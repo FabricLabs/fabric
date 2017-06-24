@@ -1,0 +1,16 @@
+{
+  "@special~": "JSON notoriously doesn't have comments, so pay attention.",
+  "@comment~": "This is an instance of a particular Type of Resource.",
+  "@id": "/",
+  "@name": "entity",
+  "@data": {
+    "@type~": "Entity",
+    "@comment~": "Think of this like an on-grid actor.",
+    "id": "/entities/the-orbus",
+    "position": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    }
+  }
+}
