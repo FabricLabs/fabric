@@ -1,0 +1,15 @@
+{
+  "@special~": "JSON notoriously doesn't have comments, so pay attention.",
+  "@comment~": "The next value is the direction we'll be taking a 'step' in.",
+  "@id": "?",
+  "@name": "z",
+  "@data": {
+    "@type~": "IrrationalNumber",
+    "id": "?#defines-state",
+    "output": {
+      "await": "Event",
+      "@type~": "String",
+      "id": "#wormhole"
+    }
+  }
+}

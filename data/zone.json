@@ -1,0 +1,13 @@
+{
+  "@special~": "JSON notoriously doesn't have comments, so pay attention.",
+  "@comment~": "This is a User-controlled Zone in Verse.",
+  "@id": "/",
+  "@name": "zone",
+  "@data": {
+    "@type~": "Zone",
+    "@comment~": "Isomorphic to RPG's Places.",
+    "id": "/places/the-orbus",
+    "universe": "the-multiverse",
+    "state": {}
+  }
+}

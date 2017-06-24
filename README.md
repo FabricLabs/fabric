@@ -1,4 +1,10 @@
 # Fabric
+![Project Status](https://img.shields.io/badge/status-experimental-rainbow.svg?style=flat-square)
+[![Build Status](https://img.shields.io/travis/martindale/fabric.svg?branch=master&style=flat-square)](https://travis-ci.org/martindale/fabric)
+[![Coverage Status](https://img.shields.io/coveralls/martindale/fabric.svg?style=flat-square)](https://coveralls.io/r/martindale/fabric)
+[![Total Contributors](https://img.shields.io/github/contributors/martindale/fabric.svg?style=flat-square)](https://github.com/martindale/fabric/contributors)
+[![Sustainability](https://img.shields.io/gratipay/team/fabric.svg?style=flat-square)](https://gratipay.com/fabric)
+
 Fabric is a **research project** intent on discovering the best means for
 developing secure, decentralized applications that benefit humanity in its
 relentless pursuit of truth.

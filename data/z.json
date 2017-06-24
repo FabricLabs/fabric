@@ -1,0 +1,14 @@
+{
+  "@special~": "JSON notoriously doesn't have comments, so pay attention.",
+  "@comment~": "The next value is the direction we'll be taking a 'step' in.",
+  "@id": "/",
+  "@name": "z",
+  "@data": {
+    "@type~": "Entity",
+    "@comment~": "This object is love.",
+    "id": "/entities/dat-bot",
+    "junk": "true",
+    "entity": "dat boi",
+    "deviation": "foo"
+  }
+}

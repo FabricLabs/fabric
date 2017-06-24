@@ -1,0 +1,43 @@
+{
+  "name": "fabric",
+  "version": "0.1.0",
+  "description": "experimental p2p framework",
+  "main": "lib/toy.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "mocha",
+    "start": "nodemon server/toy.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/martindale/fabric.git"
+  },
+  "keywords": [
+    "fabric"
+  ],
+  "author": "Eric Martindale",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/martindale/fabric/issues"
+  },
+  "homepage": "https://github.com/martindale/fabric#readme",
+  "dependencies": {
+    "bcoin": "martindale/bcoin#fabric",
+    "blessed": "^0.1.81",
+    "kad": "^2.3.0",
+    "level": "^1.7.0",
+    "lodash": "^4.17.4",
+  },
+  "devDependencies": {
+    "bunyan": "^1.8.10",
+    "chai": "^4.0.2",
+    "coveralls": "^2.13.1",
+    "istanbul": "^0.4.5",
+    "livereload": "^0.6.2",
+    "mocha": "^3.4.2",
+    "static": "^2.0.0"
+  }
+}

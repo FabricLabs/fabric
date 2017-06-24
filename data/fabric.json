@@ -1,0 +1,45 @@
+{
+  "@special~": "JSON notoriously doesn't have comments, so pay attention.",
+  "@id": "/",
+  "@name": "fabric",
+  "@link": "fabric",
+  "@type": "Vector",
+  "@sort": "strict",
+  "@author": "martindale",
+  "@comment": "The Vector meta-type is the 'bootstrap' function of the Fabric State Machine (the 'FSM'~ :D).  With a valid Vector `v_1` and a shared secret `s'`, we can compute any finite state `v_n`.",
+  "@genesis": "dev#defines-index",
+  "@contract~?": "@genesis/id",
+  "@data": {
+    "peers": [
+      "127.0.0.1",
+      "localhost",
+      "maki.io",
+      "fabric.fm",
+      "next.maki.io",
+      "next.fabric.fm",
+      "next.ericmartindale.com",
+      "next.roleplaygateway.com",
+      "verse.im",
+      "next.verse.im"
+    ],
+    "services": {
+      "http": true,
+      "tcp": true
+    },
+    "resources": {
+      "@comment": "Loosely describes a genesis `_lookup`.",
+      "Index~": "/?id=0#bootstrap"
+    },
+    "expectations": [
+      "keys", "assets",
+      "blocks", "transactions",
+      "names", "identities",
+      "components", "resources", "services", "plugins",
+      "peers", "events",
+      "sessions"
+    ],
+    "plugins": [
+      "free"
+    ]
+  }
+}
