@@ -41,5 +41,8 @@
     "plugins": [
       "free"
     ]
+  },
+  "root": {
+    "id": 0
   }
 }
