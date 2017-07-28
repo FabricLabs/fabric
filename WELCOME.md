@@ -26,5 +26,5 @@ journey!
 [why-are-we-here]: https://github.com/martindale/maki/blob/tatami/source/snippets/why-are-we-here.md
 [fabric-overview]: https://github.com/martindale/maki/blob/tatami/source/snippets/fabric-overview.md
 [maki-intro]: https://next.maki.io/guides/what-is-maki
-[resources]: https://next.maki.io/docs/resources
+[resources]: https://maki.io/docs/resources
 [institute]: http://nakamotoinstitute.org/mempool/proof-that-proof-of-work-is-the-only-solution-to-the-byzantine-generals-problem/
