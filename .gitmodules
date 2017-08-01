@@ -1,0 +1,4 @@
+[submodule "lib/bcoin"]
+	path = lib/bcoin
+	url = https://github.com/martindale/bcoin
+	branch = fabric
