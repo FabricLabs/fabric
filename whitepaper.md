@@ -11,7 +11,7 @@ We present a protocol for a distributed messaging system as an alternative to
 the current client-server model of the World Wide Web.  We extend the
 document-oriented approach provided by Timothy Berners-Lee with a new
 transactional messaging model, and also provide a mechanism for incentivizing
-the continued servicing of particular documents. 
+the continued servicing of particular documents.
 
 ## Introduction
 Fabric implements a versioned, strongly-typed, and content-addressable network
@@ -32,6 +32,8 @@ We introduce this emergent concept as a "Fuzzchain", where there is no single
 source of "truth", instead being replaced by a more individually-oriented
 "perspective" of truth.  In aggregate, these truths become quite "fuzzy",
 requiring a specific frame of reference to discern a relative truth.
+
+These offer **strong eventual consistency** as described in "[Conflict-free replicated data types][conflict-free-datatypes]" (Shapiro, Marc; Preguiça, Nuno; Baquero, Carlos; Zawirski, Marek (2011-10-10). "Conflict-free replicated data types". SSS'11 Proceedings of the 13th international conference on Stabilization, safety, and the security of distributed systems. Springer-Verlag Berlin, Heidelberg: 386–400.)
 
 Fabric facilitates this value exchange by using cryptographic tokens, which
 provide a medium of exchange that is free of outside influence or external
@@ -142,7 +144,7 @@ intangible idea, trust, as a pre-established commitment in a slightly more
 tangible fashion, a value token.  If a network is composed primarily of honest,
 friendly nodes, then commitments increase over time until the updates provided
 by the network cease to be valuable.  Should a node cease being honest, it
-destroys its ability to increase in value over time. 
+destroys its ability to increase in value over time.
 
 ### Security
 #### Contract Signatures
