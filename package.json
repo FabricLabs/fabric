@@ -12,6 +12,9 @@
     "coverage": "NODE_ENV=test istanbul cover _mocha",
     "start": "nodemon server/toy.js"
   },
+  "engines": {
+    "node": ">= 8.0.0"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/martindale/fabric.git"
