@@ -34,6 +34,7 @@ describe('Chain', function () {
     var chain = new Chain();
     var output = chain.compute();
     
+    await chain._flush();
     await chain.store.close();
     
     assert.equal(output.blocks.length, 0);
@@ -51,6 +52,7 @@ describe('Chain', function () {
     
     var output = chain.compute();
     
+    await chain._flush();
     await chain.store.close();
 
     assert.equal(1, chain.blocks.length);
@@ -60,9 +62,9 @@ describe('Chain', function () {
   it('can generate a chain of non-zero length', async function () {
     var chain = new Chain();
     var genesis = new Block(genesis);
-    
+
     genesis.compute();
-    chain.append(genesis);
+    await chain.append(genesis);
 
     var num = 3;
     var last = genesis['@id'];
@@ -75,11 +77,36 @@ describe('Chain', function () {
       last = block['@id'];
       await chain.append(block);
     }
+
+    var output = chain.compute();
+
+    await chain._flush();
+    await chain.store.close();
     
+    assert.equal(output.blocks.length, 4);
+  });
+  
+  it('can replay after shutting down', async function () {
+    var chain = new Chain();
+    var block = new Block(genesis);
+
+    block.compute();
+
+    await chain.append(block);
+
     var output = chain.compute();
 
     await chain.store.close();
     
-    assert.equal(output.blocks.length, 4);
+    var replay = new Chain();
+    
+    await replay._load();
+    
+    var original = replay.compute();
+
+    await replay.store.close();
+    
+    assert.equal(original['@data'][0], '739c0f6067efff96f6f8f66accc1cf85c9b6cc63e8e0a16f4dead4e471a48b79');
+    
   });
 });

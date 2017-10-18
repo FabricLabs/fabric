@@ -2,7 +2,7 @@
   "name": "fabric",
   "version": "0.1.0-dev",
   "description": "experimental p2p framework",
-  "main": "lib/toy.js",
+  "main": "lib/fabric.js",
   "directories": {
     "doc": "docs",
     "test": "tests"
@@ -11,6 +11,9 @@
     "test": "NODE_ENV=test mocha",
     "coverage": "NODE_ENV=test istanbul cover _mocha",
     "start": "nodemon server/toy.js"
+  },
+  "engines": {
+    "node": ">= 8.0.0"
   },
   "repository": {
     "type": "git",
@@ -33,13 +36,14 @@
     "javascript-state-machine": "^3.0.1",
     "kad": "^2.3.0",
     "level": "^2.0.0",
-    "lodash": "^4.17.4"
+    "lodash": "^4.17.4",
+    "webrtc-peer": "0.0.3"
   },
   "devDependencies": {
     "bunyan": "^1.8.10",
     "chai": "^4.0.2",
     "coveralls": "^2.13.1",
-    "istanbul": "^0.4.5",
+    "istanbul": "^1.1.0-alpha.1",
     "livereload": "^0.6.2",
     "mocha": "^3.4.2",
     "random-weighted-item": "^1.0.3",
