@@ -12,16 +12,17 @@ describe('Oracle', function () {
     assert.equal(typeof Oracle, 'function');
   });
   
-  it('can emulate HTTP GET', async function () {
+  it('can emulate HTTP PUT', async function () {
     var oracle = new Oracle();
-    var result = await oracle._GET(key);
+    var result = await oracle._PUT(key, data['@data']);
     await oracle.store.close();
     assert.ok(result);
   });
   
-  it('can emulate HTTP PUT', async function () {
+  it('can emulate HTTP GET', async function () {
     var oracle = new Oracle();
-    var result = await oracle._PUT(key, data['@data']);
+    var starts = await oracle._PUT(key, data['@data']);
+    var result = await oracle._GET(key);
     await oracle.store.close();
     assert.ok(result);
   });
