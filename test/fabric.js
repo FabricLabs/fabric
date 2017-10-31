@@ -25,7 +25,6 @@ describe('Fabric', function () {
     var fabric = new Fabric(genesis);
     //assert.equal(fabric.root.id, 0); // require a point of origin.
     fabric._sign();
-
     assert.equal(fabric['@id'], state);
   });
   
@@ -50,7 +49,7 @@ describe('Fabric', function () {
 
   it('can acknowledge its own existence', function identity (done) {
     var alice = new Fabric(genesis);
-    alice.on('auth', function validate (identity) {
+    alice.on('auth', async function validate (identity) {
       assert.equal(alice.identity.key.public, identity.key.public);
       return done();
     });
@@ -78,7 +77,7 @@ describe('Fabric', function () {
 
   it('can send a message', function broadcast () {
     var fabric = new Fabric(genesis);
-    fabric.broadcast();
+    assert.ok(fabric.broadcast());
   });
 
   /*it('can build a world', function fabricate () {

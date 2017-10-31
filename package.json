@@ -2,7 +2,7 @@
   "name": "fabric",
   "version": "0.1.0-dev",
   "description": "experimental p2p framework",
-  "main": "lib/toy.js",
+  "main": "lib/fabric.js",
   "directories": {
     "doc": "docs",
     "test": "tests"
@@ -36,7 +36,8 @@
     "javascript-state-machine": "^3.0.1",
     "kad": "^2.3.0",
     "level": "^2.0.0",
-    "lodash": "^4.17.4"
+    "lodash": "^4.17.4",
+    "webrtc-peer": "0.0.3"
   },
   "devDependencies": {
     "bunyan": "^1.8.10",
