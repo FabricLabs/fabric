@@ -5,6 +5,9 @@
 [![Total Contributors](https://img.shields.io/github/contributors/martindale/fabric.svg?style=flat-square)](https://github.com/martindale/fabric/contributors)
 [![Sustainability](https://img.shields.io/gratipay/team/fabric.svg?style=flat-square)](https://gratipay.com/fabric)
 
+**Notice** use of Fabric in production is **not recommended** in its current
+state.  Please wait for an official release before deploying.
+
 Fabric is a **research project** intent on discovering the best means for
 developing secure, decentralized applications that benefit humanity in its
 relentless pursuit of truth.
