@@ -41,4 +41,34 @@ describe('Oracle', function () {
     assert.equal(output[0], data['@data']);
     assert.ok(result);
   });
+
+  it('can emulate HTTP PATCH', async function () {
+    var oracle = new Oracle();
+    var setup = await oracle._PUT(list, []);
+    var result = await oracle._POST(list, data['@data']);
+    var patches = await oracle._PATCH(list, [{
+      extra: 'foo'
+    }]);
+    var output = await oracle._GET(list);
+
+    output = JSON.parse(output);
+
+    await oracle.store.close();
+
+    assert.equal(output[0].extra, 'foo');
+    assert.ok(result);
+  });
+
+  it('can emulate HTTP DELETE', async function () {
+    var oracle = new Oracle();
+    var setup = await oracle._PUT(list, []);
+    var result = await oracle._POST(list, data['@data']);
+    var output = await oracle._DELETE(list);
+
+    output = JSON.parse(output);
+    
+    await oracle.store.close();
+    
+    assert.equal(output, null);
+  });
 });
