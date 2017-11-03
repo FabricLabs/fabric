@@ -1,0 +1,10 @@
+doctype html
+html
+  head
+    meta(charset="UTF-8")
+    title Fabric Oracle Sample App
+    each script in scripts
+      script(src="#{script.link}", integrity="#{script.integrity}")
+
+  body
+    h1 Hello, world.
