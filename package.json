@@ -29,17 +29,17 @@
   },
   "homepage": "https://github.com/martindale/fabric#readme",
   "dependencies": {
-    "bcoin": "github:martindale/bcoin#fabric",
     "blessed": "^0.1.81",
     "elliptic": "^6.4.0",
     "fast-json-patch": "^2.0.4",
     "javascript-state-machine": "^3.0.1",
-    "kad": "^2.3.0",
     "level": "^2.0.0",
+    "localforage": "^1.5.3",
     "lodash": "^4.17.4",
     "webrtc-peer": "0.0.3"
   },
   "devDependencies": {
+    "browserify-test": "^3.1.0",
     "bunyan": "^1.8.10",
     "chai": "^4.0.2",
     "coveralls": "^2.13.1",
@@ -48,6 +48,11 @@
     "mocha": "^3.4.2",
     "random-weighted-item": "^1.0.3",
     "semistandard": "^11.0.0",
-    "static": "^2.0.0"
+    "static": "^2.0.0",
+    "testling": "^1.7.1",
+    "webpack": "^3.8.1"
+  },
+  "browserify": {
+    "level": "level-browserify"
   }
 }
