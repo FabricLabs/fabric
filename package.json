@@ -30,12 +30,15 @@
   "homepage": "https://github.com/martindale/fabric#readme",
   "dependencies": {
     "blessed": "^0.1.81",
+    "compiled-jade-render": "^1.0.2",
     "elliptic": "^6.4.0",
+    "express": "^4.16.2",
     "fast-json-patch": "^2.0.4",
     "javascript-state-machine": "^3.0.1",
     "level": "^2.0.0",
     "localforage": "^1.5.3",
     "lodash": "^4.17.4",
+    "ssri": "^5.0.0",
     "webrtc-peer": "0.0.3"
   },
   "devDependencies": {
