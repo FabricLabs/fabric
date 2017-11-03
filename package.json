@@ -10,7 +10,8 @@
   "scripts": {
     "test": "NODE_ENV=test mocha",
     "coverage": "NODE_ENV=test istanbul cover _mocha",
-    "start": "nodemon server/toy.js"
+    "start": "webpack examples/app.js assets/app.min.js && node examples/oracle.js",
+    "cli": "nodemon server/toy.js"
   },
   "engines": {
     "node": ">= 8.0.0"

@@ -17,10 +17,6 @@ window.app = new App({
 
 app._load();
 
-app.define('Person', Person);
-app.define('Post', Post);
-app.define('Relationship', Relationship);
-
 window.onload = function () {
   document.querySelector('body').appendChild(window.app.element());
 }
