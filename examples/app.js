@@ -17,6 +17,16 @@ window.app = new App({
 
 app._load();
 
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('/service.min.js').then(function(registration) {
+      console.log('[GUARDIAN]', 'ready: ', registration.scope);
+    }, function(err) {
+      console.log('[GUARDIAN]', 'failed: ', err);
+    });
+  });
+}
+
 window.onload = function () {
   document.querySelector('body').appendChild(window.app.element());
 }
