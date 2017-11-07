@@ -1,0 +1,13 @@
+{
+  "@comment~": "Strip @ prefix.",
+  "@comment~": "Remark: ~ signifies !Triage",
+  "id": "local",
+  "type": "PoW",
+  "resources": {
+    "Tablet": {
+      "@quotation": "Well, isn't that a funny coincidence.",
+      "challenge": "identity",
+      "result": 1
+    }
+  }
+}
