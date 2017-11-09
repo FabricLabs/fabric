@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "npm run make:service && webpack --progress --colors --watch examples/app.js assets/app.js & nodemon examples/oracle.js",
-    "test": "npm run build && NODE_ENV=test mocha",
+    "test": "npm run make:service && npm run make:app && NODE_ENV=test mocha",
     "coverage": "npm run build && NODE_ENV=test istanbul cover _mocha",
     "make:service": "webpack --progress --colors examples/service.js assets/service.js",
     "make:app": "webpack --progress --colors examples/app.js assets/app.js",
