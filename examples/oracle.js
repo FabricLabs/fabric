@@ -23,8 +23,8 @@ if (config.client && config.client.precompile) {
 }
 
 config.scripts = [{
-  link: '/app.min.js',
-  integrity: ssri.fromData(fs.readFileSync('./assets/app.min.js')),
+  link: '/app.js',
+  integrity: ssri.fromData(fs.readFileSync('./assets/app.js')),
 }];
 
 router.get('/', function (req, res) {

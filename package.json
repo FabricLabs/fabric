@@ -8,10 +8,16 @@
     "test": "tests"
   },
   "scripts": {
-    "test": "NODE_ENV=test mocha",
-    "coverage": "NODE_ENV=test istanbul cover _mocha",
-    "start": "webpack --progress --colors --watch examples/app.js assets/app.min.js & nodemon examples/oracle.js",
-    "cli": "nodemon server/toy.js"
+    "docs": "npm run build && gitbook serve",
+    "test": "npm run build && NODE_ENV=test mocha",
+    "coverage": "npm run build && NODE_ENV=test istanbul cover _mocha",
+    "make:service": "webpack --progress --colors examples/service.js assets/service.js",
+    "make:app": "webpack --progress --colors examples/app.js assets/app.js",
+    "start": "npm run make:service && webpack --progress --colors --watch examples/app.js assets/app.js & nodemon examples/oracle.js",
+    "cli": "nodemon server/toy.js",
+    "docs:api": "jsdoc2md --configure jsdoc.json --files lib/**/*.js > docs/api.md",
+    "docs:public": "gitbook install && gitbook build",
+    "build": "npm run make:service && npm run make:app"
   },
   "engines": {
     "node": ">= 8.0.0"
@@ -36,15 +42,20 @@
     "localforage": "^1.5.3",
     "lodash": "^4.17.4",
     "ssri": "^5.0.0",
-    "webrtc-peer": "0.0.3"
+    "wrtc": "^0.0.62"
   },
   "devDependencies": {
+    "babel-core": "^6.26.0",
+    "babel-preset-es2017": "^6.24.1",
     "blessed": "^0.1.81",
     "chai": "^4.0.2",
     "compiled-jade-render": "^1.0.2",
     "coveralls": "^2.13.1",
     "express": "^4.16.2",
     "istanbul": "^1.1.0-alpha.1",
+    "jsdoc": "^3.5.5",
+    "jsdoc-babel": "^0.3.0",
+    "jsdoc-to-markdown": "^3.0.1",
     "livereload": "^0.6.2",
     "mocha": "^3.4.2",
     "random-weighted-item": "^1.0.3",

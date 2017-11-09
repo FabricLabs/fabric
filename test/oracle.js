@@ -1,6 +1,8 @@
 var assert = require('assert');
 var expect = require('chai').expect;
 
+var fs = require('fs');
+
 var Oracle = require('../lib/oracle');
 
 var key = '/test';
@@ -70,5 +72,19 @@ describe('Oracle', function () {
     await oracle.store.close();
     
     assert.equal(output, null);
+  });
+  
+  it('can load from a directory', async function () {
+    fs.writeFileSync('./assets/test.txt', 'Hello, world!', 'utf8');
+    
+    var oracle = new Oracle();
+    var output = await oracle._load('./assets');
+    var assets = await oracle._OPTIONS('/assets');
+    var result = await oracle._OPTIONS('/assets/test.txt');
+
+    await oracle.store.close();
+    
+    assert.equal(result['@id'], '19270ea4f98808a63fbb99bc26a5ee6f0fe8df9c8182cf1d710b115d57250578');
+    assert.equal(assets['@id'], '149948a9f9d06678574a7297113291f23fd4defcfa75efc7e0417187e65e66ab');
   });
 });
