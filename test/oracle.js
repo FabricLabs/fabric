@@ -79,12 +79,12 @@ describe('Oracle', function () {
     
     var oracle = new Oracle();
     var output = await oracle._load('./assets');
+    var assets = await oracle._OPTIONS('/assets');
     var result = await oracle._OPTIONS('/assets/test.txt');
-
-    console.log('done!', result);
 
     await oracle.store.close();
     
     assert.equal(result['@id'], '19270ea4f98808a63fbb99bc26a5ee6f0fe8df9c8182cf1d710b115d57250578');
+    assert.equal(assets['@id'], 'd854308dc41ef92196c846c3591fdc2a47bd5dc219fa04d34d4b5aee71bb5336');
   });
 });
