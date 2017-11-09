@@ -36,7 +36,8 @@
     "localforage": "^1.5.3",
     "lodash": "^4.17.4",
     "ssri": "^5.0.0",
-    "webrtc-peer": "0.0.3"
+    "webrtc-peer": "0.0.3",
+    "wrtc": "^0.0.62"
   },
   "devDependencies": {
     "blessed": "^0.1.81",
