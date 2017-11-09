@@ -12,7 +12,9 @@
     "coverage": "NODE_ENV=test istanbul cover _mocha",
     "start": "webpack --progress --colors --watch examples/app.js assets/app.min.js & nodemon examples/oracle.js",
     "cli": "nodemon server/toy.js",
-    "docs:api": "jsdoc2md --configure jsdoc.json --files lib/**/*.js > docs/api.md"
+    "docs:api": "jsdoc2md --configure jsdoc.json --files lib/**/*.js > docs/api.md",
+    "build": "gitbook install && gitbook build",
+    "docs": "gitbook serve"
   },
   "engines": {
     "node": ">= 8.0.0"
