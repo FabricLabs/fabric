@@ -1,13 +1,13 @@
 {
   "theme": "./themes/clarity",
-  "plugins": ["exercises", "edit-link", "page-toc"],
+  "plugins": ["exercises", "edit-link", "page-toc", "scripts"],
   "pluginsConfig": {
     "edit-link": {
       "base": "https://github.com/martindale/fabric/edit/master",
       "label": "Edit This Page"
     },
     "scripts": {
-      "files": ["./scripts/inlineDisqussions.js"]
+      "files": ["./assets/app.js"]
     }
   }
 }

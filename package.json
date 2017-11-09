@@ -8,15 +8,15 @@
     "test": "tests"
   },
   "scripts": {
-    "docs": "npm run build && gitbook serve",
+    "start": "npm run make:service && webpack --progress --colors --watch examples/app.js assets/app.js & nodemon examples/oracle.js",
+    "docs": "gitbook install && npm run build && npm run docs:api && gitbook serve",
+    "cli": "nodemon server/toy.js",
     "test": "npm run build && NODE_ENV=test mocha",
     "coverage": "npm run build && NODE_ENV=test istanbul cover _mocha",
     "make:service": "webpack --progress --colors examples/service.js assets/service.js",
     "make:app": "webpack --progress --colors examples/app.js assets/app.js",
-    "start": "npm run make:service && webpack --progress --colors --watch examples/app.js assets/app.js & nodemon examples/oracle.js",
-    "cli": "nodemon server/toy.js",
+    "make:docs": "gitbook install && npm run build && npm run docs:api && gitbook build",
     "docs:api": "jsdoc2md --configure jsdoc.json --files lib/**/*.js > docs/api.md",
-    "docs:public": "gitbook install && gitbook build",
     "build": "npm run make:service && npm run make:app"
   },
   "engines": {
@@ -37,6 +37,7 @@
   "homepage": "https://github.com/martindale/fabric#readme",
   "dependencies": {
     "fast-json-patch": "^2.0.4",
+    "gitbook-plugin-scripts": "^1.0.2",
     "javascript-state-machine": "^3.0.1",
     "level": "^2.0.0",
     "localforage": "^1.5.3",
