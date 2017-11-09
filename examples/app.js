@@ -7,7 +7,7 @@ const Post = require('../resources/post');
 const Relationship = require('../resources/relationship');
 
 window.app = new App({
-  scripts: ['app.min.js'],
+  scripts: ['app.js'],
   resources: {
     'Person': Person,
     'Post': Post,
@@ -19,7 +19,7 @@ app._load();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function() {
-    navigator.serviceWorker.register('/service.min.js').then(function(registration) {
+    navigator.serviceWorker.register('/service.js').then(function(registration) {
       console.log('[GUARDIAN]', 'ready: ', registration.scope);
     }, function(err) {
       console.log('[GUARDIAN]', 'failed: ', err);

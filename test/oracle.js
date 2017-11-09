@@ -85,6 +85,6 @@ describe('Oracle', function () {
     await oracle.store.close();
     
     assert.equal(result['@id'], '19270ea4f98808a63fbb99bc26a5ee6f0fe8df9c8182cf1d710b115d57250578');
-    assert.equal(assets['@id'], '68a1359552ba7c97fbc36978b40def03c635ba8a8bbf7d98878ea2fa26961b35');
+    assert.equal(assets['@id'], '149948a9f9d06678574a7297113291f23fd4defcfa75efc7e0417187e65e66ab');
   });
 });
