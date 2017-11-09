@@ -37,7 +37,6 @@
   "homepage": "https://github.com/martindale/fabric#readme",
   "dependencies": {
     "fast-json-patch": "^2.0.4",
-    "gitbook-plugin-scripts": "^1.0.2",
     "javascript-state-machine": "^3.0.1",
     "level": "^2.0.0",
     "localforage": "^1.5.3",
@@ -53,6 +52,7 @@
     "compiled-jade-render": "^1.0.2",
     "coveralls": "^2.13.1",
     "express": "^4.16.2",
+    "gitbook-plugin-scripts": "^1.0.2",
     "istanbul": "^1.1.0-alpha.1",
     "jsdoc": "^3.5.5",
     "jsdoc-babel": "^0.3.0",
