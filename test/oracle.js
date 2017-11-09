@@ -81,6 +81,8 @@ describe('Oracle', function () {
     var output = await oracle._load('./assets');
     var result = await oracle._OPTIONS('/assets/test.txt');
 
+    console.log('done!', result);
+
     await oracle.store.close();
     
     assert.equal(result['@id'], '19270ea4f98808a63fbb99bc26a5ee6f0fe8df9c8182cf1d710b115d57250578');
