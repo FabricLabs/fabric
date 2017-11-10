@@ -20,7 +20,7 @@
     "cli": "nodemon server/toy.js"
   },
   "engines": {
-    "node": ">= 8.0.0"
+    "node": ">= 8.9.0"
   },
   "repository": {
     "type": "git",
@@ -42,6 +42,7 @@
     "localforage": "^1.5.3",
     "lodash": "^4.17.4",
     "ssri": "^5.0.0",
+    "wreck": "^14.0.2",
     "wrtc": "^0.0.62"
   },
   "devDependencies": {
