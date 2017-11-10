@@ -12,10 +12,14 @@ window.app = new App({
     'Person': Person,
     'Post': Post,
     'Relationship': Relationship,
+  },
+  authorities: {
+    
   }
 });
 
 app._load();
+app._explore();
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function() {
