@@ -21,4 +21,13 @@ describe('Remote', function () {
     assert.ok(result);
   });
 
+  it('can emulate HTTP OPTIONS', async function () {
+    var remote = new Remote({
+      host: 'maki.io'
+    });
+    var result = await remote._OPTIONS(key);
+
+    assert.ok(result);
+  });
+
 });
