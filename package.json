@@ -17,6 +17,7 @@
     "docs:api": "jsdoc2md --configure jsdoc.json --files lib/**/*.js > docs/api.md",
     "build": "npm run make:service && npm run make:app && npm run make:docs",
     "docs": "gitbook install && npm run docs:api && gitbook serve",
+    "examples": "docco --output examples/ examples/app.js examples/oracle.js",
     "cli": "nodemon server/toy.js"
   },
   "engines": {
@@ -43,7 +44,7 @@
     "lodash": "^4.17.4",
     "ssri": "^5.0.0",
     "wreck": "^14.0.2",
-    "wrtc": "^0.0.62"
+    "wrtc": "^0.0.63"
   },
   "devDependencies": {
     "babel-core": "^6.26.0",
@@ -52,19 +53,23 @@
     "chai": "^4.0.2",
     "compiled-jade-render": "^1.0.2",
     "coveralls": "^2.13.1",
+    "docco": "^0.7.0",
     "express": "^4.16.2",
     "gitbook-plugin-scripts": "^1.0.2",
     "istanbul": "^1.1.0-alpha.1",
+    "jade": "^1.11.0",
     "jsdoc": "^3.5.5",
     "jsdoc-babel": "^0.3.0",
     "jsdoc-to-markdown": "^3.0.1",
     "livereload": "^0.6.2",
     "mocha": "^3.4.2",
+    "page": "^1.7.1",
     "random-weighted-item": "^1.0.3",
     "semistandard": "^11.0.0",
     "static": "^2.0.0",
     "testling": "^1.7.1",
-    "webpack": "^3.8.1"
+    "webpack": "^3.8.1",
+    "webworker-threads": "^0.7.13"
   },
   "browserify": {
     "level": "level-browserify"

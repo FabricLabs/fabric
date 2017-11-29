@@ -9,6 +9,8 @@ self.addEventListener('message', function (e) {
 
 self.addEventListener('fetch', async function (event) {
   var self = this;
+  
+  return true;
   console.log('[GUARDIAN]', 'request:', event);
 
   var path = event.request.url;
@@ -26,7 +28,7 @@ self.addEventListener('fetch', async function (event) {
   if (value) {
     console.log('was cached:', uri, value.length, 'bytes');
     var request = new Request(uri, {
-      method: 'OPTIONS'
+      method: 'HEAD'
     });
 
     var response = await fetch(request);

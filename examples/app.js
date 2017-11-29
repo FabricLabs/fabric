@@ -18,9 +18,6 @@ window.app = new App({
   }
 });
 
-app._load();
-app._explore();
-
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function() {
     navigator.serviceWorker.register('/service.js').then(function(registration) {
@@ -32,5 +29,14 @@ if ('serviceWorker' in navigator) {
 }
 
 window.onload = function () {
-  document.querySelector('body').appendChild(window.app.element());
+  app.attach(document.querySelector('fabric-application'));
+  //app._load();
+
+  /*/
+  app._defer('localhost:3000');
+  /*/
+  app._defer('maki.io');
+  /**/
+
+  app._explore();
 }
