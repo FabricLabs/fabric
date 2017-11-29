@@ -3,8 +3,17 @@ html
   head
     meta(charset="UTF-8")
     title Fabric Oracle Sample App
+
     each script in scripts
       script(src="#{script.link}", integrity="#{script.integrity}")
 
+    link(rel="import", href="https://polygit.org/components/polymer/polymer-element.html")
+    link(rel="import", href="https://polygit.org/components/polymer/lib/elements/dom-repeat.html")
+
+    each component in components
+      link(rel="import", href="#{component.link}")
+
+    link(rel="stylesheet", type="text/css", href="/assets/semantic.css")
+
   body
-    h1 Hello, world.
+    fabric-application

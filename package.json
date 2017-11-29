@@ -8,19 +8,20 @@
     "test": "tests"
   },
   "scripts": {
-    "docs": "npm run build && gitbook serve",
-    "test": "npm run build && NODE_ENV=test mocha",
+    "start": "npm run make:service && webpack --progress --colors --watch examples/app.js assets/app.js & nodemon examples/oracle.js",
+    "test": "npm run make:service && npm run make:app && NODE_ENV=test mocha",
     "coverage": "npm run build && NODE_ENV=test istanbul cover _mocha",
     "make:service": "webpack --progress --colors examples/service.js assets/service.js",
     "make:app": "webpack --progress --colors examples/app.js assets/app.js",
-    "start": "npm run make:service && webpack --progress --colors --watch examples/app.js assets/app.js & nodemon examples/oracle.js",
-    "cli": "nodemon server/toy.js",
+    "make:docs": "gitbook install && npm run docs:api && gitbook build",
     "docs:api": "jsdoc2md --configure jsdoc.json --files lib/**/*.js > docs/api.md",
-    "docs:public": "gitbook install && gitbook build",
-    "build": "npm run make:service && npm run make:app"
+    "build": "npm run make:service && npm run make:app && npm run make:docs",
+    "docs": "gitbook install && npm run docs:api && gitbook serve",
+    "examples": "docco --output examples/ examples/app.js examples/oracle.js",
+    "cli": "nodemon server/toy.js"
   },
   "engines": {
-    "node": ">= 8.0.0"
+    "node": ">= 8.9.0"
   },
   "repository": {
     "type": "git",
@@ -42,7 +43,8 @@
     "localforage": "^1.5.3",
     "lodash": "^4.17.4",
     "ssri": "^5.0.0",
-    "wrtc": "^0.0.62"
+    "wreck": "^14.0.2",
+    "wrtc": "^0.0.63"
   },
   "devDependencies": {
     "babel-core": "^6.26.0",
@@ -51,18 +53,23 @@
     "chai": "^4.0.2",
     "compiled-jade-render": "^1.0.2",
     "coveralls": "^2.13.1",
+    "docco": "^0.7.0",
     "express": "^4.16.2",
+    "gitbook-plugin-scripts": "^1.0.2",
     "istanbul": "^1.1.0-alpha.1",
+    "jade": "^1.11.0",
     "jsdoc": "^3.5.5",
     "jsdoc-babel": "^0.3.0",
     "jsdoc-to-markdown": "^3.0.1",
     "livereload": "^0.6.2",
     "mocha": "^3.4.2",
+    "page": "^1.7.1",
     "random-weighted-item": "^1.0.3",
     "semistandard": "^11.0.0",
     "static": "^2.0.0",
     "testling": "^1.7.1",
-    "webpack": "^3.8.1"
+    "webpack": "^3.8.1",
+    "webworker-threads": "^0.7.13"
   },
   "browserify": {
     "level": "level-browserify"
