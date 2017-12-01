@@ -1,7 +1,7 @@
 var assert = require('assert');
 var expect = require('chai').expect;
 
-var Fabric = require('../');
+var Fabric = require('../lib/fabric');
 
 describe('Fabric.stack', function () {
   it('should correctly compute a known instruction', function () {
