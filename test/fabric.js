@@ -29,7 +29,17 @@ describe('Fabric', function () {
     assert.equal(JSON.stringify(fabric['@data']), JSON.stringify(genesis));
     assert.equal(fabric['@id'], state);
   });
-  
+
+  it('has a correctly-defined NOOP operation', function () {
+    var fabric = new Fabric(genesis);
+
+    fabric.stack.push('NOOP');
+    fabric.compute();
+
+    assert.equal(JSON.stringify(fabric['@data']), JSON.stringify(genesis));
+    
+  });
+
   it('can compute a value', function prove () {
     var fabric = new Fabric();
     
