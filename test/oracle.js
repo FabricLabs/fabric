@@ -76,15 +76,16 @@ describe('Oracle', function () {
   
   it('can load from a directory', async function () {
     fs.writeFileSync('./assets/test.txt', 'Hello, world!', 'utf8');
-    
+
     var oracle = new Oracle();
     var output = await oracle._load('./assets');
     var assets = await oracle._OPTIONS('/assets');
     var result = await oracle._OPTIONS('/assets/test.txt');
 
     await oracle.store.close();
-    
-    assert.equal(result['@id'], '19270ea4f98808a63fbb99bc26a5ee6f0fe8df9c8182cf1d710b115d57250578');
-    assert.equal(assets['@id'], '149948a9f9d06678574a7297113291f23fd4defcfa75efc7e0417187e65e66ab');
+
+    assert.equal(assets['@id'], 'edb83d6086d486f6d7c57135d8d61b247dd62dd966b51ede012d02f2a7ada9ee');
+    assert.equal(result['@id'], '4759427e7a377446d535011d3618ebaa207d697c1e9833e1c3e6018408a9d199');
+
   });
 });
