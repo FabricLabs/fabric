@@ -18,7 +18,7 @@ var genesis = {
   entropy: '00000000'
 };
 
-var state = 'd9a3ed614805ffbc3c6e62cceae3339046f6bb7135b7d00fe9956bee65871f00';
+var state = '739c0f6067efff96f6f8f66accc1cf85c9b6cc63e8e0a16f4dead4e471a48b79';
 
 // test our own expectations.  best of luck.
 // @consensus:
@@ -56,7 +56,7 @@ describe('Chain', function () {
     await chain.store.close();
 
     assert.equal(1, chain.blocks.length);
-    assert.equal(JSON.stringify(chain['@data']), JSON.stringify(genesis));
+    assert.equal(JSON.stringify(chain['@data']), JSON.stringify([genesis]));
     assert.equal(chain.genesis, state);
   });
 
