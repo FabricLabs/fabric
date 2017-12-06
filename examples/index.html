@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <link rel="stylesheet" type="text/css" href="stylesheets/tufte.css" />
+  </head>
+  <body>
+    <article>
+      <h1>Fabric</h1>
+      <p class="subtitle">a data layer for the distributed web</p>
+
+      <section>
+       <h2>Introduction</h2>
+       <p>Building products that fully utilize the power of emerging technology is hard.  That's why we built <a href="">Fabric</a>, a standardized API for designing and deploying decentralized apps.</p>
+      </section>
+      
+      <section>
+        <h3>Building Your First Decentralized Application</h3>
+        <p>We'll be using <a href="">Maki</a>, a library of user interface elements which integrate directly with Fabric.  We'll provide definitions for how our application should behave, and the core Fabric library will handle the rest.</p>
+        
+        <p>If you haven't already, now's a good time to read <a href="https://maki.io/docs">an Introduction to Maki</a> which details available options and configurations which might be interesting to you.</p>
+        
+        <h4>Basic App Scaffold</h4>
+        <p>Start with creating the following <code>app.js</code> file:</p>
+        
+        <pre class="code">
+          var Fabric = require('fabric');
+          var Maki = require('maki');
+          
+          var app = new Maki();
+          
+          app.start();
+        </pre>
+        
+        <p>This defines and starts a simple HTTP Oracle, and displays a link in your console.  You can browse this link now, or read on to add some functionality.</p>
+      </section>
+      <section>
+        <h4>Adding a Data Layer</h4>
+        <p>Fabric adds a simple synchronized datastore to your applications, allowing your users to keep a collection of the data they've consumed.</p>
+        <p>This data can be used to run applications locally, without the need for a network connection.  Let's add one now.</p>
+        <p>Place this code before <code>app.start();</code> to add a new <code>Post</code> resource:</p>
+        <pre class="code">
+          app.define('Post', {
+            attributes: {
+              content: { type: String }
+            }
+          });
+        </pre>
+
+    </article>
+  </body>
+</html>

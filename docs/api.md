@@ -9,7 +9,13 @@
 <dd></dd>
 <dt><a href="#Peer">Peer</a></dt>
 <dd></dd>
+<dt><a href="#Remote">Remote</a></dt>
+<dd></dd>
 <dt><a href="#Vector">Vector</a></dt>
+<dd></dd>
+<dt><a href="#Walker">Walker</a></dt>
+<dd></dd>
+<dt><a href="#Worker">Worker</a></dt>
 <dd></dd>
 </dl>
 
@@ -124,6 +130,52 @@ An in-memory representation of a node in our network.
 | --- | --- | --- |
 | initial | [<code>Vector</code>](#Vector) | Initialization Vector for this peer. |
 
+<a name="Remote"></a>
+
+## Remote
+**Kind**: global class  
+
+* [Remote](#Remote)
+    * [new Remote(initial)](#new_Remote_new)
+    * [._GET](#Remote+_GET) ⇒ <code>Mixed</code>
+    * [._OPTIONS](#Remote+_OPTIONS) ⇒ <code>Object</code>
+
+<a name="new_Remote_new"></a>
+
+### new Remote(initial)
+An in-memory representation of a node in our network.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| initial | <code>Object</code> | Target object. |
+
+<a name="Remote+_GET"></a>
+
+### remote._GET ⇒ <code>Mixed</code>
+HTTP GET against the configured Authority.
+
+**Kind**: instance property of [<code>Remote</code>](#Remote)  
+**Returns**: <code>Mixed</code> - [description]  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | HTTP Path to request. |
+| params | <code>Object</code> | Map of parameters to supply. |
+
+<a name="Remote+_OPTIONS"></a>
+
+### remote._OPTIONS ⇒ <code>Object</code>
+HTTP OPTIONS on the configured Authority.
+
+**Kind**: instance property of [<code>Remote</code>](#Remote)  
+**Returns**: <code>Object</code> - - Full description of remote resource.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | HTTP Path to request. |
+| params | <code>Object</code> | Map of parameters to supply. |
+
 <a name="Vector"></a>
 
 ## Vector
@@ -132,6 +184,7 @@ An in-memory representation of a node in our network.
 * [Vector](#Vector)
     * [new Vector(init)](#new_Vector_new)
     * [._serialize(input)](#Vector+_serialize) ⇒ <code>String</code>
+    * [._identify(entity)](#Vector+_identify) ⇒ <code>Object</code>
     * [.compute(input)](#Vector+compute) ⇒ [<code>Vector</code>](#Vector)
 
 <a name="new_Vector_new"></a>
@@ -156,6 +209,18 @@ _serialize is a placeholder, should be discussed.
 | --- | --- | --- |
 | input | <code>String</code> | What to serialize.  Defaults to `this['@data']`. |
 
+<a name="Vector+_identify"></a>
+
+### vector._identify(entity) ⇒ <code>Object</code>
+Compute the `sha256` hash of the input entity's `@data` field.
+
+**Kind**: instance method of [<code>Vector</code>](#Vector)  
+**Returns**: <code>Object</code> - Transformed entity with `@id` set to the `sha256` hash of `@data`.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| entity | <code>Object</code> | Input object; expects `@data`. |
+
 <a name="Vector+compute"></a>
 
 ### vector.compute(input) ⇒ [<code>Vector</code>](#Vector)
@@ -167,4 +232,83 @@ Computes the next "step" for our current Vector.
 | Param | Type | Description |
 | --- | --- | --- |
 | input | <code>String</code> | Input state, undefined if desired. |
+
+<a name="Walker"></a>
+
+## Walker
+**Kind**: global class  
+
+* [Walker](#Walker)
+    * [new Walker(init)](#new_Walker_new)
+    * [._define](#Walker+_define) ⇒ <code>Object</code>
+    * [._explore(path, [map])](#Walker+_explore) ⇒ <code>Object</code>
+
+<a name="new_Walker_new"></a>
+
+### new Walker(init)
+The Walker explores a directory tree and maps it to memory.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| init | [<code>Vector</code>](#Vector) | Initial state tree. |
+
+<a name="Walker+_define"></a>
+
+### walker._define ⇒ <code>Object</code>
+Explores a directory tree on the local system's disk.
+
+**Kind**: instance property of [<code>Walker</code>](#Walker)  
+**Returns**: <code>Object</code> - A hashmap of directory contents.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| dir | <code>String</code> |  | Path to crawl on local disk. |
+| [map] | <code>Object</code> | <code>{}</code> | Pointer to previous step in stack. |
+
+<a name="Walker+_explore"></a>
+
+### walker._explore(path, [map]) ⇒ <code>Object</code>
+Explores a directory tree on the local system's disk.
+
+**Kind**: instance method of [<code>Walker</code>](#Walker)  
+**Returns**: <code>Object</code> - [description]  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| path | <code>String</code> |  | [description] |
+| [map] | <code>Object</code> | <code>{}</code> | [description] |
+
+<a name="Worker"></a>
+
+## Worker
+**Kind**: global class  
+
+* [Worker](#Worker)
+    * [new Worker(initial)](#new_Worker_new)
+    * [.compute(input)](#Worker+compute) ⇒ <code>String</code>
+
+<a name="new_Worker_new"></a>
+
+### new Worker(initial)
+Workers are arbitrary containers for processing data.  They can be thought of
+almost like "threads", as they run asynchronously over the duration of a
+contract's lifetime as "fulfillment conditions" for its closure.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| initial | <code>Object</code> | Configuration object |
+
+<a name="Worker+compute"></a>
+
+### worker.compute(input) ⇒ <code>String</code>
+Handle a task.
+
+**Kind**: instance method of [<code>Worker</code>](#Worker)  
+**Returns**: <code>String</code> - Outcome of the requested job.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | [<code>Vector</code>](#Vector) | Input vector. |
 

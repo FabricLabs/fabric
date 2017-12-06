@@ -2,7 +2,7 @@
   "name": "fabric",
   "version": "0.1.0-dev",
   "description": "experimental p2p framework",
-  "main": "lib/fabric.js",
+  "main": "index.js",
   "directories": {
     "doc": "docs",
     "test": "tests"
@@ -41,7 +41,7 @@
     "javascript-state-machine": "^3.0.1",
     "level": "^2.0.0",
     "localforage": "^1.5.3",
-    "lodash": "^4.17.4",
+    "lodash.merge": "^4.6.0",
     "ssri": "^5.0.0",
     "wreck": "^14.0.2",
     "wrtc": "^0.0.63"

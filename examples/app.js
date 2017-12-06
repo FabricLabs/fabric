@@ -1,3 +1,4 @@
+// # Offline-first Applications with Fabric
 'use strict';
 
 const App = require('../lib/app');

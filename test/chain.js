@@ -18,7 +18,8 @@ var genesis = {
   entropy: '00000000'
 };
 
-var state = '739c0f6067efff96f6f8f66accc1cf85c9b6cc63e8e0a16f4dead4e471a48b79';
+var zero = 'd9a3ed614805ffbc3c6e62cceae3339046f6bb7135b7d00fe9956bee65871f00';
+var state = '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a';
 
 // test our own expectations.  best of luck.
 // @consensus:
@@ -38,25 +39,27 @@ describe('Chain', function () {
     await chain.store.close();
     
     assert.equal(output.blocks.length, 0);
+    assert.equal(output['@id'], state);
   });
   
   it('can generate a chain with a genesis block', async function () {
     var chain = new Chain();
     var block = new Block(genesis);
 
-    block.compute();
-    
-    assert.equal(block['@id'], state);
+    block._sign();
+
+    assert.equal(block['@id'], zero);
     
     await chain.append(block);
     
     var output = chain.compute();
-    
-    await chain._flush();
-    await chain.store.close();
 
     assert.equal(1, chain.blocks.length);
-    assert.equal(chain.genesis, state);
+    assert.equal(JSON.stringify(chain['@data']), JSON.stringify([block['@id']]));
+    assert.equal(chain.genesis, zero);
+
+    await chain._flush();
+    await chain.store.close();
   });
 
   it('can generate a chain of non-zero length', async function () {
@@ -106,7 +109,7 @@ describe('Chain', function () {
 
     await replay.store.close();
     
-    assert.equal(original['@data'][0], '739c0f6067efff96f6f8f66accc1cf85c9b6cc63e8e0a16f4dead4e471a48b79');
+    assert.equal(original['@data'][0], zero);
     
   });
 });

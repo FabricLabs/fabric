@@ -1,4 +1,4 @@
-var _ = require('lodash');
+var _ = require('../lib/functions');
 
 var Fabric = require('../lib/fabric');
 var game = new Fabric({

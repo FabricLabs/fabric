@@ -1,19 +1,37 @@
+// # HTTP Oracles with Fabric
+// Oracles are external points of reference for individual network actors.  They
+// can be used to defer authority to an outside source, such as in the
+// traditional client-server model.
+//
+// To run this example, simply try `node examples/oracle.js` from the command-
+// line and visit [localhost:3000](http://localhost:3000) in a browser.
+//
+// ## Code
+// Here, we designate ES5 Strict Mode, which causes modern browsers to constrain
+// execution parameters for more secure and performant script execution.
 'use strict';
 
+// ## Dependencies
+// Here we define two simple dependencies, `fs` for filesystem interaction and
+// `ssri` to provide secure Sub-Resource Integrity (SRI), which mitigates a
+// class of attacks in modern web browsers.
 var fs = require('fs');
-var path = require('path');
 var ssri = require('ssri');
 
 var config = {
   precompile: true
 }; //require('../config');
 
+var jade = require('jade');
 var express = require('express');
 var router = express();
 
 router.use(express.static('assets'));
 
-router.set('views', path.join(__dirname, '../assets'));
+router.locals.pretty = true;
+
+router.use('/assets', express.static('assets'));
+router.set('views', 'assets');
 
 if (config.client && config.client.precompile) {
   router.set('view engine', 'js');

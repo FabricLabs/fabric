@@ -7,7 +7,7 @@ var message = require('../data/message');
 var Fabric = require('../lib/fabric');
 var Instruction = require('../lib/instruction');
 
-var state = '326849acb46552a14fc1a904c1787609550635d0af1727ca874089b258854d6a';
+var state = '90d6d8a4824727f98eb83f66cbcaf55eb48df86300bd51c526d590b037885faa';
 
 //var Machine = require('../lib/machine');
 
@@ -25,9 +25,21 @@ describe('Fabric', function () {
     var fabric = new Fabric(genesis);
     //assert.equal(fabric.root.id, 0); // require a point of origin.
     fabric._sign();
+    
+    assert.equal(JSON.stringify(fabric['@data']), JSON.stringify(genesis));
     assert.equal(fabric['@id'], state);
   });
-  
+
+  it('has a correctly-defined NOOP operation', function () {
+    var fabric = new Fabric(genesis);
+
+    fabric.stack.push('NOOP');
+    fabric.compute();
+
+    assert.equal(JSON.stringify(fabric['@data']), JSON.stringify(genesis));
+    
+  });
+
   it('can compute a value', function prove () {
     var fabric = new Fabric();
     

@@ -103,7 +103,7 @@ block3.compute();
 //chain.append(block3);
 */
 
-var output = chain.compute();
+//var output = chain.compute();
 
 //console.log('output (LEDGER):', ledger);
 //console.log('output (TXS):', ledger['@data']);
@@ -112,19 +112,20 @@ chain.on('mutation', function(ops) {
   //console.log('mutation:', ops);
 });
 
+main();
 
-chain._listBlocks(function(err, blocks) {
-  console.log('output (CHAIN):', output['@id']);
+async function main () {
+  var genesis = new Block();
+  genesis._sign();
+
+  await chain.append(genesis);
+
+  chain.compute();
+
+  var blocks = await chain._listBlocks();
+
+  console.log('output (CHAIN):', chain);
   console.log('REPLAY:', 'blocks', blocks);
+  console.log('REPLAY:', 'chain id', chain['@id']);
 
-  var known = {};
-
-  blocks.forEach(function(id) {
-    chain.store.get('/blocks/' + id, function(err, block) {
-      known[block['@id']] = block['@data'];
-      
-      console.log('known:', known);
-    });
-  });
-  
-});
+}
