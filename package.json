@@ -17,7 +17,7 @@
     "docs:api": "jsdoc2md --configure jsdoc.json --files lib/**/*.js > docs/api.md",
     "build": "npm run make:service && npm run make:app && npm run make:docs",
     "docs": "gitbook install && npm run docs:api && gitbook serve",
-    "examples": "docco --output examples/ examples/app.js examples/oracle.js",
+    "examples": "docco --output examples/ examples/app.js examples/oracle.js && http-server examples/",
     "cli": "nodemon server/toy.js"
   },
   "engines": {
@@ -56,6 +56,7 @@
     "docco": "^0.7.0",
     "express": "^4.16.2",
     "gitbook-plugin-scripts": "^1.0.2",
+    "http-server": "^0.10.0",
     "istanbul": "^1.1.0-alpha.1",
     "jade": "^1.11.0",
     "jsdoc": "^3.5.5",
