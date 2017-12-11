@@ -8,13 +8,13 @@ describe('Machine', function () {
   it('should correctly compute a known instruction', function () {
     var machine = new Machine();
 
-    machine.use('OP_TEST', function (state) {
+    machine.define('OP_TEST', function (state) {
       return true;
     });
 
     machine.stack.push('OP_TEST');
 
-    machine.compute();
+    machine.step();
 
     assert.equal(machine['@data'], true);
     assert.equal(machine.clock, 1);
