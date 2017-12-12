@@ -27,14 +27,24 @@ whichever repository you intend to publish.
 ## Using as a Library
 Fabric exposes a constructor with several components which are convenient for
 including in your existing applications.  Convenient functions exist for common
-frameworks such as React,
+frameworks such as React and Angular.
+
+### Simple Example
+```js
+const Fabric = require('fabric');
+const service = new Fabric();
+```
+
+`service` now contains a full instance of Fabric, including `GET` and `SET`
+methods for storing and retrieving documents.  Use `npm run examples` to see
+more.
 
 ## Why?
 Legacy systems are [constantly failing][everything-is-broken],
 resulting in the loss of some really cool things!  Some are rushing to save the
 good stuff, from content (see the great folks at Archive.org) to infrastructure
 and even the applications themselves.  When systems fail, they often take value
-with them as _collateral damage_.
+with them as _collateral damage_.  Fabric is an attempt at solving this problem.
 
 It's more than content — it's how we approach it, too.  Society has a complex
 relationship with technology, and a good technology is an extension of our
