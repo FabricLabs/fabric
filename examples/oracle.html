@@ -48,15 +48,21 @@
 <p>Oracles are external points of reference for individual network actors.  They
 can be used to defer authority to an outside source, such as in the
 traditional client-server model.</p>
-<p>To run this example, simply try <code>node examples/oracle.js</code> from the command-
-line and visit <a href="http://localhost:3000">localhost:3000</a> in a browser.</p>
+<p>While the Fabric protocol does not directly interact with HTTP, it shares its
+semantics with regards to document creation and retrieval.  In fact, the
+<code>Oracle</code> class exposed by the Fabric core library can easily be bound to an
+HTTP-speaking server, such as <code>express</code> or <code>hapi</code>.  This is one such example!</p>
+<p>To run this sample application, simply execute <code>node examples/oracle.js</code> at
+the command line and visit <a href="http://localhost:3000">localhost:3000</a> in a
+browser.</p>
 <h2 id="code">Code</h2>
 <p>Here, we designate ES5 Strict Mode, which causes modern browsers to constrain
 execution parameters for more secure and performant script execution.</p>
 
             </div>
             
-            <div class="content"><div class='highlight'><pre><span class="hljs-meta">'use strict'</span>;</pre></div></div>
+            <div class="content"><div class='highlight'><pre><span class="hljs-meta">
+'use strict'</span>;</pre></div></div>
             
         </li>
         

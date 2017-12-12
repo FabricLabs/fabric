@@ -14,6 +14,21 @@ We're designing next-generation technologies that solve the most fundamental
 challenges in society, ranging from economic oppression and institutional
 violence to the efficient distribution of cat photos and dank memes.
 
+## Getting Started
+To install Fabric, ensure `node -v >= 8.0.0` and `npm i FabricLabs/fabric` into
+whichever repository you intend to publish.
+
+## Available Commands
+- `npm run cli` provides a direct command-line interface to the Fabric network.
+- `npm run docs` creates a local HTTP server for browsing documentation.
+- `npm run examples` creates a local HTTP server for interacting with examples.
+- `npm start` creates a local Fabric node.
+
+## Using as a Library
+Fabric exposes a constructor with several components which are convenient for
+including in your existing applications.  Convenient functions exist for common
+frameworks such as React,
+
 ## Why?
 Legacy systems are [constantly failing][everything-is-broken],
 resulting in the loss of some really cool things!  Some are rushing to save the
