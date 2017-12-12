@@ -3,13 +3,16 @@
 // can be used to defer authority to an outside source, such as in the
 // traditional client-server model.
 //
-// To run this example, simply try `node examples/oracle.js` from the command-
-// line and visit [localhost:3000](http://localhost:3000) in a browser.
+// While the Fabric protocol does not directly interact with HTTP, it shares its
+// semantics with regards to document creation and retrieval.  In fact, the
+// `Oracle` class exposed by the Fabric core library can easily be bound to an
+// HTTP-speaking server, such as `express` or `hapi`.  This is one such example!
 //
-// ## Code
-// Here, we designate ES5 Strict Mode, which causes modern browsers to constrain
-// execution parameters for more secure and performant script execution.
-'use strict';
+// To run this sample application, simply execute `node examples/oracle.js` at
+// the command line and visit [localhost:3000](http://localhost:3000) in a
+// browser.
+//
+'use strict'; // ensure [ES5 Strict Mode](asdf)
 
 // ## Dependencies
 // Here we define two simple dependencies, `fs` for filesystem interaction and

@@ -1,9 +1,9 @@
 var assert = require('assert');
 var expect = require('chai').expect;
 
-var Fabric = require('../lib/fabric');
+var Fabric = require('../');
 
-describe('Fabric.stack', function () {
+describe('Stack', function () {
   it('should correctly compute a known instruction', function () {
     var fabric = new Fabric();
 
@@ -16,6 +16,46 @@ describe('Fabric.stack', function () {
     fabric.compute();
 
     assert.equal(fabric['@data'], true);
+    assert.equal(fabric.clock, 1);
+  });
+
+  it('can add two numbers', function () {
+    var fabric = new Fabric();
+
+    fabric.use('ADD', function (state) {
+      var op = this.stack.pop();
+      var a = this.stack.pop();
+      var b = this.stack.pop();
+      return parseInt(a) + parseInt(b);
+    });
+
+    fabric.stack.push('1');
+    fabric.stack.push('1');
+    fabric.stack.push('ADD');
+
+    fabric.compute();
+
+    assert.equal(fabric['@data'], 2);
+    assert.equal(fabric.clock, 1);
+  });
+
+  it('can add two other numbers', function () {
+    var fabric = new Fabric();
+
+    fabric.use('ADD', function (state) {
+      var op = this.stack.pop();
+      var a = this.stack.pop();
+      var b = this.stack.pop();
+      return parseInt(a) + parseInt(b);
+    });
+
+    fabric.stack.push('123');
+    fabric.stack.push('456');
+    fabric.stack.push('ADD');
+
+    fabric.compute();
+
+    assert.equal(fabric['@data'], 579);
     assert.equal(fabric.clock, 1);
   });
 });

@@ -16,12 +16,12 @@
       <section>
         <h3>Building Your First Decentralized Application</h3>
         <p>We'll be using <a href="">Maki</a>, a library of user interface elements which integrate directly with Fabric.  We'll provide definitions for how our application should behave, and the core Fabric library will handle the rest.</p>
-        
-        <p>If you haven't already, now's a good time to read <a href="https://maki.io/docs">an Introduction to Maki</a> which details available options and configurations which might be interesting to you.</p>
-        
-        <h4>Basic App Scaffold</h4>
-        <p>Start with creating the following <code>app.js</code> file:</p>
-        
+
+        <p><small><strong>Heads up:</strong> from here on, we're going to assume you're familiar with console commands and the modern JavaScript ecosystem.  If you're just getting started, try <a href="https://maki.io/tutorials/initial-setup">Maki's Initial Setup</a> and share your progress in <a href="https://maki.io/topics/learning">#learning</a>.</small></p>
+
+        <p>Start by creating the following <code>app.js</code> file.</p>
+
+        <h4>app.js</h4>
         <pre class="code">
           var Fabric = require('fabric');
           var Maki = require('maki');
@@ -31,7 +31,7 @@
           app.start();
         </pre>
         
-        <p>This defines and starts a simple HTTP Oracle, and displays a link in your console.  You can browse this link now, or read on to add some functionality.</p>
+        <p>This defines and starts a simple HTTP <a href="oracle.html">Oracle</a>, and displays a link in your console.  You can browse this link now, or read on to add some functionality.</p>
       </section>
       <section>
         <h4>Adding a Data Layer</h4>
