@@ -10,7 +10,7 @@
   "scripts": {
     "build": "npm run make:service && npm run make:app && npm run make:docs",
     "cli": "nodemon server/toy.js",
-    "coverage": "npm run build && NODE_ENV=test istanbul cover _mocha",
+    "coverage": "npm run build && NODE_ENV=test istanbul cover _mocha && http-server coverage/lcov-report",
     "docs": "gitbook install && npm run parse:api && gitbook serve",
     "examples": "docco --output examples/ examples/app.js examples/oracle.js && http-server examples/",
     "make:app": "webpack --progress --colors examples/app.js assets/app.js",
@@ -18,7 +18,8 @@
     "make:service": "webpack --progress --colors examples/service.js assets/service.js",
     "parse:api": "jsdoc2md --configure jsdoc.json --files lib/**/*.js > docs/api.md",
     "start": "npm run make:service && webpack --progress --colors --watch examples/app.js assets/app.js & nodemon examples/oracle.js",
-    "test": "npm run make:service && npm run make:app && NODE_ENV=test mocha"
+    "test": "npm run make:service && NODE_ENV=test mocha",
+    "test:app": "npm run make:service && npm run make:app && NODE_ENV=test mocha"
   },
   "engines": {
     "node": ">= 8.9.0"
@@ -38,24 +39,36 @@
   "homepage": "https://github.com/martindale/fabric#readme",
   "dependencies": {
     "fast-json-patch": "^2.0.4",
+    "gitbook-plugin-edit-link": "^2.0.2",
+    "gitbook-plugin-exercises": "^3.0.0",
+    "gitbook-plugin-page-toc": "^1.0.2",
+    "hashcasher": "martindale/hashcasher#fabric",
     "javascript-state-machine": "^3.0.1",
     "level": "^2.0.0",
     "localforage": "^1.5.3",
     "lodash.merge": "^4.6.0",
+    "signalhub": "^4.9.0",
+    "simple-peer": "^8.1.1",
     "ssri": "^5.0.0",
+    "webrtc-swarm": "^2.9.0",
     "wreck": "^14.0.2",
     "wrtc": "^0.0.63"
   },
   "devDependencies": {
+    "@polymer/polymer": "2",
     "babel-core": "^6.26.0",
     "babel-preset-es2017": "^6.24.1",
     "blessed": "^0.1.81",
     "chai": "^4.0.2",
     "compiled-jade-render": "^1.0.2",
     "coveralls": "^2.13.1",
+    "debug-trace": "^2.2.1",
     "docco": "^0.7.0",
+    "electron": "^1.7.9",
     "express": "^4.16.2",
     "gitbook-plugin-scripts": "^1.0.2",
+    "graphlib-dot": "^0.6.2",
+    "heapdump": "^0.3.9",
     "http-server": "^0.10.0",
     "istanbul": "^1.1.0-alpha.1",
     "jade": "^1.11.0",
@@ -69,6 +82,7 @@
     "semistandard": "^11.0.0",
     "static": "^2.0.0",
     "testling": "^1.7.1",
+    "vue-custom-element": "^1.4.1",
     "webpack": "^3.8.1",
     "webworker-threads": "^0.7.13"
   },
