@@ -28,6 +28,7 @@ self.addEventListener('fetch', async function (event) {
   if (value) {
     console.log('was cached:', uri, value.length, 'bytes');
     var request = new Request(uri, {
+      // TODO: revert to OPTIONS (this was a temporary fix for an NGINX bug)
       method: 'HEAD'
     });
 

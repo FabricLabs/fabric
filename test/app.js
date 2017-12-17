@@ -5,9 +5,6 @@ var Fabric = require('../');
 
 describe('App', function () {
 
-  // TODO: optimize
-  this.timeout(30000);
-  
   it('should expose a constructor', function () {
     assert.equal(typeof Fabric.App, 'function');
   });
@@ -16,7 +13,7 @@ describe('App', function () {
     var app = new Fabric.App();
     assert.ok(app);
   });
-  
+
   it('should load data from an oracle', async function () {
 
     var oracle = new Fabric.Oracle({
