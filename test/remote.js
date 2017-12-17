@@ -23,7 +23,7 @@ describe('Remote', function () {
 
   it('can emulate HTTP OPTIONS', async function () {
     var remote = new Remote({
-      host: 'maki.io'
+      host: 'example.com'
     });
     var result = await remote._OPTIONS(key);
 
