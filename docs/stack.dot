@@ -1,0 +1,17 @@
+digraph Stack {
+  "ready" -> "read" [label=" start (1)"]
+  "read" -> "stack" [label=" push (2)"]
+  "read" -> "parse tuple\n(⨯ = [𝜃 , i⨯])" [label="compute vector space"]
+
+  "parse tuple\n(⨯ = [𝜃 , i⨯])" -> "stack" [label=" push (3)"]
+  
+  "stack" [shape=box]
+  
+  "compute" -> "stack" [label="write"]
+  
+  "stack" -> "compute" [label="read"]
+  
+  "read"
+  
+  "compute" -> "done"
+}

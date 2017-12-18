@@ -10,7 +10,7 @@
   "scripts": {
     "build": "npm run make:service && npm run make:app && npm run make:docs",
     "cli": "nodemon server/toy.js",
-    "coverage": "npm run build && NODE_ENV=test istanbul cover _mocha",
+    "coverage": "npm run build && NODE_ENV=test istanbul cover _mocha && http-server coverage/lcov-report",
     "docs": "gitbook install && npm run parse:api && gitbook serve",
     "examples": "docco --output examples/ examples/app.js examples/oracle.js && http-server examples/",
     "make:app": "webpack --progress --colors examples/app.js assets/app.js",
@@ -18,7 +18,8 @@
     "make:service": "webpack --progress --colors examples/service.js assets/service.js",
     "parse:api": "jsdoc2md --configure jsdoc.json --files lib/**/*.js > docs/api.md",
     "start": "npm run make:service && webpack --progress --colors --watch examples/app.js assets/app.js & nodemon examples/oracle.js",
-    "test": "npm run make:service && npm run make:app && NODE_ENV=test mocha"
+    "test": "npm run make:service && NODE_ENV=test mocha",
+    "test:app": "npm run make:service && npm run make:app && NODE_ENV=test mocha"
   },
   "engines": {
     "node": ">= 8.9.0"
@@ -37,7 +38,9 @@
   },
   "homepage": "https://github.com/martindale/fabric#readme",
   "dependencies": {
+    "ajv": "^5.5.2",
     "fast-json-patch": "^2.0.4",
+    "hashcasher": "martindale/hashcasher#fabric",
     "javascript-state-machine": "^3.0.1",
     "level": "^2.0.0",
     "localforage": "^1.5.3",

@@ -14,9 +14,13 @@ var state = '90d6d8a4824727f98eb83f66cbcaf55eb48df86300bd51c526d590b037885faa';
 // test our own expectations.  best of luck.
 // @consensus:
 // @quest:
-// > *Warning:* ahead lies death. # must be attributed to "Game Master"
-//
 describe('Fabric', function () {
+  after(async function () {
+    if (typeof fabric !== 'undefined') {
+      await fabric.chain.store.close();
+    }
+  });
+
   it('should expose a constructor', function () {
     assert.equal(typeof Fabric, 'function');
   });
@@ -26,21 +30,25 @@ describe('Fabric', function () {
     //assert.equal(fabric.root.id, 0); // require a point of origin.
     fabric._sign();
     
+    await fabric.chain.store.close();
+
     assert.equal(JSON.stringify(fabric['@data']), JSON.stringify(genesis));
     assert.equal(fabric['@id'], state);
   });
 
-  it('has a correctly-defined NOOP operation', function () {
+  it('has a correctly-defined NOOP operation', async function () {
     var fabric = new Fabric(genesis);
 
     fabric.stack.push('NOOP');
     fabric.compute();
 
+    await fabric.chain.store.close();
+
     assert.equal(JSON.stringify(fabric['@data']), JSON.stringify(genesis));
     
   });
 
-  it('can compute a value', function prove () {
+  it('can compute a value', async function prove () {
     var fabric = new Fabric();
     
     fabric.use('OP_TRUE', function compute () {
@@ -55,13 +63,18 @@ describe('Fabric', function () {
     fabric.stack.push('OP_TRUE');
 
     var outcome = fabric.compute();
+    
+    await fabric.chain.store.close();
 
     assert.equal(outcome['@data'], 1);
   });
 
   it('can acknowledge its own existence', function identity (done) {
     var alice = new Fabric(genesis);
+
     alice.on('auth', async function validate (identity) {
+      await alice.chain.store.close();
+
       assert.equal(alice.identity.key.public, identity.key.public);
       return done();
     });
@@ -71,9 +84,7 @@ describe('Fabric', function () {
     alice.start();
   });
 
-  it('can register peers', async function identity () {
-    var alice = new Fabric(0);
-    var bob = new Fabric(1);
+  /*/it('can register peers', async function identity () {
     
     alice.compute();
     bob.compute();
@@ -85,10 +96,11 @@ describe('Fabric', function () {
     });
 
     assert.equal(bob['@id'], list[0]);
-  });
+  }); /**/
 
-  it('can send a message', function broadcast () {
+  it('can send a message', async function broadcast () {
     var fabric = new Fabric(genesis);
+    await fabric.chain.store.close();
     assert.ok(fabric.broadcast());
   });
 
@@ -116,14 +128,16 @@ describe('Fabric', function () {
     fountain.compute();
   });*/
   
-  it('can store and retrieve some data', function datastore () {
+  it('can store and retrieve some data', async function datastore () {
     var Datastore = require('../lib/datastore');
     var datastore = new Datastore(); // robust datastore
     
     var str = 'Hello, world!';
 
-    datastore.put('foo', str);
+    await datastore.put('foo', str);
+    
     assert.equal(datastore.get('foo'), str);
+
   });
 
 });

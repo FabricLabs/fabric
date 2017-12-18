@@ -10,6 +10,8 @@ var list = '/messages';
 var data = require('../data/message');
 
 describe('Oracle', function () {
+  this.timeout(30000);
+  
   it('should expose a constructor', function () {
     assert.equal(typeof Oracle, 'function');
   });
@@ -20,7 +22,7 @@ describe('Oracle', function () {
     await oracle.store.close();
     assert.ok(result);
   });
-  
+
   it('can emulate HTTP GET', async function () {
     var oracle = new Oracle();
     var starts = await oracle._PUT(key, data['@data']);
@@ -68,9 +70,9 @@ describe('Oracle', function () {
     var output = await oracle._DELETE(list);
 
     output = JSON.parse(output);
-    
+
     await oracle.store.close();
-    
+
     assert.equal(output, null);
   });
   
