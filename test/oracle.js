@@ -10,6 +10,8 @@ var list = '/messages';
 var data = require('../data/message');
 
 describe('Oracle', function () {
+  this.timeout(30000);
+  
   it('should expose a constructor', function () {
     assert.equal(typeof Oracle, 'function');
   });

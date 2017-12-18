@@ -8,6 +8,8 @@ var Remote = require('../lib/remote');
 var key = '';
 
 describe('Remote', function () {
+  this.timeout(30000);
+  
   it('should expose a constructor', function () {
     assert.equal(typeof Remote, 'function');
   });
@@ -26,6 +28,8 @@ describe('Remote', function () {
       host: 'maki.io'
     });
     var result = await remote._OPTIONS(key);
+    
+    console.log('result:', result);
 
     assert.ok(result);
   });
