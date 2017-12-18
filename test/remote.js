@@ -1,15 +1,13 @@
 var assert = require('assert');
 var expect = require('chai').expect;
 
-var fs = require('fs');
-
 var Remote = require('../lib/remote');
 
-var key = '';
+var key = '/';
 
 describe('Remote', function () {
   this.timeout(30000);
-  
+
   it('should expose a constructor', function () {
     assert.equal(typeof Remote, 'function');
   });

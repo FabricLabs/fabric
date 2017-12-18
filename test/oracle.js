@@ -70,9 +70,9 @@ describe('Oracle', function () {
     var output = await oracle._DELETE(list);
 
     output = JSON.parse(output);
-    
+
     await oracle.store.close();
-    
+
     assert.equal(output, null);
   });
   
