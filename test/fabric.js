@@ -71,9 +71,7 @@ describe('Fabric', function () {
     alice.start();
   });
 
-  it('can register peers', async function identity () {
-    var alice = new Fabric(0);
-    var bob = new Fabric(1);
+  /*/it('can register peers', async function identity () {
     
     alice.compute();
     bob.compute();
@@ -85,7 +83,7 @@ describe('Fabric', function () {
     });
 
     assert.equal(bob['@id'], list[0]);
-  });
+  }); /**/
 
   it('can send a message', function broadcast () {
     var fabric = new Fabric(genesis);
@@ -116,14 +114,16 @@ describe('Fabric', function () {
     fountain.compute();
   });*/
   
-  it('can store and retrieve some data', function datastore () {
+  it('can store and retrieve some data', async function datastore () {
     var Datastore = require('../lib/datastore');
     var datastore = new Datastore(); // robust datastore
     
     var str = 'Hello, world!';
 
-    datastore.put('foo', str);
+    await datastore.put('foo', str);
+    
     assert.equal(datastore.get('foo'), str);
+
   });
 
 });
