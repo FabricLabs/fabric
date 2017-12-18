@@ -20,7 +20,7 @@ describe('Oracle', function () {
     await oracle.store.close();
     assert.ok(result);
   });
-  
+
   it('can emulate HTTP GET', async function () {
     var oracle = new Oracle();
     var starts = await oracle._PUT(key, data['@data']);

@@ -15,7 +15,6 @@ describe('App', function () {
   });
 
   it('should load data from an oracle', async function () {
-
     var oracle = new Fabric.Oracle({
       path: './data/oracle'
     });
