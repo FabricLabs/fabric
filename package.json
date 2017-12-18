@@ -38,6 +38,7 @@
   },
   "homepage": "https://github.com/martindale/fabric#readme",
   "dependencies": {
+    "ajv": "^5.5.2",
     "fast-json-patch": "^2.0.4",
     "gitbook-plugin-edit-link": "^2.0.2",
     "gitbook-plugin-exercises": "^3.0.0",
