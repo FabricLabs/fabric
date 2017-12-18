@@ -1,14 +1,23 @@
-function Definition () {
-  this.name = 'Person';
+'use strict';
+
+function Person () {
+
 }
 
-Definition.prototype.attributes = {
+Person.prototype.name = 'Person';
+
+Person.prototype.attributes = {
   username: { type: String }
-}
+};
 
-Definition.prototype.components = {
+Person.prototype.components = {
   query: 'maki-person-list',
   get: 'maki-person-view'
-}
+};
 
-module.exports = Definition;
+Person.prototype.routes = {
+  query: '/people',
+  get: '/people/:id'
+};
+
+module.exports = Person;
