@@ -40,23 +40,16 @@
   "dependencies": {
     "ajv": "^5.5.2",
     "fast-json-patch": "^2.0.4",
-    "gitbook-plugin-edit-link": "^2.0.2",
-    "gitbook-plugin-exercises": "^3.0.0",
-    "gitbook-plugin-page-toc": "^1.0.2",
     "hashcasher": "martindale/hashcasher#fabric",
     "javascript-state-machine": "^3.0.1",
     "level": "^2.0.0",
     "localforage": "^1.5.3",
     "lodash.merge": "^4.6.0",
-    "signalhub": "^4.9.0",
-    "simple-peer": "^8.1.1",
     "ssri": "^5.0.0",
-    "webrtc-swarm": "^2.9.0",
     "wreck": "^14.0.2",
     "wrtc": "^0.0.63"
   },
   "devDependencies": {
-    "@polymer/polymer": "2",
     "babel-core": "^6.26.0",
     "babel-preset-es2017": "^6.24.1",
     "blessed": "^0.1.81",
@@ -83,7 +76,6 @@
     "semistandard": "^11.0.0",
     "static": "^2.0.0",
     "testling": "^1.7.1",
-    "vue-custom-element": "^1.4.1",
     "webpack": "^3.8.1",
     "webworker-threads": "^0.7.13"
   },
