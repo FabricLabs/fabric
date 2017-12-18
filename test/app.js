@@ -15,28 +15,24 @@ describe('App', function () {
     await app.tips.close();
     await app.stash.close();
 
-    console.log('app:', app);
-
     assert.ok(app);
-
   });
 
   it('should load data from an oracle', async function () {
     var oracle = new Fabric.Oracle({
       path: './data/oracle'
     });
-    var app = new Fabric.App();
-    
-    console.log('app:', app);
-    console.log('orace:', oracle);
 
     await oracle._load('./resources');
+
+    var app = new Fabric.App();
 
     await app._defer(oracle);
     await app._explore();
 
     await app.tips.close();
     await app.stash.close();
+
     await oracle.store.close();
 
     assert.ok(oracle);
