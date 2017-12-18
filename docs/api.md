@@ -42,6 +42,7 @@ during their interaction with this Genesis Tablet.
 
 ## Fabric
 **Kind**: global class  
+**Emits**: <code>Fabric#event:thread</code>  
 
 * [Fabric](#Fabric)
     * [new Fabric(config)](#new_Fabric_new)
@@ -57,7 +58,7 @@ Fabric Core Library
 
 | Param | Type | Description |
 | --- | --- | --- |
-| config | <code>object</code> | configuration object |
+| config | <code>Object</code> | configuration object |
 
 <a name="Fabric+render"></a>
 
