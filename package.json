@@ -46,6 +46,7 @@
     "localforage": "^1.5.3",
     "lodash.merge": "^4.6.0",
     "ssri": "^5.0.0",
+    "webworker-threads": "^0.7.13",
     "wreck": "^14.0.2",
     "wrtc": "^0.0.63"
   },
@@ -72,8 +73,7 @@
     "semistandard": "^11.0.0",
     "static": "^2.0.0",
     "testling": "^1.7.1",
-    "webpack": "^3.8.1",
-    "webworker-threads": "^0.7.13"
+    "webpack": "^3.8.1"
   },
   "browserify": {
     "level": "level-browserify"
