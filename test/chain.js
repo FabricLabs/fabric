@@ -107,7 +107,7 @@ describe('Chain', function () {
     
     var original = replay.compute();
 
-    await replay.store.close();
+    await replay.storage.close();
     
     assert.equal(original['@data'][0], zero);
     
