@@ -19,7 +19,7 @@ describe('Oracle', function () {
   it('can emulate HTTP PUT', async function () {
     var oracle = new Oracle();
     var result = await oracle._PUT(key, data['@data']);
-    await oracle.store.close();
+    await oracle.storage.close();
     assert.ok(result);
   });
 
@@ -27,7 +27,7 @@ describe('Oracle', function () {
     var oracle = new Oracle();
     var starts = await oracle._PUT(key, data['@data']);
     var result = await oracle._GET(key);
-    await oracle.store.close();
+    await oracle.storage.close();
     assert.ok(result);
   });
   
@@ -39,7 +39,7 @@ describe('Oracle', function () {
 
     output = JSON.parse(output);
     
-    await oracle.store.close();
+    await oracle.storage.close();
     
     assert.equal(output.length, 1);
     assert.equal(output[0], data['@data']);
@@ -57,7 +57,7 @@ describe('Oracle', function () {
 
     output = JSON.parse(output);
 
-    await oracle.store.close();
+    await oracle.storage.close();
 
     assert.equal(output[0].extra, 'foo');
     assert.ok(result);
@@ -71,7 +71,7 @@ describe('Oracle', function () {
 
     output = JSON.parse(output);
 
-    await oracle.store.close();
+    await oracle.storage.close();
 
     assert.equal(output, null);
   });
@@ -84,7 +84,7 @@ describe('Oracle', function () {
     var assets = await oracle._OPTIONS('/assets');
     var result = await oracle._OPTIONS('/assets/test.txt');
 
-    await oracle.store.close();
+    await oracle.storage.close();
 
     assert.equal(assets['@id'], 'e2c8e941a0f85aa386a0a33e21a8c4893c290058a7969f4a07cd9079841f5936');
     assert.equal(result['@id'], '4759427e7a377446d535011d3618ebaa207d697c1e9833e1c3e6018408a9d199');

@@ -17,7 +17,7 @@ var state = '90d6d8a4824727f98eb83f66cbcaf55eb48df86300bd51c526d590b037885faa';
 describe('Fabric', function () {
   after(async function () {
     if (typeof fabric !== 'undefined') {
-      await fabric.chain.store.close();
+      await fabric.chain.storage.close();
     }
   });
 
@@ -30,7 +30,7 @@ describe('Fabric', function () {
     //assert.equal(fabric.root.id, 0); // require a point of origin.
     fabric._sign();
     
-    await fabric.chain.store.close();
+    await fabric.chain.storage.close();
 
     assert.equal(JSON.stringify(fabric['@data']), JSON.stringify(genesis));
     assert.equal(fabric['@id'], state);
@@ -42,7 +42,7 @@ describe('Fabric', function () {
     fabric.stack.push('NOOP');
     fabric.compute();
 
-    await fabric.chain.store.close();
+    await fabric.chain.storage.close();
 
     assert.equal(JSON.stringify(fabric['@data']), JSON.stringify(genesis));
     
@@ -64,7 +64,7 @@ describe('Fabric', function () {
 
     var outcome = fabric.compute();
     
-    await fabric.chain.store.close();
+    await fabric.chain.storage.close();
 
     assert.equal(outcome['@data'], 1);
   });
@@ -73,7 +73,7 @@ describe('Fabric', function () {
     var alice = new Fabric(genesis);
 
     alice.on('auth', async function validate (identity) {
-      await alice.chain.store.close();
+      await alice.chain.storage.close();
 
       assert.equal(alice.identity.key.public, identity.key.public);
       return done();
@@ -85,22 +85,34 @@ describe('Fabric', function () {
   });
 
   /*/it('can register peers', async function identity () {
+    var alice = new Fabric();
+    var bob = new Fabric();
     
     alice.compute();
     bob.compute();
     
+    console.log('before connect...');
     await alice.connect(bob['@id']);
+    console.log('after connect...');
+
+    alice.compute();
+    bob.compute();
 
     var list = Object.keys(alice.peers).map(function(id) {
       return alice.peers[id]['@id'];
     });
+    
+    console.log('list:', list);
+    
+    await alice.chain.storage.close();
+    await bob.chain.storage.close();
 
     assert.equal(bob['@id'], list[0]);
   }); /**/
 
   it('can send a message', async function broadcast () {
     var fabric = new Fabric(genesis);
-    await fabric.chain.store.close();
+    await fabric.chain.storage.close();
     assert.ok(fabric.broadcast());
   });
 

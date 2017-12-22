@@ -33,7 +33,7 @@ describe('App', function () {
     await app.tips.close();
     await app.stash.close();
 
-    await oracle.store.close();
+    await oracle.storage.close();
 
     assert.ok(oracle);
     assert.ok(app);

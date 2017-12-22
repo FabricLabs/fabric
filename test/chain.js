@@ -36,7 +36,7 @@ describe('Chain', function () {
     var output = chain.compute();
     
     await chain._flush();
-    await chain.store.close();
+    await chain.storage.close();
     
     assert.equal(output.blocks.length, 0);
     assert.equal(output['@id'], state);
@@ -59,7 +59,7 @@ describe('Chain', function () {
     assert.equal(chain.genesis, zero);
 
     await chain._flush();
-    await chain.store.close();
+    await chain.storage.close();
   });
 
   it('can generate a chain of non-zero length', async function () {
@@ -84,7 +84,7 @@ describe('Chain', function () {
     var output = chain.compute();
 
     await chain._flush();
-    await chain.store.close();
+    await chain.storage.close();
     
     assert.equal(output.blocks.length, 4);
   });
@@ -99,7 +99,7 @@ describe('Chain', function () {
 
     var output = chain.compute();
 
-    await chain.store.close();
+    await chain.storage.close();
     
     var replay = new Chain();
     
