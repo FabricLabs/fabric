@@ -28,7 +28,7 @@ describe('App', function () {
     var app = new Fabric.App();
 
     await app._defer(oracle);
-    await app._explore();
+    //await app._explore();
 
     await app.tips.close();
     await app.stash.close();
