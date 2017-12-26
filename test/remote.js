@@ -8,8 +8,8 @@ var server = new HTTP();
 var index = '/';
 
 describe('Remote', function () {
-  before(function (done) {
-    server.start(done);
+  before(async function () {
+    await server.start();
   });
 
   after(async function () {
