@@ -42,6 +42,9 @@ describe('HTTP', function () {
 
     let result = await remote._POST('/widgets', payload);
     let object = await remote._GET('/widgets');
+    
+    console.log('result:', result);
+    console.log('object:', object);
 
     assert.equal(result['@id'], vector['@id']);
     assert.equal(object[0]['@id'], vector['@id']);
