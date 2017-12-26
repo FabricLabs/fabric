@@ -5,7 +5,7 @@ var Fabric = require('../');
 var server = new Fabric.HTTP();
 
 describe('HTTP', function () {
-  before(function (done) {
+  before(async function () {
     server.define('Widget', {
       properties: {
         name: { type: String , maxLength: 100 }
@@ -16,7 +16,7 @@ describe('HTTP', function () {
       }
     });
 
-    server.start(done);
+    await server.start();
   });
 
   after(async function () {
