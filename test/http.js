@@ -29,7 +29,8 @@ describe('HTTP', function () {
 
   it('can serve a resource', async function () {
     let remote = new Fabric.Remote({
-      host: 'localhost:3000'
+      host: 'localhost:3000',
+      secure: false
     });
 
     let payload = {
