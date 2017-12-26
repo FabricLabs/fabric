@@ -45,6 +45,7 @@
     "level": "^2.0.0",
     "localforage": "^1.5.3",
     "lodash.merge": "^4.6.0",
+    "mkdirp": "^0.5.1",
     "ssri": "^5.0.0",
     "webworker-threads": "^0.7.13",
     "wreck": "^14.0.2",
