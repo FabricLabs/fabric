@@ -18,7 +18,7 @@
     "make:service": "webpack --progress --colors examples/service.js assets/service.js",
     "parse:api": "jsdoc2md --configure jsdoc.json --files lib/**/*.js > docs/api.md",
     "start": "npm run make:service && webpack --progress --colors --watch examples/app.js assets/app.js & nodemon examples/oracle.js",
-    "test": "npm run make:service && NODE_ENV=test mocha",
+    "test": "npm run make:service && npm run make:app && NODE_ENV=test mocha",
     "test:app": "npm run make:service && npm run make:app && NODE_ENV=test mocha"
   },
   "engines": {
@@ -53,8 +53,9 @@
   "devDependencies": {
     "babel-core": "^6.26.0",
     "babel-preset-es2017": "^6.24.1",
-    "blessed": "0.1.11",
+    "blessed": "^0.1.81",
     "blessed-contrib": "^4.8.5",
+    "body-parser": "^1.18.2",
     "chai": "^4.0.2",
     "compiled-jade-render": "^1.0.2",
     "coveralls": "^2.13.1",
