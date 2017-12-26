@@ -18,7 +18,7 @@
     "make:service": "webpack --progress --colors examples/service.js assets/service.js",
     "parse:api": "jsdoc2md --configure jsdoc.json --files lib/**/*.js > docs/api.md",
     "start": "npm run make:service && webpack --progress --colors --watch examples/app.js assets/app.js & nodemon examples/oracle.js",
-    "test": "npm run make:service && npm run make:app && NODE_ENV=test mocha",
+    "test": "NODE_ENV=test mocha",
     "test:app": "npm run make:service && npm run make:app && NODE_ENV=test mocha"
   },
   "engines": {
