@@ -4,7 +4,7 @@ var expect = require('chai').expect;
 var Fabric = require('../');
 
 describe('Stack', function () {
-  it('should correctly compute a known instruction', function () {
+  it('should correctly compute a known instruction', async function () {
     var fabric = new Fabric();
 
     fabric.use('OP_TEST', function (state) {
@@ -15,11 +15,13 @@ describe('Stack', function () {
 
     fabric.compute();
 
+    await fabric.chain.storage.close();
+
     assert.equal(fabric['@data'], true);
     assert.equal(fabric.clock, 1);
   });
 
-  it('can add two numbers', function () {
+  it('can add two numbers', async function () {
     var fabric = new Fabric();
 
     fabric.use('ADD', function (state) {
@@ -35,11 +37,13 @@ describe('Stack', function () {
 
     fabric.compute();
 
+    await fabric.chain.storage.close();
+
     assert.equal(fabric['@data'], 2);
     assert.equal(fabric.clock, 1);
   });
 
-  it('can add two other numbers', function () {
+  it('can add two other numbers', async function () {
     var fabric = new Fabric();
 
     fabric.use('ADD', function (state) {
@@ -54,6 +58,8 @@ describe('Stack', function () {
     fabric.stack.push('ADD');
 
     fabric.compute();
+    
+    await fabric.chain.storage.close();
 
     assert.equal(fabric['@data'], 579);
     assert.equal(fabric.clock, 1);
