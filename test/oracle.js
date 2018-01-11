@@ -10,6 +10,8 @@ var list = '/messages';
 var data = require('../data/message');
 
 describe('Oracle', function () {
+  this.timeout(30000);
+  
   it('should expose a constructor', function () {
     assert.equal(typeof Oracle, 'function');
   });
@@ -77,10 +79,11 @@ describe('Oracle', function () {
   it('can load from a directory', async function () {
     fs.writeFileSync('./assets/test.txt', 'Hello, world!', 'utf8');
 
-    var oracle = new Oracle();
-    var output = await oracle._load('./assets');
-    var assets = await oracle._OPTIONS('/assets');
-    var result = await oracle._OPTIONS('/assets/test.txt');
+    let oracle = new Oracle();
+
+    let output = await oracle._load('./assets');
+    let assets = await oracle._OPTIONS('/assets');
+    let result = await oracle._OPTIONS('/assets/test.txt');
 
     await oracle.storage.close();
 
