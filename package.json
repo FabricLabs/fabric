@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "npm run make:service && npm run make:app && npm run make:docs",
-    "cli": "nodemon server/toy.js",
+    "cli": "node examples/cli.js",
     "coverage": "npm run build && NODE_ENV=test istanbul cover _mocha && http-server coverage/lcov-report",
     "docs": "gitbook install && npm run parse:api && gitbook serve",
     "examples": "docco --output examples/ examples/app.js examples/oracle.js && http-server examples/",
@@ -18,7 +18,7 @@
     "make:service": "webpack --progress --colors examples/service.js assets/service.js",
     "parse:api": "jsdoc2md --configure jsdoc.json --files lib/**/*.js > docs/api.md",
     "start": "npm run make:service && webpack --progress --colors --watch examples/app.js assets/app.js & nodemon examples/oracle.js",
-    "test": "npm run make:service && NODE_ENV=test mocha",
+    "test": "NODE_ENV=test mocha",
     "test:app": "npm run make:service && npm run make:app && NODE_ENV=test mocha"
   },
   "engines": {
@@ -45,6 +45,7 @@
     "level": "^2.0.0",
     "localforage": "^1.5.3",
     "lodash.merge": "^4.6.0",
+    "mkdirp": "^0.5.1",
     "ssri": "^5.0.0",
     "webworker-threads": "^0.7.13",
     "wreck": "^14.0.2",
@@ -53,8 +54,9 @@
   "devDependencies": {
     "babel-core": "^6.26.0",
     "babel-preset-es2017": "^6.24.1",
-    "blessed": "0.1.11",
+    "blessed": "^0.1.81",
     "blessed-contrib": "^4.8.5",
+    "body-parser": "^1.18.2",
     "chai": "^4.0.2",
     "compiled-jade-render": "^1.0.2",
     "coveralls": "^2.13.1",
