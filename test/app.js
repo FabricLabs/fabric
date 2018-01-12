@@ -4,7 +4,6 @@ var expect = require('chai').expect;
 var Fabric = require('../');
 
 describe('App', function () {
-  this.timeout(30000);
 
   it('should expose a constructor', function () {
     assert.equal(typeof Fabric.App, 'function');
