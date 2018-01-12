@@ -2,10 +2,15 @@ var assert = require('assert');
 var expect = require('chai').expect;
 
 var Fabric = require('../');
-var server = new Fabric.HTTP();
 
 describe('HTTP', function () {
-  before(async function () {
+  it('should expose a constructor', function () {
+    assert.equal(typeof Fabric.HTTP, 'function');
+  });
+
+  it('can serve a resource', async function () {
+    var server = new Fabric.HTTP();
+
     server.define('Widget', {
       properties: {
         name: { type: String , maxLength: 100 }
@@ -15,19 +20,7 @@ describe('HTTP', function () {
         get: '/widgets/:id'
       }
     });
-
-    await server.start();
-  });
-
-  after(async function () {
-    await server.stop();
-  });
-
-  it('should expose a constructor', function () {
-    assert.equal(typeof Fabric.HTTP, 'function');
-  });
-
-  it('can serve a resource', async function () {
+    
     let remote = new Fabric.Remote({
       host: 'localhost:3000',
       secure: false
@@ -40,12 +33,13 @@ describe('HTTP', function () {
     let vector = new Fabric.Vector(payload);
 
     vector._sign();
+    
+    await server.start();
 
     let result = await remote._POST('/widgets', payload);
     let object = await remote._GET('/widgets');
     
-    console.log('result:', result);
-    console.log('object:', object);
+    await server.stop();
 
     assert.equal(result['@id'], vector['@id']);
     assert.equal(object[0]['@id'], vector['@id']);
