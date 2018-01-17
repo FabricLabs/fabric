@@ -9,6 +9,7 @@ Fabric.HTTP = require('./lib/http');
 Fabric.Machine = require('./lib/machine');
 Fabric.Oracle = require('./lib/oracle');
 Fabric.Remote = require('./lib/remote');
+Fabric.Storage = require('./lib/storage');
 Fabric.Transaction = require('./lib/transaction');
 Fabric.Validator = require('./lib/validator');
 Fabric.Vector = require('./lib/vector');
