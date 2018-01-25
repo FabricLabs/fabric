@@ -78,7 +78,7 @@ change.
 We believe in the power of the people to create better things in collaboration,
 and have ideas about general improvements to quality of life that derive from
 the mathematical quality of _superadditivity_.  "A sum greater than its parts"
-is the famous anecdote, a feeling often evoked upon observing [the beauty in
+is the famous aphorism, a feeling often evoked upon observing [the beauty in
 coordination][coordination].
 
 ![Flock of Birds][coordination]
