@@ -13,7 +13,7 @@
     "coverage": "npm run build && NODE_ENV=test istanbul cover _mocha && http-server coverage/lcov-report",
     "docs": "gitbook install && npm run parse:api && gitbook serve",
     "examples": "docco --output examples/ examples/app.js examples/oracle.js && http-server examples/",
-    "make:api": "jsdoc --debug index.js lib/ -d docs/",
+    "make:api": "jsdoc --debug lib/ -d docs/",
     "make:app": "webpack --progress --colors examples/app.js assets/app.js",
     "make:docs": "gitbook install && npm run parse:api && gitbook build",
     "make:service": "webpack --progress --colors examples/service.js assets/service.js",
@@ -54,7 +54,6 @@
   },
   "devDependencies": {
     "babel-core": "^6.26.0",
-    "babel-preset-es2015": "^6.24.1",
     "babel-preset-es2017": "^6.24.1",
     "blessed": "^0.1.81",
     "blessed-contrib": "^4.8.5",
@@ -83,10 +82,5 @@
   },
   "browserify": {
     "level": "level-browserify"
-  },
-  "babel": {
-    "presets": [
-      "es2015"
-    ]
   }
 }
