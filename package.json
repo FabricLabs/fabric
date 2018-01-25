@@ -13,6 +13,7 @@
     "coverage": "npm run build && NODE_ENV=test istanbul cover _mocha && http-server coverage/lcov-report",
     "docs": "gitbook install && npm run parse:api && gitbook serve",
     "examples": "docco --output examples/ examples/app.js examples/oracle.js && http-server examples/",
+    "make:api": "jsdoc --debug lib/ -d docs/",
     "make:app": "webpack --progress --colors examples/app.js assets/app.js",
     "make:docs": "gitbook install && npm run parse:api && gitbook build",
     "make:service": "webpack --progress --colors examples/service.js assets/service.js",
