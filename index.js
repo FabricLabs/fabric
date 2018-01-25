@@ -97,4 +97,4 @@ API.Vector = require('./lib/vector');
  */
 API.Walker = require('./lib/walker');
 
-export default API;
+export { API as default };
