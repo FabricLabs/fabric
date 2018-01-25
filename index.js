@@ -1,5 +1,7 @@
 'use strict'
 
+import 'babel-polyfill';
+
 const Fabric = require('./lib/fabric');
 
 /**
