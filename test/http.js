@@ -1,7 +1,10 @@
+'use strict';
+
+import Fabric from '../';
+
 const assert = require('assert');
 const expect = require('chai').expect;
 
-const Fabric = require('../');
 const widget = {
   name: 'Widget',
   properties: {
@@ -13,11 +16,22 @@ const widget = {
   }
 };
 
-const sample = {
-  name: 'garbage'
+const empty = require('../data/null');
+const message = require('../data/message');
+const payload = {
+  name: 'foobar'
 };
 
-const genesis = 'f7c2216c978fea8f83da5c4e0739031b8fbfa34fe8ea5d8bcef7921c3ab3f041';
+const oldest = {
+  name: 'foobae'
+};
+
+const newest = {
+  name: 'foobaz'
+};
+
+const target = widget.routes.query;
+const genesis = message['@id'];
 
 describe('HTTP', function () {
   it('should expose a constructor', function () {
@@ -27,143 +41,133 @@ describe('HTTP', function () {
   it('can clean up after itself', async function () {
     let server = new Fabric.HTTP();
 
-    await server.define('Widget', widget);
+    server.define('Widget', widget);
+
+    await server.storage.open();
     await server.start();
-    await server.flush();
 
-    let start = await server._GET('/widgets');
-    assert.equal(start, null);
+    try {
+      let test = new Fabric.Vector(message['@data'])._sign();
 
-    let test = Fabric.Vector(sample)._sign();
-    assert.equal(test['@id'], genesis);
+      let result = await server._PUT(target, test['@data']);
+      let vector = new Fabric.Vector(result)._sign();
 
-    let result = await server._POST('/widgets', sample);
-    assert.equal(result['@id'], genesis);
+      console.log('create attempt:', typeof result, result);
+      console.log('create vector:', typeof vector, vector);
 
-    let vector = Fabric.Vector(result['@data'])._sign();
-    assert.equal(vector['@id'], genesis);
+      let collection = await server._GET(target);
 
-    let collection = await server._GET('/widgets');
-    assert.equal(collection[0].name, sample.name);
+      console.log('collection:', collection);
 
-    let inner = Fabric.Vector(collection[0])._sign();
-    assert.equal(inner['@id'], genesis);
+      await server.flush();
 
-    await server.flush();
+      let now = await server._GET(target);
+      let answer = new Fabric.Vector(now)._sign();
 
-    let after = await server._GET('/widgets');
-    assert.equal(after, null);
+      assert.equal(test['@id'], genesis);
+      assert.equal(vector['@id'], genesis);
+      //assert.equal(collection, JSON.stringify([message['@data']]));
+      assert.equal(answer['@id'], empty['@id']);
+    } catch (E) {
+      console.error(E);
+      assert.fail(E);
+    }
 
     await server.stop();
-  });
-  
-  it('can serve a resource', async function () {
-    let server = new Fabric.HTTP();
-
-    await server.define('Widget', widget);
-    await server.start();
-    await server.flush();
-
-    let start = await server._GET('/widgets');
-    assert.equal(start, null);
-
-    let test = Fabric.Vector(sample)._sign();
-    assert.equal(test['@id'], genesis);
-
-    let result = await server._POST('/widgets', sample);
-    assert.equal(result['@id'], genesis);
-
-    let vector = Fabric.Vector(result['@data'])._sign();
-    assert.equal(vector['@id'], genesis);
-
-    let collection = await server._GET('/widgets');
-    assert.equal(collection[0].name, sample.name);
-
-    let remote = new Fabric.Remote({
-      host: 'localhost:3000',
-      secure: false,
-      path: 'data/remote'
-    });
-
-    let claim = remote._GET('/widgets');
-
-    await server.flush();
-
-    let after = await server._GET('/widgets');
-    assert.equal(after, null);
-
-    await server.stop();
+    await server.storage.close();
   });
 
-  xit('can serve a resource', async function () {
+  it('can receive a PUT request', async function () {
     let server = new Fabric.HTTP();
 
     server.define('Widget', widget);
-    
+
+    await server.storage.open();
     await server.start();
-    await server.flush();
 
     try {
+      let test = new Fabric.Vector(message['@data'])._sign();
+      let result = await server._PUT(target, test['@data']);
       
-      let remote = new Fabric.Remote({
-        host: 'localhost:3000',
-        secure: false
-      });
+      console.log('result:', result);
+      
+      let vector = new Fabric.Vector(result['@data'])._sign();
 
-      let payload = {
-        name: 'foobar'
-      };
+      console.log('create attempt:', typeof result, result);
+      console.log('create vector:', typeof vector, vector);
+      
+      let now = await server._GET(target);
+      let answer = new Fabric.Vector(now)._sign();
 
-      let vector = Fabric.Vector(payload)._sign();
-
-      await server.flush();
-
-      let result = await remote._POST('/widgets', payload);
-      let collection = await remote._GET('/widgets');
-
-      await server.flush();
-      await server.stop();
-
-      assert.equal(result['@id'], vector['@id']);
-      assert.equal(collection[0]['@id'], vector['@id']);
+      assert.equal(test['@id'], genesis);
+      assert.equal(answer['@id'], genesis);
+      assert.equal(answer['@id'], test['@id']);
     } catch (E) {
       console.error(E);
+      assert.fail(E);
     }
 
+    await server.stop();
+    await server.storage.close();
   });
-  
-  xit('correctly aggregates created objects', async function () {
+
+  it('can receive a POST request', async function () {
+    let server = new Fabric.HTTP();
+    
+    server.define('Widget', widget);
+
+    await server.storage.open();
+    await server.start();
+
     try {
-      let server = new Fabric.HTTP();
+      let start = await server._GET(target);
+      let test = new Fabric.Vector(message['@data'])._sign();
 
-      server.define('Widget', widget);
+      let request = await server._POST(target, message['@data']);
+      let response = new Fabric.Vector(request)._sign();
 
-      let remote = new Fabric.Remote({
-        host: 'localhost:3000',
-        secure: false
-      });
+      let collection = await server._GET(target);
+      let all = new Fabric.Vector(collection)._sign();
 
-      let oldest = {
-        name: 'foobar'
-      };
+      console.log('response:', response);
 
-      let newest = {
-        name: 'foobaz'
-      };
+      assert.equal(response['@id'], test['@id']);
+      assert.equal(response['@id'], test['@id']);
 
-      let elder = Fabric.Vector(oldest)._sign();
-      let child = Fabric.Vector(newest)._sign();
+    } catch (E) {
+      console.error(E);
+      assert.fail(E);
+    }
 
-      await server.start();
-      await server.flush();
+    await server.stop();
+    await server.storage.close();
+  });
 
-      let result = await remote._POST('/widgets', oldest);
-      let latest = await remote._POST('/widgets', newest);
+  xit('correctly aggregates created objects', async function () {
+    let server = new Fabric.HTTP();
+    let remote = new Fabric.Remote({
+      host: 'localhost:3000',
+      secure: false
+    });
 
-      let collection = await remote._GET('/widgets');
+    server.define('Widget', widget);
 
-      await server.flush();
-      await server.stop();
+    await server.storage.open();
+    await server.start();
+
+    let elder = new Fabric.Vector(oldest)._sign();
+    let child = new Fabric.Vector(newest)._sign();
+
+    try {
+      let result = await remote._POST(target, oldest);
+      let latest = await remote._POST(target, newest);
+
+      console.log('result:', result);
+      console.log('latest:', latest);
+      
+
+
+      let collection = await remote._GET(target);
 
       //console.log('full list:', collection);
 
@@ -174,6 +178,10 @@ describe('HTTP', function () {
       assert.equal(collection[1]['@id'], elder['@id']);
     } catch (E) {
       console.error(E);
+      assert.fail(E);
     }
+
+    await server.stop();
+    await server.storage.close();
   });
 });

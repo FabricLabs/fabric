@@ -2,7 +2,27 @@
 
 import 'babel-polyfill';
 
+//require('debug-trace')({ always: true });
+
 const Fabric = require('./lib/fabric');
+const App = require('./lib/app');
+const Block = require('./lib/block');
+const Chain = require('./lib/chain');
+const CLI = require('./lib/cli');
+const Datastore = require('./lib/datastore');
+const HTTP = require('./lib/http');
+const Machine = require('./lib/machine');
+const Message = require('./lib/message');
+const Oracle = require('./lib/oracle');
+const Remote = require('./lib/remote');
+const Resource = require('./lib/resource');
+const Storage = require('./lib/storage');
+const Store = require('./lib/store');
+const Transaction = require('./lib/transaction');
+const Validator = require('./lib/validator');
+const Vector = require('./lib/vector');
+const Walker = require('./lib/walker');
+const Worker = require('./lib/worker');
 
 /**
  * Fabric's Developer API.  Exposes immutable types for all requisite components.
@@ -19,84 +39,110 @@ class API extends Fabric {
  * Offers complex functionality for managing user interfaces bound to real-time data.
  * @type {App}
  */
-API.App = require('./lib/app');
+API.App = App;
+
+/**
+ * A batch of Transactions.
+ * @type {Block}
+ */
+API.Block = Block;
 
 /**
  * General mechanism for storing immutable events over time.
  * @type {Chain}
  */
-API.Chain = require('./lib/chain');
+API.Chain = Chain;
 
 /**
  * Basic terminal interface for {@link module:Fabric}.
  * @type {CLI}
  */
-API.CLI = require('./lib/cli');
+API.CLI = CLI;
 
 /**
  * Persistent data storage for local environments.
  * @type {Datastore}
  */
-API.Datastore = require('./lib/datastore');
+API.Datastore = Datastore;
 
 /**
  * Fully-functional HTTP server for providing oracle services.  See also {@link module:Oracle}.
  * @type {HTTP}
  */
-API.HTTP = require('./lib/http');
+API.HTTP = HTTP;
 
 /**
  * General-purpose computer with verifiable execution.
  * @type {Machine}
  */
-API.Machine = require('./lib/machine');
+API.Machine = Machine;
 
 /**
  * {@link module:Vector} instances for potential application.
  * @type {Message}
  */
-API.Message = require('./lib/message');
+API.Message = Message;
 
 /**
  * External point of trust for {@link module:Contract} instances.
  * @type {Oracle}
  */
-API.Oracle = require('./lib/oracle');
+API.Oracle = Oracle;
 
 /**
  * Simple client which speaks the {@link module:Fabric} protocol.
  * @type {Remote}
  */
-API.Remote = require('./lib/remote');
+API.Remote = Remote;
+
+/**
+ * Interactive datastore.
+ * @type {Resource}
+ */
+API.Resource = Resource;
 
 /**
  * Abstract long-term storage with isomorphic support for various clients.
  * @type {Storage}
  */
-API.Storage = require('./lib/storage');
+API.Storage = Storage;
+
+/**
+ * Simple storage class.  Uses LevelDB by default.
+ * @type {Store}
+ */
+API.Store = Store;
 
 /**
  * An atomic unit of change within the system.
  * @type {Transaction}
  */
-API.Transaction = require('./lib/transaction');
+API.Transaction = Transaction;
 
 /**
  * Validates known assumptions.
  * @type {Validator}
  */
-API.Validator = require('./lib/validator');
+API.Validator = Validator;
 
 /**
  * Minimum possible unit.
  * @type {Vector}
  */
-API.Vector = require('./lib/vector');
+API.Vector = Vector;
 
 /**
  * Agent capable of walking a graph.
  * @type {Walker}
  */
-API.Walker = require('./lib/walker');
+API.Walker = Walker;
+
+/**
+ * Simple job processing agent.
+ * @type {Worker}
+ */
+API.Worker = Worker;
+
+API.test = new Vector(API)._sign();
 
 export { API as default };

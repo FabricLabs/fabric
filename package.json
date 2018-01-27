@@ -41,6 +41,7 @@
   "dependencies": {
     "ajv": "^5.5.2",
     "babel-polyfill": "^6.26.0",
+    "debug-trace": "^2.2.1",
     "fast-json-patch": "^2.0.4",
     "hashcasher": "martindale/hashcasher#fabric",
     "javascript-state-machine": "^3.0.1",
@@ -48,6 +49,7 @@
     "localforage": "^1.5.3",
     "lodash.merge": "^4.6.0",
     "mkdirp": "^0.5.1",
+    "path-match": "^1.2.4",
     "ssri": "^5.0.0",
     "webworker-threads": "^0.7.13",
     "wreck": "^14.0.2",
