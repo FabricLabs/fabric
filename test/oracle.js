@@ -212,7 +212,7 @@ describe('Oracle', function () {
       let assets = await oracle._OPTIONS('/assets');
       let result = await oracle._OPTIONS('/assets/test.txt');
       let vector = new Fabric.Vector(result['@data'])._sign();
-      assert.equal(assets['@id'], 'f82d31e3523dcb5a14944cb764511a5705b491b90920c6001c80904d19c726ba');
+      assert.equal(assets['@id'], '28f35faf2bee18c967b2f1d830fbccc7b57f4342bf828354e7a9bc71a54c5e9f');
       //assert.equal(result['@id'], message['@id']);
       assert.equal(vector['@id'], message['@id']);
     } catch (E) {
