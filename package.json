@@ -10,7 +10,7 @@
   "scripts": {
     "build": "npm run make:service && npm run make:app && npm run make:docs",
     "cli": "node examples/cli.js",
-    "coverage": "npm run build && NODE_ENV=test istanbul cover _mocha && http-server coverage/lcov-report",
+    "coverage": "NODE_ENV=test babel-node ./node_modules/.bin/isparta cover _mocha && http-server coverage/lcov-report",
     "docs": "gitbook install && npm run parse:api && gitbook serve",
     "examples": "docco --output examples/ examples/app.js examples/oracle.js && http-server examples/",
     "make:api": "jsdoc --debug index.js lib/ -d docs/",
@@ -55,6 +55,7 @@
     "wrtc": "^0.0.63"
   },
   "devDependencies": {
+    "babel-cli": "^6.26.0",
     "babel-core": "^6.26.0",
     "babel-preset-env": "^1.6.1",
     "babel-preset-es2017": "^6.24.1",
@@ -69,7 +70,7 @@
     "express": "^4.16.2",
     "gitbook-plugin-scripts": "^1.0.2",
     "http-server": "^0.10.0",
-    "istanbul": "^1.1.0-alpha.1",
+    "isparta": "^4.0.0",
     "jade": "^1.11.0",
     "jsdoc": "^3.5.5",
     "jsdoc-babel": "^0.3.0",
