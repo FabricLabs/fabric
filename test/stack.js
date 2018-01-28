@@ -9,6 +9,8 @@ describe('Stack', function () {
   it('should correctly compute a known instruction', async function () {
     var fabric = new Fabric();
 
+    await fabric.chain.storage.open();
+
     fabric.use('OP_TEST', function (state) {
       return true;
     });
@@ -25,6 +27,8 @@ describe('Stack', function () {
 
   it('can add two numbers', async function () {
     var fabric = new Fabric();
+
+    await fabric.chain.storage.open();
 
     fabric.use('ADD', function (state) {
       var op = this.stack.pop();
@@ -60,7 +64,7 @@ describe('Stack', function () {
     fabric.stack.push('ADD');
 
     fabric.compute();
-    
+
     await fabric.chain.storage.close();
 
     assert.equal(fabric['@data'], 579);
