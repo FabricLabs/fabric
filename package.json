@@ -10,15 +10,16 @@
   "scripts": {
     "build": "npm run make:service && npm run make:app && npm run make:docs",
     "cli": "node examples/cli.js",
-    "coverage": "npm run build && NODE_ENV=test istanbul cover _mocha && http-server coverage/lcov-report",
+    "coverage": "NODE_ENV=test babel-node ./node_modules/.bin/isparta cover _mocha && http-server coverage/lcov-report",
     "docs": "gitbook install && npm run parse:api && gitbook serve",
     "examples": "docco --output examples/ examples/app.js examples/oracle.js && http-server examples/",
+    "make:api": "jsdoc --debug index.js lib/ -d docs/",
     "make:app": "webpack --progress --colors examples/app.js assets/app.js",
     "make:docs": "gitbook install && npm run parse:api && gitbook build",
     "make:service": "webpack --progress --colors examples/service.js assets/service.js",
-    "parse:api": "jsdoc2md --configure jsdoc.json --files lib/**/*.js > docs/api.md",
+    "parse:api": "jsdoc2md --configure jsdoc.json --files index.js lib/**/*.js > docs/api.md",
     "start": "npm run make:service && webpack --progress --colors --watch examples/app.js assets/app.js & nodemon examples/oracle.js",
-    "test": "NODE_ENV=test mocha",
+    "test": "NODE_ENV=test mocha --compilers js:babel-core/register",
     "test:app": "npm run make:service && npm run make:app && NODE_ENV=test mocha"
   },
   "engines": {
@@ -39,6 +40,7 @@
   "homepage": "https://github.com/martindale/fabric#readme",
   "dependencies": {
     "ajv": "^5.5.2",
+    "babel-polyfill": "^6.26.0",
     "fast-json-patch": "^2.0.4",
     "hashcasher": "martindale/hashcasher#fabric",
     "javascript-state-machine": "^3.0.1",
@@ -46,13 +48,16 @@
     "localforage": "^1.5.3",
     "lodash.merge": "^4.6.0",
     "mkdirp": "^0.5.1",
+    "path-match": "^1.2.4",
     "ssri": "^5.0.0",
     "webworker-threads": "^0.7.13",
     "wreck": "^14.0.2",
     "wrtc": "^0.0.63"
   },
   "devDependencies": {
+    "babel-cli": "^6.26.0",
     "babel-core": "^6.26.0",
+    "babel-preset-env": "^1.6.1",
     "babel-preset-es2017": "^6.24.1",
     "blessed": "^0.1.81",
     "blessed-contrib": "^4.8.5",
@@ -60,11 +65,12 @@
     "chai": "^4.0.2",
     "compiled-jade-render": "^1.0.2",
     "coveralls": "^2.13.1",
+    "debug-trace": "^2.2.1",
     "docco": "^0.7.0",
     "express": "^4.16.2",
     "gitbook-plugin-scripts": "^1.0.2",
     "http-server": "^0.10.0",
-    "istanbul": "^1.1.0-alpha.1",
+    "isparta": "^4.0.0",
     "jade": "^1.11.0",
     "jsdoc": "^3.5.5",
     "jsdoc-babel": "^0.3.0",
@@ -81,5 +87,10 @@
   },
   "browserify": {
     "level": "level-browserify"
+  },
+  "babel": {
+    "presets": [
+      "env"
+    ]
   }
 }

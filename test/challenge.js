@@ -1,5 +1,9 @@
-var assert = require('assert');
-var expect = require('chai').expect;
+'use strict';
+
+import Fabric from '../';
+
+const assert = require('assert');
+const expect = require('chai').expect;
 
 var Challenge = require('../lib/challenge');
 var Vector = require('../lib/vector');

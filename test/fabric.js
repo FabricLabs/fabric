@@ -1,13 +1,17 @@
-var assert = require('assert');
-var expect = require('chai').expect;
+'use strict';
 
-var genesis = require('../data/fabric');
-var message = require('../data/message');
+import Fabric from '../';
 
-var Fabric = require('../lib/fabric');
-var Instruction = require('../lib/instruction');
+const assert = require('assert');
+const expect = require('chai').expect;
 
-var state = '90d6d8a4824727f98eb83f66cbcaf55eb48df86300bd51c526d590b037885faa';
+const genesis = require('../data/fabric');
+const message = require('../data/message');
+
+const Canvas = require('../lib/fabric');
+const Instruction = require('../lib/instruction');
+
+const state = require('../data/fabric');
 
 //var Machine = require('../lib/machine');
 
@@ -15,25 +19,13 @@ var state = '90d6d8a4824727f98eb83f66cbcaf55eb48df86300bd51c526d590b037885faa';
 // @consensus:
 // @quest:
 describe('Fabric', function () {
-  after(async function () {
-    if (typeof fabric !== 'undefined') {
-      await fabric.chain.storage.close();
-    }
-  });
-
   it('should expose a constructor', function () {
-    assert.equal(typeof Fabric, 'function');
+    assert.equal(typeof Canvas, 'function');
   });
 
   it('has the correct, hard-coded genesis seed', async function provenance () {
-    var fabric = new Fabric(genesis);
-    //assert.equal(fabric.root.id, 0); // require a point of origin.
-    fabric._sign();
-    
-    await fabric.chain.storage.close();
-
-    assert.equal(JSON.stringify(fabric['@data']), JSON.stringify(genesis));
-    assert.equal(fabric['@id'], state);
+    let seed = new Fabric.Vector(genesis['@data'])._sign();
+    assert.equal(seed['@id'], genesis['@id']);
   });
 
   it('has a correctly-defined NOOP operation', async function () {

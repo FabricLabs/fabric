@@ -1,6 +1,6 @@
 {
+  "@id": "71b4b2f3376f3e5ca9f2642335811aead89dc30f0f327727695227599cd3a503",
   "@special~": "JSON notoriously doesn't have comments, so pay attention.",
-  "@id": "/",
   "@name": "fabric",
   "@link": "fabric",
   "@type": "Vector",

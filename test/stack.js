@@ -1,7 +1,9 @@
-var assert = require('assert');
-var expect = require('chai').expect;
+'use strict';
 
-var Fabric = require('../');
+import Fabric from '../';
+
+const assert = require('assert');
+const expect = require('chai').expect;
 
 describe('Stack', function () {
   it('should correctly compute a known instruction', async function () {

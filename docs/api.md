@@ -1,17 +1,25 @@
+## Modules
+
+<dl>
+<dt><a href="#module_Fabric">Fabric</a> : <code><a href="#Fabric">Fabric</a></code></dt>
+<dd><p>Fabric&#39;s Developer API.  Exposes immutable types for all requisite components.</p>
+</dd>
+</dl>
+
 ## Classes
 
 <dl>
-<dt><a href="#Contract">Contract</a></dt>
-<dd></dd>
 <dt><a href="#Fabric">Fabric</a></dt>
 <dd></dd>
 <dt><a href="#Oracle">Oracle</a></dt>
 <dd></dd>
 <dt><a href="#Peer">Peer</a></dt>
 <dd></dd>
-<dt><a href="#Remote">Remote</a></dt>
+<dt><a href="#Remote">Remote</a> : <code>Vector</code></dt>
 <dd></dd>
-<dt><a href="#Vector">Vector</a></dt>
+<dt><a href="#Resource">Resource</a></dt>
+<dd></dd>
+<dt><a href="#Storage">Storage</a></dt>
 <dd></dd>
 <dt><a href="#Walker">Walker</a></dt>
 <dd></dd>
@@ -19,60 +27,171 @@
 <dd></dd>
 </dl>
 
-<a name="Contract"></a>
+## Functions
 
-## Contract
-**Kind**: global class  
-<a name="new_Contract_new"></a>
+<dl>
+<dt><a href="#value">value(msg, [options])</a> ⇒ <code>string</code></dt>
+<dd><p>Generates SHA-256 hash of string.</p>
+</dd>
+</dl>
 
-### new Contract(vector)
-Self-executing multi-party agreement.
+<a name="module_Fabric"></a>
 
-## Extra
-Extra is metadata carried with an object, no matter what.  It is the
-immutable core to the object's lifecycle, the "inventory" of the character
-during their interaction with this Genesis Tablet.
+## Fabric : [<code>Fabric</code>](#Fabric)
+Fabric's Developer API.  Exposes immutable types for all requisite components.
 
 
-| Param | Type | Description |
-| --- | --- | --- |
-| vector | [<code>Vector</code>](#Vector) | Input vector [description] |
+* [Fabric](#module_Fabric) : [<code>Fabric</code>](#Fabric)
+    * [.App](#module_Fabric.App) : <code>App</code>
+    * [.Block](#module_Fabric.Block) : <code>Block</code>
+    * [.Chain](#module_Fabric.Chain) : <code>Chain</code>
+    * [.CLI](#module_Fabric.CLI) : <code>CLI</code>
+    * [.Datastore](#module_Fabric.Datastore) : <code>Datastore</code>
+    * [.HTTP](#module_Fabric.HTTP) : <code>HTTP</code>
+    * [.Machine](#module_Fabric.Machine) : <code>Machine</code>
+    * [.Message](#module_Fabric.Message) : <code>Message</code>
+    * [.Oracle](#module_Fabric.Oracle) : [<code>Oracle</code>](#Oracle)
+    * [.Remote](#module_Fabric.Remote) : [<code>Remote</code>](#Remote)
+    * [.Resource](#module_Fabric.Resource) : [<code>Resource</code>](#Resource)
+    * [.Storage](#module_Fabric.Storage) : [<code>Storage</code>](#Storage)
+    * [.Store](#module_Fabric.Store) : <code>Store</code>
+    * [.Transaction](#module_Fabric.Transaction) : <code>Transaction</code>
+    * [.Validator](#module_Fabric.Validator) : <code>Validator</code>
+    * [.Vector](#module_Fabric.Vector) : <code>Vector</code>
+    * [.Walker](#module_Fabric.Walker) : [<code>Walker</code>](#Walker)
+    * [.Worker](#module_Fabric.Worker) : [<code>Worker</code>](#Worker)
 
+<a name="module_Fabric.App"></a>
+
+### Fabric.App : <code>App</code>
+Offers complex functionality for managing user interfaces bound to real-time data.
+
+**Kind**: static property of [<code>Fabric</code>](#module_Fabric)  
+<a name="module_Fabric.Block"></a>
+
+### Fabric.Block : <code>Block</code>
+A batch of Transactions.
+
+**Kind**: static property of [<code>Fabric</code>](#module_Fabric)  
+<a name="module_Fabric.Chain"></a>
+
+### Fabric.Chain : <code>Chain</code>
+General mechanism for storing immutable events over time.
+
+**Kind**: static property of [<code>Fabric</code>](#module_Fabric)  
+<a name="module_Fabric.CLI"></a>
+
+### Fabric.CLI : <code>CLI</code>
+Basic terminal interface for [Fabric](#module_Fabric).
+
+**Kind**: static property of [<code>Fabric</code>](#module_Fabric)  
+<a name="module_Fabric.Datastore"></a>
+
+### Fabric.Datastore : <code>Datastore</code>
+Persistent data storage for local environments.
+
+**Kind**: static property of [<code>Fabric</code>](#module_Fabric)  
+<a name="module_Fabric.HTTP"></a>
+
+### Fabric.HTTP : <code>HTTP</code>
+Fully-functional HTTP server for providing oracle services.  See also [module:Oracle](module:Oracle).
+
+**Kind**: static property of [<code>Fabric</code>](#module_Fabric)  
+<a name="module_Fabric.Machine"></a>
+
+### Fabric.Machine : <code>Machine</code>
+General-purpose computer with verifiable execution.
+
+**Kind**: static property of [<code>Fabric</code>](#module_Fabric)  
+<a name="module_Fabric.Message"></a>
+
+### Fabric.Message : <code>Message</code>
+[module:Vector](module:Vector) instances for potential application.
+
+**Kind**: static property of [<code>Fabric</code>](#module_Fabric)  
+<a name="module_Fabric.Oracle"></a>
+
+### Fabric.Oracle : [<code>Oracle</code>](#Oracle)
+External point of trust for [module:Contract](module:Contract) instances.
+
+**Kind**: static property of [<code>Fabric</code>](#module_Fabric)  
+<a name="module_Fabric.Remote"></a>
+
+### Fabric.Remote : [<code>Remote</code>](#Remote)
+Simple client which speaks the [Fabric](#module_Fabric) protocol.
+
+**Kind**: static property of [<code>Fabric</code>](#module_Fabric)  
+<a name="module_Fabric.Resource"></a>
+
+### Fabric.Resource : [<code>Resource</code>](#Resource)
+Interactive datastore.
+
+**Kind**: static property of [<code>Fabric</code>](#module_Fabric)  
+<a name="module_Fabric.Storage"></a>
+
+### Fabric.Storage : [<code>Storage</code>](#Storage)
+Abstract long-term storage with isomorphic support for various clients.
+
+**Kind**: static property of [<code>Fabric</code>](#module_Fabric)  
+<a name="module_Fabric.Store"></a>
+
+### Fabric.Store : <code>Store</code>
+Simple storage class.  Uses LevelDB by default.
+
+**Kind**: static property of [<code>Fabric</code>](#module_Fabric)  
+<a name="module_Fabric.Transaction"></a>
+
+### Fabric.Transaction : <code>Transaction</code>
+An atomic unit of change within the system.
+
+**Kind**: static property of [<code>Fabric</code>](#module_Fabric)  
+<a name="module_Fabric.Validator"></a>
+
+### Fabric.Validator : <code>Validator</code>
+Validates known assumptions.
+
+**Kind**: static property of [<code>Fabric</code>](#module_Fabric)  
+<a name="module_Fabric.Vector"></a>
+
+### Fabric.Vector : <code>Vector</code>
+Minimum possible unit.
+
+**Kind**: static property of [<code>Fabric</code>](#module_Fabric)  
+<a name="module_Fabric.Walker"></a>
+
+### Fabric.Walker : [<code>Walker</code>](#Walker)
+Agent capable of walking a graph.
+
+**Kind**: static property of [<code>Fabric</code>](#module_Fabric)  
+<a name="module_Fabric.Worker"></a>
+
+### Fabric.Worker : [<code>Worker</code>](#Worker)
+Simple job processing agent.
+
+**Kind**: static property of [<code>Fabric</code>](#module_Fabric)  
 <a name="Fabric"></a>
 
 ## Fabric
 **Kind**: global class  
-**Emits**: <code>Fabric#event:thread</code>  
+**Emits**: <code>Fabric#event:thread</code>, <code>Fabric#event:step Emitted on a &#x60;compute&#x60; step.</code>  
 
 * [Fabric](#Fabric)
     * [new Fabric(config)](#new_Fabric_new)
-    * [.render](#Fabric+render)
-        * [new Fabric.prototype.render(config)](#new_Fabric+render_new)
     * [.bootstrap(vector, notify)](#Fabric+bootstrap)
+    * [.trust(source)](#Fabric+trust) ⇒ [<code>Fabric</code>](#Fabric)
+    * [.render()](#Fabric+render) ⇒ <code>String</code>
 
 <a name="new_Fabric_new"></a>
 
 ### new Fabric(config)
-Fabric Core Library
+The [Fabric](#module_Fabric) type implements the Fabric Protocol, a formally-defined language for the establishment and settlement of mutually-agreed upon proofs of work.
+
+Utilizing
 
 
 | Param | Type | Description |
 | --- | --- | --- |
-| config | <code>Object</code> | configuration object |
-
-<a name="Fabric+render"></a>
-
-### fabric.render
-**Kind**: instance class of [<code>Fabric</code>](#Fabric)  
-<a name="new_Fabric+render_new"></a>
-
-#### new Fabric.prototype.render(config)
-Consume a known state and
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| config | <code>object</code> | configuration object |
+| config | <code>Vector</code> | Initial configuration for the Fabric engine.  This can be considered the "genesis" state for any contract using the system.  If a chain of events is maintained over long periods of time, `state` can be considered "in contention", and it is demonstrated that the outstanding value of the contract remains to be settled. |
 
 <a name="Fabric+bootstrap"></a>
 
@@ -86,6 +205,25 @@ Consume an application definition (configure resources + services)
 | vector | <code>object</code> | Object representation of the application definition. |
 | notify | <code>function</code> | Callback function (err, result) |
 
+<a name="Fabric+trust"></a>
+
+### fabric.trust(source) ⇒ [<code>Fabric</code>](#Fabric)
+Blindly consume messages from a `source`, relying on `Chain` to verify.
+
+**Kind**: instance method of [<code>Fabric</code>](#Fabric)  
+**Returns**: [<code>Fabric</code>](#Fabric) - Returns itself.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| source | <code>EventEmitter</code> | Any object which implements the `EventEmitter` pattern. |
+
+<a name="Fabric+render"></a>
+
+### fabric.render() ⇒ <code>String</code>
+Serialize the current network state and provide it as output.
+
+**Kind**: instance method of [<code>Fabric</code>](#Fabric)  
+**Returns**: <code>String</code> - Serialized output for consumption.  
 <a name="Oracle"></a>
 
 ## Oracle
@@ -93,7 +231,9 @@ Consume an application definition (configure resources + services)
 
 * [Oracle](#Oracle)
     * [new Oracle(initial)](#new_Oracle_new)
-    * [._load](#Oracle+_load) ⇒ [<code>Vector</code>](#Vector)
+    * [._load](#Oracle+_load) ⇒ <code>Vector</code>
+    * [._POST](#Oracle+_POST) ⇒ <code>Vector</code>
+    * [.broadcast(msg)](#Oracle+broadcast) ⇒ <code>Boolean</code>
 
 <a name="new_Oracle_new"></a>
 
@@ -107,15 +247,40 @@ Trusted point-of-reference for external services.
 
 <a name="Oracle+_load"></a>
 
-### oracle._load ⇒ [<code>Vector</code>](#Vector)
+### oracle._load ⇒ <code>Vector</code>
 Synchronously reads a local path into memory.
 
 **Kind**: instance property of [<code>Oracle</code>](#Oracle)  
-**Returns**: [<code>Vector</code>](#Vector) - Computed vector.  
+**Returns**: <code>Vector</code> - Computed vector.  
 
 | Param | Type | Description |
 | --- | --- | --- |
 | path | <code>String</code> | dir (path to read) |
+
+<a name="Oracle+_POST"></a>
+
+### oracle._POST ⇒ <code>Vector</code>
+Handle a request from a client to `create` an object.
+
+**Kind**: instance property of [<code>Oracle</code>](#Oracle)  
+**Returns**: <code>Vector</code> - [description]  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| key | <code>String</code> | [description] |
+| obj | <code>Object</code> | [description] |
+
+<a name="Oracle+broadcast"></a>
+
+### oracle.broadcast(msg) ⇒ <code>Boolean</code>
+Core messaging function for interacting with this object in system-time.
+
+**Kind**: instance method of [<code>Oracle</code>](#Oracle)  
+**Returns**: <code>Boolean</code> - Returns `true` on success, `false` on failure.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | <code>Message</code> | Instance of a [module:Message](module:Message) object, validated then transmitted verbatim. |
 
 <a name="Peer"></a>
 
@@ -129,16 +294,18 @@ An in-memory representation of a node in our network.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| initial | [<code>Vector</code>](#Vector) | Initialization Vector for this peer. |
+| initial | <code>Vector</code> | Initialization Vector for this peer. |
 
 <a name="Remote"></a>
 
-## Remote
+## Remote : <code>Vector</code>
 **Kind**: global class  
 
-* [Remote](#Remote)
+* [Remote](#Remote) : <code>Vector</code>
     * [new Remote(initial)](#new_Remote_new)
+    * [._PUT](#Remote+_PUT) ⇒ <code>Mixed</code>
     * [._GET](#Remote+_GET) ⇒ <code>Mixed</code>
+    * [._POST](#Remote+_POST) ⇒ <code>Mixed</code>
     * [._OPTIONS](#Remote+_OPTIONS) ⇒ <code>Object</code>
 
 <a name="new_Remote_new"></a>
@@ -151,10 +318,36 @@ An in-memory representation of a node in our network.
 | --- | --- | --- |
 | initial | <code>Object</code> | Target object. |
 
+<a name="Remote+_PUT"></a>
+
+### remote._PUT ⇒ <code>Mixed</code>
+HTTP PUT against the configured Authority.
+
+**Kind**: instance property of [<code>Remote</code>](#Remote)  
+**Returns**: <code>Mixed</code> - [description]  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | HTTP Path to request. |
+| obj | <code>Object</code> | Map of parameters to supply. |
+
 <a name="Remote+_GET"></a>
 
 ### remote._GET ⇒ <code>Mixed</code>
 HTTP GET against the configured Authority.
+
+**Kind**: instance property of [<code>Remote</code>](#Remote)  
+**Returns**: <code>Mixed</code> - [description]  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | HTTP Path to request. |
+| params | <code>Object</code> | Map of parameters to supply. |
+
+<a name="Remote+_POST"></a>
+
+### remote._POST ⇒ <code>Mixed</code>
+HTTP POST against the configured Authority.
 
 **Kind**: instance property of [<code>Remote</code>](#Remote)  
 **Returns**: <code>Mixed</code> - [description]  
@@ -177,62 +370,33 @@ HTTP OPTIONS on the configured Authority.
 | path | <code>String</code> | HTTP Path to request. |
 | params | <code>Object</code> | Map of parameters to supply. |
 
-<a name="Vector"></a>
+<a name="Resource"></a>
 
-## Vector
+## Resource
 **Kind**: global class  
+<a name="new_Resource_new"></a>
 
-* [Vector](#Vector)
-    * [new Vector(init)](#new_Vector_new)
-    * [._serialize(input)](#Vector+_serialize) ⇒ <code>String</code>
-    * [._identify(entity)](#Vector+_identify) ⇒ <code>Object</code>
-    * [.compute(input)](#Vector+compute) ⇒ [<code>Vector</code>](#Vector)
-
-<a name="new_Vector_new"></a>
-
-### new Vector(init)
-An "Initialization" Vector.
+### new Resource(definition)
+Generic interface for collections of digital objects.
 
 
 | Param | Type | Description |
 | --- | --- | --- |
-| init | <code>object</code> | Input state (will map to `@data`.) |
+| definition | <code>Object</code> | Initial parameters |
 
-<a name="Vector+_serialize"></a>
+<a name="Storage"></a>
 
-### vector._serialize(input) ⇒ <code>String</code>
-_serialize is a placeholder, should be discussed.
+## Storage
+**Kind**: global class  
+<a name="new_Storage_new"></a>
 
-**Kind**: instance method of [<code>Vector</code>](#Vector)  
-**Returns**: <code>String</code> - - resulting string [JSON-encoded version of the local `@data` value.]  
+### new Storage(config)
+Persistent data storage.
 
-| Param | Type | Description |
-| --- | --- | --- |
-| input | <code>String</code> | What to serialize.  Defaults to `this['@data']`. |
-
-<a name="Vector+_identify"></a>
-
-### vector._identify(entity) ⇒ <code>Object</code>
-Compute the `sha256` hash of the input entity's `@data` field.
-
-**Kind**: instance method of [<code>Vector</code>](#Vector)  
-**Returns**: <code>Object</code> - Transformed entity with `@id` set to the `sha256` hash of `@data`.  
 
 | Param | Type | Description |
 | --- | --- | --- |
-| entity | <code>Object</code> | Input object; expects `@data`. |
-
-<a name="Vector+compute"></a>
-
-### vector.compute(input) ⇒ [<code>Vector</code>](#Vector)
-Computes the next "step" for our current Vector.
-
-**Kind**: instance method of [<code>Vector</code>](#Vector)  
-**Returns**: [<code>Vector</code>](#Vector) - - Makes this Vector chainable.  Possible antipattern.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| input | <code>String</code> | Input state, undefined if desired. |
+| config | <code>Object</code> | Configuration for internal datastore. |
 
 <a name="Walker"></a>
 
@@ -252,7 +416,7 @@ The Walker explores a directory tree and maps it to memory.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| init | [<code>Vector</code>](#Vector) | Initial state tree. |
+| init | <code>Vector</code> | Initial state tree. |
 
 <a name="Walker+_define"></a>
 
@@ -311,5 +475,20 @@ Handle a task.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| input | [<code>Vector</code>](#Vector) | Input vector. |
+| input | <code>Vector</code> | Input vector. |
+
+<a name="value"></a>
+
+## value(msg, [options]) ⇒ <code>string</code>
+Generates SHA-256 hash of string.
+
+**Kind**: global function  
+**Returns**: <code>string</code> - Hash of msg as hex character string.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| msg | <code>string</code> |  | (Unicode) string to be hashed. |
+| [options] | <code>Object</code> |  |  |
+| [options.msgFormat] | <code>string</code> | <code>&quot;string&quot;</code> | Message format: 'string' for JavaScript string   (gets converted to UTF-8 for hashing); 'hex-bytes' for string of hex bytes ('616263' ≡ 'abc') . |
+| [options.outFormat] | <code>string</code> | <code>&quot;hex&quot;</code> | Output format: 'hex' for string of contiguous   hex bytes; 'hex-w' for grouping hex bytes into groups of (4 byte / 8 character) words. |
 
