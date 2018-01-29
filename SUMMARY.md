@@ -10,4 +10,4 @@
 
 ## Documentation
 * [Specification](snippets/specification.md)
-* [API Reference](docs/api.md)
+* [API Reference](https://api.fabric.fm)

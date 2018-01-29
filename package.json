@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "npm run make:service && npm run make:app && npm run make:docs",
-    "cli": "node examples/cli.js",
+    "cli": "babel-node examples/cli.js",
     "coverage": "NODE_ENV=test babel-node ./node_modules/.bin/isparta cover _mocha && http-server coverage/lcov-report",
     "docs": "gitbook install && npm run parse:api && gitbook serve",
     "examples": "docco --output examples/ examples/app.js examples/oracle.js && http-server examples/",
