@@ -17,8 +17,6 @@ describe('Stack', function () {
 
     fabric.compute();
 
-    await fabric.chain.storage.close();
-
     assert.equal(fabric['@data'], true);
     assert.equal(fabric.clock, 1);
   });
@@ -60,8 +58,6 @@ describe('Stack', function () {
     fabric.stack.push('ADD');
 
     fabric.compute();
-    
-    await fabric.chain.storage.close();
 
     assert.equal(fabric['@data'], 579);
     assert.equal(fabric.clock, 1);

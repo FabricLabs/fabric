@@ -18,7 +18,7 @@
     "make:docs": "gitbook install && npm run parse:api && gitbook build",
     "make:service": "webpack --progress --colors examples/service.js assets/service.js",
     "parse:api": "jsdoc2md --configure jsdoc.json --files index.js lib/**/*.js > docs/api.md",
-    "start": "npm run make:service && webpack --progress --colors --watch examples/app.js assets/app.js & nodemon examples/oracle.js",
+    "start": "npm run make:service && webpack --progress --colors examples/app.js assets/app.js && babel-node examples/oracle.js",
     "test": "NODE_ENV=test mocha --compilers js:babel-core/register",
     "test:app": "npm run make:service && npm run make:app && NODE_ENV=test mocha"
   },

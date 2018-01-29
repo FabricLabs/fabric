@@ -40,10 +40,8 @@ describe('HTTP', function () {
   
   it('can clean up after itself', async function () {
     let server = new Fabric.HTTP();
+    let Widget = server.define('Widget', widget);
 
-    server.define('Widget', widget);
-
-    await server.storage.open();
     await server.start();
 
     try {
@@ -74,7 +72,52 @@ describe('HTTP', function () {
     }
 
     await server.stop();
-    await server.storage.close();
+  });
+
+  it('can receive an OPTIONS request to the main index', async function () {
+    let server = new Fabric.HTTP();
+    let Widget = server.define('Widget', widget);
+
+    await server.start();
+
+    try {
+      let options = await server._OPTIONS('/');
+      let vector = new Fabric.Vector(options)._sign();
+
+      console.log('options:', options);
+      console.log('vector:', vector);
+
+      assert.equal(vector['@id'], 'e2ca2939b6f94b9a8723013ed01abb1e1baed182485e53cc675e2532844bb981');
+    } catch (E) {
+      console.error(E);
+      assert.fail(E);
+    }
+
+    await server.stop();
+    //await server.storage.close();
+  });
+
+  it('can receive a GET request to the main index', async function () {
+    let server = new Fabric.HTTP();
+    let Widget = server.define('Widget', widget);
+
+    await server.start();
+
+    try {
+      let home = await server._GET('/');
+      let vector = new Fabric.Vector(home)._sign();
+
+      console.log('home:', home);
+      console.log('vector:', vector);
+
+      assert.equal(vector['@id'], empty['@id']);
+    } catch (E) {
+      console.error(E);
+      assert.fail(E);
+    }
+
+    await server.stop();
+    //await server.storage.close();
   });
 
   it('can receive a PUT request', async function () {
@@ -82,13 +125,12 @@ describe('HTTP', function () {
 
     server.define('Widget', widget);
 
-    await server.storage.open();
     await server.start();
 
     try {
       let test = new Fabric.Vector(message['@data'])._sign();
       let result = await server._PUT(target, test['@data']);
-      
+
       console.log('result:', result);
       
       let vector = new Fabric.Vector(result['@data'])._sign();
@@ -108,20 +150,19 @@ describe('HTTP', function () {
     }
 
     await server.stop();
-    await server.storage.close();
+    //await server.storage.close();
   });
 
   it('can receive a POST request', async function () {
     let server = new Fabric.HTTP();
-    
+
     server.define('Widget', widget);
 
-    await server.storage.open();
     await server.start();
 
     try {
-      let start = await server._GET(target);
       let test = new Fabric.Vector(message['@data'])._sign();
+      let list = new Fabric.Vector([test['@data']])._sign();
 
       let request = await server._POST(target, message['@data']);
       let response = new Fabric.Vector(request)._sign();
@@ -130,17 +171,51 @@ describe('HTTP', function () {
       let all = new Fabric.Vector(collection)._sign();
 
       console.log('response:', response);
+      console.log('collection:', all);
 
       assert.equal(response['@id'], test['@id']);
-      assert.equal(response['@id'], test['@id']);
-
+      assert.equal(all['@id'], list['@id']);
     } catch (E) {
       console.error(E);
       assert.fail(E);
     }
 
     await server.stop();
-    await server.storage.close();
+    //await server.storage.close();
+  });
+
+  it('can receive a PATCH request', async function () {
+    let server = new Fabric.HTTP();
+
+    server.define('Widget', widget);
+
+    //await server.flush();
+    await server.start();
+
+    try {
+      let test = new Fabric.Vector(message['@data'])._sign();
+      let update = new Fabric.Vector('This is a replacement.')._sign();
+
+      let request = await server._POST(target, message['@data']);
+      let response = new Fabric.Vector(request)._sign();
+
+      console.log('response:', response);
+
+      let result = await server._PATCH(target + '/' + response['@id'], update['@data']);
+      let vector = new Fabric.Vector(result)._sign();
+
+      console.log('PATCH RESULT:', result);
+      console.log('PATCH VECTOR:', vector);
+
+      assert.equal(response['@id'], test['@id']);
+      assert.equal(vector['@id'], update['@id']);
+    } catch (E) {
+      console.error(E);
+      assert.fail(E);
+    }
+
+    await server.stop();
+    //await server.flush();
   });
 
   xit('correctly aggregates created objects', async function () {
@@ -152,7 +227,6 @@ describe('HTTP', function () {
 
     server.define('Widget', widget);
 
-    await server.storage.open();
     await server.start();
 
     let elder = new Fabric.Vector(oldest)._sign();

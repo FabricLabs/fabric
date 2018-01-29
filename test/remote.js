@@ -23,7 +23,6 @@ describe('Remote', function () {
       secure: false
     });
 
-    await server.storage.open();
     await server.start();
 
     try {
@@ -43,7 +42,6 @@ describe('Remote', function () {
     }
 
     await server.stop();
-    await server.storage.close();
   });
 
   it('can use HTTP PUT', async function () {
@@ -53,7 +51,6 @@ describe('Remote', function () {
       secure: false
     });
 
-    await server.storage.open();
     await server.start();
 
     try {
@@ -71,6 +68,5 @@ describe('Remote', function () {
     }
 
     await server.stop();
-    await server.storage.close();
   });
 });
