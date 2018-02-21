@@ -13,14 +13,11 @@ describe('Stack', function () {
 
     try {
       fabric.use('OP_TEST', function (state) {
-        //let op = this.stack.pop();
-        //this.push(true);
         return true;
       });
 
       fabric.push(new Fabric.Vector('OP_TEST')._sign());
       let result = await fabric.compute();
-
 
       assert.equal(result, true);
       assert.equal(fabric.output, true);
@@ -90,8 +87,6 @@ describe('Stack', function () {
 
     let result = await fabric.compute();
 
-    await fabric.chain.storage.close();
-
     assert.equal(fabric.output, 579);
     assert.equal(fabric.clock, 1);
   });
@@ -120,8 +115,6 @@ describe('Stack', function () {
     fabric.push('ADD');
 
     let result = await fabric.compute();
-
-    await fabric.chain.storage.close();
 
     assert.equal(fabric.output, (123 + 456) * 2);
     assert.equal(fabric.output, 1158);
