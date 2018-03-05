@@ -27,8 +27,6 @@ describe('Oracle', function () {
     let oracle = new Fabric.Oracle();
     let sanity = new Fabric.Vector('Hello, world.')._sign();
 
-    console.log('sanity:', sanity);
-
     await oracle.storage.open();
 
     try {
