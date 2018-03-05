@@ -1,6 +1,6 @@
 'use strict';
 
-const Fabric = require('../');
+import Fabric from '../';
 
 const config = require('../package');
 const oracle = new Fabric.HTTP(config);
