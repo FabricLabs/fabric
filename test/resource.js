@@ -31,4 +31,29 @@ describe('Resource', function () {
 
     await store.close();
   });
+
+  it('should call query() smoothly', async function () {
+    let resource = new Fabric.Resource(widget);
+    let store = new Fabric.Store();
+
+    await store.open();
+
+    try {
+      resource.trust(store);
+      let test = await resource.create({
+        name: 'Wobbler'
+      });
+
+      let results = await resource.query();
+
+      assert.ok(test);
+      assert.ok(results);
+
+      assert.equal(results.length, 1);
+    } catch (E) {
+      console.error(E);
+    }
+
+    await store.close();
+  });
 });
