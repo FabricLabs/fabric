@@ -10,7 +10,8 @@
   "scripts": {
     "build": "npm run make:service && npm run make:app && npm run make:docs",
     "cli": "babel-node examples/cli.js",
-    "coverage": "NODE_ENV=test babel-node ./node_modules/.bin/isparta cover _mocha && http-server coverage/lcov-report",
+    "coverage": "cross-env NODE_ENV=test nyc --reporter=lcov _mocha",
+    "coverage:inspect": "npm run coverage && http-server coverage/lcov-report",
     "docs": "gitbook install && npm run parse:api && gitbook serve",
     "examples": "docco --output examples/ examples/app.js examples/oracle.js && http-server examples/",
     "make:api": "jsdoc --debug index.js lib/ -d docs/",
@@ -19,7 +20,7 @@
     "make:service": "webpack --progress --colors examples/service.js assets/service.js",
     "parse:api": "jsdoc2md --configure jsdoc.json --files index.js lib/**/*.js > docs/api.md",
     "start": "npm run make:service && webpack --progress --colors examples/app.js assets/app.js && babel-node examples/oracle.js",
-    "test": "NODE_ENV=test mocha --compilers js:babel-core/register",
+    "test": "cross-env NODE_ENV=test nyc mocha",
     "test:app": "npm run make:service && npm run make:app && NODE_ENV=test mocha"
   },
   "engines": {
@@ -42,6 +43,7 @@
     "ajv": "^5.5.2",
     "babel-polyfill": "^6.26.0",
     "fast-json-patch": "^2.0.4",
+    "hash.js": "^1.1.3",
     "hashcasher": "martindale/hashcasher#fabric",
     "javascript-state-machine": "^3.0.1",
     "level": "^2.0.0",
@@ -57,26 +59,31 @@
   "devDependencies": {
     "babel-cli": "^6.26.0",
     "babel-core": "^6.26.0",
+    "babel-plugin-istanbul": "^4.1.5",
     "babel-preset-env": "^1.6.1",
     "babel-preset-es2017": "^6.24.1",
+    "babel-register": "^6.26.0",
     "blessed": "^0.1.81",
     "blessed-contrib": "^4.8.5",
     "body-parser": "^1.18.2",
     "chai": "^4.0.2",
+    "codecov": "^3.0.0",
     "compiled-jade-render": "^1.0.2",
-    "coveralls": "^2.13.1",
+    "cross-env": "^5.1.3",
     "debug-trace": "^2.2.1",
     "docco": "^0.7.0",
+    "eccrypto": "^1.0.3",
     "express": "^4.16.2",
     "gitbook-plugin-scripts": "^1.0.2",
     "http-server": "^0.10.0",
-    "isparta": "^4.0.0",
+    "istanbul": "0.4.4",
     "jade": "^1.11.0",
     "jsdoc": "^3.5.5",
     "jsdoc-babel": "^0.3.0",
     "jsdoc-to-markdown": "^3.0.1",
     "livereload": "^0.6.2",
     "mocha": "^3.4.2",
+    "nyc": "^11.4.1",
     "page": "^1.7.1",
     "random-weighted-item": "^1.0.3",
     "semistandard": "^11.0.0",
@@ -91,6 +98,24 @@
   "babel": {
     "presets": [
       "env"
-    ]
+    ],
+    "env": {
+      "test": {
+        "plugins": [
+          "istanbul"
+        ]
+      }
+    }
+  },
+  "nyc": {
+    "require": [
+      "babel-register"
+    ],
+    "reporter": [
+      "lcov",
+      "text"
+    ],
+    "sourceMap": false,
+    "instrument": false
   }
 }

@@ -5,19 +5,38 @@ import Fabric from '../';
 const assert = require('assert');
 const expect = require('chai').expect;
 
-describe('Machine', function () {
-  it('should correctly compute a known instruction', function () {
-    var machine = new Fabric.Machine();
+const BN = require('bn.js');
 
-    machine.define('OP_TEST', function (state) {
+describe('Machine', function () {
+  it('should correctly compute a known instruction', async function () {
+    let machine = new Fabric.Machine();
+
+    machine.define('OP_TEST', function (input) {
       return true;
     });
 
-    machine.stack.push('OP_TEST');
+    machine.script.push(new Fabric.Vector('OP_TEST'));
 
-    machine.step();
+    await machine.compute();
 
     assert.equal(machine['@data'], true);
+    assert.equal(machine.clock, 1);
+  });
+  
+  it('should compute simple sums', async function () {
+    let machine = new Fabric.Machine();
+
+    machine.use('ADD', function (state) {
+      return this.add(state);
+    });
+
+    machine.script.push(new Fabric.Vector('1')._sign());
+    machine.script.push(new Fabric.Vector('1'));
+    machine.script.push(new Fabric.Vector('ADD'));
+
+    let result = await machine.compute();
+
+    assert.equal(machine['@data'], 2);
     assert.equal(machine.clock, 1);
   });
 });
