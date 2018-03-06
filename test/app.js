@@ -1,39 +1,38 @@
-var assert = require('assert');
-var expect = require('chai').expect;
+'use strict';
 
-var Fabric = require('../');
+import Fabric from '../';
+
+const assert = require('assert');
+const expect = require('chai').expect;
 
 describe('App', function () {
-
   it('should expose a constructor', function () {
     assert.equal(typeof Fabric.App, 'function');
   });
 
   it('should create an application smoothly', async function () {
-    var app = new Fabric.App();
-
-    await app.tips.close();
-    await app.stash.close();
-
+    let app = new Fabric.App();
+    await app.start();
+    await app.stop();
     assert.ok(app);
   });
 
   it('should load data from an oracle', async function () {
-    var oracle = new Fabric.Oracle({
+    let app = new Fabric.App();
+    let oracle = new Fabric.Oracle({
       path: './data/oracle'
     });
+    
+    await app.start();
+    //await oracle.start();
 
     await oracle._load('./resources');
-
-    var app = new Fabric.App();
-
     await app._defer(oracle);
-    await app._explore();
+    //await app._explore();
 
-    await app.tips.close();
-    await app.stash.close();
-
-    await oracle.store.close();
+    await app.stop();
+    await oracle.storage.close();
+    //await oracle.stop();
 
     assert.ok(oracle);
     assert.ok(app);

@@ -1,8 +1,7 @@
 # Fabric
 ![Project Status](https://img.shields.io/badge/status-experimental-rainbow.svg?style=flat-square)
 [![Build Status](https://img.shields.io/travis/martindale/fabric.svg?branch=master&style=flat-square)](https://travis-ci.org/martindale/fabric)
-[![Coverage Status](https://img.shields.io/coveralls/martindale/fabric.svg?style=flat-square)](https://coveralls.io/r/martindale/fabric)
-[![Sustainability](https://img.shields.io/gratipay/team/fabric.svg?style=flat-square)](https://gratipay.com/fabric)
+[![Coverage Status](https://img.shields.io/codecov/c/github/martindale/fabric.svg?style=flat-square)](https://codecov.io/gh/martindale/fabric)
 
 <small>**Notice:** use of Fabric in production is **not recommended** in its current state.  Please wait for an official release before deploying.</small>
 
@@ -78,7 +77,7 @@ change.
 We believe in the power of the people to create better things in collaboration,
 and have ideas about general improvements to quality of life that derive from
 the mathematical quality of _superadditivity_.  "A sum greater than its parts"
-is the famous aphorism, a feeling often evoked upon observing [the beauty in
+is the famous anecdote, a feeling often evoked upon observing [the beauty in
 coordination][coordination].
 
 ![Flock of Birds][coordination]

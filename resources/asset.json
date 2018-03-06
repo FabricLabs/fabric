@@ -1,0 +1,7 @@
+{
+  "name": "Asset",
+  "routes": {
+    "query": "/assets",
+    "get": "/assets/:id"
+  }
+}
