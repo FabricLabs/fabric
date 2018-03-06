@@ -73,6 +73,7 @@
     "gitbook-plugin-scripts": "^1.0.2",
     "http-server": "^0.10.0",
     "isparta": "^4.0.0",
+    "istanbul": "0.4.4",
     "jade": "^1.11.0",
     "jsdoc": "^3.5.5",
     "jsdoc-babel": "^0.3.0",
