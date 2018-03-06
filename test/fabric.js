@@ -1,13 +1,17 @@
-var assert = require('assert');
-var expect = require('chai').expect;
+'use strict';
 
-var genesis = require('../data/fabric');
-var message = require('../data/message');
+import Fabric from '../';
 
-var Fabric = require('../lib/fabric');
-var Instruction = require('../lib/instruction');
+const assert = require('assert');
+const expect = require('chai').expect;
 
-var state = '90d6d8a4824727f98eb83f66cbcaf55eb48df86300bd51c526d590b037885faa';
+const genesis = require('../data/fabric');
+const message = require('../data/message');
+
+const Canvas = require('../lib/fabric');
+const Instruction = require('../lib/instruction');
+
+const state = require('../data/fabric');
 
 //var Machine = require('../lib/machine');
 
@@ -15,92 +19,75 @@ var state = '90d6d8a4824727f98eb83f66cbcaf55eb48df86300bd51c526d590b037885faa';
 // @consensus:
 // @quest:
 describe('Fabric', function () {
-  after(async function () {
-    if (typeof fabric !== 'undefined') {
-      await fabric.chain.store.close();
-    }
-  });
-
   it('should expose a constructor', function () {
-    assert.equal(typeof Fabric, 'function');
+    assert.equal(typeof Canvas, 'function');
   });
 
-  it('has the correct, hard-coded genesis seed', async function provenance () {
-    var fabric = new Fabric(genesis);
-    //assert.equal(fabric.root.id, 0); // require a point of origin.
-    fabric._sign();
-    
-    await fabric.chain.store.close();
-
-    assert.equal(JSON.stringify(fabric['@data']), JSON.stringify(genesis));
-    assert.equal(fabric['@id'], state);
-  });
-
-  it('has a correctly-defined NOOP operation', async function () {
-    var fabric = new Fabric(genesis);
-
-    fabric.stack.push('NOOP');
-    fabric.compute();
-
-    await fabric.chain.store.close();
-
-    assert.equal(JSON.stringify(fabric['@data']), JSON.stringify(genesis));
-    
+  it('generates the correct, hard-coded genesis seed', async function provenance () {
+    let seed = new Fabric.Vector(genesis['@data'])._sign();
+    assert.equal(seed['@id'], genesis['@id']);
   });
 
   it('can compute a value', async function prove () {
-    var fabric = new Fabric();
-    
-    fabric.use('OP_TRUE', function compute () {
+    let fabric = new Fabric();
+
+    fabric.use('OP_TRUE', function compute (input) {
       return 1;
-    })
+    });
 
-    /*var instruction = new Instruction({
-      inputs: ['OP_TRUE'],
-      outputs: [1]
-    });*/
-    
-    fabric.stack.push('OP_TRUE');
+    fabric.push('OP_TRUE');
+    let outcome = await fabric.compute();
+    assert.equal(fabric['@data'], 1);
 
-    var outcome = fabric.compute();
-    
-    await fabric.chain.store.close();
-
-    assert.equal(outcome['@data'], 1);
+    await fabric.chain.storage.close();
   });
 
   it('can acknowledge its own existence', function identity (done) {
-    var alice = new Fabric(genesis);
+    let main = async function () {
+      let alice = new Fabric(genesis);
 
-    alice.on('auth', async function validate (identity) {
-      await alice.chain.store.close();
+      alice.on('auth', async function validate (identity) {
+        assert.equal(alice.identity.key.public, identity.key.public);
+        await alice.stop();
+        return done();
+      });
 
-      assert.equal(alice.identity.key.public, identity.key.public);
-      return done();
-    });
-    
-    alice.compute();
-    
-    alice.start();
+      alice.compute();
+      await alice.start();
+    }
+
+    main();
   });
 
   /*/it('can register peers', async function identity () {
+    var alice = new Fabric();
+    var bob = new Fabric();
     
     alice.compute();
     bob.compute();
     
+    console.log('before connect...');
     await alice.connect(bob['@id']);
+    console.log('after connect...');
+
+    alice.compute();
+    bob.compute();
 
     var list = Object.keys(alice.peers).map(function(id) {
       return alice.peers[id]['@id'];
     });
+    
+    console.log('list:', list);
+    
+    await alice.chain.storage.close();
+    await bob.chain.storage.close();
 
     assert.equal(bob['@id'], list[0]);
   }); /**/
 
   it('can send a message', async function broadcast () {
     var fabric = new Fabric(genesis);
-    await fabric.chain.store.close();
+    await fabric.chain.storage.close();
     assert.ok(fabric.broadcast());
   });
 

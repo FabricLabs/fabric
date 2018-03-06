@@ -8,13 +8,13 @@ const expect = require('chai').expect;
 const key = '/test';
 const data = require('../data/message');
 
-describe('Store', function () {
+describe('Storage', function () {
   it('should expose a constructor', function () {
-    assert.equal(typeof Fabric.Store, 'function');
+    assert.equal(typeof Fabric.Storage, 'function');
   });
 
   it('should be able to set a value', async function () {
-    let store = new Fabric.Store();
+    let store = new Fabric.Storage();
     
     await store.open();
 
@@ -28,10 +28,10 @@ describe('Store', function () {
 
     await store.close();
   });
-  
+
   it('should be able to retrieve a value', async function () {
-    let store = new Fabric.Store();
-    
+    let store = new Fabric.Storage();
+
     await store.open();
 
     try {
