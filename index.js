@@ -1,8 +1,12 @@
-'use strict'
+/**
+ * # Fabric, the world's computational infrastructure.
+ * Providing an interface to Fabric network, this file defines the available
+ * components and abstractions when relying on this library.
+ */
+'use strict';
 
-import 'babel-polyfill';
-
-//require('debug-trace')({ always: true });
+// Configures the current runtime to contain back-ported features from ES2015
+require('babel-polyfill');
 
 const Fabric = require('./lib/fabric');
 const App = require('./lib/app');
@@ -11,6 +15,7 @@ const Chain = require('./lib/chain');
 const CLI = require('./lib/cli');
 const Datastore = require('./lib/datastore');
 const HTTP = require('./lib/http');
+const Key = require('./lib/key');
 const Machine = require('./lib/machine');
 const Message = require('./lib/message');
 const Oracle = require('./lib/oracle');
@@ -28,6 +33,7 @@ const Worker = require('./lib/worker');
  * Fabric's Developer API.  Exposes immutable types for all requisite components.
  * @exports Fabric
  * @type {Fabric}
+ * @returns {Fabric}
  */
 class API extends Fabric {
   constructor (configuration) {
@@ -70,6 +76,12 @@ API.Datastore = Datastore;
  * @type {HTTP}
  */
 API.HTTP = HTTP;
+
+/**
+ * Simply cryptographic keys.
+ * @type {Key}
+ */
+API.Key = Key;
 
 /**
  * General-purpose computer with verifiable execution.

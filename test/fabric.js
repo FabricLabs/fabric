@@ -23,57 +23,40 @@ describe('Fabric', function () {
     assert.equal(typeof Canvas, 'function');
   });
 
-  it('has the correct, hard-coded genesis seed', async function provenance () {
+  it('generates the correct, hard-coded genesis seed', async function provenance () {
     let seed = new Fabric.Vector(genesis['@data'])._sign();
     assert.equal(seed['@id'], genesis['@id']);
   });
 
-  it('has a correctly-defined NOOP operation', async function () {
-    var fabric = new Fabric(genesis);
-
-    fabric.stack.push('NOOP');
-    fabric.compute();
-
-    await fabric.chain.storage.close();
-
-    assert.equal(JSON.stringify(fabric['@data']), JSON.stringify(genesis));
-    
-  });
-
   it('can compute a value', async function prove () {
-    var fabric = new Fabric();
-    
-    fabric.use('OP_TRUE', function compute () {
+    let fabric = new Fabric();
+
+    fabric.use('OP_TRUE', function compute (input) {
       return 1;
-    })
+    });
 
-    /*var instruction = new Instruction({
-      inputs: ['OP_TRUE'],
-      outputs: [1]
-    });*/
-    
-    fabric.stack.push('OP_TRUE');
+    fabric.push('OP_TRUE');
+    let outcome = await fabric.compute();
+    assert.equal(fabric['@data'], 1);
 
-    var outcome = fabric.compute();
-    
     await fabric.chain.storage.close();
-
-    assert.equal(outcome['@data'], 1);
   });
 
   it('can acknowledge its own existence', function identity (done) {
-    var alice = new Fabric(genesis);
+    let main = async function () {
+      let alice = new Fabric(genesis);
 
-    alice.on('auth', async function validate (identity) {
-      await alice.chain.storage.close();
+      alice.on('auth', async function validate (identity) {
+        assert.equal(alice.identity.key.public, identity.key.public);
+        await alice.stop();
+        return done();
+      });
 
-      assert.equal(alice.identity.key.public, identity.key.public);
-      return done();
-    });
-    
-    alice.compute();
-    
-    alice.start();
+      alice.compute();
+      await alice.start();
+    }
+
+    main();
   });
 
   /*/it('can register peers', async function identity () {
