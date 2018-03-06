@@ -28,51 +28,39 @@ describe('Chain', function () {
   it('can generate a chain of 0 length', async function () {
     let chain = new Fabric.Chain();
 
-    await chain.storage.open();
-
     try {
       let output = await chain.compute();
-      assert.equal(output.blocks.length, 0);
-      assert.equal(output['@id'], state);
+      assert.equal(chain.blocks.length, 0);
+      assert.equal(chain['@id'], state);
     } catch (E) {
       console.error(E);
       assert.fail(E);
     }
-
-    await chain.storage.close();
   });
-  
+
   it('can generate a chain with a genesis block', async function () {
     let chain = new Fabric.Chain();
-    let block = new Fabric.Block(genesis)._sign();
-
-    await chain.storage.open();
 
     try {
+      let block = new Fabric.Block(genesis)._sign();
       await chain.append(block);
+      let output = await chain.compute();
       assert.equal(block['@id'], zero);
-      assert.equal(1, chain.blocks.length);
+      assert.equal(chain.blocks.length, 1);
       assert.equal(JSON.stringify(chain['@data']), JSON.stringify([block['@id']]));
       assert.equal(chain.genesis, zero);
     } catch (E) {
       console.error(E);
       assert.fail(E);
     }
-
-    let output = await chain.compute();
-
-    await chain.storage.close();
   });
 
   it('can generate a chain of non-zero length', async function () {
-    var chain = new Fabric.Chain();
-    var genesis = new Fabric.Block(genesis);
-
-    await chain.storage.open();
+    let chain = new Fabric.Chain();
+    let start = new Fabric.Block(genesis);
 
     try {
-      await genesis.compute();
-      await chain.append(genesis);
+      await chain.append(start);
 
       var num = 3;
       var last = genesis['@id'];
@@ -80,59 +68,42 @@ describe('Chain', function () {
         var block = new Fabric.Block({
           parent: last,
           entropy: crypto.randomBytes(8).toString('hex')
-        });
-        block.compute();
+        })._sign();
         last = block['@id'];
         await chain.append(block);
       }
 
-      var output = await chain.compute();
+      let output = await chain.compute();
       
-      assert.equal(output.blocks.length, 4);
+      assert.equal(chain.blocks.length, 4);
     } catch (E) {
       console.error(E);
       assert.fail(E);
     }
-
-    //await chain._flush();
-    await chain.storage.close();
   });
   
   it('can replay after shutting down', async function () {
     try {
       let chain = new Fabric.Chain();
       let block = new Fabric.Block(genesis)._sign();
-      
-      console.log('genesis block:', block);
-      
+
       await chain.storage.open();
-
       await chain.append(block);
-
       let oldest = await chain.compute();
-      
+
       await chain.storage.close();
-      
+
       let replay = new Fabric.Chain();
-      
       await replay.storage.open();
       await replay._load();
-  
       let output = await replay.compute();
-      
+
       await replay.storage.close();
-      
-      console.log('oldest chain:', oldest);
-      console.log('output chain:', output);
-      
+
       assert.equal(output['@id'], oldest['@id']);
-      
-      
     } catch (E) {
       console.error(E);
       assert.fail(E);
     }
-
-  
   });
 });
