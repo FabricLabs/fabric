@@ -1,7 +1,8 @@
 # Fabric
 ![Project Status](https://img.shields.io/badge/status-experimental-rainbow.svg?style=flat-square)
-[![Build Status](https://img.shields.io/travis/martindale/fabric.svg?branch=master&style=flat-square)](https://travis-ci.org/martindale/fabric)
-[![Coverage Status](https://img.shields.io/codecov/c/github/martindale/fabric.svg?style=flat-square)](https://codecov.io/gh/martindale/fabric)
+[![Build Status](https://img.shields.io/travis/FabricLabs/fabric.svg?branch=master&style=flat-square)](https://travis-ci.org/FabricLabs/fabric)
+[![Coverage Status](https://img.shields.io/codecov/c/github/FabricLabs/fabric.svg?style=flat-square)](https://codecov.io/gh/FabricLabs/fabric)
+[![GitHub contributors](https://img.shields.io/github/contributors/FabricLabs/fabric.svg?style=flat-square)](https://github.com/FabricLabs/fabric/graphs/contributors)
 
 <small>**Notice:** use of Fabric in production is **not recommended** in its current state.  Please wait for an official release before deploying.</small>
 
