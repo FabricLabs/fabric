@@ -10,7 +10,8 @@
   "scripts": {
     "build": "npm run make:service && npm run make:app && npm run make:docs",
     "cli": "babel-node examples/cli.js",
-    "coverage": "cross-env NODE_ENV=test nyc --reporter=lcov mocha",
+    "coverage": "cross-env NODE_ENV=test nyc --reporter=lcov _mocha",
+    "coverage:inspect": "npm run coverage && http-server coverage/lcov-report",
     "docs": "gitbook install && npm run parse:api && gitbook serve",
     "examples": "docco --output examples/ examples/app.js examples/oracle.js && http-server examples/",
     "make:api": "jsdoc --debug index.js lib/ -d docs/",
