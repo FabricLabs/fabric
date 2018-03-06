@@ -5,16 +5,7 @@ import Fabric from '../';
 const assert = require('assert');
 const expect = require('chai').expect;
 
-const widget = {
-  name: 'Widget',
-  properties: {
-    name: { type: String , maxLength: 100 }
-  },
-  routes: {
-    query: '/widgets',
-    get: '/widgets/:id'
-  }
-};
+const widget = require('../data/widget');
 
 const empty = require('../data/null');
 const message = require('../data/message');
@@ -32,7 +23,7 @@ const newest = {
 
 const target = widget.routes.query;
 const genesis = message['@id'];
-const types = 'e7a2e048aae98d14d1a4c4b6da352f0ebd34b954bfcfe50773a94131f74963f8';
+const types = 'c9851a610d5c410770d53e80de01ebdd969a2f372885d2bdade32644b7c3769e';
 
 describe('HTTP', function () {
   it('should expose a constructor', function () {
