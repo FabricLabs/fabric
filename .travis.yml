@@ -3,4 +3,4 @@ node_js:
   - "8"
 cache:
   yarn: true
-after_script: ./node_modules/.bin/babel-node ./node_modules/.bin/isparta cover ./node_modules/.bin/_mocha --report lcovonly -- -R spec && cat ./coverage/lcov.info | ./node_modules/coveralls/bin/coveralls.js && rm -rf ./coverage
+after_script: nyc report --reporter=text-lcov | coveralls
