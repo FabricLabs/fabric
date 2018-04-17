@@ -4,17 +4,34 @@
 [![Coverage Status](https://img.shields.io/codecov/c/github/FabricLabs/fabric.svg?style=flat-square)](https://codecov.io/gh/FabricLabs/fabric)
 [![GitHub contributors](https://img.shields.io/github/contributors/FabricLabs/fabric.svg?style=flat-square)](https://github.com/FabricLabs/fabric/graphs/contributors)
 
-<small>**Notice:** use of Fabric in production is **not recommended** in its current state.  Please wait for an official release before deploying.</small>
+Fabric is an experimental protocol for distributing and executing arbitrary
+proofs of work (smart contracts) as secure multi-party computations.
 
-Fabric is a **research project** intent on discovering the best means for
-developing secure, decentralized applications that benefit humanity in its
-relentless pursuit of truth.
+| 🚨 Heads up! |
+|--------------|
+| Use of Fabric in production is **not recommended** in its current state.  Please wait for [an official release][releases] before deploying to production environments. |
 
-We're designing next-generation technologies that solve the most fundamental
-challenges in society, ranging from economic oppression and institutional
-violence to the efficient distribution of cat photos and dank memes.
+## The Serverless Web
+Fabric implements a peer-to-peer network over which participants may define
+arbitrary types, compose them into more complex programs, and provide meaningful
+services to users — all without requiring a trusted third party.  Rather than
+relying on a server, applications deployed to Fabric are "offline first",
+allowing them to operate independent of network availability or consensus.
 
-## Getting Started
+### An Information Market
+Participants in a Fabric-speaking network may compete for contracts, earning
+digital currency in exchange for processing "work orders" made available to them
+through the peer-to-peer network.  Included is a simple programming language for
+the construction of deterministic, formally-verified smart contracts, which are
+then broadcast to network participants for execution.
+
+Contracts requiring secure execution may be divided into smaller sub-programs,
+broadcast to the network as discrete instructions, and later re-composed into a
+finalized output.  In this way, Fabric implements secure, multi-party
+computations for general-purpose programs, allowing for a wide range of
+privacy-protecting applications.
+
+## Quick Start
 To install Fabric, ensure `node -v >= 8.0.0` and `npm i FabricLabs/fabric` into
 whichever repository you intend to publish.
 
@@ -24,12 +41,81 @@ whichever repository you intend to publish.
 - `npm run examples` creates a local HTTP server for interacting with examples.
 - `npm start` creates a local Fabric node.
 
-## Using as a Library
+## API
+The Fabric reference implementation exposes a simple message-passing interface
+using [the actor model][actor-model].  Message handlers are defined as pure
+functions — singular input and output values — which can then be composed to
+form complex state trees known as "state bubbles".
+
+```js
+let Fabric = require('fabric');
+let app = new Fabric();
+
+function add (base, number) {
+  return base + number;
+}
+
+app.use('ADD', add, 'Integer');
+```
+
+`app.compute('1 1 ADD')` may now be called to compute the result of calling
+`add` on `1`, the first instruction on the stack.
+
+## Resource Contracts
+Each Fabric contract, known as an Application Resource Contract, defines a list
+of types and their definitions, which contain references to immutable data types
+exposed by the underlying vector machine.
+
+```fabric
+contract User {
+  "Name" -> "String" -> "Vector"
+  "ID" -> "Vector"
+}
+```
+
+In the above `User` contract, two attributes are provided; `Name`, which
+resolves to `String`, an aggregation pipeline of type `Vector`, and `ID`,
+resolving to the same fundamental `Vector` type.  "Pipelines" are accumulators
+over an input `Vector`, in this case defining a new type `String` as a sequence
+of input messages using Fabric's fundamental data type, `Vector`.
+
+A typical message in the Fabric protocol is a vector of form `[ x , y ]`, where
+`x` and `y` are `2^16`-bit integers, providing a maximum message size of around
+16 kilobytes.  Messages are applied to a shared reference prime `Q`, provided at
+runtime, using the `OP_ADD` instruction to accumulate state over time before
+resolving to a final outcome.
+
+Messages are ordered by integer `x` and applied in sequence using the `+`
+operand, while subgroup `I` is defined as set `[0 ... 512]`, reserved for
+internal use.
+
+### Vectors
+`Vector` is a static type implemented by the Fabric Virtual Machine, a
+deterministic set of operands satisfying the following conditions:
+
+- For every `Vector` `x`, `y`, and `z` in set `X`, operand `+` (`OP_ADD`) satisfies
+  - `x + y = y + x`
+  - `(x + y) + z = x + (y + z)`
+  - `0 + x = x + 0 = x`
+- For every `Vector` `a`, `b`, and `c` in set `X`, operand `×` (`OP_MULTIPLY`) satisfies
+  - `0 × a = 0`
+  - `1 × a = a`
+  - `(a × b) × c = a × (b × c)`
+- For every `Vector` `a` and `b` in set `X` and integers `p` and `q`
+  - `p × (a + b) = (p × a) + (p × b)`
+  - `(p + q) × a = (p × a) + (q × a)`
+
+## Reference Implementation
+The Fabric Reference Implementation (this project) provides a canonical
+definition of [the Fabric Protocol][specification], and is recommended as the
+core library for any developer building decentralized applications ("dapps").
+
+### Using as a Library
 Fabric exposes a constructor with several components which are convenient for
 including in your existing applications.  Convenient functions exist for common
 frameworks such as React and Angular.
 
-### Simple Example
+#### Simple Example
 ```js
 const Fabric = require('fabric');
 const service = new Fabric();
@@ -129,3 +215,6 @@ Twitter: [@FabricProtocol][twitter]
 [gratipay]: https://gratipay.com/fabric
 [twitter]: https://twitter.com/FabricProtocol
 [join]: https://maki.io/community
+[actor-model]: http://hdl.handle.net/1721.1/6935
+[specification]: https://dev.fabric.pub/snippets/specification.html
+[releases]: https://github.com/FabricLabs/fabric/releases
