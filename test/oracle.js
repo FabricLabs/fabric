@@ -15,8 +15,6 @@ const message = require('../data/message');
 const target = { extra: 'foo' };
 
 describe('Oracle', function () {
-  this.timeout(30000);
-
   it('should expose a constructor', function () {
     assert.equal(Fabric.Oracle instanceof Function, true);
   });
