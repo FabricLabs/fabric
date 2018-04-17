@@ -16,7 +16,7 @@ const newest = { name: 'foobaz' };
 
 const target = widget.routes.list;
 const genesis = message['@id'];
-const types = 'c9851a610d5c410770d53e80de01ebdd969a2f372885d2bdade32644b7c3769e';
+const types = '26cbd34c73a7b9ddc1cc8ed5041764eed27f68aca2b8350f73e9cf87358eb250';
 
 describe('HTTP', function () {
   it('should expose a constructor', function () {
