@@ -15,15 +15,15 @@ const unlock = {
 };
 
 // includes an ARC with one definition, "Asset", for storing arbitrary data.
-const assumption = '4ce23196792830a0f491105024bfb8cbad7e917e9210bbf636fad8cffb3285ea';
+// NOTE: HTTP also includes "Index" by default.
+// TODO: fix bug on Index resource; should not have "view" path
+const assumption = 'a60f9615f9d171fc01f24010e5df4ee287b65c9d2059735b96eb1235a4bf70a0';
 
 config.bootstrap = true;
 
 describe('Remote', function () {
-  this.timeout(30000);
-
   it('should expose a constructor', function () {
-    assert.equal(typeof Fabric.Remote, 'function');
+    assert.equal(Fabric.Remote instanceof Function, true);
   });
 
   it('can use HTTP OPTIONS', async function () {
@@ -36,10 +36,11 @@ describe('Remote', function () {
     await server.start();
 
     try {
-      let local = new Fabric.Vector(server.resources)._sign();
+      let sample = await server._OPTIONS();
+      let local = new Fabric.Vector(sample)._sign();
 
       let result = await remote._OPTIONS('/');
-      let answer = new Fabric.Vector(result['@data'])._sign();
+      let answer = new Fabric.Vector(result)._sign();
 
       assert.equal(answer['@id'], assumption);
       assert.equal(answer['@id'], local['@id']);
@@ -65,7 +66,7 @@ describe('Remote', function () {
       let test = new Fabric.Vector(local)._sign();
 
       let result = await remote._GET('/assets');
-      let answer = new Fabric.Vector(result['@data'])._sign();
+      let answer = new Fabric.Vector(result)._sign();
 
       assert.equal(answer['@id'], test['@id']);
     } catch (E) {
@@ -92,7 +93,7 @@ describe('Remote', function () {
       let attempt = new Fabric.Vector(request)._sign();
 
       let result = await remote._GET(target);
-      let answer = new Fabric.Vector(result['@data'])._sign();
+      let answer = new Fabric.Vector(result)._sign();
 
       assert.equal(answer['@id'], test['@id']);
     } catch (E) {
@@ -119,7 +120,7 @@ describe('Remote', function () {
       let attempt = new Fabric.Vector(request)._sign();
 
       let result = await remote._GET(target);
-      let answer = new Fabric.Vector(result['@data'])._sign();
+      let answer = new Fabric.Vector(result)._sign();
 
       assert.equal(answer['@id'], test['@id']);
     } catch (E) {
@@ -150,10 +151,10 @@ describe('Remote', function () {
       let id = '/assets/' + attempt['@id'];
 
       let result = await remote._PATCH(id, unlock);
-      let claim = new Fabric.Vector(result['@data'])._sign();
+      let claim = new Fabric.Vector(result)._sign();
 
       let outcome = await remote._GET(id);
-      let answer = new Fabric.Vector(outcome['@data'])._sign();
+      let answer = new Fabric.Vector(outcome)._sign();
 
       console.debug('patch test:', test);
       console.debug('patch request POST returned:', request);
