@@ -9,27 +9,20 @@ const widget = require('../data/widget');
 
 const empty = require('../data/null');
 const message = require('../data/message');
-const payload = {
-  name: 'foobar'
-};
 
-const oldest = {
-  name: 'foobae'
-};
+const payload = { name: 'foobar' };
+const oldest = { name: 'foobae' };
+const newest = { name: 'foobaz' };
 
-const newest = {
-  name: 'foobaz'
-};
-
-const target = widget.routes.query;
+const target = widget.routes.list;
 const genesis = message['@id'];
 const types = 'c9851a610d5c410770d53e80de01ebdd969a2f372885d2bdade32644b7c3769e';
 
 describe('HTTP', function () {
   it('should expose a constructor', function () {
-    assert.equal(typeof Fabric.HTTP, 'function');
+    assert.equal(Fabric.HTTP instanceof Function, true);
   });
-  
+
   it('can clean up after itself', async function () {
     let server = new Fabric.HTTP();
     let Widget = server.define('Widget', widget);
@@ -42,16 +35,16 @@ describe('HTTP', function () {
       let result = await server._PUT(target, test['@data']);
       let vector = new Fabric.Vector(result)._sign();
 
-      let collection = await server._GET(target);
-
       await server.flush();
 
       let now = await server._GET(target);
       let answer = new Fabric.Vector(now)._sign();
 
+      // comparing (sanity check)
       assert.equal(test['@id'], genesis);
+      // comparing (result of put is sane)
       assert.equal(vector['@id'], genesis);
-      //assert.equal(collection, JSON.stringify([message['@data']]));
+      // comparing (after flush result is empty)
       assert.equal(answer['@id'], empty['@id']);
     } catch (E) {
       console.error(E);
