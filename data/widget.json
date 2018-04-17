@@ -4,7 +4,7 @@
     "name": { "type": "String" , "maxLength": 100 }
   },
   "routes": {
-    "query": "/widgets",
-    "get": "/widgets/:id"
+    "list": "/widgets",
+    "view": "/widgets/:id"
   }
 }
