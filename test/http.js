@@ -5,7 +5,7 @@ import Fabric from '../';
 const assert = require('assert');
 const expect = require('chai').expect;
 
-const widget = require('../data/widget');
+const Widget = require('../data/widget');
 
 const empty = require('../data/null');
 const message = require('../data/message');
@@ -14,7 +14,7 @@ const payload = { name: 'foobar' };
 const oldest = { name: 'foobae' };
 const newest = { name: 'foobaz' };
 
-const target = widget.routes.list;
+const target = Widget.routes.list;
 const genesis = message['@id'];
 const types = '26cbd34c73a7b9ddc1cc8ed5041764eed27f68aca2b8350f73e9cf87358eb250';
 
@@ -24,8 +24,9 @@ describe('HTTP', function () {
   });
 
   it('can clean up after itself', async function () {
-    let server = new Fabric.HTTP();
-    let Widget = server.define('Widget', widget);
+    let server = new Fabric.HTTP({
+      resources: { Widget }
+    });
 
     await server.start();
 
@@ -55,8 +56,9 @@ describe('HTTP', function () {
   });
 
   it('can receive an OPTIONS request to the main index', async function () {
-    let server = new Fabric.HTTP();
-    let Widget = server.define('Widget', widget);
+    let server = new Fabric.HTTP({
+      resources: { Widget }
+    });
 
     await server.start();
 
@@ -75,8 +77,9 @@ describe('HTTP', function () {
   });
 
   it('can receive a GET request to the main index', async function () {
-    let server = new Fabric.HTTP();
-    let Widget = server.define('Widget', widget);
+    let server = new Fabric.HTTP({
+      resources: { Widget }
+    });
 
     await server.start();
 
@@ -95,8 +98,9 @@ describe('HTTP', function () {
   });
 
   it('can receive a PUT request', async function () {
-    let server = new Fabric.HTTP();
-    let Widget = server.define('Widget', widget);
+    let server = new Fabric.HTTP({
+      resources: { Widget }
+    });
 
     await server.start();
 
@@ -121,8 +125,9 @@ describe('HTTP', function () {
   });
 
   it('can receive a POST request', async function () {
-    let server = new Fabric.HTTP();
-    let Widget = server.define('Widget', widget);
+    let server = new Fabric.HTTP({
+      resources: { Widget }
+    });
 
     await server.start();
 
@@ -151,8 +156,9 @@ describe('HTTP', function () {
   });
 
   it('can receive a PATCH request', async function () {
-    let server = new Fabric.HTTP();
-    let Widget = server.define('Widget', widget);
+    let server = new Fabric.HTTP({
+      resources: { Widget }
+    });
 
     //await server.flush();
     await server.start();
@@ -184,13 +190,13 @@ describe('HTTP', function () {
   });
 
   xit('correctly aggregates created objects', async function () {
-    let server = new Fabric.HTTP();
+    let server = new Fabric.HTTP({
+      resources: { Widget }
+    });
     let remote = new Fabric.Remote({
       host: 'localhost:3000',
       secure: false
     });
-
-    let Widget = server.define('Widget', widget);
 
     await server.start();
 
