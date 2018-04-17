@@ -12,15 +12,13 @@ const key = '/artifacts/key';
 const list = '/messages';
 const message = require('../data/message');
 
-const target = {
-  extra: 'foo'
-};
+const target = { extra: 'foo' };
 
 describe('Oracle', function () {
   this.timeout(30000);
 
   it('should expose a constructor', function () {
-    assert.equal(typeof Fabric.Oracle, 'function');
+    assert.equal(Fabric.Oracle instanceof Function, true);
   });
 
   it('can emulate HTTP PUT', async function () {
@@ -59,7 +57,7 @@ describe('Oracle', function () {
 
     await oracle.storage.close();
   });
-  
+
   it('can emulate HTTP OPTIONS', async function () {
     let oracle = new Fabric.Oracle();
 
