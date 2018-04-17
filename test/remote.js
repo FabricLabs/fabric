@@ -29,6 +29,34 @@ describe('Remote', function () {
     assert.equal(Fabric.Remote instanceof Function, true);
   });
 
+  it('can enumerate a remote', async function () {
+    let server = new Fabric.HTTP(config);
+    let remote = new Fabric.Remote({
+      host: 'localhost:3000',
+      secure: false
+    });
+
+    await server.start();
+
+    try {
+      let sample = await server._OPTIONS();
+      let local = new Fabric.Vector(sample)._sign();
+
+      let result = await remote.enumerate();
+      let answer = new Fabric.Vector(result)._sign();
+
+      console.log('testing:', answer);
+
+      assert.equal(answer['@id'], assumption);
+      assert.equal(answer['@id'], local['@id']);
+    } catch (E) {
+      console.error(E);
+      assert.fail(E);
+    }
+
+    await server.stop();
+  });
+
   it('can use HTTP OPTIONS', async function () {
     let server = new Fabric.HTTP(config);
     let remote = new Fabric.Remote({
