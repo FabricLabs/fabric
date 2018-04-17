@@ -73,7 +73,6 @@ describe('HTTP', function () {
     }
 
     await server.stop();
-    //await server.storage.close();
   });
 
   it('can receive a GET request to the main index', async function () {
@@ -121,7 +120,6 @@ describe('HTTP', function () {
     }
 
     await server.stop();
-    //await server.storage.close();
   });
 
   it('can receive a POST request', async function () {
@@ -152,7 +150,6 @@ describe('HTTP', function () {
     }
 
     await server.stop();
-    //await server.storage.close();
   });
 
   it('can receive a PATCH request', async function () {
@@ -186,7 +183,6 @@ describe('HTTP', function () {
     }
 
     await server.stop();
-    //await server.flush();
   });
 
   xit('correctly aggregates created objects', async function () {
