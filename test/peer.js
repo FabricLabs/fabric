@@ -88,6 +88,8 @@ describe('Peer', function () {
     let client = new net.Socket();
 
     client.on('end', function (msg) {
+      client.destroy();
+      server.stop();
       done();
     });
 
