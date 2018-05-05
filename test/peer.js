@@ -46,7 +46,7 @@ describe('Peer', function () {
       let valid = key.verify(sample, stack[0]);
 
       assert.equal(valid, true);
-      assert.equal(data.toString(), server.id);
+
       done();
     });
 
@@ -80,6 +80,21 @@ describe('Peer', function () {
       let message = Buffer.concat([ header, payload ]);
 
       client.write(message);
+    });
+  });
+
+  it('should correctly disconnect on an invalid message', function (done) {
+    let server = new Peer({ port: TEST_PORT });
+    let client = new net.Socket();
+
+    client.on('end', function (msg) {
+      done();
+    });
+
+    server.listen();
+
+    client.connect(TEST_PORT, '127.0.0.1', function () {
+      client.write(Buffer.from('fake data'));
     });
   });
 });
