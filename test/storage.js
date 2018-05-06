@@ -10,12 +10,12 @@ const data = require('../data/message');
 
 describe('Storage', function () {
   it('should expose a constructor', function () {
-    assert.equal(typeof Fabric.Storage, 'function');
+    assert.equal(Fabric.Storage instanceof Function, true);
   });
 
   it('should be able to set a value', async function () {
     let store = new Fabric.Storage();
-    
+
     await store.open();
 
     try {
@@ -38,6 +38,7 @@ describe('Storage', function () {
       let input = await store.set(key, data['@data']);
       let output = await store.get(key);
       assert.equal(output, data['@data']);
+      assert.equal(output, input);
     } catch (E) {
       console.error(E);
       assert.fail(E);
