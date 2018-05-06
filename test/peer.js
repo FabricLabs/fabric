@@ -19,6 +19,7 @@ const data = require('../data/message');
 
 const TEST_PORT = 7775;
 const GENESIS_DATA = 'Hello, world!';
+const BULK_COUNT = 1000;
 
 describe('Peer', function () {
   it('should expose a constructor', function () {
@@ -57,29 +58,10 @@ describe('Peer', function () {
       let data = Buffer.from(GENESIS_DATA).toString('hex');
       let script = [data, 'SIGN'].join(' '); // TODO: encode over the wire as big-endian
       let payload = Buffer.from(script);
-      let hash = crypto.createHash('sha256').update(script).digest('hex');
+      let message = Message.fromVector([0x20, payload]);
 
-      let magic = Buffer.alloc(4);
-      let type = Buffer.alloc(4);
-      let length = Buffer.alloc(4);
-      let checksum = Buffer.alloc(32);
-
-      magic.writeUInt32BE(0xC0D3F33D);
-      type.writeUInt32BE(0x00000020);
-      length.writeUInt32BE(payload.byteLength);
-
-      checksum.write(hash);
-
-      let header = Buffer.concat([
-        magic,
-        type,
-        length,
-        checksum
-      ]);
-
-      let message = Buffer.concat([ header, payload ]);
-
-      client.write(message);
+      // send the message!
+      client.write(message.asRaw());
     });
   });
 
@@ -97,6 +79,57 @@ describe('Peer', function () {
 
     client.connect(TEST_PORT, '127.0.0.1', function () {
       client.write(Buffer.from('fake data'));
+    });
+  });
+
+  it('should respond to PING with PONG message', function (done) {
+    let server = new Peer({ port: TEST_PORT });
+    let client = new net.Socket();
+    let message = Message.fromVector([0x12]);
+
+    client.on('data', function (msg) {
+      let input = Message.fromRaw(msg);
+      if (input.type === 0x13) {
+        client.destroy();
+        server.stop();
+        assert.equal(input.data, message.id);
+        done();
+      }
+    });
+
+    server.listen();
+
+    client.connect(TEST_PORT, '127.0.0.1', function () {
+      client.write(message.asRaw());
+    });
+  });
+
+  xit('should be reasonably fast', function (done) {
+    let server = new Peer({ port: TEST_PORT });
+    let client = new net.Socket();
+    let counter = 0;
+
+    client.on('data', function (msg) {
+      let input = Message.fromRaw(msg);
+
+      if (input.type === 0x13) {
+        counter++;
+      }
+
+      if (counter === BULK_COUNT) {
+        client.destroy();
+        server.stop();
+        done();
+      }
+    });
+
+    server.listen();
+
+    client.connect(TEST_PORT, '127.0.0.1', function () {
+      for (let i = 1; i <= BULK_COUNT; i++) {
+        let message = Message.fromVector([0x12]);
+        client.write(message.asRaw());
+      }
     });
   });
 });
