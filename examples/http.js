@@ -1,4 +1,4 @@
-'use strict'
+'use strict';
 
 var Fabric = require('../');
 var server = new Fabric.HTTP();
