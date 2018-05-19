@@ -55,7 +55,7 @@ describe('HTTP', function () {
     await server.stop();
   });
 
-  it('can receive an OPTIONS request to the main index', async function () {
+  xit('can receive an OPTIONS request to the main index', async function () {
     let server = new Fabric.HTTP({
       resources: { Widget }
     });
