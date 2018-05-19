@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: lib/app.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: lib/app.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>'use strict';
+
+const util = require('util');
+const jade = require('jade');
+
+//import Fabric from './fabric';
+const Fabric = require('./fabric');
+
+// TODO: use exports from Fabric
+const Peer = require('./peer');
+const Remote = require('./remote');
+const Resource = require('./resource');
+const Storage = require('./storage');
+const Validator = require('./validator');
+const Worker = require('./worker');
+
+if (process.env.APP_ENV === 'browser') {
+  const page = require('page');
+}
+
+class App extends Fabric {
+  /**
+   * Generic bundle for building Fabric applications.
+   * @param  {Object} definition Application definition.  See `config` for examples.
+   * @return {App}            Returns an instance of `App`.
+   */
+  constructor (definition) {
+    super(definition);
+
+    if (!definition) definition = {};
+    if (!definition.resources) definition.resources = {};
+
+    this['@data'] = definition;
+
+    this.tips = new Storage({ path: './data/tips' });
+    this.stash = new Storage({ path: './data/stash' });
+    this.worker = new Worker();
+
+    this.network = {};
+    this.authorities = {};
+    this.resources = {};
+    this.keys = [];
+
+    this.init();
+
+    return this;
+  }
+
+  /**
+   * Define a Resource.
+   * @param  {String} name      [description]
+   * @param  {Object} structure [description]
+   * @return {Object}           [description]
+   */
+  async define (name, structure) {
+    console.log('[APP]', 'defining:', name, structure);
+
+    let self = this;
+    try {
+      let index = self['@data'].resources[name];
+      let resource = new Resource(structure);
+
+      resource._sign();
+      resource.trust(self.stash);
+
+      let saved = await self.set('data/resources/' + name, resource);
+
+      self._sign();
+
+      console.log('[APP]', 'resource:', resource);
+      console.log('[APP]', 'saved:', saved);
+
+      self.resources[name] = resource;
+    } catch (E) {
+      console.error(E);
+    }
+
+    return this;
+
+    if (!index) {
+      let resource = Resource(structure)._sign();
+
+      structure.data = await self.stash.get(structure.routes.query) || [];
+
+      self['@data'].resources[name] = resource;
+      
+      self._sign();
+      
+      console.log('signed:', self['@id']);
+      
+      self.resources[name] = resource;
+
+      self.keys.push(resource.routes.query);
+
+      if (structure.routes.query &amp;&amp; typeof page === 'function') {
+        page(structure.routes.query, function query (context) {
+          console.log('navigating:', structure, context);
+          self.element.navigate(structure.components.query, context);
+        });
+      }
+      
+      if (structure.routes.get &amp;&amp; typeof page === 'function') {
+        page(structure.routes.get, function get (context) {
+          self.element.navigate(structure.components.get, context);
+        });
+      }
+      
+      return resource;
+
+    } else {
+      console.log('[APP]', 'existing definition:', index.name, index['@id']);
+      return this;
+    }
+  }
+  
+  async stop () {
+    await super.stop();
+
+    await this.tips.close();
+    await this.stash.close();
+
+    return this;
+  }
+
+}
+
+/**
+ * Defer control of this application to an outside authority.
+ * @param  {String} authority Hostname to trust.
+ * @return {App}           The configured application as deferred to `authority`.
+ */
+App.prototype._defer = async function (authority) {
+  var self = this;
+  var resources = {};
+  
+  console.warn('[APP]', 'deferring authority:', authority);
+  
+  if (typeof authority == 'string') {
+    var remote = new Remote({
+      host: authority
+    });
+
+    resources = await remote.enumerate();
+  } else {
+    resources = authority.resources;
+  }
+  
+  if (!resources) {
+    resources = {};
+  }
+
+  self._consume(resources);
+  
+  if (typeof page === 'function') {
+    page('/', function (context) {
+      console.log('ohai');
+      self.element.navigate('fabric-splash', context);
+    });
+
+    page();
+  }
+
+  self.remote = remote;
+
+  return this;
+
+};
+
+App.prototype._consume = function (resources) {
+  var self = this;
+  
+  self.element.resources = resources;
+  
+
+  for (var key in resources) {
+    var def = resources[key];
+    self.define(def.name, def);
+  }
+}
+
+App.prototype.attach = function consume (element) {
+  this.element = element;
+};
+
+App.prototype._explore = function (input) {
+  var self = this;
+  var peer = new Peer({
+    initiator: true
+  });
+  
+  peer.compute();
+
+  peer.on('error', function (err) {
+    console.error(err);
+  });
+
+  peer.on('signal', function (data) {
+    console.log('signal:', data);
+  });
+
+  peer.on('connect', function () {
+    console.log('CONNECT');
+    peer.send('whatever' + Math.random());
+  });
+
+  peer.on('data', function (data) {
+    console.log('data: ' + data)
+  });
+
+  self.network[peer['@id']] = peer;
+
+  return self;
+};
+
+App.prototype.test = function () {
+  this.stash.set('/messages', [{
+    message: 'hello, world'
+  }]);
+};
+
+App.prototype.request = function (path) {
+  worker.route(path);
+};
+
+App.prototype.element = function () {
+  return document.createElement('div');
+};
+
+module.exports = App;
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-Fabric.html">Fabric</a></li></ul><h3>Classes</h3><ul><li><a href="App.html">App</a></li><li><a href="Chain.html">Chain</a></li><li><a href="Fabric.html">Fabric</a></li><li><a href="Message.html">Message</a></li><li><a href="Oracle.html">Oracle</a></li><li><a href="Peer.html">Peer</a></li><li><a href="Remote.html">Remote</a></li><li><a href="Resource.html">Resource</a></li><li><a href="Storage.html">Storage</a></li><li><a href="Vector.html">Vector</a></li><li><a href="Walker.html">Walker</a></li><li><a href="Worker.html">Worker</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.5.5</a> on Sun Jan 28 2018 01:45:56 GMT+0000 (GMT)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

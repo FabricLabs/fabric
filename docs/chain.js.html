@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: chain.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: chain.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>'use strict';
+
+var util = require('util');
+var crypto = require('crypto');
+
+var jsonpatch = require('fast-json-patch');
+
+var StateMachine = require('javascript-state-machine');
+var StateMachineHistory = require('javascript-state-machine/lib/history')
+var Digraph = require('javascript-state-machine/lib/visualize');
+
+var Block = require('./block');
+var Ledger = require('./ledger');
+var Storage = require('./storage');
+var Vector = require('./vector');
+
+var WebWorker;
+
+if (process.env.APP_ENV !== 'browser') {
+  WebWorker = require('webworker-threads').Worker;
+} else {
+  WebWorker = window.Worker;
+}
+
+/**
+ * Holds an immutable chain of events.
+ * @param       {Vector} genesis Initial state for the chain of events.
+ * @constructor
+ */
+function Chain (genesis) {
+  this['@data'] = [];
+
+  this.clock = 0;
+  this.stack = [];
+  this.known = {};
+  this.blocks = [];
+
+  this.genesis = null;
+  this.tip = null;
+
+  // TODO: set this up via define?
+  this.indexes = {
+    blocks: '/blocks',
+    transactions: '/transactions'
+  };
+
+  this.ledger = new Ledger();
+  this.storage = new Storage({ path: './data/chain' });
+
+  this.init();
+}
+
+util.inherits(Chain, Vector);
+
+Chain.prototype._load = async function () {
+  var self = this;
+  var blocks = await self.storage.get(self.indexes.blocks);
+  
+  self['@data'] = JSON.parse(blocks);
+  
+  self._sign();
+  
+  return self;
+};
+
+Chain.prototype._flush = async function () {
+  var self = this;
+  self['@data'] = [];
+  await self.storage.set(self.indexes.blocks, []);
+  
+  return self;
+};
+
+Chain.prototype._listBlocks = async function listBlocks () {
+  var self = this;
+  var blocks = await self.storage.get(self.indexes.blocks);
+
+  return blocks;
+};
+
+Chain.prototype._produceBlock = function mine () {
+  var block = new Block();
+  return block.compute();
+};
+
+Chain.prototype.identify = function register (identity) {
+  this.identity = identity;
+};
+
+Chain.prototype.append = async function add (block) {
+  var self = this;
+  
+  if (!block['@id'] &amp;&amp; !block['@data']) {
+    block = new Vector(block);
+    block._sign();
+  }
+
+  if (self['@data'].length === 0 &amp;&amp; !self.genesis) {
+    self.genesis = block['@id'];
+    self.tip = block['@id'];
+  }
+
+  var key = [self.indexes.blocks, block['@id']].join('/');
+  // TODO: use async.waterfall (for now)
+  // TODO: define rule: max depth 2 callbacks before flow control
+  var err = await self.storage.set(key, block['@data']);
+
+  self.stack.push(['validate', block['@id']]);
+  self.known[block['@id']] = block['@data'];
+
+  self['@data'].push(block['@id']);
+
+  await self.storage.set(self.indexes.blocks, self['@data']);
+
+  self.blocks.push(block);
+  self.tip = block['@id'];
+  
+  self.emit('block', block['@id'], block['@data']);
+}
+
+Chain.prototype.mine = async function grind () {
+  var self = this;
+  // TODO: remove this code from Chain, move to Worker
+  // As it stands, cross-platform workers with `webworker-threads` seems to
+  // require this inline function, but this is suboptimal.  Ideally, this lives
+  // in a dedicated class.
+  var worker = new WebWorker(function () {
+    this.onmessage = function (event) {
+      console.log('[WORKER]', 'received:', event);
+      
+      var cash = mine(event.data);
+
+      postMessage({
+        status: 'success',
+        cash: cash.cash,
+        hash: cash.hash,
+        data: event.data.data
+      });
+    }
+
+    function mine (input) {
+      console.log('mining:', input);
+      
+      var obj = {
+        difficulty: input.difficulty || 2,
+        previous: input.previous || '',
+        data: input.data || ''
+      }
+
+      Date.prototype.yyyymmdd = function() {
+        var yyyy = this.getFullYear().toString();
+        var mm = (this.getMonth()+1).toString(); // getMonth() is zero-based
+        var dd  = this.getDate().toString();
+        return yyyy + (mm[1]?mm:'0'+mm[0]) + (dd[1]?dd:'0'+dd[0]); // padding
+      };
+
+      var date = (new Date()).yyyymmdd();
+      var bits = 0;
+      var rand = Math.random().toString(36).replace(/[^a-z]+/g, '').substr(0, 5);
+      var difficulty = obj.difficulty;
+
+      for (var counter = 0; bits &lt; difficulty; counter++) {
+        var chunks = [
+          '2', // Hashcash version number.  Note that this is 2, as opposed to 1.
+          obj.difficulty, // asserted number of bits that this cash matches
+          'sha256', // ADDITION FOR VERSION 2: specify the hash function used
+          date, // YYYYMMDD format.  specification doesn't indicate HHMMSS or lower?
+          obj.data, // Input format protocol change, recommend casting any input to hex.
+          obj.previous, // previouse block
+          rand, // random seed
+          counter // our randomized input, the nonce (actually sequential)
+        ];
+        var cash = chunks.join(':');
+        var hash = Sha256.hash(cash);
+        
+        var match = hash.match(/^(0+)/);
+        bits = (match) ? match[0].length : 0;
+      }
+      
+      return {
+        cash: cash,
+        hash: hash
+      };
+    }
+    
+    class Sha256 {
+        /**
+         * Generates SHA-256 hash of string.
+         *
+         * @param   {string} msg - (Unicode) string to be hashed.
+         * @param   {Object} [options]
+         * @param   {string} [options.msgFormat=string] - Message format: 'string' for JavaScript string
+         *   (gets converted to UTF-8 for hashing); 'hex-bytes' for string of hex bytes ('616263' ≡ 'abc') .
+         * @param   {string} [options.outFormat=hex] - Output format: 'hex' for string of contiguous
+         *   hex bytes; 'hex-w' for grouping hex bytes into groups of (4 byte / 8 character) words.
+         * @returns {string} Hash of msg as hex character string.
+         */
+        static hash(msg, options) {
+            const defaults = { msgFormat: 'string', outFormat: 'hex' };
+            const opt = Object.assign(defaults, options);
+
+            // note use throughout this routine of 'n >>> 0' to coerce Number 'n' to unsigned 32-bit integer
+
+            switch (opt.msgFormat) {
+                default: // default is to convert string to UTF-8, as SHA only deals with byte-streams
+                case 'string':   msg = utf8Encode(msg);       break;
+                case 'hex-bytes':msg = hexBytesToString(msg); break; // mostly for running tests
+            }
+
+            // constants [§4.2.2]
+            const K = [
+                0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+                0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+                0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+                0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+                0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+                0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+                0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+                0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2 ];
+
+            // initial hash value [§5.3.3]
+            const H = [
+                0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19 ];
+
+            // PREPROCESSING [§6.2.1]
+
+            msg += String.fromCharCode(0x80);  // add trailing '1' bit (+ 0's padding) to string [§5.1.1]
+
+            // convert string msg into 512-bit blocks (array of 16 32-bit integers) [§5.2.1]
+            const l = msg.length/4 + 2; // length (in 32-bit integers) of msg + ‘1’ + appended length
+            const N = Math.ceil(l/16);  // number of 16-integer (512-bit) blocks required to hold 'l' ints
+            const M = new Array(N);     // message M is N×16 array of 32-bit integers
+
+            for (let i=0; i&lt;N; i++) {
+                M[i] = new Array(16);
+                for (let j=0; j&lt;16; j++) { // encode 4 chars per integer (64 per block), big-endian encoding
+                    M[i][j] = (msg.charCodeAt(i*64+j*4+0)&lt;&lt;24) | (msg.charCodeAt(i*64+j*4+1)&lt;&lt;16)
+                            | (msg.charCodeAt(i*64+j*4+2)&lt;&lt; 8) | (msg.charCodeAt(i*64+j*4+3)&lt;&lt; 0);
+                } // note running off the end of msg is ok 'cos bitwise ops on NaN return 0
+            }
+            // add length (in bits) into final pair of 32-bit integers (big-endian) [§5.1.1]
+            // note: most significant word would be (len-1)*8 >>> 32, but since JS converts
+            // bitwise-op args to 32 bits, we need to simulate this by arithmetic operators
+            const lenHi = ((msg.length-1)*8) / Math.pow(2, 32);
+            const lenLo = ((msg.length-1)*8) >>> 0;
+            M[N-1][14] = Math.floor(lenHi);
+            M[N-1][15] = lenLo;
+
+
+            // HASH COMPUTATION [§6.2.2]
+
+            for (let i=0; i&lt;N; i++) {
+                const W = new Array(64);
+
+                // 1 - prepare message schedule 'W'
+                for (let t=0;  t&lt;16; t++) W[t] = M[i][t];
+                for (let t=16; t&lt;64; t++) {
+                    W[t] = (Sha256.σ1(W[t-2]) + W[t-7] + Sha256.σ0(W[t-15]) + W[t-16]) >>> 0;
+                }
+
+                // 2 - initialise working variables a, b, c, d, e, f, g, h with previous hash value
+                let a = H[0], b = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];
+
+                // 3 - main loop (note '>>> 0' for 'addition modulo 2^32')
+                for (let t=0; t&lt;64; t++) {
+                    const T1 = h + Sha256.Σ1(e) + Sha256.Ch(e, f, g) + K[t] + W[t];
+                    const T2 =     Sha256.Σ0(a) + Sha256.Maj(a, b, c);
+                    h = g;
+                    g = f;
+                    f = e;
+                    e = (d + T1) >>> 0;
+                    d = c;
+                    c = b;
+                    b = a;
+                    a = (T1 + T2) >>> 0;
+                }
+
+                // 4 - compute the new intermediate hash value (note '>>> 0' for 'addition modulo 2^32')
+                H[0] = (H[0]+a) >>> 0;
+                H[1] = (H[1]+b) >>> 0;
+                H[2] = (H[2]+c) >>> 0;
+                H[3] = (H[3]+d) >>> 0;
+                H[4] = (H[4]+e) >>> 0;
+                H[5] = (H[5]+f) >>> 0;
+                H[6] = (H[6]+g) >>> 0;
+                H[7] = (H[7]+h) >>> 0;
+            }
+
+            // convert H0..H7 to hex strings (with leading zeros)
+            for (let h=0; h&lt;H.length; h++) H[h] = ('00000000'+H[h].toString(16)).slice(-8);
+
+            // concatenate H0..H7, with separator if required
+            const separator = opt.outFormat=='hex-w' ? ' ' : '';
+
+            return H.join(separator);
+
+            /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */
+
+            function utf8Encode(str) {
+                try {
+                    return new TextEncoder().encode(str, 'utf-8').reduce((prev, curr) => prev + String.fromCharCode(curr), '');
+                } catch (e) { // no TextEncoder available?
+                    return unescape(encodeURIComponent(str)); // monsur.hossa.in/2012/07/20/utf-8-in-javascript.html
+                }
+            }
+
+            function hexBytesToString(hexStr) { // convert string of hex numbers to a string of chars (eg '616263' -> 'abc').
+                const str = hexStr.replace(' ', ''); // allow space-separated groups
+                return str=='' ? '' : str.match(/.{2}/g).map(byte => String.fromCharCode(parseInt(byte, 16))).join('');
+            }
+        }
+
+
+
+        /**
+         * Rotates right (circular right shift) value x by n positions [§3.2.4].
+         * @private
+         */
+        static ROTR(n, x) {
+            return (x >>> n) | (x &lt;&lt; (32-n));
+        }
+
+        /**
+         * Logical functions [§4.1.2].
+         * @private
+         */
+        static Σ0(x) { return Sha256.ROTR(2,  x) ^ Sha256.ROTR(13, x) ^ Sha256.ROTR(22, x); }
+        static Σ1(x) { return Sha256.ROTR(6,  x) ^ Sha256.ROTR(11, x) ^ Sha256.ROTR(25, x); }
+        static σ0(x) { return Sha256.ROTR(7,  x) ^ Sha256.ROTR(18, x) ^ (x>>>3);  }
+        static σ1(x) { return Sha256.ROTR(17, x) ^ Sha256.ROTR(19, x) ^ (x>>>10); }
+        static Ch(x, y, z)  { return (x &amp; y) ^ (~x &amp; z); }          // 'choice'
+        static Maj(x, y, z) { return (x &amp; y) ^ (x &amp; z) ^ (y &amp; z); } // 'majority'
+
+    }
+  });
+
+  worker.onmessage = function (event) {
+    if (event.data.status === 'success') {
+      worker.terminate();
+      var vector = new Vector(event.data);
+      
+      vector['@data'].parent = event.data.data;
+      
+      vector._sign();
+      self.emit('candidate', vector);
+    }
+  }
+  
+  worker.postMessage({
+    difficulty: 4,
+    data: self.tip
+  });
+
+  return this;
+}
+
+Chain.prototype.test = function validate (proof) {
+  var self = this;
+  if (proof['@id'] !== self['@id']) return false;
+  return true;
+};
+
+Chain.prototype.patch = function apply (patchset) {
+  var self = this;
+  var test = jsonpatch.applyPatch(self['@data'], patchset).newDocument;
+  return self;
+}
+
+Chain.prototype.render = function serialize () {
+  var self = this;
+
+  return self;
+}
+
+module.exports = Chain;
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="Chain.html">Chain</a></li><li><a href="Fabric.html">Fabric</a></li><li><a href="Message.html">Message</a></li><li><a href="Oracle.html">Oracle</a></li><li><a href="Peer.html">Peer</a></li><li><a href="Remote.html">Remote</a></li><li><a href="Resource.html">Resource</a></li><li><a href="Storage.html">Storage</a></li><li><a href="Vector.html">Vector</a></li><li><a href="Walker.html">Walker</a></li><li><a href="Worker.html">Worker</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.5.5</a> on Thu Jan 25 2018 11:26:58 GMT+0000 (GMT)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

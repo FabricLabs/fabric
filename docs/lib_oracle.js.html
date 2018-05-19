@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: lib/oracle.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: lib/oracle.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>'use strict';
+
+import Fabric from '../';
+
+const path = require('path');
+
+const Storage = require('./storage');
+const Walker = require('./walker');
+const Vector = require('./vector');
+
+const _ = require('./functions');
+
+class Oracle extends Vector {
+  /**
+   * Trusted point-of-reference for external services.
+   * @param       {Object} initial - Initialization vector.
+   * @constructor
+   */
+  constructor (init) {
+    super();
+
+    this.storage = new Storage({
+      path: './data/oracle'
+    });
+    this.keys = [];
+
+    this.init();
+  }
+
+  async start () {
+    console.log('[ORACLE]', 'starting...');
+    return this;
+  }
+
+  async stop () {
+    console.log('[ORACLE]', 'stopping...');
+    return this;
+  }
+}
+
+/**
+ * Core messaging function for interacting with this object in system-time.
+ * @param  {Message} msg Instance of a {@link module:Message} object, validated then transmitted verbatim.
+ * @return {Boolean}     Returns `true` on success, `false` on failure.
+ */
+Oracle.prototype.broadcast = function (msg) {
+  return this.emit('message', msg);
+};
+
+/**
+ * Synchronously reads a local path into memory.
+ * @param  {String} path - dir (path to read)
+ * @return {Vector} Computed vector.
+ */
+Oracle.prototype._load = async function bootstrap (dir) {
+  let self = this;
+  let walker = new Walker();
+
+  console.debug('[ORACLE]', 'bootstrapping:', dir);
+
+  let map = await walker._define(dir, {});
+  let list = Object.keys(map);
+
+  console.debug('[ORACLE]', 'list:', list);
+
+  for (var i = 0; i &lt; list.length; i++) {
+    let file = path.join('/', list[i]);
+    let content = map[list[i]];
+    console.debug('[ORACLE]', 'saving:', content.length, 'bytes to', file);
+    let result = await self.storage.set(file, content);
+    let vector = new Fabric.Vector(result)._sign();
+  }
+
+  let tree = list.map(function (x) {
+    return x.replace(/^(.*)\/(.*)$/, '$2');
+  });
+
+  var response = [];
+
+  try {
+    let assets = await self._PUT('/assets', tree);
+    self.tree = new Fabric.Vector(assets)._sign();
+    response = self.tree;
+  } catch (E) {
+    console.error(E);
+  }
+
+  console.debug('[ORACLE]', 'loaded:', list.length, 'resources from', dir);
+
+  return response;
+};
+
+Oracle.prototype._GET = async function (key, params) {
+  var result = null;
+
+  try {
+    result = await this.storage.get(key);
+  } catch (E) {
+    console.error(E);
+  }
+
+  console.debug('[ORACLE]', '_GET', key, result);
+
+  return result;
+};
+
+Oracle.prototype._PUT = async function (key, obj) {
+  var output = null;
+
+  console.debug('[ORACLE]', '_PUT', '[0]',  key, typeof obj, obj);
+
+  try {
+    let vector = new Vector(obj)._sign();
+
+    console.debug('vector:', vector);
+
+    let result = await this.storage.set(key, vector['@data']);
+
+    output = await this._GET(key);
+  } catch (E) {
+    console.error(E);
+  }
+
+  console.debug('[ORACLE]', '_PUT', '[1]', key, typeof output, output);
+
+  return output;
+};
+
+/**
+ * Handle a request from a client to `create` an object.
+ * @param  {String} key [description]
+ * @param  {Object} obj [description]
+ * @return {Vector}     [description]
+ */
+Oracle.prototype._POST = async function (key, obj) {
+  var result = null;
+  var collection = await this._GET(key);
+
+  let vector = new Vector(obj)._sign();
+
+  console.debug('[ORACLE]', '_POST', 'input:', vector);
+
+  // collection does not exist, or there was an error.
+  if (!collection || !(collection instanceof Array)) collection = [];
+
+  collection.push(obj);
+
+  try {
+    result = await this._PUT(key, collection);
+    this.keys.push(key);
+  } catch (E) {
+    console.debug(E);
+  }
+
+  return collection[0];
+};
+
+Oracle.prototype._PATCH = async function (key, changes) {
+  var result = null;
+
+  console.debug('[ORACLE]', 'patch', key, changes);
+
+  try {
+    let start = await this._GET(key);
+    console.debug('start:', start);
+    let output = _.merge(start || {}, changes);
+    console.debug('output:', output);
+    
+    result = await this._PUT(key, output);
+  } catch (E) {
+    console.debug(E);
+  }
+
+  return result;
+};
+
+Oracle.prototype._DELETE = async function (key) {
+  await this._PUT(key, null);
+  return null;
+};
+
+Oracle.prototype._OPTIONS = async function (key) {
+  var result = null;
+
+  try {
+    result = await this.storage.get(key);
+  } catch (E) {
+    console.debug(E);
+  }
+
+  try {
+    result = new Vector(result)._sign();
+  } catch (E) {
+    console.debug(E);
+  }
+
+  return result;
+};
+
+Oracle.prototype.flush = async function () {
+  console.log('[ORACLE]', 'flush requested:', this.keys);
+  
+  var result = null;
+
+  for (var i in this.keys) {
+    console.log('...flushing', this.keys[i]);
+    try {
+      result = await this._DELETE(this.keys[i]);
+    } catch (E) {
+      console.error(E);
+    }
+
+    console.log('result:', result);
+    //output = result;
+  }
+
+  return result;
+};
+
+module.exports = Oracle;
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-Fabric.html">Fabric</a></li></ul><h3>Classes</h3><ul><li><a href="App.html">App</a></li><li><a href="Chain.html">Chain</a></li><li><a href="Fabric.html">Fabric</a></li><li><a href="Message.html">Message</a></li><li><a href="Oracle.html">Oracle</a></li><li><a href="Peer.html">Peer</a></li><li><a href="Remote.html">Remote</a></li><li><a href="Resource.html">Resource</a></li><li><a href="Storage.html">Storage</a></li><li><a href="Vector.html">Vector</a></li><li><a href="Walker.html">Walker</a></li><li><a href="Worker.html">Worker</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.5.5</a> on Sun Jan 28 2018 01:45:56 GMT+0000 (GMT)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

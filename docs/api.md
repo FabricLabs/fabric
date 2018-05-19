@@ -11,8 +11,6 @@
 <dl>
 <dt><a href="#Fabric">Fabric</a></dt>
 <dd></dd>
-<dt><a href="#Oracle">Oracle</a></dt>
-<dd></dd>
 <dt><a href="#Peer">Peer</a></dt>
 <dd></dd>
 <dt><a href="#Remote">Remote</a> : <code>Vector</code></dt>
@@ -50,7 +48,7 @@ Fabric's Developer API.  Exposes immutable types for all requisite components.
     * [.HTTP](#module_Fabric.HTTP) : <code>HTTP</code>
     * [.Machine](#module_Fabric.Machine) : <code>Machine</code>
     * [.Message](#module_Fabric.Message) : <code>Message</code>
-    * [.Oracle](#module_Fabric.Oracle) : [<code>Oracle</code>](#Oracle)
+    * [.Oracle](#module_Fabric.Oracle) : <code>Oracle</code>
     * [.Remote](#module_Fabric.Remote) : [<code>Remote</code>](#Remote)
     * [.Resource](#module_Fabric.Resource) : [<code>Resource</code>](#Resource)
     * [.Storage](#module_Fabric.Storage) : [<code>Storage</code>](#Storage)
@@ -111,7 +109,7 @@ General-purpose computer with verifiable execution.
 **Kind**: static property of [<code>Fabric</code>](#module_Fabric)  
 <a name="module_Fabric.Oracle"></a>
 
-### Fabric.Oracle : [<code>Oracle</code>](#Oracle)
+### Fabric.Oracle : <code>Oracle</code>
 External point of trust for [module:Contract](module:Contract) instances.
 
 **Kind**: static property of [<code>Fabric</code>](#module_Fabric)  
@@ -224,64 +222,6 @@ Serialize the current network state and provide it as output.
 
 **Kind**: instance method of [<code>Fabric</code>](#Fabric)  
 **Returns**: <code>String</code> - Serialized output for consumption.  
-<a name="Oracle"></a>
-
-## Oracle
-**Kind**: global class  
-
-* [Oracle](#Oracle)
-    * [new Oracle(initial)](#new_Oracle_new)
-    * [._load](#Oracle+_load) ⇒ <code>Vector</code>
-    * [._POST](#Oracle+_POST) ⇒ <code>Vector</code>
-    * [.broadcast(msg)](#Oracle+broadcast) ⇒ <code>Boolean</code>
-
-<a name="new_Oracle_new"></a>
-
-### new Oracle(initial)
-Trusted point-of-reference for external services.
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| initial | <code>Object</code> | Initialization vector. |
-
-<a name="Oracle+_load"></a>
-
-### oracle._load ⇒ <code>Vector</code>
-Synchronously reads a local path into memory.
-
-**Kind**: instance property of [<code>Oracle</code>](#Oracle)  
-**Returns**: <code>Vector</code> - Computed vector.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | <code>String</code> | dir (path to read) |
-
-<a name="Oracle+_POST"></a>
-
-### oracle._POST ⇒ <code>Vector</code>
-Handle a request from a client to `create` an object.
-
-**Kind**: instance property of [<code>Oracle</code>](#Oracle)  
-**Returns**: <code>Vector</code> - [description]  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| key | <code>String</code> | [description] |
-| obj | <code>Object</code> | [description] |
-
-<a name="Oracle+broadcast"></a>
-
-### oracle.broadcast(msg) ⇒ <code>Boolean</code>
-Core messaging function for interacting with this object in system-time.
-
-**Kind**: instance method of [<code>Oracle</code>](#Oracle)  
-**Returns**: <code>Boolean</code> - Returns `true` on success, `false` on failure.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| msg | <code>Message</code> | Instance of a [module:Message](module:Message) object, validated then transmitted verbatim. |
-
 <a name="Peer"></a>
 
 ## Peer

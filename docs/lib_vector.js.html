@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: lib/vector.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: lib/vector.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>'use strict';
+
+const util = require('util')
+const crypto = require('crypto');
+
+const jsonpatch = require('fast-json-patch');
+
+const StateMachine = require('javascript-state-machine');
+const StateMachineHistory = require('javascript-state-machine/lib/history')
+const Digraph = require('javascript-state-machine/lib/visualize');
+
+class Vector extends require('events').EventEmitter {
+  /**
+   * An "Initialization" Vector.
+   * @param       {Object} - Input state (will map to `@data`.)
+   * @constructor
+   */
+  constructor (a) {
+    super(a);
+
+    if (!(this instanceof Vector)) {
+      return new Vector(a);
+    }
+
+    this['@data'] = a || {};
+  
+    this.clock = 0;
+    this.stack = [];
+    this.known = {};
+
+    this.init();
+
+    return this;
+  }
+}
+
+Vector.prototype.registry = {};
+
+Vector.prototype.init = function attach () {
+  var self = this;
+  self.observer = jsonpatch.observe(self['@data']);
+  return this;
+};
+
+Vector.prototype.use = function define (method, plugin) {
+  var self = this;
+  self.known[method] = plugin;
+};
+
+Vector.prototype.validate = function validate (input) {
+  return true;
+};
+
+/**
+ * _serialize is a placeholder, should be discussed.
+ * @param {String} input - What to serialize.  Defaults to `this['@data']`.
+ * @return {String} - resulting string [JSON-encoded version of the local `@data` value.]
+ */
+Vector.prototype._serialize = function toString (input) {
+  if (!input) input = this['@data'];
+
+  //console.log('serializing:', typeof input, input);
+  // TODO: standardize on a serialization format
+  var output = JSON.stringify(input);
+  //console.log('serialized:', output);
+
+  return output;
+};
+
+Vector.prototype._deserialize = function fromString (input) {
+  // TODO: standardize on a serialization format
+  return JSON.parse(input);
+};
+
+Vector.prototype._orderSpace = function sortObject (o) {
+  var self = this;
+  // TODO: implement this recursively
+  return Object.keys(o).sort().reduce(function (result, key) {
+    result[key] = o[key];
+    return result;
+  }, {});
+};
+
+/**
+ * Compute the `sha256` hash of the input entity's `@data` field.
+ * @param  {Object} entity Input object; expects `@data`.
+ * @return {Object}        Transformed entity with `@id` set to the `sha256` hash of `@data`.
+ */
+Vector.prototype._identify = function (entity) {
+  var self = this;
+  var sort = self._orderSpace(entity['@data']);
+  var raw = self._serialize(sort);
+
+  entity['@id'] = crypto.createHash('sha256').update(raw).digest('hex');
+  
+  return entity;
+}
+
+Vector.prototype._sign = function identify () {
+  var self = this;
+  var sort = self._orderSpace(self['@data']);
+  var raw = self._serialize(sort);
+  
+  if (!self.logs) self.logs = [];
+
+  if (!raw) return this;
+
+  self['@id'] = crypto.createHash('sha256').update(raw).digest('hex');
+
+  //console.log('claim:', self['@id'], typeof raw, raw);
+
+  self.registry[self['@id']] = self['@data'];
+  self.emit('mutation', jsonpatch.generate(self.observer));
+
+  return self;
+};
+
+Vector.prototype.patch = function apply (patchset) {
+  var self = this;
+  var test = jsonpatch.applyPatch(self['@data'], patchset).newDocument;
+
+  return self;
+};
+
+/**
+ * Computes the next "step" for our current Vector.
+ * @param  {String} input - Input state, undefined if desired.
+ * @return {Vector} - Makes this Vector chainable.  Possible antipattern.
+ */
+Vector.prototype.compute = function step (state) {
+  this.clock += 1;
+
+  var self = this;
+  var mem = [];
+
+  function follow (input) {
+    for (var i = 0; i &lt; input.length; i++) {
+      var instruction = input[i];
+      //console.log('instruction:', instruction);
+
+      if (instruction instanceof Array) {
+        follow(instruction);
+      } else {
+        //console.log('step:', instruction);
+        
+        var transmute = self.known[instruction];
+        if (typeof transmute == 'function') {
+          //console.log('KNOWN:', typeof transmute, transmute);
+          self['@data'] = transmute.call(self, self['@data'], mem);
+          mem.push(self['@data']);
+
+          self._sign();
+        }
+      }
+    }
+  }
+
+  follow(self.stack);
+
+  // TODO: document that ALL VECTORS MUST SIGN
+  self._sign();
+
+  return self;
+};
+
+Vector.prototype.render = function log () {
+  var self = this;
+  var obj = self['@data'];
+  
+  obj._sign();
+
+  return obj;
+};
+
+module.exports = Vector;
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-Fabric.html">Fabric</a></li></ul><h3>Classes</h3><ul><li><a href="App.html">App</a></li><li><a href="Chain.html">Chain</a></li><li><a href="Fabric.html">Fabric</a></li><li><a href="Message.html">Message</a></li><li><a href="Oracle.html">Oracle</a></li><li><a href="Peer.html">Peer</a></li><li><a href="Remote.html">Remote</a></li><li><a href="Resource.html">Resource</a></li><li><a href="Storage.html">Storage</a></li><li><a href="Vector.html">Vector</a></li><li><a href="Walker.html">Walker</a></li><li><a href="Worker.html">Worker</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.5.5</a> on Sun Jan 28 2018 01:45:56 GMT+0000 (GMT)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

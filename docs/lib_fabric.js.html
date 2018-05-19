@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: lib/fabric.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: lib/fabric.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>'use strict';
+
+const util = require('util');
+
+const Chain = require('./chain');
+const Peer = require('./peer');
+const Vector = require('./vector');
+const Machine = require('./machine');
+const _ = require('./functions');
+
+class Fabric extends Vector {
+  /**
+   * The {@link module:Fabric} type implements the Fabric Protocol, a formally-defined language for the establishment and settlement of mutually-agreed upon proofs of work.
+   *
+   * Utilizing
+   * @exports Fabric
+   * @constructor
+   * @param {Vector} config - Initial configuration for the Fabric engine.  This can be considered the "genesis" state for any contract using the system.  If a chain of events is maintained over long periods of time, `state` can be considered "in contention", and it is demonstrated that the outstanding value of the contract remains to be settled.
+   * @emits Fabric#thread
+   * @emits Fabric#step Emitted on a `compute` step.
+   */
+  constructor (vector) {
+    super(vector);
+
+    const self = this;
+
+    this['@data'] = vector || {};
+
+    this.clock = 0;
+    this.stack = [];
+    this.known = {};
+
+    this.identity = {};
+    this.peers = {};
+
+    this.chain = new Chain();
+    this.machine = new Machine();
+
+    this.chain.on('block', function (block) {
+      self.emit('block', block);
+    });
+
+    this.init();
+  }
+
+  async set (key, val) {
+    this.machine.stack.push([key, val]);
+    let saved = await this.chain.storage.set(key, val);
+    console.log('chainstore:', saved);
+    return this;
+  }
+
+  async stop () {
+    //super.stop();
+    await this.chain.storage.close();
+    return this;
+  }
+}
+
+Fabric.add = function combineVectors (a, b) {
+  return a + b;
+};
+
+Fabric.prototype.add = function combine (delta) {
+  const self = this;
+  
+  console.log('[FABRIC]', 'add', delta);
+  console.log('[FABRIC]', 'prior', self['@data']);
+  
+  var ans = this.machine.add(self['@data'], delta);
+  
+  return ans.newDocument;
+}
+
+/**
+ * Consume an application definition (configure resources + services)
+ * @param {object} vector - Object representation of the application definition.
+ * @param {function} notify - Callback function (err, result)
+ */
+Fabric.prototype.bootstrap = function configureSandbox (vector, notify) {
+  if (!vector) vector = null;
+  if (!notify) notify = new Function();
+
+  this.emit('vector', {
+    vector: vector
+  });
+
+  return notify('Not yet implemented');
+};
+
+// for all known peers locally, ask for data
+// aka: promiscuous mode
+Fabric.prototype.explore = function crawl () {
+  let fabric = this;
+  let list = Object.keys(fabric['@data'].peers).forEach(function(x) {
+    peer.on('identity', function sandbox (identity) {
+      console.log('sandbox inner:', identity);
+    });
+    
+    // neat!
+    peer.compute();
+  });
+};
+
+Fabric.prototype.connect = async function dock (id) {
+  var self = this;
+  var peer = new Peer(id);
+
+  await peer._connect();
+  
+  // TODO: webrtc here
+  self.peers[id] = peer;
+  
+  return peer;
+};
+
+Fabric.prototype.identify = function generateKeys (vector, notify) {
+  if (!vector) vector = {};
+  if (!notify) notify = new Function();
+
+  var self = this;
+  var identity = {
+    key: {
+      public: 'foo'
+    }
+  }
+  
+  self.identity = identity;
+  self.use('NOOP', function () {
+    return this;
+  });
+  
+  // a "vector" is a known truth, something that we've generated ourselves
+  // or otherwise derived truth from an origin (a genesis vector
+  // TODO: remove lodash
+  self['@data'] = _.merge(self['@data'], vector, identity); // should be equivalent to `f(x + y)`
+
+  this.emit('auth', identity);
+
+  return notify();
+};
+
+Fabric.prototype.broadcast = function announcer (msg, data) {
+  var self = this;
+
+  self.emit(msg, data);
+
+  Object.keys(self.peers).forEach(function tell (id) {
+    var peer = self.peers[id];
+    peer.send(msg);
+  });
+  
+  return true;
+};
+
+/**
+ * Blindly consume messages from a `source`, relying on `Chain` to verify.
+ * @param  {EventEmitter} source Any object which implements the `EventEmitter` pattern.
+ * @return {Fabric}        Returns itself.
+ */
+Fabric.prototype.trust = function (source) {
+  var self = this;
+  source.on('block', async function (block) {
+    await self.chain.append(block);
+  });
+  return self;
+};
+
+Fabric.prototype.start = async function init (done) {
+  var self = this;
+  self.identify();
+  // self.compute();
+  // return done();
+};
+
+/**
+ * Serialize the current network state and provide it as output.
+ * @return {String} Serialized output for consumption.
+ */
+Fabric.prototype.render = function consume () {
+  return JSON.stringify(this['@data']);
+};
+
+module.exports = Fabric;
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-Fabric.html">Fabric</a></li></ul><h3>Classes</h3><ul><li><a href="App.html">App</a></li><li><a href="Chain.html">Chain</a></li><li><a href="Fabric.html">Fabric</a></li><li><a href="Message.html">Message</a></li><li><a href="Oracle.html">Oracle</a></li><li><a href="Peer.html">Peer</a></li><li><a href="Remote.html">Remote</a></li><li><a href="Resource.html">Resource</a></li><li><a href="Storage.html">Storage</a></li><li><a href="Vector.html">Vector</a></li><li><a href="Walker.html">Walker</a></li><li><a href="Worker.html">Worker</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.5.5</a> on Sun Jan 28 2018 01:45:56 GMT+0000 (GMT)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

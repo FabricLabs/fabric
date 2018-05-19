@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: lib/remote.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: lib/remote.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>'use strict';
+
+var crypto = require('crypto');
+var util = require('util');
+var rest = require('wreck');
+
+var _ = require('./functions');
+
+const CONTENT_TYPE = 'application/json';
+
+/**
+ * An in-memory representation of a node in our network.
+ * @exports Remote
+ * @type {Vector}
+ * @param       {Object} initial - Target object.
+ * @constructor
+ */
+function Remote (init) {
+  this['@data'] = init || {};
+
+  this.clock = 0;
+  this.stack = [];
+  this.known = {};
+
+  this.secure = (init.secure) ? true : false;
+
+  this.init();
+}
+
+util.inherits(Remote, require('./vector'));
+
+Remote.prototype.enumerate = async function () {
+  var self = this;
+  var options = await self._OPTIONS('/');
+
+  if (!options) {
+    console.log('nothing:', options);
+    return [];
+  }
+  
+  options.resources = options.resources.map(function(r) {
+    return {
+      name: r.name,
+      description: r.description,
+      components: _.merge({
+        query: 'maki-resource-query',
+        get: 'maki-resource-get'
+      }, r.components),
+      routes: r.routes,
+      attributes: r.attributes,
+      names: r.names,
+    }
+  });
+  
+  return options.resources;
+}
+
+/**
+ * HTTP PUT against the configured Authority.
+ * @param  {String} path - HTTP Path to request.
+ * @param  {Object} obj - Map of parameters to supply.
+ * @return {Mixed}        [description]
+ */
+Remote.prototype._PUT = async function (key, obj) {
+  var self = this;
+  var host = self['@data'].host;
+  var protocol = (!self.secure) ? 'http' : 'https';
+  var url = protocol + '://' + host + key;
+
+  var result = null;
+
+  try {
+    let response = await rest.request('PUT', url, {
+      headers: {
+        'Accept': CONTENT_TYPE
+      },
+      payload: obj
+    });
+
+    console.log('[REMOTE]', '_PUT', key, obj, typeof response, response.length);
+    result = await rest.read(response, {
+      json: true
+    });
+
+    console.log('[REMOTE]', '_PUT', 'response:', key, typeof result, result);
+  } catch (e) {
+    console.error('[REMOTE]', 'exception:', e);
+  }
+
+  return result;
+};
+
+/**
+ * HTTP GET against the configured Authority.
+ * @param  {String} path - HTTP Path to request.
+ * @param  {Object} params - Map of parameters to supply.
+ * @return {Mixed}        [description]
+ */
+Remote.prototype._GET = async function (key, params) {
+  var self = this;
+  var host = self['@data'].host;
+  var protocol = (!self.secure) ? 'http' : 'https';
+  var url = protocol + '://' + host + key;
+
+  try {
+    var response = await rest.request('GET', url, {
+      headers: {
+        'Accept': CONTENT_TYPE
+      }
+    });
+    var result = await rest.read(response, {
+      json: true
+    });
+  } catch (e) {
+    console.error('[REMOTE]', 'exception:', e);
+  }
+
+  return result;
+};
+
+/**
+ * HTTP POST against the configured Authority.
+ * @param  {String} path - HTTP Path to request.
+ * @param  {Object} params - Map of parameters to supply.
+ * @return {Mixed}        [description]
+ */
+Remote.prototype._POST = async function (key, obj, params) {
+  var self = this;
+  var host = self['@data'].host;
+  var protocol = (!self.secure) ? 'http' : 'https';
+  var url = protocol + '://' + host + key;
+
+  console.log('[REMOTE]', 'posting:', key, obj);
+
+  try {
+    var response = await rest.request('POST', url, {
+      headers: {
+        'Accept': CONTENT_TYPE
+      },
+      payload: obj,
+      redirect303: true
+    });
+    var result = await rest.read(response, {
+      json: true
+    });
+
+    console.log('output:', result);
+
+  } catch (e) {
+    console.error('[REMOTE]', 'exception:', e);
+  }
+
+  return result;
+};
+
+/**
+ * HTTP OPTIONS on the configured Authority.
+ * @param  {String} path - HTTP Path to request.
+ * @param  {Object} params - Map of parameters to supply.
+ * @return {Object} - Full description of remote resource.
+ */
+Remote.prototype._OPTIONS = async function (key, params) {
+  var self = this;
+  var host = self['@data'].host;
+  var protocol = (!self.secure) ? 'http' : 'https';
+  var url = protocol + '://' + host + key;
+
+  try {
+    var response = await rest.request('OPTIONS', url, {
+      headers: {
+        'Accept': CONTENT_TYPE
+      }
+    });
+    var result = await rest.read(response, {
+      json: true
+    });
+  } catch (e) {
+    console.error('[REMOTE]', 'exception:', e);
+  }
+
+  return result;
+};
+
+module.exports = Remote;
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-Fabric.html">Fabric</a></li></ul><h3>Classes</h3><ul><li><a href="App.html">App</a></li><li><a href="Chain.html">Chain</a></li><li><a href="Fabric.html">Fabric</a></li><li><a href="Message.html">Message</a></li><li><a href="Oracle.html">Oracle</a></li><li><a href="Peer.html">Peer</a></li><li><a href="Remote.html">Remote</a></li><li><a href="Resource.html">Resource</a></li><li><a href="Storage.html">Storage</a></li><li><a href="Vector.html">Vector</a></li><li><a href="Walker.html">Walker</a></li><li><a href="Worker.html">Worker</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.5.5</a> on Sun Jan 28 2018 01:45:56 GMT+0000 (GMT)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>
