@@ -14,10 +14,10 @@ const unlock = {
 };
 
 const Widget = require('../data/widget');
+const OPTIONS = require('../data/options');
 
 // includes an ARC with one definition, "Widget", for storing arbitrary data.
 // NOTE: HTTP also includes "Index" and "Asset" by default.
-// TODO: fix bug on Index resource; should not have "view" path
 const assumption = 'bc128b68d26860b266226a5f4d435b44764beb899026bf13ff600facd3f18782';
 
 config.bootstrap = true;
@@ -47,7 +47,7 @@ describe('Remote', function () {
 
       console.log('testing:', answer);
 
-      assert.equal(answer['@id'], assumption);
+      assert.equal(answer['@id'], OPTIONS.id);
       assert.equal(answer['@id'], local['@id']);
     } catch (E) {
       console.error(E);
@@ -73,7 +73,7 @@ describe('Remote', function () {
       let result = await remote._OPTIONS('/');
       let answer = new Fabric.Vector(result)._sign();
 
-      assert.equal(answer['@id'], assumption);
+      assert.equal(answer['@id'], OPTIONS.id);
       assert.equal(answer['@id'], local['@id']);
     } catch (E) {
       console.error(E);
