@@ -18,7 +18,7 @@ const Widget = require('../data/widget');
 // includes an ARC with one definition, "Widget", for storing arbitrary data.
 // NOTE: HTTP also includes "Index" and "Asset" by default.
 // TODO: fix bug on Index resource; should not have "view" path
-const assumption = '26cbd34c73a7b9ddc1cc8ed5041764eed27f68aca2b8350f73e9cf87358eb250';
+const assumption = 'bc128b68d26860b266226a5f4d435b44764beb899026bf13ff600facd3f18782';
 
 config.bootstrap = true;
 config.directories = { components: 'components' };
