@@ -18,6 +18,7 @@ describe('CLI', function () {
       await cli.stop();
       assert.ok(cli);
     } catch (E) {
+      await cli.stop();
       console.error(E);
     }
   });
