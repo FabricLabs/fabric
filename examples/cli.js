@@ -9,7 +9,8 @@ async function main () {
   const swarm = new Swarm({
     peers: [
       'fabric.pub:7777',
-      'localhost:7450'
+      // 'localhost:7450', // for `examples/network.js`
+      // 'localhost:7777'
     ]
   });
 
