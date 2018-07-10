@@ -1,93 +1,56 @@
 'use strict';
 
-var namespace = 'playnet';
+const Fabric = require('../');
 
-var crypto = require('crypto');
+const NETWORK_NAME = 'playnet';
+const NODE_COUNT = 3;
+const PEERING_PORT = 7450;
 
-var Block = require('../lib/block');
-var Chain = require('../lib/chain');
-var Ledger = require('../lib/ledger');
-var Transaction = require('../lib/transaction');
+/**
+ * Simulate a Fabric network based on the constants above.
+ * @return {[type]} [description]
+ */
+async function simulate () {
+  let nodes = {};
+  let ids = [];
 
-var block = new Block(); // linked list
-var chain = new Chain(); // secured tree
-var ledger = new Ledger(); // simple list
-
-var proof = {};
-var output = chain.compute();
-
-
-//console.log('output (LEDGER):', ledger);
-//console.log('output (TXS):', ledger['@data']);
-
-output.on('mutation', function (ops) {
-  console.log('mutation:', ops);
-  output.patch(ops);
-});
-
-output.on('block', function validateBlock (id, block) {
-  console.log('[EVENT]', '[BLOCK]', 'incoming:', id, block);
-  console.log('chain height (before):', output['@data'].length);
-
-  proof[id] = block;
-  console.log('proof', proof);
-  
-  chain.compute();
-  
-  console.log('chain height (after):', output['@data'].length);
-
-});
-
-output.on('mutation', function (mutation) {
-  console.log('[EXAMPLE]', 'mutated:', mutation);
-  
-  ledger.patch(mutation);
-  ledger.compute();
-  
-  console.log('[EXAMPLE]', ledger);
-  
-  console.log('tests:', proof, output.test(proof));
-});
-
-
-/* blocks.forEach(function (id) {
-  output.store.get('/blocks/' + id, function (err, block) {
-    known[block['@id']] = block['@data'];
-    //console.log('known block:', known);
-  });
-}); */
-
-
-async function init () {
-  var known = {};
-  var genesis = new Block({
-    name: 'genesis',
-    entropy: crypto.randomBytes(8).toString('hex')
-  });
-  
-  genesis.compute();
-  await chain.append(genesis);
-
-  /*/var num = 0;
-
-  /**/
-  var num = 3;
-  var last = genesis['@id'];
-  for (var i = 0; i < num; i++) {
-    var block = new Block({
-      parent: last,
-      entropy: crypto.randomBytes(8).toString('hex')
+  for (let i = 0; i < NODE_COUNT; i++) {
+    let node = new Fabric.Peer({
+      port: PEERING_PORT + i
     });
-    block.compute();
-    last = block['@id'];
-    await chain.append(block);
-  }/**/
+    console.log(`node id: ${node.id}`, node.id);
+    nodes[node.id] = node;
+    ids.push(node.id);
+  }
 
-  chain.compute();
+  console.log('nodes:', nodes);
 
-  chain._listBlocks();
+  for (let id in nodes) {
+    console.log(`starting ${id}...`);
+    let node = nodes[id];
 
-  console.log('chain:', chain);
+    node.on('ready', function () {
+      console.log(`node ${id} is ready!`);
+      let peers = Object.keys(nodes).filter(x => x !== id);
+      console.log(`node ${id} knows peers:`, peers);
+
+      for (let i in peers) {
+        let peerID = peers[i];
+        let address = `${nodes[peerID].address}:${nodes[peerID].port}`;
+        console.log(`node ${id} connecting to ${address}...`);
+        node._connect(address);
+      }
+    });
+
+    nodes[id].listen();
+  }
+
+  let origin = nodes[ids[0]];
+  let message = Fabric.Message.fromVector([0x00000012, Date.now() + '']); // ping
+
+  console.log('broadcasting message to all peers:', message);
+
+  origin.broadcast(message);
 }
 
-init();
+simulate();
