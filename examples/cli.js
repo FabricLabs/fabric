@@ -44,9 +44,9 @@ async function main () {
     console.error('[CLI]', 'main()', E);
   }
 
-  swarm.on('changes', function (changes) {
-    console.log('[CLI]', 'swarm emitted:', changes);
+  swarm.on('changes', async function (changes) {
     cli.oracle.machine.applyChanges(changes);
+    await cli.oracle._sync();
   });
 
   swarm.start();
