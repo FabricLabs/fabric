@@ -5,8 +5,16 @@ import Fabric from '../';
 const Swarm = require('../lib/swarm');
 
 async function main () {
-  const cli = new Fabric.CLI();
+  const cli = new Fabric.CLI({
+    oracle: {
+      path: `./data/${process.env['NAME'] || 'cli'}`,
+      port: process.env['PORT'] || 3007
+    }
+  });
   const swarm = new Swarm({
+    peer: {
+      port: process.env['PEER_PORT'] || 7777
+    },
     peers: [
       'fabric.pub:7777',
       // 'localhost:7450', // for `examples/network.js`
