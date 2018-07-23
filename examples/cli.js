@@ -44,15 +44,17 @@ async function main () {
     console.error('[CLI]', 'main()', E);
   }
 
+  swarm.on('info', cli.inform.bind(cli));
   swarm.on('changes', async function (changes) {
     cli.oracle.machine.applyChanges(changes);
     await cli.oracle._sync();
+    cli.log('state is now:', cli.oracle.machine.state);
   });
 
   swarm.start();
 
   cli.oracle.on('changes', function (changes) {
-    console.log('MAIN', 'received changes:', changes);
+    cli.log('MAIN', 'received changes:', changes);
     swarm.self.broadcast(changes);
   });
 
