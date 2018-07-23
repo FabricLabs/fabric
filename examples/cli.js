@@ -4,23 +4,27 @@ import Fabric from '../';
 
 const Swarm = require('../lib/swarm');
 
+const config = {
+  oracle: {
+    path: `./data/${process.env['NAME'] || 'cli'}`,
+    port: process.env['PORT'] || 3007
+  }
+};
+
+const network = {
+  peer: {
+    port: process.env['PEER_PORT'] || 7777
+  },
+  peers: [
+    'fabric.pub:7777',
+    // 'localhost:7450', // for `examples/network.js`
+    // 'localhost:7777'
+  ]
+};
+
 async function main () {
-  const cli = new Fabric.CLI({
-    oracle: {
-      path: `./data/${process.env['NAME'] || 'cli'}`,
-      port: process.env['PORT'] || 3007
-    }
-  });
-  const swarm = new Swarm({
-    peer: {
-      port: process.env['PEER_PORT'] || 7777
-    },
-    peers: [
-      'fabric.pub:7777',
-      // 'localhost:7450', // for `examples/network.js`
-      // 'localhost:7777'
-    ]
-  });
+  const cli = new Fabric.CLI(config);
+  const swarm = new Swarm(network);
 
   // TODO: move to lib/chat.js
   cli.oracle.define('Message', {
@@ -45,6 +49,7 @@ async function main () {
   }
 
   swarm.on('info', cli.inform.bind(cli));
+  swarm.on('peer', cli._handlePeerMessage.bind(cli));
   swarm.on('changes', async function (changes) {
     cli.oracle.machine.applyChanges(changes);
     await cli.oracle._sync();
