@@ -11,20 +11,8 @@ const config = {
   }
 };
 
-const network = {
-  peer: {
-    port: process.env['PEER_PORT'] || 7777
-  },
-  peers: [
-    'fabric.pub:7777',
-    // 'localhost:7450', // for `examples/network.js`
-    // 'localhost:7777'
-  ]
-};
-
 async function main () {
   const cli = new Fabric.CLI(config);
-  const swarm = new Swarm(network);
 
   cli.on('info', cli.inform.bind(cli));
   // cli.on('debug', cli.alert.bind(cli));
@@ -51,22 +39,9 @@ async function main () {
     console.error('[CLI]', 'main()', E);
   }
 
-  swarm.on('info', cli.inform.bind(cli));
-  swarm.on('peer', cli._handlePeerMessage.bind(cli));
-  swarm.on('part', cli._handlePartMessage.bind(cli));
-  swarm.on('connection', cli._handleConnection.bind(cli));
-
-  swarm.on('changes', async function (changes) {
-    cli.oracle.machine.applyChanges(changes);
-    await cli.oracle._sync();
-    cli.log('state is now:', cli.oracle.machine.state);
-  });
-
-  swarm.start();
-
   cli.oracle.on('changes', function (changes) {
-    cli.log('MAIN', 'received changes:', changes);
-    swarm.self.broadcast(changes);
+    cli.debug('MAIN', 'received changes:', changes);
+    // swarm.self.broadcast(changes);
   });
 
   cli.oracle.on('/messages', function (msg) {
