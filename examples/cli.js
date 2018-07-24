@@ -51,6 +51,8 @@ async function main () {
   swarm.on('info', cli.inform.bind(cli));
   swarm.on('peer', cli._handlePeerMessage.bind(cli));
   swarm.on('part', cli._handlePartMessage.bind(cli));
+  swarm.on('connection', cli._handleConnection.bind(cli));
+
   swarm.on('changes', async function (changes) {
     cli.oracle.machine.applyChanges(changes);
     await cli.oracle._sync();
