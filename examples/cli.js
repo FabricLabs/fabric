@@ -26,6 +26,9 @@ async function main () {
   const cli = new Fabric.CLI(config);
   const swarm = new Swarm(network);
 
+  cli.on('info', cli.inform.bind(cli));
+  // cli.on('debug', cli.alert.bind(cli));
+
   // TODO: move to lib/chat.js
   cli.oracle.define('Message', {
     routes: {
