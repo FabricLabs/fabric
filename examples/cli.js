@@ -14,25 +14,6 @@ const config = {
 async function main () {
   const cli = new Fabric.CLI(config);
 
-  cli.on('info', cli.inform.bind(cli));
-  // cli.on('debug', cli.alert.bind(cli));
-
-  // TODO: move to lib/chat.js
-  cli.oracle.define('Message', {
-    routes: {
-      list: '/messages',
-      get: '/messages/:id'
-    }
-  });
-
-  // TODO: move into Fabric proper (Oracle?)
-  cli.oracle.define('Peer', {
-    routes: {
-      list: '/peers',
-      get: '/peers/:id'
-    }
-  });
-
   try {
     await cli.start();
   } catch (E) {
@@ -41,7 +22,7 @@ async function main () {
 
   cli.oracle.on('changes', function (changes) {
     cli.debug('MAIN', 'received changes:', changes);
-    // swarm.self.broadcast(changes);
+    cli.swarm.self.broadcast(changes);
   });
 
   cli.oracle.on('/messages', function (msg) {
