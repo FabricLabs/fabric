@@ -22,17 +22,17 @@ describe('App', function () {
     let oracle = new Fabric.Oracle({
       path: './data/oracle'
     });
-    
+
     await app.start();
-    //await oracle.start();
+    await oracle.start();
 
     await oracle._load('./resources');
     await app._defer(oracle);
-    //await app._explore();
+    // await app._explore();
 
     await app.stop();
     await oracle.storage.close();
-    //await oracle.stop();
+    // await oracle.stop();
 
     assert.ok(oracle);
     assert.ok(app);
