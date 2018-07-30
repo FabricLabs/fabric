@@ -85,7 +85,6 @@
     "mocha": "^3.4.2",
     "nyc": "^11.4.1",
     "page": "^1.7.1",
-    "random-weighted-item": "^1.0.3",
     "semistandard": "^11.0.0",
     "static": "^2.0.0",
     "testling": "^1.7.1",
