@@ -20,11 +20,6 @@ async function main () {
     console.error('[CLI]', 'main()', E);
   }
 
-  cli.oracle.on('changes', function (changes) {
-    cli.debug('MAIN', 'received changes:', changes);
-    cli.swarm.self.broadcast(changes);
-  });
-
   cli.oracle.on('/messages', function (msg) {
     // TODO: standardize an API for addressable messages in Oracle/HTTP
     // console.log('MAIN', 'received message:', msg);
