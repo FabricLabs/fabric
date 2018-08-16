@@ -20,7 +20,7 @@ We proudly accept [$BTC](bitcoin:3CHGLadfbcKrM1sS5uYtASaq75VAuMSMpb) as our prim
 
 Alternatively, scan this QR code with [your choice of mobile wallet][mobile-wallet]:
 
-![bitcoin:3CHGLadfbcKrM1sS5uYtASaq75VAuMSMpb](assets/3CHGLadfbcKrM1sS5uYtASaq75VAuMSMpb.png)
+![bitcoin:3CHGLadfbcKrM1sS5uYtASaq75VAuMSMpb](https://fabric.pub/assets/3CHGLadfbcKrM1sS5uYtASaq75VAuMSMpb.png)
 
 ## Artwork
 We're borne of a swarm of storytellers, eager to tell a tale.  [Join `#idlerpg:verse.im`](https://chat.fabric.pub/#/room/#idlerpg:verse.im) to start your journey, or [jump to the end](https://www.roleplaygateway.com/) to list your work.
