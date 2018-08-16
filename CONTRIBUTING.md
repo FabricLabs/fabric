@@ -3,7 +3,7 @@ Everyone is welcome to contribute to Fabric and `fabric`-deployed [#products][pr
 
 > Don't be an asshole.
 
-## Intellectual Capital
+## Intellect
 Contributing your intellectual capital is the best way to support Fabric.  [Get involved in Grove][chat-grove], our community chat, and we'll help you get started.
 
 See also:
