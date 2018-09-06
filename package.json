@@ -45,6 +45,8 @@
     "fast-json-patch": "^2.0.4",
     "hash.js": "^1.1.3",
     "hashcasher": "martindale/hashcasher#fabric",
+    "jade-lexer": "0.0.9",
+    "jade-parser": "0.0.9",
     "javascript-state-machine": "^3.0.1",
     "level": "^2.0.0",
     "localforage": "^1.5.3",
