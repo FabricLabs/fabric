@@ -27,4 +27,4 @@ build/Release
 node_modules
 
 # service output
-/assets/service.js
+assets/service.js
