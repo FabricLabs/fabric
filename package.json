@@ -1,26 +1,30 @@
 {
-  "name": "fabric",
+  "name": "@fabric/core",
   "version": "0.1.0-dev",
   "description": "experimental p2p framework",
-  "main": "index.js",
+  "main": "assets/fabric.js",
+  "module": "index.js",
   "directories": {
     "doc": "docs",
     "test": "tests"
   },
   "scripts": {
-    "build": "npm run make:service && npm run make:app && npm run make:docs",
+    "build": "npm run make:lib",
+    "build:all": "npm run make:service && npm run make:app && npm run make:docs && npm run make:lib",
     "cli": "babel-node examples/cli.js",
     "coverage": "cross-env NODE_ENV=test nyc --reporter=lcov _mocha",
     "coverage:inspect": "npm run coverage && http-server coverage/lcov-report",
     "docs": "gitbook install && npm run parse:api && gitbook serve",
     "examples": "docco --output examples/ examples/app.js examples/oracle.js && http-server examples/",
-    "make:api": "jsdoc --debug index.js lib/ -d docs/",
+    "make:api": "jsdoc --debug index.js lib/ README.md -d docs/",
     "make:app": "webpack --progress --colors examples/app.js assets/app.js",
     "make:docs": "gitbook install && npm run parse:api && gitbook build",
+    "make:lib": "babel index.js --out-file src/fabric.js && webpack --debug=true --target=node src/fabric.js assets/fabric.min.js",
     "make:service": "webpack --progress --colors examples/service.js assets/service.js",
-    "parse:api": "jsdoc2md --configure jsdoc.json --files index.js lib/**/*.js > docs/api.md",
+    "parse:api": "jsdoc2md --configure jsdoc.json --files index.js lib/**/*.js README.md > docs/api.md",
+    "prepublish": "npm run build",
     "start": "npm run make:service && webpack --progress --colors examples/app.js assets/app.js && babel-node examples/oracle.js",
-    "test": "cross-env NODE_ENV=test nyc mocha",
+    "test": "NODE_ENV=test cross-env nyc mocha",
     "test:app": "npm run make:service && npm run make:app && NODE_ENV=test mocha"
   },
   "engines": {
@@ -28,46 +32,42 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/martindale/fabric.git"
+    "url": "git+https://github.com/FabricLabs/fabric.git"
   },
   "keywords": [
-    "fabric"
+    "fabric",
+    "p2p"
   ],
   "author": "Eric Martindale",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/martindale/fabric/issues"
+    "url": "https://github.com/FabricLabs/fabric/issues"
   },
-  "homepage": "https://github.com/martindale/fabric#readme",
+  "homepage": "https://github.com/FabricLabs/fabric#readme",
   "dependencies": {
-    "ajv": "^5.5.2",
-    "babel-polyfill": "^6.26.0",
+    "bson": "^3.0.2",
+    "elliptic": "^6.4.0",
     "fast-json-patch": "^2.0.4",
-    "hash.js": "^1.1.3",
-    "hashcasher": "martindale/hashcasher#fabric",
-    "javascript-state-machine": "^3.0.1",
-    "level": "^2.0.0",
-    "localforage": "^1.5.3",
-    "lodash.merge": "^4.6.0",
+    "json-pointer": "^0.6.0",
+    "level": "^4.0.0",
+    "merkletreejs": "0.0.6",
     "mkdirp": "^0.5.1",
     "path-match": "^1.2.4",
-    "ssri": "^5.0.0",
-    "webworker-threads": "^0.7.13",
-    "wreck": "^14.0.2",
-    "wrtc": "^0.0.63"
+    "pug": "^2.0.1",
+    "wreck": "^14.0.2"
   },
   "devDependencies": {
     "babel-cli": "^6.26.0",
-    "babel-core": "^6.26.0",
+    "babel-core": "^6.26.3",
     "babel-plugin-istanbul": "^4.1.5",
-    "babel-preset-env": "^1.6.1",
+    "babel-preset-env": "^1.7.0",
     "babel-preset-es2017": "^6.24.1",
     "babel-register": "^6.26.0",
     "blessed": "^0.1.81",
-    "blessed-contrib": "^4.8.5",
+    "blessed-contrib": "^4.8.6",
     "body-parser": "^1.18.2",
     "chai": "^4.0.2",
-    "codecov": "^3.0.0",
+    "codecov": "^3.1.0",
     "compiled-jade-render": "^1.0.2",
     "cross-env": "^5.1.3",
     "debug-trace": "^2.2.1",
@@ -76,20 +76,22 @@
     "express": "^4.16.2",
     "gitbook-plugin-scripts": "^1.0.2",
     "http-server": "^0.10.0",
-    "istanbul": "0.4.4",
+    "istanbul": "^0.4.5",
     "jade": "^1.11.0",
     "jsdoc": "^3.5.5",
     "jsdoc-babel": "^0.3.0",
     "jsdoc-to-markdown": "^3.0.1",
     "livereload": "^0.6.2",
+    "localforage": "^1.7.2",
     "mocha": "^3.4.2",
-    "nyc": "^11.4.1",
+    "nyc": "^11.6.0",
     "page": "^1.7.1",
+    "pty.js": "^0.3.1",
     "semistandard": "^11.0.0",
     "static": "^2.0.0",
+    "term.js": "0.0.7",
     "testling": "^1.7.1",
-    "webpack": "^3.8.1",
-    "wopr": "martindale/wopr#exports"
+    "webpack": "^3.8.1"
   },
   "browserify": {
     "level": "level-browserify"
@@ -107,8 +109,12 @@
     }
   },
   "nyc": {
+    "plugins": [
+      "istanbul"
+    ],
     "require": [
-      "babel-register"
+      "babel-register",
+      "babel-polyfill"
     ],
     "reporter": [
       "lcov",

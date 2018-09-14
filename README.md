@@ -121,8 +121,8 @@ const Fabric = require('fabric');
 const service = new Fabric();
 ```
 
-`service` now contains a full instance of Fabric, including `GET` and `SET`
-methods for storing and retrieving documents.  Use `npm run examples` to see
+`service` now contains a full instance of Fabric, including `SET` and `GET`
+methods for publishing and retrieving documents.  Use `npm run examples` to see
 more.
 
 ## Why?
