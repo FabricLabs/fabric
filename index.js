@@ -1,160 +1,38 @@
 /**
- * # Fabric, the world's computational infrastructure.
+ * # Fabric: an experimental p2p framework
  * Providing an interface to Fabric network, this file defines the available
  * components and abstractions when relying on this library.
  */
 'use strict';
 
-// Configures the current runtime to contain back-ported features from ES2015
-require('babel-polyfill');
-
-const Fabric = require('./lib/fabric');
-const App = require('./lib/app');
-const Block = require('./lib/block');
-const Chain = require('./lib/chain');
-const CLI = require('./lib/cli');
-const Datastore = require('./lib/datastore');
-const HTTP = require('./lib/http');
-const Key = require('./lib/key');
-const Machine = require('./lib/machine');
-const Message = require('./lib/message');
-const Oracle = require('./lib/oracle');
-const Remote = require('./lib/remote');
-const Resource = require('./lib/resource');
-const Storage = require('./lib/storage');
-const Store = require('./lib/store');
-const Transaction = require('./lib/transaction');
-const Validator = require('./lib/validator');
-const Vector = require('./lib/vector');
-const Walker = require('./lib/walker');
-const Worker = require('./lib/worker');
+const Fabric = require('./fabric');
 
 /**
- * Fabric's Developer API.  Exposes immutable types for all requisite components.
- * @exports Fabric
- * @type {Fabric}
- * @returns {Fabric}
+ * Default interface to {@link Fabric}.  Exposes immutable types for all
+ * requisite {@link Component} elements of the `components` option.
+ * @property {Configuration} config Initial {@link Vector}.
+ * @property {Map} config.components Transformation function of `© ⇒ Δ`.
  */
-class API extends Fabric {
-  constructor (configuration) {
-    super(configuration);
+export default class App extends Fabric {
+  /**
+   * Create a new instance of the Fabric App.
+   * @param  {Object} config Configuration object.
+   * @param  {Object} config.store Path to local storage.
+   * @return {App}
+   */
+  constructor (config) {
+    super(config);
+    this.config = Object.assign({
+      store: './data/api'
+    }, config);
+    return this;
+  }
+
+  render () {
+    return (
+      Fabric
+    );
   }
 }
 
-/**
- * Offers complex functionality for managing user interfaces bound to real-time data.
- * @type {App}
- */
-API.App = App;
-
-/**
- * A batch of Transactions.
- * @type {Block}
- */
-API.Block = Block;
-
-/**
- * General mechanism for storing immutable events over time.
- * @type {Chain}
- */
-API.Chain = Chain;
-
-/**
- * Basic terminal interface for {@link module:Fabric}.
- * @type {CLI}
- */
-API.CLI = CLI;
-
-/**
- * Persistent data storage for local environments.
- * @type {Datastore}
- */
-API.Datastore = Datastore;
-
-/**
- * Fully-functional HTTP server for providing oracle services.  See also {@link module:Oracle}.
- * @type {HTTP}
- */
-API.HTTP = HTTP;
-
-/**
- * Simply cryptographic keys.
- * @type {Key}
- */
-API.Key = Key;
-
-/**
- * General-purpose computer with verifiable execution.
- * @type {Machine}
- */
-API.Machine = Machine;
-
-/**
- * {@link module:Vector} instances for potential application.
- * @type {Message}
- */
-API.Message = Message;
-
-/**
- * External point of trust for {@link module:Contract} instances.
- * @type {Oracle}
- */
-API.Oracle = Oracle;
-
-/**
- * Simple client which speaks the {@link module:Fabric} protocol.
- * @type {Remote}
- */
-API.Remote = Remote;
-
-/**
- * Interactive datastore.
- * @type {Resource}
- */
-API.Resource = Resource;
-
-/**
- * Abstract long-term storage with isomorphic support for various clients.
- * @type {Storage}
- */
-API.Storage = Storage;
-
-/**
- * Simple storage class.  Uses LevelDB by default.
- * @type {Store}
- */
-API.Store = Store;
-
-/**
- * An atomic unit of change within the system.
- * @type {Transaction}
- */
-API.Transaction = Transaction;
-
-/**
- * Validates known assumptions.
- * @type {Validator}
- */
-API.Validator = Validator;
-
-/**
- * Minimum possible unit.
- * @type {Vector}
- */
-API.Vector = Vector;
-
-/**
- * Agent capable of walking a graph.
- * @type {Walker}
- */
-API.Walker = Walker;
-
-/**
- * Simple job processing agent.
- * @type {Worker}
- */
-API.Worker = Worker;
-
-API.test = new Vector(API)._sign();
-
-export { API as default };
+module.exports = App;
