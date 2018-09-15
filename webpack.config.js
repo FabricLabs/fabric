@@ -1,9 +1,10 @@
-var path = require('path');
-var webpack = require('webpack');
+'use strict';
+
+const webpack = require('webpack');
 
 module.exports = {
-  entry: './examples/app.js',
-  //devtool: 'source-map',
+  // entry: './index.js',
+  // devtool: 'source-map',
   plugins: [
     new webpack.DefinePlugin({
       'process.env': {

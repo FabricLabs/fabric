@@ -11,7 +11,7 @@ const Fabric = require('./fabric');
  * Default interface to {@link Fabric}.  Exposes immutable types for all
  * requisite {@link Component} elements of the `components` option.
  * @property {Configuration} config Initial {@link Vector}.
- * @property {Map} config.components Transformation function of `© ⇒ Δ`.
+ * @property {Map} config.components Transformation function of `Σ ⇒ Δ`.
  */
 export default class App extends Fabric {
   /**
@@ -23,15 +23,13 @@ export default class App extends Fabric {
   constructor (config) {
     super(config);
     this.config = Object.assign({
-      store: './data/api'
+      store: `./data/${this.constructor.name.toLowerCase()}`
     }, config);
     return this;
   }
 
   render () {
-    return (
-      Fabric
-    );
+    return `<Fabric />`;
   }
 }
 
