@@ -1,4 +1,5 @@
 {
+  "name": "Intermediate JavaScript API for Fabric",
   "plugins": ["node_modules/jsdoc-babel"],
   "babel": {
     "presets": [ "es2017" ]
