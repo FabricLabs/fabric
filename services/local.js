@@ -1,6 +1,6 @@
 'use strict';
 
-const Service = require('.service');
+const Service = require('../lib/service');
 
 class Local extends Service {
   handler (message) {

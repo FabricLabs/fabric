@@ -3,11 +3,11 @@
   "plugins": ["exercises", "edit-link", "page-toc", "scripts"],
   "pluginsConfig": {
     "edit-link": {
-      "base": "https://github.com/martindale/fabric/edit/master",
+      "base": "https://github.com/FabricLabs/fabric/edit/master",
       "label": "Edit This Page"
     },
     "scripts": {
-      "files": ["./assets/app.js"]
+      "files": ["./assets/fabric.js"]
     }
   }
 }
