@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build:all": "npm run make:service && npm run make:app && npm run make:docs && npm run make:lib",
-    "build": "jsdoc ./index.js -d docs && npm run make:lib",
+    "build": "npm run make:docs && npm run make:lib",
     "cli": "babel-node examples/cli.js",
     "coverage:inspect": "npm run coverage && ecstatic coverage/lcov-report",
     "coverage": "cross-env NODE_ENV=test nyc --reporter=lcov _mocha",
@@ -72,6 +72,7 @@
     "debug-trace": "^2.2.1",
     "docco": "^0.7.0",
     "eccrypto": "^1.0.3",
+    "ecstatic": "^3.3.0",
     "express": "^4.16.2",
     "gitbook-cli": "^2.3.2",
     "gitbook-plugin-scripts": "^1.0.2",
