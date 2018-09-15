@@ -211,7 +211,8 @@ Twitter: [@FabricProtocol][twitter]
 
 [everything-is-broken]: https://medium.com/message/everything-is-broken-81e5f33a24e1
 [coordination]: https://i.imgur.com/Ki3fbTh.gif
-[bitcoin-donations]: bitcoin:3Nc9HqZdfQR7W6c1JN926Rc7vU6eT1wxxn
+[bitcoin-donations]: bitcoin:3CHGLadfbcKrM1sS5uYtASaq75VAuMSMpb
+[bitcoin-donations-image]: https://fabric.pub/assets/3CHGLadfbcKrM1sS5uYtASaq75VAuMSMpb.png
 [gratipay]: https://gratipay.com/fabric
 [twitter]: https://twitter.com/FabricProtocol
 [join]: https://maki.io/community
