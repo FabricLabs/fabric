@@ -9,7 +9,6 @@
     "test": "tests"
   },
   "scripts": {
-    "build:all": "npm run make:service && npm run make:app && npm run make:docs && npm run make:lib",
     "build": "npm run make:docs && npm run make:lib",
     "cli": "babel-node examples/cli.js",
     "coverage:inspect": "npm run coverage && ecstatic coverage/lcov-report",
@@ -17,12 +16,13 @@
     "docs": "gitbook install && npm run parse:api && gitbook serve",
     "examples": "docco --output examples/ examples/app.js examples/oracle.js && ecstatic examples/",
     "local": "npm run build && ecstatic ./assets",
-    "make:api": "jsdoc --debug index.js lib/ README.md -d docs/",
+    "make:all": "npm run make:api && npm run make:service && npm run make:app && npm run make:docs && npm run make:lib",
+    "make:api": "npm run parse:api && jsdoc index.js lib/ README.md -d docs/",
     "make:app": "webpack --progress examples/app.js assets/app.js",
     "make:docs": "gitbook install && npm run parse:api && gitbook build",
     "make:lib": "NODE_ENV=production babel index.js --out-file assets/fabric.js && webpack --debug=true --target=node assets/fabric.js assets/fabric.min.js",
     "make:service": "webpack --progress examples/service.js assets/service.js",
-    "parse:api": "jsdoc2md --configure jsdoc.json --files index.js README.md > API.md",
+    "parse:api": "jsdoc2md --configure jsdoc.json --files index.js lib/** README.md > API.md",
     "prepublish": "npm run build",
     "start": "npm run build && node assets/fabric.js",
     "test:app": "npm run make:service && npm run make:app && NODE_ENV=test mocha",

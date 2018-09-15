@@ -1,7 +1,7 @@
 /**
  * # Fabric: an experimental p2p framework
  * Providing an interface to Fabric network, this file defines the available
- * components and abstractions when relying on this library.
+ * components and abstractions used when relying on this library.
  */
 'use strict';
 

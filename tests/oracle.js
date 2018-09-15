@@ -1,6 +1,6 @@
 'use strict';
 
-import Fabric from '../';
+const Fabric = require('../');
 
 const assert = require('assert');
 const expect = require('chai').expect;
