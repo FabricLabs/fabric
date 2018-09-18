@@ -28,6 +28,10 @@ export default class App extends Fabric {
     return this;
   }
 
+  /**
+   * Draw the application to canvas (display).
+   * @return {Mixed}
+   */
   render () {
     return `<Fabric />`;
   }

@@ -7,7 +7,7 @@
       "label": "Edit This Page"
     },
     "scripts": {
-      "files": ["./assets/fabric.js"]
+      "files": ["./assets/fabric.min.js"]
     }
   }
 }
