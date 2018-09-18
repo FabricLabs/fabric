@@ -19,11 +19,11 @@ const genesis = message['@id'];
 const types = '26cbd34c73a7b9ddc1cc8ed5041764eed27f68aca2b8350f73e9cf87358eb250';
 
 describe('HTTP', function () {
-  it('should expose a constructor', function () {
+  xit('should expose a constructor', function () {
     assert.equal(Fabric.HTTP instanceof Function, true);
   });
 
-  it('can clean up after itself', async function () {
+  xit('can clean up after itself', async function () {
     let server = new Fabric.HTTP({
       resources: { Widget }
     });
@@ -75,7 +75,7 @@ describe('HTTP', function () {
     await server.stop();
   });
 
-  it('can receive a GET request to the main index', async function () {
+  xit('can receive a GET request to the main index', async function () {
     let server = new Fabric.HTTP({
       resources: { Widget }
     });
@@ -96,7 +96,7 @@ describe('HTTP', function () {
     //await server.storage.close();
   });
 
-  it('can receive a PUT request', async function () {
+  xit('can receive a PUT request', async function () {
     let server = new Fabric.HTTP({
       resources: { Widget }
     });
@@ -122,7 +122,7 @@ describe('HTTP', function () {
     await server.stop();
   });
 
-  it('can receive a POST request', async function () {
+  xit('can receive a POST request', async function () {
     let server = new Fabric.HTTP({
       resources: { Widget }
     });
@@ -152,7 +152,7 @@ describe('HTTP', function () {
     await server.stop();
   });
 
-  it('can receive a PATCH request', async function () {
+  xit('can receive a PATCH request', async function () {
     let server = new Fabric.HTTP({
       resources: { Widget }
     });

@@ -18,4 +18,4 @@ async function main () {
   console.log('link:', 'http://localhost:' + address.port);
 }
 
-main();
+module.exports = main();
