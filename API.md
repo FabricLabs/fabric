@@ -29,8 +29,28 @@ requisite <a href="Component">Component</a> elements of the <code>components</co
 <dt><a href="#CLI">CLI</a></dt>
 <dd><p>Base class for a terminal-like interface to the Fabric network.</p>
 </dd>
+<dt><a href="#Fabric">Fabric</a></dt>
+<dd><p>Reliable decentralized infrastructure.</p>
+</dd>
 <dt><a href="#Scribe">Scribe</a></dt>
-<dd><p>Implementation of a simple tag-based recordkeeper.</p>
+<dd><p>Simple tag-based recordkeeper.</p>
+</dd>
+<dt><a href="#Service">Service</a></dt>
+<dd><p>The &quot;Service&quot; is a simple model for processing messages in a distributed
+system.  <a href="#Service">Service</a> instances are public interfaces for outside systems,
+and typically advertise their presence to the network.</p>
+<p>To implement a Service, you will typically need to implement all methods from
+this prototype.  In general, <code>connect</code> and <code>send</code> are the highest-priority
+jobs, and by default the <code>fabric</code> property will serve as an I/O stream using
+familiar semantics.</p>
+</dd>
+</dl>
+
+## Functions
+
+<dl>
+<dt><a href="#value">value(scribe)</a> ⇒ <code><a href="#Scribe">Scribe</a></code></dt>
+<dd><p>Use an existing Scribe instance as a parent.</p>
 </dd>
 </dl>
 
@@ -42,14 +62,16 @@ requisite <a href="Component">Component</a> elements of the <code>components</co
 
 * [Fabric](#Fabric)
     * [new Fabric(config)](#new_Fabric_new)
-    * [.bootstrap(vector, notify)](#Fabric+bootstrap)
+    * [.genesis(vector, notify)](#Fabric+genesis)
     * [.trust(source)](#Fabric+trust) ⇒ [<code>Fabric</code>](#Fabric)
-    * [.render()](#Fabric+render) ⇒ <code>String</code>
 
 <a name="new_Fabric_new"></a>
 
 ### new Fabric(config)
-The [module:Fabric](module:Fabric) type implements the Fabric Protocol, a formally-defined language for the establishment and settlement of mutually-agreed upon proofs of work.
+The [Fabric](#Fabric) type implements a peer-to-peer protocol for
+establishing and settling of mutually-agreed upon proofs of
+work.  Contract execution takes place in the local node first,
+then is optionally shared with the network.
 
 Utilizing
 
@@ -58,22 +80,23 @@ Utilizing
 | --- | --- | --- |
 | config | <code>Vector</code> | Initial configuration for the Fabric engine.  This can be considered the "genesis" state for any contract using the system.  If a chain of events is maintained over long periods of time, `state` can be considered "in contention", and it is demonstrated that the outstanding value of the contract remains to be settled. |
 
-<a name="Fabric+bootstrap"></a>
+<a name="Fabric+genesis"></a>
 
-### fabric.bootstrap(vector, notify)
+### fabric.genesis(vector, notify)
 Consume an application definition (configure resources + services)
 
 **Kind**: instance method of [<code>Fabric</code>](#Fabric)  
 
 | Param | Type | Description |
 | --- | --- | --- |
-| vector | <code>object</code> | Object representation of the application definition. |
+| vector | <code>Object</code> | Object representation of the application definition. |
 | notify | <code>function</code> | Callback function (err, result) |
 
 <a name="Fabric+trust"></a>
 
 ### fabric.trust(source) ⇒ [<code>Fabric</code>](#Fabric)
-Blindly consume messages from a `source`, relying on `Chain` to verify.
+Blindly consume messages from a [Source](Source), relying on `this.chain` to
+verify results.
 
 **Kind**: instance method of [<code>Fabric</code>](#Fabric)  
 **Returns**: [<code>Fabric</code>](#Fabric) - Returns itself.  
@@ -82,13 +105,6 @@ Blindly consume messages from a `source`, relying on `Chain` to verify.
 | --- | --- | --- |
 | source | <code>EventEmitter</code> | Any object which implements the `EventEmitter` pattern. |
 
-<a name="Fabric+render"></a>
-
-### fabric.render() ⇒ <code>String</code>
-Serialize the current network state and provide it as output.
-
-**Kind**: instance method of [<code>Fabric</code>](#Fabric)  
-**Returns**: <code>String</code> - Serialized output for consumption.  
 <a name="Machine"></a>
 
 ## Machine
@@ -137,6 +153,7 @@ Start listening for connections.
 
 * [Remote](#Remote) : <code>Vector</code>
     * [new Remote(target)](#new_Remote_new)
+    * [.enumerate](#Remote+enumerate) ⇒ <code>Configuration</code>
     * [._PUT](#Remote+_PUT) ⇒ <code>Mixed</code>
     * [._GET](#Remote+_GET) ⇒ <code>Mixed</code>
     * [._POST](#Remote+_POST) ⇒ <code>Mixed</code>
@@ -154,6 +171,12 @@ An in-memory representation of a node in our network.
 | target.host | <code>String</code> | Named host, e.g. "localhost". |
 | target.secure | <code>String</code> | Require TLS session. |
 
+<a name="Remote+enumerate"></a>
+
+### remote.enumerate ⇒ <code>Configuration</code>
+Enumerate the available Resources on the remote host.
+
+**Kind**: instance property of [<code>Remote</code>](#Remote)  
 <a name="Remote+_PUT"></a>
 
 ### remote._PUT ⇒ <code>Mixed</code>
@@ -437,10 +460,68 @@ Update UI as necessary based on changes from Oracle.
 | --- | --- | --- |
 | msg | <code>Message</code> | Incoming [Message](Message). |
 
+<a name="Fabric"></a>
+
+## Fabric
+Reliable decentralized infrastructure.
+
+**Kind**: global variable  
+**Properties**
+
+| Name | Type |
+| --- | --- |
+| Block | <code>Class</code> | 
+
+
+* [Fabric](#Fabric)
+    * [new Fabric(config)](#new_Fabric_new)
+    * [.genesis(vector, notify)](#Fabric+genesis)
+    * [.trust(source)](#Fabric+trust) ⇒ [<code>Fabric</code>](#Fabric)
+
+<a name="new_Fabric_new"></a>
+
+### new Fabric(config)
+The [Fabric](#Fabric) type implements a peer-to-peer protocol for
+establishing and settling of mutually-agreed upon proofs of
+work.  Contract execution takes place in the local node first,
+then is optionally shared with the network.
+
+Utilizing
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| config | <code>Vector</code> | Initial configuration for the Fabric engine.  This can be considered the "genesis" state for any contract using the system.  If a chain of events is maintained over long periods of time, `state` can be considered "in contention", and it is demonstrated that the outstanding value of the contract remains to be settled. |
+
+<a name="Fabric+genesis"></a>
+
+### fabric.genesis(vector, notify)
+Consume an application definition (configure resources + services)
+
+**Kind**: instance method of [<code>Fabric</code>](#Fabric)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| vector | <code>Object</code> | Object representation of the application definition. |
+| notify | <code>function</code> | Callback function (err, result) |
+
+<a name="Fabric+trust"></a>
+
+### fabric.trust(source) ⇒ [<code>Fabric</code>](#Fabric)
+Blindly consume messages from a [Source](Source), relying on `this.chain` to
+verify results.
+
+**Kind**: instance method of [<code>Fabric</code>](#Fabric)  
+**Returns**: [<code>Fabric</code>](#Fabric) - Returns itself.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| source | <code>EventEmitter</code> | Any object which implements the `EventEmitter` pattern. |
+
 <a name="Scribe"></a>
 
 ## Scribe
-Implementation of a simple tag-based recordkeeper.
+Simple tag-based recordkeeper.
 
 **Kind**: global variable  
 **Properties**
@@ -448,4 +529,66 @@ Implementation of a simple tag-based recordkeeper.
 | Name | Type | Description |
 | --- | --- | --- |
 | config | <code>Object</code> | Current configuration. |
+
+<a name="Service"></a>
+
+## Service
+The "Service" is a simple model for processing messages in a distributed
+system.  [Service](#Service) instances are public interfaces for outside systems,
+and typically advertise their presence to the network.
+
+To implement a Service, you will typically need to implement all methods from
+this prototype.  In general, `connect` and `send` are the highest-priority
+jobs, and by default the `fabric` property will serve as an I/O stream using
+familiar semantics.
+
+**Kind**: global variable  
+**Properties**
+
+| Name | Description |
+| --- | --- |
+| map | The "map" is a hashtable of "key" => "value" pairs. |
+
+
+* [Service](#Service)
+    * [.send](#Service+send) ⇒ [<code>Service</code>](#Service)
+    * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
+
+<a name="Service+send"></a>
+
+### service.send ⇒ [<code>Service</code>](#Service)
+Send a message to a channel.
+
+**Kind**: instance property of [<code>Service</code>](#Service)  
+**Returns**: [<code>Service</code>](#Service) - Chainable method.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| channel | <code>String</code> | Channel name to which the message will be sent. |
+| message | <code>String</code> | Content of the message to send. |
+
+<a name="Service+handler"></a>
+
+### service.handler(message) ⇒ [<code>Service</code>](#Service)
+Default route handler for an incoming message.  Follows the Activity Streams
+2.0 spec: https://www.w3.org/TR/activitystreams-core/
+
+**Kind**: instance method of [<code>Service</code>](#Service)  
+**Returns**: [<code>Service</code>](#Service) - Chainable method.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| message | <code>Object</code> | Message object. |
+
+<a name="value"></a>
+
+## value(scribe) ⇒ [<code>Scribe</code>](#Scribe)
+Use an existing Scribe instance as a parent.
+
+**Kind**: global function  
+**Returns**: [<code>Scribe</code>](#Scribe) - The configured instance of the Scribe.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| scribe | [<code>Scribe</code>](#Scribe) | Instance of Scribe to use as parent. |
 

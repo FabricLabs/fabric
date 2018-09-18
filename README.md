@@ -22,8 +22,8 @@ allowing them to operate independent of network availability or consensus.
 Participants in a Fabric-speaking network may compete for contracts, earning
 digital currency in exchange for processing "work orders" made available to them
 through the peer-to-peer network.  Included is a simple programming language for
-the construction of deterministic, formally-verified smart contracts, which are
-then broadcast to network participants for execution.
+the construction of deterministic, formally-verifiable smart contracts, which
+are then broadcast to network participants for execution.
 
 Contracts requiring secure execution may be divided into smaller sub-programs,
 broadcast to the network as discrete instructions, and later re-composed into a
