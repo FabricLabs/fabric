@@ -1,14 +1,21 @@
 'use strict';
 
+// Core
 const Fabric = require('../');
 
+// Modules
+const Service = require('../lib/service');
+
+// Testing
 const assert = require('assert');
 const expect = require('chai').expect;
 
+// Data
 const genesis = require('../data/fabric');
 const message = require('../data/message');
 const samples = require('../data/samples');
 
+// Opcodes
 const OPCODES = require('../data/opcodes');
 
 // test our own expectations.  best of luck.
@@ -28,6 +35,18 @@ describe('Fabric', function () {
 
       assert.equal(genesis['@id'], samples.names.fabric);
       assert.equal(seed['@id'], genesis['@id']);
+    });
+
+    it('can start and stop smoothly', function (done) {
+      let fabric = new Fabric();
+
+      async function main () {
+        await fabric.start();
+        await fabric.stop();
+        done();
+      }
+
+      main();
     });
 
     it('can compute a value', async function prove () {
@@ -108,6 +127,58 @@ describe('Fabric', function () {
 
       assert.equal(put, put);
       assert.equal(get, message['@data']);
+    });
+  });
+
+  describe('Crypto', function () {
+    it('offers a "Key" type', function () {
+      assert.equal(Fabric.Key instanceof Function, true);
+    });
+
+    it('can create an ECDSA key', function () {
+      let key = new Fabric.Key();
+      assert.ok(key);
+    });
+
+    it('can sign some data', function () {
+      let key = new Fabric.Key();
+      let signature = key._sign(message['@data']);
+
+      assert.ok(signature);
+    });
+
+    it('produces a valid signature', function () {
+      let key = new Fabric.Key();
+      let signature = key._sign(message['@data']);
+      let valid = key._verify(message['@data'], signature)
+      assert.ok(valid);
+    });
+  });
+
+  describe('Service', function () {
+    it('should expose a constructor', function () {
+      assert.equal(Service instanceof Function, true);
+    });
+
+    it('can create an instance', async function provenance () {
+      let service = new Service({
+        name: 'Test'
+      });
+
+      assert.ok(service);
+    });
+
+    it('can start offering service', function (done) {
+      let service = new Service();
+
+      async function main () {
+        await service.start();
+        await service.stop();
+        assert.ok(service);
+        done();
+      }
+
+      main();
     });
   });
 });

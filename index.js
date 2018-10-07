@@ -8,23 +8,29 @@
 const Fabric = require('./fabric');
 
 /**
- * Default interface to {@link Fabric}.  Exposes immutable types for all
- * requisite {@link Component} elements of the `components` option.
+ * Default interface to {@link Fabric}.  Provides immutable types for all
+ * elements of the `components` option.
  * @property {Configuration} config Initial {@link Vector}.
  * @property {Map} config.components Transformation function of `Σ ⇒ Δ`.
  */
 class App extends Fabric {
   /**
    * Create a new instance of the Fabric App.
-   * @param  {Object} config Configuration object.
-   * @param  {Object} config.store Path to local storage.
+   * @param  {Object} [config] Configuration object.
+   * @param  {Object} [config.store] Path to local storage.
+   * @param  {Object} [config.components] Map of components.
+   * @param  {Object} [config.components.list] Name of "list" component.
+   * @param  {Object} [config.components.view] Name of "view" component.
    * @return {App}
    */
   constructor (config) {
     super(config);
+
+    // Store the configuration
     this.config = Object.assign({
       store: `./data/${this.constructor.name.toLowerCase()}`
     }, config);
+
     return this;
   }
 
