@@ -13,7 +13,7 @@ const Fabric = require('./fabric');
  * @property {Configuration} config Initial {@link Vector}.
  * @property {Map} config.components Transformation function of `Σ ⇒ Δ`.
  */
-export default class App extends Fabric {
+class App extends Fabric {
   /**
    * Create a new instance of the Fabric App.
    * @param  {Object} config Configuration object.

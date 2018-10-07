@@ -1,0 +1,8 @@
+{
+  "@id": "22f425c57636160a6bb8ca6f16bce748aaef2999260609f02db3f2a8c6e3bc80",
+  "@comment": "All fields beginning with the `@`-byte are to be removed before serialization.",
+  "@data": {
+    "name": "@examples/config"
+  },
+  "name": "@examples/config"
+}

@@ -2,5 +2,6 @@
   "~": "@id is a special field which always resolves to the hash of @data.",
   "@id": "77b022ebccdee0c6f15454b794d140fd52750d566996a934c9d0830ce39627f9",
   "@data": "Hello, world.",
+  "@input": "\"Hello, world.\"",
   "@challenge": "806dbdb19dc8cdd1e43e1fbdd4ef4f4df3c3aff7b7d94a3f51da2c9f61b8f18a"
 }

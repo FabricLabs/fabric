@@ -27,7 +27,7 @@
     "review:coverage": "npm run coverage && ecstatic coverage/lcov-report",
     "start": "npm run build && node scripts/app.js",
     "test:app": "npm run make:service && npm run make:app && NODE_ENV=test mocha",
-    "test": "NODE_ENV=test cross-env nyc mocha tests"
+    "test": "NODE_ENV=test mocha tests"
   },
   "engines": {
     "node": ">= 8.9.0"
