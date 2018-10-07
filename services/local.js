@@ -5,7 +5,10 @@ const Service = require('../lib/service');
 class Local extends Service {
   constructor (config) {
     super(config);
-    this.config = Object.assign({}, config);
+    this.config = Object.assign({
+      path: './data/local'
+    }, config);
+    return this;
   }
 
   handler (message) {

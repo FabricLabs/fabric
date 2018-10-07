@@ -1,11 +1,11 @@
 # The Fabric Welcome Package
-Welcome to Fabric, the World's Computer.  We're building a distributed network
-for securely computing arbitrary work, forming the world's first decentralized
-operating system.
+Welcome to Fabric!  We're building [an operating system][operating-system] for
+the world's most powerful supercomputer, [the Bitcoin network][bitcoin-network].
 
 Right now, we need your help.  Building a system of this scale requires as many
 people as possible, and since you're here...
 
+## Quick Links
 Here are a few links you can read to bring yourself up to speed:
 
 - [Why Are We Here][why-are-we-here]
@@ -42,18 +42,12 @@ A blockchain is a useful data structure for achieving eventual consistency in a
 widely distributed system.  Fabric provides a simple interface for applications
 to interact with a blockchain, including multi-chain configurations.
 
-Unique to Fabric is the idea of a _fuzzchain_, a dynamic swarm of several
-sidechains interacting through atomic cross-chain swaps.  As opposed to a
-simple chain-to-chain pair, these multi-chain mechanisms can be used to compute
-contracts without relying on a single anchor or base-pair chain.
-
-Fabric's configurable consensus layer allows for blockchains to be created at
-will, interleaving their ledgers like threads in a web.
-
 If you're ready to learn more, try [the technical specification][specification].
 
-[why-are-we-here]: https://github.com/martindale/maki/blob/tatami/source/snippets/why-are-we-here.md
-[fabric-overview]: https://github.com/martindale/maki/blob/tatami/source/snippets/fabric-overview.md
+[bitcoin-network]: https://bitcoin.org
+[operating-system]: https://fabric.pub
+[why-are-we-here]: https://docs.maki.io/source/snippets/why-are-we-here.html
+[fabric-overview]: https://docs.maki.io/source/snippets/fabric-overview.html
 [maki-intro]: https://next.maki.io/guides/what-is-maki
 [resources]: https://maki.io/docs/resources
 [institute]: http://nakamotoinstitute.org/mempool/proof-that-proof-of-work-is-the-only-solution-to-the-byzantine-generals-problem/
