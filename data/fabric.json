@@ -1,5 +1,5 @@
 {
-  "@id": "71b4b2f3376f3e5ca9f2642335811aead89dc30f0f327727695227599cd3a503",
+  "@id": "1c866bf97f233de116bb311f47c9a432f2c3d5efc944dda1f33ff4b8e24313e3",
   "@special~": "JSON notoriously doesn't have comments, so pay attention.",
   "@name": "fabric",
   "@link": "fabric",
@@ -11,18 +11,19 @@
   "@contract~?": "@genesis/id",
   "@data": {
     "peers": [
-      "127.0.0.1",
-      "localhost",
       "maki.io",
       "fabric.fm",
+      "fabric.pub",
       "converse.fm",
       "soundtrack.io",
       "ericmartindale.com",
       "roleplaygateway.com",
       "next.maki.io",
       "next.fabric.fm",
+      "next.fabric.pub",
       "next.ericmartindale.com",
       "next.roleplaygateway.com",
+      "valleyoftheoaks.com",
       "verse.im",
       "next.verse.im"
     ],

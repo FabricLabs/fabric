@@ -32,9 +32,10 @@ describe('@fabric/core', function () {
     });
 
     it('generates the correct, hard-coded genesis seed', async function provenance () {
-      let seed = new Fabric.Vector(genesis['@data'])._sign();
+      let seed = new Fabric.Vector(genesis['@data']);
 
       assert.equal(genesis['@id'], samples.names.fabric);
+      assert.equal(seed['@id'], samples.names.fabric);
       assert.equal(seed['@id'], genesis['@id']);
     });
 
@@ -79,12 +80,44 @@ describe('@fabric/core', function () {
       await chain.append({ debug: true, input: 'Hello, world.' });
       await chain.stop();
 
-      console.log('[TEST]', '[CORE:CHAIN]', 'resulting chain:', chain);
-      console.log('chain.ledger:', chain.ledger);
-      console.log('chain:', chain.id);
-
       assert.ok(chain);
       assert.ok(chain.ledger);
+    });
+
+    it('generates a merkle tree with the expected proof of inclusion', async function () {
+      let chain = new Fabric.Chain();
+
+      await chain.start();
+      await chain.append({ debug: true, input: 'Hello, world.' });
+      await chain.append({ debug: true, input: 'Why trust?  Verify.' });
+      await chain.stop();
+
+      let sample = chain.blocks.map(b => Buffer.from(b['@id'], 'hex'));
+      let tree = chain['@tree'];
+      let root = tree.getRoot();
+
+      let proofs = {
+        genesis: tree.getProof(sample[0], 0),
+        'blocks/1': tree.getProof(sample[1], 1),
+        'blocks/2': tree.getProof(sample[2], 2)
+      };
+
+      let verifiers = {
+        genesis: tree.verify(proofs.genesis, sample[0], root),
+        'blocks/1': tree.verify(proofs['blocks/1'], sample[1], root),
+        'blocks/2': tree.verify(proofs['blocks/2'], sample[2], root),
+        invalid: tree.verify(proofs['genesis'], Buffer.alloc(32), root)
+      };
+
+      assert.ok(chain);
+      assert.equal(sample.length, 3);
+      assert.equal(sample[0].toString('hex'), 'c1b294376d6d30d85a81cff9244e7b447a02e6307a047c4a53643a945022e505');
+      assert.equal(sample[1].toString('hex'), '67822dac02f2c1ae1e202d8e75437eaede631861e60340b2fbb258cdb75780f3');
+      assert.equal(sample[2].toString('hex'), 'a59402c14784e1be43b1adfc7832fa8c402dddf1ede7f7c29549d499b112444f');
+      assert.equal(verifiers.genesis, true);
+      assert.equal(verifiers['blocks/1'], true);
+      assert.equal(verifiers['blocks/2'], true);
+      assert.equal(verifiers.invalid, false);
     });
   });
 
@@ -145,53 +178,55 @@ describe('@fabric/core', function () {
 
     it('can append multiple arbitrary messages', async function () {
       let ledger = new Fabric.Ledger();
+      let one = new Fabric.Vector({ debug: true, input: 'Hello, world.' });
+      let two = new Fabric.Vector({ debug: true, input: 'Why trust?  Verify.' });
 
       await ledger.start();
-      await ledger.append({ debug: true, input: 'Hello, world.' });
-      await ledger.append({ debug: true, input: 'Why trust?  Verify.' });
+      await ledger.append(one['@data']);
+      await ledger.append(two['@data']);
       await ledger.stop();
 
-      console.log('[TEST]', '[CORE:LEDGER]', 'resulting ledger id:', ledger['@id']);
-      console.log('ledger.id:', ledger.id);
-      console.log('ledger.pages:', ledger.pages);
-
       assert.ok(ledger);
+      assert.equal(one.id, '67822dac02f2c1ae1e202d8e75437eaede631861e60340b2fbb258cdb75780f3');
+      assert.equal(two.id, 'a59402c14784e1be43b1adfc7832fa8c402dddf1ede7f7c29549d499b112444f');
+      assert.equal(ledger['@data'].length, 3);
+      assert.equal(ledger['@data'][0].toString('hex'), '56083f882297623cde433a434db998b99ff47256abd69c3f58f8ce8ef7583ca3');
+      assert.equal(ledger['@data'][1].toString('hex'), one.id);
+      assert.equal(ledger['@data'][2].toString('hex'), two.id);
+      assert.equal(ledger.id, '1ae312d8c3700df0bb22371eb8f0e9feb290a0d50b12d8e7dc2c54964aa05303');
     });
 
-    it('generates a merkle tree with the expected proof of inclusion', async function () {
-      let ledger = new Fabric.Ledger();
+    xit('can replicate state', function (done) {
+      async function main () {
+        let anchor = new Fabric.Ledger();
+        let sample = new Fabric.Ledger();
 
-      await ledger.start();
-      await ledger.append({ debug: true, input: 'Hello, world.' });
-      await ledger.append({ debug: true, input: 'Why trust?  Verify.' });
-      await ledger.stop();
+        let one = new Fabric.Vector({ debug: true, input: 'Hello, world.' });
+        let two = new Fabric.Vector({ debug: true, input: 'Why trust?  Verify.' });
 
-      let sample = Fabric.Vector.fromObjectString(ledger.pages['@preimage']);
-      let tree = new MerkleTree(sample, Fabric.sha256, { isBitcoinTree: true });
-      let root = tree.getRoot();
+        sample.trust(anchor);
 
-      let proofs = {
-        genesis: tree.getProof(sample[0], 0),
-        'blocks/1': tree.getProof(sample[1], 1),
-        'blocks/2': tree.getProof(sample[2], 2)
-      };
+        anchor.on('changes', function (changes) {
+          console.log('changes:', changes);
+          done();
+        });
 
-      let verifiers = {
-        genesis: tree.verify(proofs.genesis, sample[0], root),
-        'blocks/1': tree.verify(proofs['blocks/1'], sample[1], root),
-        'blocks/2': tree.verify(proofs['blocks/2'], sample[2], root),
-        invalid: tree.verify(proofs['genesis'], Buffer.alloc(32), root)
-      };
+        await anchor.start();
+        await anchor.append(one['@data']);
+        await anchor.append(two['@data']);
+        await anchor.stop();
 
-      assert.ok(ledger);
-      assert.equal(sample.length, 3);
-      assert.equal(sample[0].toString('hex'), '56083f882297623cde433a434db998b99ff47256abd69c3f58f8ce8ef7583ca3');
-      assert.equal(sample[1].toString('hex'), '67822dac02f2c1ae1e202d8e75437eaede631861e60340b2fbb258cdb75780f3');
-      assert.equal(sample[2].toString('hex'), 'a59402c14784e1be43b1adfc7832fa8c402dddf1ede7f7c29549d499b112444f');
-      assert.equal(verifiers.genesis, true);
-      assert.equal(verifiers['blocks/1'], true);
-      assert.equal(verifiers['blocks/2'], true);
-      assert.equal(verifiers.invalid, false);
+        assert.ok(anchor);
+        assert.equal(one.id, '67822dac02f2c1ae1e202d8e75437eaede631861e60340b2fbb258cdb75780f3');
+        assert.equal(two.id, 'a59402c14784e1be43b1adfc7832fa8c402dddf1ede7f7c29549d499b112444f');
+        assert.equal(anchor['@data'].length, 3);
+        assert.equal(anchor['@data'][0].toString('hex'), '56083f882297623cde433a434db998b99ff47256abd69c3f58f8ce8ef7583ca3');
+        assert.equal(anchor['@data'][1].toString('hex'), one.id);
+        assert.equal(anchor['@data'][2].toString('hex'), two.id);
+        assert.equal(anchor.id, '1ae312d8c3700df0bb22371eb8f0e9feb290a0d50b12d8e7dc2c54964aa05303');
+      }
+
+      main();
     });
   });
 
