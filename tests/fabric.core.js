@@ -8,7 +8,8 @@ const Service = require('../lib/service');
 
 // Testing
 const assert = require('assert');
-const expect = require('chai').expect;
+// const expect = require('chai').expect;
+const MerkleTree = require('merkletreejs');
 
 // Data
 const genesis = require('../data/fabric');
@@ -48,34 +49,6 @@ describe('@fabric/core', function () {
 
       main();
     });
-
-    it('can store and retrieve a blob', async function datastore () {
-      let fabric = new Fabric();
-
-      await fabric.start();
-
-      let put = await fabric._SET('/assets/test', message['@data']);
-      let get = await fabric._GET('/assets/test');
-
-      await fabric.stop();
-
-      assert.equal(put, put);
-      assert.equal(get, message['@data']);
-    });
-
-    xit('can store and retrieve an object', async function datastore () {
-      let fabric = new Fabric();
-
-      await fabric.start();
-
-      let put = await fabric._SET('/assets/genesis', genesis);
-      let get = await fabric._GET('/assets/genesis');
-
-      await fabric.stop();
-
-      assert.equal(put, put);
-      assert.equal(get, message['@data']);
-    });
   });
 
   describe('Block', function () {
@@ -87,6 +60,31 @@ describe('@fabric/core', function () {
   describe('Chain', function () {
     it('is available from @fabric/core', function () {
       assert.equal(Fabric.Chain instanceof Function, true);
+    });
+
+    it('can cleanly start and stop a chain', async function () {
+      let chain = new Fabric.Chain();
+
+      await chain.start();
+      await chain.stop();
+
+      assert.ok(chain);
+      assert.ok(chain.ledger);
+    });
+
+    it('can append an arbitrary message', async function () {
+      let chain = new Fabric.Chain();
+
+      await chain.start();
+      await chain.append({ debug: true, input: 'Hello, world.' });
+      await chain.stop();
+
+      console.log('[TEST]', '[CORE:CHAIN]', 'resulting chain:', chain);
+      console.log('chain.ledger:', chain.ledger);
+      console.log('chain:', chain.id);
+
+      assert.ok(chain);
+      assert.ok(chain.ledger);
     });
   });
 
@@ -118,6 +116,82 @@ describe('@fabric/core', function () {
       let signature = key._sign(message['@data']);
       let valid = key._verify(message['@data'], signature)
       assert.ok(valid);
+    });
+  });
+
+  describe('Ledger', function () {
+    it('is available from @fabric/core', function () {
+      assert.equal(Fabric.Ledger instanceof Function, true);
+    });
+
+    it('can cleanly start and stop', async function () {
+      let ledger = new Fabric.Ledger();
+
+      await ledger.start();
+      await ledger.stop();
+
+      assert.ok(ledger);
+    });
+
+    it('can append an arbitrary message', async function () {
+      let ledger = new Fabric.Ledger();
+
+      await ledger.start();
+      await ledger.append({ debug: true, input: 'Hello, world.' });
+      await ledger.stop();
+
+      assert.ok(ledger);
+    });
+
+    it('can append multiple arbitrary messages', async function () {
+      let ledger = new Fabric.Ledger();
+
+      await ledger.start();
+      await ledger.append({ debug: true, input: 'Hello, world.' });
+      await ledger.append({ debug: true, input: 'Why trust?  Verify.' });
+      await ledger.stop();
+
+      console.log('[TEST]', '[CORE:LEDGER]', 'resulting ledger id:', ledger['@id']);
+      console.log('ledger.id:', ledger.id);
+      console.log('ledger.pages:', ledger.pages);
+
+      assert.ok(ledger);
+    });
+
+    it('generates a merkle tree with the expected proof of inclusion', async function () {
+      let ledger = new Fabric.Ledger();
+
+      await ledger.start();
+      await ledger.append({ debug: true, input: 'Hello, world.' });
+      await ledger.append({ debug: true, input: 'Why trust?  Verify.' });
+      await ledger.stop();
+
+      let sample = Fabric.Vector.fromObjectString(ledger.pages['@preimage']);
+      let tree = new MerkleTree(sample, Fabric.sha256, { isBitcoinTree: true });
+      let root = tree.getRoot();
+
+      let proofs = {
+        genesis: tree.getProof(sample[0], 0),
+        'blocks/1': tree.getProof(sample[1], 1),
+        'blocks/2': tree.getProof(sample[2], 2)
+      };
+
+      let verifiers = {
+        genesis: tree.verify(proofs.genesis, sample[0], root),
+        'blocks/1': tree.verify(proofs['blocks/1'], sample[1], root),
+        'blocks/2': tree.verify(proofs['blocks/2'], sample[2], root),
+        invalid: tree.verify(proofs['genesis'], Buffer.alloc(32), root)
+      };
+
+      assert.ok(ledger);
+      assert.equal(sample.length, 3);
+      assert.equal(sample[0].toString('hex'), '56083f882297623cde433a434db998b99ff47256abd69c3f58f8ce8ef7583ca3');
+      assert.equal(sample[1].toString('hex'), '67822dac02f2c1ae1e202d8e75437eaede631861e60340b2fbb258cdb75780f3');
+      assert.equal(sample[2].toString('hex'), 'a59402c14784e1be43b1adfc7832fa8c402dddf1ede7f7c29549d499b112444f');
+      assert.equal(verifiers.genesis, true);
+      assert.equal(verifiers['blocks/1'], true);
+      assert.equal(verifiers['blocks/2'], true);
+      assert.equal(verifiers.invalid, false);
     });
   });
 
@@ -183,6 +257,42 @@ describe('@fabric/core', function () {
     it('is available from @fabric/core', function () {
       assert.equal(Fabric.Oracle instanceof Function, true);
     });
+
+    it('can store and retrieve a blob', async function datastore () {
+      let fabric = new Fabric({
+        path: './data/test'
+      });
+
+      await fabric.start();
+
+      let put = await fabric._SET('/assets/test', message['@data']);
+      let get = await fabric._GET('/assets/test');
+
+      await fabric.stop();
+
+      console.log('put:', put);
+      console.log('get:', get);
+
+      assert.equal(put, put);
+      assert.equal(get, message['@data']);
+    });
+
+    xit('can store and retrieve an object', async function datastore () {
+      let fabric = new Fabric();
+
+      await fabric.start();
+
+      let put = await fabric._SET('/assets/genesis', genesis);
+      let get = await fabric._GET('/assets/genesis');
+
+      await fabric.stop();
+
+      console.log('put:', put);
+      console.log('get:', get);
+
+      assert.equal(put, put);
+      assert.equal(get, message['@data']);
+    });
   });
 
   describe('Resource', function () {
@@ -234,6 +344,37 @@ describe('@fabric/core', function () {
     it('is available from @fabric/core', function () {
       assert.equal(Fabric.Stack instanceof Function, true);
     });
+
+    it('can instantiate from a serialized state', function () {
+      // TODO: migrate to Stack
+      let stack = Fabric.Vector.fromObjectString('{ "0": { "type": "Buffer", "data": [0, 0, 0, 0 ] } }');
+      assert.equal(stack instanceof Array, true);
+      assert.equal(stack[0] instanceof Buffer, true);
+      assert.equal(stack[0].toString('hex'), '00000000');
+      assert.ok(stack);
+    });
+
+    it('can push an element onto the stack', function () {
+      let stack = new Fabric.Stack();
+
+      let one = stack.push('foo');
+      let two = stack.push('bar');
+
+      assert.equal(one, 1);
+      assert.equal(two, 2);
+      assert.equal(stack['@data'][1].toString('hex'), '5959238a604fd0492fe769bfd34ba7f77c481b73626106de6e7071fdb3f82290');
+    });
+
+    xit('mimics JavaScript semantics', function () {
+      let stack = new Fabric.Stack();
+
+      stack.push('foo');
+      stack.push('bar');
+
+      let last = stack.pop();
+
+      assert.equal(last, 'bar');
+    });
   });
 
   describe('State', function () {
@@ -257,6 +398,14 @@ describe('@fabric/core', function () {
   describe('Vector', function () {
     it('is available from @fabric/core', function () {
       assert.equal(Fabric.Vector instanceof Function, true);
+    });
+
+    it('can restore from garbage', async function () {
+      let vector = Fabric.Vector.fromObjectString('{ "0": { "type": "Buffer", "data": [0, 0, 0, 0 ] } }');
+      assert.equal(vector instanceof Array, true);
+      assert.equal(vector[0] instanceof Buffer, true);
+      assert.equal(vector[0].toString('hex'), '00000000');
+      assert.ok(vector);
     });
   });
 
