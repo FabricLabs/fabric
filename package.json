@@ -1,6 +1,6 @@
 {
   "name": "@fabric/core",
-  "version": "0.1.0-dev",
+  "version": "0.1.0-alpha",
   "description": "experimental p2p framework",
   "main": "lib/fabric.js",
   "module": "index.js",
@@ -24,7 +24,6 @@
     "make:lib": "NODE_ENV=production babel index.js --out-file assets/fabric.js && webpack --target=node assets/fabric.js assets/fabric.min.js",
     "make:service": "webpack --progress examples/service.js assets/service.js",
     "parse:api": "jsdoc2md --configure jsdoc.json --files index.js lib/** README.md > API.md",
-    "prepublish": "npm run build",
     "review:coverage": "npm run coverage && ecstatic coverage/lcov-report",
     "review:coverage:core": "npm run coverage:core && ecstatic coverage/lcov-report",
     "start": "npm run build && node scripts/app.js",
