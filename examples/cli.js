@@ -1,9 +1,6 @@
 'use strict';
 
-import Fabric from '../';
-
-const Swarm = require('../lib/swarm');
-
+const CLI = require('../lib/cli');
 const config = {
   oracle: {
     path: `./data/${process.env['NAME'] || 'cli'}`,
@@ -12,7 +9,7 @@ const config = {
 };
 
 async function main () {
-  const cli = new Fabric.CLI(config);
+  const cli = new CLI(config);
 
   try {
     await cli.start();
@@ -20,9 +17,13 @@ async function main () {
     console.error('[CLI]', 'main()', E);
   }
 
+  cli.oracle.on('changes', function (changes) {
+    console.log('[MAIN:CLI]', 'received changes:', changes);
+  });
+
   cli.oracle.on('/messages', function (msg) {
     // TODO: standardize an API for addressable messages in Oracle/HTTP
-    // console.log('MAIN', 'received message:', msg);
+    console.log('[MAIN:CLI]', 'received message:', msg);
   });
 }
 
