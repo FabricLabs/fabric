@@ -24,8 +24,8 @@ const OPCODES = require('../data/opcodes');
 // from tables in documents should be standardized.
 // @consensus:
 // @quest:
-describe('Fabric', function () {
-  describe('Core', function () {
+describe('@fabric/core', function () {
+  describe('Fabric', function () {
     it('should expose a constructor', function () {
       assert.equal(Fabric instanceof Function, true);
     });
@@ -47,58 +47,6 @@ describe('Fabric', function () {
       }
 
       main();
-    });
-
-    it('can compute a value', async function prove () {
-      // TODO: use Fabric itself
-      let machine = new Fabric.Machine(false);
-
-      // TODO: use Fabric instead of Fabric.Machine
-      machine.define('OP_TRUE', OPCODES.OP_TRUE);
-
-      // fabric.push('OP_TRUE');
-      machine.script.push('OP_TRUE');
-
-      await machine.start();
-      await machine.compute();
-      await machine.stop();
-
-      assert.equal(machine.state.id, samples.names.stackWithSingleValidFrame);
-      assert.equal(machine.state['@data'][0], true);
-    });
-
-    it('can sum two values', async function prove () {
-      let machine = new Fabric.Machine(false);
-
-      machine.define('OP_ADD', OPCODES.OP_ADD);
-
-      machine.script.push('1');
-      machine.script.push('1');
-      machine.script.push('OP_ADD');
-
-      await machine.start();
-      await machine.compute();
-      await machine.stop();
-
-      assert.equal(machine.state['@data'][0], 2);
-    });
-
-    it('can sum three values', async function prove () {
-      let machine = new Fabric.Machine(false);
-
-      machine.define('OP_ADD', OPCODES.OP_ADD);
-
-      machine.script.push('1');
-      machine.script.push('1');
-      machine.script.push('OP_ADD');
-      machine.script.push('2');
-      machine.script.push('OP_ADD');
-
-      await machine.start();
-      await machine.compute();
-      await machine.stop();
-
-      assert.equal(machine.state['@data'][0], 4);
     });
 
     it('can store and retrieve a blob', async function datastore () {
@@ -130,8 +78,26 @@ describe('Fabric', function () {
     });
   });
 
-  describe('Crypto', function () {
-    it('offers a "Key" type', function () {
+  describe('Block', function () {
+    it('is available from @fabric/core', function () {
+      assert.equal(Fabric.Block instanceof Function, true);
+    });
+  });
+
+  describe('Chain', function () {
+    it('is available from @fabric/core', function () {
+      assert.equal(Fabric.Chain instanceof Function, true);
+    });
+  });
+
+  describe('Disk', function () {
+    it('is available from @fabric/core', function () {
+      assert.equal(Fabric.Disk instanceof Function, true);
+    });
+  });
+
+  describe('Key', function () {
+    it('is available from @fabric/core', function () {
       assert.equal(Fabric.Key instanceof Function, true);
     });
 
@@ -152,6 +118,76 @@ describe('Fabric', function () {
       let signature = key._sign(message['@data']);
       let valid = key._verify(message['@data'], signature)
       assert.ok(valid);
+    });
+  });
+
+  describe('Machine', function () {
+    it('is available from @fabric/core', function () {
+      assert.equal(Fabric.Machine instanceof Function, true);
+    });
+
+    it('can compute a value', async function prove () {
+      // TODO: use Fabric itself
+      let machine = new Fabric.Machine(false);
+
+      // TODO: use Fabric instead of Fabric.Machine
+      machine.define('OP_TRUE', OPCODES.OP_TRUE);
+
+      // fabric.push('OP_TRUE');
+      machine.script.push('OP_TRUE');
+
+      await machine.start();
+      await machine.compute();
+      await machine.stop();
+
+      assert.equal(machine.state.id, samples.names.stackWithSingleValidFrame);
+      assert.equal(machine.state['@data'][0], true);
+    });
+
+    it('can correctly sum two values', async function prove () {
+      let machine = new Fabric.Machine(false);
+
+      machine.define('OP_ADD', OPCODES.OP_ADD);
+
+      machine.script.push('1');
+      machine.script.push('1');
+      machine.script.push('OP_ADD');
+
+      await machine.start();
+      await machine.compute();
+      await machine.stop();
+
+      assert.equal(machine.state['@data'][0], 2);
+    });
+
+    it('can correctly sum three values', async function prove () {
+      let machine = new Fabric.Machine(false);
+
+      machine.define('OP_ADD', OPCODES.OP_ADD);
+
+      machine.script.push('1');
+      machine.script.push('1');
+      machine.script.push('OP_ADD');
+      machine.script.push('2');
+      machine.script.push('OP_ADD');
+
+      await machine.start();
+      await machine.compute();
+      await machine.stop();
+
+      assert.equal(machine.state['@data'][0], 4);
+    });
+  });
+
+  describe('Oracle', function () {
+    it('is available from @fabric/core', function () {
+      assert.equal(Fabric.Oracle instanceof Function, true);
+    });
+  });
+
+  describe('Resource', function () {
+    it('is available from @fabric/core', function () {
+      assert.equal(Fabric.Resource instanceof Function, true);
     });
   });
 
@@ -179,6 +215,54 @@ describe('Fabric', function () {
       }
 
       main();
+    });
+  });
+
+  describe('Scribe', function () {
+    it('is available from @fabric/core', function () {
+      assert.equal(Fabric.Scribe instanceof Function, true);
+    });
+  });
+
+  describe('Script', function () {
+    it('is available from @fabric/core', function () {
+      assert.equal(Fabric.Script instanceof Function, true);
+    });
+  });
+
+  describe('Stack', function () {
+    it('is available from @fabric/core', function () {
+      assert.equal(Fabric.Stack instanceof Function, true);
+    });
+  });
+
+  describe('State', function () {
+    it('is available from @fabric/core', function () {
+      assert.equal(Fabric.State instanceof Function, true);
+    });
+  });
+
+  describe('Store', function () {
+    it('is available from @fabric/core', function () {
+      assert.equal(Fabric.Store instanceof Function, true);
+    });
+  });
+
+  describe('Transaction', function () {
+    it('is available from @fabric/core', function () {
+      assert.equal(Fabric.Transaction instanceof Function, true);
+    });
+  });
+
+  describe('Vector', function () {
+    it('is available from @fabric/core', function () {
+      assert.equal(Fabric.Vector instanceof Function, true);
+    });
+  });
+
+  describe('Worker', function () {
+    it('is available from @fabric/core', function () {
+      assert.equal(Fabric.Worker instanceof Function, true);
     });
   });
 });
