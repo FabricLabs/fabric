@@ -37,10 +37,10 @@ running [the #learning channel][learning] for anyone who'd like to build
 something for themselves (or others!) — we're always around to answer questions
 and provide resources for your journey.  Come say hello!
 
-### Where does the blockchain come in?
-A blockchain is a useful data structure for achieving eventual consistency in a
-widely distributed system.  Fabric provides a simple interface for applications
-to interact with a blockchain, including multi-chain configurations.
+### Where's the Blockchain?
+Fabric is not a blockchain!  We've designed a peer-to-peer protocol for
+establishing and executing large cryptographic agreements, and the
+`@fabric/core` library provides one such implementation — [**blockchain not included.**][running-a-node]
 
 If you're ready to learn more, try [the technical specification][specification].
 
@@ -50,6 +50,7 @@ If you're ready to learn more, try [the technical specification][specification].
 [fabric-overview]: https://docs.maki.io/source/snippets/fabric-overview.html
 [maki-intro]: https://next.maki.io/guides/what-is-maki
 [resources]: https://maki.io/docs/resources
+[running-a-node]: https://bitcoin.org/en/full-node
 [institute]: http://nakamotoinstitute.org/mempool/proof-that-proof-of-work-is-the-only-solution-to-the-byzantine-generals-problem/
 [product]: https://maki.io/topic/product
 [learning]: https://maki.io/topic/learning
