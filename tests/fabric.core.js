@@ -50,6 +50,45 @@ describe('@fabric/core', function () {
 
       main();
     });
+
+    it('can store and retrieve a blob', async function datastore () {
+      let fabric = new Fabric({
+        path: './data/test'
+      });
+
+      await fabric.start();
+
+      let set = await fabric._SET('assets/test', message['@data']);
+      let get = await fabric._GET('assets/test');
+
+      await fabric.stop();
+
+      let samples = {
+        set: new Fabric.State(set),
+        // put: new Fabric.State(put),
+        get: new Fabric.State(get)
+      };
+
+      assert.equal(get, message['@data']);
+      assert.equal(set, message['@data']);
+      assert.equal(samples.get['@id'], message['@id']);
+      assert.equal(samples.get.id, message['@id']);
+    });
+
+    xit('can store and retrieve an object', async function datastore () {
+      let fabric = new Fabric();
+
+      await fabric.start();
+
+      let put = await fabric._SET('/assets/genesis', genesis);
+      let get = await fabric._GET('/assets/genesis');
+
+      await fabric.stop();
+
+      assert.equal(put, put);
+      assert.equal(typeof get, typeof message['@data']);
+      assert.equal(fabric.state.assets.genesis.id, put['@id']);
+    });
   });
 
   describe('Block', function () {
@@ -292,42 +331,6 @@ describe('@fabric/core', function () {
     it('is available from @fabric/core', function () {
       assert.equal(Fabric.Oracle instanceof Function, true);
     });
-
-    it('can store and retrieve a blob', async function datastore () {
-      let fabric = new Fabric({
-        path: './data/test'
-      });
-
-      await fabric.start();
-
-      let put = await fabric._SET('/assets/test', message['@data']);
-      let get = await fabric._GET('/assets/test');
-
-      await fabric.stop();
-
-      console.log('put:', put);
-      console.log('get:', get);
-
-      assert.equal(put, put);
-      assert.equal(get, message['@data']);
-    });
-
-    xit('can store and retrieve an object', async function datastore () {
-      let fabric = new Fabric();
-
-      await fabric.start();
-
-      let put = await fabric._SET('/assets/genesis', genesis);
-      let get = await fabric._GET('/assets/genesis');
-
-      await fabric.stop();
-
-      console.log('put:', put);
-      console.log('get:', get);
-
-      assert.equal(put, put);
-      assert.equal(get, message['@data']);
-    });
   });
 
   describe('Resource', function () {
@@ -397,7 +400,8 @@ describe('@fabric/core', function () {
 
       assert.equal(one, 1);
       assert.equal(two, 2);
-      assert.equal(stack['@data'][1].toString('hex'), '5959238a604fd0492fe769bfd34ba7f77c481b73626106de6e7071fdb3f82290');
+      assert.equal(stack['@data'][0].toString('hex'), samples.output.foo);
+      assert.equal(stack['@data'][1].toString('hex'), samples.output.bar);
     });
 
     xit('mimics JavaScript semantics', function () {
@@ -416,11 +420,24 @@ describe('@fabric/core', function () {
     it('is available from @fabric/core', function () {
       assert.equal(Fabric.State instanceof Function, true);
     });
+
+    it('provides an accurate "@id" attribute', function () {
+      let state = new Fabric.State(message['@data']);
+
+      assert.ok(state);
+      assert.equal(state.id, message['@id']);
+    });
   });
 
   describe('Store', function () {
     it('is available from @fabric/core', function () {
       assert.equal(Fabric.Store instanceof Function, true);
+    });
+
+    xit('can set a key to a string value', async function () {
+      let store = new Fabric.Store();
+      let set = await store.set('example', samples.input.hello);
+      assert.ok(store);
     });
   });
 

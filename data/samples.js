@@ -9,7 +9,19 @@ class NamedCollections {
     return {
       fabric: JSON.stringify(fabric['@data']),
       hello: JSON.stringify(hello),
-      sample: JSON.stringify(sample)
+      sample: JSON.stringify(sample),
+      foo: JSON.stringify('foo'),
+      bar: JSON.stringify('bar')
+    };
+  }
+
+  static get output () {
+    return {
+      fabric: '1c866bf97f233de116bb311f47c9a432f2c3d5efc944dda1f33ff4b8e24313e3',
+      hello: '19270ea4f98808a63fbb99bc26a5ee6f0fe8df9c8182cf1d710b115d57250578',
+      sample: '156403d8f795a18e92f5d4377c84f49bdb321700289f1ab01ee7c58e7c994317',
+      foo: 'b2213295d564916f89a6a42455567c87c3f480fcd7a1c15e220f17d7169a790b',
+      bar: '4c293ff010a730f0972761331d1b5678478d425c2dc5cefd16d8f20059e497f3'
     };
   }
 
