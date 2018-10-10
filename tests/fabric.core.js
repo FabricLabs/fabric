@@ -331,6 +331,16 @@ describe('@fabric/core', function () {
     it('is available from @fabric/core', function () {
       assert.equal(Fabric.Oracle instanceof Function, true);
     });
+
+    it('can use _SET', async function () {
+      let oracle = new Fabric.Oracle();
+
+      await oracle.start();
+      await oracle._SET('sample', message['@data']);
+      await oracle.stop();
+
+      assert.ok(oracle);
+    });
   });
 
   describe('Resource', function () {

@@ -14,7 +14,7 @@
     "cli": "node examples/cli.js",
     "coverage": "NODE_ENV=test nyc mocha tests/fabric.core.js",
     "coverage:core": "NODE_ENV=test nyc mocha tests/fabric.core.js",
-    "docs": "npm run parse:api && gitbook serve",
+    "docs": "npm run parse:api && npm run make:api && ecstatic docs/",
     "examples": "docco --output examples/ examples/app.js examples/oracle.js && ecstatic examples/",
     "local": "npm run build && ecstatic ./assets",
     "make:all": "npm run make:api && npm run make:service && npm run make:app && npm run make:docs && npm run make:lib",
@@ -63,12 +63,6 @@
     "wreck": "^14.0.2"
   },
   "devDependencies": {
-    "babel-cli": "^6.26.0",
-    "babel-core": "^6.26.3",
-    "babel-plugin-istanbul": "^4.1.5",
-    "babel-preset-env": "^1.7.0",
-    "babel-preset-es2017": "^6.24.1",
-    "babel-register": "^6.26.0",
     "blessed": "^0.1.81",
     "body-parser": "^1.18.2",
     "chai": "^4.0.2",
@@ -114,10 +108,6 @@
   "nyc": {
     "plugins": [
       "istanbul"
-    ],
-    "require": [
-      "babel-register",
-      "babel-polyfill"
     ],
     "reporter": [
       "lcov",

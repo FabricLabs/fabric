@@ -1,7 +1,10 @@
 {
   "name": "@fabric/core",
-  "plugins": ["node_modules/jsdoc-babel"],
-  "babel": {
-    "presets": [ "es2017" ]
+  "chat": "https://chat.fabric.pub/#/room/#hub:fabric.pub",
+  "source": "https://github.com/FabricLabs/fabric",
+  "templates": {
+    "default": {
+      "layoutFile": "assets/docs.tmpl"
+    }
   }
 }
