@@ -444,10 +444,14 @@ describe('@fabric/core', function () {
       assert.equal(Fabric.Store instanceof Function, true);
     });
 
-    xit('can set a key to a string value', async function () {
+    it('can set a key to a string value', async function () {
       let store = new Fabric.Store();
       let set = await store.set('example', samples.input.hello);
+
       assert.ok(store);
+      assert.ok(typeof set, 'string');
+      assert.ok(typeof set, typeof samples.input.hello);
+      assert.ok(set, samples.input.hello);
     });
   });
 
