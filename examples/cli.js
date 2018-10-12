@@ -17,8 +17,8 @@ async function main () {
     console.error('[CLI]', 'main()', E);
   }
 
-  cli.oracle.on('changes', function (changes) {
-    console.log('[MAIN:CLI]', 'received changes:', changes);
+  cli.on('changes', function (msg) {
+    console.log('[MAIN:CLI]', 'changes:', msg);
   });
 
   cli.oracle.on('/messages', function (msg) {
