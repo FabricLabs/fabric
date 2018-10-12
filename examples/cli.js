@@ -20,11 +20,6 @@ async function main () {
   cli.on('changes', function (msg) {
     console.log('[MAIN:CLI]', 'changes:', msg);
   });
-
-  cli.oracle.on('/messages', function (msg) {
-    // TODO: standardize an API for addressable messages in Oracle/HTTP
-    console.log('[MAIN:CLI]', 'received message:', msg);
-  });
 }
 
 main();
