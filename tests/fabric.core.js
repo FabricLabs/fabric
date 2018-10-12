@@ -75,19 +75,19 @@ describe('@fabric/core', function () {
       assert.equal(samples.get.id, message['@id']);
     });
 
-    xit('can store and retrieve an object', async function datastore () {
+    it('can store and retrieve an object', async function datastore () {
       let fabric = new Fabric();
 
       await fabric.start();
 
-      let put = await fabric._SET('/assets/genesis', genesis);
+      let put = await fabric._SET('/assets/genesis', genesis['@data']);
       let get = await fabric._GET('/assets/genesis');
 
       await fabric.stop();
 
       assert.equal(put, put);
-      assert.equal(typeof get, typeof message['@data']);
-      assert.equal(fabric.state.assets.genesis.id, put['@id']);
+      assert.equal(typeof get, typeof genesis);
+      assert.equal(JSON.stringify(get['@data']), JSON.stringify(genesis['@data']));
     });
   });
 
@@ -232,7 +232,7 @@ describe('@fabric/core', function () {
       assert.equal(ledger['@data'][0].toString('hex'), '56083f882297623cde433a434db998b99ff47256abd69c3f58f8ce8ef7583ca3');
       assert.equal(ledger['@data'][1].toString('hex'), one.id);
       assert.equal(ledger['@data'][2].toString('hex'), two.id);
-      assert.equal(ledger.id, '1ae312d8c3700df0bb22371eb8f0e9feb290a0d50b12d8e7dc2c54964aa05303');
+      assert.equal(ledger.id, 'af6b5824247f57e335ae807ee16e4ed157ee270fe20b780507418a885b636e1d');
     });
 
     xit('can replicate state', function (done) {
@@ -288,7 +288,7 @@ describe('@fabric/core', function () {
       await machine.compute();
       await machine.stop();
 
-      assert.equal(machine.state.id, samples.names.stackWithSingleValidFrame);
+      assert.equal(machine.state.id, samples.names.encodedStackWithSingleValidFrame);
       assert.equal(machine.state['@data'][0], true);
     });
 
@@ -437,6 +437,22 @@ describe('@fabric/core', function () {
       assert.ok(state);
       assert.equal(state.id, message['@id']);
     });
+
+    it('can serialize to a sane element', function () {
+      let state = new Fabric.State(message['@data']);
+
+      assert.ok(state);
+      assert.equal(state.id, message['@id']);
+      assert.equal(state.serialize(), JSON.stringify(message['@data']));
+    });
+
+    it('can deserialize from a string', function () {
+      let state = Fabric.State.fromString(JSON.stringify(message['@data']));
+
+      assert.ok(state);
+      assert.equal(state.id, message['@id']);
+      assert.equal(state.serialize(), JSON.stringify(message['@data']));
+    });
   });
 
   describe('Store', function () {
@@ -448,10 +464,30 @@ describe('@fabric/core', function () {
       let store = new Fabric.Store();
       let set = await store.set('example', samples.input.hello);
 
+      await store.close();
+
       assert.ok(store);
       assert.ok(typeof set, 'string');
       assert.ok(typeof set, typeof samples.input.hello);
       assert.ok(set, samples.input.hello);
+    });
+
+    it('can recover string data after a restart', async function () {
+      let store = new Fabric.Store();
+      let set = await store.set('example', samples.input.hello);
+
+      await store.close();
+      await store.open();
+      let get = await store.set('example', samples.input.hello);
+      await store.close();
+
+      assert.ok(store);
+      assert.ok(typeof set, 'string');
+      assert.ok(typeof set, typeof samples.input.hello);
+      assert.ok(set, samples.input.hello);
+      assert.ok(typeof get, 'string');
+      assert.ok(typeof get, typeof samples.input.hello);
+      assert.ok(get, samples.input.hello);
     });
   });
 
