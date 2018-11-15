@@ -47,20 +47,6 @@ using [the actor model][actor-model].  Message handlers are defined as pure
 functions — singular input and output values — which can then be composed to
 form complex state trees known as "state bubbles".
 
-```js
-let Fabric = require('fabric');
-let app = new Fabric();
-
-function add (base, number) {
-  return base + number;
-}
-
-app.use('ADD', add, 'Integer');
-```
-
-`app.compute('1 1 ADD')` may now be called to compute the result of calling
-`add` on `1`, the first instruction on the stack.
-
 ## Resource Contracts
 Each Fabric contract, known as an Application Resource Contract, defines a list
 of types and their definitions, which contain references to immutable data types
