@@ -1,23 +1,33 @@
 'use strict';
 
+const crypto = require('crypto');
 const fabric = require('./fabric');
 const hello = 'Hello, world!';
-const sample = { input: 'test' };
+const encoded = JSON.stringify(hello);
+const sample = { input: encoded };
+const output = crypto.createHash('sha256').update(sample.input, 'utf8').digest('hex');
+
+const collection = '["Hello, world!"]';
 
 class NamedCollections {
   static get input () {
     return {
+      alias: 'Nickname?', // TODO: CLI to prompt for Commit
+      bare: hello,
+      collection: collection,
       fabric: JSON.stringify(fabric['@data']),
       hello: JSON.stringify(hello),
       sample: JSON.stringify(sample),
       foo: JSON.stringify('foo'),
-      bar: JSON.stringify('bar')
+      bar: JSON.stringify('bar'),
+      output: output
     };
   }
 
   static get output () {
     return {
       fabric: '1c866bf97f233de116bb311f47c9a432f2c3d5efc944dda1f33ff4b8e24313e3',
+      collection: '94ec79adc2d418f8cda62a337189342344cd43201e6066309caee18d1464584e',
       hello: '19270ea4f98808a63fbb99bc26a5ee6f0fe8df9c8182cf1d710b115d57250578',
       sample: '156403d8f795a18e92f5d4377c84f49bdb321700289f1ab01ee7c58e7c994317',
       foo: 'b2213295d564916f89a6a42455567c87c3f480fcd7a1c15e220f17d7169a790b',

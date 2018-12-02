@@ -8,6 +8,7 @@
   "@author": "martindale",
   "@comment": "The Vector meta-type is the 'bootstrap' function of the Fabric State Machine (the 'FSM'~ :D).  With a valid Vector `v_1` and a shared secret `s'`, we can compute any finite state `v_n`.",
   "@genesis": "dev#defines-index",
+  "@output": "6164376661636232353836666336653936366330303464376431643136623032346635383035666637636234376337613835646162643862343838393263613",
   "@contract~?": "@genesis/id",
   "@data": {
     "peers": [
