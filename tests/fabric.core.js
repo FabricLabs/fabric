@@ -5,7 +5,7 @@ const Fabric = require('../');
 
 // Modules
 const Service = require('../lib/service');
-const Schnorr = require('../lib/schnorr');
+// const Schnorr = require('../lib/schnorr');
 
 // Testing
 const assert = require('assert');
