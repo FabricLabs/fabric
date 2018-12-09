@@ -133,7 +133,8 @@ describe('@fabric/core', function () {
     it('can store and retrieve a buffer', async function () {
       let buffer = Buffer.from(message['@data'], 'utf8');
       let fabric = new Fabric({
-        path: './data/test'
+        path: './data/test',
+        persistent: false
       });
 
       await fabric.start();
@@ -153,7 +154,8 @@ describe('@fabric/core', function () {
     it('can store and retrieve an array', async function () {
       let array = [message['@data']];
       let fabric = new Fabric({
-        path: './data/secondary'
+        path: './data/secondary',
+        persistent: false
       });
 
       await fabric.start();
@@ -171,7 +173,8 @@ describe('@fabric/core', function () {
     it('can store and retrieve a string', async function () {
       let string = message['@data'];
       let fabric = new Fabric({
-        path: './data/strings'
+        path: './data/strings',
+        persistent: false
       });
 
       await fabric.start();
@@ -189,7 +192,8 @@ describe('@fabric/core', function () {
     xit('can store and retrieve a blob', async function datastore () {
       let blob = { blob: message['@data'] };
       let fabric = new Fabric({
-        path: './data/test'
+        path: './data/blob',
+        persistent: false
       });
 
       await fabric.start();
@@ -205,10 +209,6 @@ describe('@fabric/core', function () {
         get: new Fabric.State(get)
       };
 
-      console.log('buffer of test data:', blob);
-      console.log('result of set operation:', set);
-      console.log('result of get operation:', get);
-
       assert.equal(set, blob);
       assert.equal(get, message['@data']);
       assert.equal(samples.get['@id'], message['@id']);
@@ -216,7 +216,9 @@ describe('@fabric/core', function () {
     });
 
     xit('can store and retrieve an object', async function datastore () {
-      let fabric = new Fabric();
+      let fabric = new Fabric({
+        persistent: false
+      });
 
       await fabric.start();
 
@@ -225,9 +227,6 @@ describe('@fabric/core', function () {
 
       await fabric.stop();
 
-      console.log('get:', get);
-      console.log('genesis[@data]:', genesis['@data']);
-
       assert.equal(put, put);
       assert.equal(typeof get, typeof genesis);
       assert.equal(JSON.stringify(get['@data']), JSON.stringify(genesis['@data']));
@@ -235,17 +234,17 @@ describe('@fabric/core', function () {
   });
 
   describe('Block', function () {
-    xit('is available from @fabric/core', function () {
+    it('is available from @fabric/core', function () {
       assert.equal(Fabric.Block instanceof Function, true);
     });
   });
 
   describe('Chain', function () {
-    xit('is available from @fabric/core', function () {
+    it('is available from @fabric/core', function () {
       assert.equal(Fabric.Chain instanceof Function, true);
     });
 
-    xit('can cleanly start and stop a chain', async function () {
+    it('can cleanly start and stop a chain', async function () {
       let chain = new Fabric.Chain();
 
       await chain.start();
@@ -541,19 +540,19 @@ describe('@fabric/core', function () {
   });
 
   describe('Scribe', function () {
-    xit('is available from @fabric/core', function () {
+    it('is available from @fabric/core', function () {
       assert.equal(Fabric.Scribe instanceof Function, true);
     });
   });
 
   describe('Script', function () {
-    xit('is available from @fabric/core', function () {
+    it('is available from @fabric/core', function () {
       assert.equal(Fabric.Script instanceof Function, true);
     });
   });
 
   describe('Stack', function () {
-    xit('is available from @fabric/core', function () {
+    it('is available from @fabric/core', function () {
       assert.equal(Fabric.Stack instanceof Function, true);
     });
 
@@ -620,24 +619,28 @@ describe('@fabric/core', function () {
   });
 
   describe('Store', function () {
-    xit('is available from @fabric/core', function () {
+    it('is available from @fabric/core', function () {
       assert.equal(Fabric.Store instanceof Function, true);
     });
 
-    xit('can set a key to a string value', async function () {
-      let store = new Fabric.Store();
+    it('can set a key to a string value', async function () {
+      let store = new Fabric.Store({
+        'persistent': false
+      });
       let set = await store.set('example', samples.input.hello);
 
       await store.close();
 
       assert.ok(store);
-      assert.ok(typeof set, 'string');
-      assert.ok(typeof set, typeof samples.input.hello);
-      assert.ok(set, samples.input.hello);
+      assert.equal(typeof set, 'string');
+      assert.equal(typeof set, typeof samples.input.hello);
+      assert.equal(set, samples.input.hello);
     });
 
-    xit('can recover string data after a restart', async function () {
-      let store = new Fabric.Store();
+    it('can recover string data after a restart', async function () {
+      let store = new Fabric.Store({
+        'persistent': false
+      });
       let set = await store.set('example', samples.input.hello);
 
       await store.close();
@@ -646,27 +649,53 @@ describe('@fabric/core', function () {
       await store.close();
 
       assert.ok(store);
-      assert.ok(typeof set, 'string');
-      assert.ok(typeof set, typeof samples.input.hello);
-      assert.ok(set, samples.input.hello);
-      assert.ok(typeof get, 'string');
-      assert.ok(typeof get, typeof samples.input.hello);
-      assert.ok(get, samples.input.hello);
+      assert.equal(typeof set, 'string');
+      assert.equal(typeof set, typeof samples.input.hello);
+      assert.equal(set, samples.input.hello);
+      assert.equal(typeof get, 'string');
+      assert.equal(typeof get, typeof samples.input.hello);
+      assert.equal(get, samples.input.hello);
+    });
+
+    it('can manage collections', async function () {
+      let data = { name: 'widget-alpha' };
+      let store = new Fabric.Store({
+        'path': './data/collections',
+        'persistent': false
+      });
+
+      await store.open();
+
+      let posted = await store._POST(`/widgets`, data);
+
+      console.log('posted:', posted);
+
+      let after = await store._GET(`/widgets`);
+      let state = await store._GET(posted);
+
+      console.log('after:', after.constructor.name, after);
+      console.log('state:', state);
+      console.log('data:', store['@data']);
+      console.log('widgets:', store['@data']['widgets']);
+
+      await store.close();
+
+      assert.equal(JSON.stringify(after), JSON.stringify([data]));
     });
   });
 
   describe('Transaction', function () {
-    xit('is available from @fabric/core', function () {
+    it('is available from @fabric/core', function () {
       assert.equal(Fabric.Transaction instanceof Function, true);
     });
   });
 
   describe('Vector', function () {
-    xit('is available from @fabric/core', function () {
+    it('is available from @fabric/core', function () {
       assert.equal(Fabric.Vector instanceof Function, true);
     });
 
-    xit('can restore from garbage', async function () {
+    it('can restore from garbage', async function () {
       let vector = Fabric.Vector.fromObjectString('{ "0": { "type": "Buffer", "data": [0, 0, 0, 0 ] } }');
       assert.equal(vector instanceof Array, true);
       assert.equal(vector[0] instanceof Buffer, true);
@@ -676,7 +705,7 @@ describe('@fabric/core', function () {
   });
 
   describe('Worker', function () {
-    xit('is available from @fabric/core', function () {
+    it('is available from @fabric/core', function () {
       assert.equal(Fabric.Worker instanceof Function, true);
     });
   });

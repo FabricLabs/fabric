@@ -14,19 +14,19 @@ async function main () {
   try {
     await cli.start();
   } catch (E) {
-    console.error('[CLI]', 'main()', E);
+    cli.error(`λ`, 'main()', E);
   }
 
-  cli.on('changes', function (msg) {
-    cli.log('[MAIN:CLI]', 'changes:', msg);
+  cli.on('changes', async function (msg) {
+    cli.log('[MAIN:CLI]', 'cli event changes:', msg);
   });
 
   cli.on('state', function (msg) {
-    console.log('[MAIN:CLI]', 'state:', msg);
+    cli.log('[MAIN:CLI]', 'state:', msg);
   });
 
   cli.on('state/tip', function (msg) {
-    console.log('[MAIN:CLI]', 'state/tip:', msg);
+    cli.log('[MAIN:CLI]', 'state/tip:', msg);
   });
 }
 
