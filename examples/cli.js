@@ -3,6 +3,7 @@
 const CLI = require('../lib/cli');
 const config = {
   path: `./data/${process.env['NAME'] || 'cli'}`,
+  persistent: true,
   oracle: {
     port: process.env['PORT'] || 3007
   }
@@ -27,6 +28,10 @@ async function main () {
 
   cli.on('state/tip', function (msg) {
     cli.log('[MAIN:CLI]', 'state/tip:', msg);
+  });
+
+  cli.on('error', function (E) {
+    console.error('EXCEPTION:', E);
   });
 }
 
