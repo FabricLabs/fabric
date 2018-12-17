@@ -336,6 +336,26 @@ describe('@fabric/core', function () {
     });
   });
 
+  describe('Collection', function () {
+    it('is available from @fabric/core', function () {
+      assert.equal(Fabric.Collection instanceof Function, true);
+    });
+
+    it('manages a collection of objects', async function () {
+      let set = new Fabric.Collection();
+
+      set.push('Α');
+      set.push('Ω');
+
+      console.log('set:', set);
+      console.log('set:', await set.populate());
+      console.log('set:', await set.render());
+
+      assert.equal(await set.populate(), '["A","Ω"]');
+      assert.equal(set.render(), '["A","Ω"]');
+    });
+  });
+
   describe('Disk', function () {
     it('is available from @fabric/core', function () {
       assert.equal(Fabric.Disk instanceof Function, true);
