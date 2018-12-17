@@ -11,6 +11,7 @@
   },
   "scripts": {
     "build": "npm run make:docs && npm run make:lib",
+    "chat": "node examples/chat.js",
     "cli": "node examples/cli.js",
     "coverage": "nyc --reporter=html --reporter=lcov --reporter=text-lcov npm test",
     "docs": "npm run parse:api && npm run make:api && ecstatic docs/",
@@ -92,7 +93,8 @@
   },
   "nyc": {
     "exclude": [
-      "tests"
+      "tests",
+      "data"
     ]
   }
 }

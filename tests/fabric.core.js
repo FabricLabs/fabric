@@ -95,8 +95,6 @@ describe('@fabric/core', function () {
       let hash = crypto.createHash('sha256').update('["Hello, world!"]', 'utf8').digest('hex');
       let rendered = state.render();
 
-      console.log('state:', state);
-
       assert.equal(rendered.toString(), '["Hello, world!"]');
       assert.equal(state.id, samples.output.collection);
       assert.equal(state['@data'][0], samples.input.bare);
@@ -145,15 +143,10 @@ describe('@fabric/core', function () {
 
     it('passes some sanity checks', async function () {
       let buffer = Buffer.from('"Hello, world!"', 'utf8');
-      let state = new Fabric.State(buffer.toString('utf8'));
+      let state = new Fabric.State('Hello, world!');
       let hash = crypto.createHash('sha256').update('"Hello, world!"', 'utf8').digest('hex');
       let rendered = state.render();
       let reconstructed = Fabric.State.fromString('"Hello, world!"');
-
-      console.log('state:', state);
-      console.log('state:', state.id);
-      console.log('rendered:', rendered);
-      console.log('reconstructed:', reconstructed);
 
       assert.equal(state.id, samples.output.hello);
       assert.equal(state.id, hash);
@@ -162,7 +155,7 @@ describe('@fabric/core', function () {
 
     it('passes longer sanity checks', async function () {
       let buffer = Buffer.from('["Hello, world!"]', 'utf8');
-      let state = new Fabric.State(buffer.toString('utf8'));
+      let state = new Fabric.State(['Hello, world!']);
       let hash = crypto.createHash('sha256').update('["Hello, world!"]', 'utf8').digest('hex');
       let rendered = state.render();
 
@@ -225,9 +218,6 @@ describe('@fabric/core', function () {
       let get = await fabric._GET('assets/test');
 
       await fabric.stop();
-
-      console.log('set:', typeof set, set.constructor.name, set);
-      console.log('get:', typeof get, get.constructor.name, get);
 
       assert.equal(set, string);
       assert.equal(get.constructor.name, 'String');
