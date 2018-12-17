@@ -278,7 +278,7 @@ describe('@fabric/core', function () {
       assert.equal(Fabric.Chain instanceof Function, true);
     });
 
-    xit('can cleanly start and stop a chain', async function () {
+    it('can cleanly start and stop a chain', async function () {
       let chain = new Fabric.Chain();
 
       await chain.start();
@@ -288,7 +288,7 @@ describe('@fabric/core', function () {
       assert.ok(chain.ledger);
     });
 
-    xit('can append an arbitrary message', async function () {
+    it('can append an arbitrary message', async function () {
       let chain = new Fabric.Chain();
 
       await chain.start();
@@ -299,7 +299,7 @@ describe('@fabric/core', function () {
       assert.ok(chain.ledger);
     });
 
-    xit('generates a merkle tree with the expected proof of inclusion', async function () {
+    it('generates a merkle tree with the expected proof of inclusion', async function () {
       let chain = new Fabric.Chain();
 
       await chain.start();
@@ -347,19 +347,19 @@ describe('@fabric/core', function () {
       assert.equal(Fabric.Key instanceof Function, true);
     });
 
-    xit('can create an ECDSA key', function () {
+    it('can create an ECDSA key', function () {
       let key = new Fabric.Key();
       assert.ok(key);
     });
 
-    xit('can sign some data', function () {
+    it('can sign some data', function () {
       let key = new Fabric.Key();
       let signature = key._sign(message['@data']);
 
       assert.ok(signature);
     });
 
-    xit('produces a valid signature', function () {
+    it('produces a valid signature', function () {
       let key = new Fabric.Key();
       let signature = key._sign(message['@data']);
       let valid = key._verify(message['@data'], signature)
@@ -372,7 +372,7 @@ describe('@fabric/core', function () {
       assert.equal(Fabric.Ledger instanceof Function, true);
     });
 
-    xit('can cleanly start and stop', async function () {
+    it('can cleanly start and stop', async function () {
       let ledger = new Fabric.Ledger();
 
       await ledger.start();
