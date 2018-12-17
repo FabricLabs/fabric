@@ -1,0 +1,93 @@
+box(
+    id="controls",
+    border= '{"type": "line"}',
+    bottom=0,
+    height= 3
+)
+
+form(
+    id="form",
+    keys= true,
+    onsubmit='on_form_submit'
+)
+
+    textbox(
+        id="textbox",
+        name= 'input',
+        input= true,
+        inputOnFocus= true,
+        focused= true,
+        value= '',
+        bottom= 1,
+        mouse= true,
+        height= 3,
+        width= '100%',
+        border= '{"type":"line"}',
+        keys= true,
+        onkeyup='on_textbox_key_up',
+        onkeyenter='on_textbox_key_enter'
+    )
+
+    button(
+        id="submit",
+        mouse= true,
+        shrink= true,
+        bottom= 0,
+        right= 0,
+        name= 'submit' ,
+        content= '[ENTER] Send',
+        style= '{"bg":"blue"}',
+        padding= '{"left":1, "right":1}',
+        onpress='on_submit_press',
+    )
+
+box(
+    id="instructions"
+    content= '[ESCAPE (2x)] exit]',
+    bottom= 0,
+    height= 1,
+    width= '100%-20',
+    padding= '{"left": 1, "right": 1}'
+)
+
+box(
+    id="history",
+    label= '[ History ]',
+    scrollable= true,
+    alwaysScroll= true,
+    keys= true,
+    mouse= true,
+    height= '100%-16',
+    width= '80%',
+    bottom= 16,
+    border= '{"type": "line"}'
+)
+
+list(
+    id =  "peerlist",
+    label= '[ Peers ]' ,
+    scrollable= true ,
+    alwaysScroll= true ,
+    keys= true ,
+    mouse= true ,
+    top= 0 ,
+    left= '80%+1' ,
+    bottom= 4 ,
+    right= 0 ,
+    border= '{"type": "line"}' ,
+    scrollbar= {}
+)
+
+list(
+    id="logs",
+    label= '[ Logs ]',
+    scrollable= true ,
+    alwaysScroll= true ,
+    keys= true ,
+    mouse= true ,
+    height= 12 ,
+    width= '80%' ,
+    bottom= 4 ,
+    border= '{"type": "line"}' ,
+    scrollbar= '{}'
+)

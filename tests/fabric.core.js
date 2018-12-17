@@ -675,13 +675,16 @@ describe('@fabric/core', function () {
       assert.equal(Fabric.Store instanceof Function, true);
     });
 
-    xit('can set a key to a string value', async function () {
+    it('can set a key to a string value', async function () {
       let store = new Fabric.Store({
         persistent: false
       });
+
+      await store.start();
+
       let set = await store.set('example', samples.input.hello);
 
-      await store.close();
+      await store.stop();
 
       assert.ok(store);
       assert.equal(typeof set, 'string');
@@ -689,14 +692,14 @@ describe('@fabric/core', function () {
       assert.equal(set, samples.input.hello);
     });
 
-    xit('can recover string data after a restart', async function () {
+    it('can recover string data after a restart', async function () {
       let store = new Fabric.Store();
+      await store.start();
       let set = await store.set('example', samples.input.hello);
-
-      await store.close();
-      await store.open();
-      let get = await store.set('example', samples.input.hello);
-      await store.close();
+      await store.stop();
+      await store.start();
+      let get = await store.get('example');
+      await store.stop();
 
       assert.ok(store);
       assert.equal(typeof set, 'string');
@@ -707,29 +710,25 @@ describe('@fabric/core', function () {
       assert.equal(get, samples.input.hello);
     });
 
-    xit('can manage collections', async function () {
+    it('can manage collections', async function () {
       let data = { name: 'widget-alpha' };
       let store = new Fabric.Store({
         path: './data/collections',
         persistent: false
       });
 
-      await store.open();
+      await store.start();
 
       let posted = await store._POST(`/widgets`, data);
+      console.log('posted:', posted);
       let after = await store._GET(`/widgets`);
       let state = await store._GET(posted);
-
-      store.commit();
-
-      let second = await store._POST(`/widgets`, Object.assign({}, data, {
-        extra: data
-      }));
+      let second = await store._POST(`/widgets`, Object.assign({}, data, { extra: data }));
       let target = await store._GET(second);
       let result = await store._GET(`/widgets`);
       let sample = new Fabric.State(result);
 
-      await store.close();
+      await store.stop();
 
       console.log('collection test:', after);
 
