@@ -178,7 +178,7 @@ describe('@fabric/core', function () {
 
       await fabric.stop();
 
-      assert.equal(set.toString('hex'), buffer.toString('hex'));
+      assert.equal(set.toString('utf8'), buffer.toString('utf8'));
       assert.equal(get.constructor.name, 'Buffer');
       assert.equal(get.toString(), buffer.toString());
       assert.equal(get.toString('hex'), buffer.toString('hex'));
@@ -347,12 +347,10 @@ describe('@fabric/core', function () {
       set.push('Α');
       set.push('Ω');
 
-      console.log('set:', set);
-      console.log('set:', await set.populate());
-      console.log('set:', await set.render());
+      let populated = await set.populate();
 
-      assert.equal(await set.populate(), '["A","Ω"]');
-      assert.equal(set.render(), '["A","Ω"]');
+      assert.equal(JSON.stringify(populated), '["Α","Ω"]');
+      assert.equal(set.render(), '["458427041fd034d6363a459998b3dce381e1e35517d6c7fbf5464904d4e6a240","81ada254356134f629692f3e740667f4da398e8ea45b22d1cd8c005b6b289c83"]');
     });
   });
 
