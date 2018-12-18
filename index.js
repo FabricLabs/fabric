@@ -5,7 +5,7 @@
  */
 'use strict';
 
-const Fabric = require('./fabric');
+const Fabric = require('./lib/fabric');
 
 /**
  * Default interface to {@link Fabric}.  Provides immutable types for all

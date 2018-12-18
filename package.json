@@ -15,16 +15,17 @@
     "cli": "node examples/cli.js",
     "coverage": "nyc report --reporter html npm test",
     "docs": "npm run parse:api && npm run make:api && ecstatic docs/",
-    "examples": "docco --output examples/ examples/*.js && ecstatic examples/",
+    "examples": "npm run make:examples && ecstatic examples/",
     "local": "npm run build && ecstatic ./assets",
     "make:all": "npm run make:api && npm run make:service && npm run make:app && npm run make:docs && npm run make:lib",
     "make:api": "npm run parse:api && jsdoc index.js lib/ README.md -d docs/",
     "make:app": "webpack --progress examples/app.js assets/app.js",
     "make:docs": "gitbook install && npm run parse:api && gitbook build",
+    "make:examples": "docco --output examples/ examples/*.js",
     "make:lib": "NODE_ENV=production babel index.js --out-file assets/fabric.js && webpack --target=node assets/fabric.js assets/fabric.min.js",
     "make:service": "webpack --progress examples/service.js assets/service.js",
     "parse:api": "jsdoc2md --configure jsdoc.json --files index.js lib/** README.md > API.md",
-    "review:coverage": "npm run coverage && ecstatic coverage",
+    "review:coverage": "npm run coverage && ecstatic reports/code-coverage",
     "start": "npm run build && node scripts/app.js",
     "test:app": "npm run make:service && npm run make:app && NODE_ENV=test mocha tests/fabric.app.js",
     "test": "NODE_ENV=test mocha tests/fabric.core.js"
@@ -94,6 +95,7 @@
     "exclude": [
       "tests",
       "data"
-    ]
+    ],
+    "report-dir": "./reports/code-coverage"
   }
 }
