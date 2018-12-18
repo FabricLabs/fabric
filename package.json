@@ -83,6 +83,7 @@
     "jsdoc": "FabricLabs/jsdoc#fabric",
     "jsdoc-babel": "^0.3.0",
     "jsdoc-to-markdown": "^4.0.1",
+    "level-browserify": "^2.0.0",
     "localforage": "^1.7.2",
     "mocha": "^5.2.0",
     "nyc": "^13.1.0",
