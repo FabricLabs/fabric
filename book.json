@@ -1,5 +1,7 @@
 {
-  "theme": "./themes/clarity",
+  "author": "Fabric Labs",
+  "title": "Fabric Developer's Handbook",
+  "description": "Build & Run P2P Applications with Fabric",
   "plugins": ["exercises", "edit-link", "page-toc", "scripts"],
   "pluginsConfig": {
     "edit-link": {
