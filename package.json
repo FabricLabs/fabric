@@ -20,7 +20,7 @@
     "make:all": "npm run make:api && npm run make:service && npm run make:app && npm run make:docs && npm run make:lib",
     "make:api": "npm run parse:api && jsdoc index.js lib/ README.md -d docs/",
     "make:app": "webpack --progress examples/app.js assets/app.js",
-    "make:docs": "gitbook install && npm run parse:api && gitbook build",
+    "make:docs": "gitbook install && npm run parse:api && npm run make:examples && gitbook build",
     "make:examples": "docco --output examples/ examples/*.js",
     "make:lib": "NODE_ENV=production webpack --target=node index.js assets/fabric.min.js",
     "make:service": "webpack --progress examples/service.js assets/service.js",
