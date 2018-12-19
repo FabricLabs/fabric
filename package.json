@@ -22,7 +22,7 @@
     "make:app": "webpack --progress examples/app.js assets/app.js",
     "make:docs": "gitbook install && npm run parse:api && gitbook build",
     "make:examples": "docco --output examples/ examples/*.js",
-    "make:lib": "NODE_ENV=production babel index.js --out-file assets/fabric.js && webpack --target=node assets/fabric.js assets/fabric.min.js",
+    "make:lib": "NODE_ENV=production webpack --target=node index.js assets/fabric.min.js",
     "make:service": "webpack --progress examples/service.js assets/service.js",
     "parse:api": "jsdoc2md --configure jsdoc.json --files index.js lib/** README.md > API.md",
     "review:coverage": "npm run coverage && ecstatic reports/code-coverage",
