@@ -13,20 +13,20 @@ async function main () {
   });
 
   // start
-  await fabric.start();
+  await fabric.start().catch(fabric.error.bind(fabric));
 
   let mem = `/players`;
   let path = pointer.escape(mem);
   let router = Fabric.sha256(path);
 
   // put info
-  let link = await fabric._POST(mem, { name, key });
-  let player = await fabric._GET(`${link}`);
-  let players = await fabric._GET(mem);
-  let collection = await fabric._GET(`/collections/${router}`);
+  let link = await fabric._POST(mem, { name, key }).catch(fabric.error.bind(fabric));
+  let player = await fabric._GET(`${link}`).catch(fabric.error.bind(fabric));
+  let players = await fabric._GET(mem).catch(fabric.error.bind(fabric));
+  let collection = await fabric._GET(`/collections/${router}`).catch(fabric.error.bind(fabric));
 
   // clean up after ourselves
-  await fabric.stop();
+  await fabric.stop().catch(fabric.error.bind(fabric));
 
   console.log('[HTTP]', 201, 'Created', 'link:', `fabric:${link}`);
   console.log('player:', player);
