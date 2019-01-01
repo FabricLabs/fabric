@@ -53,6 +53,7 @@
   },
   "homepage": "https://github.com/FabricLabs/fabric#readme",
   "dependencies": {
+    "arbitrary": "^1.4.10",
     "elliptic": "^6.4.0",
     "fast-json-patch": "^2.0.7",
     "json-pointer": "^0.6.0",
