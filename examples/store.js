@@ -51,9 +51,8 @@ async function main () {
 
   console.log('players:', players);
   console.log('collection:', collection);
-  console.log('fabric:', fabric);
-  console.log('state:', fabric.store.state);
-
+  // console.log('fabric:', fabric);
+  // console.log('state:', fabric.store.state);
   // console.log('players:', players.constructor.name, players);
 }
 
