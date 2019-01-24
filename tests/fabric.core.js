@@ -366,11 +366,14 @@ describe('@fabric/core', function () {
     });
   });
 
+  /* Disabled as `fs` polyfill needed for the browser.
+  // TODO: implement polyfill for browserland
   describe('Disk', function () {
     it('is available from @fabric/core', function () {
       assert.equal(Fabric.Disk instanceof Function, true);
     });
   });
+  */
 
   describe('Key', function () {
     it('is available from @fabric/core', function () {
