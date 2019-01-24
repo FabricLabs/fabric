@@ -341,6 +341,18 @@ describe('@fabric/core', function () {
       assert.equal(Fabric.Collection instanceof Function, true);
     });
 
+    it('starts as empty', async function () {
+      let set = new Fabric.Collection();
+      assert.equal(set.render(), '[]');
+    });
+
+    it('can hold a single entity', async function () {
+      let set = new Fabric.Collection();
+      set.push('test');
+      let populated = await set.populate();
+      assert.equal(JSON.stringify(populated), '["test"]');
+    });
+
     it('manages a collection of objects', async function () {
       let set = new Fabric.Collection();
 
@@ -712,6 +724,7 @@ describe('@fabric/core', function () {
 
     it('can manage collections', async function () {
       let data = { name: 'widget-alpha' };
+      let alt = Object.assign({}, data, { extra: data });
       let store = new Fabric.Store({
         path: './data/collections',
         persistent: false
@@ -719,21 +732,20 @@ describe('@fabric/core', function () {
 
       await store.start();
 
+      let before = await store._GET(`/widgets`);
       let posted = await store._POST(`/widgets`, data);
-      console.log('posted:', posted);
+      let entity = await store._GET(posted, data);
       let after = await store._GET(`/widgets`);
-      let state = await store._GET(posted);
-      let second = await store._POST(`/widgets`, Object.assign({}, data, { extra: data }));
+      let second = await store._POST(`/widgets`, alt);
       let target = await store._GET(second);
       let result = await store._GET(`/widgets`);
-      let sample = new Fabric.State(result);
 
       await store.stop();
 
-      console.log('collection test:', after);
-
+      //assert.equal(result.length, 2);
       assert.equal(JSON.stringify(after), JSON.stringify([data]));
-      assert.equal(JSON.stringify(state), JSON.stringify(data));
+      assert.equal(JSON.stringify(result), JSON.stringify([data, alt]));
+      //assert.equal(JSON.stringify(entity), JSON.stringify(data));
     });
   });
 

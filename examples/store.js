@@ -20,16 +20,23 @@ async function main () {
   let router = Fabric.sha256(path);
 
   // put info
-  let link = await fabric._POST(mem, { name, key }).catch(fabric.error.bind(fabric));
-  let player = await fabric._GET(`${link}`).catch(fabric.error.bind(fabric));
+  let link = await fabric._POST(mem, {
+    name: name,
+    key: key['@data']
+  }).catch(fabric.error.bind(fabric));
+
+  console.log('[HTTP]', 201, 'Created', 'link:', `fabric:${link}`);
+  console.log('link:', link);
+
+  let player = await fabric._GET(link).catch(fabric.error.bind(fabric));
+  console.log('player:', player);
+
   let players = await fabric._GET(mem).catch(fabric.error.bind(fabric));
   let collection = await fabric._GET(`/collections/${router}`).catch(fabric.error.bind(fabric));
 
   // clean up after ourselves
   await fabric.stop().catch(fabric.error.bind(fabric));
 
-  console.log('[HTTP]', 201, 'Created', 'link:', `fabric:${link}`);
-  console.log('player:', player);
   console.log('players:', players);
   console.log('collection:', collection);
   console.log('fabric:', fabric);
