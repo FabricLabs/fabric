@@ -3,6 +3,7 @@
 [![Build Status](https://img.shields.io/travis/FabricLabs/fabric.svg?branch=master&style=flat-square)](https://travis-ci.org/FabricLabs/fabric)
 [![Coverage Status](https://img.shields.io/codecov/c/github/FabricLabs/fabric.svg?style=flat-square)](https://codecov.io/gh/FabricLabs/fabric)
 [![GitHub contributors](https://img.shields.io/github/contributors/FabricLabs/fabric.svg?style=flat-square)](https://github.com/FabricLabs/fabric/graphs/contributors)
+[![Community](https://img.shields.io/matrix/hub:fabric.pub.svg?style=flat-square)](https://chat.fabric.pub)
 
 Fabric is an experimental protocol for distributing and executing arbitrary
 proofs of work (smart contracts) as secure multi-party computations.
