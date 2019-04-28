@@ -24,9 +24,8 @@
       "next.fabric.pub",
       "next.ericmartindale.com",
       "next.roleplaygateway.com",
-      "valleyoftheoaks.com",
-      "verse.im",
-      "next.verse.im"
+      "chat.roleplaygateway.com",
+      "api.roleplaygateway.com"
     ],
     "services": {
       "http": true,

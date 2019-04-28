@@ -5,6 +5,10 @@ const webpack = require('webpack');
 module.exports = {
   // entry: './index.js',
   // devtool: 'source-map',
+  target: 'web',
+  output: {
+    library: 'Fabric'
+  },
   plugins: [
     new webpack.DefinePlugin({
       'process.env': {
