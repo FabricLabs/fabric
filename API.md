@@ -76,6 +76,9 @@ committing to the outcome.  This workflow keeps app design quite simple!</p>
 <dt><a href="#Store">Store</a></dt>
 <dd><p>Long-term storage.</p>
 </dd>
+<dt><a href="#Swarm">Swarm</a> : <code>String</code></dt>
+<dd><p>The <a href="#Swarm">Swarm</a> represents a network of peers.</p>
+</dd>
 <dt><a href="#Vector">Vector</a></dt>
 <dd></dd>
 <dt><a href="#Walker">Walker</a></dt>
@@ -1389,6 +1392,34 @@ Implicitly trust an [Event](Event) source.
 | --- | --- | --- |
 | source | <code>EventEmitter</code> | Event-emitting source. |
 
+<a name="Swarm"></a>
+
+## Swarm : <code>String</code>
+The [Swarm](#Swarm) represents a network of peers.
+
+**Kind**: global class  
+
+* [Swarm](#Swarm) : <code>String</code>
+    * [new Swarm(config)](#new_Swarm_new)
+    * [.start()](#Swarm+start) ⇒ <code>Promise</code>
+
+<a name="new_Swarm_new"></a>
+
+### new Swarm(config)
+Create an instance of a [Swarm](#Swarm).
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| config | <code>Object</code> | Configuration object. |
+
+<a name="Swarm+start"></a>
+
+### swarm.start() ⇒ <code>Promise</code>
+Begin computing.
+
+**Kind**: instance method of [<code>Swarm</code>](#Swarm)  
+**Returns**: <code>Promise</code> - Resolves to instance of [Swarm](#Swarm).  
 <a name="Vector"></a>
 
 ## Vector

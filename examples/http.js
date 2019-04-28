@@ -1,7 +1,8 @@
 'use strict';
 
-var Fabric = require('../');
-var server = new Fabric.HTTP();
+const Fabric = require('../');
+const Authority = require('../lib/authority');
+const server = new Authority();
 
 async function main () {
   await server.define('Person', {
@@ -10,12 +11,12 @@ async function main () {
       username: { type: String , maxLength: 55 }
     },
     routes: {
-      query: '/people',
-      get: '/people/:id'
+      list: '/people',
+      view: '/people/:id'
     }
   });
 
-  server.start();
+  await server.start();
 }
 
 main();
