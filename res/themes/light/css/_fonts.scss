@@ -51,3 +51,21 @@
     font-weight: 700;
     font-style: normal;
 }
+
+/*
+ * Arvo
+ * Used for RPG theme
+ */
+@font-face {
+  font-family: 'Arvo';
+  src: url('$(res)/fonts/Arvo/Arvo-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Arvo';
+  src: url('$(res)/fonts/Arvo/Arvo-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+}

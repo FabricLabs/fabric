@@ -35,7 +35,7 @@ const PHASE_SERVER_DETAILS = 0;
 const PHASE_REGISTRATION = 1;
 
 // Enable phases for registration
-const PHASES_ENABLED = true;
+const PHASES_ENABLED = false;
 
 module.exports = React.createClass({
     displayName: 'Registration',
