@@ -16,17 +16,20 @@ limitations under the License.
 
 import React from 'react';
 import PropTypes from 'prop-types';
-import {EventStatus} from 'matrix-js-sdk';
 
 import { _t } from '../../../languageHandler';
 import sdk from '../../../index';
 import dis from '../../../dispatcher';
 import Modal from '../../../Modal';
 import { createMenu } from '../../structures/ContextualMenu';
+import SettingsStore from '../../../settings/SettingsStore';
+import { isContentActionable, canEditContent } from '../../../utils/EventUtils';
 
 export default class MessageActionBar extends React.PureComponent {
     static propTypes = {
         mxEvent: PropTypes.object.isRequired,
+        // The Relations model from the JS SDK for reactions to `mxEvent`
+        reactions: PropTypes.object,
         permalinkCreator: PropTypes.object,
         getTile: PropTypes.func,
         getReplyThread: PropTypes.func,
@@ -51,6 +54,13 @@ export default class MessageActionBar extends React.PureComponent {
     onReplyClick = (ev) => {
         dis.dispatch({
             action: 'reply_to_event',
+            event: this.props.mxEvent,
+        });
+    }
+
+    onEditClick = (ev) => {
+        dis.dispatch({
+            action: 'edit_event',
             event: this.props.mxEvent,
         });
     }
@@ -89,32 +99,69 @@ export default class MessageActionBar extends React.PureComponent {
         this.onFocusChange(true);
     }
 
+    isReactionsEnabled() {
+        return SettingsStore.isFeatureEnabled("feature_reactions");
+    }
+
+    isEditingEnabled() {
+        return SettingsStore.isFeatureEnabled("feature_message_editing");
+    }
+
+    renderAgreeDimension() {
+        if (!this.isReactionsEnabled()) {
+            return null;
+        }
+
+        const ReactionDimension = sdk.getComponent('messages.ReactionDimension');
+        return <ReactionDimension
+            title={_t("Agree or Disagree")}
+            options={["👍", "👎"]}
+            reactions={this.props.reactions}
+            mxEvent={this.props.mxEvent}
+        />;
+    }
+
+    renderLikeDimension() {
+        if (!this.isReactionsEnabled()) {
+            return null;
+        }
+
+        const ReactionDimension = sdk.getComponent('messages.ReactionDimension');
+        return <ReactionDimension
+            title={_t("Like or Dislike")}
+            options={["🙂", "😔"]}
+            reactions={this.props.reactions}
+            mxEvent={this.props.mxEvent}
+        />;
+    }
+
     render() {
-        const { mxEvent } = this.props;
-        const { status: eventStatus } = mxEvent;
-
-        // status is SENT before remote-echo, null after
-        const isSent = !eventStatus || eventStatus === EventStatus.SENT;
-
+        let agreeDimensionReactionButtons;
+        let likeDimensionReactionButtons;
         let replyButton;
+        let editButton;
 
-        if (isSent && mxEvent.getType() === 'm.room.message') {
-            const content = mxEvent.getContent();
-            if (
-                content.msgtype &&
-                content.msgtype !== 'm.bad.encrypted' &&
-                content.hasOwnProperty('body')
-            ) {
-                replyButton = <span className="mx_MessageActionBar_replyButton"
-                    title={_t("Reply")}
-                    onClick={this.onReplyClick}
-                />;
-            }
+        if (isContentActionable(this.props.mxEvent)) {
+            agreeDimensionReactionButtons = this.renderAgreeDimension();
+            likeDimensionReactionButtons = this.renderLikeDimension();
+            replyButton = <span className="mx_MessageActionBar_maskButton mx_MessageActionBar_replyButton"
+                title={_t("Reply")}
+                onClick={this.onReplyClick}
+            />;
+        }
+        if (this.isEditingEnabled() && canEditContent(this.props.mxEvent)) {
+            editButton = <span className="mx_MessageActionBar_maskButton mx_MessageActionBar_editButton"
+                title={_t("Edit")}
+                onClick={this.onEditClick}
+            />;
         }
 
         return <div className="mx_MessageActionBar">
+            {agreeDimensionReactionButtons}
+            {likeDimensionReactionButtons}
             {replyButton}
-            <span className="mx_MessageActionBar_optionsButton"
+            {editButton}
+            <span className="mx_MessageActionBar_maskButton mx_MessageActionBar_optionsButton"
                 title={_t("Options")}
                 onClick={this.onOptionsClick}
             />

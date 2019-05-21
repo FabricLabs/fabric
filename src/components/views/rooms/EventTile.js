@@ -159,6 +159,9 @@ module.exports = withMatrixClient(React.createClass({
 
         // show twelve hour timestamps
         isTwelveHour: PropTypes.bool,
+
+        // helper function to access relations for an event
+        getRelationsForEvent: PropTypes.func,
     },
 
     getDefaultProps: function() {
@@ -179,6 +182,8 @@ module.exports = withMatrixClient(React.createClass({
             verified: null,
             // Whether onRequestKeysClick has been called since mounting.
             previouslyRequestedKeys: false,
+            // The Relations model from the JS SDK for reactions to `mxEvent`
+            reactions: this.getReactions(),
         };
     },
 
@@ -190,9 +195,12 @@ module.exports = withMatrixClient(React.createClass({
 
     componentDidMount: function() {
         this._suppressReadReceiptAnimation = false;
-        this.props.matrixClient.on("deviceVerificationChanged",
-                                 this.onDeviceVerificationChanged);
+        const client = this.props.matrixClient;
+        client.on("deviceVerificationChanged", this.onDeviceVerificationChanged);
         this.props.mxEvent.on("Event.decrypted", this._onDecrypted);
+        if (SettingsStore.isFeatureEnabled("feature_reactions")) {
+            this.props.mxEvent.on("Event.relationsCreated", this._onReactionsCreated);
+        }
     },
 
     componentWillReceiveProps: function(nextProps) {
@@ -215,6 +223,9 @@ module.exports = withMatrixClient(React.createClass({
         const client = this.props.matrixClient;
         client.removeListener("deviceVerificationChanged", this.onDeviceVerificationChanged);
         this.props.mxEvent.removeListener("Event.decrypted", this._onDecrypted);
+        if (SettingsStore.isFeatureEnabled("feature_reactions")) {
+            this.props.mxEvent.removeListener("Event.relationsCreated", this._onReactionsCreated);
+        }
     },
 
     /** called when the event is decrypted after we show it.
@@ -472,6 +483,27 @@ module.exports = withMatrixClient(React.createClass({
         return this.refs.replyThread;
     },
 
+    getReactions() {
+        if (
+            !this.props.getRelationsForEvent ||
+            !SettingsStore.isFeatureEnabled("feature_reactions")
+        ) {
+            return null;
+        }
+        const eventId = this.props.mxEvent.getId();
+        return this.props.getRelationsForEvent(eventId, "m.annotation", "m.reaction");
+    },
+
+    _onReactionsCreated(relationType, eventType) {
+        if (relationType !== "m.annotation" || eventType !== "m.reaction") {
+            return;
+        }
+        this.props.mxEvent.removeListener("Event.relationsCreated", this._onReactionsCreated);
+        this.setState({
+            reactions: this.getReactions(),
+        });
+    },
+
     render: function() {
         const MessageTimestamp = sdk.getComponent('messages.MessageTimestamp');
         const SenderProfile = sdk.getComponent('messages.SenderProfile');
@@ -488,7 +520,10 @@ module.exports = withMatrixClient(React.createClass({
             eventType !== 'm.room.message' && eventType !== 'm.sticker' && eventType != 'm.room.create'
         );
 
-        const tileHandler = getHandlerTile(this.props.mxEvent);
+        let tileHandler = getHandlerTile(this.props.mxEvent);
+        if (!tileHandler && SettingsStore.getValue("showHiddenEventsInTimeline")) {
+            tileHandler = "messages.ViewSourceEvent";
+        }
         // This shouldn't happen: the caller should check we support this type
         // before trying to instantiate us
         if (!tileHandler) {
@@ -508,6 +543,7 @@ module.exports = withMatrixClient(React.createClass({
 
         const classes = classNames({
             mx_EventTile: true,
+            mx_EventTile_isEditing: this.props.isEditing,
             mx_EventTile_info: isInfoMessage,
             mx_EventTile_12hr: this.props.isTwelveHour,
             mx_EventTile_encrypting: this.props.eventSendStatus === 'encrypting',
@@ -585,13 +621,14 @@ module.exports = withMatrixClient(React.createClass({
         }
 
         const MessageActionBar = sdk.getComponent('messages.MessageActionBar');
-        const actionBar = <MessageActionBar
+        const actionBar = !this.props.isEditing ? <MessageActionBar
             mxEvent={this.props.mxEvent}
+            reactions={this.state.reactions}
             permalinkCreator={this.props.permalinkCreator}
             getTile={this.getTile}
             getReplyThread={this.getReplyThread}
             onFocusChange={this.onActionBarFocusChange}
-        />;
+        /> : undefined;
 
         const timestamp = this.props.mxEvent.getTs() ?
             <MessageTimestamp showTwelveHour={this.props.isTwelveHour} ts={this.props.mxEvent.getTs()} /> : null;
@@ -629,6 +666,15 @@ module.exports = withMatrixClient(React.createClass({
                 </span>
                 <ToolTipButton helpText={keyRequestHelpText} />
             </div> : null;
+
+        let reactionsRow;
+        if (SettingsStore.isFeatureEnabled("feature_reactions")) {
+            const ReactionsRow = sdk.getComponent('messages.ReactionsRow');
+            reactionsRow = <ReactionsRow
+                mxEvent={this.props.mxEvent}
+                reactions={this.state.reactions}
+            />;
+        }
 
         switch (this.props.tileShape) {
             case 'notif': {
@@ -737,11 +783,14 @@ module.exports = withMatrixClient(React.createClass({
                             { thread }
                             <EventTileType ref="tile"
                                            mxEvent={this.props.mxEvent}
+                                           replacingEventId={this.props.replacingEventId}
+                                           isEditing={this.props.isEditing}
                                            highlights={this.props.highlights}
                                            highlightLink={this.props.highlightLink}
                                            showUrlPreview={this.props.showUrlPreview}
                                            onHeightChanged={this.props.onHeightChanged} />
                             { keyRequestInfo }
+                            { reactionsRow }
                             { actionBar }
                         </div>
                         {

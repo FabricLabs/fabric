@@ -89,6 +89,7 @@
 @import "./views/elements/_InlineSpinner.scss";
 @import "./views/elements/_ManageIntegsButton.scss";
 @import "./views/elements/_MemberEventListSummary.scss";
+@import "./views/elements/_MessageEditor.scss";
 @import "./views/elements/_PowerSelector.scss";
 @import "./views/elements/_ProgressBar.scss";
 @import "./views/elements/_ReplyThread.scss";
@@ -115,10 +116,15 @@
 @import "./views/messages/_MTextBody.scss";
 @import "./views/messages/_MessageActionBar.scss";
 @import "./views/messages/_MessageTimestamp.scss";
+@import "./views/messages/_ReactionDimension.scss";
+@import "./views/messages/_ReactionsRow.scss";
+@import "./views/messages/_ReactionsRowButton.scss";
+@import "./views/messages/_ReactionsRowButtonTooltip.scss";
 @import "./views/messages/_RoomAvatarEvent.scss";
 @import "./views/messages/_SenderProfile.scss";
 @import "./views/messages/_TextualEvent.scss";
 @import "./views/messages/_UnknownBody.scss";
+@import "./views/messages/_ViewSourceEvent.scss";
 @import "./views/room_settings/_AliasSettings.scss";
 @import "./views/room_settings/_ColorSettings.scss";
 @import "./views/rooms/_AppsDrawer.scss";
