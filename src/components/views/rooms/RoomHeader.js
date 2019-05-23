@@ -292,7 +292,6 @@ module.exports = React.createClass({
                 { settingsButton }
                 { pinnedEventsButton }
                 { shareRoomButton }
-                { manageIntegsButton }
                 { forgetButton }
                 { searchButton }
             </div>;

@@ -193,10 +193,7 @@ class PasswordLogin extends React.Component {
                     name="username" // make it a little easier for browser's remember-password
                     key="username_input"
                     type="text"
-                    label={SdkConfig.get().disable_custom_urls ?
-                        _t("Username on %(hs)s", {
-                            hs: this.props.hsUrl.replace(/^https?:\/\//, ''),
-                        }) : _t("Username")}
+                    label="Username on roleplaygateway.com"
                     value={this.state.username}
                     onChange={this.onUsernameChanged}
                     onBlur={this.onUsernameBlur}
