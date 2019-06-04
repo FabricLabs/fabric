@@ -18,14 +18,15 @@ Fabric-based networking and storage.</p>
 <dt><a href="#Collection">Collection</a></dt>
 <dd><p>The <a href="#Collection">Collection</a> type maintains an ordered list of <a href="#State">State</a> items.</p>
 </dd>
+<dt><a href="#Compiler">Compiler</a> : <code>Object</code></dt>
+<dd><p>Compilers build interfaces for users of Fabric applications.</p>
+</dd>
 <dt><a href="#Entity">Entity</a></dt>
 <dd><p>Live instance of an ARC in Fabric.</p>
 </dd>
 <dt><a href="#Fabric">Fabric</a></dt>
 <dd><p>Reliable decentralized infrastructure.</p>
 </dd>
-<dt><a href="#HTTP">HTTP</a></dt>
-<dd></dd>
 <dt><a href="#Ledger">Ledger</a> ⇐ <code><a href="#Scribe">Scribe</a></code></dt>
 <dd><p>An ordered stack of pages.</p>
 </dd>
@@ -471,6 +472,22 @@ The [Collection](#Collection) type maintains an ordered list of [State](#State) 
 | --- | --- | --- |
 | @entity | <code>Object</code> | Fabric-bound entity object. |
 
+<a name="Compiler"></a>
+
+## Compiler : <code>Object</code>
+Compilers build interfaces for users of Fabric applications.
+
+**Kind**: global class  
+<a name="new_Compiler_new"></a>
+
+### new Compiler([settings])
+Create a new Compiler.
+
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [settings] | <code>Object</code> | <code>{}</code> | Configuration. |
+
 <a name="Entity"></a>
 
 ## Entity
@@ -542,41 +559,6 @@ Process the current stack.
 
 **Kind**: instance method of [<code>Fabric</code>](#Fabric)  
 **Returns**: [<code>Fabric</code>](#Fabric) - Resulting instance of the stack.  
-<a name="HTTP"></a>
-
-## HTTP
-**Kind**: global class  
-
-* [HTTP](#HTTP)
-    * [new HTTP(config)](#new_HTTP_new)
-    * [.define(name, definition)](#HTTP+define) ⇒ <code>Promise</code>
-
-<a name="new_HTTP_new"></a>
-
-### new HTTP(config)
-Builds an HTTP server for a Contract.  Useful for servicing the legacy web.
-
-**Returns**: [<code>HTTP</code>](#HTTP) - Instance of the resulting Authority.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| config | <code>Object</code> | General configuration object for the server. |
-| config.secure | <code>Object</code> | Disable security.  Defaults to true fn (!). |
-| config.bootstrap | <code>Object</code> | Load Assets from `./assets`. |
-
-<a name="HTTP+define"></a>
-
-### httP.define(name, definition) ⇒ <code>Promise</code>
-Creates associations in memory by defining a resource by its `name`.
-
-**Kind**: instance method of [<code>HTTP</code>](#HTTP)  
-**Returns**: <code>Promise</code> - [description]  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| name | <code>String</code> | Human-friendly name of this [Resource](#Resource). |
-| definition | <code>Object</code> | Resource description object. |
-
 <a name="Ledger"></a>
 
 ## Ledger ⇐ [<code>Scribe</code>](#Scribe)
@@ -1157,7 +1139,7 @@ familiar semantics.
     * [new Service(config)](#new_Service_new)
     * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
     * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
-    * [._PUT(path, value)](#Service+_PUT) ⇒ <code>Promise</code>
+    * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
     * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
     * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
     * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
@@ -1199,16 +1181,17 @@ Retrieve a value from the Service's state.
 
 <a name="Service+_PUT"></a>
 
-### service.\_PUT(path, value) ⇒ <code>Promise</code>
+### service.\_PUT(path, value, [commit]) ⇒ <code>Promise</code>
 Store a value in the Service's state.
 
 **Kind**: instance method of [<code>Service</code>](#Service)  
 **Returns**: <code>Promise</code> - Resolves with with stored document.  
 
-| Param | Type | Description |
-| --- | --- | --- |
-| path | <code>String</code> | Path to store the value at. |
-| value | <code>Object</code> | Document to store. |
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| path | <code>String</code> |  | Path to store the value at. |
+| value | <code>Object</code> |  | Document to store. |
+| [commit] | <code>Boolean</code> | <code>false</code> | Sign the resulting state. |
 
 <a name="Service+connect"></a>
 
