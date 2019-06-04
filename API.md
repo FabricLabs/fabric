@@ -643,6 +643,7 @@ General-purpose state machine with [Vector](#Vector)-based instructions.
 
 * [Machine](#Machine)
     * [new Machine(config)](#new_Machine_new)
+    * [.sip([n])](#Machine+sip) ⇒ <code>Number</code>
     * [.compute(input)](#Machine+compute) ⇒ <code>Promise</code>
 
 <a name="new_Machine_new"></a>
@@ -654,6 +655,18 @@ Create a Machine.
 | Param | Type | Description |
 | --- | --- | --- |
 | config | <code>Object</code> | Run-time configuration. |
+
+<a name="Machine+sip"></a>
+
+### machine.sip([n]) ⇒ <code>Number</code>
+Get `n` bits of entropy.
+
+**Kind**: instance method of [<code>Machine</code>](#Machine)  
+**Returns**: <code>Number</code> - Random bits from [Generator](Generator).  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [n] | <code>Number</code> | <code>32</code> | Number of bits to retrieve (max = 32). |
 
 <a name="Machine+compute"></a>
 
@@ -1143,6 +1156,8 @@ familiar semantics.
 * [Service](#Service)
     * [new Service(config)](#new_Service_new)
     * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
+    * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
+    * [._PUT(path, value)](#Service+_PUT) ⇒ <code>Promise</code>
     * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
     * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
     * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
@@ -1169,6 +1184,31 @@ Streams 2.0 spec: https://www.w3.org/TR/activitystreams-core/
 | Param | Type | Description |
 | --- | --- | --- |
 | message | <code>Activity</code> | Message object. |
+
+<a name="Service+_GET"></a>
+
+### service.\_GET(path) ⇒ <code>Promise</code>
+Retrieve a value from the Service's state.
+
+**Kind**: instance method of [<code>Service</code>](#Service)  
+**Returns**: <code>Promise</code> - Resolves with the result.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | Path of the value to retrieve. |
+
+<a name="Service+_PUT"></a>
+
+### service.\_PUT(path, value) ⇒ <code>Promise</code>
+Store a value in the Service's state.
+
+**Kind**: instance method of [<code>Service</code>](#Service)  
+**Returns**: <code>Promise</code> - Resolves with with stored document.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | Path to store the value at. |
+| value | <code>Object</code> | Document to store. |
 
 <a name="Service+connect"></a>
 

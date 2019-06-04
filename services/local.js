@@ -19,7 +19,7 @@ class Local extends Service {
       object: message.text,
       origin: {
         type: 'Link',
-        
+        name: 'Internal'
       }
     }, message);
     this.emit('message', data);
