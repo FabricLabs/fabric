@@ -21,8 +21,8 @@ Fabric-based networking and storage.</p>
 <dt><a href="#Compiler">Compiler</a> : <code>Object</code></dt>
 <dd><p>Compilers build interfaces for users of Fabric applications.</p>
 </dd>
-<dt><a href="#Entity">Entity</a></dt>
-<dd><p>Live instance of an ARC in Fabric.</p>
+<dt><a href="#Entity">Entity</a> : <code>Object</code></dt>
+<dd><p>Generic example.</p>
 </dd>
 <dt><a href="#Fabric">Fabric</a></dt>
 <dd><p>Reliable decentralized infrastructure.</p>
@@ -57,6 +57,8 @@ transitive state.</p>
 <dt><a href="#Scribe">Scribe</a></dt>
 <dd><p>Simple tag-based recordkeeper.</p>
 </dd>
+<dt><a href="#Script">Script</a></dt>
+<dd></dd>
 <dt><a href="#Service">Service</a></dt>
 <dd><p>The &quot;Service&quot; is a simple model for processing messages in a distributed
 system.  <a href="#Service">Service</a> instances are public interfaces for outside systems,
@@ -65,6 +67,9 @@ and typically advertise their presence to the network.</p>
 this prototype.  In general, <code>connect</code> and <code>send</code> are the highest-priority
 jobs, and by default the <code>fabric</code> property will serve as an I/O stream using
 familiar semantics.</p>
+</dd>
+<dt><a href="#Stack">Stack</a></dt>
+<dd><p>Manage stacks of data.</p>
 </dd>
 <dt><a href="#State">State</a></dt>
 <dd><p>The <a href="#State">State</a> is the core of most <a href="User">User</a>-facing interactions.  To
@@ -472,6 +477,18 @@ The [Collection](#Collection) type maintains an ordered list of [State](#State) 
 | --- | --- | --- |
 | @entity | <code>Object</code> | Fabric-bound entity object. |
 
+<a name="Collection+push"></a>
+
+### collection.push(data) ⇒ <code>Number</code>
+Adds an [Entity](#Entity) to the [Collection](#Collection).
+
+**Kind**: instance method of [<code>Collection</code>](#Collection)  
+**Returns**: <code>Number</code> - Length of the collection.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| data | <code>Mixed</code> | [Entity](#Entity) to add. |
+
 <a name="Compiler"></a>
 
 ## Compiler : <code>Object</code>
@@ -490,10 +507,40 @@ Create a new Compiler.
 
 <a name="Entity"></a>
 
-## Entity
-Live instance of an ARC in Fabric.
+## Entity : <code>Object</code>
+Generic example.
 
 **Kind**: global class  
+
+* [Entity](#Entity) : <code>Object</code>
+    * [new Entity([data])](#new_Entity_new)
+    * [.toJSON()](#Entity+toJSON) ⇒ <code>String</code>
+    * [.toRaw()](#Entity+toRaw) ⇒ <code>Buffer</code>
+
+<a name="new_Entity_new"></a>
+
+### new Entity([data])
+Generic template for virtual objects.
+
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [data] | <code>Object</code> | <code>{}</code> | Pass an object to use. |
+
+<a name="Entity+toJSON"></a>
+
+### entity.toJSON() ⇒ <code>String</code>
+Produces a string of JSON, representing the entity.
+
+**Kind**: instance method of [<code>Entity</code>](#Entity)  
+**Returns**: <code>String</code> - JSON-encoded object.  
+<a name="Entity+toRaw"></a>
+
+### entity.toRaw() ⇒ <code>Buffer</code>
+As a [Buffer](Buffer).
+
+**Kind**: instance method of [<code>Entity</code>](#Entity)  
+**Returns**: <code>Buffer</code> - Slice of memory.  
 <a name="Fabric"></a>
 
 ## Fabric
@@ -509,7 +556,7 @@ Reliable decentralized infrastructure.
 
 * [Fabric](#Fabric)
     * [new Fabric(config)](#new_Fabric_new)
-    * [.push(value)](#Fabric+push) ⇒ <code>Stack</code>
+    * [.push(value)](#Fabric+push) ⇒ [<code>Stack</code>](#Stack)
     * [.trust(source)](#Fabric+trust) ⇒ [<code>Fabric</code>](#Fabric)
     * [.compute()](#Fabric+compute) ⇒ [<code>Fabric</code>](#Fabric)
 
@@ -530,7 +577,7 @@ Utilizing
 
 <a name="Fabric+push"></a>
 
-### fabric.push(value) ⇒ <code>Stack</code>
+### fabric.push(value) ⇒ [<code>Stack</code>](#Stack)
 Push an instruction onto the stack.
 
 **Kind**: instance method of [<code>Fabric</code>](#Fabric)  
@@ -571,7 +618,7 @@ An ordered stack of pages.
 | Name | Type | Description |
 | --- | --- | --- |
 | memory | <code>Buffer</code> | The ledger's memory (4096 bytes). |
-| stack | <code>Stack</code> | The ledger's stack. |
+| stack | [<code>Stack</code>](#Stack) | The ledger's stack. |
 | tip | <code>Mixed</code> | The most recent page in the ledger. |
 
 
@@ -1115,6 +1162,21 @@ Use an existing Scribe instance as a parent.
 | --- | --- | --- |
 | scribe | [<code>Scribe</code>](#Scribe) | Instance of Scribe to use as parent. |
 
+<a name="Script"></a>
+
+## Script
+**Kind**: global class  
+<a name="new_Script_new"></a>
+
+### new Script(config)
+Compose a [Script](#Script) for inclusion within a [Contract](Contract).
+
+**Returns**: [<code>Script</code>](#Script) - Instance of the [Script](#Script), ready for use.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| config | <code>Mixed</code> | Configuration options for the script. |
+
 <a name="Service"></a>
 
 ## Service
@@ -1229,6 +1291,40 @@ Register an [Actor](Actor) with the [Service](#Service).
 | Param | Type | Description |
 | --- | --- | --- |
 | actor | <code>Object</code> | Instance of the [Actor](Actor). |
+
+<a name="Stack"></a>
+
+## Stack
+Manage stacks of data.
+
+**Kind**: global class  
+
+* [Stack](#Stack)
+    * [new Stack([list])](#new_Stack_new)
+    * [.push(data)](#Stack+push) ⇒ <code>Number</code>
+
+<a name="new_Stack_new"></a>
+
+### new Stack([list])
+Create a [Stack](#Stack) instance.
+
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [list] | <code>Array</code> | <code>[]</code> | Genesis state for the [Stack](#Stack) instance. |
+
+<a name="Stack+push"></a>
+
+### stack.push(data) ⇒ <code>Number</code>
+Push data onto the stack.  Changes the [Stack#frame](Stack#frame) and
+[Stack#id](Stack#id).
+
+**Kind**: instance method of [<code>Stack</code>](#Stack)  
+**Returns**: <code>Number</code> - Resulting size of the stack.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| data | <code>Mixed</code> | Treated as a [State](#State). |
 
 <a name="State"></a>
 

@@ -26,7 +26,7 @@ class NamedCollections {
 
   static get output () {
     return {
-      fabric: '1c866bf97f233de116bb311f47c9a432f2c3d5efc944dda1f33ff4b8e24313e3',
+      fabric: 'fb2d32b746ef3dbd71da161fa39587c9a9171cd70b2fb1cc23c9c27fab189986',
       collection: '94ec79adc2d418f8cda62a337189342344cd43201e6066309caee18d1464584e',
       hello: '19270ea4f98808a63fbb99bc26a5ee6f0fe8df9c8182cf1d710b115d57250578',
       sample: '156403d8f795a18e92f5d4377c84f49bdb321700289f1ab01ee7c58e7c994317',
@@ -39,7 +39,7 @@ class NamedCollections {
     return {
       'array': '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945',
       'empty': '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a',
-      'fabric': '1c866bf97f233de116bb311f47c9a432f2c3d5efc944dda1f33ff4b8e24313e3',
+      'fabric': 'fb2d32b746ef3dbd71da161fa39587c9a9171cd70b2fb1cc23c9c27fab189986',
       'hello': '315f5bdb76d078c43b8ac0064e4a0164612b1fce77c869345bfc94c75894edd3',
       'object': '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a',
       'sample': '156403d8f795a18e92f5d4377c84f49bdb321700289f1ab01ee7c58e7c994317',

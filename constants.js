@@ -13,6 +13,7 @@ const VERSION_NUMBER = 0x01;
 const BITCOIN_GENESIS = 0x000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f;
 
 const HEADER_SIZE = 48; // 32 + 16 bytes
+const LARGE_COLLECTION_SIZE = 10; // TODO: test with 1,000,000
 const MAX_MESSAGE_SIZE = 4096 - HEADER_SIZE;
 
 const MAX_STACK_HEIGHT = 32; // max height of stack (number of elements)
@@ -23,6 +24,7 @@ module.exports = {
   MAX_PEERS,
   BITCOIN_GENESIS,
   HEADER_SIZE,
+  LARGE_COLLECTION_SIZE,
   MAGIC_BYTES,
   MAX_FRAME_SIZE,
   MAX_MEMORY_ALLOC,
