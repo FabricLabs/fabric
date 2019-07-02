@@ -164,7 +164,7 @@ describe('@fabric/core', function () {
     it('can store and retrieve a buffer', async function () {
       let buffer = Buffer.from(message['@data'], 'utf8');
       let fabric = new Fabric({
-        path: './data/test',
+        path: './stores/test',
         persistent: false
       });
 
@@ -185,7 +185,7 @@ describe('@fabric/core', function () {
     it('can store and retrieve an array', async function () {
       let array = [message['@data']];
       let fabric = new Fabric({
-        path: './data/secondary',
+        path: './stores/secondary',
         persistent: false
       });
 
@@ -205,7 +205,7 @@ describe('@fabric/core', function () {
     it('can store and retrieve a string', async function () {
       let string = message['@data'];
       let fabric = new Fabric({
-        path: './data/strings',
+        path: './stores/strings',
         persistent: false
       });
 
@@ -224,7 +224,7 @@ describe('@fabric/core', function () {
     it('can store and retrieve a blob', async function datastore () {
       let blob = { blob: message['@data'] };
       let fabric = new Fabric({
-        path: './data/blob',
+        path: './stores/blob',
         persistent: false
       });
 
@@ -486,7 +486,7 @@ describe('@fabric/core', function () {
 
     xit('can replicate state', async function () {
       let anchor = new Fabric.Ledger();
-      let sample = new Fabric.Ledger({ path: './data/tests' });
+      let sample = new Fabric.Ledger({ path: './stores/tests' });
 
       let one = new Fabric.Vector({ debug: true, input: 'Hello, world.' });
       let two = new Fabric.Vector({ debug: true, input: 'Why trust?  Verify.' });
@@ -794,7 +794,7 @@ describe('@fabric/core', function () {
       let data = { name: 'widget-alpha' };
       let alt = Object.assign({}, data, { extra: data });
       let store = new Fabric.Store({
-        path: './data/collections',
+        path: './stores/collections',
         persistent: false
       });
 
@@ -820,7 +820,7 @@ describe('@fabric/core', function () {
       let data = { name: 'widget-alpha' };
       let alt = Object.assign({}, data, { extra: data });
       let store = new Fabric.Store({
-        path: './data/collections',
+        path: './stores/collections',
         persistent: false
       });
 

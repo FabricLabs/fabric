@@ -28,7 +28,7 @@ class App extends Fabric {
 
     // Store the configuration
     this.config = Object.assign({
-      store: `./data/${this.constructor.name.toLowerCase()}`
+      store: `./stores/${this.constructor.name.toLowerCase()}`
     }, config);
 
     return this;
