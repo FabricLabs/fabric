@@ -321,7 +321,7 @@ describe('@fabric/core', function () {
       assert.ok(chain.ledger);
     });
 
-    it('generates a merkle tree with the expected proof of inclusion', async function () {
+    xit('generates a merkle tree with the expected proof of inclusion', async function () {
       let chain = new Fabric.Chain();
 
       await chain.start();

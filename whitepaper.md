@@ -11,7 +11,7 @@ We present a protocol for a distributed messaging system as an alternative to
 the current client-server model of the World Wide Web.  We extend the
 document-oriented approach provided by Timothy Berners-Lee with a new
 transactional messaging model, and also provide a mechanism for incentivizing
-the continued servicing of particular documents. 
+the continued servicing of particular documents.
 
 ## Introduction
 Fabric implements a versioned, strongly-typed, and content-addressable network
@@ -142,7 +142,7 @@ intangible idea, trust, as a pre-established commitment in a slightly more
 tangible fashion, a value token.  If a network is composed primarily of honest,
 friendly nodes, then commitments increase over time until the updates provided
 by the network cease to be valuable.  Should a node cease being honest, it
-destroys its ability to increase in value over time. 
+destroys its ability to increase in value over time.
 
 ### Security
 #### Contract Signatures
@@ -233,6 +233,9 @@ transactions are isomorphic to traditional blockchain transactions, in that
 either a block is valid or it is not, as determined by the component operations
 it contains.  If any one operation is invalid, so too must be the block.
 
+### OTHER NOTES
+See:
+- "Convergent Instrumental Goal"
 
 ### TODO: include content hashes of links as they appear at document compilation time.
 [bitcoin scripting]: https://en.bitcoin.it/wiki/Script

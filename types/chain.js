@@ -5,7 +5,7 @@ const Ledger = require('./ledger');
 const State = require('./state');
 const Store = require('./store');
 
-const MerkleTree = require('merkletreejs');
+const { MerkleTree } = require('merkletreejs');
 
 /**
  * Chain.
@@ -146,9 +146,7 @@ class Chain extends Ledger {
 
     self.state.blocks.push(block);
 
-    self['@tree'] = new MerkleTree(this.leaves, this.sha256, {
-      isBitcoinTree: true
-    });
+    self['@tree'] = this._tree;
 
     self.emit('block', block['@id'], block['@data']);
 
