@@ -12,7 +12,7 @@ class Datastore extends Store {
     super(state);
 
     this.config = Object.assign({
-      path: './data/datastore'
+      path: './stores/datastore'
     }, state);
 
     this.ledger = new Ledger();

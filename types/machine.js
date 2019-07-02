@@ -20,7 +20,7 @@ class Machine extends Scribe {
     super(config);
 
     this.config = Object.assign({
-      path: './data/machine',
+      path: './stores/machine',
       debug: true,
       deterministic: true,
       seed: 1 // TODO: select seed for production
@@ -123,9 +123,11 @@ class Machine extends Scribe {
 
   commit () {
     let self = this;
+    if (!self.observer) return false;
+
     let changes = monitor.generate(self.observer);
 
-    if (changes.length) {
+    if (changes && changes.length) {
       let vector = new State({
         '@type': 'Change',
         '@data': changes,

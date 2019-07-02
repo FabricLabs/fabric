@@ -8,7 +8,7 @@ const {
 const Fabric = require('../');
 
 // Modules
-const Service = require('../lib/service');
+const Service = require('../types/service');
 // const Schnorr = require('../lib/schnorr');
 
 // Testing

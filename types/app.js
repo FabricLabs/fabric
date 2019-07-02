@@ -29,8 +29,8 @@ class App extends Scribe {
     }, definition);
 
     this.machine = new Machine(this['@data']);
-    this.tips = new Storage({ path: './data/tips' });
-    this.stash = new Storage({ path: './data/stash' });
+    this.tips = new Storage({ path: './stores/tips' });
+    this.stash = new Storage({ path: './stores/stash' });
     // this.swarm = new Swarm();
     // this.worker = new Worker();
 
@@ -43,6 +43,16 @@ class App extends Scribe {
     this.resources = {};
     this.templates = {};
     this.keys = [];
+
+    this.stash.on('patches', function (patches) {
+      console.log('[FABRIC:APP]', 'heard patches!', patches);
+    });
+
+    if (this['@data'].resources) {
+      for (let name in this['@data'].resources) {
+        this.set(this['@data'].resources[name].components.list, []);
+      }
+    }
 
     this.commit();
 

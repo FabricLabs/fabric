@@ -19,7 +19,7 @@ class Oracle extends Store {
 
     this.name = 'Oracle';
     this.config = Object.assign({
-      path: './data/oracle',
+      path: './stores/oracle',
       services: ['http'],
       resources: {
         Actors: {},

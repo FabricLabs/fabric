@@ -8,7 +8,7 @@ const State = require('./state');
 const Swarm = require('./swarm');
 const Renderer = require('./renderer');
 
-const DEFAULT_PEER_LIST = require('../data/peers');
+const DEFAULT_PEER_LIST = require('../assets/peers');
 
 /**
  * Base class for a terminal-like interface to the Fabric network.

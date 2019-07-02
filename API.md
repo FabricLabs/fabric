@@ -2,12 +2,8 @@
 
 <dl>
 <dt><a href="#App">App</a></dt>
-<dd><p>Default interface to <a href="#Fabric">Fabric</a>.  Provides immutable types for all
+<dd><p>Default interface to <a href="Fabric">Fabric</a>.  Provides immutable types for all
 elements of the <code>components</code> option.</p>
-</dd>
-<dt><a href="#App">App</a></dt>
-<dd><p>Web-friendly application framework for building single-page applications with
-Fabric-based networking and storage.</p>
 </dd>
 <dt><a href="#Chain">Chain</a></dt>
 <dd><p>Chain.</p>
@@ -15,17 +11,8 @@ Fabric-based networking and storage.</p>
 <dt><a href="#CLI">CLI</a></dt>
 <dd><p>Base class for a terminal-like interface to the Fabric network.</p>
 </dd>
-<dt><a href="#Collection">Collection</a></dt>
-<dd><p>The <a href="#Collection">Collection</a> type maintains an ordered list of <a href="#State">State</a> items.</p>
-</dd>
 <dt><a href="#Compiler">Compiler</a> : <code>Object</code></dt>
 <dd><p>Compilers build interfaces for users of Fabric applications.</p>
-</dd>
-<dt><a href="#Entity">Entity</a> : <code>Object</code></dt>
-<dd><p>Generic example.</p>
-</dd>
-<dt><a href="#Fabric">Fabric</a></dt>
-<dd><p>Reliable decentralized infrastructure.</p>
 </dd>
 <dt><a href="#Ledger">Ledger</a> ⇐ <code><a href="#Scribe">Scribe</a></code></dt>
 <dd><p>An ordered stack of pages.</p>
@@ -38,7 +25,7 @@ Fabric-based networking and storage.</p>
 Each <a href="Actor">Actor</a> in the network receives and broadcasts messages,
 selectively disclosing new routes to peers which may have open circuits.</p>
 </dd>
-<dt><a href="#Oracle">Oracle</a> ⇐ <code><a href="#Store">Store</a></code></dt>
+<dt><a href="#Oracle">Oracle</a> ⇐ <code>Store</code></dt>
 <dd><p>An Oracle manages one or more collections, using a <code>mempool</code> for
 transitive state.</p>
 </dd>
@@ -59,18 +46,6 @@ transitive state.</p>
 </dd>
 <dt><a href="#Script">Script</a></dt>
 <dd></dd>
-<dt><a href="#Service">Service</a></dt>
-<dd><p>The &quot;Service&quot; is a simple model for processing messages in a distributed
-system.  <a href="#Service">Service</a> instances are public interfaces for outside systems,
-and typically advertise their presence to the network.</p>
-<p>To implement a Service, you will typically need to implement all methods from
-this prototype.  In general, <code>connect</code> and <code>send</code> are the highest-priority
-jobs, and by default the <code>fabric</code> property will serve as an I/O stream using
-familiar semantics.</p>
-</dd>
-<dt><a href="#Stack">Stack</a></dt>
-<dd><p>Manage stacks of data.</p>
-</dd>
 <dt><a href="#State">State</a></dt>
 <dd><p>The <a href="#State">State</a> is the core of most <a href="User">User</a>-facing interactions.  To
 interact with the <a href="User">User</a>, simply propose a change in the state by
@@ -78,9 +53,6 @@ committing to the outcome.  This workflow keeps app design quite simple!</p>
 </dd>
 <dt><a href="#Storage">Storage</a></dt>
 <dd><p>Persistent data storage.</p>
-</dd>
-<dt><a href="#Store">Store</a></dt>
-<dd><p>Long-term storage.</p>
 </dd>
 <dt><a href="#Swarm">Swarm</a> : <code>String</code></dt>
 <dd><p>The <a href="#Swarm">Swarm</a> represents a network of peers.</p>
@@ -99,7 +71,7 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 <a name="App"></a>
 
 ## App
-Default interface to [Fabric](#Fabric).  Provides immutable types for all
+Default interface to [Fabric](Fabric).  Provides immutable types for all
 elements of the `components` option.
 
 **Kind**: global class  
@@ -113,17 +85,7 @@ elements of the `components` option.
 
 * [App](#App)
     * [new App([config])](#new_App_new)
-    * [new App(definition)](#new_App_new)
     * [.render()](#App+render) ⇒ <code>Mixed</code>
-    * [.start()](#App+start) ⇒ <code>Promise</code>
-    * [.stop()](#App+stop) ⇒ <code>Promise</code>
-    * [.define(name, structure)](#App+define) ⇒ <code>Object</code>
-    * [.defer(authority)](#App+defer) ⇒ [<code>App</code>](#App)
-    * [.attach(element)](#App+attach) ⇒ [<code>App</code>](#App)
-    * [.consume(resources)](#App+consume) ⇒ [<code>App</code>](#App)
-    * [.envelop(selector)](#App+envelop) ⇒ [<code>App</code>](#App)
-    * [.use(name, definition)](#App+use) ⇒ [<code>App</code>](#App)
-    * [.render()](#App+render) ⇒ <code>String</code>
 
 <a name="new_App_new"></a>
 
@@ -139,268 +101,12 @@ Create a new instance of the Fabric App.
 | [config.components.list] | <code>Object</code> | Name of "list" component. |
 | [config.components.view] | <code>Object</code> | Name of "view" component. |
 
-<a name="new_App_new"></a>
-
-### new App(definition)
-Generic bundle for building Fabric applications.
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| definition | <code>Object</code> | Application definition.  See `config` for examples. |
-
 <a name="App+render"></a>
 
 ### app.render() ⇒ <code>Mixed</code>
 Draw the application to canvas (display).
 
 **Kind**: instance method of [<code>App</code>](#App)  
-<a name="App+start"></a>
-
-### app.start() ⇒ <code>Promise</code>
-Start the program.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-<a name="App+stop"></a>
-
-### app.stop() ⇒ <code>Promise</code>
-Stop the program.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-<a name="App+define"></a>
-
-### app.define(name, structure) ⇒ <code>Object</code>
-Define a Resource, or "Type", used by the application.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: <code>Object</code> - [description]  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| name | <code>String</code> | Human-friendly name for the Resource. |
-| structure | <code>Object</code> | Map of attribute names -> definitions. |
-
-<a name="App+defer"></a>
-
-### app.defer(authority) ⇒ [<code>App</code>](#App)
-Defer control of this application to an outside authority.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: [<code>App</code>](#App) - The configured application as deferred to `authority`.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| authority | <code>String</code> | Hostname to trust. |
-
-<a name="App+attach"></a>
-
-### app.attach(element) ⇒ [<code>App</code>](#App)
-Configure the Application to use a specific element.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: [<code>App</code>](#App) - Configured instance of the Application.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| element | <code>DOMElement</code> | DOM element to bind to. |
-
-<a name="App+consume"></a>
-
-### app.consume(resources) ⇒ [<code>App</code>](#App)
-Define the Application's resources from an existing resource map.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: [<code>App</code>](#App) - Configured instance of the Application.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| resources | <code>Object</code> | Map of resource definitions by name. |
-
-<a name="App+envelop"></a>
-
-### app.envelop(selector) ⇒ [<code>App</code>](#App)
-Use a CSS selector to find an element in the current document's tree and
-bind to it as the render target.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: [<code>App</code>](#App) - Instance of app with bound element.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| selector | <code>String</code> | CSS selector. |
-
-<a name="App+use"></a>
-
-### app.use(name, definition) ⇒ [<code>App</code>](#App)
-Define a named [Resource](#Resource).
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: [<code>App</code>](#App) - Configurated instance of the [App](#App).  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| name | <code>String</code> | Human-friendly name for this resource. |
-| definition | <code>Object</code> | Map of configuration values. |
-
-<a name="App+render"></a>
-
-### app.render() ⇒ <code>String</code>
-Get the output of our program.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: <code>String</code> - Output of the program.  
-<a name="App"></a>
-
-## App
-Web-friendly application framework for building single-page applications with
-Fabric-based networking and storage.
-
-**Kind**: global class  
-**Properties**
-
-| Name | Type | Description |
-| --- | --- | --- |
-| components | [<code>Collection</code>](#Collection) | Interface elements. |
-
-
-* [App](#App)
-    * [new App([config])](#new_App_new)
-    * [new App(definition)](#new_App_new)
-    * [.render()](#App+render) ⇒ <code>Mixed</code>
-    * [.start()](#App+start) ⇒ <code>Promise</code>
-    * [.stop()](#App+stop) ⇒ <code>Promise</code>
-    * [.define(name, structure)](#App+define) ⇒ <code>Object</code>
-    * [.defer(authority)](#App+defer) ⇒ [<code>App</code>](#App)
-    * [.attach(element)](#App+attach) ⇒ [<code>App</code>](#App)
-    * [.consume(resources)](#App+consume) ⇒ [<code>App</code>](#App)
-    * [.envelop(selector)](#App+envelop) ⇒ [<code>App</code>](#App)
-    * [.use(name, definition)](#App+use) ⇒ [<code>App</code>](#App)
-    * [.render()](#App+render) ⇒ <code>String</code>
-
-<a name="new_App_new"></a>
-
-### new App([config])
-Create a new instance of the Fabric App.
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [config] | <code>Object</code> | Configuration object. |
-| [config.store] | <code>Object</code> | Path to local storage. |
-| [config.components] | <code>Object</code> | Map of components. |
-| [config.components.list] | <code>Object</code> | Name of "list" component. |
-| [config.components.view] | <code>Object</code> | Name of "view" component. |
-
-<a name="new_App_new"></a>
-
-### new App(definition)
-Generic bundle for building Fabric applications.
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| definition | <code>Object</code> | Application definition.  See `config` for examples. |
-
-<a name="App+render"></a>
-
-### app.render() ⇒ <code>Mixed</code>
-Draw the application to canvas (display).
-
-**Kind**: instance method of [<code>App</code>](#App)  
-<a name="App+start"></a>
-
-### app.start() ⇒ <code>Promise</code>
-Start the program.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-<a name="App+stop"></a>
-
-### app.stop() ⇒ <code>Promise</code>
-Stop the program.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-<a name="App+define"></a>
-
-### app.define(name, structure) ⇒ <code>Object</code>
-Define a Resource, or "Type", used by the application.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: <code>Object</code> - [description]  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| name | <code>String</code> | Human-friendly name for the Resource. |
-| structure | <code>Object</code> | Map of attribute names -> definitions. |
-
-<a name="App+defer"></a>
-
-### app.defer(authority) ⇒ [<code>App</code>](#App)
-Defer control of this application to an outside authority.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: [<code>App</code>](#App) - The configured application as deferred to `authority`.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| authority | <code>String</code> | Hostname to trust. |
-
-<a name="App+attach"></a>
-
-### app.attach(element) ⇒ [<code>App</code>](#App)
-Configure the Application to use a specific element.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: [<code>App</code>](#App) - Configured instance of the Application.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| element | <code>DOMElement</code> | DOM element to bind to. |
-
-<a name="App+consume"></a>
-
-### app.consume(resources) ⇒ [<code>App</code>](#App)
-Define the Application's resources from an existing resource map.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: [<code>App</code>](#App) - Configured instance of the Application.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| resources | <code>Object</code> | Map of resource definitions by name. |
-
-<a name="App+envelop"></a>
-
-### app.envelop(selector) ⇒ [<code>App</code>](#App)
-Use a CSS selector to find an element in the current document's tree and
-bind to it as the render target.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: [<code>App</code>](#App) - Instance of app with bound element.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| selector | <code>String</code> | CSS selector. |
-
-<a name="App+use"></a>
-
-### app.use(name, definition) ⇒ [<code>App</code>](#App)
-Define a named [Resource](#Resource).
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: [<code>App</code>](#App) - Configurated instance of the [App](#App).  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| name | <code>String</code> | Human-friendly name for this resource. |
-| definition | <code>Object</code> | Map of configuration values. |
-
-<a name="App+render"></a>
-
-### app.render() ⇒ <code>String</code>
-Get the output of our program.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: <code>String</code> - Output of the program.  
 <a name="Chain"></a>
 
 ## Chain
@@ -465,30 +171,6 @@ Update UI as necessary based on changes from Oracle.
 | --- | --- | --- |
 | msg | [<code>Message</code>](#Message) | Incoming [Message](#Message). |
 
-<a name="Collection"></a>
-
-## Collection
-The [Collection](#Collection) type maintains an ordered list of [State](#State) items.
-
-**Kind**: global class  
-**Properties**
-
-| Name | Type | Description |
-| --- | --- | --- |
-| @entity | <code>Object</code> | Fabric-bound entity object. |
-
-<a name="Collection+push"></a>
-
-### collection.push(data) ⇒ <code>Number</code>
-Adds an [Entity](#Entity) to the [Collection](#Collection).
-
-**Kind**: instance method of [<code>Collection</code>](#Collection)  
-**Returns**: <code>Number</code> - Length of the collection.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| data | <code>Mixed</code> | [Entity](#Entity) to add. |
-
 <a name="Compiler"></a>
 
 ## Compiler : <code>Object</code>
@@ -505,107 +187,6 @@ Create a new Compiler.
 | --- | --- | --- | --- |
 | [settings] | <code>Object</code> | <code>{}</code> | Configuration. |
 
-<a name="Entity"></a>
-
-## Entity : <code>Object</code>
-Generic example.
-
-**Kind**: global class  
-
-* [Entity](#Entity) : <code>Object</code>
-    * [new Entity([data])](#new_Entity_new)
-    * [.toJSON()](#Entity+toJSON) ⇒ <code>String</code>
-    * [.toRaw()](#Entity+toRaw) ⇒ <code>Buffer</code>
-
-<a name="new_Entity_new"></a>
-
-### new Entity([data])
-Generic template for virtual objects.
-
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| [data] | <code>Object</code> | <code>{}</code> | Pass an object to use. |
-
-<a name="Entity+toJSON"></a>
-
-### entity.toJSON() ⇒ <code>String</code>
-Produces a string of JSON, representing the entity.
-
-**Kind**: instance method of [<code>Entity</code>](#Entity)  
-**Returns**: <code>String</code> - JSON-encoded object.  
-<a name="Entity+toRaw"></a>
-
-### entity.toRaw() ⇒ <code>Buffer</code>
-As a [Buffer](Buffer).
-
-**Kind**: instance method of [<code>Entity</code>](#Entity)  
-**Returns**: <code>Buffer</code> - Slice of memory.  
-<a name="Fabric"></a>
-
-## Fabric
-Reliable decentralized infrastructure.
-
-**Kind**: global class  
-**Properties**
-
-| Name | Type |
-| --- | --- |
-| Block | <code>Class</code> | 
-
-
-* [Fabric](#Fabric)
-    * [new Fabric(config)](#new_Fabric_new)
-    * [.push(value)](#Fabric+push) ⇒ [<code>Stack</code>](#Stack)
-    * [.trust(source)](#Fabric+trust) ⇒ [<code>Fabric</code>](#Fabric)
-    * [.compute()](#Fabric+compute) ⇒ [<code>Fabric</code>](#Fabric)
-
-<a name="new_Fabric_new"></a>
-
-### new Fabric(config)
-The [Fabric](#Fabric) type implements a peer-to-peer protocol for
-establishing and settling of mutually-agreed upon proofs of
-work.  Contract execution takes place in the local node first,
-then is optionally shared with the network.
-
-Utilizing
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| config | [<code>Vector</code>](#Vector) | Initial configuration for the Fabric engine.  This can be considered the "genesis" state for any contract using the system.  If a chain of events is maintained over long periods of time, `state` can be considered "in contention", and it is demonstrated that the outstanding value of the contract remains to be settled. |
-
-<a name="Fabric+push"></a>
-
-### fabric.push(value) ⇒ [<code>Stack</code>](#Stack)
-Push an instruction onto the stack.
-
-**Kind**: instance method of [<code>Fabric</code>](#Fabric)  
-
-| Param | Type |
-| --- | --- |
-| value | <code>Instruction</code> | 
-
-<a name="Fabric+trust"></a>
-
-### fabric.trust(source) ⇒ [<code>Fabric</code>](#Fabric)
-Blindly consume messages from a [Source](Source), relying on `this.chain` to
-verify results.
-
-**Kind**: instance method of [<code>Fabric</code>](#Fabric)  
-**Returns**: [<code>Fabric</code>](#Fabric) - Returns itself.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| source | <code>EventEmitter</code> | Any object which implements the `EventEmitter` pattern. |
-
-<a name="Fabric+compute"></a>
-
-### fabric.compute() ⇒ [<code>Fabric</code>](#Fabric)
-Process the current stack.
-
-**Kind**: instance method of [<code>Fabric</code>](#Fabric)  
-**Returns**: [<code>Fabric</code>](#Fabric) - Resulting instance of the stack.  
 <a name="Ledger"></a>
 
 ## Ledger ⇐ [<code>Scribe</code>](#Scribe)
@@ -618,7 +199,7 @@ An ordered stack of pages.
 | Name | Type | Description |
 | --- | --- | --- |
 | memory | <code>Buffer</code> | The ledger's memory (4096 bytes). |
-| stack | [<code>Stack</code>](#Stack) | The ledger's stack. |
+| stack | <code>Stack</code> | The ledger's stack. |
 | tip | <code>Mixed</code> | The most recent page in the ledger. |
 
 
@@ -726,7 +307,7 @@ selectively disclosing new routes to peers which may have open circuits.
 <a name="new_Message_new"></a>
 
 ### new Message(message)
-The `Message` type is standardized in [Fabric](#Fabric) as a [Vector](#Vector), which can be added to any other vector to compute a resulting state.
+The `Message` type is standardized in [Fabric](Fabric) as a [Vector](#Vector), which can be added to any other vector to compute a resulting state.
 
 
 | Param | Type | Description |
@@ -742,22 +323,16 @@ Returns a [Buffer](Buffer) of the complete message.
 **Returns**: <code>Buffer</code> - Buffer of the encoded [Message](#Message).  
 <a name="Oracle"></a>
 
-## Oracle ⇐ [<code>Store</code>](#Store)
+## Oracle ⇐ <code>Store</code>
 An Oracle manages one or more collections, using a <code>mempool</code> for
 transitive state.
 
 **Kind**: global class  
-**Extends**: [<code>Store</code>](#Store)  
+**Extends**: <code>Store</code>  
 
-* [Oracle](#Oracle) ⇐ [<code>Store</code>](#Store)
+* [Oracle](#Oracle) ⇐ <code>Store</code>
     * [new Oracle(initial)](#new_Oracle_new)
     * [.broadcast(msg)](#Oracle+broadcast) ⇒ <code>Boolean</code>
-    * [._REGISTER(obj)](#Store+_REGISTER) ⇒ [<code>Vector</code>](#Vector)
-    * [._POST(key, value)](#Store+_POST) ⇒ <code>Promise</code>
-    * [.get(key)](#Store+get) ⇒ <code>Promise</code>
-    * [.set(key, value)](#Store+set)
-    * [.trust(source)](#Store+trust) ⇒ [<code>Store</code>](#Store)
-    * [.start()](#Store+start) ⇒ <code>Promise</code>
 
 <a name="new_Oracle_new"></a>
 
@@ -781,75 +356,6 @@ Core messaging function for interacting with this object in system-time.
 | --- | --- | --- |
 | msg | [<code>Message</code>](#Message) | Instance of a [module:Message](module:Message) object, validated then transmitted verbatim. |
 
-<a name="Store+_REGISTER"></a>
-
-### oracle.\_REGISTER(obj) ⇒ [<code>Vector</code>](#Vector)
-Registers an [Actor](Actor).  Necessary to store in a collection.
-
-**Kind**: instance method of [<code>Oracle</code>](#Oracle)  
-**Returns**: [<code>Vector</code>](#Vector) - Returned from `storage.set`  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| obj | <code>Object</code> | Instance of the object to store. |
-
-<a name="Store+_POST"></a>
-
-### oracle.\_POST(key, value) ⇒ <code>Promise</code>
-Insert something into a collection.
-
-**Kind**: instance method of [<code>Oracle</code>](#Oracle)  
-**Returns**: <code>Promise</code> - Resolves on success with a String pointer.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| key | <code>String</code> | Path to add data to. |
-| value | <code>Mixed</code> | Object to store. |
-
-<a name="Store+get"></a>
-
-### oracle.get(key) ⇒ <code>Promise</code>
-Barebones getter.
-
-**Kind**: instance method of [<code>Oracle</code>](#Oracle)  
-**Returns**: <code>Promise</code> - Resolves on complete.  `null` if not found.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| key | <code>String</code> | Name of data to retrieve. |
-
-<a name="Store+set"></a>
-
-### oracle.set(key, value)
-Set a `key` to a specific `value`.
-
-**Kind**: instance method of [<code>Oracle</code>](#Oracle)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| key | <code>String</code> | Address of the information. |
-| value | <code>Mixed</code> | Content to store at `key`. |
-
-<a name="Store+trust"></a>
-
-### oracle.trust(source) ⇒ [<code>Store</code>](#Store)
-Implicitly trust an [Event](Event) source.
-
-**Kind**: instance method of [<code>Oracle</code>](#Oracle)  
-**Returns**: [<code>Store</code>](#Store) - Resulting instance of [Store](#Store) with new trust.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| source | <code>EventEmitter</code> | Event-emitting source. |
-
-<a name="Store+start"></a>
-
-### oracle.start() ⇒ <code>Promise</code>
-Start running the process.
-
-**Kind**: instance method of [<code>Oracle</code>](#Oracle)  
-**Overrides**: [<code>start</code>](#Store+start)  
-**Returns**: <code>Promise</code> - Resolves on complete.  
 <a name="Peer"></a>
 
 ## Peer
@@ -1186,168 +692,6 @@ Compose a [Script](#Script) for inclusion within a [Contract](Contract).
 | --- | --- | --- |
 | config | <code>Mixed</code> | Configuration options for the script. |
 
-<a name="Service"></a>
-
-## Service
-The "Service" is a simple model for processing messages in a distributed
-system.  [Service](#Service) instances are public interfaces for outside systems,
-and typically advertise their presence to the network.
-
-To implement a Service, you will typically need to implement all methods from
-this prototype.  In general, `connect` and `send` are the highest-priority
-jobs, and by default the `fabric` property will serve as an I/O stream using
-familiar semantics.
-
-**Kind**: global class  
-**Properties**
-
-| Name | Description |
-| --- | --- |
-| map | The "map" is a hashtable of "key" => "value" pairs. |
-
-
-* [Service](#Service)
-    * [new Service(config)](#new_Service_new)
-    * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
-    * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
-    * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
-    * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
-    * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
-    * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
-    * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
-
-<a name="new_Service_new"></a>
-
-### new Service(config)
-Create an instance of a Service.
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| config | <code>Object</code> | Configuration for this service. |
-
-<a name="Service+handler"></a>
-
-### service.handler(message) ⇒ [<code>Service</code>](#Service)
-Default route handler for an incoming message.  Follows the Activity
-Streams 2.0 spec: https://www.w3.org/TR/activitystreams-core/
-
-**Kind**: instance method of [<code>Service</code>](#Service)  
-**Returns**: [<code>Service</code>](#Service) - Chainable method.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| message | <code>Activity</code> | Message object. |
-
-<a name="Service+route"></a>
-
-### service.route(msg) ⇒ <code>Promise</code>
-Resolve a [State](#State) from a particular [Message](#Message) object.
-
-**Kind**: instance method of [<code>Service</code>](#Service)  
-**Returns**: <code>Promise</code> - Resolves with resulting [State](#State).  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| msg | [<code>Message</code>](#Message) | Explicit Fabric [Message](#Message). |
-
-<a name="Service+_GET"></a>
-
-### service.\_GET(path) ⇒ <code>Promise</code>
-Retrieve a value from the Service's state.
-
-**Kind**: instance method of [<code>Service</code>](#Service)  
-**Returns**: <code>Promise</code> - Resolves with the result.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | <code>String</code> | Path of the value to retrieve. |
-
-<a name="Service+_PUT"></a>
-
-### service.\_PUT(path, value, [commit]) ⇒ <code>Promise</code>
-Store a value in the Service's state.
-
-**Kind**: instance method of [<code>Service</code>](#Service)  
-**Returns**: <code>Promise</code> - Resolves with with stored document.  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| path | <code>String</code> |  | Path to store the value at. |
-| value | <code>Object</code> |  | Document to store. |
-| [commit] | <code>Boolean</code> | <code>false</code> | Sign the resulting state. |
-
-<a name="Service+connect"></a>
-
-### service.connect(notify) ⇒ <code>Promise</code>
-Attach to network.
-
-**Kind**: instance method of [<code>Service</code>](#Service)  
-**Returns**: <code>Promise</code> - Resolves to [Fabric](#Fabric).  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| notify | <code>Boolean</code> | <code>true</code> | Commit to changes. |
-
-<a name="Service+send"></a>
-
-### service.send(channel, message) ⇒ [<code>Service</code>](#Service)
-Send a message to a channel.
-
-**Kind**: instance method of [<code>Service</code>](#Service)  
-**Returns**: [<code>Service</code>](#Service) - Chainable method.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| channel | <code>String</code> | Channel name to which the message will be sent. |
-| message | <code>String</code> | Content of the message to send. |
-
-<a name="Service+_registerActor"></a>
-
-### service.\_registerActor(actor) ⇒ <code>Promise</code>
-Register an [Actor](Actor) with the [Service](#Service).
-
-**Kind**: instance method of [<code>Service</code>](#Service)  
-**Returns**: <code>Promise</code> - Resolves upon successful registration.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| actor | <code>Object</code> | Instance of the [Actor](Actor). |
-
-<a name="Stack"></a>
-
-## Stack
-Manage stacks of data.
-
-**Kind**: global class  
-
-* [Stack](#Stack)
-    * [new Stack([list])](#new_Stack_new)
-    * [.push(data)](#Stack+push) ⇒ <code>Number</code>
-
-<a name="new_Stack_new"></a>
-
-### new Stack([list])
-Create a [Stack](#Stack) instance.
-
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| [list] | <code>Array</code> | <code>[]</code> | Genesis state for the [Stack](#Stack) instance. |
-
-<a name="Stack+push"></a>
-
-### stack.push(data) ⇒ <code>Number</code>
-Push data onto the stack.  Changes the [Stack#frame](Stack#frame) and
-[Stack#id](Stack#id).
-
-**Kind**: instance method of [<code>Stack</code>](#Stack)  
-**Returns**: <code>Number</code> - Resulting size of the stack.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| data | <code>Mixed</code> | Treated as a [State](#State). |
-
 <a name="State"></a>
 
 ## State
@@ -1400,7 +744,7 @@ Unmarshall an existing state to an instance of a [Blob](Blob).
 Convert to [Buffer](Buffer).
 
 **Kind**: instance method of [<code>State</code>](#State)  
-**Returns**: <code>Buffer</code> - [Store](#Store)-able blob.  
+**Returns**: <code>Buffer</code> - [Store](Store)-able blob.  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -1452,107 +796,6 @@ Persistent data storage.
 | --- | --- | --- |
 | config | <code>Object</code> | Configuration for internal datastore. |
 
-<a name="Store"></a>
-
-## Store
-Long-term storage.
-
-**Kind**: global class  
-**Properties**
-
-| Name | Type | Description |
-| --- | --- | --- |
-| config | <code>Mixed</code> | Current configuration. |
-
-
-* [Store](#Store)
-    * [new Store([config])](#new_Store_new)
-    * [._REGISTER(obj)](#Store+_REGISTER) ⇒ [<code>Vector</code>](#Vector)
-    * [._POST(key, value)](#Store+_POST) ⇒ <code>Promise</code>
-    * [.get(key)](#Store+get) ⇒ <code>Promise</code>
-    * [.set(key, value)](#Store+set)
-    * [.trust(source)](#Store+trust) ⇒ [<code>Store</code>](#Store)
-    * [.start()](#Store+start) ⇒ <code>Promise</code>
-
-<a name="new_Store_new"></a>
-
-### new Store([config])
-Create an instance of a [Store](#Store) to manage long-term storage, which is
-particularly useful when building a user-facing [Product](Product).
-
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| [config] | <code>Object</code> | <code>{}</code> | Configuration object. |
-
-<a name="Store+_REGISTER"></a>
-
-### store.\_REGISTER(obj) ⇒ [<code>Vector</code>](#Vector)
-Registers an [Actor](Actor).  Necessary to store in a collection.
-
-**Kind**: instance method of [<code>Store</code>](#Store)  
-**Returns**: [<code>Vector</code>](#Vector) - Returned from `storage.set`  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| obj | <code>Object</code> | Instance of the object to store. |
-
-<a name="Store+_POST"></a>
-
-### store.\_POST(key, value) ⇒ <code>Promise</code>
-Insert something into a collection.
-
-**Kind**: instance method of [<code>Store</code>](#Store)  
-**Returns**: <code>Promise</code> - Resolves on success with a String pointer.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| key | <code>String</code> | Path to add data to. |
-| value | <code>Mixed</code> | Object to store. |
-
-<a name="Store+get"></a>
-
-### store.get(key) ⇒ <code>Promise</code>
-Barebones getter.
-
-**Kind**: instance method of [<code>Store</code>](#Store)  
-**Returns**: <code>Promise</code> - Resolves on complete.  `null` if not found.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| key | <code>String</code> | Name of data to retrieve. |
-
-<a name="Store+set"></a>
-
-### store.set(key, value)
-Set a `key` to a specific `value`.
-
-**Kind**: instance method of [<code>Store</code>](#Store)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| key | <code>String</code> | Address of the information. |
-| value | <code>Mixed</code> | Content to store at `key`. |
-
-<a name="Store+trust"></a>
-
-### store.trust(source) ⇒ [<code>Store</code>](#Store)
-Implicitly trust an [Event](Event) source.
-
-**Kind**: instance method of [<code>Store</code>](#Store)  
-**Returns**: [<code>Store</code>](#Store) - Resulting instance of [Store](#Store) with new trust.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| source | <code>EventEmitter</code> | Event-emitting source. |
-
-<a name="Store+start"></a>
-
-### store.start() ⇒ <code>Promise</code>
-Start running the process.
-
-**Kind**: instance method of [<code>Store</code>](#Store)  
-**Returns**: <code>Promise</code> - Resolves on complete.  
 <a name="Swarm"></a>
 
 ## Swarm : <code>String</code>

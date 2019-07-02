@@ -39,7 +39,7 @@ class Chain extends Ledger {
 
     this.ledger = new Ledger();
     this.storage = new Store({
-      path: './data/chain'
+      path: './stores/chain'
     });
 
     Object.defineProperty(this, 'ledger', {

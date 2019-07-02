@@ -16,7 +16,7 @@ class Storage extends Store {
     super(config);
 
     this.config = Object.assign({
-      path: './data/storage',
+      path: './stores/storage',
       persistent: true
     }, config);
 

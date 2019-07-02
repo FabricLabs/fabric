@@ -479,7 +479,7 @@ class Store extends Scribe {
 
     this.status = 'starting';
 
-    mkdirp.sync(this.config.path);
+    let res = mkdirp.sync(this.config.path);
 
     try {
       await this.db.open();

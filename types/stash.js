@@ -6,7 +6,7 @@ const localforage = require('localforage');
 
 function Stash (vector) {
   this.config = Object.assign({
-    path: './data/store',
+    path: './stores/store',
     get: this.get,
     set: this.set,
     del: this.del,

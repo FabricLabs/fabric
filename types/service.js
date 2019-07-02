@@ -213,7 +213,12 @@ class Service extends Scribe {
       exclusive: true // override all previous types
     });
 
-    await this.store.open();
+    try {
+      await this.store.start();
+    } catch (E) {
+      console.log('[FABRIC:SERVICE]', 'Could not start store:', E);
+    }
+
     await this.connect();
 
     // TODO: re-re-evaluate a better approach... oh how I long for Object.observe!
@@ -228,7 +233,7 @@ class Service extends Scribe {
 
   async stop () {
     await this.disconnect();
-    await this.store.close();
+    await this.store.stop();
     await super.stop();
     return this;
   }

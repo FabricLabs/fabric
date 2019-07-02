@@ -21,7 +21,7 @@ class Scribe extends State {
     // assign the defaults;
     this.config = Object.assign({
       verbose: true,
-      path: './data/scribe'
+      path: './stores/scribe'
     }, config);
 
     this.tags = [];

@@ -7,6 +7,7 @@ const Machine = require('./machine');
 
 /**
  * Live instance of an ARC in Fabric.
+ * @type {Object}
  */
 class Entity extends Events.EventEmitter {
   /**
@@ -119,6 +120,8 @@ class Entity extends Events.EventEmitter {
         '@data': input
       };
     } else if (input instanceof Buffer) {
+      console.log('[FABRIC:ENTITY]', 'input data:', input);
+      console.log('[FABRIC:ENTITY]', 'input stringified by local JS engine:', JSON.stringify(input));
       result = {
         '@type': 'Buffer',
         '@data': JSON.parse(JSON.stringify(input))[0]

@@ -6,6 +6,7 @@ const {
 } = require('../constants');
 
 const State = require('./state');
+const MerkleTree = require('merkletreejs');
 
 /**
  * Manage stacks of data.
@@ -51,8 +52,6 @@ class Stack extends State {
   push (data) {
     let state = new State(data);
 
-    console.log('stack pushing:', state.id, ` = sha256(String${data.length} ${data})`);
-
     this['@entity'].states[this.id] = this['@data'];
     this['@entity'].states[state.id] = state['@data'];
     this['@entity'].frames[this.id] = this['@data'];
@@ -83,6 +82,12 @@ class Stack extends State {
 
   asArray () {
     return Array.from(this['@data']);
+  }
+
+  asMerkleTree () {
+    return new MerkleTree(this.asArray(), this.sha256, {
+      isBitcoinTree: true
+    });
   }
 
   snapshot () {
