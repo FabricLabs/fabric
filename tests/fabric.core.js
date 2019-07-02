@@ -17,7 +17,7 @@ const crypto = require('crypto');
 // const expect = require('chai').expect;
 
 // Data
-const genesis = require('../assets/fabric');
+const genesis = require('../assets/fabric.json');
 const message = require('../assets/message');
 const samples = require('../assets/samples');
 
