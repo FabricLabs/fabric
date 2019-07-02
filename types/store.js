@@ -3,7 +3,6 @@
 // TODO: note that generally, requirements are loosely ordered by
 // their relative importance to the file in question
 const crypto = require('crypto');
-const mkdirp = require('mkdirp');
 const level = require('level');
 const pointer = require('json-pointer');
 
@@ -478,8 +477,6 @@ class Store extends Scribe {
     await super.start();
 
     this.status = 'starting';
-
-    let res = mkdirp.sync(this.config.path);
 
     try {
       await this.db.open();

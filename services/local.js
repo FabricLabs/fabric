@@ -1,6 +1,6 @@
 'use strict';
 
-const Service = require('../lib/service');
+const Service = require('../types/service');
 
 class Local extends Service {
   constructor (config) {

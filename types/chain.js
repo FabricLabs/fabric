@@ -84,8 +84,12 @@ class Chain extends Ledger {
   async start () {
     let chain = this;
 
-    await chain.storage.open();
-    await chain.ledger.start();
+    try {
+      await chain.storage.start();
+      await chain.ledger.start();
+    } catch (E) {
+      console.error('Could not open storage:', E);
+    }
 
     // TODO: define all state transitions
     chain.state.blocks = [chain.genesis];
@@ -101,8 +105,9 @@ class Chain extends Ledger {
 
   async stop () {
     await this.commit();
+
     await this.ledger.stop();
-    await this.storage.close();
+    await this.storage.stop();
 
     return this;
   }

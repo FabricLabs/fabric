@@ -32,7 +32,7 @@
     "start": "node scripts/app.js",
     "static": "npm run build:scripts && ecstatic assets",
     "test:app": "npm run make:service && npm run make:app && NODE_ENV=test mocha tests/fabric.app.js",
-    "test": "NODE_ENV=test mocha tests/fabric.core.js"
+    "test": "mkdir -p stores && NODE_ENV=test mocha tests/fabric.core.js"
   },
   "engines": {
     "node": ">= 8.9.0"
