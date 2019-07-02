@@ -17,12 +17,12 @@ const crypto = require('crypto');
 // const expect = require('chai').expect;
 
 // Data
-const genesis = require('../data/fabric');
-const message = require('../data/message');
-const samples = require('../data/samples');
+const genesis = require('../assets/fabric');
+const message = require('../assets/message');
+const samples = require('../assets/samples');
 
 // Opcodes
-const OPCODES = require('../data/opcodes');
+const OPCODES = require('../assets/opcodes');
 
 // test our own expectations.  best of luck.
 // TODO: write parser for comments
