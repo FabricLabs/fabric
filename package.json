@@ -70,7 +70,7 @@
     "jsdoc-to-markdown": "^4.0.1",
     "json-pointer": "^0.6.0",
     "level": "^5.0.1",
-    "merkletreejs": "0.0.6",
+    "merkletreejs": "^0.1.6",
     "mkdirp": "^0.5.1",
     "node-fetch": "^2.6.0",
     "path-match": "^1.2.4",
