@@ -757,6 +757,7 @@ transitive state.
     * [.get(key)](#Store+get) ⇒ <code>Promise</code>
     * [.set(key, value)](#Store+set)
     * [.trust(source)](#Store+trust) ⇒ [<code>Store</code>](#Store)
+    * [.start()](#Store+start) ⇒ <code>Promise</code>
 
 <a name="new_Oracle_new"></a>
 
@@ -841,6 +842,14 @@ Implicitly trust an [Event](Event) source.
 | --- | --- | --- |
 | source | <code>EventEmitter</code> | Event-emitting source. |
 
+<a name="Store+start"></a>
+
+### oracle.start() ⇒ <code>Promise</code>
+Start running the process.
+
+**Kind**: instance method of [<code>Oracle</code>](#Oracle)  
+**Overrides**: [<code>start</code>](#Store+start)  
+**Returns**: <code>Promise</code> - Resolves on complete.  
 <a name="Peer"></a>
 
 ## Peer
@@ -1457,11 +1466,24 @@ Long-term storage.
 
 
 * [Store](#Store)
+    * [new Store([config])](#new_Store_new)
     * [._REGISTER(obj)](#Store+_REGISTER) ⇒ [<code>Vector</code>](#Vector)
     * [._POST(key, value)](#Store+_POST) ⇒ <code>Promise</code>
     * [.get(key)](#Store+get) ⇒ <code>Promise</code>
     * [.set(key, value)](#Store+set)
     * [.trust(source)](#Store+trust) ⇒ [<code>Store</code>](#Store)
+    * [.start()](#Store+start) ⇒ <code>Promise</code>
+
+<a name="new_Store_new"></a>
+
+### new Store([config])
+Create an instance of a [Store](#Store) to manage long-term storage, which is
+particularly useful when building a user-facing [Product](Product).
+
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [config] | <code>Object</code> | <code>{}</code> | Configuration object. |
 
 <a name="Store+_REGISTER"></a>
 
@@ -1524,6 +1546,13 @@ Implicitly trust an [Event](Event) source.
 | --- | --- | --- |
 | source | <code>EventEmitter</code> | Event-emitting source. |
 
+<a name="Store+start"></a>
+
+### store.start() ⇒ <code>Promise</code>
+Start running the process.
+
+**Kind**: instance method of [<code>Store</code>](#Store)  
+**Returns**: <code>Promise</code> - Resolves on complete.  
 <a name="Swarm"></a>
 
 ## Swarm : <code>String</code>
