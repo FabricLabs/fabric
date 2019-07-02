@@ -1200,6 +1200,7 @@ familiar semantics.
 * [Service](#Service)
     * [new Service(config)](#new_Service_new)
     * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
+    * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
     * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
     * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
     * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
@@ -1228,6 +1229,18 @@ Streams 2.0 spec: https://www.w3.org/TR/activitystreams-core/
 | Param | Type | Description |
 | --- | --- | --- |
 | message | <code>Activity</code> | Message object. |
+
+<a name="Service+route"></a>
+
+### service.route(msg) ⇒ <code>Promise</code>
+Resolve a [State](#State) from a particular [Message](#Message) object.
+
+**Kind**: instance method of [<code>Service</code>](#Service)  
+**Returns**: <code>Promise</code> - Resolves with resulting [State](#State).  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | [<code>Message</code>](#Message) | Explicit Fabric [Message](#Message). |
 
 <a name="Service+_GET"></a>
 
