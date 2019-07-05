@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>JSDoc: Source: lib/http.js</title>
+
+  <script src="scripts/prettify/prettify.js"> </script>
+  <script src="scripts/prettify/lang-css.js"> </script>
+  <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+  <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+  <div id="main">
+
+    <h1 class="page-title">Source: lib/http.js</h1>
+
+
+
+
+
+
+    <section>
+      <article>
+        <pre class="prettyprint source linenums"><code>'use strict';
+
+const Fabric = require('../');
+
+const fs = require('fs');
+const http = require('http');
+const ecstatic = require('ecstatic');
+
+const bodyParser = require('body-parser');
+const express = require('express');
+const pattern = require('path-match')();
+
+const App = require('./app');
+const Oracle = require('./oracle');
+const Document = require('./document');
+
+class HTTP extends Oracle {
+  /**
+   * Builds an HTTP server for a Contract.  Useful for servicing the legacy web.
+   * @param  {Object} config General configuration object for the server.
+   * @param  {Object} config.secure Disable security.  Defaults to true fn (!).
+   * @param  {Object} config.bootstrap Load Assets from `./assets`.
+   * @return {HTTP}        Instance of the resulting Authority.
+   */
+  constructor (config = {}) {
+    super(config);
+
+    this.config = Object.assign({
+      name: 'fabric',
+      directories: {
+        components: 'components'
+      },
+      precompile: true,
+      port: 3000
+    }, config);
+
+    this.app = new App();
+    // this.parser = new Parser();
+    // TODO: replace express with 'net'
+    this.http = express();
+
+    this.functions = {};
+    this.resources = {};
+    this.routes = {};
+
+    if (this.config.client &amp;&amp; this.config.client.precompile) {
+      this.http.set('view engine', 'js');
+      this.http.engine('js', require('compiled-jade-render'));
+    } else {
+      this.http.set('view engine', 'jade');
+    }
+
+    if (this.config.resources) {
+      this.consume(this.config.resources);
+    }
+
+    this.http.set('views', 'assets');
+
+    this.http.use(bodyParser.json());
+    this.http.use(function (req, res, next) {
+      res.header('Access-Control-Allow-Origin', '*');
+      res.header('Access-Control-Allow-Methods', 'GET, PUT, POST, PATCH, DELETE, OPTIONS');
+      res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Length, X-Requested-With');
+      return next();
+    });
+
+    return this;
+  }
+
+  static get Server () {
+    return function Server (config) {
+      this.app = express();
+      this.app.use(ecstatic({
+        root: `${__dirname}/assets`,
+        showdir: true
+      }));
+
+      return http.createServer(this.app).listen(8080);
+    };
+  }
+
+  async start () {
+    await super.start();
+
+    if (this.config.bootstrap === true) {
+      try {
+        let assets = await this._load('./assets', {});
+        console.debug('initial assets:', assets);
+      } catch (E) {
+        console.error('[HTTP]', 'failed bootstrap:', E);
+      }
+    }
+
+    await this._loadComponents();
+
+    await this.define('Asset', require('../resources/asset'));
+    await this.define('Index', {
+      routes: {
+        list: '/'
+      },
+      components: {
+        list: 'fabric-index'
+      },
+      // TODO: fully describe application in this field
+      data: this['@data']
+    });
+
+    // iterate through defined resources, populate their trees
+    // TODO: move to Oracle
+    // TODO: prevent "undefined: undefined" in message history
+    // results from this empty definition (initialization)
+    for (let name in this.resources) {
+      let resource = this.resources[name];
+      // TODO: specify loading cases
+      let result = await this._GET(resource.routes.list);
+      this.machine.applyOperation({
+        op: 'add',
+        path: resource.routes.list,
+        value: result || []
+      });
+    }
+
+    let prior = this.machine.commit();
+
+    try {
+      this.server = await this.http.listen(this.config.port);
+      console.log('[HTTP]', 'listening', this.server.address());
+    } catch (E) {
+      console.error('[HTTP]', E);
+    }
+
+    return this;
+  }
+
+  async stop () {
+    await super.stop();
+
+    try {
+      await this.server.close();
+      await this.app.tips.close();
+      await this.app.stash.close();
+      await this.storage.close();
+
+      for (var name in this.resources) {
+        let resource = this.resources[name];
+        if (resource.store) {
+          await resource.store.close();
+        }
+      }
+    } catch (E) {
+      console.error('[HTTP]', E);
+    }
+
+    return this;
+  }
+
+  consume (resources) {
+    for (let key in resources) {
+      this.define(resources[key].name, resources[key]);
+    }
+  }
+
+  async _loadComponents () {
+    console.log('path:', this.config.directories);
+    let files = fs.readdirSync(this.config.directories.components);
+    for (let i in files) {
+      let file = files[i];
+      let path = `${this.config.directories.components}/${file}`;
+      if (fs.statSync(path).isDirectory()) continue;
+      let name = file.replace(/\.jade$/, '');
+      await this._loadComponent(name);
+    }
+  }
+
+  async _loadComponent (name) {
+    try {
+      let component = [this.config.name, name].join('-');
+      let content = fs.readFileSync(`${this.config.directories.components}/${name}.jade`);
+      this.functions[component] = await this.assemble(content);
+    } catch (E) {
+      console.error(`Could not load component "${name}"`, E);
+    }
+  }
+
+  /**
+   * Creates associations in memory by defining a resource by its `name`.
+   * @param  {String}  name       Human-friendly name of this {@link Resource}.
+   * @param  {Object}  definition Resource description object.
+   * @return {Promise}            [description]
+   */
+  async define (name, definition) {
+    let self = this;
+
+    definition = Object.assign({ name }, definition);
+
+    try {
+      let app = await this.app.define(name, definition);
+      let resource = app.resources[name];
+
+      let source = resource.routes.list + '/:id';
+      let query = resource.routes.list;
+
+      self.routes[source] = name;
+      self.routes[query] = name;
+
+      await this._loadComponent(resource.components.list);
+      await this._loadComponent(resource.components.view);
+
+      self.resources[name] = resource;
+
+      this.http.put('/*', self.router.bind(self));
+      this.http.get('/*', self.router.bind(self));
+      this.http.post('/*', self.router.bind(self));
+      this.http.patch('/*', self.router.bind(self));
+      this.http.delete('/*', self.router.bind(self));
+      this.http.options('/*', self.router.bind(self));
+
+      self.keys.add(query);
+    } catch (E) {
+      console.error('[HTTP]', 'defining:', name, E);
+    }
+
+    return this;
+  }
+
+  async _OPTIONS (link) {
+    let map = {};
+    for (let name in this.resources) {
+      map[name] = this.resources[name]['@data'];
+    }
+    let options = new Fabric.Vector(map)._sign();
+    return options['@data'];
+  }
+
+  async route (link) {
+    this.log('[ROUTER]', 'route()', link, this.routes);
+
+    for (var route in this.routes) {
+      let name = this.routes[route];
+      let valid = pattern(route);
+      let match = valid(link);
+
+      if (match) {
+        return {
+          resource: name,
+          method: (match &amp;&amp; match.id) ? 'view' : 'list',
+          query: match
+        };
+      }
+    }
+  }
+
+  async router (request, response, skip) {
+    let self = this;
+    let route = await this.route(request.path);
+
+    if (!route) {
+      return response.send({
+        status: 'error',
+        message: `Received "${request.method} ${request.path}", which is not yet implemented.  Use OPTIONS for a list of available methods.`
+      });
+    }
+
+    let resource = this.resources[route.resource];
+    let component = null;
+    let output = null;
+
+    switch (request.method) {
+      default:
+        output = {
+          status: 'warning',
+          message: `Received "${request.method} ${request.path}" for ${resource.name}, which is not yet implemented.  Use OPTIONS for a list of available methods.`
+        };
+        break;
+      case 'OPTIONS':
+        try {
+          let answer = await this._OPTIONS(request.path);
+          let vector = new Fabric.Vector(answer)._sign();
+
+          component = resource.components.options;
+          output = vector;
+        } catch (E) {
+          console.error(E);
+        }
+        break;
+      case 'GET':
+        try {
+          let answer = await this._GET(request.path);
+          let vector = new Fabric.Vector(answer)._sign();
+
+          component = resource.components[route.method];
+          output = vector;
+        } catch (E) {
+          console.error(E);
+        }
+        break;
+      case 'PUT':
+        try {
+          let answer = await this._PUT(request.path, request.body);
+          let vector = new Fabric.Vector(answer)._sign();
+
+          let result = await this._GET(request.path);
+          let signed = new Fabric.Vector(result)._sign();
+
+          component = resource.components.put;
+          output = signed;
+        } catch (E) {
+          console.error(E);
+        }
+        break;
+      case 'POST':
+        try {
+          let answer = await this._POST(request.path, request.body);
+          let vector = new Fabric.Vector(answer)._sign();
+
+          return response.redirect(303, [request.path, vector.id].join('/'));
+        } catch (E) {
+          console.error(E);
+        }
+        break;
+      case 'PATCH':
+        try {
+          let answer = await this._PATCH(request.path, request.body);
+          let vector = new Fabric.Vector(answer)._sign();
+
+          let result = await this._GET(request.path);
+          let signed = new Fabric.Vector(result)._sign();
+
+          component = resource.components.patch;
+          output = signed;
+        } catch (E) {
+          console.error(E);
+        }
+        break;
+      case 'DELETE':
+        try {
+          let answer = await this._DELETE(request.path);
+          let vector = new Fabric.Vector(answer)._sign();
+
+          component = resource.components.delete;
+          output = vector;
+        } catch (E) {
+          console.error(E);
+        }
+        break;
+    }
+
+    let document = new Document(resource)._sign();
+
+    // TODO: finalize headers
+    response.header('X-Fabric-Type', resource.name);
+    response.header('X-Fabric-Link', document.link);
+    response.header('X-Fabric-ID', document.id);
+    response.header('X-Powered-By', `fabric-${this.version}-dev}`);
+
+    if (request.accepts('html')) {
+      if (resource.name === 'Asset') {
+        response.send(document['@data']);
+      } else {
+        response.send(document.asHTML());
+      }
+    } else {
+      response.send(document);
+    }
+
+    return this;
+  }
+
+  async render (path) {
+    return this['@data'];
+  }
+}
+
+module.exports = HTTP;
+</code></pre>
+      </article>
+    </section>
+
+
+
+
+  </div>
+
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="App.html">App</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="HTTP.html">HTTP</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="Oracle.html">Oracle</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="Remote.html">Remote</a></li>
+      <li><a href="Router.html">Router</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
+    </ul>
+  </nav>
+
+  <br class="clear">
+
+  <footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.6.0-dev</a> on Wed May 22 2019 04:15:25 GMT-0700 (PDT)
+  </footer>
+
+  <script>
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"> </script>
+</body>
+
+</html>

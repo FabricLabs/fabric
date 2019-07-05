@@ -1,8 +1,8 @@
 'use strict';
 
-const CLI = require('../lib/cli');
+const CLI = require('../types/cli');
 const config = {
-  path: `./data/${process.env['NAME'] || 'cli'}`,
+  path: `./stores/${process.env['NAME'] || 'cli'}`,
   persistent: true,
   oracle: {
     port: process.env['PORT'] || 3007
