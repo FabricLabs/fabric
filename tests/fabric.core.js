@@ -6,6 +6,7 @@ const {
 
 // Core
 const Fabric = require('../');
+const Web = require('@fabric/http');
 
 // Modules
 const Service = require('../types/service');
@@ -23,6 +24,11 @@ const samples = require('../assets/samples');
 
 // Opcodes
 const OPCODES = require('../assets/opcodes');
+const LOCAL_SERVER_CONFIG = {
+  host: 'localhost',
+  port: 9999,
+  secure: false
+};
 
 // test our own expectations.  best of luck.
 // TODO: write parser for comments
@@ -38,7 +44,7 @@ describe('@fabric/core', function () {
     });
 
     // This doubles as an example pattern for running Fabric nodes.
-    xit('can start and stop smoothly', function (done) {
+    it('can start and stop smoothly', function (done) {
       let fabric = new Fabric();
 
       // We'll use Events in this first example, as they're essential to the
@@ -175,6 +181,8 @@ describe('@fabric/core', function () {
 
       await fabric.stop();
 
+      console.log('set:', set);
+
       assert.equal(set.toString('utf8'), buffer.toString('utf8'));
       assert.equal(get.constructor.name, 'Buffer');
       assert.equal(get.toString(), buffer.toString());
@@ -269,10 +277,12 @@ describe('@fabric/core', function () {
       assert.equal(Fabric.App instanceof Function, true);
     });
 
-    it('has a normal lifecycle', function () {
+    it('has a normal lifecycle', async function () {
       let app = new Fabric.App();
-      app.start();
+      await app.start();
+      await app.stop();
       console.log('app:', app);
+      assert.ok(app);
     });
   });
 
@@ -414,6 +424,22 @@ describe('@fabric/core', function () {
     });
   });
   */
+
+  describe('Entity', function () {
+    it('is available from @fabric/core', function () {
+      assert.equal(Fabric.Entity instanceof Function, true);
+    });
+
+    it('can generate a known string', function () {
+      let entity = new Fabric.Entity({ foo: 'bar' });
+      assert.equal(entity.toString(), '{"foo":"bar"}');
+    });
+
+    it('can generate a known buffer', function () {
+      let entity = new Fabric.Entity({ foo: 'bar' });
+      assert.equal(entity.toBuffer(), '{"foo":"bar"}');
+    });
+  });
 
   describe('Key', function () {
     it('is available from @fabric/core', function () {
@@ -618,17 +644,60 @@ describe('@fabric/core', function () {
       assert.equal(Fabric.Remote instanceof Function, true);
     });
 
-    // TODO: re-enable this, evaluate test hosts
-    xit('can load OPTIONS', async function () {
+    it('can load OPTIONS', async function () {
+      let server = new Web.Server();
       let remote = new Fabric.Remote({
         host: 'google.com',
         port: 443
       });
+
+      await server.start();
+
       let result = await remote._OPTIONS(`/`);
+
+      await server.stop();
 
       console.log('remote:', remote);
       console.log('result:', result);
       // assert.equal(result.toString('utf8'), '');
+    });
+
+    it('can load OPTIONS from local server', async function () {
+      let server = new Web.Server();
+      let remote = new Fabric.Remote(LOCAL_SERVER_CONFIG);
+
+      await server.start();
+      let result = await remote._OPTIONS(`/`);
+      await server.stop();
+
+      assert.equal(result.status, 200);
+    });
+
+    it('can load GET from local server', async function () {
+      let server = new Web.Server();
+      let remote = new Fabric.Remote(LOCAL_SERVER_CONFIG);
+
+      await server.start();
+      let result = await remote._GET(`/`);
+      await server.stop();
+
+      assert.equal(result.status, 200);
+    });
+
+    xit('can POST to local server', async function () {
+      let server = new Web.Server();
+      let remote = new Fabric.Remote(LOCAL_SERVER_CONFIG);
+
+      await server.start();
+      try {
+        let result = await remote._POST(`/widgets`, { foo: 'bar' });
+        console.log('result:', result);
+      } catch (E) {
+        console.error('Could not:', E);
+      }
+      await server.stop();
+
+      assert.equal(result.status, 200);
     });
   });
 

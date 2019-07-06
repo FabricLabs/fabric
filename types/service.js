@@ -223,6 +223,7 @@ class Service extends Scribe {
 
     // TODO: re-re-evaluate a better approach... oh how I long for Object.observe!
     // this.observer = manager.observe(this.state, this._handleStateChange.bind(this));
+    if (!this.state) this.state = {};
     this.observer = manager.observe(this.state);
 
     this.status = 'started';

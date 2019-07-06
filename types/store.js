@@ -279,19 +279,19 @@ class Store extends Scribe {
     try {
       tip = await self.db.get(`/tips/${router}`);
     } catch (E) {
-      self.error(`cannot get tip [${router}] "/tips/${router}":`, E);
+      console.error(`cannot get tip [${router}] "/tips/${router}":`, E);
     }
 
     try {
       type = await self.db.get(`/types/${tip}`);
     } catch (E) {
-      self.error(`cannot get type`, E);
+      console.error(`cannot get type`, E);
     }
 
     try {
       state = await self.db.get(`/states/${tip}`);
     } catch (E) {
-      self.error(`cannot get state [${tip}] "/states/${tip}":`, E);
+      console.error(`cannot get state [${tip}] "/states/${tip}":`, E);
     }
 
     switch (type) {
@@ -358,6 +358,8 @@ class Store extends Scribe {
       console.error('BATCH FAILURE:', E);
     }
 
+    console.log('ops:', ops);
+
     try {
       await Promise.all(ops.map(op => {
         return self.db.put(op.key, op.value);
@@ -374,12 +376,16 @@ class Store extends Scribe {
   async open () {
     await super.open();
 
+    console.log('[FABRIC:STORE]', 'Opening:', this.config.path);
+
+    if (this.db) return this;
+
     try {
       this.db = level(this.config.path);
       this.trust(this.db);
       this.status = 'opened';
     } catch (E) {
-      this.error('[STORE]', E);
+      console.error('[STORE]', E);
     }
 
     return this;

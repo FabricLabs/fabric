@@ -359,6 +359,7 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
 
   set (path, value) {
     console.log('setting:', path, value);
+    pointer.set(this.state, path, value);
     let result = pointer.set(this['@entity']['@data'], path, value);
     this.commit();
     return result;
