@@ -29,6 +29,7 @@
     "make:service": "NODE_ENV=production webpack --target=webworker examples/service.js assets/service.js",
     "parse:api": "jsdoc2md --configure jsdoc.json --files index.js types/** README.md > API.md",
     "review:coverage": "npm run make:coverage && ecstatic reports/code-coverage",
+    "review:todo": "grep --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs -rEI \"TODO|FIXME\" . 2>/dev/null > reports/todo.txt",
     "start": "node scripts/app.js",
     "static": "npm run build:scripts && ecstatic assets",
     "test:app": "npm run make:service && npm run make:app && NODE_ENV=test mocha tests/fabric.app.js",
@@ -77,6 +78,7 @@
     "rimraf": "^2.6.2"
   },
   "devDependencies": {
+    "@fabric/http": "FabricLabs/web#fabric-0.1.0-develop",
     "blessed": "^0.1.81",
     "body-parser": "^1.18.2",
     "chai": "^4.0.2",
