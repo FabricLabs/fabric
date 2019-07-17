@@ -43,6 +43,10 @@ class Stack extends State {
     return this;
   }
 
+  get size () {
+    return this['@data'].length;
+  }
+
   /**
    * Push data onto the stack.  Changes the {@link Stack#frame} and
    * {@link Stack#id}.

@@ -160,6 +160,10 @@ class State extends EventEmitter {
     return this.fromJSON(input);
   }
 
+  sha256 (value) {
+    return crypto.createHash('sha256').update(value).digest('hex');
+  }
+
   async _applyChanges (ops) {
     try {
       monitor.applyPatch(this['@data'], ops);

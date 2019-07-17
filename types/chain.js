@@ -2,10 +2,9 @@
 
 const Block = require('./block');
 const Ledger = require('./ledger');
+const Stack = require('./stack');
 const State = require('./state');
 const Store = require('./store');
-
-const { MerkleTree } = require('merkletreejs');
 
 /**
  * Chain.
@@ -76,9 +75,8 @@ class Chain extends Ledger {
   }
 
   get _tree () {
-    return new MerkleTree(this.leaves, this.sha256, {
-      isBitcoinTree: true
-    });
+    let stack = new Stack(this.leaves);
+    return stack.asMerkleTree();
   }
 
   async start () {
