@@ -160,6 +160,23 @@ class State extends EventEmitter {
     return this.fromJSON(input);
   }
 
+  async _getState () {
+    let self = this;
+    let results = await Promise.all([
+      async function () {
+        return self.state;
+      }
+    ]).then(([
+      state
+    ]) => {
+      return {
+        state
+      };
+    }).catch(e => console.error(e));
+
+    return results;
+  }
+
   sha256 (value) {
     return crypto.createHash('sha256').update(value).digest('hex');
   }
@@ -357,12 +374,11 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
   }
 
   get (path) {
-    console.log('getting:', path);
     return pointer.get(this['@entity']['@data'], path);
   }
 
   set (path, value) {
-    console.log('setting:', path, value);
+    // console.log('setting:', path, value);
     pointer.set(this.state, path, value);
     let result = pointer.set(this['@entity']['@data'], path, value);
     this.commit();

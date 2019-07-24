@@ -2,6 +2,7 @@
 
 const pluralize = require('pluralize');
 const monitor = require('fast-json-patch');
+const pointer = require('json-pointer');
 
 const Entity = require('./entity');
 
@@ -47,13 +48,25 @@ class Collection extends Stack {
     this.settings.key = name;
   }
 
+  async getByID (id) {
+    return pointer.get(this.state, `${this.path}/${id}`);
+  }
+
   _patchTarget (path, patches) {
     let link = `${path}`;
-    console.log('[AUDIT]', 'apply patches:', patches, 'to:', this.state, 'via', link);
-    let target = this.get(link);
-    console.log('[AUDIT]', 'target:', target);
-    let result = monitor.applyPatch(target, patches).newDocument;
-    console.log('[AUDIT]', 'patch result:', result);
+    let result = null;
+
+    try {
+      result = monitor.applyPatch(this.state, patches.map((op) => {
+        op.path = `${link}${op.path}`;
+        return op;
+      })).newDocument;
+    } catch (E) {
+      console.log('Could not patch target:', E, path, patches);
+    }
+
+    this.commit();
+
     return result;
   }
 
@@ -102,23 +115,24 @@ class Collection extends Stack {
    * @return {Promise}        Resolves with instantiated {@link Entity}.
    */
   async create (input, commit = true) {
+    let result = null;
     let size = this.push(input, false);
-    let data = this['@entity'].states[this['@data'][size - 1]];
+    let state = this['@entity'].states[this['@data'][size - 1]];
 
-    let entity = new Entity(data);
+    let entity = new Entity(state);
     let link = `${this.path}/${(entity.data[this.settings.fields.id] || entity.id)}`;
-    console.log('[AUDIT]', '[COLLECTION]', 'created:', link);
+    // console.log('[AUDIT]', '[COLLECTION]', 'created:', link);
 
     if (this.settings.methods && this.settings.methods.create) {
-      data = await this.settings.methods.create.call(this, data);
-      console.log('[AUDIT]', `[COLLECTION:CREATED:${this.settings.name.toUpperCase()}]`, 'created data:', data);
+      state = await this.settings.methods.create.call(this, state);
+      // console.log('[AUDIT]', `[COLLECTION:CREATED:${this.settings.name.toUpperCase()}]`, 'created data:', state);
     }
 
-    this.set(link, entity.data);
+    this.set(link, state.data || state);
 
     this.emit('message', {
       '@type': 'Create',
-      '@data': entity.data
+      '@data': state.data
     });
 
     if (this.settings.listeners && this.settings.listeners.create) {
@@ -133,7 +147,9 @@ class Collection extends Stack {
       }
     }
 
-    return entity.data;
+    result = state.data || entity.data;
+
+    return result;
   }
 
   list () {
