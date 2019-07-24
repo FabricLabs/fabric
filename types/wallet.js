@@ -104,13 +104,11 @@ class Wallet extends Service {
   }
 
   async _load (settings = {}) {
-    let self = this;
-
     this.status = 'loading';
 
     await this.database.open();
 
-    this.wallet = await this.database.create();
+    this.wallet = await this.database.create({ master: this.settings.xprv });
     this.account = await this.wallet.getAccount('default');
     this.address = await this.account.receiveAddress();
     this.seed = this.wallet.master.mnemonic.phrase;
