@@ -20,6 +20,21 @@ const MAX_STACK_HEIGHT = 32; // max height of stack (number of elements)
 const MAX_FRAME_SIZE = 32; // max size of a stack frame in bytes
 const MAX_MEMORY_ALLOC = MAX_STACK_HEIGHT * MAX_FRAME_SIZE;
 
+// FABRIC ONLY
+const OP_DONE = 'ff';
+
+// Bitcoin
+const OP_0 = '00';
+const OP_CHECKSIG = 'ac';
+const OP_DUP = '76';
+const OP_EQUAL = '87';
+const OP_SHA256 = 'a8';
+const OP_HASH160 = 'a9';
+const OP_PUSHDATA1 = '4c';
+const OP_RETURN = '6a';
+const OP_EQUALVERIFY = '88';
+const OP_SEPARATOR = 'ab';
+
 module.exports = {
   MAX_PEERS,
   BITCOIN_GENESIS,
@@ -30,5 +45,16 @@ module.exports = {
   MAX_MEMORY_ALLOC,
   MAX_MESSAGE_SIZE,
   MAX_STACK_HEIGHT,
+  OP_DONE,
+  OP_0,
+  OP_CHECKSIG,
+  OP_DUP,
+  OP_EQUAL,
+  OP_SHA256,
+  OP_HASH160,
+  OP_PUSHDATA1,
+  OP_RETURN,
+  OP_EQUALVERIFY,
+  OP_SEPARATOR,
   VERSION_NUMBER
 };

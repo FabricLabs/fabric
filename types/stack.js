@@ -6,7 +6,7 @@ const {
 } = require('../constants');
 
 const State = require('./state');
-const MerkleTree = require('merkletreejs');
+const { MerkleTree } = require('merkletreejs');
 
 /**
  * Manage stacks of data.
