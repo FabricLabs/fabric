@@ -79,6 +79,11 @@ committing to the outcome.  This workflow keeps app design quite simple!</p>
 <dt><a href="#Store">Store</a></dt>
 <dd><p>Long-term storage.</p>
 </dd>
+<dt><a href="#Swap">Swap</a> : <code>Object</code></dt>
+<dd><p>The <a href="#Swap">Swap</a> contract executes a set of transactions on two distinct
+<a href="#Chain">Chain</a> components, utilizing a secret-reveal mechanism to atomically
+execute either the full set or none.</p>
+</dd>
 <dt><a href="#Swarm">Swarm</a> : <code>String</code></dt>
 <dd><p>The <a href="#Swarm">Swarm</a> represents a network of peers.</p>
 </dd>
@@ -86,6 +91,9 @@ committing to the outcome.  This workflow keeps app design quite simple!</p>
 <dd></dd>
 <dt><a href="#Walker">Walker</a></dt>
 <dd></dd>
+<dt><a href="#Wallet">Wallet</a> : <code>Object</code></dt>
+<dd><p>Manage keys and track their balances.</p>
+</dd>
 <dt><a href="#Worker">Worker</a></dt>
 <dd><p>Workers are arbitrary containers for processing data.  They can be thought of
 almost like &quot;threads&quot;, as they run asynchronously over the duration of a
@@ -474,6 +482,22 @@ The [Collection](#Collection) type maintains an ordered list of [State](#State) 
 | --- | --- | --- |
 | @entity | <code>Object</code> | Fabric-bound entity object. |
 
+
+* [Collection](#Collection)
+    * [new Collection([configuration])](#new_Collection_new)
+    * [.push(data)](#Collection+push) ⇒ <code>Number</code>
+    * [.create(entity)](#Collection+create) ⇒ <code>Promise</code>
+
+<a name="new_Collection_new"></a>
+
+### new Collection([configuration])
+Create a list of [Entity](#Entity)-like objects for later retrieval.
+
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [configuration] | <code>Object</code> | <code>{}</code> | Configuration object. |
+
 <a name="Collection+push"></a>
 
 ### collection.push(data) ⇒ <code>Number</code>
@@ -485,6 +509,18 @@ Adds an [Entity](#Entity) to the [Collection](#Collection).
 | Param | Type | Description |
 | --- | --- | --- |
 | data | <code>Mixed</code> | [Entity](#Entity) to add. |
+
+<a name="Collection+create"></a>
+
+### collection.create(entity) ⇒ <code>Promise</code>
+Create an instance of an [Entity](#Entity).
+
+**Kind**: instance method of [<code>Collection</code>](#Collection)  
+**Returns**: <code>Promise</code> - Resolves with instantiated [Entity](#Entity).  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| entity | <code>Object</code> | Object with properties. |
 
 <a name="Compiler"></a>
 
@@ -1485,6 +1521,43 @@ Start running the process.
 
 **Kind**: instance method of [<code>Store</code>](#Store)  
 **Returns**: <code>Promise</code> - Resolves on complete.  
+<a name="Swap"></a>
+
+## Swap : <code>Object</code>
+The [Swap](#Swap) contract executes a set of transactions on two distinct
+[Chain](#Chain) components, utilizing a secret-reveal mechanism to atomically
+execute either the full set or none.
+
+**Kind**: global class  
+
+* [Swap](#Swap) : <code>Object</code>
+    * [new Swap([settings])](#new_Swap_new)
+    * [.extractSecret(tx, address)](#Swap+extractSecret) ⇒ <code>Mixed</code>
+
+<a name="new_Swap_new"></a>
+
+### new Swap([settings])
+Atomically execute a set of transactions across two [Chain](#Chain) components.
+
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [settings] | <code>Object</code> | <code>{}</code> | Configuration for the swap. |
+
+<a name="Swap+extractSecret"></a>
+
+### swap.extractSecret(tx, address) ⇒ <code>Mixed</code>
+Find an input from the provided transaction which spends from the target
+P2SH address.
+
+**Kind**: instance method of [<code>Swap</code>](#Swap)  
+**Returns**: <code>Mixed</code> - False on failure, secret value on success.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| tx | <code>Transaction</code> | [Transaction](Transaction) to iterate over. |
+| address | <code>String</code> | P2SH address to search for. |
+
 <a name="Swarm"></a>
 
 ## Swarm : <code>String</code>
@@ -1601,6 +1674,22 @@ Explores a directory tree on the local system's disk.
 | --- | --- | --- | --- |
 | dir | <code>String</code> |  | Path to crawl on local disk. |
 | [map] | <code>Object</code> | <code>{}</code> | Pointer to previous step in stack. |
+
+<a name="Wallet"></a>
+
+## Wallet : <code>Object</code>
+Manage keys and track their balances.
+
+**Kind**: global class  
+<a name="new_Wallet_new"></a>
+
+### new Wallet([settings])
+Create an instance of a [Wallet](#Wallet).
+
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [settings] | <code>Object</code> | <code>{}</code> | Configure the wallet. |
 
 <a name="Worker"></a>
 
