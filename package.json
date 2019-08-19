@@ -59,6 +59,7 @@
   "dependencies": {
     "arbitrary": "^1.4.10",
     "base58check": "^2.0.0",
+    "bcoin": "bcoin-org/bcoin#master",
     "dotparser": "^0.3.0",
     "elliptic": "^6.4.0",
     "fast-json-patch": "^2.0.7",
