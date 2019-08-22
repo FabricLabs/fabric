@@ -53,6 +53,7 @@ to our goals.
 
 - Fabric python project (#fabric on Freenode)
 - Fabric application framework by Twitter
+- HyperLedger Fabric, by IBM
 
 ## Learning More
 The best place to get started is in [the #learning channel][learning], a
