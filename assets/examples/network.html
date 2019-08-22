@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+  <title>network.js</title>
+  <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+  <meta name="viewport" content="width=device-width, target-densitydpi=160dpi, initial-scale=1.0; maximum-scale=1.0; user-scalable=0;">
+  <link rel="stylesheet" media="all" href="docco.css" />
+</head>
+<body>
+  <div id="container">
+    <div id="background"></div>
+    
+      <ul id="jump_to">
+        <li>
+          <a class="large" href="javascript:void(0);">Jump To &hellip;</a>
+          <a class="small" href="javascript:void(0);">+</a>
+          <div id="jump_wrapper">
+          <div id="jump_page_wrapper">
+            <div id="jump_page">
+              
+                
+                <a class="source" href="app.html">
+                  app.js
+                </a>
+              
+                
+                <a class="source" href="blockchain.html">
+                  blockchain.js
+                </a>
+              
+                
+                <a class="source" href="chain.html">
+                  chain.js
+                </a>
+              
+                
+                <a class="source" href="cli.html">
+                  cli.js
+                </a>
+              
+                
+                <a class="source" href="cli_jade.html">
+                  cli_jade.js
+                </a>
+              
+                
+                <a class="source" href="collection.html">
+                  collection.js
+                </a>
+              
+                
+                <a class="source" href="game.html">
+                  game.js
+                </a>
+              
+                
+                <a class="source" href="http.html">
+                  http.js
+                </a>
+              
+                
+                <a class="source" href="index.html">
+                  index.js
+                </a>
+              
+                
+                <a class="source" href="network.html">
+                  network.js
+                </a>
+              
+                
+                <a class="source" href="oracle.html">
+                  oracle.js
+                </a>
+              
+                
+                <a class="source" href="p2pkh.html">
+                  p2pkh.js
+                </a>
+              
+                
+                <a class="source" href="service.html">
+                  service.js
+                </a>
+              
+                
+                <a class="source" href="store.html">
+                  store.js
+                </a>
+              
+            </div>
+          </div>
+        </li>
+      </ul>
+    
+    <ul class="sections">
+        
+          <li id="title">
+              <div class="annotation">
+                  <h1>network.js</h1>
+              </div>
+          </li>
+        
+        
+        
+        <li id="section-1">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-1">&#182;</a>
+              </div>
+              
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-meta">'use strict'</span>;
+
+<span class="hljs-keyword">const</span> Fabric = <span class="hljs-built_in">require</span>(<span class="hljs-string">'../'</span>);
+
+<span class="hljs-keyword">const</span> NETWORK_NAME = <span class="hljs-string">'playnet'</span>;
+<span class="hljs-keyword">const</span> NODE_COUNT = <span class="hljs-number">3</span>;
+<span class="hljs-keyword">const</span> PEERING_PORT = <span class="hljs-number">7450</span>;
+
+<span class="hljs-comment">/**
+ * Simulate a Fabric network based on the constants above.
+ * @return {[type]} [description]
+ */</span>
+<span class="hljs-keyword">async</span> <span class="hljs-function"><span class="hljs-keyword">function</span> <span class="hljs-title">simulate</span> (<span class="hljs-params"></span>) </span>{
+  <span class="hljs-keyword">let</span> nodes = {};
+  <span class="hljs-keyword">let</span> ids = [];
+
+  <span class="hljs-keyword">for</span> (<span class="hljs-keyword">let</span> i = <span class="hljs-number">0</span>; i &lt; NODE_COUNT; i++) {
+    <span class="hljs-keyword">let</span> node = <span class="hljs-keyword">new</span> Fabric.Peer({
+      <span class="hljs-attr">port</span>: PEERING_PORT + i
+    });
+    <span class="hljs-built_in">console</span>.log(<span class="hljs-string">`node id: <span class="hljs-subst">${node.id}</span>`</span>, node.id);
+    nodes[node.id] = node;
+    ids.push(node.id);
+  }
+
+  <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'nodes:'</span>, nodes);
+
+  <span class="hljs-keyword">for</span> (<span class="hljs-keyword">let</span> id <span class="hljs-keyword">in</span> nodes) {
+    <span class="hljs-built_in">console</span>.log(<span class="hljs-string">`starting <span class="hljs-subst">${id}</span>...`</span>);
+    <span class="hljs-keyword">let</span> node = nodes[id];
+
+    node.on(<span class="hljs-string">'ready'</span>, <span class="hljs-function"><span class="hljs-keyword">function</span> (<span class="hljs-params"></span>) </span>{
+      <span class="hljs-built_in">console</span>.log(<span class="hljs-string">`node <span class="hljs-subst">${id}</span> is ready!`</span>);
+      <span class="hljs-keyword">let</span> peers = <span class="hljs-built_in">Object</span>.keys(nodes).filter(<span class="hljs-function"><span class="hljs-params">x</span> =&gt;</span> x !== id);
+      <span class="hljs-built_in">console</span>.log(<span class="hljs-string">`node <span class="hljs-subst">${id}</span> knows peers:`</span>, peers);
+
+      <span class="hljs-keyword">for</span> (<span class="hljs-keyword">let</span> i <span class="hljs-keyword">in</span> peers) {
+        <span class="hljs-keyword">let</span> peerID = peers[i];
+        <span class="hljs-keyword">let</span> address = <span class="hljs-string">`<span class="hljs-subst">${nodes[peerID].address}</span>:<span class="hljs-subst">${nodes[peerID].port}</span>`</span>;
+        <span class="hljs-built_in">console</span>.log(<span class="hljs-string">`node <span class="hljs-subst">${id}</span> connecting to <span class="hljs-subst">${address}</span>...`</span>);
+        node._connect(address);
+      }
+    });
+
+    nodes[id].listen();
+  }
+
+  <span class="hljs-keyword">let</span> origin = nodes[ids[<span class="hljs-number">0</span>]];
+  <span class="hljs-keyword">let</span> message = Fabric.Message.fromVector([<span class="hljs-number">0x00000012</span>, <span class="hljs-built_in">Date</span>.now() + <span class="hljs-string">''</span>]); <span class="hljs-comment">// ping</span>
+
+  <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'broadcasting message to all peers:'</span>, message);
+
+  origin.broadcast(message);
+}
+
+simulate();</pre></div></div>
+            
+        </li>
+        
+    </ul>
+  </div>
+</body>
+</html>
