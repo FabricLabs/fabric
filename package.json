@@ -1,6 +1,6 @@
 {
   "name": "@fabric/core",
-  "version": "0.1.0-alpha",
+  "version": "0.1.0-RC1",
   "description": "experimental p2p framework",
   "main": "lib/fabric.js",
   "module": "index.js",
