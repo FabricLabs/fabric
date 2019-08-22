@@ -24,7 +24,7 @@
     "make:app": "webpack --progress examples/app.js assets/app.js",
     "make:coverage": "nyc report --reporter html npm test",
     "make:docs": "gitbook install && npm run parse:api && npm run make:examples && gitbook build",
-    "make:examples": "docco --output examples/ examples/*.js",
+    "make:examples": "docco --output assets/examples/ examples/*.js",
     "make:lib": "NODE_ENV=production webpack lib/fabric.js assets/fabric.min.js",
     "make:service": "NODE_ENV=production webpack --target=webworker examples/service.js assets/service.js",
     "parse:api": "jsdoc2md --configure jsdoc.json --files index.js types/** README.md > API.md",
