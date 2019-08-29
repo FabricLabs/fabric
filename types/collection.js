@@ -48,8 +48,27 @@ class Collection extends Stack {
     this.settings.key = name;
   }
 
-  async getByID (id) {
-    return pointer.get(this.state, `${this.path}/${id}`);
+  getByID (id) {
+    let result = null;
+    try {
+      result = pointer.get(this.state, `${this.path}/${id}`);
+    } catch (E) {
+      console.debug('[FABRIC:COLLECTION]', `@${this.name}`, Date.now(), `Could not find ${id}`);
+    }
+    return result;
+  }
+
+  findByName (name) {
+    let result = null;
+    let items = pointer.get(this.state, this.path);
+    // constant-time loop
+    for (let id in items) {
+      if (items[id].name === name) {
+        // use only first result
+        result = (result) ? result : items[id];
+      }
+    }
+    return result;
   }
 
   _patchTarget (path, patches) {

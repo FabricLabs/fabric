@@ -4,6 +4,7 @@ const fs = require('fs');
 
 const lex = require('jade-lexer');
 const parse = require('jade-parser');
+const AST = require('@webassemblyjs/ast');
 
 // TODO: have Lexer review
 // TODO: render the following:
@@ -49,6 +50,13 @@ class Compiler {
     let ast = parse(tokens, { filename, src });
     let html = this.render(ast);
     return html;
+  }
+
+  _fromJavaScript (name) {
+    let body = fs.readFileSync(`${__dirname}/../contracts/${name}`);
+    let ast = AST.program(body);
+    console.log('body:', body);
+    console.log('ast:', ast);
   }
 
   render (ast, screen, ui, eventHandlers, depth = 0) {

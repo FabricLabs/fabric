@@ -57,6 +57,7 @@
   },
   "homepage": "https://github.com/FabricLabs/fabric#readme",
   "dependencies": {
+    "@webassemblyjs/ast": "^1.8.5",
     "arbitrary": "^1.4.10",
     "base58check": "^2.0.0",
     "bcoin": "bcoin-org/bcoin#master",
