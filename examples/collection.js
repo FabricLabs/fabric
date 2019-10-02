@@ -13,8 +13,8 @@ console.log('---');
 // ## Requirements
 // We'll set `Collection` to a relative path, but in practice you'll use the
 // `@fabric/core` package directly.
-const Collection = require('../lib/collection');
-const Machine = require('../lib/machine');
+const Collection = require('../types/collection');
+const Machine = require('../types/machine');
 
 // Our `main` function runs asynchronously, here we define that behavior.
 async function main () {
@@ -31,6 +31,17 @@ async function main () {
     text: 'Hello, world!',
     entropy: machine.sip()
   });
+
+  // Direct methods such as `create` and `update` may also be used.
+  // Note that this is an async method, and returns a promise.
+  await collection.create({
+    text: 'An army of principles can penetrate where an army of soldiers cannot.',
+    entropy: machine.sip()
+  });
+
+  // To retrieve the contents of a collection, use the `list` method.
+  let content = await collection.list();
+  console.log('[EXAMPLE]', 'Collection content:', content);
 
   // Fabric can serialize the object to a JSON-formatted string.
   console.log('[EXAMPLE]', 'collection:', collection.render());
