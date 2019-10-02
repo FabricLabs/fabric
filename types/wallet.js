@@ -41,6 +41,15 @@ class Wallet extends Service {
 
     this.words = Mnemonic.getWordlist('english').words;
     this.mnemonic = new Mnemonic();
+    this.index = 0;
+
+    this.state = {
+      asset: null,
+      balances: {
+        confirmed: 0,
+        unconfirmed: 0
+      }
+    };
 
     this.status = 'closed';
 
@@ -66,6 +75,18 @@ class Wallet extends Service {
   _getAccountByIndex (index = 0) {
     return {
       address: this.account.deriveReceive(index).getAddress('string')
+    };
+  }
+
+  async generateCleanKeyPair () {
+    if (this.status !== 'loaded') await this._load();
+
+    this.index++;
+    let key = this.master.derivePath(`m/44/0/0/0/${this.index}`);
+    let keyring = KeyRing.fromPrivate(key.privateKey);
+    return {
+      index: this.index,
+      public: keyring.publicKey
     };
   }
 
@@ -112,6 +133,7 @@ class Wallet extends Service {
     this.account = await this.wallet.getAccount('default');
     this.address = await this.account.receiveAddress();
     this.seed = this.wallet.master.mnemonic.phrase;
+    this.master = HD.fromMnemonic(this.wallet.master.mnemonic);
 
     /* this.account.bind('confirmed', async function (wallet, transaction) {
       console.log('wallet confirmed:', wallet, transaction);
@@ -125,7 +147,7 @@ class Wallet extends Service {
 
     this.emit('ready');
 
-    console.log('[FABRIC:WALLET]', 'Wallet opened:', this.wallet);
+    // console.log('[FABRIC:WALLET]', 'Wallet opened:', this.wallet);
 
     return this.wallet;
   }

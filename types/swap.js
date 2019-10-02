@@ -21,7 +21,44 @@ class Swap {
 
     this.status = 'unconfigured';
 
+    this.bond = null;
+    this.originator = null;
+    this.counterparty = null;
+    this.secret = null;
+
+    this.offer = {
+      symbol: this.settings.symbol || 'BTC',
+      inputs: [],
+      outputs: [],
+      originator: null
+    };
+
+    this.state = {
+      chains: [],
+      transactions: []
+    };
+
     return this;
+  }
+
+  _generateSecret () {
+    this.secret = crypto.randomBytes(32);
+  }
+
+  _fundWithInput (input) {
+    this.offer.inputs.push(input);
+  }
+
+  _createMarketOutput () {
+    const output = new bcoin.Script();
+    const keypair = this.getKeyPair();
+
+    output.pushData(keypair.publicKey);
+    output.pushSym('OP_CHECKSIG');
+
+    output.compile();
+
+    this.offer.outputs.push(output);
   }
 
   /**
@@ -58,7 +95,7 @@ class Swap {
   // Generate an ECDSA public / private key pair
   getKeyPair () {
     // Generate new random private key
-    const master = this.hd.generate();
+    const master = bcoin.hd.generate();
     const key = master.derivePath('m/44/0/0/0/0');
     const privateKey = key.privateKey;
 
@@ -73,7 +110,7 @@ class Swap {
   }
 
   // REDEEM script: the output of the swap HTLC
-  getRedeemScript (hash, refundPubkey, swapPubkey, locktime) {
+  getRedeemScript (hash, refundPubkey, swapPubkey, locktime = 6) {
     const redeem = new bcoin.Script();
 
     redeem.pushSym('OP_IF');
@@ -174,6 +211,10 @@ class Swap {
 
   verifyMTX (mtx) {
     return mtx.verify(this.flags);
+  }
+
+  async start () {
+    console.log('[FABRIC:SWAP]', 'Starting swap...');
   }
 }
 

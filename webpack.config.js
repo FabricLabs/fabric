@@ -5,6 +5,7 @@ const webpack = require('webpack');
 module.exports = {
   // entry: './index.js',
   // devtool: 'source-map',
+  mode: 'development',
   target: 'web',
   output: {
     library: 'Fabric'

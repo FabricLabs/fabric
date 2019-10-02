@@ -25,7 +25,10 @@ class Collection extends Stack {
     // TODO: document `listeners` handler (currently only `create`)
     this.settings = Object.assign({
       atomic: true,
+      // TODO: document determinism
+      deterministic: true,
       name: 'Collection',
+      type: Entity,
       path: `./stores/collection`,
       fields: {
         id: 'id'
@@ -50,12 +53,24 @@ class Collection extends Stack {
 
   getByID (id) {
     let result = null;
+
     try {
       result = pointer.get(this.state, `${this.path}/${id}`);
     } catch (E) {
       console.debug('[FABRIC:COLLECTION]', `@${this.name}`, Date.now(), `Could not find ${id}`);
     }
+
+    if (this.settings.type.name !== 'Entity') {
+      let Type = this.settings.type;
+      result = new Type(result);
+    }
+
     return result;
+  }
+
+  getLatest () {
+    let items = pointer.get(this.state, this.path);
+    return items[items.length - 1];
   }
 
   findByName (name) {
@@ -68,6 +83,28 @@ class Collection extends Stack {
         result = (result) ? result : items[id];
       }
     }
+    return result;
+  }
+
+  // TODO: deep search, consider GraphQL (!!!: to discuss)
+  match (query = {}) {
+    let result = null;
+    let items = pointer.get(this.state, this.path);
+    let list = Object.keys(items).map((x) => {
+      return items[x];
+    });
+
+    try {
+      result = list.filter((x) => {
+        for (let field in query) {
+          if (x[field] !== query[field]) return false;
+        }
+        return true;
+      });
+    } catch (E) {
+      console.error('Could not match:', E);
+    }
+
     return result;
   }
 
@@ -137,6 +174,8 @@ class Collection extends Stack {
     let result = null;
     let size = this.push(input, false);
     let state = this['@entity'].states[this['@data'][size - 1]];
+
+    if (!this.settings.deterministic) state.created = Date.now();
 
     let entity = new Entity(state);
     let link = `${this.path}/${(entity.data[this.settings.fields.id] || entity.id)}`;
