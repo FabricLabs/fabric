@@ -56,8 +56,16 @@ class Wallet extends Service {
     return this;
   }
 
+  get balance () {
+    return this.get('/balances/confirmed');
+  }
+
   async _createAccount (data) {
     return this.wallet.createAccount(data);
+  }
+
+  async _updateBalance (amount) {
+    return this.set('/balances/confirmed', amount);
   }
 
   _handleWalletTransaction (tx) {

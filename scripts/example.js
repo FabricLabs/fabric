@@ -1,8 +1,9 @@
 const util = require('util');
 
 const Fabric = require('../lib/fabric');
-const Worker = require('../lib/worker');
+const Worker = require('../types/worker');
 
+// TODO: generate signature, hash of function definition (the "type")
 function Genesis () {
   comment = 'Function body is the program.';
 }

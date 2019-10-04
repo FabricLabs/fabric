@@ -120,6 +120,8 @@ class State extends EventEmitter {
       }
     }
 
+    this.state = {};
+
     // always commit before resolving
     this.commit();
 
@@ -240,7 +242,7 @@ ${confirmed}
 ### Free as in _freedom_.
 Labs: https://github.com/FabricLabs
 
-To edit this message, visit this URL: https://github.com/FabricLabs/fabric/edit/master/lib/state.js
+To edit this message, visit this URL: https://github.com/FabricLabs/fabric/edit/master/types/state.js
 
 ## Onboarding
 When you're ready to continue, visit the following URL: https://dev.fabric.pub/WELCOME.html
@@ -374,13 +376,13 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
   }
 
   get (path) {
-    return pointer.get(this['@entity']['@data'], path);
+    return pointer.get(this.state, path);
   }
 
   set (path, value) {
     // console.log('setting:', path, value);
     pointer.set(this.state, path, value);
-    let result = pointer.set(this['@entity']['@data'], path, value);
+    let result = pointer.set(this.state, path, value);
     this.commit();
     return result;
   }

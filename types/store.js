@@ -358,8 +358,6 @@ class Store extends Scribe {
       console.error('BATCH FAILURE:', E);
     }
 
-    console.log('ops:', ops);
-
     try {
       await Promise.all(ops.map(op => {
         return self.db.put(op.key, op.value);

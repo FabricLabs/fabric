@@ -51,13 +51,19 @@ class Collection extends Stack {
     this.settings.key = name;
   }
 
+  /**
+   * Retrieve an element from the collection by ID.
+   * @param {String} id Document identifier.
+   */
   getByID (id) {
+    if (!id) return null;
+
     let result = null;
 
     try {
       result = pointer.get(this.state, `${this.path}/${id}`);
     } catch (E) {
-      console.debug('[FABRIC:COLLECTION]', `@${this.name}`, Date.now(), `Could not find ${id}`);
+      console.debug('[FABRIC:COLLECTION]', `@${this.name}`, Date.now(), `Could not find ID "${id}" in tree ${this.asMerkleTree()}`);
     }
 
     if (this.settings.type.name !== 'Entity') {
@@ -68,6 +74,9 @@ class Collection extends Stack {
     return result;
   }
 
+  /**
+   * Retrieve the most recent element in the collection.
+   */
   getLatest () {
     let items = pointer.get(this.state, this.path);
     return items[items.length - 1];

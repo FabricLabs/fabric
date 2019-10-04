@@ -10,7 +10,7 @@ const Web = require('@fabric/http');
 
 // Modules
 const Service = require('../types/service');
-// const Schnorr = require('../lib/schnorr');
+// const Schnorr = require('../types/schnorr');
 
 // Testing
 const assert = require('assert');
