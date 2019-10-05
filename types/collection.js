@@ -68,7 +68,7 @@ class Collection extends Stack {
 
     if (this.settings.type.name !== 'Entity') {
       let Type = this.settings.type;
-      result = new Type(result);
+      result = new Type(result || {});
     }
 
     return result;
@@ -88,6 +88,20 @@ class Collection extends Stack {
     // constant-time loop
     for (let id in items) {
       if (items[id].name === name) {
+        // use only first result
+        result = (result) ? result : items[id];
+      }
+    }
+    return result;
+  }
+
+  findBySymbol (symbol) {
+    let result = null;
+    let items = pointer.get(this.state, this.path);
+    // constant-time loop
+    for (let id in items) {
+      // TODO: fix bug here (check for symbol)
+      if (items[id].symbol === symbol) {
         // use only first result
         result = (result) ? result : items[id];
       }
