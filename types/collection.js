@@ -201,7 +201,9 @@ class Collection extends Stack {
     if (!this.settings.deterministic) state.created = Date.now();
 
     let entity = new Entity(state);
-    let link = `${this.path}/${(entity.data[this.settings.fields.id] || entity.id)}`;
+    // TODO: enable specifying names (again)
+    // let link = `${this.path}/${(entity.data[this.settings.fields.id] || entity.id)}`;
+    let link = `${this.path}/${entity.id}`;
     // console.log('[AUDIT]', '[COLLECTION]', 'created:', link);
 
     if (this.settings.methods && this.settings.methods.create) {
@@ -213,7 +215,9 @@ class Collection extends Stack {
 
     this.emit('message', {
       '@type': 'Create',
-      '@data': state.data
+      '@data': Object.assign({}, state.data, {
+        id: entity.id
+      })
     });
 
     if (this.settings.listeners && this.settings.listeners.create) {
@@ -229,6 +233,7 @@ class Collection extends Stack {
     }
 
     result = state.data || entity.data;
+    result.id = entity.id;
 
     return result;
   }

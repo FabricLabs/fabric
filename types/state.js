@@ -122,9 +122,6 @@ class State extends EventEmitter {
 
     this.state = {};
 
-    // always commit before resolving
-    this.commit();
-
     return this;
   }
 

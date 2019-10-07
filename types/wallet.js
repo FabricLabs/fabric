@@ -23,7 +23,7 @@ class Wallet extends Service {
   constructor (settings = {}) {
     super(settings);
 
-    this.settings = Object.assign({
+    this.settings = (settings.id) ? settings : Object.assign({
       name: 'default',
       network: 'regtest'
     }, settings);
