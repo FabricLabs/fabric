@@ -2,7 +2,7 @@
 
 const Service = require('./service');
 const State = require('./state');
-const bcoin = require('bcoin/lib/bcoin-browser').set('regtest');
+const bcoin = require('bcoin/lib/bcoin-browser').set('testnet');
 
 const WalletDB = bcoin.WalletDB;
 const WalletKey = bcoin.wallet.WalletKey;
@@ -23,14 +23,16 @@ class Wallet extends Service {
   constructor (settings = {}) {
     super(settings);
 
-    this.settings = (settings.id) ? settings : Object.assign({
+    this.settings = Object.assign({
       name: 'default',
-      network: 'regtest'
+      network: 'testnet',
+      language: 'english',
+      key: null
     }, settings);
 
     this.database = new WalletDB({
       db: 'memory',
-      network: 'regtest'
+      network: this.settings.network
     });
 
     this.account = null;
@@ -38,6 +40,7 @@ class Wallet extends Service {
     this.wallet = null;
     this.master = null;
     this.seed = null;
+    this.key = null;
 
     this.words = Mnemonic.getWordlist('english').words;
     this.mnemonic = new Mnemonic();
@@ -48,7 +51,8 @@ class Wallet extends Service {
       balances: {
         confirmed: 0,
         unconfirmed: 0
-      }
+      },
+      transactions: []
     };
 
     this.status = 'closed';
@@ -58,6 +62,10 @@ class Wallet extends Service {
 
   get balance () {
     return this.get('/balances/confirmed');
+  }
+
+  get transactions () {
+    return this.get('/transactions');
   }
 
   async _createAccount (data) {
@@ -137,7 +145,23 @@ class Wallet extends Service {
 
     await this.database.open();
 
-    this.wallet = await this.database.create({ master: this.settings.xprv });
+    let master = null;
+
+    console.log('wallet settings:', this.settings);
+
+    try {
+      let buffer = Buffer.from(this.settings.key.private, 'hex');
+      this.key = HD.fromRaw(buffer, this.settings.network);
+    } catch (E) {
+      console.error('could not cast key:', E);
+    }
+
+    if (this.settings.key) {
+      console.log('LOADING WALLET WITH KNOWN KEY:', this.settings.key);
+      master = bcoin.hd.fromXpriv(this.settings.key.xprivkey)
+    }
+
+    this.wallet = await this.database.create({ master: master });
     this.account = await this.wallet.getAccount('default');
     this.address = await this.account.receiveAddress();
     this.seed = this.wallet.master.mnemonic.phrase;
