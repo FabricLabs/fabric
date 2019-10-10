@@ -1,12 +1,18 @@
 'use strict';
 
+// Types
+const Collection = require('./collection');
 const Service = require('./service');
 const State = require('./state');
-const bcoin = require('bcoin/lib/bcoin-browser').set('testnet');
 
+// Bcoin
+const bcoin = require('bcoin/lib/bcoin-browser').set('testnet');
+// Convenience classes...
+const Coin = bcoin.Coin;
 const WalletDB = bcoin.WalletDB;
 const WalletKey = bcoin.wallet.WalletKey;
-const KeyRing = bcoin.KeyRing;
+const Outpoint = bcoin.Outpoint;
+const Keyring = bcoin.wallet.WalletKey;
 const Mnemonic = bcoin.hd.Mnemonic;
 const HD = bcoin.hd;
 
@@ -42,9 +48,11 @@ class Wallet extends Service {
     this.seed = null;
     this.key = null;
 
-    this.words = Mnemonic.getWordlist('english').words;
-    this.mnemonic = new Mnemonic();
+    this.words = Mnemonic.getWordlist(this.settings.language).words;
+    this.mnemonic = null;
     this.index = 0;
+
+    this.accounts = new Collection();
 
     this.state = {
       asset: null,
@@ -94,6 +102,43 @@ class Wallet extends Service {
     };
   }
 
+  async _getFreeCoinbase (amount) {
+    const coins = {};
+    const coinbase = new MTX();
+
+    // Add a typical coinbase input
+    coinbase.addInput({
+      prevout: new Outpoint(),
+      script: new Script()
+    });
+
+    coinbase.addOutput({
+      address: this._getDepositAddress(),
+      value: amount * 100000000 // amount in Satoshis
+    });
+
+    // Convert the coinbase output to a Coin
+    // object and add it to the available coins for that keyring.
+    // In reality you might get these coins from a wallet.
+    coins[0] = Coin.fromTX(coinbase, 0, -1);
+    console.log('coins:', coins);
+
+    return coins[0];
+  }
+
+
+  async _getSpendableOutput (amount) {
+    let key = null;
+    let mtx = new MTX();
+    let address = ``;
+
+    mtx.addOutput({ value: amount, address: `${address}` });
+
+    return {
+      mtx: mtx
+    };
+  }
+
   async generateCleanKeyPair () {
     if (this.status !== 'loaded') await this._load();
 
@@ -110,30 +155,35 @@ class Wallet extends Service {
     console.log('wallet balance:', balance);
     await this._PUT(`/balance`, balance);
 
-    let depositor = new State({ name: 'eric' });
+    let depositor = new State({ name: this.settings.name || 'default' });
     await this._PUT(`/depositors/${depositor.id}/balance`, balance);
     this.emit('balance', balance);
   }
 
   async _registerAccount (obj) {
+    if (!obj.name) throw new Error('Account must have "name" property.');
+
     this.status = 'creating';
 
     if (!this.database.db.loaded) {
       await this.database.open();
     }
 
-    try {
-      this.wallet = await this.database.create();
-    } catch (E) {
-      console.error('Could not create wallet:', E);
-    }
+    // TODO: register account with this.wallet
+    let account = await this.accounts.create(obj);
+    console.log('registering account, created:', account);
+    let wallet = await this.wallet.createAccount({ name: obj.name });
+    console.log('bcoin wallet account:', wallet);
 
     if (this.manager) {
       this.manager.on('tx', this._handleWalletTransaction.bind(this));
       this.manager.on('balance', this._handleWalletBalance.bind(this));
     }
 
-    return this.account;
+    console.log('internal wallet:', this.wallet);
+    console.log('internal account:', this.account);
+
+    return account;
   }
 
   async _unload () {
@@ -147,25 +197,24 @@ class Wallet extends Service {
 
     let master = null;
 
-    console.log('wallet settings:', this.settings);
-
     try {
-      let buffer = Buffer.from(this.settings.key.private, 'hex');
-      this.key = HD.fromRaw(buffer, this.settings.network);
+      if (this.settings.key) {
+        let mnemonic = new Mnemonic(this.settings.key.seed);
+        master = bcoin.hd.fromMnemonic(mnemonic);
+      }
     } catch (E) {
-      console.error('could not cast key:', E);
+      console.error('Could not find/restore key:', E);
     }
 
-    if (this.settings.key) {
-      console.log('LOADING WALLET WITH KNOWN KEY:', this.settings.key);
-      master = bcoin.hd.fromXpriv(this.settings.key.xprivkey)
-    }
+    this.wallet = await this.database.create({
+      name: 'default',
+      network: this.settings.network,
+      master: master
+    });
 
-    this.wallet = await this.database.create({ master: master });
     this.account = await this.wallet.getAccount('default');
     this.address = await this.account.receiveAddress();
-    this.seed = this.wallet.master.mnemonic.phrase;
-    this.master = HD.fromMnemonic(this.wallet.master.mnemonic);
+    this.master = master;
 
     /* this.account.bind('confirmed', async function (wallet, transaction) {
       console.log('wallet confirmed:', wallet, transaction);
@@ -181,7 +230,7 @@ class Wallet extends Service {
 
     // console.log('[FABRIC:WALLET]', 'Wallet opened:', this.wallet);
 
-    return this.wallet;
+    return this;
   }
 
   async start () {
