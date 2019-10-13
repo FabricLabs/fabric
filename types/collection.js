@@ -47,6 +47,12 @@ class Collection extends Stack {
     return this;
   }
 
+  asMerkleTree () {
+    let list = pointer.get(this.state, this.path);
+    let stack = new Stack(Object.keys(list));
+    return stack.asMerkleTree();
+  }
+
   _setKey (name) {
     this.settings.key = name;
   }
@@ -80,6 +86,19 @@ class Collection extends Stack {
   getLatest () {
     let items = pointer.get(this.state, this.path);
     return items[items.length - 1];
+  }
+
+  findByField (name, value) {
+    let result = null;
+    let items = pointer.get(this.state, this.path);
+    // constant-time loop
+    for (let id in items) {
+      if (items[id][name] === value) {
+        // use only first result
+        result = (result) ? result : items[id];
+      }
+    }
+    return result;
   }
 
   findByName (name) {
@@ -188,6 +207,10 @@ class Collection extends Stack {
     return this.get(path);
   }
 
+  async list () {
+    return Collection.pointer.get(this.state, `${this.path}`);
+  }
+
   /**
    * Create an instance of an {@link Entity}.
    * @param  {Object}  entity Object with properties.
@@ -238,8 +261,50 @@ class Collection extends Stack {
     return result;
   }
 
-  list () {
-    return Collection.pointer.get(this.state, `${this.path}`);
+  async import (input, commit = true) {
+    let result = null;
+    let size = this.push(input, false);
+    let state = this['@entity'].states[this['@data'][size - 1]];
+    let entity = new Entity(state);
+    let link = `${this.path}/${entity.id}`;
+
+    this.set(link, state.data || state);
+
+    if (commit) {
+      try {
+        this['@commit'] = this.commit();
+      } catch (E) {
+        console.error('Could not commit.', E);
+      }
+    }
+
+    result = state.data || entity.data;
+    result.id = entity.id;
+
+    this.emit('message', {
+      '@type': 'Snapshot',
+      '@data': {
+        path: this.path,
+        state: pointer.get(this.state, this.path)
+      }
+    });
+
+    return result;
+  }
+
+  async importList (list) {
+    let ids = [];
+
+    for (let i = 0; i < list.length; i++) {
+      let item = await this.import(list[i]);
+      ids.push(item.id);
+    }
+
+    return ids;
+  }
+
+  async importMap (map) {
+    return this.importList(Object.values(map));
   }
 }
 

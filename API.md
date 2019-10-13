@@ -485,6 +485,8 @@ The [Collection](#Collection) type maintains an ordered list of [State](#State) 
 
 * [Collection](#Collection)
     * [new Collection([configuration])](#new_Collection_new)
+    * [.getByID(id)](#Collection+getByID)
+    * [.getLatest()](#Collection+getLatest)
     * [.push(data)](#Collection+push) ⇒ <code>Number</code>
     * [.create(entity)](#Collection+create) ⇒ <code>Promise</code>
 
@@ -498,6 +500,23 @@ Create a list of [Entity](#Entity)-like objects for later retrieval.
 | --- | --- | --- | --- |
 | [configuration] | <code>Object</code> | <code>{}</code> | Configuration object. |
 
+<a name="Collection+getByID"></a>
+
+### collection.getByID(id)
+Retrieve an element from the collection by ID.
+
+**Kind**: instance method of [<code>Collection</code>](#Collection)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| id | <code>String</code> | Document identifier. |
+
+<a name="Collection+getLatest"></a>
+
+### collection.getLatest()
+Retrieve the most recent element in the collection.
+
+**Kind**: instance method of [<code>Collection</code>](#Collection)  
 <a name="Collection+push"></a>
 
 ### collection.push(data) ⇒ <code>Number</code>
@@ -1681,6 +1700,12 @@ Explores a directory tree on the local system's disk.
 Manage keys and track their balances.
 
 **Kind**: global class  
+
+* [Wallet](#Wallet) : <code>Object</code>
+    * [new Wallet([settings])](#new_Wallet_new)
+    * [._load(settings)](#Wallet+_load)
+    * [.start()](#Wallet+start)
+
 <a name="new_Wallet_new"></a>
 
 ### new Wallet([settings])
@@ -1691,6 +1716,23 @@ Create an instance of a [Wallet](#Wallet).
 | --- | --- | --- | --- |
 | [settings] | <code>Object</code> | <code>{}</code> | Configure the wallet. |
 
+<a name="Wallet+_load"></a>
+
+### wallet.\_load(settings)
+Initialize the wallet, including keys and addresses.
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+
+| Param | Type |
+| --- | --- |
+| settings | <code>Object</code> | 
+
+<a name="Wallet+start"></a>
+
+### wallet.start()
+Start the wallet, including listening for transactions.
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
 <a name="Worker"></a>
 
 ## Worker

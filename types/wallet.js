@@ -17,6 +17,9 @@ const Output = bcoin.Output;
 const Keyring = bcoin.wallet.WalletKey;
 const Mnemonic = bcoin.hd.Mnemonic;
 const HD = bcoin.hd;
+const MTX = bcoin.MTX;
+const Script = bcoin.Script;
+
 
 /**
  * Manage keys and track their balances.
