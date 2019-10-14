@@ -6,7 +6,8 @@ const Service = require('./service');
 const State = require('./state');
 
 // Bcoin
-const bcoin = require('bcoin/lib/bcoin-browser').set('testnet');
+const bcoin = require('bcoin/lib/bcoin-browser').set('regtest');
+
 // Convenience classes...
 const Address = bcoin.Address;
 const Coin = bcoin.Coin;
@@ -35,7 +36,7 @@ class Wallet extends Service {
     super(settings);
 
     this.settings = Object.assign({
-      name: 'default',
+      name: 'primary',
       network: 'regtest',
       language: 'english',
       witness: false,
@@ -60,11 +61,14 @@ class Wallet extends Service {
     this.index = 0;
 
     this.accounts = new Collection();
+    this.addresses = new Collection();
+    this.keys = new Collection();
     this.coins = new Collection();
 
     // Internal State
     this._state = {
-      coins: []
+      coins: [],
+      keys: {}
     };
 
     // External State
@@ -75,6 +79,7 @@ class Wallet extends Service {
         unconfirmed: 0
       },
       coins: [],
+      keys: [],
       transactions: []
     };
 
@@ -91,13 +96,28 @@ class Wallet extends Service {
     return this.get('/transactions');
   }
 
+  /**
+   * Returns a bech32 address for the provided {@link Script}.
+   * @param {Script} script 
+   */
+  getAddressForScript (script) {
+    // TODO: use Fabric.Script
+    const p2wsh = script.forWitness();
+    const address = p2wsh.getAddress().toBech32(this.settings.network);
+    return address;
+  }
+
   getAddressFromRedeemScript (redeemScript) {
     return Address.fromScripthash(redeemScript.hash160());
   }
 
   async _createAccount (data) {
     console.log('wallet creating account with data:', data);
-    return this.wallet.createAccount(data);
+    await this._load();
+    let existing = await this.wallet.getAccount(data.name);
+    if (existing) return existing;
+    let account = await this.wallet.createAccount(data);
+    return account;
   }
 
   async _updateBalance (amount) {
@@ -158,31 +178,56 @@ class Wallet extends Service {
     return Object.assign({}, tx, { signature });
   }
 
+  /**
+   * Create a crowdfunding transaction.
+   * @param {Object} fund 
+   */
+  async _createCrowdfund (fund = {}) {
+    if (!fund.amount) return null;
+    if (!fund.address) return null;
+
+    let index = fund.index || 0;
+    let hashType = Script.hashType.ANYONECANPAY | Script.hashType.ALL;
+  
+    mtx.addCoin(this._state.coins[0]);
+    mtx.scriptInput(index, this._state.coins[0], this.keyring);
+    mtx.signInput(index, this._state.coins[0], this.keyring, hashType);
+
+    await this.commit();
+
+    return {
+      tx: mtx.toTX(),
+      mtx: mtx
+    };
+  }
+
   async _createIncentivizedTransaction (config) {
     console.log('creating incentivized transaction with config:', config);
 
     let mtx = new MTX();
     let data = new Script();
+    let clean = await this.generateCleanKeyPair();
 
     data.pushSym('OP_IF');
     data.pushSym('OP_SHA256');
-    data.pushData(hash);
+    data.pushData(config.hash);
     data.pushSym('OP_EQUALVERIFY');
-    data.pushData(swapPubkey);
+    data.pushData(config.swapPubkey);
     data.pushSym('OP_CHECKSIG');
     data.pushSym('OP_ELSE');
-    data.pushInt(locktime);
+    data.pushInt(config.locktime);
     data.pushSym('OP_CHECKSEQUENCEVERIFY');
     data.pushSym('OP_DROP');
-    data.pushData(refundPubkey);
+    data.pushData(clean.public);
     data.pushSym('OP_CHECKSIG');
     data.pushSym('OP_ENDIF');
     data.compile();
 
     console.log('address data:', data);
+    let segwitAddress = await this.getAddressForScript(data);
 
     mtx.addOutput({
-      address: data,
+      address: segwitAddress,
       value: 0
     });
 
@@ -192,8 +237,6 @@ class Wallet extends Service {
       rate: 10000,
       changeAddress: this.ring.getAddress()
     });
-
-
 
     console.log('transaction:', out);
     return out;
@@ -253,6 +296,24 @@ class Wallet extends Service {
     };
   }
 
+  async getFirstAddressSlice (size = 256) {
+    await this._load();
+
+    // aggregate results for return
+    let slice = [];
+    let account = await this.wallet.getAccount(this.settings.name);
+
+    // iterate over length of shard, aggregate addresses
+    for (let i = 0; i < size; i++) {
+      let addr = account.deriveReceive(i).getAddress('string');
+      slice.push(await this.addresses.create({
+        string: addr
+      }));
+    }
+
+    return slice;
+  }
+
   async generateCleanKeyPair () {
     if (this.status !== 'loaded') await this._load();
 
@@ -264,7 +325,8 @@ class Wallet extends Service {
     return {
       index: this.index,
       public: keyring.publicKey.toString('hex'),
-      address: keyring.getAddress('string')
+      address: keyring.getAddress('string'),
+      keyring: keyring
     };
   }
 
@@ -284,18 +346,18 @@ class Wallet extends Service {
     }
 
     // TODO: register account with this.wallet
-    let account = await this.accounts.create(obj);
-    console.log('registering account, created:', account);
     let wallet = await this.wallet.createAccount({ name: obj.name });
     console.log('bcoin wallet account:', wallet);
+    let actor = Object.assign({
+      account: wallet
+    }, obj);
+
+    let account = await this.accounts.create(obj);
 
     if (this.manager) {
       this.manager.on('tx', this._handleWalletTransaction.bind(this));
       this.manager.on('balance', this._handleWalletBalance.bind(this));
     }
-
-    console.log('internal wallet:', this.wallet);
-    console.log('internal account:', this.account);
 
     return account;
   }
@@ -322,36 +384,35 @@ class Wallet extends Service {
       let mnemonic = new Mnemonic(this.settings.key.seed);
       this.master = bcoin.hd.fromMnemonic(mnemonic);
     } else {
-      this.master = bcoin.hd.from(mnemonic, this.settings.network);
+      this.master = bcoin.hd.generate(this.settings.network);
     }
 
-    this.wallet = await this.database.create({
-      name: this.settings.name,
-      network: this.settings.network,
-      master: this.master
-    });
+    try {
+      this.wallet = await this.database.create({
+        network: this.settings.network,
+        master: this.master
+      });
+    } catch (E) {
+      console.error('Could not create wallet:', E);
+    }
 
     // Setup Ring
     this.ring = new bcoin.KeyRing(this.master, this.settings.network);
-    this.ring.witness = this.settings.witness;
+    this.ring.witness = this.settings.witness; // designates witness
 
     console.log('keyring:', this.ring);
     console.log('address from keyring:', this.ring.getAddress().toString());
 
-    // TODO: notify downstream of short-circuit removal
-    this.account.bind('confirmed', async function (wallet, transaction) {
-      console.log('[AUDIT]', 'wallet confirmed:', wallet, transaction);
-      self.emit('confirmation', {
-        '@type': 'Confirmation',
-        '@data': { transaction }
-      });
-    });
-
     this.account = await this.wallet.getAccount(this.settings.name);
+
+    // Let's call it a shard!
+    this.shard = await this.getFirstAddressSlice();
+
     // TODO: also retrieve key for address
     // let key = this.master.derivePath('m/44/0/0/0/0');
     // TODO: label as identity address
     // this.address = await this.account.receiveAddress();
+    // TODO: notify downstream of short-circuit removal
 
     this.status = 'loaded';
     this.emit('ready');

@@ -207,7 +207,7 @@ class Collection extends Stack {
     return this.get(path);
   }
 
-  async list () {
+  list () {
     return Collection.pointer.get(this.state, `${this.path}`);
   }
 
