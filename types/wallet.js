@@ -2,8 +2,10 @@
 
 // Types
 const Collection = require('./collection');
+const Entity = require('./entity');
 const Service = require('./service');
 const State = require('./state');
+const BN = require('bn.js');
 
 // Bcoin
 const bcoin = require('bcoin/lib/bcoin-browser').set('regtest');
@@ -64,6 +66,7 @@ class Wallet extends Service {
     this.addresses = new Collection();
     this.keys = new Collection();
     this.coins = new Collection();
+    this.entity = new Entity(this.settings);
 
     // Internal State
     this._state = {
@@ -73,7 +76,7 @@ class Wallet extends Service {
 
     // External State
     this.state = {
-      asset: null,
+      asset: this.settings.asset || null,
       balances: {
         confirmed: 0,
         unconfirmed: 0
@@ -86,6 +89,10 @@ class Wallet extends Service {
     this.status = 'closed';
 
     return this;
+  }
+
+  get id () {
+    return this.settings.id || this.entity.id;
   }
 
   get balance () {
@@ -143,6 +150,16 @@ class Wallet extends Service {
   }
 
   async _getFreeCoinbase (amount = 1) {
+    let num = new BN(amount);
+    let hun = new BN(100000000); // one hundred million
+    let value = num.mul(hun); // amount in Satoshis
+
+    if (value.gt(Math.pow(2, 64))) {
+      console.warn('Value (in satoshis) higher than 2^64:', value);
+      value = new BN(Math.pow(2, 64));
+      console.warn('The issuance of this coinbase transaction has been limited to:', value);
+    }
+
     await this._load();
 
     const coins = {};
@@ -158,7 +175,7 @@ class Wallet extends Service {
     // INSERT 1 Output
     coinbase.addOutput({
       address: this._getDepositAddress(),
-      value: amount * 100000000 // amount in Satoshis
+      value: value.toString()
     });
 
     // TODO: wallet._getSpendableOutput()
@@ -210,15 +227,15 @@ class Wallet extends Service {
 
     data.pushSym('OP_IF');
     data.pushSym('OP_SHA256');
-    data.pushData(config.hash);
+    data.pushData(Buffer.from(config.hash));
     data.pushSym('OP_EQUALVERIFY');
-    data.pushData(config.swapPubkey);
+    data.pushData(Buffer.from(config.payee));
     data.pushSym('OP_CHECKSIG');
     data.pushSym('OP_ELSE');
     data.pushInt(config.locktime);
     data.pushSym('OP_CHECKSEQUENCEVERIFY');
     data.pushSym('OP_DROP');
-    data.pushData(clean.public);
+    data.pushData(Buffer.from(clean.public));
     data.pushSym('OP_CHECKSIG');
     data.pushSym('OP_ENDIF');
     data.compile();
@@ -301,11 +318,10 @@ class Wallet extends Service {
 
     // aggregate results for return
     let slice = [];
-    let account = await this.wallet.getAccount(this.settings.name);
 
     // iterate over length of shard, aggregate addresses
     for (let i = 0; i < size; i++) {
-      let addr = account.deriveReceive(i).getAddress('string');
+      let addr = this.account.deriveReceive(i).getAddress('string');
       slice.push(await this.addresses.create({
         string: addr
       }));
@@ -403,7 +419,7 @@ class Wallet extends Service {
     console.log('keyring:', this.ring);
     console.log('address from keyring:', this.ring.getAddress().toString());
 
-    this.account = await this.wallet.getAccount(this.settings.name);
+    this.account = await this.wallet.getAccount('default');
 
     // Let's call it a shard!
     this.shard = await this.getFirstAddressSlice();
