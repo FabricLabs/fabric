@@ -18,6 +18,8 @@ class NamedCollections {
       fabric: JSON.stringify(fabric['@data']),
       hello: JSON.stringify(hello),
       sample: JSON.stringify(sample),
+      seed: 'order jaguar stairs labor emotion pistol connect loan frame benefit forum deer tonight retire cheap describe basic ramp reunion siren episode victory latin mask',
+      first: 'mhUfpvY2VvkDwk46kpmCmnfdXRsoc64vkd',
       foo: JSON.stringify('foo'),
       bar: JSON.stringify('bar'),
       output: output

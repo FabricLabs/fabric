@@ -1,6 +1,7 @@
 'use strict';
 
 // Types
+const EncryptedPromise = require('./promise');
 const Collection = require('./collection');
 const Entity = require('./entity');
 const Service = require('./service');
@@ -150,15 +151,17 @@ class Wallet extends Service {
   }
 
   async _getFreeCoinbase (amount = 1) {
-    let num = new BN(amount);
-    let hun = new BN(100000000); // one hundred million
+    let num = new BN(amount, 10);
+    let max = new BN('5000000000000', 10); // upper limit per coinbase
+    let hun = new BN('100000000', 10); // one hundred million
     let value = num.mul(hun); // amount in Satoshis
 
-    if (value.gt(Math.pow(2, 64))) {
-      console.warn('Value (in satoshis) higher than 2^64:', value);
-      value = new BN(Math.pow(2, 64));
-      console.warn('The issuance of this coinbase transaction has been limited to:', value);
+    if (value.gt(max)) {
+      value = max;
     }
+
+    let v = value.toString(10);
+    let w = parseInt(v);
 
     await this._load();
 
@@ -172,11 +175,15 @@ class Wallet extends Service {
       sequence: 0xffffffff
     });
 
-    // INSERT 1 Output
-    coinbase.addOutput({
-      address: this._getDepositAddress(),
-      value: value.toString()
-    });
+    try {
+      // INSERT 1 Output
+      coinbase.addOutput({
+        address: this._getDepositAddress(),
+        value: w
+      });
+    } catch (E) {
+      console.error('Could not add output:', E);
+    }
 
     // TODO: wallet._getSpendableOutput()
     let coin = Coin.fromTX(coinbase, 0, -1);
@@ -185,9 +192,13 @@ class Wallet extends Service {
 
     console.log('coins:', this._state.coins);
     
-    return this._state.coins[0];
+    return coinbase;
   }
 
+  /**
+   * Signs a transaction with the keyring.
+   * @param {BcoinTX} tx 
+   */
   async _sign (tx) {
     let signature = await tx.sign(this.keyring);
     console.log('signing tx:', tx);
@@ -216,6 +227,11 @@ class Wallet extends Service {
       tx: mtx.toTX(),
       mtx: mtx
     };
+  }
+
+  async _createSeed() {
+    let mnemonic = new Mnemonic({ bits: 256 });
+    return { seed: mnemonic.toString() };
   }
 
   async _createIncentivizedTransaction (config) {
@@ -378,6 +394,12 @@ class Wallet extends Service {
     return account;
   }
 
+  async _loadSeed (seed) {
+    this.settings.key = { seed };
+    await this._load();
+    return this.seed;
+  }
+
   async _unload () {
     return this.database.close();
   }
@@ -399,6 +421,7 @@ class Wallet extends Service {
     if (this.settings.key && this.settings.key.seed) {
       let mnemonic = new Mnemonic(this.settings.key.seed);
       this.master = bcoin.hd.fromMnemonic(mnemonic);
+      this.seed = new EncryptedPromise({ data: this.settings.key.seed });
     } else {
       this.master = bcoin.hd.generate(this.settings.network);
     }
