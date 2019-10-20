@@ -1,7 +1,8 @@
 'use strict';
 
-// Fabric
-const Fabric = require('@fabric/core');
+// Types
+const Service = require('../types/service');
+const State = require('../types/state');
 
 // External Dependencies
 const bcoin = require('bcoin/lib/bcoin-browser').set('regtest');
@@ -9,7 +10,7 @@ const FullNode = bcoin.FullNode;
 const WalletClient = require('bclient');
 const network = bcoin.Network.get('regtest');
 
-class Bitcoin extends Fabric.Service {
+class Bitcoin extends Service {
   constructor (settings = {}) {
     super(settings);
 
@@ -18,6 +19,7 @@ class Bitcoin extends Fabric.Service {
     };
 
     this.settings = Object.assign({
+      name: '@services/bitcoin',
       network: 'regtest',
       nodes: [],
       seeds: ['127.0.0.1'],
@@ -75,7 +77,7 @@ class Bitcoin extends Fabric.Service {
 
   async _registerBlock (obj) {
     let result = null;
-    let state = new Fabric.State(obj);
+    let state = new State(obj);
     let transform = [state.id, state.render()];
     let prior = null;
 

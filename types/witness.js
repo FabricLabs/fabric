@@ -52,7 +52,7 @@ class Witness {
     return der;
   }
 
-  fromBitcoinSignature (signature) {}) {
+  fromBitcoinSignature (signature = {}) {
 
   }
 }

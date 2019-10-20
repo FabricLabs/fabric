@@ -568,6 +568,7 @@ Live instance of an ARC in Fabric.
     * [new Entity([data])](#new_Entity_new)
     * [.toJSON()](#Entity+toJSON) ⇒ <code>String</code>
     * [.toRaw()](#Entity+toRaw) ⇒ <code>Buffer</code>
+    * [._downsample([input])](#Entity+_downsample)
 
 <a name="new_Entity_new"></a>
 
@@ -593,6 +594,17 @@ As a [Buffer](Buffer).
 
 **Kind**: instance method of [<code>Entity</code>](#Entity)  
 **Returns**: <code>Buffer</code> - Slice of memory.  
+<a name="Entity+_downsample"></a>
+
+### entity.\_downsample([input])
+Return a [Fabric](Fabric)-labeled [Object](Object) for this [Entity](#Entity).
+
+**Kind**: instance method of [<code>Entity</code>](#Entity)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [input] | <code>Mixed</code> | Input to downsample.  If not provided, current Entity will be used. |
+
 <a name="Ledger"></a>
 
 ## Ledger ⇐ [<code>Scribe</code>](#Scribe)
@@ -1703,6 +1715,9 @@ Manage keys and track their balances.
 
 * [Wallet](#Wallet) : <code>Object</code>
     * [new Wallet([settings])](#new_Wallet_new)
+    * [.getAddressForScript(script)](#Wallet+getAddressForScript)
+    * [._sign(tx)](#Wallet+_sign)
+    * [._createCrowdfund(fund)](#Wallet+_createCrowdfund)
     * [._load(settings)](#Wallet+_load)
     * [.start()](#Wallet+start)
 
@@ -1715,6 +1730,39 @@ Create an instance of a [Wallet](#Wallet).
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
 | [settings] | <code>Object</code> | <code>{}</code> | Configure the wallet. |
+
+<a name="Wallet+getAddressForScript"></a>
+
+### wallet.getAddressForScript(script)
+Returns a bech32 address for the provided [Script](#Script).
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+
+| Param | Type |
+| --- | --- |
+| script | [<code>Script</code>](#Script) | 
+
+<a name="Wallet+_sign"></a>
+
+### wallet.\_sign(tx)
+Signs a transaction with the keyring.
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+
+| Param | Type |
+| --- | --- |
+| tx | <code>BcoinTX</code> | 
+
+<a name="Wallet+_createCrowdfund"></a>
+
+### wallet.\_createCrowdfund(fund)
+Create a crowdfunding transaction.
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+
+| Param | Type |
+| --- | --- |
+| fund | <code>Object</code> | 
 
 <a name="Wallet+_load"></a>
 

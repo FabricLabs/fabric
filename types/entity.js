@@ -104,6 +104,10 @@ class Entity extends Events.EventEmitter {
     return Buffer.from(this.toJSON(), 'utf8');
   }
 
+  /**
+   * Return a {@link Fabric}-labeled {@link Object} for this {@link Entity}.
+   * @param {Mixed} [input] Input to downsample.  If not provided, current Entity will be used. 
+   */
   _downsample (input) {
     let result = {};
 

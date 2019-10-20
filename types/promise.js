@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const Network = require('./network');
+const Witness = require('./witness');
 const MAX_MEMORY = Math.pow(2, 21) + (64 * 1000);
 
 class EncryptedPromise {
