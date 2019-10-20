@@ -27,15 +27,10 @@ class Bitcoin extends Service {
     }, settings);
 
     this.fullnode = new FullNode({
-      file: true,
-      argv: true,
-      env: true,
-      logFile: true,
-      logConsole: true,
+      network: this.settings.network,
       logLevel: 'debug',
-      memory: false,
+      memory: true,
       workers: true,
-      listen: true,
       loader: require
     });
 
