@@ -1,0 +1,6 @@
+{
+  "name": "@fabric/core",
+  "description": "Application Resource Contract for the Fabric Execution Environment.",
+  "stack": [],
+  "state": {}
+}

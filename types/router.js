@@ -53,6 +53,7 @@ class Router extends Scribe {
             break;
           default:
             this.log('no such native trigger, calling...', command);
+            // TODO: remove this.fabric.plugins call
             result = await handler.value.apply(this.fabric.plugins[handler.plugin], [msg]);
             break;
         }

@@ -1,12 +1,15 @@
 'use strict';
 
+// External Dependencies
+const BN = require('bn.js');
+
 // Types
 const EncryptedPromise = require('./promise');
+const Transaction = require('./transaction');
 const Collection = require('./collection');
 const Entity = require('./entity');
 const Service = require('./service');
 const State = require('./state');
-const BN = require('bn.js');
 
 // Bcoin
 const bcoin = require('bcoin/lib/bcoin-browser').set('regtest');
@@ -24,7 +27,6 @@ const HD = bcoin.hd;
 const MTX = bcoin.MTX;
 const Script = bcoin.Script;
 
-
 /**
  * Manage keys and track their balances.
  * @type {Object}
@@ -37,6 +39,13 @@ class Wallet extends Service {
    */
   constructor (settings = {}) {
     super(settings);
+
+    // Create a Marshalling object
+    this.marshall = {
+      collections: {
+        'transactions': null // not yet loaded, seek for Buffer
+      }
+    };
 
     this.settings = Object.assign({
       name: 'primary',
@@ -59,7 +68,8 @@ class Wallet extends Service {
     this.seed = null;
     this.key = null;
 
-    this.words = Mnemonic.getWordlist(this.settings.language).words;
+    // TODO: enable wordlist translations
+    // this.words = Mnemonic.getWordlist(this.settings.language).words;
     this.mnemonic = null;
     this.index = 0;
 
@@ -67,6 +77,7 @@ class Wallet extends Service {
     this.addresses = new Collection();
     this.keys = new Collection();
     this.coins = new Collection();
+    this.transactions = new Collection();
     this.entity = new Entity(this.settings);
 
     // Internal State
@@ -87,6 +98,9 @@ class Wallet extends Service {
       transactions: []
     };
 
+    Object.defineProperty(this, 'database', { enumerable: false });
+    Object.defineProperty(this, 'wallet', { enumerable: false });
+
     this.status = 'closed';
 
     return this;
@@ -104,14 +118,28 @@ class Wallet extends Service {
     return this.get('/transactions');
   }
 
+  set transactions (val) {
+    let state = {};
+
+    for (let key in val) {
+      if (key === 'id') {
+        console.log('[AUDIT]', '');
+      }
+
+      state[key] = val[key];
+    }
+
+    this.marshall.collections.transactions = val;
+  }
+
   /**
    * Returns a bech32 address for the provided {@link Script}.
    * @param {Script} script 
    */
   getAddressForScript (script) {
     // TODO: use Fabric.Script
-    const p2wsh = script.forWitness();
-    const address = p2wsh.getAddress().toBech32(this.settings.network);
+    let p2wsh = script.forWitness();
+    let address = p2wsh.getAddress().toBech32(this.settings.network);
     return address;
   }
 
@@ -216,7 +244,7 @@ class Wallet extends Service {
 
     let index = fund.index || 0;
     let hashType = Script.hashType.ANYONECANPAY | Script.hashType.ALL;
-  
+
     mtx.addCoin(this._state.coins[0]);
     mtx.scriptInput(index, this._state.coins[0], this.keyring);
     mtx.signInput(index, this._state.coins[0], this.keyring, hashType);

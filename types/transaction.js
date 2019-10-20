@@ -1,29 +1,27 @@
 'use strict';
 
-var util = require('util');
-var crypto = require('crypto');
+const crypto = require('crypto');
+const patch = require('fast-json-patch');
 
-var patch = require('fast-json-patch');
+const Entity = require('./entity');
 
-function Transaction (data) {
-  if (!data) data = {};
+class Transaction extends Entity {
+  constructor (settings = {}) {
+    this.settings = Object.assign({
+      type: 'Transaction'
+    }, settings);
+  
+    this.clock = 0;
+    this.stack = [];
+    this.known = {};
 
-  this['@data'] = {
-    type: 'Transaction',
-    name: data.name
-  };
+    this.state = {};
+    this._state = {
+      settings: this.settings
+    };
 
-  this.clock = 0;
-  this.stack = [];
-  this.known = {};
-
-  if (data.name) {
-    this.stack.push(data.name);
+    return this;
   }
-
-  this.init();
-}
-
-util.inherits(Transaction, require('./vector'));
+} 
 
 module.exports = Transaction;

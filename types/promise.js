@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const Network = require('./network');
 const MAX_MEMORY = Math.pow(2, 21) + (64 * 1000);
 
 class EncryptedPromise {
@@ -18,6 +19,8 @@ class EncryptedPromise {
     if (this._state.data.length > this._state.blob.size) {
       throw new Error(`Promise not created, input too large, maximum size is ${MAX_MEMORY}`);
     }
+
+    Object.defineProperty(this, '_state', { enumerable: false });
 
     this.load();
   }

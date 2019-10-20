@@ -12,6 +12,9 @@ const Web = require('@fabric/http');
 const Service = require('../types/service');
 // const Schnorr = require('../types/schnorr');
 
+// Services
+const Bitcoin = require('../services/bitcoin');
+
 // Testing
 const assert = require('assert');
 const crypto = require('crypto');
@@ -926,6 +929,78 @@ describe('@fabric/core', function () {
       assert.equal(vector[0] instanceof Buffer, true);
       assert.equal(vector[0].toString('hex'), '00000000');
       assert.ok(vector);
+    });
+  });
+
+  describe('Wallet', function () {
+    it('is available from @fabric/core', function () {
+      assert.equal(Fabric.Wallet instanceof Function, true);
+    });
+
+    it('can load and unload', function (done) {
+      async function test () {
+        let wallet = new Fabric.Wallet();
+        await wallet.start();
+        await wallet.stop();
+        done();
+      }
+
+      test().catch(done);
+    });
+
+    it('can start and stop', function (done) {
+      async function test () {
+        let wallet = new Fabric.Wallet();
+        await wallet.start();
+        await wallet.stop();
+        done();
+      }
+
+      test().catch(done);
+    });
+
+    it('can generate a seed', function (done) {
+      async function test () {
+        let wallet = new Fabric.Wallet();
+        let entity = await wallet._createSeed();
+        assert.ok(entity);
+        assert.ok(entity.seed);
+        assert.equal(entity.seed.split(' ').length, 24);
+        console.log('seed:', entity.seed);
+        done();
+      }
+
+      test().catch(done);
+    });
+
+    it('can restore a seed', function (done) {
+      async function test () {
+        let wallet = new Fabric.Wallet();
+        await wallet._loadSeed(samples.input.seed);
+        assert.ok(wallet);
+        assert.ok(wallet.seed);
+        assert.equal(wallet.shard[0].string, samples.input.first);
+        done();
+      }
+
+      test().catch(done);
+    });
+
+    it('can read a bitcoin block', function (done) {
+      async function test () {
+        let bitcoin = new Bitcoin({ network: 'regtest' });
+        let wallet = new Fabric.Wallet();
+
+        await bitcoin.start();
+        await wallet._loadSeed(samples.input.seed);
+
+        assert.ok(wallet);
+        assert.ok(wallet.seed);
+        assert.equal(wallet.shard[0].string, samples.input.first);
+        done();
+      }
+
+      test().catch(done);
     });
   });
 
