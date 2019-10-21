@@ -114,24 +114,6 @@ class Wallet extends Service {
     return this.get('/balances/confirmed');
   }
 
-  get transactions () {
-    return this.get('/transactions');
-  }
-
-  set transactions (val) {
-    let state = {};
-
-    for (let key in val) {
-      if (key === 'id') {
-        console.log('[AUDIT]', '');
-      }
-
-      state[key] = val[key];
-    }
-
-    this.marshall.collections.transactions = val;
-  }
-
   /**
    * Returns a bech32 address for the provided {@link Script}.
    * @param {Script} script 
