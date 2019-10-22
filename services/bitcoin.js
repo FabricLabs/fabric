@@ -8,6 +8,8 @@ const State = require('../types/state');
 const bcoin = require('bcoin/lib/bcoin-browser').set('regtest');
 const FullNode = bcoin.FullNode;
 const WalletClient = require('bclient');
+
+// TODO: import genesis hash from file / config
 const network = bcoin.Network.get('regtest');
 
 class Bitcoin extends Service {
@@ -250,21 +252,15 @@ class Bitcoin extends Service {
     console.log('[SERVICES:BITCOIN]', 'State:', this.state);
   }
 
-  async connect (addr) {
-    try {
-      this.peer.connect(addr);
-    } catch (E) {
-      console.error('[SERVICES:BITCOIN]', 'Could not connect to peer:', E);
-    }
-  }
-
-  async start () {
+  async _connectToSeedNodes () {
     for (let i = 0; i < this.settings.seeds.length; i++) {
       let address = bcoin.net.NetAddress.fromHostname(this.settings.seeds[i], this.settings.network);
       address.port = this.settings.port;
       this.connect(address);
     }
+  }
 
+  async _connectToEdgeNodes () {
     for (let id in this.settings.nodes) {
       let node = this.settings.nodes[id];
       try {
@@ -279,6 +275,19 @@ class Bitcoin extends Service {
         console.error('[SERVICES:BITCOIN]', 'Could not connect to trusted node:', E);
       }
     }
+  }
+
+  async connect (addr) {
+    try {
+      this.peer.connect(addr);
+    } catch (E) {
+      console.error('[SERVICES:BITCOIN]', 'Could not connect to peer:', E);
+    }
+  }
+
+  async start () {
+    await this._connectToSeedNodes();
+    await this._connectToEdgeNodes();
 
     this.peer.tryOpen();
 
