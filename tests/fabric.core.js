@@ -992,8 +992,9 @@ describe('@fabric/core', function () {
         let bitcoin = new Bitcoin({ network: 'regtest' });
         let wallet = new Fabric.Wallet();
 
-        await bitcoin.start();
+        // await bitcoin.start();
         await wallet._loadSeed(samples.input.seed);
+        // await bitcoin.stop();
 
         assert.ok(wallet);
         assert.ok(wallet.seed);
