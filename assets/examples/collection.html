@@ -25,6 +25,11 @@
                 </a>
               
                 
+                <a class="source" href="bitcoin.html">
+                  bitcoin.js
+                </a>
+              
+                
                 <a class="source" href="blockchain.html">
                   blockchain.js
                 </a>
@@ -42,6 +47,11 @@
                 
                 <a class="source" href="collection.html">
                   collection.js
+                </a>
+              
+                
+                <a class="source" href="fabric.html">
+                  fabric.js
                 </a>
               
                 
@@ -82,6 +92,11 @@
                 
                 <a class="source" href="store.html">
                   store.js
+                </a>
+              
+                
+                <a class="source" href="witness.html">
+                  witness.js
                 </a>
               
             </div>
@@ -154,8 +169,8 @@ design.  If in doubt, check <a href="https://dev.fabric.pub/docs">the documentat
 
             </div>
             
-            <div class="content"><div class='highlight'><pre><span class="hljs-keyword">const</span> Collection = <span class="hljs-built_in">require</span>(<span class="hljs-string">'../lib/collection'</span>);
-<span class="hljs-keyword">const</span> Machine = <span class="hljs-built_in">require</span>(<span class="hljs-string">'../lib/machine'</span>);</pre></div></div>
+            <div class="content"><div class='highlight'><pre><span class="hljs-keyword">const</span> Collection = <span class="hljs-built_in">require</span>(<span class="hljs-string">'../types/collection'</span>);
+<span class="hljs-keyword">const</span> Machine = <span class="hljs-built_in">require</span>(<span class="hljs-string">'../types/machine'</span>);</pre></div></div>
             
         </li>
         
@@ -232,11 +247,15 @@ from our collection.</p>
               <div class="pilwrap ">
                 <a class="pilcrow" href="#section-9">&#182;</a>
               </div>
-              <p>Fabric can serialize the object to a JSON-formatted string.</p>
+              <p>Direct methods such as <code>create</code> and <code>update</code> may also be used.
+Note that this is an async method, and returns a promise.</p>
 
             </div>
             
-            <div class="content"><div class='highlight'><pre>  <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'[EXAMPLE]'</span>, <span class="hljs-string">'collection:'</span>, collection.render());</pre></div></div>
+            <div class="content"><div class='highlight'><pre>  <span class="hljs-keyword">await</span> collection.create({
+    <span class="hljs-attr">text</span>: <span class="hljs-string">'An army of principles can penetrate where an army of soldiers cannot.'</span>,
+    <span class="hljs-attr">entropy</span>: machine.sip()
+  });</pre></div></div>
             
         </li>
         
@@ -246,6 +265,37 @@ from our collection.</p>
               
               <div class="pilwrap ">
                 <a class="pilcrow" href="#section-10">&#182;</a>
+              </div>
+              <p>To retrieve the contents of a collection, use the <code>list</code> method.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>  <span class="hljs-keyword">let</span> content = <span class="hljs-keyword">await</span> collection.list();
+  <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'[EXAMPLE]'</span>, <span class="hljs-string">'Collection content:'</span>, content);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-11">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-11">&#182;</a>
+              </div>
+              <p>Fabric can serialize the object to a JSON-formatted string.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>  <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'[EXAMPLE]'</span>, <span class="hljs-string">'collection:'</span>, collection.render());</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-12">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-12">&#182;</a>
               </div>
               <p>Collections are maps of their contents.  To re-hydrate elements, use the
 <code>populate</code> method.</p>
@@ -262,11 +312,11 @@ from our collection.</p>
         </li>
         
         
-        <li id="section-11">
+        <li id="section-13">
             <div class="annotation">
               
               <div class="pilwrap ">
-                <a class="pilcrow" href="#section-11">&#182;</a>
+                <a class="pilcrow" href="#section-13">&#182;</a>
               </div>
               <p>Lastly, run the program as defined.</p>
 

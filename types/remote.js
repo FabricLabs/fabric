@@ -62,53 +62,23 @@ class Remote extends Resource {
     return options;
   }
 
-  /**
-   * HTTP PUT against the configured Authority.
-   * @param  {String} path - HTTP Path to request.
-   * @param  {Object} obj - Map of parameters to supply.
-   * @return {Mixed}        [description]
-   */
-  async _PUT (key, obj) {
+  async request (type, path, params = {}) {
     let self = this;
-    let host = self.config.authority;
-    let port = self.config.port;
+    let parts = self.config.authority.split(':');
+
+    // TODO: use onion address for secure mode
+    let host = parts[0] || ((self.secure) ? 'localhost' : 'localhost');
+    let port = parts[1] || ((self.secure) ? 443 : 80);
+
     let protocol = (!self.secure) ? 'http' : 'https';
-    let url = `${protocol}://${host}:${port}${key}`;
+    let url = `${protocol}://${host}:${port}${path}`;
 
-    let result = null;
-
-    try {
-      result = await fetch(url, {
-        method: 'put',
-        headers: {
-          'Accept': CONTENT_TYPE
-        },
-        body: obj
-      });
-    } catch (e) {
-      console.error('[REMOTE]', 'exception:', e);
-    }
-
-    return result;
-  }
-
-  /**
-   * HTTP GET against the configured Authority.
-   * @param  {String} path - HTTP Path to request.
-   * @param  {Object} params - Map of parameters to supply.
-   * @return {Mixed}        [description]
-   */
-  async _GET (key, params) {
-    let self = this;
-    let host = self.config.authority;
-    let port = self.config.port;
-    let protocol = (!self.secure) ? 'http' : 'https';
-    let url = `${protocol}://${host}:${port}${key}`;
     let result = null;
     let headers = {
       'Accept': CONTENT_TYPE
     };
 
+    // TODO: break out into independent auth module
     if (this.config.username && this.config.password) {
       headers['Authorization'] = `Basic ${Buffer.from([
         this.config.username,
@@ -116,13 +86,13 @@ class Remote extends Resource {
       ].join(':')).toString('base64')}`;
     }
 
-    if (params) {
+    if (params && Object.keys(params).length) {
       url += '?' + querystring.stringify(params);
     }
 
     try {
       result = await fetch(url, {
-        method: 'get',
+        method: type,
         headers: headers
       });
     } catch (e) {
@@ -132,6 +102,27 @@ class Remote extends Resource {
     return result;
   }
 
+
+  /**
+   * HTTP PUT against the configured Authority.
+   * @param  {String} path - HTTP Path to request.
+   * @param  {Object} obj - Map of parameters to supply.
+   * @return {Mixed}        [description]
+   */
+  async _PUT (key, obj) {
+    return this.request('put', key, obj);
+  }
+
+  /**
+   * HTTP GET against the configured Authority.
+   * @param  {String} path - HTTP Path to request.
+   * @param  {Object} params - Map of parameters to supply.
+   * @return {Mixed}        [description]
+   */
+  async _GET (key, params) {
+    return this.request('get', key, params);
+  }
+
   /**
    * HTTP POST against the configured Authority.
    * @param  {String} path - HTTP Path to request.
@@ -139,45 +130,7 @@ class Remote extends Resource {
    * @return {Mixed}        [description]
    */
   async _POST (key, obj, params) {
-    let self = this;
-    let host = self.config.authority;
-    let port = self.config.port;
-    let protocol = (!self.secure) ? 'http' : 'https';
-    let url = `${protocol}://${host}:${port}${key}`;
-    let result = null;
-
-    try {
-      result = await fetch(url, {
-        method: 'post',
-        headers: {
-          'Accept': CONTENT_TYPE
-        },
-        body: obj
-      });
-    } catch (e) {
-      console.error('[REMOTE]', 'exception:', e);
-    }
-
-    /* try {
-      let response = await rest.request('POST', url, {
-        headers: {
-          'Accept': CONTENT_TYPE
-        },
-        payload: obj,
-        // TODO: report to `wreck` as NOT WORKING
-        redirect303: true
-      });
-
-      if (response.statusCode === 303) {
-        result = await self._GET(response.headers.location);
-      } else {
-        result = await rest.read(response, { json: true });
-      }
-    } catch (e) {
-      console.error('[REMOTE]', 'exception:', e);
-    } */
-
-    return result;
+    return this.request('post', key, params);
   }
 
   /**
@@ -187,25 +140,7 @@ class Remote extends Resource {
    * @return {Object} - Full description of remote resource.
    */
   async _OPTIONS (key, params) {
-    let self = this;
-    let host = self.config.authority;
-    let port = self.config.port;
-    let protocol = (!self.secure) ? 'http' : 'https';
-    let url = `${protocol}://${host}:${port}${key}`;
-    let result = null;
-
-    try {
-      result = await fetch(url, {
-        method: 'options',
-        headers: {
-          'Accept': CONTENT_TYPE
-        }
-      });
-    } catch (e) {
-      console.error('[REMOTE]', 'exception:', e);
-    }
-
-    return result;
+    return this.request('options', key, params);
   }
 
   /**
@@ -215,26 +150,7 @@ class Remote extends Resource {
    * @return {Object} - Full description of remote resource.
    */
   async _PATCH (key, params) {
-    let self = this;
-    let host = self.config.authority;
-    let port = self.config.port;
-    let protocol = (!self.secure) ? 'http' : 'https';
-    let url = `${protocol}://${host}:${port}${key}`;
-    let result = null;
-
-    try {
-      result = await fetch(url, {
-        method: 'patch',
-        headers: {
-          'Accept': CONTENT_TYPE
-        },
-        body: params
-      });
-    } catch (e) {
-      console.error('[REMOTE]', 'exception:', e);
-    }
-
-    return result;
+    return this.request('patch', key, params);
   }
 
   /**
@@ -244,25 +160,7 @@ class Remote extends Resource {
    * @return {Object} - Full description of remote resource.
    */
   async _DELETE (key, params) {
-    let self = this;
-    let host = self.config.authority;
-    let port = self.config.port;
-    let protocol = (!self.secure) ? 'http' : 'https';
-    let url = `${protocol}://${host}:${port}${key}`;
-    let result = null;
-
-    try {
-      result = await fetch(url, {
-        method: 'delete',
-        headers: {
-          'Accept': CONTENT_TYPE
-        }
-      });
-    } catch (e) {
-      console.error('[REMOTE]', 'exception:', e);
-    }
-
-    return result;
+    return this.request('delete', key, params);
   }
 }
 

@@ -17,7 +17,7 @@
     "cli": "node examples/cli.js",
     "coverage": "nyc npm test",
     "docs": "npm run make:api && ecstatic docs",
-    "examples": "npm run make:examples && ecstatic examples",
+    "examples": "npm run make:examples && ecstatic assets/examples",
     "local": "npm run build && ecstatic ./assets",
     "make:all": "npm run make:api && npm run make:service && npm run make:app && npm run make:docs && npm run make:lib",
     "make:api": "npm run parse:api && node_modules/.bin/jsdoc index.js types/ README.md -d docs/ && glob-run js-beautify --indent-size 2 -r docs/*.html",

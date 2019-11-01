@@ -25,6 +25,11 @@
                 </a>
               
                 
+                <a class="source" href="bitcoin.html">
+                  bitcoin.js
+                </a>
+              
+                
                 <a class="source" href="blockchain.html">
                   blockchain.js
                 </a>
@@ -42,6 +47,11 @@
                 
                 <a class="source" href="collection.html">
                   collection.js
+                </a>
+              
+                
+                <a class="source" href="fabric.html">
+                  fabric.js
                 </a>
               
                 
@@ -84,6 +94,11 @@
                   store.js
                 </a>
               
+                
+                <a class="source" href="witness.html">
+                  witness.js
+                </a>
+              
             </div>
           </div>
         </li>
@@ -110,25 +125,25 @@
             
             <div class="content"><div class='highlight'><pre><span class="hljs-meta">'use strict'</span>;
 
-<span class="hljs-keyword">var</span> Block = <span class="hljs-built_in">require</span>(<span class="hljs-string">'../lib/block'</span>);
-<span class="hljs-keyword">var</span> Chain = <span class="hljs-built_in">require</span>(<span class="hljs-string">'../lib/chain'</span>);
+<span class="hljs-keyword">const</span> Block = <span class="hljs-built_in">require</span>(<span class="hljs-string">'../types/block'</span>);
+<span class="hljs-keyword">const</span> Chain = <span class="hljs-built_in">require</span>(<span class="hljs-string">'../types/chain'</span>);
 
-<span class="hljs-keyword">var</span> genesis = <span class="hljs-built_in">require</span>(<span class="hljs-string">'../data/block'</span>);
+<span class="hljs-keyword">const</span> genesis = <span class="hljs-built_in">require</span>(<span class="hljs-string">'../assets/block'</span>);
 
-<span class="hljs-keyword">var</span> chain = <span class="hljs-keyword">new</span> Chain();
-<span class="hljs-keyword">var</span> max = <span class="hljs-number">2</span>;
+<span class="hljs-keyword">async</span> <span class="hljs-function"><span class="hljs-keyword">function</span> <span class="hljs-title">main</span> (<span class="hljs-params"></span>) </span>{
+  <span class="hljs-keyword">let</span> chain = <span class="hljs-keyword">new</span> Chain();
 
-chain.on(<span class="hljs-string">'candidate'</span>, <span class="hljs-keyword">async</span> <span class="hljs-function"><span class="hljs-keyword">function</span> (<span class="hljs-params">block</span>) </span>{
-  <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'chain received candidate block:'</span>, block);
+  chain.on(<span class="hljs-string">'candidate'</span>, <span class="hljs-keyword">async</span> <span class="hljs-function"><span class="hljs-keyword">function</span> (<span class="hljs-params">block</span>) </span>{
+    <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'chain received candidate block:'</span>, block);
 
-  <span class="hljs-keyword">var</span> candidate = <span class="hljs-keyword">new</span> Block(block[<span class="hljs-string">'@data'</span>]);
-  <span class="hljs-keyword">var</span> isValid = candidate.validate();
+    <span class="hljs-keyword">let</span> candidate = <span class="hljs-keyword">new</span> Block(block);
+    <span class="hljs-keyword">let</span> isValid = candidate.validate();
 
-  candidate.compute();
+    candidate.compute();
 
-  <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'isValid:'</span>, isValid);
+    <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'isValid:'</span>, isValid);
 
-  <span class="hljs-keyword">if</span> (!isValid) {</pre></div></div>
+    <span class="hljs-keyword">if</span> (!isValid) {</pre></div></div>
             
         </li>
         
@@ -143,39 +158,23 @@ chain.on(<span class="hljs-string">'candidate'</span>, <span class="hljs-keyword
 
             </div>
             
-            <div class="content"><div class='highlight'><pre>    <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;
-  }
+            <div class="content"><div class='highlight'><pre>      <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;
+    }
 
-  <span class="hljs-keyword">await</span> chain.append(candidate);
+    <span class="hljs-keyword">await</span> chain.append(candidate);
 
-  <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'chain length:'</span>, chain[<span class="hljs-string">'@data'</span>].length);
+    <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'chain length:'</span>, chain[<span class="hljs-string">'@data'</span>].length);
 
-  <span class="hljs-keyword">if</span> (<span class="hljs-keyword">typeof</span> heapdump !== <span class="hljs-string">'undefined'</span>) {
-    heapdump.writeSnapshot(<span class="hljs-function"><span class="hljs-keyword">function</span> (<span class="hljs-params">err, filename</span>) </span>{
-      <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'dump written to'</span>, filename);
-    });
-  }
+    <span class="hljs-keyword">if</span> (chain[<span class="hljs-string">'@data'</span>].length &lt; max) {
+      <span class="hljs-keyword">await</span> chain.mine();
+    } <span class="hljs-keyword">else</span> {
+      <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'Chain filled!'</span>);
+      <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'Chain:'</span>, chain);
+    }
+  });
 
-  <span class="hljs-keyword">if</span> (chain[<span class="hljs-string">'@data'</span>].length &lt; max) {
-    <span class="hljs-keyword">await</span> chain.mine();
-  } <span class="hljs-keyword">else</span> {
-    <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'Chain filled!'</span>);
-    <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'Chain:'</span>, chain);
-  }
-});
-
-main();
-
-<span class="hljs-keyword">async</span> <span class="hljs-function"><span class="hljs-keyword">function</span> <span class="hljs-title">main</span> (<span class="hljs-params"></span>) </span>{
-  <span class="hljs-keyword">var</span> start = <span class="hljs-keyword">new</span> Block(genesis);
-
-  start.compute();
-
+  <span class="hljs-keyword">let</span> start = <span class="hljs-keyword">new</span> Block(genesis);
   <span class="hljs-keyword">await</span> chain.append(start);
-
-  <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'computing... stack:'</span>, chain.stack);
-  chain.compute();
-  <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'compute done.'</span>);
 
   <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'starting... chain:'</span>, chain[<span class="hljs-string">'@id'</span>]);
   <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'mining...'</span>);
@@ -183,7 +182,9 @@ main();
   <span class="hljs-keyword">await</span> chain.mine();
 
   <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'chain id:'</span>, chain[<span class="hljs-string">'@id'</span>]);
-}</pre></div></div>
+}
+
+main();</pre></div></div>
             
         </li>
         

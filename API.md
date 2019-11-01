@@ -24,6 +24,9 @@ Fabric-based networking and storage.</p>
 <dt><a href="#Entity">Entity</a> : <code>Object</code></dt>
 <dd><p>Live instance of an ARC in Fabric.</p>
 </dd>
+<dt><a href="#Hash256">Hash256</a></dt>
+<dd><p>Simple interaction with 256-bit spaces.</p>
+</dd>
 <dt><a href="#Ledger">Ledger</a> ⇐ <code><a href="#Scribe">Scribe</a></code></dt>
 <dd><p>An ordered stack of pages.</p>
 </dd>
@@ -604,6 +607,41 @@ Return a [Fabric](Fabric)-labeled [Object](Object) for this [Entity](#Entity).
 | Param | Type | Description |
 | --- | --- | --- |
 | [input] | <code>Mixed</code> | Input to downsample.  If not provided, current Entity will be used. |
+
+<a name="Hash256"></a>
+
+## Hash256
+Simple interaction with 256-bit spaces.
+
+**Kind**: global class  
+
+* [Hash256](#Hash256)
+    * [new Hash256(settings)](#new_Hash256_new)
+    * [.digest(input)](#Hash256.digest) ⇒ <code>String</code>
+
+<a name="new_Hash256_new"></a>
+
+### new Hash256(settings)
+Create an instance of a `Hash256` object by calling `new Hash256()`,
+where `settings` can be provided to supply a particular input object.
+
+If the `settings` is not a string, `input` must be provided.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| settings | <code>Object</code> |  |
+| settings.input | <code>String</code> | Input string to map as 256-bit hash. |
+
+<a name="Hash256.digest"></a>
+
+### Hash256.digest(input) ⇒ <code>String</code>
+**Kind**: static method of [<code>Hash256</code>](#Hash256)  
+**Returns**: <code>String</code> - `SHA256(input)` as a hexadecimal string.  
+
+| Param | Type |
+| --- | --- |
+| input | <code>String</code> | 
 
 <a name="Ledger"></a>
 
@@ -1718,6 +1756,8 @@ Manage keys and track their balances.
     * [.getAddressForScript(script)](#Wallet+getAddressForScript)
     * [._sign(tx)](#Wallet+_sign)
     * [._createCrowdfund(fund)](#Wallet+_createCrowdfund)
+    * [._getSwapInputScript(redeemScript, secret)](#Wallet+_getSwapInputScript)
+    * [._getRefundInputScript(redeemScript)](#Wallet+_getRefundInputScript)
     * [._load(settings)](#Wallet+_load)
     * [.start()](#Wallet+start)
 
@@ -1763,6 +1803,29 @@ Create a crowdfunding transaction.
 | Param | Type |
 | --- | --- |
 | fund | <code>Object</code> | 
+
+<a name="Wallet+_getSwapInputScript"></a>
+
+### wallet.\_getSwapInputScript(redeemScript, secret)
+Generate [Script](#Script) for claiming a [Swap](#Swap).
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+
+| Param | Type |
+| --- | --- |
+| redeemScript | <code>\*</code> | 
+| secret | <code>\*</code> | 
+
+<a name="Wallet+_getRefundInputScript"></a>
+
+### wallet.\_getRefundInputScript(redeemScript)
+Generate [Script](#Script) for reclaiming funds commited to a [Swap](#Swap).
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+
+| Param | Type |
+| --- | --- |
+| redeemScript | <code>\*</code> | 
 
 <a name="Wallet+_load"></a>
 
