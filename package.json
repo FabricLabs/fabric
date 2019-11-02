@@ -20,7 +20,7 @@
     "examples": "npm run make:examples && ecstatic assets/examples",
     "local": "npm run build && ecstatic ./assets",
     "make:all": "npm run make:api && npm run make:service && npm run make:app && npm run make:docs && npm run make:lib",
-    "make:api": "npm run parse:api && node_modules/.bin/jsdoc index.js types/ README.md -d docs/ && glob-run js-beautify --indent-size 2 -r docs/*.html",
+    "make:api": "npm run parse:api && node_modules/.bin/jsdoc -c jsdoc.json index.js types/ README.md -d docs/ && glob-run js-beautify --indent-size 2 -r docs/*.html",
     "make:app": "webpack --progress examples/app.js assets/app.js",
     "make:coverage": "nyc report --reporter html npm test",
     "make:docs": "gitbook install && npm run parse:api && npm run make:examples && gitbook build",
@@ -83,7 +83,8 @@
     "node-fetch": "^2.6.0",
     "path-match": "^1.2.4",
     "pluralize": "^8.0.0",
-    "rimraf": "^2.6.2"
+    "rimraf": "^2.6.2",
+    "struct": "^0.0.12"
   },
   "devDependencies": {
     "@fabric/http": "FabricLabs/web#fabric-0.1.0-develop",
