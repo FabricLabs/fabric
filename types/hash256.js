@@ -37,6 +37,7 @@ class Hash256 {
     return crypto.createHash('sha256').update(input).digest('hex');
   }
 
+  // TODO: document `hash256.value`
   get value () {
     return Hash256.digest(this.settings.input);
   }

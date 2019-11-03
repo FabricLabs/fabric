@@ -41,6 +41,13 @@ class Entity extends Events.EventEmitter {
     return this;
   }
 
+  get buffer () {
+    let entity = this;
+    return function buffer () {
+      return Buffer.from(entity.toJSON(), 'utf8');
+    }
+  }
+
   get id () {
     let data = this.toJSON();
     let hash = crypto.createHash('sha256').update(data).digest('hex');

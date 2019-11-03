@@ -95,13 +95,13 @@ class Remote extends Resource {
         method: type,
         headers: headers
       });
+      result = result.json();
     } catch (e) {
       console.error('[REMOTE]', 'exception:', e);
     }
 
     return result;
   }
-
 
   /**
    * HTTP PUT against the configured Authority.
