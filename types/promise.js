@@ -44,8 +44,17 @@ class EncryptedPromise {
     this._settings = map;
   }
 
+  async _assignState (state) {
+    this.status = 'assigning';
+    this._state.data = JSON.stringify(state);
+    this.load();
+    this.status = 'assigned';
+  }
+
   load () {
+    this.status = 'loading';
     this._state.blob.write(this._state.data);
+    this.status = 'loaded';
   }
 
   resolve (msg) {
@@ -56,7 +65,7 @@ class EncryptedPromise {
   }
 
   decrypt () {
-    
+    // TODO: recover state
   }
 }
 
