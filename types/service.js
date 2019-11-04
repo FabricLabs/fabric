@@ -58,7 +58,12 @@ class Service extends Scribe {
     this.collections = {};
     this.definitions = {};
     this.origin = '';
-    this.key = new Key();
+    // TODO: fix this
+    //   2) RPG Lite
+    //      Canvas
+    //        can draw a canvas:
+    //          Error: Not implemented yet
+    this.key = null; // new Key();
 
     this.store = new Store({
       path: this.config.path
