@@ -39,9 +39,10 @@ class Service extends Scribe {
     super(config);
 
     // Configure (with defaults)
-    this.config = Object.assign({
+    this.settings = this.config = Object.assign({
       name: 'service',
       path: './stores/service',
+      verbosity: 2, // 0 none, 1 error, 2 warning, 3 notice, 4 debug
       // TODO: export this as the default data in `inputs/fabric.json`
       // If the sha256(JSON.stringify(this.data)) is equal to this, it's
       // considered a valid Fabric object (for now!)
