@@ -61,6 +61,8 @@ class Wallet extends Service {
       network: this.settings.network
     });
 
+    bcoin.set(this.settings.network);
+
     this.account = null;
     this.manager = null;
     this.wallet = null;
@@ -78,6 +80,7 @@ class Wallet extends Service {
     this.addresses = new Collection();
     this.keys = new Collection();
     this.coins = new Collection();
+    this.secrets = new Collection();
     this.transactions = new Collection();
     this.entity = new Entity(this.settings);
 

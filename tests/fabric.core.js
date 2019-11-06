@@ -1,5 +1,7 @@
 'use strict';
 
+// require('debug-trace')({ always: true });
+
 const {
   LARGE_COLLECTION_SIZE
 } = require('../constants');
