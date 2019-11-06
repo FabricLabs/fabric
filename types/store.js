@@ -26,9 +26,10 @@ class Store extends Scribe {
   constructor (config = {}) {
     super(config);
 
-    this.config = Object.assign({
+    this.settings = this.config = Object.assign({
       path: './stores/store',
-      persistent: true
+      persistent: true,
+      verbosity: 2, // 0 none, 1 error, 2 warning, 3 notice, 4 debug
     }, config);
 
     this['@entity'] = {
@@ -126,7 +127,7 @@ class Store extends Scribe {
     let root = {};
     let current = await this._GET(key);
 
-    console.log('current value, no typecheck:', typeof current, current);
+    if (this.settings.verbosity >= 2) console.warn('current value, no typecheck:', typeof current, current);
 
     let result = Object.assign(root, current || {}, patch);
 
@@ -146,7 +147,7 @@ class Store extends Scribe {
    * @return {Promise}       Resolves on success with a String pointer.
    */
   async _POST (key, value) {
-    console.log('[STORE]', '_POST', key, typeof value, value);
+    if (this.settings.verbosity >= 3) console.log('[STORE]', '_POST', key, typeof value, value);
 
     this['@method'] = '_POST';
 
@@ -182,7 +183,7 @@ class Store extends Scribe {
       entity = await self.db.get(address);
       // console.log('loading entity:', entity.toString('utf8'));
     } catch (E) {
-      console.warn('Creating new collection:', E);
+      if (this.settings.verbosity >= 3) console.warn('Creating new collection:', E);
     }
 
     if (entity) {
@@ -196,7 +197,7 @@ class Store extends Scribe {
     try {
       if (entity) {
         family = await self.populate(entity);
-        console.log('WARNING:', 'family exists, expecting restoration:', family);
+        if (this.settings.verbosity >= 3) console.log('WARNING:', 'family exists, expecting restoration:', family);
         origin = new Collection(family);
       } else {
         origin = new Collection();
@@ -279,19 +280,21 @@ class Store extends Scribe {
     try {
       tip = await self.db.get(`/tips/${router}`);
     } catch (E) {
-      console.error(`cannot get tip [${router}] "/tips/${router}":`, E);
+      if (this.settings.verbosity >= 4) console.error(`cannot get tip [${router}] "/tips/${router}":`, E);
     }
 
-    try {
-      type = await self.db.get(`/types/${tip}`);
-    } catch (E) {
-      console.error(`cannot get type`, E);
-    }
+    if (tip) {
+      try {
+        type = await self.db.get(`/types/${tip}`);
+      } catch (E) {
+        if (this.settings.verbosity >= 2) console.error(`cannot get type`, E);
+      }
 
-    try {
-      state = await self.db.get(`/states/${tip}`);
-    } catch (E) {
-      console.error(`cannot get state [${tip}] "/states/${tip}":`, E);
+      try {
+        state = await self.db.get(`/states/${tip}`);
+      } catch (E) {
+        if (this.settings.verbosity >= 2) console.error(`cannot get state [${tip}] "/states/${tip}":`, E);
+      }
     }
 
     switch (type) {
@@ -374,7 +377,7 @@ class Store extends Scribe {
   async open () {
     await super.open();
 
-    console.log('[FABRIC:STORE]', 'Opening:', this.config.path);
+    if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Opening:', this.config.path);
 
     if (this.db) return this;
 
@@ -462,7 +465,7 @@ class Store extends Scribe {
   async flush () {
     for (let name in this['@entity']['@data'].addresses) {
       let address = this['@entity']['@data'].addresses[name];
-      console.log('found address:', address);
+      if (this.settings.verbosity >= 3) console.log('found address:', address);
       if (address) await this.del(address);
     }
 

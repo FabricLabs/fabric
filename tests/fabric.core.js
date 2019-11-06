@@ -77,8 +77,6 @@ describe('@fabric/core', function () {
       let hash = crypto.createHash('sha256').update('"Hello, world!"', 'utf8').digest('hex');
       let rendered = state.serialize();
 
-      console.log('rendered.toString():', rendered.toString());
-
       assert.equal(rendered.toString(), '"Hello, world!"');
       assert.equal(state.id, samples.output.hello);
 
@@ -185,8 +183,6 @@ describe('@fabric/core', function () {
 
       await fabric.stop();
 
-      console.log('set:', set);
-
       assert.equal(set.toString('utf8'), buffer.toString('utf8'));
       assert.equal(get.constructor.name, 'Buffer');
       assert.equal(get.toString(), buffer.toString());
@@ -285,7 +281,6 @@ describe('@fabric/core', function () {
       let app = new Fabric.App();
       await app.start();
       await app.stop();
-      console.log('app:', app);
       assert.ok(app);
     });
   });
@@ -385,9 +380,9 @@ describe('@fabric/core', function () {
     it('can hold a single entity', async function () {
       let set = new Fabric.Collection();
       set.push('test');
-      console.log('the set:', set);
+      // console.log('the set:', set);
       let populated = await set.populate();
-      console.log('populated:', populated);
+      // console.log('populated:', populated);
       assert.equal(JSON.stringify(populated), '["test"]');
     });
 
@@ -411,9 +406,9 @@ describe('@fabric/core', function () {
 
       let populated = await set.populate();
 
-      console.log('set:', set);
-      console.log('populated:', populated);
-      console.log('rendered:', set.render());
+      // console.log('set:', set);
+      // console.log('populated:', populated);
+      // console.log('rendered:', set.render());
 
       assert.equal(JSON.stringify(populated), '["Α","Ω"]');
       assert.equal(set.render(), '["2b99b4981c9947163e21a542ac3a7b1e1804ca6d933604d14280a4794e0939bb","432aa66781782a3d162c50fd9491af6a592a52f6ffe6a0dd996136b6fe74c2fa"]');
@@ -574,7 +569,7 @@ describe('@fabric/core', function () {
       await machine.compute();
       await machine.stop();
 
-      console.log('machine state:', machine.state);
+      // console.log('machine state:', machine.state);
 
       // assert.equal(machine.state.id, samples.names.encodedStackWithSingleValidFrame);
       assert.equal(machine.state['@data'][0], true);
@@ -756,8 +751,9 @@ describe('@fabric/core', function () {
 
     it('can restore state from an Array-like object', function () {
       let stack = new Fabric.Stack(['test']);
-      console.log('stack:', stack);
-      console.log('stack.render():', stack.render());
+      // console.log('stack:', stack);
+      // console.log('stack.render():', stack.render());
+
       // TODO: move to constants, verify
       assert.equal(stack.id, 'dc0422e42d8bac213c34031a1af2a99223fbad851887d1dd03f11d144f0cfe75');
     });
@@ -968,7 +964,6 @@ describe('@fabric/core', function () {
         assert.ok(entity);
         assert.ok(entity.seed);
         assert.equal(entity.seed.split(' ').length, 24);
-        console.log('seed:', entity.seed);
         done();
       }
 

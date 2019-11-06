@@ -51,6 +51,7 @@ class Wallet extends Service {
       name: 'primary',
       network: 'regtest',
       language: 'english',
+      verbosity: 2, // 0 none, 1 error, 2 warning, 3 notice, 4 debug
       witness: false,
       key: null
     }, settings);
@@ -125,7 +126,12 @@ class Wallet extends Service {
     return address;
   }
 
+  /**
+   * Generate a {@link BitcoinAddress} for the supplied {@link BitcoinScript}.
+   * @param {BitcoinScript} redeemScript 
+   */
   getAddressFromRedeemScript (redeemScript) {
+    if (!redeemScript) return null;
     return Address.fromScripthash(redeemScript.hash160());
   }
 
@@ -373,7 +379,7 @@ class Wallet extends Service {
   }
 
   async _handleWalletBalance (balance) {
-    console.log('wallet balance:', balance);
+    if (this.settings.verbosity >= 4) console.log('wallet balance:', balance);
     await this._PUT(`/balance`, balance);
 
     let depositor = new State({ name: this.settings.name || 'default' });
@@ -389,12 +395,13 @@ class Wallet extends Service {
 
     // TODO: register account with this.wallet
     let wallet = await this.wallet.createAccount({ name: obj.name });
-    console.log('bcoin wallet account:', wallet);
+    if (this.settings.verbosity >= 4) console.log('bcoin wallet account:', wallet);
     let actor = Object.assign({
       account: wallet
     }, obj);
 
     let account = await this.accounts.create(obj);
+    if (this.settings.verbosity >= 4) console.log('registering account, created:', account);
 
     if (this.manager) {
       this.manager.on('tx', this._handleWalletTransaction.bind(this));
@@ -429,10 +436,12 @@ class Wallet extends Service {
     }
 
     if (this.settings.key && this.settings.key.seed) {
+      if (this.settings.verbosity >= 3) console.log('[AUDIT]', 'Restoring wallet from provided seed:', this.settings.key.seed);
       let mnemonic = new Mnemonic(this.settings.key.seed);
       this.master = bcoin.hd.fromMnemonic(mnemonic);
       this.seed = new EncryptedPromise({ data: this.settings.key.seed });
     } else {
+      if (this.settings.verbosity >= 3) console.log('[AUDIT]', 'Generating new HD key for wallet...');
       this.master = bcoin.hd.generate(this.settings.network);
     }
 
@@ -449,14 +458,17 @@ class Wallet extends Service {
     this.ring = new bcoin.KeyRing(this.master, this.settings.network);
     this.ring.witness = this.settings.witness; // designates witness
 
-    console.log('keyring:', this.ring);
-    console.log('address from keyring:', this.ring.getAddress().toString());
+    if (this.settings.verbosity >= 4) console.log('keyring:', this.ring);
+    if (this.settings.verbosity >= 4) console.log('address from keyring:', this.ring.getAddress().toString());
 
     this.account = await this.wallet.getAccount('default');
 
     // Let's call it a shard!
     this.shard = await this.getFirstAddressSlice();
+    // console.log('shard created:', await this.addresses.asMerkleTree());
+    // console.log('shard created:', this.shard);
 
+    if (this.settings.verbosity >= 3) console.log('[AUDIT]', 'Wallet account:', this.account);
     // TODO: also retrieve key for address
     // let key = this.master.derivePath('m/44/0/0/0/0');
     // TODO: label as identity address
