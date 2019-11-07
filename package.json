@@ -39,7 +39,7 @@
     "test": "mkdir -p stores && NODE_ENV=test mocha tests"
   },
   "engines": {
-    "node": ">= 8.9.0"
+    "node": ">= 10.0.0"
   },
   "repository": {
     "type": "git",

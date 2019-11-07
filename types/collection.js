@@ -69,13 +69,10 @@ class Collection extends Stack {
     try {
       result = pointer.get(this.state, `${this.path}/${id}`);
     } catch (E) {
-      console.debug('[FABRIC:COLLECTION]', `@${this.name}`, Date.now(), `Could not find ID "${id}" in tree ${this.asMerkleTree()}`);
+     // console.debug('[FABRIC:COLLECTION]', `@${this.name}`, Date.now(), `Could not find ID "${id}" in tree ${this.asMerkleTree()}`);
     }
 
-    if (this.settings.type.name !== 'Entity') {
-      let Type = this.settings.type;
-      result = new Type(result || {});
-    }
+    result = this._wrapResult(result);
 
     return result;
   }
@@ -147,6 +144,14 @@ class Collection extends Stack {
       console.error('Could not match:', E);
     }
 
+    return result;
+  }
+
+  _wrapResult (result) {
+    if (this.settings.type.name !== 'Entity') {
+      let Type = this.settings.type;
+      result = new Type(result || {});
+    }
     return result;
   }
 

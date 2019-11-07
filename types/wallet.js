@@ -8,6 +8,7 @@ const EncryptedPromise = require('./promise');
 const Transaction = require('./transaction');
 const Collection = require('./collection');
 const Entity = require('./entity');
+const Hash256 = require('./hash256');
 const Service = require('./service');
 const State = require('./state');
 
@@ -81,6 +82,7 @@ class Wallet extends Service {
     this.keys = new Collection();
     this.coins = new Collection();
     this.secrets = new Collection();
+    this.outputs = new Collection();
     this.transactions = new Collection();
     this.entity = new Entity(this.settings);
 
@@ -136,6 +138,69 @@ class Wallet extends Service {
   getAddressFromRedeemScript (redeemScript) {
     if (!redeemScript) return null;
     return Address.fromScripthash(redeemScript.hash160());
+  }
+
+  async generateSignedTransactionTo (address, amount) {
+    if (!address) throw new Error(`Parameter "address" is required.`);
+    if (!amount) throw new Error(`Parameter "amount" is required.`);
+
+    let bn = new BN(amount + '', 10);
+    // TODO: labeled keypairs
+    let clean = await this.generateCleanKeyPair();
+    let change = await this.generateCleanKeyPair();
+
+    // TODO: remove all fake coinbases
+    // TODO: remove all short-circuits
+    // TODO: use this.getFakeCoinbase()
+    // fake coinbase
+    let cb = new MTX();
+    let mtx = new MTX();
+
+    // Coinbase Input
+    cb.addInput({
+      prevout: new Outpoint(),
+      script: new Script(),
+      sequence: 0xffffffff
+    });
+
+    // Add Output to pay ourselves
+    cb.addOutput({
+      address: clean.address,
+      value: 50000
+    });
+
+    let coin = Coin.fromTX(cb, 0, -1);
+    this._state.coins.push(coin);
+    // TODO: store above coinbase in this.state._coins
+    // TODO: reconcile above two lines
+
+    mtx.addOutput({
+      address: address,
+      amount: amount
+    });
+
+    await mtx.fund(this._state.coins, {
+      rate: 10000, // TODO: fee calculation
+      changeAddress: change.address
+    });
+
+    mtx.sign(this.ring);
+    // mtx.signInput(0, this.ring);
+
+    let tx = mtx.toTX();
+    let output = Coin.fromTX(mtx, 0, -1);
+    let raw = mtx.toRaw();
+    let hash = Hash256.digest(raw.toString('hex'));
+
+    return {
+      type: 'BitcoinTransaction',
+      data: {
+        tx: tx,
+        output: output,
+        raw: raw.toString('hex'),
+        hash: hash
+      }
+    };
   }
 
   async _createAccount (data) {
@@ -348,6 +413,23 @@ class Wallet extends Service {
     };
   }
 
+  async _scanBlockForTransactions (block) {
+    console.log('[AUDIT]', 'Scanning block for transactions:', block);
+    let found = [];
+  }
+
+  async _scanChainForTransactions (chain) {
+    console.log('[AUDIT]', 'Scanning chain for transactions:', chain);
+
+    let transactions = [];
+
+    for (let i = 0; i < chain.blocks.length; i++) {
+      transactions.concat(await this._scanBlockForTransactions(chain.blocks[i]));
+    }
+
+    return transactions;
+  }
+
   async getFirstAddressSlice (size = 256) {
     await this._load();
 
@@ -358,7 +440,8 @@ class Wallet extends Service {
     for (let i = 0; i < size; i++) {
       let addr = this.account.deriveReceive(i).getAddress('string');
       slice.push(await this.addresses.create({
-        string: addr
+        string: addr,
+        label: `shared address ${i} for wallet ${this.id}`
       }));
     }
 
