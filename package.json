@@ -88,6 +88,7 @@
     "struct": "^0.0.12"
   },
   "devDependencies": {
+    "@fabric/http": "FabricLabs/web#fabric-0.1.0-develop",
     "blessed": "^0.1.81",
     "body-parser": "^1.18.2",
     "chai": "^4.0.2",
