@@ -1,8 +1,13 @@
 'use strict';
 
 // Types
+const Collection = require('../types/collection');
+const Entity = require('../types/entity');
 const Service = require('../types/service');
 const State = require('../types/state');
+const Wallet = require('../types/wallet');
+
+const BitcoinBlock = require('../types/bitcoin/block');
 
 // External Dependencies
 const bcoin = require('bcoin/lib/bcoin-browser').set('regtest');
@@ -23,13 +28,31 @@ class Bitcoin extends Service {
     this.settings = Object.assign({
       name: '@services/bitcoin',
       network: 'regtest',
-      nodes: [],
+      nodes: ['127.0.0.1'],
       seeds: ['127.0.0.1'],
       port: 18444
     }, settings);
 
+    this.wallet = new Wallet();
+
+    this.blocks = new Collection({
+      name: 'Block',
+      type: BitcoinBlock,
+      methods: {
+        'create': this._prepareBlock.bind(this)
+      },
+      listeners: {
+        'create': this._handleCommittedBlock.bind(this)
+      }
+    });
+
     this.fullnode = new FullNode({
+      agent: this.UAString,
+      // port: 48445,
       network: this.settings.network,
+      bip37: true, // TODO: verify SPV implementation
+      listen: true,
+      http: false,
       logLevel: 'debug',
       memory: true,
       workers: true,
@@ -37,8 +60,8 @@ class Bitcoin extends Service {
     });
 
     this.peer = bcoin.Peer.fromOptions({
-      network: 'regtest',
-      agent: 'Fabric/Bridge 0.1.0-dev (@fabric/core#0.1.0-dev)',
+      network: this.settings.network,
+      agent: this.UAString,
       hasWitness: () => {
         return false;
       }
@@ -49,7 +72,16 @@ class Bitcoin extends Service {
     this.peer.on('open', () => {
       // triggers block event
       // pre-seeds genesis block for the rest of us.
-      this.peer.getBlock([network.genesis.hash]);
+      let block = this.peer.getBlock([network.genesis.hash]);
+    });
+
+    this.spv = new bcoin.SPVNode({
+      agent: this.UAString + ' (SPV)',
+      network: this.settings.network,
+      httpPort: 48449, // TODO: disable HTTP entirely!
+      memory: true,
+      logLevel: 'spam',
+      maxOutbound: 1,
     });
 
     this.define('VersionPacket', { type: 0 });
@@ -68,8 +100,23 @@ class Bitcoin extends Service {
     return bcoin.TX;
   }
 
+  get UAString () {
+    return 'Portal/Bridge 0.1.0-dev (@fabric/core#0.1.0-dev)';
+  }
+
   async broadcast (msg) {
     console.log('[SERVICES:BITCOIN]', 'Broadcasting:', msg);
+  }
+
+  async _prepareBlock (obj) {
+    let entity = new Entity(obj);
+    return Object.assign({}, obj, {
+      id: entity.id
+    });
+  }
+
+  async _handleCommittedBlock (block) {
+    this.emit('block', block);
   }
 
   async _registerBlock (obj) {
@@ -254,26 +301,43 @@ class Bitcoin extends Service {
 
   async _connectToSeedNodes () {
     for (let i = 0; i < this.settings.seeds.length; i++) {
-      let address = bcoin.net.NetAddress.fromHostname(this.settings.seeds[i], this.settings.network);
-      address.port = this.settings.port;
-      this.connect(address);
+      let node = this.settings.seeds[i];
+      this.connect(node);
     }
   }
 
   async _connectToEdgeNodes () {
     for (let id in this.settings.nodes) {
       let node = this.settings.nodes[id];
-      try {
-        console.log('walletclient:', WalletClient);
-        let walletClient = new WalletClient({
-          network: node.network,
+      let peer = bcoin.Peer.fromOptions({
+        network: this.settings.network,
+        agent: this.UAString,
+        hasWitness: () => {
+          return false;
+        }
+      });
+  
+      this.peer.on('error', this._handlePeerError.bind(this));
+      this.peer.on('packet', this._handlePeerPacket.bind(this));
+      this.peer.on('open', () => {
+        // triggers block event
+        // pre-seeds genesis block for the rest of us.
+        this.peer.getBlock([network.genesis.hash]);
+      });
+
+      await peer.open();
+      await peer.connect();
+
+      /* try {
+        let walletClient = new bclient.WalletClient({
+          network: this.settings.network,
           port: node.port
         });
-        let balance = walletClient.execute('getbalance');
+        let balance = await walletClient.execute('getbalance');
         console.log('wallet balance:', balance);
       } catch (E) {
         console.error('[SERVICES:BITCOIN]', 'Could not connect to trusted node:', E);
-      }
+      } */
     }
   }
 
@@ -286,10 +350,9 @@ class Bitcoin extends Service {
   }
 
   async start () {
-    await this._connectToSeedNodes();
-    await this._connectToEdgeNodes();
-
-    this.peer.tryOpen();
+    await this.wallet.start();
+    await this._startLocalNode();
+    await this._connectSPV();
 
     return this;
   }

@@ -7,6 +7,7 @@ const BN = require('bn.js');
 const EncryptedPromise = require('./promise');
 const Transaction = require('./transaction');
 const Collection = require('./collection');
+const Consensus = require('./consensus');
 const Entity = require('./entity');
 const Hash256 = require('./hash256');
 const Service = require('./service');
@@ -36,6 +37,7 @@ class Wallet extends Service {
   /**
    * Create an instance of a {@link Wallet}.
    * @param  {Object} [settings={}] Configure the wallet.
+   * @param  {Number} [verbosity=2] One of: 0 (none), 1 (error), 2 (warning), 3 (notice), 4 (debug), 5 (audit)
    * @return {Wallet}               Instance of the wallet.
    */
   constructor (settings = {}) {
@@ -44,7 +46,8 @@ class Wallet extends Service {
     // Create a Marshalling object
     this.marshall = {
       collections: {
-        'transactions': null // not yet loaded, seek for Buffer
+        'transactions': null, // not yet loaded, seek for Buffer,
+        'orders': null
       }
     };
 
@@ -52,7 +55,7 @@ class Wallet extends Service {
       name: 'primary',
       network: 'regtest',
       language: 'english',
-      verbosity: 2, // 0 none, 1 error, 2 warning, 3 notice, 4 debug
+      verbosity: 2,
       witness: false,
       key: null
     }, settings);
@@ -84,12 +87,16 @@ class Wallet extends Service {
     this.secrets = new Collection();
     this.outputs = new Collection();
     this.transactions = new Collection();
+
     this.entity = new Entity(this.settings);
+    this.consensus = new Consensus();
 
     // Internal State
     this._state = {
       coins: [],
-      keys: {}
+      keys: {},
+      transactions: [],
+      orders: []
     };
 
     // External State
@@ -140,6 +147,22 @@ class Wallet extends Service {
     return Address.fromScripthash(redeemScript.hash160());
   }
 
+  CSVencode (locktime, seconds = false) {
+    let locktimeUint32 = locktime >>> 0;
+    if (locktimeUint32 !== locktime)
+      throw new Error('Locktime must be a uint32.');
+
+    if (seconds) {
+      locktimeUint32 >>>= this.consensus.SEQUENCE_GRANULARITY;
+      locktimeUint32 &= this.consensus.SEQUENCE_MASK;
+      locktimeUint32 |= this.consensus.SEQUENCE_TYPE_FLAG;
+    } else {
+      locktimeUint32 &= this.consensus.SEQUENCE_MASK;
+    }
+
+    return locktimeUint32;
+  }
+
   async generateSignedTransactionTo (address, amount) {
     if (!address) throw new Error(`Parameter "address" is required.`);
     if (!amount) throw new Error(`Parameter "amount" is required.`);
@@ -149,24 +172,17 @@ class Wallet extends Service {
     let clean = await this.generateCleanKeyPair();
     let change = await this.generateCleanKeyPair();
 
-    // TODO: remove all fake coinbases
-    // TODO: remove all short-circuits
-    // TODO: use this.getFakeCoinbase()
-    // fake coinbase
-    let cb = new MTX();
     let mtx = new MTX();
+    let cb = await this._generateFakeCoinbase(amount);
 
-    // Coinbase Input
-    cb.addInput({
-      prevout: new Outpoint(),
-      script: new Script(),
-      sequence: 0xffffffff
+    mtx.addOutput({
+      address: address,
+      amount: amount
     });
 
-    // Add Output to pay ourselves
-    cb.addOutput({
-      address: clean.address,
-      value: 50000
+    await mtx.fund(this._state.coins, {
+      rate: 10000, // TODO: fee calculation
+      changeAddress: change.address
     });
 
     let coin = Coin.fromTX(cb, 0, -1);
@@ -271,10 +287,9 @@ class Wallet extends Service {
 
     // TODO: wallet._getSpendableOutput()
     let coin = Coin.fromTX(coinbase, 0, -1);
-
     this._state.coins.push(coin);
 
-    console.log('coins:', this._state.coins);
+    console.log('coinbase:', coinbase);
     
     return coinbase;
   }
@@ -365,7 +380,7 @@ class Wallet extends Service {
     let script = new Script();
     let clean = await this.generateCleanKeyPair();
 
-    console.log('[AUDIT]', 'getting bond address, clean:', clean);
+    if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'getting bond address, clean:', clean);
 
     // write the contract
     // script.pushData(clean.public.toString('hex'));

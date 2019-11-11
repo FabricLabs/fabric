@@ -63,6 +63,7 @@
     "@webassemblyjs/ast": "^1.8.5",
     "arbitrary": "^1.4.10",
     "base58check": "^2.0.0",
+    "bcash": "^1.1.1",
     "bcoin": "^1.0.2",
     "dotparser": "^0.3.0",
     "elliptic": "^6.4.0",
@@ -87,7 +88,6 @@
     "struct": "^0.0.12"
   },
   "devDependencies": {
-    "@fabric/http": "FabricLabs/web#fabric-0.1.0-develop",
     "blessed": "^0.1.81",
     "body-parser": "^1.18.2",
     "chai": "^4.0.2",
