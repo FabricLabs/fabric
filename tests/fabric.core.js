@@ -6,6 +6,8 @@ const {
   LARGE_COLLECTION_SIZE
 } = require('../constants');
 
+const config = require('../settings/test');
+
 // Core
 const Fabric = require('../');
 const Web = require('@fabric/http');
@@ -974,7 +976,7 @@ describe('@fabric/core', function () {
 
     it('can restore a seed', function (done) {
       async function test () {
-        let wallet = new Fabric.Wallet();
+        let wallet = new Fabric.Wallet(config);
         await wallet._loadSeed(samples.input.seed);
         assert.ok(wallet);
         assert.ok(wallet.seed);
@@ -987,8 +989,8 @@ describe('@fabric/core', function () {
 
     it('can read a bitcoin block', function (done) {
       async function test () {
-        let bitcoin = new Bitcoin({ network: 'regtest' });
-        let wallet = new Fabric.Wallet();
+        let bitcoin = new Bitcoin(config);
+        let wallet = new Fabric.Wallet(config);
 
         // await bitcoin.start();
         await wallet._loadSeed(samples.input.seed);
