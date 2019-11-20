@@ -271,7 +271,11 @@ class Collection extends Stack {
     let size = this.push(input, false);
     let state = this['@entity'].states[this['@data'][size - 1]];
     let entity = new Entity(state);
-    let link = `${this.path}/${entity.id}`;
+    let link = `${this.path}/${input.id || entity.id}`;
+
+    if (this.settings.verbosity >= 4) console.log('state.data:', state.data);
+    if (this.settings.verbosity >= 4) console.log('state:', state);
+    if (this.settings.verbosity >= 4) console.log('link:', link);
 
     this.set(link, state.data || state);
 
@@ -284,7 +288,7 @@ class Collection extends Stack {
     }
 
     result = state.data || entity.data;
-    result.id = entity.id;
+    result.id = input.id || entity.id;
 
     this.emit('message', {
       '@type': 'Snapshot',

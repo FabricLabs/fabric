@@ -2,7 +2,7 @@
   "name": "@fabric/core",
   "description": "Application Resource Contract for the Fabric Execution Environment.",
   "language": "english",
-  "network": "testnet",
+  "network": "regtest",
   "stack": [],
   "state": {}
 }

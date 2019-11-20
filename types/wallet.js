@@ -1,5 +1,7 @@
 'use strict';
 
+const config = require('../settings/default');
+
 // External Dependencies
 const BN = require('bn.js');
 
@@ -14,7 +16,7 @@ const Service = require('./service');
 const State = require('./state');
 
 // Bcoin
-const bcoin = require('bcoin/lib/bcoin-browser').set('regtest');
+const bcoin = require('bcoin/lib/bcoin-browser');
 
 // Convenience classes...
 const Address = bcoin.Address;
@@ -53,8 +55,9 @@ class Wallet extends Service {
 
     this.settings = Object.assign({
       name: 'primary',
-      network: 'regtest',
-      language: 'english',
+      network: config.network,
+      language: config.language,
+      decimals: 8,
       verbosity: 2,
       witness: false,
       key: null
@@ -289,7 +292,7 @@ class Wallet extends Service {
     let coin = Coin.fromTX(coinbase, 0, -1);
     this._state.coins.push(coin);
 
-    console.log('coinbase:', coinbase);
+    // console.log('coinbase:', coinbase);
     
     return coinbase;
   }
