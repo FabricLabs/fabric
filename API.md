@@ -42,6 +42,10 @@ selectively disclosing new routes to peers which may have open circuits.</p>
 <dd><p>An Oracle manages one or more collections, using a <code>mempool</code> for
 transitive state.</p>
 </dd>
+<dt><a href="#Path">Path</a></dt>
+<dd><p>A <a href="#Path">Path</a> is a <a href="Fabric">Fabric</a>-native link to a <a href="Document">Document</a>
+within the network.</p>
+</dd>
 <dt><a href="#Peer">Peer</a></dt>
 <dd><p>An in-memory representation of a node in our network.</p>
 </dd>
@@ -89,6 +93,10 @@ execute either the full set or none.</p>
 </dd>
 <dt><a href="#Swarm">Swarm</a> : <code>String</code></dt>
 <dd><p>The <a href="#Swarm">Swarm</a> represents a network of peers.</p>
+</dd>
+<dt><a href="#Transition">Transition</a></dt>
+<dd><p>The <a href="#Transition">Transition</a> type reflects a change from one finite
+<a href="#State">State</a> to another.</p>
 </dd>
 <dt><a href="#Vector">Vector</a></dt>
 <dd></dd>
@@ -887,6 +895,33 @@ Start running the process.
 **Kind**: instance method of [<code>Oracle</code>](#Oracle)  
 **Overrides**: [<code>start</code>](#Store+start)  
 **Returns**: <code>Promise</code> - Resolves on complete.  
+<a name="Path"></a>
+
+## Path
+A [Path](#Path) is a [Fabric](Fabric)-native link to a [Document](Document)
+within the network.
+
+**Kind**: global class  
+
+* [Path](#Path)
+    * [new Path(input)](#new_Path_new)
+    * [.isValid()](#Path+isValid) ⇒ <code>Boolean</code>
+
+<a name="new_Path_new"></a>
+
+### new Path(input)
+Create a new [Path](#Path).
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>String</code> \| <code>Object</code> | Named path. |
+
+<a name="Path+isValid"></a>
+
+### path.isValid() ⇒ <code>Boolean</code>
+**Kind**: instance method of [<code>Path</code>](#Path)  
+**Returns**: <code>Boolean</code> - Whether or not the Path is valid.  
 <a name="Peer"></a>
 
 ## Peer
@@ -1410,6 +1445,7 @@ committing to the outcome.  This workflow keeps app design quite simple!
         * [.toString()](#State+toString) ⇒ <code>String</code>
         * [.serialize([input])](#State+serialize) ⇒ <code>Buffer</code>
         * [.deserialize(input)](#State+deserialize) ⇒ [<code>State</code>](#State)
+        * [.get(path)](#State+get)
         * [.render()](#State+render) ⇒ <code>String</code>
     * _static_
         * [.fromJSON(input)](#State.fromJSON) ⇒ [<code>State</code>](#State)
@@ -1454,6 +1490,17 @@ Take a hex-encoded input and convert to a [State](#State) object.
 | Param | Type | Description |
 | --- | --- | --- |
 | input | <code>String</code> | [description] |
+
+<a name="State+get"></a>
+
+### state.get(path)
+Retrieve a key from
+
+**Kind**: instance method of [<code>State</code>](#State)  
+
+| Param | Type |
+| --- | --- |
+| path | [<code>Path</code>](#Path) | 
 
 <a name="State+render"></a>
 
@@ -1655,6 +1702,21 @@ Begin computing.
 
 **Kind**: instance method of [<code>Swarm</code>](#Swarm)  
 **Returns**: <code>Promise</code> - Resolves to instance of [Swarm](#Swarm).  
+<a name="Transition"></a>
+
+## Transition
+The [Transition](#Transition) type reflects a change from one finite
+[State](#State) to another.
+
+**Kind**: global class  
+<a name="new_Transition_new"></a>
+
+### new Transition(settings)
+
+| Param | Type | Description |
+| --- | --- | --- |
+| settings | <code>Object</code> | Configuration for the transition object. |
+
 <a name="Vector"></a>
 
 ## Vector
@@ -1750,10 +1812,18 @@ Explores a directory tree on the local system's disk.
 Manage keys and track their balances.
 
 **Kind**: global class  
+**Properties**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| id | <code>String</code> | Unique identifier for this [Wallet](#Wallet). |
+
 
 * [Wallet](#Wallet) : <code>Object</code>
-    * [new Wallet([settings])](#new_Wallet_new)
+    * [new Wallet([settings], [verbosity])](#new_Wallet_new)
     * [.getAddressForScript(script)](#Wallet+getAddressForScript)
+    * [.getAddressFromRedeemScript(redeemScript)](#Wallet+getAddressFromRedeemScript)
+    * [.createPricedOrder(order)](#Wallet+createPricedOrder)
     * [._sign(tx)](#Wallet+_sign)
     * [._createCrowdfund(fund)](#Wallet+_createCrowdfund)
     * [._getSwapInputScript(redeemScript, secret)](#Wallet+_getSwapInputScript)
@@ -1763,13 +1833,14 @@ Manage keys and track their balances.
 
 <a name="new_Wallet_new"></a>
 
-### new Wallet([settings])
+### new Wallet([settings], [verbosity])
 Create an instance of a [Wallet](#Wallet).
 
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
 | [settings] | <code>Object</code> | <code>{}</code> | Configure the wallet. |
+| [verbosity] | <code>Number</code> | <code>2</code> | One of: 0 (none), 1 (error), 2 (warning), 3 (notice), 4 (debug), 5 (audit) |
 
 <a name="Wallet+getAddressForScript"></a>
 
@@ -1781,6 +1852,30 @@ Returns a bech32 address for the provided [Script](#Script).
 | Param | Type |
 | --- | --- |
 | script | [<code>Script</code>](#Script) | 
+
+<a name="Wallet+getAddressFromRedeemScript"></a>
+
+### wallet.getAddressFromRedeemScript(redeemScript)
+Generate a [BitcoinAddress](BitcoinAddress) for the supplied [BitcoinScript](BitcoinScript).
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+
+| Param | Type |
+| --- | --- |
+| redeemScript | <code>BitcoinScript</code> | 
+
+<a name="Wallet+createPricedOrder"></a>
+
+### wallet.createPricedOrder(order)
+Create a priced order.
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+
+| Param | Type |
+| --- | --- |
+| order | <code>Object</code> | 
+| order.asset | <code>Object</code> | 
+| order.amount | <code>Object</code> | 
 
 <a name="Wallet+_sign"></a>
 

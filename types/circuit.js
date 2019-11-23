@@ -41,9 +41,6 @@ class Circuit extends Service {
       this.transitions.push({ name: wire.name, from: wire.from, to: wire.to });
     }
 
-    console.log('transitions:', this.transitions);
-    console.log('wires:', this.wires);
-
     this.graph = new StateMachine({
       init: 'start()',
       data: this.state,

@@ -33,6 +33,7 @@ const Script = bcoin.Script;
 
 /**
  * Manage keys and track their balances.
+ * @property {String} id Unique identifier for this {@link Wallet}.
  * @type {Object}
  */
 class Wallet extends Service {
@@ -89,7 +90,6 @@ class Wallet extends Service {
     this.coins = new Collection();
     this.secrets = new Collection();
     this.outputs = new Collection();
-    this.transactions = new Collection();
 
     this.entity = new Entity(this.settings);
     this.consensus = new Consensus();
@@ -111,7 +111,8 @@ class Wallet extends Service {
       },
       coins: [],
       keys: [],
-      transactions: []
+      transactions: [],
+      orders: []
     };
 
     Object.defineProperty(this, 'database', { enumerable: false });
@@ -128,6 +129,14 @@ class Wallet extends Service {
 
   get balance () {
     return this.get('/balances/confirmed');
+  }
+
+  get transactions () {
+    return this.get('/transactions');
+  }
+
+  get orders () {
+    return this.get('/orders');
   }
 
   /**
@@ -331,7 +340,7 @@ class Wallet extends Service {
     };
   }
 
-  async _createSeed() {
+  async _createSeed () {
     let mnemonic = new Mnemonic({ bits: 256 });
     return { seed: mnemonic.toString() };
   }

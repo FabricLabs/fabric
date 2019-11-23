@@ -28,6 +28,7 @@ class Entity extends Events.EventEmitter {
     this.actor = Object.assign({}, this._downsample(data));
     this.data = Object.assign({}, data);
 
+    // TODO: use getters/setters to restrict access to these elements
     // remove EventEmitter cruft
     Object.defineProperty(this, '_events', { enumerable: false });
     Object.defineProperty(this, '_eventsCount', { enumerable: false });
@@ -39,6 +40,10 @@ class Entity extends Events.EventEmitter {
 
     // return instance
     return this;
+  }
+
+  get version () {
+    return 1;
   }
 
   get buffer () {
