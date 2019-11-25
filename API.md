@@ -12,6 +12,12 @@ Fabric-based networking and storage.</p>
 <dt><a href="#Chain">Chain</a></dt>
 <dd><p>Chain.</p>
 </dd>
+<dt><a href="#Circuit">Circuit</a></dt>
+<dd><p>The <a href="#Circuit">Circuit</a> is the mechanism through which <a href="Fabric">Fabric</a>
+operates, a computable directed graph for execution be a network
+of <a href="#Peer">Peer</a> components.  See also <a href="#Swarm">Swarm</a> for deeper
+inspection of <a href="#Machine">Machine</a> mechanics.</p>
+</dd>
 <dt><a href="#CLI">CLI</a></dt>
 <dd><p>Base class for a terminal-like interface to the Fabric network.</p>
 </dd>
@@ -442,6 +448,15 @@ Holds an immutable chain of events.
 | --- | --- | --- |
 | genesis | [<code>Vector</code>](#Vector) | Initial state for the chain of events. |
 
+<a name="Circuit"></a>
+
+## Circuit
+The [Circuit](#Circuit) is the mechanism through which [Fabric](Fabric)
+operates, a computable directed graph for execution be a network
+of [Peer](#Peer) components.  See also [Swarm](#Swarm) for deeper
+inspection of [Machine](#Machine) mechanics.
+
+**Kind**: global class  
 <a name="CLI"></a>
 
 ## CLI

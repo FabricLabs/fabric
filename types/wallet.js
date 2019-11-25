@@ -262,6 +262,49 @@ class Wallet extends Service {
     };
   }
 
+  async _addOutputToSpendables (coin) {
+    this._state.coins.push(coin);
+    return this;
+  }
+
+  async _generateFakeCoinbase (amount = 1) {
+    // TODO: use Satoshis for all calculations
+    let num = new BN(amount, 10);
+
+    // TODO: remove all fake coinbases
+    // TODO: remove all short-circuits
+    // fake coinbase
+    let cb = new MTX();
+    let clean = await this.generateCleanKeyPair();
+
+    // Coinbase Input
+    cb.addInput({
+      prevout: new Outpoint(),
+      script: new Script(),
+      sequence: 0xffffffff
+    });
+
+    // Add Output to pay ourselves
+    cb.addOutput({
+      address: clean.address,
+      value: 5000000000
+    });
+
+    // TODO: remove short-circuit
+    let coin = Coin.fromTX(cb, 0, -1);
+    let tx = cb.toTX();
+
+    await this._addOutputToSpendables(coin);
+
+    return {
+      type: 'BitcoinTransactionOutput',
+      data: {
+        tx: cb,
+        coin: coin
+      }
+    };
+  }
+
   async _getFreeCoinbase (amount = 1) {
     let num = new BN(amount, 10);
     let max = new BN('5000000000000', 10); // upper limit per coinbase
