@@ -6,6 +6,7 @@ const Entity = require('../types/entity');
 const Service = require('../types/service');
 const State = require('../types/state');
 const Wallet = require('../types/wallet');
+const Consensus = require('../types/consensus');
 
 const BitcoinBlock = require('../types/bitcoin/block');
 
@@ -13,6 +14,7 @@ const BitcoinBlock = require('../types/bitcoin/block');
 const bcoin = require('bcoin/lib/bcoin-browser').set('regtest');
 const FullNode = bcoin.FullNode;
 const WalletClient = require('bclient');
+const NetAddress = bcoin.net.NetAddress;
 
 // TODO: import genesis hash from file / config
 const network = bcoin.Network.get('regtest');
@@ -33,6 +35,8 @@ class Bitcoin extends Service {
       port: 18444
     }, settings);
 
+    // Internal management components
+    this.provider = new Consensus({ provider: 'bcoin' });
     this.wallet = new Wallet();
 
     this.blocks = new Collection({
@@ -46,14 +50,14 @@ class Bitcoin extends Service {
       }
     });
 
-    this.fullnode = new FullNode({
+    this.fullnode = new this.provider.FullNode({
       agent: this.UAString,
-      // port: 48445,
+      port: this.provider.port,
       network: this.settings.network,
       bip37: true, // TODO: verify SPV implementation
-      listen: true,
+      listen: false, // TODO: consider opening external ports
       http: false,
-      logLevel: 'debug',
+      logLevel: 'error',
       memory: true,
       workers: true,
       loader: require
@@ -297,6 +301,33 @@ class Bitcoin extends Service {
     }
 
     console.log('[SERVICES:BITCOIN]', 'State:', this.state);
+  }
+
+  async _connectSPV () {
+    await this.spv.open();
+    await this.spv.connect();
+
+    for (let i = 0; i < this.wallet.shard.length; i++) {
+      let slice = this.wallet.shard[i];
+      // TODO: fix @types/wallet to use named types for Addresses...
+      // i.e., this next line should be unnecessary!
+      let address = bcoin.Address.fromString(slice.string, this.spv.network);
+      this.spv.pool.watchAddress(address);
+    }
+
+    this.spv.on('tx', (tx) => {
+      console.log('[AUDIT]', 'SPV Received TX:', tx);
+    });
+  
+    let addr = new NetAddress({
+      host: '127.0.0.1',
+      port: this.fullnode.pool.options.port
+    });
+  
+    let peer = this.spv.pool.createOutbound(addr);
+    this.spv.pool.peers.add(peer);
+
+    await this.spv.startSync();
   }
 
   async _connectToSeedNodes () {
