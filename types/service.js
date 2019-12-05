@@ -6,6 +6,7 @@ const Key = require('./key');
 const Entity = require('./entity');
 const Store = require('./store');
 const Scribe = require('./scribe');
+const Swarm = require('./swarm');
 const Collection = require('./collection');
 
 // external dependencies
@@ -33,6 +34,7 @@ class Service extends Scribe {
   /**
    * Create an instance of a Service.
    * @param       {Object} config Configuration for this service.
+   * @param       {Object} [config.@data] Internal data to assign.
    */
   constructor (config) {
     // Initialize Scribe, our logging tool
@@ -59,6 +61,7 @@ class Service extends Scribe {
     this.collections = {};
     this.definitions = {};
     this.origin = '';
+
     // TODO: fix this
     //   2) RPG Lite
     //      Canvas
@@ -76,6 +79,7 @@ class Service extends Scribe {
     }, this.config['@data']);
 
     this.observer = null;
+    this.swarm = new Swarm();
 
     // Set ready status
     this.status = 'ready';

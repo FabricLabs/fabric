@@ -22,6 +22,7 @@ class Swarm extends Scribe {
 
     this.name = 'Swarm';
     this.config = Object.assign({
+      name: 'fabric',
       peers: []
     }, config);
 

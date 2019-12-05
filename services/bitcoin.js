@@ -19,10 +19,20 @@ const NetAddress = bcoin.net.NetAddress;
 // TODO: import genesis hash from file / config
 const network = bcoin.Network.get('regtest');
 
+/**
+ * Manages interaction with the Bitcoin network.
+ */
 class Bitcoin extends Service {
+  /**
+   * Creates an instance of the Bitcoin service.
+   * @param {Object} settings Map of configuration options for the Bitcoin service.
+   * @param {String} settings.network One of `regtest`, `testnet`, or `mainnet`.
+   * @param {Array} settings.nodes List of address:port pairs to trust.
+   */
   constructor (settings = {}) {
     super(settings);
 
+    // Internal State
     this.state = {
       blocks: {}
     };
@@ -372,6 +382,11 @@ class Bitcoin extends Service {
     }
   }
 
+  async _startLocalNode () {
+    await this.fullnode.open();
+    await this.fullnode.connect();
+  }
+
   async connect (addr) {
     try {
       this.peer.connect(addr);
@@ -383,7 +398,10 @@ class Bitcoin extends Service {
   async start () {
     await this.wallet.start();
     await this._startLocalNode();
+    // await this._connectToSeedNodes();
+    // await this._connectToEdgeNodes();
     await this._connectSPV();
+    // this.peer.tryOpen();
 
     return this;
   }
