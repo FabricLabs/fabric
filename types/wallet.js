@@ -631,6 +631,10 @@ class Wallet extends Service {
     // this.address = await this.account.receiveAddress();
     // TODO: notify downstream of short-circuit removal
 
+    // finally, assign state...
+    this.state.transactions = this.settings.transaction;
+    this.state.orders = this.settings.orders;
+
     this.status = 'loaded';
     this.emit('ready');
 

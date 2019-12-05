@@ -1312,6 +1312,7 @@ Create an instance of a Service.
 | Param | Type | Description |
 | --- | --- | --- |
 | config | <code>Object</code> | Configuration for this service. |
+| [config.@data] | <code>Object</code> | Configuration for this service. |
 
 <a name="Service+handler"></a>
 
