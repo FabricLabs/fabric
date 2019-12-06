@@ -36,9 +36,11 @@ class Peer extends Scribe {
     this.name = 'Peer';
     this.config = Object.assign({
       address: '0.0.0.0',
+      networking: true,
       port: 7777
     }, config || {});
 
+    this.server = net.createServer(this._handleConnection.bind(this));
     this.stream = new stream.Transform({
       transform (chunk, encoding, callback) {
         // TODO: parse as encrypted data
@@ -66,12 +68,23 @@ class Peer extends Scribe {
     return this;
   }
 
-  start () {
+  async start () {
     this.log('Peer starting...');
 
     if (!this.server) {
-      this.listen();
+      await this.listen();
     }
+
+    return this;
+  }
+
+  async stop () {
+    this.log('Peer stopping...');
+
+    // TODO: close only when listening actively
+    await this.server.close();
+
+    return this;
   }
 
   _connect (address) {
@@ -343,7 +356,6 @@ class Peer extends Scribe {
    */
   listen () {
     let self = this;
-    self.server = net.createServer(self._handleConnection.bind(self));
     self.server.listen(self.config.port, self.config.address, function () {
       if (self.config.debug) {
         self.log('[PEER]', `${self.id} now listening on tcp://${self.address}:${self.port}`);
