@@ -11,13 +11,14 @@ const Consensus = require('../types/consensus');
 const BitcoinBlock = require('../types/bitcoin/block');
 
 // External Dependencies
-const bcoin = require('bcoin/lib/bcoin-browser').set('regtest');
+const bcoin = require('bcoin/lib/bcoin-browser');
 const FullNode = bcoin.FullNode;
 const WalletClient = require('bclient');
 const NetAddress = bcoin.net.NetAddress;
 
-// TODO: import genesis hash from file / config
-const network = bcoin.Network.get('regtest');
+// Extraneous Dependencies
+// TODO: remove!
+const bclient = require('bclient');
 
 /**
  * Manages interaction with the Bitcoin network.
@@ -44,6 +45,9 @@ class Bitcoin extends Service {
       seeds: ['127.0.0.1'],
       port: 18444
     }, settings);
+
+    bcoin.set(this.settings.network);
+    this.network = bcoin.Network.get(this.settings.network);
 
     // Internal management components
     this.provider = new Consensus({ provider: 'bcoin' });
@@ -86,7 +90,7 @@ class Bitcoin extends Service {
     this.peer.on('open', () => {
       // triggers block event
       // pre-seeds genesis block for the rest of us.
-      let block = this.peer.getBlock([network.genesis.hash]);
+      let block = this.peer.getBlock([this.network.genesis.hash]);
     });
 
     this.spv = new bcoin.SPVNode({
@@ -321,7 +325,7 @@ class Bitcoin extends Service {
       let slice = this.wallet.shard[i];
       // TODO: fix @types/wallet to use named types for Addresses...
       // i.e., this next line should be unnecessary!
-      let address = bcoin.Address.fromString(slice.string, this.spv.network);
+      let address = bcoin.Address.fromString(slice.string, this.settings.network);
       this.spv.pool.watchAddress(address);
     }
 
@@ -348,6 +352,8 @@ class Bitcoin extends Service {
   }
 
   async _connectToEdgeNodes () {
+    let bitcoin = this;
+
     for (let id in this.settings.nodes) {
       let node = this.settings.nodes[id];
       let peer = bcoin.Peer.fromOptions({
@@ -363,7 +369,7 @@ class Bitcoin extends Service {
       this.peer.on('open', () => {
         // triggers block event
         // pre-seeds genesis block for the rest of us.
-        this.peer.getBlock([network.genesis.hash]);
+        bitcoin.peer.getBlock([bitcoin.network.genesis.hash]);
       });
 
       await peer.open();
@@ -383,6 +389,7 @@ class Bitcoin extends Service {
   }
 
   async _startLocalNode () {
+    console.log('[SERVICES:BITCOIN]', 'Starting fullnode for network "', this.settings.network, '"...');
     await this.fullnode.open();
     await this.fullnode.connect();
   }
@@ -396,6 +403,7 @@ class Bitcoin extends Service {
   }
 
   async start () {
+    console.log('[SERVICES:BITCOIN]', 'Starting for network "', this.settings.network, '"...');
     await this.wallet.start();
     await this._startLocalNode();
     // await this._connectToSeedNodes();
