@@ -34,6 +34,7 @@ class Service extends Scribe {
   /**
    * Create an instance of a Service.
    * @param       {Object} config Configuration for this service.
+   * @param       {Boolean} [config.networking=true] Whether or not to connect to the network.
    * @param       {Object} [config.@data] Internal data to assign.
    */
   constructor (config) {
@@ -44,6 +45,7 @@ class Service extends Scribe {
     this.settings = this.config = Object.assign({
       name: 'service',
       path: './stores/service',
+      networking: true,
       verbosity: 2, // 0 none, 1 error, 2 warning, 3 notice, 4 debug
       // TODO: export this as the default data in `inputs/fabric.json`
       // If the sha256(JSON.stringify(this.data)) is equal to this, it's
@@ -364,6 +366,10 @@ class Service extends Scribe {
       this.state = state;
     } catch (E) {
       this.warn('[DOORMAN:SERVICE]', 'Could not restore state:', E);
+    }
+
+    if (this.settings.networking) {
+      await this.swarm.start();
     }
 
     this.connection = null;
