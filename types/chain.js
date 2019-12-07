@@ -5,6 +5,7 @@ const Ledger = require('./ledger');
 const Stack = require('./stack');
 const State = require('./state');
 const Store = require('./store');
+const Worker = require('./worker');
 
 /**
  * Chain.
@@ -18,17 +19,21 @@ class Chain extends Ledger {
    * Holds an immutable chain of events.
    * @param       {Vector} genesis Initial state for the chain of events.
    */
-  constructor (origin) {
+  constructor (origin = {}) {
     super(origin);
 
     this.name = (origin) ? origin.name : 'playnet';
     this.config = Object.assign({
       name: this.name,
-      type: 'sha256'
+      type: 'sha256',
+      validator: this.validate.bind(this)
     }, origin);
 
-    this.genesis = new State(this.config);
-    this.state['@data'] = this.genesis['@data'];
+    this.genesis = new Block(this.config);
+    this.miner = new Worker({ method: 'sha256' });
+    this.state = {
+      blocks: []
+    };
 
     // TODO: set this up via define?
     this.indices = {
@@ -165,6 +170,12 @@ class Chain extends Ledger {
     return blocks;
   }
 
+  async _setGenesis (genesis) {
+    let sample = new Chain(genesis);
+    this.config = sample.config;
+    this.genesis = new Block(genesis);
+  }
+
   async mine () {
     let block = new State({
       parent: this.id
@@ -204,6 +215,14 @@ class Chain extends Ledger {
     this.log(`Verification Level ${level} running from -${depth}...`);
     console.log('root:', this.root);
     return (this['@id'] === this.root);
+  }
+
+  validate (chain) {
+    let valid = false;
+    for (let i = 0; i < chain.height; i++) {
+      let block = chain.blocks[i];
+    }
+    return valid;
   }
 
   render () {

@@ -19,8 +19,9 @@ class Scribe extends State {
     super(config);
 
     // assign the defaults;
-    this.config = Object.assign({
+    this.settings = this.config = Object.assign({
       verbose: true,
+      verbosity: 2, // 0 none, 1 error, 2 warning, 3 notice, 4 debug
       path: './stores/scribe'
     }, config);
 
@@ -81,7 +82,7 @@ class Scribe extends State {
     inputs.unshift(`[${this.constructor.name.toUpperCase()}]`);
     inputs.unshift(`[${now}]`);
 
-    if (this.config && this.config.verbose) {
+    if (this.settings.verbosity >= 3) {
       console.log.apply(null, this.tags.concat(inputs));
     }
 

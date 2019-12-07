@@ -24,7 +24,7 @@ class App extends Scribe {
 
     if (!definition.resources) definition.resources = {};
 
-    this['@data'] = Object.assign({
+    this.settings = this['@data'] = Object.assign({
       seed: 1
     }, definition);
 

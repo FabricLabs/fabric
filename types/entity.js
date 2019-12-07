@@ -28,6 +28,7 @@ class Entity extends Events.EventEmitter {
     this.actor = Object.assign({}, this._downsample(data));
     this.data = Object.assign({}, data);
 
+    // TODO: use getters/setters to restrict access to these elements
     // remove EventEmitter cruft
     Object.defineProperty(this, '_events', { enumerable: false });
     Object.defineProperty(this, '_eventsCount', { enumerable: false });
@@ -39,6 +40,17 @@ class Entity extends Events.EventEmitter {
 
     // return instance
     return this;
+  }
+
+  get version () {
+    return 1;
+  }
+
+  get buffer () {
+    let entity = this;
+    return function buffer () {
+      return Buffer.from(entity.toJSON(), 'utf8');
+    }
   }
 
   get id () {
@@ -104,6 +116,10 @@ class Entity extends Events.EventEmitter {
     return Buffer.from(this.toJSON(), 'utf8');
   }
 
+  /**
+   * Return a {@link Fabric}-labeled {@link Object} for this {@link Entity}.
+   * @param {Mixed} [input] Input to downsample.  If not provided, current Entity will be used. 
+   */
   _downsample (input) {
     let result = {};
 

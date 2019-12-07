@@ -1,6 +1,10 @@
 'use strict';
 
+const Collection = require('./collection');
+const EncryptedPromise = require('./promise');
+const Entity = require('./entity');
 const Machine = require('./machine');
+const Router = require('./router');
 const Service = require('./service');
 
 /**
@@ -16,7 +20,12 @@ class Worker extends Service {
     // self.worker = new Worker('validator.js');
     this.method = method;
     this.machine = new Machine();
+    this.router = new Router();
     this.behaviors = {};
+  }
+
+  use (definition) {
+    return this.router.use(definition);
   }
 
   /**
@@ -26,6 +35,8 @@ class Worker extends Service {
    */
   async compute (input) {
     let output = await this.machine.compute(input);
+
+    console.log('[FABRIC:WORKER]', this.machine.clock, 'Computed output:', output);
 
     switch (input) {
       case 'PING':

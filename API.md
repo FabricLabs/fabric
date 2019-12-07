@@ -12,6 +12,12 @@ Fabric-based networking and storage.</p>
 <dt><a href="#Chain">Chain</a></dt>
 <dd><p>Chain.</p>
 </dd>
+<dt><a href="#Circuit">Circuit</a></dt>
+<dd><p>The <a href="#Circuit">Circuit</a> is the mechanism through which <a href="Fabric">Fabric</a>
+operates, a computable directed graph for execution be a network
+of <a href="#Peer">Peer</a> components.  See also <a href="#Swarm">Swarm</a> for deeper
+inspection of <a href="#Machine">Machine</a> mechanics.</p>
+</dd>
 <dt><a href="#CLI">CLI</a></dt>
 <dd><p>Base class for a terminal-like interface to the Fabric network.</p>
 </dd>
@@ -23,6 +29,9 @@ Fabric-based networking and storage.</p>
 </dd>
 <dt><a href="#Entity">Entity</a> : <code>Object</code></dt>
 <dd><p>Live instance of an ARC in Fabric.</p>
+</dd>
+<dt><a href="#Hash256">Hash256</a></dt>
+<dd><p>Simple interaction with 256-bit spaces.</p>
 </dd>
 <dt><a href="#Ledger">Ledger</a> ⇐ <code><a href="#Scribe">Scribe</a></code></dt>
 <dd><p>An ordered stack of pages.</p>
@@ -38,6 +47,10 @@ selectively disclosing new routes to peers which may have open circuits.</p>
 <dt><a href="#Oracle">Oracle</a> ⇐ <code><a href="#Store">Store</a></code></dt>
 <dd><p>An Oracle manages one or more collections, using a <code>mempool</code> for
 transitive state.</p>
+</dd>
+<dt><a href="#Path">Path</a></dt>
+<dd><p>A <a href="#Path">Path</a> is a <a href="Fabric">Fabric</a>-native link to a <a href="Document">Document</a>
+within the network.</p>
 </dd>
 <dt><a href="#Peer">Peer</a></dt>
 <dd><p>An in-memory representation of a node in our network.</p>
@@ -79,13 +92,25 @@ committing to the outcome.  This workflow keeps app design quite simple!</p>
 <dt><a href="#Store">Store</a></dt>
 <dd><p>Long-term storage.</p>
 </dd>
+<dt><a href="#Swap">Swap</a> : <code>Object</code></dt>
+<dd><p>The <a href="#Swap">Swap</a> contract executes a set of transactions on two distinct
+<a href="#Chain">Chain</a> components, utilizing a secret-reveal mechanism to atomically
+execute either the full set or none.</p>
+</dd>
 <dt><a href="#Swarm">Swarm</a> : <code>String</code></dt>
 <dd><p>The <a href="#Swarm">Swarm</a> represents a network of peers.</p>
+</dd>
+<dt><a href="#Transition">Transition</a></dt>
+<dd><p>The <a href="#Transition">Transition</a> type reflects a change from one finite
+<a href="#State">State</a> to another.</p>
 </dd>
 <dt><a href="#Vector">Vector</a></dt>
 <dd></dd>
 <dt><a href="#Walker">Walker</a></dt>
 <dd></dd>
+<dt><a href="#Wallet">Wallet</a> : <code>Object</code></dt>
+<dd><p>Manage keys and track their balances.</p>
+</dd>
 <dt><a href="#Worker">Worker</a></dt>
 <dd><p>Workers are arbitrary containers for processing data.  They can be thought of
 almost like &quot;threads&quot;, as they run asynchronously over the duration of a
@@ -423,6 +448,15 @@ Holds an immutable chain of events.
 | --- | --- | --- |
 | genesis | [<code>Vector</code>](#Vector) | Initial state for the chain of events. |
 
+<a name="Circuit"></a>
+
+## Circuit
+The [Circuit](#Circuit) is the mechanism through which [Fabric](Fabric)
+operates, a computable directed graph for execution be a network
+of [Peer](#Peer) components.  See also [Swarm](#Swarm) for deeper
+inspection of [Machine](#Machine) mechanics.
+
+**Kind**: global class  
 <a name="CLI"></a>
 
 ## CLI
@@ -474,6 +508,41 @@ The [Collection](#Collection) type maintains an ordered list of [State](#State) 
 | --- | --- | --- |
 | @entity | <code>Object</code> | Fabric-bound entity object. |
 
+
+* [Collection](#Collection)
+    * [new Collection([configuration])](#new_Collection_new)
+    * [.getByID(id)](#Collection+getByID)
+    * [.getLatest()](#Collection+getLatest)
+    * [.push(data)](#Collection+push) ⇒ <code>Number</code>
+    * [.create(entity)](#Collection+create) ⇒ <code>Promise</code>
+
+<a name="new_Collection_new"></a>
+
+### new Collection([configuration])
+Create a list of [Entity](#Entity)-like objects for later retrieval.
+
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [configuration] | <code>Object</code> | <code>{}</code> | Configuration object. |
+
+<a name="Collection+getByID"></a>
+
+### collection.getByID(id)
+Retrieve an element from the collection by ID.
+
+**Kind**: instance method of [<code>Collection</code>](#Collection)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| id | <code>String</code> | Document identifier. |
+
+<a name="Collection+getLatest"></a>
+
+### collection.getLatest()
+Retrieve the most recent element in the collection.
+
+**Kind**: instance method of [<code>Collection</code>](#Collection)  
 <a name="Collection+push"></a>
 
 ### collection.push(data) ⇒ <code>Number</code>
@@ -485,6 +554,18 @@ Adds an [Entity](#Entity) to the [Collection](#Collection).
 | Param | Type | Description |
 | --- | --- | --- |
 | data | <code>Mixed</code> | [Entity](#Entity) to add. |
+
+<a name="Collection+create"></a>
+
+### collection.create(entity) ⇒ <code>Promise</code>
+Create an instance of an [Entity](#Entity).
+
+**Kind**: instance method of [<code>Collection</code>](#Collection)  
+**Returns**: <code>Promise</code> - Resolves with instantiated [Entity](#Entity).  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| entity | <code>Object</code> | Object with properties. |
 
 <a name="Compiler"></a>
 
@@ -513,6 +594,7 @@ Live instance of an ARC in Fabric.
     * [new Entity([data])](#new_Entity_new)
     * [.toJSON()](#Entity+toJSON) ⇒ <code>String</code>
     * [.toRaw()](#Entity+toRaw) ⇒ <code>Buffer</code>
+    * [._downsample([input])](#Entity+_downsample)
 
 <a name="new_Entity_new"></a>
 
@@ -538,6 +620,52 @@ As a [Buffer](Buffer).
 
 **Kind**: instance method of [<code>Entity</code>](#Entity)  
 **Returns**: <code>Buffer</code> - Slice of memory.  
+<a name="Entity+_downsample"></a>
+
+### entity.\_downsample([input])
+Return a [Fabric](Fabric)-labeled [Object](Object) for this [Entity](#Entity).
+
+**Kind**: instance method of [<code>Entity</code>](#Entity)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [input] | <code>Mixed</code> | Input to downsample.  If not provided, current Entity will be used. |
+
+<a name="Hash256"></a>
+
+## Hash256
+Simple interaction with 256-bit spaces.
+
+**Kind**: global class  
+
+* [Hash256](#Hash256)
+    * [new Hash256(settings)](#new_Hash256_new)
+    * [.digest(input)](#Hash256.digest) ⇒ <code>String</code>
+
+<a name="new_Hash256_new"></a>
+
+### new Hash256(settings)
+Create an instance of a `Hash256` object by calling `new Hash256()`,
+where `settings` can be provided to supply a particular input object.
+
+If the `settings` is not a string, `input` must be provided.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| settings | <code>Object</code> |  |
+| settings.input | <code>String</code> | Input string to map as 256-bit hash. |
+
+<a name="Hash256.digest"></a>
+
+### Hash256.digest(input) ⇒ <code>String</code>
+**Kind**: static method of [<code>Hash256</code>](#Hash256)  
+**Returns**: <code>String</code> - `SHA256(input)` as a hexadecimal string.  
+
+| Param | Type |
+| --- | --- |
+| input | <code>String</code> | 
+
 <a name="Ledger"></a>
 
 ## Ledger ⇐ [<code>Scribe</code>](#Scribe)
@@ -782,6 +910,33 @@ Start running the process.
 **Kind**: instance method of [<code>Oracle</code>](#Oracle)  
 **Overrides**: [<code>start</code>](#Store+start)  
 **Returns**: <code>Promise</code> - Resolves on complete.  
+<a name="Path"></a>
+
+## Path
+A [Path](#Path) is a [Fabric](Fabric)-native link to a [Document](Document)
+within the network.
+
+**Kind**: global class  
+
+* [Path](#Path)
+    * [new Path(input)](#new_Path_new)
+    * [.isValid()](#Path+isValid) ⇒ <code>Boolean</code>
+
+<a name="new_Path_new"></a>
+
+### new Path(input)
+Create a new [Path](#Path).
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>String</code> \| <code>Object</code> | Named path. |
+
+<a name="Path+isValid"></a>
+
+### path.isValid() ⇒ <code>Boolean</code>
+**Kind**: instance method of [<code>Path</code>](#Path)  
+**Returns**: <code>Boolean</code> - Whether or not the Path is valid.  
 <a name="Peer"></a>
 
 ## Peer
@@ -1305,6 +1460,7 @@ committing to the outcome.  This workflow keeps app design quite simple!
         * [.toString()](#State+toString) ⇒ <code>String</code>
         * [.serialize([input])](#State+serialize) ⇒ <code>Buffer</code>
         * [.deserialize(input)](#State+deserialize) ⇒ [<code>State</code>](#State)
+        * [.get(path)](#State+get)
         * [.render()](#State+render) ⇒ <code>String</code>
     * _static_
         * [.fromJSON(input)](#State.fromJSON) ⇒ [<code>State</code>](#State)
@@ -1349,6 +1505,17 @@ Take a hex-encoded input and convert to a [State](#State) object.
 | Param | Type | Description |
 | --- | --- | --- |
 | input | <code>String</code> | [description] |
+
+<a name="State+get"></a>
+
+### state.get(path)
+Retrieve a key from
+
+**Kind**: instance method of [<code>State</code>](#State)  
+
+| Param | Type |
+| --- | --- |
+| path | [<code>Path</code>](#Path) | 
 
 <a name="State+render"></a>
 
@@ -1485,6 +1652,43 @@ Start running the process.
 
 **Kind**: instance method of [<code>Store</code>](#Store)  
 **Returns**: <code>Promise</code> - Resolves on complete.  
+<a name="Swap"></a>
+
+## Swap : <code>Object</code>
+The [Swap](#Swap) contract executes a set of transactions on two distinct
+[Chain](#Chain) components, utilizing a secret-reveal mechanism to atomically
+execute either the full set or none.
+
+**Kind**: global class  
+
+* [Swap](#Swap) : <code>Object</code>
+    * [new Swap([settings])](#new_Swap_new)
+    * [.extractSecret(tx, address)](#Swap+extractSecret) ⇒ <code>Mixed</code>
+
+<a name="new_Swap_new"></a>
+
+### new Swap([settings])
+Atomically execute a set of transactions across two [Chain](#Chain) components.
+
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [settings] | <code>Object</code> | <code>{}</code> | Configuration for the swap. |
+
+<a name="Swap+extractSecret"></a>
+
+### swap.extractSecret(tx, address) ⇒ <code>Mixed</code>
+Find an input from the provided transaction which spends from the target
+P2SH address.
+
+**Kind**: instance method of [<code>Swap</code>](#Swap)  
+**Returns**: <code>Mixed</code> - False on failure, secret value on success.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| tx | <code>Transaction</code> | [Transaction](Transaction) to iterate over. |
+| address | <code>String</code> | P2SH address to search for. |
+
 <a name="Swarm"></a>
 
 ## Swarm : <code>String</code>
@@ -1513,6 +1717,21 @@ Begin computing.
 
 **Kind**: instance method of [<code>Swarm</code>](#Swarm)  
 **Returns**: <code>Promise</code> - Resolves to instance of [Swarm](#Swarm).  
+<a name="Transition"></a>
+
+## Transition
+The [Transition](#Transition) type reflects a change from one finite
+[State](#State) to another.
+
+**Kind**: global class  
+<a name="new_Transition_new"></a>
+
+### new Transition(settings)
+
+| Param | Type | Description |
+| --- | --- | --- |
+| settings | <code>Object</code> | Configuration for the transition object. |
+
 <a name="Vector"></a>
 
 ## Vector
@@ -1602,6 +1821,139 @@ Explores a directory tree on the local system's disk.
 | dir | <code>String</code> |  | Path to crawl on local disk. |
 | [map] | <code>Object</code> | <code>{}</code> | Pointer to previous step in stack. |
 
+<a name="Wallet"></a>
+
+## Wallet : <code>Object</code>
+Manage keys and track their balances.
+
+**Kind**: global class  
+**Properties**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| id | <code>String</code> | Unique identifier for this [Wallet](#Wallet). |
+
+
+* [Wallet](#Wallet) : <code>Object</code>
+    * [new Wallet([settings], [verbosity])](#new_Wallet_new)
+    * [.getAddressForScript(script)](#Wallet+getAddressForScript)
+    * [.getAddressFromRedeemScript(redeemScript)](#Wallet+getAddressFromRedeemScript)
+    * [.createPricedOrder(order)](#Wallet+createPricedOrder)
+    * [._sign(tx)](#Wallet+_sign)
+    * [._createCrowdfund(fund)](#Wallet+_createCrowdfund)
+    * [._getSwapInputScript(redeemScript, secret)](#Wallet+_getSwapInputScript)
+    * [._getRefundInputScript(redeemScript)](#Wallet+_getRefundInputScript)
+    * [._load(settings)](#Wallet+_load)
+    * [.start()](#Wallet+start)
+
+<a name="new_Wallet_new"></a>
+
+### new Wallet([settings], [verbosity])
+Create an instance of a [Wallet](#Wallet).
+
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [settings] | <code>Object</code> | <code>{}</code> | Configure the wallet. |
+| [verbosity] | <code>Number</code> | <code>2</code> | One of: 0 (none), 1 (error), 2 (warning), 3 (notice), 4 (debug), 5 (audit) |
+
+<a name="Wallet+getAddressForScript"></a>
+
+### wallet.getAddressForScript(script)
+Returns a bech32 address for the provided [Script](#Script).
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+
+| Param | Type |
+| --- | --- |
+| script | [<code>Script</code>](#Script) | 
+
+<a name="Wallet+getAddressFromRedeemScript"></a>
+
+### wallet.getAddressFromRedeemScript(redeemScript)
+Generate a [BitcoinAddress](BitcoinAddress) for the supplied [BitcoinScript](BitcoinScript).
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+
+| Param | Type |
+| --- | --- |
+| redeemScript | <code>BitcoinScript</code> | 
+
+<a name="Wallet+createPricedOrder"></a>
+
+### wallet.createPricedOrder(order)
+Create a priced order.
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+
+| Param | Type |
+| --- | --- |
+| order | <code>Object</code> | 
+| order.asset | <code>Object</code> | 
+| order.amount | <code>Object</code> | 
+
+<a name="Wallet+_sign"></a>
+
+### wallet.\_sign(tx)
+Signs a transaction with the keyring.
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+
+| Param | Type |
+| --- | --- |
+| tx | <code>BcoinTX</code> | 
+
+<a name="Wallet+_createCrowdfund"></a>
+
+### wallet.\_createCrowdfund(fund)
+Create a crowdfunding transaction.
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+
+| Param | Type |
+| --- | --- |
+| fund | <code>Object</code> | 
+
+<a name="Wallet+_getSwapInputScript"></a>
+
+### wallet.\_getSwapInputScript(redeemScript, secret)
+Generate [Script](#Script) for claiming a [Swap](#Swap).
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+
+| Param | Type |
+| --- | --- |
+| redeemScript | <code>\*</code> | 
+| secret | <code>\*</code> | 
+
+<a name="Wallet+_getRefundInputScript"></a>
+
+### wallet.\_getRefundInputScript(redeemScript)
+Generate [Script](#Script) for reclaiming funds commited to a [Swap](#Swap).
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+
+| Param | Type |
+| --- | --- |
+| redeemScript | <code>\*</code> | 
+
+<a name="Wallet+_load"></a>
+
+### wallet.\_load(settings)
+Initialize the wallet, including keys and addresses.
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+
+| Param | Type |
+| --- | --- |
+| settings | <code>Object</code> | 
+
+<a name="Wallet+start"></a>
+
+### wallet.start()
+Start the wallet, including listening for transactions.
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
 <a name="Worker"></a>
 
 ## Worker

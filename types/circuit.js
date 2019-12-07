@@ -12,8 +12,10 @@ class Circuit extends Service {
     super(config);
 
     this.config = Object.assign({
+      edges: [],
       gates: [],
       loops: [],
+      nodes: [],
       wires: []
     }, config);
 
@@ -21,12 +23,15 @@ class Circuit extends Service {
 
     this.transitions = [];
     this.methods = {};
-    this.state = {};
+    this.state = {
+      edges: [],
+      nodes: []
+    };
 
     for (let i in this.config.gates) {
       this.transitions.push({
-        name: `start`,
-        from: 'init',
+        name: `step`,
+        from: 'cycle()',
         to: `${this.config.gates[i]}`
       });
     }
@@ -36,11 +41,8 @@ class Circuit extends Service {
       this.transitions.push({ name: wire.name, from: wire.from, to: wire.to });
     }
 
-    console.log('transitions:', this.transitions);
-    console.log('wires:', this.wires);
-
     this.graph = new StateMachine({
-      init: 'init',
+      init: 'start()',
       data: this.state,
       transitions: this.transitions,
       methods: this.methods
@@ -55,7 +57,9 @@ class Circuit extends Service {
 
   get dot () {
     // TODO: generate polynomial for circuit
-    return visualize(this.graph);
+    return visualize(this.graph, {
+      orientation: 'horizontal'
+    });
   }
 
   _registerMethod (name, method) {

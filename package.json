@@ -1,6 +1,6 @@
 {
   "name": "@fabric/core",
-  "version": "0.1.0-alpha",
+  "version": "0.1.0-RC1",
   "description": "experimental p2p framework",
   "main": "lib/fabric.js",
   "module": "index.js",
@@ -17,26 +17,29 @@
     "cli": "node examples/cli.js",
     "coverage": "nyc npm test",
     "docs": "npm run make:api && ecstatic docs",
-    "examples": "npm run make:examples && ecstatic examples",
+    "examples": "npm run make:examples && ecstatic assets/examples",
     "local": "npm run build && ecstatic ./assets",
     "make:all": "npm run make:api && npm run make:service && npm run make:app && npm run make:docs && npm run make:lib",
-    "make:api": "npm run parse:api && node_modules/.bin/jsdoc index.js types/ README.md -d docs/ && glob-run js-beautify --indent-size 2 -r docs/*.html",
+    "make:api": "npm run parse:api && node_modules/.bin/jsdoc -c jsdoc.json index.js types/ README.md -d docs/ && glob-run js-beautify --indent-size 2 -r docs/*.html",
     "make:app": "webpack --progress examples/app.js assets/app.js",
     "make:coverage": "nyc report --reporter html npm test",
     "make:docs": "gitbook install && npm run parse:api && npm run make:examples && gitbook build",
-    "make:examples": "docco --output examples/ examples/*.js",
-    "make:lib": "NODE_ENV=production webpack lib/fabric.js assets/fabric.min.js",
+    "make:examples": "docco --output assets/examples/ examples/*.js",
+    "make:lib": "NODE_ENV=production webpack lib/fabric.js -o assets/fabric.min.js",
     "make:service": "NODE_ENV=production webpack --target=webworker examples/service.js assets/service.js",
+    "make:viewer": "NODE_ENV=production webpack components/circuit-viewer.js -o assets/viewer.min.js",
     "parse:api": "jsdoc2md --configure jsdoc.json --files index.js types/** README.md > API.md",
     "review:coverage": "npm run make:coverage && ecstatic reports/code-coverage",
     "review:todo": "grep --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs -rEI \"TODO|FIXME\" . 2>/dev/null > reports/todo.txt",
     "start": "node scripts/app.js",
     "static": "npm run build:scripts && ecstatic assets",
     "test:app": "npm run make:service && npm run make:app && NODE_ENV=test mocha tests/fabric.app.js",
-    "test": "mkdir -p stores && NODE_ENV=test mocha tests/fabric.core.js"
+    "test:bitcoin": "mocha tests/bitcoin.core.js",
+    "test:ethereum": "mocha tests/ethereum.core.js",
+    "test": "mkdir -p stores && NODE_ENV=test mocha tests"
   },
   "engines": {
-    "node": ">= 8.9.0"
+    "node": ">= 10.0.0"
   },
   "repository": {
     "type": "git",
@@ -57,10 +60,15 @@
   },
   "homepage": "https://github.com/FabricLabs/fabric#readme",
   "dependencies": {
+    "@webassemblyjs/ast": "^1.8.5",
     "arbitrary": "^1.4.10",
     "base58check": "^2.0.0",
+    "bcash": "^1.1.1",
+    "bcoin": "^1.0.2",
     "dotparser": "^0.3.0",
     "elliptic": "^6.4.0",
+    "ethereumjs-account": "^3.0.0",
+    "ethereumjs-vm": "^4.1.0",
     "fast-json-patch": "^2.0.7",
     "gitbook-plugin-page-toc": "^1.1.1",
     "glob-run": "^0.1.6",
@@ -75,7 +83,9 @@
     "mkdirp": "^0.5.1",
     "node-fetch": "^2.6.0",
     "path-match": "^1.2.4",
-    "rimraf": "^2.6.2"
+    "pluralize": "^8.0.0",
+    "rimraf": "^2.6.2",
+    "struct": "^0.0.12"
   },
   "devDependencies": {
     "@fabric/http": "FabricLabs/web#fabric-0.1.0-develop",

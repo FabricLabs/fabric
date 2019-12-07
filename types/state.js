@@ -120,8 +120,7 @@ class State extends EventEmitter {
       }
     }
 
-    // always commit before resolving
-    this.commit();
+    this.state = {};
 
     return this;
   }
@@ -158,6 +157,23 @@ class State extends EventEmitter {
   static fromString (input) {
     if (typeof input !== 'string') return null;
     return this.fromJSON(input);
+  }
+
+  async _getState () {
+    let self = this;
+    let results = await Promise.all([
+      async function () {
+        return self.state;
+      }
+    ]).then(([
+      state
+    ]) => {
+      return {
+        state
+      };
+    }).catch(e => console.error(e));
+
+    return results;
   }
 
   sha256 (value) {
@@ -223,7 +239,7 @@ ${confirmed}
 ### Free as in _freedom_.
 Labs: https://github.com/FabricLabs
 
-To edit this message, visit this URL: https://github.com/FabricLabs/fabric/edit/master/lib/state.js
+To edit this message, visit this URL: https://github.com/FabricLabs/fabric/edit/master/types/state.js
 
 ## Onboarding
 When you're ready to continue, visit the following URL: https://dev.fabric.pub/WELCOME.html
@@ -357,14 +373,13 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
   }
 
   get (path) {
-    console.log('getting:', path);
-    return pointer.get(this['@entity']['@data'], path);
+    return pointer.get(this.state, path);
   }
 
   set (path, value) {
-    console.log('setting:', path, value);
+    // console.log('setting:', path, value);
     pointer.set(this.state, path, value);
-    let result = pointer.set(this['@entity']['@data'], path, value);
+    let result = pointer.set(this.state, path, value);
     this.commit();
     return result;
   }
