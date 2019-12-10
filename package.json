@@ -1,121 +1,127 @@
 {
-  "name": "fabric",
-  "version": "0.1.0-dev",
+  "name": "@fabric/core",
+  "version": "0.1.0-RC1",
   "description": "experimental p2p framework",
-  "main": "index.js",
+  "main": "lib/fabric.js",
+  "module": "index.js",
   "directories": {
     "doc": "docs",
+    "example": "examples",
     "test": "tests"
   },
   "scripts": {
-    "build": "npm run make:service && npm run make:app && npm run make:docs",
-    "cli": "babel-node examples/cli.js",
-    "coverage": "cross-env NODE_ENV=test nyc --reporter=lcov _mocha",
-    "coverage:inspect": "npm run coverage && http-server coverage/lcov-report",
-    "docs": "gitbook install && npm run parse:api && gitbook serve",
-    "examples": "docco --output examples/ examples/app.js examples/oracle.js && http-server examples/",
-    "make:api": "jsdoc --debug index.js lib/ -d docs/",
-    "make:app": "webpack --progress --colors examples/app.js assets/app.js",
-    "make:docs": "gitbook install && npm run parse:api && gitbook build",
-    "make:service": "webpack --progress --colors examples/service.js assets/service.js",
-    "parse:api": "jsdoc2md --configure jsdoc.json --files index.js lib/**/*.js > docs/api.md",
-    "start": "npm run make:service && webpack --progress --colors examples/app.js assets/app.js && babel-node examples/oracle.js",
-    "test": "cross-env NODE_ENV=test nyc mocha",
-    "test:app": "npm run make:service && npm run make:app && NODE_ENV=test mocha"
+    "book": "npm run make:docs && ecstatic _book",
+    "build": "npm run make:all",
+    "build:all": "npm run make:all",
+    "chat": "node examples/chat.js",
+    "cli": "node examples/cli.js",
+    "coverage": "nyc npm test",
+    "docs": "npm run make:api && ecstatic docs",
+    "examples": "npm run make:examples && ecstatic assets/examples",
+    "local": "npm run build && ecstatic ./assets",
+    "make:all": "npm run make:api && npm run make:service && npm run make:app && npm run make:docs && npm run make:lib",
+    "make:api": "npm run parse:api && node_modules/.bin/jsdoc -c jsdoc.json index.js types/ README.md -d docs/ && glob-run js-beautify --indent-size 2 -r docs/*.html",
+    "make:app": "webpack --progress examples/app.js assets/app.js",
+    "make:coverage": "nyc report --reporter html npm test",
+    "make:docs": "gitbook install && npm run parse:api && npm run make:examples && gitbook build",
+    "make:examples": "docco --output assets/examples/ examples/*.js",
+    "make:lib": "NODE_ENV=production webpack lib/fabric.js -o assets/fabric.min.js",
+    "make:service": "NODE_ENV=production webpack --target=webworker examples/service.js assets/service.js",
+    "make:viewer": "NODE_ENV=production webpack components/circuit-viewer.js -o assets/viewer.min.js",
+    "parse:api": "jsdoc2md --configure jsdoc.json --files index.js types/** README.md > API.md",
+    "review:coverage": "npm run make:coverage && ecstatic reports/code-coverage",
+    "review:todo": "grep --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs -rEI \"TODO|FIXME\" . 2>/dev/null > reports/todo.txt",
+    "start": "node scripts/app.js",
+    "static": "npm run build:scripts && ecstatic assets",
+    "test:app": "npm run make:service && npm run make:app && NODE_ENV=test mocha tests/fabric.app.js",
+    "test:bitcoin": "mocha tests/bitcoin.core.js",
+    "test:ethereum": "mocha tests/ethereum.core.js",
+    "test": "mkdir -p stores && NODE_ENV=test mocha tests"
   },
   "engines": {
-    "node": ">= 8.9.0"
+    "node": ">= 10.0.0"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/martindale/fabric.git"
+    "url": "git+https://github.com/FabricLabs/fabric.git"
   },
   "keywords": [
-    "fabric"
+    "fabric",
+    "p2p",
+    "application",
+    "architecture",
+    "serverless",
+    "web"
   ],
-  "author": "Eric Martindale",
+  "author": "Fabric Labs",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/martindale/fabric/issues"
+    "url": "https://github.com/FabricLabs/fabric/issues"
   },
-  "homepage": "https://github.com/martindale/fabric#readme",
+  "homepage": "https://github.com/FabricLabs/fabric#readme",
   "dependencies": {
-    "ajv": "^5.5.2",
-    "babel-polyfill": "^6.26.0",
-    "fast-json-patch": "^2.0.4",
-    "hash.js": "^1.1.3",
-    "hashcasher": "martindale/hashcasher#fabric",
-    "javascript-state-machine": "^3.0.1",
-    "level": "^2.0.0",
-    "localforage": "^1.5.3",
-    "lodash.merge": "^4.6.0",
+    "@webassemblyjs/ast": "^1.8.5",
+    "arbitrary": "^1.4.10",
+    "base58check": "^2.0.0",
+    "bcash": "^1.1.1",
+    "bcoin": "^1.0.2",
+    "dotparser": "^0.3.0",
+    "elliptic": "^6.4.0",
+    "ethereumjs-account": "^3.0.0",
+    "ethereumjs-vm": "^4.1.0",
+    "fast-json-patch": "^2.0.7",
+    "gitbook-plugin-page-toc": "^1.1.1",
+    "glob-run": "^0.1.6",
+    "jade-lexer": "0.0.9",
+    "jade-parser": "0.0.9",
+    "javascript-state-machine": "^3.1.0",
+    "js-beautify": "^1.10.0",
+    "jsdoc-to-markdown": "^4.0.1",
+    "json-pointer": "^0.6.0",
+    "level": "^5.0.1",
+    "merkletreejs": "^0.1.6",
     "mkdirp": "^0.5.1",
+    "node-fetch": "^2.6.0",
     "path-match": "^1.2.4",
-    "ssri": "^5.0.0",
-    "webworker-threads": "^0.7.13",
-    "wreck": "^14.0.2",
-    "wrtc": "^0.0.63"
+    "pluralize": "^8.0.0",
+    "rimraf": "^2.6.2",
+    "struct": "^0.0.12"
   },
   "devDependencies": {
-    "babel-cli": "^6.26.0",
-    "babel-core": "^6.26.0",
-    "babel-plugin-istanbul": "^4.1.5",
-    "babel-preset-env": "^1.6.1",
-    "babel-preset-es2017": "^6.24.1",
-    "babel-register": "^6.26.0",
+    "@fabric/http": "FabricLabs/web#fabric-0.1.0-develop",
     "blessed": "^0.1.81",
-    "blessed-contrib": "^4.8.5",
     "body-parser": "^1.18.2",
     "chai": "^4.0.2",
-    "codecov": "^3.0.0",
+    "codecov": "^3.2.0",
     "compiled-jade-render": "^1.0.2",
     "cross-env": "^5.1.3",
     "debug-trace": "^2.2.1",
     "docco": "^0.7.0",
     "eccrypto": "^1.0.3",
+    "ecstatic": "^3.3.0",
+    "eslint": "^5.6.0",
     "express": "^4.16.2",
+    "gitbook-cli": "^2.3.2",
+    "gitbook-plugin-edit-link": "^2.0.2",
+    "gitbook-plugin-exercises": "^3.0.0",
+    "gitbook-plugin-page-toc": "^1.1.0",
     "gitbook-plugin-scripts": "^1.0.2",
-    "http-server": "^0.10.0",
-    "istanbul": "0.4.4",
-    "jade": "^1.11.0",
-    "jsdoc": "^3.5.5",
-    "jsdoc-babel": "^0.3.0",
-    "jsdoc-to-markdown": "^3.0.1",
-    "livereload": "^0.6.2",
-    "mocha": "^3.4.2",
-    "nyc": "^11.4.1",
+    "jsdoc": "FabricLabs/jsdoc#fabric",
+    "json-to-dot": "^1.1.0",
+    "localforage": "^1.7.2",
+    "mocha": "^5.2.0",
+    "nyc": "^13.1.0",
     "page": "^1.7.1",
-    "random-weighted-item": "^1.0.3",
+    "raw-loader": "^0.5.1",
     "semistandard": "^11.0.0",
-    "static": "^2.0.0",
-    "testling": "^1.7.1",
-    "webpack": "^3.8.1",
-    "wopr": "martindale/wopr#exports"
-  },
-  "browserify": {
-    "level": "level-browserify"
-  },
-  "babel": {
-    "presets": [
-      "env"
-    ],
-    "env": {
-      "test": {
-        "plugins": [
-          "istanbul"
-        ]
-      }
-    }
+    "webpack": "4",
+    "webpack-cli": "3.3.2"
   },
   "nyc": {
-    "require": [
-      "babel-register"
+    "exclude": [
+      "tests",
+      "data"
     ],
-    "reporter": [
-      "lcov",
-      "text"
-    ],
-    "sourceMap": false,
-    "instrument": false
+    "report-dir": "./reports/code-coverage"
   }
 }

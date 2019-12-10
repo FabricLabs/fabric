@@ -1,0 +1,66 @@
+{
+  "@id": "bc128b68d26860b266226a5f4d435b44764beb899026bf13ff600facd3f18782",
+  "id": "bc128b68d26860b266226a5f4d435b44764beb899026bf13ff600facd3f18782",
+  "@data": {
+    "Asset": {
+      "name": "Asset",
+      "routes": {
+        "list": "/assets",
+        "view": "/assets/:id"
+      }
+    },
+    "Index": {
+      "name": "Index",
+      "routes": {
+        "list": "/"
+      },
+      "components": {
+        "list": "fabric-index"
+      },
+      "data": {}
+    },
+    "Widget": {
+      "name": "Widget",
+      "properties": {
+        "name": {
+          "type": "String",
+          "maxLength": 100
+        }
+      },
+      "routes": {
+        "list": "/widgets",
+        "view": "/widgets/:id"
+      }
+    }
+  },
+  "Asset": {
+    "name": "Asset",
+    "routes": {
+      "list": "/assets",
+      "view": "/assets/:id"
+    }
+  },
+  "Index": {
+    "name": "Index",
+    "routes": {
+      "list": "/"
+    },
+    "components": {
+      "list": "fabric-index"
+    },
+    "data": {}
+  },
+  "Widget": {
+    "name": "Widget",
+    "properties": {
+      "name": {
+        "type": "String",
+        "maxLength": 100
+      }
+    },
+    "routes": {
+      "list": "/widgets",
+      "view": "/widgets/:id"
+    }
+  }
+}

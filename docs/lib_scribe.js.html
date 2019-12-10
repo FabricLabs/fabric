@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>JSDoc: Source: lib/scribe.js</title>
+
+  <script src="scripts/prettify/prettify.js"> </script>
+  <script src="scripts/prettify/lang-css.js"> </script>
+  <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+  <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+  <div id="main">
+
+    <h1 class="page-title">Source: lib/scribe.js</h1>
+
+
+
+
+
+
+    <section>
+      <article>
+        <pre class="prettyprint source linenums"><code>'use strict';
+
+const crypto = require('crypto');
+
+// Fabric Components
+const State = require('./state');
+
+/**
+ * Simple tag-based recordkeeper.
+ * @property {Object} config Current configuration.
+ */
+class Scribe extends State {
+  /**
+   * The "Scribe" is a simple tag-based recordkeeper.
+   * @param       {Object} config General configuration object.
+   * @param       {Boolean} config.verbose Should the Scribe be noisy?
+   */
+  constructor (config = {}) {
+    super(config);
+
+    // assign the defaults;
+    this.config = Object.assign({
+      verbose: true,
+      path: './data/scribe'
+    }, config);
+
+    this.tags = [];
+    this.state = new State(config);
+
+    // signal ready
+    this.status = 'ready';
+
+    Object.defineProperty(this, 'tags', {
+      enumerable: false
+    });
+
+    return this;
+  }
+
+  now () {
+    // return new Date().toISOString();
+    return new Date().getTime();
+  }
+
+  sha256 (data) {
+    return crypto.createHash('sha256').update(data).digest('hex');
+  }
+
+  _sign () {
+    this.commit();
+  }
+
+  /**
+   * Blindly bind event handlers to the {@link Source}.
+   * @param  {Source} source Event stream.
+   * @return {Scribe}        Instance of the {@link Scribe}.
+   */
+  trust (source) {
+    let self = this;
+
+    source.on('transaction', async function (transaction) {
+      self.log('[SCRIBE]', '[EVENT:TRANSACTION]', 'apply this transaction to local state:', transaction);
+      self.log('[PROPOSAL]', 'apply this transaction to local state:', transaction);
+    });
+
+    return self;
+  }
+
+  /**
+   * Use an existing Scribe instance as a parent.
+   * @param  {Scribe} scribe Instance of Scribe to use as parent.
+   * @return {Scribe}        The configured instance of the Scribe.
+   */
+  inherits (scribe) {
+    return this.tags.push(scribe.config.namespace);
+  }
+
+  log (...inputs) {
+    let now = this.now();
+
+    inputs.unshift(`[${this.constructor.name.toUpperCase()}]`);
+    inputs.unshift(`[${now}]`);
+
+    if (this.config &amp;&amp; this.config.verbose) {
+      console.log.apply(null, this.tags.concat(inputs));
+    }
+
+    return this.emit('info', this.tags.concat(inputs));
+  }
+
+  error (...inputs) {
+    let now = this.now();
+
+    inputs.unshift(`[${this.constructor.name.toUpperCase()}]`);
+    inputs.unshift(`[${now}]`);
+
+    if (this.config.verbose) {
+      console.error.apply(null, this.tags.concat(inputs));
+    }
+
+    return this.emit('error', this.tags.concat(inputs));
+  }
+
+  warn (...inputs) {
+    let now = this.now();
+
+    inputs.unshift(`[${this.constructor.name.toUpperCase()}]`);
+    inputs.unshift(`[${now}]`);
+
+    if (this.config.verbose) {
+      console.warn.apply(null, this.tags.concat(inputs));
+    }
+
+    return this.emit('warning', this.tags.concat(inputs));
+  }
+
+  debug (...inputs) {
+    let now = this.now();
+
+    inputs.unshift(`[${this.constructor.name.toUpperCase()}]`);
+    inputs.unshift(`[${now}]`);
+
+    if (this.config.verbose) {
+      console.debug.apply(null, this.tags.concat(inputs));
+    }
+
+    return this.emit('debug', this.tags.concat(inputs));
+  }
+
+  async open () {
+    this.status = 'opened';
+    return this;
+  }
+
+  async close () {
+    this.status = 'closed';
+    return this;
+  }
+
+  async start () {
+    this.status = 'starting';
+    this['@data'] = this.config;
+
+    await this.open();
+    await this.commit();
+
+    // this.trust(this.state);
+
+    this.status = 'started';
+
+    return this;
+  }
+
+  async stop () {
+    this.status = 'stopping';
+    await this.close();
+    this.status = 'stopped';
+    return this;
+  }
+}
+
+module.exports = Scribe;
+</code></pre>
+      </article>
+    </section>
+
+
+
+
+  </div>
+
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="App.html">App</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Compiler.html">Compiler</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="Oracle.html">Oracle</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="Remote.html">Remote</a></li>
+      <li><a href="Router.html">Router</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Stack.html">Stack</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
+    </ul>
+  </nav>
+
+  <br class="clear">
+
+  <footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.6.0-dev</a> on Mon Jul 01 2019 21:32:25 GMT-0700 (Pacific Daylight Time)
+  </footer>
+
+  <script>
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"> </script>
+</body>
+
+</html>

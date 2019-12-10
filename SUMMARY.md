@@ -4,10 +4,7 @@
 * [Introduction](README.md)
 * [The Fabric Welcome Package](WELCOME.md)
 
-## Examples
-* [Hello World](docs/hello-world.md)
-* [Your First Blockchain](docs/your-first-blockchain.md)
-
 ## Documentation
-* [Specification](snippets/specification.md)
-* [API Reference](https://api.fabric.fm)
+* [Code Samples](https://dev.fabric.pub/examples)
+* [API Reference](API.md)
+* [API Documentation](https://dev.fabric.pub/docs)

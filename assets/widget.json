@@ -1,0 +1,10 @@
+{
+  "name": "Widget",
+  "properties": {
+    "name": { "type": "String" , "maxLength": 100 }
+  },
+  "routes": {
+    "list": "/widgets",
+    "view": "/widgets/:id"
+  }
+}

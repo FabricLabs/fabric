@@ -1,4 +1,5 @@
 // # Offline-first Applications with Fabric
+// Build your first Fabric application.
 'use strict';
 
 const App = require('../lib/app');

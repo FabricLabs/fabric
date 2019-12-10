@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Class: CLI &middot; Docs</title>
+  <script src="scripts/prettify/prettify.js"> </script>
+  <script src="scripts/prettify/lang-css.js"> </script>
+  <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+  <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+  <div id="main">
+    <h1 class="page-title">Class: CLI</h1>
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2><span class="attribs"><span class="type-signature"></span></span>CLI<span class="signature">(configuration)</span><span class="type-signature"></span></h2>
+
+        <div class="class-description">Base class for a terminal-like interface to the Fabric network.</div>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+
+
+          <h2>Constructor</h2>
+
+
+
+          <h4 class="name" id="CLI"><span class="type-signature"></span>new CLI<span class="signature">(configuration)</span><span class="type-signature"></span></h4>
+
+
+
+
+
+
+          <div class="description">
+            Base class for a terminal-like interface to the Fabric network.
+          </div>
+
+
+
+
+
+
+
+
+
+          <h5>Parameters:</h5>
+
+
+          <table class="params">
+            <thead>
+              <tr>
+
+                <th>Name</th>
+
+
+                <th>Type</th>
+
+
+
+
+
+                <th class="last">Description</th>
+              </tr>
+            </thead>
+
+            <tbody>
+
+
+              <tr>
+
+                <td class="name"><code>configuration</code></td>
+
+
+                <td class="type">
+
+
+                  <span class="param-type">Object</span>
+
+
+
+                </td>
+
+
+
+
+
+                <td class="description last">Configuration object for the CLI.</td>
+              </tr>
+
+
+            </tbody>
+          </table>
+
+
+
+
+
+
+          <h5 class="subsection-title">Properties:</h5>
+
+
+
+          <table class="props">
+            <thead>
+              <tr>
+
+                <th>Name</th>
+
+
+                <th>Type</th>
+
+
+
+
+
+                <th class="last">Description</th>
+              </tr>
+            </thead>
+
+            <tbody>
+
+
+              <tr>
+
+                <td class="name"><code>config</code></td>
+
+
+                <td class="type">
+
+
+                  <span class="param-type">Object</span>
+
+
+
+                </td>
+
+
+
+
+
+                <td class="description last">Initial <a href="Vector.html">Vector</a>.</td>
+              </tr>
+
+
+
+              <tr>
+
+                <td class="name"><code>oracle</code></td>
+
+
+                <td class="type">
+
+
+                  <span class="param-type"><a href="Oracle.html">Oracle</a></span>
+
+
+
+                </td>
+
+
+
+
+
+                <td class="description last">Instance of <a href="Oracle.html">Oracle</a>.</td>
+              </tr>
+
+
+            </tbody>
+          </table>
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_cli.js.html">types/cli.js</a>, <a href="types_cli.js.html#line26">line 26</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h3 class="subsection-title">Methods</h3>
+
+
+
+
+
+
+
+        <h4 class="name" id="_handleChanges"><span class="type-signature"></span>_handleChanges<span class="signature">(msg)</span><span class="type-signature"> &rarr; {<a href="CLI.html">CLI</a>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Update UI as necessary based on changes from Oracle.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>msg</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type"><a href="Message.html">Message</a></span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Incoming <a href="Message.html">Message</a>.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_cli.js.html">types/cli.js</a>, <a href="types_cli.js.html#line514">line 514</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="CLI.html">CLI</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+  </div>
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="App.html">App</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Compiler.html">Compiler</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="Oracle.html">Oracle</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="Remote.html">Remote</a></li>
+      <li><a href="Router.html">Router</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Stack.html">Stack</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="Swap.html">Swap</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
+      <li><a href="Wallet.html">Wallet</a></li>
+    </ul>
+  </nav>
+  <br class="clear" />
+  <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>
+  <script type="text/javascript">
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"></script>
+</body>
+
+</html>
