@@ -67,6 +67,7 @@ class Collection extends Stack {
     let result = null;
 
     try {
+      if (this.settings.verbosity >= 5) console.log(`getting ${this.path}/${id} from:`, this.state);
       result = pointer.get(this.state, `${this.path}/${id}`);
     } catch (E) {
      // console.debug('[FABRIC:COLLECTION]', `@${this.name}`, Date.now(), `Could not find ID "${id}" in tree ${this.asMerkleTree()}`);
@@ -148,10 +149,14 @@ class Collection extends Stack {
   }
 
   _wrapResult (result) {
+    // TODO: enable upstream specification via pure JSON
     if (this.settings.type.name !== 'Entity') {
       let Type = this.settings.type;
       result = new Type(result || {});
     }
+
+    // TODO: validation of result by calling result.validate()
+    // TODO: signing of result by calling result.signWith()
     return result;
   }
 
@@ -159,13 +164,15 @@ class Collection extends Stack {
     let link = `${path}`;
     let result = null;
 
+    if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'Patching target:', path, patches);
+
     try {
       result = monitor.applyPatch(this.state, patches.map((op) => {
         op.path = `${link}${op.path}`;
         return op;
       })).newDocument;
     } catch (E) {
-      console.log('Could not patch target:', E, path, patches);
+      console.error('Could not patch target:', E, path, patches);
     }
 
     this.commit();
@@ -213,6 +220,19 @@ class Collection extends Stack {
   }
 
   list () {
+    let map = this.map();
+    let ids = Object.keys(map);
+    // TODO: `list()` should return an Array
+    let result = {};
+
+    for (let i = 0; i < ids.length; i++) {
+      result[ids[i]] = this._wrapResult(map[ids[i]]);
+    }
+
+    return result;
+  }
+
+  map () {
     return Collection.pointer.get(this.state, `${this.path}`);
   }
 
@@ -289,6 +309,11 @@ class Collection extends Stack {
 
     result = state.data || entity.data;
     result.id = input.id || entity.id;
+
+    // TODO: ensure updates sent on subscriber channels
+    // ESPECIALLY when an ID is supplied...
+    // TODO: test upstream attack vectors
+    if (this.settings.verbosity >= 4) console.log('input.id', input.id);
 
     this.emit('message', {
       '@type': 'Snapshot',

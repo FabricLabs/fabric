@@ -1,0 +1,8 @@
+{
+  "name": "@network/playnet",
+  "network": "testnet",
+  "key": {
+    "@comment": "Add your 24-word seed to the field below to restore from the blockchain.",
+    "seed": ""
+  }
+}

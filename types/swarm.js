@@ -22,8 +22,12 @@ class Swarm extends Scribe {
 
     this.name = 'Swarm';
     this.config = Object.assign({
+      name: 'fabric',
       peers: []
     }, config);
+
+    // create a peer for one's own $self
+    this.agent = new Peer(this.config.peer);
 
     this.nodes = {};
     this.peers = {};
@@ -106,8 +110,6 @@ class Swarm extends Scribe {
     // let's keep the swarm on the stack
     let swarm = this;
 
-    // create a peer for one's own $self
-    swarm.agent = new Peer(swarm.config.peer);
     await swarm.trust(swarm.agent);
 
     // TODO: consider renaming this to JOIN
@@ -135,6 +137,11 @@ class Swarm extends Scribe {
     });
 
     return swarm.agent.start();
+  }
+
+  async stop () {
+    await this.agent.stop();
+    await super.stop();
   }
 }
 
