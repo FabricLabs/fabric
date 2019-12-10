@@ -31,6 +31,7 @@
     "parse:api": "jsdoc2md --configure jsdoc.json --files index.js types/** README.md > API.md",
     "review:coverage": "npm run make:coverage && ecstatic reports/code-coverage",
     "review:todo": "grep --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs -rEI \"TODO|FIXME\" . 2>/dev/null > reports/todo.txt",
+    "playnet": "node scripts/playnet.js",
     "start": "node scripts/app.js",
     "static": "npm run build:scripts && ecstatic assets",
     "test:app": "npm run make:service && npm run make:app && NODE_ENV=test mocha tests/fabric.app.js",

@@ -8,6 +8,7 @@ const State = require('../types/state');
 const Wallet = require('../types/wallet');
 const Consensus = require('../types/consensus');
 
+// Special Types (internal to Bitcoin)
 const BitcoinBlock = require('../types/bitcoin/block');
 
 // External Dependencies
@@ -41,6 +42,7 @@ class Bitcoin extends Service {
     this.settings = Object.assign({
       name: '@services/bitcoin',
       network: 'regtest',
+      listen: false,
       nodes: ['127.0.0.1'],
       seeds: ['127.0.0.1'],
       port: 18444
@@ -51,7 +53,7 @@ class Bitcoin extends Service {
 
     // Internal management components
     this.provider = new Consensus({ provider: 'bcoin' });
-    this.wallet = new Wallet();
+    this.wallet = new Wallet(this.settings);
 
     this.blocks = new Collection({
       name: 'Block',
@@ -69,17 +71,20 @@ class Bitcoin extends Service {
       port: this.provider.port,
       network: this.settings.network,
       bip37: true, // TODO: verify SPV implementation
-      listen: false, // TODO: consider opening external ports
+      listen: this.settings.listen,
       http: false,
-      logLevel: 'error',
+      httpPort: 19999,
+      logLevel: 'debug',
       memory: true,
       workers: true,
-      loader: require
+      loader: require,
+      // maxOutbound: 1
+      maxOutbound: 16
     });
 
     this.peer = bcoin.Peer.fromOptions({
-      network: this.settings.network,
       agent: this.UAString,
+      network: this.settings.network,
       hasWitness: () => {
         return false;
       }
@@ -96,10 +101,12 @@ class Bitcoin extends Service {
     this.spv = new bcoin.SPVNode({
       agent: this.UAString + ' (SPV)',
       network: this.settings.network,
+      port: 18444,
       httpPort: 48449, // TODO: disable HTTP entirely!
       memory: true,
-      logLevel: 'spam',
-      maxOutbound: 1,
+      logLevel: 'warning',
+      // maxOutbound: 1,
+      maxOutbound: 16,
     });
 
     this.define('VersionPacket', { type: 0 });
@@ -335,12 +342,15 @@ class Bitcoin extends Service {
   
     let addr = new NetAddress({
       host: '127.0.0.1',
-      port: this.fullnode.pool.options.port
+      // port: this.fullnode.pool.options.port
+      port: 18444
     });
   
+    // connect this.spv with fullNode
     let peer = this.spv.pool.createOutbound(addr);
     this.spv.pool.peers.add(peer);
 
+    // start the SPV node's blockchain sync
     await this.spv.startSync();
   }
 

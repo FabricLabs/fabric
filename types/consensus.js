@@ -6,6 +6,7 @@ const bcash = require('bcash/lib/bcoin-browser');
 class Consensus {
   constructor (settings = {}) {
     this.settings = Object.assign({
+      network: 'mainnet',
       provider: 'bcoin'
     }, settings);
 

@@ -78,6 +78,10 @@ this prototype.  In general, <code>connect</code> and <code>send</code> are the 
 jobs, and by default the <code>fabric</code> property will serve as an I/O stream using
 familiar semantics.</p>
 </dd>
+<dt><a href="#Session">Session</a></dt>
+<dd><p>The <a href="#Session">Session</a> type describes a connection between <a href="#Peer">Peer</a>
+objects, and includes its own lifecycle.</p>
+</dd>
 <dt><a href="#Stack">Stack</a></dt>
 <dd><p>Manage stacks of data.</p>
 </dd>
@@ -1309,10 +1313,11 @@ familiar semantics.
 Create an instance of a Service.
 
 
-| Param | Type | Description |
-| --- | --- | --- |
-| config | <code>Object</code> | Configuration for this service. |
-| [config.@data] | <code>Object</code> | Configuration for this service. |
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| config | <code>Object</code> |  | Configuration for this service. |
+| [config.networking] | <code>Boolean</code> | <code>true</code> | Whether or not to connect to the network. |
+| [config.@data] | <code>Object</code> |  | Internal data to assign. |
 
 <a name="Service+handler"></a>
 
@@ -1402,6 +1407,41 @@ Register an [Actor](Actor) with the [Service](#Service).
 | --- | --- | --- |
 | actor | <code>Object</code> | Instance of the [Actor](Actor). |
 
+<a name="Session"></a>
+
+## Session
+The [Session](#Session) type describes a connection between [Peer](#Peer)
+objects, and includes its own lifecycle.
+
+**Kind**: global class  
+
+* [Session](#Session)
+    * [new Session(settings)](#new_Session_new)
+    * [.start()](#Session+start)
+    * [.stop()](#Session+stop)
+
+<a name="new_Session_new"></a>
+
+### new Session(settings)
+Creates a new [Session](#Session).
+
+
+| Param | Type |
+| --- | --- |
+| settings | <code>Object</code> | 
+
+<a name="Session+start"></a>
+
+### session.start()
+Opens the [Session](#Session) for interaction.
+
+**Kind**: instance method of [<code>Session</code>](#Session)  
+<a name="Session+stop"></a>
+
+### session.stop()
+Closes the [Session](#Session), preventing further interaction.
+
+**Kind**: instance method of [<code>Session</code>](#Session)  
 <a name="Stack"></a>
 
 ## Stack
@@ -1461,7 +1501,7 @@ committing to the outcome.  This workflow keeps app design quite simple!
         * [.toString()](#State+toString) ⇒ <code>String</code>
         * [.serialize([input])](#State+serialize) ⇒ <code>Buffer</code>
         * [.deserialize(input)](#State+deserialize) ⇒ [<code>State</code>](#State)
-        * [.get(path)](#State+get)
+        * [.get(path)](#State+get) ⇒ <code>Mixed</code>
         * [.render()](#State+render) ⇒ <code>String</code>
     * _static_
         * [.fromJSON(input)](#State.fromJSON) ⇒ [<code>State</code>](#State)
@@ -1509,14 +1549,14 @@ Take a hex-encoded input and convert to a [State](#State) object.
 
 <a name="State+get"></a>
 
-### state.get(path)
+### state.get(path) ⇒ <code>Mixed</code>
 Retrieve a key from
 
 **Kind**: instance method of [<code>State</code>](#State)  
 
-| Param | Type |
-| --- | --- |
-| path | [<code>Path</code>](#Path) | 
+| Param | Type | Description |
+| --- | --- | --- |
+| path | [<code>Path</code>](#Path) | Key to retrieve. |
 
 <a name="State+render"></a>
 
@@ -1836,7 +1876,7 @@ Manage keys and track their balances.
 
 
 * [Wallet](#Wallet) : <code>Object</code>
-    * [new Wallet([settings], [verbosity])](#new_Wallet_new)
+    * [new Wallet([settings])](#new_Wallet_new)
     * [.getAddressForScript(script)](#Wallet+getAddressForScript)
     * [.getAddressFromRedeemScript(redeemScript)](#Wallet+getAddressFromRedeemScript)
     * [.createPricedOrder(order)](#Wallet+createPricedOrder)
@@ -1849,14 +1889,16 @@ Manage keys and track their balances.
 
 <a name="new_Wallet_new"></a>
 
-### new Wallet([settings], [verbosity])
+### new Wallet([settings])
 Create an instance of a [Wallet](#Wallet).
 
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
 | [settings] | <code>Object</code> | <code>{}</code> | Configure the wallet. |
-| [verbosity] | <code>Number</code> | <code>2</code> | One of: 0 (none), 1 (error), 2 (warning), 3 (notice), 4 (debug), 5 (audit) |
+| [settings.verbosity] | <code>Number</code> | <code>2</code> | One of: 0 (none), 1 (error), 2 (warning), 3 (notice), 4 (debug), 5 (audit) |
+| [settings.key] | <code>Object</code> |  | Key to restore from. |
+| [settings.key.seed] | <code>String</code> |  | Mnemonic seed for a restored wallet. |
 
 <a name="Wallet+getAddressForScript"></a>
 
