@@ -372,6 +372,11 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
     return new State(data);
   }
 
+  /**
+   * Retrieve a key from
+   * @param {Path} path Key to retrieve.
+   * @returns {Mixed}
+   */
   get (path) {
     return pointer.get(this.state, path);
   }
