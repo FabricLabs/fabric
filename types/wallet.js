@@ -18,7 +18,10 @@ const Secret = require('./secret');
 const State = require('./state');
 
 // Bcoin
-const bcoin = require('bcoin/lib/bcoin-browser');
+// For the browser...
+// const bcoin = require('bcoin/lib/bcoin-browser');
+// For the node...
+const bcoin = require('bcoin');
 
 // Convenience classes...
 const Address = bcoin.Address;

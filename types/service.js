@@ -81,7 +81,7 @@ class Service extends Scribe {
     }, this.config['@data']);
 
     this.observer = null;
-    this.swarm = new Swarm();
+    this.swarm = new Swarm(this.settings);
 
     // Set ready status
     this.status = 'ready';
@@ -205,6 +205,10 @@ class Service extends Scribe {
     return result;
   }
 
+  /**
+   * Start the service, including the initiation of an outbound connection
+   * to any peers designated in the service's configuration.
+   */
   async start () {
     await super.start();
 
@@ -383,7 +387,9 @@ class Service extends Scribe {
   }
 
   async disconnect () {
+    this.status = 'disconnecting';
     if (this.status !== 'active') return this;
+    if (this.settings.networking) await this.swarm.stop();
     this.status = 'disconnected';
     return this;
   }

@@ -1,7 +1,12 @@
 'use strict';
 
-const bcoin = require('bcoin/lib/bcoin-browser');
-const bcash = require('bcash/lib/bcoin-browser');
+// For browsers...
+// const bcoin = require('bcoin/lib/bcoin-browser');
+// const bcash = require('bcash/lib/bcoin-browser');
+
+// For node...
+const bcoin = require('bcoin');
+const bcash = require('bcash');
 
 class Consensus {
   constructor (settings = {}) {
@@ -28,6 +33,14 @@ class Consensus {
 
   get FullNode () {
     return this.providers[this.settings.provider].FullNode;
+  }
+
+  get MTX () {
+    return this.providers[this.settings.provider].MTX;
+  }
+
+  get Script () {
+    return this.providers[this.settings.provider].Script;
   }
 
   // TODO: remove from {@link Consensus}
