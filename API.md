@@ -2,7 +2,7 @@
 
 <dl>
 <dt><a href="#App">App</a></dt>
-<dd><p>Default interface to <a href="Fabric">Fabric</a>.  Provides immutable types for all
+<dd><p>Default interface to <a href="#Fabric">Fabric</a>.  Provides immutable types for all
 elements of the <code>components</code> option.</p>
 </dd>
 <dt><a href="#App">App</a></dt>
@@ -12,8 +12,12 @@ Fabric-based networking and storage.</p>
 <dt><a href="#Chain">Chain</a></dt>
 <dd><p>Chain.</p>
 </dd>
+<dt><a href="#Channel">Channel</a></dt>
+<dd><p>Creates a channel between to peers.  Useful for aggregation
+of many transactions over time, to be settled on-chain later.</p>
+</dd>
 <dt><a href="#Circuit">Circuit</a></dt>
-<dd><p>The <a href="#Circuit">Circuit</a> is the mechanism through which <a href="Fabric">Fabric</a>
+<dd><p>The <a href="#Circuit">Circuit</a> is the mechanism through which <a href="#Fabric">Fabric</a>
 operates, a computable directed graph for execution be a network
 of <a href="#Peer">Peer</a> components.  See also <a href="#Swarm">Swarm</a> for deeper
 inspection of <a href="#Machine">Machine</a> mechanics.</p>
@@ -29,6 +33,9 @@ inspection of <a href="#Machine">Machine</a> mechanics.</p>
 </dd>
 <dt><a href="#Entity">Entity</a> : <code>Object</code></dt>
 <dd><p>Live instance of an ARC in Fabric.</p>
+</dd>
+<dt><a href="#Fabric">Fabric</a></dt>
+<dd><p>Interact with the Fabric network as if it were a local object.</p>
 </dd>
 <dt><a href="#Hash256">Hash256</a></dt>
 <dd><p>Simple interaction with 256-bit spaces.</p>
@@ -49,7 +56,7 @@ selectively disclosing new routes to peers which may have open circuits.</p>
 transitive state.</p>
 </dd>
 <dt><a href="#Path">Path</a></dt>
-<dd><p>A <a href="#Path">Path</a> is a <a href="Fabric">Fabric</a>-native link to a <a href="Document">Document</a>
+<dd><p>A <a href="#Path">Path</a> is a <a href="#Fabric">Fabric</a>-native link to a <a href="Document">Document</a>
 within the network.</p>
 </dd>
 <dt><a href="#Peer">Peer</a></dt>
@@ -125,7 +132,7 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 <a name="App"></a>
 
 ## App
-Default interface to [Fabric](Fabric).  Provides immutable types for all
+Default interface to [Fabric](#Fabric).  Provides immutable types for all
 elements of the `components` option.
 
 **Kind**: global class  
@@ -452,10 +459,25 @@ Holds an immutable chain of events.
 | --- | --- | --- |
 | genesis | [<code>Vector</code>](#Vector) | Initial state for the chain of events. |
 
+<a name="Channel"></a>
+
+## Channel
+Creates a channel between to peers.  Useful for aggregation
+of many transactions over time, to be settled on-chain later.
+
+**Kind**: global class  
+<a name="new_Channel_new"></a>
+
+### new Channel([settings])
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Configuration for the channel. |
+
 <a name="Circuit"></a>
 
 ## Circuit
-The [Circuit](#Circuit) is the mechanism through which [Fabric](Fabric)
+The [Circuit](#Circuit) is the mechanism through which [Fabric](#Fabric)
 operates, a computable directed graph for execution be a network
 of [Peer](#Peer) components.  See also [Swarm](#Swarm) for deeper
 inspection of [Machine](#Machine) mechanics.
@@ -627,13 +649,28 @@ As a [Buffer](Buffer).
 <a name="Entity+_downsample"></a>
 
 ### entity.\_downsample([input])
-Return a [Fabric](Fabric)-labeled [Object](Object) for this [Entity](#Entity).
+Return a [Fabric](#Fabric)-labeled [Object](Object) for this [Entity](#Entity).
 
 **Kind**: instance method of [<code>Entity</code>](#Entity)  
 
 | Param | Type | Description |
 | --- | --- | --- |
 | [input] | <code>Mixed</code> | Input to downsample.  If not provided, current Entity will be used. |
+
+<a name="Fabric"></a>
+
+## Fabric
+Interact with the Fabric network as if it were a local object.
+
+**Kind**: global class  
+<a name="new_Fabric_new"></a>
+
+### new Fabric([settings])
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Configuration for the layer. |
+| [settings.port] | <code>Object</code> | Port to bind to for incoming TCP connections. |
 
 <a name="Hash256"></a>
 
@@ -790,7 +827,7 @@ selectively disclosing new routes to peers which may have open circuits.
 <a name="new_Message_new"></a>
 
 ### new Message(message)
-The `Message` type is standardized in [Fabric](Fabric) as a [Vector](#Vector), which can be added to any other vector to compute a resulting state.
+The `Message` type is standardized in [Fabric](#Fabric) as a [Vector](#Vector), which can be added to any other vector to compute a resulting state.
 
 
 | Param | Type | Description |
@@ -917,7 +954,7 @@ Start running the process.
 <a name="Path"></a>
 
 ## Path
-A [Path](#Path) is a [Fabric](Fabric)-native link to a [Document](Document)
+A [Path](#Path) is a [Fabric](#Fabric)-native link to a [Document](Document)
 within the network.
 
 **Kind**: global class  
@@ -1301,6 +1338,7 @@ familiar semantics.
     * [new Service(config)](#new_Service_new)
     * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
     * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
+    * [.start()](#Service+start)
     * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
     * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
     * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
@@ -1344,6 +1382,13 @@ Resolve a [State](#State) from a particular [Message](#Message) object.
 | --- | --- | --- |
 | msg | [<code>Message</code>](#Message) | Explicit Fabric [Message](#Message). |
 
+<a name="Service+start"></a>
+
+### service.start()
+Start the service, including the initiation of an outbound connection
+to any peers designated in the service's configuration.
+
+**Kind**: instance method of [<code>Service</code>](#Service)  
 <a name="Service+_GET"></a>
 
 ### service.\_GET(path) ⇒ <code>Promise</code>
@@ -1376,7 +1421,7 @@ Store a value in the Service's state.
 Attach to network.
 
 **Kind**: instance method of [<code>Service</code>](#Service)  
-**Returns**: <code>Promise</code> - Resolves to [Fabric](Fabric).  
+**Returns**: <code>Promise</code> - Resolves to [Fabric](#Fabric).  
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
