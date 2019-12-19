@@ -1,13 +1,16 @@
 'use strict';
 
-class Block {
+class BitcoinBlock {
   constructor (settings = {}) {
     this.settings = Object.assign({}, settings);
     this._state = {
-      transactions: [],
-      confirmations: 0
+      transactions: []
     };
+  }
+
+  get data () {
+    return this.settings;
   }
 }
 
-module.exports = Block;
+module.exports = BitcoinBlock;

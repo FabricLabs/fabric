@@ -65,6 +65,9 @@ class State extends EventEmitter {
           this['@entity']['@data'] = this['@data']['@data'];
           break;
       }
+    } else {
+      this['@entity']['@type'] = 'Object';
+      this['@entity']['@data'] = data;
     }
 
     /**
@@ -378,12 +381,14 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
    * @returns {Mixed}
    */
   get (path) {
-    return pointer.get(this.state, path);
+    // return pointer.get(this.state, path);
+    return pointer.get(this['@entity']['@data'], path);
   }
 
   set (path, value) {
     // console.log('setting:', path, value);
     pointer.set(this.state, path, value);
+    pointer.set(this['@entity']['@data'], path, value);
     let result = pointer.set(this.state, path, value);
     this.commit();
     return result;

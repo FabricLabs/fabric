@@ -40,6 +40,9 @@ inspection of <a href="#Machine">Machine</a> mechanics.</p>
 <dt><a href="#Hash256">Hash256</a></dt>
 <dd><p>Simple interaction with 256-bit spaces.</p>
 </dd>
+<dt><a href="#Interface">Interface</a> ⇐ <code>EventEmitter</code></dt>
+<dd><p>Interfaces compile abstract contract code into <a href="#Chain">Chain</a>-executable transactions, or &quot;chaincode&quot;. For example, the &quot;Bitcoin&quot; interface might compile a Swap contract into Script, preparing a valid Bitcoin transaction for broadcast which executes the swap contract.</p>
+</dd>
 <dt><a href="#Ledger">Ledger</a> ⇐ <code><a href="#Scribe">Scribe</a></code></dt>
 <dd><p>An ordered stack of pages.</p>
 </dd>
@@ -707,6 +710,85 @@ If the `settings` is not a string, `input` must be provided.
 | --- | --- |
 | input | <code>String</code> | 
 
+<a name="Interface"></a>
+
+## Interface ⇐ <code>EventEmitter</code>
+Interfaces compile abstract contract code into [Chain](#Chain)-executable transactions, or "chaincode". For example, the "Bitcoin" interface might compile a Swap contract into Script, preparing a valid Bitcoin transaction for broadcast which executes the swap contract.
+
+**Kind**: global class  
+**Extends**: <code>EventEmitter</code>  
+**Properties**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| status | <code>String</code> | Human-friendly value representing the Interface's current [State](#State). |
+
+
+* [Interface](#Interface) ⇐ <code>EventEmitter</code>
+    * [new Interface(settings)](#new_Interface_new)
+    * [.state](#Interface+state)
+    * [.start()](#Interface+start)
+    * [.stop()](#Interface+stop)
+    * [.cycle(val)](#Interface+cycle)
+    * [.log(...inputs)](#Interface+log)
+    * [.now()](#Interface+now) ⇒ <code>Number</code>
+
+<a name="new_Interface_new"></a>
+
+### new Interface(settings)
+Define an [Interface](#Interface) by creating an instance of this class.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| settings | <code>Object</code> | Configuration values. |
+
+<a name="Interface+state"></a>
+
+### interface.state
+Getter for [State](#State).
+
+**Kind**: instance property of [<code>Interface</code>](#Interface)  
+<a name="Interface+start"></a>
+
+### interface.start()
+Start the [Interface](#Interface).
+
+**Kind**: instance method of [<code>Interface</code>](#Interface)  
+<a name="Interface+stop"></a>
+
+### interface.stop()
+Stop the Interface.
+
+**Kind**: instance method of [<code>Interface</code>](#Interface)  
+<a name="Interface+cycle"></a>
+
+### interface.cycle(val)
+Ticks the clock with a named [Cycle](Cycle).
+
+**Kind**: instance method of [<code>Interface</code>](#Interface)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| val | <code>String</code> | Name of cycle to scribe. |
+
+<a name="Interface+log"></a>
+
+### interface.log(...inputs)
+Log some output to the console.
+
+**Kind**: instance method of [<code>Interface</code>](#Interface)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| ...inputs | <code>any</code> | Components of the message to long.  Can be a single {@link} String, many [String](String) objects, or anything else. |
+
+<a name="Interface+now"></a>
+
+### interface.now() ⇒ <code>Number</code>
+Returns current timestamp.
+
+**Kind**: instance method of [<code>Interface</code>](#Interface)  
 <a name="Ledger"></a>
 
 ## Ledger ⇐ [<code>Scribe</code>](#Scribe)
@@ -725,6 +807,7 @@ An ordered stack of pages.
 
 * [Ledger](#Ledger) ⇐ [<code>Scribe</code>](#Scribe)
     * [.append(item)](#Ledger+append) ⇒ <code>Promise</code>
+    * [.now()](#Scribe+now) ⇒ <code>Number</code>
     * [.trust(source)](#Scribe+trust) ⇒ [<code>Scribe</code>](#Scribe)
     * [.inherits(scribe)](#Scribe+inherits) ⇒ [<code>Scribe</code>](#Scribe)
 
@@ -740,6 +823,13 @@ Attempts to append a [Page](Page) to the ledger.
 | --- | --- | --- |
 | item | <code>Mixed</code> | Item to store. |
 
+<a name="Scribe+now"></a>
+
+### ledger.now() ⇒ <code>Number</code>
+Retrives the current timestamp, in milliseconds.
+
+**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+**Returns**: <code>Number</code> - [Number](Number) representation of the millisecond [Integer](Integer) value.  
 <a name="Scribe+trust"></a>
 
 ### ledger.trust(source) ⇒ [<code>Scribe</code>](#Scribe)
@@ -1184,6 +1274,7 @@ Process incoming messages.
     * [new Router(map)](#new_Router_new)
     * [.route(msg)](#Router+route) ⇒ <code>Array</code>
     * [.use(plugin, name)](#Router+use) ⇒ [<code>Router</code>](#Router)
+    * [.now()](#Scribe+now) ⇒ <code>Number</code>
     * [.trust(source)](#Scribe+trust) ⇒ [<code>Scribe</code>](#Scribe)
     * [.inherits(scribe)](#Scribe+inherits) ⇒ [<code>Scribe</code>](#Scribe)
 
@@ -1222,6 +1313,13 @@ Attaches a new handler to the router.
 | plugin | <code>Plugin</code> | Instance of the plugin. |
 | name | <code>Plugin.name</code> | Name of the plugin. |
 
+<a name="Scribe+now"></a>
+
+### router.now() ⇒ <code>Number</code>
+Retrives the current timestamp, in milliseconds.
+
+**Kind**: instance method of [<code>Router</code>](#Router)  
+**Returns**: <code>Number</code> - [Number](Number) representation of the millisecond [Integer](Integer) value.  
 <a name="Scribe+trust"></a>
 
 ### router.trust(source) ⇒ [<code>Scribe</code>](#Scribe)
@@ -1261,6 +1359,7 @@ Simple tag-based recordkeeper.
 
 * [Scribe](#Scribe)
     * [new Scribe(config)](#new_Scribe_new)
+    * [.now()](#Scribe+now) ⇒ <code>Number</code>
     * [.trust(source)](#Scribe+trust) ⇒ [<code>Scribe</code>](#Scribe)
     * [.inherits(scribe)](#Scribe+inherits) ⇒ [<code>Scribe</code>](#Scribe)
 
@@ -1275,6 +1374,13 @@ The "Scribe" is a simple tag-based recordkeeper.
 | config | <code>Object</code> | General configuration object. |
 | config.verbose | <code>Boolean</code> | Should the Scribe be noisy? |
 
+<a name="Scribe+now"></a>
+
+### scribe.now() ⇒ <code>Number</code>
+Retrives the current timestamp, in milliseconds.
+
+**Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Returns**: <code>Number</code> - [Number](Number) representation of the millisecond [Integer](Integer) value.  
 <a name="Scribe+trust"></a>
 
 ### scribe.trust(source) ⇒ [<code>Scribe</code>](#Scribe)

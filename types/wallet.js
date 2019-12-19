@@ -186,8 +186,13 @@ class Wallet extends Service {
     }
   }
 
-  processBitcoinBlock (block) {
-    console.log('[FABRIC:WALLET]', 'Processing block:', block);
+  async processBitcoinBlock (block) {
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:WALLET]', 'Processing block:', block);
+    if (!block.block) return 0;
+    for (let i = 0; i < block.block.hashes.length; i++) {
+      let txid = block.block.hashes[i].toString('hex');
+      console.log('found txid in block:', txid);
+    }
   }
 
   async addTransactionToWallet (transaction) {
@@ -1054,6 +1059,8 @@ class Wallet extends Service {
     // finally, assign state...
     this.state.transactions = this.settings.transaction;
     this.state.orders = this.settings.orders;
+
+    if (this.settings.verbosity >=5) console.log('[FABRIC:WALLET]', 'state after loading:', this.state);
 
     this.status = 'loaded';
     this.emit('ready');

@@ -38,6 +38,9 @@ class Scribe extends State {
     return this;
   }
 
+  /** Retrives the current timestamp, in milliseconds.
+   * @return {Number} {@link Number} representation of the millisecond {@link Integer} value.
+   */
   now () {
     // return new Date().toISOString();
     return new Date().getTime();

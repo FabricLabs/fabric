@@ -1,12 +1,14 @@
 'use strict';
 
 const Entity = require('../types/entity');
+const Interface = require('../types/interface');
+// TODO: compare API against {@link Service}
 const Service = require('../types/service');
 
 /**
  * Service for interacting with Matrix.
  */
-class Matrix extends Service {
+class Matrix extends Interface {
   /**
    * Create an instance of a Matrix client, connect to the
    * network, and relay messages received from therein.
@@ -29,9 +31,9 @@ class Matrix extends Service {
    */
   async start () {
     super.start();
-    this.status('starting');
+    this.status = 'starting';
     this.log('[SERVICES:MATRIX]', 'Starting...');
-    this.status('started');
+    this.status = 'started';
     this.log('[SERVICES:MATRIX]', 'Started!');
   }
 
@@ -40,9 +42,9 @@ class Matrix extends Service {
    */
   async stop () {
     super.stop();
-    this.status('stopping');
+    this.status = 'stopping';
     this.log('[SERVICES:MATRIX]', 'Stopping...');
-    this.status('stopped');
+    this.status = 'stopped';
     this.log('[SERVICES:MATRIX]', 'Stopped!');
   }
 }

@@ -15,7 +15,14 @@ describe('@fabric/core/types/swarm', function () {
     });
 
     it('can start and stop cleanly', async function () {
-      let swarm = new Swarm();
+      const swarm = new Swarm();
+      await swarm.start();
+      await swarm.stop();
+      assert.ok(swarm);
+    });
+
+    it('can start and stop with the test configuration', async function () {
+      const swarm = new Swarm(config);
       await swarm.start();
       await swarm.stop();
       assert.ok(swarm);

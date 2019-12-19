@@ -51,8 +51,11 @@ class Bitcoin extends Service {
       listen: false,
       nodes: ['127.0.0.1'],
       seeds: ['127.0.0.1'],
-      port: 18444
+      port: 18444,
+      verbosity: 2
     }, settings);
+
+    if (this.settings.verbosity >= 4) console.log('[DEBUG]', 'Instance of Bitcoin service created, settings:', this.settings);
 
     bcoin.set(this.settings.network);
     this.network = bcoin.Network.get(this.settings.network);
@@ -330,19 +333,22 @@ class Bitcoin extends Service {
     console.log('[SERVICES:BITCOIN]', 'State:', this.state);
   }
 
-  async _handleBlockFromSPV (block) {
-    if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'SPV Received block:', block);
-    let msg = {
+  async _handleBlockFromSPV (msg) {
+    if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'SPV Received block:', msg);
+    let block = await this.blocks.create({
+      hash: msg.hash('hex'),
+      parent: msg.prevBlock.toString('hex'),
+      transactions: msg.hashes,
+      block: msg
+    });
+
+    let message = {
       '@type': 'BitcoinBlock',
-      '@data': {
-        hash: block.hash('hex'),
-        parent: block.prevBlock.toString('hex'),
-        transactions: block.hashes,
-        block: block
-      }
+      '@data': block
     };
-    this.emit('block', msg);
-    this.emit('message', { '@type': 'ServiceMessage', '@data': msg });
+
+    this.emit('block', message);
+    this.emit('message', { '@type': 'ServiceMessage', '@data': message });
   }
 
   /**
@@ -386,10 +392,10 @@ class Bitcoin extends Service {
     // subscribe to shard...
     await this._subscribeToShard(this.wallet.shard);
 
+    // bind listeners...
     this.spv.on('tx', this._handleTransactionFromSPV.bind(this));
     this.spv.on('block', this._handleBlockFromSPV.bind(this));
 
-  
     // get peer from known address
     let addr = new NetAddress({
       host: '127.0.0.1',
@@ -399,6 +405,7 @@ class Bitcoin extends Service {
   
     // connect this.spv with fullNode
     let peer = this.spv.pool.createOutbound(addr);
+    if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', 'Peer connection created:', peer);
     this.spv.pool.peers.add(peer);
 
     // start the SPV node's blockchain sync

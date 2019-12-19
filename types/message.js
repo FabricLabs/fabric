@@ -116,6 +116,7 @@ Object.defineProperty(Message.prototype, 'type', {
     return this.raw.type.readUInt32BE();
   },
   set (value) {
+    this['@type'] = value;
     this.raw.type.writeUInt32BE(value);
   }
 });
@@ -123,11 +124,11 @@ Object.defineProperty(Message.prototype, 'type', {
 Object.defineProperty(Message.prototype, 'data', {
   get () {
     if (!this.raw.data) return '';
-    return this.raw.data.toString('ascii');
+    return this.raw.data.toString('utf8');
   },
   set (value) {
     if (!value) value = '';
-    let hash = crypto.createHash('sha256').update(value.toString('ascii'));
+    let hash = crypto.createHash('sha256').update(value.toString('utf8'));
     this.raw.hash = hash.digest();
     this.raw.data = Buffer.from(value);
     this.raw.size.writeUInt32BE(this.raw.data.byteLength);
