@@ -6,6 +6,7 @@ const Key = require('./key');
 const Entity = require('./entity');
 const Store = require('./store');
 const Scribe = require('./scribe');
+const Stack = require('./stack');
 const Swarm = require('./swarm');
 const Collection = require('./collection');
 
@@ -37,7 +38,7 @@ class Service extends Scribe {
    * @param       {Boolean} [config.networking=true] Whether or not to connect to the network.
    * @param       {Object} [config.@data] Internal data to assign.
    */
-  constructor (config) {
+  constructor (config = {}) {
     // Initialize Scribe, our logging tool
     super(config);
 
@@ -46,6 +47,7 @@ class Service extends Scribe {
       name: 'service',
       path: './stores/service',
       networking: true,
+      persistent: true,
       verbosity: 2, // 0 none, 1 error, 2 warning, 3 notice, 4 debug
       // TODO: export this as the default data in `inputs/fabric.json`
       // If the sha256(JSON.stringify(this.data)) is equal to this, it's
@@ -71,9 +73,16 @@ class Service extends Scribe {
     //          Error: Not implemented yet
     this.key = null; // new Key();
 
-    this.store = new Store({
-      path: this.config.path
-    });
+    if (this.settings.persistent) {
+      try {
+        this.store = new Store({
+          path: this.config.path
+        });
+      } catch (E) {
+        console.error('Error:', E);
+      }
+    }
+
 
     // set local state to whatever configuration supplies...
     this.state = Object.assign({
@@ -172,6 +181,7 @@ class Service extends Scribe {
     } catch (E) {
       this.error('Malformed message:', message);
     }
+
     return this;
   }
 
@@ -372,7 +382,7 @@ class Service extends Scribe {
       this.warn('[DOORMAN:SERVICE]', 'Could not restore state:', E);
     }
 
-    if (this.settings.networking) {
+    if (this.settings.networking && this.swarm) {
       await this.swarm.start();
     }
 

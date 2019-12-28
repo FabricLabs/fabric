@@ -1,6 +1,5 @@
 'use strict';
 
-// const CANON = require('canon');
 const {
   MAX_MESSAGE_SIZE
 } = require('../constants');
@@ -111,7 +110,8 @@ class State extends EventEmitter {
 
     // set internal data
     this.services = ['json'];
-    this.name = this['@entity'].name || this.id;
+    // TODO: re-enable
+    // this.name = this['@entity'].name || this.id;
     this.link = `/entities/${this.id}`;
     this.tags = [];
 
@@ -368,6 +368,11 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
     return map;
   }
 
+  /**
+   * Creates a new child {@link State}, with `@parent` set to
+   * the current {@link State} by immutable identifier.
+   * @returns {State}
+   */
   fork () {
     let data = Object.assign({
       '@parent': this.id
@@ -376,7 +381,7 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
   }
 
   /**
-   * Retrieve a key from
+   * Retrieve a key from the {@link State}.
    * @param {Path} path Key to retrieve.
    * @returns {Mixed}
    */
@@ -385,6 +390,11 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
     return pointer.get(this['@entity']['@data'], path);
   }
 
+  /**
+   * Set a key in the {@link State} to a particular value.
+   * @param {Path} path Key to retrieve.
+   * @returns {Mixed}
+   */
   set (path, value) {
     // console.log('setting:', path, value);
     pointer.set(this.state, path, value);
@@ -394,6 +404,9 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
     return result;
   }
 
+  /**
+   * Increment the vector clock, broadcast all changes as a transaction.
+   */
   commit () {
     ++this.clock;
 
@@ -410,6 +423,13 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
     if (this['@changes'] && this['@changes'].length) {
       this.emit('changes', this['@changes']);
       this.emit('state', this['@state']);
+      this.emit('message', {
+        '@type': 'Transaction',
+        '@data': {
+          'changes': this['@changes'],
+          'state': this['@changes']
+        }
+      });
     }
 
     return this;
