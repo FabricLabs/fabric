@@ -11,6 +11,7 @@ const Storage = require('./store');
 /**
  * Web-friendly application framework for building single-page applications with
  * Fabric-based networking and storage.
+ * @extends Scribe
  * @property {Collection} components Interface elements.
  */
 class App extends Scribe {
@@ -25,6 +26,7 @@ class App extends Scribe {
     if (!definition.resources) definition.resources = {};
 
     this.settings = this['@data'] = Object.assign({
+      prefix: '/',
       seed: 1
     }, definition);
 
@@ -50,7 +52,7 @@ class App extends Scribe {
 
     if (this['@data'].resources) {
       for (let name in this['@data'].resources) {
-        this.set(this['@data'].resources[name].components.list, []);
+        this.set(this.settings.prefix + this['@data'].resources[name].components.list, []);
       }
     }
 

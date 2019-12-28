@@ -5,7 +5,7 @@
 <dd><p>Default interface to <a href="#Fabric">Fabric</a>.  Provides immutable types for all
 elements of the <code>components</code> option.</p>
 </dd>
-<dt><a href="#App">App</a></dt>
+<dt><a href="#App">App</a> ⇐ <code><a href="#Scribe">Scribe</a></code></dt>
 <dd><p>Web-friendly application framework for building single-page applications with
 Fabric-based networking and storage.</p>
 </dd>
@@ -74,7 +74,7 @@ within the network.</p>
 <dt><a href="#Router">Router</a> ⇐ <code><a href="#Scribe">Scribe</a></code></dt>
 <dd><p>Process incoming messages.</p>
 </dd>
-<dt><a href="#Scribe">Scribe</a></dt>
+<dt><a href="#Scribe">Scribe</a> ⇐ <code><a href="#State">State</a></code></dt>
 <dd><p>Simple tag-based recordkeeper.</p>
 </dd>
 <dt><a href="#Script">Script</a></dt>
@@ -160,6 +160,9 @@ elements of the `components` option.
     * [.envelop(selector)](#App+envelop) ⇒ [<code>App</code>](#App)
     * [.use(name, definition)](#App+use) ⇒ [<code>App</code>](#App)
     * [.render()](#App+render) ⇒ <code>String</code>
+    * [.now()](#Scribe+now) ⇒ <code>Number</code>
+    * [.trust(source)](#Scribe+trust) ⇒ [<code>Scribe</code>](#Scribe)
+    * [.inherits(scribe)](#Scribe+inherits) ⇒ [<code>Scribe</code>](#Scribe)
 
 <a name="new_App_new"></a>
 
@@ -285,13 +288,45 @@ Get the output of our program.
 
 **Kind**: instance method of [<code>App</code>](#App)  
 **Returns**: <code>String</code> - Output of the program.  
+<a name="Scribe+now"></a>
+
+### app.now() ⇒ <code>Number</code>
+Retrives the current timestamp, in milliseconds.
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Returns**: <code>Number</code> - [Number](Number) representation of the millisecond [Integer](Integer) value.  
+<a name="Scribe+trust"></a>
+
+### app.trust(source) ⇒ [<code>Scribe</code>](#Scribe)
+Blindly bind event handlers to the [Source](Source).
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Returns**: [<code>Scribe</code>](#Scribe) - Instance of the [Scribe](#Scribe).  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| source | <code>Source</code> | Event stream. |
+
+<a name="Scribe+inherits"></a>
+
+### app.inherits(scribe) ⇒ [<code>Scribe</code>](#Scribe)
+Use an existing Scribe instance as a parent.
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Returns**: [<code>Scribe</code>](#Scribe) - The configured instance of the Scribe.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| scribe | [<code>Scribe</code>](#Scribe) | Instance of Scribe to use as parent. |
+
 <a name="App"></a>
 
-## App
+## App ⇐ [<code>Scribe</code>](#Scribe)
 Web-friendly application framework for building single-page applications with
 Fabric-based networking and storage.
 
 **Kind**: global class  
+**Extends**: [<code>Scribe</code>](#Scribe)  
 **Properties**
 
 | Name | Type | Description |
@@ -299,7 +334,7 @@ Fabric-based networking and storage.
 | components | [<code>Collection</code>](#Collection) | Interface elements. |
 
 
-* [App](#App)
+* [App](#App) ⇐ [<code>Scribe</code>](#Scribe)
     * [new App([config])](#new_App_new)
     * [new App(definition)](#new_App_new)
     * [.render()](#App+render) ⇒ <code>Mixed</code>
@@ -312,6 +347,9 @@ Fabric-based networking and storage.
     * [.envelop(selector)](#App+envelop) ⇒ [<code>App</code>](#App)
     * [.use(name, definition)](#App+use) ⇒ [<code>App</code>](#App)
     * [.render()](#App+render) ⇒ <code>String</code>
+    * [.now()](#Scribe+now) ⇒ <code>Number</code>
+    * [.trust(source)](#Scribe+trust) ⇒ [<code>Scribe</code>](#Scribe)
+    * [.inherits(scribe)](#Scribe+inherits) ⇒ [<code>Scribe</code>](#Scribe)
 
 <a name="new_App_new"></a>
 
@@ -437,6 +475,37 @@ Get the output of our program.
 
 **Kind**: instance method of [<code>App</code>](#App)  
 **Returns**: <code>String</code> - Output of the program.  
+<a name="Scribe+now"></a>
+
+### app.now() ⇒ <code>Number</code>
+Retrives the current timestamp, in milliseconds.
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Returns**: <code>Number</code> - [Number](Number) representation of the millisecond [Integer](Integer) value.  
+<a name="Scribe+trust"></a>
+
+### app.trust(source) ⇒ [<code>Scribe</code>](#Scribe)
+Blindly bind event handlers to the [Source](Source).
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Returns**: [<code>Scribe</code>](#Scribe) - Instance of the [Scribe](#Scribe).  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| source | <code>Source</code> | Event stream. |
+
+<a name="Scribe+inherits"></a>
+
+### app.inherits(scribe) ⇒ [<code>Scribe</code>](#Scribe)
+Use an existing Scribe instance as a parent.
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Returns**: [<code>Scribe</code>](#Scribe) - The configured instance of the Scribe.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| scribe | [<code>Scribe</code>](#Scribe) | Instance of Scribe to use as parent. |
+
 <a name="Chain"></a>
 
 ## Chain
@@ -810,6 +879,14 @@ An ordered stack of pages.
     * [.now()](#Scribe+now) ⇒ <code>Number</code>
     * [.trust(source)](#Scribe+trust) ⇒ [<code>Scribe</code>](#Scribe)
     * [.inherits(scribe)](#Scribe+inherits) ⇒ [<code>Scribe</code>](#Scribe)
+    * [.toString()](#State+toString) ⇒ <code>String</code>
+    * [.serialize([input])](#State+serialize) ⇒ <code>Buffer</code>
+    * [.deserialize(input)](#State+deserialize) ⇒ [<code>State</code>](#State)
+    * [.fork()](#State+fork) ⇒ [<code>State</code>](#State)
+    * [.get(path)](#State+get) ⇒ <code>Mixed</code>
+    * [.set(path)](#State+set) ⇒ <code>Mixed</code>
+    * [.commit()](#State+commit)
+    * [.render()](#State+render) ⇒ <code>String</code>
 
 <a name="Ledger+append"></a>
 
@@ -854,6 +931,81 @@ Use an existing Scribe instance as a parent.
 | --- | --- | --- |
 | scribe | [<code>Scribe</code>](#Scribe) | Instance of Scribe to use as parent. |
 
+<a name="State+toString"></a>
+
+### ledger.toString() ⇒ <code>String</code>
+Unmarshall an existing state to an instance of a [Blob](Blob).
+
+**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+**Returns**: <code>String</code> - Serialized [Blob](Blob).  
+<a name="State+serialize"></a>
+
+### ledger.serialize([input]) ⇒ <code>Buffer</code>
+Convert to [Buffer](Buffer).
+
+**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+**Returns**: <code>Buffer</code> - [Store](#Store)-able blob.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [input] | <code>Mixed</code> | Input to serialize. |
+
+<a name="State+deserialize"></a>
+
+### ledger.deserialize(input) ⇒ [<code>State</code>](#State)
+Take a hex-encoded input and convert to a [State](#State) object.
+
+**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+**Returns**: [<code>State</code>](#State) - [description]  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>String</code> | [description] |
+
+<a name="State+fork"></a>
+
+### ledger.fork() ⇒ [<code>State</code>](#State)
+Creates a new child [State](#State), with `@parent` set to
+the current [State](#State) by immutable identifier.
+
+**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+<a name="State+get"></a>
+
+### ledger.get(path) ⇒ <code>Mixed</code>
+Retrieve a key from the [State](#State).
+
+**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | [<code>Path</code>](#Path) | Key to retrieve. |
+
+<a name="State+set"></a>
+
+### ledger.set(path) ⇒ <code>Mixed</code>
+Set a key in the [State](#State) to a particular value.
+
+**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | [<code>Path</code>](#Path) | Key to retrieve. |
+
+<a name="State+commit"></a>
+
+### ledger.commit()
+Increment the vector clock, broadcast all changes as a transaction.
+
+**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+**Overrides**: [<code>commit</code>](#State+commit)  
+<a name="State+render"></a>
+
+### ledger.render() ⇒ <code>String</code>
+Compose a JSON string for network consumption.
+
+**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+**Overrides**: [<code>render</code>](#State+render)  
+**Returns**: <code>String</code> - JSON-encoded [String](String).  
 <a name="Machine"></a>
 
 ## Machine
@@ -1277,6 +1429,14 @@ Process incoming messages.
     * [.now()](#Scribe+now) ⇒ <code>Number</code>
     * [.trust(source)](#Scribe+trust) ⇒ [<code>Scribe</code>](#Scribe)
     * [.inherits(scribe)](#Scribe+inherits) ⇒ [<code>Scribe</code>](#Scribe)
+    * [.toString()](#State+toString) ⇒ <code>String</code>
+    * [.serialize([input])](#State+serialize) ⇒ <code>Buffer</code>
+    * [.deserialize(input)](#State+deserialize) ⇒ [<code>State</code>](#State)
+    * [.fork()](#State+fork) ⇒ [<code>State</code>](#State)
+    * [.get(path)](#State+get) ⇒ <code>Mixed</code>
+    * [.set(path)](#State+set) ⇒ <code>Mixed</code>
+    * [.commit()](#State+commit)
+    * [.render()](#State+render) ⇒ <code>String</code>
 
 <a name="new_Router_new"></a>
 
@@ -1344,12 +1504,86 @@ Use an existing Scribe instance as a parent.
 | --- | --- | --- |
 | scribe | [<code>Scribe</code>](#Scribe) | Instance of Scribe to use as parent. |
 
+<a name="State+toString"></a>
+
+### router.toString() ⇒ <code>String</code>
+Unmarshall an existing state to an instance of a [Blob](Blob).
+
+**Kind**: instance method of [<code>Router</code>](#Router)  
+**Returns**: <code>String</code> - Serialized [Blob](Blob).  
+<a name="State+serialize"></a>
+
+### router.serialize([input]) ⇒ <code>Buffer</code>
+Convert to [Buffer](Buffer).
+
+**Kind**: instance method of [<code>Router</code>](#Router)  
+**Returns**: <code>Buffer</code> - [Store](#Store)-able blob.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [input] | <code>Mixed</code> | Input to serialize. |
+
+<a name="State+deserialize"></a>
+
+### router.deserialize(input) ⇒ [<code>State</code>](#State)
+Take a hex-encoded input and convert to a [State](#State) object.
+
+**Kind**: instance method of [<code>Router</code>](#Router)  
+**Returns**: [<code>State</code>](#State) - [description]  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>String</code> | [description] |
+
+<a name="State+fork"></a>
+
+### router.fork() ⇒ [<code>State</code>](#State)
+Creates a new child [State](#State), with `@parent` set to
+the current [State](#State) by immutable identifier.
+
+**Kind**: instance method of [<code>Router</code>](#Router)  
+<a name="State+get"></a>
+
+### router.get(path) ⇒ <code>Mixed</code>
+Retrieve a key from the [State](#State).
+
+**Kind**: instance method of [<code>Router</code>](#Router)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | [<code>Path</code>](#Path) | Key to retrieve. |
+
+<a name="State+set"></a>
+
+### router.set(path) ⇒ <code>Mixed</code>
+Set a key in the [State](#State) to a particular value.
+
+**Kind**: instance method of [<code>Router</code>](#Router)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | [<code>Path</code>](#Path) | Key to retrieve. |
+
+<a name="State+commit"></a>
+
+### router.commit()
+Increment the vector clock, broadcast all changes as a transaction.
+
+**Kind**: instance method of [<code>Router</code>](#Router)  
+<a name="State+render"></a>
+
+### router.render() ⇒ <code>String</code>
+Compose a JSON string for network consumption.
+
+**Kind**: instance method of [<code>Router</code>](#Router)  
+**Returns**: <code>String</code> - JSON-encoded [String](String).  
 <a name="Scribe"></a>
 
-## Scribe
+## Scribe ⇐ [<code>State</code>](#State)
 Simple tag-based recordkeeper.
 
 **Kind**: global class  
+**Extends**: [<code>State</code>](#State)  
 **Properties**
 
 | Name | Type | Description |
@@ -1357,11 +1591,19 @@ Simple tag-based recordkeeper.
 | config | <code>Object</code> | Current configuration. |
 
 
-* [Scribe](#Scribe)
+* [Scribe](#Scribe) ⇐ [<code>State</code>](#State)
     * [new Scribe(config)](#new_Scribe_new)
     * [.now()](#Scribe+now) ⇒ <code>Number</code>
     * [.trust(source)](#Scribe+trust) ⇒ [<code>Scribe</code>](#Scribe)
     * [.inherits(scribe)](#Scribe+inherits) ⇒ [<code>Scribe</code>](#Scribe)
+    * [.toString()](#State+toString) ⇒ <code>String</code>
+    * [.serialize([input])](#State+serialize) ⇒ <code>Buffer</code>
+    * [.deserialize(input)](#State+deserialize) ⇒ [<code>State</code>](#State)
+    * [.fork()](#State+fork) ⇒ [<code>State</code>](#State)
+    * [.get(path)](#State+get) ⇒ <code>Mixed</code>
+    * [.set(path)](#State+set) ⇒ <code>Mixed</code>
+    * [.commit()](#State+commit)
+    * [.render()](#State+render) ⇒ <code>String</code>
 
 <a name="new_Scribe_new"></a>
 
@@ -1405,6 +1647,79 @@ Use an existing Scribe instance as a parent.
 | --- | --- | --- |
 | scribe | [<code>Scribe</code>](#Scribe) | Instance of Scribe to use as parent. |
 
+<a name="State+toString"></a>
+
+### scribe.toString() ⇒ <code>String</code>
+Unmarshall an existing state to an instance of a [Blob](Blob).
+
+**Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Returns**: <code>String</code> - Serialized [Blob](Blob).  
+<a name="State+serialize"></a>
+
+### scribe.serialize([input]) ⇒ <code>Buffer</code>
+Convert to [Buffer](Buffer).
+
+**Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Returns**: <code>Buffer</code> - [Store](#Store)-able blob.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [input] | <code>Mixed</code> | Input to serialize. |
+
+<a name="State+deserialize"></a>
+
+### scribe.deserialize(input) ⇒ [<code>State</code>](#State)
+Take a hex-encoded input and convert to a [State](#State) object.
+
+**Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Returns**: [<code>State</code>](#State) - [description]  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>String</code> | [description] |
+
+<a name="State+fork"></a>
+
+### scribe.fork() ⇒ [<code>State</code>](#State)
+Creates a new child [State](#State), with `@parent` set to
+the current [State](#State) by immutable identifier.
+
+**Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+<a name="State+get"></a>
+
+### scribe.get(path) ⇒ <code>Mixed</code>
+Retrieve a key from the [State](#State).
+
+**Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | [<code>Path</code>](#Path) | Key to retrieve. |
+
+<a name="State+set"></a>
+
+### scribe.set(path) ⇒ <code>Mixed</code>
+Set a key in the [State](#State) to a particular value.
+
+**Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | [<code>Path</code>](#Path) | Key to retrieve. |
+
+<a name="State+commit"></a>
+
+### scribe.commit()
+Increment the vector clock, broadcast all changes as a transaction.
+
+**Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+<a name="State+render"></a>
+
+### scribe.render() ⇒ <code>String</code>
+Compose a JSON string for network consumption.
+
+**Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Returns**: <code>String</code> - JSON-encoded [String](String).  
 <a name="Script"></a>
 
 ## Script
@@ -1652,7 +1967,10 @@ committing to the outcome.  This workflow keeps app design quite simple!
         * [.toString()](#State+toString) ⇒ <code>String</code>
         * [.serialize([input])](#State+serialize) ⇒ <code>Buffer</code>
         * [.deserialize(input)](#State+deserialize) ⇒ [<code>State</code>](#State)
+        * [.fork()](#State+fork) ⇒ [<code>State</code>](#State)
         * [.get(path)](#State+get) ⇒ <code>Mixed</code>
+        * [.set(path)](#State+set) ⇒ <code>Mixed</code>
+        * [.commit()](#State+commit)
         * [.render()](#State+render) ⇒ <code>String</code>
     * _static_
         * [.fromJSON(input)](#State.fromJSON) ⇒ [<code>State</code>](#State)
@@ -1698,10 +2016,17 @@ Take a hex-encoded input and convert to a [State](#State) object.
 | --- | --- | --- |
 | input | <code>String</code> | [description] |
 
+<a name="State+fork"></a>
+
+### state.fork() ⇒ [<code>State</code>](#State)
+Creates a new child [State](#State), with `@parent` set to
+the current [State](#State) by immutable identifier.
+
+**Kind**: instance method of [<code>State</code>](#State)  
 <a name="State+get"></a>
 
 ### state.get(path) ⇒ <code>Mixed</code>
-Retrieve a key from
+Retrieve a key from the [State](#State).
 
 **Kind**: instance method of [<code>State</code>](#State)  
 
@@ -1709,6 +2034,23 @@ Retrieve a key from
 | --- | --- | --- |
 | path | [<code>Path</code>](#Path) | Key to retrieve. |
 
+<a name="State+set"></a>
+
+### state.set(path) ⇒ <code>Mixed</code>
+Set a key in the [State](#State) to a particular value.
+
+**Kind**: instance method of [<code>State</code>](#State)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | [<code>Path</code>](#Path) | Key to retrieve. |
+
+<a name="State+commit"></a>
+
+### state.commit()
+Increment the vector clock, broadcast all changes as a transaction.
+
+**Kind**: instance method of [<code>State</code>](#State)  
 <a name="State+render"></a>
 
 ### state.render() ⇒ <code>String</code>
