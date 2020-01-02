@@ -44,9 +44,17 @@ class Store extends Scribe {
     this['@entity']['@data'].collections = {};
     this['@entity']['@data'].tips = {};
 
+    this.commits = new Collection({
+      type: 'State'
+    });
+
     Object.assign(this['@data'], this['@entity']['@data']);
 
     return this;
+  }
+
+  async _errorHandler (err) {
+    console.error('[FABRIC:STORE]', 'Error condition:', err);
   }
 
   async _setEncrypted (path, value, passphrase = '') {
@@ -171,7 +179,7 @@ class Store extends Scribe {
     let tip = null;
 
     if (!self.db) {
-      await self.open();
+      await self.open().catch(self._errorHandler.bind(self));
     }
 
     let family = null;
@@ -446,15 +454,31 @@ class Store extends Scribe {
     return this;
   }
 
-  del (key) {
+  /**
+   * Remove a {@link Value} by {@link Path}.
+   * @param {Path} key Key to remove.
+   */
+  async del (key) {
+    if (!this.db) {
+      await this.open();
+    }
+
     return this.db.del(key);
   }
 
-  batch (ops, done) {
+  async batch (ops, done) {
+    if (!this.db) {
+      await this.open();
+    }
+
+    return this.db.batch(ops).then(done);
+  }
+
+  async commit () {
+    const entity = new Entity(this.state);
+
     if (this.db) {
-      return this.db.batch(ops).then(done);
-    } else {
-      return done;
+      await this.db.close();
     }
   }
 

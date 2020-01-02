@@ -80,9 +80,9 @@ class Message extends Vector {
     return message;
   }
 
-  get [Symbol.toStringTag] () {
-    return 'Message';
-  }
+  /* get [Symbol.toStringTag] () {
+    return `<Message | ${JSON.stringify(this.raw)}>`;
+  } */
 
   get id () {
     return crypto.createHash('sha256').update(this.asRaw()).digest('hex');

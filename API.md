@@ -49,6 +49,9 @@ inspection of <a href="#Machine">Machine</a> mechanics.</p>
 <dt><a href="#Machine">Machine</a></dt>
 <dd><p>General-purpose state machine with <a href="#Vector">Vector</a>-based instructions.</p>
 </dd>
+<dt><a href="#Mempool">Mempool</a></dt>
+<dd><p>Stores a list of <a href="Transaction">Transaction</a> elements.</p>
+</dd>
 <dt><a href="#Message">Message</a> : <code>Object</code></dt>
 <dd><p>The <a href="#Message">Message</a> type defines the Application Messaging Protocol, or AMP.
 Each <a href="Actor">Actor</a> in the network receives and broadcasts messages,
@@ -117,6 +120,9 @@ execute either the full set or none.</p>
 <dt><a href="#Transition">Transition</a></dt>
 <dd><p>The <a href="#Transition">Transition</a> type reflects a change from one finite
 <a href="#State">State</a> to another.</p>
+</dd>
+<dt><a href="#Value">Value</a></dt>
+<dd><p><a href="Number">Number</a>-like type.</p>
 </dd>
 <dt><a href="#Vector">Vector</a></dt>
 <dd></dd>
@@ -332,6 +338,7 @@ Fabric-based networking and storage.
 | Name | Type | Description |
 | --- | --- | --- |
 | components | [<code>Collection</code>](#Collection) | Interface elements. |
+| stash | [<code>Store</code>](#Store) | Routable [Datastore](Datastore). |
 
 
 * [App](#App) ⇐ [<code>Scribe</code>](#Scribe)
@@ -538,6 +545,11 @@ Creates a channel between to peers.  Useful for aggregation
 of many transactions over time, to be settled on-chain later.
 
 **Kind**: global class  
+
+* [Channel](#Channel)
+    * [new Channel([settings])](#new_Channel_new)
+    * [.add(amount)](#Channel+add)
+
 <a name="new_Channel_new"></a>
 
 ### new Channel([settings])
@@ -545,6 +557,17 @@ of many transactions over time, to be settled on-chain later.
 | Param | Type | Description |
 | --- | --- | --- |
 | [settings] | <code>Object</code> | Configuration for the channel. |
+
+<a name="Channel+add"></a>
+
+### channel.add(amount)
+Add an amount to the channel's balance.
+
+**Kind**: instance method of [<code>Channel</code>](#Channel)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| amount | <code>Number</code> | Amount value to add to current outgoing balance. |
 
 <a name="Circuit"></a>
 
@@ -1053,6 +1076,23 @@ so counts should always begin with 0.
 | --- | --- | --- |
 | input | [<code>Vector</code>](#Vector) | Input state, undefined if desired. |
 
+<a name="Mempool"></a>
+
+## Mempool
+Stores a list of [Transaction](Transaction) elements.
+
+**Kind**: global class  
+**Emits**: <code>event:{Message} confirmed Emitted when the Mempool has dropped a transaction.</code>  
+<a name="new_Mempool_new"></a>
+
+### new Mempool(settings)
+Creates an instance of a [Mempool](#Mempool) [Service](#Service).
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| settings | <code>Object</code> | Map of settings to utilize. |
+
 <a name="Message"></a>
 
 ## Message : <code>Object</code>
@@ -1100,6 +1140,7 @@ transitive state.
     * [.get(key)](#Store+get) ⇒ <code>Promise</code>
     * [.set(key, value)](#Store+set)
     * [.trust(source)](#Store+trust) ⇒ [<code>Store</code>](#Store)
+    * [.del(key)](#Store+del)
     * [.start()](#Store+start) ⇒ <code>Promise</code>
 
 <a name="new_Oracle_new"></a>
@@ -1184,6 +1225,17 @@ Implicitly trust an [Event](Event) source.
 | Param | Type | Description |
 | --- | --- | --- |
 | source | <code>EventEmitter</code> | Event-emitting source. |
+
+<a name="Store+del"></a>
+
+### oracle.del(key)
+Remove a [Value](#Value) by [Path](#Path).
+
+**Kind**: instance method of [<code>Oracle</code>](#Oracle)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| key | [<code>Path</code>](#Path) | Key to remove. |
 
 <a name="Store+start"></a>
 
@@ -2105,6 +2157,7 @@ Long-term storage.
     * [.get(key)](#Store+get) ⇒ <code>Promise</code>
     * [.set(key, value)](#Store+set)
     * [.trust(source)](#Store+trust) ⇒ [<code>Store</code>](#Store)
+    * [.del(key)](#Store+del)
     * [.start()](#Store+start) ⇒ <code>Promise</code>
 
 <a name="new_Store_new"></a>
@@ -2178,6 +2231,17 @@ Implicitly trust an [Event](Event) source.
 | Param | Type | Description |
 | --- | --- | --- |
 | source | <code>EventEmitter</code> | Event-emitting source. |
+
+<a name="Store+del"></a>
+
+### store.del(key)
+Remove a [Value](#Value) by [Path](#Path).
+
+**Kind**: instance method of [<code>Store</code>](#Store)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| key | [<code>Path</code>](#Path) | Key to remove. |
 
 <a name="Store+start"></a>
 
@@ -2265,6 +2329,38 @@ The [Transition](#Transition) type reflects a change from one finite
 | Param | Type | Description |
 | --- | --- | --- |
 | settings | <code>Object</code> | Configuration for the transition object. |
+
+<a name="Value"></a>
+
+## Value
+[Number](Number)-like type.
+
+**Kind**: global class  
+
+* [Value](#Value)
+    * [new Value(data)](#new_Value_new)
+    * [.value(input)](#Value+value)
+
+<a name="new_Value_new"></a>
+
+### new Value(data)
+Use the [Value](#Value) type to interact with [Number](Number)-like objects.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| data | <code>Mixed</code> | Input value. |
+
+<a name="Value+value"></a>
+
+### value.value(input)
+Compute the numeric representation of this input.
+
+**Kind**: instance method of [<code>Value</code>](#Value)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>String</code> | Input string to seek for value. |
 
 <a name="Vector"></a>
 

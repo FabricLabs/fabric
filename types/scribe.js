@@ -7,6 +7,7 @@ const State = require('./state');
 
 /**
  * Simple tag-based recordkeeper.
+ * @extends State
  * @property {Object} config Current configuration.
  */
 class Scribe extends State {

@@ -97,6 +97,7 @@ class Wallet extends Service {
     this.keys = new Collection();
     this.coins = new Collection();
     this.secrets = new Collection();
+    this.transactions = new Collection();
     this.outputs = new Collection();
 
     this.entity = new Entity(this.settings);
@@ -126,6 +127,15 @@ class Wallet extends Service {
     };
 
     Object.defineProperty(this, 'database', { enumerable: false });
+    // TODO: remove these
+    Object.defineProperty(this, 'accounts', { enumerable: false });
+    Object.defineProperty(this, 'addresses', { enumerable: false });
+    Object.defineProperty(this, 'coins', { enumerable: false });
+    Object.defineProperty(this, 'keys', { enumerable: false });
+    Object.defineProperty(this, 'outputs', { enumerable: false });
+    Object.defineProperty(this, 'secrets', { enumerable: false });
+    Object.defineProperty(this, 'swarm', { enumerable: false });
+    Object.defineProperty(this, 'transactions', { enumerable: false });
     Object.defineProperty(this, 'wallet', { enumerable: false });
 
     this.status = 'closed';
@@ -141,10 +151,6 @@ class Wallet extends Service {
     return this.get('/balances/confirmed');
   }
 
-  get transactions () {
-    return this.get('/transactions');
-  }
-
   get orders () {
     return this.get('/orders');
   }
@@ -157,6 +163,9 @@ class Wallet extends Service {
 
   _handleGenericMessage (msg) {
     if (this.settings.verbosity >= 5) console.log('[AUDIT]', '[FABRIC:WALLET]', 'Trusted emitter gave us:', msg);
+
+    // TODO: remove this log event, only used for debugging
+    console.log('[AUDIT]', '[FABRIC:WALLET]', 'Trusted emitter gave us:', msg);
 
     // TODO: bind @fabric/core/services/bitcoin to addresses on wallet...
     // ATTN: Eric
@@ -195,11 +204,19 @@ class Wallet extends Service {
     }
   }
 
+  async _attachTXID (txid) {
+    // TODO: check that `txid` is a proper TXID
+    let result = this.set(`/transactions`, this.get('/transactions').concat([ txid ]));
+    console.log('[AUDIT]', `Attached TXID ${txid} to Wallet ID ${this.id}`);
+    return result;
+  }
+
   async addTransactionToWallet (transaction) {
     let entity = new Entity(transaction);
     if (!transaction.spent) transaction.spent = false;
     this._state.transactions.push(transaction);
     this.commit();
+    console.log('[FABRIC:WALLET]', 'Wallet transactions now:', this._state.transactions);
 
     for (let i = 0; i < transaction.outputs.length; i++) {
       let output = transaction.outputs[i].toJSON();
@@ -231,10 +248,19 @@ class Wallet extends Service {
 
   async _spendToAddress(amount, address) {
     let mtx = new MTX();
+    let utxo = await this._getUnspentOutput(amount);
+    let change = await this._allocateSlot();
+
+    if (!this._state.coins.length) throw new Error('No available funds.');
 
     mtx.addOutput({
       address: address,
       value: amount
+    });
+
+    mtx.fund(this._state.coins, {
+      rate: 10,
+      changeAddress: change.string
     });
 
     mtx.sign(this.ring);
