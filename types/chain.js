@@ -2,6 +2,7 @@
 
 const Block = require('./block');
 const Ledger = require('./ledger');
+const Mempool = require('./mempool');
 const Stack = require('./stack');
 const State = require('./state');
 const Store = require('./store');
@@ -30,7 +31,10 @@ class Chain extends Ledger {
     }, origin);
 
     this.genesis = new Block(this.config);
+    this.mempool = new Worker(this.config);
     this.miner = new Worker({ method: 'sha256' });
+
+    // External State
     this.state = {
       blocks: []
     };

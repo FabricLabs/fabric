@@ -13,6 +13,7 @@ const Storage = require('./store');
  * Fabric-based networking and storage.
  * @extends Scribe
  * @property {Collection} components Interface elements.
+ * @property {Store} stash Routable {@link Datastore}.
  */
 class App extends Scribe {
   /**

@@ -473,9 +473,13 @@ class Service extends Scribe {
 
     if (this.store) {
       // TODO: add robust + convenient database opener
-      await this.store.batch(ops, function shareChanges () {
-        // TODO: notify status?
-      });
+      try {
+        await this.store.batch(ops, function shareChanges () {
+          // TODO: notify status?
+        });
+      } catch (E) {
+        console.log('[FABRIC:SERVICE]', 'Threw Exception:', E);
+      }
     }
 
     if (self.observer) {

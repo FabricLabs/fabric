@@ -11,7 +11,7 @@ const Secret = require('./secret');
 const Consensus = require('./consensus');
 
 /**
- * Creates a channel between to peers.  Useful for aggregation
+ * Creates a channel between two peers.
  * of many transactions over time, to be settled on-chain later.
  */
 class Channel extends Scribe {
@@ -67,12 +67,59 @@ class Channel extends Scribe {
     return this._state.counterparty || null;
   }
 
+  get balance () {
+    return this._state.value.outgoing;
+  }
+
+  set balance (amount) {
+    this._state.value.outgoing = amount;
+    this.commit();
+    return this.balance;
+  }
+
+  /**
+   * Add an amount to the channel's balance.
+   * @param {Number} amount Amount value to add to current outgoing balance.
+   */
+  add (amount) {
+    this._state.value.outgoing += amount;
+    this.commit();
+    return this.balance;
+  }
+
+  commit () {
+    const commit = new Entity(this._state);
+    console.log('[FABRIC:CHANNEL]', 'Commit:', commit.id, '', commit);
+    return commit;
+  }
+
+  /**
+   * Fund the channel.
+   * @param {Mixed} input Instance of a {@link Transaction}.
+   */
   async fund (input) {
     this._state.inputs.push(input);
   }
 
+  /**
+   * Opens a {@link Channel} with a {@link Peer}.
+   * @param {Object} channel Channel settings.
+   */
   async open (channel = {}) {
     if (!channel.recipient) return console.error('Channel recipient must be provided.');
+    this.status = 'opening';
+    this._state.session = {
+      counterparty: channel.recipient,
+      settings: channel
+    };
+    this.status = 'opened';
+    this.commit();
+  }
+
+  async _setDestinationAddress (address) {
+    console.log('[FABRIC:CHANNEL]', `Setting destination address to ${address} on counterparty:`, this.counterparty);
+    this.counterparty.address = address;
+    this.commit();
   }
 
   async _getSpendableOutput () {

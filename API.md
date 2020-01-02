@@ -13,7 +13,7 @@ Fabric-based networking and storage.</p>
 <dd><p>Chain.</p>
 </dd>
 <dt><a href="#Channel">Channel</a></dt>
-<dd><p>Creates a channel between to peers.  Useful for aggregation
+<dd><p>Creates a channel between two peers.
 of many transactions over time, to be settled on-chain later.</p>
 </dd>
 <dt><a href="#Circuit">Circuit</a></dt>
@@ -541,7 +541,7 @@ Holds an immutable chain of events.
 <a name="Channel"></a>
 
 ## Channel
-Creates a channel between to peers.  Useful for aggregation
+Creates a channel between two peers.
 of many transactions over time, to be settled on-chain later.
 
 **Kind**: global class  
@@ -549,6 +549,8 @@ of many transactions over time, to be settled on-chain later.
 * [Channel](#Channel)
     * [new Channel([settings])](#new_Channel_new)
     * [.add(amount)](#Channel+add)
+    * [.fund(input)](#Channel+fund)
+    * [.open(channel)](#Channel+open)
 
 <a name="new_Channel_new"></a>
 
@@ -568,6 +570,28 @@ Add an amount to the channel's balance.
 | Param | Type | Description |
 | --- | --- | --- |
 | amount | <code>Number</code> | Amount value to add to current outgoing balance. |
+
+<a name="Channel+fund"></a>
+
+### channel.fund(input)
+Fund the channel.
+
+**Kind**: instance method of [<code>Channel</code>](#Channel)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>Mixed</code> | Instance of a [Transaction](Transaction). |
+
+<a name="Channel+open"></a>
+
+### channel.open(channel)
+Opens a [Channel](#Channel) with a [Peer](#Peer).
+
+**Kind**: instance method of [<code>Channel</code>](#Channel)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| channel | <code>Object</code> | Channel settings. |
 
 <a name="Circuit"></a>
 
