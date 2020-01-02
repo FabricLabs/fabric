@@ -8,6 +8,7 @@ const pointer = require('json-pointer');
 
 // internal components
 const Collection = require('./collection');
+const Entity = require('./entity');
 const Scribe = require('./scribe');
 const Stack = require('./stack');
 const State = require('./state');
