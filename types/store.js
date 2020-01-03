@@ -352,7 +352,7 @@ class Store extends Scribe {
       '@buffer': serial
     };
 
-    if (!self.db) {
+    if (!self.db || self.db._status === 'closed') {
       await self.open();
     }
 
@@ -378,30 +378,40 @@ class Store extends Scribe {
       console.error(E);
     }
 
-    this.commit();
+    try {
+      const commit = await this.commit();
+    } catch (E) {
+      console.error('Could not commit:', E);
+    }
 
     return this.get(key);
   }
 
   async open () {
-    await super.open();
-
+    // await super.open();
     if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Opening:', this.config.path);
+    // if (this.db) return this;
 
-    if (this.db) return this;
 
     try {
       this.db = level(this.config.path);
       this.trust(this.db);
       this.status = 'opened';
+      await this.commit();
+      if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Opened!');
     } catch (E) {
-      console.error('[STORE]', E);
+      console.error('[FABRIC:STORE]', E);
+      this.status = 'error';
     }
+
+    if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Opened!');
 
     return this;
   }
 
   async close () {
+    if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Closing:', this.config.path);
+
     if (!this.config.persistent) {
       await this.flush();
     }
@@ -414,7 +424,7 @@ class Store extends Scribe {
       }
     }
 
-    await super.close();
+    // await super.close();
 
     return this;
   }
@@ -464,29 +474,39 @@ class Store extends Scribe {
       await this.open();
     }
 
-    return this.db.del(key);
+    const deleted = this.db.del(key);
+    return deleted;
   }
 
-  async batch (ops, done) {
-    if (!this.db) {
+  async batch (ops) {
+    if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Batching:', ops);
+
+    try {
       await this.open();
+    } catch (E) {
+      console.log('Could not open for batch:', ops, E);
     }
 
-    return this.db.batch(ops).then(done);
+    let batched = this.db.batch(ops);
+    if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Batched:', batched);
+    return batched;
   }
 
   async commit () {
+    if (this.settings.verbosity >= 4) console.trace('[FABRIC:STORE]', 'Committing:', this.state);
     const entity = new Entity(this.state);
-
-    if (this.db) {
-      await this.db.close();
-    }
+    this.emit('commit', entity.id);
+    // TODO: document re-opening of store
+    return entity;
   }
 
   createReadStream () {
     return this.db.createReadStream();
   }
 
+  /**
+   * Wipes the storage.
+   */
   async flush () {
     for (let name in this['@entity']['@data'].addresses) {
       let address = this['@entity']['@data'].addresses[name];
@@ -494,7 +514,19 @@ class Store extends Scribe {
       if (address) await this.del(address);
     }
 
-    return this.del(`/collections`);
+    try {
+      this.del(`/collections`);
+      await this.commit();
+    } catch (E) {
+      console.error('Could not wipe database:', E);
+    }
+
+    return this;
+  }
+
+  noop () {
+    this.emit('noop');
+    return this;
   }
 
   rotate () {
@@ -506,18 +538,34 @@ class Store extends Scribe {
    * @return {Promise} Resolves on complete.
    */
   async start () {
-    await super.start();
-
+    if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Starting:', this.config.path);
     this.status = 'starting';
+
+    if (!this.db) {
+      await this.open();
+    }
 
     try {
       await this.db.open();
+      this.status = 'started';
+      await this.commit();
+      if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Starting:', this.config.path);
     } catch (E) {
       console.error('[FABRIC:STORE]', 'Could not open db:', E);
     }
 
-    this.status = 'started';
+    return this;
+  }
 
+  async stop () {
+    if (this.status === 'started') {
+      this.status = 'stopping';
+      await this.close();
+    } else {
+      this.noop();
+    }
+
+    this.status = 'stopped';
     return this;
   }
 }

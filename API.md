@@ -1165,6 +1165,7 @@ transitive state.
     * [.set(key, value)](#Store+set)
     * [.trust(source)](#Store+trust) ⇒ [<code>Store</code>](#Store)
     * [.del(key)](#Store+del)
+    * [.flush()](#Store+flush)
     * [.start()](#Store+start) ⇒ <code>Promise</code>
 
 <a name="new_Oracle_new"></a>
@@ -1261,6 +1262,13 @@ Remove a [Value](#Value) by [Path](#Path).
 | --- | --- | --- |
 | key | [<code>Path</code>](#Path) | Key to remove. |
 
+<a name="Store+flush"></a>
+
+### oracle.flush()
+Wipes the storage.
+
+**Kind**: instance method of [<code>Oracle</code>](#Oracle)  
+**Overrides**: [<code>flush</code>](#Store+flush)  
 <a name="Store+start"></a>
 
 ### oracle.start() ⇒ <code>Promise</code>
@@ -2182,6 +2190,7 @@ Long-term storage.
     * [.set(key, value)](#Store+set)
     * [.trust(source)](#Store+trust) ⇒ [<code>Store</code>](#Store)
     * [.del(key)](#Store+del)
+    * [.flush()](#Store+flush)
     * [.start()](#Store+start) ⇒ <code>Promise</code>
 
 <a name="new_Store_new"></a>
@@ -2267,6 +2276,12 @@ Remove a [Value](#Value) by [Path](#Path).
 | --- | --- | --- |
 | key | [<code>Path</code>](#Path) | Key to remove. |
 
+<a name="Store+flush"></a>
+
+### store.flush()
+Wipes the storage.
+
+**Kind**: instance method of [<code>Store</code>](#Store)  
 <a name="Store+start"></a>
 
 ### store.start() ⇒ <code>Promise</code>
