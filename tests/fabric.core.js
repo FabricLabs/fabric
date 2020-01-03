@@ -614,34 +614,6 @@ describe('@fabric/core', function () {
     });
   });
 
-  describe('Oracle', function () {
-    it('is available from @fabric/core', function () {
-      assert.equal(Fabric.Oracle instanceof Function, true);
-    });
-
-    it('can use _SET', async function () {
-      let oracle = new Fabric.Oracle();
-
-      await oracle.start();
-      await oracle._SET('sample', message['@data']);
-      await oracle.stop();
-
-      assert.ok(oracle);
-    });
-
-    it('can store a string value', async function () {
-      let oracle = new Fabric.Oracle();
-
-      await oracle.start();
-      let set = await oracle._SET('sample', message['@data']);
-      let get = await oracle._GET('sample');
-      await oracle.stop();
-
-      assert.ok(oracle);
-      assert.equal(typeof get, 'string');
-    });
-  });
-
   describe('Remote', function () {
     it('is available from @fabric/core', function () {
       assert.equal(Fabric.Remote instanceof Function, true);
@@ -834,11 +806,9 @@ describe('@fabric/core', function () {
         persistent: false
       });
 
-      await store.start();
-
-      let set = await store.set('example', samples.input.hello);
-
-      await store.stop();
+      await store.start().catch(store.error.bind(store));
+      let set = await store.set('example', samples.input.hello).catch(store.error.bind(store));
+      await store.stop().catch(store.error.bind(store));
 
       assert.ok(store);
       assert.equal(typeof set, 'string');
@@ -925,7 +895,7 @@ describe('@fabric/core', function () {
       assert.equal(Fabric.Vector instanceof Function, true);
     });
 
-    xit('can restore from garbage', async function () {
+    it('can restore from garbage', async function () {
       let vector = Fabric.Vector.fromObjectString('{ "0": { "type": "Buffer", "data": [0, 0, 0, 0 ] } }');
       assert.equal(vector instanceof Array, true);
       assert.equal(vector[0] instanceof Buffer, true);
@@ -934,42 +904,21 @@ describe('@fabric/core', function () {
     });
   });
 
-  describe('Wallet', function () {
-    it('is available from @fabric/core', function () {
-      assert.equal(Fabric.Wallet instanceof Function, true);
+  describe('Worker', function () {
+    xit('is available from @fabric/core', function () {
+      assert.equal(Fabric.Worker instanceof Function, true);
     });
 
-    it('can load and unload', function (done) {
-      async function test () {
-        let wallet = new Fabric.Wallet();
-        await wallet.start();
-        await wallet.stop();
-        done();
-      }
-
-      test().catch(done);
+    xit('can handle a task', async function () {
+      let worker = new Fabric.Worker();
+      let result = await worker.compute(1);
+      console.log('worker:', worker);
+      console.log('result:', result);
     });
+  });
+});
 
-    it('can start and stop', function (done) {
-      async function test () {
-        let wallet = new Fabric.Wallet();
-        await wallet.start();
-        await wallet.stop();
-        done();
-      }
 
-      test().catch(done);
-    });
-
-    it('can generate a seed', function (done) {
-      async function test () {
-        let wallet = new Fabric.Wallet();
-        let entity = await wallet._createSeed();
-        assert.ok(entity);
-        assert.ok(entity.seed);
-        assert.equal(entity.seed.split(' ').length, 24);
-        done();
-      }
 
       test().catch(done);
     });
