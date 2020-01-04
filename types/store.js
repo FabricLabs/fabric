@@ -483,17 +483,18 @@ class Store extends Scribe {
   }
 
   async batch (ops) {
-    if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Batching:', ops);
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:STORE]', 'Batching:', ops);
+    let result = null;
 
+    // Core function
     try {
-      await this.open();
+      result = await this.db.batch(ops);
+      if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Batched:', result);
     } catch (E) {
-      console.log('Could not open for batch:', ops, E);
+      console.error('[FABRIC:STORE]', 'Could not batch updates:', E);
     }
 
-    let batched = this.db.batch(ops);
-    if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Batched:', batched);
-    return batched;
+    return result;
   }
 
   async commit () {
