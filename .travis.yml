@@ -4,5 +4,4 @@ node_js:
 cache:
   yarn: true
 after_script:
-  - npm run coverage
-  - codecov
+  - npm run report:coverage
