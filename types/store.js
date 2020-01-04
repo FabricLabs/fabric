@@ -304,6 +304,8 @@ class Store extends Scribe {
       } catch (E) {
         if (this.settings.verbosity >= 2) console.error(`cannot get state [${tip}] "/states/${tip}":`, E);
       }
+    } else {
+      return null;
     }
 
     switch (type) {
@@ -474,7 +476,7 @@ class Store extends Scribe {
       await this.open();
     }
 
-    const deleted = this.db.del(key);
+    const deleted = await this.db.del(key);
     return deleted;
   }
 
