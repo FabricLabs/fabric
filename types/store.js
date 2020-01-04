@@ -420,10 +420,12 @@ class Store extends Scribe {
       await this.flush();
     }
 
-    try {
-      await this.db.close();
-    } catch (E) {
-      this.error('[STORE]', 'closing store:', this.settings.path, E);
+    if (this.db) {
+      try {
+        await this.db.close();
+      } catch (E) {
+        this.error('[STORE]', 'closing store:', this.settings.path, E);
+      }
     }
 
     // await super.close();
