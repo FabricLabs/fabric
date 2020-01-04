@@ -1,7 +1,5 @@
 'use strict';
 
-require('debug-trace')({ always: true });
-
 const config = require('../settings/test');
 const Interface = require('../types/interface');
 

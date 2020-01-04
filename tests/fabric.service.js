@@ -1,7 +1,5 @@
 'use strict';
 
-require('debug-trace')({ always: true });
-
 // Testing
 const assert = require('assert');
 const Fabric = require('../');

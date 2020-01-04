@@ -105,6 +105,26 @@ class Circuit extends Service {
     return output;
   }
 
+  scramble () {
+    let key = crypto.randomBytes(32);
+    let machine = new Machine({ seed: key });
+    let seed = machine.sip();
+    let gates = [];
+
+    for (let i = 0; i < this._state.steps.length; i++) {
+      gates.push({
+        name: this._state.steps[i],
+        seed: machine.sip()
+      });
+    }
+
+    gates.sort((a, b) => {
+      return a.seed - b.seed;
+    });
+
+    return gates;
+  }
+
   render () {
     let hash = crypto.createHash('sha256').update(this.dot).digest('base64');
     return `<fabric-circuit>

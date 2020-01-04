@@ -1,7 +1,5 @@
 'use strict';
 
-require('debug-trace')({ always: true });
-
 const {
   LARGE_COLLECTION_SIZE
 } = require('../constants');
@@ -25,8 +23,7 @@ describe('@fabric/core/types/store', function () {
 
     it('can set a key to a string value', async function () {
       let store = new Store({
-        persistent: false,
-        verbosity: 5
+        persistent: false
       });
 
       await store.start().catch(store.error.bind(store));
