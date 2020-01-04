@@ -28,10 +28,15 @@ describe('@fabric/core/types/service', function () {
       });
 
       try {
-        await service.start().catch(handler);
-        await service.stop().catch(handler);
+        await service.start();
       } catch (E) {
-        console.error('Exception:', E);
+        console.error('Exception starting:', E);
+      }
+
+      try {
+        await service.stop();
+      } catch (E) {
+        console.error('Exception stopping:', E);
       }
 
       assert.ok(service);

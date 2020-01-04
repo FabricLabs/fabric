@@ -366,8 +366,11 @@ class Store extends Scribe {
       { type: 'put', key: `/names/${router}`, value: id }
     ];
 
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:STORE]', `Applying ops to path "${key}" :`, ops);
+
     try {
       batched = await self.db.batch(ops);
+      if (this.settings.verbosity >= 4) console.log('batched result:', batched);
     } catch (E) {
       console.error('BATCH FAILURE:', E);
     }
@@ -391,12 +394,11 @@ class Store extends Scribe {
 
   async open () {
     // await super.open();
-    if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Opening:', this.config.path);
+    if (this.settings.verbosity >= 3) console.trace('[FABRIC:STORE]', 'Opening:', this.settings.path);
     // if (this.db) return this;
 
-
     try {
-      this.db = level(this.config.path);
+      this.db = level(this.settings.path);
       this.trust(this.db);
       this.status = 'opened';
       await this.commit();
@@ -412,7 +414,7 @@ class Store extends Scribe {
   }
 
   async close () {
-    if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Closing:', this.config.path);
+    if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Closing:', this.settings.path);
 
     if (!this.config.persistent) {
       await this.flush();
@@ -422,7 +424,7 @@ class Store extends Scribe {
       try {
         await this.db.close();
       } catch (E) {
-        this.error('[STORE]', 'closing store:', this.config.path, E);
+        this.error('[STORE]', 'closing store:', this.settings.path, E);
       }
     }
 
@@ -540,7 +542,7 @@ class Store extends Scribe {
    * @return {Promise} Resolves on complete.
    */
   async start () {
-    if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Starting:', this.config.path);
+    if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Starting:', this.settings.path);
     this.status = 'starting';
 
     if (!this.db) {
@@ -551,11 +553,12 @@ class Store extends Scribe {
       await this.db.open();
       this.status = 'started';
       await this.commit();
-      if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Starting:', this.config.path);
+      if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Starting:', this.settings.path);
     } catch (E) {
       console.error('[FABRIC:STORE]', 'Could not open db:', E);
     }
 
+    if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Started on path:', this.settings.path);
     return this;
   }
 
