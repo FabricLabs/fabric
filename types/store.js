@@ -420,16 +420,13 @@ class Store extends Scribe {
       await this.flush();
     }
 
-    if (this.db) {
-      try {
-        await this.db.close();
-      } catch (E) {
-        this.error('[STORE]', 'closing store:', this.settings.path, E);
-      }
+    try {
+      await this.db.close();
+    } catch (E) {
+      this.error('[STORE]', 'closing store:', this.settings.path, E);
     }
 
     // await super.close();
-
     return this;
   }
 
@@ -498,7 +495,7 @@ class Store extends Scribe {
   }
 
   async commit () {
-    if (this.settings.verbosity >= 4) console.trace('[FABRIC:STORE]', 'Committing:', this.state);
+    if (this.settings.verbosity >= 5) console.trace('[AUDIT]', '[FABRIC:STORE]', 'Committing:', this.state);
     const entity = new Entity(this.state);
     this.emit('commit', entity.id);
     // TODO: document re-opening of store
@@ -546,15 +543,10 @@ class Store extends Scribe {
     if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Starting:', this.settings.path);
     this.status = 'starting';
 
-    if (!this.db) {
-      await this.open();
-    }
-
     try {
-      await this.db.open();
+      await this.open();
       this.status = 'started';
-      await this.commit();
-      if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Starting:', this.settings.path);
+      // await this.commit();
     } catch (E) {
       console.error('[FABRIC:STORE]', 'Could not open db:', E);
     }
@@ -564,14 +556,16 @@ class Store extends Scribe {
   }
 
   async stop () {
-    if (this.status === 'started') {
-      this.status = 'stopping';
+    this.status = 'stopping';
+
+    try {
       await this.close();
-    } else {
-      this.noop();
+    } catch (E) {
+      console.error('Could not stop store:', E);
     }
 
     this.status = 'stopped';
+
     return this;
   }
 }

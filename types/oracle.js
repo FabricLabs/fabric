@@ -62,7 +62,11 @@ class Oracle extends Store {
   }
 
   async start () {
-    await super.start();
+    try {
+      await this.open();
+    } catch (E) {
+      console.error('Could not open Oracle:', E);
+    }
 
     // TODO: define all resources
     await Promise.all([
@@ -88,6 +92,16 @@ class Oracle extends Store {
     // this.state = await this._GET('/');
     // console.log('state retrieved:', this.state);
     // this.machine.on('changes', this._handleStateChange.bind(this));
+
+    return this;
+  }
+
+  async stop () {
+    try {
+      await this.close();
+    } catch (E) {
+      console.error('Could not close Oracle:', E);
+    }
 
     return this;
   }

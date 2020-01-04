@@ -44,6 +44,12 @@ using [the actor model][actor-model].
 ```js
 const Fabric = require('fabric');
 const service = new Fabric();
+
+service.on('message', function (message) {
+  console.log('Received message from Fabric:', message);
+});
+
+service.start();
 ```
 
 `service` now contains a full instance of Fabric, including `SET` and `GET`
@@ -66,6 +72,7 @@ collection of empassioned educators eager to help you.
 
 Fabric on Twitter: [@FabricProtocol][twitter]
 
+[fabric-github]: https://github.com/FabricLabs/fabric
 [http-plugin]: https://github.com/FabricLabs/web
 
 [learning]: https://maki.io/topics/learning

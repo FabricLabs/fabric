@@ -236,10 +236,13 @@ class Service extends Scribe {
       exclusive: true // override all previous types
     });
 
-    try {
-      await this.store.start();
-    } catch (E) {
-      console.error('[FABRIC:SERVICE]', 'Could not start store:', E);
+
+    if (this.settings.persistent) {
+      try {
+        await this.store.start();
+      } catch (E) {
+        console.error('[FABRIC:SERVICE]', 'Could not start store:', E);
+      }
     }
 
     if (this.settings.networking) {
@@ -263,12 +266,16 @@ class Service extends Scribe {
   }
 
   async stop () {
-    await this.disconnect();
+    if (this.settings.networking) {
+      await this.disconnect();
+    }
 
-    try {
-      await this.store.stop();
-    } catch (E) {
-      console.error('[FABRIC:SERVICE]', 'Exception stopping store:', E);
+    if (this.settings.persistent) {
+      try {
+        await this.store.stop();
+      } catch (E) {
+        console.error('[FABRIC:SERVICE]', 'Exception stopping store:', E);
+      }
     }
 
     return this;
