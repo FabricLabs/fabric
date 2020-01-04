@@ -35,11 +35,26 @@ Fabric is an extensible framework, supporting a variety of plugins.
 
 - [`@fabric/http`][http-plugin] for serving Fabric apps to the legacy web (HTTP)
 
+## Running on Fabric
+Several successful projects are built with or are running on Fabric, including:
+
+- [Doorman][doorman], an artificially intelligent assistant
+- [IdleRPG][idlerpg], a simple RPG game which rewards you for remaining idle
+- [Verse][verse], a virtual universe simulator
+
+To add your project to the list, [read the API docs][api-docs], create a public
+repository for the source code, then [edit this file][edit-readme] to include a
+link to your work.
+
 ## API
 The Fabric reference implementation exposes a simple message-passing interface
-using [the actor model][actor-model].
+using [the actor model][actor-model], enabling your downstream applications to
+subscribe to simple events for rapid prototyping of distributed applications.
 
 ### Using as a Library
+Using the `EventEmitter` pattern, you can create an instance of Fabric to use
+it as an event source.
+
 #### Simple Example
 ```js
 const Fabric = require('fabric');
@@ -55,6 +70,20 @@ service.start();
 `service` now contains a full instance of Fabric, including `SET` and `GET`
 methods for publishing and retrieving documents.  Use `npm run examples` to see
 more.
+
+### Message Types
+Message types are as follows:
+
+#### `message`
+The generic message event.
+
+**Properties:**
+- `@type` name of the event type.
+- `@data` the content of the event, if any.
+
+### Using Fabric in the Browser
+Fabric generates a `fabric.min.js` bundle, which can be included with any HTML
+document to expose the API in a browser.
 
 ## Other Fabrics
 Several other projects have used the name Fabric, as it's a great way to
@@ -74,16 +103,22 @@ Fabric on Twitter: [@FabricProtocol][twitter]
 
 [fabric-github]: https://github.com/FabricLabs/fabric
 [http-plugin]: https://github.com/FabricLabs/web
+[api-docs]: https://dev.fabric.pub
+[edit-readme]: https://github.com/FabricLabs/fabric/edit/master/README.md
 
-[learning]: https://maki.io/topics/learning
-[development]: https://maki.io/topics/development
+[learning]: https://to.fabric.pub/#learning:fabric.pub
+[development]: https://to.fabric.pub/#development:fabric.pub
+
+[doorman]: https://github.com/FabricLabs/doorman
+[idlerpg]: https://to.fabric.pub/#idlerpg:verse.im
+[verse]: https://verse.im
 
 [everything-is-broken]: https://medium.com/message/everything-is-broken-81e5f33a24e1
 [coordination]: https://i.imgur.com/Ki3fbTh.gif
 [bitcoin-donations]: bitcoin:3CHGLadfbcKrM1sS5uYtASaq75VAuMSMpb
 [bitcoin-donations-image]: https://fabric.pub/assets/3CHGLadfbcKrM1sS5uYtASaq75VAuMSMpb.png
 [twitter]: https://twitter.com/FabricProtocol
-[join]: https://maki.io/community
+[join]: https://chat.fabric.pub#register
 [actor-model]: http://hdl.handle.net/1721.1/6935
 [specification]: https://dev.fabric.pub/snippets/specification.html
 [releases]: https://github.com/FabricLabs/fabric/releases
