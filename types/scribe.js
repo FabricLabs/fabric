@@ -7,6 +7,7 @@ const State = require('./state');
 
 /**
  * Simple tag-based recordkeeper.
+ * @extends State
  * @property {Object} config Current configuration.
  */
 class Scribe extends State {
@@ -22,10 +23,10 @@ class Scribe extends State {
     this.settings = this.config = Object.assign({
       verbose: true,
       verbosity: 2, // 0 none, 1 error, 2 warning, 3 notice, 4 debug
-      path: './stores/scribe'
+      path: './stores/scribe',
+      tags: []
     }, config);
 
-    this.tags = [];
     this.state = new State(config);
 
     // signal ready
@@ -38,6 +39,9 @@ class Scribe extends State {
     return this;
   }
 
+  /** Retrives the current timestamp, in milliseconds.
+   * @return {Number} {@link Number} representation of the millisecond {@link Integer} value.
+   */
   now () {
     // return new Date().toISOString();
     return new Date().getTime();
@@ -58,6 +62,10 @@ class Scribe extends State {
    */
   trust (source) {
     let self = this;
+
+    source.on('message', async function (msg) {
+      console.log('[FABRIC:SCRIBE]', 'Our Scribe received the following message from a trusted source:', msg);
+    });
 
     source.on('transaction', async function (transaction) {
       self.log('[SCRIBE]', '[EVENT:TRANSACTION]', 'apply this transaction to local state:', transaction);
@@ -83,10 +91,10 @@ class Scribe extends State {
     inputs.unshift(`[${now}]`);
 
     if (this.settings.verbosity >= 3) {
-      console.log.apply(null, this.tags.concat(inputs));
+      console.log.apply(null, ['[SCRIBE]'].concat(inputs));
     }
 
-    return this.emit('info', this.tags.concat(inputs));
+    return this.emit('info', ['[SCRIBE]'].concat(inputs));
   }
 
   error (...inputs) {
@@ -96,10 +104,10 @@ class Scribe extends State {
     inputs.unshift(`[${now}]`);
 
     if (this.config.verbose) {
-      console.error.apply(null, this.tags.concat(inputs));
+      console.error.apply(null, ['[SCRIBE]'].concat(inputs));
     }
 
-    return this.emit('error', this.tags.concat(inputs));
+    return this.emit('error', ['[SCRIBE]'].concat(inputs));
   }
 
   warn (...inputs) {
@@ -109,10 +117,10 @@ class Scribe extends State {
     inputs.unshift(`[${now}]`);
 
     if (this.config.verbose) {
-      console.warn.apply(null, this.tags.concat(inputs));
+      console.warn.apply(null, ['[SCRIBE]'].concat(inputs));
     }
 
-    return this.emit('warning', this.tags.concat(inputs));
+    return this.emit('warning', ['[SCRIBE]'].concat(inputs));
   }
 
   debug (...inputs) {
@@ -122,10 +130,10 @@ class Scribe extends State {
     inputs.unshift(`[${now}]`);
 
     if (this.config.verbose) {
-      console.debug.apply(null, this.tags.concat(inputs));
+      console.debug.apply(null, ['[SCRIBE]'].concat(inputs));
     }
 
-    return this.emit('debug', this.tags.concat(inputs));
+    return this.emit('debug', ['[SCRIBE]'].concat(inputs));
   }
 
   async open () {

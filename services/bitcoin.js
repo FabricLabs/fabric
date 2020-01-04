@@ -6,34 +6,63 @@ const Entity = require('../types/entity');
 const Service = require('../types/service');
 const State = require('../types/state');
 const Wallet = require('../types/wallet');
+const Consensus = require('../types/consensus');
 
+// Special Types (internal to Bitcoin)
 const BitcoinBlock = require('../types/bitcoin/block');
 
 // External Dependencies
-const bcoin = require('bcoin/lib/bcoin-browser').set('regtest');
+// For the browser
+// ATTN: breaks after 1.0.2
+// const bcoin = require('bcoin/lib/bcoin-browser');
+
+// For node...
+const bcoin = require('bcoin');
+
+// Bitcoin types.
 const FullNode = bcoin.FullNode;
-const WalletClient = require('bclient');
+const NetAddress = bcoin.net.NetAddress;
 
-// TODO: import genesis hash from file / config
-const network = bcoin.Network.get('regtest');
+// Extraneous Dependencies
+// TODO: remove!
+// const bclient = require('bclient');
 
+/**
+ * Manages interaction with the Bitcoin network.
+ */
 class Bitcoin extends Service {
+  /**
+   * Creates an instance of the Bitcoin service.
+   * @param {Object} settings Map of configuration options for the Bitcoin service.
+   * @param {String} settings.network One of `regtest`, `testnet`, or `mainnet`.
+   * @param {Array} settings.nodes List of address:port pairs to trust.
+   */
   constructor (settings = {}) {
     super(settings);
 
+    // Internal State
     this.state = {
       blocks: {}
     };
 
     this.settings = Object.assign({
       name: '@services/bitcoin',
-      network: 'regtest',
+      network: 'main',
+      listen: false,
       nodes: ['127.0.0.1'],
       seeds: ['127.0.0.1'],
-      port: 18444
+      port: 18444,
+      verbosity: 2
     }, settings);
 
-    this.wallet = new Wallet();
+    if (this.settings.verbosity >= 4) console.log('[DEBUG]', 'Instance of Bitcoin service created, settings:', this.settings);
+
+    bcoin.set(this.settings.network);
+    this.network = bcoin.Network.get(this.settings.network);
+
+    // Internal management components
+    this.provider = new Consensus({ provider: 'bcoin' });
+    this.wallet = new Wallet(this.settings);
 
     this.blocks = new Collection({
       name: 'Block',
@@ -46,22 +75,25 @@ class Bitcoin extends Service {
       }
     });
 
-    this.fullnode = new FullNode({
+    this.fullnode = new this.provider.FullNode({
       agent: this.UAString,
-      // port: 48445,
+      port: this.provider.port,
       network: this.settings.network,
       bip37: true, // TODO: verify SPV implementation
-      listen: true,
+      listen: this.settings.listen,
       http: false,
+      httpPort: 19999,
       logLevel: 'debug',
       memory: true,
       workers: true,
-      loader: require
+      loader: require,
+      // maxOutbound: 1
+      maxOutbound: 16
     });
 
     this.peer = bcoin.Peer.fromOptions({
-      network: this.settings.network,
       agent: this.UAString,
+      network: this.settings.network,
       hasWitness: () => {
         return false;
       }
@@ -72,16 +104,18 @@ class Bitcoin extends Service {
     this.peer.on('open', () => {
       // triggers block event
       // pre-seeds genesis block for the rest of us.
-      let block = this.peer.getBlock([network.genesis.hash]);
+      let block = this.peer.getBlock([this.network.genesis.hash]);
     });
 
     this.spv = new bcoin.SPVNode({
       agent: this.UAString + ' (SPV)',
       network: this.settings.network,
+      port: 18444,
       httpPort: 48449, // TODO: disable HTTP entirely!
       memory: true,
       logLevel: 'spam',
       maxOutbound: 1,
+      workers: true
     });
 
     this.define('VersionPacket', { type: 0 });
@@ -299,6 +333,85 @@ class Bitcoin extends Service {
     console.log('[SERVICES:BITCOIN]', 'State:', this.state);
   }
 
+  async _handleBlockFromSPV (msg) {
+    if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'SPV Received block:', msg);
+    let block = await this.blocks.create({
+      hash: msg.hash('hex'),
+      parent: msg.prevBlock.toString('hex'),
+      transactions: msg.hashes,
+      block: msg
+    });
+
+    let message = {
+      '@type': 'BitcoinBlock',
+      '@data': block
+    };
+
+    this.emit('block', message);
+    this.emit('message', { '@type': 'ServiceMessage', '@data': message });
+  }
+
+  /**
+   * Verify and interpret a {@link BitcoinTransaction}, as received from an
+   * {@link SPVSource}.
+   * @param {BitcoinTransaction} tx Incoming transaction from the SPV source.
+   */
+  async _handleTransactionFromSPV (tx) {
+    if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'SPV Received TX:', tx);
+    let msg = {
+      '@type': 'BitcoinTransaction',
+      '@data': {
+        hash: tx.hash('hex'),
+        inputs: tx.inputs,
+        outputs: tx.outputs,
+        tx: tx
+      }
+    };
+
+    this.emit('transaction', msg);
+    this.emit('message', { '@type': 'ServiceMessage', '@data': msg });
+
+    return 1;
+  }
+
+  async _subscribeToShard (shard) {
+    for (let i = 0; i < shard.length; i++) {
+      let slice = shard[i];
+      // TODO: fix @types/wallet to use named types for Addresses...
+      // i.e., this next line should be unnecessary!
+      let address = bcoin.Address.fromString(slice.string, this.settings.network);
+      console.log('[DEBUG]', `[@0x${slice.string}] === ${slice.string}`);
+      this.spv.pool.watchAddress(address);
+    }
+  }
+
+  async _connectSPV () {
+    await this.spv.open();
+    await this.spv.connect();
+
+    // subscribe to shard...
+    await this._subscribeToShard(this.wallet.shard);
+
+    // bind listeners...
+    this.spv.on('tx', this._handleTransactionFromSPV.bind(this));
+    this.spv.on('block', this._handleBlockFromSPV.bind(this));
+
+    // get peer from known address
+    let addr = new NetAddress({
+      host: '127.0.0.1',
+      // port: this.fullnode.pool.options.port
+      port: 18444
+    });
+  
+    // connect this.spv with fullNode
+    let peer = this.spv.pool.createOutbound(addr);
+    if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', 'Peer connection created:', peer);
+    this.spv.pool.peers.add(peer);
+
+    // start the SPV node's blockchain sync
+    await this.spv.startSync();
+  }
+
   async _connectToSeedNodes () {
     for (let i = 0; i < this.settings.seeds.length; i++) {
       let node = this.settings.seeds[i];
@@ -307,6 +420,8 @@ class Bitcoin extends Service {
   }
 
   async _connectToEdgeNodes () {
+    let bitcoin = this;
+
     for (let id in this.settings.nodes) {
       let node = this.settings.nodes[id];
       let peer = bcoin.Peer.fromOptions({
@@ -322,7 +437,7 @@ class Bitcoin extends Service {
       this.peer.on('open', () => {
         // triggers block event
         // pre-seeds genesis block for the rest of us.
-        this.peer.getBlock([network.genesis.hash]);
+        bitcoin.peer.getBlock([bitcoin.network.genesis.hash]);
       });
 
       await peer.open();
@@ -341,6 +456,12 @@ class Bitcoin extends Service {
     }
   }
 
+  async _startLocalNode () {
+    console.log('[SERVICES:BITCOIN]', 'Starting fullnode for network "', this.settings.network, '"...');
+    await this.fullnode.open();
+    await this.fullnode.connect();
+  }
+
   async connect (addr) {
     try {
       this.peer.connect(addr);
@@ -350,9 +471,13 @@ class Bitcoin extends Service {
   }
 
   async start () {
+    console.log('[SERVICES:BITCOIN]', 'Starting for network "', this.settings.network, '"...');
     await this.wallet.start();
-    await this._startLocalNode();
+    // await this._startLocalNode();
+    // await this._connectToSeedNodes();
+    // await this._connectToEdgeNodes();
     await this._connectSPV();
+    // this.peer.tryOpen();
 
     return this;
   }

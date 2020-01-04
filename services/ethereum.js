@@ -4,9 +4,13 @@ const BN = require('bn.js');
 
 const Entity = require('../types/entity');
 const Service = require('../types/service');
+const Transition = require('../types/transition');
 
 // Ethereum
 const VM = require('ethereumjs-vm').default;
+const Account = require('ethereumjs-account').default;
+const Blockchain = require('ethereumjs-blockchain').default;
+const Block = require('ethereumjs-block');
 const Opcodes = {
   STOP: '00',
   ADD: '01',
@@ -19,10 +23,14 @@ class Ethereum extends Service {
 
     this.status = 'constructing';
     this.settings = Object.assign({
-      name: '@services/ethereum'
+      name: '@services/ethereum',
+      stack: []
     }, settings);
 
-    this._state = {};
+    this._state = {
+      stack: this.settings.stack
+    };
+
     this.vm = new VM();
     this.status = 'constructed';
   }
@@ -40,8 +48,11 @@ class Ethereum extends Service {
     return this.execute(program);
   }
 
-  async _handleVMStep (data) {
-    console.log('[SERVICES:ETHEREUM]', '[VM]', `Executed Opcode: ${data.opcode.name}\n\tStack:`, data.stack);
+  async _handleVMStep (step) {
+    console.log('[SERVICES:ETHEREUM]', '[VM]', `Executed Opcode: ${step.opcode.name}\n\tStack:`, step.stack);
+    let transition = Transition.between(this._state.stack, step.stack);
+    this._state.stack = step.stack;
+    console.log('transition:', transition);``
   }
 
   async execute (program) {

@@ -10,13 +10,18 @@ const EncryptedPromise = require('./promise');
 const Transaction = require('./transaction');
 const Collection = require('./collection');
 const Consensus = require('./consensus');
+const Channel = require('./channel');
 const Entity = require('./entity');
 const Hash256 = require('./hash256');
 const Service = require('./service');
+const Secret = require('./secret');
 const State = require('./state');
 
 // Bcoin
-const bcoin = require('bcoin/lib/bcoin-browser');
+// For the browser...
+// const bcoin = require('bcoin/lib/bcoin-browser');
+// For the node...
+const bcoin = require('bcoin');
 
 // Convenience classes...
 const Address = bcoin.Address;
@@ -40,7 +45,9 @@ class Wallet extends Service {
   /**
    * Create an instance of a {@link Wallet}.
    * @param  {Object} [settings={}] Configure the wallet.
-   * @param  {Number} [verbosity=2] One of: 0 (none), 1 (error), 2 (warning), 3 (notice), 4 (debug), 5 (audit)
+   * @param  {Number} [settings.verbosity=2] One of: 0 (none), 1 (error), 2 (warning), 3 (notice), 4 (debug), 5 (audit)
+   * @param  {Object} [settings.key] Key to restore from.
+   * @param  {String} [settings.key.seed] Mnemonic seed for a restored wallet.
    * @return {Wallet}               Instance of the wallet.
    */
   constructor (settings = {}) {
@@ -48,6 +55,7 @@ class Wallet extends Service {
 
     // Create a Marshalling object
     this.marshall = {
+      agents: [],
       collections: {
         'transactions': null, // not yet loaded, seek for Buffer,
         'orders': null
@@ -89,6 +97,7 @@ class Wallet extends Service {
     this.keys = new Collection();
     this.coins = new Collection();
     this.secrets = new Collection();
+    this.transactions = new Collection();
     this.outputs = new Collection();
 
     this.entity = new Entity(this.settings);
@@ -96,10 +105,12 @@ class Wallet extends Service {
 
     // Internal State
     this._state = {
+      space: {}, // tracks addresses in shard
       coins: [],
       keys: {},
       transactions: [],
-      orders: []
+      orders: [],
+      outputs: []
     };
 
     // External State
@@ -116,6 +127,15 @@ class Wallet extends Service {
     };
 
     Object.defineProperty(this, 'database', { enumerable: false });
+    // TODO: remove these
+    Object.defineProperty(this, 'accounts', { enumerable: false });
+    Object.defineProperty(this, 'addresses', { enumerable: false });
+    Object.defineProperty(this, 'coins', { enumerable: false });
+    Object.defineProperty(this, 'keys', { enumerable: false });
+    Object.defineProperty(this, 'outputs', { enumerable: false });
+    Object.defineProperty(this, 'secrets', { enumerable: false });
+    Object.defineProperty(this, 'swarm', { enumerable: false });
+    Object.defineProperty(this, 'transactions', { enumerable: false });
     Object.defineProperty(this, 'wallet', { enumerable: false });
 
     this.status = 'closed';
@@ -131,12 +151,123 @@ class Wallet extends Service {
     return this.get('/balances/confirmed');
   }
 
-  get transactions () {
-    return this.get('/transactions');
-  }
-
   get orders () {
     return this.get('/orders');
+  }
+
+  trust (emitter) {
+    let listener = emitter.on('message', this._handleGenericMessage.bind(this));
+    this.marshall.agents.push(listener);
+    return this;
+  }
+
+  _handleGenericMessage (msg) {
+    if (this.settings.verbosity >= 5) console.log('[AUDIT]', '[FABRIC:WALLET]', 'Trusted emitter gave us:', msg);
+
+    // TODO: remove this log event, only used for debugging
+    console.log('[AUDIT]', '[FABRIC:WALLET]', 'Trusted emitter gave us:', msg);
+
+    // TODO: bind @fabric/core/services/bitcoin to addresses on wallet...
+    // ATTN: Eric
+
+    // TODO: update channels
+    // TODO: parse as {@link Message}
+    // TODO: store in this.messages
+    switch (msg['@type']) {
+      default:
+        return console.warn('[FABRIC:WALLET]', `Unhandled message type: ${msg['@type']}`);
+      case 'ServiceMessage':
+        return this._processServiceMessage(msg['@data']);
+    }
+  }
+
+  async _processServiceMessage (msg) {
+    switch (msg['@type']) {
+      default:
+        return console.warn('[FABRIC:WALLET]', `Unhandled message type: ${msg['@type']}`);
+      case 'BitcoinBlock':
+        this.processBitcoinBlock(msg['@data']);
+        break;
+      case 'BitcoinTransaction':
+        // TODO: validate destination is this wallet
+        this.addTransactionToWallet(msg['@data']);
+        break;
+    }
+  }
+
+  async processBitcoinBlock (block) {
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:WALLET]', 'Processing block:', block);
+    if (!block.block) return 0;
+    for (let i = 0; i < block.block.hashes.length; i++) {
+      let txid = block.block.hashes[i].toString('hex');
+      console.log('found txid in block:', txid);
+    }
+  }
+
+  async _attachTXID (txid) {
+    // TODO: check that `txid` is a proper TXID
+    let result = this.set(`/transactions`, this.get('/transactions').concat([ txid ]));
+    console.log('[AUDIT]', `Attached TXID ${txid} to Wallet ID ${this.id}`);
+    return result;
+  }
+
+  async addTransactionToWallet (transaction) {
+    let entity = new Entity(transaction);
+    if (!transaction.spent) transaction.spent = false;
+    this._state.transactions.push(transaction);
+    this.commit();
+    console.log('[FABRIC:WALLET]', 'Wallet transactions now:', this._state.transactions);
+
+    for (let i = 0; i < transaction.outputs.length; i++) {
+      let output = transaction.outputs[i].toJSON();
+      let address = await this._findAddressInCurrentShard(output.address);
+
+      if (address) {
+        this._state.outputs.push(output);
+        this._state.coins.push(new Coin(transaction.outputs[i]));
+      }
+
+      /* switch (output.type) {
+        default:
+          console.warn('[FABRIC:WALLET]', 'Unhandled output type:', output.type);
+          break;
+        case 'pubkeyhash':
+          let address = await this._findAddressInCurrentShard(output.address);
+          break;
+      } */
+    }
+  }
+
+  async _findAddressInCurrentShard (address) {
+    for (let i = 0; i < this.shard.length; i++) {
+      let slice = this.shard[i];
+      if (slice.string === address) return slice;
+    }
+    return null;
+  }
+
+  async _spendToAddress(amount, address) {
+    let mtx = new MTX();
+    let utxo = await this._getUnspentOutput(amount);
+    let change = await this._allocateSlot();
+
+    if (!this._state.coins.length) throw new Error('No available funds.');
+
+    mtx.addOutput({
+      address: address,
+      value: amount
+    });
+
+    mtx.fund(this._state.coins, {
+      rate: 10,
+      changeAddress: change.string
+    });
+
+    mtx.sign(this.ring);
+
+    let tx = mtx.toTX();
+
+    return tx;
   }
 
   /**
@@ -159,20 +290,36 @@ class Wallet extends Service {
     return Address.fromScripthash(redeemScript.hash160());
   }
 
-  CSVencode (locktime, seconds = false) {
-    let locktimeUint32 = locktime >>> 0;
-    if (locktimeUint32 !== locktime)
-      throw new Error('Locktime must be a uint32.');
+  /**
+   * Create a priced order.
+   * @param {Object} order
+   * @param {Object} order.asset
+   * @param {Object} order.amount
+   */
+  async createPricedOrder (order) {
+    if (!order.asset) throw new Error('Order parameter "asset" is required.');
+    if (!order.amount) throw new Error('Order parameter "amount" is required.');
 
-    if (seconds) {
-      locktimeUint32 >>>= this.consensus.SEQUENCE_GRANULARITY;
-      locktimeUint32 &= this.consensus.SEQUENCE_MASK;
-      locktimeUint32 |= this.consensus.SEQUENCE_TYPE_FLAG;
-    } else {
-      locktimeUint32 &= this.consensus.SEQUENCE_MASK;
+    let leftover = order.amount % (10 * this.settings.decimals);
+    let parts = order.amount / (10 * this.settings.decimals);
+
+    let partials = [];
+    // TODO: remove short-circuit
+    let cb = await this._generateFakeCoinbase(order.amount);
+    let mtx = new MTX();
+
+    // TODO: complete order construction
+    for (let i = 0; i < parts; i++) {
+
     }
 
-    return locktimeUint32;
+
+    let entity = new Entity({
+      comment: 'List of transactions to validate.',
+      transactions: []
+    });
+
+    return entity;
   }
 
   async generateSignedTransactionTo (address, amount) {
@@ -186,21 +333,6 @@ class Wallet extends Service {
 
     let mtx = new MTX();
     let cb = await this._generateFakeCoinbase(amount);
-
-    mtx.addOutput({
-      address: address,
-      amount: amount
-    });
-
-    await mtx.fund(this._state.coins, {
-      rate: 10000, // TODO: fee calculation
-      changeAddress: change.address
-    });
-
-    let coin = Coin.fromTX(cb, 0, -1);
-    this._state.coins.push(coin);
-    // TODO: store above coinbase in this.state._coins
-    // TODO: reconcile above two lines
 
     mtx.addOutput({
       address: address,
@@ -231,8 +363,73 @@ class Wallet extends Service {
     };
   }
 
+  async generateOrderRootTo (pubkey, amount) {
+    if (!pubkey) throw new Error(`Parameter "pubkey" is required.`);
+    if (!amount) throw new Error(`Parameter "amount" is required.`);
+
+    let bn = new BN(amount + '', 10);
+    // TODO: labeled keypairs
+    let clean = await this.generateCleanKeyPair();
+    let change = await this.generateCleanKeyPair();
+
+    let mtx = new MTX();
+    let cb = await this._generateFakeCoinbase(amount);
+
+    mtx.addOutput({
+      address: address,
+      amount: amount
+    });
+
+    await mtx.fund(this._state.coins, {
+      rate: 10000, // TODO: fee calculation
+      changeAddress: change.address
+    });
+
+    mtx.sign(this.ring);
+    // mtx.signInput(0, this.ring);
+
+    let tx = mtx.toTX();
+    let output = Coin.fromTX(mtx, 0, -1);
+    let raw = mtx.toRaw();
+    let hash = Hash256.digest(raw.toString('hex'));
+
+    return {
+      type: 'BitcoinTransaction',
+      data: {
+        tx: tx,
+        output: output,
+        raw: raw.toString('hex'),
+        hash: hash
+      }
+    };
+  }
+
+  addInputForCrowdfund (coin, inputIndex, mtx, keyring, hashType) {
+    let sampleCoin = coin instanceof Coin ? coin : Coin.fromJSON(coin);
+    if (!hashType) hashType = Script.hashType.ANYONECANPAY | Script.hashType.ALL;
+
+    mtx.addCoin(sampleCoin);
+    mtx.scriptInput(inputIndex, sampleCoin, keyring);
+    mtx.signInput(inputIndex, sampleCoin, keyring, hashType);
+
+    console.log('MTX after Input added (and signed):', mtx);
+
+    // TODO: return a full object for Fabric
+    return mtx;
+  }
+
+  getFeeForInput (coin, address, keyring, rate) {
+    let fundingTarget = 100000000; // 1 BTC (arbitrary for purposes of this function)
+    let testMTX = new MTX();
+
+    // TODO: restore swap code, abstract input types
+    // this.addInputForCrowdfund(coin, 0, testMTX, this.keyring);
+
+    return testMTX.getMinFee(null, rate);
+  }
+
   async _createAccount (data) {
-    console.log('wallet creating account with data:', data);
+    // console.log('wallet creating account with data:', data);
     await this._load();
     let existing = await this.wallet.getAccount(data.name);
     if (existing) return existing;
@@ -262,9 +459,75 @@ class Wallet extends Service {
     };
   }
 
+  async _splitCoinbase (funderKeyring, coin, targetAmount, txRate) {
+    // loop through each coinbase coin to split
+    let coins = [];
+
+    const mtx = new MTX();
+
+    assert(coin.value > targetAmount, 'coin value is not enough!');
+
+    // creating a transaction that will have an output equal to what we want to fund
+    mtx.addOutput({
+      address: funderKeyring.getAddress(),
+      value: targetAmount
+    });
+
+    // the fund method will automatically split
+    // the remaining funds to the change address
+    // Note that in a real application these splitting transactions will also
+    // have to be broadcast to the network
+    await mtx.fund([coin], {
+      rate: txRate,
+      // send change back to an address belonging to the funder
+      changeAddress: funderKeyring.getAddress()
+    }).then(() => {
+      // sign the mtx to finalize split
+      mtx.sign(funderKeyring);
+      assert(mtx.verify());
+
+      const tx = mtx.toTX();
+      assert(tx.verify(mtx.view));
+
+      const outputs = tx.outputs;
+
+      // get coins from tx
+      outputs.forEach((outputs, index) => {
+        coins.push(Coin.fromTX(tx, index, -1));
+      });
+    }).catch(e => console.log('There was an error: ', e));
+
+    return coins;
+  }
+
+  async composeCrowdfund (coins) {
+    const funderCoins = {};
+    // Loop through each coinbase
+    for (let index in coins) {
+      const coinbase = coins[index][0];
+      // estimate fee for each coin (assuming their split coins will use same tx type)
+      const estimatedFee = getFeeForInput(coinbase, fundeeAddress, funders[index], txRate);
+      const targetPlusFee = amountToFund + estimatedFee;
+
+      // split the coinbase with targetAmount plus estimated fee
+      const splitCoins = await Utils.splitCoinbase(funders[index], coinbase, targetPlusFee, txRate);
+
+      // add to funderCoins object with returned coins from splitCoinbase being value,
+      // and index being the key
+      funderCoins[index] = splitCoins;
+    }
+    // ... we'll keep filling out the rest of the code here
+  }
+
   async _addOutputToSpendables (coin) {
     this._state.coins.push(coin);
     return this;
+  }
+
+  async getUnspentTransactionOutputs () {
+    return this._state.transactions.filter(x => {
+      return (x.spent === 0);
+    });
   }
 
   async _generateFakeCoinbase (amount = 1) {
@@ -294,7 +557,8 @@ class Wallet extends Service {
     let coin = Coin.fromTX(cb, 0, -1);
     let tx = cb.toTX();
 
-    await this._addOutputToSpendables(coin);
+    // TODO: remove entirely, test short-circuit removal
+    // await this._addOutputToSpendables(coin);
 
     return {
       type: 'BitcoinTransactionOutput',
@@ -345,7 +609,7 @@ class Wallet extends Service {
     this._state.coins.push(coin);
 
     // console.log('coinbase:', coinbase);
-    
+
     return coinbase;
   }
 
@@ -386,6 +650,11 @@ class Wallet extends Service {
   async _createSeed () {
     let mnemonic = new Mnemonic({ bits: 256 });
     return { seed: mnemonic.toString() };
+  }
+
+  async _importSeed (seed) {
+    let mnemonic = new Mnemonic(seed);
+    return this._loadSeed(mnemonic.toString());
   }
 
   async _createIncentivizedTransaction (config) {
@@ -483,6 +752,168 @@ class Wallet extends Service {
     };
   }
 
+  async signInput (mtx, index, redeemScript, value, privateKey, sigHashType, version_or_flags) {
+    return mtx.signature(
+      index,
+      redeemScript,
+      value,
+      privateKey,
+      sigHashType,
+      version_or_flags
+    );
+  }
+
+  async getRedeemTX (address, fee, fundingTX, fundingTXoutput, redeemScript, inputScript, locktime, privateKey) {
+    // Create a mutable transaction object
+    let redeemTX = new MTX();
+
+    // Get the output we want to spend (coins sent to the P2SH address) 
+    let coin = Coin.fromTX(fundingTX, fundingTXoutput, -1);
+
+    // Add that coin as an input to our transaction
+    redeemTX.addCoin(coin);
+
+    // Redeem the input coin with either the swap or refund script
+    redeemTX.inputs[0].script = inputScript;
+
+    // Create the output back to our primary wallet
+    redeemTX.addOutput({
+      address: address,
+      value: coin.value - fee
+    });
+
+    // If this was a refund redemption we need to set the sequence
+    // Sequence is the relative timelock value applied to individual inputs
+    if (locktime) {
+      redeemTX.setSequence(0, locktime, this.CSV_seconds);
+    } else {
+      redeemTX.inputs[0].sequence = 0xffffffff;
+    }
+
+    // Set SIGHASH and replay protection bits
+    let version_or_flags = 0;
+    let type = null;
+
+    if (this.libName === 'bcash') {
+      version_or_flags = this.flags;
+      type = Script.hashType.SIGHASH_FORKID | Script.hashType.ALL;
+    }
+
+    // Create the signature authorizing the input script to spend the coin
+    let sig = await this.signInput(
+      redeemTX,
+      0,
+      redeemScript,
+      coin.value,
+      privateKey,
+      type,
+      version_or_flags
+    );
+
+    // Insert the signature into the input script where we had a `0` placeholder
+    inputScript.setData(0, sig);
+
+    // Finish up and return
+    inputScript.compile();
+
+    return redeemTX;
+  }
+
+  /**
+   * Generate {@link Script} for claiming a {@link Swap}.
+   * @param {*} redeemScript 
+   * @param {*} secret 
+   */
+  async _getSwapInputScript (redeemScript, secret) {
+    let inputSwap = new Script();
+
+    inputSwap.pushInt(0); // signature placeholder
+    inputSwap.pushData(secret);
+    inputSwap.pushInt(1); // <true>
+    inputSwap.pushData(redeemScript.toRaw()); // P2SH
+    inputSwap.compile();
+
+    return inputSwap;
+  }
+
+  /**
+   * Generate {@link Script} for reclaiming funds commited to a {@link Swap}.
+   * @param {*} redeemScript 
+   */
+  async _getRefundInputScript (redeemScript) {
+    let inputRefund = new Script();
+
+    inputRefund.pushInt(0); // signature placeholder
+    inputRefund.pushInt(0); // <false>
+    inputRefund.pushData(redeemScript.toRaw()); // P2SH
+    inputRefund.compile();
+
+    return inputRefund;
+  }
+
+  async _createOrderForPubkey (pubkey) {
+    console.log('creating ORDER transaction with pubkey:', pubkey);
+
+    let mtx = new MTX();
+    let data = new Script();
+    let clean = await this.generateCleanKeyPair();
+
+    let secret = 'fixed secret :)';
+    let sechash = require('crypto').createHash('sha256').update(secret).digest('hex');
+
+    console.log('SECRET CREATED:', secret);
+    console.log('SECHASH:', sechash);
+
+    data.pushSym('OP_IF');
+    data.pushSym('OP_SHA256');
+    data.pushData(Buffer.from(sechash));
+    data.pushSym('OP_EQUALVERIFY');
+    data.pushData(Buffer.from(pubkey));
+    data.pushSym('OP_ELSE');
+    data.pushInt(86400);
+    data.pushSym('OP_CHECKSEQUENCEVERIFY');
+    data.pushSym('OP_DROP');
+    data.pushData(Buffer.from(clean.public));
+    data.pushSym('OP_ENDIF');
+    data.pushSym('OP_CHECKSIG');
+    data.compile();
+
+    console.log('[AUDIT]', 'address data:', data);
+    let segwitAddress = await this.getAddressForScript(data);
+    let address = await this.getAddressFromRedeemScript(data);
+    console.log('[AUDIT]', 'segwit address:', segwitAddress);
+    console.log('[AUDIT]', 'normal address:', address);
+
+    mtx.addOutput({
+      address: address,
+      value: 25000000
+    });
+
+    // ensure a coin exists...
+    // NOTE: this is tracked in this._state.coins
+    // and thus does not need to be cast to a variable...
+    let coinbase = await this._getFreeCoinbase();
+
+    // TODO: load available outputs from wallet
+    let out = await mtx.fund(this._state.coins, {
+      // TODO: fee estimation
+      rate: 10000,
+      changeAddress: this.ring.getAddress()
+    });
+
+    let tx = mtx.toTX();
+    let sig = await mtx.sign(this.ring);
+
+    console.log('transaction:', tx);
+    console.log('sig:', sig);
+
+    return {
+      tx: tx,
+      mtx: mtx,
+      sig: sig
+    };
+  }
+
   async _scanBlockForTransactions (block) {
     console.log('[AUDIT]', 'Scanning block for transactions:', block);
     let found = [];
@@ -500,6 +931,21 @@ class Wallet extends Service {
     return transactions;
   }
 
+  async _createChannel (channel) {
+    let element = new Channel(channel);
+    return element;
+  }
+
+  async _allocateSlot () {
+    for (let i = 0; i < Object.keys(this._state.space).length; i++) {
+      let slot = this._state.space[Object.keys(this._state.space)[i]];
+      if (!slot.allocation) {
+        this._state.space[Object.keys(this._state.space)[i]].allocation = new Secret();
+        return this._state.space[Object.keys(this._state.space)[i]];
+      }
+    }
+  }
+
   async getFirstAddressSlice (size = 256) {
     await this._load();
 
@@ -508,11 +954,16 @@ class Wallet extends Service {
 
     // iterate over length of shard, aggregate addresses
     for (let i = 0; i < size; i++) {
-      let addr = this.account.deriveReceive(i).getAddress('string');
-      slice.push(await this.addresses.create({
+      let addr = this.account.deriveReceive(i).getAddress('string', this.settings.network);
+      let address = await this.addresses.create({
         string: addr,
-        label: `shared address ${i} for wallet ${this.id}`
-      }));
+        label: `shared address ${i} for wallet ${this.id}`,
+        allocation: null
+      });
+
+      this._state.space[addr] = address;
+
+      slice.push(address);
     }
 
     return slice;
@@ -630,6 +1081,12 @@ class Wallet extends Service {
     // TODO: label as identity address
     // this.address = await this.account.receiveAddress();
     // TODO: notify downstream of short-circuit removal
+
+    // finally, assign state...
+    this.state.transactions = this.settings.transaction;
+    this.state.orders = this.settings.orders;
+
+    if (this.settings.verbosity >=5) console.log('[FABRIC:WALLET]', 'state after loading:', this.state);
 
     this.status = 'loaded';
     this.emit('ready');

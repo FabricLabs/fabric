@@ -6,6 +6,7 @@
  */
 'use strict';
 
+const PEER_PORT = 9999;
 const MAX_PEERS = 32;
 
 const MAGIC_BYTES = 0xC0D3F33D;
@@ -19,6 +20,7 @@ const MAX_MESSAGE_SIZE = 4096 - HEADER_SIZE;
 const MAX_STACK_HEIGHT = 32; // max height of stack (number of elements)
 const MAX_FRAME_SIZE = 32; // max size of a stack frame in bytes
 const MAX_MEMORY_ALLOC = MAX_STACK_HEIGHT * MAX_FRAME_SIZE;
+const MAX_CHANNEL_VALUE = 100000000;
 
 // FABRIC ONLY
 const OP_DONE = 'ff';
@@ -36,6 +38,7 @@ const OP_EQUALVERIFY = '88';
 const OP_SEPARATOR = 'ab';
 
 module.exports = {
+  PEER_PORT,
   MAX_PEERS,
   BITCOIN_GENESIS,
   HEADER_SIZE,
@@ -45,6 +48,7 @@ module.exports = {
   MAX_MEMORY_ALLOC,
   MAX_MESSAGE_SIZE,
   MAX_STACK_HEIGHT,
+  MAX_CHANNEL_VALUE,
   OP_DONE,
   OP_0,
   OP_CHECKSIG,

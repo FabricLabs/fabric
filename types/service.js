@@ -6,6 +6,8 @@ const Key = require('./key');
 const Entity = require('./entity');
 const Store = require('./store');
 const Scribe = require('./scribe');
+const Stack = require('./stack');
+// const Swarm = require('./swarm');
 const Collection = require('./collection');
 
 // external dependencies
@@ -33,8 +35,10 @@ class Service extends Scribe {
   /**
    * Create an instance of a Service.
    * @param       {Object} config Configuration for this service.
+   * @param       {Boolean} [config.networking=true] Whether or not to connect to the network.
+   * @param       {Object} [config.@data] Internal data to assign.
    */
-  constructor (config) {
+  constructor (config = {}) {
     // Initialize Scribe, our logging tool
     super(config);
 
@@ -42,6 +46,8 @@ class Service extends Scribe {
     this.settings = this.config = Object.assign({
       name: 'service',
       path: './stores/service',
+      networking: true,
+      persistent: true,
       verbosity: 2, // 0 none, 1 error, 2 warning, 3 notice, 4 debug
       // TODO: export this as the default data in `inputs/fabric.json`
       // If the sha256(JSON.stringify(this.data)) is equal to this, it's
@@ -59,6 +65,7 @@ class Service extends Scribe {
     this.collections = {};
     this.definitions = {};
     this.origin = '';
+
     // TODO: fix this
     //   2) RPG Lite
     //      Canvas
@@ -66,9 +73,13 @@ class Service extends Scribe {
     //          Error: Not implemented yet
     this.key = null; // new Key();
 
-    this.store = new Store({
-      path: this.config.path
-    });
+    if (this.settings.persistent) {
+      try {
+        this.store = new Store(this.settings);
+      } catch (E) {
+        console.error('Error:', E);
+      }
+    }
 
     // set local state to whatever configuration supplies...
     this.state = Object.assign({
@@ -76,6 +87,10 @@ class Service extends Scribe {
     }, this.config['@data']);
 
     this.observer = null;
+
+    /* if (this.settings.networking) {
+      this.swarm = new Swarm(this.settings);
+    } */
 
     // Set ready status
     this.status = 'ready';
@@ -166,6 +181,7 @@ class Service extends Scribe {
     } catch (E) {
       this.error('Malformed message:', message);
     }
+
     return this;
   }
 
@@ -199,10 +215,11 @@ class Service extends Scribe {
     return result;
   }
 
+  /**
+   * Start the service, including the initiation of an outbound connection
+   * to any peers designated in the service's configuration.
+   */
   async start () {
-    await super.start();
-
-    this.log('Starting...');
     this.status = 'starting';
     this.process = function Process (msg) {
       console.log('[FABRIC:SERVICE]', 'Unterminated message:', msg);
@@ -222,10 +239,12 @@ class Service extends Scribe {
     try {
       await this.store.start();
     } catch (E) {
-      console.log('[FABRIC:SERVICE]', 'Could not start store:', E);
+      console.error('[FABRIC:SERVICE]', 'Could not start store:', E);
     }
 
-    await this.connect();
+    if (this.settings.networking) {
+      await this.connect();
+    }
 
     // TODO: re-re-evaluate a better approach... oh how I long for Object.observe!
     // this.observer = manager.observe(this.state, this._handleStateChange.bind(this));
@@ -233,15 +252,25 @@ class Service extends Scribe {
     this.observer = manager.observe(this.state);
 
     this.status = 'started';
-    this.commit();
+
+    try {
+      await this.commit();
+    } catch (E) {
+      console.error('Could not commit:', E);
+    }
 
     return this;
   }
 
   async stop () {
     await this.disconnect();
-    await this.store.stop();
-    await super.stop();
+
+    try {
+      await this.store.stop();
+    } catch (E) {
+      console.error('[FABRIC:SERVICE]', 'Exception stopping store:', E);
+    }
+
     return this;
   }
 
@@ -362,6 +391,10 @@ class Service extends Scribe {
       this.warn('[DOORMAN:SERVICE]', 'Could not restore state:', E);
     }
 
+    if (this.settings.networking && this.swarm) {
+      await this.swarm.start();
+    }
+
     this.connection = null;
     this.status = 'connected';
 
@@ -373,7 +406,9 @@ class Service extends Scribe {
   }
 
   async disconnect () {
-    if (this.status !== 'active') return this;
+    this.status = 'disconnecting';
+    // if (this.status !== 'active') return this;
+    if (this.settings.networking && this.swarm) await this.swarm.stop();
     this.status = 'disconnected';
     return this;
   }
@@ -447,9 +482,13 @@ class Service extends Scribe {
 
     if (this.store) {
       // TODO: add robust + convenient database opener
-      await this.store.batch(ops, function shareChanges () {
-        // TODO: notify status?
-      });
+      try {
+        await this.store.batch(ops, function shareChanges () {
+          // TODO: notify status?
+        });
+      } catch (E) {
+        console.error('[FABRIC:SERVICE]', 'Threw Exception:', E);
+      }
     }
 
     if (self.observer) {

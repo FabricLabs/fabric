@@ -95,6 +95,11 @@ class Remote extends Resource {
         method: type,
         headers: headers
       });
+    } catch (e) {
+      console.error('[REMOTE]', 'exception:', e);
+    }
+
+    try {
       result = result.json();
     } catch (e) {
       console.error('[REMOTE]', 'exception:', e);
