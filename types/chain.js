@@ -31,7 +31,7 @@ class Chain extends Ledger {
     }, origin);
 
     this.genesis = new Block(this.config);
-    this.mempool = new Worker(this.config);
+    this.mempool = new Mempool(this.config);
     this.miner = new Worker({ method: 'sha256' });
 
     // External State
@@ -113,8 +113,12 @@ class Chain extends Ledger {
   async stop () {
     await this.commit();
 
-    await this.ledger.stop();
-    await this.storage.stop();
+    try {
+      await this.ledger.stop();
+      await this.storage.stop();
+    } catch (E) {
+      console.error('Could not close storage:', E);
+    }
 
     return this;
   }

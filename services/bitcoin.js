@@ -25,7 +25,7 @@ const NetAddress = bcoin.net.NetAddress;
 
 // Extraneous Dependencies
 // TODO: remove!
-const bclient = require('bclient');
+// const bclient = require('bclient');
 
 /**
  * Manages interaction with the Bitcoin network.
