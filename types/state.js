@@ -113,7 +113,6 @@ class State extends EventEmitter {
     // TODO: re-enable
     // this.name = this['@entity'].name || this.id;
     this.link = `/entities/${this.id}`;
-    this.tags = [];
 
     if (this['@entity']['@data']) {
       try {

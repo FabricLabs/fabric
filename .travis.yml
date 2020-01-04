@@ -1,8 +1,4 @@
 language: node_js
 node_js:
   - "10"
-cache:
-  yarn: true
-after_script:
-  - npm run coverage
-  - codecov
+after_success: npm run report:coverage

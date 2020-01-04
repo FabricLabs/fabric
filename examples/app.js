@@ -2,7 +2,7 @@
 // Build your first Fabric application.
 'use strict';
 
-const App = require('../lib/app');
+const App = require('../types/app');
 
 const Person = require('../resources/person');
 const Post = require('../resources/post');
