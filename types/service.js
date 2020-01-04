@@ -75,9 +75,7 @@ class Service extends Scribe {
 
     if (this.settings.persistent) {
       try {
-        this.store = new Store({
-          path: this.config.path
-        });
+        this.store = new Store(this.settings);
       } catch (E) {
         console.error('Error:', E);
       }
@@ -222,9 +220,6 @@ class Service extends Scribe {
    * to any peers designated in the service's configuration.
    */
   async start () {
-    await super.start();
-
-    this.log('Starting...');
     this.status = 'starting';
     this.process = function Process (msg) {
       console.log('[FABRIC:SERVICE]', 'Unterminated message:', msg);
@@ -244,10 +239,12 @@ class Service extends Scribe {
     try {
       await this.store.start();
     } catch (E) {
-      console.log('[FABRIC:SERVICE]', 'Could not start store:', E);
+      console.error('[FABRIC:SERVICE]', 'Could not start store:', E);
     }
 
-    await this.connect();
+    if (this.settings.networking) {
+      await this.connect();
+    }
 
     // TODO: re-re-evaluate a better approach... oh how I long for Object.observe!
     // this.observer = manager.observe(this.state, this._handleStateChange.bind(this));
@@ -255,15 +252,25 @@ class Service extends Scribe {
     this.observer = manager.observe(this.state);
 
     this.status = 'started';
-    this.commit();
+
+    try {
+      await this.commit();
+    } catch (E) {
+      console.error('Could not commit:', E);
+    }
 
     return this;
   }
 
   async stop () {
     await this.disconnect();
-    await this.store.stop();
-    await super.stop();
+
+    try {
+      await this.store.stop();
+    } catch (E) {
+      console.error('[FABRIC:SERVICE]', 'Exception stopping store:', E);
+    }
+
     return this;
   }
 
@@ -400,8 +407,8 @@ class Service extends Scribe {
 
   async disconnect () {
     this.status = 'disconnecting';
-    if (this.status !== 'active') return this;
-    if (this.settings.networking) await this.swarm.stop();
+    // if (this.status !== 'active') return this;
+    if (this.settings.networking && this.swarm) await this.swarm.stop();
     this.status = 'disconnected';
     return this;
   }
