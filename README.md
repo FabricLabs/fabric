@@ -13,7 +13,7 @@ decentralization technology.
 
 | 🚨 Heads up! |
 |--------------|
-| Use of Fabric in production is **not recommended** in its current state.  Please wait for [an official release][releases] before deploying to production environments. |
+| Use of Fabric in production is **not recommended** in its current state.  Please wait for [an official release][releases] before deploying to production environments, or proceed at your own risk. |
 
 ## Getting Started
 If you're already familiar with `node` and have a project already started, try
@@ -29,6 +29,11 @@ you're ready to integrate Fabric into your application.
 - `npm run docs` creates a local HTTP server for browsing documentation.
 - `npm run examples` creates a local HTTP server for interacting with examples.
 - `npm start` creates a local Fabric node.
+
+## Plugins
+Fabric is an extensible framework, supporting a variety of plugins.
+
+- [`@fabric/http`][http-plugin] for serving Fabric apps to the legacy web (HTTP)
 
 ## API
 The Fabric reference implementation exposes a simple message-passing interface
@@ -60,6 +65,8 @@ The best place to get started is in [the #learning channel][learning], a
 collection of empassioned educators eager to help you.
 
 Fabric on Twitter: [@FabricProtocol][twitter]
+
+[http-plugin]: https://github.com/FabricLabs/web
 
 [learning]: https://maki.io/topics/learning
 [development]: https://maki.io/topics/development
