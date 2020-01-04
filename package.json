@@ -22,7 +22,7 @@
     "make:all": "npm run make:api && npm run make:service && npm run make:app && npm run make:docs && npm run make:lib",
     "make:api": "npm run parse:api && node_modules/.bin/jsdoc -c jsdoc.json index.js types/ README.md -d docs/ && glob-run js-beautify --indent-size 2 -r docs/*.html",
     "make:app": "webpack --progress examples/app.js -o assets/app.js",
-    "make:coverage": "nyc report --reporter html npm test",
+    "make:coverage": "nyc report --reporter html",
     "make:docs": "gitbook install && npm run parse:api && npm run make:examples && gitbook build",
     "make:examples": "docco --output assets/examples/ examples/*.js",
     "make:lib": "NODE_ENV=production webpack lib/fabric.js -o assets/fabric.min.js",
@@ -111,7 +111,7 @@
     "json-to-dot": "^1.1.0",
     "localforage": "^1.7.2",
     "mocha": "^5.2.0",
-    "nyc": "^13.1.0",
+    "nyc": "^15.0.0",
     "page": "^1.7.1",
     "raw-loader": "^0.5.1",
     "semistandard": "^11.0.0",
@@ -124,6 +124,7 @@
       "tests",
       "data"
     ],
-    "report-dir": "./reports/coverage"
+    "report-dir": "./reports/coverage",
+    "temp-dir": "./reports/nyc"
   }
 }
