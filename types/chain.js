@@ -2,6 +2,7 @@
 
 const Block = require('./block');
 const Ledger = require('./ledger');
+const Mempool = require('./mempool');
 const Stack = require('./stack');
 const State = require('./state');
 const Store = require('./store');
@@ -30,7 +31,10 @@ class Chain extends Ledger {
     }, origin);
 
     this.genesis = new Block(this.config);
+    this.mempool = new Mempool(this.config);
     this.miner = new Worker({ method: 'sha256' });
+
+    // External State
     this.state = {
       blocks: []
     };
@@ -109,8 +113,12 @@ class Chain extends Ledger {
   async stop () {
     await this.commit();
 
-    await this.ledger.stop();
-    await this.storage.stop();
+    try {
+      await this.ledger.stop();
+      await this.storage.stop();
+    } catch (E) {
+      console.error('Could not close storage:', E);
+    }
 
     return this;
   }

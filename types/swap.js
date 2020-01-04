@@ -1,6 +1,11 @@
 'use strict';
 
-const bcoin = require('bcoin/lib/bcoin-browser');
+// TODO: revert to 1.0.2 to enable
+// ATTN: Eric
+// const bcoin = require('bcoin/lib/bcoin-browser');
+const bcoin = require('bcoin');
+
+// Native Dependencies
 const crypto = require('crypto');
 
 /**

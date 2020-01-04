@@ -12,7 +12,7 @@ const Service = require('./service');
 
 /**
  * The {@link Circuit} is the mechanism through which {@link Fabric}
- * operates, a computable directed graph for execution by a network
+ * operates, a computable directed graph for execution be a network
  * of {@link Peer} components.  See also {@link Swarm} for deeper
  * inspection of {@link Machine} mechanics.
  */
@@ -103,6 +103,26 @@ class Circuit extends Service {
     // empty resolves to Identity function f(x) = x
 
     return output;
+  }
+
+  scramble () {
+    let key = crypto.randomBytes(32);
+    let machine = new Machine({ seed: key });
+    let seed = machine.sip();
+    let gates = [];
+
+    for (let i = 0; i < this._state.steps.length; i++) {
+      gates.push({
+        name: this._state.steps[i],
+        seed: machine.sip()
+      });
+    }
+
+    gates.sort((a, b) => {
+      return a.seed - b.seed;
+    });
+
+    return gates;
   }
 
   render () {

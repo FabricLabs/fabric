@@ -232,6 +232,25 @@ class Collection extends Stack {
     return result;
   }
 
+  toTypedArray () {
+    let map = this.map();
+    let ids = Object.keys(map);
+    return ids.map((x) => this._wrapResult(map[ids[x]]));
+  }
+
+  typedMap () {
+    let map = this.map();
+    let ids = Object.keys(map);
+    // TODO: `list()` should return an Array
+    let result = {};
+
+    for (let i = 0; i < ids.length; i++) {
+      result[ids[i]] = this._wrapResult(map[ids[i]]);
+    }
+
+    return result;
+  }
+
   map () {
     return Collection.pointer.get(this.state, `${this.path}`);
   }
