@@ -7,7 +7,7 @@ const Entity = require('./entity');
 const Store = require('./store');
 const Scribe = require('./scribe');
 const Stack = require('./stack');
-const Swarm = require('./swarm');
+// const Swarm = require('./swarm');
 const Collection = require('./collection');
 
 // external dependencies
@@ -83,14 +83,16 @@ class Service extends Scribe {
       }
     }
 
-
     // set local state to whatever configuration supplies...
     this.state = Object.assign({
       messages: {} // always define a list of messages for Fabric services
     }, this.config['@data']);
 
     this.observer = null;
-    this.swarm = new Swarm(this.settings);
+
+    /* if (this.settings.networking) {
+      this.swarm = new Swarm(this.settings);
+    } */
 
     // Set ready status
     this.status = 'ready';
@@ -478,7 +480,7 @@ class Service extends Scribe {
           // TODO: notify status?
         });
       } catch (E) {
-        console.log('[FABRIC:SERVICE]', 'Threw Exception:', E);
+        console.error('[FABRIC:SERVICE]', 'Threw Exception:', E);
       }
     }
 
