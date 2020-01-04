@@ -1,0 +1,193 @@
+./snippets/specification.md:// TODO: migrate script
+./types/vector.js:  // TODO: standardize on a serialization format
+./types/vector.js:    // TODO: standardize on a serialization format
+./types/oracle.js:    // TODO: define all resources
+./types/oracle.js:    // TODO: pre-populate
+./types/remote.js:        // TODO: report to `wreck` as NOT WORKING
+./types/service.js:      // TODO: export this as the default data in `inputs/fabric.json`
+./types/service.js:    // TODO: re-re-evaluate a better approach... oh how I long for Object.observe!
+./types/service.js:    // TODO: use Resource definition to de-deuplicate by fields.id
+./types/service.js:    // TODO: reduce storage to references
+./types/service.js:    // TODO: implement a basic Stream
+./types/service.js:      // TODO: add robust + convenient database opener
+./types/service.js:        // TODO: notify status?
+./types/service.js:    // TODO: allow configurable validators
+./types/service.js:        // TODO: update this in constructor
+./types/swarm.js:    // TODO: store timers globally (ConnectionManager?)
+./types/swarm.js:    // TODO: exponential backoff for reconnections
+./types/swarm.js:      // TODO: use `slots` from above
+./types/swarm.js:    // TODO: consider renaming this to JOIN
+./types/peer.js:// TODO: implement the noise protocol: http://noiseprotocol.org/noise.html
+./types/peer.js:const P2P_INSTRUCTION = 0x00000020; // TODO: select w/ no overlap
+./types/peer.js:const P2P_BASE_MESSAGE = 0x00000031; // TODO: select w/ no overlap
+./types/peer.js:const P2P_STATE_COMMITTMENT = 0x00000032; // TODO: select w/ no overlap
+./types/peer.js:const P2P_STATE_CHANGE = 0x00000033; // TODO: select w/ no overlap
+./types/peer.js:        // TODO: parse as encrypted data
+./types/peer.js:    // TODO: attempt to use handler binding
+./types/peer.js:    // TODO: refactor to use local functions + specific unbindings
+./types/peer.js:        // TODO: consider using `process.nextTick` to only clean up after event?
+./types/peer.js:      // TODO: unify as _dataHandler
+./types/peer.js:      // TODO: replace with handshake
+./types/peer.js:        // TODO: check peer ID, eject if self or known
+./types/peer.js:    // TODO: unify as _dataHandler
+./types/peer.js:        // TODO: use Fabric.Script / Fabric.Machine
+./types/peer.js:      // TODO: select type byte for state updates
+./types/peer.js:      // TODO: select type byte for state updates
+./types/state.js:    // TODO: test and document memory alignment
+./types/state.js:      // TODO: order?
+./types/chain.js:    // TODO: set this up via define?
+./types/chain.js:    // TODO: define all state transitions
+./types/renderer.js:    // TODO: move this to dynamic event handler
+./types/resource.js:      list: `/${this.names[1].toLowerCase()}`, // TODO: unpin, offer larger name list
+./types/machine.js:      seed: 1 // TODO: select seed for production
+./types/store.js:// TODO: note that generally, requirements are loosely ordered by
+./types/store.js:    let secret = value; // TODO: encrypt value
+./types/store.js:    let decrypted = secret; // TODO: decrypt value
+./types/store.js:    // TODO: check for commit state
+./types/store.js:    // TODO: use ._GET
+./types/store.js:      // TODO: document the special case of "null"
+./types/stash.js:// TODO: note that generally, requirements are loosely ordered by
+./types/app.js:      // TODO: decide on resource['@data'] vs. resource (new)
+./types/compiler.js:// TODO: have Lexer review
+./types/compiler.js:// TODO: render the following:
+./types/entity.js:        // TODO: write up longer-form explanation as to why we use an Array here
+./types/stack.js:    // TODO: return Transaction
+./types/circuit.js:    // TODO: generate polynomial for circuit
+./types/cli.js:    // TODO: use deep assign
+./types/cli.js:    // TODO: use method to only retrieve latest
+./types/cli.js:  // TODO: move to Fabric#Chat
+./types/cli.js:  // TODO: move to Fabric#Chat
+./types/cli.js:      // TODO: visual indicator of "sending..." status
+./types/cli.js:      // TODO: set relay policy
+./types/cli.js:    // TODO: internalize to CLI
+./types/cli.js:    // TODO: fix route -- `channels/messages`
+./types/cli.js:  // TODO: move to Fabric#Chat
+./types/cli.js:      // TODO: use Stack
+./types/cli.js:  // TODO: move to Fabric#Chat
+./types/cli.js:      // TODO: receive events from collection
+./types/cli.js:        // TODO: fix Machine bug; only one delta should be emitted;
+./types/cli.js:          // TODO: eliminate need for this check
+./types/cli.js:          // TODO: validate before append
+./types/cli.js:  // TODO: move to Fabric#Chat
+./types/cli.js:  // TODO: move to Fabric#Chat
+./tests/fabric.core.js:// TODO: write parser for comments
+./tests/fabric.core.js:  // TODO: implement polyfill for browserland
+./tests/fabric.core.js:      // TODO: use Fabric itself
+./tests/fabric.core.js:      // TODO: use Fabric instead of Fabric.Machine
+./tests/fabric.core.js:    // TODO: fix @fabric/http/types/server
+./tests/fabric.core.js:      // TODO: move to constants, verify
+./tests/fabric.core.js:      // TODO: migrate to Stack
+./assets/service.js:  // TODO(indutny): it may be reasonable to omit it for users who don't need
+./assets/service.js:    // TODO(indutny): implement me
+./assets/service.js:    // TODO(indutny): implement me
+./assets/service.js:// TODO: Legacy, not needed anymore. Remove in next major version.
+./assets/service.js:  // TODO: defer error events consistently everywhere, not just the cb
+./assets/service.js:    // TODO: test and document memory alignment
+./assets/service.js:      // TODO: order?
+./assets/service.js:    // TODO: observer cleanup
+./assets/service.js:      // TODO: revert to OPTIONS (this was a temporary fix for an NGINX bug)
+./assets/service.js:    // v0.12 TODO(isaacs): This is not quite how Chrome does things.
+./assets/service.js:// TODO: note that generally, requirements are loosely ordered by
+./assets/service.js:    // TODO: See why those tests fail and use a better solution.
+./assets/service.js:// TODO: Find out if this resets the AUTO_INCREMENT number.
+./assets/service.js:// TODO: Don't change ID on `setItem()`.
+./assets/service.js:                        // TODO: Make this a specific error/event.
+./assets/service.js:  // TODO: standardize on a serialization format
+./assets/service.js:    // TODO: standardize on a serialization format
+./assets/service.js:  // TODO(indutny): optimize it, this is far from optimal
+./assets/service.js:      // TODO(indutny): this should be thrown on DSL level
+./assets/service.js:    // TODO: return Transaction
+./assets/fabric.min.js:// TODO: Legacy, not needed anymore. Remove in next major version.
+./assets/fabric.min.js:  // TODO(indutny): it may be reasonable to omit it for users who don't need
+./assets/fabric.min.js:    // TODO(indutny): implement me
+./assets/fabric.min.js:    // TODO(indutny): implement me
+./assets/fabric.min.js:    // TODO: test and document memory alignment
+./assets/fabric.min.js:      // TODO: order?
+./assets/fabric.min.js:    // TODO: observer cleanup
+./assets/fabric.min.js:    // TODO: return Transaction
+./assets/fabric.min.js:// TODO: note that generally, requirements are loosely ordered by
+./assets/fabric.min.js:    // TODO: check for commit state
+./assets/fabric.min.js:    // TODO: use ._GET
+./assets/fabric.min.js:      // TODO: document the special case of "null"
+./assets/fabric.min.js:  // TODO: standardize on a serialization format
+./assets/fabric.min.js:    // TODO: standardize on a serialization format
+./assets/fabric.min.js:  // TODO: defer error events consistently everywhere, not just the cb
+./assets/fabric.min.js:      seed: 1 // TODO: select seed for production
+./assets/fabric.min.js:    // v0.12 TODO(isaacs): This is not quite how Chrome does things.
+./assets/fabric.min.js:    // TODO: implement a basic Stream
+./assets/fabric.min.js:        // TODO: report to `wreck` as NOT WORKING
+./assets/fabric.min.js:			// reader.onerror = ??? // TODO: this
+./assets/fabric.min.js:  // TODO: make this comparison case-insensitive on windows?
+./assets/fabric.min.js:  var er = new ERR_STREAM_WRITE_AFTER_END(); // TODO: defer error events consistently everywhere, not just the cb
+./assets/fabric.min.js:    stream.push(data); // TODO(BridgeAR): Write a test for these two error cases
+./assets/fabric.min.js:    // TODO: select random function
+./assets/fabric.min.js:    // TODO: remove lodash
+./assets/fabric.min.js:        path: source.name + patch.path // TODO: check in Vector Machine that this is safe
+./assets/fabric.min.js:      // TODO: evaluate old code from Doorman for trigger responses
+./assets/fabric.min.js:  // TODO(indutny): optimize it, this is far from optimal
+./assets/fabric.min.js:      // TODO(indutny): this should be thrown on DSL level
+./assets/fabric.min.js:      // TODO: decide on resource['@data'] vs. resource (new)
+./assets/fabric.min.js:            // TODO: Put in constraints that guarantee if it's an integer,
+./assets/fabric.min.js:            // TODO: Test the above concern and in general do some analysis of the quality of generated
+./assets/fabric.min.js:  // TODO: may be {}
+./assets/fabric.min.js:            // TODO: 2 or 1 bytes?
+./assets/fabric.min.js:    //TODO: the specificity here is stupid, errno should be available everywhere
+./assets/fabric.min.js:    // TODO: set this up via define?
+./assets/fabric.min.js:    // TODO: define all state transitions
+./assets/fabric.min.js:    // TODO: generate polynomial for circuit
+./assets/fabric.min.js:  observersForEvent: function(event) { // TODO: this could be cached
+./assets/fabric.min.js:    // TODO: define all resources
+./assets/fabric.min.js:    // TODO: pre-populate
+./assets/app.js:// TODO: Legacy, not needed anymore. Remove in next major version.
+./assets/app.js:  // TODO(indutny): it may be reasonable to omit it for users who don't need
+./assets/app.js:    // TODO(indutny): implement me
+./assets/app.js:    // TODO(indutny): implement me
+./assets/app.js:    // TODO: test and document memory alignment
+./assets/app.js:      // TODO: order?
+./assets/app.js:    // TODO: observer cleanup
+./assets/app.js:  // TODO: defer error events consistently everywhere, not just the cb
+./assets/app.js:    // TODO: return Transaction
+./assets/app.js:    // v0.12 TODO(isaacs): This is not quite how Chrome does things.
+./assets/app.js:			// reader.onerror = ??? // TODO: this
+./assets/app.js:// TODO: note that generally, requirements are loosely ordered by
+./assets/app.js:    // TODO: check for commit state
+./assets/app.js:    // TODO: use ._GET
+./assets/app.js:      // TODO: document the special case of "null"
+./assets/app.js:  var er = new ERR_STREAM_WRITE_AFTER_END(); // TODO: defer error events consistently everywhere, not just the cb
+./assets/app.js:    stream.push(data); // TODO(BridgeAR): Write a test for these two error cases
+./assets/app.js:      // TODO: decide on resource['@data'] vs. resource (new)
+./assets/app.js:      seed: 1 // TODO: select seed for production
+./assets/app.js:  // TODO(indutny): optimize it, this is far from optimal
+./assets/app.js:      // TODO(indutny): this should be thrown on DSL level
+./assets/app.js:            // TODO: Put in constraints that guarantee if it's an integer,
+./assets/app.js:            // TODO: Test the above concern and in general do some analysis of the quality of generated
+./assets/app.js:  // TODO: standardize on a serialization format
+./assets/app.js:    // TODO: standardize on a serialization format
+./assets/app.js:        // TODO: report to `wreck` as NOT WORKING
+./assets/app.js:  // TODO: may be {}
+./assets/app.js:            // TODO: 2 or 1 bytes?
+./assets/app.js:  // TODO: make this comparison case-insensitive on windows?
+./assets/app.js:    //TODO: the specificity here is stupid, errno should be available everywhere
+./assets/samples.js:      alias: 'Nickname?', // TODO: CLI to prompt for Commit
+./constants.js:const LARGE_COLLECTION_SIZE = 10; // TODO: test with 1,000,000
+./examples/oracle.js:// TODO: use bottom panel for inline execution (_a la_ "Run this Code &raquo;")
+./examples/service.js:      // TODO: revert to OPTIONS (this was a temporary fix for an NGINX bug)
+./examples/oracle.html:              <p>TODO: use bottom panel for inline execution (<em>a la</em> “Run this Code &raquo;”)</p>
+./examples/blockchain.html:              <p>TODO: disconnect peers</p>
+./examples/game.html:              <p>TODO: use fabric call
+./examples/cli_jade.html:              <p>TODO: use deep assign</p>
+./examples/cli_jade.html:              <p>TODO: move to lib/chat.js</p>
+./examples/cli_jade.html:              <p>TODO: visual indicator of “sending…” status</p>
+./examples/service.html:              <p>TODO: revert to OPTIONS (this was a temporary fix for an NGINX bug)</p>
+./examples/cli_jade.js:// TODO: use deep assign
+./examples/cli_jade.js:    // TODO: move to lib/chat.js
+./examples/cli_jade.js:            // TODO: visual indicator of "sending..." status
+./examples/game.js:    // TODO: use fabric call
+./examples/blockchain.js:    // TODO: disconnect peers
+./whitepaper.md:### TODO: include content hashes of links as they appear at document compilation time.
+./lib/fabric.js:    // TODO: select random function
+./lib/fabric.js:    // TODO: remove lodash
+./lib/fabric.js:        path: source.name + patch.path // TODO: check in Vector Machine that this is safe
+./lib/fabric.js:      // TODO: evaluate old code from Doorman for trigger responses
+./lib/fabric.js:    // TODO: enable lib-wide commits
+./package.json:    "review:todo": "grep --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs -rEI \"TODO|FIXME\" . 2>/dev/null > reports/todo.txt",

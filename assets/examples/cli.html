@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+  <title>cli.js</title>
+  <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+  <meta name="viewport" content="width=device-width, target-densitydpi=160dpi, initial-scale=1.0; maximum-scale=1.0; user-scalable=0;">
+  <link rel="stylesheet" media="all" href="docco.css" />
+</head>
+<body>
+  <div id="container">
+    <div id="background"></div>
+    
+      <ul id="jump_to">
+        <li>
+          <a class="large" href="javascript:void(0);">Jump To &hellip;</a>
+          <a class="small" href="javascript:void(0);">+</a>
+          <div id="jump_wrapper">
+          <div id="jump_page_wrapper">
+            <div id="jump_page">
+              
+                
+                <a class="source" href="app.html">
+                  app.js
+                </a>
+              
+                
+                <a class="source" href="bitcoin.html">
+                  bitcoin.js
+                </a>
+              
+                
+                <a class="source" href="blockchain.html">
+                  blockchain.js
+                </a>
+              
+                
+                <a class="source" href="chain.html">
+                  chain.js
+                </a>
+              
+                
+                <a class="source" href="cli.html">
+                  cli.js
+                </a>
+              
+                
+                <a class="source" href="collection.html">
+                  collection.js
+                </a>
+              
+                
+                <a class="source" href="fabric.html">
+                  fabric.js
+                </a>
+              
+                
+                <a class="source" href="game.html">
+                  game.js
+                </a>
+              
+                
+                <a class="source" href="http.html">
+                  http.js
+                </a>
+              
+                
+                <a class="source" href="index.html">
+                  index.js
+                </a>
+              
+                
+                <a class="source" href="network.html">
+                  network.js
+                </a>
+              
+                
+                <a class="source" href="oracle.html">
+                  oracle.js
+                </a>
+              
+                
+                <a class="source" href="p2pkh.html">
+                  p2pkh.js
+                </a>
+              
+                
+                <a class="source" href="service.html">
+                  service.js
+                </a>
+              
+                
+                <a class="source" href="store.html">
+                  store.js
+                </a>
+              
+                
+                <a class="source" href="witness.html">
+                  witness.js
+                </a>
+              
+            </div>
+          </div>
+        </li>
+      </ul>
+    
+    <ul class="sections">
+        
+          <li id="title">
+              <div class="annotation">
+                  <h1>cli.js</h1>
+              </div>
+          </li>
+        
+        
+        
+        <li id="section-1">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-1">&#182;</a>
+              </div>
+              
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-meta">'use strict'</span>;
+
+<span class="hljs-keyword">const</span> CLI = <span class="hljs-built_in">require</span>(<span class="hljs-string">'../types/cli'</span>);
+<span class="hljs-keyword">const</span> config = {
+  <span class="hljs-attr">path</span>: <span class="hljs-string">`./stores/<span class="hljs-subst">${process.env[<span class="hljs-string">'NAME'</span>] || <span class="hljs-string">'cli'</span>}</span>`</span>,
+  <span class="hljs-attr">persistent</span>: <span class="hljs-literal">true</span>,
+  <span class="hljs-attr">oracle</span>: {
+    <span class="hljs-attr">port</span>: process.env[<span class="hljs-string">'PORT'</span>] || <span class="hljs-number">3007</span>
+  }
+};
+
+<span class="hljs-keyword">async</span> <span class="hljs-function"><span class="hljs-keyword">function</span> <span class="hljs-title">main</span> (<span class="hljs-params"></span>) </span>{
+  <span class="hljs-keyword">const</span> cli = <span class="hljs-keyword">new</span> CLI(config);
+
+  <span class="hljs-keyword">try</span> {
+    <span class="hljs-keyword">await</span> cli.start();
+  } <span class="hljs-keyword">catch</span> (E) {
+    cli.error(<span class="hljs-string">`λ`</span>, <span class="hljs-string">'main()'</span>, E);
+  }
+
+  cli.on(<span class="hljs-string">'changes'</span>, <span class="hljs-keyword">async</span> <span class="hljs-function"><span class="hljs-keyword">function</span> (<span class="hljs-params">msg</span>) </span>{
+    cli.log(<span class="hljs-string">'[MAIN:CLI]'</span>, <span class="hljs-string">'cli event changes:'</span>, msg);
+  });
+
+  cli.on(<span class="hljs-string">'state'</span>, <span class="hljs-function"><span class="hljs-keyword">function</span> (<span class="hljs-params">msg</span>) </span>{
+    cli.log(<span class="hljs-string">'[MAIN:CLI]'</span>, <span class="hljs-string">'state:'</span>, msg);
+  });
+
+  cli.on(<span class="hljs-string">'state/tip'</span>, <span class="hljs-function"><span class="hljs-keyword">function</span> (<span class="hljs-params">msg</span>) </span>{
+    cli.log(<span class="hljs-string">'[MAIN:CLI]'</span>, <span class="hljs-string">'state/tip:'</span>, msg);
+  });
+
+  cli.on(<span class="hljs-string">'error'</span>, <span class="hljs-function"><span class="hljs-keyword">function</span> (<span class="hljs-params">E</span>) </span>{
+    <span class="hljs-built_in">console</span>.error(<span class="hljs-string">'EXCEPTION:'</span>, E);
+  });
+}
+
+main();</pre></div></div>
+            
+        </li>
+        
+    </ul>
+  </div>
+</body>
+</html>

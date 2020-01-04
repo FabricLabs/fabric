@@ -1,7 +1,7 @@
 //importScripts('/app.min.js');
 
 var url = require('url');
-var Stash = require('../lib/stash');
+var Stash = require('../types/stash');
 
 self.addEventListener('message', function (e) {
   e.source.postMessage('[GUARDIAN]', 'Hello! Your message was: ' + e.data);

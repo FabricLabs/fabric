@@ -1,41 +1,92 @@
 # Fabric
-We introduce a new peer-to-peer protocol for the trade of arbitrary data in
-exchange for value tokens.  We implement an overlay network utilizing this
-protocol on top of the Bitcoin network, using rapidly-adjusted micropayment
-channels and other smart contracts to create a new, provably free market for the
-offering and delivering of Application Resource Contracts (ARCs), and present a
-new model for a distributed web.
-
 ## Abstract
-We present a protocol for a distributed messaging system as an alternative to
-the current client-server model of the World Wide Web.  We extend the
-document-oriented approach provided by Timothy Berners-Lee with a new
-transactional messaging model, and also provide a mechanism for incentivizing
-the continued servicing of particular documents. 
+We present a novel approach to building general-purpose "computation markets", in which users
+are able to deploy complex programs for blinded execution by a network of peers,
+which lay claim to digital currency bonded in the initial request for
+computation.  Our design defers consensus on global state to an underlying trust
+anchor, particularly the Nakamoto Consensus surrounding Bitcoin's blockchain.
 
 ## Introduction
-Fabric implements a versioned, strongly-typed, and content-addressable network
-that stores and registers content by its unique hash. Furthermore, a protocol
-for broadcasting mutations to content is provided, a consequence of which is a
-mechanism for rewinding, replaying, and even forking the state history of
-individual documents.
+Recent advances in Fully-Homomorphic Encryption (FHE) have reduced computational
+requirements to a domain in which real-world users may find tolerable, in the
+range of 30 seconds to two minutes for small, well-defined programs.  Two primary
+approaches exist, Yao's garbled circuits model^[citation needed] and an array of
+secret-sharing designs, but Fabric's design relies on Yao's model for Secure
+Multi-Party Computations, or SMPC.
 
-The fundamental principle of Fabric is that it does _not_ require consensus, and
-in fact encourages the emergence of curators and natural monopolies, much in the
-same way that many online communities already have monopolies over individual
-publishing formats and content types.  Consumers of Fabric applications maintain
-explicit control over the content they consume, and, instead of being forced to
-form a quorum with their peers, may in fact deliver value to the network by
-sharing their content moderation decisions in exchange for subscriber subsidies.
+## Background
+### Bitcoin
+In 2008, Satoshi Nakamoto crystallized a solution to the Byzantine General's
+Problem in the form of Nakamoto Consensus, which is most famously utilized as
+part of Bitcoin's consensus mechanism.  Launching publicly in 2009, Bitcoin has
+gone on to become the world's most reknown distributed system.
 
-We introduce this emergent concept as a "Fuzzchain", where there is no single
-source of "truth", instead being replaced by a more individually-oriented
-"perspective" of truth.  In aggregate, these truths become quite "fuzzy",
-requiring a specific frame of reference to discern a relative truth.
+### Smart Contracts
+Bitcoin leverages the concept of a self-executing agreement known as a Smart
+Contract, a term coined by Nick Szabo in 2001^[citation needed].  While Bitcoin
+has encountered many upstart alternatives, it remains dominant in the market as
+of the time of writing, indicating it has the highest likelihood of success
+according to the Lindy Effect^[citation needed].
 
-Fabric facilitates this value exchange by using cryptographic tokens, which
-provide a medium of exchange that is free of outside influence or external
-requirements.
+### Payment Channels
+A Payment Channel is a special arrangement between two Bitcoin users, who construct
+a special form of smart contract which applies additional constraints to the funds
+locked up in the contract, but allows the pair to perform large volumes of transactions
+without generating additional on-chain overhead.
+
+### Atomic Cross-Chain Transactions
+Another interesting use of Bitcoin's smart contracting capability is the hash-lock,
+which can add the additional constraint on a Bitcoin transaction to require a
+pre-selected secret to be revealed in order to claim funds.  When off-chain
+coordination is utilized, peers can leverage this tool to construct multi-chain
+transactions, which either happen all at once or not at all (thus the "atomic"
+description).
+
+### Potential Networks
+To measure the potential along any one particular path, one first calculates the
+risk for each edge by measuring the probability of reversal, then multiplying it
+by the balance of channel (positive or negative).  Once all routes have been
+computed, a simple sum along any route is sufficient to rank paths by potential
+value, allowing any peer to verify the correct execution of a contract by
+performing the sort themselves and checking the order of the resulting elements.
+
+Let's take a simple example where Alice would like to pay the network to compute
+the _n_th fibonacci number.  Alice first composes her verifier program, which takes
+some inputs _x_ and _y_ and produces some boolean value _B_ as to whether _x_ is
+at position _y_ in the fibonacci sequence.
+
+## Approach
+### Minimized Trust Requirements
+
+## Assumptions
+### Cryptographic
+### Computational
+### Consensus
+
+## Components
+### Layer 1: Consensus on Global State
+Fabric relies on Bitcoin's blockchain to establish consensus on a shared, global
+state, namely the monetary capital used in a Fabric-speaking network.  Using this
+external conflict resolution mechanism, we can build smaller, more specialized
+networks without additionally having to implement our own consensus algorithm.
+
+### Layer 2: Peering & Payments
+Requests for computation are small operations, typically a single application of
+a polynomial function to a known prior state.  As even the simplest of programs is
+often composed from hundreds of thousands of such operations, requiring space in a
+globally-distributed database for every transaction would rapidly become prohibitively
+expensive.  As such, Fabric relies on a network of deeply-embedded payment channels at
+Layer 2, not dissimilar from the Lightning Network or our earlier work on Impulse.
+
+Each peering relationship has three primary components; the **bonding commitment**, the
+**secret preimage**, and the **counterparty**.  A typical peer lifecycle might look as
+follows:
+
+1. User commits funds to a time-locked contract (the **bonding commitment**)
+2. User establishes a peering relationship with the network (the **counterparty**)
+3. User generates some **secret preimage**, 
+
+### Layer 3: Execution
 
 ### Bitcoin
 The emergence of Bitcoin, a new peer-to-peer digital cash system in 2008 by
@@ -142,7 +193,7 @@ intangible idea, trust, as a pre-established commitment in a slightly more
 tangible fashion, a value token.  If a network is composed primarily of honest,
 friendly nodes, then commitments increase over time until the updates provided
 by the network cease to be valuable.  Should a node cease being honest, it
-destroys its ability to increase in value over time. 
+destroys its ability to increase in value over time.
 
 ### Security
 #### Contract Signatures
@@ -233,6 +284,9 @@ transactions are isomorphic to traditional blockchain transactions, in that
 either a block is valid or it is not, as determined by the component operations
 it contains.  If any one operation is invalid, so too must be the block.
 
+### OTHER NOTES
+See:
+- "Convergent Instrumental Goal"
 
 ### TODO: include content hashes of links as they appear at document compilation time.
 [bitcoin scripting]: https://en.bitcoin.it/wiki/Script

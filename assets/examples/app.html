@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+  <title>Offline-first Applications with Fabric</title>
+  <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+  <meta name="viewport" content="width=device-width, target-densitydpi=160dpi, initial-scale=1.0; maximum-scale=1.0; user-scalable=0;">
+  <link rel="stylesheet" media="all" href="docco.css" />
+</head>
+<body>
+  <div id="container">
+    <div id="background"></div>
+    
+      <ul id="jump_to">
+        <li>
+          <a class="large" href="javascript:void(0);">Jump To &hellip;</a>
+          <a class="small" href="javascript:void(0);">+</a>
+          <div id="jump_wrapper">
+          <div id="jump_page_wrapper">
+            <div id="jump_page">
+              
+                
+                <a class="source" href="app.html">
+                  app.js
+                </a>
+              
+                
+                <a class="source" href="bitcoin.html">
+                  bitcoin.js
+                </a>
+              
+                
+                <a class="source" href="blockchain.html">
+                  blockchain.js
+                </a>
+              
+                
+                <a class="source" href="chain.html">
+                  chain.js
+                </a>
+              
+                
+                <a class="source" href="cli.html">
+                  cli.js
+                </a>
+              
+                
+                <a class="source" href="collection.html">
+                  collection.js
+                </a>
+              
+                
+                <a class="source" href="fabric.html">
+                  fabric.js
+                </a>
+              
+                
+                <a class="source" href="game.html">
+                  game.js
+                </a>
+              
+                
+                <a class="source" href="http.html">
+                  http.js
+                </a>
+              
+                
+                <a class="source" href="index.html">
+                  index.js
+                </a>
+              
+                
+                <a class="source" href="network.html">
+                  network.js
+                </a>
+              
+                
+                <a class="source" href="oracle.html">
+                  oracle.js
+                </a>
+              
+                
+                <a class="source" href="p2pkh.html">
+                  p2pkh.js
+                </a>
+              
+                
+                <a class="source" href="service.html">
+                  service.js
+                </a>
+              
+                
+                <a class="source" href="store.html">
+                  store.js
+                </a>
+              
+                
+                <a class="source" href="witness.html">
+                  witness.js
+                </a>
+              
+            </div>
+          </div>
+        </li>
+      </ul>
+    
+    <ul class="sections">
+        
+        
+        
+        <li id="section-1">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-1">&#182;</a>
+              </div>
+              <h1 id="offline-first-applications-with-fabric">Offline-first Applications with Fabric</h1>
+<p>Build your first Fabric application.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-meta">'use strict'</span>;
+
+<span class="hljs-keyword">const</span> App = <span class="hljs-built_in">require</span>(<span class="hljs-string">'../lib/app'</span>);
+
+<span class="hljs-keyword">const</span> Person = <span class="hljs-built_in">require</span>(<span class="hljs-string">'../resources/person'</span>);
+<span class="hljs-keyword">const</span> Post = <span class="hljs-built_in">require</span>(<span class="hljs-string">'../resources/post'</span>);
+<span class="hljs-keyword">const</span> Relationship = <span class="hljs-built_in">require</span>(<span class="hljs-string">'../resources/relationship'</span>);
+
+<span class="hljs-built_in">window</span>.app = <span class="hljs-keyword">new</span> App({
+  <span class="hljs-attr">scripts</span>: [<span class="hljs-string">'app.js'</span>],
+  <span class="hljs-attr">resources</span>: {
+    <span class="hljs-string">'Person'</span>: Person,
+    <span class="hljs-string">'Post'</span>: Post,
+    <span class="hljs-string">'Relationship'</span>: Relationship,
+  },
+  <span class="hljs-attr">authorities</span>: {
+    
+  }
+});
+
+<span class="hljs-keyword">if</span> (<span class="hljs-string">'serviceWorker'</span> <span class="hljs-keyword">in</span> navigator) {
+  <span class="hljs-built_in">window</span>.addEventListener(<span class="hljs-string">'load'</span>, <span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params"></span>) </span>{
+    navigator.serviceWorker.register(<span class="hljs-string">'/service.js'</span>).then(<span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">registration</span>) </span>{
+      <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'[GUARDIAN]'</span>, <span class="hljs-string">'ready: '</span>, registration.scope);
+    }, <span class="hljs-function"><span class="hljs-keyword">function</span>(<span class="hljs-params">err</span>) </span>{
+      <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'[GUARDIAN]'</span>, <span class="hljs-string">'failed: '</span>, err);
+    });
+  });
+}
+
+<span class="hljs-built_in">window</span>.onload = <span class="hljs-function"><span class="hljs-keyword">function</span> (<span class="hljs-params"></span>) </span>{
+  app.attach(<span class="hljs-built_in">document</span>.querySelector(<span class="hljs-string">'fabric-application'</span>));</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-2">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-2">&#182;</a>
+              </div>
+              <p>app._load();</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+  <span class="hljs-comment">/*/
+  app._defer('localhost:3000');
+  /*/</span>
+  app._defer(<span class="hljs-string">'maki.io'</span>);
+  <span class="hljs-comment">/**/</span>
+
+  app._explore();
+}</pre></div></div>
+            
+        </li>
+        
+    </ul>
+  </div>
+</body>
+</html>

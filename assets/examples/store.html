@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+  <title>Storing Data in Fabric</title>
+  <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+  <meta name="viewport" content="width=device-width, target-densitydpi=160dpi, initial-scale=1.0; maximum-scale=1.0; user-scalable=0;">
+  <link rel="stylesheet" media="all" href="docco.css" />
+</head>
+<body>
+  <div id="container">
+    <div id="background"></div>
+    
+      <ul id="jump_to">
+        <li>
+          <a class="large" href="javascript:void(0);">Jump To &hellip;</a>
+          <a class="small" href="javascript:void(0);">+</a>
+          <div id="jump_wrapper">
+          <div id="jump_page_wrapper">
+            <div id="jump_page">
+              
+                
+                <a class="source" href="app.html">
+                  app.js
+                </a>
+              
+                
+                <a class="source" href="bitcoin.html">
+                  bitcoin.js
+                </a>
+              
+                
+                <a class="source" href="blockchain.html">
+                  blockchain.js
+                </a>
+              
+                
+                <a class="source" href="chain.html">
+                  chain.js
+                </a>
+              
+                
+                <a class="source" href="cli.html">
+                  cli.js
+                </a>
+              
+                
+                <a class="source" href="collection.html">
+                  collection.js
+                </a>
+              
+                
+                <a class="source" href="fabric.html">
+                  fabric.js
+                </a>
+              
+                
+                <a class="source" href="game.html">
+                  game.js
+                </a>
+              
+                
+                <a class="source" href="http.html">
+                  http.js
+                </a>
+              
+                
+                <a class="source" href="index.html">
+                  index.js
+                </a>
+              
+                
+                <a class="source" href="network.html">
+                  network.js
+                </a>
+              
+                
+                <a class="source" href="oracle.html">
+                  oracle.js
+                </a>
+              
+                
+                <a class="source" href="p2pkh.html">
+                  p2pkh.js
+                </a>
+              
+                
+                <a class="source" href="service.html">
+                  service.js
+                </a>
+              
+                
+                <a class="source" href="store.html">
+                  store.js
+                </a>
+              
+                
+                <a class="source" href="witness.html">
+                  witness.js
+                </a>
+              
+            </div>
+          </div>
+        </li>
+      </ul>
+    
+    <ul class="sections">
+        
+        
+        
+        <li id="section-1">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-1">&#182;</a>
+              </div>
+              <h1 id="storing-data-in-fabric">Storing Data in Fabric</h1>
+
+            </div>
+            
+        </li>
+        
+        
+        <li id="section-2">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-2">&#182;</a>
+              </div>
+              <p>One of Fabric’s utilities is as a storage layer for your application.  By
+using the <code>Fabric.Store</code> constructor, you can interact with the network as if
+it were local storage.</p>
+<p>In this example, we’ll run a single process <code>main()</code> demonstrating common
+interactions with Fabric’s Storage Engine.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-meta">'use strict'</span>;
+
+<span class="hljs-keyword">const</span> Fabric = <span class="hljs-built_in">require</span>(<span class="hljs-string">'../'</span>);
+<span class="hljs-keyword">const</span> name = <span class="hljs-string">'martindale'</span>;
+<span class="hljs-keyword">const</span> key = <span class="hljs-keyword">new</span> Fabric.Key();
+<span class="hljs-keyword">const</span> pointer = <span class="hljs-built_in">require</span>(<span class="hljs-string">'json-pointer'</span>);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-3">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-3">&#182;</a>
+              </div>
+              <h2 id="primary-process">Primary Process</h2>
+<p>Here, we define our main process.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-keyword">async</span> <span class="hljs-function"><span class="hljs-keyword">function</span> <span class="hljs-title">main</span> (<span class="hljs-params"></span>) </span>{
+  <span class="hljs-keyword">let</span> fabric = <span class="hljs-keyword">new</span> Fabric({
+    <span class="hljs-attr">name</span>: <span class="hljs-string">'@fabric/examples/store'</span>,
+    <span class="hljs-attr">path</span>: <span class="hljs-string">'./data/examples'</span>,
+    <span class="hljs-attr">persistent</span>: <span class="hljs-literal">false</span>
+  });</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-4">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-4">&#182;</a>
+              </div>
+              <p>Start the Fabric instance, and log any errors.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>  <span class="hljs-keyword">await</span> fabric.start().catch(fabric.error.bind(fabric));</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-5">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-5">&#182;</a>
+              </div>
+              <p>Let’s use <code>/players</code> as the “address” for a collection of data.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>  <span class="hljs-keyword">let</span> mem = <span class="hljs-string">`/players`</span>;
+  <span class="hljs-keyword">let</span> path = pointer.escape(mem);
+  <span class="hljs-keyword">let</span> router = Fabric.sha256(path);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-6">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-6">&#182;</a>
+              </div>
+              <p>Use <code>_POST(collection, item)</code> to insert an <code>item</code> into a named <code>collection</code>
+for later retrieval.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>  <span class="hljs-keyword">let</span> link = <span class="hljs-keyword">await</span> fabric._POST(mem, {
+    <span class="hljs-attr">name</span>: name,
+    <span class="hljs-attr">key</span>: key[<span class="hljs-string">'@data'</span>]
+  }).catch(fabric.error.bind(fabric));
+
+  <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'[HTTP]'</span>, <span class="hljs-number">201</span>, <span class="hljs-string">'Created'</span>, <span class="hljs-string">'link:'</span>, <span class="hljs-string">`fabric:<span class="hljs-subst">${link}</span>`</span>);
+  <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'link:'</span>, link);
+
+  <span class="hljs-keyword">let</span> player = <span class="hljs-keyword">await</span> fabric._GET(link).catch(fabric.error.bind(fabric));
+  <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'player:'</span>, player);
+
+  <span class="hljs-keyword">let</span> players = <span class="hljs-keyword">await</span> fabric._GET(mem).catch(fabric.error.bind(fabric));
+  <span class="hljs-keyword">let</span> collection = <span class="hljs-keyword">await</span> fabric._GET(<span class="hljs-string">`/collections/<span class="hljs-subst">${router}</span>`</span>).catch(fabric.error.bind(fabric));</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-7">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-7">&#182;</a>
+              </div>
+              <p>clean up after ourselves</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>  <span class="hljs-keyword">await</span> fabric.stop().catch(fabric.error.bind(fabric));
+
+  <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'players:'</span>, players);
+  <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'collection:'</span>, collection);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-8">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-8">&#182;</a>
+              </div>
+              <p>console.log(‘fabric:’, fabric);
+console.log(‘state:’, fabric.store.state);
+console.log(‘players:’, players.constructor.name, players);</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>}
+
+<span class="hljs-keyword">try</span> {
+  main();
+} <span class="hljs-keyword">catch</span> (E) {
+  <span class="hljs-built_in">console</span>.trace(E);
+}</pre></div></div>
+            
+        </li>
+        
+    </ul>
+  </div>
+</body>
+</html>
