@@ -33,7 +33,10 @@ you're ready to integrate Fabric into your application.
 ## Plugins
 Fabric is an extensible framework, supporting a variety of plugins.
 
-- [`@fabric/http`][http-plugin] for serving Fabric apps to the legacy web (HTTP)
+| Package                        | Description                                | Status                                                                                                                                                                                                                                                                                             |   |   |
+|--------------------------------|--------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---|---|
+| [`@fabric/http` ][http-plugin] | serve Fabric apps to the legacy web (HTTP) | [![Build Status](https://img.shields.io/travis/FabricLabs/web.svg?branch=master&style=flat-square)](https://travis-ci.org/FabricLabs/web) [![Coverage Status](https://img.shields.io/codecov/c/github/FabricLabs/web.svg?style=flat-square)](https://codecov.io/gh/FabricLabs/web)                 |   |   |
+| [`@fabric/doorman` ][doorman]  | an artificially intelligent assistant      | [![Build Status](https://img.shields.io/travis/FabricLabs/doorman.svg?branch=master&style=flat-square)](https://travis-ci.org/FabricLabs/doorman) [![Coverage Status](https://img.shields.io/codecov/c/github/FabricLabs/doorman.svg?style=flat-square)](https://codecov.io/gh/FabricLabs/doorman) |   |   |
 
 ## Running on Fabric
 Several successful projects are built with or are running on Fabric, including:
