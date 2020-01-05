@@ -136,9 +136,9 @@ class Store extends Scribe {
     let root = {};
     let current = await this._GET(key);
 
-    if (this.settings.verbosity >= 2) console.warn('current value, no typecheck:', typeof current, current);
-
+    if (this.settings.verbosity >= 3) console.warn('current value, no typecheck:', typeof current, current);
     let result = Object.assign(root, current || {}, patch);
+    if (this.settings.verbosity >= 5) console.log('[STORE]', 'Patch result:', result);
 
     try {
       let action = await this._PUT(key, result);
@@ -388,6 +388,8 @@ class Store extends Scribe {
     } catch (E) {
       console.error('Could not commit:', E);
     }
+
+    this['@entity']['@data'].addresses[router] = `/tips/${router}`;
 
     return this.get(key);
   }

@@ -86,6 +86,11 @@ class Remote extends Resource {
       'Content-Type': CONTENT_TYPE
     };
 
+    let opts = {
+      method: type,
+      headers: headers
+    };
+
     // TODO: break out into independent auth module
     if (this.config.username && this.config.password) {
       headers['Authorization'] = `Basic ${Buffer.from([
@@ -96,7 +101,7 @@ class Remote extends Resource {
 
     if (params.body) {
       try {
-        body = JSON.stringify(params.body);
+        opts.body = JSON.stringify(params.body);
         delete params.body;
       } catch (E) {
         console.error('Could not prepare request:', E);
@@ -108,27 +113,34 @@ class Remote extends Resource {
     }
 
     try {
-      response = await fetch(url, {
-        method: type,
-        headers: headers,
-        body: body
-      });
+      response = await fetch(url, opts);
     } catch (e) {
       console.error('[REMOTE]', 'exception:', e);
     }
 
-    const formatter = parser.parse(response.headers.get('content-type'));
-    switch (formatter.type) {
+    switch (response.status) {
       default:
-        if (this.settings.verbosity >= 4) console.warn('[FABRIC:REMOTE]', 'Unhandled headers content type:', formatter.type);
-        result = response.text();
-        break;
-      case 'application/json':
-        try {
-          result = response.json();
-        } catch (E) {
-          console.error('[REMOTE]', 'Could not parse JSON:', E);
+        if (response.ok) {
+          const formatter = parser.parse(response.headers.get('content-type'));
+          switch (formatter.type) {
+            default:
+              if (this.settings.verbosity >= 4) console.warn('[FABRIC:REMOTE]', 'Unhandled headers content type:', formatter.type);
+              result = response.text();
+              break;
+            case 'application/json':
+              try {
+                result = response.json();
+              } catch (E) {
+                console.error('[REMOTE]', 'Could not parse JSON:', E);
+              }
+              break;
+          }
+        } else {
+          if (this.settings.verbosity >= 4) console.warn('[FABRIC:REMOTE]', 'Unmanaged HTTP status code:', response.status);
         }
+        break;
+      case 404:
+        result = null;
         break;
     }
 
@@ -138,11 +150,11 @@ class Remote extends Resource {
   /**
    * HTTP PUT against the configured Authority.
    * @param  {String} path - HTTP Path to request.
-   * @param  {Object} obj - Map of parameters to supply.
+   * @param  {Object} body - Map of parameters to supply.
    * @return {Mixed}        [description]
    */
-  async _PUT (key, obj) {
-    return this.request('put', key, obj);
+  async _PUT (key, body) {
+    return this.request('put', key, { body });
   }
 
   /**
@@ -181,11 +193,11 @@ class Remote extends Resource {
   /**
    * HTTP PATCH on the configured Authority.
    * @param  {String} path - HTTP Path to request.
-   * @param  {Object} params - Map of parameters to supply.
+   * @param  {Object} body - Map of parameters to supply.
    * @return {Object} - Full description of remote resource.
    */
-  async _PATCH (key, params) {
-    return this.request('patch', key, params);
+  async _PATCH (key, body) {
+    return this.request('patch', key, { body });
   }
 
   /**
