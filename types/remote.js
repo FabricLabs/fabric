@@ -70,10 +70,15 @@ class Remote extends Resource {
     let host = parts[0] || ((self.secure) ? 'localhost' : 'localhost');
     let port = parts[1] || ((self.secure) ? 443 : 80);
 
+    if (this.config.port) {
+      port = this.config.port;
+    }
+
     let protocol = (!self.secure) ? 'http' : 'https';
     let url = `${protocol}://${host}:${port}${path}`;
 
     let result = null;
+    let response = null;
     let headers = {
       'Accept': CONTENT_TYPE
     };
@@ -91,7 +96,7 @@ class Remote extends Resource {
     }
 
     try {
-      result = await fetch(url, {
+      response = await fetch(url, {
         method: type,
         headers: headers
       });
@@ -99,10 +104,17 @@ class Remote extends Resource {
       console.error('[REMOTE]', 'exception:', e);
     }
 
-    try {
-      result = result.json();
-    } catch (e) {
-      console.error('[REMOTE]', 'exception:', e);
+    switch (response.headers.get('content-type')) {
+      default:
+        result = response.text();
+        break;
+      case 'application/json':
+        try {
+          result = response.json();
+        } catch (E) {
+          console.error('[REMOTE]', 'Could not parse JSON:', E);
+        }
+        break;
     }
 
     return result;
