@@ -79,8 +79,10 @@ class Remote extends Resource {
 
     let result = null;
     let response = null;
+    let body = null;
     let headers = {
-      'Accept': CONTENT_TYPE
+      'Accept': CONTENT_TYPE,
+      'Content-Type': CONTENT_TYPE
     };
 
     // TODO: break out into independent auth module
@@ -91,6 +93,15 @@ class Remote extends Resource {
       ].join(':')).toString('base64')}`;
     }
 
+    if (params.body) {
+      try {
+        body = JSON.stringify(params.body);
+        delete params.body;
+      } catch (E) {
+        console.error('Could not prepare request:', E);
+      }
+    }
+
     if (params && Object.keys(params).length) {
       url += '?' + querystring.stringify(params);
     }
@@ -98,7 +109,8 @@ class Remote extends Resource {
     try {
       response = await fetch(url, {
         method: type,
-        headers: headers
+        headers: headers,
+        body: body
       });
     } catch (e) {
       console.error('[REMOTE]', 'exception:', e);
@@ -147,7 +159,10 @@ class Remote extends Resource {
    * @return {Mixed}        [description]
    */
   async _POST (key, obj, params) {
-    return this.request('post', key, params);
+    const options = Object.assign({}, params, {
+      body: obj
+    });
+    return this.request('post', key, options);
   }
 
   /**
