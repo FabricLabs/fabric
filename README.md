@@ -30,25 +30,6 @@ you're ready to integrate Fabric into your application.
 - `npm run examples` creates a local HTTP server for interacting with examples.
 - `npm start` creates a local Fabric node.
 
-## Plugins
-Fabric is an extensible framework, supporting a variety of plugins.
-
-| Package                        | Description                                | Status                                                                                                                                                                                                                                                                                             |   |   |
-|--------------------------------|--------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---|---|
-| [`@fabric/http` ][http-plugin] | serve Fabric apps to the legacy web (HTTP) | [![Build Status](https://img.shields.io/travis/FabricLabs/web.svg?branch=master&style=flat-square)](https://travis-ci.org/FabricLabs/web) [![Coverage Status](https://img.shields.io/codecov/c/github/FabricLabs/web.svg?style=flat-square)](https://codecov.io/gh/FabricLabs/web)                 |   |   |
-| [`@fabric/doorman` ][doorman]  | an artificially intelligent assistant      | [![Build Status](https://img.shields.io/travis/FabricLabs/doorman.svg?branch=master&style=flat-square)](https://travis-ci.org/FabricLabs/doorman) [![Coverage Status](https://img.shields.io/codecov/c/github/FabricLabs/doorman.svg?style=flat-square)](https://codecov.io/gh/FabricLabs/doorman) |   |   |
-
-## Running on Fabric
-Several successful projects are built with or are running on Fabric, including:
-
-- [Doorman][doorman], an artificially intelligent assistant
-- [IdleRPG][idlerpg], a simple RPG game which rewards you for remaining idle
-- [Verse][verse], a virtual universe simulator
-
-To add your project to the list, [read the API docs][api-docs], create a public
-repository for the source code, then [edit this file][edit-readme] to include a
-link to your work.
-
 ## API
 The Fabric reference implementation exposes a simple message-passing interface
 using [the actor model][actor-model], enabling your downstream applications to
@@ -97,6 +78,26 @@ to our goals.
 - Fabric python project (#fabric on Freenode)
 - Fabric application framework by Twitter
 - HyperLedger Fabric, by IBM
+
+
+## Plugins
+Fabric is an extensible framework, supporting a variety of plugins.
+
+| Package                        | Description                                | Status                                                                                                                                                                                                                                                                                             |
+|--------------------------------|--------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [`@fabric/http` ][http-plugin] | serve Fabric apps to the legacy web (HTTP) | [![Build Status](https://img.shields.io/travis/FabricLabs/web.svg?branch=master&style=flat-square)](https://travis-ci.org/FabricLabs/web) [![Coverage Status](https://img.shields.io/codecov/c/github/FabricLabs/web.svg?style=flat-square)](https://codecov.io/gh/FabricLabs/web)                 |
+| [`@fabric/doorman` ][doorman]  | an artificially intelligent assistant      | [![Build Status](https://img.shields.io/travis/FabricLabs/doorman.svg?branch=master&style=flat-square)](https://travis-ci.org/FabricLabs/doorman) [![Coverage Status](https://img.shields.io/codecov/c/github/FabricLabs/doorman.svg?style=flat-square)](https://codecov.io/gh/FabricLabs/doorman) |
+
+## Running on Fabric
+Several successful projects are built with or are running on Fabric, including:
+
+- [Doorman][doorman], an artificially intelligent assistant
+- [IdleRPG][idlerpg], a simple RPG game which rewards you for remaining idle
+- [Verse][verse], a virtual universe simulator
+
+To add your project to the list, [read the API docs][api-docs], create a public
+repository for the source code, then [edit this file][edit-readme] to include a
+link to your work.
 
 ## Learning More
 The best place to get started is in [the #learning channel][learning], a

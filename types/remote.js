@@ -1,11 +1,12 @@
 'use strict';
 
+// External Dependencies
 const fetch = require('node-fetch');
-const querystring = require('querystring');
 const parser = require('content-type');
+const querystring = require('querystring');
 
+// Internal Types
 const Resource = require('./resource');
-
 const CONTENT_TYPE = 'application/json';
 
 /**
