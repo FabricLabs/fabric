@@ -106,7 +106,7 @@ class Service extends Scribe {
     Object.defineProperty(this, '@buffer', { enumerable: false });
 
     // Remove sensitive objects
-    Object.defineProperty(this, 'store', { enumerable: false });
+    // Object.defineProperty(this, 'store', { enumerable: false });
     Object.defineProperty(this, 'observer', { enumerable: false });
 
     // Provide the instance

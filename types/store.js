@@ -15,23 +15,23 @@ const State = require('./state');
 
 /**
  * Long-term storage.
- * @property {Mixed} config Current configuration.
+ * @property {Mixed} settings Current configuration.
  */
 class Store extends Scribe {
   /**
    * Create an instance of a {@link Store} to manage long-term storage, which is
    * particularly useful when building a user-facing {@link Product}.
-   * @param  {Object} [config={}] Configuration object.
+   * @param  {Object} [settings={}] configuration object.
    * @return {Store}              Instance of the Store, ready to start.
    */
-  constructor (config = {}) {
-    super(config);
+  constructor (settings = {}) {
+    super(settings);
 
-    this.settings = this.config = Object.assign({
+    this.settings = Object.assign({
       path: './stores/store',
       persistent: true,
       verbosity: 2, // 0 none, 1 error, 2 warning, 3 notice, 4 debug
-    }, config);
+    }, settings);
 
     this['@entity'] = {
       '@type': 'Store',
@@ -394,7 +394,7 @@ class Store extends Scribe {
 
   async open () {
     // await super.open();
-    if (this.settings.verbosity >= 3) console.trace('[FABRIC:STORE]', 'Opening:', this.settings.path);
+    if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Opening:', this.settings.path);
     // if (this.db) return this;
 
     try {
@@ -415,11 +415,6 @@ class Store extends Scribe {
 
   async close () {
     if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Closing:', this.settings.path);
-
-    if (!this.config.persistent) {
-      await this.flush();
-    }
-
     if (this.db) {
       try {
         await this.db.close();
@@ -497,7 +492,7 @@ class Store extends Scribe {
   }
 
   async commit () {
-    if (this.settings.verbosity >= 5) console.trace('[AUDIT]', '[FABRIC:STORE]', 'Committing:', this.state);
+    if (this.settings.verbosity >= 5) console.log('[AUDIT]', '[FABRIC:STORE]', 'Committing:', this.state);
     const entity = new Entity(this.state);
     this.emit('commit', entity.id);
     // TODO: document re-opening of store
@@ -512,6 +507,8 @@ class Store extends Scribe {
    * Wipes the storage.
    */
   async flush () {
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:STORE]', 'Flushing database...');
+
     for (let name in this['@entity']['@data'].addresses) {
       let address = this['@entity']['@data'].addresses[name];
       if (this.settings.verbosity >= 3) console.log('found address:', address);
@@ -519,7 +516,7 @@ class Store extends Scribe {
     }
 
     try {
-      this.del(`/collections`);
+      await this.del(`/collections`);
       await this.commit();
     } catch (E) {
       console.error('Could not wipe database:', E);
@@ -559,6 +556,10 @@ class Store extends Scribe {
 
   async stop () {
     this.status = 'stopping';
+
+    if (this.settings.persistent !== true) {
+      await this.flush();
+    }
 
     try {
       await this.close();

@@ -1,8 +1,9 @@
 'use strict';
 
-const querystring = require('querystring');
-
 const fetch = require('node-fetch');
+const querystring = require('querystring');
+const parser = require('content-type');
+
 const Resource = require('./resource');
 
 const CONTENT_TYPE = 'application/json';
@@ -116,8 +117,10 @@ class Remote extends Resource {
       console.error('[REMOTE]', 'exception:', e);
     }
 
-    switch (response.headers.get('content-type')) {
+    const formatter = parser.parse(response.headers.get('content-type'));
+    switch (formatter.type) {
       default:
+        if (this.settings.verbosity >= 4) console.warn('[FABRIC:REMOTE]', 'Unhandled headers content type:', formatter.type);
         result = response.text();
         break;
       case 'application/json':
