@@ -225,6 +225,13 @@ class Wallet extends Service {
       if (address) {
         this._state.outputs.push(output);
         this._state.coins.push(new Coin(transaction.outputs[i]));
+        this.emit('payment', {
+          '@type': 'WalletPayment',
+          '@data': {
+            id: entity.id,
+            transaction: transaction
+          }
+        });
       }
 
       /* switch (output.type) {
@@ -951,6 +958,8 @@ class Wallet extends Service {
 
     // aggregate results for return
     let slice = [];
+
+    if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'generating {@link Space} with settings:', this.settings);
 
     // iterate over length of shard, aggregate addresses
     for (let i = 0; i < size; i++) {

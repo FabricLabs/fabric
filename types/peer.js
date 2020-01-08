@@ -8,6 +8,7 @@ const Key = require('./key');
 const Machine = require('./machine');
 const Message = require('./message');
 const Scribe = require('./scribe');
+const Wallet = require('./wallet');
 
 // TODO: implement the noise protocol: http://noiseprotocol.org/noise.html
 const P2P_IDENT_REQUEST = 0x01; // 1, or the identity
@@ -40,6 +41,8 @@ class Peer extends Scribe {
       port: 7777
     }, config || {});
 
+    this.wallet = new Wallet(config);
+
     this.server = net.createServer(this._handleConnection.bind(this));
     this.stream = new stream.Transform({
       transform (chunk, encoding, callback) {
@@ -68,14 +71,30 @@ class Peer extends Scribe {
     return this;
   }
 
-  async start () {
-    this.log('Peer starting...');
+  get id () {
+    console.log('Getting peer ID...');
+    return this.wallet.shard[0].string;
+  }
 
-    if (!this.server) {
-      await this.listen();
+  async start () {
+    const peer = this;
+    peer.log('Peer starting...');
+
+    try {
+      await peer.wallet.start();
+    } catch (E) {
+      console.error('Could not start wallet:', E);
     }
 
-    return this;
+    if (!peer.server) {
+      await peer.listen();
+    }
+
+    peer.emit('ready', {
+      id: peer.id
+    });
+
+    return peer;
   }
 
   async stop () {
@@ -357,12 +376,9 @@ class Peer extends Scribe {
   listen () {
     let self = this;
     self.server.listen(self.config.port, self.config.address, function () {
-      if (self.config.debug) {
+      if (self.config.verbosity >= 3) {
         self.log('[PEER]', `${self.id} now listening on tcp://${self.address}:${self.port}`);
       }
-      self.emit('ready', {
-        id: self.id
-      });
     });
     return self;
   }

@@ -52,6 +52,38 @@ class Swarm extends Scribe {
 
   trust (source) {
     super.trust(source);
+    const swarm = this;
+
+    swarm.agent.on('ready', function (agent) {
+      swarm.emit('agent', agent);
+    });
+
+    // TODO: consider renaming this to JOIN
+    swarm.agent.on('peer', function (peer) {
+      console.log('[FABRIC:SWARM]', 'Received peer from agent:', peer);
+      swarm._registerPeer(peer);
+    });
+
+    swarm.agent.on('connections:open', function (connection) {
+      swarm.emit('connections:open', connection);
+    });
+
+    swarm.agent.on('connections:close', function (connection) {
+      swarm.emit('connections:close', connection);
+      swarm._fillPeerSlots();
+    });
+
+    swarm.agent.on('collections:post', function (message) {
+      swarm.emit('collections:post', message);
+    });
+
+    swarm.agent.on('ready', function (info) {
+      swarm.log(`swarm is ready (${info.id})`);
+      swarm.emit('ready');
+      swarm._fillPeerSlots();
+    });
+
+    return this;
   }
 
   _broadcastTypedMessage (type, msg) {
@@ -106,42 +138,15 @@ class Swarm extends Scribe {
    */
   async start () {
     await super.start();
-
-    // let's keep the swarm on the stack
-    let swarm = this;
-
-    await swarm.trust(swarm.agent);
-
-    // TODO: consider renaming this to JOIN
-    swarm.agent.on('peer', function (peer) {
-      swarm._registerPeer(peer);
-    });
-
-    swarm.agent.on('connections:open', function (connection) {
-      swarm.emit('connections:open', connection);
-    });
-
-    swarm.agent.on('connections:close', function (connection) {
-      swarm.emit('connections:close', connection);
-      swarm._fillPeerSlots();
-    });
-
-    swarm.agent.on('collections:post', function (message) {
-      swarm.emit('collections:post', message);
-    });
-
-    swarm.agent.on('ready', function (info) {
-      swarm.log(`swarm is ready (${info.id})`);
-      swarm.emit('ready');
-      swarm._fillPeerSlots();
-    });
-
-    return swarm.agent.start();
+    await this.trust(this.agent);
+    await this.agent.start();
+    return this;
   }
 
   async stop () {
     await this.agent.stop();
     await super.stop();
+    return this;
   }
 }
 
