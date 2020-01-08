@@ -69,15 +69,6 @@ class State extends EventEmitter {
       this['@entity']['@data'] = data;
     }
 
-    /**
-     * Identity function.
-     * @type {Boolean}
-     */
-    Object.defineProperty(this, 'id', {
-      enumerable: true,
-      get: this.fingerprint.bind(this)
-    });
-
     Object.defineProperty(this, `size`, {
       enumerable: true,
       get: function count () {
@@ -106,13 +97,14 @@ class State extends EventEmitter {
 
     // set various #meta
     this['@type'] = this['@entity']['@type'];
-    this['@id'] = this.id;
+    // this['@id'] = null;
+    // this['@id'] = this.id;
 
     // set internal data
     this.services = ['json'];
     // TODO: re-enable
     // this.name = this['@entity'].name || this.id;
-    this.link = `/entities/${this.id}`;
+    this.link = `/entities/${this.fingerprint()}`;
 
     if (this['@entity']['@data']) {
       try {
@@ -129,6 +121,14 @@ class State extends EventEmitter {
 
   static get pointer () {
     return pointer;
+  }
+
+  /**
+   * Identity function.
+   * @type {Boolean}
+   */
+  get id () {
+    return this.fingerprint();
   }
 
   /**

@@ -31,17 +31,17 @@ class Peer extends Scribe {
    * Create an instance of {@link Peer}.
    * @param       {Vector} config - Initialization Vector for this peer.
    */
-  constructor (config) {
+  constructor (config = {}) {
     super(config);
 
     this.name = 'Peer';
-    this.config = Object.assign({
+    this.settings = this.config = Object.assign({
       address: '0.0.0.0',
       networking: true,
       port: 7777
-    }, config || {});
+    }, config);
 
-    this.wallet = new Wallet(config);
+    this.wallet = new Wallet(this.settings);
 
     this.server = net.createServer(this._handleConnection.bind(this));
     this.stream = new stream.Transform({
@@ -55,9 +55,12 @@ class Peer extends Scribe {
     // probably bug with this vs. self
     // this.stream.on('data', this._handler.bind(this));
 
-    this.key = this.config.key || new Key();
-    this.hex = this.key.public.encodeCompressed('hex');
-    this.pkh = crypto.createHash('sha256').update(this.hex).digest('hex');
+    // TODO: load wallet from key
+    this.key = new Key(this.settings.key);
+    this.wallet = new Wallet(this.settings);
+
+    // this.hex = this.key.public.encodeCompressed('hex');
+    // this.pkh = crypto.createHash('sha256').update(this.hex).digest('hex');
 
     this.address = this.config.address;
     this.port = this.config.port;

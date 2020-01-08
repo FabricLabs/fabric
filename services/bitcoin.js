@@ -113,7 +113,7 @@ class Bitcoin extends Service {
       port: 18444,
       httpPort: 48449, // TODO: disable HTTP entirely!
       memory: true,
-      logLevel: 'spam',
+      logLevel: (this.settings.verbosity >= 4) ? 'spam' : 'error',
       maxOutbound: 1,
       workers: true
     });
@@ -380,7 +380,7 @@ class Bitcoin extends Service {
       // TODO: fix @types/wallet to use named types for Addresses...
       // i.e., this next line should be unnecessary!
       let address = bcoin.Address.fromString(slice.string, this.settings.network);
-      console.log('[DEBUG]', `[@0x${slice.string}] === ${slice.string}`);
+      if (this.settings.verbosity >= 4) console.log('[DEBUG]', `[@0x${slice.string}] === ${slice.string}`);
       this.spv.pool.watchAddress(address);
     }
   }
@@ -471,7 +471,7 @@ class Bitcoin extends Service {
   }
 
   async start () {
-    console.log('[SERVICES:BITCOIN]', 'Starting for network "', this.settings.network, '"...');
+    if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', 'Starting for network "', this.settings.network, '"...');
     await this.wallet.start();
     // await this._startLocalNode();
     // await this._connectToSeedNodes();
@@ -479,11 +479,13 @@ class Bitcoin extends Service {
     await this._connectSPV();
     // this.peer.tryOpen();
 
+    if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', 'Service started!');
     return this;
   }
 
   async stop () {
     await this.peer.disconnect();
+    await this.wallet.stop();
   }
 }
 
