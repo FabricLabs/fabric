@@ -74,6 +74,13 @@ class Peer extends Scribe {
     this.messages = new Set();
     this.machine = new Machine();
 
+    this.meta = {
+      messages: {
+        inbound: 0,
+        outbound: 0
+      }
+    };
+
     return this;
   }
 
@@ -169,8 +176,10 @@ class Peer extends Scribe {
         self.log(`connection to ${address} established!`);
 
         // TODO: check peer ID, eject if self or known
-        let message = Message.fromVector([P2P_IDENT_REQUEST, self.id]);
-        self.connections[address].write(message.asRaw());
+        /* const vector = ['IdentityRequest', self.id];
+        const message = Message.fromVector(vector);
+        self.meta.messages.outbound++;
+        self.connections[address].write(message.asRaw()); */
       });
     } catch (E) {
       self.log('[PEER]', 'failed to connect:', E);
@@ -229,6 +238,13 @@ class Peer extends Scribe {
 
     // add this socket to the list of known connections
     this.connections[address] = socket;
+
+    // Request peer identity
+    // TODO: check peer ID, eject if self or known
+    const vector = ['IdentityRequest', self.id];
+    const message = Message.fromVector(vector);
+    self.meta.messages.outbound++;
+    self.connections[address].write(message.asRaw());
   }
 
   _registerPeer (peer) {
