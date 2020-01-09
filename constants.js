@@ -37,6 +37,16 @@ const OP_RETURN = '6a';
 const OP_EQUALVERIFY = '88';
 const OP_SEPARATOR = 'ab';
 
+const P2P_IDENT_REQUEST = 0x01; // 1, or the identity
+const P2P_IDENT_RESPONSE = 0x11;
+const P2P_ROOT = 0x00000000;
+const P2P_PING = 0x00000012; // same ID as Lightning (18)
+const P2P_PONG = 0x00000013; // same ID as Lightning (19)
+const P2P_INSTRUCTION = 0x00000020; // TODO: select w/ no overlap
+const P2P_BASE_MESSAGE = 0x00000031; // TODO: select w/ no overlap
+const P2P_STATE_COMMITTMENT = 0x00000032; // TODO: select w/ no overlap
+const P2P_STATE_CHANGE = 0x00000033; // TODO: select w/ no overlap
+
 module.exports = {
   PEER_PORT,
   MAX_PEERS,
@@ -60,5 +70,14 @@ module.exports = {
   OP_RETURN,
   OP_EQUALVERIFY,
   OP_SEPARATOR,
+  P2P_IDENT_REQUEST,
+  P2P_IDENT_RESPONSE,
+  P2P_ROOT,
+  P2P_PING,
+  P2P_PONG,
+  P2P_INSTRUCTION,
+  P2P_BASE_MESSAGE,
+  P2P_STATE_COMMITTMENT,
+  P2P_STATE_CHANGE,
   VERSION_NUMBER
 };

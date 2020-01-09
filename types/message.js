@@ -4,7 +4,16 @@ const {
   MAGIC_BYTES,
   VERSION_NUMBER,
   HEADER_SIZE,
-  MAX_MESSAGE_SIZE
+  MAX_MESSAGE_SIZE,
+  P2P_IDENT_REQUEST,
+  P2P_IDENT_RESPONSE,
+  P2P_ROOT,
+  P2P_PING,
+  P2P_PONG,
+  P2P_INSTRUCTION,
+  P2P_BASE_MESSAGE,
+  P2P_STATE_COMMITTMENT,
+  P2P_STATE_CHANGE
 } = require('../constants');
 
 const crypto = require('crypto');
@@ -88,6 +97,14 @@ class Message extends Vector {
     return crypto.createHash('sha256').update(this.asRaw()).digest('hex');
   }
 
+  get types () {
+    // Message Types
+    return {
+      'IdentityRequest': P2P_IDENT_REQUEST,
+      'IdentityResponse': P2P_IDENT_RESPONSE
+    };
+  }
+
   get magic () {
     return this.raw.magic;
   }
@@ -113,11 +130,22 @@ class Message extends Vector {
 
 Object.defineProperty(Message.prototype, 'type', {
   get () {
-    return this.raw.type.readUInt32BE();
+    const code = this.raw.type.readUInt32BE();
+    switch (code) {
+      default:
+        console.warn('[FABRIC:MESSAGE]', "Unhandled message type:", code);
+        return 'GenericMessage';
+      case P2P_IDENT_REQUEST:
+        return 'IdentityRequest';
+      case P2P_IDENT_RESPONSE:
+        return 'IdentityRequest';
+    }
   },
   set (value) {
+    const code = this.types[value];
+    if (!code) throw new Error(`Unknown message type: ${value}`);
     this['@type'] = value;
-    this.raw.type.writeUInt32BE(value);
+    this.raw.type.writeUInt32BE(code);
   }
 });
 

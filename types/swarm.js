@@ -17,17 +17,19 @@ class Swarm extends Scribe {
    * @param  {Object} config Configuration object.
    * @return {Swarm}        Instance of the Swarm.
    */
-  constructor (config) {
+  constructor (config = {}) {
     super(config);
 
     this.name = 'Swarm';
-    this.config = Object.assign({
+    this.settings = this.config = Object.assign({
       name: 'fabric',
+      // TODO: define seed list
+      seeds: [],
       peers: []
     }, config);
 
     // create a peer for one's own $self
-    this.agent = new Peer(this.config.peer);
+    this.agent = new Peer(this.config);
 
     this.nodes = {};
     this.peers = {};
@@ -132,6 +134,12 @@ class Swarm extends Scribe {
     }
   }
 
+  async _connectSeedNodes () {
+    for (let id in this.settings.seeds) {
+      this.connect(this.settings.seeds[id]);
+    }
+  }
+
   /**
    * Begin computing.
    * @return {Promise} Resolves to instance of {@link Swarm}.
@@ -140,6 +148,7 @@ class Swarm extends Scribe {
     await super.start();
     await this.trust(this.agent);
     await this.agent.start();
+    await this._connectSeedNodes();
     return this;
   }
 

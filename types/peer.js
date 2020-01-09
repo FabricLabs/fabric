@@ -1,5 +1,17 @@
 'use strict';
 
+const {
+  P2P_IDENT_REQUEST,
+  P2P_IDENT_RESPONSE,
+  P2P_ROOT,
+  P2P_PING,
+  P2P_PONG,
+  P2P_INSTRUCTION,
+  P2P_BASE_MESSAGE,
+  P2P_STATE_COMMITTMENT,
+  P2P_STATE_CHANGE
+} = require('../constants');
+
 const net = require('net');
 const crypto = require('crypto');
 const stream = require('stream');
@@ -11,16 +23,6 @@ const Scribe = require('./scribe');
 const Wallet = require('./wallet');
 
 // TODO: implement the noise protocol: http://noiseprotocol.org/noise.html
-const P2P_IDENT_REQUEST = 0x01; // 1, or the identity
-const P2P_IDENT_RESPONSE = 0x11;
-const P2P_ROOT = 0x00000000;
-const P2P_PING = 0x00000012; // same ID as Lightning (18)
-const P2P_PONG = 0x00000013; // same ID as Lightning (19)
-const P2P_INSTRUCTION = 0x00000020; // TODO: select w/ no overlap
-const P2P_BASE_MESSAGE = 0x00000031; // TODO: select w/ no overlap
-const P2P_STATE_COMMITTMENT = 0x00000032; // TODO: select w/ no overlap
-const P2P_STATE_CHANGE = 0x00000033; // TODO: select w/ no overlap
-
 const ZERO_LENGTH_PLAINTEXT = '';
 
 /**
@@ -38,6 +40,7 @@ class Peer extends Scribe {
     this.settings = this.config = Object.assign({
       address: '0.0.0.0',
       networking: true,
+      listen: false,
       port: 7777
     }, config);
 
@@ -89,7 +92,7 @@ class Peer extends Scribe {
       console.error('Could not start wallet:', E);
     }
 
-    if (!peer.server) {
+    if (this.settings.listen) {
       await peer.listen();
     }
 
@@ -114,7 +117,7 @@ class Peer extends Scribe {
     let parts = address.split(':');
     let known = Object.keys(self.connections);
 
-    if (parts.length !== 2) return self.debug('Invalid address:', address);
+    if (parts.length !== 2) return console.debug('Invalid address:', address);
     if (known.includes(address)) return self.connections[address];
 
     // TODO: refactor to use local functions + specific unbindings
@@ -137,9 +140,11 @@ class Peer extends Scribe {
 
       // TODO: unify as _dataHandler
       self.connections[address].on('data', async function (data) {
+        if (self.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Received data from peer:', data);
+        self.meta.messages.inbound++;
         let message = self._parseMessage(data);
         // disconnect from any peer sending invalid messages
-        if (!message) this.destroy();
+        if (!message) return this.destroy();
 
         let response = await self._handleMessage({
           origin: address,
@@ -147,12 +152,14 @@ class Peer extends Scribe {
         });
 
         if (response) {
+          self.meta.messages.outbound++;
           this.write(response.asRaw());
         }
       });
 
       // TODO: replace with handshake
       self.connections[address].connect(parts[1], parts[0], function () {
+        const m = new Message();
         self.emit('connections:open', {
           address: address,
           status: 'unauthenticated',
@@ -241,6 +248,7 @@ class Peer extends Scribe {
 
   async _handleMessage (packet) {
     if (!packet) return false;
+    if (this.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Handling packet from peer:', packet);
 
     let self = this;
     let response = null;
@@ -260,12 +268,11 @@ class Peer extends Scribe {
       default:
         self.log('[PEER]', `unhandled message type "${message.type}"`);
         break;
-      case P2P_IDENT_REQUEST:
+      case 'IdentityRequest':
         self.log('message was an identity request.  sending node id...');
-        response = Message.fromVector([P2P_IDENT_RESPONSE, self.id]);
+        response = Message.fromVector(['IdentityResponse', self.id]);
         break;
-      case P2P_IDENT_RESPONSE:
-        self.log('message was an identity response!  registering peer:', message.data);
+      case 'IdentityResponse':
         if (!self.peers[message.data]) {
           let peer = {
             id: message.data,
