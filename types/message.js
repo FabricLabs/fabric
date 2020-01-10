@@ -62,7 +62,7 @@ class Message extends Vector {
     if (input.length < HEADER_SIZE) return null;
     if (input.length > MAX_MESSAGE_SIZE) return new Error('Input too large.');
 
-    let message = new Message();
+    const message = new Message();
 
     message.raw = {
       magic: input.slice(0, 4),
@@ -81,11 +81,9 @@ class Message extends Vector {
   }
 
   static fromVector (vector) {
-    let message = new Message();
-
+    const message = new Message();
     message.type = vector[0];
     message.data = vector[1];
-
     return message;
   }
 
@@ -101,7 +99,14 @@ class Message extends Vector {
     // Message Types
     return {
       'IdentityRequest': P2P_IDENT_REQUEST,
-      'IdentityResponse': P2P_IDENT_RESPONSE
+      'IdentityResponse': P2P_IDENT_RESPONSE,
+      'StateRoot': P2P_ROOT,
+      'Ping': P2P_PING,
+      'Pong': P2P_PONG,
+      'PeerInstruction': P2P_INSTRUCTION,
+      'PeerMessage': P2P_BASE_MESSAGE,
+      'StateCommitment': P2P_STATE_COMMITTMENT,
+      'StateChange': P2P_STATE_CHANGE
     };
   }
 

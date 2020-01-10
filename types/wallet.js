@@ -164,9 +164,6 @@ class Wallet extends Service {
   _handleGenericMessage (msg) {
     if (this.settings.verbosity >= 5) console.log('[AUDIT]', '[FABRIC:WALLET]', 'Trusted emitter gave us:', msg);
 
-    // TODO: remove this log event, only used for debugging
-    console.log('[AUDIT]', '[FABRIC:WALLET]', 'Trusted emitter gave us:', msg);
-
     // TODO: bind @fabric/core/services/bitcoin to addresses on wallet...
     // ATTN: Eric
 
@@ -200,14 +197,16 @@ class Wallet extends Service {
     if (!block.block) return 0;
     for (let i = 0; i < block.block.hashes.length; i++) {
       let txid = block.block.hashes[i].toString('hex');
-      console.log('found txid in block:', txid);
+      // ATTN: Eric
+      // TODO: process transaction
+      // console.log('found txid in block:', txid);
     }
   }
 
   async _attachTXID (txid) {
     // TODO: check that `txid` is a proper TXID
     let result = this.set(`/transactions`, this.get('/transactions').concat([ txid ]));
-    console.log('[AUDIT]', `Attached TXID ${txid} to Wallet ID ${this.id}`);
+    if (this.settings.verbosity >= 5) console.log('[AUDIT]', `Attached TXID ${txid} to Wallet ID ${this.id}`);
     return result;
   }
 
@@ -215,12 +214,16 @@ class Wallet extends Service {
     let entity = new Entity(transaction);
     if (!transaction.spent) transaction.spent = false;
     this._state.transactions.push(transaction);
-    this.commit();
-    console.log('[FABRIC:WALLET]', 'Wallet transactions now:', this._state.transactions);
+    await this.commit();
+    if (this.settings.verbosity >= 5) console.log('[FABRIC:WALLET]', 'Wallet transactions now:', this._state.transactions);
 
     for (let i = 0; i < transaction.outputs.length; i++) {
       let output = transaction.outputs[i].toJSON();
       let address = await this._findAddressInCurrentShard(output.address);
+
+      // TODO: test these outputs
+      // console.log('output to parse:', output);
+      // console.log('address found:', address);
 
       if (address) {
         this._state.outputs.push(output);

@@ -43,7 +43,7 @@ class Swarm extends Scribe {
   }
 
   connect (address) {
-    this.log(`connecting to: ${address}`);
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', `Connecting to: ${address}`);
 
     try {
       this.agent._connect(address);

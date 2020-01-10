@@ -49,6 +49,7 @@ class Bitcoin extends Service {
       name: '@services/bitcoin',
       network: 'main',
       listen: false,
+      fullnode: false,
       nodes: ['127.0.0.1'],
       seeds: ['127.0.0.1'],
       port: 18444,
@@ -80,7 +81,7 @@ class Bitcoin extends Service {
       port: this.provider.port,
       network: this.settings.network,
       bip37: true, // TODO: verify SPV implementation
-      listen: this.settings.listen,
+      listen: this.settings.fullnode,
       http: false,
       httpPort: 19999,
       logLevel: 'debug',
