@@ -116,6 +116,11 @@ class Channel extends Scribe {
     this.commit();
   }
 
+  async close () {
+    this.status = 'closed';
+    this.commit();
+  }
+
   async _setDestinationAddress (address) {
     console.log('[FABRIC:CHANNEL]', `Setting destination address to ${address} on counterparty:`, this.counterparty);
     this.counterparty.address = address;

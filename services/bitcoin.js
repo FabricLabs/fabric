@@ -76,7 +76,7 @@ class Bitcoin extends Service {
       }
     });
 
-    this.fullnode = new this.provider.FullNode({
+    /* this.fullnode = new this.provider.FullNode({
       agent: this.UAString,
       port: this.provider.port,
       network: this.settings.network,
@@ -90,7 +90,7 @@ class Bitcoin extends Service {
       loader: require,
       // maxOutbound: 1
       maxOutbound: 16
-    });
+    }); */
 
     this.peer = bcoin.Peer.fromOptions({
       agent: this.UAString,
@@ -103,15 +103,19 @@ class Bitcoin extends Service {
     this.peer.on('error', this._handlePeerError.bind(this));
     this.peer.on('packet', this._handlePeerPacket.bind(this));
     this.peer.on('open', () => {
+      console.log('PEER IS OPEN:', this);
       // triggers block event
       // pre-seeds genesis block for the rest of us.
       let block = this.peer.getBlock([this.network.genesis.hash]);
+      console.log('block recovered:', block);
     });
 
     this.spv = new bcoin.SPVNode({
       agent: this.UAString + ' (SPV)',
       network: this.settings.network,
       port: 18444,
+      http: false,
+      listen: false,
       httpPort: 48449, // TODO: disable HTTP entirely!
       memory: true,
       logLevel: (this.settings.verbosity >= 4) ? 'spam' : 'error',

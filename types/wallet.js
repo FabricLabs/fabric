@@ -268,7 +268,7 @@ class Wallet extends Service {
       value: amount
     });
 
-    mtx.fund(this._state.coins, {
+    await mtx.fund(this._state.coins, {
       rate: 10,
       changeAddress: change.string
     });
@@ -278,6 +278,31 @@ class Wallet extends Service {
     let tx = mtx.toTX();
 
     return tx;
+  }
+
+  async _getUnspentOutput (amount) {
+    if (!this._state.coins.length) throw new Error('No available funds.');
+    // TODO: use coin selection
+    const mtx = new MTX();
+
+    // Send 10,000 satoshis to ourself.
+    mtx.addOutput({
+      address: this.ring.getAddress(),
+      value: amount
+    });
+
+    await mtx.fund(this._state.coins, {
+      // Use a rate of 10,000 satoshis per kb.
+      // With the `fullnode` object, you can
+      // use the fee estimator for this instead
+      // of blindly guessing.
+      rate: 10000,
+      // Send the change back to ourselves.
+      changeAddress: this.ring.getAddress()
+    });
+    // TODO: use the MTX to select outputs
+
+    return this._state.coins[0];
   }
 
   /**
