@@ -116,7 +116,7 @@ class Bitcoin extends Service {
       port: 18444,
       http: false,
       listen: false,
-      httpPort: 48449, // TODO: disable HTTP entirely!
+      // httpPort: 48449, // TODO: disable HTTP entirely!
       memory: true,
       logLevel: (this.settings.verbosity >= 4) ? 'spam' : 'error',
       maxOutbound: 1,
@@ -145,6 +145,13 @@ class Bitcoin extends Service {
 
   async broadcast (msg) {
     console.log('[SERVICES:BITCOIN]', 'Broadcasting:', msg);
+    const verify = await msg.verify();
+    console.log('[SERVICES:BITCOIN]', 'Verified TX:', verify);
+
+    await this.spv.sendTX(msg);
+    // await this.spv.broadcast(msg);
+    await this.spv.relay(msg);
+    console.log('[SERVICES:BITCOIN]', 'Broadcasted!');
   }
 
   async _prepareBlock (obj) {
@@ -346,6 +353,9 @@ class Bitcoin extends Service {
       transactions: msg.hashes,
       block: msg
     });
+
+    // if (this.settings.verbosity >= 5) console.log('created block:', block);
+    if (this.settings.verbosity >= 5) console.log('block count:', Object.keys(this.blocks.list()).length);
 
     let message = {
       '@type': 'BitcoinBlock',

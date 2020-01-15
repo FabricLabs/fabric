@@ -211,6 +211,7 @@ class Wallet extends Service {
   }
 
   async addTransactionToWallet (transaction) {
+    if (this.settings.verbosity >= 5) console.log('[AUDIT]', '[FABRIC:WALLET]', 'Adding transaction to Wallet:', transaction);
     let entity = new Entity(transaction);
     if (!transaction.spent) transaction.spent = false;
     this._state.transactions.push(transaction);
@@ -256,10 +257,16 @@ class Wallet extends Service {
     return null;
   }
 
-  async _spendToAddress(amount, address) {
-    let mtx = new MTX();
-    let utxo = await this._getUnspentOutput(amount);
-    let change = await this._allocateSlot();
+  async _createMultisigAddress (m, n, keys) {
+    const multisig = Script.fromMultisig(m, n, keys);
+    const address = multisig.getAddress().toBase58(this.settings.network);
+    return address;
+  }
+
+  async _spendToAddress (amount, address) {
+    const mtx = new MTX();
+    const utxo = await this._getUnspentOutput(amount);
+    const change = await this._allocateSlot();
 
     if (!this._state.coins.length) throw new Error('No available funds.');
 
@@ -273,9 +280,9 @@ class Wallet extends Service {
       changeAddress: change.string
     });
 
-    mtx.sign(this.ring);
-
-    let tx = mtx.toTX();
+    const sigs = mtx.sign(this.ring);
+    const tx = mtx.toTX();
+    const valid = tx.check(mtx.view);
 
     return tx;
   }
@@ -611,6 +618,7 @@ class Wallet extends Service {
     let value = num.mul(hun); // amount in Satoshis
 
     if (value.gt(max)) {
+      console.warn('Value (in satoshis) higher than max:', value.toString(10), `(max was ${max.toString(10)})`);
       value = max;
     }
 

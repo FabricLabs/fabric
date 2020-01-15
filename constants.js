@@ -42,6 +42,7 @@ const P2P_IDENT_RESPONSE = 0x11;
 const P2P_ROOT = 0x00000000;
 const P2P_PING = 0x00000012; // same ID as Lightning (18)
 const P2P_PONG = 0x00000013; // same ID as Lightning (19)
+const P2P_STATE_ROOT = 0x00000030; // TODO: select w/ no overlap
 const P2P_INSTRUCTION = 0x00000020; // TODO: select w/ no overlap
 const P2P_BASE_MESSAGE = 0x00000031; // TODO: select w/ no overlap
 const P2P_STATE_COMMITTMENT = 0x00000032; // TODO: select w/ no overlap
@@ -77,6 +78,7 @@ module.exports = {
   P2P_PONG,
   P2P_INSTRUCTION,
   P2P_BASE_MESSAGE,
+  P2P_STATE_ROOT,
   P2P_STATE_COMMITTMENT,
   P2P_STATE_CHANGE,
   VERSION_NUMBER

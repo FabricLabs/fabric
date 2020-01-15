@@ -12,6 +12,7 @@ const {
   P2P_PONG,
   P2P_INSTRUCTION,
   P2P_BASE_MESSAGE,
+  P2P_STATE_ROOT,
   P2P_STATE_COMMITTMENT,
   P2P_STATE_CHANGE
 } = require('../constants');
@@ -59,8 +60,8 @@ class Message extends Vector {
 
   static fromRaw (input) {
     if (!input) return null;
-    if (input.length < HEADER_SIZE) return null;
-    if (input.length > MAX_MESSAGE_SIZE) return new Error('Input too large.');
+    // if (input.length < HEADER_SIZE) return null;
+    // if (input.length > MAX_MESSAGE_SIZE) return new Error('Input too large.');
 
     const message = new Message();
 
@@ -100,11 +101,14 @@ class Message extends Vector {
     return {
       'IdentityRequest': P2P_IDENT_REQUEST,
       'IdentityResponse': P2P_IDENT_RESPONSE,
-      'StateRoot': P2P_ROOT,
+      // TODO: restore this type
+      // 'StateRoot': P2P_ROOT,
       'Ping': P2P_PING,
       'Pong': P2P_PONG,
       'PeerInstruction': P2P_INSTRUCTION,
       'PeerMessage': P2P_BASE_MESSAGE,
+      // TODO: restore above StateRoot type
+      'StateRoot': P2P_STATE_ROOT,
       'StateCommitment': P2P_STATE_COMMITTMENT,
       'StateChange': P2P_STATE_CHANGE
     };
@@ -143,7 +147,11 @@ Object.defineProperty(Message.prototype, 'type', {
       case P2P_IDENT_REQUEST:
         return 'IdentityRequest';
       case P2P_IDENT_RESPONSE:
-        return 'IdentityRequest';
+        return 'IdentityResponse';
+      case P2P_STATE_ROOT:
+        return 'StateRoot';
+      case P2P_STATE_CHANGE:
+        return 'StateChange';
     }
   },
   set (value) {

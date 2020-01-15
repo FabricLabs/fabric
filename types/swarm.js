@@ -38,7 +38,7 @@ class Swarm extends Scribe {
   }
 
   broadcast (msg) {
-    this.log('broadcasting:', msg);
+    if (this.settings.verbosity >= 5) console.log('broadcasting:', msg);
     this.agent.broadcast(msg);
   }
 
@@ -58,6 +58,11 @@ class Swarm extends Scribe {
 
     swarm.agent.on('ready', function (agent) {
       swarm.emit('agent', agent);
+    });
+
+    swarm.agent.on('state', function (state) {
+      console.log('[FABRIC:SWARM]', 'Received state from agent:', state);
+      swarm.emit('state', state);
     });
 
     // TODO: consider renaming this to JOIN
@@ -119,7 +124,7 @@ class Swarm extends Scribe {
     let swarm = this;
     let slots = MAX_PEERS - Object.keys(this.nodes).length;
     let peers = Object.keys(this.peers).map(function (id) {
-      swarm.log('checking:', swarm.peers[id]);
+      if (swarm.settings.verbosity >= 5) console.log('[FABRIC:SWARM]', '_fillPeerSlots()', 'Checking:', swarm.peers[id]);
       return swarm.peers[id].address;
     });
     let candidates = swarm.config.peers.filter(function (address) {
@@ -135,7 +140,9 @@ class Swarm extends Scribe {
   }
 
   async _connectSeedNodes () {
+    console.log('[FABRIC:SWARM]', 'Connecting to seed nodes...', this.settings.seeds);
     for (let id in this.settings.seeds) {
+      console.log('[FABRIC:SWARM]', 'Iterating on seed:', this.settings.seeds[id]);
       this.connect(this.settings.seeds[id]);
     }
   }
@@ -145,16 +152,20 @@ class Swarm extends Scribe {
    * @return {Promise} Resolves to instance of {@link Swarm}.
    */
   async start () {
+    console.log('[FABRIC:SWARM]', 'Starting...');
     await super.start();
     await this.trust(this.agent);
     await this.agent.start();
     await this._connectSeedNodes();
+    console.log('[FABRIC:SWARM]', 'Started!');
     return this;
   }
 
   async stop () {
+    console.log('[FABRIC:SWARM]', 'Stopping...');
     await this.agent.stop();
     await super.stop();
+    console.log('[FABRIC:SWARM]', 'Stopped!');
     return this;
   }
 }
