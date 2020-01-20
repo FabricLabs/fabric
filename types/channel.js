@@ -5,6 +5,7 @@ const {
 } = require('../constants');
 
 const Key = require('./key');
+const Entity = require('./entity');
 const Scribe = require('./scribe');
 const Secret = require('./secret');
 

@@ -237,7 +237,7 @@ class Peer extends Scribe {
       console.log('[FABRIC:PEER]', 'Incoming socket data:', data);
       let message = self._parseMessage(data);
       // disconnect from any peer sending invalid messages
-      if (!message) this.destroy();
+      if (!message) return this.destroy();
       if (self.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Parsed into Message:', message.raw);
       if (self.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Message type:', message.type);
       if (self.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Message data:', message.data);
