@@ -110,10 +110,11 @@ class Bitcoin extends Service {
       console.log('block recovered:', block);
     });
 
+    // Attach to the network
     this.spv = new bcoin.SPVNode({
       agent: this.UAString + ' (SPV)',
       network: this.settings.network,
-      port: 18444,
+      port: this.provider.port,
       http: false,
       listen: false,
       // httpPort: 48449, // TODO: disable HTTP entirely!
@@ -345,6 +346,10 @@ class Bitcoin extends Service {
     console.log('[SERVICES:BITCOIN]', 'State:', this.state);
   }
 
+  /**
+   * Hand a {@link Block} message as supplied by an {@link SPV} client.
+   * @param {BlockMessage} msg A {@link Message} as passed by the {@link SPV} source.
+   */
   async _handleBlockFromSPV (msg) {
     if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'SPV Received block:', msg);
     let block = await this.blocks.create({
@@ -361,6 +366,9 @@ class Bitcoin extends Service {
       '@type': 'BitcoinBlock',
       '@data': block
     };
+
+    // Finalize any uncommitted changes
+    // await this.commit();
 
     this.emit('block', message);
     this.emit('message', { '@type': 'ServiceMessage', '@data': message });

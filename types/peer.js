@@ -303,7 +303,10 @@ class Peer extends Scribe {
 
     switch (message.type) {
       default:
-        self.log('[PEER]', `unhandled message type "${message.type}"`);
+        console.log('[PEER]', `unhandled message type "${message.type}"`);
+        break;
+      case 'GenericMessage':
+        console.warn('[FABRIC:PEER]', 'Sent Generic Message:', message.data);
         break;
       case 'IdentityRequest':
         console.log('[FABRIC:PEER]', 'Peer sent IdentityRequest.  Responding with IdentityResponse (node id)...', self.id);

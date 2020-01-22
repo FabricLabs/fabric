@@ -8,7 +8,7 @@ const Peer = require('./peer');
 const Scribe = require('./scribe');
 
 /**
- * The {@link Swarm} represents a network of peers.
+ * Orchestrates a network of peers.
  * @type {String}
  */
 class Swarm extends Scribe {
@@ -52,6 +52,12 @@ class Swarm extends Scribe {
     }
   }
 
+  /**
+   * Explicitly trust an {@link EventEmitter} to provide messages using
+   * the expected {@link Interface}, providing {@link Message} objects as
+   * the expected {@link Type}.
+   * @param {EventEmitter} source {@link Actor} to utilize.
+   */
   trust (source) {
     super.trust(source);
     const swarm = this;
@@ -65,12 +71,23 @@ class Swarm extends Scribe {
       swarm.emit('state', state);
     });
 
+    swarm.agent.on('change', function (change) {
+      console.log('[FABRIC:SWARM]', 'Received change from agent:', change);
+      swarm.emit('change', change);
+    });
+
+    swarm.agent.on('patches', function (patches) {
+      console.log('[FABRIC:SWARM]', 'Received patches from agent:', patches);
+      swarm.emit('patches', patches);
+    });
+
     // TODO: consider renaming this to JOIN
     swarm.agent.on('peer', function (peer) {
       console.log('[FABRIC:SWARM]', 'Received peer from agent:', peer);
       swarm._registerPeer(peer);
     });
 
+    // Connections & Peering
     swarm.agent.on('connections:open', function (connection) {
       swarm.emit('connections:open', connection);
     });
@@ -84,6 +101,7 @@ class Swarm extends Scribe {
       swarm.emit('collections:post', message);
     });
 
+    // Final Notification
     swarm.agent.on('ready', function (info) {
       swarm.log(`swarm is ready (${info.id})`);
       swarm.emit('ready');
