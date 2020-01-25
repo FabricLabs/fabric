@@ -5,7 +5,6 @@ const monitor = require('fast-json-patch');
 const pointer = require('json-pointer');
 
 const Entity = require('./entity');
-
 const Stack = require('./stack');
 const State = require('./state');
 
@@ -47,12 +46,20 @@ class Collection extends Stack {
     return this;
   }
 
+  /**
+   * Current elements of the collection as a {@link MerkleTree}.
+   * @returns {MerkleTree}
+   */
   asMerkleTree () {
     let list = pointer.get(this.state, this.path);
     let stack = new Stack(Object.keys(list));
     return stack.asMerkleTree();
   }
 
+  /**
+   * Sets the `key` property of collection settings.
+   * @param {String} name Value to set the `key` setting to.
+   */
   _setKey (name) {
     this.settings.key = name;
   }
@@ -86,6 +93,11 @@ class Collection extends Stack {
     return items[items.length - 1];
   }
 
+  /**
+   * Find a document by specific field.
+   * @param {String} name Name of field to search.
+   * @param {String} value Value to match.
+   */
   findByField (name, value) {
     let result = null;
     let items = pointer.get(this.state, this.path);
@@ -99,6 +111,10 @@ class Collection extends Stack {
     return result;
   }
 
+  /**
+   * Find a document by the "name" field.
+   * @param {String} name Name to search for.
+   */
   findByName (name) {
     let result = null;
     let items = pointer.get(this.state, this.path);
@@ -112,6 +128,10 @@ class Collection extends Stack {
     return result;
   }
 
+  /**
+   * Find a document by the "symbol" field.
+   * @param {String} symbol Value to search for.
+   */
   findBySymbol (symbol) {
     let result = null;
     let items = pointer.get(this.state, this.path);
@@ -160,6 +180,11 @@ class Collection extends Stack {
     return result;
   }
 
+  /**
+   * Modify a target document using an array of atomic updates.
+   * @param {String} path Path to the document to modify.
+   * @param {Array} patches List of operations to apply.
+   */
   _patchTarget (path, patches) {
     let link = `${path}`;
     let result = null;
@@ -219,6 +244,11 @@ class Collection extends Stack {
     return this.get(path);
   }
 
+  /**
+   * Generate a list of elements in the collection.
+   * @deprecated
+   * @returns {Array}
+   */
   list () {
     let map = this.map();
     let ids = Object.keys(map);
@@ -232,6 +262,11 @@ class Collection extends Stack {
     return result;
   }
 
+  /**
+   * Provides the {@link Collection} as an {@link Array} of typed
+   * elements.  The type of these elments are defined by the collection's
+   * type, supplied in the constructor.
+   */
   toTypedArray () {
     let map = this.map();
     let ids = Object.keys(map);
@@ -251,6 +286,10 @@ class Collection extends Stack {
     return result;
   }
 
+  /**
+   * Generate a hashtable of elements in the collection.
+   * @returns {Array}
+   */
   map () {
     return Collection.pointer.get(this.state, `${this.path}`);
   }
@@ -305,7 +344,14 @@ class Collection extends Stack {
     return result;
   }
 
+  /**
+   * Loads {@link State} into memory.
+   * @param {State} state State to import.
+   * @param {Boolean} commit Whether or not to commit the result.
+   */
   async import (input, commit = true) {
+    if (input['@data']) input = input['@data'];
+
     let result = null;
     let size = this.push(input, false);
     let state = this['@entity'].states[this['@data'][size - 1]];

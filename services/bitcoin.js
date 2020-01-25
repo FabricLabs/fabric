@@ -10,6 +10,7 @@ const Consensus = require('../types/consensus');
 
 // Special Types (internal to Bitcoin)
 const BitcoinBlock = require('../types/bitcoin/block');
+const BitcoinTransaction = require('../types/bitcoin/transaction');
 
 // External Dependencies
 // For the browser
@@ -73,6 +74,17 @@ class Bitcoin extends Service {
       },
       listeners: {
         'create': this._handleCommittedBlock.bind(this)
+      }
+    });
+
+    this.transactions = new Collection({
+      name: 'Transaction',
+      type: BitcoinTransaction,
+      methods: {
+        'create': this._prepareTransaction.bind(this)
+      },
+      listeners: {
+        'create': this._handleCommittedTransaction.bind(this)
       }
     });
 
@@ -162,8 +174,21 @@ class Bitcoin extends Service {
     });
   }
 
+  async _prepareTransaction (obj) {
+    return Object.assign({}, obj);
+  }
+
   async _handleCommittedBlock (block) {
     this.emit('block', block);
+
+    for (let i = 0; i < block.transactions.length; i++) {
+      let txid = block.transactions[i];
+      await this.transactions.create({
+        hash: txid.toString('hex')
+      });
+    }
+
+    // await this.commit();
   }
 
   async _registerBlock (obj) {

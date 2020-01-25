@@ -115,7 +115,7 @@ committing to the outcome.  This workflow keeps app design quite simple!</p>
 execute either the full set or none.</p>
 </dd>
 <dt><a href="#Swarm">Swarm</a> : <code>String</code></dt>
-<dd><p>The <a href="#Swarm">Swarm</a> represents a network of peers.</p>
+<dd><p>Orchestrates a network of peers.</p>
 </dd>
 <dt><a href="#Transition">Transition</a></dt>
 <dd><p>The <a href="#Transition">Transition</a> type reflects a change from one finite
@@ -656,10 +656,19 @@ The [Collection](#Collection) type maintains an ordered list of [State](#State) 
 
 * [Collection](#Collection)
     * [new Collection([configuration])](#new_Collection_new)
+    * [.asMerkleTree()](#Collection+asMerkleTree) ⇒ <code>MerkleTree</code>
     * [.getByID(id)](#Collection+getByID)
     * [.getLatest()](#Collection+getLatest)
+    * [.findByField(name, value)](#Collection+findByField)
+    * [.findByName(name)](#Collection+findByName)
+    * [.findBySymbol(symbol)](#Collection+findBySymbol)
+    * [._patchTarget(path, patches)](#Collection+_patchTarget)
     * [.push(data)](#Collection+push) ⇒ <code>Number</code>
+    * ~~[.list()](#Collection+list) ⇒ <code>Array</code>~~
+    * [.toTypedArray()](#Collection+toTypedArray)
+    * [.map()](#Collection+map) ⇒ <code>Array</code>
     * [.create(entity)](#Collection+create) ⇒ <code>Promise</code>
+    * [.import(state, commit)](#Collection+import)
 
 <a name="new_Collection_new"></a>
 
@@ -671,6 +680,12 @@ Create a list of [Entity](#Entity)-like objects for later retrieval.
 | --- | --- | --- | --- |
 | [configuration] | <code>Object</code> | <code>{}</code> | Configuration object. |
 
+<a name="Collection+asMerkleTree"></a>
+
+### collection.asMerkleTree() ⇒ <code>MerkleTree</code>
+Current elements of the collection
+
+**Kind**: instance method of [<code>Collection</code>](#Collection)  
 <a name="Collection+getByID"></a>
 
 ### collection.getByID(id)
@@ -688,6 +703,52 @@ Retrieve an element from the collection by ID.
 Retrieve the most recent element in the collection.
 
 **Kind**: instance method of [<code>Collection</code>](#Collection)  
+<a name="Collection+findByField"></a>
+
+### collection.findByField(name, value)
+Find a document by specific field.
+
+**Kind**: instance method of [<code>Collection</code>](#Collection)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>String</code> | Name of field to search. |
+| value | <code>String</code> | Value to match. |
+
+<a name="Collection+findByName"></a>
+
+### collection.findByName(name)
+Find a document by the "name" field.
+
+**Kind**: instance method of [<code>Collection</code>](#Collection)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>String</code> | Name to search for. |
+
+<a name="Collection+findBySymbol"></a>
+
+### collection.findBySymbol(symbol)
+Find a document by the "symbol" field.
+
+**Kind**: instance method of [<code>Collection</code>](#Collection)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| symbol | <code>String</code> | Value to search for. |
+
+<a name="Collection+_patchTarget"></a>
+
+### collection.\_patchTarget(path, patches)
+Modify a target document using an array of atomic updates.
+
+**Kind**: instance method of [<code>Collection</code>](#Collection)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | Path to the document to modify. |
+| patches | <code>Array</code> | List of operations to apply. |
+
 <a name="Collection+push"></a>
 
 ### collection.push(data) ⇒ <code>Number</code>
@@ -700,6 +761,28 @@ Adds an [Entity](#Entity) to the [Collection](#Collection).
 | --- | --- | --- |
 | data | <code>Mixed</code> | [Entity](#Entity) to add. |
 
+<a name="Collection+list"></a>
+
+### ~~collection.list() ⇒ <code>Array</code>~~
+***Deprecated***
+
+Generate a list of elements in the collection.
+
+**Kind**: instance method of [<code>Collection</code>](#Collection)  
+<a name="Collection+toTypedArray"></a>
+
+### collection.toTypedArray()
+Provides the [Collection](#Collection) as an [Array](Array) of typed
+elements.  The type of these elments are defined by the collection's
+type, supplied in the constructor.
+
+**Kind**: instance method of [<code>Collection</code>](#Collection)  
+<a name="Collection+map"></a>
+
+### collection.map() ⇒ <code>Array</code>
+Generate a hashtable of elements in the collection.
+
+**Kind**: instance method of [<code>Collection</code>](#Collection)  
 <a name="Collection+create"></a>
 
 ### collection.create(entity) ⇒ <code>Promise</code>
@@ -711,6 +794,18 @@ Create an instance of an [Entity](#Entity).
 | Param | Type | Description |
 | --- | --- | --- |
 | entity | <code>Object</code> | Object with properties. |
+
+<a name="Collection+import"></a>
+
+### collection.import(state, commit)
+Loads [State](#State) into memory.
+
+**Kind**: instance method of [<code>Collection</code>](#Collection)  
+
+| Param | Type |
+| --- | --- |
+| state | [<code>State</code>](#State) | 
+| commit | <code>Boolean</code> | 
 
 <a name="Compiler"></a>
 
@@ -922,6 +1017,7 @@ An ordered stack of pages.
 
 
 * [Ledger](#Ledger) ⇐ [<code>Scribe</code>](#Scribe)
+    * [.id](#State+id) : <code>Boolean</code>
     * [.append(item)](#Ledger+append) ⇒ <code>Promise</code>
     * [.now()](#Scribe+now) ⇒ <code>Number</code>
     * [.trust(source)](#Scribe+trust) ⇒ [<code>Scribe</code>](#Scribe)
@@ -935,6 +1031,12 @@ An ordered stack of pages.
     * [.commit()](#State+commit)
     * [.render()](#State+render) ⇒ <code>String</code>
 
+<a name="State+id"></a>
+
+### ledger.id : <code>Boolean</code>
+Identity function.
+
+**Kind**: instance property of [<code>Ledger</code>](#Ledger)  
 <a name="Ledger+append"></a>
 
 ### ledger.append(item) ⇒ <code>Promise</code>
@@ -1350,11 +1452,11 @@ Interact with a remote [Resource](#Resource).
 * [Remote](#Remote) : [<code>Remote</code>](#Remote)
     * [new Remote(target)](#new_Remote_new)
     * [.enumerate()](#Remote+enumerate) ⇒ <code>Configuration</code>
-    * [._PUT(path, obj)](#Remote+_PUT) ⇒ <code>Mixed</code>
+    * [._PUT(path, body)](#Remote+_PUT) ⇒ <code>Mixed</code>
     * [._GET(path, params)](#Remote+_GET) ⇒ <code>Mixed</code>
     * [._POST(path, params)](#Remote+_POST) ⇒ <code>Mixed</code>
     * [._OPTIONS(path, params)](#Remote+_OPTIONS) ⇒ <code>Object</code>
-    * [._PATCH(path, params)](#Remote+_PATCH) ⇒ <code>Object</code>
+    * [._PATCH(path, body)](#Remote+_PATCH) ⇒ <code>Object</code>
     * [._DELETE(path, params)](#Remote+_DELETE) ⇒ <code>Object</code>
 
 <a name="new_Remote_new"></a>
@@ -1377,7 +1479,7 @@ Enumerate the available Resources on the remote host.
 **Kind**: instance method of [<code>Remote</code>](#Remote)  
 <a name="Remote+_PUT"></a>
 
-### remote.\_PUT(path, obj) ⇒ <code>Mixed</code>
+### remote.\_PUT(path, body) ⇒ <code>Mixed</code>
 HTTP PUT against the configured Authority.
 
 **Kind**: instance method of [<code>Remote</code>](#Remote)  
@@ -1386,7 +1488,7 @@ HTTP PUT against the configured Authority.
 | Param | Type | Description |
 | --- | --- | --- |
 | path | <code>String</code> | HTTP Path to request. |
-| obj | <code>Object</code> | Map of parameters to supply. |
+| body | <code>Object</code> | Map of parameters to supply. |
 
 <a name="Remote+_GET"></a>
 
@@ -1429,7 +1531,7 @@ HTTP OPTIONS on the configured Authority.
 
 <a name="Remote+_PATCH"></a>
 
-### remote.\_PATCH(path, params) ⇒ <code>Object</code>
+### remote.\_PATCH(path, body) ⇒ <code>Object</code>
 HTTP PATCH on the configured Authority.
 
 **Kind**: instance method of [<code>Remote</code>](#Remote)  
@@ -1438,7 +1540,7 @@ HTTP PATCH on the configured Authority.
 | Param | Type | Description |
 | --- | --- | --- |
 | path | <code>String</code> | HTTP Path to request. |
-| params | <code>Object</code> | Map of parameters to supply. |
+| body | <code>Object</code> | Map of parameters to supply. |
 
 <a name="Remote+_DELETE"></a>
 
@@ -1508,6 +1610,7 @@ Process incoming messages.
 
 * [Router](#Router) ⇐ [<code>Scribe</code>](#Scribe)
     * [new Router(map)](#new_Router_new)
+    * [.id](#State+id) : <code>Boolean</code>
     * [.route(msg)](#Router+route) ⇒ <code>Array</code>
     * [.use(plugin, name)](#Router+use) ⇒ [<code>Router</code>](#Router)
     * [.now()](#Scribe+now) ⇒ <code>Number</code>
@@ -1532,6 +1635,12 @@ Maintains a list of triggers ("commands") and their behaviors.
 | --- | --- | --- |
 | map | <code>Object</code> | Map of command names => behaviors. |
 
+<a name="State+id"></a>
+
+### router.id : <code>Boolean</code>
+Identity function.
+
+**Kind**: instance property of [<code>Router</code>](#Router)  
 <a name="Router+route"></a>
 
 ### router.route(msg) ⇒ <code>Array</code>
@@ -1677,6 +1786,7 @@ Simple tag-based recordkeeper.
 
 * [Scribe](#Scribe) ⇐ [<code>State</code>](#State)
     * [new Scribe(config)](#new_Scribe_new)
+    * [.id](#State+id) : <code>Boolean</code>
     * [.now()](#Scribe+now) ⇒ <code>Number</code>
     * [.trust(source)](#Scribe+trust) ⇒ [<code>Scribe</code>](#Scribe)
     * [.inherits(scribe)](#Scribe+inherits) ⇒ [<code>Scribe</code>](#Scribe)
@@ -1700,6 +1810,12 @@ The "Scribe" is a simple tag-based recordkeeper.
 | config | <code>Object</code> | General configuration object. |
 | config.verbose | <code>Boolean</code> | Should the Scribe be noisy? |
 
+<a name="State+id"></a>
+
+### scribe.id : <code>Boolean</code>
+Identity function.
+
+**Kind**: instance property of [<code>Scribe</code>](#Scribe)  
 <a name="Scribe+now"></a>
 
 ### scribe.now() ⇒ <code>Number</code>
@@ -2048,6 +2164,7 @@ committing to the outcome.  This workflow keeps app design quite simple!
 * [State](#State)
     * [new State(data)](#new_State_new)
     * _instance_
+        * [.id](#State+id) : <code>Boolean</code>
         * [.toString()](#State+toString) ⇒ <code>String</code>
         * [.serialize([input])](#State+serialize) ⇒ <code>Buffer</code>
         * [.deserialize(input)](#State+deserialize) ⇒ [<code>State</code>](#State)
@@ -2069,6 +2186,12 @@ Creates a snapshot of some information.
 | --- | --- | --- |
 | data | <code>Mixed</code> | Input data. |
 
+<a name="State+id"></a>
+
+### state.id : <code>Boolean</code>
+Identity function.
+
+**Kind**: instance property of [<code>State</code>](#State)  
 <a name="State+toString"></a>
 
 ### state.toString() ⇒ <code>String</code>
@@ -2179,11 +2302,11 @@ Long-term storage.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| config | <code>Mixed</code> | Current configuration. |
+| settings | <code>Mixed</code> | Current configuration. |
 
 
 * [Store](#Store)
-    * [new Store([config])](#new_Store_new)
+    * [new Store([settings])](#new_Store_new)
     * [._REGISTER(obj)](#Store+_REGISTER) ⇒ [<code>Vector</code>](#Vector)
     * [._POST(key, value)](#Store+_POST) ⇒ <code>Promise</code>
     * [.get(key)](#Store+get) ⇒ <code>Promise</code>
@@ -2195,14 +2318,14 @@ Long-term storage.
 
 <a name="new_Store_new"></a>
 
-### new Store([config])
+### new Store([settings])
 Create an instance of a [Store](#Store) to manage long-term storage, which is
 particularly useful when building a user-facing [Product](Product).
 
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
-| [config] | <code>Object</code> | <code>{}</code> | Configuration object. |
+| [settings] | <code>Object</code> | <code>{}</code> | configuration object. |
 
 <a name="Store+_REGISTER"></a>
 
@@ -2329,12 +2452,13 @@ P2SH address.
 <a name="Swarm"></a>
 
 ## Swarm : <code>String</code>
-The [Swarm](#Swarm) represents a network of peers.
+Orchestrates a network of peers.
 
 **Kind**: global class  
 
 * [Swarm](#Swarm) : <code>String</code>
     * [new Swarm(config)](#new_Swarm_new)
+    * [.trust(source)](#Swarm+trust)
     * [.start()](#Swarm+start) ⇒ <code>Promise</code>
 
 <a name="new_Swarm_new"></a>
@@ -2346,6 +2470,19 @@ Create an instance of a [Swarm](#Swarm).
 | Param | Type | Description |
 | --- | --- | --- |
 | config | <code>Object</code> | Configuration object. |
+
+<a name="Swarm+trust"></a>
+
+### swarm.trust(source)
+Explicitly trust an [EventEmitter](EventEmitter) to provide messages using
+the expected [Interface](#Interface), providing [Message](#Message) objects as
+the expected [Type](Type).
+
+**Kind**: instance method of [<code>Swarm</code>](#Swarm)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| source | <code>EventEmitter</code> | [Actor](Actor) to utilize. |
 
 <a name="Swarm+start"></a>
 
