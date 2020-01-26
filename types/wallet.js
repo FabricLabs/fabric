@@ -98,6 +98,7 @@ class Wallet extends Service {
     this.coins = new Collection();
     this.secrets = new Collection();
     this.transactions = new Collection();
+    this.txids = new Collection();
     this.outputs = new Collection();
 
     this.entity = new Entity(this.settings);

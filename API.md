@@ -95,6 +95,9 @@ familiar semantics.</p>
 <dd><p>The <a href="#Session">Session</a> type describes a connection between <a href="#Peer">Peer</a>
 objects, and includes its own lifecycle.</p>
 </dd>
+<dt><a href="#Snapshot">Snapshot</a></dt>
+<dd><p>A type of message to be expected from a <a href="#Service">Service</a>.</p>
+</dd>
 <dt><a href="#Stack">Stack</a></dt>
 <dd><p>Manage stacks of data.</p>
 </dd>
@@ -657,6 +660,7 @@ The [Collection](#Collection) type maintains an ordered list of [State](#State) 
 * [Collection](#Collection)
     * [new Collection([configuration])](#new_Collection_new)
     * [.asMerkleTree()](#Collection+asMerkleTree) ⇒ <code>MerkleTree</code>
+    * [._setKey(name)](#Collection+_setKey)
     * [.getByID(id)](#Collection+getByID)
     * [.getLatest()](#Collection+getLatest)
     * [.findByField(name, value)](#Collection+findByField)
@@ -683,9 +687,20 @@ Create a list of [Entity](#Entity)-like objects for later retrieval.
 <a name="Collection+asMerkleTree"></a>
 
 ### collection.asMerkleTree() ⇒ <code>MerkleTree</code>
-Current elements of the collection
+Current elements of the collection as a [MerkleTree](MerkleTree).
 
 **Kind**: instance method of [<code>Collection</code>](#Collection)  
+<a name="Collection+_setKey"></a>
+
+### collection.\_setKey(name)
+Sets the `key` property of collection settings.
+
+**Kind**: instance method of [<code>Collection</code>](#Collection)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>String</code> | Value to set the `key` setting to. |
+
 <a name="Collection+getByID"></a>
 
 ### collection.getByID(id)
@@ -801,11 +816,12 @@ Create an instance of an [Entity](#Entity).
 Loads [State](#State) into memory.
 
 **Kind**: instance method of [<code>Collection</code>](#Collection)  
+**Emits**: <code>event:message Will emit one {@link Snapshot} message.</code>  
 
-| Param | Type |
-| --- | --- |
-| state | [<code>State</code>](#State) | 
-| commit | <code>Boolean</code> | 
+| Param | Type | Description |
+| --- | --- | --- |
+| state | [<code>State</code>](#State) | State to import. |
+| commit | <code>Boolean</code> | Whether or not to commit the result. |
 
 <a name="Compiler"></a>
 
@@ -2108,6 +2124,33 @@ Opens the [Session](#Session) for interaction.
 Closes the [Session](#Session), preventing further interaction.
 
 **Kind**: instance method of [<code>Session</code>](#Session)  
+<a name="Snapshot"></a>
+
+## Snapshot
+A type of message to be expected from a [Service](#Service).
+
+**Kind**: global class  
+
+* [Snapshot](#Snapshot)
+    * [new Snapshot(settings)](#new_Snapshot_new)
+    * [.commit()](#Snapshot+commit)
+
+<a name="new_Snapshot_new"></a>
+
+### new Snapshot(settings)
+Creates an instance of a [Snapshot](#Snapshot).
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| settings | <code>Object</code> | Map of settings to configure the [Snapshot](#Snapshot) with. |
+
+<a name="Snapshot+commit"></a>
+
+### snapshot.commit()
+Retrieves the `sha256` fingerprint for the [Snapshot](#Snapshot) state.
+
+**Kind**: instance method of [<code>Snapshot</code>](#Snapshot)  
 <a name="Stack"></a>
 
 ## Stack

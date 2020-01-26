@@ -46,6 +46,15 @@ class Entity extends Events.EventEmitter {
     return 1;
   }
 
+  set state (state) {
+    if (!state) throw new Error('State must be provided.');
+    this._state = state;
+  }
+
+  get state () {
+    return Object.assign({}, this._state);
+  }
+
   get buffer () {
     let entity = this;
     return function buffer () {

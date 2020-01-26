@@ -20,7 +20,7 @@
     "examples": "npm run make:examples && ecstatic assets/examples",
     "local": "npm run build && ecstatic ./assets",
     "make:all": "npm run make:api && npm run make:service && npm run make:app && npm run make:docs && npm run make:lib",
-    "make:api": "npm run parse:api && node_modules/.bin/jsdoc -c jsdoc.json index.js types/ README.md -d docs/ && glob-run js-beautify --indent-size 2 -r docs/*.html",
+    "make:api": "npm run parse:api && node_modules/.bin/jsdoc -c jsdoc.json index.js types services README.md -d docs/ && glob-run js-beautify --indent-size 2 -r docs/*.html",
     "make:app": "webpack --progress examples/app.js -o assets/app.js",
     "make:coverage": "npm run coverage && nyc report --reporter html",
     "make:docs": "gitbook install && npm run parse:api && npm run make:examples && gitbook build",
