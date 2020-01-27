@@ -157,8 +157,19 @@ class Wallet extends Service {
   }
 
   trust (emitter) {
+    let wallet = this;
     let listener = emitter.on('message', this._handleGenericMessage.bind(this));
     this.marshall.agents.push(listener);
+
+    emitter.on('message', async function messageHandler (msg) {
+      if (this.settings.verbosity >= 5) console.log('[FABRIC:WALLET]', 'Received message from trusted event emitter:', msg);
+    });
+
+    emitter.on('transaction', async function trustedHandler (msg) {
+      if (this.settings.verbosity >= 5) console.log('[FABRIC:WALLET]', 'Received transaction from trusted event emitter:', msg);
+      await wallet.addTransactionToWallet(msg);
+    });
+
     return this;
   }
 

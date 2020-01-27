@@ -327,7 +327,8 @@ class Collection extends Stack {
     });
 
     if (this.settings.listeners && this.settings.listeners.create) {
-      await this.settings.listeners.create.call(this, entity.data);
+      // await this.settings.listeners.create.call(this, entity.data);
+      await this.settings.listeners.create(entity.data);
     }
 
     if (commit) {
@@ -348,6 +349,7 @@ class Collection extends Stack {
    * Loads {@link State} into memory.
    * @param {State} state State to import.
    * @param {Boolean} commit Whether or not to commit the result.
+   * @emits message Will emit one {@link Snapshot} message.
    */
   async import (input, commit = true) {
     if (input['@data']) input = input['@data'];
