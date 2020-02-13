@@ -323,7 +323,7 @@ class Store extends Scribe {
    */
   async set (key, value) {
     // this.log('[STORE]', `(${this['@method']})`, 'set:', key, value.constructor.name, value);
-    this.log('[STORE]', `(${this['@method']})`, 'set:', key, typeof value, value);
+    if (this.settings.verbosity >= 5) this.log('[STORE]', `(${this['@method']})`, 'set:', key, typeof value, value);
 
     let self = this;
 
