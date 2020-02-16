@@ -119,6 +119,10 @@ class Remote extends Resource {
       console.error('[REMOTE]', 'exception:', e);
     }
 
+    if (!response) {
+      return null;
+    }
+
     switch (response.status) {
       default:
         if (response.ok) {
@@ -175,10 +179,19 @@ class Remote extends Resource {
    * @return {Mixed}        [description]
    */
   async _POST (key, obj, params) {
+    let result = null;
+
     const options = Object.assign({}, params, {
       body: obj
     });
-    return this.request('post', key, options);
+
+    try {
+      result = await this.request('post', key, options);
+    } catch (E) {
+      console.error('bad exception:', E);
+    }
+
+    return result;
   }
 
   /**
