@@ -317,6 +317,8 @@ class Collection extends Stack {
       // console.log('[AUDIT]', `[COLLECTION:CREATED:${this.settings.name.toUpperCase()}]`, 'created data:', state);
     }
 
+    if (!state) state = {};
+
     this.set(link, state.data || state);
 
     this.emit('message', {

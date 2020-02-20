@@ -120,7 +120,10 @@ class Remote extends Resource {
     }
 
     if (!response) {
-      return null;
+      return {
+        status: 'error',
+        message: 'No response to request.'
+      };
     }
 
     switch (response.status) {
@@ -142,10 +145,19 @@ class Remote extends Resource {
           }
         } else {
           if (this.settings.verbosity >= 4) console.warn('[FABRIC:REMOTE]', 'Unmanaged HTTP status code:', response.status);
+
+          try {
+            result = response.json();
+          } catch (exception) {
+            result = response.text();
+          }
         }
         break;
       case 404:
-        result = null;
+        result = {
+          status: 'error',
+          message: 'Document not found.'
+        };
         break;
     }
 
@@ -176,7 +188,7 @@ class Remote extends Resource {
    * HTTP POST against the configured Authority.
    * @param  {String} path - HTTP Path to request.
    * @param  {Object} params - Map of parameters to supply.
-   * @return {Mixed}        [description]
+   * @return {Mixed}        Result of request.
    */
   async _POST (key, obj, params) {
     let result = null;
@@ -185,11 +197,7 @@ class Remote extends Resource {
       body: obj
     });
 
-    try {
-      result = await this.request('post', key, options);
-    } catch (E) {
-      console.error('bad exception:', E);
-    }
+    result = await this.request('post', key, options);
 
     return result;
   }
