@@ -231,6 +231,10 @@ class Remote extends Resource {
   async _DELETE (key, params) {
     return this.request('delete', key, params);
   }
+
+  async _SEARCH (key, params) {
+    return this.request('search', key, params);
+  }
 }
 
 module.exports = Remote;
