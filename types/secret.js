@@ -12,6 +12,12 @@ class Secret extends EncryptedPromise {
     // TODO: check and document upstream pattern
     this.load();
   }
+
+  get data () {
+    return {
+      hash: this._secret._state.blob
+    }
+  }
 }
 
-module.exports = EncryptedPromise;
+module.exports = Secret;
