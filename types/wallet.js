@@ -23,6 +23,10 @@ const State = require('./state');
 // For the node...
 const bcoin = require('bcoin');
 
+// TODO: most of these should be converted to use Consensus,
+// provided above.  Refactor these to use `this.provider` or
+// `this.consensus` for maximum portability.
+// ATTN: @martindale
 // Convenience classes...
 const Address = bcoin.Address;
 const Coin = bcoin.Coin;
@@ -66,7 +70,9 @@ class Wallet extends Service {
       name: 'primary',
       network: config.network,
       language: config.language,
+      locktime: 144,
       decimals: 8,
+      shardsize: 4,
       verbosity: 2,
       witness: false,
       key: null
@@ -96,7 +102,12 @@ class Wallet extends Service {
     this.addresses = new Collection();
     this.keys = new Collection();
     this.coins = new Collection();
-    this.secrets = new Collection();
+    this.secrets = new Collection({
+      methods: {
+        'create': this._prepareSecret.bind(this)
+      }
+    });
+
     this.transactions = new Collection();
     this.txids = new Collection();
     this.outputs = new Collection();
@@ -157,13 +168,11 @@ class Wallet extends Service {
   }
 
   trust (emitter) {
-    let wallet = this;
-    let listener = emitter.on('message', this._handleGenericMessage.bind(this));
-    this.marshall.agents.push(listener);
+    const wallet = this;
+    const listener = emitter.on('message', this._handleGenericMessage.bind(this));
 
-    emitter.on('message', async function messageHandler (msg) {
-      if (this.settings.verbosity >= 5) console.log('[FABRIC:WALLET]', 'Received message from trusted event emitter:', msg);
-    });
+    // Keep track of all event handlers
+    this.marshall.agents.push(listener);
 
     emitter.on('transaction', async function trustedHandler (msg) {
       if (this.settings.verbosity >= 5) console.log('[FABRIC:WALLET]', 'Received transaction from trusted event emitter:', msg);
@@ -174,6 +183,7 @@ class Wallet extends Service {
   }
 
   _handleGenericMessage (msg) {
+    if (this.settings.verbosity >= 5) console.log('[FABRIC:WALLET]', 'Received message from trusted event emitter:', msg);
     if (this.settings.verbosity >= 5) console.log('[AUDIT]', '[FABRIC:WALLET]', 'Trusted emitter gave us:', msg);
 
     // TODO: bind @fabric/core/services/bitcoin to addresses on wallet...
@@ -217,15 +227,16 @@ class Wallet extends Service {
 
   async _attachTXID (txid) {
     // TODO: check that `txid` is a proper TXID
-    let result = this.set(`/transactions`, this.get('/transactions').concat([ txid ]));
-    if (this.settings.verbosity >= 5) console.log('[AUDIT]', `Attached TXID ${txid} to Wallet ID ${this.id}`);
-    return result;
+    let txp = await this.txids.create(txid);
+    if (this.settings.verbosity >= 5) console.log('[AUDIT]', `Attached TXID ${txid} to Wallet ID ${this.id}, result:`, txp);
+    return txp;
   }
 
   async addTransactionToWallet (transaction) {
     if (this.settings.verbosity >= 5) console.log('[AUDIT]', '[FABRIC:WALLET]', 'Adding transaction to Wallet:', transaction);
     let entity = new Entity(transaction);
     if (!transaction.spent) transaction.spent = false;
+    if (!transaction.outputs) transaction.outputs = [];
     this._state.transactions.push(transaction);
     await this.commit();
     if (this.settings.verbosity >= 5) console.log('[FABRIC:WALLET]', 'Wallet transactions now:', this._state.transactions);
@@ -259,6 +270,8 @@ class Wallet extends Service {
           break;
       } */
     }
+
+    await this.commit();
   }
 
   async _findAddressInCurrentShard (address) {
@@ -361,18 +374,115 @@ class Wallet extends Service {
     // TODO: remove short-circuit
     let cb = await this._generateFakeCoinbase(order.amount);
     let mtx = new MTX();
+    let script = new Script();
+
+    let secret = await this.generateSecret();
+    let image = Buffer.from(secret.hash);
+
+    console.log('secret generated:', secret);
+    console.log('image of secret:', image);
+
+    let refund = await this.ring.getPublicKey();
+    console.log('refund:', refund);
+
+    script.pushSym('OP_IF');
+    script.pushSym('OP_SHA256');
+    script.pushData(image);
+    script.pushSym('OP_EQUALVERIFY');
+    script.pushData(order.counterparty);
+    script.pushSym('OP_ELSE');
+    script.pushInt(this.settings.locktime);
+    script.pushSym('OP_CHECKSEQUENCEVERIFY');
+    script.pushSym('OP_DROP');
+    script.pushData(refund);
+    script.pushSym('OP_ENDIF');
+    script.pushSym('OP_CHECKSIG');
+    script.compile();
 
     // TODO: complete order construction
     for (let i = 0; i < parts; i++) {
-
+      // TODO: should be split parts
+      partials.push(script);
     }
-
 
     let entity = new Entity({
       comment: 'List of transactions to validate.',
-      transactions: []
+      orders: partials,
+      transactions: partials
     });
 
+    return entity;
+  }
+
+  async createHTLC (contract) {
+    // if (!contract.asset) throw new Error('Contract parameter "asset" is required.');
+    if (!contract.amount) throw new Error('Contract parameter "amount" is required.');
+    // TODO: remove short-circuit
+    if (!contract.counterparty) {
+      // TODO: replace this with a randomly-generated input
+      // sha256
+      // -> pubkey
+      contract.counterparty = await this.ring.getPublicKey();
+      console.log('contract counterparty artificially generated:', contract.counterparty);
+    }
+
+    let leftover = contract.amount % this.settings.decimals;
+    let parts = contract.amount / this.settings.decimals;
+
+    let partials = [];
+    // TODO: remove short-circuit
+    let cb = await this._generateFakeCoinbase(contract.amount);
+    let mtx = new MTX();
+    let script = new Script();
+
+    let secret = await this.generateSecret();
+    let image = Buffer.from(secret.hash);
+
+    console.log('secret generated:', secret);
+    console.log('image of secret:', image);
+
+    let refund = await this.ring.getPublicKey();
+    console.log('refund:', refund);
+
+    script.pushSym('OP_IF');
+    script.pushSym('OP_SHA256');
+    script.pushData(image);
+    script.pushSym('OP_EQUALVERIFY');
+    script.pushData(contract.counterparty);
+    script.pushSym('OP_ELSE');
+    script.pushInt(this.settings.locktime);
+    script.pushSym('OP_CHECKSEQUENCEVERIFY');
+    script.pushSym('OP_DROP');
+    script.pushData(refund);
+    script.pushSym('OP_ENDIF');
+    script.pushSym('OP_CHECKSIG');
+    script.compile();
+
+    // TODO: complete order construction
+    for (let i = 0; i < parts; i++) {
+      // TODO: should be split parts
+      partials.push(script);
+    }
+
+    console.log('parts:', partials);
+    console.log('leftover:', leftover);
+
+    let entity = new Entity({
+      comment: 'List of transactions to validate.',
+      orders: partials,
+      transactions: partials,
+      type: 'BitcoinTransaction'
+    });
+
+    return entity;
+  }
+
+  async generateSecret () {
+    const secret = new Secret();
+    const entity = await this.secrets.create({
+      hash: secret.hash
+    });
+    console.log('created secret:', entity);
     return entity;
   }
 
@@ -443,7 +553,14 @@ class Wallet extends Service {
     // mtx.signInput(0, this.ring);
 
     let tx = mtx.toTX();
-    let output = Coin.fromTX(mtx, 0, -1);
+    let output = null;
+
+    try {
+      output = Coin.fromTX(mtx, 0, -1);
+    } catch (exception) {
+      console.error('[FABRIC:WALLET]', 'Could not generate output:', exception);
+    }
+
     let raw = mtx.toRaw();
     let hash = Hash256.digest(raw.toString('hex'));
 
@@ -470,6 +587,15 @@ class Wallet extends Service {
 
     // TODO: return a full object for Fabric
     return mtx;
+  }
+
+  balanceFromState (state) {
+    if (!state.transactions) throw new Error('State does not provide a `transactions` property.');
+    if (!state.transactions.length) return 0;
+    return state.transactions.reduce((acc, obj, i) => {
+      if (!acc.value) acc.value = 0;
+      acc.value += obj.value;
+    });
   }
 
   getFeeForInput (coin, address, keyring, rate) {
@@ -1031,7 +1157,7 @@ class Wallet extends Service {
 
     this.index++;
 
-    let key = this.master.derivePath(`m/44/0/0/0/${this.index}`);
+    let key = this.master.derivePath(`m/44'/0'/0'/0/${this.index}`);
     let keyring = bcoin.KeyRing.fromPrivate(key.privateKey);
 
     return {
@@ -1070,9 +1196,16 @@ class Wallet extends Service {
     if (this.manager) {
       this.manager.on('tx', this._handleWalletTransaction.bind(this));
       this.manager.on('balance', this._handleWalletBalance.bind(this));
+      // TODO: check on above events, should be more like...
+      // this.manager.on('changes', this._handleWalletBalance.bind(this));
     }
 
     return account;
+  }
+
+  async _prepareSecret (state) {
+    const entity = new Entity(state);
+    return entity;
   }
 
   async _loadSeed (seed) {
@@ -1128,7 +1261,7 @@ class Wallet extends Service {
     this.account = await this.wallet.getAccount('default');
 
     // Let's call it a shard!
-    this.shard = await this.getFirstAddressSlice();
+    this.shard = await this.getFirstAddressSlice(this.settings.shardsize);
     // console.log('shard created:', await this.addresses.asMerkleTree());
     // console.log('shard created:', this.shard);
 

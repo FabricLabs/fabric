@@ -37,7 +37,7 @@ describe('@fabric/core/types/message', function () {
       assert.equal(Fabric.Message instanceof Function, true);
     });
 
-    it('can compose using fromVector()', async function prove () {
+    it('can compose from a vector', async function prove () {
       const message = Fabric.Message.fromVector(['Call', JSON.stringify(example.data)]);
       const literal = message.toObject();
 

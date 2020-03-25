@@ -1,5 +1,8 @@
 'use strict';
 
+const Key = require('./key');
+const Entity = require('./entity');
+
 class Layer extends Entity {
   constructor (state = {}) {
     super(state);
@@ -14,6 +17,8 @@ class Layer extends Entity {
       size: 256
     }, state);
 
+    // TODO: describe state-passing for key
+    this.key = new Key(this.settings);
     this._state = Object.assign({}, this.settings);
 
     return this;
@@ -30,4 +35,11 @@ class Layer extends Entity {
   get children () {
     return this._state.children;
   }
+
+  async addInput (input) {
+    this._state.parents.push(input);
+    return this;
+  }
 }
+
+module.exports = Layer;

@@ -64,6 +64,7 @@ class Service extends Scribe {
     this.name = this.config.name;
     this.collections = {};
     this.definitions = {};
+    this.targets = [];
     this.origin = '';
 
     // TODO: fix this
@@ -86,6 +87,7 @@ class Service extends Scribe {
       messages: {} // always define a list of messages for Fabric services
     }, this.config['@data']);
 
+    // Keeps track of changes
     this.observer = null;
 
     /* if (this.settings.networking) {
@@ -113,8 +115,24 @@ class Service extends Scribe {
     return this;
   }
 
+  init () {
+    this.components = {};
+  }
+
+  async process () {
+    console.log('process created');
+  }
+
   get members () {
     return this['@data'].members;
+  }
+
+  get targets () {
+    return this._targets;
+  }
+
+  set targets (value) {
+    this._targets = value;
   }
 
   static fromName (name) {
@@ -220,6 +238,9 @@ class Service extends Scribe {
    * to any peers designated in the service's configuration.
    */
   async start () {
+    const service = this;
+
+    // Assign status and process
     this.status = 'starting';
     this.process = function Process (msg) {
       console.log('[FABRIC:SERVICE]', 'Unterminated message:', msg);
@@ -230,12 +251,51 @@ class Service extends Scribe {
       console.log('Local Repository: `npm run docs` to open HTTP server at http://localhost:8000');
     };
 
-    await this.define('message', {
+    /* await this.define('message', {
       name: 'message',
       handler: this.process.bind(this.state),
       exclusive: true // override all previous types
-    });
+    }); */
 
+    for (let name in this.settings.resources) {
+      const resource = this.settings.resources[name];
+      const attribute = resource.routes.list.split('/')[1];
+      const key = crypto.createHash('sha256').update(resource.routes.list).digest('hex');
+
+      // Assign collection
+      this.collections[key] = new Collection(resource);
+
+      // Add to targets
+      this.targets.push(this.collections[key].routes.list);
+
+      // Define mappings
+      Object.defineProperty(this, attribute, {
+        get: function () {
+          return this.collections[key];
+        }
+      });
+
+      // Attach events
+      this.collections[key].on('commit', (commit) => {
+        console.log('[FABRIC:SERVICE]', 'Internal commit:', key, commit);
+      });
+
+      this.collections[key].on('message', (message) => {
+        console.log('[FABRIC:SERVICE]', 'Internal message:', key, message);
+      });
+
+      this.collections[key].on('transaction', (transaction) => {
+        console.log('[FABRIC:SERVICE]', 'Internal transaction:', key, transaction);
+      });
+
+      this.collections[key].on('changes', (changes) => {
+        service._applyChanges(changes);
+        service.emit('message', {
+          type: 'Change',
+          data: changes
+        });
+      });
+    }
 
     if (this.settings.persistent) {
       try {
@@ -288,13 +348,24 @@ class Service extends Scribe {
    */
   async _GET (path) {
     let result = null;
+    let parts = path.split('/');
+    let list = `/${parts[1]}`;
+    let name = crypto.createHash('sha256').update(list).digest('hex');
 
     if (path === '/') return this.state;
+    if (this.collections[name]) {
+      if (parts[2]) {
+        let inner = this.collections[name].filter((x) => {
+          return (x.address === parts[2]);
+        })[0];
+        return inner;
+      }
+    }
 
     try {
       result = pointer.get(this.state, path);
     } catch (E) {
-      this.error(`Could not _GET() ${path}:`, E);
+      console.error(`Could not _GET() ${path}:`, E);
     }
 
     return result;
@@ -342,12 +413,11 @@ class Service extends Scribe {
     let memory = null;
 
     try {
-      memory = await this._GET(path);
+      memory = await pointer.get(this.state, path);
     } catch (E) {
       console.warn('[FABRIC:SERVICE]', 'posting to unloaded collection:', path);
+      memory = [];
     }
-
-    if (!memory) memory = [];
 
     try {
       collection = new Collection(memory);
@@ -357,7 +427,6 @@ class Service extends Scribe {
 
     // TODO: use Resource definition to de-deuplicate by fields.id
     collection.push(object.toObject());
-
     this.collections[name] = await collection.populate();
 
     // TODO: reduce storage to references
@@ -442,7 +511,7 @@ class Service extends Scribe {
    * @return {Service}        Chainable method.
    */
   async send (channel, message, extra) {
-    if (this.debug) this.log('[SERVICE]', 'send:', channel, message, extra);
+    if (this.debug) console.log('[SERVICE]', 'send()', 'Sending:', channel, message, extra);
 
     let path = Buffer.alloc(256);
     let payload = Buffer.alloc(2048);
@@ -474,6 +543,8 @@ class Service extends Scribe {
     let self = this;
     let ops = [];
     let state = new Entity(self.state);
+
+    if (self.settings.verbosity >= 4) console.log('[FABRIC:SERVICE]', 'Committing...');
 
     // assemble all necessary info, emit Snapshot regardless of storage status
     try {
@@ -549,13 +620,13 @@ class Service extends Scribe {
   async _registerActor (actor) {
     if (!actor.id) return this.error('Client must have an id.');
 
-    this.log('registering actor:', actor.id, JSON.stringify(actor).slice(0, 32) + '…');
+    console.log('Registering Actor:', actor.id, JSON.stringify(actor).slice(0, 32) + '…');
 
     let id = pointer.escape(actor.id);
     let path = `/actors/${id}`;
 
     try {
-      this._PUT(path, Object.assign({
+      await this._PUT(path, Object.assign({
         name: actor.id,
         subscriptions: []
       }, actor, { id }));
@@ -608,10 +679,20 @@ class Service extends Scribe {
   }
 
   async _applyChanges (changes) {
-    // TODO: allow configurable validators
-    return manager.applyPatch(this.state, changes, function isValid () {
-      return true;
-    }, true /* mutate doc (1st param) */);
+    let result = null;
+
+    try {
+      // TODO: allow configurable validators
+      result = manager.applyPatch(this.state, changes, function isValid () {
+        return true;
+      }, true /* mutate doc (1st param) */);
+    } catch (exception) {
+      console.error('Could not apply changes:', changes, exception);
+    }
+
+    await this.commit();
+
+    return result;
   }
 
   async _handleStateChange (changes) {

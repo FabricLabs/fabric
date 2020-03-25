@@ -31,6 +31,10 @@ class Consensus {
     return this.providers[this.settings.provider].SEQUENCE_TYPE_FLAG;
   }
 
+  get Block () {
+    return this.providers[this.settings.provider].Block;
+  }
+
   get FullNode () {
     return this.providers[this.settings.provider].FullNode;
   }
@@ -41,6 +45,10 @@ class Consensus {
 
   get Script () {
     return this.providers[this.settings.provider].Script;
+  }
+
+  get Transaction () {
+    return this.providers[this.settings.provider].Transaction;
   }
 
   // TODO: remove from {@link Consensus}

@@ -479,8 +479,12 @@ class Store extends Scribe {
   }
 
   async batch (ops) {
-    if (this.settings.verbosity >= 4) console.log('[FABRIC:STORE]', 'Batching:', ops);
+    if (this.settings.verbosity >= 5) console.log('[FABRIC:STORE]', 'Batching:', ops);
     let result = null;
+
+    if (!this.db || this.db._status === 'closed') {
+      await this.open();
+    }
 
     // Core function
     try {

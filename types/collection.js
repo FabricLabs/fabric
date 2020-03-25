@@ -42,8 +42,13 @@ class Collection extends Stack {
     this.state = {};
 
     this.set(`${this.path}`, this.settings.data || {});
+    this.observer = monitor.observe(this.state);
 
     return this;
+  }
+
+  get routes () {
+    return this.settings.routes;
   }
 
   /**
@@ -185,7 +190,7 @@ class Collection extends Stack {
    * @param {String} path Path to the document to modify.
    * @param {Array} patches List of operations to apply.
    */
-  _patchTarget (path, patches) {
+  async _patchTarget (path, patches) {
     let link = `${path}`;
     let result = null;
 
@@ -200,7 +205,7 @@ class Collection extends Stack {
       console.error('Could not patch target:', E, path, patches);
     }
 
-    this.commit();
+    await this.commit();
 
     return result;
   }
@@ -210,7 +215,7 @@ class Collection extends Stack {
    * @param  {Mixed} data {@link Entity} to add.
    * @return {Number}      Length of the collection.
    */
-  push (data, commit = true) {
+  async push (data, commit = true) {
     super.push(data);
 
     let state = new State(data);
@@ -225,7 +230,7 @@ class Collection extends Stack {
 
     if (commit) {
       try {
-        this['@commit'] = this.commit();
+        this['@commit'] = await this.commit();
       } catch (E) {
         console.error('Could not commit.', E);
       }
@@ -301,7 +306,7 @@ class Collection extends Stack {
    */
   async create (input, commit = true) {
     let result = null;
-    let size = this.push(input, false);
+    let size = await this.push(input, false);
     let state = this['@entity'].states[this['@data'][size - 1]];
 
     if (!this.settings.deterministic) state.created = Date.now();
@@ -326,17 +331,17 @@ class Collection extends Stack {
       })
     });
 
-    if (this.settings.listeners && this.settings.listeners.create) {
-      // await this.settings.listeners.create.call(this, entity.data);
-      await this.settings.listeners.create(entity.data);
-    }
-
     if (commit) {
       try {
-        this['@commit'] = this.commit();
+        this['@commit'] = await this.commit();
+        this.emit('commit', this['@commit']);
       } catch (E) {
         console.error('Could not commit.', E);
       }
+    }
+
+    if (this.settings.listeners && this.settings.listeners.create) {
+      await this.settings.listeners.create(entity.data);
     }
 
     result = state.data || entity.data;
@@ -355,7 +360,7 @@ class Collection extends Stack {
     if (input['@data']) input = input['@data'];
 
     let result = null;
-    let size = this.push(input, false);
+    let size = await this.push(input, false);
     let state = this['@entity'].states[this['@data'][size - 1]];
     let entity = new Entity(state);
     let link = `${this.path}/${input.id || entity.id}`;
@@ -368,7 +373,7 @@ class Collection extends Stack {
 
     if (commit) {
       try {
-        this['@commit'] = this.commit();
+        this['@commit'] = await this.commit();
       } catch (E) {
         console.error('Could not commit.', E);
       }
@@ -406,6 +411,17 @@ class Collection extends Stack {
 
   async importMap (map) {
     return this.importList(Object.values(map));
+  }
+
+  async commit () {
+    const changes = await super.commit();
+    const patches = monitor.generate(this.observer);
+
+    this.emit('transaction', {
+      changes: patches
+    });
+
+    if (changes) this.emit('patches', changes);
   }
 }
 
