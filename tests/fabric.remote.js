@@ -56,26 +56,14 @@ describe('@fabric/core/types/remote', function () {
     });
 
     it('can POST to local server', async function () {
-      //let server = new Web.Server();
-
-      const server = http.createServer((req, res) => {
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({status:200}));
-      });
+      let server = new Web.Server();
       let remote = new Fabric.Remote(LOCAL_SERVER_CONFIG);
 
-      //await server.start();
-      server.listen(LOCAL_SERVER_CONFIG.port);
-
+      await server.start();      
       let result = await remote._POST(`/widgets`, { foo: 'bar' });
-
-      //await server.stop();
+      await server.stop();
 
       assert.equal(result.status, 200);
-
-      server.close(function() {
-          console.log('We closed!');
-      });
     });
 
     it('can PATCH to local server (new)', async function () {
