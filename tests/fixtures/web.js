@@ -1,19 +1,17 @@
-const http = require('http');
-
 global.LOCAL_SERVER_CONFIG = {
   host: 'localhost',
   port: 9999,
   secure: false
 };
 
-class Server{
+const http = require('http');
 
+class Server{
   constructor(){
     this.server = http.createServer((req, res) => {
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({status:200}));
     });
-
   }
 
   async start(){
@@ -25,6 +23,4 @@ class Server{
   }
 }
 
-module.exports = {
-  Server:Server
-}
+module.exports = {Server}
