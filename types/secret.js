@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('crypto');
 const EncryptedPromise = require('./promise');
 
 class Secret extends EncryptedPromise {
@@ -13,9 +14,14 @@ class Secret extends EncryptedPromise {
     this.load();
   }
 
+  get hash () {
+    return crypto.createHash('sha256').update(this.data.content).digest('hex');
+  }
+
   get data () {
     return {
-      hash: this._secret._state.blob
+      hash: this._state.blob,
+      content: this._state.blob.toString()
     }
   }
 }
