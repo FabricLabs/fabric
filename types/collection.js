@@ -417,9 +417,11 @@ class Collection extends Stack {
     const changes = await super.commit();
     const patches = monitor.generate(this.observer);
 
-    this.emit('transaction', {
-      changes: patches
-    });
+    if (patches && patches.length) {
+      this.emit('transaction', {
+        changes: patches
+      });
+    }
 
     if (changes) this.emit('patches', changes);
   }
