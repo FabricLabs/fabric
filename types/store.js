@@ -107,12 +107,12 @@ class Store extends Scribe {
   async _GET (key) {
     let result = null;
 
-    this.log('[STORE]', '_GET', key);
+    if (this.settings.verbosity >= 5) this.log('[STORE]', '_GET', key);
 
     try {
       result = await this.get(key);
     } catch (E) {
-      this.warn('[STORE]', '[_GET]', '[FAILURE]', E);
+      if (this.settings.verbosity >= 5) this.warn('[STORE]', '[_GET]', '[FAILURE]', E);
     }
 
     return result;
@@ -156,7 +156,7 @@ class Store extends Scribe {
    * @return {Promise}       Resolves on success with a String pointer.
    */
   async _POST (key, value) {
-    if (this.settings.verbosity >= 3) console.log('[STORE]', '_POST', key, typeof value, value);
+    if (this.settings.verbosity >= 5) console.log('[STORE]', '_POST', key, typeof value, value);
 
     this['@method'] = '_POST';
 
@@ -206,7 +206,7 @@ class Store extends Scribe {
     try {
       if (entity) {
         family = await self.populate(entity);
-        if (this.settings.verbosity >= 3) console.log('WARNING:', 'family exists, expecting restoration:', family);
+        if (this.settings.verbosity >= 5) console.warn('WARNING:', 'family exists, expecting restoration:', family);
         origin = new Collection(family);
       } else {
         origin = new Collection();
@@ -257,7 +257,7 @@ class Store extends Scribe {
    * @return {Promise}     Resolves on complete.  `null` if not found.
    */
   async get (key) {
-    this.log('[STORE]', 'get:', key);
+    if (this.settings.verbosity >= 5) this.log('[STORE]', 'get:', key);
 
     let self = this;
     let id = pointer.escape(key);
@@ -323,7 +323,7 @@ class Store extends Scribe {
    */
   async set (key, value) {
     // this.log('[STORE]', `(${this['@method']})`, 'set:', key, value.constructor.name, value);
-    this.log('[STORE]', `(${this['@method']})`, 'set:', key, typeof value, value);
+    if (this.settings.verbosity >= 5) this.log('[STORE]', `(${this['@method']})`, 'set:', key, typeof value, value);
 
     let self = this;
 
@@ -366,11 +366,13 @@ class Store extends Scribe {
       { type: 'put', key: `/names/${router}`, value: id }
     ];
 
-    if (this.settings.verbosity >= 4) console.log('[FABRIC:STORE]', `Applying ops to path "${key}" :`, ops);
+    if (this.settings.verbosity >= 5) console.log('[FABRIC:STORE]', `Applying ops to path "${key}" :`, ops);
 
     try {
       batched = await self.db.batch(ops);
-      if (this.settings.verbosity >= 4) console.log('batched result:', batched);
+      // TODO: document verbosity 6
+      // NOTE: breaks with Fabric
+      if (this.settings.verbosity >= 6) console.log('batched result:', batched);
     } catch (E) {
       console.error('BATCH FAILURE:', E);
     }
@@ -439,7 +441,8 @@ class Store extends Scribe {
     let name = `/sources/${store.id}`;
 
     source.on('put', function (key, value) {
-      store.log('[TRUST:SOURCE]', source.constructor.name, 'emitted a put event', name, key, value.constructor.name, value);
+      // store.log('[TRUST:SOURCE]', source.constructor.name, 'emitted a put event', name, key, value.constructor.name, value);
+      if (store.settings.verbosity >= 5) console.log('[TRUST:SOURCE]', source.constructor.name, 'emitted a put event', name, key, value.constructor.name, value);
 
       let id = pointer.escape(key);
       let router = store.sha256(id);
