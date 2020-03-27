@@ -4,16 +4,8 @@ const Fabric = require('../');
 const assert = require('assert');
 
 const http = require('http');
-const Web = require('@fabric/http');
 
-const LOCAL_SERVER_CONFIG = {
-  host: 'localhost',
-  port: 9999,
-  secure: false
-};
-
-
-let fs = require('fs');
+const Web = require(__dirname+'/fixtures/web'); //require('@fabric/http');
 
 
 describe('@fabric/core/types/remote', function () {
@@ -41,7 +33,7 @@ describe('@fabric/core/types/remote', function () {
     });
 
     // TODO: fix local options
-    xit('can load OPTIONS from local server', async function () {
+    it('can load OPTIONS from local server', async function () {
       let server = new Web.Server();
       let remote = new Fabric.Remote(LOCAL_SERVER_CONFIG);
 
@@ -52,7 +44,7 @@ describe('@fabric/core/types/remote', function () {
       assert.equal(result.status, 200);
     });
 
-    xit('can load GET from local server', async function () {
+    it('can load GET from local server', async function () {
       let server = new Web.Server();
       let remote = new Fabric.Remote(LOCAL_SERVER_CONFIG);
 
@@ -64,28 +56,20 @@ describe('@fabric/core/types/remote', function () {
     });
 
     it('can POST to local server', async function () {
-      //let server = new Web.Server();
-
-      const server = http.createServer((req, res) => {
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({status:200}));
-      });
+      let server = new Web.Server();
       let remote = new Fabric.Remote(LOCAL_SERVER_CONFIG);
 
-      //await server.start();
-      server.listen(LOCAL_SERVER_CONFIG.port);
-
+      await server.start();      
       let result = await remote._POST(`/widgets`, { foo: 'bar' });
-
-      //await server.stop();
+      await server.stop();
 
       assert.equal(result.status, 200);
     });
 
-    xit('can PATCH to local server (new)', async function () {
+    it('can PATCH to local server (new)', async function () {
       let server = new Web.Server();
       let remote = new Fabric.Remote(LOCAL_SERVER_CONFIG);
-      
+
       await server.start();
 
       let result = await remote._POST(`/widgets`, { foo: 'bar' });
