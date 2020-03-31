@@ -47,7 +47,7 @@ describe('@fabric/core/types/wallet', function () {
         const address = await wallet._createMultisigAddress(2, 3, keys);
 
         // TODO: replace with fixture
-        assert.equal(address, '2NDcGc5dUbcLBi9DuEGzevpheM2fzLbAojG');
+        assert.equal(address, '2NAjx1UE2pyie3xN16AWBsbHhJSGAxLX7aY');
       }
 
       await test();
