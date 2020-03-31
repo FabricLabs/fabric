@@ -5,8 +5,8 @@
 // const bcash = require('bcash/lib/bcoin-browser');
 
 // For node...
-const bcoin = require('bcoin');
-const bcash = require('bcash');
+// const bcoin = require('bcoin');
+// const bcash = require('bcash');
 
 class Consensus {
   constructor (settings = {}) {
