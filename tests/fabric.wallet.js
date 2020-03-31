@@ -20,14 +20,37 @@ describe('@fabric/core/types/wallet', function () {
       assert.equal(Wallet instanceof Function, true);
     });
 
-    it('can generate a multisig address', function () {
+    it('can restore a public key', async function () {
       async function test () {
         const wallet = new Wallet(options);
-        const address = await wallet._createMultisigAddress(2, 3);
-        console.log('address generated:', address);
+        const origin = await wallet.generateCleanKeyPair();
+        const pubkey = await wallet.publicKeyFromString(origin.public);
+        assert.equal(origin.public, pubkey.toString('hex'));
       }
 
-      test();
+      await test();
+    });
+
+    it('can generate a multisig address', async function () {
+      async function test () {
+        const wallet = new Wallet(options);
+        const pairs = [
+          (await wallet.generateCleanKeyPair()).public,
+          (await wallet.generateCleanKeyPair()).public,
+          (await wallet.generateCleanKeyPair()).public
+        ];
+
+        const keys = pairs.map((x) => {
+          return wallet.publicKeyFromString(x)
+        });
+
+        const address = await wallet._createMultisigAddress(2, 3, keys);
+
+        // TODO: replace with fixture
+        assert.equal(address, '2NDcGc5dUbcLBi9DuEGzevpheM2fzLbAojG');
+      }
+
+      await test();
     });
 
     xit('can trust an existing chain service', function (done) {

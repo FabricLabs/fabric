@@ -283,9 +283,28 @@ class Wallet extends Service {
   }
 
   async _createMultisigAddress (m, n, keys) {
-    const multisig = Script.fromMultisig(m, n, keys);
-    const address = multisig.getAddress().toBase58(this.settings.network);
-    return address;
+    let result = null;
+
+    // Check for required fields
+    if (!m) throw new Error('Parameter 0 required: m');
+    if (!m) throw new Error('Parameter 1 required: n');
+    if (!keys || !keys.length) throw new Error('Parameter 2 required: keys');
+
+    try {
+      // Compose the address
+      const multisig = Script.fromMultisig(m, n, keys);
+      const address = multisig.getAddress().toBase58(this.settings.network);
+
+      // TODO: remove this audit message
+      if (this.settings.verbosity >= 5) console.log('[FABRIC:WALLET]', 'Created multisig address:', address);
+
+      // Assign to output
+      result = address;
+    } catch (exception) {
+      console.error('[FABRIC:WALLET]', 'Could not create multisig address:', exception);
+    }
+
+    return result;
   }
 
   async _spendToAddress (amount, address) {
@@ -1150,6 +1169,15 @@ class Wallet extends Service {
     }
 
     return slice;
+  }
+
+  /**
+   * Create a public key from a string.
+   * @param {String} input Hex-encoded string to create key from.
+   */
+  publicKeyFromString (input) {
+    const buf = Buffer.from(input, 'hex');
+    return bcoin.KeyRing.fromPublic(buf).publicKey;
   }
 
   async generateCleanKeyPair () {
