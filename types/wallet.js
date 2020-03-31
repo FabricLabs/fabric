@@ -21,7 +21,7 @@ const State = require('./state');
 // For the browser...
 // const bcoin = require('bcoin/lib/bcoin-browser');
 // For the node...
-const bcoin = require('bcoin');
+/* const bcoin = require('bcoin');
 
 // Convenience classes...
 const Address = bcoin.Address;
@@ -34,7 +34,7 @@ const Keyring = bcoin.wallet.WalletKey;
 const Mnemonic = bcoin.hd.Mnemonic;
 const HD = bcoin.hd;
 const MTX = bcoin.MTX;
-const Script = bcoin.Script;
+const Script = bcoin.Script; */
 
 /**
  * Manage keys and track their balances.
