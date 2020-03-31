@@ -72,6 +72,7 @@ class Remote extends Resource {
 
     let protocol = (!self.secure) ? 'http' : 'https';
     let url = `${protocol}://${host}:${port}${path}`;
+    let body = null;
 
     let result = null;
     let headers = {
@@ -88,13 +89,21 @@ class Remote extends Resource {
 
     if (params && Object.keys(params).length) {
       url += '?' + querystring.stringify(params);
+      body = JSON.stringify(params);
     }
 
     try {
-      result = await fetch(url, {
+      let opts = {
         method: type,
-        headers: headers
-      });
+        headers: headers,
+      };
+
+      if (body) {
+        opts.body = body;
+        headers['Content-Type'] = 'application/json';
+      }
+
+      result = await fetch(url, opts);
     } catch (e) {
       console.error('[REMOTE]', 'exception:', e);
     }
