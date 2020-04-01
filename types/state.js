@@ -116,6 +116,13 @@ class State extends EventEmitter {
 
     this.state = {};
 
+    // TODO: document hidden properties
+    // Remove various undesired clutter from output
+    Object.defineProperty(this, '@allocation', { enumerable: false });
+    Object.defineProperty(this, '@buffer', { enumerable: false });
+    Object.defineProperty(this, '@encoding', { enumerable: false });
+    Object.defineProperty(this, 'services', { enumerable: false });
+
     return this;
   }
 
@@ -386,7 +393,13 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
    */
   get (path) {
     // return pointer.get(this.state, path);
-    return pointer.get(this['@entity']['@data'], path);
+    let result = null;
+    try {
+      result = pointer.get(this['@entity']['@data'], path);
+    } catch (exception) {
+      console.error('[FABRIC:STATE]', 'Could not retrieve path:', path, exception);
+    }
+    return result;
   }
 
   /**
