@@ -462,16 +462,24 @@ class Collection extends Stack {
   }
 
   commit () {
-    const changes = super.commit();
+    console.log('[FABRIC:COLLECTION]', 'Committing...');
+    // const changes = super.commit();
     const patches = monitor.generate(this.observer);
 
     if (patches && patches.length) {
-      this.emit('transaction', {
-        changes: patches
+      const body = {
+        changes: patches,
+        state: this.state
+      };
+
+      this.emit('transaction', body);
+      this.emit('message', {
+        '@type': 'Transaction',
+        '@data': body
       });
     }
 
-    if (changes) this.emit('patches', changes);
+    // if (changes) this.emit('patches', changes);
   }
 }
 
