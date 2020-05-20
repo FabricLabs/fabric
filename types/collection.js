@@ -481,6 +481,10 @@ class Collection extends Stack {
 
     // if (changes) this.emit('patches', changes);
   }
+
+  get len(){
+    return Object.keys(this.list()).length;
+  }
 }
 
 module.exports = Collection;
