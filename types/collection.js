@@ -462,7 +462,7 @@ class Collection extends Stack {
   }
 
   commit () {
-    console.log('[FABRIC:COLLECTION]', 'Committing...');
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:COLLECTION]', 'Committing...');
     // const changes = super.commit();
     const patches = monitor.generate(this.observer);
 

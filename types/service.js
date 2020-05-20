@@ -64,6 +64,7 @@ class Service extends Scribe {
     this.name = this.config.name;
     this.collections = {};
     this.definitions = {};
+    this.clients = {};
     this.targets = [];
     this.origin = '';
 
@@ -83,9 +84,10 @@ class Service extends Scribe {
     }
 
     // set local state to whatever configuration supplies...
-    this.state = Object.assign({
+    /* this.state = Object.assign({
       messages: {} // always define a list of messages for Fabric services
-    }, this.config['@data']);
+    }, this.config['@data']); */
+    this._state = {};
 
     // Keeps track of changes
     this.observer = null;
@@ -133,6 +135,15 @@ class Service extends Scribe {
 
   set targets (value) {
     this._targets = value;
+  }
+
+  get state () {
+    return this._state;
+  }
+
+  set state (value) {
+    // console.trace('[FABRIC:SERVICE]', 'Setting state:', value);
+    this._state = value;
   }
 
   static fromName (name) {
@@ -201,6 +212,18 @@ class Service extends Scribe {
     }
 
     return this;
+  }
+
+  async broadcast (msg) {
+    if (!msg['@type']) throw new Error('Message must have a @type property.');
+    if (!msg['@data']) throw new Error('Message must have a @data property.');
+
+    for (let name in this.clients) {
+      let target = this.clients[name];
+      console.log('[FABRIC:SERVICE]', 'Sending broadcast to client:', target);
+    }
+
+    this.emit('message', msg);
   }
 
   /**
@@ -277,7 +300,10 @@ class Service extends Scribe {
 
       // Attach events
       this.collections[key].on('commit', (commit) => {
-        console.log('[FABRIC:SERVICE]', 'Internal commit:', key, commit);
+        service.broadcast({
+          '@type': 'StateUpdate',
+          '@data': service.state
+        });
       });
 
       this.collections[key].on('message', (message) => {
