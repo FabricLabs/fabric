@@ -3,11 +3,7 @@
 const Fabric = require('../');
 const assert = require('assert');
 
-let sampleList = [
-  {id:1, something:1},
-  {id:2, something:2},
-  {id:3, something:3},
-];
+const samples = require('./fixtures/collection');
 
 describe('@fabric/core/types/collection', function () {
   describe('Collection', function () {
@@ -59,35 +55,35 @@ describe('@fabric/core/types/collection', function () {
 
     it('can import with commit', async()=>{
       let set = new Fabric.Collection();
-      let res = await set.import(sampleList[0]);
+      let res = await set.import(samples.list[0]);
       console.log("IMPORT RESULT", res)
       assert.equal(set.len, 1)
     });
 
     it('can import without commit', async()=>{
       let set = new Fabric.Collection();
-      let res = await set.import(sampleList[0], false);
+      let res = await set.import(samples.list[0], false);
       console.log("IMPORT RESULT", res)
       assert.equal(set.len, 1)
     });
 
     it('can import list', async()=>{
       let set = new Fabric.Collection();
-      let res = await set.importList(sampleList);
+      let res = await set.importList(samples.list);
       console.log("IMPORT LIST RESULT", res)
       assert.equal(set.len, 3)
     });
 
     it('can create with commit', async()=>{
       let set = new Fabric.Collection();
-      let res = await set.create(sampleList[0]);
+      let res = await set.create(samples.list[0]);
 
       assert.equal(set.len, 1);
     });
 
     it('can create without commit', async()=>{
       let set = new Fabric.Collection();
-      let res = await set.create(sampleList[0], false);
+      let res = await set.create(samples.list[0], false);
 
       assert.equal(set.len, 1);
     });
@@ -99,7 +95,7 @@ describe('@fabric/core/types/collection', function () {
       it('can convert to ' + converter, async()=>{
         console.log("RUNNING CONVERTER", converter)
         let set = new Fabric.Collection();
-        let res = await set.importList(sampleList)
+        let res = await set.importList(samples.list)
         let map = set[converter]();
 
         //if(converter == 'toTypedArray'){
@@ -110,7 +106,7 @@ describe('@fabric/core/types/collection', function () {
           let item = map[i];
           for(var k in item){
             let j = converter == 'toTypedArray' ? i : i-1;
-            assert(item[k] == sampleList[j][k]);
+            assert.equal(item[k], samples.list[j][k]);
           }
         }
       });
