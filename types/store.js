@@ -45,6 +45,7 @@ class Store extends Scribe {
     this['@entity']['@data'].collections = {};
     this['@entity']['@data'].tips = {};
 
+    this.keys = {};
     this.commits = new Collection({
       type: 'State'
     });
@@ -174,6 +175,14 @@ class Store extends Scribe {
     let router = this.sha256(path);
     let address = `/collections/${router}`;
 
+    if (!this.keys[address]) {
+      // TODO: store metadata
+      this.keys[address] = {
+        path: key,
+        address: address
+      };
+    }
+
     // TODO: check for commit state
     self['@entity']['@data'].addresses[router] = address;
 
@@ -220,11 +229,15 @@ class Store extends Scribe {
         origin = new Collection();
       }
 
+      // Add Element to Collection
       let height = origin.push(value);
+
+      // Store the object at an entity locale
       let object = await self._PUT(`/entities/${state.id}`, value);
       let serialized = await origin.serialize();
-      let answer = await self.db.put(address, serialized.toString());
 
+      // Write serialized Collection to disk
+      let answer = await self.db.put(address, serialized.toString());
     } catch (E) {
       console.log('Could not POST:', key, value, E);
       return false;
@@ -265,7 +278,8 @@ class Store extends Scribe {
    * @return {Promise}     Resolves on complete.  `null` if not found.
    */
   async get (key) {
-    if (this.settings.verbosity >= 5) this.log('[STORE]', 'get:', key);
+    // if (this.settings.verbosity >= 5) this.log('[STORE]', 'get:', key);
+    // console.trace('[FABRIC:STORE]', 'Internal get():', key);
 
     let self = this;
     let id = pointer.escape(key);
@@ -282,12 +296,16 @@ class Store extends Scribe {
     try {
       let input = await self.db.get(`/collections/${router}`);
       let collection = JSON.parse(input);
+
       if (collection) {
         let answer = [];
+
         for (let i = 0; i < collection.length; i++) {
-          let entity = await this._GET(`/entities/${collection[i]}`);
+          let code = `/entities/${collection[i]}`;
+          let entity = await this._GET(code);
           answer.push(entity);
         }
+
         return answer;
       }
     } catch (E) {
@@ -334,6 +352,7 @@ class Store extends Scribe {
     if (this.settings.verbosity >= 5) this.log('[STORE]', `(${this['@method']})`, 'set:', key, typeof value, value);
 
     let self = this;
+    let collection = null;
 
     // Let's use the document's key as the identifying value.
     // This is what defines our key => value store.
@@ -374,23 +393,37 @@ class Store extends Scribe {
       { type: 'put', key: `/names/${router}`, value: id }
     ];
 
-    if (this.settings.verbosity >= 5) console.log('[FABRIC:STORE]', `Applying ops to path "${key}" :`, ops);
-
     try {
-      batched = await self.db.batch(ops);
-      // TODO: document verbosity 6
-      // NOTE: breaks with Fabric
-      if (this.settings.verbosity >= 6) console.log('batched result:', batched);
+      collection = await self.db.get(`/collections/${router}`);
     } catch (E) {
-      console.error('BATCH FAILURE:', E);
+      // console.error('could not get collection:', E);
     }
 
-    try {
-      await Promise.all(ops.map(op => {
-        return self.db.put(op.key, op.value);
-      }));
-    } catch (E) {
-      console.error(E);
+    // if (this.settings.verbosity >= 5) console.log('[FABRIC:STORE]', `Applying ops to path "${key}" :`, ops);
+
+    // TODO: make work for single instance deletes
+    if (collection && value === null) {
+      // console.warn('[FABRIC:STORE]', 'Value is null and target is a Collection');
+      // ops.push({ type: 'del', key: `/collections/${router}` });
+      await self.db.del(`/collections/${router}`);
+      await self.db.del(`/states/${pure['@id']}`);
+    } else {
+      try {
+        batched = await self.db.batch(ops);
+        // TODO: document verbosity 6
+        // NOTE: breaks with Fabric
+        if (this.settings.verbosity >= 6) console.log('batched result:', batched);
+      } catch (E) {
+        console.error('BATCH FAILURE:', E);
+      }
+ 
+      try {
+        await Promise.all(ops.map(op => {
+          return self.db.put(op.key, op.value);
+        }));
+      } catch (E) {
+        console.error(E);
+      }
     }
 
     try {
@@ -510,8 +543,8 @@ class Store extends Scribe {
 
   async commit () {
     if (this.settings.verbosity >= 5) console.log('[AUDIT]', '[FABRIC:STORE]', 'Committing:', this.state);
-    const entity = new Entity(this.state);
-    this.emit('commit', entity.id);
+    const entity = new Entity(this.state.state);
+    this.emit('commit', entity.id, entity.data);
     // TODO: document re-opening of store
     return entity;
   }
@@ -558,6 +591,7 @@ class Store extends Scribe {
   async start () {
     if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Starting:', this.settings.path);
     this.status = 'starting';
+    let keys = null;
 
     try {
       await this.open();
