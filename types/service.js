@@ -52,11 +52,11 @@ class Service extends Scribe {
       // TODO: export this as the default data in `inputs/fabric.json`
       // If the sha256(JSON.stringify(this.data)) is equal to this, it's
       // considered a valid Fabric object (for now!)
-      '@data': {
+      /* '@data': {
         channels: {},
         messages: {},
         members: {}
-      }
+      } */
     }, config);
 
     // Reserve a place for ourselves
