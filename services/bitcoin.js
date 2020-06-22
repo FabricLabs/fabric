@@ -88,21 +88,22 @@ class Bitcoin extends Service {
       }
     });
 
-    /* this.fullnode = new this.provider.FullNode({
-      agent: this.UAString,
-      port: this.provider.port,
-      network: this.settings.network,
-      bip37: true, // TODO: verify SPV implementation
-      listen: this.settings.fullnode,
-      http: false,
-      httpPort: 19999,
-      logLevel: 'debug',
-      memory: true,
-      workers: true,
-      loader: require,
-      // maxOutbound: 1
-      maxOutbound: 16
-    }); */
+    if (this.settings.fullnode) {
+      this.fullnode = new this.provider.FullNode({
+        agent: this.UAString,
+        port: this.provider.port,
+        network: this.settings.network,
+        bip37: true, // TODO: verify SPV implementation
+        listen: true,
+        http: false,
+        httpPort: 19999,
+        logLevel: 'debug',
+        memory: true,
+        workers: true,
+        loader: require,
+        maxOutbound: 1
+      });
+    }
 
     this.peer = bcoin.Peer.fromOptions({
       agent: this.UAString,
@@ -473,7 +474,7 @@ class Bitcoin extends Service {
     let addr = new NetAddress({
       host: '127.0.0.1',
       // port: this.fullnode.pool.options.port
-      port: 18444
+      port: this.provider.port
     });
 
     // connect this.spv with fullNode
@@ -551,7 +552,7 @@ class Bitcoin extends Service {
    * Start the Bitcoin service, including the initiation of outbound requests.
    */
   async start () {
-    if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', 'Starting for network "', this.settings.network, '"...');
+    if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', `Starting for network "${this.settings.network}"...`);
     await this.wallet.start();
     // await this._startLocalNode();
     // await this._connectToSeedNodes();

@@ -35,15 +35,32 @@ class Collection extends Stack {
       key: 'id'
     }, configuration);
 
+    this['@type'] = 'Collection';
     this['@entity']['@type'] = 'Collection';
 
-    this.name = pluralize(configuration.name || this.settings.name);
+    // Set name to plural version, define path for storage
+    this.name = pluralize(this.settings.name);
     this.path = `/` + this.name.toLowerCase();
+
+    this._state = {};
     this.state = {};
 
     this.set(`${this.path}`, this.settings.data || {});
+    this.observer = monitor.observe(this.state);
+
+    Object.defineProperty(this, '@allocation', { enumerable: false });
+    Object.defineProperty(this, '@buffer', { enumerable: false });
+    Object.defineProperty(this, '@encoding', { enumerable: false });
+    Object.defineProperty(this, '@parent', { enumerable: false });
+    Object.defineProperty(this, '@preimage', { enumerable: false });
+    Object.defineProperty(this, 'frame', { enumerable: false });
+    Object.defineProperty(this, 'services', { enumerable: false });
 
     return this;
+  }
+
+  get routes () {
+    return this.settings.routes;
   }
 
   /**
@@ -185,7 +202,7 @@ class Collection extends Stack {
    * @param {String} path Path to the document to modify.
    * @param {Array} patches List of operations to apply.
    */
-  _patchTarget (path, patches) {
+  async _patchTarget (path, patches) {
     let link = `${path}`;
     let result = null;
 
@@ -200,7 +217,7 @@ class Collection extends Stack {
       console.error('Could not patch target:', E, path, patches);
     }
 
-    this.commit();
+    await this.commit();
 
     return result;
   }
@@ -210,7 +227,7 @@ class Collection extends Stack {
    * @param  {Mixed} data {@link Entity} to add.
    * @return {Number}      Length of the collection.
    */
-  push (data, commit = true) {
+  async push (data, commit = true) {
     super.push(data);
 
     let state = new State(data);
@@ -225,7 +242,7 @@ class Collection extends Stack {
 
     if (commit) {
       try {
-        this['@commit'] = this.commit();
+        this['@commit'] = await this.commit();
       } catch (E) {
         console.error('Could not commit.', E);
       }
@@ -242,6 +259,37 @@ class Collection extends Stack {
 
   async query (path) {
     return this.get(path);
+  }
+
+  /**
+   * Retrieve a key from the {@link State}.
+   * @param {Path} path Key to retrieve.
+   * @returns {Mixed}
+   */
+  get (path) {
+    let result = null;
+
+    try {
+      result = pointer.get(this['@entity']['@data'], path);
+    } catch (exception) {
+      console.error('[FABRIC:COLLECTION]', 'Could not retrieve path:', path, exception);
+    }
+
+    return result;
+  }
+
+  /**
+   * Set a key in the {@link State} to a particular value.
+   * @param {Path} path Key to retrieve.
+   * @returns {Mixed}
+   */
+  set (path, value) {
+    pointer.set(this._state, path, value);
+    pointer.set(this.state, path, value);
+    pointer.set(this['@entity']['@data'], path, value);
+
+    this.commit();
+    return true;
   }
 
   /**
@@ -300,48 +348,51 @@ class Collection extends Stack {
    * @return {Promise}        Resolves with instantiated {@link Entity}.
    */
   async create (input, commit = true) {
+    if (this.settings.verbosity >= 5) console.log('[FABRIC:COLLECTION]', 'Creating object:', input);
+    if (!this.settings.deterministic) input.created = Date.now();
+
     let result = null;
-    let size = this.push(input, false);
-    let state = this['@entity'].states[this['@data'][size - 1]];
-
-    if (!this.settings.deterministic) state.created = Date.now();
-
-    let entity = new Entity(state);
+    let entity = new Entity(input);
+    let link = `${this.path}/${entity.id}`;
     // TODO: enable specifying names (again)
     // let link = `${this.path}/${(entity.data[this.settings.fields.id] || entity.id)}`;
-    let link = `${this.path}/${entity.id}`;
-    // console.log('[AUDIT]', '[COLLECTION]', 'created:', link);
-
-    if (this.settings.methods && this.settings.methods.create) {
-      state = await this.settings.methods.create.call(this, state);
-      // console.log('[AUDIT]', `[COLLECTION:CREATED:${this.settings.name.toUpperCase()}]`, 'created data:', state);
+    // TODO: handle duplicates (when desired, i.e., "unique" in settings)
+    let current = await this.getByID(entity.id);
+    if (current) {
+      if (this.settings.verbosity >= 5) console.log('[FABRIC:COLLECTION]', 'Exact entity exists:', current);
     }
 
-    if (!state) state = {};
+    if (this.settings.methods && this.settings.methods.create) {
+      result = await this.settings.methods.create.call(this, input);
+    } else {
+      result = entity;
+    }
 
-    this.set(link, state.data || state);
+    pointer.set(this._state, link, result.data);
+
+    this.set(link, result.data || result);
 
     this.emit('message', {
       '@type': 'Create',
-      '@data': Object.assign({}, state.data, {
+      '@data': Object.assign({}, result.data, {
         id: entity.id
       })
     });
 
-    if (this.settings.listeners && this.settings.listeners.create) {
-      // await this.settings.listeners.create.call(this, entity.data);
-      await this.settings.listeners.create(entity.data);
-    }
-
     if (commit) {
       try {
-        this['@commit'] = this.commit();
+        this['@commit'] = await this.commit();
+        this.emit('commit', this['@commit']);
       } catch (E) {
         console.error('Could not commit.', E);
       }
     }
 
-    result = state.data || entity.data;
+    if (this.settings.listeners && this.settings.listeners.create) {
+      await this.settings.listeners.create(entity.data);
+    }
+
+    result = result.data || entity.data;
     result.id = entity.id;
 
     return result;
@@ -357,7 +408,7 @@ class Collection extends Stack {
     if (input['@data']) input = input['@data'];
 
     let result = null;
-    let size = this.push(input, false);
+    let size = await this.push(input, false);
     let state = this['@entity'].states[this['@data'][size - 1]];
     let entity = new Entity(state);
     let link = `${this.path}/${input.id || entity.id}`;
@@ -370,7 +421,7 @@ class Collection extends Stack {
 
     if (commit) {
       try {
-        this['@commit'] = this.commit();
+        this['@commit'] = await this.commit();
       } catch (E) {
         console.error('Could not commit.', E);
       }
@@ -408,6 +459,31 @@ class Collection extends Stack {
 
   async importMap (map) {
     return this.importList(Object.values(map));
+  }
+
+  commit () {
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:COLLECTION]', 'Committing...');
+    // const changes = super.commit();
+    const patches = monitor.generate(this.observer);
+
+    if (patches && patches.length) {
+      const body = {
+        changes: patches,
+        state: this.state
+      };
+
+      this.emit('transaction', body);
+      this.emit('message', {
+        '@type': 'Transaction',
+        '@data': body
+      });
+    }
+
+    // if (changes) this.emit('patches', changes);
+  }
+
+  get len(){
+    return Object.keys(this.list()).length;
   }
 }
 
