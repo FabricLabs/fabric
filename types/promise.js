@@ -10,6 +10,7 @@ class EncryptedPromise {
     // Assign Settings
     // TODO: make private
     this.settings = Object.assign({}, settings);
+    this._settings = Object.assign({}, this.settings);
 
     // Create Internal State
     this._state = {
@@ -21,7 +22,7 @@ class EncryptedPromise {
       throw new Error(`Promise not created, input too large, maximum size is ${MAX_MEMORY}`);
     }
 
-    Object.defineProperty(this, '_state', { enumerable: false });
+    // Object.defineProperty(this, '_state', { enumerable: false });
 
     this.load();
   }
@@ -64,7 +65,15 @@ class EncryptedPromise {
     };
   }
 
+  lock () {
+    // TODO: encrypt state
+  }
+
   decrypt () {
+    return this.unlock();
+  }
+
+  unlock () {
     // TODO: recover state
   }
 }

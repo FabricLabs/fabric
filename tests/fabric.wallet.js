@@ -1,9 +1,18 @@
 'use strict';
 
+require('debug-trace')({ always: true });
+
 const assert = require('assert');
 const Wallet = require('../types/wallet');
+const Bitcoin = require('../services/bitcoin');
 
 const message = require('../assets/message');
+const settings = require('../settings/test');
+const options = Object.assign({}, settings, {
+  network: 'regtest',
+  // fullnode: true,
+  verbosity: 5
+});
 
 describe('@fabric/core/types/wallet', function () {
   describe('Wallet', function () {

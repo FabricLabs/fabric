@@ -399,8 +399,7 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
   get (path) {
     // return pointer.get(this.state, path);
     let result = null;
-
-    console.log('[FABRIC:STATE]', 'Getting substate path:', path, this['@entity']['@data']);
+    // console.log('[FABRIC:STATE]', 'Getting substate path:', path, this['@entity']['@data']);
 
     try {
       result = pointer.get(this['@entity']['@data'], path);

@@ -5,6 +5,7 @@ const {
   VERSION_NUMBER,
   HEADER_SIZE,
   MAX_MESSAGE_SIZE,
+  OP_CYCLE,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
   P2P_ROOT,
@@ -14,11 +15,14 @@ const {
   P2P_BASE_MESSAGE,
   P2P_STATE_ROOT,
   P2P_STATE_COMMITTMENT,
-  P2P_STATE_CHANGE
+  P2P_STATE_CHANGE,
+  P2P_TRANSACTION,
+  P2P_CALL
 } = require('../constants');
 
 const crypto = require('crypto');
 const Vector = require('./vector');
+const padDigits = require('../functions/padDigits');
 
 /**
  * The {@link Message} type defines the Application Messaging Protocol, or AMP.
@@ -41,11 +45,20 @@ class Message extends Vector {
       type: Buffer.alloc(4),
       size: Buffer.alloc(4),
       hash: Buffer.alloc(32),
+      Uint256: this.Uint256,
       data: null
     };
 
-    this.raw.magic.writeUInt32BE(MAGIC_BYTES);
-    this.raw.version.writeUInt32BE(VERSION_NUMBER);
+    this.raw.magic.write(`${MAGIC_BYTES.toString(16)}`, 'hex');
+    this.raw.version.write(`${padDigits(VERSION_NUMBER.toString(16), 8)}`, 'hex');
+
+    if (input.data) {
+      this.data = JSON.stringify(input.data);
+    }
+
+    if (input.type) {
+      this.type = input.type;
+    }
 
     return this;
   }
@@ -53,7 +66,6 @@ class Message extends Vector {
   get byte () {
     let input = 0 + '';
     let num = Buffer.from(`0x${padDigits(input, 8)}`, 'hex');
-    console.log('the 8 bit byte:', num);
     return num;
   }
 
@@ -80,6 +92,38 @@ class Message extends Vector {
    */
   asRaw () {
     return Buffer.concat([this.header, this.raw.data]);
+  }
+
+  toRaw () {
+    return Buffer.from(this.asRaw());
+  }
+
+  asTypedArray () {
+    return new Uint8Array(this.asRaw());
+    // TODO: Node 12
+    // return new TypedArray(this.asRaw());
+  }
+
+  asBlob () {
+    return this.asRaw().map(byte => parseInt(byte, 16));
+  }
+
+  toObject () {
+    return {
+      headers: {
+        magic: parseInt(`0x${this.raw.magic.toString('hex')}`, 16),
+        version: parseInt(`${this.raw.version.toString('hex')}`, 16),
+        type: parseInt(`${this.raw.type.toString('hex')}`, 16),
+        size: parseInt(`${this.raw.size.toString('hex')}`, 16),
+        hash: this.raw.hash.toString('hex')
+      },
+      type: this.type,
+      data: this.data
+    };
+  }
+
+  fromObject (input) {
+    return new Message(input);
   }
 
   static fromRaw (input) {
@@ -153,6 +197,7 @@ class Message extends Vector {
   get types () {
     // Message Types
     return {
+      'Cycle': OP_CYCLE,
       'IdentityRequest': P2P_IDENT_REQUEST,
       'IdentityResponse': P2P_IDENT_RESPONSE,
       // TODO: restore this type
@@ -164,8 +209,18 @@ class Message extends Vector {
       // TODO: restore above StateRoot type
       'StateRoot': P2P_STATE_ROOT,
       'StateCommitment': P2P_STATE_COMMITTMENT,
-      'StateChange': P2P_STATE_CHANGE
+      'StateChange': P2P_STATE_CHANGE,
+      'Transaction': P2P_TRANSACTION,
+      'Call': P2P_CALL
     };
+  }
+
+  get codes () {
+    return Object.entries(this.types).reduce((ret, entry) => {
+      const [ key, value ] = entry;
+      ret[ value ] = key;
+      return ret;
+    }, {});
   }
 
   get magic () {
@@ -173,11 +228,11 @@ class Message extends Vector {
   }
 
   get size () {
-    return this.raw.size.readUInt32BE();
+    return parseInt(Buffer.from(this.raw.size, 'hex'));
   }
 
   get version () {
-    return this.raw.version.readUInt32BE();
+    return parseInt(Buffer.from(this.raw.version));
   }
 
   get header () {
@@ -189,10 +244,11 @@ class Message extends Vector {
       Buffer.from(this.raw.hash, 'hex')
     ];
 
-    console.log('retrieving header, parts:', parts);
+    // TODO: remove this crap
+    /* console.log('retrieving header, parts:', parts);
     console.log(`retrieving header, parts mapped [magic, version, type, size, hash]:`, parts.map((x) => {
       return parseInt(x.toString('hex'), 16)
-    }));
+    })); */
 
     return Buffer.concat(parts);
   }
@@ -228,8 +284,9 @@ Object.defineProperty(Message.prototype, 'type', {
   set (value) {
     const code = this.types[value];
     if (!code) throw new Error(`Unknown message type: ${value}`);
+    const padded = padDigits(code.toString(16), 8);
     this['@type'] = value;
-    this.raw.type.writeUInt32BE(code);
+    this.raw.type.write(padded, 'hex');
   }
 });
 
@@ -240,10 +297,10 @@ Object.defineProperty(Message.prototype, 'data', {
   },
   set (value) {
     if (!value) value = '';
-    let hash = crypto.createHash('sha256').update(value.toString('utf8'));
+    const hash = crypto.createHash('sha256').update(value.toString('utf8'));
     this.raw.hash = hash.digest();
     this.raw.data = Buffer.from(value);
-    this.raw.size.writeUInt32BE(this.raw.data.byteLength);
+    this.raw.size.write(padDigits(this.raw.data.byteLength.toString(16), 8), 'hex');
   }
 });
 

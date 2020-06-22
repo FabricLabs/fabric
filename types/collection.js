@@ -59,6 +59,10 @@ class Collection extends Stack {
     return this;
   }
 
+  get routes () {
+    return this.settings.routes;
+  }
+
   /**
    * Current elements of the collection as a {@link MerkleTree}.
    * @returns {MerkleTree}
@@ -198,7 +202,7 @@ class Collection extends Stack {
    * @param {String} path Path to the document to modify.
    * @param {Array} patches List of operations to apply.
    */
-  _patchTarget (path, patches) {
+  async _patchTarget (path, patches) {
     let link = `${path}`;
     let result = null;
 
@@ -213,7 +217,7 @@ class Collection extends Stack {
       console.error('Could not patch target:', E, path, patches);
     }
 
-    this.commit();
+    await this.commit();
 
     return result;
   }
@@ -223,7 +227,7 @@ class Collection extends Stack {
    * @param  {Mixed} data {@link Entity} to add.
    * @return {Number}      Length of the collection.
    */
-  push (data, commit = true) {
+  async push (data, commit = true) {
     super.push(data);
 
     let state = new State(data);
@@ -238,7 +242,7 @@ class Collection extends Stack {
 
     if (commit) {
       try {
-        this['@commit'] = this.commit();
+        this['@commit'] = await this.commit();
       } catch (E) {
         console.error('Could not commit.', E);
       }
@@ -283,6 +287,7 @@ class Collection extends Stack {
    * @returns {Mixed}
    */
   set (path, value) {
+
     if (this.settings.verbosity >= 6) console.log('[FABRIC:COLLECTION]', 'Setting:', path, value);
 
     pointer.set(this._state, path, value);
@@ -410,7 +415,7 @@ class Collection extends Stack {
     if (input['@data']) input = input['@data'];
 
     let result = null;
-    let size = this.push(input, false);
+    let size = await this.push(input, false);
     let state = this['@entity'].states[this['@data'][size - 1]];
     let entity = new Entity(state);
     let link = `${this.path}/${input.id || entity.id}`;
@@ -423,7 +428,7 @@ class Collection extends Stack {
 
     if (commit) {
       try {
-        this['@commit'] = this.commit();
+        this['@commit'] = await this.commit();
       } catch (E) {
         console.error('Could not commit.', E);
       }
@@ -461,6 +466,31 @@ class Collection extends Stack {
 
   async importMap (map) {
     return this.importList(Object.values(map));
+  }
+
+  commit () {
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:COLLECTION]', 'Committing...');
+    // const changes = super.commit();
+    const patches = monitor.generate(this.observer);
+
+    if (patches && patches.length) {
+      const body = {
+        changes: patches,
+        state: this.state
+      };
+
+      this.emit('transaction', body);
+      this.emit('message', {
+        '@type': 'Transaction',
+        '@data': body
+      });
+    }
+
+    // if (changes) this.emit('patches', changes);
+  }
+
+  get len(){
+    return Object.keys(this.list()).length;
   }
 }
 

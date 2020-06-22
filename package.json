@@ -66,6 +66,7 @@
     "@webassemblyjs/ast": "^1.8.5",
     "arbitrary": "^1.4.10",
     "base58check": "^2.0.0",
+    "bcash": "bcoin-org/bcash#master",
     "bcoin": "bcoin-org/bcoin#master",
     "content-type": "^1.0.4",
     "dotparser": "^0.3.0",

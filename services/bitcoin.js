@@ -104,8 +104,7 @@ class Bitcoin extends Service {
         memory: true,
         workers: true,
         loader: require,
-        // maxOutbound: 1
-        maxOutbound: 16
+        maxOutbound: 1
       });
     }
 

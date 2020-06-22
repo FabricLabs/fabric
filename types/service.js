@@ -52,11 +52,11 @@ class Service extends Scribe {
       // TODO: export this as the default data in `inputs/fabric.json`
       // If the sha256(JSON.stringify(this.data)) is equal to this, it's
       // considered a valid Fabric object (for now!)
-      '@data': {
+      /* '@data': {
         channels: {},
         messages: {},
         members: {}
-      }
+      } */
     }, config);
 
     // Reserve a place for ourselves
@@ -64,6 +64,8 @@ class Service extends Scribe {
     this.name = this.config.name;
     this.collections = {};
     this.definitions = {};
+    this.clients = {};
+    this.targets = [];
     this.origin = '';
 
     // TODO: fix this
@@ -82,10 +84,12 @@ class Service extends Scribe {
     }
 
     // set local state to whatever configuration supplies...
-    this.state = Object.assign({
+    /* this.state = Object.assign({
       messages: {} // always define a list of messages for Fabric services
-    }, this.config['@data']);
+    }, this.config['@data']); */
+    this._state = {};
 
+    // Keeps track of changes
     this.observer = null;
 
     /* if (this.settings.networking) {
@@ -113,8 +117,33 @@ class Service extends Scribe {
     return this;
   }
 
+  init () {
+    this.components = {};
+  }
+
+  async process () {
+    console.log('process created');
+  }
+
   get members () {
     return this['@data'].members;
+  }
+
+  get targets () {
+    return this._targets;
+  }
+
+  set targets (value) {
+    this._targets = value;
+  }
+
+  get state () {
+    return this._state;
+  }
+
+  set state (value) {
+    // console.trace('[FABRIC:SERVICE]', 'Setting state:', value);
+    this._state = value;
   }
 
   static fromName (name) {
@@ -415,12 +444,11 @@ class Service extends Scribe {
     let memory = null;
 
     try {
-      memory = await this._GET(path);
+      memory = await pointer.get(this.state, path);
     } catch (E) {
       console.warn('[FABRIC:SERVICE]', 'posting to unloaded collection:', path);
+      memory = [];
     }
-
-    if (!memory) memory = [];
 
     try {
       collection = new Collection(memory);
@@ -430,7 +458,6 @@ class Service extends Scribe {
 
     // TODO: use Resource definition to de-deuplicate by fields.id
     collection.push(object.toObject());
-
     this.collections[name] = await collection.populate();
 
     // TODO: reduce storage to references
@@ -515,7 +542,7 @@ class Service extends Scribe {
    * @return {Service}        Chainable method.
    */
   async send (channel, message, extra) {
-    if (this.debug) this.log('[SERVICE]', 'send:', channel, message, extra);
+    if (this.debug) console.log('[SERVICE]', 'send()', 'Sending:', channel, message, extra);
 
     let path = Buffer.alloc(256);
     let payload = Buffer.alloc(2048);
@@ -547,6 +574,8 @@ class Service extends Scribe {
     let self = this;
     let ops = [];
     let state = new Entity(self.state);
+
+    if (self.settings.verbosity >= 4) console.log('[FABRIC:SERVICE]', 'Committing...');
 
     // assemble all necessary info, emit Snapshot regardless of storage status
     try {
@@ -623,13 +652,13 @@ class Service extends Scribe {
   async _registerActor (actor) {
     if (!actor.id) return this.error('Client must have an id.');
 
-    this.log('registering actor:', actor.id, JSON.stringify(actor).slice(0, 32) + '…');
+    console.log('Registering Actor:', actor.id, JSON.stringify(actor).slice(0, 32) + '…');
 
     let id = pointer.escape(actor.id);
     let path = `/actors/${id}`;
 
     try {
-      this._PUT(path, Object.assign({
+      await this._PUT(path, Object.assign({
         name: actor.id,
         subscriptions: []
       }, actor, { id }));
@@ -693,10 +722,9 @@ class Service extends Scribe {
         return true;
       }, true /* mutate doc (1st param) */);
     } catch (exception) {
-      console.trace('Could not apply changes:', changes, exception);
+      console.error('Could not apply changes:', changes, exception);
     }
 
-    // console.log('[FABRIC:SERVICE]', 'State after:', this.state);
     await this.commit();
 
     return result;

@@ -2,7 +2,10 @@
 
 // Convenience bindings for JavaScript
 const EventEmitter = require('events').EventEmitter;
+
+// Dependencies
 const BN = require('bn.js');
+// const monitor = require('fast-json-patch');
 
 // Fabric types
 const Entity = require('./entity');
@@ -70,6 +73,7 @@ class Interface extends EventEmitter {
 
   async patch (transaction) {
     // TODO: apply `transaction.operations` to Interface state
+    await this.state._applyChanges(transaction.operations);
     return this;
   }
 

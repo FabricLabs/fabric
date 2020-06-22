@@ -45,11 +45,20 @@ class Store extends Scribe {
     this['@entity']['@data'].collections = {};
     this['@entity']['@data'].tips = {};
 
+    this.keys = {};
     this.commits = new Collection({
       type: 'State'
     });
 
     Object.assign(this['@data'], this['@entity']['@data']);
+
+    Object.defineProperty(this, '@allocation', { enumerable: false });
+    Object.defineProperty(this, '@buffer', { enumerable: false });
+    Object.defineProperty(this, '@encoding', { enumerable: false });
+    Object.defineProperty(this, '@parent', { enumerable: false });
+    Object.defineProperty(this, '@preimage', { enumerable: false });
+    Object.defineProperty(this, 'frame', { enumerable: false });
+    Object.defineProperty(this, 'services', { enumerable: false });
 
     return this;
   }
@@ -165,6 +174,14 @@ class Store extends Scribe {
     let router = this.sha256(path);
     let address = `/collections/${router}`;
 
+    if (!this.keys[address]) {
+      // TODO: store metadata
+      this.keys[address] = {
+        path: key,
+        address: address
+      };
+    }
+
     // TODO: check for commit state
     self['@entity']['@data'].addresses[router] = address;
 
@@ -210,11 +227,15 @@ class Store extends Scribe {
         origin = new Collection();
       }
 
+      // Add Element to Collection
       let height = origin.push(value);
+
+      // Store the object at an entity locale
       let object = await self._PUT(`/entities/${state.id}`, value);
       let serialized = await origin.serialize();
-      let answer = await self.db.put(address, serialized.toString());
 
+      // Write serialized Collection to disk
+      let answer = await self.db.put(address, serialized.toString());
     } catch (E) {
       console.log('Could not POST:', key, value, E);
       return false;
@@ -255,7 +276,8 @@ class Store extends Scribe {
    * @return {Promise}     Resolves on complete.  `null` if not found.
    */
   async get (key) {
-    if (this.settings.verbosity >= 5) this.log('[STORE]', 'get:', key);
+    // if (this.settings.verbosity >= 5) this.log('[STORE]', 'get:', key);
+    // console.trace('[FABRIC:STORE]', 'Internal get():', key);
 
     let self = this;
     let id = pointer.escape(key);
@@ -272,13 +294,16 @@ class Store extends Scribe {
     try {
       let input = await self.db.get(`/collections/${router}`);
       let collection = JSON.parse(input);
+
       if (collection) {
         let answer = [];
+
         for (let i = 0; i < collection.length; i++) {
           let code = `/entities/${collection[i]}`;
           let entity = await this._GET(code);
           answer.push(entity);
         }
+
         return answer;
       }
     } catch (E) {
@@ -365,15 +390,10 @@ class Store extends Scribe {
       { type: 'put', key: `/names/${router}`, value: id }
     ];
 
-    if (this.settings.verbosity >= 5) console.log('[FABRIC:STORE]', `Applying ops to path "${key}" :`, ops);
-
     try {
-      batched = await self.db.batch(ops);
-      // TODO: document verbosity 6
-      // NOTE: breaks with Fabric
-      if (this.settings.verbosity >= 6) console.log('batched result:', batched);
+      collection = await self.db.get(`/collections/${router}`);
     } catch (E) {
-      console.error('BATCH FAILURE:', E);
+      // console.error('could not get collection:', E);
     }
 
     // if (this.settings.verbosity >= 5) console.log('[FABRIC:STORE]', `Applying ops to path "${key}" :`, ops);
@@ -393,7 +413,7 @@ class Store extends Scribe {
       } catch (E) {
         console.error('BATCH FAILURE:', E);
       }
-  
+
       try {
         await Promise.all(ops.map(op => {
           return self.db.put(op.key, op.value);
@@ -500,8 +520,12 @@ class Store extends Scribe {
   }
 
   async batch (ops) {
-    if (this.settings.verbosity >= 4) console.log('[FABRIC:STORE]', 'Batching:', ops);
+    if (this.settings.verbosity >= 5) console.log('[FABRIC:STORE]', 'Batching:', ops);
     let result = null;
+
+    if (!this.db || this.db._status === 'closed') {
+      await this.open();
+    }
 
     // Core function
     try {
