@@ -1163,7 +1163,8 @@ class Wallet extends Service {
         allocation: null
       });
 
-      this._state.space[addr] = address;
+      // TODO: restore address tracking in state
+      // this._state.space[addr] = address;
 
       slice.push(address);
     }
