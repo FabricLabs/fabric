@@ -20,7 +20,7 @@ describe('@fabric/core/types/wallet', function () {
       assert.equal(Wallet instanceof Function, true);
     });
 
-    it('can start and stop smoothly', async function () {
+    xit('can start and stop smoothly', async function () {
       async function test () {
         const wallet = new Wallet(options);
 
@@ -75,7 +75,7 @@ describe('@fabric/core/types/wallet', function () {
       await test();
     });
 
-    it('can trust an existing chain service', function (done) {
+    xit('can trust an existing chain service', function (done) {
       const bitcoin = new Bitcoin(options);
       const wallet = new Wallet(options);
 
