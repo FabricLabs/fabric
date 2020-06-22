@@ -16,6 +16,7 @@ const BITCOIN_GENESIS = 0x000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1
 const HEADER_SIZE = 48; // 32 + 16 bytes
 const LARGE_COLLECTION_SIZE = 10; // TODO: test with 1,000,000
 const MAX_MESSAGE_SIZE = 4096 - HEADER_SIZE;
+// const MAX_MESSAGE_SIZE = Math.pow(2, 21) - HEADER_SIZE;
 
 const MAX_STACK_HEIGHT = 32; // max height of stack (number of elements)
 const MAX_FRAME_SIZE = 32; // max size of a stack frame in bytes

@@ -172,6 +172,8 @@ class Service extends Scribe {
    * @return {Service}         Chainable method.
    */
   handler (message) {
+    console.log('[FABRIC:SERVICE]', 'Incoming message:', message);
+
     try {
       this.emit('message', {
         actor: message.actor,
@@ -183,6 +185,21 @@ class Service extends Scribe {
     }
 
     return this;
+  }
+
+  async broadcast (msg) {
+    // console.trace('[FABRIC:SERVICE]', 'Broadcasting message:', msg);
+    // console.trace('[FABRIC:SERVICE]', 'Clients:', this.clients);
+
+    if (!msg['@type']) throw new Error('Message must have a @type property.');
+    if (!msg['@data']) throw new Error('Message must have a @data property.');
+
+    for (let name in this.clients) {
+      let target = this.clients[name];
+      console.log('[FABRIC:SERVICE]', 'Sending broadcast to client:', target);
+    }
+
+    this.emit('message', msg);
   }
 
   /**
@@ -220,6 +237,9 @@ class Service extends Scribe {
    * to any peers designated in the service's configuration.
    */
   async start () {
+    const service = this;
+
+    // Assign status and process
     this.status = 'starting';
     this.process = function Process (msg) {
       console.log('[FABRIC:SERVICE]', 'Unterminated message:', msg);
@@ -230,12 +250,54 @@ class Service extends Scribe {
       console.log('Local Repository: `npm run docs` to open HTTP server at http://localhost:8000');
     };
 
-    await this.define('message', {
+    /* await this.define('message', {
       name: 'message',
       handler: this.process.bind(this.state),
       exclusive: true // override all previous types
-    });
+    }); */
 
+    for (let name in this.settings.resources) {
+      const resource = this.settings.resources[name];
+      const attribute = resource.routes.list.split('/')[1];
+      const key = crypto.createHash('sha256').update(resource.routes.list).digest('hex');
+
+      // Assign collection
+      this.collections[key] = new Collection(resource);
+
+      // Add to targets
+      this.targets.push(this.collections[key].routes.list);
+
+      // Define mappings
+      Object.defineProperty(this, attribute, {
+        get: function () {
+          return this.collections[key];
+        }
+      });
+
+      // Attach events
+      this.collections[key].on('commit', (commit) => {
+        service.broadcast({
+          '@type': 'StateUpdate',
+          '@data': service.state
+        });
+      });
+
+      this.collections[key].on('message', (message) => {
+        console.log('[FABRIC:SERVICE]', 'Internal message:', key, message);
+      });
+
+      this.collections[key].on('transaction', (transaction) => {
+        console.log('[FABRIC:SERVICE]', 'Internal transaction:', key, transaction);
+      });
+
+      this.collections[key].on('changes', (changes) => {
+        service._applyChanges(changes);
+        service.emit('message', {
+          type: 'Change',
+          data: changes
+        });
+      });
+    }
 
     if (this.settings.persistent) {
       try {
@@ -288,13 +350,24 @@ class Service extends Scribe {
    */
   async _GET (path) {
     let result = null;
+    let parts = path.split('/');
+    let list = `/${parts[1]}`;
+    let name = crypto.createHash('sha256').update(list).digest('hex');
 
     if (path === '/') return this.state;
+    if (this.collections[name]) {
+      if (parts[2]) {
+        let inner = this.collections[name].filter((x) => {
+          return (x.address === parts[2]);
+        })[0];
+        return inner;
+      }
+    }
 
     try {
       result = pointer.get(this.state, path);
     } catch (E) {
-      this.error(`Could not _GET() ${path}:`, E);
+      console.error(`Could not _GET() ${path}:`, E);
     }
 
     return result;
@@ -488,6 +561,7 @@ class Service extends Scribe {
     }
 
     if (this.store) {
+      // if (this.settings.verbosity >= 5) console.trace('[FABRIC:SERVICE]', 'Committing ops to Store:', ops);
       // TODO: add robust + convenient database opener
       try {
         await this.store.batch(ops, function shareChanges () {
@@ -608,10 +682,24 @@ class Service extends Scribe {
   }
 
   async _applyChanges (changes) {
-    // TODO: allow configurable validators
-    return manager.applyPatch(this.state, changes, function isValid () {
-      return true;
-    }, true /* mutate doc (1st param) */);
+    let result = null;
+
+    // console.log('[FABRIC:SERVICE]', 'Applying changes:', changes);
+    // console.log('[FABRIC:SERVICE]', 'State before:', this.state);
+
+    try {
+      // TODO: allow configurable validators
+      result = manager.applyPatch(this.state, changes, function isValid () {
+        return true;
+      }, true /* mutate doc (1st param) */);
+    } catch (exception) {
+      console.trace('Could not apply changes:', changes, exception);
+    }
+
+    // console.log('[FABRIC:SERVICE]', 'State after:', this.state);
+    await this.commit();
+
+    return result;
   }
 
   async _handleStateChange (changes) {

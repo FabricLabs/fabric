@@ -178,7 +178,12 @@ class Peer extends Scribe {
         // const m = new Message();
         // TODO: check peer ID, eject if self or known
         const vector = ['IdentityRequest', self.id];
+        console.log(`creating message from vector:`, vector);
+
         const message = Message.fromVector(vector);
+        console.log(`Created ident message from:`, vector);
+        // console.log(`Network message:`, message);
+        console.log(`Network message (raw bytes):`, message.asRaw());
 
         self.meta.messages.outbound++;
         self.connections[address].write(message.asRaw());
@@ -272,7 +277,8 @@ class Peer extends Scribe {
 
     if (!peer) return false;
     if (!peer.id) {
-      self.log(`Peer attribute 'id' is required.`);
+      console.log(`Peer attribute 'id' is required.`);
+      console.log(`Peer received:`, peer);
       return false;
     }
 
@@ -313,6 +319,7 @@ class Peer extends Scribe {
         response = Message.fromVector(['IdentityResponse', self.id]);
         break;
       case 'IdentityResponse':
+        console.log('message was an identity response!  registering peer:', message.data);
         if (!self.peers[message.data]) {
           let peer = {
             id: message.data,
@@ -326,7 +333,7 @@ class Peer extends Scribe {
         if (self.settings.verbosity >= 5) console.log('[AUDIT]', 'Message was a state root:', message.data);
         try {
           const state = JSON.parse(message.data);
-          self.emit('state', state);
+          // self.emit('state', state);
         } catch (E) {
           console.error('[FABRIC:PEER]', 'Could not parse StateRoot:', E);
         }
@@ -392,16 +399,18 @@ class Peer extends Scribe {
     let id = crypto.createHash('sha256').update(message).digest('hex');
 
     if (this.messages.has(id)) {
-      this.log('attempted to broadcast duplicate message');
+      console.log('attempted to broadcast duplicate message');
       return false;
     } else {
       this.memory[id] = message;
       this.messages.add(id);
     }
 
+    console.log('iterating over peer list:', this.peers);
+
     for (let id in this.peers) {
       let peer = this.peers[id];
-      this.log('creating message for:', peer);
+      console.log('creating message for:', peer);
       // TODO: select type byte for state updates
       let msg = Message.fromVector([P2P_BASE_MESSAGE, message]);
       this.connections[peer.address].write(msg.asRaw());
@@ -415,7 +424,7 @@ class Peer extends Scribe {
     let id = crypto.createHash('sha256').update(message).digest('hex');
 
     if (this.messages.has(id)) {
-      this.log('attempted to broadcast duplicate message');
+      console.warn('attempted to broadcast duplicate message');
       return false;
     } else {
       this.memory[id] = message;

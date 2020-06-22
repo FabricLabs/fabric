@@ -51,12 +51,18 @@ class Oracle extends Store {
   }
 
   async define (name, definition) {
+    // if (this.settings.verbosity >= 5) console.log('[FABRIC:ORACLE]', `Defining resource "${name}" as:`, definition);
+
     let resource = Object.assign({
       name: name
     }, definition);
 
+    // if (this.settings.verbosity >= 5) console.log('[FABRIC:ORACLE]', `Resource "${name}" defined:`, resource);
+
     this.resources[name] = new Resource(resource);
     this.emit('resource', this.resources[name]);
+
+    // if (this.settings.verbosity >= 5) console.log('[FABRIC:ORACLE]', `Typed Resource "${name}" created:`, this.resources[name]);
 
     return this.resources[name];
   }

@@ -106,8 +106,7 @@ class Store extends Scribe {
 
   async _GET (key) {
     let result = null;
-
-    if (this.settings.verbosity >= 5) this.log('[STORE]', '_GET', key);
+    // if (this.settings.verbosity >= 5) this.log('[STORE]', '_GET', key);
 
     try {
       result = await this.get(key);
@@ -190,7 +189,6 @@ class Store extends Scribe {
     // TODO: use ._GET
     try {
       entity = await self.db.get(address);
-      // console.log('loading entity:', entity.toString('utf8'));
     } catch (E) {
       if (this.settings.verbosity >= 3) console.warn('Creating new collection:', E);
     }
@@ -206,7 +204,7 @@ class Store extends Scribe {
     try {
       if (entity) {
         family = await self.populate(entity);
-        if (this.settings.verbosity >= 5) console.warn('WARNING:', 'family exists, expecting restoration:', family);
+        // if (this.settings.verbosity >= 5) console.warn('WARNING:', 'family exists, expecting restoration:', family);
         origin = new Collection(family);
       } else {
         origin = new Collection();
@@ -277,7 +275,8 @@ class Store extends Scribe {
       if (collection) {
         let answer = [];
         for (let i = 0; i < collection.length; i++) {
-          let entity = await this._GET(`/entities/${collection[i]}`);
+          let code = `/entities/${collection[i]}`;
+          let entity = await this._GET(code);
           answer.push(entity);
         }
         return answer;
@@ -302,7 +301,7 @@ class Store extends Scribe {
       try {
         state = await self.db.get(`/states/${tip}`);
       } catch (E) {
-        if (this.settings.verbosity >= 2) console.error(`cannot get state [${tip}] "/states/${tip}":`, E);
+        // if (this.settings.verbosity >= 2) console.error(`cannot get state [${tip}] "/states/${tip}":`, E);
       }
     } else {
       return null;
@@ -323,9 +322,9 @@ class Store extends Scribe {
    */
   async set (key, value) {
     // this.log('[STORE]', `(${this['@method']})`, 'set:', key, value.constructor.name, value);
-    if (this.settings.verbosity >= 5) this.log('[STORE]', `(${this['@method']})`, 'set:', key, typeof value, value);
-
+    if (this.settings.verbosity >= 5) console.log('[STORE]', `(${this['@method']})`, 'set:', key, typeof value, value);
     let self = this;
+    let collection = null;
 
     // Let's use the document's key as the identifying value.
     // This is what defines our key => value store.
@@ -377,12 +376,31 @@ class Store extends Scribe {
       console.error('BATCH FAILURE:', E);
     }
 
-    try {
-      await Promise.all(ops.map(op => {
-        return self.db.put(op.key, op.value);
-      }));
-    } catch (E) {
-      console.error(E);
+    // if (this.settings.verbosity >= 5) console.log('[FABRIC:STORE]', `Applying ops to path "${key}" :`, ops);
+
+    // TODO: make work for single instance deletes
+    if (collection && value === null) {
+      // console.warn('[FABRIC:STORE]', 'Value is null and target is a Collection');
+      // ops.push({ type: 'del', key: `/collections/${router}` });
+      await self.db.del(`/collections/${router}`);
+      await self.db.del(`/states/${pure['@id']}`);
+    } else {
+      try {
+        batched = await self.db.batch(ops);
+        // TODO: document verbosity 6
+        // NOTE: breaks with Fabric
+        if (this.settings.verbosity >= 6) console.log('batched result:', batched);
+      } catch (E) {
+        console.error('BATCH FAILURE:', E);
+      }
+  
+      try {
+        await Promise.all(ops.map(op => {
+          return self.db.put(op.key, op.value);
+        }));
+      } catch (E) {
+        console.error(E);
+      }
     }
 
     try {
@@ -398,7 +416,7 @@ class Store extends Scribe {
 
   async open () {
     // await super.open();
-    if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Opening:', this.settings.path);
+    // if (this.settings.verbosity >= 4) console.log('[FABRIC:STORE]', 'Opening:', this.settings.path);
     // if (this.db) return this;
 
     try {
@@ -406,19 +424,18 @@ class Store extends Scribe {
       this.trust(this.db);
       this.status = 'opened';
       await this.commit();
-      if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Opened!');
     } catch (E) {
       console.error('[FABRIC:STORE]', E);
       this.status = 'error';
     }
 
-    if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Opened!');
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:STORE]', 'Opened!');
 
     return this;
   }
 
   async close () {
-    if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Closing:', this.settings.path);
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:STORE]', 'Closing:', this.settings.path);
     if (this.db) {
       try {
         await this.db.close();
@@ -427,6 +444,7 @@ class Store extends Scribe {
       }
     }
 
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:STORE]', 'Closed!');
     // await super.close();
     return this;
   }
@@ -442,7 +460,7 @@ class Store extends Scribe {
 
     source.on('put', function (key, value) {
       // store.log('[TRUST:SOURCE]', source.constructor.name, 'emitted a put event', name, key, value.constructor.name, value);
-      if (store.settings.verbosity >= 5) console.log('[TRUST:SOURCE]', source.constructor.name, 'emitted a put event', name, key, value.constructor.name, value);
+      // if (store.settings.verbosity >= 5) console.log('[TRUST:SOURCE]', source.constructor.name, 'emitted a put event', name, key, value.constructor.name, value);
 
       let id = pointer.escape(key);
       let router = store.sha256(id);
@@ -488,7 +506,7 @@ class Store extends Scribe {
     // Core function
     try {
       result = await this.db.batch(ops);
-      if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Batched:', result);
+      // if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Batched:', result);
     } catch (E) {
       console.error('[FABRIC:STORE]', 'Could not batch updates:', E);
     }
@@ -498,8 +516,10 @@ class Store extends Scribe {
 
   async commit () {
     if (this.settings.verbosity >= 5) console.log('[AUDIT]', '[FABRIC:STORE]', 'Committing:', this.state);
-    const entity = new Entity(this.state);
-    this.emit('commit', entity.id);
+    // console.trace('[AUDIT]', '[FABRIC:STORE]', 'Committing:', this.state.state);
+    const entity = new Entity(this.state.state);
+    // console.log('[AUDIT]', '[FABRIC:STORE]', 'Committed entity:', entity);
+    this.emit('commit', entity.id, entity.data);
     // TODO: document re-opening of store
     return entity;
   }
@@ -546,6 +566,7 @@ class Store extends Scribe {
   async start () {
     if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Starting:', this.settings.path);
     this.status = 'starting';
+    let keys = null;
 
     try {
       await this.open();

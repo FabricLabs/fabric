@@ -118,11 +118,19 @@ class Circuit extends Service {
       });
     }
 
+    console.log('[AUDIT]', 'gates before shuffle:', gates);
+
     gates.sort((a, b) => {
       return a.seed - b.seed;
     });
 
+    console.log('[AUDIT]', 'gates after shuffle:', gates);
+
     return gates;
+  }
+
+  descramble () {
+
   }
 
   render () {

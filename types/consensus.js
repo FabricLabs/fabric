@@ -56,7 +56,7 @@ class Consensus {
   }
 
   get port () {
-    return (this.settings.provider === 'bcash') ? 18033 : 18332;
+    return (this.settings.provider === 'bcash') ? 18449 : 18444;
   }
 }
 

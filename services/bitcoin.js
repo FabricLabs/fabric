@@ -25,6 +25,7 @@ const FullNode = bcoin.FullNode;
 const NetAddress = bcoin.net.NetAddress;
 
 // Extraneous Dependencies
+const pEvent = require('p-event');
 // TODO: remove!
 // const bclient = require('bclient');
 
@@ -88,21 +89,25 @@ class Bitcoin extends Service {
       }
     });
 
-    /* this.fullnode = new this.provider.FullNode({
-      agent: this.UAString,
-      port: this.provider.port,
-      network: this.settings.network,
-      bip37: true, // TODO: verify SPV implementation
-      listen: this.settings.fullnode,
-      http: false,
-      httpPort: 19999,
-      logLevel: 'debug',
-      memory: true,
-      workers: true,
-      loader: require,
-      // maxOutbound: 1
-      maxOutbound: 16
-    }); */
+    if (this.settings.fullnode) {
+      console.warn('[SERVICES:BITCOIN]', 'Will run an internal Full Node as "fullnode" has been specified in Service configuration.');
+      this.fullnode = new this.provider.FullNode({
+        agent: this.UAString,
+        port: this.provider.port,
+        network: this.settings.network,
+        bip37: true, // TODO: verify SPV implementation
+        // listen: this.settings.fullnode,
+        listen: true,
+        http: false,
+        httpPort: 19999,
+        logLevel: (this.settings.verbosity >= 4) ? 'spam' : 'error',
+        memory: true,
+        workers: true,
+        loader: require,
+        // maxOutbound: 1
+        maxOutbound: 16
+      });
+    }
 
     this.peer = bcoin.Peer.fromOptions({
       agent: this.UAString,
@@ -170,6 +175,7 @@ class Bitcoin extends Service {
   async _prepareBlock (obj) {
     let entity = new Entity(obj);
     return Object.assign({}, obj, {
+      // '@fabric/id': entity.id,
       id: entity.id
     });
   }
@@ -179,6 +185,10 @@ class Bitcoin extends Service {
    * @param {Transaction} obj Transaction to prepare.
    */
   async _prepareTransaction (obj) {
+    /* let entity = new Entity(obj);
+    return Object.assign({}, obj, {
+      id: entity.id
+    }); */
     return Object.assign({}, obj);
   }
 
@@ -190,6 +200,7 @@ class Bitcoin extends Service {
     // console.log('[FABRIC:BITCOIN]', 'Handling Committed Block:', block);
     for (let i = 0; i < block.transactions.length; i++) {
       let txid = block.transactions[i];
+      // console.log('transaction in block:', txid);
       await this.transactions.create({
         hash: txid.toString('hex')
       });
@@ -389,6 +400,10 @@ class Bitcoin extends Service {
     console.log('[SERVICES:BITCOIN]', 'State:', this.state);
   }
 
+  async _handlePeerFromSPV (msg) {
+    console.log('[SERVICES:BITCOIN]', 'Peer message ("peer") from SPV:', msg);
+  }
+
   /**
    * Hand a {@link Block} message as supplied by an {@link SPV} client.
    * @param {BlockMessage} msg A {@link Message} as passed by the {@link SPV} source.
@@ -424,6 +439,17 @@ class Bitcoin extends Service {
    */
   async _handleTransactionFromSPV (tx) {
     if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'SPV Received TX:', tx);
+
+    let transaction = await this.transactions.create({
+      formats: {
+        bitcoin: {
+          hash: tx.hash('hex'),
+          raw: tx.toRaw()
+        }
+      }
+    });
+    console.log('created transaction:', transaction);
+
     let msg = {
       '@type': 'BitcoinTransaction',
       '@data': {
@@ -434,7 +460,7 @@ class Bitcoin extends Service {
       }
     };
 
-    this.emit('transaction', msg);
+    // this.emit('transaction', msg);
     this.emit('message', { '@type': 'ServiceMessage', '@data': msg });
 
     return 1;
@@ -450,7 +476,7 @@ class Bitcoin extends Service {
       // TODO: fix @types/wallet to use named types for Addresses...
       // i.e., this next line should be unnecessary!
       let address = bcoin.Address.fromString(slice.string, this.settings.network);
-      if (this.settings.verbosity >= 4) console.log('[DEBUG]', `[@0x${slice.string}] === ${slice.string}`);
+      if (this.settings.verbosity >= 4) console.log('[FABRIC:WALLET]', '[DEBUG]', `[@0x${slice.string}] === ${slice.string}`);
       this.spv.pool.watchAddress(address);
     }
   }
@@ -459,6 +485,8 @@ class Bitcoin extends Service {
    * Initiate outbound connections to configured SPV nodes.
    */
   async _connectSPV () {
+    console.log('[SERVICES:BITCOIN]', 'Connecting SPV node...');
+
     await this.spv.open();
     await this.spv.connect();
 
@@ -468,21 +496,50 @@ class Bitcoin extends Service {
     // bind listeners...
     this.spv.on('tx', this._handleTransactionFromSPV.bind(this));
     this.spv.on('block', this._handleBlockFromSPV.bind(this));
+    this.spv.on('peer', this._handlePeerFromSPV.bind(this));
+
+    console.log('[SERVICES:BITCOIN]', 'SPV node peers BEFORE connection:', this.spv.pool.peers.head());
 
     // get peer from known address
     let addr = new NetAddress({
       host: '127.0.0.1',
+      // port: 18444
       // port: this.fullnode.pool.options.port
-      port: 18444
+      // port: this.spv.pool.options.port
+      port: this.provider.port
     });
 
     // connect this.spv with fullNode
     let peer = this.spv.pool.createOutbound(addr);
     if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', 'Peer connection created:', peer);
+
+    // Add the created peer to our pool
     this.spv.pool.peers.add(peer);
+
+    // await to establish connection
+    let connected  = await pEvent(this.spv.pool, 'peer connect');
+    // nodes are now connected!
+    console.log('[SERVICES:BITCOIN]', 'Event "peer connect" received:', connected);
+    console.log('[SERVICES:BITCOIN]', 'SPV node peers AFTER connection:', this.spv.pool.peers.head());
+
+    /*
+      // TODO: test TX broadcast and receive
+
+    // broadcast a tx that DOESN'T pay out to SPV node's watch address
+    const tx1 = bcoin.TX.fromRaw('01000000011d06bce42b67f1de811a3444353fab5d400d82728a5bbf9c89978be37ad3eba9000000006a47304402200de4fd4ecc365ea90f93dbc85d219d7f1bd92ec8743648acb48b6602977e0b4302203ca2eeabed8e6f457234652a92711d66dd8eda71ed90fb6c49b3c12ce809a5d401210257654e1b0de2d8b08d514e51af5d770e9ef617ca2b254d84dd26685fbc609ec3ffffffff0280969800000000001976a914a4ecde9642f8070241451c5851431be9b658a7fe88acc4506a94000000001976a914b9825cafc838c5b5befb70ecded7871d011af89d88ac00000000', 'hex');
+    await this.fullnode.sendTX(tx1);
+    // broadcast a tx that pays out to SPV node's watch address
+    const tx2 = bcoin.TX.fromRaw('010000000106b014e37704109fefe2c5c9f4227d68840c3497fc89a9832db8504df039a6c7000000006a47304402207dc8173fbd7d23c3950aaf91b1bc78c0ed9bf910d47a977b24a8478a91b28e69022024860f942a16bc67ec54884e338b5b87f4a9518a80f9402564061a3649019319012103cb25dc2929ea58675113e60f4c08d084904189ab44a9a142179684c6cdd8d46affffffff0280c3c901000000001976a91400ba915c3d18907b79e6cfcd8b9fdf69edc7a7db88acc41c3c28010000001976a91437f306a0154e1f0de4e54d6cf9d46e07722b722688ac00000000', 'hex');
+    this.fullnode.sendTX(tx2);
+
+    // await for the second transaction to be received by the SPV node
+    await pEvent(this.spv, 'tx');
+    */
 
     // start the SPV node's blockchain sync
     await this.spv.startSync();
+
+    console.log('[SERVICES:BITCOIN]', 'SPV node connect done!');
   }
 
   async _connectToSeedNodes () {
@@ -508,6 +565,7 @@ class Bitcoin extends Service {
       this.peer.on('error', this._handlePeerError.bind(this));
       this.peer.on('packet', this._handlePeerPacket.bind(this));
       this.peer.on('open', () => {
+        console.log('PEER IS OPEN:', this);
         // triggers block event
         // pre-seeds genesis block for the rest of us.
         bitcoin.peer.getBlock([bitcoin.network.genesis.hash]);
@@ -531,8 +589,26 @@ class Bitcoin extends Service {
 
   async _startLocalNode () {
     console.log('[SERVICES:BITCOIN]', 'Starting fullnode for network "', this.settings.network, '"...');
-    await this.fullnode.open();
-    await this.fullnode.connect();
+
+    try {
+      await this.fullnode.ensure();
+    } catch (exception) {
+      console.error('[SERVICES:BITCOIN]', 'Could not ensure log directry for local Full Node:', exception);
+    }
+
+    try {
+      await this.fullnode.open();
+    } catch (exception) {
+      console.error('[SERVICES:BITCOIN]', 'Could not "open" local Full Node:', exception);
+    }
+
+    try {
+      await this.fullnode.connect();
+    } catch (exception) {
+      console.error('[SERVICES:BITCOIN]', 'Could not "connect" local Full Node:', exception);
+    }
+
+    console.log('[SERVICES:BITCOIN]', 'Full Node opened and connected!');
   }
 
   /**
@@ -551,9 +627,15 @@ class Bitcoin extends Service {
    * Start the Bitcoin service, including the initiation of outbound requests.
    */
   async start () {
-    if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', 'Starting for network "', this.settings.network, '"...');
-    await this.wallet.start();
-    // await this._startLocalNode();
+    if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', `Starting for network "${this.settings.network}"...`);
+
+    try {
+      await this.wallet.start();
+    } catch (exception) {
+      console.error('[SERVICES:BITCOIN]', 'Could not start Service Wallet:', exception);
+    }
+
+    await this._startLocalNode();
     // await this._connectToSeedNodes();
     // await this._connectToEdgeNodes();
     await this._connectSPV();
@@ -567,8 +649,33 @@ class Bitcoin extends Service {
    * Stop the Bitcoin service.
    */
   async stop () {
-    await this.peer.disconnect();
-    await this.wallet.stop();
+    console.log('[SERVICES:BITCOIN]', 'Stopping Bitcoin service...');
+
+    try {
+      await this.spv.disconnect();
+      await this.spv.stop();
+    } catch (exception) {
+      console.error('[SERVICES:BITCOIN]', 'Could not stop SPV node:', exception);
+    }
+
+    try {
+      await this.fullnode.disconnect();
+      await this.fullnode.stop();
+    } catch (exception) {
+      console.error('[SERVICES:BITCOIN]', 'Could not stop full node:', exception);
+    }
+
+    try {
+      await this.peer.disconnect();
+    } catch (exception) {
+      console.error('[SERVICES:BITCOIN]', 'Could not stop peer:', exception);
+    }
+
+    try {
+      await this.wallet.stop();
+    } catch (exception) {
+      console.error('[SERVICES:BITCOIN]', 'Could not stop Wallet:', exception);
+    }
   }
 }
 

@@ -11,6 +11,20 @@ class BitcoinBlock {
   get data () {
     return this.settings;
   }
+
+  toBitcoinBlock () {
+    const Block = this.consensus.Block;
+    const block = new Block({
+      txs: this.state.transactions.map((x) => {
+        return new Transaction({
+          hash: x
+        });
+      })
+    });
+
+    console.log('Converted to Bitcoin block:', block);
+    return block;
+  }
 }
 
 module.exports = BitcoinBlock;

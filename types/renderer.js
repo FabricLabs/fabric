@@ -84,7 +84,7 @@ class Renderer {
     return html;
   }
 
-  _renderJadeFile (filename, ui, eventHandlers) {
+  _renderJadeFile (filename) {
     let src = fs.readFileSync(filename, 'utf8');
     console.log('src:', src);
 

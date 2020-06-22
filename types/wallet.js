@@ -6,6 +6,7 @@ const config = require('../settings/default');
 const BN = require('bn.js');
 
 // Types
+const Layer = require('./layer');
 const EncryptedPromise = require('./promise');
 const Transaction = require('./transaction');
 const Collection = require('./collection');
@@ -27,12 +28,12 @@ const bcoin = require('bcoin');
 const Address = bcoin.Address;
 const Coin = bcoin.Coin;
 const WalletDB = bcoin.WalletDB;
-const WalletKey = bcoin.wallet.WalletKey;
+// const WalletKey = bcoin.wallet.WalletKey;
 const Outpoint = bcoin.Outpoint;
-const Output = bcoin.Output;
-const Keyring = bcoin.wallet.WalletKey;
+// const Output = bcoin.Output;
+// const Keyring = bcoin.wallet.WalletKey;
 const Mnemonic = bcoin.hd.Mnemonic;
-const HD = bcoin.hd;
+// const HD = bcoin.hd;
 const MTX = bcoin.MTX;
 const Script = bcoin.Script;
 
@@ -205,7 +206,7 @@ class Wallet extends Service {
   }
 
   async processBitcoinBlock (block) {
-    if (this.settings.verbosity >= 4) console.log('[FABRIC:WALLET]', 'Processing block:', block);
+    // if (this.settings.verbosity >= 4) console.log('[FABRIC:WALLET]', 'Processing block:', block);
     if (!block.block) return 0;
     for (let i = 0; i < block.block.hashes.length; i++) {
       let txid = block.block.hashes[i].toString('hex');
@@ -226,17 +227,20 @@ class Wallet extends Service {
     if (this.settings.verbosity >= 5) console.log('[AUDIT]', '[FABRIC:WALLET]', 'Adding transaction to Wallet:', transaction);
     let entity = new Entity(transaction);
     if (!transaction.spent) transaction.spent = false;
+    if (!transaction.outputs) transaction.outputs = [];
     this._state.transactions.push(transaction);
-    await this.commit();
-    if (this.settings.verbosity >= 5) console.log('[FABRIC:WALLET]', 'Wallet transactions now:', this._state.transactions);
+
+    // await this.commit();
+    // if (this.settings.verbosity >= 5) console.log('[FABRIC:WALLET]', 'Wallet transactions now:', this._state.transactions);
+    // console.log('[FABRIC:WALLET]', 'Transaction Being Added:', transaction);
 
     for (let i = 0; i < transaction.outputs.length; i++) {
       let output = transaction.outputs[i].toJSON();
       let address = await this._findAddressInCurrentShard(output.address);
 
       // TODO: test these outputs
-      // console.log('output to parse:', output);
-      // console.log('address found:', address);
+      console.warn('output to parse:', output);
+      console.warn('address found:', address);
 
       if (address) {
         this._state.outputs.push(output);
@@ -247,8 +251,11 @@ class Wallet extends Service {
             id: entity.id,
             transaction: transaction
           }
-        });
+        })
       }
+
+      // console.log('outputs:', this._state.outputs);
+      console.log('coins:', this._state.coins);
 
       /* switch (output.type) {
         default:
@@ -280,6 +287,12 @@ class Wallet extends Service {
     const utxo = await this._getUnspentOutput(amount);
     const change = await this._allocateSlot();
 
+    console.log(`spending ${amount} satoshis to address:`, address);
+    console.log(`unspent utxo:`, utxo);
+    console.log(`change slot:`, change);
+    console.log(`coins to use:`, this._state.coins);
+    console.log(`ring to use:`, this.ring);
+
     if (!this._state.coins.length) throw new Error('No available funds.');
 
     mtx.addOutput({
@@ -293,8 +306,11 @@ class Wallet extends Service {
     });
 
     const sigs = mtx.sign(this.ring);
+    console.log('inputs signed:', sigs);
     const tx = mtx.toTX();
+    // const valid = tx.verify(mtx.view);
     const valid = tx.check(mtx.view);
+    console.log('is valid:', valid);
 
     return tx;
   }
@@ -351,11 +367,19 @@ class Wallet extends Service {
    * @param {Object} order.amount
    */
   async createPricedOrder (order) {
-    if (!order.asset) throw new Error('Order parameter "asset" is required.');
+    // if (!order.asset) throw new Error('Order parameter "asset" is required.');
     if (!order.amount) throw new Error('Order parameter "amount" is required.');
+    // TODO: remove short-circuit
+    if (!order.counterparty) {
+      // TODO: replace this with a randomly-generated input
+      // sha256
+      // -> pubkey
+      order.counterparty = await this.ring.getPublicKey();
+      console.log('order counterparty artificially generated:', order.counterparty);
+    }
 
-    let leftover = order.amount % (10 * this.settings.decimals);
-    let parts = order.amount / (10 * this.settings.decimals);
+    let leftover = order.amount % this.settings.decimals;
+    let parts = order.amount / this.settings.decimals;
 
     let partials = [];
     // TODO: remove short-circuit
@@ -364,7 +388,32 @@ class Wallet extends Service {
 
     // TODO: complete order construction
     for (let i = 0; i < parts; i++) {
+      // TODO: should be split parts
+      partials.push(script);
+    }
 
+    console.log('parts:', partials);
+    console.log('leftover:', leftover);
+
+    let entity = new Entity({
+      comment: 'List of transactions to validate.',
+      orders: partials,
+      transactions: partials
+    });
+
+    return entity;
+  }
+
+  async createHTLC (contract) {
+    // if (!contract.asset) throw new Error('Contract parameter "asset" is required.');
+    if (!contract.amount) throw new Error('Contract parameter "amount" is required.');
+    // TODO: remove short-circuit
+    if (!contract.counterparty) {
+      // TODO: replace this with a randomly-generated input
+      // sha256
+      // -> pubkey
+      contract.counterparty = await this.ring.getPublicKey();
+      console.log('contract counterparty artificially generated:', contract.counterparty);
     }
 
 
@@ -486,8 +535,10 @@ class Wallet extends Service {
     // console.log('wallet creating account with data:', data);
     await this._load();
     let existing = await this.wallet.getAccount(data.name);
+    // console.log('existing:', existing);
     if (existing) return existing;
     let account = await this.wallet.createAccount(data);
+    // console.log('created account:', account);
     return account;
   }
 
@@ -630,8 +681,9 @@ class Wallet extends Service {
     let value = num.mul(hun); // amount in Satoshis
 
     if (value.gt(max)) {
-      console.warn('Value (in satoshis) higher than max:', value.toString(10), `(max was ${max.toString(10)})`);
+      console.trace('Value (in satoshis) higher than max:', value.toString(10), `(max was ${max.toString(10)})`);
       value = max;
+      // console.warn('The issuance of this coinbase transaction has been limited to:', value.toString(10));
     }
 
     let v = value.toString(10);
@@ -694,6 +746,8 @@ class Wallet extends Service {
     mtx.scriptInput(index, this._state.coins[0], this.keyring);
     mtx.signInput(index, this._state.coins[0], this.keyring, hashType);
 
+    console.log('magical crowdfunding TX unicorn:', mtx.toTX());
+
     await this.commit();
 
     return {
@@ -719,6 +773,8 @@ class Wallet extends Service {
     let data = new Script();
     let clean = await this.generateCleanKeyPair();
 
+    console.log('clean:', clean);
+
     data.pushSym('OP_IF');
     data.pushSym('OP_SHA256');
     data.pushData(Buffer.from(config.hash));
@@ -736,6 +792,7 @@ class Wallet extends Service {
 
     console.log('address data:', data);
     let segwitAddress = await this.getAddressForScript(data);
+    console.log('segwit address:', segwitAddress);
 
     mtx.addOutput({
       address: segwitAddress,
@@ -913,7 +970,8 @@ class Wallet extends Service {
     let data = new Script();
     let clean = await this.generateCleanKeyPair();
 
-    let secret = 'fixed secret :)';
+    // TODO: cleanup
+    let secret = 'mongoloid';
     let sechash = require('crypto').createHash('sha256').update(secret).digest('hex');
 
     console.log('SECRET CREATED:', secret);
@@ -988,6 +1046,7 @@ class Wallet extends Service {
 
   async _createChannel (channel) {
     let element = new Channel(channel);
+    // console.log('created channel:', element);
     return element;
   }
 
@@ -1003,11 +1062,11 @@ class Wallet extends Service {
 
   async getFirstAddressSlice (size = 256) {
     await this._load();
+    // if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'generating {@link Space} with settings:', this.settings);
+    // console.log('[AUDIT]', 'generating {@link Space} with settings:', this.settings);
 
     // aggregate results for return
     let slice = [];
-
-    if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'generating {@link Space} with settings:', this.settings);
 
     // iterate over length of shard, aggregate addresses
     for (let i = 0; i < size; i++) {
@@ -1100,12 +1159,12 @@ class Wallet extends Service {
     }
 
     if (this.settings.key && this.settings.key.seed) {
-      if (this.settings.verbosity >= 3) console.log('[AUDIT]', 'Restoring wallet from provided seed:', this.settings.key.seed);
+      if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'Restoring wallet from provided seed:', this.settings.key.seed);
       let mnemonic = new Mnemonic(this.settings.key.seed);
       this.master = bcoin.hd.fromMnemonic(mnemonic);
       this.seed = new EncryptedPromise({ data: this.settings.key.seed });
     } else {
-      if (this.settings.verbosity >= 3) console.log('[AUDIT]', 'Generating new HD key for wallet...');
+      if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'Generating new HD key for wallet...');
       this.master = bcoin.hd.generate(this.settings.network);
     }
 
@@ -1122,8 +1181,8 @@ class Wallet extends Service {
     this.ring = new bcoin.KeyRing(this.master, this.settings.network);
     this.ring.witness = this.settings.witness; // designates witness
 
-    if (this.settings.verbosity >= 4) console.log('keyring:', this.ring);
-    if (this.settings.verbosity >= 4) console.log('address from keyring:', this.ring.getAddress().toString());
+    // if (this.settings.verbosity >= 4) console.log('keyring:', this.ring);
+    // if (this.settings.verbosity >= 4) console.log('address from keyring:', this.ring.getAddress().toString());
 
     this.account = await this.wallet.getAccount('default');
 
@@ -1132,7 +1191,7 @@ class Wallet extends Service {
     // console.log('shard created:', await this.addresses.asMerkleTree());
     // console.log('shard created:', this.shard);
 
-    if (this.settings.verbosity >= 3) console.log('[AUDIT]', 'Wallet account:', this.account);
+    // if (this.settings.verbosity >= 3) console.log('[AUDIT]', 'Wallet account:', this.account);
     // TODO: also retrieve key for address
     // let key = this.master.derivePath('m/44/0/0/0/0');
     // TODO: label as identity address
@@ -1140,10 +1199,10 @@ class Wallet extends Service {
     // TODO: notify downstream of short-circuit removal
 
     // finally, assign state...
-    this.state.transactions = this.settings.transaction;
-    this.state.orders = this.settings.orders;
+    // this.state.transactions = this.settings.transaction;
+    // this.state.orders = this.settings.orders;
 
-    if (this.settings.verbosity >=5) console.log('[FABRIC:WALLET]', 'state after loading:', this.state);
+    if (this.settings.verbosity >= 5) console.log('[FABRIC:WALLET]', 'state after loading:', this.state);
 
     this.status = 'loaded';
     this.emit('ready');

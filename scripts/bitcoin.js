@@ -2,10 +2,11 @@
 
 const Bitcoin = require('../services/bitcoin');
 const config = {
-  // network: 'regtest'
-  network: 'testnet',
+  network: 'regtest',
+  // network: 'testnet',
   // network: 'main',
-  verbosity: 4
+  fullnode: true,
+  verbosity: 2
 };
 
 async function main () {

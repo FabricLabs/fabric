@@ -28,6 +28,8 @@ class State extends EventEmitter {
   constructor (data = {}) {
     super(data);
 
+    // console.trace('[FABRIC:STATE]', 'Creating state with data:', data);
+
     this['@version'] = 0x01;
     this['@input'] = data || null;
     this['@data'] = data || {};
@@ -115,6 +117,16 @@ class State extends EventEmitter {
     }
 
     this.state = {};
+
+    // TODO: document hidden properties
+    // Remove various undesired clutter from output
+    Object.defineProperty(this, '@allocation', { enumerable: false });
+    Object.defineProperty(this, '@buffer', { enumerable: false });
+    Object.defineProperty(this, '@encoding', { enumerable: false });
+    // Object.defineProperty(this, '@parent', { enumerable: false });
+    // Object.defineProperty(this, '@preimage', { enumerable: false });
+    // Object.defineProperty(this, 'frame', { enumerable: false });
+    Object.defineProperty(this, 'services', { enumerable: false });
 
     return this;
   }
@@ -386,7 +398,17 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
    */
   get (path) {
     // return pointer.get(this.state, path);
-    return pointer.get(this['@entity']['@data'], path);
+    let result = null;
+
+    console.log('[FABRIC:STATE]', 'Getting substate path:', path, this['@entity']['@data']);
+
+    try {
+      result = pointer.get(this['@entity']['@data'], path);
+    } catch (exception) {
+      console.error('[FABRIC:STATE]', 'Could not retrieve path:', path, exception);
+    }
+
+    return result;
   }
 
   /**
@@ -395,7 +417,7 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
    * @returns {Mixed}
    */
   set (path, value) {
-    // console.log('setting:', path, value);
+    console.log('setting:', path, value);
     pointer.set(this.state, path, value);
     pointer.set(this['@entity']['@data'], path, value);
     let result = pointer.set(this.state, path, value);
@@ -421,7 +443,7 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
 
     if (this['@changes'] && this['@changes'].length) {
       this.emit('changes', this['@changes']);
-      this.emit('state', this['@state']);
+      // this.emit('state', this['@state']);
       this.emit('message', {
         '@type': 'Transaction',
         '@data': {
