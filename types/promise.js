@@ -22,7 +22,7 @@ class EncryptedPromise {
       throw new Error(`Promise not created, input too large, maximum size is ${MAX_MEMORY}`);
     }
 
-    Object.defineProperty(this, '_state', { enumerable: false });
+    // Object.defineProperty(this, '_state', { enumerable: false });
 
     this.load();
   }

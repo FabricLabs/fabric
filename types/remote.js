@@ -133,11 +133,11 @@ class Remote extends Resource {
           switch (formatter.type) {
             default:
               if (this.settings.verbosity >= 4) console.warn('[FABRIC:REMOTE]', 'Unhandled headers content type:', formatter.type);
-              result = response.text();
+              result = await response.text();
               break;
             case 'application/json':
               try {
-                result = response.json();
+                result = await response.json();
               } catch (E) {
                 console.error('[REMOTE]', 'Could not parse JSON:', E);
               }

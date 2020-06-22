@@ -46,6 +46,7 @@ class Peer extends Scribe {
       port: 7777
     }, config);
 
+    console.log('[FABRIC:PEER]', 'Creating Wallet with settings:', this.settings);
     this.wallet = new Wallet(this.settings);
 
     this.server = net.createServer(this._handleConnection.bind(this));
