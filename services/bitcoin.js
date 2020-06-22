@@ -10,6 +10,7 @@ const Consensus = require('../types/consensus');
 
 // Special Types (internal to Bitcoin)
 const BitcoinBlock = require('../types/bitcoin/block');
+const BitcoinTransaction = require('../types/bitcoin/transaction');
 
 // External Dependencies
 // For the browser
@@ -49,6 +50,7 @@ class Bitcoin extends Service {
       name: '@services/bitcoin',
       network: 'main',
       listen: false,
+      fullnode: false,
       nodes: ['127.0.0.1'],
       seeds: ['127.0.0.1'],
       port: 18444,
@@ -75,21 +77,33 @@ class Bitcoin extends Service {
       }
     });
 
-    this.fullnode = new this.provider.FullNode({
-      agent: this.UAString,
-      port: this.provider.port,
-      network: this.settings.network,
-      bip37: true, // TODO: verify SPV implementation
-      listen: this.settings.listen,
-      http: false,
-      httpPort: 19999,
-      logLevel: 'debug',
-      memory: true,
-      workers: true,
-      loader: require,
-      // maxOutbound: 1
-      maxOutbound: 16
+    this.transactions = new Collection({
+      name: 'Transaction',
+      type: BitcoinTransaction,
+      methods: {
+        'create': this._prepareTransaction.bind(this)
+      },
+      listeners: {
+        'create': this._handleCommittedTransaction.bind(this)
+      }
     });
+
+    if (this.settings.fullnode) {
+      this.fullnode = new this.provider.FullNode({
+        agent: this.UAString,
+        port: this.provider.port,
+        network: this.settings.network,
+        bip37: true, // TODO: verify SPV implementation
+        listen: true,
+        http: false,
+        httpPort: 19999,
+        logLevel: 'debug',
+        memory: true,
+        workers: true,
+        loader: require,
+        maxOutbound: 1
+      });
+    }
 
     this.peer = bcoin.Peer.fromOptions({
       agent: this.UAString,
@@ -102,18 +116,23 @@ class Bitcoin extends Service {
     this.peer.on('error', this._handlePeerError.bind(this));
     this.peer.on('packet', this._handlePeerPacket.bind(this));
     this.peer.on('open', () => {
+      console.log('PEER IS OPEN:', this);
       // triggers block event
       // pre-seeds genesis block for the rest of us.
       let block = this.peer.getBlock([this.network.genesis.hash]);
+      console.log('block recovered:', block);
     });
 
+    // Attach to the network
     this.spv = new bcoin.SPVNode({
       agent: this.UAString + ' (SPV)',
       network: this.settings.network,
-      port: 18444,
-      httpPort: 48449, // TODO: disable HTTP entirely!
+      port: this.provider.port,
+      http: false,
+      listen: false,
+      // httpPort: 48449, // TODO: disable HTTP entirely!
       memory: true,
-      logLevel: 'spam',
+      logLevel: (this.settings.verbosity >= 4) ? 'spam' : 'error',
       maxOutbound: 1,
       workers: true
     });
@@ -140,6 +159,13 @@ class Bitcoin extends Service {
 
   async broadcast (msg) {
     console.log('[SERVICES:BITCOIN]', 'Broadcasting:', msg);
+    const verify = await msg.verify();
+    console.log('[SERVICES:BITCOIN]', 'Verified TX:', verify);
+
+    await this.spv.sendTX(msg);
+    // await this.spv.broadcast(msg);
+    await this.spv.relay(msg);
+    console.log('[SERVICES:BITCOIN]', 'Broadcasted!');
   }
 
   async _prepareBlock (obj) {
@@ -149,8 +175,35 @@ class Bitcoin extends Service {
     });
   }
 
+  /**
+   * Prepares a {@link Transaction} for storage.
+   * @param {Transaction} obj Transaction to prepare.
+   */
+  async _prepareTransaction (obj) {
+    return Object.assign({}, obj);
+  }
+
+  /**
+   * Receive a committed block.
+   * @param {Block} block Block to handle.
+   */
   async _handleCommittedBlock (block) {
+    // console.log('[FABRIC:BITCOIN]', 'Handling Committed Block:', block);
+    for (let i = 0; i < block.transactions.length; i++) {
+      let txid = block.transactions[i];
+      await this.transactions.create({
+        hash: txid.toString('hex')
+      });
+    }
+
     this.emit('block', block);
+
+    // await this.commit();
+  }
+
+  async _handleCommittedTransaction (transaction) {
+    // console.log('[SERVICE:BITCOIN]', 'Handling Committed Transaction:', transaction);
+    // this.emit('transaction', transaction);
   }
 
   async _registerBlock (obj) {
@@ -295,6 +348,10 @@ class Bitcoin extends Service {
     console.error('[SERVICES:BITCOIN]', 'Peer generated error:', err);
   }
 
+  /**
+   * Process a message from a peer in the Bitcoin network.
+   * @param {PeerPacket} msg Message from peer.
+   */
   async _handlePeerPacket (msg) {
     console.log('[SERVICES:BITCOIN]', 'Peer sent packet:', msg);
 
@@ -333,6 +390,10 @@ class Bitcoin extends Service {
     console.log('[SERVICES:BITCOIN]', 'State:', this.state);
   }
 
+  /**
+   * Hand a {@link Block} message as supplied by an {@link SPV} client.
+   * @param {BlockMessage} msg A {@link Message} as passed by the {@link SPV} source.
+   */
   async _handleBlockFromSPV (msg) {
     if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'SPV Received block:', msg);
     let block = await this.blocks.create({
@@ -342,10 +403,16 @@ class Bitcoin extends Service {
       block: msg
     });
 
+    // if (this.settings.verbosity >= 5) console.log('created block:', block);
+    if (this.settings.verbosity >= 5) console.log('block count:', Object.keys(this.blocks.list()).length);
+
     let message = {
       '@type': 'BitcoinBlock',
       '@data': block
     };
+
+    // Finalize any uncommitted changes
+    // await this.commit();
 
     this.emit('block', message);
     this.emit('message', { '@type': 'ServiceMessage', '@data': message });
@@ -374,17 +441,24 @@ class Bitcoin extends Service {
     return 1;
   }
 
+  /**
+   * Attach event handlers for a supplied list of addresses.
+   * @param {Shard} shard List of addresses to monitor.
+   */
   async _subscribeToShard (shard) {
     for (let i = 0; i < shard.length; i++) {
       let slice = shard[i];
       // TODO: fix @types/wallet to use named types for Addresses...
       // i.e., this next line should be unnecessary!
       let address = bcoin.Address.fromString(slice.string, this.settings.network);
-      console.log('[DEBUG]', `[@0x${slice.string}] === ${slice.string}`);
+      if (this.settings.verbosity >= 4) console.log('[DEBUG]', `[@0x${slice.string}] === ${slice.string}`);
       this.spv.pool.watchAddress(address);
     }
   }
 
+  /**
+   * Initiate outbound connections to configured SPV nodes.
+   */
   async _connectSPV () {
     await this.spv.open();
     await this.spv.connect();
@@ -400,9 +474,9 @@ class Bitcoin extends Service {
     let addr = new NetAddress({
       host: '127.0.0.1',
       // port: this.fullnode.pool.options.port
-      port: 18444
+      port: this.provider.port
     });
-  
+
     // connect this.spv with fullNode
     let peer = this.spv.pool.createOutbound(addr);
     if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', 'Peer connection created:', peer);
@@ -462,6 +536,10 @@ class Bitcoin extends Service {
     await this.fullnode.connect();
   }
 
+  /**
+   * Connect to a Fabric {@link Peer}.
+   * @param {String} addr Address to connect to.
+   */
   async connect (addr) {
     try {
       this.peer.connect(addr);
@@ -470,8 +548,11 @@ class Bitcoin extends Service {
     }
   }
 
+  /**
+   * Start the Bitcoin service, including the initiation of outbound requests.
+   */
   async start () {
-    console.log('[SERVICES:BITCOIN]', 'Starting for network "', this.settings.network, '"...');
+    if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', `Starting for network "${this.settings.network}"...`);
     await this.wallet.start();
     // await this._startLocalNode();
     // await this._connectToSeedNodes();
@@ -479,11 +560,16 @@ class Bitcoin extends Service {
     await this._connectSPV();
     // this.peer.tryOpen();
 
+    if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', 'Service started!');
     return this;
   }
 
+  /**
+   * Stop the Bitcoin service.
+   */
   async stop () {
     await this.peer.disconnect();
+    await this.wallet.stop();
   }
 }
 

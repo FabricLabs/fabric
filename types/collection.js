@@ -5,7 +5,6 @@ const monitor = require('fast-json-patch');
 const pointer = require('json-pointer');
 
 const Entity = require('./entity');
-
 const Stack = require('./stack');
 const State = require('./state');
 
@@ -36,23 +35,48 @@ class Collection extends Stack {
       key: 'id'
     }, configuration);
 
+    this['@type'] = 'Collection';
     this['@entity']['@type'] = 'Collection';
 
-    this.name = pluralize(configuration.name || this.settings.name);
+    // Set name to plural version, define path for storage
+    this.name = pluralize(this.settings.name);
     this.path = `/` + this.name.toLowerCase();
+
+    this._state = {};
     this.state = {};
 
     this.set(`${this.path}`, this.settings.data || {});
+    this.observer = monitor.observe(this.state);
+
+    Object.defineProperty(this, '@allocation', { enumerable: false });
+    Object.defineProperty(this, '@buffer', { enumerable: false });
+    Object.defineProperty(this, '@encoding', { enumerable: false });
+    Object.defineProperty(this, '@parent', { enumerable: false });
+    Object.defineProperty(this, '@preimage', { enumerable: false });
+    Object.defineProperty(this, 'frame', { enumerable: false });
+    Object.defineProperty(this, 'services', { enumerable: false });
 
     return this;
   }
 
+  get routes () {
+    return this.settings.routes;
+  }
+
+  /**
+   * Current elements of the collection as a {@link MerkleTree}.
+   * @returns {MerkleTree}
+   */
   asMerkleTree () {
     let list = pointer.get(this.state, this.path);
     let stack = new Stack(Object.keys(list));
     return stack.asMerkleTree();
   }
 
+  /**
+   * Sets the `key` property of collection settings.
+   * @param {String} name Value to set the `key` setting to.
+   */
   _setKey (name) {
     this.settings.key = name;
   }
@@ -86,6 +110,11 @@ class Collection extends Stack {
     return items[items.length - 1];
   }
 
+  /**
+   * Find a document by specific field.
+   * @param {String} name Name of field to search.
+   * @param {String} value Value to match.
+   */
   findByField (name, value) {
     let result = null;
     let items = pointer.get(this.state, this.path);
@@ -99,6 +128,10 @@ class Collection extends Stack {
     return result;
   }
 
+  /**
+   * Find a document by the "name" field.
+   * @param {String} name Name to search for.
+   */
   findByName (name) {
     let result = null;
     let items = pointer.get(this.state, this.path);
@@ -112,6 +145,10 @@ class Collection extends Stack {
     return result;
   }
 
+  /**
+   * Find a document by the "symbol" field.
+   * @param {String} symbol Value to search for.
+   */
   findBySymbol (symbol) {
     let result = null;
     let items = pointer.get(this.state, this.path);
@@ -160,7 +197,12 @@ class Collection extends Stack {
     return result;
   }
 
-  _patchTarget (path, patches) {
+  /**
+   * Modify a target document using an array of atomic updates.
+   * @param {String} path Path to the document to modify.
+   * @param {Array} patches List of operations to apply.
+   */
+  async _patchTarget (path, patches) {
     let link = `${path}`;
     let result = null;
 
@@ -175,7 +217,7 @@ class Collection extends Stack {
       console.error('Could not patch target:', E, path, patches);
     }
 
-    this.commit();
+    await this.commit();
 
     return result;
   }
@@ -185,7 +227,7 @@ class Collection extends Stack {
    * @param  {Mixed} data {@link Entity} to add.
    * @return {Number}      Length of the collection.
    */
-  push (data, commit = true) {
+  async push (data, commit = true) {
     super.push(data);
 
     let state = new State(data);
@@ -200,7 +242,7 @@ class Collection extends Stack {
 
     if (commit) {
       try {
-        this['@commit'] = this.commit();
+        this['@commit'] = await this.commit();
       } catch (E) {
         console.error('Could not commit.', E);
       }
@@ -219,6 +261,42 @@ class Collection extends Stack {
     return this.get(path);
   }
 
+  /**
+   * Retrieve a key from the {@link State}.
+   * @param {Path} path Key to retrieve.
+   * @returns {Mixed}
+   */
+  get (path) {
+    let result = null;
+
+    try {
+      result = pointer.get(this['@entity']['@data'], path);
+    } catch (exception) {
+      console.error('[FABRIC:COLLECTION]', 'Could not retrieve path:', path, exception);
+    }
+
+    return result;
+  }
+
+  /**
+   * Set a key in the {@link State} to a particular value.
+   * @param {Path} path Key to retrieve.
+   * @returns {Mixed}
+   */
+  set (path, value) {
+    pointer.set(this._state, path, value);
+    pointer.set(this.state, path, value);
+    pointer.set(this['@entity']['@data'], path, value);
+
+    this.commit();
+    return true;
+  }
+
+  /**
+   * Generate a list of elements in the collection.
+   * @deprecated
+   * @returns {Array}
+   */
   list () {
     let map = this.map();
     let ids = Object.keys(map);
@@ -232,6 +310,11 @@ class Collection extends Stack {
     return result;
   }
 
+  /**
+   * Provides the {@link Collection} as an {@link Array} of typed
+   * elements.  The type of these elments are defined by the collection's
+   * type, supplied in the constructor.
+   */
   toTypedArray () {
     let map = this.map();
     let ids = Object.keys(map);
@@ -251,6 +334,10 @@ class Collection extends Stack {
     return result;
   }
 
+  /**
+   * Generate a hashtable of elements in the collection.
+   * @returns {Array}
+   */
   map () {
     return Collection.pointer.get(this.state, `${this.path}`);
   }
@@ -261,53 +348,67 @@ class Collection extends Stack {
    * @return {Promise}        Resolves with instantiated {@link Entity}.
    */
   async create (input, commit = true) {
+    if (this.settings.verbosity >= 5) console.log('[FABRIC:COLLECTION]', 'Creating object:', input);
+    if (!this.settings.deterministic) input.created = Date.now();
+
     let result = null;
-    let size = this.push(input, false);
-    let state = this['@entity'].states[this['@data'][size - 1]];
-
-    if (!this.settings.deterministic) state.created = Date.now();
-
-    let entity = new Entity(state);
+    let entity = new Entity(input);
+    let link = `${this.path}/${entity.id}`;
     // TODO: enable specifying names (again)
     // let link = `${this.path}/${(entity.data[this.settings.fields.id] || entity.id)}`;
-    let link = `${this.path}/${entity.id}`;
-    // console.log('[AUDIT]', '[COLLECTION]', 'created:', link);
-
-    if (this.settings.methods && this.settings.methods.create) {
-      state = await this.settings.methods.create.call(this, state);
-      // console.log('[AUDIT]', `[COLLECTION:CREATED:${this.settings.name.toUpperCase()}]`, 'created data:', state);
+    // TODO: handle duplicates (when desired, i.e., "unique" in settings)
+    let current = await this.getByID(entity.id);
+    if (current) {
+      if (this.settings.verbosity >= 5) console.log('[FABRIC:COLLECTION]', 'Exact entity exists:', current);
     }
 
-    this.set(link, state.data || state);
+    if (this.settings.methods && this.settings.methods.create) {
+      result = await this.settings.methods.create.call(this, input);
+    } else {
+      result = entity;
+    }
+
+    pointer.set(this._state, link, result.data);
+
+    this.set(link, result.data || result);
 
     this.emit('message', {
       '@type': 'Create',
-      '@data': Object.assign({}, state.data, {
+      '@data': Object.assign({}, result.data, {
         id: entity.id
       })
     });
 
-    if (this.settings.listeners && this.settings.listeners.create) {
-      await this.settings.listeners.create.call(this, entity.data);
-    }
-
     if (commit) {
       try {
-        this['@commit'] = this.commit();
+        this['@commit'] = await this.commit();
+        this.emit('commit', this['@commit']);
       } catch (E) {
         console.error('Could not commit.', E);
       }
     }
 
-    result = state.data || entity.data;
+    if (this.settings.listeners && this.settings.listeners.create) {
+      await this.settings.listeners.create(entity.data);
+    }
+
+    result = result.data || entity.data;
     result.id = entity.id;
 
     return result;
   }
 
+  /**
+   * Loads {@link State} into memory.
+   * @param {State} state State to import.
+   * @param {Boolean} commit Whether or not to commit the result.
+   * @emits message Will emit one {@link Snapshot} message.
+   */
   async import (input, commit = true) {
+    if (input['@data']) input = input['@data'];
+
     let result = null;
-    let size = this.push(input, false);
+    let size = await this.push(input, false);
     let state = this['@entity'].states[this['@data'][size - 1]];
     let entity = new Entity(state);
     let link = `${this.path}/${input.id || entity.id}`;
@@ -320,7 +421,7 @@ class Collection extends Stack {
 
     if (commit) {
       try {
-        this['@commit'] = this.commit();
+        this['@commit'] = await this.commit();
       } catch (E) {
         console.error('Could not commit.', E);
       }
@@ -358,6 +459,31 @@ class Collection extends Stack {
 
   async importMap (map) {
     return this.importList(Object.values(map));
+  }
+
+  commit () {
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:COLLECTION]', 'Committing...');
+    // const changes = super.commit();
+    const patches = monitor.generate(this.observer);
+
+    if (patches && patches.length) {
+      const body = {
+        changes: patches,
+        state: this.state
+      };
+
+      this.emit('transaction', body);
+      this.emit('message', {
+        '@type': 'Transaction',
+        '@data': body
+      });
+    }
+
+    // if (changes) this.emit('patches', changes);
+  }
+
+  get len(){
+    return Object.keys(this.list()).length;
   }
 }
 

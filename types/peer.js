@@ -1,5 +1,18 @@
 'use strict';
 
+const {
+  P2P_IDENT_REQUEST,
+  P2P_IDENT_RESPONSE,
+  P2P_ROOT,
+  P2P_PING,
+  P2P_PONG,
+  P2P_INSTRUCTION,
+  P2P_BASE_MESSAGE,
+  P2P_STATE_COMMITTMENT,
+  P2P_STATE_CHANGE,
+  P2P_STATE_ROOT
+} = require('../constants');
+
 const net = require('net');
 const crypto = require('crypto');
 const stream = require('stream');
@@ -7,19 +20,11 @@ const stream = require('stream');
 const Key = require('./key');
 const Machine = require('./machine');
 const Message = require('./message');
+const Session = require('./session');
 const Scribe = require('./scribe');
+const Wallet = require('./wallet');
 
 // TODO: implement the noise protocol: http://noiseprotocol.org/noise.html
-const P2P_IDENT_REQUEST = 0x01; // 1, or the identity
-const P2P_IDENT_RESPONSE = 0x11;
-const P2P_ROOT = 0x00000000;
-const P2P_PING = 0x00000012; // same ID as Lightning (18)
-const P2P_PONG = 0x00000013; // same ID as Lightning (19)
-const P2P_INSTRUCTION = 0x00000020; // TODO: select w/ no overlap
-const P2P_BASE_MESSAGE = 0x00000031; // TODO: select w/ no overlap
-const P2P_STATE_COMMITTMENT = 0x00000032; // TODO: select w/ no overlap
-const P2P_STATE_CHANGE = 0x00000033; // TODO: select w/ no overlap
-
 const ZERO_LENGTH_PLAINTEXT = '';
 
 /**
@@ -30,15 +35,19 @@ class Peer extends Scribe {
    * Create an instance of {@link Peer}.
    * @param       {Vector} config - Initialization Vector for this peer.
    */
-  constructor (config) {
+  constructor (config = {}) {
     super(config);
 
     this.name = 'Peer';
-    this.config = Object.assign({
+    this.settings = this.config = Object.assign({
       address: '0.0.0.0',
       networking: true,
+      listen: false,
       port: 7777
-    }, config || {});
+    }, config);
+
+    console.log('[FABRIC:PEER]', 'Creating Wallet with settings:', this.settings);
+    this.wallet = new Wallet(this.settings);
 
     this.server = net.createServer(this._handleConnection.bind(this));
     this.stream = new stream.Transform({
@@ -52,9 +61,12 @@ class Peer extends Scribe {
     // probably bug with this vs. self
     // this.stream.on('data', this._handler.bind(this));
 
-    this.key = this.config.key || new Key();
-    this.hex = this.key.public.encodeCompressed('hex');
-    this.pkh = crypto.createHash('sha256').update(this.hex).digest('hex');
+    // TODO: load wallet from key
+    this.key = new Key(this.settings.key);
+    this.wallet = new Wallet(this.settings);
+
+    // this.hex = this.key.public.encodeCompressed('hex');
+    // this.pkh = crypto.createHash('sha256').update(this.hex).digest('hex');
 
     this.address = this.config.address;
     this.port = this.config.port;
@@ -65,17 +77,39 @@ class Peer extends Scribe {
     this.messages = new Set();
     this.machine = new Machine();
 
+    this.meta = {
+      messages: {
+        inbound: 0,
+        outbound: 0
+      }
+    };
+
     return this;
   }
 
-  async start () {
-    this.log('Peer starting...');
+  get id () {
+    return this.wallet.shard[0].string;
+  }
 
-    if (!this.server) {
-      await this.listen();
+  async start () {
+    const peer = this;
+    console.log('[FABRIC:PEER]', 'Peer starting...');
+
+    try {
+      await peer.wallet.start();
+    } catch (E) {
+      console.error('Could not start wallet:', E);
     }
 
-    return this;
+    if (this.settings.listen) {
+      await peer.listen();
+    }
+
+    peer.emit('ready', {
+      id: peer.id
+    });
+
+    return peer;
   }
 
   async stop () {
@@ -92,7 +126,9 @@ class Peer extends Scribe {
     let parts = address.split(':');
     let known = Object.keys(self.connections);
 
-    if (parts.length !== 2) return self.debug('Invalid address:', address);
+    console.log('[FABRIC:PEER]', 'Connecting to address:', address);
+
+    if (parts.length !== 2) return console.debug('Invalid address:', address);
     if (known.includes(address)) return self.connections[address];
 
     // TODO: refactor to use local functions + specific unbindings
@@ -100,7 +136,7 @@ class Peer extends Scribe {
       self.connections[address] = new net.Socket();
 
       self.connections[address].on('error', function (err) {
-        self.debug('[PEER]', `could not connect to peer ${address} — Reason:`, err);
+        console.debug('[PEER]', `could not connect to peer ${address} — Reason:`, err);
       });
 
       self.connections[address].on('close', function (err) {
@@ -114,10 +150,15 @@ class Peer extends Scribe {
       });
 
       // TODO: unify as _dataHandler
-      self.connections[address].on('data', async function (data) {
+      self.connections[address].on('data', async function peerDataHandler (data) {
+        if (self.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Received data from peer:', data);
+        self.meta.messages.inbound++;
         let message = self._parseMessage(data);
+        console.log('[FABRIC:PEER]', 'Inbound message type:', message.type);
+        console.log('[FABRIC:PEER]', 'Total inbound messages:', self.meta.messages.inbound);
+
         // disconnect from any peer sending invalid messages
-        if (!message) this.destroy();
+        if (!message) return this.destroy();
 
         let response = await self._handleMessage({
           origin: address,
@@ -125,23 +166,31 @@ class Peer extends Scribe {
         });
 
         if (response) {
+          self.meta.messages.outbound++;
           this.write(response.asRaw());
         }
       });
 
       // TODO: replace with handshake
+      // NOTE: the handler is only called once per connection!
       self.connections[address].connect(parts[1], parts[0], function () {
+        console.log('[FABRIC:PEER]', 'Connection created...');
+        const session = new Session();
+        // const m = new Message();
+        // TODO: check peer ID, eject if self or known
+        const vector = ['IdentityRequest', self.id];
+        const message = Message.fromVector(vector);
+
+        self.meta.messages.outbound++;
+        self.connections[address].write(message.asRaw());
+
         self.emit('connections:open', {
           address: address,
           status: 'unauthenticated',
           initiator: true
         });
 
-        self.log(`connection to ${address} established!`);
-
-        // TODO: check peer ID, eject if self or known
-        let message = Message.fromVector([P2P_IDENT_REQUEST, self.id]);
-        self.connections[address].write(message.asRaw());
+        console.log('[FABRIC:PEER]', `Connection to ${address} established!`);
       });
     } catch (E) {
       self.log('[PEER]', 'failed to connect:', E);
@@ -152,6 +201,7 @@ class Peer extends Scribe {
 
   _parseMessage (data) {
     if (!data) return false;
+    if (this.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Parsing message:', data);
 
     let self = this;
     let message = null;
@@ -159,9 +209,10 @@ class Peer extends Scribe {
     try {
       message = Message.fromRaw(data);
     } catch (E) {
-      self.debug('[PEER]', 'error parsing message:', E);
+      console.debug('[FABRIC:PEER]', 'error parsing message:', E);
     }
 
+    if (this.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Parsed message into:', message.type, message.data);
     return message;
   }
 
@@ -169,7 +220,7 @@ class Peer extends Scribe {
     let self = this;
     let address = [socket.remoteAddress, socket.remotePort].join(':');
 
-    self.log('incoming connection:', address);
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Incoming connection from address:', address);
 
     self.emit('connections:open', {
       address: address,
@@ -183,10 +234,14 @@ class Peer extends Scribe {
     });
 
     // TODO: unify as _dataHandler
-    socket.on('data', async function (data) {
+    socket.on('data', async function incomingDataHandler (data) {
+      console.log('[FABRIC:PEER]', 'Incoming socket data:', data);
       let message = self._parseMessage(data);
       // disconnect from any peer sending invalid messages
-      if (!message) this.destroy();
+      if (!message) return this.destroy();
+      if (self.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Parsed into Message:', message.raw);
+      if (self.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Message type:', message.type);
+      if (self.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Message data:', message.data);
 
       let response = await self._handleMessage({
         origin: address,
@@ -194,12 +249,23 @@ class Peer extends Scribe {
       });
 
       if (response) {
+        console.log('[FABRIC:PEER]', 'Writing response:', response);
         this.write(response.asRaw());
+      } else {
+        console.warn('[FABRIC:PEER]', 'No response found for message type:', message.type);
       }
     });
 
     // add this socket to the list of known connections
     this.connections[address] = socket;
+
+    // Request peer identity
+    // TODO: check peer ID, eject if self or known
+    const vector = ['IdentityRequest', self.id];
+    const message = Message.fromVector(vector);
+    if (self.settings.verbosity >= 4) console.log(`Network message (raw bytes):`, message.asRaw());
+    self.meta.messages.outbound++;
+    self.connections[address].write(message.asRaw());
   }
 
   _registerPeer (peer) {
@@ -214,20 +280,22 @@ class Peer extends Scribe {
     self.peers[peer.id] = peer;
     self.emit('peer', peer);
 
+    console.log('[FABRIC:PEER]', 'Peer registered:', peer);
+
     return true;
   }
 
   async _handleMessage (packet) {
     if (!packet) return false;
+    if (this.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Handling packet from peer:', packet.message.id);
 
     let self = this;
     let response = null;
     let message = packet.message;
 
-    if (!message) return self.error('Hard failure:', packet);
-
+    if (!message) return console.error('Hard failure:', packet);
     if (self.messages.has(message.id)) {
-      self.log('received duplicate message:', message);
+      if (self.settings.verbosity >= 4) console.warn('[FABRIC:PEER]', 'Received duplicate message:', message.id, message.type, message.data);
       return false;
     } else {
       self.memory[message.id] = message;
@@ -236,14 +304,16 @@ class Peer extends Scribe {
 
     switch (message.type) {
       default:
-        self.log('[PEER]', `unhandled message type "${message.type}"`);
+        console.log('[PEER]', `unhandled message type "${message.type}"`);
         break;
-      case P2P_IDENT_REQUEST:
-        self.log('message was an identity request.  sending node id...');
-        response = Message.fromVector([P2P_IDENT_RESPONSE, self.id]);
+      case 'GenericMessage':
+        console.warn('[FABRIC:PEER]', 'Sent Generic Message:', message.data);
         break;
-      case P2P_IDENT_RESPONSE:
-        self.log('message was an identity response!  registering peer:', message.data);
+      case 'IdentityRequest':
+        console.log('[FABRIC:PEER]', 'Peer sent IdentityRequest.  Responding with IdentityResponse (node id)...', self.id);
+        response = Message.fromVector(['IdentityResponse', self.id]);
+        break;
+      case 'IdentityResponse':
         if (!self.peers[message.data]) {
           let peer = {
             id: message.data,
@@ -251,6 +321,19 @@ class Peer extends Scribe {
           };
           self._registerPeer(peer);
         }
+        response = Message.fromVector(['StateRoot', JSON.stringify(self.state)]);
+        break;
+      case 'StateRoot':
+        if (self.settings.verbosity >= 5) console.log('[AUDIT]', 'Message was a state root:', message.data);
+        try {
+          const state = JSON.parse(message.data);
+          self.emit('state', state);
+        } catch (E) {
+          console.error('[FABRIC:PEER]', 'Could not parse StateRoot:', E);
+        }
+        break;
+      case 'StateChange':
+        console.log('message was a state change:', message.data);
         break;
       case P2P_BASE_MESSAGE:
         self._handleBasePacket(packet);
@@ -276,7 +359,7 @@ class Peer extends Scribe {
             response = Message.fromVector([P2P_INSTRUCTION, script]);
             break;
           default:
-            self.log('[PEER]', `unhandled instruction "${stack[1]}"`);
+            console.log('[PEER]', `unhandled peer instruction "${stack[1]}"`);
             break;
         }
 
@@ -297,7 +380,7 @@ class Peer extends Scribe {
 
     switch (message.type) {
       default:
-        this.log('unhandled base packet type:', message.type);
+        console.log('unhandled base packet type:', message.type);
         break;
       case 'collections:post':
         this.emit('collections:post', message.data);
@@ -357,12 +440,9 @@ class Peer extends Scribe {
   listen () {
     let self = this;
     self.server.listen(self.config.port, self.config.address, function () {
-      if (self.config.debug) {
+      if (self.config.verbosity >= 3) {
         self.log('[PEER]', `${self.id} now listening on tcp://${self.address}:${self.port}`);
       }
-      self.emit('ready', {
-        id: self.id
-      });
     });
     return self;
   }

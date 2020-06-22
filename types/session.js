@@ -13,17 +13,20 @@ class Session extends Entity {
    * @param {Object} settings 
    */
   constructor (settings = {}) {
+    super(settings);
+
     this.settings = Object.assign({}, settings);
     this.key = new Key();
-
-    // External State
-    this.state = {};
 
     // Internal State
     this._state = {};
 
     // Status flag
     this.status = 'initialized';
+  }
+
+  get state () {
+    return Object.assign({}, this._state);
   }
 
   /**

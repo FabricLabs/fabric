@@ -24,6 +24,11 @@ class Stack extends State {
     this.frame = Buffer.alloc(MAX_FRAME_SIZE);
     this.config = list || [];
 
+    // Patch for new Collection inheritance
+    this.settings = Object.assign({
+      verbosity: 2
+    }, list);
+
     this['@type'] = this.config['@type'];
     this['@entity'].frames = {};
     this['@entity'].states = {};

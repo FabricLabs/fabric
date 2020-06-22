@@ -40,5 +40,5 @@ assets/app.js # Barebones App
 assets/service.js # Service Files; Minified service file that, if included, runs
 assets/fabric.min.js # Minified fabric.js bundle
 docs/lib*
-docs
+docs/*.html
 examples

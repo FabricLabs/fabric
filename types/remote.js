@@ -1,10 +1,12 @@
 'use strict';
 
+// External Dependencies
+const fetch = require('node-fetch');
+const parser = require('content-type');
 const querystring = require('querystring');
 
-const fetch = require('node-fetch');
+// Internal Types
 const Resource = require('./resource');
-
 const CONTENT_TYPE = 'application/json';
 
 /**
@@ -70,12 +72,24 @@ class Remote extends Resource {
     let host = parts[0] || ((self.secure) ? 'localhost' : 'localhost');
     let port = parts[1] || ((self.secure) ? 443 : 80);
 
+    if (this.config.port) {
+      port = this.config.port;
+    }
+
     let protocol = (!self.secure) ? 'http' : 'https';
     let url = `${protocol}://${host}:${port}${path}`;
 
     let result = null;
+    let response = null;
+    let body = null;
     let headers = {
-      'Accept': CONTENT_TYPE
+      'Accept': CONTENT_TYPE,
+      'Content-Type': CONTENT_TYPE
+    };
+
+    let opts = {
+      method: type,
+      headers: headers
     };
 
     // TODO: break out into independent auth module
@@ -86,23 +100,65 @@ class Remote extends Resource {
       ].join(':')).toString('base64')}`;
     }
 
+    if (params.body) {
+      try {
+        opts.body = JSON.stringify(params.body);
+        delete params.body;
+      } catch (E) {
+        console.error('Could not prepare request:', E);
+      }
+    }
+
     if (params && Object.keys(params).length) {
       url += '?' + querystring.stringify(params);
     }
 
     try {
-      result = await fetch(url, {
-        method: type,
-        headers: headers
-      });
+      response = await fetch(url, opts);
     } catch (e) {
       console.error('[REMOTE]', 'exception:', e);
     }
 
-    try {
-      result = result.json();
-    } catch (e) {
-      console.error('[REMOTE]', 'exception:', e);
+    if (!response) {
+      return {
+        status: 'error',
+        message: 'No response to request.'
+      };
+    }
+
+    switch (response.status) {
+      default:
+        if (response.ok) {
+          const formatter = parser.parse(response.headers.get('content-type'));
+          switch (formatter.type) {
+            default:
+              if (this.settings.verbosity >= 4) console.warn('[FABRIC:REMOTE]', 'Unhandled headers content type:', formatter.type);
+              result = await response.text();
+              break;
+            case 'application/json':
+              try {
+                result = await response.json();
+              } catch (E) {
+                console.error('[REMOTE]', 'Could not parse JSON:', E);
+              }
+              break;
+          }
+        } else {
+          if (this.settings.verbosity >= 4) console.warn('[FABRIC:REMOTE]', 'Unmanaged HTTP status code:', response.status);
+
+          try {
+            result = response.json();
+          } catch (exception) {
+            result = response.text();
+          }
+        }
+        break;
+      case 404:
+        result = {
+          status: 'error',
+          message: 'Document not found.'
+        };
+        break;
     }
 
     return result;
@@ -111,11 +167,11 @@ class Remote extends Resource {
   /**
    * HTTP PUT against the configured Authority.
    * @param  {String} path - HTTP Path to request.
-   * @param  {Object} obj - Map of parameters to supply.
+   * @param  {Object} body - Map of parameters to supply.
    * @return {Mixed}        [description]
    */
-  async _PUT (key, obj) {
-    return this.request('put', key, obj);
+  async _PUT (key, body) {
+    return this.request('put', key, { body });
   }
 
   /**
@@ -132,10 +188,18 @@ class Remote extends Resource {
    * HTTP POST against the configured Authority.
    * @param  {String} path - HTTP Path to request.
    * @param  {Object} params - Map of parameters to supply.
-   * @return {Mixed}        [description]
+   * @return {Mixed}        Result of request.
    */
   async _POST (key, obj, params) {
-    return this.request('post', key, params);
+    let result = null;
+
+    const options = Object.assign({}, params, {
+      body: obj
+    });
+
+    result = await this.request('post', key, options);
+
+    return result;
   }
 
   /**
@@ -151,11 +215,11 @@ class Remote extends Resource {
   /**
    * HTTP PATCH on the configured Authority.
    * @param  {String} path - HTTP Path to request.
-   * @param  {Object} params - Map of parameters to supply.
+   * @param  {Object} body - Map of parameters to supply.
    * @return {Object} - Full description of remote resource.
    */
-  async _PATCH (key, params) {
-    return this.request('patch', key, params);
+  async _PATCH (key, body) {
+    return this.request('patch', key, { body });
   }
 
   /**
@@ -166,6 +230,10 @@ class Remote extends Resource {
    */
   async _DELETE (key, params) {
     return this.request('delete', key, params);
+  }
+
+  async _SEARCH (key, params) {
+    return this.request('search', key, params);
   }
 }
 

@@ -8,7 +8,7 @@ const Peer = require('./peer');
 const Scribe = require('./scribe');
 
 /**
- * The {@link Swarm} represents a network of peers.
+ * Orchestrates a network of peers.
  * @type {String}
  */
 class Swarm extends Scribe {
@@ -17,17 +17,19 @@ class Swarm extends Scribe {
    * @param  {Object} config Configuration object.
    * @return {Swarm}        Instance of the Swarm.
    */
-  constructor (config) {
+  constructor (config = {}) {
     super(config);
 
     this.name = 'Swarm';
-    this.config = Object.assign({
+    this.settings = this.config = Object.assign({
       name: 'fabric',
+      // TODO: define seed list
+      seeds: [],
       peers: []
     }, config);
 
     // create a peer for one's own $self
-    this.agent = new Peer(this.config.peer);
+    this.agent = new Peer(this.config);
 
     this.nodes = {};
     this.peers = {};
@@ -36,12 +38,12 @@ class Swarm extends Scribe {
   }
 
   broadcast (msg) {
-    this.log('broadcasting:', msg);
+    if (this.settings.verbosity >= 5) console.log('broadcasting:', msg);
     this.agent.broadcast(msg);
   }
 
   connect (address) {
-    this.log(`connecting to: ${address}`);
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', `Connecting to: ${address}`);
 
     try {
       this.agent._connect(address);
@@ -50,8 +52,63 @@ class Swarm extends Scribe {
     }
   }
 
+  /**
+   * Explicitly trust an {@link EventEmitter} to provide messages using
+   * the expected {@link Interface}, providing {@link Message} objects as
+   * the expected {@link Type}.
+   * @param {EventEmitter} source {@link Actor} to utilize.
+   */
   trust (source) {
     super.trust(source);
+    const swarm = this;
+
+    swarm.agent.on('ready', function (agent) {
+      swarm.emit('agent', agent);
+    });
+
+    swarm.agent.on('state', function (state) {
+      console.log('[FABRIC:SWARM]', 'Received state from agent:', state);
+      swarm.emit('state', state);
+    });
+
+    swarm.agent.on('change', function (change) {
+      console.log('[FABRIC:SWARM]', 'Received change from agent:', change);
+      swarm.emit('change', change);
+    });
+
+    swarm.agent.on('patches', function (patches) {
+      console.log('[FABRIC:SWARM]', 'Received patches from agent:', patches);
+      swarm.emit('patches', patches);
+    });
+
+    // TODO: consider renaming this to JOIN
+    swarm.agent.on('peer', function (peer) {
+      console.log('[FABRIC:SWARM]', 'Received peer from agent:', peer);
+      swarm._registerPeer(peer);
+    });
+
+    // Connections & Peering
+    swarm.agent.on('connections:open', function (connection) {
+      swarm.emit('connections:open', connection);
+    });
+
+    swarm.agent.on('connections:close', function (connection) {
+      swarm.emit('connections:close', connection);
+      swarm._fillPeerSlots();
+    });
+
+    swarm.agent.on('collections:post', function (message) {
+      swarm.emit('collections:post', message);
+    });
+
+    // Final Notification
+    swarm.agent.on('ready', function (info) {
+      swarm.log(`swarm is ready (${info.id})`);
+      swarm.emit('ready');
+      swarm._fillPeerSlots();
+    });
+
+    return this;
   }
 
   _broadcastTypedMessage (type, msg) {
@@ -85,7 +142,7 @@ class Swarm extends Scribe {
     let swarm = this;
     let slots = MAX_PEERS - Object.keys(this.nodes).length;
     let peers = Object.keys(this.peers).map(function (id) {
-      swarm.log('checking:', swarm.peers[id]);
+      if (swarm.settings.verbosity >= 5) console.log('[FABRIC:SWARM]', '_fillPeerSlots()', 'Checking:', swarm.peers[id]);
       return swarm.peers[id].address;
     });
     let candidates = swarm.config.peers.filter(function (address) {
@@ -100,48 +157,34 @@ class Swarm extends Scribe {
     }
   }
 
+  async _connectSeedNodes () {
+    console.log('[FABRIC:SWARM]', 'Connecting to seed nodes...', this.settings.seeds);
+    for (let id in this.settings.seeds) {
+      console.log('[FABRIC:SWARM]', 'Iterating on seed:', this.settings.seeds[id]);
+      this.connect(this.settings.seeds[id]);
+    }
+  }
+
   /**
    * Begin computing.
    * @return {Promise} Resolves to instance of {@link Swarm}.
    */
   async start () {
+    console.log('[FABRIC:SWARM]', 'Starting...');
     await super.start();
-
-    // let's keep the swarm on the stack
-    let swarm = this;
-
-    await swarm.trust(swarm.agent);
-
-    // TODO: consider renaming this to JOIN
-    swarm.agent.on('peer', function (peer) {
-      swarm._registerPeer(peer);
-    });
-
-    swarm.agent.on('connections:open', function (connection) {
-      swarm.emit('connections:open', connection);
-    });
-
-    swarm.agent.on('connections:close', function (connection) {
-      swarm.emit('connections:close', connection);
-      swarm._fillPeerSlots();
-    });
-
-    swarm.agent.on('collections:post', function (message) {
-      swarm.emit('collections:post', message);
-    });
-
-    swarm.agent.on('ready', function (info) {
-      swarm.log(`swarm is ready (${info.id})`);
-      swarm.emit('ready');
-      swarm._fillPeerSlots();
-    });
-
-    return swarm.agent.start();
+    await this.trust(this.agent);
+    await this.agent.start();
+    await this._connectSeedNodes();
+    console.log('[FABRIC:SWARM]', 'Started!');
+    return this;
   }
 
   async stop () {
+    console.log('[FABRIC:SWARM]', 'Stopping...');
     await this.agent.stop();
     await super.stop();
+    console.log('[FABRIC:SWARM]', 'Stopped!');
+    return this;
   }
 }
 
