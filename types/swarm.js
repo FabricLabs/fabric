@@ -158,9 +158,9 @@ class Swarm extends Scribe {
   }
 
   async _connectSeedNodes () {
-    console.log('[FABRIC:SWARM]', 'Connecting to seed nodes...', this.settings.seeds);
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', 'Connecting to seed nodes...', this.settings.seeds);
     for (let id in this.settings.seeds) {
-      console.log('[FABRIC:SWARM]', 'Iterating on seed:', this.settings.seeds[id]);
+      if (this.settings.verbosity >= 5) console.log('[FABRIC:SWARM]', 'Iterating on seed:', this.settings.seeds[id]);
       this.connect(this.settings.seeds[id]);
     }
   }
@@ -170,20 +170,20 @@ class Swarm extends Scribe {
    * @return {Promise} Resolves to instance of {@link Swarm}.
    */
   async start () {
-    console.log('[FABRIC:SWARM]', 'Starting...');
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', 'Starting...');
     await super.start();
     await this.trust(this.agent);
     await this.agent.start();
     await this._connectSeedNodes();
-    console.log('[FABRIC:SWARM]', 'Started!');
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', 'Started!');
     return this;
   }
 
   async stop () {
-    console.log('[FABRIC:SWARM]', 'Stopping...');
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', 'Stopping...');
     await this.agent.stop();
     await super.stop();
-    console.log('[FABRIC:SWARM]', 'Stopped!');
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', 'Stopped!');
     return this;
   }
 }

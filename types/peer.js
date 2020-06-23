@@ -46,7 +46,7 @@ class Peer extends Scribe {
       port: 7777
     }, config);
 
-    console.log('[FABRIC:PEER]', 'Creating Wallet with settings:', this.settings);
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Creating Wallet with settings:', this.settings);
     this.wallet = new Wallet(this.settings);
 
     this.server = net.createServer(this._handleConnection.bind(this));
@@ -93,7 +93,7 @@ class Peer extends Scribe {
 
   async start () {
     const peer = this;
-    console.log('[FABRIC:PEER]', 'Peer starting...');
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Peer starting...');
 
     try {
       await peer.wallet.start();
@@ -126,7 +126,7 @@ class Peer extends Scribe {
     let parts = address.split(':');
     let known = Object.keys(self.connections);
 
-    console.log('[FABRIC:PEER]', 'Connecting to address:', address);
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Connecting to address:', address);
 
     if (parts.length !== 2) return console.debug('Invalid address:', address);
     if (known.includes(address)) return self.connections[address];
@@ -174,7 +174,7 @@ class Peer extends Scribe {
       // TODO: replace with handshake
       // NOTE: the handler is only called once per connection!
       self.connections[address].connect(parts[1], parts[0], function () {
-        console.log('[FABRIC:PEER]', 'Connection created...');
+        if (self.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Connection created...');
         const session = new Session();
         // const m = new Message();
         // TODO: check peer ID, eject if self or known
@@ -190,7 +190,7 @@ class Peer extends Scribe {
           initiator: true
         });
 
-        console.log('[FABRIC:PEER]', `Connection to ${address} established!`);
+        if (self.settings.verbosity >= 4) console.log('[FABRIC:PEER]', `Connection to ${address} established!`);
       });
     } catch (E) {
       self.log('[PEER]', 'failed to connect:', E);
@@ -249,7 +249,7 @@ class Peer extends Scribe {
       });
 
       if (response) {
-        console.log('[FABRIC:PEER]', 'Writing response:', response);
+        if (self.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Writing response:', response);
         this.write(response.asRaw());
       } else {
         console.warn('[FABRIC:PEER]', 'No response found for message type:', message.type);
