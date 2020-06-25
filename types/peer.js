@@ -43,6 +43,7 @@ class Peer extends Scribe {
       address: '0.0.0.0',
       networking: true,
       listen: false,
+      peers: [],
       port: 7777
     }, config);
 
@@ -98,11 +99,17 @@ class Peer extends Scribe {
     try {
       await peer.wallet.start();
     } catch (E) {
-      console.error('Could not start wallet:', E);
+      console.error('[FABRIC:PEER]', 'Could not start wallet:', E);
     }
 
-    if (this.settings.listen) {
+    if (peer.settings.listen) {
       await peer.listen();
+    }
+
+    if (peer.settings.networking) {
+      for (const candidate of peer.settings.peers) {
+        peer._connect(candidate);
+      }
     }
 
     peer.emit('ready', {
@@ -114,6 +121,12 @@ class Peer extends Scribe {
 
   async stop () {
     this.log('Peer stopping...');
+
+    for (const id in this.connections) {
+      const connection = this.connections[id];
+      // TODO: notify peer of disconnect
+      await connection.end();
+    }
 
     // TODO: close only when listening actively
     await this.server.close();
@@ -307,9 +320,9 @@ class Peer extends Scribe {
     }
 
     self.peers[peer.id] = peer;
-    self.emit('peer', peer);
 
     console.log('[FABRIC:PEER]', 'Peer registered:', peer);
+    self.emit('peer', peer);
 
     return true;
   }
@@ -484,14 +497,18 @@ class Peer extends Scribe {
    * @fires Peer#ready
    * @return {Peer} Chainable method.
    */
-  listen () {
+  async listen () {
     let self = this;
-    self.server.listen(self.config.port, self.config.address, function listenReady () {
-      if (self.config.verbosity >= 3) {
-        self.log('[PEER]', `${self.id} now listening on tcp://${self.address}:${self.port}`);
-      }
+
+    let promise = new Promise((resolve, reject) => {
+      self.server.listen(self.settings.port, self.settings.address, function listenComplete (error) {
+        if (error) return reject(error);
+        if (self.config.verbosity >= 3) self.log('[PEER]', `${self.id} now listening on tcp://${self.address}:${self.port}`);
+        return resolve();
+      });
     });
-    return self;
+
+    return promise;
   }
 }
 
