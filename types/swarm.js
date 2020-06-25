@@ -66,6 +66,10 @@ class Swarm extends Scribe {
       swarm.emit('agent', agent);
     });
 
+    swarm.agent.on('message', function (message) {
+      swarm.emit('message', message);
+    });
+
     swarm.agent.on('state', function (state) {
       console.log('[FABRIC:SWARM]', 'Received state from agent:', state);
       swarm.emit('state', state);
@@ -99,6 +103,10 @@ class Swarm extends Scribe {
 
     swarm.agent.on('collections:post', function (message) {
       swarm.emit('collections:post', message);
+    });
+
+    swarm.agent.on('socket:data', function (message) {
+      swarm.emit('socket:data', message);
     });
 
     // Final Notification

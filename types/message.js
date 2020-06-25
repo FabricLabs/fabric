@@ -6,6 +6,7 @@ const {
   HEADER_SIZE,
   MAX_MESSAGE_SIZE,
   OP_CYCLE,
+  P2P_GENERIC,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
   P2P_ROOT,
@@ -61,6 +62,10 @@ class Message extends Vector {
     }
 
     return this;
+  }
+
+  get body () {
+    return this.raw.data;
   }
 
   get byte () {
@@ -133,13 +138,12 @@ class Message extends Vector {
 
     const message = new Message();
 
-
     try {
       if (input instanceof String) input = Buffer.from([input], 'hex');
       let obj = JSON.parse(input.toString('utf8'));
       return new Message(obj);
     } catch (E) {
-      console.warn('Could not parse string as JSON:', input.toString('utf8'), E);
+      // console.warn('[FABRIC:MESSAGE]', 'Could not parse string as JSON:', input.toString('utf8'), E);
     }
 
     if (input.headers) {
@@ -198,6 +202,8 @@ class Message extends Vector {
   get types () {
     // Message Types
     return {
+      // TODO: document Generic type
+      'Generic': P2P_GENERIC,
       'Cycle': OP_CYCLE,
       'IdentityRequest': P2P_IDENT_REQUEST,
       'IdentityResponse': P2P_IDENT_RESPONSE,
@@ -266,6 +272,8 @@ Object.defineProperty(Message.prototype, 'type', {
         return 'IdentityRequest';
       case P2P_IDENT_RESPONSE:
         return 'IdentityResponse';
+      case P2P_BASE_MESSAGE:
+        return 'PeerMessage';
       case P2P_STATE_ROOT:
         return 'StateRoot';
       case P2P_STATE_CHANGE:

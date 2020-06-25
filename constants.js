@@ -39,6 +39,7 @@ const OP_RETURN = '6a';
 const OP_EQUALVERIFY = '88';
 const OP_SEPARATOR = 'ab';
 
+const P2P_GENERIC = 0x80; // 128 in decimal
 const P2P_IDENT_REQUEST = 0x01; // 1, or the identity
 const P2P_IDENT_RESPONSE = 0x11;
 const P2P_ROOT = 0x00000000;
@@ -92,6 +93,7 @@ module.exports = {
   OP_RETURN,
   OP_EQUALVERIFY,
   OP_SEPARATOR,
+  P2P_GENERIC,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
   P2P_ROOT,
