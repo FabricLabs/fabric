@@ -120,15 +120,17 @@ class Peer extends Scribe {
   }
 
   async stop () {
+    const peer = this;
     this.log('Peer stopping...');
 
     for (const id in this.connections) {
       const connection = this.connections[id];
       const closer = async function () {
-        new Promise((resolve, reject) => {
+        return new Promise((resolve, reject) => {
           // TODO: notify remote peer of closure
           // Use end(SOME_CLOSE_MESSAGE, ...)
-          connection.end(function socketClosed () {
+          return connection.end(function socketClosed (error) {
+            if (error) return reject(error);
             resolve();
           });
         });
@@ -136,8 +138,17 @@ class Peer extends Scribe {
       await closer();
     }
 
-    // TODO: close only when listening actively
-    await this.server.close();
+    const terminator = async function () {
+      return new Promise((resolve, reject) => {
+        if (!peer.server.address()) return resolve();
+        return peer.server.close(function serverClosed (error) {
+          if (error) return reject(error);
+          resolve();
+        });
+      });
+    }
+
+    await terminator();
 
     return this;
   }
