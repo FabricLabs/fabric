@@ -50,6 +50,7 @@ const P2P_INSTRUCTION = 0x00000020; // TODO: select w/ no overlap
 const P2P_BASE_MESSAGE = 0x00000031; // TODO: select w/ no overlap
 const P2P_STATE_COMMITTMENT = 0x00000032; // TODO: select w/ no overlap
 const P2P_STATE_CHANGE = 0x00000033; // TODO: select w/ no overlap
+const P2P_STATE_REQUEST = 0x00000029; // TODO: select w/ no overlap
 const P2P_TRANSACTION = 0x00000039; // TODO: select w/ no overlap
 const P2P_CALL = 0x00000042;
 
@@ -104,6 +105,7 @@ module.exports = {
   P2P_STATE_ROOT,
   P2P_STATE_COMMITTMENT,
   P2P_STATE_CHANGE,
+  P2P_STATE_REQUEST,
   P2P_TRANSACTION,
   P2P_CALL,
   VERSION_NUMBER

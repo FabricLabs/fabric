@@ -17,6 +17,7 @@ const {
   P2P_STATE_ROOT,
   P2P_STATE_COMMITTMENT,
   P2P_STATE_CHANGE,
+  P2P_STATE_REQUEST,
   P2P_TRANSACTION,
   P2P_CALL
 } = require('../constants');
@@ -185,9 +186,16 @@ class Message extends Vector {
   }
 
   static fromVector (vector) {
-    const message = new Message();
-    message.type = vector[0];
-    message.data = vector[1];
+    let message = null;
+
+    try {
+      message = new Message();
+      message.type = vector[0];
+      message.data = vector[1];
+    } catch (exception) {
+      console.error('[FABRIC:MESSAGE]', 'Could not construct Message:', exception);
+    }
+
     return message;
   }
 
@@ -217,6 +225,7 @@ class Message extends Vector {
       'StateRoot': P2P_STATE_ROOT,
       'StateCommitment': P2P_STATE_COMMITTMENT,
       'StateChange': P2P_STATE_CHANGE,
+      'StateRequest': P2P_STATE_REQUEST,
       'Transaction': P2P_TRANSACTION,
       'Call': P2P_CALL
     };
@@ -278,6 +287,8 @@ Object.defineProperty(Message.prototype, 'type', {
         return 'StateRoot';
       case P2P_STATE_CHANGE:
         return 'StateChange';
+      case P2P_STATE_REQUEST:
+        return 'StateRequest';
       case P2P_TRANSACTION:
         return 'Transaction';
       case P2P_CALL:
