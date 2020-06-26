@@ -198,8 +198,12 @@ class Peer extends Scribe {
         if (!message) return this.destroy();
 
         let response = await self._handleMessage({
+          message: message,
           origin: address,
-          message: message
+          peer: {
+            address: address,
+            id: 'FAKE PEER'
+          }
         });
 
         if (response) {
@@ -357,6 +361,7 @@ class Peer extends Scribe {
     if (this.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Handling packet from peer:', packet.message.id);
 
     let self = this;
+    let relay = false;
     let response = null;
     let message = packet.message;
 
@@ -376,6 +381,7 @@ class Peer extends Scribe {
         break;
       case 'GenericMessage':
         console.warn('[FABRIC:PEER]', 'Received Generic Message:', message.data);
+        relay = true;
         break;
       case 'IdentityRequest':
         console.log('[FABRIC:PEER]', 'Peer sent IdentityRequest.  Responding with IdentityResponse (node id)...', self.id);
@@ -448,6 +454,10 @@ class Peer extends Scribe {
     // Emit for listeners
     self.emit('message', message);
 
+    if (relay) {
+      self.relayFrom(origin, message);
+    }
+
     return response;
   }
 
@@ -470,17 +480,31 @@ class Peer extends Scribe {
     }
   }
 
+  relayFrom (origin, message) {
+    for (let id in this.peers) {
+      if (id === origin) continue;
+      let peer = this.peers[id];
+      let msg = Message.fromVector(['PeerMessage', message]);
+
+      try {
+        this.connections[peer.address].write(msg.asRaw());
+      } catch (exception) {
+        console.error('[FABRIC:PEER]', `Could not wriite message to connection "${peer.address}":`, exception);
+      }
+    }
+  }
+
   broadcast (message) {
     // TODO: coerce type, prefer `Message`
     if (typeof message !== 'string') message = JSON.stringify(message);
-    let id = crypto.createHash('sha256').update(message).digest('hex');
+    let hash = crypto.createHash('sha256').update(message).digest('hex');
 
-    if (this.messages.has(id)) {
-      if (this.settings.verbosity >= 3) console.warn('[FABRIC:PEER]', `Attempted to broadcast duplicate message ${id} with content:`, message);
+    if (this.messages.has(hash)) {
+      if (this.settings.verbosity >= 3) console.warn('[FABRIC:PEER]', `Attempted to broadcast duplicate message ${hash} with content:`, message);
       return false;
     } else {
-      this.memory[id] = message;
-      this.messages.add(id);
+      this.memory[hash] = message;
+      this.messages.add(hash);
     }
 
     for (let id in this.peers) {
