@@ -48,8 +48,8 @@ class Peer extends Scribe {
     }, config);
 
     if (this.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Creating Wallet with settings:', this.settings);
-    this.wallet = new Wallet(this.settings);
 
+    // Network Internals
     this.server = net.createServer(this._handleConnection.bind(this));
     this.stream = new stream.Transform({
       transform (chunk, encoding, callback) {
@@ -64,18 +64,24 @@ class Peer extends Scribe {
 
     // TODO: load wallet from key
     this.key = new Key(this.settings.key);
-    this.wallet = new Wallet(this.settings);
+
+    // TODO: document wallet settings
+    this.wallet = new Wallet(this.settings.wallet);
 
     // this.hex = this.key.public.encodeCompressed('hex');
     // this.pkh = crypto.createHash('sha256').update(this.hex).digest('hex');
 
+    // TODO: add getters for these
     this.address = this.config.address;
     this.port = this.config.port;
 
+    // Internal properties
     this.connections = {};
     this.peers = {};
     this.memory = {};
     this.messages = new Set();
+
+    // Internal Stack Machine
     this.machine = new Machine();
 
     this.meta = {
@@ -85,11 +91,26 @@ class Peer extends Scribe {
       }
     };
 
+    this._state = {
+      peers: {},
+      connections: {},
+      status: 'sleeping'
+    };
+
     return this;
   }
 
   get id () {
     return this.wallet.shard[0].string;
+  }
+
+  get state () {
+    // TODO: use Proxy
+    return Object.assign({}, this._state);
+  }
+
+  set state (value) {
+    this._state = value;
   }
 
   async start () {

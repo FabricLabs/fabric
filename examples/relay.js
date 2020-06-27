@@ -15,9 +15,22 @@ async function main () {
       listen: true
     }),
     destination: new Peer({
-      peers: ['localhost:7778']
+      peers: ['localhost:7778'],
+      wallet: {
+        seed: 'frown equal zero tackle relief shallow leisure diet roast festival good plunge pencil virus vote property blame random bacon rich ecology major survey slice'
+      }
     })
   };
+
+  // Core functionality (wait for peer, send message)
+  swarm.origin.on('peer', async function (peer) {
+    console.log('[EXAMPLES:RELAY]', 'Origin Peer emitted "peer" event:', peer);
+
+    // Send Message
+    console.warn('[EXAMPLES:RELAY]', 'Generating and sending initial message...');
+    let message = Message.fromVector(['Generic', 'Hello, world!']);
+    await swarm.origin.broadcast(message);
+  });
 
   // Debug Listeners
   // TODO: remove these
@@ -47,21 +60,17 @@ async function main () {
   });
 
   // Start component services
-  console.log('[EXAMPLES:RELAY]', 'Starting origin Peer...');
+  console.warn('[EXAMPLES:RELAY]', 'Starting origin Peer...');
   await swarm.origin.start();
   console.log('[EXAMPLES:RELAY]', 'Origin Peer started!');
 
-  console.log('[EXAMPLES:RELAY]', 'Starting relayer Peer...');
+  console.warn('[EXAMPLES:RELAY]', 'Starting relayer Peer...');
   await swarm.relayer.start();
   console.log('[EXAMPLES:RELAY]', 'Relayer Peer started!');
 
-  console.log('[EXAMPLES:RELAY]', 'Starting destinaton Peer...');
+  console.warn('[EXAMPLES:RELAY]', 'Starting destinaton Peer...');
   await swarm.destination.start();
   console.log('[EXAMPLES:RELAY]', 'Destinaton Peer started!');
-
-  // Send Message
-  let message = Message.fromVector(['Generic', 'Hello, world!']);
-  await swarm.origin.broadcast(message);
 }
 
 main().catch(function exceptionHandler (exception) {
