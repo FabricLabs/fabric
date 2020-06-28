@@ -66,7 +66,11 @@ class Peer extends Scribe {
     this.key = new Key(this.settings.key);
 
     // TODO: document wallet settings
-    this.wallet = new Wallet(this.settings.wallet);
+    this.wallet = new Wallet({
+      key: {
+        seed: (this.settings.wallet && this.settings.wallet.seed) ? this.settings.wallet.seed : null
+      }
+    });
 
     // this.hex = this.key.public.encodeCompressed('hex');
     // this.pkh = crypto.createHash('sha256').update(this.hex).digest('hex');
@@ -256,8 +260,18 @@ class Peer extends Scribe {
         if (self.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Connection created...');
         const session = new Session();
         // const m = new Message();
+
+        // TODO: consolidate with similar _handleConnection segment
         // TODO: check peer ID, eject if self or known
-        const vector = ['IdentityRequest', self.id];
+
+        // TODO re-enable (disabled to reduce spammy messaging)
+        // TODO: re-evaluate use of IdentityRequest
+        // const vector = ['IdentityRequest', self.id];
+        const vector = ['StartSession', JSON.stringify({
+          id: '',
+          identity: self.id,
+          signature: ''
+        })];
         const message = Message.fromVector(vector);
 
         self.meta.messages.outbound++;
@@ -361,8 +375,9 @@ class Peer extends Scribe {
     self.meta.messages.outbound++;
     self.connections[address].write(message.asRaw());
 
+    // TODO: only register peer on inbound connection
     // TODO: set peer ID to actual BTC address
-    this._registerPeer({ id: 'foo', address: address });
+    // this._registerPeer({ id: 'foo', address: address });
   }
 
   _registerPeer (peer) {
@@ -431,6 +446,39 @@ class Peer extends Scribe {
         break;
       case 'PeerMessage':
         console.trace('[FABRIC:PEER]', 'Received "PeerMessage" on socket:', message.raw);
+        break;
+      case 'StartSession':
+        console.warn('[FABRIC:PEER]', 'Received "StartSession" message on socket:', message.raw);
+        let session = null;
+
+        try {
+          session = JSON.parse(message.data.toString('utf8'));
+        } catch (exception) {
+          console.error('[FABRIC:PEER]', 'Session body could not be parsed:', exception);
+        }
+
+        if (self.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Proposed session:', session);
+
+        // TODO: avoid using JSON in overall protocol
+        // TODO: validate signature
+        let valid = true;
+        if (valid && session && session.identity) {
+          let peer = {
+            id: session.identity,
+            address: packet.origin
+          };
+
+          if (self.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Peer to register:', peer);
+
+          // TODO: document peer registration process
+          self._registerPeer(peer);
+
+          // TODO: use message type for next phase of session (i.e., NOISE)
+          response = Message.fromVector(['StartSession', JSON.stringify({
+            identity: self.id
+          })]);
+        }
+
         break;
       case 'StateRoot':
         if (self.settings.verbosity >= 5) console.log('[AUDIT]', 'Message was a state root:', message.data);
@@ -516,6 +564,9 @@ class Peer extends Scribe {
     for (let id in this.peers) {
       if (id === origin) continue;
       let peer = this.peers[id];
+      // TODO: select type byte for state updates
+      // TODO: require `Message` type before broadcast (or, preferrably, cast as necessary)
+      // let msg = Message.fromVector([P2P_BASE_MESSAGE, message]);
       let msg = Message.fromVector(['PeerMessage', message]);
 
       try {

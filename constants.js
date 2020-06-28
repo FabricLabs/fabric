@@ -54,6 +54,10 @@ const P2P_STATE_REQUEST = 0x00000029; // TODO: select w/ no overlap
 const P2P_TRANSACTION = 0x00000039; // TODO: select w/ no overlap
 const P2P_CALL = 0x00000042;
 
+const PEER_CANDIDATE = 0x09;
+
+const SESSION_START = 0x02;
+
 // Lightning
 const LIGHTNING_TEST_HEADER = 'D0520C6E';
 
@@ -108,5 +112,7 @@ module.exports = {
   P2P_STATE_REQUEST,
   P2P_TRANSACTION,
   P2P_CALL,
+  PEER_CANDIDATE,
+  SESSION_START,
   VERSION_NUMBER
 };

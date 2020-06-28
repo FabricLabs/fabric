@@ -19,7 +19,9 @@ const {
   P2P_STATE_CHANGE,
   P2P_STATE_REQUEST,
   P2P_TRANSACTION,
-  P2P_CALL
+  P2P_CALL,
+  PEER_CANDIDATE,
+  SESSION_START
 } = require('../constants');
 
 const crypto = require('crypto');
@@ -158,7 +160,8 @@ class Message extends Vector {
 
       message.data = Buffer.from(input.data, 'utf8');
     } else if (input instanceof Buffer) {
-      let size = input.slice(HEADER_SIZE);
+      let size = input.length - HEADER_SIZE;
+
       message.raw = {
         magic: input.slice(0, 4),
         version: input.slice(4, 8),
@@ -170,6 +173,9 @@ class Message extends Vector {
       message.data = input.slice(HEADER_SIZE, HEADER_SIZE + size);
     } else {
       let input = Buffer.from(input, 'hex');
+      let size = input.length - HEADER_SIZE;
+
+      // TODO: eliminate this type
       message['@type'] = 'rarifiedHex';
       message.raw = {
         magic: input.slice(0, 4),
@@ -219,8 +225,10 @@ class Message extends Vector {
       // 'StateRoot': P2P_ROOT,
       'Ping': P2P_PING,
       'Pong': P2P_PONG,
+      'PeerCandidate': PEER_CANDIDATE,
       'PeerInstruction': P2P_INSTRUCTION,
       'PeerMessage': P2P_BASE_MESSAGE,
+      'StartSession': SESSION_START,
       // TODO: restore above StateRoot type
       'StateRoot': P2P_STATE_ROOT,
       'StateCommitment': P2P_STATE_COMMITTMENT,
@@ -293,6 +301,10 @@ Object.defineProperty(Message.prototype, 'type', {
         return 'Transaction';
       case P2P_CALL:
         return 'Call';
+      case PEER_CANDIDATE:
+        return 'PeerCandidate';
+      case SESSION_START:
+        return 'StartSession';
     }
   },
   set (value) {
