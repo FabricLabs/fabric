@@ -393,7 +393,13 @@ class Peer extends Scribe {
 
     console.log('[FABRIC:PEER]', 'Peer registered:', peer);
     console.log('[FABRIC:PEER]', 'Peer list:', self.peers);
+
     self.emit('peer', peer);
+
+    // TODO: document peer announcement
+    // TODO: eliminate use of JSON in messaging
+    let announcement = Message.fromVector(['PeerCandidate', JSON.stringify(peer)]);
+    self.relayFrom(peer.id, announcement);
 
     return true;
   }
