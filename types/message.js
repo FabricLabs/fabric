@@ -6,6 +6,7 @@ const {
   HEADER_SIZE,
   MAX_MESSAGE_SIZE,
   OP_CYCLE,
+  P2P_GENERIC,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
   P2P_ROOT,
@@ -16,8 +17,11 @@ const {
   P2P_STATE_ROOT,
   P2P_STATE_COMMITTMENT,
   P2P_STATE_CHANGE,
+  P2P_STATE_REQUEST,
   P2P_TRANSACTION,
-  P2P_CALL
+  P2P_CALL,
+  PEER_CANDIDATE,
+  SESSION_START
 } = require('../constants');
 
 const crypto = require('crypto');
@@ -61,6 +65,10 @@ class Message extends Vector {
     }
 
     return this;
+  }
+
+  get body () {
+    return this.raw.data;
   }
 
   get byte () {
@@ -133,13 +141,12 @@ class Message extends Vector {
 
     const message = new Message();
 
-
     try {
       if (input instanceof String) input = Buffer.from([input], 'hex');
       let obj = JSON.parse(input.toString('utf8'));
       return new Message(obj);
     } catch (E) {
-      console.warn('Could not parse string as JSON:', input.toString('utf8'), E);
+      // console.warn('[FABRIC:MESSAGE]', 'Could not parse string as JSON:', input.toString('utf8'), E);
     }
 
     if (input.headers) {
@@ -153,7 +160,8 @@ class Message extends Vector {
 
       message.data = Buffer.from(input.data, 'utf8');
     } else if (input instanceof Buffer) {
-      let size = input.slice(HEADER_SIZE);
+      let size = input.length - HEADER_SIZE;
+
       message.raw = {
         magic: input.slice(0, 4),
         version: input.slice(4, 8),
@@ -165,6 +173,9 @@ class Message extends Vector {
       message.data = input.slice(HEADER_SIZE, HEADER_SIZE + size);
     } else {
       let input = Buffer.from(input, 'hex');
+      let size = input.length - HEADER_SIZE;
+
+      // TODO: eliminate this type
       message['@type'] = 'rarifiedHex';
       message.raw = {
         magic: input.slice(0, 4),
@@ -181,9 +192,16 @@ class Message extends Vector {
   }
 
   static fromVector (vector) {
-    const message = new Message();
-    message.type = vector[0];
-    message.data = vector[1];
+    let message = null;
+
+    try {
+      message = new Message();
+      message.type = vector[0];
+      message.data = vector[1];
+    } catch (exception) {
+      console.error('[FABRIC:MESSAGE]', 'Could not construct Message:', exception);
+    }
+
     return message;
   }
 
@@ -198,6 +216,8 @@ class Message extends Vector {
   get types () {
     // Message Types
     return {
+      // TODO: document Generic type
+      'Generic': P2P_GENERIC,
       'Cycle': OP_CYCLE,
       'IdentityRequest': P2P_IDENT_REQUEST,
       'IdentityResponse': P2P_IDENT_RESPONSE,
@@ -205,12 +225,15 @@ class Message extends Vector {
       // 'StateRoot': P2P_ROOT,
       'Ping': P2P_PING,
       'Pong': P2P_PONG,
+      'PeerCandidate': PEER_CANDIDATE,
       'PeerInstruction': P2P_INSTRUCTION,
       'PeerMessage': P2P_BASE_MESSAGE,
+      'StartSession': SESSION_START,
       // TODO: restore above StateRoot type
       'StateRoot': P2P_STATE_ROOT,
       'StateCommitment': P2P_STATE_COMMITTMENT,
       'StateChange': P2P_STATE_CHANGE,
+      'StateRequest': P2P_STATE_REQUEST,
       'Transaction': P2P_TRANSACTION,
       'Call': P2P_CALL
     };
@@ -262,18 +285,28 @@ Object.defineProperty(Message.prototype, 'type', {
         return 'Ping';
       case P2P_PONG:
         return 'Pong';
+      case P2P_GENERIC:
+        return 'Generic';
       case P2P_IDENT_REQUEST:
         return 'IdentityRequest';
       case P2P_IDENT_RESPONSE:
         return 'IdentityResponse';
+      case P2P_BASE_MESSAGE:
+        return 'PeerMessage';
       case P2P_STATE_ROOT:
         return 'StateRoot';
       case P2P_STATE_CHANGE:
         return 'StateChange';
+      case P2P_STATE_REQUEST:
+        return 'StateRequest';
       case P2P_TRANSACTION:
         return 'Transaction';
       case P2P_CALL:
         return 'Call';
+      case PEER_CANDIDATE:
+        return 'PeerCandidate';
+      case SESSION_START:
+        return 'StartSession';
     }
   },
   set (value) {

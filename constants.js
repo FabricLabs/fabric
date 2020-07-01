@@ -39,6 +39,7 @@ const OP_RETURN = '6a';
 const OP_EQUALVERIFY = '88';
 const OP_SEPARATOR = 'ab';
 
+const P2P_GENERIC = 0x80; // 128 in decimal
 const P2P_IDENT_REQUEST = 0x01; // 1, or the identity
 const P2P_IDENT_RESPONSE = 0x11;
 const P2P_ROOT = 0x00000000;
@@ -49,8 +50,13 @@ const P2P_INSTRUCTION = 0x00000020; // TODO: select w/ no overlap
 const P2P_BASE_MESSAGE = 0x00000031; // TODO: select w/ no overlap
 const P2P_STATE_COMMITTMENT = 0x00000032; // TODO: select w/ no overlap
 const P2P_STATE_CHANGE = 0x00000033; // TODO: select w/ no overlap
+const P2P_STATE_REQUEST = 0x00000029; // TODO: select w/ no overlap
 const P2P_TRANSACTION = 0x00000039; // TODO: select w/ no overlap
 const P2P_CALL = 0x00000042;
+
+const PEER_CANDIDATE = 0x09;
+
+const SESSION_START = 0x02;
 
 // Lightning
 const LIGHTNING_TEST_HEADER = 'D0520C6E';
@@ -92,6 +98,7 @@ module.exports = {
   OP_RETURN,
   OP_EQUALVERIFY,
   OP_SEPARATOR,
+  P2P_GENERIC,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
   P2P_ROOT,
@@ -102,7 +109,10 @@ module.exports = {
   P2P_STATE_ROOT,
   P2P_STATE_COMMITTMENT,
   P2P_STATE_CHANGE,
+  P2P_STATE_REQUEST,
   P2P_TRANSACTION,
   P2P_CALL,
+  PEER_CANDIDATE,
+  SESSION_START,
   VERSION_NUMBER
 };
