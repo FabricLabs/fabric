@@ -285,6 +285,8 @@ Object.defineProperty(Message.prototype, 'type', {
         return 'Ping';
       case P2P_PONG:
         return 'Pong';
+      case P2P_GENERIC:
+        return 'Generic';
       case P2P_IDENT_REQUEST:
         return 'IdentityRequest';
       case P2P_IDENT_RESPONSE:

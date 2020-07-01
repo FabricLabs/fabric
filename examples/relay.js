@@ -2,6 +2,9 @@
 
 require('debug-trace')({ always: true });
 
+const PEER_SEED = 'frown equal zero tackle relief shallow leisure diet roast festival good plunge pencil virus vote property blame random bacon rich ecology major survey slice';
+const PEER_ID = 'mt4Wm6TW4ejU51iviiD73ECNCfRsjiBhQf';
+
 // Dependencies
 const Peer = require('../types/peer');
 const Message = require('../types/message');
@@ -17,19 +20,25 @@ async function main () {
     destination: new Peer({
       peers: ['localhost:7778'],
       wallet: {
-        seed: 'frown equal zero tackle relief shallow leisure diet roast festival good plunge pencil virus vote property blame random bacon rich ecology major survey slice'
+        seed: PEER_SEED
       }
     })
   };
 
   // Core functionality (wait for peer, send message)
-  swarm.origin.on('peer', async function (peer) {
-    console.log('[EXAMPLES:RELAY]', 'Origin Peer emitted "peer" event:', peer);
+  swarm.origin.on('peer:candidate', async function (peer) {
+    console.log('[EXAMPLES:RELAY]', 'Origin Peer emitted "peer:candidate" event:', peer);
 
-    // Send Message
-    console.warn('[EXAMPLES:RELAY]', 'Generating and sending initial message...');
-    let message = Message.fromVector(['Generic', 'Hello, world!']);
-    await swarm.origin.broadcast(message);
+    if (peer.id === PEER_ID) {
+      console.warn('[EXAMPLES:RELAY]', 'Peer event was destination peer!');
+      console.warn('[EXAMPLES:RELAY]', 'Origin node peers:', swarm.origin.peers);
+      console.warn('[EXAMPLES:RELAY]', 'Relay node peers:', swarm.relayer.peers);
+      console.warn('[EXAMPLES:RELAY]', 'Destination node peers:', swarm.destination.peers);
+
+      // Send Message
+      let message = Message.fromVector(['Generic', 'Hello, world!']);
+      await swarm.origin.broadcast(message);
+    }
   });
 
   // Debug Listeners
@@ -48,15 +57,15 @@ async function main () {
 
   // Listeners
   swarm.origin.on('message', async function handleHubMessage (msg) {
-    console.log('[EXAMPLES:RELAY]', 'Got message on origin:', msg.raw);
+    console.log('[EXAMPLES:RELAY]', 'Got message on origin:', msg.type, msg.body.toString('utf8'));
   });
 
   swarm.relayer.on('message', async function handleSwarmMessage (msg) {
-    console.log('[EXAMPLES:RELAY]', 'Got message on relayer:', msg.raw);
+    console.log('[EXAMPLES:RELAY]', 'Got message on relayer:', msg.type, msg.body);
   });
 
   swarm.destination.on('message', async function handleSwarmMessage (msg) {
-    console.log('[EXAMPLES:RELAY]', 'Got message on destination:', msg.raw);
+    console.log('[EXAMPLES:RELAY]', 'Got message on destination:', msg.type, msg.body);
   });
 
   // Start component services
@@ -68,9 +77,9 @@ async function main () {
   await swarm.relayer.start();
   console.log('[EXAMPLES:RELAY]', 'Relayer Peer started!');
 
-  console.warn('[EXAMPLES:RELAY]', 'Starting destinaton Peer...');
+  console.warn('[EXAMPLES:RELAY]', 'Starting destination Peer...');
   await swarm.destination.start();
-  console.log('[EXAMPLES:RELAY]', 'Destinaton Peer started!');
+  console.log('[EXAMPLES:RELAY]', 'Destination Peer started!');
 }
 
 main().catch(function exceptionHandler (exception) {
