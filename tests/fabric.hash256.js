@@ -12,10 +12,30 @@ describe('@fabric/core/types/hash256', function () {
       assert.equal(Hash256 instanceof Function, true);
     });
 
+    it('can instantiate with no data', function () {
+      const hash256 = new Hash256();
+      assert.ok(hash256);
+      assert.ok(hash256.value);
+      assert.equal(hash256.value.length, 64);
+    });
+
     it('can instantiate from sample data', function () {
       const hash256 = new Hash256(sample);
       assert.ok(hash256);
+      assert.ok(hash256.value);
+      assert.equal(hash256.value.length, 64);
       assert.equal(hash256.value, fixture);
+    });
+
+    it('provides a static digest() method', function () {
+      const digest = Hash256.digest(sample);
+      assert.ok(digest);
+      assert.equal(digest.length, 64);
+      assert.equal(digest, fixture);
+    });
+
+    it('throws an error when static digest() is called on a non-string', function () {
+      assert.throws(() => Hash256.digest({ sample }));
     });
   });
 });
