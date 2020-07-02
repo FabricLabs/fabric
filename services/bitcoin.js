@@ -53,6 +53,7 @@ class Bitcoin extends Service {
       fullnode: false,
       nodes: ['127.0.0.1'],
       seeds: ['127.0.0.1'],
+      peers: [],
       port: 18444,
       verbosity: 2
     }, settings);
@@ -531,9 +532,36 @@ class Bitcoin extends Service {
   }
 
   async _startLocalNode () {
-    console.log('[SERVICES:BITCOIN]', 'Starting fullnode for network "', this.settings.network, '"...');
+    this.fullnode.on('peer connect', function peerConnectHandler (peer) {
+      console.warn('[SERVICES:BITCOIN]', 'Peer connected to Full Node:', peer);
+    });
+
+    this.fullnode.on('block', function fullnodeBlockHandler (block) {
+      console.warn('[SERVICES:BITCOIN]', 'Full Node emitted block:', block);
+    });
+
+    this.fullnode.on('tx', function fullnodeBlockHandler (tx) {
+      console.warn('[SERVICES:BITCOIN]', 'Full Node emitted transaction:', tx);
+    });
+
+    for (const candidate of this.settings.peers) {
+      let parts = candidate.split(':');
+      let addr = new NetAddress({
+        host: parts[0],
+        port: parseInt(parts[1]) || this.provider.port
+      });
+
+      let peer = this.fullnode.pool.createOutbound(addr);
+      this.fullnode.pool.peers.add(peer);
+    }
+
     await this.fullnode.open();
     await this.fullnode.connect();
+
+    // TODO: listen for sync finalization
+    this.fullnode.startSync();
+
+    console.log('[SERVICES:BITCOIN]', `Full Node for network "${this.settings.network}" started!`);
   }
 
   /**
@@ -554,10 +582,13 @@ class Bitcoin extends Service {
   async start () {
     if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', `Starting for network "${this.settings.network}"...`);
     await this.wallet.start();
-    // await this._startLocalNode();
+    await this._startLocalNode();
     // await this._connectToSeedNodes();
     // await this._connectToEdgeNodes();
-    await this._connectSPV();
+
+    // TODO: re-enable SPV
+    // await this._connectSPV();
+
     // this.peer.tryOpen();
 
     if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', 'Service started!');
