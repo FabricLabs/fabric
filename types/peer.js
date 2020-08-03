@@ -421,6 +421,7 @@ class Peer extends Scribe {
     let relay = false;
     let response = null;
     let message = packet.message;
+    let origin = packet.origin;
 
     if (!message) return console.error('Hard failure:', packet);
     if (self.messages.has(message.id)) {
