@@ -7,7 +7,6 @@ const Message = require('../types/message');
 
 // UI dependencies
 const blessed = require('blessed');
-const contrib = require('blessed-contrib');
 
 const hubs = [
   // 'localhost:7777',
@@ -17,11 +16,8 @@ const hubs = [
 ];
 
 async function main () {
-  // const app = new App();
   const chat = new Chat();
-
   await chat.start();
-  // await app.start();
 }
 
 class Chat extends App {
@@ -30,6 +26,8 @@ class Chat extends App {
 
     this.node = new Peer({
       peers: hubs,
+      // TODO: listen by default
+      // Also, advertise correct address/port in PeerCandidate messages
       // listen: true,
       // verbosity: 4
     });
@@ -68,6 +66,7 @@ class Chat extends App {
       });
 
       self.peers[peer.id] = peer;
+      // TODO: use peer ID for managed list
       // self.elements['peers'].insertItem(0, element);
       self.elements['peers'].add(element.content);
     }
@@ -170,14 +169,14 @@ class Chat extends App {
       keys: true,
       inputOnFocus: true
     });
- 
+
     // Render the screen.
     self.screen.render();
     self._bindKeys();
 
     self.elements['form'].on('submit', self._handleFormSubmit.bind(self));
     self.elements['prompt'].focus();
-  
+
     setInterval(function () {
       self._appendMessage('10 seconds have passed.');
     }, 10000);
