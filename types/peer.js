@@ -436,6 +436,9 @@ class Peer extends Scribe {
       default:
         console.error('[PEER]', `unhandled message type "${message.type}"`);
         break;
+      case 'Generic':
+        relay = true;
+        break;
       case 'GenericMessage':
         console.warn('[FABRIC:PEER]', 'Received Generic Message:', message.data);
         relay = true;
@@ -668,7 +671,7 @@ class Peer extends Scribe {
     let promise = new Promise((resolve, reject) => {
       self.server.listen(self.settings.port, self.settings.address, function listenComplete (error) {
         if (error) return reject(error);
-        if (self.config.verbosity >= 3) self.log('[PEER]', `${self.id} now listening on tcp://${self.address}:${self.port}`);
+        if (self.config.verbosity >= 3) console.log('[PEER]', `${self.id} now listening on tcp://${self.address}:${self.port}`);
         return resolve();
       });
     });

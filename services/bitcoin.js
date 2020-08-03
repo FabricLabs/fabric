@@ -158,6 +158,10 @@ class Bitcoin extends Service {
     return 'Portal/Bridge 0.1.0-dev (@fabric/core#0.1.0-dev)';
   }
 
+  get tip () {
+    return this.fullnode.chain.tip;
+  }
+
   async broadcast (msg) {
     console.log('[SERVICES:BITCOIN]', 'Broadcasting:', msg);
     const verify = await msg.verify();
@@ -170,6 +174,13 @@ class Bitcoin extends Service {
   }
 
   async _prepareBlock (obj) {
+    if (!obj.transactions) throw new Error('Block must have "transactions" property.');
+    if (!(obj.transactions instanceof Array)) throw new Error('Block must provide transactions as an Array.');
+
+    for (const tx of obj.transactions) {
+      let transaction = await this.transactions.create(tx);
+    }
+
     let entity = new Entity(obj);
     return Object.assign({}, obj, {
       id: entity.id
@@ -181,7 +192,10 @@ class Bitcoin extends Service {
    * @param {Transaction} obj Transaction to prepare.
    */
   async _prepareTransaction (obj) {
-    return Object.assign({}, obj);
+    let entity = new Entity(obj);
+    return Object.assign({}, obj, {
+      id: entity.id
+    });
   }
 
   /**
@@ -391,6 +405,19 @@ class Bitcoin extends Service {
     console.log('[SERVICES:BITCOIN]', 'State:', this.state);
   }
 
+  async _handleBlockMessage (msg) {
+    let template = {
+      hash: msg.hash('hex'),
+      parent: msg.prevBlock.toString('hex'),
+      transactions: msg.txs.map((tx) => {
+        return tx;
+      }),
+      block: msg
+    };
+
+    let block = await this.blocks.create(template);
+  }
+
   /**
    * Hand a {@link Block} message as supplied by an {@link SPV} client.
    * @param {BlockMessage} msg A {@link Message} as passed by the {@link SPV} source.
@@ -536,10 +563,7 @@ class Bitcoin extends Service {
       console.warn('[SERVICES:BITCOIN]', 'Peer connected to Full Node:', peer);
     });
 
-    this.fullnode.on('block', function fullnodeBlockHandler (block) {
-      console.warn('[SERVICES:BITCOIN]', 'Full Node emitted block:', block);
-    });
-
+    this.fullnode.on('block', this._handleBlockMessage.bind(this));
     this.fullnode.on('tx', function fullnodeBlockHandler (tx) {
       console.warn('[SERVICES:BITCOIN]', 'Full Node emitted transaction:', tx);
     });
@@ -562,6 +586,12 @@ class Bitcoin extends Service {
     this.fullnode.startSync();
 
     console.log('[SERVICES:BITCOIN]', `Full Node for network "${this.settings.network}" started!`);
+  }
+
+  async generateBlock () {
+    let block = await this.fullnode.miner.mineBlock(this.tip);
+    await this.fullnode.chain.add(block);
+    return block;
   }
 
   /**
