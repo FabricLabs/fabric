@@ -5,6 +5,9 @@ const App = require('../types/app');
 const Peer = require('../types/peer');
 const Message = require('../types/message');
 
+// Services
+const Bitcoin = require('../services/bitcoin');
+
 // UI dependencies
 const blessed = require('blessed');
 
@@ -15,6 +18,11 @@ class CLI extends App {
     this.settings = Object.assign({}, this.settings, settings);
 
     this.node = new Peer(this.settings);
+    this.bitcoin = new Bitcoin({
+      fullnode: true,
+      network: 'regtest',
+      verbosity: 0
+    });
 
     this.screen = null;
     this.commands = {};
@@ -26,15 +34,24 @@ class CLI extends App {
 
   async start () {
     this._registerCommand('help', this._handleHelpRequest);
+    this._registerCommand('generate', this._handleGenerateRequest);
 
     this.render();
 
+    // Attach P2P handlers
     this.node.on('message', this._handlePeerMessage.bind(this));
     this.node.on('peer', this._handlePeer.bind(this));
     this.node.on('peer:candidate', this._handlePeerCandidate.bind(this));
     this.node.on('connections:close', this._handleConnectionClose.bind(this));
 
+    // Attach Bitcoin handlers
+    this.bitcoin.on('block', this._handleBitcoinBlock.bind(this));
+
+    // Start Bitcoin service
+    // await this.bitcoin.start();
+
     this.node.start();
+    this.emit('ready');
   }
 
   async stop () {
@@ -44,6 +61,10 @@ class CLI extends App {
   async _appendMessage (msg) {
     this.elements['messages'].log(`[${(new Date()).toISOString()}]: ${msg}`);
     this.screen.render();
+  }
+
+  async _handleBitcoinBlock (block) {
+    this._appendMessage(`Bitcoin service emitted block: ${block}`);
   }
 
   async _handleConnectionClose (msg) {
@@ -116,6 +137,10 @@ class CLI extends App {
     self.screen.render();
   }
 
+  _handleGenerateRequest (count = 1) {
+    this.bitcoin.generateBlock();
+  }
+
   _handleHelpRequest (data) {
     const self = this;
     const help = `Available Commands:\n${Object.keys(self.commands).map(x => `\t${x}`).join('\n')}`;
@@ -150,12 +175,51 @@ class CLI extends App {
       smartCSR: true
     });
 
+    self.elements['status'] = blessed.box({
+      parent: self.screen,
+      label: '[ Status ]',
+      border: {
+        type: 'line'
+      },
+      top: 0,
+      height: 5,
+      width: '100%'
+    });
+
+    self.elements['wallet'] = blessed.box({
+      parent: self.elements['status'],
+      right: 1,
+      width: 29,
+    });
+
+    self.elements['balance'] = blessed.text({
+      parent: self.elements['wallet'],
+      content: '0.00000000',
+      top: 0,
+      right: 4
+    });
+
+    self.elements['label'] = blessed.text({
+      parent: self.elements['wallet'],
+      content: 'BALANCE:',
+      top: 0,
+      right: 15
+    });
+
+    self.elements['denomination'] = blessed.text({
+      parent: self.elements['wallet'],
+      content: 'BTC',
+      top: 0,
+      right: 0
+    });
+
     self.elements['messages'] = blessed.log({
       parent: self.screen,
       label: '[ Messages ]',
       border: {
         type: 'line'
       },
+      top: 5,
       width: '80%',
       bottom: 3,
       mouse: true
@@ -167,6 +231,7 @@ class CLI extends App {
       border: {
         type: 'line'
       },
+      top: 5,
       left: '80%+1',
       bottom: 3
     });
@@ -199,11 +264,16 @@ class CLI extends App {
     self.screen.render();
     self._bindKeys();
 
+    self.elements['form'].on('click', function () {
+      self.elements['prompt'].focus();
+    });
+
     self.elements['form'].on('submit', self._handleFormSubmit.bind(self));
     self.elements['prompt'].focus();
 
     setInterval(function () {
       self._appendMessage('10 seconds have passed.');
+      self.bitcoin.generateBlock();
     }, 10000);
   }
 }
