@@ -32,13 +32,22 @@ class CLI extends App {
     this.node.on('message', this._handlePeerMessage.bind(this));
     this.node.on('peer', this._handlePeer.bind(this));
     this.node.on('peer:candidate', this._handlePeerCandidate.bind(this));
+    this.node.on('connections:close', this._handleConnectionClose.bind(this));
 
     this.node.start();
+  }
+
+  async stop () {
+    return process.exit(0);
   }
 
   async _appendMessage (msg) {
     this.elements['messages'].log(`[${(new Date()).toISOString()}]: ${msg}`);
     this.screen.render();
+  }
+
+  async _handleConnectionClose (msg) {
+    this._appendMessage(`Node emitted "connections:close" event: ${msg}`);
   }
 
   async _handlePeer (peer) {
@@ -76,25 +85,24 @@ class CLI extends App {
     self.screen.render();
   }
 
+  async _handlePromptEnterKey (ch, key) {
+    this.elements['form'].submit();
+    this.elements['prompt'].clearValue();
+    this.elements['prompt'].readInput();
+  }
+
   _bindKeys () {
     const self = this;
-
-    // Quit on Escape, q, or Control-C.
-    self.screen.key(['escape', 'q', 'C-c'], function (ch, key) {
-      return process.exit(0);
-    });
-
-    self.elements['prompt'].key(['enter'], function (ch, key) {
-      self.elements['form'].submit();
-      self.elements['prompt'].clearValue();
-      self.elements['prompt'].readInput();
-    });
+    self.screen.key(['escape', 'q', 'C-c'], self.stop);
+    self.elements['prompt'].key(['enter'], self._handlePromptEnterKey.bind(self));
   }
 
   _handleFormSubmit (data) {
     const self = this;
     const content = data.input;
 
+    // Debug
+    // TODO: remove
     self._appendMessage('Form submit: ' + JSON.stringify(data));
 
     // TODO: pass actor:object:target type
