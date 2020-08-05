@@ -99,7 +99,10 @@ class CLI extends App {
 
     // TODO: pass actor:object:target type
     const result = self._processInput(data.input);
-    self.node.relayFrom(self.node.id, Message.fromVector(['Generic', content]));
+
+    if (!result) {
+      self.node.relayFrom(self.node.id, Message.fromVector(['Generic', content]));
+    }
 
     self.elements['form'].reset();
     self.screen.render();
@@ -107,8 +110,7 @@ class CLI extends App {
 
   _handleHelpRequest (data) {
     const self = this;
-    const help = `Available Commands: ${Object.keys(self.commands).join(', ')}`;
-    // const help = `Available Commands:\n${Object.keys(self.commands).join('\n\t')}`;
+    const help = `Available Commands:\n${Object.keys(self.commands).map(x => `\t${x}`).join('\n')}`;
 
     self._appendMessage(help);
   }
