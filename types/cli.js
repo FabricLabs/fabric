@@ -55,6 +55,7 @@ class CLI extends App {
   }
 
   async stop () {
+    await this.node.stop();
     return process.exit(0);
   }
 
@@ -68,7 +69,7 @@ class CLI extends App {
   }
 
   async _handleConnectionClose (msg) {
-    this._appendMessage(`Node emitted "connections:close" event: ${msg}`);
+    this._appendMessage(`Node emitted "connections:close" event: ${JSON.stringify(msg)}`);
   }
 
   async _handlePeer (peer) {
@@ -114,7 +115,7 @@ class CLI extends App {
 
   _bindKeys () {
     const self = this;
-    self.screen.key(['escape', 'q', 'C-c'], self.stop);
+    self.screen.key(['escape', 'q', 'C-c'], self.stop.bind(self));
     self.elements['prompt'].key(['enter'], self._handlePromptEnterKey.bind(self));
   }
 
@@ -203,7 +204,8 @@ class CLI extends App {
       parent: self.elements['wallet'],
       content: 'BALANCE:',
       top: 0,
-      right: 15
+      right: 15,
+      bold: true
     });
 
     self.elements['denomination'] = blessed.text({
@@ -272,7 +274,7 @@ class CLI extends App {
     self.elements['prompt'].focus();
 
     setInterval(function () {
-      self._appendMessage('10 seconds have passed.');
+      // self._appendMessage('10 seconds have passed.');
       self.bitcoin.generateBlock();
     }, 10000);
   }
