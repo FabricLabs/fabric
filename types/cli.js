@@ -25,6 +25,8 @@ class CLI extends App {
   }
 
   async start () {
+    this._registerCommand('help', this._handleHelpRequest);
+
     this.render();
 
     this.node.on('message', this._handlePeerMessage.bind(this));
@@ -35,7 +37,7 @@ class CLI extends App {
   }
 
   async _appendMessage (msg) {
-    this.elements['messages'].addItem(`[${(new Date()).toISOString()}]: ${msg}`);
+    this.elements['messages'].log(`[${(new Date()).toISOString()}]: ${msg}`);
     this.screen.render();
   }
 
@@ -95,10 +97,34 @@ class CLI extends App {
 
     self._appendMessage('Form submit: ' + JSON.stringify(data));
 
+    // TODO: pass actor:object:target type
+    const result = self._processInput(data.input);
     self.node.relayFrom(self.node.id, Message.fromVector(['Generic', content]));
 
     self.elements['form'].reset();
     self.screen.render();
+  }
+
+  _handleHelpRequest (data) {
+    const self = this;
+    const help = `Available Commands: ${Object.keys(self.commands).join(', ')}`;
+    // const help = `Available Commands:\n${Object.keys(self.commands).join('\n\t')}`;
+
+    self._appendMessage(help);
+  }
+
+  _processInput (input) {
+    if (input.charAt(0) === '/') {
+      const parts = input.substring(1).split(' ');
+      if (this.commands[parts[0]]) {
+        // TODO: pass actor:object:target type
+        return this.commands[parts[0]].apply(this, [ parts ]);
+      }
+    }
+  }
+
+  _registerCommand (command, method) {
+    this.commands[command] = method.bind(this);
   }
 
   render () {
@@ -114,7 +140,7 @@ class CLI extends App {
       smartCSR: true
     });
 
-    self.elements['messages'] = blessed.list({
+    self.elements['messages'] = blessed.log({
       parent: self.screen,
       label: '[ Messages ]',
       border: {
@@ -122,8 +148,7 @@ class CLI extends App {
       },
       width: '80%',
       bottom: 3,
-      scrollable: true,
-      alwaysScroll: true
+      mouse: true
     });
 
     self.elements['peers'] = blessed.list({
