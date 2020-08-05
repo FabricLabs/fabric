@@ -90,6 +90,12 @@ class Bitcoin extends Service {
     });
 
     if (this.settings.fullnode) {
+      let logLevel = 'none';
+
+      if (this.settings.verbosity > 2) {
+        logLevel = 'debug';
+      }
+
       this.fullnode = new this.provider.FullNode({
         agent: this.UAString,
         port: this.provider.port,
@@ -98,7 +104,7 @@ class Bitcoin extends Service {
         listen: true,
         http: false,
         httpPort: 19999,
-        logLevel: 'debug',
+        logLevel: logLevel,
         memory: true,
         workers: true,
         loader: require,
@@ -218,7 +224,7 @@ class Bitcoin extends Service {
 
   async _handleCommittedTransaction (transaction) {
     // console.log('[SERVICE:BITCOIN]', 'Handling Committed Transaction:', transaction);
-    // this.emit('transaction', transaction);
+    this.emit('transaction', transaction);
   }
 
   async _registerBlock (obj) {

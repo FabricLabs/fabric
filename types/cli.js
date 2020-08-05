@@ -48,7 +48,7 @@ class CLI extends App {
     this.bitcoin.on('block', this._handleBitcoinBlock.bind(this));
 
     // Start Bitcoin service
-    // await this.bitcoin.start();
+    await this.bitcoin.start();
 
     this.node.start();
     this.emit('ready');
@@ -64,7 +64,7 @@ class CLI extends App {
   }
 
   async _handleBitcoinBlock (block) {
-    this._appendMessage(`Bitcoin service emitted block: ${block}`);
+    this._appendMessage(`Bitcoin service emitted block, chain height now: ${this.bitcoin.fullnode.chain.height}`);
   }
 
   async _handleConnectionClose (msg) {
