@@ -163,6 +163,7 @@ class CLI extends App {
 
   _handleGenerateRequest (count = 1) {
     this.bitcoin.generateBlock();
+    return false;
   }
 
   _handleHelpRequest (data) {
@@ -298,7 +299,7 @@ class CLI extends App {
 
     setInterval(function () {
       // self._appendMessage('10 seconds have passed.');
-      self.bitcoin.generateBlock();
+      // self.bitcoin.generateBlock();
     }, 10000);
   }
 }
