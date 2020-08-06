@@ -34,15 +34,20 @@ class CLI extends App {
 
   async start () {
     this._registerCommand('help', this._handleHelpRequest);
+    this._registerCommand('connect', this._handleConnectRequest);
     this._registerCommand('generate', this._handleGenerateRequest);
 
     this.render();
 
     // Attach P2P handlers
+    this.node.on('error', this._handlePeerError.bind(this));
+    this.node.on('warning', this._handlePeerWarning.bind(this));
     this.node.on('message', this._handlePeerMessage.bind(this));
+
     this.node.on('peer', this._handlePeer.bind(this));
     this.node.on('peer:candidate', this._handlePeerCandidate.bind(this));
     this.node.on('connections:close', this._handleConnectionClose.bind(this));
+    this.node.on('connection:error', this._handleConnectionError.bind(this));
 
     // Attach Bitcoin handlers
     this.bitcoin.on('block', this._handleBitcoinBlock.bind(this));
@@ -70,6 +75,10 @@ class CLI extends App {
 
   async _handleConnectionClose (msg) {
     this._appendMessage(`Node emitted "connections:close" event: ${JSON.stringify(msg)}`);
+  }
+
+  async _handleConnectionError (msg) {
+    this._appendMessage(`Node emitted "connection:error" event: ${JSON.stringify(msg)}`);
   }
 
   async _handlePeer (peer) {
@@ -101,10 +110,16 @@ class CLI extends App {
     self.screen.render();
   }
 
+  async _handlePeerError (message) {
+    this._appendMessage(`Local "error" event: <${message.type}> ${message.data}`);
+  }
+
+  async _handlePeerWarning (message) {
+    this._appendMessage(`Local "warning" event: <${message.type}> ${message.data}`);
+  }
+
   async _handlePeerMessage (message) {
-    const self = this;
-    self._appendMessage(`Local "message" event: <${message.type}> ${message.data}`);
-    self.screen.render();
+    this._appendMessage(`Local "message" event: <${message.type}> ${message.data}`);
   }
 
   async _handlePromptEnterKey (ch, key) {
@@ -136,6 +151,13 @@ class CLI extends App {
 
     self.elements['form'].reset();
     self.screen.render();
+  }
+
+  _handleConnectRequest (params) {
+    if (!params[1]) this._appendMessage('You must specify an address to connect to. ');
+    const address = params[1];
+    this._appendMessage('Connect request: ' + JSON.stringify(params));
+    this.node._connect(address);
   }
 
   _handleGenerateRequest (count = 1) {

@@ -199,7 +199,11 @@ class Peer extends Scribe {
       self.connections[address] = new net.Socket();
 
       self.connections[address].on('error', function (err) {
-        console.debug('[PEER]', `could not connect to peer ${address} — Reason:`, err);
+        const text = `could not connect to peer ${address} — Reason: ${err}`;
+        self.emit('connection:error', {
+          message: text
+        });
+        // console.debug('[PEER]', `could not connect to peer ${address} — Reason:`, err);
       });
 
       self.connections[address].on('close', function (err) {
@@ -425,7 +429,12 @@ class Peer extends Scribe {
 
     if (!message) return console.error('Hard failure:', packet);
     if (self.messages.has(message.id)) {
+      let text = `Received duplicate message [0x${message.id}] from [${origin}] in packet: ${JSON.stringify(packet)}`;
       if (self.settings.verbosity >= 4) console.warn('[FABRIC:PEER]', 'Received duplicate message:', message.id, message.type, message.data);
+      self.emit('warning', {
+        message: text
+      });
+
       return false;
     } else {
       self.memory[message.id] = message;
