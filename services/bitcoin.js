@@ -591,7 +591,7 @@ class Bitcoin extends Service {
     // TODO: listen for sync finalization
     this.fullnode.startSync();
 
-    console.log('[SERVICES:BITCOIN]', `Full Node for network "${this.settings.network}" started!`);
+    if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', `Full Node for network "${this.settings.network}" started!`);
   }
 
   async generateBlock () {
