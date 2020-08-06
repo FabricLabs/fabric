@@ -470,6 +470,8 @@ class Peer extends Scribe {
         }
         response = Message.fromVector(['StateRoot', JSON.stringify(self.state)]);
         break;
+      case 'BlockCandidate':
+        break;
       case 'PeerCandidate':
         let candidate = null;
 
@@ -605,6 +607,11 @@ class Peer extends Scribe {
     for (let id in this.peers) {
       if (id === origin) continue;
       let peer = this.peers[id];
+      if (!this.connections[peer.address]) {
+        this.emit('error', `No connection for peer "${peer.address}" to receive message: ${JSON.stringify(message)}`);
+        continue;
+      }
+
       // TODO: select type byte for state updates
       // TODO: require `Message` type before broadcast (or, preferrably, cast as necessary)
       // let msg = Message.fromVector([P2P_BASE_MESSAGE, message]);
