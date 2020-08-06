@@ -115,7 +115,7 @@ class CLI extends App {
   }
 
   async _handlePeerWarning (message) {
-    this._appendMessage(`Local "warning" event: <${message.type}> ${message.data}`);
+    this._appendMessage(`Local "warning" event: ${message}`);
   }
 
   async _handlePeerMessage (message) {
@@ -158,6 +158,7 @@ class CLI extends App {
     const address = params[1];
     this._appendMessage('Connect request: ' + JSON.stringify(params));
     this.node._connect(address);
+    return false;
   }
 
   _handleGenerateRequest (count = 1) {
