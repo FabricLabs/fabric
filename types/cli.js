@@ -115,7 +115,7 @@ class CLI extends App {
   }
 
   async _handlePeerWarning (message) {
-    this._appendMessage(`Local "warning" event: ${message}`);
+    this._appendMessage(`Local "warning" event: ${JSON.stringify(message)}`);
   }
 
   async _handlePeerMessage (message) {

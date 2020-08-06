@@ -2,19 +2,23 @@
 
 // Settings
 const PORT = process.env.PORT;
+const SEED = process.env.SEED;
 
 // Fabric Types
 const CLI = require('../types/cli');
-
-const hubs = [
-  // 'localhost:7777',
-  'rpg.verse.im:7777',
-  'forge.fabric.pub:7777',
-  'hub.fabric.pub:7777'
-];
+const settings = {
+  seed: SEED,
+  peers: [
+    // 'localhost:7777',
+    // 'antipode:7777',
+    'rpg.verse.im:7777',
+    'forge.fabric.pub:7777',
+    'hub.fabric.pub:7777'
+  ]
+};
 
 async function main () {
-  const chat = new CLI({ peers: hubs });
+  const chat = new CLI(settings);
   await chat.start();
 }
 
