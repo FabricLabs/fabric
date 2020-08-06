@@ -438,13 +438,18 @@ class Peer extends Scribe {
       return false;
     } else {
       self.memory[message.id] = message;
-      self.messages.add(message.id);
+
+      // TODO: re-add to set
+      // self.messages.add(message.id);
     }
 
     // Build a response to various message types
     switch (message.type) {
       default:
         console.error('[PEER]', `unhandled message type "${message.type}"`);
+        break;
+      case 'ChatMessage':
+        relay = true;
         break;
       case 'Generic':
         relay = true;

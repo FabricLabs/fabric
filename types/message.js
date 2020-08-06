@@ -20,6 +20,8 @@ const {
   P2P_STATE_REQUEST,
   P2P_TRANSACTION,
   P2P_CALL,
+  CHAT_MESSAGE,
+  BLOCK_CANDIDATE,
   PEER_CANDIDATE,
   SESSION_START
 } = require('../constants');
@@ -225,10 +227,12 @@ class Message extends Vector {
       // 'StateRoot': P2P_ROOT,
       'Ping': P2P_PING,
       'Pong': P2P_PONG,
+      'BlockCandidate': BLOCK_CANDIDATE,
       'PeerCandidate': PEER_CANDIDATE,
       'PeerInstruction': P2P_INSTRUCTION,
       'PeerMessage': P2P_BASE_MESSAGE,
       'StartSession': SESSION_START,
+      'ChatMessage': CHAT_MESSAGE,
       // TODO: restore above StateRoot type
       'StateRoot': P2P_STATE_ROOT,
       'StateCommitment': P2P_STATE_COMMITTMENT,
@@ -279,6 +283,8 @@ Object.defineProperty(Message.prototype, 'type', {
       default:
         console.warn('[FABRIC:MESSAGE]', "Unhandled message type:", code);
         return 'GenericMessage';
+      case BLOCK_CANDIDATE:
+        return 'BlockCandidate';
       case OP_CYCLE:
         return 'Cycle';
       case P2P_PING:
@@ -307,6 +313,8 @@ Object.defineProperty(Message.prototype, 'type', {
         return 'PeerCandidate';
       case SESSION_START:
         return 'StartSession';
+      case CHAT_MESSAGE:
+        return 'ChatMessage';
     }
   },
   set (value) {
