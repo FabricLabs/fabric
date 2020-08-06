@@ -438,9 +438,7 @@ class Peer extends Scribe {
       return false;
     } else {
       self.memory[message.id] = message;
-
-      // TODO: re-add to set
-      // self.messages.add(message.id);
+      self.messages.add(message.id);
     }
 
     // Build a response to various message types
