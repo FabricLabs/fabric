@@ -146,7 +146,7 @@ class CLI extends App {
     const result = self._processInput(data.input);
 
     if (!result) {
-      self.node.relayFrom(self.node.id, Message.fromVector(['Generic', content]));
+      self.node.relayFrom(self.node.id, Message.fromVector(['ChatMessage', content]));
     }
 
     self.elements['form'].reset();
@@ -162,7 +162,9 @@ class CLI extends App {
   }
 
   _handleGenerateRequest (count = 1) {
-    this.bitcoin.generateBlock();
+    const block = this.bitcoin.generateBlock();
+    const message = Message.fromVector(['BlockCandidate', block]);
+    this.node.relayFrom(this.node.id, message);
     return false;
   }
 
@@ -237,6 +239,24 @@ class CLI extends App {
       content: 'BTC',
       top: 0,
       right: 0
+    });
+
+    self.elements['mempool'] = blessed.box({
+      parent: self.elements['status'],
+      left: 1,
+      width: 29
+    });
+
+    self.elements['mempoolLabel'] = blessed.box({
+      parent: self.elements['mempool'],
+      content: 'MEMPOOL SIZE:',
+      bold: true
+    });
+
+    self.elements['mempoolCount'] = blessed.box({
+      parent: self.elements['mempool'],
+      content: '0',
+      left: 14
     });
 
     self.elements['messages'] = blessed.log({
