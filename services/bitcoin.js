@@ -600,6 +600,12 @@ class Bitcoin extends Service {
     return block;
   }
 
+  async append (raw) {
+    const block = bcoin.Block.fromRaw(raw, 'hex');
+    this.emit('message', `Parsed block: ${JSON.stringify(block)}`);
+    const added = await this.fullnode.chain.add(block)
+  }
+
   /**
    * Connect to a Fabric {@link Peer}.
    * @param {String} addr Address to connect to.

@@ -73,6 +73,7 @@ class CLI extends App {
     // this.node.on('socket:data', this._handleSocketData.bind(this));
 
     // Attach Bitcoin handlers
+    this.bitcoin.on('message', this._handleBitcoinMessage.bind(this));
     this.bitcoin.on('block', this._handleBitcoinBlock.bind(this));
 
     // Start Bitcoin service
@@ -95,6 +96,10 @@ class CLI extends App {
 
   async _appendError (msg) {
     this._appendMessage(`{red-fg}${msg}{/red-fg}`)
+  }
+
+  async _handleBitcoinMessage (message) {
+    this._appendMessage(`Bitcoin service emitted message: ${message}`);
   }
 
   async _handleBitcoinBlock (block) {
@@ -166,6 +171,10 @@ class CLI extends App {
         } catch (exception) {
           this._appendError(`Could not parse <ChatMessage> data (should be JSON): ${message.data}`);
         }
+        break;
+      case 'BlockCandidate':
+        this._appendMessage(`Received Candidate Block from peer: <${message.type}> ${message.data}`);
+        this.bitcoin.append(message.data);
         break;
     }
   }
