@@ -53,7 +53,7 @@ class CLI extends App {
     this.node.on('connections:close', this._handleConnectionClose.bind(this));
     this.node.on('connection:error', this._handleConnectionError.bind(this));
     this.node.on('session:update', this._handleSessionUpdate.bind(this));
-    this.node.on('socket:data', this._handleSocketData.bind(this));
+    // this.node.on('socket:data', this._handleSocketData.bind(this));
 
     // Attach Bitcoin handlers
     this.bitcoin.on('block', this._handleBitcoinBlock.bind(this));
