@@ -151,7 +151,7 @@ class CLI extends App {
   }
 
   async _handlePromptEnterKey (ch, key) {
-    this.elements['prompt'].historyIndex++;
+    this.elements['prompt'].historyIndex = this.history.length;
     this.elements['form'].submit();
     this.elements['prompt'].clearValue();
     this.elements['prompt'].readInput();
