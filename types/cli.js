@@ -52,6 +52,7 @@ class CLI extends App {
     this._registerCommand('peers', this._handlePeerListRequest);
     this._registerCommand('connect', this._handleConnectRequest);
     this._registerCommand('disconnect', this._handleDisconnectRequest);
+    this._registerCommand('identity', this._handleIdentityRequest);
     this._registerCommand('generate', this._handleGenerateRequest);
     this._registerCommand('balance', this._handleBalanceRequest);
 
@@ -59,6 +60,7 @@ class CLI extends App {
     this.render();
 
     // Attach P2P handlers
+    this.node.on('ready', this._handleNodeReady.bind(this));
     this.node.on('error', this._handlePeerError.bind(this));
     this.node.on('warning', this._handlePeerWarning.bind(this));
     this.node.on('message', this._handlePeerMessage.bind(this));
@@ -138,6 +140,10 @@ class CLI extends App {
     const self = this;
     self._appendMessage('Local node emitted "peer:candidate" event: ' + JSON.stringify(peer));
     self.screen.render();
+  }
+
+  async _handleNodeReady (node) {
+    this.elements['identityString'].setContent(node.id);
   }
 
   async _handlePeerError (message) {
@@ -283,6 +289,13 @@ class CLI extends App {
     return false;
   }
 
+  _handleIdentityRequest () {
+    this._appendMessage(`Local Identity: ${JSON.stringify({
+      id: this.node.id,
+      address: this.node.server.address()
+    }, null, '  ')}`);
+  }
+
   _handleHelpRequest (data) {
     const self = this;
     const help = `Available Commands:\n${Object.keys(self.commands).map(x => `\t${x}`).join('\n')}`;
@@ -351,6 +364,25 @@ class CLI extends App {
       width: '100%'
     });
 
+    self.elements['identity'] = blessed.box({
+      parent: self.elements['status'],
+      left: 1
+    });
+
+    self.elements['identityLabel'] = blessed.text({
+      parent: self.elements['identity'],
+      content: 'IDENTITY:',
+      top: 0,
+      bold: true
+    });
+
+    self.elements['identityString'] = blessed.text({
+      parent: self.elements['identity'],
+      content: '',
+      top: 0,
+      left: 10
+    });
+
     self.elements['wallet'] = blessed.box({
       parent: self.elements['status'],
       right: 1,
@@ -381,6 +413,7 @@ class CLI extends App {
 
     self.elements['mempool'] = blessed.box({
       parent: self.elements['status'],
+      top: 1,
       left: 1,
       width: 29
     });
