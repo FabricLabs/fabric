@@ -603,7 +603,9 @@ class Bitcoin extends Service {
   async append (raw) {
     const block = bcoin.Block.fromRaw(raw, 'hex');
     this.emit('message', `Parsed block: ${JSON.stringify(block)}`);
-    const added = await this.fullnode.chain.add(block)
+    const added = await this.fullnode.chain.add(block);
+    if (!added) this.emit('message', `Block not added to chain.`);
+    return added;
   }
 
   /**
