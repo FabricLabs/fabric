@@ -25,6 +25,7 @@ class CLI extends App {
     });
 
     this.screen = null;
+    this.history = [];
     this.commands = {};
     this.elements = {};
     this.peers = {};
@@ -133,9 +134,9 @@ class CLI extends App {
       case 'ChatMessage':
         try {
           let parsed = JSON.parse(message.data);
-          this._appendMessage(`<${message.type}> [@${parsed.actor}]: ${parsed.object.content}`);
+          this._appendMessage(`[@${parsed.actor}]: ${parsed.object.content}`);
         } catch (exception) {
-          this._appendError(`Could not parse <ChatMessage> data: ${message.data}`);
+          this._appendError(`Could not parse <ChatMessage> data (should be JSON): ${message.data}`);
         }
         break;
     }
@@ -150,20 +151,45 @@ class CLI extends App {
   }
 
   async _handlePromptEnterKey (ch, key) {
+    this.elements['prompt'].historyIndex++;
     this.elements['form'].submit();
     this.elements['prompt'].clearValue();
     this.elements['prompt'].readInput();
+  }
+
+  async _handlePromptUpKey (ch, key) {
+    const index = this.elements['prompt'].historyIndex;
+    if (index > 0) this.elements['prompt'].historyIndex--;
+    this.elements['prompt'].setValue(this.history[index]);
+    this.screen.render();
+  }
+
+  async _handlePromptDownKey (ch, key) {
+    const index = ++this.elements['prompt'].historyIndex;
+
+    if (index < this.history.length) {
+      this.elements['prompt'].setValue(this.history[index]);
+    } else {
+      this.elements['prompt'].historyIndex = this.history.length - 1;
+      this.elements['prompt'].setValue('');
+    }
+
+    this.screen.render();
   }
 
   _bindKeys () {
     const self = this;
     self.screen.key(['escape', 'q', 'C-c'], self.stop.bind(self));
     self.elements['prompt'].key(['enter'], self._handlePromptEnterKey.bind(self));
+    self.elements['prompt'].key(['up'], self._handlePromptUpKey.bind(self));
+    self.elements['prompt'].key(['down'], self._handlePromptDownKey.bind(self));
   }
 
   _handleFormSubmit (data) {
     const self = this;
     const content = data.input;
+
+    self.history.push(data.input);
 
     // Debug
     // TODO: remove
@@ -196,7 +222,7 @@ class CLI extends App {
   }
 
   _handleConnectRequest (params) {
-    if (!params[1]) this._appendMessage('You must specify an address to connect to. ');
+    if (!params[1]) return this._appendMessage('You must specify an address to connect to. ');
     const address = params[1];
     this._appendMessage('Connect request: ' + JSON.stringify(params));
     this.node._connect(address);
@@ -348,6 +374,9 @@ class CLI extends App {
       keys: true,
       inputOnFocus: true
     });
+
+    // Set Index for Command History
+    this.elements['prompt'].historyIndex = -1;
 
     // Render the screen.
     self.screen.render();
