@@ -11,6 +11,15 @@ const Message = require('../types/message');
 const Bitcoin = require('../services/bitcoin');
 
 // UI dependencies
+// TODO: use Jade to render pre-registered components
+// ```jade
+// fabric-application
+//   fabric-box
+//   fabric-row
+//     fabric-log
+//     fabric-list
+//   fabric-input
+// ```
 const blessed = require('blessed');
 
 class CLI extends App {
@@ -36,11 +45,15 @@ class CLI extends App {
   }
 
   async start () {
+    // Register Internal Commands
     this._registerCommand('help', this._handleHelpRequest);
     this._registerCommand('peers', this._handlePeerListRequest);
     this._registerCommand('connect', this._handleConnectRequest);
+    this._registerCommand('disconnect', this._handleDisconnectRequest);
     this._registerCommand('generate', this._handleGenerateRequest);
+    this._registerCommand('balance', this._handleBalanceRequest);
 
+    // Render UI
     this.render();
 
     // Attach P2P handlers
@@ -61,6 +74,7 @@ class CLI extends App {
     // Start Bitcoin service
     await this.bitcoin.start();
 
+    // Start P2P node
     this.node.start();
     this.emit('ready');
   }
@@ -222,17 +236,37 @@ class CLI extends App {
   }
 
   _handleConnectRequest (params) {
-    if (!params[1]) return this._appendMessage('You must specify an address to connect to. ');
+    if (!params[1]) return this._appendMessage('You must specify an address to connect to.');
     const address = params[1];
     this._appendMessage('Connect request: ' + JSON.stringify(params));
     this.node._connect(address);
     return false;
   }
 
+  _handleDisconnectRequest (params) {
+    if (!params[1]) return this._appendMessage('You must specify an peer to disconnect from.');
+    const id = params[1];
+    this._appendMessage('Disconnect request: ' + JSON.stringify(params));
+    this.node._disconnect(id);
+    return false;
+  }
+
   _handleGenerateRequest (count = 1) {
     const block = this.bitcoin.generateBlock();
     const message = Message.fromVector(['BlockCandidate', block]);
+
+    this._appendMessage('Block to transmit: ' + JSON.stringify(message));
     this.node.relayFrom(this.node.id, message);
+
+    return false;
+  }
+
+  _handleBalanceRequest () {
+    this._appendMessage(`{bold}Wallet Balance{/bold}: ${JSON.stringify({
+      confirmed: 0,
+      unconfirmed: 0
+    }, null, '  ')}`);
+
     return false;
   }
 

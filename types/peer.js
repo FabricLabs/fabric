@@ -321,6 +321,11 @@ class Peer extends Scribe {
     return self.connections[address];
   }
 
+  _disconnect (address) {
+    if (!this.connections[address]) return false;
+    this.connections[address].destroy();
+  }
+
   _parseMessage (data) {
     if (!data) return false;
     if (this.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Parsing message:', data);
@@ -342,7 +347,7 @@ class Peer extends Scribe {
     let self = this;
     let address = [socket.remoteAddress, socket.remotePort].join(':');
 
-    if (this.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Incoming connection from address:', address);
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:PEER]', `[@ID:$${self.id}]`, 'Incoming connection from address:', address);
 
     self.emit('connections:open', {
       address: address,
