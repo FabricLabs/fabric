@@ -1,5 +1,7 @@
 'use strict';
 
+const MAX_CHAT_MESSAGE_LENGTH = 2048;
+
 // Types
 const App = require('../types/app');
 const Peer = require('../types/peer');
@@ -188,6 +190,9 @@ class CLI extends App {
   _handleFormSubmit (data) {
     const self = this;
     const content = data.input;
+
+    if (!content) return self._appendMessage('No message provided.');
+    if (content.length >= MAX_CHAT_MESSAGE_LENGTH) return self._appendMessage(`Message exceeds maximum length (${MAX_CHAT_MESSAGE_LENGTH}).`);
 
     self.history.push(data.input);
 
