@@ -141,7 +141,7 @@ class CLI extends App {
   }
 
   async _handlePeerError (message) {
-    this._appendMessage(`Local "error" event: <${message.type}> ${message.data}`);
+    this._appendError(`Local "error" event: ${JSON.stringify(message)} <${message.type}> ${message.data}`);
   }
 
   async _handlePeerWarning (message) {
