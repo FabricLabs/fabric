@@ -464,9 +464,10 @@ class Peer extends Scribe {
     if (self.messages.has(message.id)) {
       let text = `Received duplicate message [0x${message.id}] from [${origin}] in packet: ${JSON.stringify(packet)}`;
       if (self.settings.verbosity >= 4) console.warn('[FABRIC:PEER]', 'Received duplicate message:', message.id, message.type, message.data);
-      self.emit('warning', {
+
+      /* self.emit('warning', {
         message: text
-      });
+      }); */
 
       return false;
     } else {
@@ -653,7 +654,8 @@ class Peer extends Scribe {
       try {
         this.connections[peer.address].write(msg.asRaw());
       } catch (exception) {
-        console.error('[FABRIC:PEER]', `Could not wriite message to connection "${peer.address}":`, exception);
+        this.emit('error', `Could not write message to connection "${peer.address}":`, exception);
+        // console.error('[FABRIC:PEER]', `Could not write message to connection "${peer.address}":`, exception);
       }
     }
   }
