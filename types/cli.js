@@ -34,6 +34,7 @@ class CLI extends App {
 
   async start () {
     this._registerCommand('help', this._handleHelpRequest);
+    this._registerCommand('peers', this._handlePeerListRequest);
     this._registerCommand('connect', this._handleConnectRequest);
     this._registerCommand('generate', this._handleGenerateRequest);
 
@@ -48,6 +49,8 @@ class CLI extends App {
     this.node.on('peer:candidate', this._handlePeerCandidate.bind(this));
     this.node.on('connections:close', this._handleConnectionClose.bind(this));
     this.node.on('connection:error', this._handleConnectionError.bind(this));
+    this.node.on('session:update', this._handleSessionUpdate.bind(this));
+    this.node.on('socket:data', this._handleSocketData.bind(this));
 
     // Attach Bitcoin handlers
     this.bitcoin.on('block', this._handleBitcoinBlock.bind(this));
@@ -67,6 +70,10 @@ class CLI extends App {
   async _appendMessage (msg) {
     this.elements['messages'].log(`[${(new Date()).toISOString()}]: ${msg}`);
     this.screen.render();
+  }
+
+  async _appendError (msg) {
+    this._appendMessage(`{red-fg}${msg}{/red-fg}`)
   }
 
   async _handleBitcoinBlock (block) {
@@ -119,7 +126,27 @@ class CLI extends App {
   }
 
   async _handlePeerMessage (message) {
-    this._appendMessage(`Local "message" event: <${message.type}> ${message.data}`);
+    switch (message.type) {
+      default:
+        this._appendMessage(`Local "message" event: <${message.type}> ${message.data}`);
+        break;
+      case 'ChatMessage':
+        try {
+          let parsed = JSON.parse(message.data);
+          this._appendMessage(`<${message.type}> [@${parsed.actor}]: ${parsed.object.content}`);
+        } catch (exception) {
+          this._appendError(`Could not parse <ChatMessage> data: ${message.data}`);
+        }
+        break;
+    }
+  }
+
+  async _handleSessionUpdate (session) {
+    this._appendMessage(`Local session update: ${JSON.stringify(session)}`);
+  }
+
+  async _handleSocketData (data) {
+    this._appendMessage(`Local "socket:data" event: ${JSON.stringify(data)}`);
   }
 
   async _handlePromptEnterKey (ch, key) {
@@ -146,11 +173,26 @@ class CLI extends App {
     const result = self._processInput(data.input);
 
     if (!result) {
-      self.node.relayFrom(self.node.id, Message.fromVector(['ChatMessage', content]));
+      // Describe the activity for use in P2P message
+      let body = JSON.stringify({
+        actor: self.node.id,
+        object: {
+          created: Date.now(),
+          content: content
+        },
+        target: '/messages'
+      });
+
+      self.node.relayFrom(self.node.id, Message.fromVector(['ChatMessage', body]));
     }
 
     self.elements['form'].reset();
     self.screen.render();
+  }
+
+  _handlePeerListRequest (params) {
+    this._appendMessage('Peers: ' + JSON.stringify(Object.keys(this.peers), null, ' '));
+    return false;
   }
 
   _handleConnectRequest (params) {
@@ -268,7 +310,8 @@ class CLI extends App {
       top: 5,
       width: '80%',
       bottom: 3,
-      mouse: true
+      mouse: true,
+      tags: true
     });
 
     self.elements['peers'] = blessed.list({

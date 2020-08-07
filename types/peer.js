@@ -184,6 +184,57 @@ class Peer extends Scribe {
     return this.state.state;
   }
 
+  // TODO: use in _connect
+  async _sessionStart (socket, address) {
+    const self = this;
+
+    if (self.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Connection created...');
+
+    const session = new Session();
+    // const m = new Message();
+
+    session.on('message', function (msg) {
+      self.emit('session:update', {
+        type: 'AddMessage',
+        data: msg
+      });
+    });
+
+    await session.start();
+    self.emit('session:update', session);
+
+    // TODO: consolidate with similar _handleConnection segment
+    // TODO: check peer ID, eject if self or known
+
+    // TODO re-enable (disabled to reduce spammy messaging)
+    // /*
+    // TODO: re-evaluate use of IdentityRequest
+    // const vector = ['IdentityRequest', self.id];
+    const vector = ['StartSession', JSON.stringify({
+      id: session.id,
+      identity: self.id,
+      signature: ''
+    })];
+    const message = Message.fromVector(vector);
+
+    self.meta.messages.outbound++;
+    if (!socket.writable) {
+      console.trace('[FABRIC:PEER]', 'Socket is not writable');
+      return false;
+    }
+
+    self.connections[address].write(message.asRaw());
+    // */
+
+    self.emit('connections:open', {
+      address: address,
+      status: 'unauthenticated',
+      initiator: true
+    });
+
+    if (self.settings.verbosity >= 4) console.log('[FABRIC:PEER]', `Connection to ${address} established!`);
+  }
+
   _connect (address) {
     let self = this;
     let parts = address.split(':');
@@ -259,40 +310,9 @@ class Peer extends Scribe {
 
       // TODO: replace with handshake
       // NOTE: the handler is only called once per connection!
-      self.connections[address].connect(parts[1], parts[0], function connectionAttemptComplete (error) {
+      self.connections[address].connect(parts[1], parts[0], async function connectionAttemptComplete (error) {
         if (error) return new Error(`Could not establish connection: ${error}`);
-        if (self.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Connection created...');
-        const session = new Session();
-        // const m = new Message();
-
-        // TODO: consolidate with similar _handleConnection segment
-        // TODO: check peer ID, eject if self or known
-
-        // TODO re-enable (disabled to reduce spammy messaging)
-        // TODO: re-evaluate use of IdentityRequest
-        // const vector = ['IdentityRequest', self.id];
-        const vector = ['StartSession', JSON.stringify({
-          id: '',
-          identity: self.id,
-          signature: ''
-        })];
-        const message = Message.fromVector(vector);
-
-        self.meta.messages.outbound++;
-        if (!this.writable) {
-          console.trace('[FABRIC:PEER]', 'Socket is not writable.');
-          return false;
-        }
-
-        self.connections[address].write(message.asRaw());
-
-        self.emit('connections:open', {
-          address: address,
-          status: 'unauthenticated',
-          initiator: true
-        });
-
-        if (self.settings.verbosity >= 4) console.log('[FABRIC:PEER]', `Connection to ${address} established!`);
+        self._sessionStart.apply(self, [ this, address ]);
       });
     } catch (E) {
       self.log('[PEER]', 'failed to connect:', E);
@@ -338,7 +358,10 @@ class Peer extends Scribe {
     // TODO: unify as _dataHandler
     socket.on('data', async function incomingDataHandler (data) {
       // console.log('[FABRIC:PEER]', 'Incoming socket data:', data);
-      self.emit('socket:data', data);
+      self.emit('socket:data', {
+        type: 'HandledSocketData',
+        data: data
+      });
       let message = null;
 
       try {
@@ -352,6 +375,11 @@ class Peer extends Scribe {
       if (self.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Parsed into Message:', message.raw);
       if (self.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Message type:', message.type);
       if (self.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Message data:', message.data);
+
+      self.emit('socket:data', {
+        type: 'InboundSocketData',
+        data: data
+      });
 
       let response = await self._handleMessage({
         origin: address,
