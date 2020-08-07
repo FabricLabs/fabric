@@ -47,6 +47,8 @@ class CLI extends App {
   async start () {
     // Register Internal Commands
     this._registerCommand('help', this._handleHelpRequest);
+    this._registerCommand('quit', this._handleQuitRequest);
+    this._registerCommand('exit', this._handleQuitRequest);
     this._registerCommand('peers', this._handlePeerListRequest);
     this._registerCommand('connect', this._handleConnectRequest);
     this._registerCommand('disconnect', this._handleDisconnectRequest);
@@ -228,6 +230,12 @@ class CLI extends App {
 
     self.elements['form'].reset();
     self.screen.render();
+  }
+
+  _handleQuitRequest () {
+    this._appendMessage('Exiting...');
+    this.stop();
+    return false;
   }
 
   _handlePeerListRequest (params) {
