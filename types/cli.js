@@ -101,6 +101,17 @@ class CLI extends App {
 
   async _handleConnectionClose (msg) {
     this._appendMessage(`Node emitted "connections:close" event: ${JSON.stringify(msg)}`);
+
+    for (const id in this.peers) {
+      const peer = this.peers[id];
+      this._appendMessage(`Checking: ${JSON.stringify(peer)}`);
+      if (peer.address === msg.address) {
+        this._appendMessage(`Address matches.`);
+        delete this.peers[id];
+      }
+    }
+
+    this._syncPeerList();
   }
 
   async _handleConnectionError (msg) {
@@ -116,17 +127,10 @@ class CLI extends App {
     }
 
     if (!self.peers[peer.id]) {
-      let element = blessed.element({
-        name: peer.id,
-        content: `[✓] ${peer.id}@${peer.address}`
-      });
-
       self.peers[peer.id] = peer;
-      // TODO: use peer ID for managed list
-      // self.elements['peers'].insertItem(0, element);
-      self.elements['peers'].add(element.content);
     }
 
+    self._syncPeerList();
     self.screen.render();
   }
 
@@ -195,6 +199,17 @@ class CLI extends App {
     this.screen.render();
   }
 
+  async _handleGenerateRequest (count = 1) {
+    const block = await this.bitcoin.generateBlock();
+    const raw = block.toRaw().toString('hex');
+    this._appendMessage('Block generated: ' + raw);
+
+    const message = Message.fromVector(['BlockCandidate', raw]);
+    this.node.relayFrom(this.node.id, message);
+
+    return false;
+  }
+
   _bindKeys () {
     const self = this;
     self.screen.key(['escape', 'q', 'C-c'], self.stop.bind(self));
@@ -239,7 +254,7 @@ class CLI extends App {
   }
 
   _handlePeerListRequest (params) {
-    this._appendMessage('Peers: ' + JSON.stringify(Object.keys(this.peers), null, ' '));
+    this._appendMessage('Peers: ' + JSON.stringify(this.peers, null, ' '));
     return false;
   }
 
@@ -256,16 +271,6 @@ class CLI extends App {
     const id = params[1];
     this._appendMessage('Disconnect request: ' + JSON.stringify(params));
     this.node._disconnect(id);
-    return false;
-  }
-
-  _handleGenerateRequest (count = 1) {
-    const block = this.bitcoin.generateBlock();
-    const message = Message.fromVector(['BlockCandidate', block]);
-
-    this._appendMessage('Block to transmit: ' + JSON.stringify(message));
-    this.node.relayFrom(this.node.id, message);
-
     return false;
   }
 
@@ -300,6 +305,22 @@ class CLI extends App {
     }
 
     return false;
+  }
+
+  _syncPeerList () {
+    this.elements['peers'].clearItems();
+
+    for (const id in this.peers) {
+      const peer = this.peers[id];
+      const element = blessed.element({
+        name: peer.id,
+        content: `[✓] ${peer.id}@${peer.address}`
+      });
+
+      // TODO: use peer ID for managed list
+      // self.elements['peers'].insertItem(0, element);
+      this.elements['peers'].add(element.content);
+    }
   }
 
   _registerCommand (command, method) {
