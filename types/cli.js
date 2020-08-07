@@ -73,6 +73,7 @@ class CLI extends App {
     // this.node.on('socket:data', this._handleSocketData.bind(this));
 
     // Attach Bitcoin handlers
+    this.bitcoin.on('ready', this._handleBitcoinReady.bind(this));
     this.bitcoin.on('message', this._handleBitcoinMessage.bind(this));
     this.bitcoin.on('block', this._handleBitcoinBlock.bind(this));
 
@@ -104,6 +105,11 @@ class CLI extends App {
 
   async _handleBitcoinBlock (block) {
     this._appendMessage(`Bitcoin service emitted block, chain height now: ${this.bitcoin.fullnode.chain.height}`);
+    this._syncChainDisplay();
+  }
+
+  async _handleBitcoinReady (bitcoin) {
+    this._syncChainDisplay();
   }
 
   async _handleConnectionClose (msg) {
@@ -329,6 +335,10 @@ class CLI extends App {
     return false;
   }
 
+  _syncChainDisplay () {
+    this.elements['chainTip'].setContent(`${this.bitcoin.fullnode.chain.tip.hash.toString('hex')} (height is ${this.bitcoin.fullnode.chain.height})`);
+  }
+
   _syncPeerList () {
     this.elements['peers'].clearItems();
 
@@ -420,9 +430,27 @@ class CLI extends App {
       right: 0
     });
 
-    self.elements['mempool'] = blessed.box({
+    self.elements['chain'] = blessed.box({
       parent: self.elements['status'],
       top: 1,
+      left: 1
+    });
+
+    self.elements['chainLabel'] = blessed.box({
+      parent: self.elements['chain'],
+      content: 'CHAIN TIP:',
+      bold: true
+    });
+
+    self.elements['chainTip'] = blessed.box({
+      parent: self.elements['chain'],
+      content: '',
+      left: 11
+    });
+
+    self.elements['mempool'] = blessed.box({
+      parent: self.elements['status'],
+      top: 2,
       left: 1,
       width: 29
     });

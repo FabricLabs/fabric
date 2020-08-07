@@ -635,6 +635,10 @@ class Bitcoin extends Service {
 
     // this.peer.tryOpen();
 
+    this.emit('ready', {
+      tip: this.fullnode.chain.tip.toString('hex')
+    });
+
     if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', 'Service started!');
     return this;
   }
