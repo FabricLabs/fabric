@@ -194,16 +194,11 @@ class CLI extends App {
     if (!content) return self._appendMessage('No message provided.');
     if (content.length > MAX_CHAT_MESSAGE_LENGTH) return self._appendMessage(`Message exceeds maximum length (${MAX_CHAT_MESSAGE_LENGTH}).`);
 
+    // Modify history
     self.history.push(data.input);
 
-    // Debug
-    // TODO: remove
-    self._appendMessage('Form submit: ' + JSON.stringify(data));
-
-    // TODO: pass actor:object:target type
-    const result = self._processInput(data.input);
-
-    if (!result) {
+    // Send as Chat Message if no handler registered
+    if (!self._processInput(data.input)) {
       // Describe the activity for use in P2P message
       let body = JSON.stringify({
         actor: self.node.id,
@@ -251,11 +246,15 @@ class CLI extends App {
   _processInput (input) {
     if (input.charAt(0) === '/') {
       const parts = input.substring(1).split(' ');
+
       if (this.commands[parts[0]]) {
-        // TODO: pass actor:object:target type
         this.commands[parts[0]].apply(this, [ parts ]);
         return true;
       }
+
+      this._appendError('Unhandled command: ' + parts[0]);
+
+      return true;
     }
 
     return false;
