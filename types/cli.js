@@ -192,7 +192,7 @@ class CLI extends App {
     const content = data.input;
 
     if (!content) return self._appendMessage('No message provided.');
-    if (content.length >= MAX_CHAT_MESSAGE_LENGTH) return self._appendMessage(`Message exceeds maximum length (${MAX_CHAT_MESSAGE_LENGTH}).`);
+    if (content.length > MAX_CHAT_MESSAGE_LENGTH) return self._appendMessage(`Message exceeds maximum length (${MAX_CHAT_MESSAGE_LENGTH}).`);
 
     self.history.push(data.input);
 
@@ -253,9 +253,12 @@ class CLI extends App {
       const parts = input.substring(1).split(' ');
       if (this.commands[parts[0]]) {
         // TODO: pass actor:object:target type
-        return this.commands[parts[0]].apply(this, [ parts ]);
+        this.commands[parts[0]].apply(this, [ parts ]);
+        return true;
       }
     }
+
+    return false;
   }
 
   _registerCommand (command, method) {

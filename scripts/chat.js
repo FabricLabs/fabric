@@ -14,7 +14,8 @@ const settings = {
     'rpg.verse.im:7777',
     'forge.fabric.pub:7777',
     'hub.fabric.pub:7777'
-  ]
+  ],
+  listen: true
 };
 
 async function main () {
