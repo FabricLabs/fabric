@@ -5,6 +5,7 @@ const Collection = require('../types/collection');
 const Entity = require('../types/entity');
 const Service = require('../types/service');
 const State = require('../types/state');
+const Chain = require('../types/chain');
 const Wallet = require('../types/wallet');
 const Consensus = require('../types/consensus');
 
@@ -66,6 +67,7 @@ class Bitcoin extends Service {
     // Internal management components
     this.provider = new Consensus({ provider: 'bcoin' });
     this.wallet = new Wallet(this.settings);
+    this.chain = new Chain();
 
     this.blocks = new Collection({
       name: 'Block',
@@ -165,7 +167,11 @@ class Bitcoin extends Service {
   }
 
   get tip () {
-    return this.fullnode.chain.tip;
+    return this.fullnode.chain.tip.hash.toString('hex');
+  }
+
+  get height () {
+    return this.fullnode.chain.height;
   }
 
   async broadcast (msg) {
@@ -595,15 +601,19 @@ class Bitcoin extends Service {
     if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', `Full Node for network "${this.settings.network}" started!`);
   }
 
-  async generateBlock () {
-    let block = await this.fullnode.miner.mineBlock(this.tip);
+  async generateBlock (address) {
+    if (!address) address = await this.wallet.getUnusedAddress();
+    let block = await this.fullnode.miner.mineBlock(this.fullnode.chain.tip, address);
     await this.fullnode.chain.add(block);
     return block;
   }
 
   async generateBlocks (count = 1, address) {
+    if (!address) address = await this.wallet.getUnusedAddress();
+
+    // Generate the specified number of blocks
     for (let i = 0; i < count; i++) {
-      const block = await this.fullnode.miner.mineBlock(this.tip, address);
+      const block = await this.fullnode.miner.mineBlock(this.fullnode.chain.tip, address);
       await this.fullnode.chain.add(block);
     }
 
@@ -635,8 +645,15 @@ class Bitcoin extends Service {
    */
   async start () {
     if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', `Starting for network "${this.settings.network}"...`);
+
+    // Start services
     await this.wallet.start();
+    await this.chain.start();
+
+    // Start nodes
     await this._startLocalNode();
+
+    // TODO: re-enable these
     // await this._connectToSeedNodes();
     // await this._connectToEdgeNodes();
 
@@ -644,9 +661,14 @@ class Bitcoin extends Service {
     // await this._connectSPV();
 
     // this.peer.tryOpen();
+    // END TODO
+
+    let genesis = await this.fullnode.getBlock(0);
+    // TODO: refactor Chain
+    await this.chain._setGenesis(genesis.toJSON());
 
     this.emit('ready', {
-      tip: this.fullnode.chain.tip.toString('hex')
+      tip: this.tip
     });
 
     if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', 'Service started!');
@@ -657,8 +679,10 @@ class Bitcoin extends Service {
    * Stop the Bitcoin service.
    */
   async stop () {
-    await this.peer.disconnect();
+    if (this.peer && this.peer.connected) await this.peer.destroy();
+    if (this.fullnode) await this.fullnode.close();
     await this.wallet.stop();
+    await this.chain.stop();
   }
 }
 

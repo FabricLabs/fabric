@@ -49,6 +49,7 @@ class CLI extends App {
     this._registerCommand('help', this._handleHelpRequest);
     this._registerCommand('quit', this._handleQuitRequest);
     this._registerCommand('exit', this._handleQuitRequest);
+    this._registerCommand('clear', this._handleClearRequest);
     this._registerCommand('peers', this._handlePeerListRequest);
     this._registerCommand('connect', this._handleConnectRequest);
     this._registerCommand('disconnect', this._handleDisconnectRequest);
@@ -282,6 +283,11 @@ class CLI extends App {
     return false;
   }
 
+  _handleClearRequest () {
+    this.elements['messages'].setContent('');
+    return false;
+  }
+
   _handlePeerListRequest (params) {
     this._appendMessage('Peers: ' + JSON.stringify(this.peers, null, ' '));
     return false;
@@ -371,7 +377,7 @@ class CLI extends App {
   }
 
   _syncChainDisplay () {
-    this.elements['chainTip'].setContent(`${this.bitcoin.fullnode.chain.tip.hash.toString('hex')} (height is ${this.bitcoin.fullnode.chain.height})`);
+    this.elements['chainTip'].setContent(`${this.bitcoin.tip} (height is ${this.bitcoin.fullnode.chain.height})`);
   }
 
   _syncPeerList () {
