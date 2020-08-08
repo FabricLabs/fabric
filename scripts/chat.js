@@ -7,7 +7,8 @@ const SEED = process.env.SEED;
 // Fabric Types
 const CLI = require('../types/cli');
 const settings = {
-  seed: SEED,
+  listen: true,
+  port: PORT,
   peers: [
     // 'localhost:7777',
     // 'antipode:7777',
@@ -15,7 +16,9 @@ const settings = {
     'forge.fabric.pub:7777',
     'hub.fabric.pub:7777'
   ],
-  listen: true
+  wallet: {
+    seed: SEED
+  }
 };
 
 async function main () {
