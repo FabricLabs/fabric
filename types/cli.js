@@ -507,6 +507,7 @@ class CLI extends App {
       left: 1
     });
 
+
     self.elements['prompt'] = blessed.textbox({
       parent: self.elements['form'],
       name: 'input',
@@ -515,6 +516,7 @@ class CLI extends App {
       inputOnFocus: true
     });
 
+
     // Set Index for Command History
     this.elements['prompt'].historyIndex = -1;
 
@@ -522,6 +524,26 @@ class CLI extends App {
     self.screen.render();
     self._bindKeys();
 
+    //TODO: clean up workaround
+    let textBox = this.elements['prompt'];
+    textBox.oldFocus = textBox.focus;
+    textBox.focus = function(){
+      let oldListener = textBox.__listener;
+      textBox.removeListener('keypress', textBox.__listener);
+      delete textBox.__listener;
+
+      let oldBlur = textBox.__done;
+      textBox.removeListener('blur', textBox.__done);
+      delete textBox.__done;
+      textBox.screen.focusPop(textBox)
+
+      textBox.addListener('keypress', oldListener);
+      textBox.addListener('blur', oldBlur);
+
+      textBox.oldFocus();
+    }
+
+    //focus when clicked
     self.elements['form'].on('click', function () {
       self.elements['prompt'].focus();
     });
