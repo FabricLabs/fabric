@@ -507,7 +507,6 @@ class CLI extends App {
       left: 1
     });
 
-
     self.elements['prompt'] = blessed.textbox({
       parent: self.elements['form'],
       name: 'input',
@@ -524,23 +523,22 @@ class CLI extends App {
     self.screen.render();
     self._bindKeys();
 
-    //TODO: clean up workaround
-    let textBox = this.elements['prompt'];
-    textBox.oldFocus = textBox.focus;
-    textBox.focus = function(){
-      let oldListener = textBox.__listener;
-      textBox.removeListener('keypress', textBox.__listener);
-      delete textBox.__listener;
+    // TODO: clean up workaround (from https://github.com/chjj/blessed/issues/109)
+    self.elements['prompt'].oldFocus = self.elements['prompt'].focus;
+    self.elements['prompt'].focus = function () {
+      let oldListener = self.elements['prompt'].__listener;
+      self.elements['prompt'].removeListener('keypress', self.elements['prompt'].__listener);
+      delete self.elements['prompt'].__listener;
 
-      let oldBlur = textBox.__done;
-      textBox.removeListener('blur', textBox.__done);
-      delete textBox.__done;
-      textBox.screen.focusPop(textBox)
+      let oldBlur = self.elements['prompt'].__done;
+      self.elements['prompt'].removeListener('blur', self.elements['prompt'].__done);
+      delete self.elements['prompt'].__done;
+      self.elements['prompt'].screen.focusPop(self.elements['prompt'])
 
-      textBox.addListener('keypress', oldListener);
-      textBox.addListener('blur', oldBlur);
+      self.elements['prompt'].addListener('keypress', oldListener);
+      self.elements['prompt'].addListener('blur', oldBlur);
 
-      textBox.oldFocus();
+      self.elements['prompt'].oldFocus();
     }
 
     //focus when clicked
