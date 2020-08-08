@@ -14,6 +14,7 @@ const {
   P2P_PONG,
   P2P_INSTRUCTION,
   P2P_BASE_MESSAGE,
+  P2P_CHAIN_SYNC_REQUEST,
   P2P_STATE_ROOT,
   P2P_STATE_COMMITTMENT,
   P2P_STATE_CHANGE,
@@ -223,6 +224,7 @@ class Message extends Vector {
       'Cycle': OP_CYCLE,
       'IdentityRequest': P2P_IDENT_REQUEST,
       'IdentityResponse': P2P_IDENT_RESPONSE,
+      'ChainSyncRequest': P2P_CHAIN_SYNC_REQUEST,
       // TODO: restore this type
       // 'StateRoot': P2P_ROOT,
       'Ping': P2P_PING,
@@ -293,6 +295,8 @@ Object.defineProperty(Message.prototype, 'type', {
         return 'Pong';
       case P2P_GENERIC:
         return 'Generic';
+      case P2P_CHAIN_SYNC_REQUEST:
+        return 'ChainSyncRequest';
       case P2P_IDENT_REQUEST:
         return 'IdentityRequest';
       case P2P_IDENT_RESPONSE:

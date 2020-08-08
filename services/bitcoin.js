@@ -418,7 +418,8 @@ class Bitcoin extends Service {
       transactions: msg.txs.map((tx) => {
         return tx;
       }),
-      block: msg
+      block: msg,
+      raw: msg.toRaw().toString('hex')
     };
 
     let block = await this.blocks.create(template);
@@ -598,6 +599,15 @@ class Bitcoin extends Service {
     let block = await this.fullnode.miner.mineBlock(this.tip);
     await this.fullnode.chain.add(block);
     return block;
+  }
+
+  async generateBlocks (count = 1, address) {
+    for (let i = 0; i < count; i++) {
+      const block = await this.fullnode.miner.mineBlock(this.tip, address);
+      await this.fullnode.chain.add(block);
+    }
+
+    return true;
   }
 
   async append (raw) {

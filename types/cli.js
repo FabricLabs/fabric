@@ -55,6 +55,8 @@ class CLI extends App {
     this._registerCommand('identity', this._handleIdentityRequest);
     this._registerCommand('generate', this._handleGenerateRequest);
     this._registerCommand('balance', this._handleBalanceRequest);
+    this._registerCommand('sync', this._handleChainSyncRequest);
+    this._registerCommand('send', this._handleSendRequest);
 
     // Render UI
     this.render();
@@ -76,6 +78,7 @@ class CLI extends App {
     this.bitcoin.on('ready', this._handleBitcoinReady.bind(this));
     this.bitcoin.on('message', this._handleBitcoinMessage.bind(this));
     this.bitcoin.on('block', this._handleBitcoinBlock.bind(this));
+    this.bitcoin.on('tx', this._handleBitcoinTransaction.bind(this));
 
     // Start Bitcoin service
     await this.bitcoin.start();
@@ -106,6 +109,13 @@ class CLI extends App {
   async _handleBitcoinBlock (block) {
     this._appendMessage(`Bitcoin service emitted block, chain height now: ${this.bitcoin.fullnode.chain.height}`);
     this._syncChainDisplay();
+
+    const message = Message.fromVector(['BlockCandidate', block.raw]);
+    this.node.relayFrom(this.node.id, message);
+  }
+
+  async _handleBitcoinTransaction (transaction) {
+    this._appendMessage(`Bitcoin service emitted transaction: ${JSON.stringify(transaction)}`);
   }
 
   async _handleBitcoinReady (bitcoin) {
@@ -220,14 +230,12 @@ class CLI extends App {
     this.screen.render();
   }
 
-  async _handleGenerateRequest (count = 1) {
-    const block = await this.bitcoin.generateBlock();
-    const raw = block.toRaw().toString('hex');
-    this._appendMessage('Block generated: ' + raw);
-
-    const message = Message.fromVector(['BlockCandidate', raw]);
-    this.node.relayFrom(this.node.id, message);
-
+  async _handleGenerateRequest (params) {
+    if (!params[1]) params[1] = 1;
+    const count = params[1];
+    const address = await this.node.wallet.getUnusedAddress();
+    this._appendMessage(`Generating ${count} blocks to address: ${address}`);
+    this.bitcoin.generateBlocks(count, address);
     return false;
   }
 
@@ -300,6 +308,33 @@ class CLI extends App {
       confirmed: 0,
       unconfirmed: 0
     }, null, '  ')}`);
+
+    return false;
+  }
+
+  _handleChainSyncRequest () {
+    this._appendMessage(`Sync starting for chain...`);
+
+    // TODO: test this on testnet / mainnet
+    this.bitcoin.fullnode.startSync();
+
+    const message = Message.fromVector(['ChainSyncRequest', JSON.stringify({
+      tip: this.bitcoin.fullnode.chain.tip
+    })]);
+    this.node.relayFrom(this.node.id, message);
+
+    return false;
+  }
+
+  async _handleSendRequest (params) {
+    if (!params[1]) return this._appendError('You must specify an address to send to.');
+    if (!params[2]) return this._appendError('You must specify an amount to send.');
+
+    const address = params[1];
+    const amount = params[2];
+
+    const tx = await this.node.wallet._spendToAddress(amount, address);
+    this._appendMessage('Transaction created:', tx);
 
     return false;
   }

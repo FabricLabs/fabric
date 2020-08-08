@@ -53,6 +53,7 @@ const P2P_STATE_CHANGE = 0x00000033; // TODO: select w/ no overlap
 const P2P_STATE_REQUEST = 0x00000029; // TODO: select w/ no overlap
 const P2P_TRANSACTION = 0x00000039; // TODO: select w/ no overlap
 const P2P_CALL = 0x00000042;
+const P2P_CHAIN_SYNC_REQUEST = 0x55;
 
 const PEER_CANDIDATE = 0x09;
 // TODO: should be 0x02 for Bitcoin P2P
@@ -106,6 +107,7 @@ module.exports = {
   P2P_GENERIC,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
+  P2P_CHAIN_SYNC_REQUEST,
   P2P_ROOT,
   P2P_PING,
   P2P_PONG,

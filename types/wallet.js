@@ -723,6 +723,11 @@ class Wallet extends Service {
     return this;
   }
 
+  async getUnusedAddress () {
+    let clean = await this.generateCleanKeyPair();
+    return clean.address;
+  }
+
   async getUnspentTransactionOutputs () {
     return this._state.transactions.filter(x => {
       return (x.spent === 0);
