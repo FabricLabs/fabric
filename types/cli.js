@@ -309,7 +309,7 @@ class CLI extends App {
     return false;
   }
 
-  _handleBalanceRequest () {
+  async _handleBalanceRequest () {
     this._appendMessage(`{bold}Wallet Balance{/bold}: ${JSON.stringify({
       confirmed: 0,
       unconfirmed: 0
@@ -410,7 +410,11 @@ class CLI extends App {
     };
 
     self.screen = blessed.screen({
-      smartCSR: true
+      smartCSR: true,
+      input: this.settings.input,
+      output: this.settings.output,
+      terminal: this.settings.terminal,
+      fullUnicode: this.settings.fullUnicode
     });
 
     self.elements['status'] = blessed.box({

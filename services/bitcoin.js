@@ -230,6 +230,20 @@ class Bitcoin extends Service {
 
   async _handleCommittedTransaction (transaction) {
     // console.log('[SERVICE:BITCOIN]', 'Handling Committed Transaction:', transaction);
+    let tx = null;
+
+    try {
+      tx = bcoin.TX.fromOptions(transaction);
+    } catch (exception) {
+      this.emit('message', `Could not create transaction: ${exception}`);
+    }
+
+    try {
+      await this.wallet.wallet.add(tx);
+    } catch (exception) {
+      this.emit('message', `Could not add transaction to wallet: ${exception}`);
+    }
+
     this.emit('transaction', transaction);
   }
 
@@ -602,22 +616,33 @@ class Bitcoin extends Service {
   }
 
   async generateBlock (address) {
+    let self = this;
+    let block = null;
+
     if (!address) address = await this.wallet.getUnusedAddress();
-    let block = await this.fullnode.miner.mineBlock(this.fullnode.chain.tip, address);
+
+    try {
+      block = await this.fullnode.miner.mineBlock(this.fullnode.chain.tip, address);
+    } catch (exception) {
+      return this.emit('message', `Could not mine block: ${exception}`);
+    }
+
+    // Add the block to our chain
     await this.fullnode.chain.add(block);
     return block;
   }
 
   async generateBlocks (count = 1, address) {
+    const blocks = [];
+
     if (!address) address = await this.wallet.getUnusedAddress();
 
     // Generate the specified number of blocks
     for (let i = 0; i < count; i++) {
-      const block = await this.fullnode.miner.mineBlock(this.fullnode.chain.tip, address);
-      await this.fullnode.chain.add(block);
+      blocks.push( await this.generateBlock(address) );
     }
 
-    return true;
+    return blocks;
   }
 
   async append (raw) {
@@ -645,6 +670,12 @@ class Bitcoin extends Service {
    */
   async start () {
     if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', `Starting for network "${this.settings.network}"...`);
+
+    const self = this;
+
+    this.wallet.on('message', function (msg) {
+      self.emit('message', msg);
+    });
 
     // Start services
     await this.wallet.start();

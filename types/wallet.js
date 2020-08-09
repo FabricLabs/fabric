@@ -78,12 +78,12 @@ class Wallet extends Service {
       key: null
     }, settings);
 
+    bcoin.set(this.settings.network);
+
     this.database = new WalletDB({
       db: 'memory',
       network: this.settings.network
     });
-
-    bcoin.set(this.settings.network);
 
     this.account = null;
     this.manager = null;
@@ -724,8 +724,8 @@ class Wallet extends Service {
   }
 
   async getUnusedAddress () {
-    let clean = await this.generateCleanKeyPair();
-    return clean.address;
+    let clean = await this.account.receiveAddress();
+    return clean;
   }
 
   async getUnspentTransactionOutputs () {
@@ -1217,13 +1217,6 @@ class Wallet extends Service {
       await this.database.open();
     }
 
-    // TODO: register account with this.wallet
-    let wallet = await this.wallet.createAccount({ name: obj.name });
-    if (this.settings.verbosity >= 4) console.log('bcoin wallet account:', wallet);
-    let actor = Object.assign({
-      account: wallet
-    }, obj);
-
     let account = await this.accounts.create(obj);
     if (this.settings.verbosity >= 4) console.log('registering account, created:', account);
 
@@ -1258,6 +1251,8 @@ class Wallet extends Service {
    */
   async _load (settings = {}) {
     if (this.wallet) return this;
+
+    const self = this;
 
     this.status = 'loading';
     this.master = null;
