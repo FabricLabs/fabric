@@ -224,8 +224,8 @@ class Peer extends Scribe {
     }
 
     self.connections[address].write(message.asRaw());
-    // */
 
+    // Emit notification of a newly opened connection
     self.emit('connections:open', {
       address: address,
       status: 'unauthenticated',
@@ -259,6 +259,7 @@ class Peer extends Scribe {
 
       self.connections[address].on('close', function (err) {
         if (err) self.debug('socket closed on error:', err);
+        if (err) self.emit('message', `socket closed on error: ${err}`);
         self.connections[address].removeAllListeners();
         // TODO: consider using `process.nextTick` to only clean up after event?
         delete self.connections[address];
@@ -343,6 +344,50 @@ class Peer extends Scribe {
     return message;
   }
 
+  async _handleSocketData (socket, data) {
+    let self = this;
+    let message = null;
+    let address = [socket.remoteAddress, socket.remotePort].join(':');
+
+    // console.log('[FABRIC:PEER]', 'Incoming socket data:', data);
+    self.emit('socket:data', {
+      type: 'HandledSocketData',
+      data: data
+    });
+
+    try {
+      message = self._parseMessage(data);
+    } catch (exception) {
+      console.error('[FABRIC:PEER]', 'Could not parse data into message:', message);
+    }
+
+    // disconnect from any peer sending invalid messages
+    if (!message) return this.destroy();
+
+    self.emit('socket:data', {
+      type: 'InboundSocketData',
+      data: data
+    });
+
+    let response = await self._handleMessage({
+      origin: address,
+      message: message
+    });
+
+    if (response) {
+      if (self.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Writing response:', response);
+
+      // Try writing data to socket
+      try {
+        socket.write(response.asRaw());
+      } catch (exception) {
+        self.emit('error', `Could not write data to purportedly live socket: ${exception}`);
+      }
+    } else {
+      // console.warn('[FABRIC:PEER]', 'No response found for message type:', message.type);
+    }
+  }
+
   _handleConnection (socket) {
     let self = this;
     let address = [socket.remoteAddress, socket.remotePort].join(':');
@@ -360,43 +405,8 @@ class Peer extends Scribe {
       self.emit('connections:close', { address: address });
     });
 
-    // TODO: unify as _dataHandler
-    socket.on('data', async function incomingDataHandler (data) {
-      // console.log('[FABRIC:PEER]', 'Incoming socket data:', data);
-      self.emit('socket:data', {
-        type: 'HandledSocketData',
-        data: data
-      });
-      let message = null;
-
-      try {
-        message = self._parseMessage(data);
-      } catch (exception) {
-        console.error('[FABRIC:PEER]', 'Could not parse data into message:', message);
-      }
-
-      // disconnect from any peer sending invalid messages
-      if (!message) return this.destroy();
-      if (self.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Parsed into Message:', message.raw);
-      if (self.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Message type:', message.type);
-      if (self.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Message data:', message.data);
-
-      self.emit('socket:data', {
-        type: 'InboundSocketData',
-        data: data
-      });
-
-      let response = await self._handleMessage({
-        origin: address,
-        message: message
-      });
-
-      if (response) {
-        if (self.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Writing response:', response);
-        this.write(response.asRaw());
-      } else {
-        // console.warn('[FABRIC:PEER]', 'No response found for message type:', message.type);
-      }
+    socket.on('data', function inboundPeerHandler (data) {
+      self._handleSocketData.apply(self, [ this, data ]);
     });
 
     // add this socket to the list of known connections
@@ -440,7 +450,12 @@ class Peer extends Scribe {
     // TODO: document peer announcement
     // TODO: eliminate use of JSON in messaging
     let announcement = Message.fromVector(['PeerCandidate', JSON.stringify(peer)]);
-    self.relayFrom(peer.id, announcement);
+
+    try {
+      self.relayFrom(peer.id, announcement);
+    } catch (exception) {
+      self.emit('error', `Could not relay peer registration: ${exception}`);
+    }
 
     return true;
   }
@@ -479,6 +494,7 @@ class Peer extends Scribe {
     switch (message.type) {
       default:
         console.error('[PEER]', `unhandled message type "${message.type}"`);
+        self.emit('error', `Unhandled message type "${message.type}"`);
         break;
       case 'ChatMessage':
         relay = true;
