@@ -83,6 +83,7 @@ class Peer extends Scribe {
     this.connections = {};
     this.peers = {};
     this.memory = {};
+    this.handlers = {};
     this.messages = new Set();
 
     // Internal Stack Machine
@@ -431,6 +432,12 @@ class Peer extends Scribe {
     // this._registerPeer({ id: 'foo', address: address });
   }
 
+  _registerHandler (type, method) {
+    if (this.handlers[type]) return new Error(`Handler for method "${type}" is already registered.`);
+    this.handlers[type] = method.bind(this);
+    return this.handlers[type];
+  }
+
   _registerPeer (peer) {
     let self = this;
 
@@ -516,7 +523,13 @@ class Peer extends Scribe {
             id: message.data,
             address: packet.origin
           };
-          self._registerPeer(peer);
+
+          // Try to register peer...
+          try {
+            self._registerPeer(peer);
+          } catch (exception) {
+            self.emit('error', `Could not register peer ${message.data} because: ${exception}`);
+          }
         }
         response = Message.fromVector(['StateRoot', JSON.stringify(self.state)]);
         break;
