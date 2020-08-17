@@ -413,6 +413,21 @@ class Peer extends Scribe {
     this.socket.write(ping.asRaw());
   }
 
+  _updateLiveness (address) {
+    // Return Error if no connection
+    if (!this.connections[address]) {
+      const error = `No connection for address: ${address}`;
+      this.emit('error', error);
+      return new Error(error);
+    }
+
+    // Set the _lastMessage property
+    this.connections[address]._lastMessage = Date.now();
+
+    // Make chainable
+    return this;
+  }
+
   _registerHandler (type, method) {
     if (this.handlers[type]) return new Error(`Handler for method "${type}" is already registered.`);
     this.handlers[type] = method.bind(this);
@@ -463,6 +478,8 @@ class Peer extends Scribe {
     let message = packet.message;
     let origin = packet.origin;
 
+    self._updateLiveness(packet.origin);
+
     if (!message) return console.error('Hard failure:', packet);
     if (self.messages.has(message.id)) {
       let text = `Received duplicate message [0x${message.id}] from [${origin}] in packet: ${JSON.stringify(packet)}`;
@@ -490,6 +507,12 @@ class Peer extends Scribe {
       case 'Generic':
         relay = true;
         break;
+      case 'Ping':
+        response = Message.fromVector(['Pong', message.id]);
+        break;
+      case 'Pong':
+        self.emit('message', `Received Pong: ${message}`);
+        break;
       case 'GenericMessage':
         console.warn('[FABRIC:PEER]', 'Received Generic Message:', message.data);
         relay = true;
@@ -512,6 +535,7 @@ class Peer extends Scribe {
             self.emit('error', `Could not register peer ${message.data} because: ${exception}`);
           }
         }
+
         response = Message.fromVector(['StateRoot', JSON.stringify(self.state)]);
         break;
       case 'BlockCandidate':
@@ -594,10 +618,6 @@ class Peer extends Scribe {
         response = Message.fromVector([P2P_STATE_COMMITTMENT, self.state]);
         self.log('type was ROOT, sending state root:', response);
         self.log('type was ROOT, state was:', self.state);
-        break;
-      case 'Ping':
-        response = Message.fromVector(['Pong', message.id]);
-        self.log(`type was PING (${message.id}), sending PONG:`, response);
         break;
       case P2P_INSTRUCTION:
         // TODO: use Fabric.Script / Fabric.Machine
