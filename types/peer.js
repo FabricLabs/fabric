@@ -220,7 +220,8 @@ class Peer extends Scribe {
 
     self.meta.messages.outbound++;
     if (!socket.writable) {
-      console.trace('[FABRIC:PEER]', 'Socket is not writable');
+      // console.trace('[FABRIC:PEER]', 'Socket is not writable');
+      self.emit('error', `Socket is not writable.`);
       return false;
     }
 
@@ -234,6 +235,51 @@ class Peer extends Scribe {
     });
 
     if (self.settings.verbosity >= 4) console.log('[FABRIC:PEER]', `Connection to ${address} established!`);
+  }
+
+  async _handleSocketData (socket, address, data) {
+    let self = this;
+    if (self.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Received data from peer:', data);
+    self.meta.messages.inbound++;
+    let message = null;
+
+    // debug message for listeners
+    self.emit('socket:data', data);
+
+    try {
+      message = self._parseMessage(data);
+    } catch (exception) {
+      console.error('[FABRIC:PEER]', 'Could not parse inbound messsage:', exception);
+    }
+
+    // disconnect from any peer sending invalid messages
+    if (!message) return this.destroy();
+
+    self.emit('socket:data', {
+      type: 'InboundSocketData',
+      data: data
+    });
+
+    let response = await self._handleMessage({
+      message: message,
+      origin: address,
+      peer: {
+        address: address,
+        id: 'FAKE PEER'
+      }
+    });
+
+    if (response) {
+      self.meta.messages.outbound++;
+      // console.log('[FABRIC:PEER]', 'Socket to write response to:', this);
+      if (!this.writable) {
+        // console.trace('[FABRIC:PEER]', 'Socket is not writable.');
+        self.emit('error', `Socket is not writable, message was: ${JSON.stringify(response.toObject(), null, '  ')}`);
+        return false;
+      }
+
+      socket.write(response.asRaw());
+    }
   }
 
   _connect (address) {
@@ -271,43 +317,7 @@ class Peer extends Scribe {
 
       // TODO: unify as _dataHandler
       self.connections[address].on('data', async function peerDataHandler (data) {
-        if (self.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Received data from peer:', data);
-        self.meta.messages.inbound++;
-        let message = null;
-
-        // debug message for listeners
-        self.emit('socket:data', data);
-
-        try {
-          message = self._parseMessage(data);
-        } catch (exception) {
-          console.error('[FABRIC:PEER]', 'Could not parse inbound messsage:', exception);
-        }
-
-        // console.log('[FABRIC:PEER]', 'Inbound message type:', message.type);
-        // console.log('[FABRIC:PEER]', 'Total inbound messages:', self.meta.messages.inbound);
-
-        // disconnect from any peer sending invalid messages
-        if (!message) return this.destroy();
-
-        let response = await self._handleMessage({
-          message: message,
-          origin: address,
-          peer: {
-            address: address,
-            id: 'FAKE PEER'
-          }
-        });
-
-        if (response) {
-          self.meta.messages.outbound++;
-          if (!this.writable) {
-            console.trace('[FABRIC:PEER]', 'Socket is not writable.');
-            return false;
-          }
-
-          this.write(response.asRaw());
-        }
+        self._handleSocketData.apply(self, [ this, address, data ]);
       });
 
       // TODO: replace with handshake
@@ -345,50 +355,6 @@ class Peer extends Scribe {
     return message;
   }
 
-  async _handleSocketData (socket, data) {
-    let self = this;
-    let message = null;
-    let address = [socket.remoteAddress, socket.remotePort].join(':');
-
-    // console.log('[FABRIC:PEER]', 'Incoming socket data:', data);
-    self.emit('socket:data', {
-      type: 'HandledSocketData',
-      data: data
-    });
-
-    try {
-      message = self._parseMessage(data);
-    } catch (exception) {
-      console.error('[FABRIC:PEER]', 'Could not parse data into message:', message);
-    }
-
-    // disconnect from any peer sending invalid messages
-    if (!message) return this.destroy();
-
-    self.emit('socket:data', {
-      type: 'InboundSocketData',
-      data: data
-    });
-
-    let response = await self._handleMessage({
-      origin: address,
-      message: message
-    });
-
-    if (response) {
-      if (self.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Writing response:', response);
-
-      // Try writing data to socket
-      try {
-        socket.write(response.asRaw());
-      } catch (exception) {
-        self.emit('error', `Could not write data to purportedly live socket: ${exception}`);
-      }
-    } else {
-      // console.warn('[FABRIC:PEER]', 'No response found for message type:', message.type);
-    }
-  }
-
   _handleConnection (socket) {
     let self = this;
     let address = [socket.remoteAddress, socket.remotePort].join(':');
@@ -407,7 +373,7 @@ class Peer extends Scribe {
     });
 
     socket.on('data', function inboundPeerHandler (data) {
-      self._handleSocketData.apply(self, [ this, data ]);
+      self._handleSocketData.apply(self, [ this, address, data ]);
     });
 
     // add this socket to the list of known connections
