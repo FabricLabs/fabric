@@ -596,7 +596,7 @@ class Peer extends Scribe {
         self.log('type was ROOT, state was:', self.state);
         break;
       case 'Ping':
-        response = Message.fromVector([P2P_PONG, message.id]);
+        response = Message.fromVector(['Pong', message.id]);
         self.log(`type was PING (${message.id}), sending PONG:`, response);
         break;
       case P2P_INSTRUCTION:
