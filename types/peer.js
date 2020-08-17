@@ -188,11 +188,9 @@ class Peer extends Scribe {
   // TODO: use in _connect
   async _sessionStart (socket, address) {
     const self = this;
-
-    if (self.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Connection created...');
-
     const session = new Session();
-    // const m = new Message();
+
+    self.emit('message', `Starting session with address: ${address}`);
 
     session.on('message', function (msg) {
       self.emit('session:update', {
@@ -202,7 +200,8 @@ class Peer extends Scribe {
     });
 
     await session.start();
-    self.emit('session:update', session);
+
+    self.emit('message', `Session created: ${JSON.stringify(session)}`);
 
     // TODO: consolidate with similar _handleConnection segment
     // TODO: check peer ID, eject if self or known
@@ -271,8 +270,7 @@ class Peer extends Scribe {
 
     if (response) {
       self.meta.messages.outbound++;
-      // console.log('[FABRIC:PEER]', 'Socket to write response to:', this);
-      if (!this.writable) {
+      if (!socket.writable) {
         // console.trace('[FABRIC:PEER]', 'Socket is not writable.');
         self.emit('error', `Socket is not writable, message was: ${JSON.stringify(response.toObject(), null, '  ')}`);
         return false;
@@ -320,6 +318,8 @@ class Peer extends Scribe {
         self._handleSocketData.apply(self, [ this, address, data ]);
       });
 
+      self.emit('message', `Starting connection to address: ${address}`);
+
       // TODO: replace with handshake
       // NOTE: the handler is only called once per connection!
       self.connections[address].connect(parts[1], parts[0], async function connectionAttemptComplete (error) {
@@ -356,8 +356,8 @@ class Peer extends Scribe {
   }
 
   _handleConnection (socket) {
-    let self = this;
-    let address = [socket.remoteAddress, socket.remotePort].join(':');
+    const self = this;
+    const address = [socket.remoteAddress, socket.remotePort].join(':');
 
     if (this.settings.verbosity >= 4) console.log('[FABRIC:PEER]', `[@ID:$${self.id}]`, 'Incoming connection from address:', address);
 
@@ -374,7 +374,7 @@ class Peer extends Scribe {
 
     socket.on('data', function inboundPeerHandler (data) {
       try {
-        self._handleSocketData.apply(self, [ this, address, data ]);
+        self._handleSocketData.apply(self, [ socket, address, data ]);
       } catch (exception) {
         self.emit('error', `Could not handle socket data: ${exception}`);
       }
@@ -382,24 +382,6 @@ class Peer extends Scribe {
 
     // add this socket to the list of known connections
     this.connections[address] = socket;
-
-    // Request incoming Peer's identity
-    // TODO: check peer ID, eject if self or known
-
-    // TODO: uncomment this block (disabled to debug message relay, i.e., reduce clutter)
-    /*
-    const vector = ['IdentityRequest', self.id];
-    const message = Message.fromVector(vector);
-    if (self.settings.verbosity >= 4) console.log(`Network message (raw bytes):`, message.asRaw());
-
-    // TODO: use `sendTo` method (not yet defined on Peer)
-    self.meta.messages.outbound++;
-    self.connections[address].write(message.asRaw());
-    */
-
-    // TODO: only register peer on inbound connection
-    // TODO: set peer ID to actual BTC address
-    // this._registerPeer({ id: 'foo', address: address });
   }
 
   _registerHandler (type, method) {
