@@ -325,6 +325,7 @@ class Peer extends Scribe {
       self.connections[address].connect(parts[1], parts[0], async function connectionAttemptComplete (error) {
         if (error) return new Error(`Could not establish connection: ${error}`);
         self._sessionStart.apply(self, [ this, address ]);
+        self._maintainConnection(address);
       });
     } catch (E) {
       self.log('[PEER]', 'failed to connect:', E);
@@ -382,6 +383,34 @@ class Peer extends Scribe {
 
     // add this socket to the list of known connections
     this.connections[address] = socket;
+
+    self._maintainConnection(address);
+  }
+
+  _maintainConnection (address) {
+    const self = this;
+
+    if (!this.connections[address]) return new Error(`Connection for address "${address}" does not exist.`);
+
+    // TODO: fail smoothly if not exists
+    clearTimeout(this.connections[address].heartbeat);
+
+    // Shenanigans...
+    // TODO: make better.
+    this.connections[address].heartbeat = setTimeout(async function heartbeat () {
+      self.emit('message', `Heartbeat ping starting for address: ${address}`);
+      self._verifyLiveness.apply({
+        address: address,
+        socket: self.connections[address]
+      });
+    }, 60000);
+  }
+
+  _verifyLiveness () {
+    const ping = Message.fromVector(['Ping', `${Date.now().toString()}`]);
+
+    // TODO: use a deliver function
+    this.socket.write(ping.asRaw());
   }
 
   _registerHandler (type, method) {
@@ -566,7 +595,7 @@ class Peer extends Scribe {
         self.log('type was ROOT, sending state root:', response);
         self.log('type was ROOT, state was:', self.state);
         break;
-      case P2P_PING:
+      case 'Ping':
         response = Message.fromVector([P2P_PONG, message.id]);
         self.log(`type was PING (${message.id}), sending PONG:`, response);
         break;
