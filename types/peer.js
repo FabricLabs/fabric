@@ -373,7 +373,11 @@ class Peer extends Scribe {
     });
 
     socket.on('data', function inboundPeerHandler (data) {
-      self._handleSocketData.apply(self, [ this, address, data ]);
+      try {
+        self._handleSocketData.apply(self, [ this, address, data ]);
+      } catch (exception) {
+        self.emit('error', `Could not handle socket data: ${exception}`);
+      }
     });
 
     // add this socket to the list of known connections
