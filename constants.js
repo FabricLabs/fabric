@@ -1,7 +1,7 @@
 /*
   Fabric Core Constants.
   ---
-  Author:* Eric Martindale
+  Author: Fabric Labs
   Copyright: All Rights Reserved.
  */
 'use strict';
@@ -64,6 +64,8 @@ const CHAT_MESSAGE = 0x67;
 
 // Lightning
 const LIGHTNING_TEST_HEADER = 'D0520C6E';
+const LIGHTNING_PROTOCOL_H_INIT = 'Noise_XK_secp256k1_ChaChaPoly_SHA256';
+const LIGHTNING_PROTOCOL_PROLOGUE = 'lightning';
 
 // Lightning BMM
 const LIGHTNING_BMM_HEADER = 'D0520C6E';
@@ -81,6 +83,8 @@ module.exports = {
   BLOCK_CANDIDATE,
   CHAT_MESSAGE,
   LIGHTNING_TEST_HEADER,
+  LIGHTNING_PROTOCOL_H_INIT,
+  LIGHTNING_PROTOCOL_PROLOGUE,
   LIGHTNING_BMM_HEADER,
   LIGHTNING_SIDECHAIN_NUM,
   LIGHTNING_SIDEBLOCK_HASH,

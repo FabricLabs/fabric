@@ -22,6 +22,10 @@ const Bitcoin = require('../services/bitcoin');
 // ```
 const blessed = require('blessed');
 
+/**
+ * Provides a Command Line Interface (CLI) for interacting with
+ * the Fabric network using a terminal emulator.
+ */
 class CLI extends App {
   constructor (settings = {}) {
     super(settings);
@@ -32,6 +36,10 @@ class CLI extends App {
     this.bitcoin = new Bitcoin({
       fullnode: true,
       network: 'regtest',
+      peers: [
+        // '25.14.120.36:18444',
+        // '127.0.0.1:18444'
+      ],
       verbosity: 0
     });
 
@@ -70,6 +78,7 @@ class CLI extends App {
 
     this.node.on('peer', this._handlePeer.bind(this));
     this.node.on('peer:candidate', this._handlePeerCandidate.bind(this));
+    this.node.on('connections:open', this._handleConnectionOpen.bind(this));
     this.node.on('connections:close', this._handleConnectionClose.bind(this));
     this.node.on('connection:error', this._handleConnectionError.bind(this));
     this.node.on('session:update', this._handleSessionUpdate.bind(this));
@@ -99,6 +108,10 @@ class CLI extends App {
     this.screen.render();
   }
 
+  async _appendWarning (msg) {
+    this._appendMessage(`{yellow-fg}${msg}{/yellow-fg}`)
+  }
+
   async _appendError (msg) {
     this._appendMessage(`{red-fg}${msg}{/red-fg}`)
   }
@@ -121,6 +134,11 @@ class CLI extends App {
 
   async _handleBitcoinReady (bitcoin) {
     this._syncChainDisplay();
+  }
+
+  async _handleConnectionOpen (msg) {
+    this._appendMessage(`Node emitted "connections:open" event: ${JSON.stringify(msg)}`);
+    this._syncPeerList();
   }
 
   async _handleConnectionClose (msg) {
@@ -173,13 +191,17 @@ class CLI extends App {
   }
 
   async _handlePeerWarning (message) {
-    this._appendMessage(`Local "warning" event: ${JSON.stringify(message)}`);
+    this._appendWarning(`Local "warning" event: ${JSON.stringify(message)}`);
   }
 
   async _handlePeerMessage (message) {
     switch (message.type) {
       default:
-        this._appendMessage(`Local "message" event: <${message.type}> ${message.data}`);
+        if (!message.type && !message.data) {
+          this._appendMessage(`Local "message" event: ${message}`);
+        } else {
+          this._appendMessage(`Local "message" event: <${message.type}> ${message.data}`);
+        }
         break;
       case 'ChatMessage':
         try {

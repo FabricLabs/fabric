@@ -12,11 +12,14 @@ class Key extends Entity {
     super(init);
 
     this.config = Object.assign({
-      prefix: '00'
+      prefix: '00',
+      private: null
     }, init);
 
     if (init.pubkey) {
       this.keypair = ec.keyFromPublic(init.pubkey, 'hex');
+    } else if (this.config.private) {
+      this.keypair = ec.keyFromPrivate(this.config.private, 16);
     } else {
       this.keypair = ec.genKeyPair();
     }

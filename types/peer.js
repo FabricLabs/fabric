@@ -245,19 +245,17 @@ class Peer extends Scribe {
     // debug message for listeners
     self.emit('socket:data', data);
 
+    // TODO: actually decrypt packet
+    let decrypted = socket.session.decrypt(data);
+
     try {
-      message = self._parseMessage(data);
+      message = self._parseMessage(decrypted);
     } catch (exception) {
       console.error('[FABRIC:PEER]', 'Could not parse inbound messsage:', exception);
     }
 
     // disconnect from any peer sending invalid messages
     if (!message) return this.destroy();
-
-    self.emit('socket:data', {
-      type: 'InboundSocketData',
-      data: data
-    });
 
     let response = await self._handleMessage({
       message: message,
@@ -320,11 +318,16 @@ class Peer extends Scribe {
 
       self.emit('message', `Starting connection to address: ${address}`);
 
+      // TODO: use known key
+      self.connections[address].session = new Session({
+        // initiator: self.wallet.key
+      });
+
       // TODO: replace with handshake
       // NOTE: the handler is only called once per connection!
       self.connections[address].connect(parts[1], parts[0], async function connectionAttemptComplete (error) {
         if (error) return new Error(`Could not establish connection: ${error}`);
-        self._sessionStart.apply(self, [ this, address ]);
+        await self._sessionStart.apply(self, [ this, address ]);
         self._maintainConnection(address);
       });
     } catch (E) {
@@ -336,6 +339,13 @@ class Peer extends Scribe {
 
   _disconnect (address) {
     if (!this.connections[address]) return false;
+
+    // Halt any heartbeat
+    if (this.connections[address].heartbeat) {
+      clearInterval(this.connections[address]);
+    }
+
+    // Destroy the connection
     this.connections[address].destroy();
   }
 
@@ -368,6 +378,9 @@ class Peer extends Scribe {
       initiator: false
     });
 
+    // TODO: use known key
+    socket.session = new Session();
+
     socket.on('close', function terminate () {
       self.log('connection closed:', address);
       self.emit('connections:close', { address: address });
@@ -388,22 +401,8 @@ class Peer extends Scribe {
   }
 
   _maintainConnection (address) {
-    const self = this;
-
     if (!this.connections[address]) return new Error(`Connection for address "${address}" does not exist.`);
-
-    // TODO: fail smoothly if not exists
-    clearTimeout(this.connections[address].heartbeat);
-
-    // Shenanigans...
-    // TODO: make better.
-    this.connections[address].heartbeat = setTimeout(async function heartbeat () {
-      self.emit('message', `Heartbeat ping starting for address: ${address}`);
-      self._verifyLiveness.apply({
-        address: address,
-        socket: self.connections[address]
-      });
-    }, 60000);
+    // TODO: ping peer
   }
 
   _verifyLiveness (address) {
@@ -513,6 +512,7 @@ class Peer extends Scribe {
         break;
       case 'Ping':
         response = Message.fromVector(['Pong', message.id]);
+        self.emit('message', `Received Ping: ${message}`);
         break;
       case 'Pong':
         // self.emit('message', `Received Pong: ${message}`);
@@ -532,12 +532,14 @@ class Peer extends Scribe {
             address: packet.origin
           };
 
+          // TODO: remove in favor of StartSession
+          // Why?  Duplicate "peer" event is sent within _registerPeer
           // Try to register peer...
-          try {
+          /* try {
             self._registerPeer(peer);
           } catch (exception) {
             self.emit('error', `Could not register peer ${message.data} because: ${exception}`);
-          }
+          } */
         }
 
         response = Message.fromVector(['StateRoot', JSON.stringify(self.state)]);
