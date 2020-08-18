@@ -224,7 +224,7 @@ class Peer extends Scribe {
       return false;
     }
 
-    self.connections[address].write(message.asRaw());
+    self.sendToSocket(address, message);
 
     // Emit notification of a newly opened connection
     self.emit('connections:open', {
@@ -276,7 +276,7 @@ class Peer extends Scribe {
         return false;
       }
 
-      socket.write(response.asRaw());
+      self.sendToSocket(address, response);
     }
   }
 
@@ -406,11 +406,14 @@ class Peer extends Scribe {
     }, 60000);
   }
 
-  _verifyLiveness () {
+  _verifyLiveness (address) {
     const ping = Message.fromVector(['Ping', `${Date.now().toString()}`]);
 
-    // TODO: use a deliver function
-    this.socket.write(ping.asRaw());
+    try {
+      this.sendToSocket(address, ping);
+    } catch (exception) {
+      this.emit('error', `Couldn't deliver message to socket: ${exception}`);
+    }
   }
 
   _updateLiveness (address) {
@@ -503,6 +506,7 @@ class Peer extends Scribe {
         break;
       case 'ChatMessage':
         relay = true;
+        self.emit('message', message);
         break;
       case 'Generic':
         relay = true;
@@ -511,7 +515,7 @@ class Peer extends Scribe {
         response = Message.fromVector(['Pong', message.id]);
         break;
       case 'Pong':
-        self.emit('message', `Received Pong: ${message}`);
+        // self.emit('message', `Received Pong: ${message}`);
         break;
       case 'GenericMessage':
         console.warn('[FABRIC:PEER]', 'Received Generic Message:', message.data);
@@ -639,7 +643,7 @@ class Peer extends Scribe {
     }
 
     // Emit for listeners
-    self.emit('message', message);
+    // self.emit('message', message);
 
     if (relay) {
       self.relayFrom(origin, message);
@@ -667,14 +671,37 @@ class Peer extends Scribe {
     }
   }
 
+  sendToSocket (address, message) {
+    const self = this;
+
+    if (!this.connections[address]) {
+      this.emit('error', `Could not deliver message to unconnected address: ${address}`);
+      return false;
+    }
+
+    if (!this.connections[address].writable) {
+      this.emit('error', `Connection is not writable: ${address}`);
+      return false;
+    }
+
+    this.connections[address].cork();
+    const result = this.connections[address].write(message.asRaw());
+    if (!result) {
+      self.emit('warning', 'Stream result false.');
+    }
+
+    process.nextTick(doUncork, this.connections[address]);
+
+    function doUncork (stream) {
+      stream.uncork();
+    }
+  }
+
   relayFrom (origin, message) {
+    // For each known peer, send to the corresponding socket
     for (let id in this.peers) {
       if (id === origin) continue;
       let peer = this.peers[id];
-      if (!this.connections[peer.address]) {
-        this.emit('error', `No connection for peer "${peer.address}" to receive message: ${JSON.stringify(message)}`);
-        continue;
-      }
 
       // TODO: select type byte for state updates
       // TODO: require `Message` type before broadcast (or, preferrably, cast as necessary)
@@ -682,7 +709,7 @@ class Peer extends Scribe {
       let msg = Message.fromVector([message.type, message.data]);
 
       try {
-        this.connections[peer.address].write(msg.asRaw());
+        this.sendToSocket(peer.address, msg);
       } catch (exception) {
         this.emit('error', `Could not write message to connection "${peer.address}":`, exception);
         // console.error('[FABRIC:PEER]', `Could not write message to connection "${peer.address}":`, exception);
@@ -715,7 +742,7 @@ class Peer extends Scribe {
       let msg = Message.fromVector(['PeerMessage', message]);
 
       try {
-        this.connections[peer.address].write(msg.asRaw());
+        this.sendToSocket(peer.address, msg);
       } catch (exception) {
         console.error('[FABRIC:PEER]', `Could not write message to connection "${peer.address}":`, exception);
       }
@@ -738,10 +765,9 @@ class Peer extends Scribe {
 
     for (let id in this.peers) {
       let peer = this.peers[id];
-      this.log('creating message for:', peer);
       // TODO: select type byte for state updates
       let msg = Message.fromVector([type, message]);
-      this.connections[peer.address].write(msg.asRaw());
+      this.sendToSocket(peer.address, msg);
     }
   }
 
