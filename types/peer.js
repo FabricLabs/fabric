@@ -147,16 +147,27 @@ class Peer extends Scribe {
 
   async stop () {
     const peer = this;
-    this.log('Peer stopping...');
 
-    for (const id in this.connections) {
-      const connection = this.connections[id];
+    // Alert listeners
+    peer.emit('message', 'Peer stopping...');
+
+    for (const id in peer.connections) {
+      peer.emit('message', `Closing connection: ${id}`);
+      const connection = peer.connections[id];
       const closer = async function () {
         return new Promise((resolve, reject) => {
+          // Give socket a timeout to close cleanly, destroy if failed
+          let deadline = setTimeout(function () {
+            console.warn('[FABRIC:PEER]', 'end() timed out for peer:', id, 'Calling destroy...');
+            connection.destroy();
+            resolve();
+          }, 5000);
+
           // TODO: notify remote peer of closure
           // Use end(SOME_CLOSE_MESSAGE, ...)
           return connection.end(function socketClosed (error) {
             if (error) return reject(error);
+            clearTimeout(deadline);
             resolve();
           });
         });
@@ -218,8 +229,8 @@ class Peer extends Scribe {
     const message = Message.fromVector(vector);
 
     self.meta.messages.outbound++;
+
     if (!socket.writable) {
-      // console.trace('[FABRIC:PEER]', 'Socket is not writable');
       self.emit('error', `Socket is not writable.`);
       return false;
     }
@@ -342,11 +353,14 @@ class Peer extends Scribe {
 
     // Halt any heartbeat
     if (this.connections[address].heartbeat) {
-      clearInterval(this.connections[address]);
+      clearInterval(this.connections[address].heartbeat);
     }
 
     // Destroy the connection
     this.connections[address].destroy();
+
+    // Remove connection from map
+    delete this.connections[address];
   }
 
   _parseMessage (data) {
@@ -384,6 +398,7 @@ class Peer extends Scribe {
     socket.on('close', function terminate () {
       self.log('connection closed:', address);
       self.emit('connections:close', { address: address });
+      self._disconnect(address);
     });
 
     socket.on('data', function inboundPeerHandler (data) {
@@ -401,11 +416,14 @@ class Peer extends Scribe {
   }
 
   _maintainConnection (address) {
-    if (!this.connections[address]) return new Error(`Connection for address "${address}" does not exist.`);
-    // TODO: ping peer
+    const peer = this;
+    if (!peer.connections[address]) return new Error(`Connection for address "${address}" does not exist.`);
+    /* peer.connections[address]._player = setInterval(function () {
+      peer._pingConnection.apply(peer, [ address ]);
+    }, 60000); */
   }
 
-  _verifyLiveness (address) {
+  _pingConnection (address) {
     const ping = Message.fromVector(['Ping', `${Date.now().toString()}`]);
 
     try {
@@ -512,7 +530,6 @@ class Peer extends Scribe {
         break;
       case 'Ping':
         response = Message.fromVector(['Pong', message.id]);
-        self.emit('message', `Received Ping: ${message}`);
         break;
       case 'Pong':
         // self.emit('message', `Received Pong: ${message}`);
@@ -720,14 +737,15 @@ class Peer extends Scribe {
   }
 
   broadcast (message) {
+    // Coerce to Object
     if (message instanceof Message) {
       message = message.toObject();
     }
 
-    // TODO: coerce type, prefer `Message`
     if (typeof message !== 'string') message = JSON.stringify(message);
     let hash = crypto.createHash('sha256').update(message).digest('hex');
 
+    // Do not relay duplicate messages
     if (this.messages.has(hash)) {
       if (this.settings.verbosity >= 3) console.warn('[FABRIC:PEER]', `Attempted to broadcast duplicate message ${hash} with content:`, message);
       return false;
@@ -780,11 +798,11 @@ class Peer extends Scribe {
    */
   async listen () {
     let self = this;
-
     let promise = new Promise((resolve, reject) => {
       self.server.listen(self.settings.port, self.settings.address, function listenComplete (error) {
         if (error) return reject(error);
-        if (self.config.verbosity >= 3) console.log('[PEER]', `${self.id} now listening on tcp://${self.address}:${self.port}`);
+        let address = self.server.address();
+        self.emit('message', `Now listening on tcp://${address.address}:${address.port} [!!!]`);
         return resolve();
       });
     });
