@@ -63,6 +63,7 @@ class CLI extends App {
     this._registerCommand('disconnect', this._handleDisconnectRequest);
     this._registerCommand('identity', this._handleIdentityRequest);
     this._registerCommand('generate', this._handleGenerateRequest);
+    this._registerCommand('receive', this._handleReceiveAddressRequest);
     this._registerCommand('balance', this._handleBalanceRequest);
     this._registerCommand('sync', this._handleChainSyncRequest);
     this._registerCommand('send', this._handleSendRequest);
@@ -86,6 +87,7 @@ class CLI extends App {
 
     // Attach Bitcoin handlers
     this.bitcoin.on('ready', this._handleBitcoinReady.bind(this));
+    this.bitcoin.on('error', this._handleBitcoinError.bind(this));
     this.bitcoin.on('message', this._handleBitcoinMessage.bind(this));
     this.bitcoin.on('block', this._handleBitcoinBlock.bind(this));
     this.bitcoin.on('tx', this._handleBitcoinTransaction.bind(this));
@@ -123,13 +125,16 @@ class CLI extends App {
   async _handleBitcoinBlock (block) {
     this._appendMessage(`Bitcoin service emitted block, chain height now: ${this.bitcoin.fullnode.chain.height}`);
     this._syncChainDisplay();
-
     const message = Message.fromVector(['BlockCandidate', block.raw]);
     this.node.relayFrom(this.node.id, message);
   }
 
   async _handleBitcoinTransaction (transaction) {
     this._appendMessage(`Bitcoin service emitted transaction: ${JSON.stringify(transaction)}`);
+  }
+
+  async _handleBitcoinError (...msg) {
+    this._appendError(msg);
   }
 
   async _handleBitcoinReady (bitcoin) {
@@ -331,15 +336,6 @@ class CLI extends App {
     return false;
   }
 
-  async _handleBalanceRequest () {
-    this._appendMessage(`{bold}Wallet Balance{/bold}: ${JSON.stringify({
-      confirmed: 0,
-      unconfirmed: 0
-    }, null, '  ')}`);
-
-    return false;
-  }
-
   _handleChainSyncRequest () {
     this._appendMessage(`Sync starting for chain...`);
 
@@ -364,6 +360,18 @@ class CLI extends App {
     const tx = await this.node.wallet._spendToAddress(amount, address);
     this._appendMessage('Transaction created:', tx);
 
+    return false;
+  }
+
+  async _handleBalanceRequest () {
+    const balance = await this.node.wallet.wallet.getBalance(1);
+    this._appendMessage(`{bold}Wallet Balance{/bold}: ${JSON.stringify(balance, null, '  ')}`);
+    return false;
+  }
+
+  async _handleReceiveAddressRequest () {
+    const address = await this.node.wallet.getUnusedAddress();
+    this._appendMessage(`{bold}Receive address:{/bold}: ${JSON.stringify(address.toString(), null, '  ')}`);
     return false;
   }
 
