@@ -25,10 +25,6 @@ const bcoin = require('bcoin');
 const FullNode = bcoin.FullNode;
 const NetAddress = bcoin.net.NetAddress;
 
-// Extraneous Dependencies
-// TODO: remove!
-// const bclient = require('bclient');
-
 /**
  * Manages interaction with the Bitcoin network.
  */
@@ -57,7 +53,7 @@ class Bitcoin extends Service {
       peers: [],
       port: 18444,
       verbosity: 2
-    }, settings);
+    }, this.settings, settings);
 
     if (this.settings.verbosity >= 4) console.log('[DEBUG]', 'Instance of Bitcoin service created, settings:', this.settings);
 
@@ -230,20 +226,7 @@ class Bitcoin extends Service {
 
   async _handleCommittedTransaction (transaction) {
     // console.log('[SERVICE:BITCOIN]', 'Handling Committed Transaction:', transaction);
-    let tx = null;
-
-    try {
-      tx = bcoin.TX.fromOptions(transaction);
-    } catch (exception) {
-      this.emit('message', `Could not create transaction: ${exception}`);
-    }
-
-    try {
-      await this.wallet.wallet.add(tx);
-    } catch (exception) {
-      this.emit('message', `Could not add transaction to wallet: ${exception}`);
-    }
-
+    // this.emit('message', `Transaction committed: ${JSON.stringify(transaction)}`);
     this.emit('transaction', transaction);
   }
 
@@ -445,6 +428,15 @@ class Bitcoin extends Service {
     let block = await this.blocks.create(template);
   }
 
+  async _handleConnectMessage (entry, block) {
+    try {
+      const count = await this.wallet.database.addBlock(entry, block.txs);
+      this.emit('message', `Added block to wallet database, transactions added: ${count}`);
+    } catch (exception) {
+      this.emit('error', `Could not add block to WalletDB: ${exception}`);
+    }
+  }
+
   /**
    * Hand a {@link Block} message as supplied by an {@link SPV} client.
    * @param {BlockMessage} msg A {@link Message} as passed by the {@link SPV} source.
@@ -586,14 +578,9 @@ class Bitcoin extends Service {
   }
 
   async _startLocalNode () {
-    this.fullnode.on('peer connect', function peerConnectHandler (peer) {
-      console.warn('[SERVICES:BITCOIN]', 'Peer connected to Full Node:', peer);
-    });
+    const self = this;
 
-    this.fullnode.on('block', this._handleBlockMessage.bind(this));
-    this.fullnode.on('tx', function fullnodeBlockHandler (tx) {
-      console.warn('[SERVICES:BITCOIN]', 'Full Node emitted transaction:', tx);
-    });
+    if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', `Starting fullnode for network "${this.settings.network}"...`);
 
     for (const candidate of this.settings.peers) {
       let parts = candidate.split(':');
@@ -616,19 +603,18 @@ class Bitcoin extends Service {
   }
 
   async generateBlock (address) {
-    let self = this;
     let block = null;
 
     if (!address) address = await this.wallet.getUnusedAddress();
 
     try {
       block = await this.fullnode.miner.mineBlock(this.fullnode.chain.tip, address);
+      // Add the block to our chain
+      await this.fullnode.chain.add(block);
     } catch (exception) {
       return this.emit('message', `Could not mine block: ${exception}`);
     }
 
-    // Add the block to our chain
-    await this.fullnode.chain.add(block);
     return block;
   }
 
@@ -673,8 +659,23 @@ class Bitcoin extends Service {
 
     const self = this;
 
+    this.fullnode.on('peer connect', function peerConnectHandler (peer) {
+      console.warn('[SERVICES:BITCOIN]', 'Peer connected to Full Node:', peer);
+    });
+
+    this.fullnode.on('block', this._handleBlockMessage.bind(this));
+    this.fullnode.on('connect', this._handleConnectMessage.bind(this));
+
+    this.fullnode.on('tx', async function fullnodeTxHandler (tx) {
+      self.emit('message', `tx event: ${JSON.stringify(tx)}`);
+    });
+
     this.wallet.on('message', function (msg) {
-      self.emit('message', msg);
+      self.emit('message', `wallet msg: ${msg}`);
+    });
+
+    this.wallet.database.on('tx', function (tx) {
+      self.emit('message', `wallet tx!!!!!! ${tx}`);
     });
 
     // Start services

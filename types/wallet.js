@@ -74,7 +74,7 @@ class Wallet extends Service {
       decimals: 8,
       shardsize: 4,
       verbosity: 2,
-      witness: false,
+      witness: true,
       key: null
     }, settings);
 
@@ -724,7 +724,8 @@ class Wallet extends Service {
   }
 
   async getUnusedAddress () {
-    let clean = await this.account.receiveAddress();
+    let clean = await this.wallet.receiveAddress();
+    this.emit('message', `unused address: ${clean}`);
     return clean;
   }
 
@@ -1317,7 +1318,9 @@ class Wallet extends Service {
    * Start the wallet, including listening for transactions.
    */
   async start () {
-    return this._load();
+    this.emit('message', `Wallet starting...`);
+    await this._load();
+    this.emit('message', `Wallet started!`);
   }
 }
 
