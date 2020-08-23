@@ -119,30 +119,32 @@ class Peer extends Scribe {
   }
 
   async start () {
-    const peer = this;
+    let address = null;
+
     if (this.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Peer starting...');
 
     try {
-      await peer.wallet.start();
+      await this.wallet.start();
     } catch (E) {
       console.error('[FABRIC:PEER]', 'Could not start wallet:', E);
     }
 
-    if (peer.settings.listen) {
-      await peer.listen();
+    if (this.settings.listen) {
+      address = await this.listen();
     }
 
-    if (peer.settings.networking) {
-      for (const candidate of peer.settings.peers) {
-        peer._connect(candidate);
+    if (this.settings.networking) {
+      for (const candidate of this.settings.peers) {
+        this._connect(candidate);
       }
     }
 
-    peer.emit('ready', {
-      id: peer.id
+    this.emit('ready', {
+      id: this.id,
+      address: address
     });
 
-    return peer;
+    return this;
   }
 
   async stop () {
@@ -803,7 +805,7 @@ class Peer extends Scribe {
         if (error) return reject(error);
         let address = self.server.address();
         self.emit('message', `Now listening on tcp://${address.address}:${address.port} [!!!]`);
-        return resolve();
+        return resolve(`tcp://${address.address}:${address.port}`);
       });
     });
 
