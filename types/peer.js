@@ -68,7 +68,7 @@ class Peer extends Scribe {
     // TODO: document wallet settings
     this.wallet = new Wallet({
       key: {
-        seed: (this.settings.wallet && this.settings.wallet.seed) ? this.settings.wallet.seed : null
+        seed: (this.settings.wallet && this.settings.wallet.seed) ? this.settings.wallet.seed : this.settings.seed
       }
     });
 
