@@ -82,6 +82,12 @@ class Peer extends Scribe {
     this.address = this.config.address;
     this.port = this.config.port;
 
+    // Public Details
+    this.public = {
+      ip: null,
+      port: this.settings.port
+    };
+
     // Internal properties
     this.connections = {};
     this.peers = {};
@@ -110,6 +116,10 @@ class Peer extends Scribe {
 
   get id () {
     return this.wallet.shard[0].string;
+  }
+
+  get pubkeyhash () {
+    return this.wallet.ring.getKeyHash('hex');
   }
 
   get state () {
@@ -604,7 +614,8 @@ class Peer extends Scribe {
         if (valid && session && session.identity) {
           let peer = {
             id: session.identity,
-            address: packet.origin
+            address: packet.origin,
+            advertise: `${self.pubkeyhash}@${self.public.ip}:${self.public.port}`
           };
 
           if (self.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Peer to register:', peer);
@@ -815,7 +826,9 @@ class Peer extends Scribe {
         }, function (err) {
           if (err) return self.emit('message', `error configuring upnp: ${err}`);
 
-          self.upnp.externalIp(function(err, ip) {
+          self.upnp.externalIp(function (err, ip) {
+            if (err) return self.emit('message', `Could not retrieve public IP: ${err}`);
+            self.public.ip = ip;
             self.emit('message', `UPNP configured!  External IP: ${ip}`);
           });
         });
