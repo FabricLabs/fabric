@@ -16,6 +16,7 @@ const {
 const net = require('net');
 const crypto = require('crypto');
 const stream = require('stream');
+const merge = require('lodash.merge');
 
 const Key = require('./key');
 const Machine = require('./machine');
@@ -39,7 +40,7 @@ class Peer extends Scribe {
     super(config);
 
     this.name = 'Peer';
-    this.settings = this.config = Object.assign({
+    this.settings = this.config = merge({
       address: '0.0.0.0',
       networking: true,
       listen: false,
