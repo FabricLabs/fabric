@@ -17,6 +17,7 @@ const net = require('net');
 const crypto = require('crypto');
 const stream = require('stream');
 const merge = require('lodash.merge');
+const upnp = require('nat-upnp');
 
 const Key = require('./key');
 const Machine = require('./machine');
@@ -51,6 +52,7 @@ class Peer extends Scribe {
     if (this.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Creating Wallet with settings:', this.settings);
 
     // Network Internals
+    this.upnp = upnp.createClient();
     this.server = net.createServer(this._handleConnection.bind(this));
     this.stream = new stream.Transform({
       transform (chunk, encoding, callback) {
@@ -804,6 +806,20 @@ class Peer extends Scribe {
     let promise = new Promise((resolve, reject) => {
       self.server.listen(self.settings.port, self.settings.address, function listenComplete (error) {
         if (error) return reject(error);
+
+        // UPNP
+        self.upnp.portMapping({
+          public: 7777,
+          private: 7777,
+          ttl: 10
+        }, function (err) {
+          if (err) return self.emit('message', `error configuring upnp: ${err}`);
+
+          self.upnp.externalIp(function(err, ip) {
+            self.emit('message', `UPNP configured!  External IP: ${ip}`);
+          });
+        });
+
         let address = self.server.address();
         self.emit('message', `Now listening on tcp://${address.address}:${address.port} [!!!]`);
         return resolve(`tcp://${address.address}:${address.port}`);
