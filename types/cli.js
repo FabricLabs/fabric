@@ -46,6 +46,7 @@ class CLI extends App {
     this.screen = null;
     this.history = [];
     this.commands = {};
+    this.services = {};
     this.elements = {};
     this.peers = {};
 
@@ -94,6 +95,10 @@ class CLI extends App {
 
     // Start Bitcoin service
     await this.bitcoin.start();
+
+    for (const [name, service] of Object.entries(this.services)) {
+      await service.start();
+    }
 
     // Start P2P node
     this.node.start();
@@ -389,6 +394,10 @@ class CLI extends App {
     self._appendMessage(help);
   }
 
+  _handleServiceMessage (msg) {
+    this.emit('message', 'received message from service:', msg);
+  }
+
   _processInput (input) {
     if (input.charAt(0) === '/') {
       const parts = input.substring(1).split(' ');
@@ -428,6 +437,17 @@ class CLI extends App {
 
   _registerCommand (command, method) {
     this.commands[command] = method.bind(this);
+  }
+
+  _registerService (name, type) {
+    const self = this;
+    const service = new type(this.settings);
+
+    this.services[name] = service;
+
+    this.services[name].on('message', function (msg) {
+      self._appendMessage(`service message from ${name}:`, msg);
+    });
   }
 
   render () {

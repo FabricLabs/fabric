@@ -6,6 +6,9 @@ const SEED = process.env.SEED || '';
 
 // Fabric Types
 const CLI = require('../types/cli');
+const Matrix = require('../services/matrix');
+
+// Settings
 const settings = {
   listen: true,
   port: PORT,
@@ -15,6 +18,7 @@ const settings = {
     // 'antipode:7777',
     // 'rpg.verse.im:7777',
     // 'forge.fabric.pub:7777',
+    '174.129.128.216:7777',
     'hub.fabric.pub:7777'
   ],
   wallet: {
@@ -24,6 +28,9 @@ const settings = {
 
 async function main () {
   const chat = new CLI(settings);
+
+  chat._registerService('matrix', Matrix);
+
   await chat.start();
 }
 
