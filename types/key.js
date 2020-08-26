@@ -27,7 +27,7 @@ class Key extends Entity {
     this.private = this.keypair.getPrivate();
     this.public = this.keypair.getPublic(true);
 
-    this.pubkey = this.public.encode('hex');
+    this.pubkey = this.public.encodeCompressed('hex');
     this.pubkeyhash = crypto.createHash('sha256').update(this.pubkey).digest('hex');
 
     let input = `${this.config.prefix}${this.pubkeyhash}`;
@@ -56,9 +56,15 @@ class Key extends Entity {
     return this;
   }
 
+  get id () {
+    return this.pubkeyhash;
+  }
+
   _sign (msg) {
     // console.log(`[KEY] signing: ${msg}...`);
-    let signature = this.keypair.sign(msg);
+    if (typeof msg !== 'string') msg = JSON.stringify(msg);
+    let hmac = crypto.createHash('sha256').update(msg).digest('hex');
+    let signature = this.keypair.sign(hmac);
     // console.log(`[KEY] signature:`, signature);
     return signature.toDER();
   }

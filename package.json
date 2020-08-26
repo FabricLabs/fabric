@@ -18,6 +18,7 @@
     "coverage": "nyc npm test",
     "docs": "npm run make:api && ecstatic docs",
     "examples": "npm run make:examples && ecstatic assets/examples",
+    "keygen": "node scripts/keygen.js",
     "local": "npm run build && ecstatic ./assets",
     "make:all": "npm run make:api && npm run make:service && npm run make:app && npm run make:docs && npm run make:lib",
     "make:api": "npm run parse:api && node_modules/.bin/jsdoc -c jsdoc.json index.js types services README.md -d docs/ && glob-run js-beautify --indent-size 2 -r docs/*.html",

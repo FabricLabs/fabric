@@ -7,6 +7,7 @@ const {
 } = require('../constants');
 
 // Dependencies
+const BN = require('bn.js');
 const event = require('p-event');
 const struct = require('struct');
 const crypto = require('crypto');
@@ -33,8 +34,9 @@ class Session extends Entity {
       recipient: null
     }, settings);
 
-    // Create Unique Key
-    this.key = new Key();
+    // Session Key
+    this.key = null;
+    this.derived = null;
 
     // Internal State
     this._state = {
@@ -119,13 +121,24 @@ class Session extends Entity {
     return data;
   }
 
+  _getOddKey () {
+    let key = new Key();
+    let num = new BN(key.public.encode('hex'), 16);
+    if (num.isEven()) return this._getOddKey();
+    return key;
+  }
+
   /**
    * Opens the {@link Session} for interaction.
    */
   async start () {
     this.status = 'starting';
+    this.key = this._getOddKey();
+    this.derived = this.key.keypair.derive(this.settings.recipient);
 
-    const start = this.TypedMessage('SessionStart');
+    const key = new BN(this.key.public.encode('hex'), 16);
+    const start = this.TypedMessage('SessionStart', key.toString(10));
+
     await this._appendMessage(start.buffer());
 
     this.components.h = this.hash(Buffer.from(LIGHTNING_PROTOCOL_H_INIT, 'ascii'));
@@ -147,9 +160,8 @@ class Session extends Entity {
   }
 
   async commit () {
-    return true;
     let signature = this.key._sign(this.state);
-    return signature;
+    return Buffer.from(signature).toString('hex');
   }
 
   async _appendMessage (message) {
@@ -165,7 +177,10 @@ class Session extends Entity {
     this.meta.messages = this.messages.length;
 
     let signature = await this.commit();
-    this.emit('message', { id, signature });
+    this.emit('message', {
+      type: 'AddMessage',
+      data: { id, signature }
+    });
 
     return signature;
   }

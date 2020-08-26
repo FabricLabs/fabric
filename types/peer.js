@@ -229,6 +229,11 @@ class Peer extends Scribe {
 
     self.emit('message', `Session created: ${JSON.stringify(session)}`);
 
+    if (!self.public.ip) {
+      self.public.ip = socket.localAddress;
+      self.emit('message', `Local socket was null, changed to: ${self.public.ip}`);
+    }
+
     // TODO: consolidate with similar _handleConnection segment
     // TODO: check peer ID, eject if self or known
 
@@ -239,11 +244,10 @@ class Peer extends Scribe {
     const vector = ['StartSession', JSON.stringify({
       id: session.id,
       identity: self.id,
+      advertise: `${self.pubkey}@${self.public.ip}:${self.public.port}`,
       signature: ''
     })];
     const message = Message.fromVector(vector);
-
-    self.meta.messages.outbound++;
 
     if (!socket.writable) {
       self.emit('error', `Socket is not writable.`);
@@ -827,15 +831,19 @@ class Peer extends Scribe {
           if (err) return self.emit('message', `error configuring upnp: ${err}`);
 
           self.upnp.externalIp(function (err, ip) {
-            if (err) return self.emit('message', `Could not retrieve public IP: ${err}`);
-            self.public.ip = ip;
-            self.emit('message', `UPNP configured!  External IP: ${ip}`);
+            if (err) {
+              self.emit('message', `Could not retrieve public IP: ${err}`);
+            } else {
+              self.public.ip = ip;
+              self.emit('message', `UPNP configured!  External IP: ${ip}`);
+            }
+
+            let address = self.server.address();
+            self.emit('message', `Now listening on tcp://${address.address}:${address.port} [!!!]`);
+
+            resolve(`tcp://${address.address}:${address.port}`);
           });
         });
-
-        let address = self.server.address();
-        self.emit('message', `Now listening on tcp://${address.address}:${address.port} [!!!]`);
-        return resolve(`tcp://${address.address}:${address.port}`);
       });
     });
 

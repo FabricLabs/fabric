@@ -28,9 +28,7 @@ const settings = {
 
 async function main () {
   const chat = new CLI(settings);
-
-  chat._registerService('matrix', Matrix);
-
+  // chat._registerService('matrix', Matrix);
   await chat.start();
 }
 
