@@ -70,7 +70,8 @@ class Key extends Entity {
   }
 
   _verify (msg, sig) {
-    let valid = this.keypair.verify(msg, sig);
+    let hmac = crypto.createHash('sha256').update(msg).digest('hex');
+    let valid = this.keypair.verify(hmac, sig);
     return valid;
   }
 }
