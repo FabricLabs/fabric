@@ -23,6 +23,7 @@ const Key = require('./key');
 const Machine = require('./machine');
 const Message = require('./message');
 const Session = require('./session');
+const Reader = require('./reader');
 const Scribe = require('./scribe');
 const Wallet = require('./wallet');
 
@@ -212,22 +213,19 @@ class Peer extends Scribe {
   }
 
   // TODO: use in _connect
-  async _sessionStart (socket, address) {
+  async _sessionStart (socket, target) {
     const self = this;
-    const session = new Session();
+    const address = `${target.address}:${target.port}`;
 
     self.emit('message', `Starting session with address: ${address}`);
 
-    session.on('message', function (msg) {
-      self.emit('session:update', {
-        type: 'AddMessage',
-        data: msg
-      });
+    self.connections[address].session = new Session({
+      recipient: target.pubkey
     });
 
-    await session.start();
+    await self.connections[address].session.start();
 
-    self.emit('message', `Session created: ${JSON.stringify(session)}`);
+    self.emit('message', `Session created: ${JSON.stringify(self.connections[address].session)}`);
 
     if (!self.public.ip) {
       self.public.ip = socket.localAddress;
@@ -242,7 +240,7 @@ class Peer extends Scribe {
     // TODO: re-evaluate use of IdentityRequest
     // const vector = ['IdentityRequest', self.id];
     const vector = ['StartSession', JSON.stringify({
-      id: session.id,
+      id: self.connections[address].session.id,
       identity: self.id,
       advertise: `${self.pubkey}@${self.public.ip}:${self.public.port}`,
       signature: ''
@@ -266,15 +264,9 @@ class Peer extends Scribe {
     if (self.settings.verbosity >= 4) console.log('[FABRIC:PEER]', `Connection to ${address} established!`);
   }
 
-  async _handleSocketData (socket, address, data) {
+  async _processCompleteDataPacket (socket, address, data) {
     let self = this;
-    if (self.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Received data from peer:', data);
-    self.meta.messages.inbound++;
     let message = null;
-
-    // debug message for listeners
-    self.emit('socket:data', data);
-
     // TODO: actually decrypt packet
     let decrypted = socket.session.decrypt(data);
 
@@ -308,63 +300,95 @@ class Peer extends Scribe {
     }
   }
 
+  async _handleSocketData (socket, address, data) {
+    let self = this;
+    if (self.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Received data from peer:', data);
+
+    if (!socket.session) {
+      self.emit('error', `Received data on socket without a session!`);
+      return false;
+    }
+
+    socket._reader._addData(data);
+  }
+
   _connect (address) {
     let self = this;
     let parts = address.split(':');
     let known = Object.keys(self.connections);
+    let keyparts = parts[0].split('@');
+    let target = {
+      pubkey: null,
+      address: null,
+      port: null
+    };
 
-    if (this.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Connecting to address:', address);
+    if (keyparts.length === 2) {
+      target.pubkey = keyparts[0];
+      target.address = keyparts[1];
+      target.port = parts[1];
+    } else {
+      target.address = parts[0];
+      target.port = parts[1];
+    }
+
+    const authority = `${target.address}:${target.port}`;
+
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Connecting to address:', authority);
 
     if (parts.length !== 2) return console.debug('Invalid address:', address);
-    if (known.includes(address)) return self.connections[address];
+    if (known.includes(authority)) return self.connections[authority];
 
     // TODO: refactor to use local functions + specific unbindings
     try {
-      self.connections[address] = new net.Socket();
+      self.connections[authority] = new net.Socket();
+      self.connections[authority]._reader = new Reader();
+      self.connections[authority]._reader.on('message', function (msg) {
+        self._processCompleteDataPacket.apply(self, [ self.connections[authority], authority, msg ]);
+      });
 
-      self.connections[address].on('error', function (err) {
-        const text = `could not connect to peer ${address} — Reason: ${err}`;
+      self.connections[authority].on('error', function (err) {
+        const text = `could not connect to peer ${authority} — Reason: ${err}`;
         self.emit('connection:error', {
           message: text
         });
-        // console.debug('[PEER]', `could not connect to peer ${address} — Reason:`, err);
+        // console.debug('[PEER]', `could not connect to peer ${authority} — Reason:`, err);
       });
 
-      self.connections[address].on('close', function (err) {
+      self.connections[authority].on('close', function (err) {
         if (err) self.debug('socket closed on error:', err);
         if (err) self.emit('message', `socket closed on error: ${err}`);
-        self.connections[address].removeAllListeners();
+
+        self.emit('warning', `Connection closed: ${authority}`);
+
+        self.connections[authority].removeAllListeners();
+
         // TODO: consider using `process.nextTick` to only clean up after event?
-        delete self.connections[address];
+        delete self.connections[authority];
         self.emit('connections:close', {
-          address: address
+          address: authority
         });
       });
 
       // TODO: unify as _dataHandler
-      self.connections[address].on('data', async function peerDataHandler (data) {
-        self._handleSocketData.apply(self, [ this, address, data ]);
+      self.connections[authority].on('data', async function peerDataHandler (data) {
+        self._handleSocketData.apply(self, [ this, authority, data ]);
       });
 
-      self.emit('message', `Starting connection to address: ${address}`);
-
-      // TODO: use known key
-      self.connections[address].session = new Session({
-        // initiator: self.wallet.key
-      });
+      self.emit('message', `Starting connection to address: ${authority}`);
 
       // TODO: replace with handshake
       // NOTE: the handler is only called once per connection!
-      self.connections[address].connect(parts[1], parts[0], async function connectionAttemptComplete (error) {
+      self.connections[authority].connect(target.port, target.address, async function connectionAttemptComplete (error) {
         if (error) return new Error(`Could not establish connection: ${error}`);
-        await self._sessionStart.apply(self, [ this, address ]);
-        self._maintainConnection(address);
+        await self._sessionStart.apply(self, [ this, target ]);
+        self._maintainConnection(authority);
       });
     } catch (E) {
       self.log('[PEER]', 'failed to connect:', E);
     }
 
-    return self.connections[address];
+    return self.connections[authority];
   }
 
   _disconnect (address) {
@@ -399,10 +423,11 @@ class Peer extends Scribe {
     return message;
   }
 
-  _handleConnection (socket) {
+  async _handleConnection (socket) {
     const self = this;
     const address = [socket.remoteAddress, socket.remotePort].join(':');
 
+    self.emit('message', `[FABRIC:PEER] [@ID:$${self.id}] Incoming connection from address: ${address}`);
     if (this.settings.verbosity >= 4) console.log('[FABRIC:PEER]', `[@ID:$${self.id}]`, 'Incoming connection from address:', address);
 
     self.emit('connections:open', {
@@ -430,6 +455,10 @@ class Peer extends Scribe {
 
     // add this socket to the list of known connections
     this.connections[address] = socket;
+    this.connections[address]._reader = new Reader();
+    this.connections[address]._reader.on('message', function (msg) {
+      self._processCompleteDataPacket.apply(self, [ self.connections[address], address, msg ]);
+    });
 
     self._maintainConnection(address);
   }
@@ -710,11 +739,16 @@ class Peer extends Scribe {
     }
   }
 
-  sendToSocket (address, message) {
+  async sendToSocket (address, message) {
     const self = this;
 
     if (!this.connections[address]) {
       this.emit('error', `Could not deliver message to unconnected address: ${address}`);
+      return false;
+    }
+
+    if (!this.connections[address].session) {
+      this.emit('error', `Connection does not have a Session: ${address}`);
       return false;
     }
 
@@ -723,16 +757,10 @@ class Peer extends Scribe {
       return false;
     }
 
-    this.connections[address].cork();
+    const signature = await this.connections[address].session._appendMessage(message.asRaw());
     const result = this.connections[address].write(message.asRaw());
     if (!result) {
       self.emit('warning', 'Stream result false.');
-    }
-
-    process.nextTick(doUncork, this.connections[address]);
-
-    function doUncork (stream) {
-      stream.uncork();
     }
   }
 

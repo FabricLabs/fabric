@@ -35,7 +35,7 @@ class Session extends Entity {
     }, settings);
 
     // Session Key
-    this.key = null;
+    this.key = this._getOddKey();
     this.derived = null;
 
     // Internal State
@@ -121,10 +121,17 @@ class Session extends Entity {
     return data;
   }
 
+  _getEvenKey () {
+    let key = new Key();
+    let num = new BN(key.public.encode('hex'), 16);
+    if (!num.isEven()) return this._getEvenKey();
+    return key;
+  }
+
   _getOddKey () {
     let key = new Key();
     let num = new BN(key.public.encode('hex'), 16);
-    if (num.isEven()) return this._getOddKey();
+    if (!num.isOdd()) return this._getOddKey();
     return key;
   }
 
@@ -132,9 +139,16 @@ class Session extends Entity {
    * Opens the {@link Session} for interaction.
    */
   async start () {
+    if (!this.settings.recipient) {
+      const error = 'Session must be constructed with a recipient.';
+      this.emit('error', error);
+      return new Error(error);
+    }
+
     this.status = 'starting';
-    this.key = this._getOddKey();
-    this.derived = this.key.keypair.derive(this.settings.recipient);
+
+    const target = new Key({ public: this.settings.recipient });
+    this.derived = this.key.keypair.derive(target.public);
 
     const key = new BN(this.key.public.encode('hex'), 16);
     const start = this.TypedMessage('SessionStart', key.toString(10));
@@ -160,6 +174,7 @@ class Session extends Entity {
   }
 
   async commit () {
+    if (!this.key) throw new Error('No key for session!');
     let signature = this.key._sign(this.state);
     return Buffer.from(signature).toString('hex');
   }
@@ -177,6 +192,7 @@ class Session extends Entity {
     this.meta.messages = this.messages.length;
 
     let signature = await this.commit();
+
     this.emit('message', {
       type: 'AddMessage',
       data: { id, signature }
