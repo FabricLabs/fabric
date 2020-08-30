@@ -28,6 +28,7 @@ const {
 } = require('../constants');
 
 const crypto = require('crypto');
+const struct = require('struct');
 const Vector = require('./vector');
 const padDigits = require('../functions/padDigits');
 
@@ -135,6 +136,26 @@ class Message extends Vector {
 
   fromObject (input) {
     return new Message(input);
+  }
+
+  static parseBuffer (buffer) {
+    const message = struct()
+      .charsnt('magic', 4, 'hex')
+      .charsnt('version', 4, 'hex')
+      .charsnt('type', 4, 'hex')
+      .charsnt('size', 4, 'hex')
+      .charsnt('hash', 32, 'hex')
+      .charsnt('data', buffer.length - HEADER_SIZE);
+
+    message.allocate();
+    message._setBuff(buffer);
+
+    return message;
+  }
+
+  static fromBuffer (buffer) {
+    const parsed = Message.parseBuffer(buffer);
+    return Message.fromRaw(parsed.buffer());
   }
 
   static fromRaw (input) {
