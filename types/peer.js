@@ -167,6 +167,8 @@ class Peer extends Scribe {
     // Alert listeners
     peer.emit('message', 'Peer stopping...');
 
+    peer.upnp.close();
+
     for (const id in peer.connections) {
       peer.emit('message', `Closing connection: ${id}`);
       const connection = peer.connections[id];
