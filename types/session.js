@@ -139,12 +139,6 @@ class Session extends Entity {
    * Opens the {@link Session} for interaction.
    */
   async start () {
-    if (!this.settings.recipient) {
-      const error = 'Session must be constructed with a recipient.';
-      this.emit('error', error);
-      return new Error(error);
-    }
-
     this.status = 'starting';
 
     const target = new Key({ public: this.settings.recipient });
