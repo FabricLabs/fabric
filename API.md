@@ -23,13 +23,17 @@ of <a href="#Peer">Peer</a> components.  See also <a href="#Swarm">Swarm</a> for
 inspection of <a href="#Machine">Machine</a> mechanics.</p>
 </dd>
 <dt><a href="#CLI">CLI</a></dt>
-<dd><p>Base class for a terminal-like interface to the Fabric network.</p>
+<dd><p>Provides a Command Line Interface (CLI) for interacting with
+the Fabric network using a terminal emulator.</p>
 </dd>
 <dt><a href="#Collection">Collection</a></dt>
 <dd><p>The <a href="#Collection">Collection</a> type maintains an ordered list of <a href="#State">State</a> items.</p>
 </dd>
 <dt><a href="#Compiler">Compiler</a> : <code>Object</code></dt>
 <dd><p>Compilers build interfaces for users of Fabric applications.</p>
+</dd>
+<dt><a href="#Consensus">Consensus</a></dt>
+<dd><p>Provides various network-specific rules.</p>
 </dd>
 <dt><a href="#Entity">Entity</a> : <code>Object</code></dt>
 <dd><p>Live instance of an ARC in Fabric.</p>
@@ -42,6 +46,9 @@ inspection of <a href="#Machine">Machine</a> mechanics.</p>
 </dd>
 <dt><a href="#Interface">Interface</a> ⇐ <code>EventEmitter</code></dt>
 <dd><p>Interfaces compile abstract contract code into <a href="#Chain">Chain</a>-executable transactions, or &quot;chaincode&quot;. For example, the &quot;Bitcoin&quot; interface might compile a Swap contract into Script, preparing a valid Bitcoin transaction for broadcast which executes the swap contract.</p>
+</dd>
+<dt><a href="#Key">Key</a></dt>
+<dd><p>Represents a cryptographic key.</p>
 </dd>
 <dt><a href="#Ledger">Ledger</a> ⇐ <code><a href="#Scribe">Scribe</a></code></dt>
 <dd><p>An ordered stack of pages.</p>
@@ -608,42 +615,10 @@ inspection of [Machine](#Machine) mechanics.
 <a name="CLI"></a>
 
 ## CLI
-Base class for a terminal-like interface to the Fabric network.
+Provides a Command Line Interface (CLI) for interacting with
+the Fabric network using a terminal emulator.
 
 **Kind**: global class  
-**Properties**
-
-| Name | Type | Description |
-| --- | --- | --- |
-| config | <code>Object</code> | Initial [Vector](#Vector). |
-| oracle | [<code>Oracle</code>](#Oracle) | Instance of [Oracle](#Oracle). |
-
-
-* [CLI](#CLI)
-    * [new CLI(configuration)](#new_CLI_new)
-    * [._handleChanges(msg)](#CLI+_handleChanges) ⇒ [<code>CLI</code>](#CLI)
-
-<a name="new_CLI_new"></a>
-
-### new CLI(configuration)
-Base class for a terminal-like interface to the Fabric network.
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| configuration | <code>Object</code> | Configuration object for the CLI. |
-
-<a name="CLI+_handleChanges"></a>
-
-### clI.\_handleChanges(msg) ⇒ [<code>CLI</code>](#CLI)
-Update UI as necessary based on changes from Oracle.
-
-**Kind**: instance method of [<code>CLI</code>](#CLI)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| msg | [<code>Message</code>](#Message) | Incoming [Message](#Message). |
-
 <a name="Collection"></a>
 
 ## Collection
@@ -668,6 +643,8 @@ The [Collection](#Collection) type maintains an ordered list of [State](#State) 
     * [.findBySymbol(symbol)](#Collection+findBySymbol)
     * [._patchTarget(path, patches)](#Collection+_patchTarget)
     * [.push(data)](#Collection+push) ⇒ <code>Number</code>
+    * [.get(path)](#Collection+get) ⇒ <code>Mixed</code>
+    * [.set(path)](#Collection+set) ⇒ <code>Mixed</code>
     * ~~[.list()](#Collection+list) ⇒ <code>Array</code>~~
     * [.toTypedArray()](#Collection+toTypedArray)
     * [.map()](#Collection+map) ⇒ <code>Array</code>
@@ -776,6 +753,28 @@ Adds an [Entity](#Entity) to the [Collection](#Collection).
 | --- | --- | --- |
 | data | <code>Mixed</code> | [Entity](#Entity) to add. |
 
+<a name="Collection+get"></a>
+
+### collection.get(path) ⇒ <code>Mixed</code>
+Retrieve a key from the [State](#State).
+
+**Kind**: instance method of [<code>Collection</code>](#Collection)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | [<code>Path</code>](#Path) | Key to retrieve. |
+
+<a name="Collection+set"></a>
+
+### collection.set(path) ⇒ <code>Mixed</code>
+Set a key in the [State](#State) to a particular value.
+
+**Kind**: instance method of [<code>Collection</code>](#Collection)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | [<code>Path</code>](#Path) | Key to retrieve. |
+
 <a name="Collection+list"></a>
 
 ### ~~collection.list() ⇒ <code>Array</code>~~
@@ -838,6 +837,24 @@ Create a new Compiler.
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
 | [settings] | <code>Object</code> | <code>{}</code> | Configuration. |
+
+<a name="Consensus"></a>
+
+## Consensus
+Provides various network-specific rules.
+
+**Kind**: global class  
+<a name="new_Consensus_new"></a>
+
+### new Consensus([settings])
+Create an instance of a [Consensus](#Consensus) verifier.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Configuration for the network. |
+| [settings.network] | <code>String</code> | Name of the network. |
+| [settings.provider] | <code>String</code> | Name of the source provider. |
 
 <a name="Entity"></a>
 
@@ -1016,6 +1033,29 @@ Log some output to the console.
 Returns current timestamp.
 
 **Kind**: instance method of [<code>Interface</code>](#Interface)  
+<a name="Key"></a>
+
+## Key
+Represents a cryptographic key.
+
+**Kind**: global class  
+<a name="new_Key_new"></a>
+
+### new Key([settings])
+Create an instance of a Fabric Key, either restoring from some known
+values or from prior knowledge.  For instance, you can call `new Key()`
+to create a fresh keypair, or `new Key({ public: 'deadbeef...' })` to
+create it from a known public key.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Initialization for the key. |
+| [settings.network] | <code>String</code> | Network string. |
+| [settings.seed] | <code>String</code> | Mnemonic seed for initializing the key. |
+| [settings.public] | <code>String</code> | Public key in hex. |
+| [settings.private] | <code>String</code> | Private key in hex. |
+
 <a name="Ledger"></a>
 
 ## Ledger ⇐ [<code>Scribe</code>](#Scribe)
@@ -1525,7 +1565,7 @@ HTTP GET against the configured Authority.
 HTTP POST against the configured Authority.
 
 **Kind**: instance method of [<code>Remote</code>](#Remote)  
-**Returns**: <code>Mixed</code> - [description]  
+**Returns**: <code>Mixed</code> - Result of request.  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -2692,6 +2732,7 @@ Manage keys and track their balances.
     * [._createCrowdfund(fund)](#Wallet+_createCrowdfund)
     * [._getSwapInputScript(redeemScript, secret)](#Wallet+_getSwapInputScript)
     * [._getRefundInputScript(redeemScript)](#Wallet+_getRefundInputScript)
+    * [.publicKeyFromString(input)](#Wallet+publicKeyFromString)
     * [._load(settings)](#Wallet+_load)
     * [.start()](#Wallet+start)
 
@@ -2787,6 +2828,17 @@ Generate [Script](#Script) for reclaiming funds commited to a [Swap](#Swap).
 | Param | Type |
 | --- | --- |
 | redeemScript | <code>\*</code> | 
+
+<a name="Wallet+publicKeyFromString"></a>
+
+### wallet.publicKeyFromString(input)
+Create a public key from a string.
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>String</code> | Hex-encoded string to create key from. |
 
 <a name="Wallet+_load"></a>
 
