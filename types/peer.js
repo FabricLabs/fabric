@@ -47,7 +47,8 @@ class Peer extends Scribe {
       networking: true,
       listen: false,
       peers: [],
-      port: 7777
+      port: 7777,
+      upnp: true
     }, config);
 
     if (this.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Creating Wallet with settings:', this.settings);
@@ -847,10 +848,21 @@ class Peer extends Scribe {
    * @return {Peer} Chainable method.
    */
   async listen () {
-    let self = this;
-    let promise = new Promise((resolve, reject) => {
+    const self = this;
+    const promise = new Promise((resolve, reject) => {
       self.server.listen(self.settings.port, self.settings.address, function listenComplete (error) {
         if (error) return reject(error);
+
+        const details = self.server.address();
+        const address = `tcp://${details.address}:${details.port}`;
+        const complete = function () {
+          self.emit('message', `Now listening on ${address} [!!!]`);
+          return resolve(address);
+        }
+
+        if (!self.settings.upnp) {
+          return complete();
+        }
 
         // UPNP
         self.upnp.portMapping({
@@ -858,7 +870,10 @@ class Peer extends Scribe {
           private: 7777,
           ttl: 10
         }, function (err) {
-          if (err) return self.emit('message', `error configuring upnp: ${err}`);
+          if (err) {
+            self.emit('message', `error configuring upnp: ${err}`);
+            return complete();
+          }
 
           self.upnp.externalIp(function (err, ip) {
             if (err) {
@@ -868,10 +883,7 @@ class Peer extends Scribe {
               self.emit('message', `UPNP configured!  External IP: ${ip}`);
             }
 
-            let address = self.server.address();
-            self.emit('message', `Now listening on tcp://${address.address}:${address.port} [!!!]`);
-
-            resolve(`tcp://${address.address}:${address.port}`);
+            return complete();
           });
         });
       });
