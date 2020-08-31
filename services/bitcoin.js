@@ -27,6 +27,7 @@ const NetAddress = bcoin.net.NetAddress;
 
 /**
  * Manages interaction with the Bitcoin network.
+ * @module services/bitcoin
  */
 class Bitcoin extends Service {
   /**
@@ -53,7 +54,7 @@ class Bitcoin extends Service {
       peers: [],
       port: 18444,
       verbosity: 2
-    }, this.settings, settings);
+    }, settings);
 
     if (this.settings.verbosity >= 4) console.log('[DEBUG]', 'Instance of Bitcoin service created, settings:', this.settings);
 

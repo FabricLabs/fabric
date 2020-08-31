@@ -39,7 +39,11 @@ const Wallet = require('./wallet');
 class Peer extends Scribe {
   /**
    * Create an instance of {@link Peer}.
-   * @param       {Vector} config - Initialization Vector for this peer.
+   * @param {Object} [config] Initialization Vector for this peer.
+   * @param {Boolean} [config.listen] Whether or not to listen for connections.
+   * @param {Boolean} [config.upnp] Whether or not to use UPNP for automatic configuration.
+   * @param {Number} [config.port=7777] Port to use for P2P connections.
+   * @param {Array} [config.peers=[]] List of initial peers.
    */
   constructor (config = {}) {
     super(config);
@@ -133,6 +137,9 @@ class Peer extends Scribe {
     this._state = value;
   }
 
+  /**
+   * Start the Peer.
+   */
   async start () {
     let address = null;
 
@@ -162,6 +169,9 @@ class Peer extends Scribe {
     return this;
   }
 
+  /**
+   * Stop the peer.
+   */
   async stop () {
     const peer = this;
 

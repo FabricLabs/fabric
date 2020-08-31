@@ -7,6 +7,7 @@ const Service = require('../types/service');
 
 /**
  * Service for interacting with Matrix.
+ * @module services/matrix
  */
 class Matrix extends Interface {
   /**

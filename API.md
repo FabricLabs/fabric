@@ -1470,19 +1470,37 @@ An in-memory representation of a node in our network.
 **Kind**: global class  
 
 * [Peer](#Peer)
-    * [new Peer(config)](#new_Peer_new)
+    * [new Peer([config])](#new_Peer_new)
+    * [.start()](#Peer+start)
+    * [.stop()](#Peer+stop)
     * [.listen()](#Peer+listen) ⇒ [<code>Peer</code>](#Peer)
 
 <a name="new_Peer_new"></a>
 
-### new Peer(config)
+### new Peer([config])
 Create an instance of [Peer](#Peer).
 
 
-| Param | Type | Description |
-| --- | --- | --- |
-| config | [<code>Vector</code>](#Vector) | Initialization Vector for this peer. |
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [config] | [<code>Vector</code>](#Vector) |  | Initialization Vector for this peer. |
+| [config.listen] | <code>Boolean</code> |  | Whether or not to listen for connections. |
+| [config.upnp] | <code>Boolean</code> |  | Whether or not to use UPNP for automatic configuration. |
+| [config.port] | <code>Number</code> | <code>7777</code> | Port to use for P2P connections. |
+| [config.peers] | <code>Array</code> | <code>[]</code> | List of initial peers. |
 
+<a name="Peer+start"></a>
+
+### peer.start()
+Start the Peer.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+<a name="Peer+stop"></a>
+
+### peer.stop()
+Stop the peer.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
 <a name="Peer+listen"></a>
 
 ### peer.listen() ⇒ [<code>Peer</code>](#Peer)

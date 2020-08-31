@@ -14,7 +14,21 @@ const bcoin = require('bcoin');
 // Fabric Types
 const Entity = require('./entity');
 
+/**
+ * Represents a cryptographic key.
+ */
 class Key extends Entity {
+  /**
+   * Create an instance of a Fabric Key, either restoring from some known
+   * values or from prior knowledge.  For instance, you can call `new Key()`
+   * to create a fresh keypair, or `new Key({ public: 'deadbeef...' })` to
+   * create it from a known public key.
+   * @param {Object} [settings] Initialization for the key.
+   * @param {String} [settings.network] Network string.
+   * @param {String} [settings.seed] Mnemonic seed for initializing the key.
+   * @param {String} [settings.public] Public key in hex.
+   * @param {String} [settings.private] Private key in hex.
+   */
   constructor (init = {}) {
     super(init);
 
