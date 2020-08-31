@@ -1,10 +1,17 @@
 'use strict';
 
+// TODO: replace with bcoin
 const Base58Check = require('base58check');
+
+// Dependencies
 const crypto = require('crypto');
 const EC = require('elliptic').ec;
 const ec = new EC('secp256k1');
 
+// Dependencies
+const bcoin = require('bcoin');
+
+// Fabric Types
 const Entity = require('./entity');
 
 class Key extends Entity {
@@ -12,15 +19,27 @@ class Key extends Entity {
     super(init);
 
     this.config = Object.assign({
+      network: 'main',
       prefix: '00',
       private: null
     }, init);
 
-    if (init.pubkey) {
+    if (this.config.seed) {
+      // Seed provided, compute keys
+      let mnemonic = new bcoin.Mnemonic(this.config.seed);
+      let master = bcoin.hd.fromMnemonic(mnemonic);
+      let ring = new bcoin.KeyRing(master, this.config.network);
+
+      // Assign keys
+      this.keypair = ec.keyFromPrivate(ring.getPrivateKey('hex'));
+    } else if (init.pubkey) {
+      // Key is only public
       this.keypair = ec.keyFromPublic(init.pubkey, 'hex');
     } else if (this.config.private) {
+      // Key is private
       this.keypair = ec.keyFromPrivate(this.config.private, 16);
     } else {
+      // Generate new keys
       this.keypair = ec.genKeyPair();
     }
 

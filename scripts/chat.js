@@ -1,8 +1,8 @@
 'use strict';
 
 // Settings
-const PORT = process.env.PORT || 7777;
-const SEED = process.env.SEED || '';
+const PORT = process.env.PORT;
+const SEED = process.env.SEED;
 
 // Fabric Types
 const CLI = require('../types/cli');

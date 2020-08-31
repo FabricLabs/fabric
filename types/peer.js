@@ -1,5 +1,6 @@
 'use strict';
 
+// Constants
 const {
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
@@ -14,12 +15,16 @@ const {
   ZERO_LENGTH_PLAINTEXT
 } = require('../constants');
 
+// Internals
 const net = require('net');
 const crypto = require('crypto');
 const stream = require('stream');
+
+// Dependencies
 const merge = require('lodash.merge');
 const upnp = require('nat-upnp');
 
+// Fabric Types
 const Key = require('./key');
 const Machine = require('./machine');
 const Message = require('./message');
@@ -42,14 +47,13 @@ class Peer extends Scribe {
     this.name = 'Peer';
     this.settings = this.config = merge({
       address: '0.0.0.0',
+      network: 'regtest',
       networking: true,
       listen: false,
       peers: [],
       port: 7777,
       upnp: true
     }, config);
-
-    if (this.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Creating Wallet with settings:', this.settings);
 
     // Network Internals
     this.upnp = upnp.createClient();
@@ -61,9 +65,10 @@ class Peer extends Scribe {
       }
     });
 
-    // TODO: attempt to use handler binding
-    // probably bug with this vs. self
-    // this.stream.on('data', this._handler.bind(this));
+    this.key = new Key({
+      network: this.settings.network,
+      seed: (this.settings.wallet && this.settings.wallet.seed) ? this.settings.wallet.seed : this.settings.seed
+    });
 
     // TODO: document wallet settings
     this.wallet = new Wallet({
@@ -71,8 +76,6 @@ class Peer extends Scribe {
         seed: (this.settings.wallet && this.settings.wallet.seed) ? this.settings.wallet.seed : this.settings.seed
       }
     });
-
-    this.key = null;
 
     // this.hex = this.key.public.encodeCompressed('hex');
     // this.pkh = crypto.createHash('sha256').update(this.hex).digest('hex');
@@ -140,10 +143,6 @@ class Peer extends Scribe {
     } catch (E) {
       console.error('[FABRIC:PEER]', 'Could not start wallet:', E);
     }
-
-    this.key = new Key({
-      private: this.wallet.ring.getPrivateKey('hex')
-    });
 
     if (this.settings.listen) {
       address = await this.listen();
@@ -763,6 +762,7 @@ class Peer extends Scribe {
 
     const signature = await this.connections[address].session._appendMessage(message.asRaw());
     const result = this.connections[address].write(message.asRaw());
+
     if (!result) {
       self.emit('warning', 'Stream result false.');
     }
