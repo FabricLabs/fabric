@@ -2,6 +2,9 @@
 
 const MAX_CHAT_MESSAGE_LENGTH = 2048;
 
+// Dependencies
+const merge = require('lodash.merge');
+
 // Types
 const App = require('../types/app');
 const Peer = require('../types/peer');
@@ -30,8 +33,10 @@ class CLI extends App {
   constructor (settings = {}) {
     super(settings);
 
-    this.settings = Object.assign({}, this.settings, settings);
+    // Assign Settings
+    this.settings = merge({}, this.settings, settings);
 
+    // Internal Components
     this.node = new Peer(this.settings);
     this.bitcoin = new Bitcoin({
       fullnode: true,
@@ -43,6 +48,7 @@ class CLI extends App {
       verbosity: 0
     });
 
+    // Other Properties
     this.screen = null;
     this.history = [];
     this.commands = {};
@@ -50,6 +56,7 @@ class CLI extends App {
     this.elements = {};
     this.peers = {};
 
+    // Chainable
     return this;
   }
 
@@ -229,7 +236,7 @@ class CLI extends App {
   }
 
   async _handleSessionUpdate (session) {
-    this._appendMessage(`Local session update: ${JSON.stringify(session)}`);
+    this._appendMessage(`Local session update: ${JSON.stringify(session, null, '  ')}`);
   }
 
   async _handleSocketData (data) {
