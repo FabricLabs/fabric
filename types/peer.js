@@ -10,7 +10,8 @@ const {
   P2P_BASE_MESSAGE,
   P2P_STATE_COMMITTMENT,
   P2P_STATE_CHANGE,
-  P2P_STATE_ROOT
+  P2P_STATE_ROOT,
+  ZERO_LENGTH_PLAINTEXT
 } = require('../constants');
 
 const net = require('net');
@@ -26,9 +27,6 @@ const Session = require('./session');
 const Reader = require('./reader');
 const Scribe = require('./scribe');
 const Wallet = require('./wallet');
-
-// TODO: implement the noise protocol: http://noiseprotocol.org/noise.html
-const ZERO_LENGTH_PLAINTEXT = '';
 
 /**
  * An in-memory representation of a node in our network.
@@ -67,15 +65,14 @@ class Peer extends Scribe {
     // probably bug with this vs. self
     // this.stream.on('data', this._handler.bind(this));
 
-    // TODO: load wallet from key
-    this.key = new Key(this.settings.key);
-
     // TODO: document wallet settings
     this.wallet = new Wallet({
       key: {
         seed: (this.settings.wallet && this.settings.wallet.seed) ? this.settings.wallet.seed : this.settings.seed
       }
     });
+
+    this.key = null;
 
     // this.hex = this.key.public.encodeCompressed('hex');
     // this.pkh = crypto.createHash('sha256').update(this.hex).digest('hex');
@@ -143,6 +140,10 @@ class Peer extends Scribe {
     } catch (E) {
       console.error('[FABRIC:PEER]', 'Could not start wallet:', E);
     }
+
+    this.key = new Key({
+      private: this.wallet.ring.getPrivateKey('hex')
+    });
 
     if (this.settings.listen) {
       address = await this.listen();
@@ -245,7 +246,7 @@ class Peer extends Scribe {
     const vector = ['StartSession', JSON.stringify({
       id: self.connections[address].session.id,
       identity: self.id,
-      advertise: `${self.pubkey}@${self.public.ip}:${self.public.port}`,
+      advertise: `${self.key.pubkey}@${self.public.ip}:${self.public.port}`,
       signature: ''
     })];
     const message = Message.fromVector(vector);
