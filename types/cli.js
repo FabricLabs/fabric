@@ -617,6 +617,7 @@ class CLI extends App {
       inputOnFocus: true
     });
 
+
     // Set Index for Command History
     this.elements['prompt'].historyIndex = -1;
 
@@ -624,6 +625,25 @@ class CLI extends App {
     self.screen.render();
     self._bindKeys();
 
+    // TODO: clean up workaround (from https://github.com/chjj/blessed/issues/109)
+    self.elements['prompt'].oldFocus = self.elements['prompt'].focus;
+    self.elements['prompt'].focus = function () {
+      let oldListener = self.elements['prompt'].__listener;
+      self.elements['prompt'].removeListener('keypress', self.elements['prompt'].__listener);
+      delete self.elements['prompt'].__listener;
+
+      let oldBlur = self.elements['prompt'].__done;
+      self.elements['prompt'].removeListener('blur', self.elements['prompt'].__done);
+      delete self.elements['prompt'].__done;
+      self.elements['prompt'].screen.focusPop(self.elements['prompt'])
+
+      self.elements['prompt'].addListener('keypress', oldListener);
+      self.elements['prompt'].addListener('blur', oldBlur);
+
+      self.elements['prompt'].oldFocus();
+    }
+
+    //focus when clicked
     self.elements['form'].on('click', function () {
       self.elements['prompt'].focus();
     });
