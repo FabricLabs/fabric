@@ -44,6 +44,10 @@ the Fabric network using a terminal emulator.</p>
 <dt><a href="#Hash256">Hash256</a></dt>
 <dd><p>Simple interaction with 256-bit spaces.</p>
 </dd>
+<dt><a href="#HKDF">HKDF</a></dt>
+<dd><p>Provides an HMAC-based Extract-and-Expand Key Derivation Function (HKDF), compatible with
+RFC 5869.  Defaults to 32 byte output, matching Bitcoin&#39;s implementaton.</p>
+</dd>
 <dt><a href="#Interface">Interface</a> ⇐ <code>EventEmitter</code></dt>
 <dd><p>Interfaces compile abstract contract code into <a href="#Chain">Chain</a>-executable transactions, or &quot;chaincode&quot;. For example, the &quot;Bitcoin&quot; interface might compile a Swap contract into Script, preparing a valid Bitcoin transaction for broadcast which executes the swap contract.</p>
 </dd>
@@ -954,6 +958,43 @@ If the `settings` is not a string, `input` must be provided.
 | --- | --- |
 | input | <code>String</code> | 
 
+<a name="HKDF"></a>
+
+## HKDF
+Provides an HMAC-based Extract-and-Expand Key Derivation Function (HKDF), compatible with
+RFC 5869.  Defaults to 32 byte output, matching Bitcoin's implementaton.
+
+**Kind**: global class  
+
+* [HKDF](#HKDF)
+    * [new HKDF(settings)](#new_HKDF_new)
+    * [.derive([info], [size])](#HKDF+derive)
+
+<a name="new_HKDF_new"></a>
+
+### new HKDF(settings)
+Create an HKDF instance.
+
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| settings | <code>Object</code> |  | List of settings. |
+| settings.initial | <code>String</code> |  | Input keying material. |
+| [settings.algorithm] | <code>String</code> | <code>sha256</code> | Name of the hashing algorithm to use. |
+| [settings.salt] | <code>String</code> |  | Salt value (a non-secret random value). |
+
+<a name="HKDF+derive"></a>
+
+### hkdF.derive([info], [size])
+Derive a new output.
+
+**Kind**: instance method of [<code>HKDF</code>](#HKDF)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [info] | <code>Buffer</code> |  | Context and application specific information. |
+| [size] | <code>Number</code> | <code>32</code> | Length of output. |
+
 <a name="Interface"></a>
 
 ## Interface ⇐ <code>EventEmitter</code>
@@ -1483,7 +1524,7 @@ Create an instance of [Peer](#Peer).
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
-| [config] | [<code>Vector</code>](#Vector) |  | Initialization Vector for this peer. |
+| [config] | <code>Object</code> |  | Initialization Vector for this peer. |
 | [config.listen] | <code>Boolean</code> |  | Whether or not to listen for connections. |
 | [config.upnp] | <code>Boolean</code> |  | Whether or not to use UPNP for automatic configuration. |
 | [config.port] | <code>Number</code> | <code>7777</code> | Port to use for P2P connections. |

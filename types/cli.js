@@ -12,6 +12,7 @@ const Message = require('../types/message');
 
 // Services
 const Bitcoin = require('../services/bitcoin');
+const Matrix = require('../services/matrix');
 
 // UI dependencies
 // TODO: use Jade to render pre-registered components
@@ -34,7 +35,9 @@ class CLI extends App {
     super(settings);
 
     // Assign Settings
-    this.settings = merge({}, this.settings, settings);
+    this.settings = merge({
+      listen: false
+    }, this.settings, settings);
 
     // Internal Components
     this.node = new Peer(this.settings);
@@ -287,6 +290,12 @@ class CLI extends App {
     self.elements['prompt'].key(['down'], self._handlePromptDownKey.bind(self));
   }
 
+  _sendToAllServices (message) {
+    for (const [name, service] of Object.entries(this.services)) {
+      service._send(message);
+    }
+  }
+
   _handleFormSubmit (data) {
     const self = this;
     const content = data.input;
@@ -300,16 +309,17 @@ class CLI extends App {
     // Send as Chat Message if no handler registered
     if (!self._processInput(data.input)) {
       // Describe the activity for use in P2P message
-      let body = JSON.stringify({
+      let msg = {
         actor: self.node.id,
         object: {
           created: Date.now(),
           content: content
         },
         target: '/messages'
-      });
+      };
 
-      self.node.relayFrom(self.node.id, Message.fromVector(['ChatMessage', body]));
+      self.node.relayFrom(self.node.id, Message.fromVector(['ChatMessage', JSON.stringify(msg)]));
+      self._sendToAllServices(msg);
     }
 
     self.elements['form'].reset();
@@ -450,10 +460,28 @@ class CLI extends App {
     const self = this;
     const service = new type(this.settings);
 
+    if (this.services[name]) {
+      return this._appendWarning(`Service already registered: ${name}`);
+    }
+
     this.services[name] = service;
 
+    this.services[name].on('error', function (msg) {
+      self._appendError(`Service "${name}" emitted error: ${JSON.stringify(msg, null, '  ')}`);
+    });
+
     this.services[name].on('message', function (msg) {
-      self._appendMessage(`service message from ${name}:`, msg);
+      self._appendMessage(`service message from ${name}: ${JSON.stringify(msg, null, '  ')}`);
+    });
+
+    this.on('identity', function _registerActor (identity) {
+      self._appendMessage(`Registering actor on service "${name}": ${JSON.stringify(identity)}`);
+
+      try {
+        this.services[name]._registerActor(identity);
+      } catch (exception) {
+        self._appendError(`Error from service "${name}" during _registerActor: ${exception}`);
+      }
     });
   }
 

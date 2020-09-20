@@ -103,14 +103,14 @@ class Interface extends EventEmitter {
   async cycle (val) {
     if (typeof val !== 'string') throw new Error('Input must be a {@link String} object.');
     this.clock.add(this.identity);
-    this.emit('message', Message.fromVector(['Cycle', Buffer.from(val)]));
+    this.emit('cycle', Message.fromVector(['Cycle', Buffer.from(val)]));
     return this;
   }
 
   async _handleStateChange (change) {
     this.log('[FABRIC:INTERFACE]', 'Received State change:', change);
     let data = JSON.stringify({ changes: change });
-    this.emit('message', Message.fromVector(['Transaction', data]));
+    this.emit('transaction', Message.fromVector(['Transaction', data]));
     return 1;
   }
 
