@@ -82,6 +82,7 @@
     "json-pointer": "^0.6.0",
     "level": "^5.0.1",
     "lodash.merge": "^4.6.2",
+    "matrix-js-sdk": "^8.3.0",
     "merkletreejs": "^0.1.6",
     "mkdirp": "^0.5.1",
     "nat-upnp": "^1.1.1",
