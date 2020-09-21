@@ -204,6 +204,10 @@ class CLI extends App {
 
   async _handleNodeReady (node) {
     this.elements['identityString'].setContent(node.id);
+    this.emit('identity', {
+      id: node.id,
+      pubkey: node.pubkey
+    });
   }
 
   async _handlePeerError (message) {
