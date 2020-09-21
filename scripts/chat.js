@@ -25,7 +25,12 @@ const settings = {
 
 async function main () {
   const chat = new CLI(settings);
-  // chat._registerService('matrix', Matrix);
+
+  // ## Services
+  // Matrix for initial service testing.
+  // TODO: reconcile API wth @fabric/doorman as appears at: https://github.com/FabricLabs/doorman
+  chat._registerService('matrix', Matrix);
+
   await chat.start();
 }
 
