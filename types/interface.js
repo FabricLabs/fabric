@@ -103,7 +103,7 @@ class Interface extends EventEmitter {
   async cycle (val) {
     if (typeof val !== 'string') throw new Error('Input must be a {@link String} object.');
     this.clock.add(this.identity);
-    this.emit('cycle', Message.fromVector(['Cycle', Buffer.from(val)]));
+    this.emit('cycle', val);
     return this;
   }
 
