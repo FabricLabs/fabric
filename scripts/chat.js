@@ -6,12 +6,11 @@ const SEED = process.env.SEED;
 
 // Fabric Types
 const CLI = require('../types/cli');
-// const Matrix = require('../services/matrix');
+const Matrix = require('../services/matrix');
 
 // Settings
 const settings = {
   listen: true,
-  port: PORT,
   peers: [
     '027cac525e934dd777a944565f114b7babdb73412e37f568a0115d241d3da6ba08@antipode:7777',
     '02e8da26206354565edf7ddefe13325ac83a03f4ff4a903d75c81a05173e841e91@174.129.128.216:7777',
@@ -20,7 +19,7 @@ const settings = {
     '02a1933ff21f2d588285f4dc759402e02ae2ad15840243ce79fbb213eaca2b3724@95.217.115.29:7777'
   ],
   services: [
-    // 'matrix'
+    'matrix'
   ],
   port: PORT,
   seed: SEED,
@@ -36,7 +35,7 @@ async function main () {
   // ## Services
   // Matrix for initial service testing.
   // TODO: reconcile API wth @fabric/doorman as appears at: https://github.com/FabricLabs/doorman
-  // chat._registerService('matrix', Matrix);
+  chat._registerService('matrix', Matrix);
   // chat._registerService('rpg', RPG);
 
   await chat.start();

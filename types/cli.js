@@ -12,7 +12,6 @@ const Message = require('../types/message');
 
 // Services
 const Bitcoin = require('../services/bitcoin');
-const Matrix = require('../services/matrix');
 
 // UI dependencies
 // TODO: use Jade to render pre-registered components
@@ -48,6 +47,7 @@ class CLI extends App {
         // '25.14.120.36:18444',
         // '127.0.0.1:18444'
       ],
+      services: [],
       verbosity: 0
     });
 
@@ -76,6 +76,7 @@ class CLI extends App {
     this._registerCommand('generate', this._handleGenerateRequest);
     this._registerCommand('receive', this._handleReceiveAddressRequest);
     this._registerCommand('balance', this._handleBalanceRequest);
+    this._registerCommand('service', this._handleServiceCommand);
     this._registerCommand('sync', this._handleChainSyncRequest);
     this._registerCommand('send', this._handleSendRequest);
 
@@ -94,6 +95,7 @@ class CLI extends App {
     this.node.on('connections:close', this._handleConnectionClose.bind(this));
     this.node.on('connection:error', this._handleConnectionError.bind(this));
     this.node.on('session:update', this._handleSessionUpdate.bind(this));
+    // debug event
     // this.node.on('socket:data', this._handleSocketData.bind(this));
 
     // Attach Bitcoin handlers
@@ -107,7 +109,9 @@ class CLI extends App {
     await this.bitcoin.start();
 
     for (const [name, service] of Object.entries(this.services)) {
-      await service.start();
+      if (this.settings.services.includes(name)) {
+        await service.start();
+      }
     }
 
     // Start P2P node
@@ -157,7 +161,7 @@ class CLI extends App {
   }
 
   async _handleConnectionOpen (msg) {
-    this._appendMessage(`Node emitted "connections:open" event: ${JSON.stringify(msg)}`);
+    // this._appendMessage(`Node emitted "connections:open" event: ${JSON.stringify(msg)}`);
     this._syncPeerList();
   }
 
@@ -177,7 +181,7 @@ class CLI extends App {
   }
 
   async _handleConnectionError (msg) {
-    this._appendMessage(`Node emitted "connection:error" event: ${JSON.stringify(msg)}`);
+    this._appendWarning(`Node emitted "connection:error" event: ${JSON.stringify(msg)}`);
   }
 
   async _handlePeer (peer) {
@@ -296,7 +300,9 @@ class CLI extends App {
 
   _sendToAllServices (message) {
     for (const [name, service] of Object.entries(this.services)) {
-      service._send(message);
+      if (this.settings.services.includes(name)) {
+        service._send(message);
+      }
     }
   }
 
@@ -401,6 +407,15 @@ class CLI extends App {
     return false;
   }
 
+  _handleServiceCommand (params) {
+    switch (params[1]) {
+      case 'list':
+      default:
+        this._appendMessage(`{bold}Available Services:{/bold}: ${JSON.stringify(Object.keys(this.services), null, '  ')}`);
+        break;
+    }
+  }
+
   _handleIdentityRequest () {
     this._appendMessage(`Local Identity: ${JSON.stringify({
       id: this.node.id,
@@ -476,15 +491,18 @@ class CLI extends App {
 
     this.services[name].on('message', function (msg) {
       self._appendMessage(`service message from ${name}: ${JSON.stringify(msg, null, '  ')}`);
+      self.node.relayFrom(self.node.id, Message.fromVector(['ChatMessage', JSON.stringify(msg)]));
     });
 
     this.on('identity', function _registerActor (identity) {
-      self._appendMessage(`Registering actor on service "${name}": ${JSON.stringify(identity)}`);
+      if (this.settings.services.includes(name)) {
+        self._appendMessage(`Registering actor on service "${name}": ${JSON.stringify(identity)}`);
 
-      try {
-        this.services[name]._registerActor(identity);
-      } catch (exception) {
-        self._appendError(`Error from service "${name}" during _registerActor: ${exception}`);
+        try {
+          this.services[name]._registerActor(identity);
+        } catch (exception) {
+          self._appendError(`Error from service "${name}" during _registerActor: ${exception}`);
+        }
       }
     });
   }
@@ -649,7 +667,6 @@ class CLI extends App {
       inputOnFocus: true
     });
 
-
     // Set Index for Command History
     this.elements['prompt'].historyIndex = -1;
 
@@ -661,12 +678,14 @@ class CLI extends App {
     self.elements['prompt'].oldFocus = self.elements['prompt'].focus;
     self.elements['prompt'].focus = function () {
       let oldListener = self.elements['prompt'].__listener;
-      self.elements['prompt'].removeListener('keypress', self.elements['prompt'].__listener);
-      delete self.elements['prompt'].__listener;
-
       let oldBlur = self.elements['prompt'].__done;
+
+      self.elements['prompt'].removeListener('keypress', self.elements['prompt'].__listener);
       self.elements['prompt'].removeListener('blur', self.elements['prompt'].__done);
+
+      delete self.elements['prompt'].__listener;
       delete self.elements['prompt'].__done;
+
       self.elements['prompt'].screen.focusPop(self.elements['prompt'])
 
       self.elements['prompt'].addListener('keypress', oldListener);
