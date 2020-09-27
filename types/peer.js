@@ -7,6 +7,7 @@ const {
   P2P_ROOT,
   P2P_PING,
   P2P_PONG,
+  P2P_START_CHAIN,
   P2P_INSTRUCTION,
   P2P_BASE_MESSAGE,
   P2P_STATE_COMMITTMENT,
@@ -594,6 +595,8 @@ class Peer extends Scribe {
         break;
       case 'Pong':
         // self.emit('message', `Received Pong: ${message}`);
+        break;
+      case 'StartChain':
         break;
       case 'GenericMessage':
         console.warn('[FABRIC:PEER]', 'Received Generic Message:', message.data);

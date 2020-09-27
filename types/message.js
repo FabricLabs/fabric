@@ -12,6 +12,7 @@ const {
   P2P_ROOT,
   P2P_PING,
   P2P_PONG,
+  P2P_START_CHAIN,
   P2P_INSTRUCTION,
   P2P_BASE_MESSAGE,
   P2P_CHAIN_SYNC_REQUEST,
@@ -256,6 +257,7 @@ class Message extends Vector {
       'PeerMessage': P2P_BASE_MESSAGE,
       'StartSession': SESSION_START,
       'ChatMessage': CHAT_MESSAGE,
+      'StartChain': P2P_START_CHAIN,
       // TODO: restore above StateRoot type
       'StateRoot': P2P_STATE_ROOT,
       'StateCommitment': P2P_STATE_COMMITTMENT,
@@ -340,6 +342,8 @@ Object.defineProperty(Message.prototype, 'type', {
         return 'StartSession';
       case CHAT_MESSAGE:
         return 'ChatMessage';
+      case P2P_START_CHAIN:
+        return 'StartChain';
     }
   },
   set (value) {
