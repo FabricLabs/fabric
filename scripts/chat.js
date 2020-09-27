@@ -6,6 +6,8 @@ const SEED = process.env.SEED;
 
 // Fabric Types
 const CLI = require('../types/cli');
+
+// Services
 const Matrix = require('../services/matrix');
 
 // Settings
@@ -29,11 +31,11 @@ const settings = {
   }
 };
 
+// Main Program
 async function main () {
   const chat = new CLI(settings);
 
   // ## Services
-  // Matrix for initial service testing.
   // TODO: reconcile API wth @fabric/doorman as appears at: https://github.com/FabricLabs/doorman
   chat._registerService('matrix', Matrix);
   // chat._registerService('rpg', RPG);
