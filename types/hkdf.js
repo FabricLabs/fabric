@@ -2,8 +2,19 @@
 
 const crypto = require('crypto');
 
+/**
+ * Provides an HMAC-based Extract-and-Expand Key Derivation Function (HKDF), compatible with
+ * RFC 5869.  Defaults to 32 byte output, matching Bitcoin's implementaton.
+ */
 class HKDF {
-  constructor (settings) {
+  /**
+   * Create an HKDF instance.
+   * @param {Object} settings List of settings.
+   * @param {String} settings.initial Input keying material.
+   * @param {String} [settings.algorithm=sha256] Name of the hashing algorithm to use.
+   * @param {String} [settings.salt] Salt value (a non-secret random value).
+   */
+  constructor (settings = {}) {
     if (!settings.initial) throw new Error('Requires "initial" value in settings.');
 
     // Assign Settings
@@ -26,7 +37,12 @@ class HKDF {
     return Buffer.alloc(count, '0').toString();
   }
 
-  derive (info, size = 32) {
+  /**
+   * Derive a new output.
+   * @param {Buffer} [info] Context and application specific information.
+   * @param {Number} [size] Length of output.
+   */
+  derive (info = '', size = 32) {
     if (!(info instanceof Buffer)) info = Buffer.from(info);
 
     const blocks = Math.ceil(size / this.size);

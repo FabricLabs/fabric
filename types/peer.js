@@ -26,6 +26,7 @@ const merge = require('lodash.merge');
 const upnp = require('nat-upnp');
 
 // Fabric Types
+const Entity = require('./entity');
 const Key = require('./key');
 const Machine = require('./machine');
 const Message = require('./message');
@@ -96,6 +97,7 @@ class Peer extends Scribe {
     };
 
     // Internal properties
+    this.chains = {};
     this.connections = {};
     this.peers = {};
     this.memory = {};
@@ -114,6 +116,7 @@ class Peer extends Scribe {
 
     this._state = {
       peers: {},
+      chains: {},
       connections: {},
       status: 'sleeping'
     };
@@ -122,7 +125,7 @@ class Peer extends Scribe {
   }
 
   get id () {
-    return this.wallet.shard[0].string;
+    return this.key.pubkey;
   }
 
   get pubkeyhash () {
@@ -164,7 +167,8 @@ class Peer extends Scribe {
 
     this.emit('ready', {
       id: this.id,
-      address: address
+      address: address,
+      pubkey: this.key.pubkey
     });
 
     return this;

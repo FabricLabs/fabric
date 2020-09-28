@@ -7,6 +7,10 @@ const Interface = require('../types/interface');
 // TODO: compare API against {@link Service}
 const Service = require('../types/service');
 
+const COORDINATORS = [
+  '!pPjIUAOkwmgXeICrzT:fabric.pub'
+];
+
 /**
  * Service for interacting with Matrix.
  * @module services/matrix
@@ -24,10 +28,14 @@ class Matrix extends Interface {
     this.settings = Object.assign({
       name: '@fabric/matrix',
       homeserver: 'https://fabric.pub',
-      coordinator: '!pPjIUAOkwmgXeICrzT:fabric.pub'
+      coordinator: COORDINATORS[0]
     }, settings);
 
     this.client = matrix.createClient(this.settings.homeserver);
+    this._state = {
+      channels: COORDINATORS,
+      messages: []
+    };
 
     return this;
   }

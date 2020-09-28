@@ -95,19 +95,8 @@ class Bitcoin extends Service {
         logLevel = 'debug';
       }
 
-      this.fullnode = new this.provider.FullNode({
-        agent: this.UAString,
-        port: this.provider.port,
-        network: this.settings.network,
-        bip37: true, // TODO: verify SPV implementation
-        listen: true,
-        http: false,
-        httpPort: 19999,
-        logLevel: logLevel,
-        memory: true,
-        workers: true,
-        loader: require,
-        maxOutbound: 1
+      this.fullnode = new FullNode({
+        network: 'regtest'
       });
     }
 
@@ -583,7 +572,7 @@ class Bitcoin extends Service {
 
     if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', `Starting fullnode for network "${this.settings.network}"...`);
 
-    for (const candidate of this.settings.peers) {
+    for (const candidate of this.settings.seeds) {
       let parts = candidate.split(':');
       let addr = new NetAddress({
         host: parts[0],
@@ -675,8 +664,12 @@ class Bitcoin extends Service {
       self.emit('message', `wallet msg: ${msg}`);
     });
 
+    this.wallet.on('error', function (msg) {
+      self.emit('error', `wallet error: ${msg}`);
+    });
+
     this.wallet.database.on('tx', function (tx) {
-      self.emit('message', `wallet tx!!!!!! ${tx}`);
+      self.emit('message', `wallet tx!!!!!! ${JSON.stringify(tx, null, '  ')}`);
     });
 
     // Start services

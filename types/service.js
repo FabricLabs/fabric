@@ -316,7 +316,7 @@ class Service extends Scribe {
 
       this.collections[key].on('changes', (changes) => {
         service._applyChanges(changes);
-        service.emit('message', {
+        service.emit('change', {
           type: 'Change',
           data: changes
         });
