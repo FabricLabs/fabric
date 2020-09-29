@@ -147,6 +147,7 @@ class Matrix extends Interface {
     const self = this;
     const promise = new Promise(async (resolve, reject) => {
       self.emit('message', `Trying registration: ${username}:${password}`);
+      let result = null;
 
       result = await this.client.registerRequest({
         username: username,
