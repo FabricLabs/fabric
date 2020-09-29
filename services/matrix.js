@@ -134,7 +134,7 @@ class Matrix extends Interface {
   async register (username, password) {
     const self = this;
     const promise = new Promise((resolve, reject) => {
-      this.emit('message', `Trying registration: ${username}:${password}`);
+      self.emit('message', `Trying registration: ${username}:${password}`);
 
       result = this.client.registerRequest({
         username: username,
@@ -147,12 +147,14 @@ class Matrix extends Interface {
       });
     });
 
-    return result;
+    return promise;
   }
 
   async _checkUsernameAvailable (username) {
     const self = this;
     return new Promise(async (resolve, reject) => {
+      self.emit('message', `Checking username: ${username}`);
+
       try {
         const available = await self.client.isUsernameAvailable(username);
         return resolve(available);
