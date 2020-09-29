@@ -87,20 +87,14 @@ class Matrix extends Interface {
       try {
         await this.register(actor.pubkey, actor.privkeyhash || password);
       } catch (exception) {
-
+        this.emit('error', `Could not register with coordinator: ${exception}`);
       }
+    }
 
-      try {
-        await this.login(actor.pubkey, actor.privkeyhash || password);
-      } catch (exception) {
-
-      }
-    } else {
-      try {
-        await this.login(actor.pubkey, actor.privkeyhash || password);
-      } catch (exception) {
-
-      }
+    try {
+      await this.login(actor.pubkey, actor.privkeyhash || password);
+    } catch (exception) {
+      this.emit('error', `Could not authenticate with coordinator: ${exception}`);
     }
 
     try {
