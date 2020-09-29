@@ -1,14 +1,17 @@
 'use strict';
 
+// Dependencies
 const matrix = require('matrix-js-sdk');
 
+// Fabric Types
 const Entity = require('../types/entity');
 const Interface = require('../types/interface');
 // TODO: compare API against {@link Service}
 const Service = require('../types/service');
 
+// Local Values
 const COORDINATORS = [
-  '!pPjIUAOkwmgXeICrzT:fabric.pub'
+  '!pPjIUAOkwmgXeICrzT:fabric.pub' // Primary Coordinator
 ];
 
 /**
@@ -23,7 +26,7 @@ class Matrix extends Interface {
    */
   constructor (settings = {}) {
     super(settings);
-    
+
     // Assign defaults
     this.settings = Object.assign({
       name: '@fabric/matrix',
@@ -33,11 +36,36 @@ class Matrix extends Interface {
 
     this.client = matrix.createClient(this.settings.homeserver);
     this._state = {
+      status: 'READY',
       channels: COORDINATORS,
       messages: []
     };
 
     return this;
+  }
+
+  get status () {
+    return this._state[`status`];
+  }
+
+  set status (value = this.status) {
+    switch (value) {
+      case 'READY':
+        this._state[`status`] =  value;
+        break;
+      default:
+        return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Getter for {@link State}.
+   */
+  get state () {
+    // TODO: remove old use of `@data` while internal to Fabric
+    return this._state['@data'];
   }
 
   async _listPublicRooms () {
@@ -56,10 +84,23 @@ class Matrix extends Interface {
     }
 
     if (available) {
-      await this.register(actor.pubkey, actor.privkeyhash || password);
-      await this.login(actor.pubkey, actor.privkeyhash || password);
+      try {
+        await this.register(actor.pubkey, actor.privkeyhash || password);
+      } catch (exception) {
+
+      }
+
+      try {
+        await this.login(actor.pubkey, actor.privkeyhash || password);
+      } catch (exception) {
+
+      }
     } else {
-      await this.login(actor.pubkey, actor.privkeyhash || password);
+      try {
+        await this.login(actor.pubkey, actor.privkeyhash || password);
+      } catch (exception) {
+
+      }
     }
 
     await this.client.joinRoom(this.settings.coordinator);
@@ -117,15 +158,29 @@ class Matrix extends Interface {
     });
   }
 
+  async _handleMessage (msg) {
+    if (msg.getType() !== 'm.room.message') {
+      return; // only use messages
+    }
+
+    this.emit('message', {
+      actor: msg.event.sender,
+      object: {
+        content: msg.event.content.body
+      },
+      target: '/messages'
+    });
+  }
+
   /**
    * Start the service, including the initiation of an outbound connection
    * to any peers designated in the service's configuration.
    */
   async start () {
     super.start();
-    this.status = 'starting';
+    this.status = 'STARTING';
     // this.log('[SERVICES:MATRIX]', 'Starting...');
-    this.status = 'started';
+    this.status = 'STARTED';
     // this.log('[SERVICES:MATRIX]', 'Started!');
   }
 

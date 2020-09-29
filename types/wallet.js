@@ -81,8 +81,7 @@ class Wallet extends Service {
     bcoin.set(this.settings.network);
 
     this.database = new WalletDB({
-      db: 'memory',
-      network: this.settings.network
+      network: 'regtest'
     });
 
     this.account = null;
@@ -232,6 +231,10 @@ class Wallet extends Service {
     return txp;
   }
 
+  async _handleFabricTransaction (tx) {
+    console.log('[FABRIC:WALLET]', 'Handling Fabric Transaction:', tx);
+  }
+
   async addTransactionToWallet (transaction) {
     if (this.settings.verbosity >= 5) console.log('[AUDIT]', '[FABRIC:WALLET]', 'Adding transaction to Wallet:', transaction);
     let entity = new Entity(transaction);
@@ -309,19 +312,19 @@ class Wallet extends Service {
 
   async _spendToAddress (amount, address) {
     const mtx = new MTX();
-    const utxo = await this._getUnspentOutput(amount);
-    const change = await this._allocateSlot();
+    const change = await this.wallet.receiveAddress();
+    const coins = await this.wallet.getCoins();
 
-    if (!this._state.coins.length) throw new Error('No available funds.');
+    this.emit('message', `Amount to send: ${amount}`);
 
     mtx.addOutput({
-      address: address,
-      value: amount
+      address: recipient,
+      value: parseInt(amount)
     });
 
-    await mtx.fund(this._state.coins, {
+    await mtx.fund(coins, {
       rate: 10,
-      changeAddress: change.string
+      changeAddress: change
     });
 
     const sigs = mtx.sign(this.ring);

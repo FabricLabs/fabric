@@ -39,7 +39,7 @@
     "test:app": "npm run make:service && npm run make:app && NODE_ENV=test mocha tests/fabric.app.js",
     "test:bitcoin": "mocha tests/bitcoin.core.js",
     "test:ethereum": "mocha tests/ethereum.core.js",
-    "test": "mkdir -p stores && NODE_ENV=test mocha tests"
+    "test": "NODE_ENV=test mocha tests"
   },
   "engines": {
     "node": ">= 10.0.0"

@@ -45,7 +45,7 @@ class Interface extends EventEmitter {
     this.secret = new Secret(this.settings);
 
     // internal state
-    this._state = new State();
+    this._state = new State(settings);
     this.status = 'initialized';
 
     // Bind {@link Message} handler
