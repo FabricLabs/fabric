@@ -7,6 +7,7 @@ const merge = require('lodash.merge');
 
 // Types
 const App = require('../types/app');
+const Entity = require('./entity');
 const Peer = require('../types/peer');
 const Message = require('../types/message');
 
@@ -43,6 +44,9 @@ class CLI extends App {
     this.bitcoin = new Bitcoin({
       fullnode: true,
       network: 'regtest',
+      key: {
+        seed: this.settings.wallet.seed
+      },
       peers: [
         // '25.14.120.36:18444',
         // '127.0.0.1:18444'
@@ -58,6 +62,11 @@ class CLI extends App {
     this.services = {};
     this.elements = {};
     this.peers = {};
+
+    // State
+    this._state = {
+      chains: {}
+    };
 
     // Chainable
     return this;
