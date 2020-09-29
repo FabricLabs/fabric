@@ -103,7 +103,11 @@ class Matrix extends Interface {
       }
     }
 
-    await this.client.joinRoom(this.settings.coordinator);
+    try {
+      await this.client.joinRoom(this.settings.coordinator);
+    } catch (exception) {
+      this.emit('error', `Could not join coordinator: ${exception}`);
+    }
   }
 
   async _send (msg) {
@@ -189,9 +193,9 @@ class Matrix extends Interface {
    */
   async stop () {
     super.stop();
-    this.status = 'stopping';
+    this.status = 'STOPPING';
     // this.log('[SERVICES:MATRIX]', 'Stopping...');
-    this.status = 'stopped';
+    this.status = 'STOPPED';
     // this.log('[SERVICES:MATRIX]', 'Stopped!');
   }
 }
