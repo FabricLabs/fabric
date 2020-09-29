@@ -37,6 +37,7 @@ class Matrix extends Interface {
     this.client = matrix.createClient(this.settings.homeserver);
     this._state = {
       status: 'READY',
+      actors: [],
       channels: COORDINATORS,
       messages: []
     };
@@ -74,14 +75,15 @@ class Matrix extends Interface {
   }
 
   async _registerActor (actor) {
-    const password = 'f00b4r';
-    const available = false;
+    let password = 'f00b4r';
+    let available = false;
+    let registration = null;
 
     try {
       this.emit('message', `Checking availability: ${actor.pubkey}`);
       available = await this._checkUsernameAvailable(actor.pubkey);
     } catch (exception) {
-      // this.emit('error', 'Username already registered.');
+      this.emit('error', `Could not check availability: ${exception}`);
     }
 
     this.emit('message', `Username available: ${available}`);
@@ -89,11 +91,13 @@ class Matrix extends Interface {
     if (available) {
       try {
         this.emit('message', `Trying registration: ${actor.pubkey}`);
-        await this.register(actor.pubkey, actor.privkeyhash || password);
+        registration = await this.register(actor.pubkey, actor.privkeyhash || password);
       } catch (exception) {
         this.emit('error', `Could not register with coordinator: ${exception}`);
       }
     }
+
+    this.emit('message', `Registration: ${registration}`);
 
     try {
       this.emit('message', `Trying login: ${actor.pubkey}`);
@@ -170,7 +174,7 @@ class Matrix extends Interface {
         return resolve(available);
       } catch (exception) {
         self.emit('error', `Username check "${username}" failed: ${exception}`);
-        return resolve(available);
+        return resolve(false);
       }
     });
 
