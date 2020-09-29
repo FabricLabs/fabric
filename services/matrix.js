@@ -92,16 +92,26 @@ class Matrix extends Interface {
     }
 
     try {
+      this.emit('message', `Trying login: ${actor.pubkey}`);
       await this.login(actor.pubkey, actor.privkeyhash || password);
     } catch (exception) {
       this.emit('error', `Could not authenticate with coordinator: ${exception}`);
     }
 
     try {
+      this.emit('message', `Trying join room: ${this.settings.coordinator}`);
       await this.client.joinRoom(this.settings.coordinator);
     } catch (exception) {
       this.emit('error', `Could not join coordinator: ${exception}`);
     }
+
+    const entity = new Entity({
+      pubkey: actor.pubkey
+    });
+
+    this.emit('message', `Actor Registered: ${entity.id} ${JSON.stringify(entity.data, null, '  ')}`);
+
+    return entity.data;
   }
 
   async _send (msg) {
@@ -148,13 +158,15 @@ class Matrix extends Interface {
     const self = this;
     const promise = new Promise(async (resolve, reject) => {
       self.emit('message', `Checking username: ${username}`);
+      let available = true;
 
       try {
-        const available = await self.client.isUsernameAvailable(username);
+        available = await self.client.isUsernameAvailable(username);
+        self.emit('message', `Checking username ${username} as available: ${available}`);
         return resolve(available);
       } catch (exception) {
         self.emit('error', `Username check "${username}" failed: ${exception}`);
-        return reject('Username not available.');
+        return resolve(available);
       }
     });
 
