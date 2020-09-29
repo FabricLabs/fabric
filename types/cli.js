@@ -109,8 +109,10 @@ class CLI extends App {
     await this.bitcoin.start();
 
     for (const [name, service] of Object.entries(this.services)) {
+      this._appendWarning(`Checking for Service: ${name}`);
       if (this.settings.services.includes(name)) {
-        await service.start();
+        this._appendWarning(`Starting service: ${name}`);
+        await this.services[name].start();
       }
     }
 
