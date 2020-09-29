@@ -138,18 +138,18 @@ class Matrix extends Interface {
 
   async register (username, password) {
     const self = this;
-    const promise = new Promise((resolve, reject) => {
+    const promise = new Promise(async (resolve, reject) => {
       self.emit('message', `Trying registration: ${username}:${password}`);
 
-      result = this.client.registerRequest({
+      result = await this.client.registerRequest({
         username: username,
         password: password,
         auth: {
           type: 'm.login.dummy'
         }
-      }).then((output) => {
-        resolve(output);
       });
+
+      resolve(result);
     });
 
     return promise;
