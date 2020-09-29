@@ -146,16 +146,19 @@ class Matrix extends Interface {
 
   async _checkUsernameAvailable (username) {
     const self = this;
-    return new Promise(async (resolve, reject) => {
+    const promise = new Promise(async (resolve, reject) => {
       self.emit('message', `Checking username: ${username}`);
 
       try {
         const available = await self.client.isUsernameAvailable(username);
         return resolve(available);
       } catch (exception) {
+        self.emit('error', `Username check "${username}" failed: ${exception}`);
         return reject('Username not available.');
       }
     });
+
+    return promise;
   }
 
   async _handleMatrixMessage (msg) {
