@@ -85,6 +85,7 @@ class Matrix extends Interface {
 
     if (available) {
       try {
+        this.emit('message', `Trying registration: ${actor.pubkey}`);
         await this.register(actor.pubkey, actor.privkeyhash || password);
       } catch (exception) {
         this.emit('error', `Could not register with coordinator: ${exception}`);
