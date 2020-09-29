@@ -162,7 +162,7 @@ class Matrix extends Interface {
     });
   }
 
-  async _handleMessage (msg) {
+  async _handleMatrixMessage (msg) {
     if (msg.getType() !== 'm.room.message') {
       return; // only use messages
     }
@@ -181,10 +181,13 @@ class Matrix extends Interface {
    * to any peers designated in the service's configuration.
    */
   async start () {
-    super.start();
     this.status = 'STARTING';
+    this.emit('message', '[SERVICES:MATRIX] Starting...');
     // this.log('[SERVICES:MATRIX]', 'Starting...');
+
+    await this.client.startClient({ initialSyncLimit: 10 });
     this.status = 'STARTED';
+    this.emit('message', '[SERVICES:MATRIX] Started!');
     // this.log('[SERVICES:MATRIX]', 'Started!');
   }
 
@@ -192,7 +195,6 @@ class Matrix extends Interface {
    * Stop the service.
    */
   async stop () {
-    super.stop();
     this.status = 'STOPPING';
     // this.log('[SERVICES:MATRIX]', 'Stopping...');
     this.status = 'STOPPED';
