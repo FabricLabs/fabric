@@ -78,10 +78,13 @@ class Matrix extends Interface {
     const available = false;
 
     try {
+      this.emit('message', `Checking availability: ${actor.pubkey}`);
       available = await this._checkUsernameAvailable(actor.pubkey);
     } catch (exception) {
       // this.emit('error', 'Username already registered.');
     }
+
+    this.emit('message', `Username available: ${available}`);
 
     if (available) {
       try {
