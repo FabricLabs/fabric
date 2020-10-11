@@ -32,9 +32,11 @@ const NetAddress = bcoin.net.NetAddress;
 class Bitcoin extends Service {
   /**
    * Creates an instance of the Bitcoin service.
-   * @param {Object} settings Map of configuration options for the Bitcoin service.
-   * @param {String} settings.network One of `regtest`, `testnet`, or `mainnet`.
-   * @param {Array} settings.nodes List of address:port pairs to trust.
+   * @param {Object} [settings] Map of configuration options for the Bitcoin service.
+   * @param {String} [settings.network] One of `regtest`, `testnet`, or `mainnet`.
+   * @param {Array} [settings.nodes] List of address:port pairs to trust.
+   * @param {Array} [settings.seeds] Bitcoin peers to request chain from (address:port).
+   * @param {Boolean} [settings.fullnode] Run a full node.
    */
   constructor (settings = {}) {
     super(settings);
@@ -44,9 +46,10 @@ class Bitcoin extends Service {
       blocks: {}
     };
 
+    // Local Settings
     this.settings = Object.assign({
       name: '@services/bitcoin',
-      network: 'main',
+      network: 'regtest',
       listen: false,
       fullnode: false,
       nodes: ['127.0.0.1'],
@@ -58,14 +61,17 @@ class Bitcoin extends Service {
 
     if (this.settings.verbosity >= 4) console.log('[DEBUG]', 'Instance of Bitcoin service created, settings:', this.settings);
 
+    // Bcoin for JS full node
     bcoin.set(this.settings.network);
     this.network = bcoin.Network.get(this.settings.network);
 
-    // Internal management components
+    // Internal Services
     this.provider = new Consensus({ provider: 'bcoin' });
     this.wallet = new Wallet(this.settings);
     this.chain = new Chain();
 
+    // ## Collections
+    // ### Blocks
     this.blocks = new Collection({
       name: 'Block',
       type: BitcoinBlock,
@@ -77,6 +83,7 @@ class Bitcoin extends Service {
       }
     });
 
+    // ### Transactions
     this.transactions = new Collection({
       name: 'Transaction',
       type: BitcoinTransaction,
@@ -100,6 +107,7 @@ class Bitcoin extends Service {
       });
     }
 
+    // Local Bitcoin Node
     this.peer = bcoin.Peer.fromOptions({
       agent: this.UAString,
       network: this.settings.network,
@@ -108,8 +116,10 @@ class Bitcoin extends Service {
       }
     });
 
+    // Bitcoin events
     this.peer.on('error', this._handlePeerError.bind(this));
     this.peer.on('packet', this._handlePeerPacket.bind(this));
+    // NOTE: we always ask for genesis block on peer open
     this.peer.on('open', () => {
       console.log('PEER IS OPEN:', this);
       // triggers block event

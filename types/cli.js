@@ -45,7 +45,7 @@ class CLI extends App {
       fullnode: true,
       network: 'regtest',
       key: {
-        seed: this.settings.wallet.seed
+        seed: (this.settings.wallet) ? this.settings.wallet.seed : this.settings.seed
       },
       peers: [
         // '25.14.120.36:18444',
