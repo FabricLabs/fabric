@@ -35,7 +35,8 @@ class CLI extends App {
 
     // Assign Settings
     this.settings = merge({
-      listen: false
+      listen: false,
+      services: []
     }, this.settings, settings);
 
     // Internal Components
