@@ -9,8 +9,8 @@
 // offline-first applications.
 
 // ### Quick Start
-// Run locally with `node examples/oracle.js` — use Node 8, _a la_ `nvm use 8`
-// if you're using [NVM](https://nvm.sh), or from
+// Run locally with `node examples/oracle.js` — use Node 12, _a la_
+// `nvm use 12` if you're using [NVM](https://nvm.sh), or from
 // [nodejs.org](https://nodejs.org) if not!
 
 // TODO: use bottom panel for inline execution (_a la_ "Run this Code &raquo;")
@@ -19,9 +19,8 @@
 // First, let's ensure [strict mode](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Strict_mode) is used to parse our code.
 'use strict';
 
-// Require `@fabric/core` as the `Fabric` constant.  This allows us to use [the
-// Fabric API](https://dev.fabric.pub) directly: `new Fabric.<type>()`
-const Fabric = require('@fabric/core');
+// Import types from `@fabric/core`:
+const Oracle = require('@fabric/core/types/oracle');
 
 // An example configuration object, encoded as [JSON](https://json.org/):
 // ```json
@@ -44,7 +43,7 @@ const config = require('./config');
 async function main () {
   // Our primary objective is to create an Oracle, so we do that next by passing
   // the `config` constant from earlier into the `Fabric.Oracle` constructor.
-  let oracle = new Fabric.Oracle(config);
+  const oracle = new Oracle(config);
   // The `oracle` variable contains our Oracle, so now let's define a Resource
   // for it to manage.
 

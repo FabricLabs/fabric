@@ -26,6 +26,7 @@ you're ready to integrate Fabric into your application.
 
 ## Available Commands
 - `npm run cli` provides a direct command-line interface to the Fabric network.
+- `npm run dev` serves a developer interface over localhost HTTP.
 - `npm run docs` creates a local HTTP server for browsing documentation.
 - `npm run examples` creates a local HTTP server for interacting with examples.
 - `npm start` creates a local Fabric node.
@@ -83,14 +84,16 @@ to our goals.
 ## Plugins
 Fabric is an extensible framework, supporting a variety of plugins.
 
-| Package                        | Description                                | Status                                                                                                                                                                                                                                                                                             |
-|--------------------------------|--------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [`@fabric/http` ][http-plugin] | serve Fabric apps to the legacy web (HTTP) | [![Build Status](https://img.shields.io/travis/FabricLabs/web.svg?branch=master&style=flat-square)](https://travis-ci.org/FabricLabs/web) [![Coverage Status](https://img.shields.io/codecov/c/github/FabricLabs/web.svg?style=flat-square)](https://codecov.io/gh/FabricLabs/web)                 |
-| [`@fabric/doorman` ][doorman]  | an artificially intelligent assistant      | [![Build Status](https://img.shields.io/travis/FabricLabs/doorman.svg?branch=master&style=flat-square)](https://travis-ci.org/FabricLabs/doorman) [![Coverage Status](https://img.shields.io/codecov/c/github/FabricLabs/doorman.svg?style=flat-square)](https://codecov.io/gh/FabricLabs/doorman) |
+| Package                            | Description                                | Status                                                                                                                                       |
+|------------------------------------|--------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------|
+| [`@fabric/http`][http-plugin]      | serve Fabric apps to the legacy web (HTTP) | [![Build Status][badge-http-status]][http-test-status] [![Coverage Status][badge-http-coverage]][badge-http-coverage]                        |
+| [`@fabric/doorman`][doorman]       | an artificially intelligent assistant      | [![Build Status][badge-doorman-status]][doorman-test-status] [![Coverage Status][badge-doorman-coverage]][doorman-coverage-home]             |
+| [`@fabric/soundtrack`][soundtrack] | collaborative jukebox                      | [![Build Status][badge-soundtrack-status]][soundtrack-test-status] [![Coverage Status][badge-soundtrack-coverage]][soundtrack-coverage-home] |
 
 ## Running on Fabric
 Several successful projects are built with or are running on Fabric, including:
 
+- [soundtrack.io][soundtrack.io], Internet jukebox
 - [Doorman][doorman], an artificially intelligent assistant
 - [IdleRPG][idlerpg], a simple RPG game which rewards you for remaining idle
 - [Verse][verse], a virtual universe simulator
@@ -113,6 +116,23 @@ Fabric on Twitter: [@FabricProtocol][twitter]
 [learning]: https://to.fabric.pub/#learning:fabric.pub
 [development]: https://to.fabric.pub/#development:fabric.pub
 
+[badge-doorman-status]: https://img.shields.io/travis/FabricLabs/doorman.svg?branch=master&style=flat-square
+[badge-doorman-coverage]: https://img.shields.io/codecov/c/github/FabricLabs/doorman.svg?style=flat-square
+[badge-http-status]: https://img.shields.io/travis/FabricLabs/web.svg?branch=master&style=flat-square
+[badge-http-coverage]: https://img.shields.io/codecov/c/github/FabricLabs/web.svg?style=flat-square
+[badge-soundtrack-status]: https://img.shields.io/travis/FabricLabs/soundtrack.svg?branch=master&style=flat-square
+[badge-soundtrack-coverage]: https://img.shields.io/codecov/c/github/FabricLabs/soundtrack.svg?style=flat-square
+
+[doorman-test-status]: https://travis-ci.org/FabricLabs/doorman
+[http-test-status]: https://travis-ci.org/FabricLabs/web
+[soundtrack-test-status]: https://travis-ci.org/FabricLabs/soundtrack
+
+[doorman-coverage-home]: https://codecov.io/gh/FabricLabs/doorman
+[http-coverage-home]: https://codecov.io/gh/FabricLabs/web
+[soundtrack-coverage-home]: https://codecov.io/gh/FabricLabs/soundtrack
+
+[soundtrack.io]: https://soundtrack.io
+[soundtrack]: https://github.com/FabricLabs/soundtrack
 [doorman]: https://github.com/FabricLabs/doorman
 [idlerpg]: https://to.fabric.pub/#idlerpg:verse.im
 [verse]: https://verse.im

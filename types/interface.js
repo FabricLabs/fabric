@@ -17,7 +17,7 @@ const Secret = require('./secret');
 
 /**
  * Interfaces compile abstract contract code into {@link Chain}-executable transactions, or "chaincode". For example, the "Bitcoin" interface might compile a Swap contract into Script, preparing a valid Bitcoin transaction for broadcast which executes the swap contract.
- * @extends EventEmitter
+ * @augments EventEmitter
  * @property {String} status Human-friendly value representing the Interface's current {@link State}.
  */
 class Interface extends EventEmitter {
