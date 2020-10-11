@@ -110,8 +110,22 @@ class Interface extends EventEmitter {
   async _handleStateChange (change) {
     this.log('[FABRIC:INTERFACE]', 'Received State change:', change);
     let data = JSON.stringify({ changes: change });
+    // this.emit('message', Message.fromVector(['Transaction', data]));
     this.emit('transaction', Message.fromVector(['Transaction', data]));
     return 1;
+  }
+
+  commit () {
+    const entity = new Entity(this._state);
+    const commit = {
+      '@type': 'Commit',
+      '@data': entity.id,
+      '@solution': JSON.stringify(this._state)
+    };
+
+    this.emit('commit', commit);
+
+    return commit;
   }
 
   /**
