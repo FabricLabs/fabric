@@ -13,6 +13,7 @@ const EventEmitter = require('events').EventEmitter;
  * The {@link State} is the core of most {@link User}-facing interactions.  To
  * interact with the {@link User}, simply propose a change in the state by
  * committing to the outcome.  This workflow keeps app design quite simple!
+ * @augments EventEmitter
  * @property {Number} size Size of state in bytes.
  * @property {Buffer} @buffer Byte-for-byte memory representation of state.
  * @property {String} @type Named type.

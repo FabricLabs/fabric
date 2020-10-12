@@ -1,30 +1,66 @@
 'use strict';
 
+// TODO: replace with bcoin
 const Base58Check = require('base58check');
+
+// Dependencies
 const crypto = require('crypto');
 const EC = require('elliptic').ec;
 const ec = new EC('secp256k1');
 
+// Dependencies
+const bcoin = require('bcoin');
+
+// Fabric Types
 const Entity = require('./entity');
 
+/**
+ * Represents a cryptographic key.
+ */
 class Key extends Entity {
+  /**
+   * Create an instance of a Fabric Key, either restoring from some known
+   * values or from prior knowledge.  For instance, you can call `new Key()`
+   * to create a fresh keypair, or `new Key({ public: 'deadbeef...' })` to
+   * create it from a known public key.
+   * @param {Object} [settings] Initialization for the key.
+   * @param {String} [settings.network] Network string.
+   * @param {String} [settings.seed] Mnemonic seed for initializing the key.
+   * @param {String} [settings.public] Public key in hex.
+   * @param {String} [settings.private] Private key in hex.
+   */
   constructor (init = {}) {
     super(init);
 
     this.config = Object.assign({
-      prefix: '00'
+      network: 'main',
+      prefix: '00',
+      private: null
     }, init);
 
-    if (init.pubkey) {
+    if (this.config.seed) {
+      // Seed provided, compute keys
+      let mnemonic = new bcoin.Mnemonic(this.config.seed);
+      let master = bcoin.hd.fromMnemonic(mnemonic);
+      let ring = new bcoin.KeyRing(master, this.config.network);
+
+      // Assign keys
+      this.keypair = ec.keyFromPrivate(ring.getPrivateKey('hex'));
+    } else if (init.pubkey) {
+      // Key is only public
       this.keypair = ec.keyFromPublic(init.pubkey, 'hex');
+    } else if (this.config.private) {
+      // Key is private
+      this.keypair = ec.keyFromPrivate(this.config.private, 16);
     } else {
+      // Generate new keys
       this.keypair = ec.genKeyPair();
     }
 
     this.private = this.keypair.getPrivate();
     this.public = this.keypair.getPublic(true);
 
-    this.pubkey = this.public.encode('hex');
+    this.pubkey = this.public.encodeCompressed('hex');
     this.pubkeyhash = crypto.createHash('sha256').update(this.pubkey).digest('hex');
 
     let input = `${this.config.prefix}${this.pubkeyhash}`;
@@ -53,15 +89,22 @@ class Key extends Entity {
     return this;
   }
 
+  get id () {
+    return this.pubkeyhash;
+  }
+
   _sign (msg) {
     // console.log(`[KEY] signing: ${msg}...`);
-    let signature = this.keypair.sign(msg);
+    if (typeof msg !== 'string') msg = JSON.stringify(msg);
+    let hmac = crypto.createHash('sha256').update(msg).digest('hex');
+    let signature = this.keypair.sign(hmac);
     // console.log(`[KEY] signature:`, signature);
     return signature.toDER();
   }
 
   _verify (msg, sig) {
-    let valid = this.keypair.verify(msg, sig);
+    let hmac = crypto.createHash('sha256').update(msg).digest('hex');
+    let valid = this.keypair.verify(hmac, sig);
     return valid;
   }
 }

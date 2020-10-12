@@ -74,16 +74,15 @@ class Wallet extends Service {
       decimals: 8,
       shardsize: 4,
       verbosity: 2,
-      witness: false,
+      witness: true,
       key: null
     }, settings);
 
-    this.database = new WalletDB({
-      db: 'memory',
-      network: this.settings.network
-    });
-
     bcoin.set(this.settings.network);
+
+    this.database = new WalletDB({
+      network: 'regtest'
+    });
 
     this.account = null;
     this.manager = null;
@@ -232,6 +231,10 @@ class Wallet extends Service {
     return txp;
   }
 
+  async _handleFabricTransaction (tx) {
+    console.log('[FABRIC:WALLET]', 'Handling Fabric Transaction:', tx);
+  }
+
   async addTransactionToWallet (transaction) {
     if (this.settings.verbosity >= 5) console.log('[AUDIT]', '[FABRIC:WALLET]', 'Adding transaction to Wallet:', transaction);
     let entity = new Entity(transaction);
@@ -309,19 +312,19 @@ class Wallet extends Service {
 
   async _spendToAddress (amount, address) {
     const mtx = new MTX();
-    const utxo = await this._getUnspentOutput(amount);
-    const change = await this._allocateSlot();
+    const change = await this.wallet.receiveAddress();
+    const coins = await this.wallet.getCoins();
 
-    if (!this._state.coins.length) throw new Error('No available funds.');
+    this.emit('message', `Amount to send: ${amount}`);
 
     mtx.addOutput({
-      address: address,
-      value: amount
+      address: recipient,
+      value: parseInt(amount)
     });
 
-    await mtx.fund(this._state.coins, {
+    await mtx.fund(coins, {
       rate: 10,
-      changeAddress: change.string
+      changeAddress: change
     });
 
     const sigs = mtx.sign(this.ring);
@@ -721,6 +724,12 @@ class Wallet extends Service {
   async _addOutputToSpendables (coin) {
     this._state.coins.push(coin);
     return this;
+  }
+
+  async getUnusedAddress () {
+    let clean = await this.wallet.receiveAddress();
+    this.emit('message', `unused address: ${clean}`);
+    return clean;
   }
 
   async getUnspentTransactionOutputs () {
@@ -1212,13 +1221,6 @@ class Wallet extends Service {
       await this.database.open();
     }
 
-    // TODO: register account with this.wallet
-    let wallet = await this.wallet.createAccount({ name: obj.name });
-    if (this.settings.verbosity >= 4) console.log('bcoin wallet account:', wallet);
-    let actor = Object.assign({
-      account: wallet
-    }, obj);
-
     let account = await this.accounts.create(obj);
     if (this.settings.verbosity >= 4) console.log('registering account, created:', account);
 
@@ -1253,6 +1255,8 @@ class Wallet extends Service {
    */
   async _load (settings = {}) {
     if (this.wallet) return this;
+
+    const self = this;
 
     this.status = 'loading';
     this.master = null;
@@ -1317,7 +1321,9 @@ class Wallet extends Service {
    * Start the wallet, including listening for transactions.
    */
   async start () {
-    return this._load();
+    this.emit('message', `Wallet starting...`);
+    await this._load();
+    this.emit('message', `Wallet started!`);
   }
 }
 

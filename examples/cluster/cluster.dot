@@ -1,0 +1,8 @@
+digraph Cluster {
+  "A" -> "B" [dir="both"]
+  "B" -> "C" [dir="both"]
+  "C" -> {
+    "D"
+    "E"
+  } [dir="both"]
+}

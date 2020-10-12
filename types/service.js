@@ -316,7 +316,7 @@ class Service extends Scribe {
 
       this.collections[key].on('changes', (changes) => {
         service._applyChanges(changes);
-        service.emit('message', {
+        service.emit('change', {
           type: 'Change',
           data: changes
         });
@@ -599,10 +599,6 @@ class Service extends Scribe {
       try {
         let patches = manager.generate(self.observer);
         if (patches.length) self.emit('patches', patches);
-        if (patches.length) self.emit('message', {
-          '@type': 'Commit',
-          '@data': patches
-        });
       } catch (E) {
         console.error('Could not generate patches:', E);
       }

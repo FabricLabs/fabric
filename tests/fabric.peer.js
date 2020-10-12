@@ -26,8 +26,10 @@ describe('@fabric/core/types/peer', function () {
 
     it('can receive a connection', function (done) {
       async function test () {
-        let server = new Peer({ listen: true, port: 9898 });
-        let client = new Peer({ peers: ['localhost:9898'] });
+        let server = new Peer({ listen: true, port: 9898, upnp: false });
+        let client = new Peer({ peers: [
+          `${server.key.pubkey}@localhost:9898`
+        ] });
 
         server.on('peer', async function handlePeer (peer) {
           await client.stop();

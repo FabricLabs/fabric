@@ -12,19 +12,24 @@ const {
   P2P_ROOT,
   P2P_PING,
   P2P_PONG,
+  P2P_START_CHAIN,
   P2P_INSTRUCTION,
   P2P_BASE_MESSAGE,
+  P2P_CHAIN_SYNC_REQUEST,
   P2P_STATE_ROOT,
   P2P_STATE_COMMITTMENT,
   P2P_STATE_CHANGE,
   P2P_STATE_REQUEST,
   P2P_TRANSACTION,
   P2P_CALL,
+  CHAT_MESSAGE,
+  BLOCK_CANDIDATE,
   PEER_CANDIDATE,
   SESSION_START
 } = require('../constants');
 
 const crypto = require('crypto');
+const struct = require('struct');
 const Vector = require('./vector');
 const padDigits = require('../functions/padDigits');
 
@@ -134,6 +139,26 @@ class Message extends Vector {
     return new Message(input);
   }
 
+  static parseBuffer (buffer) {
+    const message = struct()
+      .charsnt('magic', 4, 'hex')
+      .charsnt('version', 4, 'hex')
+      .charsnt('type', 4, 'hex')
+      .charsnt('size', 4, 'hex')
+      .charsnt('hash', 32, 'hex')
+      .charsnt('data', buffer.length - HEADER_SIZE);
+
+    message.allocate();
+    message._setBuff(buffer);
+
+    return message;
+  }
+
+  static fromBuffer (buffer) {
+    const parsed = Message.parseBuffer(buffer);
+    return Message.fromRaw(parsed.buffer());
+  }
+
   static fromRaw (input) {
     if (!input) return null;
     // if (input.length < HEADER_SIZE) return null;
@@ -221,14 +246,18 @@ class Message extends Vector {
       'Cycle': OP_CYCLE,
       'IdentityRequest': P2P_IDENT_REQUEST,
       'IdentityResponse': P2P_IDENT_RESPONSE,
+      'ChainSyncRequest': P2P_CHAIN_SYNC_REQUEST,
       // TODO: restore this type
       // 'StateRoot': P2P_ROOT,
       'Ping': P2P_PING,
       'Pong': P2P_PONG,
+      'BlockCandidate': BLOCK_CANDIDATE,
       'PeerCandidate': PEER_CANDIDATE,
       'PeerInstruction': P2P_INSTRUCTION,
       'PeerMessage': P2P_BASE_MESSAGE,
       'StartSession': SESSION_START,
+      'ChatMessage': CHAT_MESSAGE,
+      'StartChain': P2P_START_CHAIN,
       // TODO: restore above StateRoot type
       'StateRoot': P2P_STATE_ROOT,
       'StateCommitment': P2P_STATE_COMMITTMENT,
@@ -279,6 +308,8 @@ Object.defineProperty(Message.prototype, 'type', {
       default:
         console.warn('[FABRIC:MESSAGE]', "Unhandled message type:", code);
         return 'GenericMessage';
+      case BLOCK_CANDIDATE:
+        return 'BlockCandidate';
       case OP_CYCLE:
         return 'Cycle';
       case P2P_PING:
@@ -287,6 +318,8 @@ Object.defineProperty(Message.prototype, 'type', {
         return 'Pong';
       case P2P_GENERIC:
         return 'Generic';
+      case P2P_CHAIN_SYNC_REQUEST:
+        return 'ChainSyncRequest';
       case P2P_IDENT_REQUEST:
         return 'IdentityRequest';
       case P2P_IDENT_RESPONSE:
@@ -307,6 +340,10 @@ Object.defineProperty(Message.prototype, 'type', {
         return 'PeerCandidate';
       case SESSION_START:
         return 'StartSession';
+      case CHAT_MESSAGE:
+        return 'ChatMessage';
+      case P2P_START_CHAIN:
+        return 'StartChain';
     }
   },
   set (value) {
