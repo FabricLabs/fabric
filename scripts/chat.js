@@ -5,8 +5,12 @@
 const PORT = process.env.PORT;
 const SEED = process.env.SEED;
 
+// Dependencies
+const { Command } = require('commander');
+
 // Fabric Types
 const CLI = require('../types/cli');
+const Wallet = require('../types/wallet');
 
 // Services
 const Matrix = require('../services/matrix');
@@ -34,6 +38,29 @@ const settings = {
 
 // Main Program
 async function main () {
+  // Argument Parsing
+  const program = new Command();
+  const wallet = new Wallet();
+
+  program.name('fabric');
+  program.option('--earn', 'Enable earning.');
+  program.option('--seed', 'Load from mnemonic seed.');
+  program.option('--xpub', 'Load from xpub.');
+  program.option('--keygen', 'Generate a new seed.');
+  program.parse(process.argv);
+
+  if (program.keygen) {
+    // Toxic Waste
+    const seed = await wallet._createSeed();
+    console.warn('[FABRIC:KEYGEN]', 'GENERATE_SEED', seed);
+    process.exit();
+  }
+
+  if (program.earn) {
+    SETTINGS.earn = true;
+  }
+
+  // Fabric CLI
   const chat = new CLI(settings);
 
   // ## Services
