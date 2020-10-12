@@ -16,7 +16,7 @@ const COORDINATORS = [
 
 /**
  * Service for interacting with Matrix.
- * @module services/matrix
+ * @augments Interface
  */
 class Matrix extends Interface {
   /**
