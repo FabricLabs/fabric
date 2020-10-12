@@ -27,7 +27,7 @@ const NetAddress = bcoin.net.NetAddress;
 
 /**
  * Manages interaction with the Bitcoin network.
- * @module services/bitcoin
+ * @augments Interface
  */
 class Bitcoin extends Service {
   /**

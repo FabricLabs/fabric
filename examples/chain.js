@@ -1,6 +1,7 @@
 'use strict';
 
-const Chain = require('../lib/chain');
+// Fabric Dependencies
+const Chain = require('../types/chain');
 const chain = new Chain();
 
 async function main () {
@@ -19,4 +20,6 @@ async function main () {
   return this;
 }
 
-main();
+main().catch((exception) => {
+  console.error('[EXAMPLES:CHAIN]', 'Main Process Exception:', exception);
+});

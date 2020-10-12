@@ -1,10 +1,6 @@
 ## Classes
 
 <dl>
-<dt><a href="#App">App</a></dt>
-<dd><p>Default interface to <a href="#Fabric">Fabric</a>.  Provides immutable types for all
-elements of the <code>components</code> option.</p>
-</dd>
 <dt><a href="#App">App</a> ⇐ <code><a href="#Scribe">Scribe</a></code></dt>
 <dd><p>Web-friendly application framework for building single-page applications with
 Fabric-based networking and storage.</p>
@@ -17,7 +13,7 @@ Fabric-based networking and storage.</p>
 of many transactions over time, to be settled on-chain later.</p>
 </dd>
 <dt><a href="#Circuit">Circuit</a></dt>
-<dd><p>The <a href="#Circuit">Circuit</a> is the mechanism through which <a href="#Fabric">Fabric</a>
+<dd><p>The <a href="#Circuit">Circuit</a> is the mechanism through which <a href="Fabric">Fabric</a>
 operates, a computable directed graph for execution be a network
 of <a href="#Peer">Peer</a> components.  See also <a href="#Swarm">Swarm</a> for deeper
 inspection of <a href="#Machine">Machine</a> mechanics.</p>
@@ -37,9 +33,6 @@ the Fabric network using a terminal emulator.</p>
 </dd>
 <dt><a href="#Entity">Entity</a> : <code>Object</code></dt>
 <dd><p>Live instance of an ARC in Fabric.</p>
-</dd>
-<dt><a href="#Fabric">Fabric</a></dt>
-<dd><p>Interact with the Fabric network as if it were a local object.</p>
 </dd>
 <dt><a href="#Hash256">Hash256</a></dt>
 <dd><p>Simple interaction with 256-bit spaces.</p>
@@ -73,7 +66,7 @@ selectively disclosing new routes to peers which may have open circuits.</p>
 transitive state.</p>
 </dd>
 <dt><a href="#Path">Path</a></dt>
-<dd><p>A <a href="#Path">Path</a> is a <a href="#Fabric">Fabric</a>-native link to a <a href="Document">Document</a>
+<dd><p>A <a href="#Path">Path</a> is a <a href="Fabric">Fabric</a>-native link to a <a href="Document">Document</a>
 within the network.</p>
 </dd>
 <dt><a href="#Peer">Peer</a></dt>
@@ -112,7 +105,7 @@ objects, and includes its own lifecycle.</p>
 <dt><a href="#Stack">Stack</a></dt>
 <dd><p>Manage stacks of data.</p>
 </dd>
-<dt><a href="#State">State</a></dt>
+<dt><a href="#State">State</a> ⇐ <code>EventEmitter</code></dt>
 <dd><p>The <a href="#State">State</a> is the core of most <a href="User">User</a>-facing interactions.  To
 interact with the <a href="User">User</a>, simply propose a change in the state by
 committing to the outcome.  This workflow keeps app design quite simple!</p>
@@ -150,194 +143,13 @@ execute either the full set or none.</p>
 almost like &quot;threads&quot;, as they run asynchronously over the duration of a
 contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</p>
 </dd>
+<dt><a href="#Bitcoin">Bitcoin</a> ⇐ <code><a href="#Interface">Interface</a></code></dt>
+<dd><p>Manages interaction with the Bitcoin network.</p>
+</dd>
+<dt><a href="#Matrix">Matrix</a> ⇐ <code><a href="#Interface">Interface</a></code></dt>
+<dd><p>Service for interacting with Matrix.</p>
+</dd>
 </dl>
-
-<a name="App"></a>
-
-## App
-Default interface to [Fabric](#Fabric).  Provides immutable types for all
-elements of the `components` option.
-
-**Kind**: global class  
-**Properties**
-
-| Name | Type | Description |
-| --- | --- | --- |
-| config | <code>Configuration</code> | Initial [Vector](#Vector). |
-| config.components | <code>Map</code> | Transformation function of `Σ ⇒ Δ`. |
-
-
-* [App](#App)
-    * [new App([config])](#new_App_new)
-    * [new App(definition)](#new_App_new)
-    * [.render()](#App+render) ⇒ <code>Mixed</code>
-    * [.start()](#App+start) ⇒ <code>Promise</code>
-    * [.stop()](#App+stop) ⇒ <code>Promise</code>
-    * [.define(name, structure)](#App+define) ⇒ <code>Object</code>
-    * [.defer(authority)](#App+defer) ⇒ [<code>App</code>](#App)
-    * [.attach(element)](#App+attach) ⇒ [<code>App</code>](#App)
-    * [.consume(resources)](#App+consume) ⇒ [<code>App</code>](#App)
-    * [.envelop(selector)](#App+envelop) ⇒ [<code>App</code>](#App)
-    * [.use(name, definition)](#App+use) ⇒ [<code>App</code>](#App)
-    * [.render()](#App+render) ⇒ <code>String</code>
-    * [.now()](#Scribe+now) ⇒ <code>Number</code>
-    * [.trust(source)](#Scribe+trust) ⇒ [<code>Scribe</code>](#Scribe)
-    * [.inherits(scribe)](#Scribe+inherits) ⇒ [<code>Scribe</code>](#Scribe)
-
-<a name="new_App_new"></a>
-
-### new App([config])
-Create a new instance of the Fabric App.
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [config] | <code>Object</code> | Configuration object. |
-| [config.store] | <code>Object</code> | Path to local storage. |
-| [config.components] | <code>Object</code> | Map of components. |
-| [config.components.list] | <code>Object</code> | Name of "list" component. |
-| [config.components.view] | <code>Object</code> | Name of "view" component. |
-
-<a name="new_App_new"></a>
-
-### new App(definition)
-Generic bundle for building Fabric applications.
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| definition | <code>Object</code> | Application definition.  See `config` for examples. |
-
-<a name="App+render"></a>
-
-### app.render() ⇒ <code>Mixed</code>
-Draw the application to canvas (display).
-
-**Kind**: instance method of [<code>App</code>](#App)  
-<a name="App+start"></a>
-
-### app.start() ⇒ <code>Promise</code>
-Start the program.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-<a name="App+stop"></a>
-
-### app.stop() ⇒ <code>Promise</code>
-Stop the program.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-<a name="App+define"></a>
-
-### app.define(name, structure) ⇒ <code>Object</code>
-Define a Resource, or "Type", used by the application.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: <code>Object</code> - [description]  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| name | <code>String</code> | Human-friendly name for the Resource. |
-| structure | <code>Object</code> | Map of attribute names -> definitions. |
-
-<a name="App+defer"></a>
-
-### app.defer(authority) ⇒ [<code>App</code>](#App)
-Defer control of this application to an outside authority.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: [<code>App</code>](#App) - The configured application as deferred to `authority`.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| authority | <code>String</code> | Hostname to trust. |
-
-<a name="App+attach"></a>
-
-### app.attach(element) ⇒ [<code>App</code>](#App)
-Configure the Application to use a specific element.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: [<code>App</code>](#App) - Configured instance of the Application.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| element | <code>DOMElement</code> | DOM element to bind to. |
-
-<a name="App+consume"></a>
-
-### app.consume(resources) ⇒ [<code>App</code>](#App)
-Define the Application's resources from an existing resource map.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: [<code>App</code>](#App) - Configured instance of the Application.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| resources | <code>Object</code> | Map of resource definitions by name. |
-
-<a name="App+envelop"></a>
-
-### app.envelop(selector) ⇒ [<code>App</code>](#App)
-Use a CSS selector to find an element in the current document's tree and
-bind to it as the render target.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: [<code>App</code>](#App) - Instance of app with bound element.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| selector | <code>String</code> | CSS selector. |
-
-<a name="App+use"></a>
-
-### app.use(name, definition) ⇒ [<code>App</code>](#App)
-Define a named [Resource](#Resource).
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: [<code>App</code>](#App) - Configurated instance of the [App](#App).  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| name | <code>String</code> | Human-friendly name for this resource. |
-| definition | <code>Object</code> | Map of configuration values. |
-
-<a name="App+render"></a>
-
-### app.render() ⇒ <code>String</code>
-Get the output of our program.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: <code>String</code> - Output of the program.  
-<a name="Scribe+now"></a>
-
-### app.now() ⇒ <code>Number</code>
-Retrives the current timestamp, in milliseconds.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: <code>Number</code> - [Number](Number) representation of the millisecond [Integer](Integer) value.  
-<a name="Scribe+trust"></a>
-
-### app.trust(source) ⇒ [<code>Scribe</code>](#Scribe)
-Blindly bind event handlers to the [Source](Source).
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: [<code>Scribe</code>](#Scribe) - Instance of the [Scribe](#Scribe).  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| source | <code>Source</code> | Event stream. |
-
-<a name="Scribe+inherits"></a>
-
-### app.inherits(scribe) ⇒ [<code>Scribe</code>](#Scribe)
-Use an existing Scribe instance as a parent.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: [<code>Scribe</code>](#Scribe) - The configured instance of the Scribe.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| scribe | [<code>Scribe</code>](#Scribe) | Instance of Scribe to use as parent. |
 
 <a name="App"></a>
 
@@ -356,9 +168,8 @@ Fabric-based networking and storage.
 
 
 * [App](#App) ⇐ [<code>Scribe</code>](#Scribe)
-    * [new App([config])](#new_App_new)
     * [new App(definition)](#new_App_new)
-    * [.render()](#App+render) ⇒ <code>Mixed</code>
+    * [.id](#State+id) : <code>Boolean</code>
     * [.start()](#App+start) ⇒ <code>Promise</code>
     * [.stop()](#App+stop) ⇒ <code>Promise</code>
     * [.define(name, structure)](#App+define) ⇒ <code>Object</code>
@@ -371,20 +182,13 @@ Fabric-based networking and storage.
     * [.now()](#Scribe+now) ⇒ <code>Number</code>
     * [.trust(source)](#Scribe+trust) ⇒ [<code>Scribe</code>](#Scribe)
     * [.inherits(scribe)](#Scribe+inherits) ⇒ [<code>Scribe</code>](#Scribe)
-
-<a name="new_App_new"></a>
-
-### new App([config])
-Create a new instance of the Fabric App.
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [config] | <code>Object</code> | Configuration object. |
-| [config.store] | <code>Object</code> | Path to local storage. |
-| [config.components] | <code>Object</code> | Map of components. |
-| [config.components.list] | <code>Object</code> | Name of "list" component. |
-| [config.components.view] | <code>Object</code> | Name of "view" component. |
+    * [.toString()](#State+toString) ⇒ <code>String</code>
+    * [.serialize([input])](#State+serialize) ⇒ <code>Buffer</code>
+    * [.deserialize(input)](#State+deserialize) ⇒ [<code>State</code>](#State)
+    * [.fork()](#State+fork) ⇒ [<code>State</code>](#State)
+    * [.get(path)](#State+get) ⇒ <code>Mixed</code>
+    * [.set(path)](#State+set) ⇒ <code>Mixed</code>
+    * [.commit()](#State+commit)
 
 <a name="new_App_new"></a>
 
@@ -396,12 +200,12 @@ Generic bundle for building Fabric applications.
 | --- | --- | --- |
 | definition | <code>Object</code> | Application definition.  See `config` for examples. |
 
-<a name="App+render"></a>
+<a name="State+id"></a>
 
-### app.render() ⇒ <code>Mixed</code>
-Draw the application to canvas (display).
+### app.id : <code>Boolean</code>
+Identity function.
 
-**Kind**: instance method of [<code>App</code>](#App)  
+**Kind**: instance property of [<code>App</code>](#App)  
 <a name="App+start"></a>
 
 ### app.start() ⇒ <code>Promise</code>
@@ -495,6 +299,7 @@ Define a named [Resource](#Resource).
 Get the output of our program.
 
 **Kind**: instance method of [<code>App</code>](#App)  
+**Overrides**: [<code>render</code>](#State+render)  
 **Returns**: <code>String</code> - Output of the program.  
 <a name="Scribe+now"></a>
 
@@ -527,6 +332,72 @@ Use an existing Scribe instance as a parent.
 | --- | --- | --- |
 | scribe | [<code>Scribe</code>](#Scribe) | Instance of Scribe to use as parent. |
 
+<a name="State+toString"></a>
+
+### app.toString() ⇒ <code>String</code>
+Unmarshall an existing state to an instance of a [Blob](Blob).
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Returns**: <code>String</code> - Serialized [Blob](Blob).  
+<a name="State+serialize"></a>
+
+### app.serialize([input]) ⇒ <code>Buffer</code>
+Convert to [Buffer](Buffer).
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Returns**: <code>Buffer</code> - [Store](#Store)-able blob.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [input] | <code>Mixed</code> | Input to serialize. |
+
+<a name="State+deserialize"></a>
+
+### app.deserialize(input) ⇒ [<code>State</code>](#State)
+Take a hex-encoded input and convert to a [State](#State) object.
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Returns**: [<code>State</code>](#State) - [description]  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>String</code> | [description] |
+
+<a name="State+fork"></a>
+
+### app.fork() ⇒ [<code>State</code>](#State)
+Creates a new child [State](#State), with `@parent` set to
+the current [State](#State) by immutable identifier.
+
+**Kind**: instance method of [<code>App</code>](#App)  
+<a name="State+get"></a>
+
+### app.get(path) ⇒ <code>Mixed</code>
+Retrieve a key from the [State](#State).
+
+**Kind**: instance method of [<code>App</code>](#App)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | [<code>Path</code>](#Path) | Key to retrieve. |
+
+<a name="State+set"></a>
+
+### app.set(path) ⇒ <code>Mixed</code>
+Set a key in the [State](#State) to a particular value.
+
+**Kind**: instance method of [<code>App</code>](#App)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | [<code>Path</code>](#Path) | Key to retrieve. |
+
+<a name="State+commit"></a>
+
+### app.commit()
+Increment the vector clock, broadcast all changes as a transaction.
+
+**Kind**: instance method of [<code>App</code>](#App)  
 <a name="Chain"></a>
 
 ## Chain
@@ -610,7 +481,7 @@ Opens a [Channel](#Channel) with a [Peer](#Peer).
 <a name="Circuit"></a>
 
 ## Circuit
-The [Circuit](#Circuit) is the mechanism through which [Fabric](#Fabric)
+The [Circuit](#Circuit) is the mechanism through which [Fabric](Fabric)
 operates, a computable directed graph for execution be a network
 of [Peer](#Peer) components.  See also [Swarm](#Swarm) for deeper
 inspection of [Machine](#Machine) mechanics.
@@ -900,28 +771,13 @@ As a [Buffer](Buffer).
 <a name="Entity+_downsample"></a>
 
 ### entity.\_downsample([input])
-Return a [Fabric](#Fabric)-labeled [Object](Object) for this [Entity](#Entity).
+Return a [Fabric](Fabric)-labeled [Object](Object) for this [Entity](#Entity).
 
 **Kind**: instance method of [<code>Entity</code>](#Entity)  
 
 | Param | Type | Description |
 | --- | --- | --- |
 | [input] | <code>Mixed</code> | Input to downsample.  If not provided, current Entity will be used. |
-
-<a name="Fabric"></a>
-
-## Fabric
-Interact with the Fabric network as if it were a local object.
-
-**Kind**: global class  
-<a name="new_Fabric_new"></a>
-
-### new Fabric([settings])
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [settings] | <code>Object</code> | Configuration for the layer. |
-| [settings.port] | <code>Object</code> | Port to bind to for incoming TCP connections. |
 
 <a name="Hash256"></a>
 
@@ -1332,7 +1188,7 @@ selectively disclosing new routes to peers which may have open circuits.
 <a name="new_Message_new"></a>
 
 ### new Message(message)
-The `Message` type is standardized in [Fabric](#Fabric) as a [Vector](#Vector), which can be added to any other vector to compute a resulting state.
+The `Message` type is standardized in [Fabric](Fabric) as a [Vector](#Vector), which can be added to any other vector to compute a resulting state.
 
 
 | Param | Type | Description |
@@ -1479,7 +1335,7 @@ Start running the process.
 <a name="Path"></a>
 
 ## Path
-A [Path](#Path) is a [Fabric](#Fabric)-native link to a [Document](Document)
+A [Path](#Path) is a [Fabric](Fabric)-native link to a [Document](Document)
 within the network.
 
 **Kind**: global class  
@@ -2157,7 +2013,7 @@ Store a value in the Service's state.
 Attach to network.
 
 **Kind**: instance method of [<code>Service</code>](#Service)  
-**Returns**: <code>Promise</code> - Resolves to [Fabric](#Fabric).  
+**Returns**: <code>Promise</code> - Resolves to [Fabric](Fabric).  
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -2286,12 +2142,13 @@ Push data onto the stack.  Changes the [Stack#frame](Stack#frame) and
 
 <a name="State"></a>
 
-## State
+## State ⇐ <code>EventEmitter</code>
 The [State](#State) is the core of most [User](User)-facing interactions.  To
 interact with the [User](User), simply propose a change in the state by
 committing to the outcome.  This workflow keeps app design quite simple!
 
 **Kind**: global class  
+**Extends**: <code>EventEmitter</code>  
 **Properties**
 
 | Name | Type | Description |
@@ -2303,7 +2160,7 @@ committing to the outcome.  This workflow keeps app design quite simple!
 | @id | <code>String</code> | Unique identifier for this data. |
 
 
-* [State](#State)
+* [State](#State) ⇐ <code>EventEmitter</code>
     * [new State(data)](#new_State_new)
     * _instance_
         * [.id](#State+id) : <code>Boolean</code>
@@ -2949,3 +2806,253 @@ Handle a task.
 | --- | --- | --- |
 | input | [<code>Vector</code>](#Vector) | Input vector. |
 
+<a name="Bitcoin"></a>
+
+## Bitcoin ⇐ [<code>Interface</code>](#Interface)
+Manages interaction with the Bitcoin network.
+
+**Kind**: global class  
+**Extends**: [<code>Interface</code>](#Interface)  
+
+* [Bitcoin](#Bitcoin) ⇐ [<code>Interface</code>](#Interface)
+    * [new Bitcoin([settings])](#new_Bitcoin_new)
+    * [.state](#Interface+state)
+    * [._prepareTransaction(obj)](#Bitcoin+_prepareTransaction)
+    * [._handleCommittedBlock(block)](#Bitcoin+_handleCommittedBlock)
+    * [._handlePeerPacket(msg)](#Bitcoin+_handlePeerPacket)
+    * [._handleBlockFromSPV(msg)](#Bitcoin+_handleBlockFromSPV)
+    * [._handleTransactionFromSPV(tx)](#Bitcoin+_handleTransactionFromSPV)
+    * [._subscribeToShard(shard)](#Bitcoin+_subscribeToShard)
+    * [._connectSPV()](#Bitcoin+_connectSPV)
+    * [.connect(addr)](#Bitcoin+connect)
+    * [.start()](#Bitcoin+start)
+    * [.stop()](#Bitcoin+stop)
+    * [.cycle(val)](#Interface+cycle)
+    * [.log(...inputs)](#Interface+log)
+    * [.now()](#Interface+now) ⇒ <code>Number</code>
+
+<a name="new_Bitcoin_new"></a>
+
+### new Bitcoin([settings])
+Creates an instance of the Bitcoin service.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Map of configuration options for the Bitcoin service. |
+| [settings.network] | <code>String</code> | One of `regtest`, `testnet`, or `mainnet`. |
+| [settings.nodes] | <code>Array</code> | List of address:port pairs to trust. |
+| [settings.seeds] | <code>Array</code> | Bitcoin peers to request chain from (address:port). |
+| [settings.fullnode] | <code>Boolean</code> | Run a full node. |
+
+<a name="Interface+state"></a>
+
+### bitcoin.state
+Getter for [State](#State).
+
+**Kind**: instance property of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>state</code>](#Interface+state)  
+<a name="Bitcoin+_prepareTransaction"></a>
+
+### bitcoin.\_prepareTransaction(obj)
+Prepares a [Transaction](Transaction) for storage.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| obj | <code>Transaction</code> | Transaction to prepare. |
+
+<a name="Bitcoin+_handleCommittedBlock"></a>
+
+### bitcoin.\_handleCommittedBlock(block)
+Receive a committed block.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| block | <code>Block</code> | Block to handle. |
+
+<a name="Bitcoin+_handlePeerPacket"></a>
+
+### bitcoin.\_handlePeerPacket(msg)
+Process a message from a peer in the Bitcoin network.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | <code>PeerPacket</code> | Message from peer. |
+
+<a name="Bitcoin+_handleBlockFromSPV"></a>
+
+### bitcoin.\_handleBlockFromSPV(msg)
+Hand a [Block](Block) message as supplied by an [SPV](SPV) client.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | <code>BlockMessage</code> | A [Message](#Message) as passed by the [SPV](SPV) source. |
+
+<a name="Bitcoin+_handleTransactionFromSPV"></a>
+
+### bitcoin.\_handleTransactionFromSPV(tx)
+Verify and interpret a [BitcoinTransaction](BitcoinTransaction), as received from an
+[SPVSource](SPVSource).
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| tx | <code>BitcoinTransaction</code> | Incoming transaction from the SPV source. |
+
+<a name="Bitcoin+_subscribeToShard"></a>
+
+### bitcoin.\_subscribeToShard(shard)
+Attach event handlers for a supplied list of addresses.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| shard | <code>Shard</code> | List of addresses to monitor. |
+
+<a name="Bitcoin+_connectSPV"></a>
+
+### bitcoin.\_connectSPV()
+Initiate outbound connections to configured SPV nodes.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+<a name="Bitcoin+connect"></a>
+
+### bitcoin.connect(addr)
+Connect to a Fabric [Peer](#Peer).
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| addr | <code>String</code> | Address to connect to. |
+
+<a name="Bitcoin+start"></a>
+
+### bitcoin.start()
+Start the Bitcoin service, including the initiation of outbound requests.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>start</code>](#Interface+start)  
+<a name="Bitcoin+stop"></a>
+
+### bitcoin.stop()
+Stop the Bitcoin service.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>stop</code>](#Interface+stop)  
+<a name="Interface+cycle"></a>
+
+### bitcoin.cycle(val)
+Ticks the clock with a named [Cycle](Cycle).
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| val | <code>String</code> | Name of cycle to scribe. |
+
+<a name="Interface+log"></a>
+
+### bitcoin.log(...inputs)
+Log some output to the console.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| ...inputs | <code>any</code> | Components of the message to long.  Can be a single {@link} String, many [String](String) objects, or anything else. |
+
+<a name="Interface+now"></a>
+
+### bitcoin.now() ⇒ <code>Number</code>
+Returns current timestamp.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+<a name="Matrix"></a>
+
+## Matrix ⇐ [<code>Interface</code>](#Interface)
+Service for interacting with Matrix.
+
+**Kind**: global class  
+**Extends**: [<code>Interface</code>](#Interface)  
+
+* [Matrix](#Matrix) ⇐ [<code>Interface</code>](#Interface)
+    * [new Matrix([settings])](#new_Matrix_new)
+    * [.state](#Matrix+state)
+    * [.start()](#Matrix+start)
+    * [.stop()](#Matrix+stop)
+    * [.cycle(val)](#Interface+cycle)
+    * [.log(...inputs)](#Interface+log)
+    * [.now()](#Interface+now) ⇒ <code>Number</code>
+
+<a name="new_Matrix_new"></a>
+
+### new Matrix([settings])
+Create an instance of a Matrix client, connect to the
+network, and relay messages received from therein.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Configuration values. |
+
+<a name="Matrix+state"></a>
+
+### matrix.state
+Getter for [State](#State).
+
+**Kind**: instance property of [<code>Matrix</code>](#Matrix)  
+**Overrides**: [<code>state</code>](#Interface+state)  
+<a name="Matrix+start"></a>
+
+### matrix.start()
+Start the service, including the initiation of an outbound connection
+to any peers designated in the service's configuration.
+
+**Kind**: instance method of [<code>Matrix</code>](#Matrix)  
+**Overrides**: [<code>start</code>](#Interface+start)  
+<a name="Matrix+stop"></a>
+
+### matrix.stop()
+Stop the service.
+
+**Kind**: instance method of [<code>Matrix</code>](#Matrix)  
+**Overrides**: [<code>stop</code>](#Interface+stop)  
+<a name="Interface+cycle"></a>
+
+### matrix.cycle(val)
+Ticks the clock with a named [Cycle](Cycle).
+
+**Kind**: instance method of [<code>Matrix</code>](#Matrix)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| val | <code>String</code> | Name of cycle to scribe. |
+
+<a name="Interface+log"></a>
+
+### matrix.log(...inputs)
+Log some output to the console.
+
+**Kind**: instance method of [<code>Matrix</code>](#Matrix)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| ...inputs | <code>any</code> | Components of the message to long.  Can be a single {@link} String, many [String](String) objects, or anything else. |
+
+<a name="Interface+now"></a>
+
+### matrix.now() ⇒ <code>Number</code>
+Returns current timestamp.
+
+**Kind**: instance method of [<code>Matrix</code>](#Matrix)  
