@@ -272,7 +272,8 @@ class Collection extends Stack {
     try {
       result = pointer.get(this['@entity']['@data'], path);
     } catch (exception) {
-      console.error('[FABRIC:COLLECTION]', 'Could not retrieve path:', path, exception);
+      this.emit('warning', `[FABRIC:COLLECTION] Could not retrieve path: ${path} ${JSON.stringify(exception)}`);
+      // console.error('[FABRIC:COLLECTION]', 'Could not retrieve path:', path, exception);
     }
 
     return result;
