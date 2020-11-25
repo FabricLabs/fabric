@@ -91,7 +91,7 @@
     "lodash.merge": "^4.6.2",
     "matrix-js-sdk": "martindale/matrix-js-sdk#silent-logger",
     "merkletreejs": "^0.1.6",
-    "mkdirp": "^0.5.1",
+    "mkdirp": "^1.0.4",
     "nat-upnp": "^1.1.1",
     "node-fetch": "^2.6.0",
     "node-torrent": "^0.2.2",
