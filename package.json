@@ -73,6 +73,8 @@
     "base58check": "^2.0.0",
     "bcash": "bcoin-org/bcash#master",
     "bcoin": "bcoin-org/bcoin#master",
+    "bitmessage": "^0.6.6",
+    "bitmessage-transports": "^0.1.4",
     "commander": "^6.1.0",
     "content-type": "^1.0.4",
     "dotparser": "^0.3.0",

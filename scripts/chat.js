@@ -36,12 +36,13 @@ const settings = {
   }
 };
 
-// Main Program
+// Define Main Program
 async function main () {
   // Argument Parsing
   const program = new Command();
   const wallet = new Wallet();
 
+  // Configure Program
   program.name('fabric');
   program.option('--earn', 'Enable earning.');
   program.option('--seed', 'Load from mnemonic seed.');
@@ -50,9 +51,13 @@ async function main () {
   program.parse(process.argv);
 
   if (program.keygen) {
-    // Toxic Waste
+    // ### [!!!] Toxic Waste [!!!]
     const seed = await wallet._createSeed();
+
+    // TODO: remove from log output...
     console.warn('[FABRIC:KEYGEN]', 'GENERATE_SEED', seed);
+
+    // prevent further execution
     process.exit();
   }
 
@@ -65,12 +70,14 @@ async function main () {
 
   // ## Services
   // TODO: reconcile API wth @fabric/doorman as appears at: https://github.com/FabricLabs/doorman
+  chat._registerService('bitcoin', Bitcoin);
   chat._registerService('matrix', Matrix);
   // chat._registerService('rpg', RPG);
 
   await chat.start();
 }
 
+// Run Program
 main().catch((exception) => {
   console.error('[SCRIPTS:CHAT]', 'Main process threw Exception:', exception);
 });
