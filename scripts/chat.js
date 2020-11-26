@@ -69,14 +69,6 @@ async function main () {
     seed = environment.readWallet();
   }
 
-  if (secret) {
-    try {
-      seed = secret.decrypt(program.password);
-    } catch (exception) {
-      console.error('[FABRIC:KEYGEN]', 'Could not decrypt wallet:', exception);
-    }
-  }
-
   if (program.keygen) {
     // ### [!!!] Toxic Waste [!!!]
     if (!environment.walletExists() || program.force) {
