@@ -73,8 +73,6 @@
     "base58check": "^2.0.0",
     "bcash": "bcoin-org/bcash#master",
     "bcoin": "bcoin-org/bcoin#master",
-    "bitmessage": "^0.6.6",
-    "bitmessage-transports": "^0.1.4",
     "commander": "^6.1.0",
     "content-type": "^1.0.4",
     "dotparser": "^0.3.0",
@@ -101,7 +99,6 @@
     "path-match": "^1.2.4",
     "pluralize": "^8.0.0",
     "rimraf": "^2.6.2",
-    "simple-aes": "^0.1.1",
     "struct": "^0.0.12",
     "torrent-stream": "^1.2.0"
   },
