@@ -17,12 +17,19 @@ const { Command } = require('commander');
 
 // Fabric Types
 const CLI = require('../types/cli');
+const Peer = require('../types/peer');
 const Wallet = require('../types/wallet');
 const Environment = require('../types/environment');
 
 // Services
 const Bitcoin = require('../services/bitcoin');
 const Matrix = require('../services/matrix');
+
+const wallet = new Wallet();
+const environment = new Environment();
+
+// ### [!!!] Toxic Waste [!!!]
+let seed = null;
 
 // Settings
 const settings = {
@@ -44,23 +51,65 @@ const settings = {
 
 // Define Main Program
 async function main () {
+
+  if (!environment.walletExists()) {
+    seed = await wallet._createSeed();
+  } else {
+    seed = environment.readWallet();
+  }
+
+  const COMMANDS = {
+    'START': async function OP_START () {
+      const peer = new Peer();
+      peer.on('ready', () => {
+        console.log('peer ready');
+      });
+      await peer.start();
+    },
+    'CHAT': async function OP_CHAT () {
+      // Configure Earning
+      if (program.earn) {
+        SETTINGS.earn = true;
+      }
+
+      // Load from Seed
+      settings.key.seed = seed['@data'];
+      settings.wallet.seed = seed['@data'];
+
+      // Fabric CLI
+      const chat = new CLI(settings);
+
+      // ## Services
+      // TODO: reconcile API wth @fabric/doorman as appears at: https://github.com/FabricLabs/doorman
+      chat._registerService('bitcoin', Bitcoin);
+      // chat._registerService('matrix', Matrix);
+      // chat._registerService('rpg', RPG);
+
+      await chat.start();
+    }
+  };
+
   // Argument Parsing
   const program = new Command();
-  const wallet = new Wallet();
-  const environment = new Environment();
-
-  // ### [!!!] Toxic Waste [!!!]
-  let seed = null;
-  let secret = null;
 
   // Configure Program
   program.name('fabric');
+
+  program.command('start', { isDefault: true })
+    .description('Initiate peer bootstrapping.')
+    .action(COMMANDS['START'].bind(program));
+
+  program.command('chat')
+    .description('Open P2P chat.')
+    .action(COMMANDS['CHAT'].bind(program));
+
   program.option('--earn', 'Enable earning.');
-  program.option('--seed', 'Load from mnemonic seed.');
-  program.option('--xpub', 'Load from xpub.');
-  program.option('--keygen', 'Generate a new seed.');
+  program.option('--seed <SEED PHRASE>', 'Load from mnemonic seed.');
+  program.option('--xpub <XPUB>', 'Load from xpub.');
+  program.option('--receive', 'Generate a fresh receiving address.');
   program.option('--force', 'Force generation of new seed.');
   program.option('--password <PASSWORD>', 'Specify the encryption passphrase.');
+  program.option('-n, --keygen', 'Generate a new seed.  Consider the privacy of your surroundings!');
   program.parse(process.argv);
 
   if (!environment.walletExists() || (program.keygen && program.force)) {
@@ -101,26 +150,18 @@ async function main () {
 
     // prevent further execution
     process.exit();
-  } else {
-    // Configure Earning
-    if (program.earn) {
-      SETTINGS.earn = true;
-    }
+  } else if (program.receive) {
+    const wallet = new Wallet({
+      key: {
+        seed: seed['@data'].seed
+      }
+    });
 
-    // Load from Seed
-    settings.key.seed = seed['@data'];
-    settings.wallet.seed = seed['@data'];
+    await wallet._load();
+    const address = await wallet.wallet.receiveAddress();
 
-    // Fabric CLI
-    const chat = new CLI(settings);
-
-    // ## Services
-    // TODO: reconcile API wth @fabric/doorman as appears at: https://github.com/FabricLabs/doorman
-    chat._registerService('bitcoin', Bitcoin);
-    chat._registerService('matrix', Matrix);
-    // chat._registerService('rpg', RPG);
-
-    await chat.start();
+    console.log('[FABRIC:WALLET]', '$BTC', 'Receive Address:', address.toString());
+    process.exit();
   }
 }
 
