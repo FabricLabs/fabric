@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-'use strict';
-
 // Configuration
 const PORT = process.env.PORT;
 const SEED = process.env.SEED;
