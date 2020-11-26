@@ -18,7 +18,7 @@ const { Command } = require('commander');
 // Fabric Types
 const CLI = require('../types/cli');
 const Wallet = require('../types/wallet');
-const EncryptedPromise = require('../types/promise');
+const Environment = require('../types/environment');
 
 // Services
 const Bitcoin = require('../services/bitcoin');
@@ -47,6 +47,7 @@ async function main () {
   // Argument Parsing
   const program = new Command();
   const wallet = new Wallet();
+  const environment = new Environment();
 
   // ### [!!!] Toxic Waste [!!!]
   let seed = null;
@@ -62,20 +63,10 @@ async function main () {
   program.option('--password <PASSWORD>', 'Specify the encryption passphrase.');
   program.parse(process.argv);
 
-  if (!fs.existsSync(file) || (program.keygen && program.force)) {
+  if (!environment.walletExists() || (program.keygen && program.force)) {
     seed = await wallet._createSeed();
   } else {
-    let data = fs.readFileSync(file, 'utf8');
-
-    try {
-      seed = JSON.parse(data);
-      secret = new EncryptedPromise({
-        password: program.password,
-        ciphertext: seed['@data']
-      });
-    } catch (exception) {
-      console.error('[FABRIC:KEYGEN]', 'Could not load wallet data:', exception);
-    }
+    seed = environment.readWallet();
   }
 
   if (secret) {
@@ -88,14 +79,14 @@ async function main () {
 
   if (program.keygen) {
     // ### [!!!] Toxic Waste [!!!]
-    if (!fs.existsSync(file) || program.force) {
+    if (!environment.walletExists() || program.force) {
       // TODO: remove from log output...
-      console.warn('[FABRIC:KEYGEN]', 'GENERATE_SEED', seed);
+      console.warn('[FABRIC:KEYGEN]', 'GENERATED_SEED', '=', seed);
       console.warn('[FABRIC:KEYGEN]', 'Saving new wallet to path:', path);
       // console.warn('[FABRIC:KEYGEN]', 'Wallet password:', program.password);
 
       try {
-        fs.mkdirSync(path);
+        environment.makeStore();
       } catch (exception) {
         // console.error('[FABRIC:KEYGEN]', 'Could prepare wallet store:', exception);
       }
@@ -106,11 +97,14 @@ async function main () {
       }, null, '  ') + '\n');
 
       // TODO: replicate this program in C / ASM
-      console.warn('[FABRIC:KEYGEN]', '[!!!]', 'WARNING!', 'TOXIC WASTE ABOVE');
+      console.warn('[FABRIC:KEYGEN]', '[!!!]', 'WARNING!', 'TOXIC WASTE ABOVE', '[!!!]');
+      console.warn('[FABRIC:KEYGEN]', '[!!!]', 'The above is PRIVATE KEY MATERIAL, which can be used to');
+      console.warn('[FABRIC:KEYGEN]', '[!!!]', 'spend funds from this wallet & deanonymize historical transactions.');
+      console.error('[FABRIC:KEYGEN]', '[!!!]', 'DO NOT DISTRIBUTE', '[!!!]');
     } else {
       console.warn('[FABRIC:KEYGEN]', 'Key file exists, no data will be written.  Use --force to override.');
       console.warn('[FABRIC:KEYGEN]', '[WARNING]', '--force DESTROYS ALL DATA: DOUBLE-CHECK YOUR BACKUPS!');
-      console.warn('[FABRIC:KEYGEN]', 'EXISTING_SEED', seed);
+      console.warn('[FABRIC:KEYGEN]', 'EXISTING_XPUB_PUBLIC', '=', seed['@data'].xpub.public);
     }
 
     // prevent further execution
