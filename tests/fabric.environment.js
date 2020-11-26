@@ -17,5 +17,13 @@ describe('@fabric/core/types/environment', function () {
       assert.ok(environment);
       assert.equal(typeof exists, 'boolean');
     });
+
+    it('can check for wallet', async function () {
+      let environment = new Environment();
+      let exists = environment.walletExists();
+
+      assert.ok(environment);
+      assert.equal(typeof exists, 'boolean');
+    });
   });
 });
