@@ -23,6 +23,9 @@ class Entity extends Events.EventEmitter {
 
     // set internal properties
     this.machine = new Machine();
+    this.settings = {
+      verbosity: 2 // Information && Warnings
+    };
 
     // configure defaults
     this.actor = Object.assign({}, this._downsample(data));
@@ -46,6 +49,15 @@ class Entity extends Events.EventEmitter {
     return 1;
   }
 
+  set state (state) {
+    if (!state) throw new Error('State must be provided.');
+    this._state = state;
+  }
+
+  get state () {
+    return Object.assign({}, this._state);
+  }
+
   get buffer () {
     let entity = this;
     return function buffer () {
@@ -56,7 +68,7 @@ class Entity extends Events.EventEmitter {
   get id () {
     let data = this.toJSON();
     let hash = crypto.createHash('sha256').update(data).digest('hex');
-    // console.log('[RPG:ENTITY (pending upstream!)]', 'hash:', hash, 'data:', data);
+    if (this.settings.verbosity >= 5) console.log('[FABRIC:ENTITY (pending upstream!)]', 'hash:', hash, 'data:', data);
     return hash;
   }
 
@@ -79,6 +91,7 @@ class Entity extends Events.EventEmitter {
       default:
         result = JSON.stringify(this.toObject());
         break;
+      case 'Buffer':
       case 'String':
         result = JSON.stringify(this.toString());
         break;
@@ -92,7 +105,12 @@ class Entity extends Events.EventEmitter {
 
     switch (this.actor['@type']) {
       default:
-        result = this.toJSON();
+        result = JSON.stringify(this.actor['@data']);
+        break;
+      case 'Buffer':
+        const buffer = new Uint8Array(this.data);
+        const values = Object.values(this.data);
+        result = JSON.stringify(values);
         break;
       case 'String':
         // TODO: write up longer-form explanation as to why we use an Array here
@@ -136,8 +154,6 @@ class Entity extends Events.EventEmitter {
         '@data': input
       };
     } else if (input instanceof Buffer) {
-      console.log('[FABRIC:ENTITY]', 'input data:', input);
-      console.log('[FABRIC:ENTITY]', 'input stringified by local JS engine:', JSON.stringify(input));
       result = {
         '@type': 'Buffer',
         '@data': JSON.parse(JSON.stringify(input))[0]

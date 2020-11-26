@@ -2,7 +2,7 @@
   "author": "Fabric Labs",
   "title": "Fabric Developer's Handbook",
   "description": "Build & Run P2P Applications with Fabric",
-  "plugins": ["exercises", "edit-link", "page-toc", "scripts"],
+  "plugins": ["exercises", "edit-link", "scripts"],
   "pluginsConfig": {
     "edit-link": {
       "base": "https://github.com/FabricLabs/fabric/edit/master",

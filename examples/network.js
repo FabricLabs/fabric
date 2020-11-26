@@ -1,6 +1,6 @@
 'use strict';
 
-const Fabric = require('../');
+const Peer = require('../types/peer');
 
 const NETWORK_NAME = 'playnet';
 const NODE_COUNT = 3;
@@ -15,7 +15,7 @@ async function simulate () {
   let ids = [];
 
   for (let i = 0; i < NODE_COUNT; i++) {
-    let node = new Fabric.Peer({
+    let node = new Peer({
       port: PEERING_PORT + i
     });
     console.log(`node id: ${node.id}`, node.id);

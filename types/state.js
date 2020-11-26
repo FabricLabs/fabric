@@ -13,6 +13,7 @@ const EventEmitter = require('events').EventEmitter;
  * The {@link State} is the core of most {@link User}-facing interactions.  To
  * interact with the {@link User}, simply propose a change in the state by
  * committing to the outcome.  This workflow keeps app design quite simple!
+ * @augments EventEmitter
  * @property {Number} size Size of state in bytes.
  * @property {Buffer} @buffer Byte-for-byte memory representation of state.
  * @property {String} @type Named type.
@@ -69,15 +70,6 @@ class State extends EventEmitter {
       this['@entity']['@data'] = data;
     }
 
-    /**
-     * Identity function.
-     * @type {Boolean}
-     */
-    Object.defineProperty(this, 'id', {
-      enumerable: true,
-      get: this.fingerprint.bind(this)
-    });
-
     Object.defineProperty(this, `size`, {
       enumerable: true,
       get: function count () {
@@ -106,13 +98,14 @@ class State extends EventEmitter {
 
     // set various #meta
     this['@type'] = this['@entity']['@type'];
-    this['@id'] = this.id;
+    // this['@id'] = null;
+    // this['@id'] = this.id;
 
     // set internal data
     this.services = ['json'];
     // TODO: re-enable
     // this.name = this['@entity'].name || this.id;
-    this.link = `/entities/${this.id}`;
+    this.link = `/entities/${this.fingerprint()}`;
 
     if (this['@entity']['@data']) {
       try {
@@ -124,11 +117,26 @@ class State extends EventEmitter {
 
     this.state = {};
 
+    // TODO: document hidden properties
+    // Remove various undesired clutter from output
+    Object.defineProperty(this, '@allocation', { enumerable: false });
+    Object.defineProperty(this, '@buffer', { enumerable: false });
+    Object.defineProperty(this, '@encoding', { enumerable: false });
+    Object.defineProperty(this, 'services', { enumerable: false });
+
     return this;
   }
 
   static get pointer () {
     return pointer;
+  }
+
+  /**
+   * Identity function.
+   * @type {Boolean}
+   */
+  get id () {
+    return this.fingerprint();
   }
 
   /**
@@ -386,7 +394,13 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
    */
   get (path) {
     // return pointer.get(this.state, path);
-    return pointer.get(this['@entity']['@data'], path);
+    let result = null;
+    try {
+      result = pointer.get(this['@entity']['@data'], path);
+    } catch (exception) {
+      console.error('[FABRIC:STATE]', 'Could not retrieve path:', path, exception);
+    }
+    return result;
   }
 
   /**

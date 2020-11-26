@@ -1,0 +1,27 @@
+digraph Chat {
+  "input" -> {
+    "main"
+  } -> "_generateOutput" -> "output"
+
+  subgraph cluster_main {
+    "main"
+    "main" -> "_routeInput" -> {
+      "_syncPeerList"
+      "_syncMessageList"
+      "_handleFormSubmit"
+      "_handlePeerMessage"
+    } -> "_generateOutput"
+
+    subgraph cluster_methods {
+      "_routeInput"
+      "_syncPeerList"
+      "_syncMessageList"
+      "_handleFormSubmit"
+      "_handlePeerMessage"
+    }
+
+    subgraph cluster_ui {
+      "_generateOutput"
+    }
+  }
+}

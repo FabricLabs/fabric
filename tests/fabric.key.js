@@ -11,9 +11,17 @@ describe('@fabric/core/types/key', function () {
       assert.equal(Fabric.Key instanceof Function, true);
     });
 
-    it('can create an ECDSA key', function () {
+    it('can create a new ECDSA key', function () {
       let key = new Fabric.Key();
       assert.ok(key);
+    });
+
+    it('can generate a known keypair', function () {
+      let key = new Fabric.Key({
+        private: '1111111111111111111111111111111111111111111111111111111111111111'
+      });
+
+      assert.equal(key.public.encodeCompressed('hex'), '034f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa');
     });
 
     it('can sign some data', function () {

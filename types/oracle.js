@@ -33,6 +33,14 @@ class Oracle extends Store {
     this.resources = new Set();
     this.keys = new Set();
 
+    Object.defineProperty(this, '@allocation', { enumerable: false });
+    Object.defineProperty(this, '@buffer', { enumerable: false });
+    Object.defineProperty(this, '@encoding', { enumerable: false });
+    Object.defineProperty(this, '@parent', { enumerable: false });
+    Object.defineProperty(this, '@preimage', { enumerable: false });
+    Object.defineProperty(this, 'frame', { enumerable: false });
+    Object.defineProperty(this, 'services', { enumerable: false });
+
     return this;
   }
 
@@ -62,7 +70,11 @@ class Oracle extends Store {
   }
 
   async start () {
-    await super.start();
+    try {
+      await this.open();
+    } catch (E) {
+      console.error('Could not open Oracle:', E);
+    }
 
     // TODO: define all resources
     await Promise.all([
@@ -88,6 +100,16 @@ class Oracle extends Store {
     // this.state = await this._GET('/');
     // console.log('state retrieved:', this.state);
     // this.machine.on('changes', this._handleStateChange.bind(this));
+
+    return this;
+  }
+
+  async stop () {
+    try {
+      await this.close();
+    } catch (E) {
+      console.error('Could not close Oracle:', E);
+    }
 
     return this;
   }
