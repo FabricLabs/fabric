@@ -856,9 +856,40 @@ class Wallet extends Service {
     };
   }
 
-  async _createSeed () {
-    let mnemonic = new Mnemonic({ bits: 256 });
-    return { seed: mnemonic.toString() };
+  async _createSeed (password = null) {
+    const mnemonic = new Mnemonic({ bits: 256 });
+    const master = bcoin.hd.fromMnemonic(mnemonic);
+
+    await this._load();
+
+    const wallet = await this.database.create({
+      network: this.settings.network,
+      master: master
+    });
+
+    // TODO: allow override of wallet name
+    const account = await wallet.getAccount('default');
+    const data = {
+      seed: mnemonic.toString(),
+      master: master.privateKey.toString('hex'),
+      xpub: {
+        meta: {
+          depth: account.accountKey.depth,
+          parentFingerPrint: account.accountKey.parentFingerPrint,
+          childIndex: account.accountKey.childIndex,
+          chainCode: account.accountKey.chainCode.toString('hex'),
+          publicKey: account.accountKey.publicKey.toString('hex'),
+          fingerPrint: account.accountKey.fingerPrint
+        },
+        public: account.accountKey.publicKey.toString('hex')
+      },
+      key: {
+        private: master.privateKey.toString('hex'),
+        public: master.publicKey.toString('hex')
+      }
+    };
+
+    return data;
   }
 
   async _importSeed (seed) {
@@ -1266,6 +1297,7 @@ class Wallet extends Service {
     }
 
     if (this.settings.key && this.settings.key.seed) {
+      this.emit('message', 'Restoring wallet from seed...');
       if (this.settings.verbosity >= 3) console.log('[AUDIT]', 'Restoring wallet from provided seed:', this.settings.key.seed);
       let mnemonic = new Mnemonic(this.settings.key.seed);
       this.master = bcoin.hd.fromMnemonic(mnemonic);
@@ -1291,6 +1323,7 @@ class Wallet extends Service {
     if (this.settings.verbosity >= 4) console.log('keyring:', this.ring);
     if (this.settings.verbosity >= 4) console.log('address from keyring:', this.ring.getAddress().toString());
 
+    // TODO: allow override of wallet name
     this.account = await this.wallet.getAccount('default');
 
     // Let's call it a shard!
