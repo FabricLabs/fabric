@@ -44,6 +44,10 @@ class Environment extends Entity {
     }
   }
 
+  readVariable (name) {
+    return process.env[name] || '';
+  }
+
   readWallet (password) {
     let data = fs.readFileSync(this.settings.path);
     let seed = null;

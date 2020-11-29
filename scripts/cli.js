@@ -15,9 +15,9 @@ const fs = require('fs');
 const { Command } = require('commander');
 
 // Fabric Types
-const CLI = require('../types/cli');
 const Entity = require('../types/entity');
 const Wallet = require('../types/wallet');
+const Machine = require('../types/machine');
 const Environment = require('../types/environment');
 
 // Services
@@ -26,6 +26,7 @@ const Matrix = require('../services/matrix');
 
 // Contracts
 const OP_START = require('../contracts/node');
+const OP_CHAT = require('../contracts/chat');
 
 // Singletons
 const wallet = new Wallet();
@@ -62,31 +63,12 @@ async function main () {
 
   const COMMANDS = {
     'START': OP_START,
-    'CHAT': async function OP_CHAT () {
-      // Configure Earning
-      if (program.earn) {
-        SETTINGS.earn = true;
-      }
-
-      // Load from Seed
-      settings.key.seed = seed['@data'];
-      settings.wallet.seed = seed['@data'];
-
-      // Fabric CLI
-      const chat = new CLI(settings);
-
-      // ## Services
-      // TODO: reconcile API wth @fabric/doorman as appears at: https://github.com/FabricLabs/doorman
-      chat._registerService('bitcoin', Bitcoin);
-      // chat._registerService('matrix', Matrix);
-      // chat._registerService('rpg', RPG);
-
-      await chat.start();
-    }
+    'CHAT': OP_CHAT
   };
 
   // Argument Parsing
   const program = new Command();
+  const machine = new Machine();
 
   // Configure Program
   program.name('fabric');
@@ -100,9 +82,11 @@ async function main () {
     .action(COMMANDS['CHAT'].bind(program));
 
   program.option('--earn', 'Enable earning.');
+  program.option('--port <PORT NUMBER>', 'Specify the Fabric P2P communication port.');
   program.option('--seed <SEED PHRASE>', 'Load from mnemonic seed.');
   program.option('--xpub <XPUB>', 'Load from xpub.');
   program.option('--receive', 'Generate a fresh receiving address.');
+  program.option('--trust <PUBKEY@host:port>', 'Generate a fresh receiving address.');
   program.option('--force', 'Force generation of new seed.');
   program.option('--password <PASSWORD>', 'Specify the encryption passphrase.');
   program.option('-n, --keygen', 'Generate a new seed.  Consider the privacy of your surroundings!');
