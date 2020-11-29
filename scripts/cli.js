@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // Configuration
-const PORT = process.env.PORT;
-const SEED = process.env.SEED;
+const PORT = process.env.FABRIC_PORT;
+const SEED = process.env.FABRIC_SEED;
 
+// Settings
 const defaults = require('../settings/default');
 const playnet = require('../settings/playnet');
 
@@ -15,7 +16,6 @@ const { Command } = require('commander');
 
 // Fabric Types
 const CLI = require('../types/cli');
-const Peer = require('../types/peer');
 const Entity = require('../types/entity');
 const Wallet = require('../types/wallet');
 const Environment = require('../types/environment');
@@ -24,6 +24,10 @@ const Environment = require('../types/environment');
 const Bitcoin = require('../services/bitcoin');
 const Matrix = require('../services/matrix');
 
+// Contracts
+const OP_START = require('../contracts/node');
+
+// Singletons
 const wallet = new Wallet();
 const environment = new Environment();
 
@@ -57,15 +61,7 @@ async function main () {
   }
 
   const COMMANDS = {
-    'START': async function OP_START () {
-      const peer = new Peer();
-
-      peer.on('ready', () => {
-        console.log('[FABRIC:CLI]', 'Peer ready!');
-      });
-
-      await peer.start();
-    },
+    'START': OP_START,
     'CHAT': async function OP_CHAT () {
       // Configure Earning
       if (program.earn) {
