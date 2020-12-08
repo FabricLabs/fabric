@@ -44,6 +44,7 @@ describe('@fabric/core/types/interface', function () {
       assert.equal(events.length, 0);
       assert.equal(cycles.length, 0);
 
+      // TODO: remove this case / rework messages
       net.on('message', async function handler (msg) {
         // console.log('Message received:', msg);
         events.push(msg);
@@ -58,6 +59,15 @@ describe('@fabric/core/types/interface', function () {
         }
       });
 
+      net.on('cycle', async function handler (cycle) {
+        events.push(cycle);
+        cycles.push(cycle);
+      });
+
+      net.on('transaction', async function handler (transaction) {
+        events.push(transaction);
+      });
+
       await net.start();
       assert.equal(net.status, 'started');
 
@@ -70,6 +80,23 @@ describe('@fabric/core/types/interface', function () {
       assert.equal(cycles.length, 2);
       assert.equal(cycles[0], script[0]);
       assert.equal(cycles[1], script[1]);
+    });
+
+    it('can share some state', async function () {
+      const alice = new Interface(config);
+      const bob = new Interface(config);
+
+      const genesis = alice.shared();
+      const replica = bob.shared();
+
+      alice.on('commit', function (commit) {
+        console.log('got commit:', commit);
+      });
+
+      alice.writeTo(0, 'Hello, world!');
+
+      assert.ok(genesis);
+      assert.ok(replica);
     });
   });
 });

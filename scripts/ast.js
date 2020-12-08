@@ -3,7 +3,7 @@
 const Compiler = require('../types/compiler');
 
 async function main () {
-  let compiler = new Compiler();
+  const compiler = new Compiler();
   compiler._fromJavaScript('sample.js');
 }
 
