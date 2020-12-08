@@ -1,8 +1,8 @@
 module.exports = {
   OP_ADD: function compute (input) {
-    let a = this.stack.pop();
-    let b = this.stack.pop();
-    let sum = parseInt(a) + parseInt(b);
+    const a = this.stack.pop();
+    const b = this.stack.pop();
+    const sum = parseInt(a) + parseInt(b);
     return sum;
   },
   OP_TRUE: function compute (input) {

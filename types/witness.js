@@ -16,7 +16,7 @@ class Witness {
     this.buffer = Buffer.alloc(32 * 256);
     this._state = {
       data: this.settings.data
-    }
+    };
 
     if (settings && settings.keypair) {
       if (settings.keypair.private) {
@@ -55,7 +55,7 @@ class Witness {
 
   get signature () {
     // return this.keypair.sign(this.hash).toDER().toString('hex');
-    let sig = this.keypair.sign(this.hash);
+    const sig = this.keypair.sign(this.hash);
     return {
       curve: this.settings.curve,
       r: sig.r.toString('hex'),
@@ -75,7 +75,7 @@ class Witness {
     return {
       private: this.keypair.getPrivate(),
       public: this.keypair.getPublic()
-    }
+    };
   }
 
   _usePrivateKey (key) {
@@ -110,11 +110,11 @@ class Witness {
    * Converts the Witness to a Compact DER format.
    */
   toCompactDER () {
-    let sig = this.signature;
-    let R = sig.r;
-    let S = sig.s;
+    const sig = this.signature;
+    const R = sig.r;
+    const S = sig.s;
 
-    let payload = [
+    const payload = [
       0x02, // a header byte indicating an integer.
       32, // A 1-byte length descriptor for the R value
       // TODO: assign R coordinate
@@ -127,20 +127,20 @@ class Witness {
 
     console.log('payload:', payload);
 
-    let raw = [
+    const raw = [
       0x30, // indicates compound structure
-      Buffer.from(payload, 'hex').size, // payload size
+      Buffer.from(payload, 'hex').size // payload size
     ].join('') + payload;
 
-    let der = Buffer.from(raw, 'hex');
+    const der = Buffer.from(raw, 'hex');
 
     return der;
   }
 
   verify (msg, signature) {
-    let hash = this.digest(msg);
-    let verifies = this.keypair.verify(hash, signature);
-    let verification = {
+    const hash = this.digest(msg);
+    const verifies = this.keypair.verify(hash, signature);
+    const verification = {
       msg: msg,
       hash: hash,
       pubkey: this.pubkey,
