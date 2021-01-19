@@ -24,9 +24,10 @@
 
       <header>
 
-        <h2><span class="attribs"><span class="type-signature"></span></span>CLI<span class="signature">(configuration)</span><span class="type-signature"></span></h2>
+        <h2><span class="attribs"><span class="type-signature"></span></span>CLI<span class="signature">(settings)</span><span class="type-signature"></span></h2>
 
-        <div class="class-description">Base class for a terminal-like interface to the Fabric network.</div>
+        <div class="class-description">Provides a Command Line Interface (CLI) for interacting with
+          the Fabric network using a terminal emulator.</div>
 
 
       </header>
@@ -41,7 +42,7 @@
 
 
 
-          <h4 class="name" id="CLI"><span class="type-signature"></span>new CLI<span class="signature">(configuration)</span><span class="type-signature"></span></h4>
+          <h4 class="name" id="CLI"><span class="type-signature"></span>new CLI<span class="signature">(settings)</span><span class="type-signature"></span></h4>
 
 
 
@@ -49,7 +50,7 @@
 
 
           <div class="description">
-            Base class for a terminal-like interface to the Fabric network.
+            Create a terminal-based interface for a User.
           </div>
 
 
@@ -85,7 +86,7 @@
 
               <tr>
 
-                <td class="name"><code>configuration</code></td>
+                <td class="name"><code>settings</code></td>
 
 
                 <td class="type">
@@ -101,7 +102,7 @@
 
 
 
-                <td class="description last">Configuration object for the CLI.</td>
+                <td class="description last">Configuration values.</td>
               </tr>
 
 
@@ -109,81 +110,6 @@
           </table>
 
 
-
-
-
-
-          <h5 class="subsection-title">Properties:</h5>
-
-
-
-          <table class="props">
-            <thead>
-              <tr>
-
-                <th>Name</th>
-
-
-                <th>Type</th>
-
-
-
-
-
-                <th class="last">Description</th>
-              </tr>
-            </thead>
-
-            <tbody>
-
-
-              <tr>
-
-                <td class="name"><code>config</code></td>
-
-
-                <td class="type">
-
-
-                  <span class="param-type">Object</span>
-
-
-
-                </td>
-
-
-
-
-
-                <td class="description last">Initial <a href="Vector.html">Vector</a>.</td>
-              </tr>
-
-
-
-              <tr>
-
-                <td class="name"><code>oracle</code></td>
-
-
-                <td class="type">
-
-
-                  <span class="param-type"><a href="Oracle.html">Oracle</a></span>
-
-
-
-                </td>
-
-
-
-
-
-                <td class="description last">Instance of <a href="Oracle.html">Oracle</a>.</td>
-              </tr>
-
-
-            </tbody>
-          </table>
 
 
 
@@ -219,7 +145,7 @@
             <dd class="tag-source">
               <ul class="dummy">
                 <li>
-                  <a href="types_cli.js.html">types/cli.js</a>, <a href="types_cli.js.html#line26">line 26</a>
+                  <a href="types_cli.js.html">types/cli.js</a>, <a href="types_cli.js.html#line39">line 39</a>
                 </li>
               </ul>
             </dd>
@@ -277,7 +203,7 @@
 
 
 
-        <h4 class="name" id="_handleChanges"><span class="type-signature"></span>_handleChanges<span class="signature">(msg)</span><span class="type-signature"> &rarr; {<a href="CLI.html">CLI</a>}</span></h4>
+        <h4 class="name" id="stop"><span class="type-signature">(async) </span>stop<span class="signature">()</span><span class="type-signature"></span></h4>
 
 
 
@@ -285,7 +211,7 @@
 
 
         <div class="description">
-          Update UI as necessary based on changes from Oracle.
+          Disconnect all interfaces and exit the process.
         </div>
 
 
@@ -294,55 +220,6 @@
 
 
 
-
-
-        <h5>Parameters:</h5>
-
-
-        <table class="params">
-          <thead>
-            <tr>
-
-              <th>Name</th>
-
-
-              <th>Type</th>
-
-
-
-
-
-              <th class="last">Description</th>
-            </tr>
-          </thead>
-
-          <tbody>
-
-
-            <tr>
-
-              <td class="name"><code>msg</code></td>
-
-
-              <td class="type">
-
-
-                <span class="param-type"><a href="Message.html">Message</a></span>
-
-
-
-              </td>
-
-
-
-
-
-              <td class="description last">Incoming <a href="Message.html">Message</a>.</td>
-            </tr>
-
-
-          </tbody>
-        </table>
 
 
 
@@ -380,7 +257,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_cli.js.html">types/cli.js</a>, <a href="types_cli.js.html#line514">line 514</a>
+                <a href="types_cli.js.html">types/cli.js</a>, <a href="types_cli.js.html#line142">line 142</a>
               </li>
             </ul>
           </dd>
@@ -407,24 +284,6 @@
 
 
 
-        <h5>Returns:</h5>
-
-
-
-
-        <dl>
-          <dt>
-            Type
-          </dt>
-          <dd>
-
-            <span class="param-type"><a href="CLI.html">CLI</a></span>
-
-
-          </dd>
-        </dl>
-
-
 
 
 
@@ -448,16 +307,21 @@
     <h3>Classes</h3>
     <ul>
       <li><a href="App.html">App</a></li>
+      <li><a href="Bitcoin.html">Bitcoin</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Compiler.html">Compiler</a></li>
+      <li><a href="Consensus.html">Consensus</a></li>
+      <li><a href="CryptoVoxels.html">CryptoVoxels</a></li>
       <li><a href="Entity.html">Entity</a></li>
-      <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Hash256.html">Hash256</a></li>
+      <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="Interface.html">Interface</a></li>
+      <li><a href="Key.html">Key</a></li>
       <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Matrix.html">Matrix</a></li>
       <li><a href="Mempool.html">Mempool</a></li>
       <li><a href="Message.html">Message</a></li>
       <li><a href="Oracle.html">Oracle</a></li>
@@ -469,6 +333,7 @@
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
+      <li><a href="Snapshot.html">Snapshot</a></li>
       <li><a href="Stack.html">Stack</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>

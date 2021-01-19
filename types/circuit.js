@@ -12,9 +12,10 @@ const Service = require('./service');
 
 /**
  * The {@link Circuit} is the mechanism through which {@link Fabric}
- * operates, a computable directed graph for execution be a network
- * of {@link Peer} components.  See also {@link Swarm} for deeper
- * inspection of {@link Machine} mechanics.
+ * operates, a computable directed graph describing a network of
+ * {@link Peer} components and their interactions (side effects).
+ * See also {@link Swarm} for deeper *inspection of {@link Machine}
+ * mechanics.
  */
 class Circuit extends Service {
   constructor (config = {}) {

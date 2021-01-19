@@ -1,11 +1,12 @@
 'use strict';
 
+// Constants
 const MAX_CHAT_MESSAGE_LENGTH = 2048;
 
-// Dependencies
+// External Dependencies
 const merge = require('lodash.merge');
 
-// Types
+// Fabric Types
 const App = require('../types/app');
 const Entity = require('./entity');
 const Peer = require('../types/peer');
@@ -31,6 +32,10 @@ const blessed = require('blessed');
  * the Fabric network using a terminal emulator.
  */
 class CLI extends App {
+  /**
+   * Create a terminal-based interface for a {@link User}.
+   * @param {Object} settings Configuration values.
+   */
   constructor (settings = {}) {
     super(settings);
 
@@ -131,6 +136,9 @@ class CLI extends App {
     this.emit('ready');
   }
 
+  /**
+   * Disconnect all interfaces and exit the process.
+   */
   async stop () {
     await this.node.stop();
     return process.exit(0);
@@ -706,7 +714,7 @@ class CLI extends App {
       self.elements['prompt'].oldFocus();
     }
 
-    //focus when clicked
+    // focus when clicked
     self.elements['form'].on('click', function () {
       self.elements['prompt'].focus();
     });

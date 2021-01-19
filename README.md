@@ -6,7 +6,7 @@
 [![Community](https://img.shields.io/matrix/hub:fabric.pub.svg?style=flat-square)](https://chat.fabric.pub)
 
 Fabric is an experimental approach to the secure establishment and execution of
-peer-to -peer agreements, up to and including financial transactions.  With a
+peer-to-peer agreements, up to and including financial transactions.  With a
 robust library of common components, `npm i @fabric/core` provides all the tools
 one might `require` during the development of a well-researched application of
 decentralization technology.
