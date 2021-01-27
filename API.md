@@ -9,14 +9,19 @@ Fabric-based networking and storage.</p>
 <dd><p>Chain.</p>
 </dd>
 <dt><a href="#Channel">Channel</a></dt>
-<dd><p>Creates a channel between two peers.
-of many transactions over time, to be settled on-chain later.</p>
+<dd><p>The <a href="#Channel">Channel</a> is a encrypted connection with a member of your
+<a href="#Peer">Peer</a> group, with some amount of $BTC bonded and paid for each
+correctly-validated message.</p>
+<p>Channels in Fabric are powerful tools for application development, as they
+can empower users with income opportunities in exchange for delivering
+service to the network.</p>
 </dd>
 <dt><a href="#Circuit">Circuit</a></dt>
 <dd><p>The <a href="#Circuit">Circuit</a> is the mechanism through which <a href="Fabric">Fabric</a>
-operates, a computable directed graph for execution be a network
-of <a href="#Peer">Peer</a> components.  See also <a href="#Swarm">Swarm</a> for deeper
-inspection of <a href="#Machine">Machine</a> mechanics.</p>
+operates, a computable directed graph describing a network of
+<a href="#Peer">Peer</a> components and their interactions (side effects).
+See also <a href="#Swarm">Swarm</a> for deeper *inspection of <a href="#Machine">Machine</a>
+mechanics.</p>
 </dd>
 <dt><a href="#CLI">CLI</a></dt>
 <dd><p>Provides a Command Line Interface (CLI) for interacting with
@@ -145,6 +150,9 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 </dd>
 <dt><a href="#Bitcoin">Bitcoin</a> ⇐ <code><a href="#Interface">Interface</a></code></dt>
 <dd><p>Manages interaction with the Bitcoin network.</p>
+</dd>
+<dt><a href="#CryptoVoxels">CryptoVoxels</a></dt>
+<dd><p>Experimental <a href="#Interface">Interface</a> for the CryptoVoxels virtual <a href="World">World</a>.</p>
 </dd>
 <dt><a href="#Matrix">Matrix</a> ⇐ <code><a href="#Interface">Interface</a></code></dt>
 <dd><p>Service for interacting with Matrix.</p>
@@ -426,8 +434,13 @@ Holds an immutable chain of events.
 <a name="Channel"></a>
 
 ## Channel
-Creates a channel between two peers.
-of many transactions over time, to be settled on-chain later.
+The [Channel](#Channel) is a encrypted connection with a member of your
+[Peer](#Peer) group, with some amount of $BTC bonded and paid for each
+correctly-validated message.
+
+Channels in Fabric are powerful tools for application development, as they
+can empower users with income opportunities in exchange for delivering
+service to the network.
 
 **Kind**: global class  
 
@@ -440,6 +453,9 @@ of many transactions over time, to be settled on-chain later.
 <a name="new_Channel_new"></a>
 
 ### new Channel([settings])
+Creates a channel between two peers.
+of many transactions over time, to be settled on-chain later.
+
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -482,9 +498,10 @@ Opens a [Channel](#Channel) with a [Peer](#Peer).
 
 ## Circuit
 The [Circuit](#Circuit) is the mechanism through which [Fabric](Fabric)
-operates, a computable directed graph for execution be a network
-of [Peer](#Peer) components.  See also [Swarm](#Swarm) for deeper
-inspection of [Machine](#Machine) mechanics.
+operates, a computable directed graph describing a network of
+[Peer](#Peer) components and their interactions (side effects).
+See also [Swarm](#Swarm) for deeper *inspection of [Machine](#Machine)
+mechanics.
 
 **Kind**: global class  
 <a name="CLI"></a>
@@ -494,6 +511,27 @@ Provides a Command Line Interface (CLI) for interacting with
 the Fabric network using a terminal emulator.
 
 **Kind**: global class  
+
+* [CLI](#CLI)
+    * [new CLI(settings)](#new_CLI_new)
+    * [.stop()](#CLI+stop)
+
+<a name="new_CLI_new"></a>
+
+### new CLI(settings)
+Create a terminal-based interface for a [User](User).
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| settings | <code>Object</code> | Configuration values. |
+
+<a name="CLI+stop"></a>
+
+### clI.stop()
+Disconnect all interfaces and exit the process.
+
+**Kind**: instance method of [<code>CLI</code>](#CLI)  
 <a name="Collection"></a>
 
 ## Collection
@@ -2978,6 +3016,33 @@ Log some output to the console.
 Returns current timestamp.
 
 **Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+<a name="CryptoVoxels"></a>
+
+## CryptoVoxels
+Experimental [Interface](#Interface) for the CryptoVoxels virtual [World](World).
+
+**Kind**: global class  
+
+* [CryptoVoxels](#CryptoVoxels)
+    * [new CryptoVoxels([settings])](#new_CryptoVoxels_new)
+    * [._load()](#CryptoVoxels+_load)
+
+<a name="new_CryptoVoxels_new"></a>
+
+### new CryptoVoxels([settings])
+Create an instance of the [CryptoVoxels](#CryptoVoxels) interface.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Configuration options. |
+
+<a name="CryptoVoxels+_load"></a>
+
+### cryptoVoxels.\_load()
+Load data from [Oracle](#Oracle) source.
+
+**Kind**: instance method of [<code>CryptoVoxels</code>](#CryptoVoxels)  
 <a name="Matrix"></a>
 
 ## Matrix ⇐ [<code>Interface</code>](#Interface)
@@ -2989,6 +3054,7 @@ Service for interacting with Matrix.
 * [Matrix](#Matrix) ⇐ [<code>Interface</code>](#Interface)
     * [new Matrix([settings])](#new_Matrix_new)
     * [.state](#Matrix+state)
+    * [._registerActor(actor)](#Matrix+_registerActor)
     * [.start()](#Matrix+start)
     * [.stop()](#Matrix+stop)
     * [.cycle(val)](#Interface+cycle)
@@ -3013,6 +3079,18 @@ Getter for [State](#State).
 
 **Kind**: instance property of [<code>Matrix</code>](#Matrix)  
 **Overrides**: [<code>state</code>](#Interface+state)  
+<a name="Matrix+_registerActor"></a>
+
+### matrix.\_registerActor(actor)
+Register an Actor on the network.
+
+**Kind**: instance method of [<code>Matrix</code>](#Matrix)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| actor | <code>Object</code> | Actor to register. |
+| actor.pubkey | <code>Object</code> | Hex-encoded pubkey. |
+
 <a name="Matrix+start"></a>
 
 ### matrix.start()

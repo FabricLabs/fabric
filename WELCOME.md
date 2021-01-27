@@ -46,12 +46,12 @@ If you're ready to learn more, try [the technical specification][specification].
 
 [bitcoin-network]: https://bitcoin.org
 [operating-system]: https://fabric.pub
-[why-are-we-here]: https://docs.maki.io/source/snippets/why-are-we-here.html
-[fabric-overview]: https://docs.maki.io/source/snippets/fabric-overview.html
-[maki-intro]: https://next.maki.io/guides/what-is-maki
-[resources]: https://maki.io/docs/resources
+[why-are-we-here]: https://maki.fabric.pub/snippets/why-are-we-here.html
+[fabric-overview]: https://maki.fabric.pub/snippets/fabric-overview.html
+[maki-intro]: https://maki.fabric.pub/guides/what-is-maki
+[resources]: https://maki.fabric.pub/docs/resources
 [running-a-node]: https://bitcoin.org/en/full-node
 [institute]: http://nakamotoinstitute.org/mempool/proof-that-proof-of-work-is-the-only-solution-to-the-byzantine-generals-problem/
-[product]: https://maki.io/topic/product
-[learning]: https://maki.io/topic/learning
+[product]: https://fabric.pub/topics/product
+[learning]: https://fabric.pub/topics/learning
 [specification]: snippets/specification.md
