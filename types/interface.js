@@ -84,6 +84,7 @@ class Interface extends EventEmitter {
     this.status = 'starting';
     await this.machine.start();
     this.status = 'started';
+    this.emit('ready', { name: this.settings.name });
     return this;
   }
 

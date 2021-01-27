@@ -1,6 +1,6 @@
 'use strict';
 
-const Fabric = require('../');
+const App = require('../types/app');
 
 const assert = require('assert');
 const expect = require('chai').expect;
