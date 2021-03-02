@@ -52,6 +52,6 @@ If you're ready to learn more, try [the technical specification][specification].
 [resources]: https://maki.fabric.pub/docs/resources
 [running-a-node]: https://bitcoin.org/en/full-node
 [institute]: http://nakamotoinstitute.org/mempool/proof-that-proof-of-work-is-the-only-solution-to-the-byzantine-generals-problem/
-[product]: https://fabric.pub/topics/product
-[learning]: https://fabric.pub/topics/learning
+[product]: https://maki.fabric.pub/topics/product
+[learning]: https://maki.fabric.pub/topics/learning
 [specification]: snippets/specification.md
