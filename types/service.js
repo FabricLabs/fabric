@@ -642,7 +642,7 @@ class Service extends Scribe {
   async _registerActor (actor) {
     if (!actor.id) return this.error('Client must have an id.');
 
-    console.log('Registering Actor:', actor.id, JSON.stringify(actor).slice(0, 32) + '…');
+    this.emit('message', `Registering Actor: ${actor.id} ${JSON.stringify(actor).slice(0, 32)}…`);
 
     let id = pointer.escape(actor.id);
     let path = `/actors/${id}`;
@@ -727,6 +727,16 @@ class Service extends Scribe {
         changes: changes
       }
     });
+  }
+
+  /**
+   * Sends a message.
+   * @param {Mixed} message Message to send.
+   */
+  async _send (message) {
+    const entity = new Entity(message);
+    await this._PUT(`/messages/${entity.id}`, message);
+    return entity.id;
   }
 }
 
