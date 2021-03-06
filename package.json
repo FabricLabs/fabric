@@ -17,7 +17,7 @@
     "build": "npm run make:all",
     "build:all": "npm run make:all",
     "chat": "node scripts/chat.js",
-    "cli": "node scripts/cli.js",
+    "cli": "node scripts/cli.js chat",
     "coverage": "nyc npm test",
     "dev": "npm run make:dev && http-server -p 8000 _book",
     "docs": "npm run make:api && npm run make:docs && http-server -p 8000 docs",
