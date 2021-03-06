@@ -214,6 +214,7 @@ class CLI extends App {
 
     if (!self.peers[peer.id]) {
       self.peers[peer.id] = peer;
+      self.emit('peer', peer);
     }
 
     self._syncPeerList();

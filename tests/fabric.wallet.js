@@ -1,6 +1,6 @@
 'use strict';
 
-require('debug-trace')({ always: true });
+// require('debug-trace')({ always: true });
 
 const assert = require('assert');
 const Wallet = require('../types/wallet');

@@ -5,45 +5,169 @@
 const PORT = process.env.FABRIC_PORT;
 const SEED = process.env.FABRIC_SEED;
 
+const defaults = require('../settings/default');
+const playnet = require('../settings/playnet');
+
+const path = process.env.HOME + '/.fabric';
+const file = path + '/wallet.json';
+
+// Dependencies
+const fs = require('fs');
+const { Command } = require('commander');
+
 // Fabric Types
 const CLI = require('../types/cli');
+const Peer = require('../types/peer');
+const Entity = require('../types/entity');
+const Wallet = require('../types/wallet');
+const Environment = require('../types/environment');
 
 // Services
+const Bitcoin = require('../services/bitcoin');
 const Matrix = require('../services/matrix');
+
+const wallet = new Wallet();
+const environment = new Environment();
+
+// ### [!!!] Toxic Waste [!!!]
+let seed = null;
 
 // Settings
 const settings = {
   listen: true,
-  peers: [
-    '027cac525e934dd777a944565f114b7babdb73412e37f568a0115d241d3da6ba08@antipode:7777',
-    '02e8da26206354565edf7ddefe13325ac83a03f4ff4a903d75c81a05173e841e91@174.129.128.216:7777',
-    '02de546951cee477c90c36d38615a338123a7e1fe190f3c117b028f60359b5bc7e@hub.fabric.pub:7777',
-    '02512b88b368b43c93eeb725439df33fa6e30a2b40e22bba7844bc22f675afc76a@54.193.117.227:7777',
-    '02a1933ff21f2d588285f4dc759402e02ae2ad15840243ce79fbb213eaca2b3724@95.217.115.29:7777'
-  ],
+  peers: [].concat(playnet.peers),
   services: [
     'matrix'
   ],
   port: PORT,
   seed: SEED,
+  key: {
+    SEED,
+  },
   // TODO: remove Wallet-specfic configuration
   wallet: {
     seed: SEED
   }
 };
 
-// Main Program
+// Define Main Program
 async function main () {
-  const chat = new CLI(settings);
+  if (!environment.walletExists()) {
+    seed = await wallet._createSeed();
+  } else {
+    seed = environment.readWallet();
+  }
 
-  // ## Services
-  // TODO: reconcile API wth @fabric/doorman as appears at: https://github.com/FabricLabs/doorman
-  chat._registerService('matrix', Matrix);
-  // chat._registerService('rpg', RPG);
+  const COMMANDS = {
+    'START': async function OP_START () {
+      const peer = new Peer();
 
-  await chat.start();
+      peer.on('ready', () => {
+        console.log('[FABRIC:CLI]', 'Peer ready!');
+      });
+
+      await peer.start();
+    },
+    'CHAT': async function OP_CHAT () {
+      // Configure Earning
+      if (program.earn) {
+        SETTINGS.earn = true;
+      }
+
+      // Load from Seed
+      settings.key.seed = seed['@data'];
+      settings.wallet.seed = seed['@data'];
+
+      // Fabric CLI
+      const chat = new CLI(settings);
+
+      // ## Services
+      // TODO: reconcile API wth @fabric/doorman as appears at: https://github.com/FabricLabs/doorman
+      chat._registerService('bitcoin', Bitcoin);
+      // chat._registerService('matrix', Matrix);
+      // chat._registerService('rpg', RPG);
+
+      await chat.start();
+    }
+  };
+
+  // Argument Parsing
+  const program = new Command();
+
+  // Configure Program
+  program.name('fabric');
+
+  program.command('start', { isDefault: true })
+    .description('Initiate peer bootstrapping.')
+    .action(COMMANDS['START'].bind(program));
+
+  program.command('chat')
+    .description('Open P2P chat.')
+    .action(COMMANDS['CHAT'].bind(program));
+
+  program.option('--earn', 'Enable earning.');
+  program.option('--seed <SEED PHRASE>', 'Load from mnemonic seed.');
+  program.option('--xpub <XPUB>', 'Load from xpub.');
+  program.option('--receive', 'Generate a fresh receiving address.');
+  program.option('--force', 'Force generation of new seed.');
+  program.option('--password <PASSWORD>', 'Specify the encryption passphrase.');
+  program.option('-n, --keygen', 'Generate a new seed.  Consider the privacy of your surroundings!');
+  program.parse(process.argv);
+
+  if (!environment.walletExists() || (program.keygen && program.force)) {
+    seed = await wallet._createSeed();
+  } else {
+    seed = environment.readWallet();
+  }
+
+  if (program.keygen) {
+    // ### [!!!] Toxic Waste [!!!]
+    if (!environment.walletExists() || program.force) {
+      // TODO: remove from log output...
+      console.warn('[FABRIC:KEYGEN]', 'GENERATED_SEED', '=', seed);
+      console.warn('[FABRIC:KEYGEN]', 'Saving new wallet to path:', path);
+      // console.warn('[FABRIC:KEYGEN]', 'Wallet password:', program.password);
+
+      try {
+        environment.makeStore();
+      } catch (exception) {
+        // console.error('[FABRIC:KEYGEN]', 'Could prepare wallet store:', exception);
+      }
+
+      fs.writeFileSync(file, JSON.stringify({
+        '@type': 'WalletStore',
+        '@data': seed
+      }, null, '  ') + '\n');
+
+      // TODO: replicate this program in C / ASM
+      console.warn('[FABRIC:KEYGEN]', '[!!!]', 'WARNING!', 'TOXIC WASTE ABOVE', '[!!!]');
+      console.warn('[FABRIC:KEYGEN]', '[!!!]', 'The above is PRIVATE KEY MATERIAL, which can be used to');
+      console.warn('[FABRIC:KEYGEN]', '[!!!]', 'spend funds from this wallet & deanonymize historical transactions.');
+      console.error('[FABRIC:KEYGEN]', '[!!!]', 'DO NOT DISTRIBUTE', '[!!!]');
+    } else {
+      console.warn('[FABRIC:KEYGEN]', 'Key file exists, no data will be written.  Use --force to override.');
+      console.warn('[FABRIC:KEYGEN]', '[WARNING]', '--force DESTROYS ALL DATA: DOUBLE-CHECK YOUR BACKUPS!');
+      console.warn('[FABRIC:KEYGEN]', 'EXISTING_XPUB_PUBLIC', '=', seed['@data'].xpub.public);
+    }
+
+    // prevent further execution
+    process.exit();
+  } else if (program.receive) {
+    const wallet = new Wallet({
+      key: {
+        seed: seed['@data'].seed
+      }
+    });
+
+    await wallet._load();
+    const address = await wallet.wallet.receiveAddress();
+
+    console.log('[FABRIC:WALLET]', '$BTC', 'Receive Address:', address.toString());
+    process.exit();
+  }
 }
 
+// Run Program
 main().catch((exception) => {
   console.error('[SCRIPTS:CHAT]', 'Main process threw Exception:', exception);
 });

@@ -3,6 +3,10 @@
 const PORT = process.env.FABRIC_PORT;
 const SEED = process.env.FABRIC_SEED;
 
+// Settings
+const defaults = require('../settings/default');
+const playnet = require('../settings/playnet');
+
 const path = process.env.HOME + '/.fabric';
 const file = path + '/wallet.json';
 
@@ -15,6 +19,9 @@ const Entity = require('../types/entity');
 const Wallet = require('../types/wallet');
 const Machine = require('../types/machine');
 const Environment = require('../types/environment');
+
+// Services
+const Matrix = require('../services/matrix');
 
 // Contracts
 const OP_START = require('../contracts/node');
@@ -84,6 +91,7 @@ async function main () {
     seed = environment.readWallet();
   }
 
+  // TODO: read & test contracts
   // const contracts = environment.readContracts();
   // console.log('contracts:', contracts);
 
