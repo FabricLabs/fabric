@@ -115,7 +115,7 @@ class State extends EventEmitter {
       }
     }
 
-    this.state = {};
+    this.value = {};
 
     // TODO: document hidden properties
     // Remove various undesired clutter from output
@@ -137,6 +137,16 @@ class State extends EventEmitter {
    */
   get id () {
     return this.fingerprint();
+  }
+
+  get state () {
+    return this.value;
+    // TODO: re-enable the below, map security considerations
+    // return Object.assign({}, this.value);
+  }
+
+  set state (value) {
+    this.value = value;
   }
 
   /**
@@ -173,7 +183,7 @@ class State extends EventEmitter {
     let self = this;
     let results = await Promise.all([
       async function () {
-        return self.state;
+        return self.value;
       }
     ]).then(([
       state
@@ -410,9 +420,9 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
    */
   set (path, value) {
     // console.log('setting:', path, value);
-    pointer.set(this.state, path, value);
+    pointer.set(this.value, path, value);
     pointer.set(this['@entity']['@data'], path, value);
-    let result = pointer.set(this.state, path, value);
+    let result = pointer.set(this.value, path, value);
     this.commit();
     return result;
   }

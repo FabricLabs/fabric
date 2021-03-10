@@ -15,13 +15,14 @@ const Message = require('./message');
 const State = require('./state');
 const Machine = require('./machine');
 const Secret = require('./secret');
+const Service = require('./service');
 
 /**
  * Interfaces compile abstract contract code into {@link Chain}-executable transactions, or "chaincode". For example, the "Bitcoin" interface might compile a Swap contract into Script, preparing a valid Bitcoin transaction for broadcast which executes the swap contract.
  * @augments EventEmitter
  * @property {String} status Human-friendly value representing the Interface's current {@link State}.
  */
-class Interface extends EventEmitter {
+class Interface extends Service {
   /**
    * Define an {@link Interface} by creating an instance of this class.
    * @param {Object} settings Configuration values.
@@ -67,14 +68,6 @@ class Interface extends EventEmitter {
 
   set status (value = this.status) {
     return this._state.set(`/status`, value);
-  }
-
-  /**
-   * Getter for {@link State}.
-   */
-  get state () {
-    // TODO: remove old use of `@data` while internal to Fabric
-    return this._state['@data'];
   }
 
   async patch (transaction) {

@@ -78,6 +78,13 @@ class CLI extends App {
     return this;
   }
 
+  async bootstrap () {
+    return true;
+  }
+
+  /**
+   * Starts (and renders) the CLI.
+   */
   async start () {
     // Register Internal Commands
     this._registerCommand('help', this._handleHelpRequest);
@@ -94,6 +101,8 @@ class CLI extends App {
     this._registerCommand('service', this._handleServiceCommand);
     this._registerCommand('sync', this._handleChainSyncRequest);
     this._registerCommand('send', this._handleSendRequest);
+
+    await this.bootstrap();
 
     // Render UI
     this.render();
@@ -432,7 +441,7 @@ class CLI extends App {
     switch (params[1]) {
       case 'list':
       default:
-        this._appendMessage(`{bold}Available Services:{/bold}: ${JSON.stringify(Object.keys(this.services), null, '  ')}`);
+        this._appendMessage(`{bold}Available Services{/bold}: ${JSON.stringify(Object.keys(this.services), null, '  ')}`);
         break;
     }
   }
@@ -510,8 +519,12 @@ class CLI extends App {
       self._appendError(`Service "${name}" emitted error: ${JSON.stringify(msg, null, '  ')}`);
     });
 
+    this.services[name].on('warning', function (msg) {
+      self._appendWarning(`Service warning from ${name}: ${JSON.stringify(msg, null, '  ')}`);
+    });
+
     this.services[name].on('message', function (msg) {
-      self._appendMessage(`service message from ${name}: ${JSON.stringify(msg, null, '  ')}`);
+      self._appendMessage(`Service message from ${name}: ${JSON.stringify(msg, null, '  ')}`);
       self.node.relayFrom(self.node.id, Message.fromVector(['ChatMessage', JSON.stringify(msg)]));
     });
 
