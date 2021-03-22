@@ -1,6 +1,7 @@
 'use strict';
 
 const BN = require('bn.js');
+const jayson = require('jayson');
 
 const Entity = require('../types/entity');
 const Service = require('../types/service');
@@ -24,6 +25,9 @@ class Ethereum extends Service {
     this.status = 'constructing';
     this.settings = Object.assign({
       name: '@services/ethereum',
+      mode: 'rpc',
+      ETHID: 1,
+      hosts: [],
       stack: []
     }, settings);
 
@@ -67,16 +71,52 @@ class Ethereum extends Service {
     }).catch(err => console.log('Error    : ' + err));
   }
 
+  async _checkRPCBlockNumber () {
+    const service = this;
+    service.rpc.request('eth_blockNumber', [], function(err, response) {
+      if (err) service.emit('error', `Could not call: ${err}`);
+      service.emit('warning', `Current block: ${response.result}`);
+    });
+  }
+
   async stop () {
     this.status = 'stopping';
     // await this.vm.destroy();
+
+    if (this.settings.mode === 'rpc') {
+      clearInterval(this.heartbeat);
+    }
+
     this.status = 'stopped';
   }
 
   async start () {
-    this.status = 'starting';
-    this.vm.on('step', this._handleVMStep.bind(this));
-    this.status = 'started';
+    const service = this;
+    service.status = 'starting';
+
+    if (service.settings.mode === 'rpc') {
+      // create a client
+      service.rpc = jayson.client.https({
+        host: 'typhoon.nakamoto.group',
+        port: 443
+      });
+
+      // await service._checkRPCBlockNumber();
+      service.heartbeat = setInterval(function _checkRPCBlockNumber () {
+        service.rpc.request('eth_blockNumber', [], function(err, response) {
+          if (err) service.emit('error', `Could not call: ${err}`);
+          service.emit('warning', `Current block: ${response.result}`);
+        });
+      }, 5000);
+    }
+
+    service.vm.on('step', service._handleVMStep.bind(service));
+    service.status = 'started';
+    service.emit('warning', `Service started!`);
+  }
+
+  async _RPCErrorHandler (error) {
+    this.emit('error', `[RPC] Error: ${error}`);
   }
 }
 

@@ -1974,6 +1974,7 @@ familiar semantics.
     * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
     * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
     * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
+    * [._send(message)](#Service+_send)
 
 <a name="new_Service_new"></a>
 
@@ -2081,6 +2082,17 @@ Register an [Actor](Actor) with the [Service](#Service).
 | Param | Type | Description |
 | --- | --- | --- |
 | actor | <code>Object</code> | Instance of the [Actor](Actor). |
+
+<a name="Service+_send"></a>
+
+### service.\_send(message)
+Sends a message.
+
+**Kind**: instance method of [<code>Service</code>](#Service)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| message | <code>Mixed</code> | Message to send. |
 
 <a name="Session"></a>
 
