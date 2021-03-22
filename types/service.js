@@ -96,9 +96,6 @@ class Service extends Scribe {
       this.swarm = new Swarm(this.settings);
     } */
 
-    // Set ready status
-    this.status = 'ready';
-
     // Remove mutable variables
     Object.defineProperty(this, '@version', { enumerable: false });
     Object.defineProperty(this, '@input', { enumerable: false });
@@ -340,7 +337,7 @@ class Service extends Scribe {
     if (!this.state) this.state = {};
     this.observer = manager.observe(this.state);
 
-    this.status = 'started';
+    this.status = 'ready';
 
     try {
       await this.commit();
@@ -374,6 +371,8 @@ class Service extends Scribe {
    */
   async _GET (path) {
     let result = null;
+    if (typeof path !== 'string') return null;
+
     let parts = path.split('/');
     let list = `/${parts[1]}`;
     let name = crypto.createHash('sha256').update(list).digest('hex');
@@ -656,6 +655,7 @@ class Service extends Scribe {
       return this.error('Something went wrong saving:', E);
     }
 
+    await this.commit();
     this.emit('actor', this._GET(path));
 
     return this;

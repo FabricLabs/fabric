@@ -1,10 +1,9 @@
 #!/usr/bin/env node
-'use strict';
-
 // Configuration
 const PORT = process.env.FABRIC_PORT;
 const SEED = process.env.FABRIC_SEED;
 
+// Settings
 const defaults = require('../settings/default');
 const playnet = require('../settings/playnet');
 
@@ -16,39 +15,25 @@ const fs = require('fs');
 const { Command } = require('commander');
 
 // Fabric Types
-const CLI = require('../types/cli');
-const Peer = require('../types/peer');
 const Entity = require('../types/entity');
 const Wallet = require('../types/wallet');
+const Machine = require('../types/machine');
 const Environment = require('../types/environment');
 
 // Services
-const Bitcoin = require('../services/bitcoin');
 const Matrix = require('../services/matrix');
 
+// Contracts
+const OP_START = require('../contracts/node');
+const OP_CHAT = require('../contracts/chat');
+const OP_TEST = require('../contracts/test');
+
+// Singletons
 const wallet = new Wallet();
 const environment = new Environment();
 
 // ### [!!!] Toxic Waste [!!!]
 let seed = null;
-
-// Settings
-const settings = {
-  listen: true,
-  peers: [].concat(playnet.peers),
-  services: [
-    'matrix'
-  ],
-  port: PORT,
-  seed: SEED,
-  key: {
-    SEED,
-  },
-  // TODO: remove Wallet-specfic configuration
-  wallet: {
-    seed: SEED
-  }
-};
 
 // Define Main Program
 async function main () {
@@ -59,44 +44,19 @@ async function main () {
   }
 
   const COMMANDS = {
-    'START': async function OP_START () {
-      const peer = new Peer();
-
-      peer.on('ready', () => {
-        console.log('[FABRIC:CLI]', 'Peer ready!');
-      });
-
-      await peer.start();
-    },
-    'CHAT': async function OP_CHAT () {
-      // Configure Earning
-      if (program.earn) {
-        SETTINGS.earn = true;
-      }
-
-      // Load from Seed
-      settings.key.seed = seed['@data'];
-      settings.wallet.seed = seed['@data'];
-
-      // Fabric CLI
-      const chat = new CLI(settings);
-
-      // ## Services
-      // TODO: reconcile API wth @fabric/doorman as appears at: https://github.com/FabricLabs/doorman
-      chat._registerService('bitcoin', Bitcoin);
-      // chat._registerService('matrix', Matrix);
-      // chat._registerService('rpg', RPG);
-
-      await chat.start();
-    }
+    'START': OP_START,
+    'CHAT': OP_CHAT,
+    'TEST': OP_TEST
   };
 
   // Argument Parsing
   const program = new Command();
+  const machine = new Machine();
 
   // Configure Program
   program.name('fabric');
 
+  // Declare Commands
   program.command('start', { isDefault: true })
     .description('Initiate peer bootstrapping.')
     .action(COMMANDS['START'].bind(program));
@@ -105,21 +65,37 @@ async function main () {
     .description('Open P2P chat.')
     .action(COMMANDS['CHAT'].bind(program));
 
+  program.command('test')
+    .description('Run the test chain.')
+    .action(COMMANDS['TEST'].bind(program));
+
+  // Options
   program.option('--earn', 'Enable earning.');
+  program.option('--port <PORT NUMBER>', 'Specify the Fabric P2P communication port.');
   program.option('--seed <SEED PHRASE>', 'Load from mnemonic seed.');
   program.option('--xpub <XPUB>', 'Load from xpub.');
+  program.option('--anchor <GENESIS>', 'Specify the anchor chain.');
   program.option('--receive', 'Generate a fresh receiving address.');
-  program.option('--force', 'Force generation of new seed.');
+  program.option('--trust <PUBKEY@host:port>', 'Explicit trust of events from this peer.');
+  program.option('--force', 'Force dangerous behavior.');
   program.option('--password <PASSWORD>', 'Specify the encryption passphrase.');
   program.option('-n, --keygen', 'Generate a new seed.  Consider the privacy of your surroundings!');
+
+  // Parse Arguments
   program.parse(process.argv);
 
+  // Read Environment
   if (!environment.walletExists() || (program.keygen && program.force)) {
     seed = await wallet._createSeed();
   } else {
     seed = environment.readWallet();
   }
 
+  // TODO: read & test contracts
+  // const contracts = environment.readContracts();
+  // console.log('contracts:', contracts);
+
+  // Behaviors
   if (program.keygen) {
     // ### [!!!] Toxic Waste [!!!]
     if (!environment.walletExists() || program.force) {
@@ -152,6 +128,8 @@ async function main () {
 
     // prevent further execution
     process.exit();
+  } else if (program.test) {
+
   } else if (program.receive) {
     const wallet = new Wallet({
       key: {

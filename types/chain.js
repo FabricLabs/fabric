@@ -83,6 +83,10 @@ class Chain extends Ledger {
     return this.blocks.map(x => Buffer.from(x.id, 'hex'));
   }
 
+  get subsidy () {
+    return 50;
+  }
+
   get _tree () {
     let stack = new Stack(this.leaves);
     return stack.asMerkleTree();
