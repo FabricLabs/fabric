@@ -35,6 +35,7 @@ class Ethereum extends Service {
       stack: this.settings.stack
     };
 
+    this.rpc = null;
     this.vm = new VM();
     this.status = 'constructed';
   }
