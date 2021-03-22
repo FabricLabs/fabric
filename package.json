@@ -5,7 +5,7 @@
   "main": "types/fabric.js",
   "module": "index.js",
   "bin": {
-    "fabric": "./scripts/chat.js"
+    "fabric": "./scripts/cli.js"
   },
   "directories": {
     "doc": "docs",
@@ -84,6 +84,7 @@
     "jade-lexer": "0.0.9",
     "jade-parser": "0.0.9",
     "javascript-state-machine": "^3.1.0",
+    "jayson": "^3.4.4",
     "js-beautify": "^1.10.0",
     "json-pointer": "^0.6.0",
     "level": "^5.0.1",

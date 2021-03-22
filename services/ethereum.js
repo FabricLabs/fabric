@@ -1,6 +1,7 @@
 'use strict';
 
 const BN = require('bn.js');
+const ETHRPC = require('ethrpc');
 
 const Entity = require('../types/entity');
 const Service = require('../types/service');
@@ -24,6 +25,11 @@ class Ethereum extends Service {
     this.status = 'constructing';
     this.settings = Object.assign({
       name: '@services/ethereum',
+      mode: 'rpc',
+      ETHID: 120852483,
+      hosts: [
+        'typhoon:8545'
+      ],
       stack: []
     }, settings);
 
@@ -31,6 +37,7 @@ class Ethereum extends Service {
       stack: this.settings.stack
     };
 
+    this.rpc = null;
     this.vm = new VM();
     this.status = 'constructed';
   }
