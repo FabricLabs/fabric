@@ -5,11 +5,7 @@
   "main": "types/fabric.js",
   "module": "index.js",
   "bin": {
-<<<<<<< HEAD
-    "fabric": "./scripts/cli.js"
-=======
     "fabric": "scripts/cli.js"
->>>>>>> f98c388edbe4a36efd1f4d5eb2baa0358a749937
   },
   "directories": {
     "doc": "docs",

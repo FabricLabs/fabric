@@ -7,10 +7,9 @@ const MAX_CHAT_MESSAGE_LENGTH = 2048;
 const merge = require('lodash.merge');
 
 // Fabric Types
-const App = require('../types/app');
-const Entity = require('./entity');
-const Peer = require('../types/peer');
-const Message = require('../types/message');
+const App = require('./app');
+const Peer = require('./peer');
+const Message = require('./message');
 
 // Services
 const Bitcoin = require('../services/bitcoin');
