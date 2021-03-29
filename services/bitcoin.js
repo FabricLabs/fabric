@@ -14,6 +14,7 @@ const BitcoinBlock = require('../types/bitcoin/block');
 const BitcoinTransaction = require('../types/bitcoin/transaction');
 
 // External Dependencies
+const jayson = require('jayson');
 // For the browser
 // ATTN: breaks after 1.0.2
 // const bcoin = require('bcoin/lib/bcoin-browser');
@@ -49,11 +50,16 @@ class Bitcoin extends Service {
     // Local Settings
     this.settings = Object.assign({
       name: '@services/bitcoin',
+      mode: 'rpc',
       network: 'regtest',
+      path: './stores/bitcoin-regtest',
       listen: false,
       fullnode: false,
       nodes: ['127.0.0.1'],
       seeds: ['127.0.0.1'],
+      servers: [
+        'http://username:password@localhost:18443'
+      ],
       peers: [],
       port: 18444,
       verbosity: 2
@@ -68,7 +74,7 @@ class Bitcoin extends Service {
     // Internal Services
     this.provider = new Consensus({ provider: 'bcoin' });
     this.wallet = new Wallet(this.settings);
-    this.chain = new Chain();
+    this.chain = new Chain(this.settings);
 
     // ## Collections
     // ### Blocks
@@ -163,7 +169,11 @@ class Bitcoin extends Service {
   }
 
   get tip () {
-    return this.fullnode.chain.tip.hash.toString('hex');
+    if (this.settings.fullnode) {
+      return this.fullnode.chain.tip.hash.toString('hex');
+    } else {
+      return this.chain.tip.toString('hex');
+    }
   }
 
   get height () {
@@ -651,6 +661,73 @@ class Bitcoin extends Service {
     }
   }
 
+  async _makeRPCRequest (method, params = []) {
+    const self = this;
+    return new Promise((resolve, reject) => {
+      self.rpc.request(method, params, function (err, response) {
+        if (err) return reject(err);
+        return resolve(response.result);
+      });
+    });
+  }
+
+  async _requestBestBlockHash () {
+    return this._makeRPCRequest('getbestblockhash', []);
+  }
+
+  async _requestBlock (hash) {
+    return this._makeRPCRequest('getblock', [hash]);
+  }
+
+  async _requestBlockAtHeight (height) {
+    return this._makeRPCRequest('getblockhash', [height]);
+  }
+
+  async _requestChainHeight () {
+    return this._makeRPCRequest('getblockcount', []);
+  }
+
+  async _listUnspent () {
+    return this._makeRPCRequest('listunspent', []);
+  }
+
+  async _signRawTransactionWithWallet (rawTX, prevouts = []) {
+    return this._makeRPCRequest('signrawtransaction', [rawTX, JSON.stringify(prevouts)]);
+  }
+
+  async _syncWithRPC () {
+    const self = this;
+
+    // const genesisID = await self._requestBlockAtHeight(0);
+    // const genesis = await self._requestBlock(genesisID);
+    const height = await self._requestChainHeight();
+    // const best = await self._requestBestBlockHash();
+
+    // TODO: test and verify append() on chain length 0 sets genesis
+    /* await self.chain._setGenesis({
+      hash: genesisID
+    }); */
+
+    for (let i = 0; i <= height; i++) {
+      const blockID = await self._requestBlockAtHeight(i);
+      const block = await self._requestBlock(blockID);
+      const posted = await self.chain.append({
+        hash: blockID,
+        bits: block.bits,
+        nonce: block.nonce,
+        time: block.time,
+        size: block.size,
+        weight: block.weight,
+        version: block.version
+      });
+
+      self.emit('message', {
+        '@type': 'BlockNotification',
+        '@data': posted
+      });
+    }
+  }
+
   /**
    * Start the Bitcoin service, including the initiation of outbound requests.
    */
@@ -659,16 +736,18 @@ class Bitcoin extends Service {
 
     const self = this;
 
-    this.fullnode.on('peer connect', function peerConnectHandler (peer) {
-      console.warn('[SERVICES:BITCOIN]', 'Peer connected to Full Node:', peer);
-    });
+    if (this.settings.fullnode) {
+      this.fullnode.on('peer connect', function peerConnectHandler (peer) {
+        self.emit('warning', `[SERVICES:BITCOIN]', 'Peer connected to Full Node: ${peer}`);
+      });
 
-    this.fullnode.on('block', this._handleBlockMessage.bind(this));
-    this.fullnode.on('connect', this._handleConnectMessage.bind(this));
+      this.fullnode.on('block', this._handleBlockMessage.bind(this));
+      this.fullnode.on('connect', this._handleConnectMessage.bind(this));
 
-    this.fullnode.on('tx', async function fullnodeTxHandler (tx) {
-      self.emit('message', `tx event: ${JSON.stringify(tx)}`);
-    });
+      this.fullnode.on('tx', async function fullnodeTxHandler (tx) {
+        self.emit('message', `tx event: ${JSON.stringify(tx)}`);
+      });
+    }
 
     this.wallet.on('message', function (msg) {
       self.emit('message', `wallet msg: ${msg}`);
@@ -687,7 +766,43 @@ class Bitcoin extends Service {
     await this.chain.start();
 
     // Start nodes
-    await this._startLocalNode();
+    if (this.settings.fullnode) await this._startLocalNode();
+    if (this.settings.mode === 'rpc') {
+      // create a client
+      try {
+        self.rpc = jayson.client.http(this.settings.servers[0]);
+
+        const genesisID = await self._requestBlockAtHeight(0);
+        const height = await self._requestChainHeight();
+        const best = await self._requestBestBlockHash();
+        const genesis = await self._requestBlock(genesisID);
+
+        self.emit('warning', `GENESIS: ${genesisID}`);
+        self.emit('warning', `GENESIS BLOCK: ${JSON.stringify(genesis, null, '  ')}`);
+        self.emit('warning', `HEIGHT: ${height}`);
+        self.emit('warning', `BEST: ${best}`);
+
+        await self._syncWithRPC();
+
+        const unspent = await self._listUnspent();
+        self.emit('warning', `UNSPENT: ${JSON.stringify(unspent, null, '  ')}`);
+
+        for (let i = 0; i < unspent.length; i++) {
+          await self.wallet._addOutputToSpendables(unspent[i]);
+        }
+      } catch (exception) {
+        self.emit('error', `Could not prepare session with RPC host: ${exception}`);
+      }
+
+      self.heartbeat = setInterval(async function _checkRPCBlockNumber () {
+        try {
+          const best = await self._requestBestBlockHash();
+          self.emit('warning', `BEST BLOCK: ${best}`);
+        } catch (exception) {
+          self.emit('error', `Could not make request to RPC host: ${exception}`);
+        }
+      }, 5000);
+    }
 
     // TODO: re-enable these
     // await this._connectToSeedNodes();
@@ -699,9 +814,12 @@ class Bitcoin extends Service {
     // this.peer.tryOpen();
     // END TODO
 
-    let genesis = await this.fullnode.getBlock(0);
-    // TODO: refactor Chain
-    await this.chain._setGenesis(genesis.toJSON());
+    if (this.settings.fullnode) {
+      let genesis = await this.fullnode.getBlock(0);
+
+      // TODO: refactor Chain
+      await this.chain._setGenesis(genesis.toJSON());
+    }
 
     this.emit('ready', {
       tip: this.tip
