@@ -38,6 +38,8 @@ class Key extends Entity {
       private: null
     }, init);
 
+    this.master = null;
+
     if (this.config.seed) {
       // Seed provided, compute keys
       let mnemonic = new bcoin.Mnemonic(this.config.seed);
@@ -45,7 +47,9 @@ class Key extends Entity {
       let ring = new bcoin.KeyRing(master, this.config.network);
 
       // Assign keys
+      this.master = master;
       this.keypair = ec.keyFromPrivate(ring.getPrivateKey('hex'));
+      this.status = 'seeded';
     } else if (init.pubkey) {
       // Key is only public
       this.keypair = ec.keyFromPublic(init.pubkey, 'hex');
@@ -60,7 +64,11 @@ class Key extends Entity {
     this.private = this.keypair.getPrivate();
     this.public = this.keypair.getPublic(true);
 
+    // STANDARD BEGINS HERE
     this.pubkey = this.public.encodeCompressed('hex');
+
+    // BELOW THIS NON-STANDARD
+    // DO NOT USE IN PRODUCTION
     this.pubkeyhash = crypto.createHash('sha256').update(this.pubkey).digest('hex');
 
     let input = `${this.config.prefix}${this.pubkeyhash}`;
@@ -106,6 +114,11 @@ class Key extends Entity {
     let hmac = crypto.createHash('sha256').update(msg).digest('hex');
     let valid = this.keypair.verify(hmac, sig);
     return valid;
+  }
+
+  derive (path = `m/44'/0'/0'/0/0`) {
+    if (!this.master) throw new Error('You cannot derive without a master key.  Provide a seed phrase.');
+    return this.master.derivePath(path);
   }
 }
 

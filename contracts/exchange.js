@@ -7,20 +7,25 @@ const playnet = require('../settings/playnet');
 const settings = {
   upnp: false,
   listen: true,
+  persistent: false, // Loads from anchor chain
   // sideload playnet
   peers: [].concat(playnet.peers),
   services: [
     'exchange',
     'btca',
     'btcb',
+    'lightning'
   ],
   key: {
     seed: playnet.seed
   },
   bitcoin: {
-    mode: 'rpc'
+    mode: 'rpc',
+    servers: [].concat(playnet.servers),
   },
-  turntable: playnet.turntable || null
+  btca: playnet.btca || null,
+  btcb: playnet.btcb || null,
+  currencies: [].concat(playnet.currencies)
 };
 
 // Fabric Types
@@ -30,6 +35,7 @@ const CLI = require('../types/cli');
 const Bitcoin = require('../services/bitcoin');
 const Ethereum = require('../services/ethereum');
 const Exchange = require('../services/exchange');
+const Lightning = require('../services/lightning');
 
 // Program Definition
 async function OP_EXCHANGE () {
@@ -51,10 +57,11 @@ async function OP_EXCHANGE () {
 
   // ## Services
   // TODO: reconcile API wth @fabric/doorman as appears at: https://github.com/FabricLabs/doorman
-  exchange._registerService('exchange', Exchange);
+  // exchange._registerService('exchange', Exchange);
   exchange._registerService('btca', Bitcoin);
   exchange._registerService('btcb', Bitcoin);
   // exchange._registerService('eth', Ethereum);
+  // exchange._registerService('lightning', Lightning);
 
   await exchange.start();
 

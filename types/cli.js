@@ -33,7 +33,8 @@ const blessed = require('blessed');
 class CLI extends App {
   /**
    * Create a terminal-based interface for a {@link User}.
-   * @param {Object} settings Configuration values.
+   * @param {Object} [settings] Configuration values.
+   * @param {Array} [settings.currencies] List of currencies to support.
    */
   constructor (settings = {}) {
     super(settings);
@@ -41,7 +42,11 @@ class CLI extends App {
     // Assign Settings
     this.settings = merge({
       listen: false,
-      services: []
+      services: [],
+      currencies: [ {
+        name: 'Bitcoin',
+        symbol: 'BTC'
+      } ]
     }, this.settings, settings);
 
     // Internal Components
@@ -70,6 +75,7 @@ class CLI extends App {
 
     // State
     this._state = {
+      anchor: 'BTC',
       chains: {}
     };
 
@@ -182,6 +188,10 @@ class CLI extends App {
 
   async _handleBitcoinError (...msg) {
     this._appendError(msg);
+  }
+
+  async _handleBitcoinWarning (...msg) {
+    this._appendWarning(msg);
   }
 
   async _handleBitcoinReady (bitcoin) {
@@ -432,7 +442,7 @@ class CLI extends App {
 
   async _handleReceiveAddressRequest () {
     const address = await this.node.wallet.getUnusedAddress();
-    this._appendMessage(`{bold}Receive address:{/bold}: ${JSON.stringify(address.toString(), null, '  ')}`);
+    this._appendMessage(`{bold}Receive address{/bold}: ${JSON.stringify(address.toString(), null, '  ')}`);
     return false;
   }
 
@@ -506,7 +516,7 @@ class CLI extends App {
 
   _registerService (name, type) {
     const self = this;
-    const service = new type(this.settings);
+    const service = new type(merge({}, this.settings, this.settings[name]));
 
     if (this.services[name]) {
       return this._appendWarning(`Service already registered: ${name}`);

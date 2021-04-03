@@ -711,7 +711,22 @@ class Bitcoin extends Service {
     for (let i = 0; i <= height; i++) {
       const blockID = await self._requestBlockAtHeight(i);
       const block = await self._requestBlock(blockID);
-      const posted = await self.chain.append({
+
+      const entity = new Entity({
+        hash: blockID,
+        bits: block.bits,
+        nonce: block.nonce,
+        time: block.time,
+        size: block.size,
+        parent: block.previousblockhash,
+        weight: block.weight,
+        version: block.version
+      });
+
+      self.emit('message', `Block Raw: ${JSON.stringify(block, null, '  ')}`);
+      self.emit('message', `Block Entity: ${JSON.stringify(entity, null, '  ')}`);
+
+      /* const posted = await self.chain.append({
         hash: blockID,
         bits: block.bits,
         nonce: block.nonce,
@@ -721,10 +736,11 @@ class Bitcoin extends Service {
         version: block.version
       });
 
+      // TODO: subscribe to this event in CLI
       self.emit('message', {
         '@type': 'BlockNotification',
         '@data': posted
-      });
+      }); */
     }
   }
 
@@ -751,6 +767,10 @@ class Bitcoin extends Service {
 
     this.wallet.on('message', function (msg) {
       self.emit('message', `wallet msg: ${msg}`);
+    });
+
+    this.wallet.on('warning', function (msg) {
+      self.emit('warning', `wallet warning: ${msg}`);
     });
 
     this.wallet.on('error', function (msg) {

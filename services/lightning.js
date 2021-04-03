@@ -1,5 +1,9 @@
 'use strict';
 
+// External Dependencies
+const jayson = require('jayson');
+
+// Fabric Types
 const Service = require('../types/service');
 const Machine = require('../types/machine');
 
