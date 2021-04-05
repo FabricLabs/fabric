@@ -75,6 +75,7 @@ class Compiler {
     });
 
     this.ast = null;
+    this.body = null;
     this.screen = null;
 
     this.entities = {};
@@ -95,12 +96,12 @@ class Compiler {
 
   static _fromMinsc (body) {
     if (!(body instanceof Buffer)) throw new Error('JavaScript must be passed as a buffer.');
-    return new Compiler({ body, type: 'minsc'  });
+    return new Compiler({ body, type: 'minsc' });
   }
 
   static _fromSolidity (body) {
     if (!(body instanceof Buffer)) throw new Error('JavaScript must be passed as a buffer.');
-    return new Compiler({ body, type: 'solidity'  });
+    return new Compiler({ body, type: 'solidity' });
   }
 
   async start () {
@@ -123,6 +124,10 @@ class Compiler {
       this.entities[entities[i].id] = entities[i];
       this.abstracts[entities[i].id] = abstracts[i];
     }
+
+    this.body = body;
+
+    return this;
   }
 
   _getScriptAST (input) {
@@ -256,7 +261,20 @@ class Compiler {
   }
 
   _renderToHTML (state = {}) {
+    return `<DOCTYPE html>
+<html>
+  <head>
+    <title>Fabric</title>
+  </head>
+  <body>
+    <h1>Empty Document</h1>
+    <p>This document is a placeholder.</p>
 
+    <div id="body">
+      <textarea name="body">${this.body}</textarea>
+    </div>
+  </body>
+</html>`;
   }
 }
 
