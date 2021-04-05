@@ -18,6 +18,7 @@ const {
 
 // Fabric Types
 const Entity = require('./entity');
+const Hash256 = require('./hash256');
 const Machine = require('./machine');
 const Ethereum = require('../services/ethereum');
 
@@ -84,6 +85,10 @@ class Compiler {
     return this;
   }
 
+  get integrity () {
+    return `sha256-${Hash256.digest(this.body)}`;
+  }
+
   /**
    * Creates a new Compiler instance from a JavaScript contract.
    * @param {Buffer} body Content of the JavaScript to evaluate.
@@ -112,7 +117,7 @@ class Compiler {
 
     // Assign Body
     const initial = this.settings.body || Buffer.from('', 'utf8');
-    const body = [ initial ].concat(contents);
+    const body = Buffer.concat([ initial ].concat(contents));
     const entity = new Entity(body);
     const abstract = this._getJavaScriptAST(body);
 
@@ -269,10 +274,12 @@ class Compiler {
   <body>
     <h1>Empty Document</h1>
     <p>This document is a placeholder.</p>
-
     <div id="body">
       <textarea name="body">${this.body}</textarea>
     </div>
+    <fabric-unsafe-javascript>
+      <script integrity="${this.integrity}">${this.body}</script>
+    </fabric-unsafe-javascript>
   </body>
 </html>`;
   }

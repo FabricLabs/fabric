@@ -1,6 +1,7 @@
 'use strict';
 
 const Compiler = require('../types/compiler');
+const Hash256 = require('../types/hash256');
 const assert = require('assert');
 const fs = require('fs');
 
@@ -43,6 +44,17 @@ describe('@fabric/core/types/compiler', function () {
       let compiler = Compiler._fromJavaScript(body);
       await compiler.start();
       assert.ok(compiler);
+    });
+
+    it('can compile to HTML', async function () {
+      const body = fs.readFileSync(`./contracts/node.js`);
+      let compiler = Compiler._fromJavaScript(body);
+      await compiler.start();
+      let html = compiler._renderToHTML();
+      let hash = Hash256.digest(html);
+      assert.ok(compiler);
+      assert.strictEqual(compiler.integrity, 'sha256-e4720ec234b4673cff23bd97dec51c6c5511f711942bb502617235e0797d3680');
+      assert.strictEqual(hash, '8462e4d151f48df82bf9e5ae5b22250e18cef7763548b0a8a893c19224f21c29');
     });
   });
 });
