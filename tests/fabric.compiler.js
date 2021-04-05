@@ -35,7 +35,13 @@ describe('@fabric/core/types/compiler', function () {
     it('can read a JavaScript contract', function () {
       const body = fs.readFileSync(`./contracts/node.js`);
       let compiler = Compiler._fromJavaScript(body);
-      console.log('compiler:', compiler);
+      assert.ok(compiler);
+    });
+
+    it('can compile a JavaScript contract', async function () {
+      const body = fs.readFileSync(`./contracts/node.js`);
+      let compiler = Compiler._fromJavaScript(body);
+      await compiler.start();
       assert.ok(compiler);
     });
   });

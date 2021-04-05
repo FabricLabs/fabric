@@ -61,6 +61,7 @@ class Compiler {
     this.settings = Object.assign({
       ast: null,
       body: null,
+      type: 'javascript',
       inputs: [],
       outputs: []
     }, settings);
@@ -89,19 +90,17 @@ class Compiler {
    */
   static _fromJavaScript (body) {
     if (!(body instanceof Buffer)) throw new Error('JavaScript must be passed as a buffer.');
-    return new Compiler({ body, ast });
+    return new Compiler({ body, type: 'javascript' });
   }
 
-  static _fromMiniscript (body) {
+  static _fromMinsc (body) {
     if (!(body instanceof Buffer)) throw new Error('JavaScript must be passed as a buffer.');
-    const ast = this._getMinscAST(body);
-    return new Compiler({ body, ast });
+    return new Compiler({ body, type: 'minsc'  });
   }
 
   static _fromSolidity (body) {
     if (!(body instanceof Buffer)) throw new Error('JavaScript must be passed as a buffer.');
-    const ast = this._getSolidityAST(body);
-    return new Compiler({ body, ast });
+    return new Compiler({ body, type: 'solidity'  });
   }
 
   async start () {
@@ -111,8 +110,10 @@ class Compiler {
     const abstracts = contents.map(x => this._getJavaScriptAST(x));
 
     // Assign Body
-    const entity = new Entity(this.settings.body);
-    const abstract = this._getJavaScriptAST(this.settings.body);
+    const initial = this.settings.body || Buffer.from('', 'utf8');
+    const body = [ initial ].concat(contents);
+    const entity = new Entity(body);
+    const abstract = this._getJavaScriptAST(body);
 
     this.entities[entity.id] = entity;
     this.abstracts[entity.id] = abstract;
@@ -129,10 +130,17 @@ class Compiler {
     return null;
   }
 
+  /**
+   * Parse a {@link Buffer} of JavaScript into an Abstract Syntax Tree ({@link AST}).
+   * @param {Buffer} input Input JavaScript to parse.
+   * @returns {AST}
+   */
   _getJavaScriptAST (input) {
+    if (typeof input === 'string') input = Buffer.from(input, 'utf8');
     const ast = AST.program(input);
     return {
       '@type': 'AST',
+      '@language': 'JavaScript',
       input: input,
       interpreters: {
         'WebAssembly': ast
@@ -142,13 +150,29 @@ class Compiler {
 
   _getMinscAST (input) {
     const output = run(input);
-    return output;
+    return {
+      '@type': 'AST',
+      '@language': 'Minsc',
+      input: input,
+      script: output,
+      interpreters: {
+        'Minsc': output
+      }
+    };
   }
 
   _getSolidityAST (input) {
     const ethereum = new Ethereum();
     const result = ethereum.execute(body);
-    return result;
+    return {
+      '@type': 'AST',
+      '@language': 'Solidity',
+      input: input,
+      output: result,
+      interpreters: {
+        'EthereumJSVM': result
+      }
+    };
   }
 
   _fromPath (filename) {
