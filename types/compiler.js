@@ -1,10 +1,25 @@
 'use strict';
 
+// Dependencies
 const fs = require('fs');
+const { readFile } = require('fs').promises;
 
-const lex = require('jade-lexer');
-const parse = require('jade-parser');
+// TODO: rewrite these / use lexical parser
+// const lex = require('jade-lexer');
+// const parse = require('jade-parser');
+const { run } = require('minsc');
+
+// JavaScript & TypeScript ASTs
 const AST = require('@webassemblyjs/ast');
+const {
+  Project,
+  ScriptTarget
+} = require('ts-morph');
+
+// Fabric Types
+const Entity = require('./entity');
+const Machine = require('./machine');
+const Ethereum = require('../services/ethereum');
 
 // TODO: have Lexer review
 // TODO: render the following:
@@ -31,17 +46,109 @@ const AST = require('@webassemblyjs/ast');
 
 /**
  * Compilers build interfaces for users of Fabric applications.
- * @type {Object}
+ * @type {Actor}
+ * @property {AST} ast Compiler's current AST.
+ * @property {Entity} entity Compiler's current {@link Entity}.
  */
 class Compiler {
   /**
    * Create a new Compiler.
-   * @param  {Object} [settings={}] Configuration.
-   * @return {Compiler}               Instance of the compiler.
+   * @param  {Object} settings={} Configuration.
+   * @param  {Buffer} settings.body Body of the input program to compile.
+   * @return {Compiler}             Instance of the compiler.
    */
   constructor (settings = {}) {
-    this.settings = Object.assign({}, settings);
+    this.settings = Object.assign({
+      ast: null,
+      body: null,
+      inputs: [],
+      outputs: []
+    }, settings);
+
+    this.entity = new Entity(this.settings);
+    this.machine = new Machine(this.settings);
+    this.project = new Project({
+      compilerOptions: {
+        target: ScriptTarget.ES2020
+      }
+    });
+
+    this.ast = null;
+    this.screen = null;
+
+    this.entities = {};
+    this.abstracts = {};
+
     return this;
+  }
+
+  /**
+   * Creates a new Compiler instance from a JavaScript contract.
+   * @param {Buffer} body Content of the JavaScript to evaluate.
+   * @returns Compiler
+   */
+  static _fromJavaScript (body) {
+    if (!(body instanceof Buffer)) throw new Error('JavaScript must be passed as a buffer.');
+    return new Compiler({ body, ast });
+  }
+
+  static _fromMiniscript (body) {
+    if (!(body instanceof Buffer)) throw new Error('JavaScript must be passed as a buffer.');
+    const ast = this._getMinscAST(body);
+    return new Compiler({ body, ast });
+  }
+
+  static _fromSolidity (body) {
+    if (!(body instanceof Buffer)) throw new Error('JavaScript must be passed as a buffer.');
+    const ast = this._getSolidityAST(body);
+    return new Compiler({ body, ast });
+  }
+
+  async start () {
+    const promises = this.settings.inputs.map(x => readFile(x));
+    const contents = await Promise.all(promises);
+    const entities = contents.map(x => new Entity(x));
+    const abstracts = contents.map(x => this._getJavaScriptAST(x));
+
+    // Assign Body
+    const entity = new Entity(this.settings.body);
+    const abstract = this._getJavaScriptAST(this.settings.body);
+
+    this.entities[entity.id] = entity;
+    this.abstracts[entity.id] = abstract;
+
+    // Assign all Entities, Abstracts
+    for (let i = 0; i < entities.length; i++) {
+      this.entities[entities[i].id] = entities[i];
+      this.abstracts[entities[i].id] = abstracts[i];
+    }
+  }
+
+  _getScriptAST (input) {
+    throw new Error('Not yet supported.');
+    return null;
+  }
+
+  _getJavaScriptAST (input) {
+    const ast = AST.program(input);
+    return {
+      '@type': 'AST',
+      input: input,
+      interpreters: {
+        'WebAssembly': ast
+      }
+    };
+  }
+
+  _getMinscAST (input) {
+    const output = run(input);
+    return output;
+  }
+
+  _getSolidityAST (input) {
+    const ethereum = new Ethereum();
+    const result = ethereum.execute(body);
+    return result;
   }
 
   _fromPath (filename) {
@@ -52,14 +159,16 @@ class Compiler {
     return html;
   }
 
-  _fromJavaScript (name) {
-    let body = fs.readFileSync(`${__dirname}/../contracts/${name}`);
-    let ast = AST.program(body);
-    console.log('body:', body);
-    console.log('ast:', ast);
+  render () {
+    if (this.screen) {
+      return this._renderToTerminal();
+    } else {
+      return this._renderToHTML();
+    }
   }
 
-  render (ast, screen, ui, eventHandlers, depth = 0) {
+  // TODO: @melnx to refactor into f(x) => y
+  _renderToTerminal (ast, screen, ui, eventHandlers, depth = 0) {
     let result = '';
 
     if (ast.type === 'Block') {
@@ -120,6 +229,10 @@ class Compiler {
     }
 
     return result;
+  }
+
+  _renderToHTML (state = {}) {
+
   }
 }
 

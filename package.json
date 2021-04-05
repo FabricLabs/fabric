@@ -29,7 +29,7 @@
     "make:app": "webpack --progress examples/app.js -o assets/app.js",
     "make:coverage": "npm run coverage && nyc report --reporter html",
     "make:dev": "gitbook install && npm run make:examples && npm run make:docs && gitbook build && cp -rf docs _book/ && cp -rf examples _book/ && glob-run js-beautify --indent-size 2 -r _book/**.html",
-    "make:docs": "npm run make:api && node_modules/.bin/jsdoc -c jsdoc.json services types API.md -d docs/ && glob-run js-beautify --indent-size 2 -r docs/**.html",
+    "make:docs": "npm run make:api && node_modules/.bin/jsdoc -c jsdoc.json services types DEVELOPERS.md -d docs/ && glob-run js-beautify --indent-size 2 -r docs/**.html",
     "make:examples": "docco --output examples/ examples/*.js && glob-run js-beautify --indent-size 2 -r examples/*.html",
     "make:lib": "NODE_ENV=production webpack scripts/fabric.js -o assets/fabric.min.js",
     "make:service": "NODE_ENV=production webpack --target=webworker examples/service.js -o assets/service.js",
@@ -82,8 +82,6 @@
     "fast-json-patch": "^2.0.7",
     "fd-chunk-store": "^2.0.0",
     "glob-run": "^0.1.6",
-    "jade-lexer": "0.0.9",
-    "jade-parser": "0.0.9",
     "javascript-state-machine": "^3.1.0",
     "jayson": "^3.4.4",
     "js-beautify": "^1.10.0",
@@ -92,6 +90,7 @@
     "lodash.merge": "^4.6.2",
     "matrix-js-sdk": "martindale/matrix-js-sdk#silent-logger",
     "merkletreejs": "^0.1.6",
+    "minsc": "^0.2.0",
     "mkdirp": "^1.0.4",
     "nat-upnp": "^1.1.1",
     "node-fetch": "^2.6.0",
@@ -103,6 +102,7 @@
     "simple-aes": "^0.1.1",
     "struct": "^0.0.12",
     "torrent-stream": "^1.2.0",
+    "ts-morph": "^10.0.2",
     "ttfm": "chrisinajar/ttfm"
   },
   "devDependencies": {

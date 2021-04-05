@@ -10,6 +10,10 @@ const ec = new EC('secp256k1');
 
 // Dependencies
 const bcoin = require('bcoin');
+const {
+  KeyRing,
+  Mnemonic
+} = require('bcoin');
 
 // Fabric Types
 const Entity = require('./entity');
@@ -35,10 +39,14 @@ class Key extends Entity {
     this.config = Object.assign({
       network: 'main',
       prefix: '00',
-      private: null
+      public: null,
+      private: null,
+      hd: true
     }, init);
 
     this.master = null;
+    this.private = null;
+    this.public = null;
 
     if (this.config.seed) {
       // Seed provided, compute keys
@@ -50,12 +58,13 @@ class Key extends Entity {
       this.master = master;
       this.keypair = ec.keyFromPrivate(ring.getPrivateKey('hex'));
       this.status = 'seeded';
-    } else if (init.pubkey) {
-      // Key is only public
-      this.keypair = ec.keyFromPublic(init.pubkey, 'hex');
     } else if (this.config.private) {
       // Key is private
       this.keypair = ec.keyFromPrivate(this.config.private, 16);
+    } else if (this.config.pubkey || this.config.public) {
+      // Key is only public
+      let pubkey = this.config.pubkey || this.config.public;
+      this.keypair = ec.keyFromPublic(pubkey, 'hex');
     } else {
       // Generate new keys
       this.keypair = ec.genKeyPair();
@@ -95,6 +104,10 @@ class Key extends Entity {
     });
 
     return this;
+  }
+
+  static Mnemonic (seed) {
+    return new Mnemonic(seed);
   }
 
   get id () {
