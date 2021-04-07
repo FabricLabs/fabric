@@ -13,6 +13,9 @@ const Consensus = require('../types/consensus');
 const BitcoinBlock = require('../types/bitcoin/block');
 const BitcoinTransaction = require('../types/bitcoin/transaction');
 
+const NODEA = require('../settings/node-a');
+const NODEB = require('../settings/node-b');
+
 // External Dependencies
 const jayson = require('jayson');
 // For the browser
@@ -22,13 +25,14 @@ const jayson = require('jayson');
 // For node...
 const bcoin = require('bcoin');
 
-// Bitcoin types.
+// Used to connect to the Bitcoin network directly
 const FullNode = bcoin.FullNode;
 const NetAddress = bcoin.net.NetAddress;
 
 /**
  * Manages interaction with the Bitcoin network.
- * @augments Interface
+ * @module @fabric/core/services/bitcoin
+ * @augments Service
  */
 class Bitcoin extends Service {
   /**
@@ -148,6 +152,7 @@ class Bitcoin extends Service {
       workers: true
     });
 
+    // Define Bitcoin P2P Messages
     this.define('VersionPacket', { type: 0 });
     this.define('VerAckPacket', { type: 1 });
     this.define('PingPacket', { type: 2 });
@@ -157,17 +162,36 @@ class Bitcoin extends Service {
     this.define('FeeFilterPacket', { type: 21 });
     this.define('SendCmpctPacket', { type: 22 });
 
+    // Chainable
     return this;
   }
 
+  /**
+   * Provides bcoin's implementation of `TX` internally.  This static may be
+   * removed in the future.
+   */
   static get Transaction () {
     return bcoin.TX;
   }
 
+  /**
+   * Provides bcoin's implementation of `MTX` internally.  This static may be
+   * removed in the future.
+   */
+  static get MutableTransaction () {
+    return bcoin.TX;
+  }
+
+  /**
+   * User Agent string for the Bitcoin P2P network.
+   */
   get UAString () {
     return 'Portal/Bridge 0.1.0-dev (@fabric/core#0.1.0-dev)';
   }
 
+  /**
+   * Chain tip (block hash of the chain with the most Proof of Work)
+   */
   get tip () {
     if (this.settings.fullnode) {
       return this.fullnode.chain.tip.hash.toString('hex');
@@ -176,6 +200,9 @@ class Bitcoin extends Service {
     }
   }
 
+  /**
+   * Chain height (`=== length - 1`)
+   */
   get height () {
     return this.fullnode.chain.height;
   }

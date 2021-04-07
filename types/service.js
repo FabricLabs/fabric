@@ -1,6 +1,7 @@
 'use strict';
 
 // internal dependencies
+const Actor = require('./actor');
 // const Disk = require('./disk');
 const Key = require('./key');
 const Entity = require('./entity');
@@ -64,6 +65,7 @@ class Service extends Scribe {
     this.name = this.config.name;
     this.collections = {};
     this.definitions = {};
+    this.methods = {};
     this.clients = {};
     this.targets = [];
     this.origin = '';
@@ -677,6 +679,10 @@ class Service extends Scribe {
     }
 
     return this;
+  }
+
+  async _registerMethod (name, method) {
+    this.methods[name] = method.bind(this);
   }
 
   async _updatePresence (id, status) {

@@ -1,8 +1,6 @@
 # Fabric Developer Resources
-If you haven't already, shimmy on over to
-[the "Getting Started" overview][welcome] and get acquainted. There's a lot of
-information to cover with regards to building decentralized applications, so
-grab a coffee ☕ and settle in.
+There's a lot of information to cover with regards to building decentralized
+applications, so grab a coffee ☕ and settle in.
 
 ## Architecture
 Fabric relies on `Message` objects passed between nodes to exchange information,
@@ -38,7 +36,6 @@ networks.
 
 See [the Services Overview][services] for more information.
 
-[services]: ../services.html
-[welcome]: ../welcome.html
+[services]: ../SERVICES.html
 
 [actor-type]: Actor.html

@@ -7,6 +7,11 @@ const jayson = require('jayson');
 const Service = require('../types/service');
 const Machine = require('../types/machine');
 
+/**
+ * Lightning connectivity.
+ * @module @fabric/core/services/lightning
+ * @augments Service
+ */
 class Lightning extends Service {
   constructor (settings = {}) {
     super(settings);

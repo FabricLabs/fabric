@@ -16,6 +16,7 @@ const COORDINATORS = [
 
 /**
  * Service for interacting with Matrix.
+ * @module @fabric/core/services/matrix
  * @augments Interface
  */
 class Matrix extends Interface {
