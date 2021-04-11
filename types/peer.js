@@ -444,9 +444,7 @@ class Peer extends Scribe {
   async _handleConnection (socket) {
     const self = this;
     const address = [socket.remoteAddress, socket.remotePort].join(':');
-
-    self.emit('message', `[FABRIC:PEER] [@ID:$${self.id}] Incoming connection from address: ${address}`);
-    if (this.settings.verbosity >= 4) console.log('[FABRIC:PEER]', `[@ID:$${self.id}]`, 'Incoming connection from address:', address);
+    if (this.settings.verbosity >= 4) self.emit('message', `[FABRIC:PEER] [0x${self.id}] Incoming connection from address: ${address}`);
 
     self.emit('connections:open', {
       address: address,
@@ -521,6 +519,7 @@ class Peer extends Scribe {
   }
 
   _registerPeer (peer) {
+    if (this.settings.verbosity >= 6) console.warn('[AUDIT]', 'Registering peer:', peer);
     let self = this;
 
     if (!peer) return false;
@@ -650,7 +649,7 @@ class Peer extends Scribe {
         self.relayFrom(packet.origin, message);
         break;
       case 'StartSession':
-        // console.warn('[FABRIC:PEER]', `[@ID:$${self.id}]`, 'Received "StartSession" message on socket:', message.raw);
+        if (self.settings.verbosity >= 6) console.warn('[AUDIT]', '[FABRIC:PEER]', `[0x${self.id}]`, 'Received "StartSession" message on socket:', message.raw);
         let session = null;
 
         try {
@@ -664,7 +663,10 @@ class Peer extends Scribe {
         // TODO: avoid using JSON in overall protocol
         // TODO: validate signature
         let valid = true;
-        if (valid && session && session.identity) {
+        // TODO: restore session identity
+        if (valid && session/* && session.identity */) {
+          if (self.settings.verbosity >= 6) console.log('[AUDIT]', 'Session is valid...');
+
           let peer = {
             id: session.identity,
             address: packet.origin,
@@ -677,9 +679,8 @@ class Peer extends Scribe {
           self._registerPeer(peer);
 
           // TODO: use message type for next phase of session (i.e., NOISE)
-          response = Message.fromVector(['StartSession', JSON.stringify({
-            identity: self.id
-          })]);
+          response = Message.fromVector(['StartSession', { identity: self.id }]);
+          if (self.settings.verbosity >= 6) console.log('[AUDIT]', 'Will send response:', response);
         }
 
         break;
