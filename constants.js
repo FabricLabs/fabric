@@ -28,7 +28,7 @@ const MAX_CHANNEL_VALUE = 100000000;
 
 // FABRIC ONLY
 const LOG_MESSAGE_TYPE = parseInt(crypto.createHash('sha256').update('@types/GenericLogMessage').digest('hex'), 16);
-const GENERIC_LIST_TYPE = parseInt(crypto.createHash('sha256').update('@types/GenericLogMessage').digest('hex'), 16);
+const GENERIC_LIST_TYPE = parseInt(crypto.createHash('sha256').update('@types/GenericList').digest('hex'), 16);
 
 const OP_CYCLE = '00';
 const OP_DONE = 'ff';

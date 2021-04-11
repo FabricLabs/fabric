@@ -373,6 +373,10 @@ class Service extends Scribe {
       await this.disconnect();
     }
 
+    if (this.heartbeat) {
+      clearInterval(this.heartbeat);
+    }
+
     if (this.settings.persistent) {
       try {
         await this.store.stop();
