@@ -39,9 +39,9 @@ class Service extends Scribe {
    * @param       {Boolean} [config.networking=true] Whether or not to connect to the network.
    * @param       {Object} [config.@data] Internal data to assign.
    */
-  constructor (config = {}) {
+  constructor (settings = {}) {
     // Initialize Scribe, our logging tool
-    super(config);
+    super(settings);
 
     // Configure (with defaults)
     this.settings = this.config = Object.assign({
@@ -49,6 +49,7 @@ class Service extends Scribe {
       path: './stores/service',
       networking: true,
       persistent: true,
+      interval: 60000, // Mandatory Checkpoint Interval
       verbosity: 2, // 0 none, 1 error, 2 warning, 3 notice, 4 debug
       // TODO: export this as the default data in `inputs/fabric.json`
       // If the sha256(JSON.stringify(this.data)) is equal to this, it's
@@ -58,10 +59,11 @@ class Service extends Scribe {
         messages: {},
         members: {}
       } */
-    }, config);
+    }, this.config, settings);
 
     // Reserve a place for ourselves
     this.agent = null;
+    this.actor = null;
     this.name = this.config.name;
     this.clock = 0;
     this.collections = {};
@@ -282,6 +284,9 @@ class Service extends Scribe {
       console.log('Local Repository: `npm run docs` to open HTTP server at http://localhost:8000');
     };
 
+    // Define an Actor with all current settings
+    this.actor = new Actor(this.settings);
+
     /* await this.define('message', {
       name: 'message',
       handler: this.process.bind(this.state),
@@ -351,6 +356,8 @@ class Service extends Scribe {
     // Set a heartbeat
     this.heartbeat = setInterval(this._heartbeat.bind(this), this.settings.interval);
     this.status = 'ready';
+    this.emit('message', `[FABRIC:SERVICE] Started!`);
+    this.emit('ready');
 
     try {
       await this.commit();

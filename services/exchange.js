@@ -1,5 +1,10 @@
 'use strict';
 
+// Constants
+const {
+  BITCOIN_GENESIS
+} = require('../constants');
+
 // Dependencies
 const merge = require('lodash.merge');
 
@@ -23,6 +28,8 @@ class Exchange extends Service {
    */
   constructor (settings = {}) {
     super(settings);
+
+    // Configures Defaults
     this.settings = merge({
       anchor: 'btc',
       path: './stores/exchange-playnet',
@@ -30,7 +37,8 @@ class Exchange extends Service {
       currencies: [
         {
           name: 'Bitcoin',
-          symbol: 'BTC'
+          symbol: 'BTC',
+          genesis: BITCOIN_GENESIS
         },
         // Helix Chain
         {
@@ -51,7 +59,16 @@ class Exchange extends Service {
     this.orders = new Collection(this.settings.orders);
     this.currencies = new Collection(this.settings.currencies);
 
+    // Chainable
     return this;
+  }
+
+
+  async start () {
+    // Set a heartbeat
+    this.heartbeat = setInterval(this._heartbeat.bind(this), this.settings.interval);
+    this.emit('message', `[FABRIC:EXCHANGE] Started!`);
+    this.emit('ready');
   }
 
   async _postOrder (order) {
@@ -65,8 +82,8 @@ class Exchange extends Service {
     this.emit('message', `Order [${entity.id}] posted: ${state}`);
   }
 
-  async _matchOrders () {
-    
+  async _matchOrders (orders) {
+    return []
   }
 }
 

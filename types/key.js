@@ -8,7 +8,8 @@ const crypto = require('crypto');
 const EC = require('elliptic').ec;
 const ec = new EC('secp256k1');
 
-// Dependencies
+// External Dependencies
+// TODO: remove all external dependencies
 const bcoin = require('bcoin');
 const {
   KeyRing,
@@ -38,9 +39,11 @@ class Key extends Entity {
 
     this.config = Object.assign({
       network: 'main',
+      curve: 'secp256k1',
       prefix: '00',
       public: null,
       private: null,
+      bits: 256,
       hd: true
     }, init);
 

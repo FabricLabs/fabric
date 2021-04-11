@@ -41,6 +41,17 @@ class Hash256 {
   get value () {
     return Hash256.digest(this.settings.input);
   }
+
+  /**
+   * Reverses the bytes of the digest.
+   */
+  static reverse (input = '') {
+    return Buffer.from(input, 'hex').reverse().toString('hex');
+  }
+
+  reverse (input = this.value) {
+    return Hash256.reverse(input);
+  }
 }
 
 module.exports = Hash256;

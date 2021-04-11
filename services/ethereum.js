@@ -103,21 +103,22 @@ class Ethereum extends Service {
 
     if (service.settings.mode === 'rpc') {
       const providers = service.settings.servers.map(x => new URL(x));
+      // TODO: loop through all providers
       const provider = providers[0];
 
       if (provider.protocol === 'https:') secure = true;
+      const config = {
+        host: provider.hostname,
+        port: provider.port
+      };
+
       if (secure) {
-        client = jayson.client.https({
-          host: provider.hostname,
-          port: provider.port
-        });
+        client = jayson.client.https(config);
       } else {
-        client = jayson.client.http({
-          host: provider.hostname,
-          port: provider.port
-        });
+        client = jayson.client.http(config);
       }
 
+      // Link generated client to `rpc` property
       service.rpc = client;
 
       // await service._checkRPCBlockNumber();
@@ -132,6 +133,7 @@ class Ethereum extends Service {
     service.vm.on('step', service._handleVMStep.bind(service));
     service.status = 'started';
     service.emit('warning', `Service started!`);
+    service.emit('ready', { id: service.id });
   }
 
   async _RPCErrorHandler (error) {
