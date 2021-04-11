@@ -63,6 +63,7 @@ class Service extends Scribe {
     // Reserve a place for ourselves
     this.agent = null;
     this.name = this.config.name;
+    this.clock = 0;
     this.collections = {};
     this.definitions = {};
     this.methods = {};
@@ -118,6 +119,14 @@ class Service extends Scribe {
 
   init () {
     this.components = {};
+  }
+
+  /**
+   * Move forward one clock cycle.
+   * @returns {Number}
+   */
+  tick () {
+    return ++this.clock;
   }
 
   async process () {
@@ -339,6 +348,8 @@ class Service extends Scribe {
     if (!this.state) this.state = {};
     this.observer = manager.observe(this.state);
 
+    // Set a heartbeat
+    this.heartbeat = setInterval(this._heartbeat.bind(this), this.settings.interval);
     this.status = 'ready';
 
     try {
@@ -733,6 +744,10 @@ class Service extends Scribe {
         changes: changes
       }
     });
+  }
+
+  async _heartbeat () {
+    return this.tick();
   }
 
   /**

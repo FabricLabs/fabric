@@ -9,7 +9,7 @@ const settings = {
   listen: true,
   persistent: false, // Loads from anchor chain
   // sideload playnet
-  peers: [].concat(playnet.peers),
+  // peers: [].concat(playnet.peers),
   services: [
     'exchange',
     'btca',
@@ -19,10 +19,7 @@ const settings = {
   key: {
     seed: playnet.seed
   },
-  bitcoin: {
-    mode: 'rpc',
-    servers: [].concat(playnet.servers),
-  },
+  bitcoin: false,
   btca: playnet.btca || null,
   btcb: playnet.btcb || null,
   currencies: [].concat(playnet.currencies)

@@ -6,6 +6,8 @@
  */
 'use strict';
 
+const crypto = require('crypto');
+
 const PEER_PORT = 9999;
 const MAX_PEERS = 32;
 
@@ -25,6 +27,9 @@ const MAX_MEMORY_ALLOC = MAX_STACK_HEIGHT * MAX_FRAME_SIZE;
 const MAX_CHANNEL_VALUE = 100000000;
 
 // FABRIC ONLY
+const LOG_MESSAGE_TYPE = parseInt(crypto.createHash('sha256').update('@types/GenericLogMessage').digest('hex'), 16);
+const GENERIC_LIST_TYPE = parseInt(crypto.createHash('sha256').update('@types/GenericLogMessage').digest('hex'), 16);
+
 const OP_CYCLE = '00';
 const OP_DONE = 'ff';
 
@@ -85,6 +90,8 @@ module.exports = {
   PRECISION,
   BITCOIN_GENESIS,
   HEADER_SIZE,
+  LOG_MESSAGE_TYPE,
+  GENERIC_LIST_TYPE,
   LARGE_COLLECTION_SIZE,
   BLOCK_CANDIDATE,
   CHAT_MESSAGE,

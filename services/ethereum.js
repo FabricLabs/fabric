@@ -93,14 +93,32 @@ class Ethereum extends Service {
 
   async start () {
     const service = this;
+    const secure = false;
+
+    // Assign Status
     service.status = 'starting';
 
+    // Local Variables
+    let client = null;
+
     if (service.settings.mode === 'rpc') {
-      // create a client
-      service.rpc = jayson.client.https({
-        host: 'typhoon.nakamoto.group',
-        port: 443
-      });
+      const providers = service.settings.servers.map(x => new URL(x));
+      const provider = providers[0];
+
+      if (provider.protocol === 'https:') secure = true;
+      if (secure) {
+        client = jayson.client.https({
+          host: provider.hostname,
+          port: provider.port
+        });
+      } else {
+        client = jayson.client.http({
+          host: provider.hostname,
+          port: provider.port
+        });
+      }
+
+      service.rpc = client;
 
       // await service._checkRPCBlockNumber();
       service.heartbeat = setInterval(function _checkRPCBlockNumber () {

@@ -117,7 +117,7 @@
     "debug-trace": "^2.2.1",
     "docco": "^0.7.0",
     "eccrypto": "^1.0.3",
-    "eslint": "^5.6.0",
+    "eslint": "^5.16.0",
     "express": "^4.16.2",
     "gitbook-cli": "^2.3.2",
     "gitbook-plugin-edit-link": "^2.0.2",
