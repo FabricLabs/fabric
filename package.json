@@ -46,7 +46,7 @@
     "test": "NODE_ENV=test mocha tests"
   },
   "engines": {
-    "node": "12.16.0"
+    "node": "^12.16"
   },
   "repository": {
     "type": "git",
@@ -71,13 +71,11 @@
     "append-only-torrent": "^1.0.0",
     "arbitrary": "^1.4.10",
     "base58check": "^2.0.0",
-    "bcash": "bcoin-org/bcash#master",
     "bcoin": "bcoin-org/bcoin#master",
     "commander": "^6.1.0",
     "content-type": "^1.0.4",
     "dotparser": "^0.3.0",
     "elliptic": "^6.4.0",
-    "ethereumjs-account": "^3.0.0",
     "ethereumjs-vm": "^4.1.0",
     "fast-json-patch": "^2.0.7",
     "fd-chunk-store": "^2.0.0",

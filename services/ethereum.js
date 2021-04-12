@@ -9,9 +9,10 @@ const Transition = require('../types/transition');
 
 // Ethereum
 const VM = require('ethereumjs-vm').default;
-const Account = require('ethereumjs-account').default;
-const Blockchain = require('ethereumjs-blockchain').default;
-const Block = require('ethereumjs-block');
+// TODO: re-evaluate inclusion of Ethereum toolchain
+// const Account = require('ethereumjs-account').default;
+// const Blockchain = require('ethereumjs-blockchain').default;
+// const Block = require('ethereumjs-block');
 const Opcodes = {
   STOP: '00',
   ADD: '01',

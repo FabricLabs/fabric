@@ -1,9 +1,9 @@
 'use strict';
 
 // Constants
-const {
-  BITCOIN_GENESIS
-} = require('../constants');
+const BTC = require('../currencies/btc');
+const BTCA = require('../currencies/btca');
+const BTCB = require('../currencies/btcb');
 
 // Dependencies
 const merge = require('lodash.merge');
@@ -31,24 +31,18 @@ class Exchange extends Service {
 
     // Configures Defaults
     this.settings = merge({
-      anchor: 'btc',
+      anchor: 'BTC', // Symbol of Primary Timestamping Asset (PTA)
       path: './stores/exchange-playnet',
-      orders: [],
+      debug: false,
+      orders: [], // Pre-define a list of Orders
+      premium: {
+        type: 'bips',
+        value: 2000 // 2000 bips === 20%
+      },
       currencies: [
-        {
-          name: 'Bitcoin',
-          symbol: 'BTC',
-          genesis: BITCOIN_GENESIS
-        },
-        // Helix Chain
-        {
-          name: 'BTCA',
-          symbol: 'BTCA'
-        },
-        {
-          name: 'BTCB',
-          symbol: 'BTCB'
-        }
+        BTC,
+        BTCA,
+        BTCB
       ],
       fees: {
         minimum: 20000 // satoshis
@@ -59,14 +53,36 @@ class Exchange extends Service {
     this.orders = new Collection(this.settings.orders);
     this.currencies = new Collection(this.settings.currencies);
 
+    // Internal State
+    this._state = {
+      actors: {}, // Fabric Actors
+      blocks: {}, // Fabric Blocks
+      chains: {}, // Fabric Chains
+      channels: {}, // Fabric Channels
+      oracles: {}, // Fabric Oracles
+      pairs: {}, // Portal Pairs
+      transactions: {}, // Fabric Transactions
+      witnesses: {}, // Fabric Witnesses
+      orders: {} // Portal Orders
+    };
+
     // Chainable
     return this;
   }
 
+  async bootstrap () {
+    if (!this.settings.debug) return;
+    for (let i = 0; i < this.settings.orders.length; i++) {
+      const order = await this._postOrder(this.settings.orders[i]);
+      this.emit('message', `Posted Order: ${order}`);
+    }
+    return this;
+  }
 
   async start () {
     // Set a heartbeat
     this.heartbeat = setInterval(this._heartbeat.bind(this), this.settings.interval);
+    await this.bootstrap();
     this.emit('message', `[FABRIC:EXCHANGE] Started!`);
     this.emit('ready');
   }
@@ -80,10 +96,24 @@ class Exchange extends Service {
 
     const state = await this.orders.create(entity);
     this.emit('message', `Order [${entity.id}] posted: ${state}`);
+    if (!this._state.orders[entity.id]) this._state.orders[entity.id] = entity;
+    const commit = await this.commit();
+    this.emit('message', `Committed to Order, commit now: ${commit}`);
+    return commit;
   }
 
   async _matchOrders (orders) {
-    return []
+    const exchange = this;
+    const incomplete = Object.values(orders).filter(x => (x.status !== 'completed'));
+    const haves = incomplete.filter(x => (x.have === exchange.settings.anchor));
+    const wants = incomplete.filter(x => (x.want === exchange.settings.anchor));
+    return {
+      type: 'ExchangeOrderExecution',
+      data: {
+        haves,
+        wants
+      }
+    };
   }
 }
 

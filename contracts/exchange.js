@@ -5,6 +5,7 @@ const defaults = require('../settings/default');
 const playnet = require('../settings/playnet');
 
 const settings = {
+  debug: true,
   upnp: false,
   listen: true,
   persistent: false, // Loads from anchor chain
@@ -20,10 +21,23 @@ const settings = {
   key: {
     seed: playnet.seed
   },
-  bitcoin: false,
-  btca: playnet.btca || null,
-  btcb: playnet.btcb || null,
-  currencies: [].concat(playnet.currencies)
+  anchor: 'BTCA',
+  bitcoin: false, // disable Bitcoin (for now)
+  btca: playnet.btca || null, // Test Provider
+  btcb: playnet.btcb || null, // Test Provider
+  currencies: [].concat(playnet.currencies),
+  orders: [
+    {
+      have: {
+        symbol: 'BTCB',
+        amount: 0.1
+      },
+      want: {
+        symbol: 'BTCA',
+        amount: 0.1
+      }
+    }
+  ]
 };
 
 // Fabric Types
