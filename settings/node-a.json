@@ -11,19 +11,33 @@
   "servers": [
     "http://YOUR_USERNAME:YOUR_PASSWORD@localhost:18443"
   ],
+  "orders": [
+    {
+      "have": {
+        "symbol": "BTCA",
+        "amount": 0.1
+      },
+      "want": {
+        "symbol": "BTCB",
+        "amount": 0.1
+      }
+    }
+  ],
   "btca": {
     "name": "BTCA",
     "mode": "rpc",
     "servers": [
       "http://YOUR_USERNAME:YOUR_PASSWORD@localhost:18443"
-    ]
+    ],
+    "interval": 10000
   },
   "btcb": {
     "name": "BTCB",
     "mode": "rpc",
     "servers": [
       "http://YOUR_USERNAME:YOUR_PASSWORD@localhost:19443"
-    ]
+    ],
+    "interval": 10000
   },
   "key": {
     "seed": "hand danger teach fame embrace captain mean choose vault change sight code object obscure agent stock misery assume web grow yard aunt cup crush",

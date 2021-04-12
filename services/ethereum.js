@@ -29,7 +29,8 @@ class Ethereum extends Service {
       mode: 'rpc',
       ETHID: 1,
       hosts: [],
-      stack: []
+      stack: [],
+      interval: 15000
     }, settings);
 
     this._state = {
@@ -75,10 +76,29 @@ class Ethereum extends Service {
 
   async _checkRPCBlockNumber () {
     const service = this;
-    service.rpc.request('eth_blockNumber', [], function(err, response) {
-      if (err) service.emit('error', `Could not call: ${err}`);
-      service.emit('warning', `Current block: ${response.result}`);
+    const promise = new Promise((resolve, reject) => {
+      try {
+        service.rpc.request('eth_blockNumber', [], function (err, response) {
+          if (err) {
+            reject(new Error(`Could not call: ${err}`));
+          } else {
+            resolve(response.result);
+          }
+        });
+      } catch (exception) {
+        reject(new Error(`Request exception:`, exception));
+      }
     });
+    return promise;
+  }
+
+  async _heartbeat () {
+    try {
+      const blockNumber = await this._checkRPCBlockNumber();
+      this.emit('warning', `Current block: ${blockNumber}`);
+    } catch (exception) {
+      this.emit('error', `Could not retrieve current block from RPC: ${exception}`);
+    }
   }
 
   async stop () {
@@ -94,7 +114,7 @@ class Ethereum extends Service {
 
   async start () {
     const service = this;
-    const secure = false;
+    let secure = false;
 
     // Assign Status
     service.status = 'starting';
@@ -105,7 +125,7 @@ class Ethereum extends Service {
     if (service.settings.mode === 'rpc') {
       const providers = service.settings.servers.map(x => new URL(x));
       // TODO: loop through all providers
-      const provider = providers[0];
+      let provider = providers[0];
 
       if (provider.protocol === 'https:') secure = true;
       const config = {
@@ -122,13 +142,8 @@ class Ethereum extends Service {
       // Link generated client to `rpc` property
       service.rpc = client;
 
-      // await service._checkRPCBlockNumber();
-      service.heartbeat = setInterval(function _checkRPCBlockNumber () {
-        service.rpc.request('eth_blockNumber', [], function(err, response) {
-          if (err) service.emit('error', `Could not call: ${err}`);
-          service.emit('warning', `Current block: ${response.result}`);
-        });
-      }, 5000);
+      // Assign Heartbeat
+      service.heartbeat = setInterval(service._heartbeat.bind(service), service.settings.interval);
     }
 
     service.vm.on('step', service._handleVMStep.bind(service));

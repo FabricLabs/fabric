@@ -26,7 +26,7 @@ async function OP_TEST () {
     }
   });
 
-  console.log('chain started:', chain.id);
+  return chain.id;
 }
 
 // Module

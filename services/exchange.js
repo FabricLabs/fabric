@@ -9,8 +9,9 @@ const BTCB = require('../currencies/btcb');
 const merge = require('lodash.merge');
 
 // Fabric Types
-const Collection = require('../types/collection');
 const Entity = require('../types/entity');
+const Collection = require('../types/collection');
+const Message = require('../types/message');
 const Service = require('../types/service');
 
 /**
@@ -73,8 +74,9 @@ class Exchange extends Service {
   async bootstrap () {
     if (!this.settings.debug) return;
     for (let i = 0; i < this.settings.orders.length; i++) {
-      const order = await this._postOrder(this.settings.orders[i]);
-      this.emit('message', `Posted Order: ${order}`);
+      const order = this.settings.orders[i];
+      const posted = await this._postOrder(order);
+      this.emit('message', `Posted Order: ${posted}`);
     }
     return this;
   }
@@ -87,6 +89,11 @@ class Exchange extends Service {
     this.emit('ready');
   }
 
+  async _heartbeat () {
+    await super._heartbeat();
+    await this._matchOrders(this._state.orders);
+  }
+
   async _postOrder (order) {
     if (!order) return new Error('Order must be provided.');
     if (!order.signature) return new Error('Order must be signed.');
@@ -97,9 +104,10 @@ class Exchange extends Service {
     const state = await this.orders.create(entity);
     this.emit('message', `Order [${entity.id}] posted: ${state}`);
     if (!this._state.orders[entity.id]) this._state.orders[entity.id] = entity;
-    const commit = await this.commit();
-    this.emit('message', `Committed to Order, commit now: ${commit}`);
-    return commit;
+
+    await this.commit();
+    this.emit('message', Message.fromVector(['PostedExchangeOrder', state]));
+    return state;
   }
 
   async _matchOrders (orders) {
