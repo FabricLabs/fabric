@@ -66,6 +66,7 @@ class Bitcoin extends Service {
       ],
       peers: [],
       port: 18444,
+      interval: 10 * 60 * 1000, // every 10 minutes, write a checkpoint
       verbosity: 2
     }, settings);
 
@@ -722,6 +723,17 @@ class Bitcoin extends Service {
     return this._makeRPCRequest('signrawtransaction', [rawTX, JSON.stringify(prevouts)]);
   }
 
+  async _checkRPCBlockNumber () {
+    try {
+      const best = await this._requestBestBlockHash();
+      if (best !== this.best) {
+        this.best = best;
+      }
+    } catch (exception) {
+      this.emit('error', `[${this.settings.name}] Could not make request to RPC host: ${JSON.stringify(exception)}`);
+    }
+  }
+
   async _syncWithRPC () {
     const self = this;
 
@@ -841,14 +853,7 @@ class Bitcoin extends Service {
         self.emit('error', `Could not prepare session with RPC host: ${exception}`);
       }
 
-      self.heartbeat = setInterval(async function _checkRPCBlockNumber () {
-        try {
-          const best = await self._requestBestBlockHash();
-          self.emit('warning', `BEST BLOCK: ${best}`);
-        } catch (exception) {
-          self.emit('error', `Could not make request to RPC host: ${exception}`);
-        }
-      }, 5000);
+      self.heartbeat = setInterval(self._checkRPCBlockNumber.bind(self), self.settings.interval);
     }
 
     // TODO: re-enable these

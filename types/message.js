@@ -75,7 +75,7 @@ class Message extends Vector {
   }
 
   get body () {
-    return this.raw.data;
+    return JSON.parse(this.raw.data.toString('utf8'));
   }
 
   get byte () {
@@ -110,7 +110,7 @@ class Message extends Vector {
   }
 
   toRaw () {
-    return Buffer.from(this.asRaw());
+    return this.asRaw();
   }
 
   asTypedArray () {
@@ -321,7 +321,9 @@ Object.defineProperty(Message.prototype, 'type', {
         // console.warn('[FABRIC:MESSAGE]', "Unhandled message type:", code);
         return 'GenericMessage';
       case LOG_MESSAGE_TYPE:
-        return `GenericLogMessage`;
+        return 'GenericLogMessage';
+      case GENERIC_LIST_TYPE:
+        return 'GenericList';
       case BLOCK_CANDIDATE:
         return 'BlockCandidate';
       case OP_CYCLE:
@@ -362,7 +364,6 @@ Object.defineProperty(Message.prototype, 'type', {
   },
   set (value) {
     let code = this.types[value];
-
     // Default to GenericMessage;
     if (!code) {
       this.emit('warning', `Unknown message type: ${value}`);

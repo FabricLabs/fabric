@@ -10,6 +10,7 @@ const settings = {
   persistent: false, // Loads from anchor chain
   // sideload playnet
   // peers: [].concat(playnet.peers),
+  peers: [],
   services: [
     'exchange',
     'btca',
