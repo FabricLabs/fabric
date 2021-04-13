@@ -4,15 +4,6 @@
 <dt><a href="#module_@fabric/core/services/bitcoin">@fabric/core/services/bitcoin</a> ⇐ <code><a href="#Service">Service</a></code></dt>
 <dd><p>Manages interaction with the Bitcoin network.</p>
 </dd>
-<dt><a href="#module_@fabric/core/services/lightning">@fabric/core/services/lightning</a> ⇐ <code><a href="#Service">Service</a></code></dt>
-<dd><p>Lightning connectivity.</p>
-</dd>
-<dt><a href="#module_@fabric/core/services/matrix">@fabric/core/services/matrix</a> ⇐ <code><a href="#Interface">Interface</a></code></dt>
-<dd><p>Service for interacting with Matrix.</p>
-</dd>
-<dt><a href="#module_@fabric/core/services/shyft">@fabric/core/services/shyft</a> ⇐ <code><a href="#Service">Service</a></code></dt>
-<dd><p>Manages interactivity with the Shyft network.</p>
-</dd>
 </dl>
 
 ## Classes
@@ -173,6 +164,9 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 </dd>
 <dt><a href="#Exchange">Exchange</a></dt>
 <dd><p>Implements a basic Exchange.</p>
+</dd>
+<dt><a href="#Matrix">Matrix</a> ⇐ <code><a href="#Interface">Interface</a></code></dt>
+<dd><p>Service for interacting with Matrix.</p>
 </dd>
 </dl>
 
@@ -385,87 +379,6 @@ Provides bcoin's implementation of `MTX` internally.  This static may be
 removed in the future.
 
 **Kind**: static property of [<code>Bitcoin</code>](#module_@fabric/core/services/bitcoin..Bitcoin)  
-<a name="module_@fabric/core/services/lightning"></a>
-
-## @fabric/core/services/lightning ⇐ [<code>Service</code>](#Service)
-Lightning connectivity.
-
-**Extends**: [<code>Service</code>](#Service)  
-<a name="module_@fabric/core/services/matrix"></a>
-
-## @fabric/core/services/matrix ⇐ [<code>Interface</code>](#Interface)
-Service for interacting with Matrix.
-
-**Extends**: [<code>Interface</code>](#Interface)  
-
-* [@fabric/core/services/matrix](#module_@fabric/core/services/matrix) ⇐ [<code>Interface</code>](#Interface)
-    * [~Matrix](#module_@fabric/core/services/matrix..Matrix)
-        * [new Matrix([settings])](#new_module_@fabric/core/services/matrix..Matrix_new)
-        * [.state](#module_@fabric/core/services/matrix..Matrix+state)
-        * [.start()](#module_@fabric/core/services/matrix..Matrix+start)
-        * [.stop()](#module_@fabric/core/services/matrix..Matrix+stop)
-
-<a name="module_@fabric/core/services/matrix..Matrix"></a>
-
-### @fabric/core/services/matrix~Matrix
-**Kind**: inner class of [<code>@fabric/core/services/matrix</code>](#module_@fabric/core/services/matrix)  
-
-* [~Matrix](#module_@fabric/core/services/matrix..Matrix)
-    * [new Matrix([settings])](#new_module_@fabric/core/services/matrix..Matrix_new)
-    * [.state](#module_@fabric/core/services/matrix..Matrix+state)
-    * [.start()](#module_@fabric/core/services/matrix..Matrix+start)
-    * [.stop()](#module_@fabric/core/services/matrix..Matrix+stop)
-
-<a name="new_module_@fabric/core/services/matrix..Matrix_new"></a>
-
-#### new Matrix([settings])
-Create an instance of a Matrix client, connect to the
-network, and relay messages received from therein.
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [settings] | <code>Object</code> | Configuration values. |
-
-<a name="module_@fabric/core/services/matrix..Matrix+state"></a>
-
-#### matrix.state
-Getter for [State](#State).
-
-**Kind**: instance property of [<code>Matrix</code>](#module_@fabric/core/services/matrix..Matrix)  
-<a name="module_@fabric/core/services/matrix..Matrix+start"></a>
-
-#### matrix.start()
-Start the service, including the initiation of an outbound connection
-to any peers designated in the service's configuration.
-
-**Kind**: instance method of [<code>Matrix</code>](#module_@fabric/core/services/matrix..Matrix)  
-<a name="module_@fabric/core/services/matrix..Matrix+stop"></a>
-
-#### matrix.stop()
-Stop the service.
-
-**Kind**: instance method of [<code>Matrix</code>](#module_@fabric/core/services/matrix..Matrix)  
-<a name="module_@fabric/core/services/shyft"></a>
-
-## @fabric/core/services/shyft ⇐ [<code>Service</code>](#Service)
-Manages interactivity with the Shyft network.
-
-**Extends**: [<code>Service</code>](#Service)  
-
-* [@fabric/core/services/shyft](#module_@fabric/core/services/shyft) ⇐ [<code>Service</code>](#Service)
-    * [~Shyft](#module_@fabric/core/services/shyft..Shyft)
-        * [new Shyft()](#new_module_@fabric/core/services/shyft..Shyft_new)
-
-<a name="module_@fabric/core/services/shyft..Shyft"></a>
-
-### @fabric/core/services/shyft~Shyft
-**Kind**: inner class of [<code>@fabric/core/services/shyft</code>](#module_@fabric/core/services/shyft)  
-<a name="new_module_@fabric/core/services/shyft..Shyft_new"></a>
-
-#### new Shyft()
-Create a new instance of the Shyft service.
-
 <a name="Actor"></a>
 
 ## Actor
@@ -1305,6 +1218,7 @@ Simple interaction with 256-bit spaces.
 * [Hash256](#Hash256)
     * [new Hash256(settings)](#new_Hash256_new)
     * [.digest(input)](#Hash256.digest) ⇒ <code>String</code>
+    * [.reverse()](#Hash256.reverse)
 
 <a name="new_Hash256_new"></a>
 
@@ -1332,6 +1246,12 @@ Produce a SHA256 digest of some input data.
 | --- | --- | --- |
 | input | <code>String</code> \| <code>Buffer</code> | Content to digest. |
 
+<a name="Hash256.reverse"></a>
+
+### Hash256.reverse()
+Reverses the bytes of the digest.
+
+**Kind**: static method of [<code>Hash256</code>](#Hash256)  
 <a name="HKDF"></a>
 
 ## HKDF
@@ -2438,7 +2358,8 @@ familiar semantics.
 
 
 * [Service](#Service)
-    * [new Service(config)](#new_Service_new)
+    * [new Service(settings)](#new_Service_new)
+    * [.tick()](#Service+tick) ⇒ <code>Number</code>
     * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
     * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
     * [.start()](#Service+start)
@@ -2451,16 +2372,22 @@ familiar semantics.
 
 <a name="new_Service_new"></a>
 
-### new Service(config)
+### new Service(settings)
 Create an instance of a Service.
 
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
-| config | <code>Object</code> |  | Configuration for this service. |
-| [config.networking] | <code>Boolean</code> | <code>true</code> | Whether or not to connect to the network. |
-| [config.@data] | <code>Object</code> |  | Internal data to assign. |
+| settings | <code>Object</code> |  | Configuration for this service. |
+| [settings.networking] | <code>Boolean</code> | <code>true</code> | Whether or not to connect to the network. |
+| [settings.@data] | <code>Object</code> |  | Internal data to assign. |
 
+<a name="Service+tick"></a>
+
+### service.tick() ⇒ <code>Number</code>
+Move forward one clock cycle.
+
+**Kind**: instance method of [<code>Service</code>](#Service)  
 <a name="Service+handler"></a>
 
 ### service.handler(message) ⇒ [<code>Service</code>](#Service)
@@ -3349,3 +3276,93 @@ find and trade with real peers.
 | settings.fees | <code>Object</code> | Map of fee settings (all values in BTC). |
 | settings.fees.minimum | <code>Object</code> | Minimum fee (satoshis). |
 
+<a name="Matrix"></a>
+
+## Matrix ⇐ [<code>Interface</code>](#Interface)
+Service for interacting with Matrix.
+
+**Kind**: global class  
+**Extends**: [<code>Interface</code>](#Interface)  
+
+* [Matrix](#Matrix) ⇐ [<code>Interface</code>](#Interface)
+    * [new Matrix([settings])](#new_Matrix_new)
+    * [.state](#Matrix+state)
+    * [._registerActor(actor)](#Matrix+_registerActor)
+    * [.start()](#Matrix+start)
+    * [.stop()](#Matrix+stop)
+    * [.cycle(val)](#Interface+cycle)
+    * [.log(...inputs)](#Interface+log)
+    * [.now()](#Interface+now) ⇒ <code>Number</code>
+
+<a name="new_Matrix_new"></a>
+
+### new Matrix([settings])
+Create an instance of a Matrix client, connect to the
+network, and relay messages received from therein.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Configuration values. |
+
+<a name="Matrix+state"></a>
+
+### matrix.state
+Getter for [State](#State).
+
+**Kind**: instance property of [<code>Matrix</code>](#Matrix)  
+<a name="Matrix+_registerActor"></a>
+
+### matrix.\_registerActor(actor)
+Register an Actor on the network.
+
+**Kind**: instance method of [<code>Matrix</code>](#Matrix)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| actor | <code>Object</code> | Actor to register. |
+| actor.pubkey | <code>Object</code> | Hex-encoded pubkey. |
+
+<a name="Matrix+start"></a>
+
+### matrix.start()
+Start the service, including the initiation of an outbound connection
+to any peers designated in the service's configuration.
+
+**Kind**: instance method of [<code>Matrix</code>](#Matrix)  
+**Overrides**: [<code>start</code>](#Interface+start)  
+<a name="Matrix+stop"></a>
+
+### matrix.stop()
+Stop the service.
+
+**Kind**: instance method of [<code>Matrix</code>](#Matrix)  
+**Overrides**: [<code>stop</code>](#Interface+stop)  
+<a name="Interface+cycle"></a>
+
+### matrix.cycle(val)
+Ticks the clock with a named [Cycle](Cycle).
+
+**Kind**: instance method of [<code>Matrix</code>](#Matrix)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| val | <code>String</code> | Name of cycle to scribe. |
+
+<a name="Interface+log"></a>
+
+### matrix.log(...inputs)
+Log some output to the console.
+
+**Kind**: instance method of [<code>Matrix</code>](#Matrix)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| ...inputs | <code>any</code> | Components of the message to long.  Can be a single {@link} String, many [String](String) objects, or anything else. |
+
+<a name="Interface+now"></a>
+
+### matrix.now() ⇒ <code>Number</code>
+Returns current timestamp.
+
+**Kind**: instance method of [<code>Matrix</code>](#Matrix)  

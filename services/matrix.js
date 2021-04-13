@@ -4,6 +4,7 @@
 const matrix = require('matrix-js-sdk');
 
 // Fabric Types
+const HKDF = require('../types/hkdf');
 const Entity = require('../types/entity');
 const Interface = require('../types/interface');
 // TODO: compare API against {@link Service}
@@ -11,6 +12,7 @@ const Service = require('../types/service');
 
 // Local Values
 const COORDINATORS = [
+  // TODO: supply at least 7 coordinators
   '!pPjIUAOkwmgXeICrzT:fabric.pub' // Primary Coordinator
 ];
 
@@ -31,6 +33,7 @@ class Matrix extends Interface {
     // Assign defaults
     this.settings = Object.assign({
       name: '@fabric/matrix',
+      path: './stores/matrix',
       homeserver: 'https://fabric.pub',
       coordinator: COORDINATORS[0]
     }, settings);
@@ -70,13 +73,46 @@ class Matrix extends Interface {
     return this._state['@data'];
   }
 
+  async _handleException (exception) {
+    console.error('[SERVICES:MATRIX]', 'Exception:', exception);
+  }
+
+  async _setState (state) {
+    const entity = new Entity(state);
+    const content = {
+      '@id': entity.id,
+      '@data': state,
+      'state_key': 'fabric.services.matrix'
+    };
+
+    const promise = new Promise((resolve, reject) => {
+      this.client.sendEvent(this.settings.coordinator, "m.room.state", content, "", (err, res) => {
+        if (err) return reject(err);
+
+        return resolve(res);
+      });
+    });
+
+    return promise;
+  }
+
   async _listPublicRooms () {
     let rooms = await this.client.publicRooms();
     return rooms;
   }
 
+  /**
+   * Register an Actor on the network.
+   * @param {Object} actor Actor to register.
+   * @param {Object} actor.pubkey Hex-encoded pubkey.
+   */
   async _registerActor (actor) {
-    let password = 'f00b4r';
+    const hmac = new HKDF({
+      initial: 'f00b4r',
+      salt: actor.privkeyhash
+    });
+
+    let password = hmac.derive().toString('hex');
     let available = false;
     let registration = null;
 
@@ -119,6 +155,18 @@ class Matrix extends Interface {
     });
 
     this.emit('message', `Actor Registered: ${entity.id} ${JSON.stringify(entity.data, null, '  ')}`);
+
+    let result = await this._setState({
+      content: 'Hello, world!'
+    });
+
+    this.emit('message', {
+      actor: actor.pubkey,
+      object: {
+        content: `Matrix result: ${JSON.stringify(result, null, '  ')}`
+      },
+      target: '/messages'
+    });
 
     return entity.data;
   }
@@ -205,8 +253,29 @@ class Matrix extends Interface {
     this.status = 'STARTING';
     this.emit('message', '[SERVICES:MATRIX] Starting...');
     // this.log('[SERVICES:MATRIX]', 'Starting...');
+    const service = this;
+
+    this.client.once('sync', function _handleClientSync (state, prevState, res) {
+      if (state === 'PREPARED') {
+        console.log("prepared");
+      } else {
+        console.error('Unhandled state:', state);
+        process.exit(1);
+      }
+    });
+
+    this.client.on('Room.timeline', function _handleRoomTimeline (event, room, toStartOfTimeline) {
+      if (event.getType() !== 'm.room.message') return;
+
+      service.emit('message', {
+        actor: event.event,
+        object: event.event.content,
+        target: '/messages'
+      });
+    });
 
     await this.client.startClient({ initialSyncLimit: 10 });
+
     this.status = 'STARTED';
     this.emit('message', '[SERVICES:MATRIX] Started!');
     // this.log('[SERVICES:MATRIX]', 'Started!');
