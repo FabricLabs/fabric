@@ -17,7 +17,7 @@ can empower users with income opportunities in exchange for delivering
 service to the network.</p>
 </dd>
 <dt><a href="#Circuit">Circuit</a></dt>
-<dd><p>The <a href="#Circuit">Circuit</a> is the mechanism through which <a href="Fabric">Fabric</a>
+<dd><p>The <a href="#Circuit">Circuit</a> is the mechanism through which <a href="#Fabric">Fabric</a>
 operates, a computable directed graph describing a network of
 <a href="#Peer">Peer</a> components and their interactions (side effects).
 See also <a href="#Swarm">Swarm</a> for deeper *inspection of <a href="#Machine">Machine</a>
@@ -38,6 +38,9 @@ the Fabric network using a terminal emulator.</p>
 </dd>
 <dt><a href="#Entity">Entity</a> : <code>Object</code></dt>
 <dd><p>Live instance of an ARC in Fabric.</p>
+</dd>
+<dt><a href="#Fabric">Fabric</a></dt>
+<dd><p>Reliable decentralized infrastructure.</p>
 </dd>
 <dt><a href="#Hash256">Hash256</a></dt>
 <dd><p>Simple interaction with 256-bit spaces.</p>
@@ -71,7 +74,7 @@ selectively disclosing new routes to peers which may have open circuits.</p>
 transitive state.</p>
 </dd>
 <dt><a href="#Path">Path</a></dt>
-<dd><p>A <a href="#Path">Path</a> is a <a href="Fabric">Fabric</a>-native link to a <a href="Document">Document</a>
+<dd><p>A <a href="#Path">Path</a> is a <a href="#Fabric">Fabric</a>-native link to a <a href="Document">Document</a>
 within the network.</p>
 </dd>
 <dt><a href="#Peer">Peer</a></dt>
@@ -153,6 +156,9 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 </dd>
 <dt><a href="#CryptoVoxels">CryptoVoxels</a></dt>
 <dd><p>Experimental <a href="#Interface">Interface</a> for the CryptoVoxels virtual <a href="World">World</a>.</p>
+</dd>
+<dt><a href="#Exchange">Exchange</a></dt>
+<dd><p>Implements a basic Exchange.</p>
 </dd>
 <dt><a href="#Matrix">Matrix</a> ⇐ <code><a href="#Interface">Interface</a></code></dt>
 <dd><p>Service for interacting with Matrix.</p>
@@ -497,7 +503,7 @@ Opens a [Channel](#Channel) with a [Peer](#Peer).
 <a name="Circuit"></a>
 
 ## Circuit
-The [Circuit](#Circuit) is the mechanism through which [Fabric](Fabric)
+The [Circuit](#Circuit) is the mechanism through which [Fabric](#Fabric)
 operates, a computable directed graph describing a network of
 [Peer](#Peer) components and their interactions (side effects).
 See also [Swarm](#Swarm) for deeper *inspection of [Machine](#Machine)
@@ -514,6 +520,7 @@ the Fabric network using a terminal emulator.
 
 * [CLI](#CLI)
     * [new CLI(settings)](#new_CLI_new)
+    * [.start()](#CLI+start)
     * [.stop()](#CLI+stop)
 
 <a name="new_CLI_new"></a>
@@ -526,6 +533,12 @@ Create a terminal-based interface for a [User](User).
 | --- | --- | --- |
 | settings | <code>Object</code> | Configuration values. |
 
+<a name="CLI+start"></a>
+
+### clI.start()
+Starts (and renders) the CLI.
+
+**Kind**: instance method of [<code>CLI</code>](#CLI)  
 <a name="CLI+stop"></a>
 
 ### clI.stop()
@@ -809,7 +822,7 @@ As a [Buffer](Buffer).
 <a name="Entity+_downsample"></a>
 
 ### entity.\_downsample([input])
-Return a [Fabric](Fabric)-labeled [Object](Object) for this [Entity](#Entity).
+Return a [Fabric](#Fabric)-labeled [Object](Object) for this [Entity](#Entity).
 
 **Kind**: instance method of [<code>Entity</code>](#Entity)  
 
@@ -817,6 +830,83 @@ Return a [Fabric](Fabric)-labeled [Object](Object) for this [Entity](#Entity).
 | --- | --- | --- |
 | [input] | <code>Mixed</code> | Input to downsample.  If not provided, current Entity will be used. |
 
+<a name="Fabric"></a>
+
+## Fabric
+Reliable decentralized infrastructure.
+
+**Kind**: global class  
+**Properties**
+
+| Name | Type |
+| --- | --- |
+| Block | <code>Class</code> | 
+
+
+* [Fabric](#Fabric)
+    * [new Fabric(config)](#new_Fabric_new)
+    * [.register(service)](#Fabric+register)
+    * [.push(value)](#Fabric+push) ⇒ [<code>Stack</code>](#Stack)
+    * [.trust(source)](#Fabric+trust) ⇒ [<code>Fabric</code>](#Fabric)
+    * [.compute()](#Fabric+compute) ⇒ [<code>Fabric</code>](#Fabric)
+
+<a name="new_Fabric_new"></a>
+
+### new Fabric(config)
+The [Fabric](#Fabric) type implements a peer-to-peer protocol for
+establishing and settling of mutually-agreed upon proofs of
+work.  Contract execution takes place in the local node first,
+then is optionally shared with the network.
+
+Utilizing
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| config | [<code>Vector</code>](#Vector) | Initial configuration for the Fabric engine.  This can be considered the "genesis" state for any contract using the system.  If a chain of events is maintained over long periods of time, `state` can be considered "in contention", and it is demonstrated that the outstanding value of the contract remains to be settled. |
+
+<a name="Fabric+register"></a>
+
+### fabric.register(service)
+Register an available [Service](#Service) using an ES6 [Class](Class).
+
+**Kind**: instance method of [<code>Fabric</code>](#Fabric)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| service | <code>Class</code> | The ES6 [Class](Class). |
+
+<a name="Fabric+push"></a>
+
+### fabric.push(value) ⇒ [<code>Stack</code>](#Stack)
+Push an instruction onto the stack.
+
+**Kind**: instance method of [<code>Fabric</code>](#Fabric)  
+
+| Param | Type |
+| --- | --- |
+| value | <code>Instruction</code> | 
+
+<a name="Fabric+trust"></a>
+
+### fabric.trust(source) ⇒ [<code>Fabric</code>](#Fabric)
+Blindly consume messages from a [Source](Source), relying on `this.chain` to
+verify results.
+
+**Kind**: instance method of [<code>Fabric</code>](#Fabric)  
+**Returns**: [<code>Fabric</code>](#Fabric) - Returns itself.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| source | <code>EventEmitter</code> | Any object which implements the `EventEmitter` pattern. |
+
+<a name="Fabric+compute"></a>
+
+### fabric.compute() ⇒ [<code>Fabric</code>](#Fabric)
+Process the current stack.
+
+**Kind**: instance method of [<code>Fabric</code>](#Fabric)  
+**Returns**: [<code>Fabric</code>](#Fabric) - Resulting instance of the stack.  
 <a name="Hash256"></a>
 
 ## Hash256
@@ -905,7 +995,6 @@ Interfaces compile abstract contract code into [Chain](#Chain)-executable transa
 
 * [Interface](#Interface) ⇐ <code>EventEmitter</code>
     * [new Interface(settings)](#new_Interface_new)
-    * [.state](#Interface+state)
     * [.start()](#Interface+start)
     * [.stop()](#Interface+stop)
     * [.cycle(val)](#Interface+cycle)
@@ -922,12 +1011,6 @@ Define an [Interface](#Interface) by creating an instance of this class.
 | --- | --- | --- |
 | settings | <code>Object</code> | Configuration values. |
 
-<a name="Interface+state"></a>
-
-### interface.state
-Getter for [State](#State).
-
-**Kind**: instance property of [<code>Interface</code>](#Interface)  
 <a name="Interface+start"></a>
 
 ### interface.start()
@@ -1226,7 +1309,7 @@ selectively disclosing new routes to peers which may have open circuits.
 <a name="new_Message_new"></a>
 
 ### new Message(message)
-The `Message` type is standardized in [Fabric](Fabric) as a [Vector](#Vector), which can be added to any other vector to compute a resulting state.
+The `Message` type is standardized in [Fabric](#Fabric) as a [Vector](#Vector), which can be added to any other vector to compute a resulting state.
 
 
 | Param | Type | Description |
@@ -1373,7 +1456,7 @@ Start running the process.
 <a name="Path"></a>
 
 ## Path
-A [Path](#Path) is a [Fabric](Fabric)-native link to a [Document](Document)
+A [Path](#Path) is a [Fabric](#Fabric)-native link to a [Document](Document)
 within the network.
 
 **Kind**: global class  
@@ -2052,7 +2135,7 @@ Store a value in the Service's state.
 Attach to network.
 
 **Kind**: instance method of [<code>Service</code>](#Service)  
-**Returns**: <code>Promise</code> - Resolves to [Fabric](Fabric).  
+**Returns**: <code>Promise</code> - Resolves to [Fabric](#Fabric).  
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -2866,7 +2949,6 @@ Manages interaction with the Bitcoin network.
 
 * [Bitcoin](#Bitcoin) ⇐ [<code>Interface</code>](#Interface)
     * [new Bitcoin([settings])](#new_Bitcoin_new)
-    * [.state](#Interface+state)
     * [._prepareTransaction(obj)](#Bitcoin+_prepareTransaction)
     * [._handleCommittedBlock(block)](#Bitcoin+_handleCommittedBlock)
     * [._handlePeerPacket(msg)](#Bitcoin+_handlePeerPacket)
@@ -2895,13 +2977,6 @@ Creates an instance of the Bitcoin service.
 | [settings.seeds] | <code>Array</code> | Bitcoin peers to request chain from (address:port). |
 | [settings.fullnode] | <code>Boolean</code> | Run a full node. |
 
-<a name="Interface+state"></a>
-
-### bitcoin.state
-Getter for [State](#State).
-
-**Kind**: instance property of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>state</code>](#Interface+state)  
 <a name="Bitcoin+_prepareTransaction"></a>
 
 ### bitcoin.\_prepareTransaction(obj)
@@ -3055,6 +3130,26 @@ Create an instance of the [CryptoVoxels](#CryptoVoxels) interface.
 Load data from [Oracle](#Oracle) source.
 
 **Kind**: instance method of [<code>CryptoVoxels</code>](#CryptoVoxels)  
+<a name="Exchange"></a>
+
+## Exchange
+Implements a basic Exchange.
+
+**Kind**: global class  
+<a name="new_Exchange_new"></a>
+
+### new Exchange(settings)
+Create an instance of the Exchange.  You may run two instances at
+once to simulate two-party contracts, or use the Fabric Market to
+find and trade with real peers.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| settings | <code>Object</code> | Map of settings to values. |
+| settings.fees | <code>Object</code> | Map of fee settings (all values in BTC). |
+| settings.fees.minimum | <code>Object</code> | Minimum fee (satoshis). |
+
 <a name="Matrix"></a>
 
 ## Matrix ⇐ [<code>Interface</code>](#Interface)
@@ -3090,7 +3185,6 @@ network, and relay messages received from therein.
 Getter for [State](#State).
 
 **Kind**: instance property of [<code>Matrix</code>](#Matrix)  
-**Overrides**: [<code>state</code>](#Interface+state)  
 <a name="Matrix+_registerActor"></a>
 
 ### matrix.\_registerActor(actor)
