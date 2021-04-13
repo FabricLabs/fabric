@@ -6,9 +6,9 @@ const matrix = require('matrix-js-sdk');
 // Fabric Types
 const HKDF = require('../types/hkdf');
 const Entity = require('../types/entity');
-const Interface = require('../types/interface');
 // TODO: compare API against {@link Service}
 const Service = require('../types/service');
+const Actor = require('../types/actor');
 
 // Local Values
 const COORDINATORS = [
@@ -18,10 +18,9 @@ const COORDINATORS = [
 
 /**
  * Service for interacting with Matrix.
- * @module @fabric/core/services/matrix
- * @augments Interface
+ * @augments Service
  */
-class Matrix extends Interface {
+class Matrix extends Service {
   /**
    * Create an instance of a Matrix client, connect to the
    * network, and relay messages received from therein.
@@ -36,7 +35,7 @@ class Matrix extends Interface {
       path: './stores/matrix',
       homeserver: 'https://fabric.pub',
       coordinator: COORDINATORS[0]
-    }, settings);
+    }, this.settings, settings);
 
     this.client = matrix.createClient(this.settings.homeserver);
     this._state = {
@@ -112,7 +111,7 @@ class Matrix extends Interface {
       salt: actor.privkeyhash
     });
 
-    let password = hmac.derive().toString('hex');
+    let password = actor.password || hmac.derive().toString('hex');
     let available = false;
     let registration = null;
 
@@ -162,9 +161,7 @@ class Matrix extends Interface {
 
     this.emit('message', {
       actor: actor.pubkey,
-      object: {
-        content: `Matrix result: ${JSON.stringify(result, null, '  ')}`
-      },
+      object: result.event_id,
       target: '/messages'
     });
 
@@ -254,6 +251,10 @@ class Matrix extends Interface {
     this.emit('message', '[SERVICES:MATRIX] Starting...');
     // this.log('[SERVICES:MATRIX]', 'Starting...');
     const service = this;
+    const user = {
+      pubkey: service.settings.username,
+      password: service.settings.password
+    };
 
     this.client.once('sync', function _handleClientSync (state, prevState, res) {
       if (state === 'PREPARED') {
@@ -266,14 +267,18 @@ class Matrix extends Interface {
 
     this.client.on('Room.timeline', function _handleRoomTimeline (event, room, toStartOfTimeline) {
       if (event.getType() !== 'm.room.message') return;
-
+      const actor = new Actor({ name: event.event.sender });
       service.emit('message', {
-        actor: event.event,
-        object: event.event.content,
+        actor: actor.id,
+        object: {
+          type: 'MatrixEvent',
+          data: event.event
+        },
         target: '/messages'
       });
     });
 
+    await this._registerActor(user);
     await this.client.startClient({ initialSyncLimit: 10 });
 
     this.status = 'STARTED';

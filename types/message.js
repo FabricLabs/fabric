@@ -30,10 +30,20 @@ const {
   SESSION_START
 } = require('../constants');
 
+// Dependencies
 const crypto = require('crypto');
 const struct = require('struct');
+
+// Fabric Types
+const Label = require('./label');
 const Vector = require('./vector');
+
+// Function Definitions
 const padDigits = require('../functions/padDigits');
+
+// Type Labels
+const TYPE_ETHEREUM_BLOCK        = parseInt((new Label('types/EthereumBlock'))._id, 16);
+const TYPE_ETHEREUM_BLOCK_NUMBER = parseInt((new Label('types/EthereumBlockNumber'))._id, 16);
 
 /**
  * The {@link Message} type defines the Application Messaging Protocol, or AMP.
@@ -277,6 +287,8 @@ class Message extends Vector {
       'Transaction': P2P_TRANSACTION,
       'Call': P2P_CALL,
       'LogMessage': LOG_MESSAGE_TYPE,
+      'EthereumBlock': TYPE_ETHEREUM_BLOCK,
+      'EthereumBlockNumber': TYPE_ETHEREUM_BLOCK_NUMBER
     };
   }
 
@@ -360,6 +372,10 @@ Object.defineProperty(Message.prototype, 'type', {
         return 'ChatMessage';
       case P2P_START_CHAIN:
         return 'StartChain';
+      case TYPE_ETHEREUM_BLOCK:
+        return 'EthereumBlock';
+      case TYPE_ETHEREUM_BLOCK_NUMBER:
+        return 'EthereumBlockNumber';
     }
   },
   set (value) {

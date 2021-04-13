@@ -3,16 +3,20 @@
 const BN = require('bn.js');
 const jayson = require('jayson');
 
+const Label = require('../types/label');
 const Entity = require('../types/entity');
 const Service = require('../types/service');
+const Message = require('../types/message');
 const Transition = require('../types/transition');
 
 // Ethereum
 const VM = require('ethereumjs-vm').default;
+const Actor = require('../types/actor');
 // TODO: re-evaluate inclusion of Ethereum toolchain
 // const Account = require('ethereumjs-account').default;
 // const Blockchain = require('ethereumjs-blockchain').default;
 // const Block = require('ethereumjs-block');
+
 const Opcodes = {
   STOP: '00',
   ADD: '01',
@@ -27,19 +31,49 @@ class Ethereum extends Service {
     this.settings = Object.assign({
       name: '@services/ethereum',
       mode: 'rpc',
+      network: 'main',
       ETHID: 1,
       hosts: [],
       stack: [],
+      servers: ['http://127.0.0.1:8545'],
       interval: 15000
     }, settings);
 
+    // Internal State
     this._state = {
-      stack: this.settings.stack
+      stack: this.settings.stack,
+      tip: null
     };
 
+    // Internal Properties
     this.rpc = null;
     this.vm = new VM();
     this.status = 'constructed';
+
+    // Chainable
+    return this;
+  }
+
+  set tip (value) {
+    if (this._state.tip !== value) {
+      this.emit('block', Message.fromVector(['EthereumBlock', value]));
+      this._state.tip = value;
+    }
+  }
+
+  set height (value) {
+    if (this._state.height !== value) {
+      this.emit('height', Message.fromVector(['EthereumBlockNumber', value]));
+      this._state.height = value;
+    }
+  }
+
+  get tip () {
+    return this._state.tip;
+  }
+
+  get height () {
+    return this._state.height;
   }
 
   async _test () {
@@ -64,7 +98,6 @@ class Ethereum extends Service {
 
   async execute (program) {
     if (!(program instanceof Array)) throw new Error('Cannot process program unless it is an Array.');
-
     return this.vm.runCode({
       code: Buffer.from(program.join(''), 'hex'),
       gasLimit: new BN(0xffff),
@@ -74,15 +107,32 @@ class Ethereum extends Service {
     }).catch(err => console.log('Error    : ' + err));
   }
 
-  async _checkRPCBlockNumber () {
+  async _executeRPCRequest (name, params = [], callback = new Function()) {
+    const start = Date.now();
     const service = this;
+    const actor = new Actor({
+      type: 'GenericRPCRequest',
+      method: name,
+      params: params,
+      status: 'queued'
+    });
+
     const promise = new Promise((resolve, reject) => {
       try {
-        service.rpc.request('eth_blockNumber', [], function (err, response) {
+        service.rpc.request(name, params, function (err, response) {
+          const finish = Date.now();
+          const duration = finish - start;
           if (err) {
+            actor.status = 'error';
+            this.emit('error', Message.fromVector(['GenericServiceError', err]));
             reject(new Error(`Could not call: ${err}`));
           } else {
-            resolve(response.result);
+            actor.status = 'completed';
+            resolve({
+              request: actor,
+              duration: duration,
+              result: response.result
+            });
           }
         });
       } catch (exception) {
@@ -92,10 +142,18 @@ class Ethereum extends Service {
     return promise;
   }
 
+  async _checkRPCBlockNumber () {
+    const service = this;
+    const request = service._executeRPCRequest('eth_blockNumber');
+    request.then((response) => {
+      this.height = response.result;
+    });
+    return request;
+  }
+
   async _heartbeat () {
     try {
-      const blockNumber = await this._checkRPCBlockNumber();
-      this.emit('warning', `Current block: ${blockNumber}`);
+      const blockNumberRequest = await this._checkRPCBlockNumber();
     } catch (exception) {
       this.emit('error', `Could not retrieve current block from RPC: ${exception}`);
     }
