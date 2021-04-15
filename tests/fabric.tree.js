@@ -17,7 +17,7 @@ describe('@fabric/core/types/tree', function () {
       assert.strictEqual(tree.root.toString('hex'), ''); // TODO: wat?
     });
 
-    it('can construct an known tree', async function () {
+    it('can construct a known tree', async function () {
       let tree = new Tree(['foo', 'bar']);
       assert.ok(tree);
       assert.ok(tree._tree);

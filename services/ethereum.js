@@ -37,12 +37,13 @@ class Ethereum extends Service {
       stack: [],
       servers: ['http://127.0.0.1:8545'],
       interval: 15000
-    }, settings);
+    }, this.settings, settings);
 
     // Internal State
     this._state = {
       stack: this.settings.stack,
-      tip: null
+      tip: null,
+      height: null
     };
 
     // Internal Properties
@@ -124,7 +125,7 @@ class Ethereum extends Service {
           const duration = finish - start;
           if (err) {
             actor.status = 'error';
-            this.emit('error', Message.fromVector(['GenericServiceError', err]));
+            service.emit('error', Message.fromVector(['GenericServiceError', err]));
             reject(new Error(`Could not call: ${err}`));
           } else {
             actor.status = 'completed';
@@ -187,6 +188,8 @@ class Ethereum extends Service {
 
       if (provider.protocol === 'https:') secure = true;
       const config = {
+        username: provider.username,
+        password: provider.password,
         host: provider.hostname,
         port: provider.port
       };

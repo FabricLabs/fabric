@@ -19,11 +19,23 @@ class Tree extends Actor {
       isBitcoinTree: true
     });
 
+    this._state = {
+      root: this.root
+    }
+
     return this;
   }
 
   get root () {
     return this._tree.getRoot();
+  }
+
+  addLeaf (leaf = '') {
+    this._tree = new MerkleTree(this.settings.leaves.concat([ leaf ]), Hash256.digest, {
+      isBitcoinTree: true
+    });
+
+    return this;
   }
 }
 
