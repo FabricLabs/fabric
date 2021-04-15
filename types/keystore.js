@@ -24,7 +24,7 @@ class KeyStore extends Actor {
       path: './stores/keystore',
       mode: 'aes-256-cbc',
       key: Buffer.from(this.key.privkey, 'hex'),
-      version: 0
+      version: 0 // TODO: consider changing `key` to Object in v:1
     }, this.settings, settings);
 
     this.tree = new Tree();

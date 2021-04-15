@@ -83,6 +83,9 @@ class Key extends Entity {
     this.private = this.keypair.getPrivate();
     this.public = this.keypair.getPublic(true);
 
+    // TODO: determine if this makes sense / needs to be private
+    this.privkey = (this.private) ? this.private.toString() : null;
+
     // STANDARD BEGINS HERE
     this.pubkey = this.public.encodeCompressed('hex');
 
