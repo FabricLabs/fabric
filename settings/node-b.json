@@ -9,20 +9,32 @@
   ],
   "mode": "rpc",
   "servers": [
-    "http://cahcainh:pief0ohG@localhost:18443"
+    "http://YOUR_USERNAME:YOUR_PASSWORD@localhost:18443"
+  ],
+  "orders": [
+    {
+      "have": {
+        "symbol": "BTCB",
+        "amount": 0.1
+      },
+      "want": {
+        "symbol": "BTCA",
+        "amount": 0.1
+      }
+    }
   ],
   "btca": {
     "name": "BTCA",
     "mode": "rpc",
     "servers": [
-      "http://cahcainh:pief0ohG@localhost:18443"
+      "http://YOUR_USERNAME:YOUR_PASSWORD@localhost:18443"
     ]
   },
   "btcb": {
     "name": "BTCB",
     "mode": "rpc",
     "servers": [
-      "http://cahcainh:pief0ohG@localhost:19443"
+      "http://YOUR_USERNAME:YOUR_PASSWORD@localhost:19443"
     ]
   },
   "key": {

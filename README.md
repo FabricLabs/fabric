@@ -42,14 +42,14 @@ it as an event source.
 
 #### Simple Example
 ```js
-const Fabric = require('fabric');
-const service = new Fabric();
+const Fabric = require('@fabric/core');
+const fabric = new Fabric();
 
-service.on('message', function (message) {
+fabric.on('message', function (message) {
   console.log('Received message from Fabric:', message);
 });
 
-service.start();
+fabric.start();
 ```
 
 `service` now contains a full instance of Fabric, including `SET` and `GET`

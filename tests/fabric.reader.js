@@ -11,7 +11,7 @@ const Message = require('../types/message');
 describe('@fabric/core/types/reader', function () {
   describe('Reader', function () {
     it('is a constructor', function () {
-      assert.equal(Reader instanceof Function, true);
+      assert.strictEqual(Reader instanceof Function, true);
     });
 
     it('can parse a well-formatted message', function (done) {
@@ -21,14 +21,14 @@ describe('@fabric/core/types/reader', function () {
 
       reader.on('message', function (msg) {
         const message = Message.fromBuffer(msg);
-        assert.equal(message.body, 'Hello, world!');
+        assert.strictEqual(message.body, 'Hello, world!');
         done();
       });
 
       reader._addData(message.toRaw());
 
       assert.ok(reader);
-      assert.equal(message.toObject().headers.hash, '315f5bdb76d078c43b8ac0064e4a0164612b1fce77c869345bfc94c75894edd3');
+      assert.strictEqual(message.toObject().headers.hash, '315f5bdb76d078c43b8ac0064e4a0164612b1fce77c869345bfc94c75894edd3');
     });
   });
 });

@@ -48,8 +48,8 @@ describe('@fabric/core/types/message', function () {
       assert.equal(literal.headers.magic, MAGIC_BYTES);
       assert.equal(literal.headers.version, VERSION_NUMBER);
       assert.equal(literal.headers.type, P2P_CALL);
-      assert.equal(literal.headers.size, 29);
-      assert.equal(literal.headers.hash, '29ef07455d1e3ab5f0b5ad485d4bb85a00a4dd4003dabd43cab0f43199fc316e');
+      assert.equal(literal.headers.size, 37);
+      assert.equal(literal.headers.hash, 'c19f3c2725b19758a2e8a9b908306d0c750d1fa6fb10cf5348f0ca306b6e1b21');
       assert.equal(message.type, 'Call');
     });
 

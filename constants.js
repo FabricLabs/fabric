@@ -6,14 +6,17 @@
  */
 'use strict';
 
+const crypto = require('crypto');
+
 const PEER_PORT = 9999;
 const MAX_PEERS = 32;
 
 const PRECISION = 100;
 
 const MAGIC_BYTES = 0xC0D3F33D;
-const VERSION_NUMBER = 0x01;
-const BITCOIN_GENESIS = 0x000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f;
+const VERSION_NUMBER = 0x00;
+const BITCOIN_GENESIS = '000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f';
+const BITCOIN_GENESIS_ROOT = '4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b';
 
 const HEADER_SIZE = 48; // 32 + 16 bytes
 const LARGE_COLLECTION_SIZE = 10; // TODO: test with 1,000,000
@@ -25,6 +28,9 @@ const MAX_MEMORY_ALLOC = MAX_STACK_HEIGHT * MAX_FRAME_SIZE;
 const MAX_CHANNEL_VALUE = 100000000;
 
 // FABRIC ONLY
+const LOG_MESSAGE_TYPE = parseInt(crypto.createHash('sha256').update('@types/GenericLogMessage').digest('hex'), 16);
+const GENERIC_LIST_TYPE = parseInt(crypto.createHash('sha256').update('@types/GenericList').digest('hex'), 16);
+
 const OP_CYCLE = '00';
 const OP_DONE = 'ff';
 
@@ -84,7 +90,10 @@ module.exports = {
   MAX_PEERS,
   PRECISION,
   BITCOIN_GENESIS,
+  BITCOIN_GENESIS_ROOT,
   HEADER_SIZE,
+  LOG_MESSAGE_TYPE,
+  GENERIC_LIST_TYPE,
   LARGE_COLLECTION_SIZE,
   BLOCK_CANDIDATE,
   CHAT_MESSAGE,
