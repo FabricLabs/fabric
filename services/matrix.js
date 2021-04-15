@@ -106,6 +106,7 @@ class Matrix extends Service {
    * @param {Object} actor.pubkey Hex-encoded pubkey.
    */
   async _registerActor (actor) {
+    if (!actor.pubkey) throw new Error('Field "pubkey" is required.');
     const hmac = new HKDF({
       initial: 'f00b4r',
       salt: actor.privkeyhash
