@@ -16,15 +16,15 @@ const Key = require('./key');
 class KeyStore extends Actor {
   constructor (settings = {}) {
     super(settings);
-    if (!settings.seed) settings.seed = process.env.FABRIC_SEED || (new Key()).seed;
+    if (!settings.seed) settings.seed = process.env.FABRIC_SEED || null;
     this.key = new Key(settings);
     this.settings = merge({
       name: 'DefaultStore',
       type: 'EncryptedFabricStore',
       path: './stores/keystore',
       mode: 'aes-256-cbc',
-      key: Buffer.from(this.key.privkey, 'hex'),
-      version: 0 // TODO: consider changing `key` to Object in v:1
+      key: { private: Buffer.from(this.key.privkey, 'hex') },
+      version: 0
     }, this.settings, settings);
 
     this.tree = new Tree();
@@ -32,6 +32,7 @@ class KeyStore extends Actor {
     this.db = null;
 
     this.codec = new Codec({
+      key: { private: this.key.privkey },
       mode: this.settings.mode,
       version: this.settings.version
     });
@@ -177,6 +178,7 @@ class KeyStore extends Actor {
     const keystore = this;
     const promise = new Promise(async (resolve, reject) => {
       const ops = [];
+      const meta = { keys: [] };
       const actor = new Actor(state);
       const transition = {
         subject: 'state',
@@ -187,6 +189,7 @@ class KeyStore extends Actor {
       // Phase 1
       for (let key in state) {
         if (Object.prototype.hasOwnProperty.call(state, key)) {
+          meta.keys.push(key);
           ops.push({ type: 'put', key: `/${key}`, value: state[key] });
           keystore._state.value[key] = state[key];
         }
