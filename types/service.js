@@ -78,7 +78,7 @@ class Service extends Scribe {
     //      Canvas
     //        can draw a canvas:
     //          Error: Not implemented yet
-    this.key = null; // new Key();
+    this.key = new Key(this.settings.key);
 
     if (this.settings.persistent) {
       try {
