@@ -37,14 +37,21 @@ class Key extends Entity {
   constructor (init = {}) {
     super(init);
 
-    this.config = Object.assign({
+    this.settings = this.config = Object.assign({
       network: 'main',
       curve: 'secp256k1',
+      mode: 'aes-256-cbc',
       prefix: '00',
       public: null,
       private: null,
       bits: 256,
-      hd: true
+      hd: true,
+      password: null,
+      cipher: {
+        iv: {
+          size: 16
+        }
+      }
     }, init);
 
     this.master = null;
@@ -98,6 +105,10 @@ class Key extends Entity {
       'address': this.address
     };
 
+    this._state = {
+      pubkey: this.pubkey
+    };
+
     Object.defineProperty(this, 'keypair', {
       enumerable: false
     });
@@ -115,6 +126,36 @@ class Key extends Entity {
 
   get id () {
     return this.pubkeyhash;
+  }
+
+  get iv () {
+    return crypto.randomBytes(this.settings.cipher.iv.size);
+  }
+
+  encrypt (value) {
+    try {
+      const iv = Buffer.from(this.iv, 'hex');
+      const cipher = crypto.createCipheriv(this.settings.mode, this.private.toBuffer(), iv);
+      let encrypted = cipher.update(value);
+      encrypted = Buffer.concat([ encrypted, cipher.final() ]);
+      return iv.toString('hex') + ':' + encrypted.toString('hex');
+    } catch (exception) {
+      console.error('err:', exception);
+    }
+  }
+
+  decrypt (text) {
+    try {
+      const parts = text.split(':');
+      const iv = Buffer.from(parts.shift(), 'hex');
+      const blob = Buffer.from(parts.join(':'), 'hex');
+      const decipher = crypto.createDecipheriv('aes-256-cbc', this.private.toBuffer(), iv);
+      let decrypted = decipher.update(blob);
+      decrypted = Buffer.concat([ decrypted, decipher.final() ]);
+      return decrypted.toString();
+    } catch (exception) {
+      console.error('err:', exception);
+    }
   }
 
   _sign (msg) {

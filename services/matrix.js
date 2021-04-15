@@ -9,6 +9,7 @@ const Entity = require('../types/entity');
 // TODO: compare API against {@link Service}
 const Service = require('../types/service');
 const Actor = require('../types/actor');
+const Message = require('../types/message');
 
 // Local Values
 const COORDINATORS = [
@@ -34,15 +35,16 @@ class Matrix extends Service {
       name: '@fabric/matrix',
       path: './stores/matrix',
       homeserver: 'https://fabric.pub',
-      coordinator: COORDINATORS[0]
+      coordinator: COORDINATORS[0],
+      connect: false
     }, this.settings, settings);
 
     this.client = matrix.createClient(this.settings.homeserver);
     this._state = {
       status: 'READY',
-      actors: [],
+      actors: {},
       channels: COORDINATORS,
-      messages: []
+      messages: {}
     };
 
     return this;
@@ -85,9 +87,8 @@ class Matrix extends Service {
     };
 
     const promise = new Promise((resolve, reject) => {
-      this.client.sendEvent(this.settings.coordinator, "m.room.state", content, "", (err, res) => {
+      this.client.sendEvent(this.settings.coordinator, 'm.room.state', content, '', (err, res) => {
         if (err) return reject(err);
-
         return resolve(res);
       });
     });
@@ -105,68 +106,67 @@ class Matrix extends Service {
    * @param {Object} actor Actor to register.
    * @param {Object} actor.pubkey Hex-encoded pubkey.
    */
-  async _registerActor (actor) {
-    if (!actor.pubkey) throw new Error('Field "pubkey" is required.');
-    const hmac = new HKDF({
-      initial: 'f00b4r',
-      salt: actor.privkeyhash
-    });
+  async _registerActor (object) {
+    if (!object.pubkey) throw new Error('Field "pubkey" is required.');
+    const actor = new Actor(object);
+    this._state.actors[actor.id] = actor.toObject();
 
-    let password = actor.password || hmac.derive().toString('hex');
-    let available = false;
-    let registration = null;
+    if (this.settings.connect) {
+      const hmac = new HKDF({
+        initial: 'f00b4r',
+        salt: actor.privkeyhash
+      });
 
-    try {
-      this.emit('message', `Checking availability: ${actor.pubkey}`);
-      available = await this._checkUsernameAvailable(actor.pubkey);
-    } catch (exception) {
-      this.emit('error', `Could not check availability: ${exception}`);
-    }
+      let password = actor.password || hmac.derive().toString('hex');
+      let available = false;
+      let registration = null;
 
-    this.emit('message', `Username available: ${available}`);
-
-    if (available) {
       try {
-        this.emit('message', `Trying registration: ${actor.pubkey}`);
-        registration = await this.register(actor.pubkey, actor.privkeyhash || password);
+        this.emit('message', `Checking availability: ${actor.pubkey}`);
+        available = await this._checkUsernameAvailable(actor.pubkey);
+        this.emit('message', Message.fromVector(['OracleBoolean', available]));
       } catch (exception) {
-        this.emit('error', `Could not register with coordinator: ${exception}`);
+        this.emit('error', `Could not check availability: ${exception}`);
       }
+
+      if (available) {
+        try {
+          this.emit('message', `Trying registration: ${actor.pubkey}`);
+          registration = await this.register(actor.pubkey, actor.privkeyhash || password);
+          this.emit('message', `Registration: ${registration}`);
+        } catch (exception) {
+          this.emit('error', `Could not register with coordinator: ${exception}`);
+        }
+      }
+
+      try {
+        this.emit('message', `Trying login: ${actor.pubkey}`);
+        await this.login(actor.pubkey, actor.privkeyhash || password);
+      } catch (exception) {
+        this.emit('error', `Could not authenticate with coordinator: ${exception}`);
+      }
+
+      try {
+        this.emit('message', `Trying join room: ${this.settings.coordinator}`);
+        await this.client.joinRoom(this.settings.coordinator);
+      } catch (exception) {
+        this.emit('error', `Could not join coordinator: ${exception}`);
+      }
+
+      let result = await this._setState({
+        content: 'Hello, world!'
+      });
+
+      this.emit('message', {
+        actor: actor.pubkey,
+        object: result.event_id,
+        target: '/messages'
+      });
     }
 
-    this.emit('message', `Registration: ${registration}`);
+    this.emit('message', `Actor Registered: ${actor.id} ${JSON.stringify(actor.data, null, '  ')}`);
 
-    try {
-      this.emit('message', `Trying login: ${actor.pubkey}`);
-      await this.login(actor.pubkey, actor.privkeyhash || password);
-    } catch (exception) {
-      this.emit('error', `Could not authenticate with coordinator: ${exception}`);
-    }
-
-    try {
-      this.emit('message', `Trying join room: ${this.settings.coordinator}`);
-      await this.client.joinRoom(this.settings.coordinator);
-    } catch (exception) {
-      this.emit('error', `Could not join coordinator: ${exception}`);
-    }
-
-    const entity = new Entity({
-      pubkey: actor.pubkey
-    });
-
-    this.emit('message', `Actor Registered: ${entity.id} ${JSON.stringify(entity.data, null, '  ')}`);
-
-    let result = await this._setState({
-      content: 'Hello, world!'
-    });
-
-    this.emit('message', {
-      actor: actor.pubkey,
-      object: result.event_id,
-      target: '/messages'
-    });
-
-    return entity.data;
+    return actor.data;
   }
 
   async _send (msg) {
@@ -191,20 +191,16 @@ class Matrix extends Service {
   }
 
   async register (username, password) {
+    if (!username) throw new Error('Must provide username.');
+    if (!password) throw new Error('Must provide password.');
     const self = this;
-    const promise = new Promise(async (resolve, reject) => {
+    const promise = new Promise((resolve, reject) => {
       self.emit('message', `Trying registration: ${username}:${password}`);
-      let result = null;
-
-      result = await this.client.registerRequest({
+      self.client.registerRequest({
         username: username,
         password: password,
-        auth: {
-          type: 'm.login.dummy'
-        }
-      });
-
-      resolve(result);
+        auth: { type: 'm.login.dummy' }
+      }).catch(reject).then(resolve);
     });
 
     return promise;
@@ -214,18 +210,12 @@ class Matrix extends Service {
     const self = this;
     const promise = new Promise(async (resolve, reject) => {
       self.emit('message', `Checking username: ${username}`);
-      let available = true;
-
-      try {
-        available = await self.client.isUsernameAvailable(username);
-        self.emit('message', `Checking username ${username} as available: ${available}`);
-        return resolve(available);
-      } catch (exception) {
-        self.emit('error', `Username check "${username}" failed: ${exception}`);
-        return resolve(false);
-      }
+      self.client.isUsernameAvailable(username).catch((exception) => {
+        resolve(false);
+      }).then((result) => {
+        resolve(true);
+      });
     });
-
     return promise;
   }
 
@@ -250,19 +240,21 @@ class Matrix extends Service {
   async start () {
     this.status = 'STARTING';
     this.emit('message', '[SERVICES:MATRIX] Starting...');
-    // this.log('[SERVICES:MATRIX]', 'Starting...');
     const service = this;
     const user = {
-      pubkey: service.settings.username,
+      pubkey: (service.settings.username) ? service.settings.username : this.key.pubkey,
       password: service.settings.password
     };
 
     this.client.once('sync', function _handleClientSync (state, prevState, res) {
       if (state === 'PREPARED') {
-        console.log("prepared");
+        service.emit('message', Message.fromVector(['MatrixClientSync', {
+          state: state
+        }]));
       } else {
-        console.error('Unhandled state:', state);
-        process.exit(1);
+        service.emit('error', Message.fromVector(['GenericError', {
+          message: `Unhandled sync event state: ${state}`
+        }]));
       }
     });
 
@@ -280,7 +272,7 @@ class Matrix extends Service {
     });
 
     await this._registerActor(user);
-    await this.client.startClient({ initialSyncLimit: 10 });
+    if (this.settings.connect) await this.client.startClient({ initialSyncLimit: 10 });
 
     this.status = 'STARTED';
     this.emit('message', '[SERVICES:MATRIX] Started!');
