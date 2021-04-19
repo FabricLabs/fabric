@@ -17,6 +17,7 @@ class KeyStore extends Actor {
   constructor (settings = {}) {
     super(settings);
     if (!settings.seed) settings.seed = process.env.FABRIC_SEED || null;
+
     this.key = new Key(settings);
     this.settings = merge({
       name: 'DefaultStore',
@@ -74,9 +75,11 @@ class KeyStore extends Actor {
   async commit () {
     const changes = monitor.generate(this.observer, true);
     if (changes) {
+      const actor = new Actor(changes);
       this.emit('changes', changes);
       this.emit('message', Message.fromVector(['StateChange', {
-        changes: changes
+        changes: changes,
+        signature: actor.sign().signature
       }]));
     }
     return this;

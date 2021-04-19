@@ -93,10 +93,10 @@ class Remote extends Resource {
     };
 
     // TODO: break out into independent auth module
-    if (this.config.username && this.config.password) {
+    if (this.config.username || this.config.password) {
       headers['Authorization'] = `Basic ${Buffer.from([
-        this.config.username,
-        this.config.password
+        this.config.username || '',
+        this.config.password || ''
       ].join(':')).toString('base64')}`;
     }
 
