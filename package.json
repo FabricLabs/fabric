@@ -36,7 +36,7 @@
     "make:viewer": "NODE_ENV=production webpack components/circuit-viewer.js -o assets/viewer.min.js",
     "report:coverage": "npm run make:coverage && nyc report --reporter=text-lcov > reports/coverage.lcov && codecov",
     "review:coverage": "npm run make:coverage && http-server -p 8000 reports/coverage",
-    "review:todo": "grep --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs -rEI \"TODO|FIXME\" . 2>/dev/null > reports/todo.txt",
+    "review:todo": "grep --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs -rEI \"TODO|FIXME\" . 2>/dev/null > reports/TODO.txt",
     "playnet": "node scripts/playnet.js",
     "start": "node scripts/app.js",
     "static": "npm run build:scripts && http-server -p 8000 assets",

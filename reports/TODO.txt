@@ -134,7 +134,6 @@
 ./types/state.js:    // TODO: document hidden properties
 ./types/state.js:    // TODO: re-enable the below, map security considerations
 ./types/state.js:      // TODO: order?
-./types/keystore.js:      version: 0 // TODO: consider changing `key` to Object in v:1
 ./types/keystore.js:        // TODO: recursively cast { type, data } tuples as Buffer
 ./types/secret.js:    // TODO: check and document upstream pattern
 ./types/cli.js:// TODO: use Jade to render pre-registered components
@@ -212,7 +211,7 @@
 ./tests/fabric.stack.js:      // TODO: migrate to Stack
 ./tests/fabric.wallet.js:        // TODO: replace with fixture
 ./tests/fixtures/lightning.js:// TODO: test same as before
-./package.json:    "review:todo": "grep --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs -rEI \"TODO|FIXME\" . 2>/dev/null > reports/todo.txt",
+./package.json:    "review:todo": "grep --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs -rEI \"TODO|FIXME\" . 2>/dev/null > reports/TODO.txt",
 ./examples/bitcoin.js:  // TODO: import these into core process logic
 ./examples/game.js:    // TODO: use fabric call
 ./examples/swarm.html:          <p>TODO: create entities on seed node
@@ -324,6 +323,8 @@
 ./services/bitcoin.js:    // TODO: listen for sync finalization
 ./services/bitcoin.js:    // TODO: test and verify append() on chain length 0 sets genesis
 ./services/bitcoin.js:      // TODO: subscribe to this event in CLI
+./services/bitcoin.js:      // TODO: loop through all providers
+./services/bitcoin.js:      // TODO: cleanup
 ./services/bitcoin.js:    // TODO: re-enable these
 ./services/bitcoin.js:    // TODO: re-enable SPV
 ./services/bitcoin.js:    // END TODO
@@ -335,5 +336,7 @@
 ./services/matrix.js:    // TODO: remove old use of `@data` while internal to Fabric
 ./services/ethereum.js:// TODO: re-evaluate inclusion of Ethereum toolchain
 ./services/ethereum.js:      // TODO: loop through all providers
+./services/lightning.js:      // TODO: loop through all providers
+./services/lightning.js:      // TODO: loop through all providers
 ./whitepaper.md:TODO
 ./whitepaper.md:TODO: include content hashes of links as they appear at
