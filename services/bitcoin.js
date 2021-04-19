@@ -3,6 +3,7 @@
 // Types
 const Collection = require('../types/collection');
 const Entity = require('../types/entity');
+const Message = require('../types/message');
 const Service = require('../types/service');
 const State = require('../types/state');
 const Chain = require('../types/chain');
@@ -24,6 +25,7 @@ const jayson = require('jayson');
 
 // For node...
 const bcoin = require('bcoin');
+const Actor = require('../types/actor');
 
 // Used to connect to the Bitcoin network directly
 const FullNode = bcoin.FullNode;
@@ -197,7 +199,7 @@ class Bitcoin extends Service {
     if (this.settings.fullnode) {
       return this.fullnode.chain.tip.hash.toString('hex');
     } else {
-      return this.chain.tip.toString('hex');
+      return (this.chain.tip) ? this.chain.tip.toString('hex') : null;
     }
   }
 
@@ -734,6 +736,20 @@ class Bitcoin extends Service {
     }
   }
 
+  async _syncBalanceFromOracle () {
+    const balance = await this._makeRPCRequest('getbalance');
+    this.balance = balance;
+    const commit = await this.commit();
+    const actor = new Actor(commit.data);
+    return {
+      type: 'OracleBalance',
+      data: {
+        content: balance
+      },
+      signature: actor.sign().signature
+    };
+  }
+
   async _syncWithRPC () {
     const self = this;
 
@@ -762,8 +778,10 @@ class Bitcoin extends Service {
         version: block.version
       });
 
-      self.emit('message', `Block Raw: ${JSON.stringify(block, null, '  ')}`);
-      self.emit('message', `Block Entity: ${JSON.stringify(entity, null, '  ')}`);
+      self.emit('block', Message.fromVector(['BitcoinBlock', {
+        type: 'Entity',
+        data: entity.data
+      }]));
 
       /* const posted = await self.chain.append({
         hash: blockID,
@@ -790,6 +808,14 @@ class Bitcoin extends Service {
     if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', `Starting for network "${this.settings.network}"...`);
 
     const self = this;
+    const service = this;
+    let secure = false;
+
+    // Assign Status
+    service.status = 'starting';
+
+    // Local Variables
+    let client = null;
 
     if (this.settings.fullnode) {
       this.fullnode.on('peer connect', function peerConnectHandler (peer) {
@@ -827,28 +853,35 @@ class Bitcoin extends Service {
     // Start nodes
     if (this.settings.fullnode) await this._startLocalNode();
     if (this.settings.mode === 'rpc') {
-      // create a client
+      const providers = service.settings.servers.map(x => new URL(x));
+      // TODO: loop through all providers
+      let provider = providers[0];
+      if (provider.protocol === 'https:') secure = true;
+      const auth = provider.username + ':' + provider.password;
+      const config = {
+        headers: { 'Authorization': `Basic ${Buffer.from(auth, 'utf8').toString('base64')}` },
+        host: provider.hostname,
+        port: provider.port
+      };
+
+      if (secure) {
+        client = jayson.client.https(config);
+      } else {
+        client = jayson.client.http(config);
+      }
+
+      // Link generated client to `rpc` property
+      service.rpc = client;
+
+      await this._syncBalanceFromOracle();
+
+      // Assign Heartbeat
+      // service.heartbeat = setInterval(service._heartbeat.bind(service), service.settings.interval);
+
+      // DEVCODE
+      // TODO: cleanup
       try {
-        self.rpc = jayson.client.http(this.settings.servers[0]);
-
-        const genesisID = await self._requestBlockAtHeight(0);
-        const height = await self._requestChainHeight();
-        const best = await self._requestBestBlockHash();
-        const genesis = await self._requestBlock(genesisID);
-
-        self.emit('warning', `GENESIS: ${genesisID}`);
-        self.emit('warning', `GENESIS BLOCK: ${JSON.stringify(genesis, null, '  ')}`);
-        self.emit('warning', `HEIGHT: ${height}`);
-        self.emit('warning', `BEST: ${best}`);
-
-        await self._syncWithRPC();
-
-        const unspent = await self._listUnspent();
-        self.emit('warning', `UNSPENT: ${JSON.stringify(unspent, null, '  ')}`);
-
-        for (let i = 0; i < unspent.length; i++) {
-          await self.wallet._addOutputToSpendables(unspent[i]);
-        }
+        // await self._syncWithRPC();
       } catch (exception) {
         self.emit('error', `Could not prepare session with RPC host: ${exception}`);
       }
