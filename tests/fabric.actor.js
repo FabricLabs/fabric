@@ -26,7 +26,7 @@ describe('@fabric/core/types/actor', function () {
 
       assert.ok(actor);
       assert.ok(actor.signature);
-      assert.strictEqual(actor.id, 'c9793947c211af0c48921172626683aec7591d0bf0210b282d68f5d82e599d73');
+      assert.strictEqual(actor.id, '4fc21835a13a9e1fb1471c68ba47412bd8bd905bf58900e47042a6a45ec15e91');
     });
 
     it('can sign some data with a known seed', function () {
@@ -39,7 +39,7 @@ describe('@fabric/core/types/actor', function () {
 
       assert.ok(actor);
       assert.ok(actor.signature);
-      assert.strictEqual(actor.id, 'ec23d93c07e7b479d19438b897e60010a615d68a6bb3ff4d50696cd3eeda945d');
+      assert.strictEqual(actor.id, '9d8a516d046906b237d664ad1ea7545c18028b74efe49685f145ff56b584b336');
     });
   });
 });

@@ -13,7 +13,16 @@ const Message = require('./message');
 const Tree = require('./tree');
 const Key = require('./key');
 
+/**
+ * Provides an encrypted datastore for generic object storage.
+ */
 class KeyStore extends Actor {
+  /**
+   * Create an instance of the Store.
+   * @param {FabricStoreConfiguration} [configuration] Settings to use.
+   * @param {String} [configuration.name="DefaultStore"] Name of the Store.
+   * @returns {KeyStore} Instance of the store.
+   */
   constructor (settings = {}) {
     super(settings);
     if (!settings.seed) settings.seed = process.env.FABRIC_SEED || null;
@@ -93,7 +102,6 @@ class KeyStore extends Actor {
 
       async function _handleOpen (err, db) {
         keystore.status = 'open';
-
         try {
           await keystore._getState();
         } catch (exception) {
@@ -161,6 +169,7 @@ class KeyStore extends Actor {
     const promise = new Promise(async (resolve, reject) => {
       try {
         const result = await keystore.db.get('/');
+        // TODO: actor.deserialize();
         const state = JSON.parse(result);
         // TODO: recursively cast { type, data } tuples as Buffer
         // where type === 'Buffer' && data
@@ -174,6 +183,11 @@ class KeyStore extends Actor {
     return promise;
   }
 
+  /**
+   * Saves an Object to the store.
+   * @param {Object} state State to store.
+   * @returns {Actor} The local instance of the provided State's {@link Actor}.
+   */
   async _setState (state) {
     if (!state) throw new Error('State must be provided.');
     if (!['open', 'deleting'].includes(this.status)) throw new Error(`Store is not writable.  Currently: ${this.status}`);

@@ -81,6 +81,17 @@ class Message extends Vector {
       this.type = input.type;
     }
 
+    // Set various properties to be unenumerable
+    for (let name of [
+      '@input',
+      '@entity',
+      '_state',
+      'config',
+      'settings',
+      'stack',
+      'observer'
+    ]) Object.defineProperty(this, name, { enumerable: false });
+
     return this;
   }
 

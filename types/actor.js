@@ -37,15 +37,35 @@ class Actor extends Entity {
     // Indicate Risk
     this.private = (this.key.seed || this.key.private);
 
+    // Internal State
+    this._state = {
+      '@type': 'Actor',
+      '@data': this.value
+    };
+
     // Chainable
     return this;
   }
 
   get id () {
-    return Hash256.digest(Buffer.from(JSON.stringify({
-      '@type': 'Actor',
-      '@data': this.value
-    }, null, '  '), 'utf8'));
+    const buffer = Buffer.from(this.preimage, 'hex');
+    return Hash256.digest(buffer);
+  }
+
+  get preimage () {
+    const input = {
+      '@type': 'FabricActorState',
+      '@data': this.state
+    };
+
+    const string = JSON.stringify(input, null, '  ');
+    const buffer = Buffer.from(string, 'utf8');
+
+    return Hash256.digest(buffer);
+  }
+
+  get state () {
+    return Object.assign({}, this._state);
   }
 
   /**
