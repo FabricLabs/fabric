@@ -25,7 +25,9 @@ class Vector extends Scribe {
     return this;
   }
 
-  static fromObjectString (input) {
+  static fromObjectString (input = '') {
+    if (!input) throw new Error('Must provide input.');
+    if (typeof input !== 'string') input = JSON.stringify(input);
     let result = [];
     let object = JSON.parse(input);
 

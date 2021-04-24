@@ -1,10 +1,26 @@
 'use strict';
 
+// Dependencies
 const fs = require('fs');
+const { readFile } = require('fs').promises;
 
-const lex = require('jade-lexer');
-const parse = require('jade-parser');
+// TODO: rewrite these / use lexical parser
+// const lex = require('jade-lexer');
+// const parse = require('jade-parser');
+const { run } = require('minsc');
+
+// JavaScript & TypeScript ASTs
 const AST = require('@webassemblyjs/ast');
+const {
+  Project,
+  ScriptTarget
+} = require('ts-morph');
+
+// Fabric Types
+const Entity = require('./entity');
+const Hash256 = require('./hash256');
+const Machine = require('./machine');
+const Ethereum = require('../services/ethereum');
 
 // TODO: have Lexer review
 // TODO: render the following:
@@ -31,17 +47,142 @@ const AST = require('@webassemblyjs/ast');
 
 /**
  * Compilers build interfaces for users of Fabric applications.
- * @type {Object}
+ * @type {Actor}
+ * @property {AST} ast Compiler's current AST.
+ * @property {Entity} entity Compiler's current {@link Entity}.
  */
 class Compiler {
   /**
    * Create a new Compiler.
-   * @param  {Object} [settings={}] Configuration.
-   * @return {Compiler}               Instance of the compiler.
+   * @param  {Object} settings={} Configuration.
+   * @param  {Buffer} settings.body Body of the input program to compile.
+   * @return {Compiler}             Instance of the compiler.
    */
   constructor (settings = {}) {
-    this.settings = Object.assign({}, settings);
+    this.settings = Object.assign({
+      ast: null,
+      body: null,
+      type: 'javascript',
+      inputs: [],
+      outputs: []
+    }, settings);
+
+    this.entity = new Entity(this.settings);
+    this.machine = new Machine(this.settings);
+    this.project = new Project({
+      compilerOptions: {
+        target: ScriptTarget.ES2020
+      }
+    });
+
+    this.ast = null;
+    this.body = null;
+    this.screen = null;
+
+    this.entities = {};
+    this.abstracts = {};
+
     return this;
+  }
+
+  get integrity () {
+    return `sha256-${Hash256.digest(this.body)}`;
+  }
+
+  /**
+   * Creates a new Compiler instance from a JavaScript contract.
+   * @param {Buffer} body Content of the JavaScript to evaluate.
+   * @returns Compiler
+   */
+  static _fromJavaScript (body) {
+    if (!(body instanceof Buffer)) throw new Error('JavaScript must be passed as a buffer.');
+    return new Compiler({ body, type: 'javascript' });
+  }
+
+  static _fromMinsc (body) {
+    if (!(body instanceof Buffer)) throw new Error('JavaScript must be passed as a buffer.');
+    return new Compiler({ body, type: 'minsc' });
+  }
+
+  static _fromSolidity (body) {
+    if (!(body instanceof Buffer)) throw new Error('JavaScript must be passed as a buffer.');
+    return new Compiler({ body, type: 'solidity' });
+  }
+
+  async start () {
+    const promises = this.settings.inputs.map(x => readFile(x));
+    const contents = await Promise.all(promises);
+    const entities = contents.map(x => new Entity(x));
+    const abstracts = contents.map(x => this._getJavaScriptAST(x));
+
+    // Assign Body
+    const initial = this.settings.body || Buffer.from('', 'utf8');
+    const body = Buffer.concat([ initial ].concat(contents));
+    const entity = new Entity(body);
+    const abstract = this._getJavaScriptAST(body);
+
+    this.entities[entity.id] = entity;
+    this.abstracts[entity.id] = abstract;
+
+    // Assign all Entities, Abstracts
+    for (let i = 0; i < entities.length; i++) {
+      this.entities[entities[i].id] = entities[i];
+      this.abstracts[entities[i].id] = abstracts[i];
+    }
+
+    this.body = body;
+
+    return this;
+  }
+
+  _getScriptAST (input) {
+    throw new Error('Not yet supported.');
+    return null;
+  }
+
+  /**
+   * Parse a {@link Buffer} of JavaScript into an Abstract Syntax Tree ({@link AST}).
+   * @param {Buffer} input Input JavaScript to parse.
+   * @returns {AST}
+   */
+  _getJavaScriptAST (input) {
+    if (typeof input === 'string') input = Buffer.from(input, 'utf8');
+    const ast = AST.program(input);
+    return {
+      '@type': 'AST',
+      '@language': 'JavaScript',
+      input: input,
+      interpreters: {
+        'WebAssembly': ast
+      }
+    };
+  }
+
+  _getMinscAST (input) {
+    const output = run(input);
+    return {
+      '@type': 'AST',
+      '@language': 'Minsc',
+      input: input,
+      script: output,
+      interpreters: {
+        'Minsc': output
+      }
+    };
+  }
+
+  _getSolidityAST (input) {
+    const ethereum = new Ethereum();
+    const result = ethereum.execute(body);
+    return {
+      '@type': 'AST',
+      '@language': 'Solidity',
+      input: input,
+      output: result,
+      interpreters: {
+        'EthereumJSVM': result
+      }
+    };
   }
 
   _fromPath (filename) {
@@ -52,14 +193,16 @@ class Compiler {
     return html;
   }
 
-  _fromJavaScript (name) {
-    let body = fs.readFileSync(`${__dirname}/../contracts/${name}`);
-    let ast = AST.program(body);
-    console.log('body:', body);
-    console.log('ast:', ast);
+  render () {
+    if (this.screen) {
+      return this._renderToTerminal();
+    } else {
+      return this._renderToHTML();
+    }
   }
 
-  render (ast, screen, ui, eventHandlers, depth = 0) {
+  // TODO: @melnx to refactor into f(x) => y
+  _renderToTerminal (ast, screen, ui, eventHandlers, depth = 0) {
     let result = '';
 
     if (ast.type === 'Block') {
@@ -120,6 +263,25 @@ class Compiler {
     }
 
     return result;
+  }
+
+  _renderToHTML (state = {}) {
+    return `<DOCTYPE html>
+<html>
+  <head>
+    <title>Fabric</title>
+  </head>
+  <body>
+    <h1>Empty Document</h1>
+    <p>This document is a placeholder.</p>
+    <div id="body">
+      <textarea name="body">${this.body}</textarea>
+    </div>
+    <fabric-unsafe-javascript>
+      <script integrity="${this.integrity}">${this.body}</script>
+    </fabric-unsafe-javascript>
+  </body>
+</html>`;
   }
 }
 

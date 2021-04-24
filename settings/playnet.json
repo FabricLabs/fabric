@@ -1,11 +1,41 @@
 {
   "name": "@network/playnet",
   "network": "testnet",
+  "anchor": "BTC",
   "peers": [
     "02de546951cee477c90c36d38615a338123a7e1fe190f3c117b028f60359b5bc7e@hub.fabric.pub:7777",
     "02512b88b368b43c93eeb725439df33fa6e30a2b40e22bba7844bc22f675afc76a@54.193.117.227:7777",
     "02a1933ff21f2d588285f4dc759402e02ae2ad15840243ce79fbb213eaca2b3724@95.217.115.29:7777"
   ],
+  "mode": "rpc",
+  "servers": [
+    "http://YOUR_USERNAME:YOUR_PASSWORD@localhost:18443"
+  ],
+  "currencies": [
+    {
+      "name": "BTCA",
+      "symbol": "BTCA",
+      "service": "btca"
+    }, {
+      "name": "BTCB",
+      "symbol": "BTCB",
+      "service": "btcb"
+    }
+  ],
+  "btca": {
+    "name": "BTCA",
+    "mode": "rpc",
+    "servers": [
+      "http://YOUR_USERNAME:YOUR_PASSWORD@localhost:18443"
+    ]
+  },
+  "btcb": {
+    "name": "BTCB",
+    "mode": "rpc",
+    "servers": [
+      "http://YOUR_USERNAME:YOUR_PASSWORD@localhost:19443"
+    ]
+  },
   "key": {
     "@comment": "Add your 24-word seed to the field below to restore from the mainchain.",
     "seed": ""

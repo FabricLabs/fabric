@@ -26,6 +26,7 @@ const Matrix = require('../services/matrix');
 // Contracts
 const OP_START = require('../contracts/node');
 const OP_CHAT = require('../contracts/chat');
+const OP_EXCHANGE = require('../contracts/exchange');
 const OP_TEST = require('../contracts/test');
 
 // Singletons
@@ -46,6 +47,7 @@ async function main () {
   const COMMANDS = {
     'START': OP_START,
     'CHAT': OP_CHAT,
+    'EXCHANGE': OP_EXCHANGE,
     'TEST': OP_TEST
   };
 
@@ -64,6 +66,10 @@ async function main () {
   program.command('chat')
     .description('Open P2P chat.')
     .action(COMMANDS['CHAT'].bind(program));
+
+  program.command('exchange')
+    .description('Runs a local exchange node.')
+    .action(COMMANDS['EXCHANGE'].bind(program));
 
   program.command('test')
     .description('Run the test chain.')
