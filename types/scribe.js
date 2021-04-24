@@ -27,14 +27,11 @@ class Scribe extends State {
       tags: []
     }, config);
 
-    this.state = new State(config);
+    // internal state
+    this._state = new State(config);
 
     // signal ready
     this.status = 'ready';
-
-    Object.defineProperty(this, 'tags', {
-      enumerable: false
-    });
 
     return this;
   }
@@ -153,6 +150,7 @@ class Scribe extends State {
     await this.open();
     await this.commit();
 
+    // TODO: enable
     // this.trust(this.state);
 
     this.status = 'started';

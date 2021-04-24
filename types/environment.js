@@ -29,6 +29,10 @@ class Environment extends Entity {
     return fs.existsSync(this.settings.path);
   }
 
+  makeContractStore () {
+    fs.mkdirSync(this.settings.store);
+  }
+
   makeStore () {
     fs.mkdirSync(this.settings.store);
   }
@@ -42,6 +46,21 @@ class Environment extends Entity {
     } catch (err) {
       fs.closeSync(fs.openSync(this.settings.path, 'w'));
     }
+  }
+
+  readContracts () {
+    const prefix = `${__dirname}/..`;
+    return fs.readdirSync(`${prefix}/contracts`).filter((x) => {
+      const parts = x.split('.');
+      return (parts[parts.length - 1] === 'js');
+    }).map((x) => {
+      const contract = fs.readFileSync(`${prefix}/contracts/${x}`);
+      const entity = new Entity(contract);
+      return {
+        '@id': entity.id,
+        '@data': entity.data
+      };
+    });
   }
 
   readVariable (name) {

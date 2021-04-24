@@ -1,10 +1,15 @@
 'use strict';
 
+const fs = require('fs');
 const Compiler = require('../types/compiler');
+const target = process.argv[2] || './contracts/node.js';
+const data = fs.readFileSync(target);
 
 async function main () {
-  let compiler = new Compiler();
-  compiler._fromJavaScript('sample.js');
+  let compiler = Compiler._fromJavaScript(data);
+  console.log('[SCRIPTS:AST]', compiler);
 }
 
-main();
+main().catch((exception) => {
+  console.error('[SCRIPTS:AST]', 'Main Process Exception:', exception);
+});

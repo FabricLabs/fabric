@@ -1,21 +1,29 @@
 # Summary
+Welcome to Fabric!
 
 ## Overview
-* [Introduction][readme]
-* [The Fabric Welcome Package][welcome]
+* [🤔 Introduction][readme]
+* [👀 Quick Start][quickstart]
+* [🖨️ API Reference Sheet][api-md]
+* [🤯 Developer Guide][developers]
 
 ## Documentation
-* [Code Samples][api-examples]
-* [API Reference][api-md]
-* [API Documentation][api-docs]
+* [📜 Code Samples][api-examples]
+* [🖥️ API Documentation][api-docs]
+* [🏦 Services Overview][services]
 
 ## Archive
-* [Whitepaper (2015)][whitepaper-2015]
+* [📄 Whitepaper (latest)][whitepaper]
+* [📃 Whitepaper (2015)][whitepaper-2015]
 
-[api-docs]: https://dev.fabric.pub/docs
 [api-md]: API.md
+[api-docs]: https://dev.fabric.pub/docs
 [api-examples]: https://dev.fabric.pub/examples
 
 [readme]: README.md
 [welcome]: WELCOME.md
-[whitepaper-2015]: whitepaper.md
+[quickstart]: QUICKSTART.md
+[whitepaper]: whitepaper.md
+[whitepaper-2015]: whitepaper-2015.md
+[developers]: DEVELOPERS.md
+[services]: SERVICES.md

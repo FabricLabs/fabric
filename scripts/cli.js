@@ -21,12 +21,13 @@ const Machine = require('../types/machine');
 const Environment = require('../types/environment');
 
 // Services
-const Bitcoin = require('../services/bitcoin');
 const Matrix = require('../services/matrix');
 
 // Contracts
 const OP_START = require('../contracts/node');
 const OP_CHAT = require('../contracts/chat');
+const OP_EXCHANGE = require('../contracts/exchange');
+const OP_TEST = require('../contracts/test');
 
 // Singletons
 const wallet = new Wallet();
@@ -34,24 +35,6 @@ const environment = new Environment();
 
 // ### [!!!] Toxic Waste [!!!]
 let seed = null;
-
-// Settings
-const settings = {
-  listen: true,
-  peers: [].concat(playnet.peers),
-  services: [
-    'matrix'
-  ],
-  port: PORT,
-  seed: SEED,
-  key: {
-    SEED,
-  },
-  // TODO: remove Wallet-specfic configuration
-  wallet: {
-    seed: SEED
-  }
-};
 
 // Define Main Program
 async function main () {
@@ -63,7 +46,9 @@ async function main () {
 
   const COMMANDS = {
     'START': OP_START,
-    'CHAT': OP_CHAT
+    'CHAT': OP_CHAT,
+    'EXCHANGE': OP_EXCHANGE,
+    'TEST': OP_TEST
   };
 
   // Argument Parsing
@@ -73,6 +58,7 @@ async function main () {
   // Configure Program
   program.name('fabric');
 
+  // Declare Commands
   program.command('start', { isDefault: true })
     .description('Initiate peer bootstrapping.')
     .action(COMMANDS['START'].bind(program));
@@ -81,23 +67,41 @@ async function main () {
     .description('Open P2P chat.')
     .action(COMMANDS['CHAT'].bind(program));
 
+  program.command('exchange')
+    .description('Runs a local exchange node.')
+    .action(COMMANDS['EXCHANGE'].bind(program));
+
+  program.command('test')
+    .description('Run the test chain.')
+    .action(COMMANDS['TEST'].bind(program));
+
+  // Options
   program.option('--earn', 'Enable earning.');
   program.option('--port <PORT NUMBER>', 'Specify the Fabric P2P communication port.');
   program.option('--seed <SEED PHRASE>', 'Load from mnemonic seed.');
   program.option('--xpub <XPUB>', 'Load from xpub.');
+  program.option('--anchor <GENESIS>', 'Specify the anchor chain.');
   program.option('--receive', 'Generate a fresh receiving address.');
-  program.option('--trust <PUBKEY@host:port>', 'Generate a fresh receiving address.');
-  program.option('--force', 'Force generation of new seed.');
+  program.option('--trust <PUBKEY@host:port>', 'Explicit trust of events from this peer.');
+  program.option('--force', 'Force dangerous behavior.');
   program.option('--password <PASSWORD>', 'Specify the encryption passphrase.');
   program.option('-n, --keygen', 'Generate a new seed.  Consider the privacy of your surroundings!');
+
+  // Parse Arguments
   program.parse(process.argv);
 
+  // Read Environment
   if (!environment.walletExists() || (program.keygen && program.force)) {
     seed = await wallet._createSeed();
   } else {
     seed = environment.readWallet();
   }
 
+  // TODO: read & test contracts
+  // const contracts = environment.readContracts();
+  // console.log('contracts:', contracts);
+
+  // Behaviors
   if (program.keygen) {
     // ### [!!!] Toxic Waste [!!!]
     if (!environment.walletExists() || program.force) {
@@ -130,6 +134,8 @@ async function main () {
 
     // prevent further execution
     process.exit();
+  } else if (program.test) {
+
   } else if (program.receive) {
     const wallet = new Wallet({
       key: {

@@ -1,15 +1,15 @@
 'use strict';
 
+// Constants
 const MAX_CHAT_MESSAGE_LENGTH = 2048;
 
-// Dependencies
+// External Dependencies
 const merge = require('lodash.merge');
 
-// Types
-const App = require('../types/app');
-const Entity = require('./entity');
-const Peer = require('../types/peer');
-const Message = require('../types/message');
+// Fabric Types
+const App = require('./app');
+const Peer = require('./peer');
+const Message = require('./message');
 
 // Services
 const Bitcoin = require('../services/bitcoin');
@@ -31,13 +31,22 @@ const blessed = require('blessed');
  * the Fabric network using a terminal emulator.
  */
 class CLI extends App {
+  /**
+   * Create a terminal-based interface for a {@link User}.
+   * @param {Object} [settings] Configuration values.
+   * @param {Array} [settings.currencies] List of currencies to support.
+   */
   constructor (settings = {}) {
     super(settings);
 
     // Assign Settings
     this.settings = merge({
       listen: false,
-      services: []
+      services: [],
+      currencies: [ {
+        name: 'Bitcoin',
+        symbol: 'BTC'
+      } ]
     }, this.settings, settings);
 
     // Internal Components
@@ -66,6 +75,7 @@ class CLI extends App {
 
     // State
     this._state = {
+      anchor: 'BTC',
       chains: {}
     };
 
@@ -73,6 +83,13 @@ class CLI extends App {
     return this;
   }
 
+  async bootstrap () {
+    return true;
+  }
+
+  /**
+   * Starts (and renders) the CLI.
+   */
   async start () {
     // Register Internal Commands
     this._registerCommand('help', this._handleHelpRequest);
@@ -89,6 +106,8 @@ class CLI extends App {
     this._registerCommand('service', this._handleServiceCommand);
     this._registerCommand('sync', this._handleChainSyncRequest);
     this._registerCommand('send', this._handleSendRequest);
+
+    await this.bootstrap();
 
     // Render UI
     this.render();
@@ -131,6 +150,9 @@ class CLI extends App {
     this.emit('ready');
   }
 
+  /**
+   * Disconnect all interfaces and exit the process.
+   */
   async stop () {
     await this.node.stop();
     return process.exit(0);
@@ -166,6 +188,10 @@ class CLI extends App {
 
   async _handleBitcoinError (...msg) {
     this._appendError(msg);
+  }
+
+  async _handleBitcoinWarning (...msg) {
+    this._appendWarning(msg);
   }
 
   async _handleBitcoinReady (bitcoin) {
@@ -416,7 +442,7 @@ class CLI extends App {
 
   async _handleReceiveAddressRequest () {
     const address = await this.node.wallet.getUnusedAddress();
-    this._appendMessage(`{bold}Receive address:{/bold}: ${JSON.stringify(address.toString(), null, '  ')}`);
+    this._appendMessage(`{bold}Receive address{/bold}: ${JSON.stringify(address.toString(), null, '  ')}`);
     return false;
   }
 
@@ -424,7 +450,7 @@ class CLI extends App {
     switch (params[1]) {
       case 'list':
       default:
-        this._appendMessage(`{bold}Available Services:{/bold}: ${JSON.stringify(Object.keys(this.services), null, '  ')}`);
+        this._appendMessage(`{bold}Available Services{/bold}: ${JSON.stringify(Object.keys(this.services), null, '  ')}`);
         break;
     }
   }
@@ -490,7 +516,7 @@ class CLI extends App {
 
   _registerService (name, type) {
     const self = this;
-    const service = new type(this.settings);
+    const service = new type(merge({}, this.settings, this.settings[name]));
 
     if (this.services[name]) {
       return this._appendWarning(`Service already registered: ${name}`);
@@ -502,8 +528,12 @@ class CLI extends App {
       self._appendError(`Service "${name}" emitted error: ${JSON.stringify(msg, null, '  ')}`);
     });
 
+    this.services[name].on('warning', function (msg) {
+      self._appendWarning(`Service warning from ${name}: ${JSON.stringify(msg, null, '  ')}`);
+    });
+
     this.services[name].on('message', function (msg) {
-      self._appendMessage(`service message from ${name}: ${JSON.stringify(msg, null, '  ')}`);
+      self._appendMessage(`Service message from ${name}: ${JSON.stringify(msg, null, '  ')}`);
       self.node.relayFrom(self.node.id, Message.fromVector(['ChatMessage', JSON.stringify(msg)]));
     });
 
@@ -707,7 +737,7 @@ class CLI extends App {
       self.elements['prompt'].oldFocus();
     }
 
-    //focus when clicked
+    // focus when clicked
     self.elements['form'].on('click', function () {
       self.elements['prompt'].focus();
     });

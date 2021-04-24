@@ -5,6 +5,7 @@ const Matrix = require('../services/matrix');
 
 const settings = require('../settings/test');
 const options = Object.assign({}, settings, {
+  connect: false,
   network: 'regtest',
   fullnode: true,
   verbosity: 2
@@ -35,7 +36,9 @@ describe('@fabric/core/services/matrix', function () {
         assert.ok(matrix);
       }
 
-      await test();
+      test().catch((exception) => {
+        console.error(exception);
+      });
     });
   });
 });

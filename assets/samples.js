@@ -1,7 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
-const fabric = require('../lib/fabric');
+const fabric = require('../types/fabric');
 const hello = 'Hello, world!';
 const encoded = JSON.stringify(hello);
 const sample = { input: encoded };

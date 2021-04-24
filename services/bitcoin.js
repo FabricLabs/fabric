@@ -3,6 +3,7 @@
 // Types
 const Collection = require('../types/collection');
 const Entity = require('../types/entity');
+const Message = require('../types/message');
 const Service = require('../types/service');
 const State = require('../types/state');
 const Chain = require('../types/chain');
@@ -13,21 +14,27 @@ const Consensus = require('../types/consensus');
 const BitcoinBlock = require('../types/bitcoin/block');
 const BitcoinTransaction = require('../types/bitcoin/transaction');
 
+const NODEA = require('../settings/node-a');
+const NODEB = require('../settings/node-b');
+
 // External Dependencies
+const jayson = require('jayson');
 // For the browser
 // ATTN: breaks after 1.0.2
 // const bcoin = require('bcoin/lib/bcoin-browser');
 
 // For node...
 const bcoin = require('bcoin');
+const Actor = require('../types/actor');
 
-// Bitcoin types.
+// Used to connect to the Bitcoin network directly
 const FullNode = bcoin.FullNode;
 const NetAddress = bcoin.net.NetAddress;
 
 /**
  * Manages interaction with the Bitcoin network.
- * @augments Interface
+ * @module @fabric/core/services/bitcoin
+ * @augments Service
  */
 class Bitcoin extends Service {
   /**
@@ -49,13 +56,19 @@ class Bitcoin extends Service {
     // Local Settings
     this.settings = Object.assign({
       name: '@services/bitcoin',
+      mode: 'rpc',
       network: 'regtest',
+      path: './stores/bitcoin-regtest',
       listen: false,
       fullnode: false,
       nodes: ['127.0.0.1'],
       seeds: ['127.0.0.1'],
+      servers: [
+        'http://username:password@localhost:18443'
+      ],
       peers: [],
       port: 18444,
+      interval: 10 * 60 * 1000, // every 10 minutes, write a checkpoint
       verbosity: 2
     }, settings);
 
@@ -68,7 +81,7 @@ class Bitcoin extends Service {
     // Internal Services
     this.provider = new Consensus({ provider: 'bcoin' });
     this.wallet = new Wallet(this.settings);
-    this.chain = new Chain();
+    this.chain = new Chain(this.settings);
 
     // ## Collections
     // ### Blocks
@@ -142,6 +155,7 @@ class Bitcoin extends Service {
       workers: true
     });
 
+    // Define Bitcoin P2P Messages
     this.define('VersionPacket', { type: 0 });
     this.define('VerAckPacket', { type: 1 });
     this.define('PingPacket', { type: 2 });
@@ -151,21 +165,47 @@ class Bitcoin extends Service {
     this.define('FeeFilterPacket', { type: 21 });
     this.define('SendCmpctPacket', { type: 22 });
 
+    // Chainable
     return this;
   }
 
+  /**
+   * Provides bcoin's implementation of `TX` internally.  This static may be
+   * removed in the future.
+   */
   static get Transaction () {
     return bcoin.TX;
   }
 
+  /**
+   * Provides bcoin's implementation of `MTX` internally.  This static may be
+   * removed in the future.
+   */
+  static get MutableTransaction () {
+    return bcoin.TX;
+  }
+
+  /**
+   * User Agent string for the Bitcoin P2P network.
+   */
   get UAString () {
     return 'Portal/Bridge 0.1.0-dev (@fabric/core#0.1.0-dev)';
   }
 
+  /**
+   * Chain tip (block hash of the chain with the most Proof of Work)
+   */
   get tip () {
-    return this.fullnode.chain.tip.hash.toString('hex');
+    if (this.settings.fullnode) {
+      return this.fullnode.chain.tip.hash.toString('hex');
+    } else {
+      return (this.chain.tip) ? this.chain.tip.toString('hex') : null;
+    }
   }
 
+  /**
+   * Chain height (`=== length - 1`)
+   */
   get height () {
     return this.fullnode.chain.height;
   }
@@ -651,6 +691,116 @@ class Bitcoin extends Service {
     }
   }
 
+  async _makeRPCRequest (method, params = []) {
+    const self = this;
+    return new Promise((resolve, reject) => {
+      self.rpc.request(method, params, function (err, response) {
+        if (err) return reject(err);
+        return resolve(response.result);
+      });
+    });
+  }
+
+  async _requestBestBlockHash () {
+    return this._makeRPCRequest('getbestblockhash', []);
+  }
+
+  async _requestBlock (hash) {
+    return this._makeRPCRequest('getblock', [hash]);
+  }
+
+  async _requestBlockAtHeight (height) {
+    return this._makeRPCRequest('getblockhash', [height]);
+  }
+
+  async _requestChainHeight () {
+    return this._makeRPCRequest('getblockcount', []);
+  }
+
+  async _listUnspent () {
+    return this._makeRPCRequest('listunspent', []);
+  }
+
+  async _signRawTransactionWithWallet (rawTX, prevouts = []) {
+    return this._makeRPCRequest('signrawtransaction', [rawTX, JSON.stringify(prevouts)]);
+  }
+
+  async _checkRPCBlockNumber () {
+    try {
+      const best = await this._requestBestBlockHash();
+      if (best !== this.best) {
+        this.best = best;
+      }
+    } catch (exception) {
+      this.emit('error', `[${this.settings.name}] Could not make request to RPC host: ${JSON.stringify(exception)}`);
+    }
+  }
+
+  async _syncBalanceFromOracle () {
+    const balance = await this._makeRPCRequest('getbalance');
+    this.balance = balance;
+    const commit = await this.commit();
+    const actor = new Actor(commit.data);
+    return {
+      type: 'OracleBalance',
+      data: {
+        content: balance
+      },
+      signature: actor.sign().signature
+    };
+  }
+
+  async _syncWithRPC () {
+    const self = this;
+
+    // const genesisID = await self._requestBlockAtHeight(0);
+    // const genesis = await self._requestBlock(genesisID);
+    const height = await self._requestChainHeight();
+    // const best = await self._requestBestBlockHash();
+
+    // TODO: test and verify append() on chain length 0 sets genesis
+    /* await self.chain._setGenesis({
+      hash: genesisID
+    }); */
+
+    for (let i = 0; i <= height; i++) {
+      const blockID = await self._requestBlockAtHeight(i);
+      const block = await self._requestBlock(blockID);
+
+      const entity = new Entity({
+        hash: blockID,
+        bits: block.bits,
+        nonce: block.nonce,
+        time: block.time,
+        size: block.size,
+        parent: block.previousblockhash,
+        weight: block.weight,
+        version: block.version
+      });
+
+      self.emit('block', Message.fromVector(['BitcoinBlock', {
+        type: 'Entity',
+        data: entity.data
+      }]));
+
+      /* const posted = await self.chain.append({
+        hash: blockID,
+        bits: block.bits,
+        nonce: block.nonce,
+        time: block.time,
+        size: block.size,
+        weight: block.weight,
+        version: block.version
+      });
+
+      // TODO: subscribe to this event in CLI
+      self.emit('message', {
+        '@type': 'BlockNotification',
+        '@data': posted
+      }); */
+    }
+  }
+
   /**
    * Start the Bitcoin service, including the initiation of outbound requests.
    */
@@ -658,20 +808,34 @@ class Bitcoin extends Service {
     if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', `Starting for network "${this.settings.network}"...`);
 
     const self = this;
+    const service = this;
+    let secure = false;
 
-    this.fullnode.on('peer connect', function peerConnectHandler (peer) {
-      console.warn('[SERVICES:BITCOIN]', 'Peer connected to Full Node:', peer);
-    });
+    // Assign Status
+    service.status = 'starting';
 
-    this.fullnode.on('block', this._handleBlockMessage.bind(this));
-    this.fullnode.on('connect', this._handleConnectMessage.bind(this));
+    // Local Variables
+    let client = null;
 
-    this.fullnode.on('tx', async function fullnodeTxHandler (tx) {
-      self.emit('message', `tx event: ${JSON.stringify(tx)}`);
-    });
+    if (this.settings.fullnode) {
+      this.fullnode.on('peer connect', function peerConnectHandler (peer) {
+        self.emit('warning', `[SERVICES:BITCOIN]', 'Peer connected to Full Node: ${peer}`);
+      });
+
+      this.fullnode.on('block', this._handleBlockMessage.bind(this));
+      this.fullnode.on('connect', this._handleConnectMessage.bind(this));
+
+      this.fullnode.on('tx', async function fullnodeTxHandler (tx) {
+        self.emit('message', `tx event: ${JSON.stringify(tx)}`);
+      });
+    }
 
     this.wallet.on('message', function (msg) {
       self.emit('message', `wallet msg: ${msg}`);
+    });
+
+    this.wallet.on('warning', function (msg) {
+      self.emit('warning', `wallet warning: ${msg}`);
     });
 
     this.wallet.on('error', function (msg) {
@@ -687,7 +851,43 @@ class Bitcoin extends Service {
     await this.chain.start();
 
     // Start nodes
-    await this._startLocalNode();
+    if (this.settings.fullnode) await this._startLocalNode();
+    if (this.settings.mode === 'rpc') {
+      const providers = service.settings.servers.map(x => new URL(x));
+      // TODO: loop through all providers
+      let provider = providers[0];
+      if (provider.protocol === 'https:') secure = true;
+      const auth = provider.username + ':' + provider.password;
+      const config = {
+        headers: { 'Authorization': `Basic ${Buffer.from(auth, 'utf8').toString('base64')}` },
+        host: provider.hostname,
+        port: provider.port
+      };
+
+      if (secure) {
+        client = jayson.client.https(config);
+      } else {
+        client = jayson.client.http(config);
+      }
+
+      // Link generated client to `rpc` property
+      service.rpc = client;
+
+      await this._syncBalanceFromOracle();
+
+      // Assign Heartbeat
+      // service.heartbeat = setInterval(service._heartbeat.bind(service), service.settings.interval);
+
+      // DEVCODE
+      // TODO: cleanup
+      try {
+        // await self._syncWithRPC();
+      } catch (exception) {
+        self.emit('error', `Could not prepare session with RPC host: ${exception}`);
+      }
+
+      self.heartbeat = setInterval(self._checkRPCBlockNumber.bind(self), self.settings.interval);
+    }
 
     // TODO: re-enable these
     // await this._connectToSeedNodes();
@@ -699,9 +899,12 @@ class Bitcoin extends Service {
     // this.peer.tryOpen();
     // END TODO
 
-    let genesis = await this.fullnode.getBlock(0);
-    // TODO: refactor Chain
-    await this.chain._setGenesis(genesis.toJSON());
+    if (this.settings.fullnode) {
+      let genesis = await this.fullnode.getBlock(0);
+
+      // TODO: refactor Chain
+      await this.chain._setGenesis(genesis.toJSON());
+    }
 
     this.emit('ready', {
       tip: this.tip
