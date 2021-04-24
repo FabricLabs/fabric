@@ -81,5 +81,22 @@ describe('@fabric/core/types/interface', function () {
       assert.equal(cycles[0], script[0]);
       assert.equal(cycles[1], script[1]);
     });
+
+    it('can share some state', async function () {
+      const alice = new Interface(config);
+      const bob = new Interface(config);
+
+      const genesis = alice.shared();
+      const replica = bob.shared();
+
+      alice.on('commit', function (commit) {
+        console.log('got commit:', commit);
+      });
+
+      alice.writeTo(0, 'Hello, world!');
+
+      assert.ok(genesis);
+      assert.ok(replica);
+    });
   });
 });

@@ -2,34 +2,38 @@
   "name": "@fabric/core",
   "version": "0.1.0-RC1",
   "description": "experimental p2p framework",
-  "main": "lib/fabric.js",
+  "main": "types/fabric.js",
   "module": "index.js",
+  "bin": {
+    "fabric": "scripts/cli.js"
+  },
   "directories": {
     "doc": "docs",
     "example": "examples",
     "test": "tests"
   },
   "scripts": {
-    "book": "npm run make:docs && ecstatic _book",
+    "book": "npm run dev",
     "build": "npm run make:all",
     "build:all": "npm run make:all",
     "chat": "node scripts/chat.js",
     "cli": "node scripts/cli.js",
     "coverage": "nyc npm test",
-    "docs": "npm run make:api && ecstatic docs",
-    "examples": "npm run make:examples && ecstatic assets/examples",
+    "dev": "npm run make:dev && ecstatic _book",
+    "docs": "npm run make:api && npm run make:docs && ecstatic docs",
+    "examples": "npm run make:examples && ecstatic examples",
     "keygen": "node scripts/keygen.js",
     "local": "npm run build && ecstatic ./assets",
-    "make:all": "npm run make:api && npm run make:service && npm run make:app && npm run make:docs && npm run make:lib",
-    "make:api": "npm run parse:api && node_modules/.bin/jsdoc -c jsdoc.json index.js types services README.md -d docs/ && glob-run js-beautify --indent-size 2 -r docs/*.html",
+    "make:all": "npm run make:service && npm run make:app && npm run make:dev && npm run make:lib",
+    "make:api": "jsdoc2md --configure jsdoc.json --files types/*.js services/*.js README.md > API.md",
     "make:app": "webpack --progress examples/app.js -o assets/app.js",
     "make:coverage": "npm run coverage && nyc report --reporter html",
-    "make:docs": "gitbook install && npm run parse:api && npm run make:examples && gitbook build",
-    "make:examples": "docco --output assets/examples/ examples/*.js",
+    "make:dev": "gitbook install && npm run make:examples && npm run make:docs && gitbook build && cp -rf docs _book/ && cp -rf examples _book/ && glob-run js-beautify --indent-size 2 -r _book/**.html",
+    "make:docs": "npm run make:api && node_modules/.bin/jsdoc -c jsdoc.json services types API.md -d docs/ && glob-run js-beautify --indent-size 2 -r docs/**.html",
+    "make:examples": "docco --output examples/ examples/*.js && glob-run js-beautify --indent-size 2 -r examples/*.html",
     "make:lib": "NODE_ENV=production webpack lib/fabric.js -o assets/fabric.min.js",
     "make:service": "NODE_ENV=production webpack --target=webworker examples/service.js -o assets/service.js",
     "make:viewer": "NODE_ENV=production webpack components/circuit-viewer.js -o assets/viewer.min.js",
-    "parse:api": "jsdoc2md --configure jsdoc.json --files index.js types/** README.md > API.md",
     "report:coverage": "npm run make:coverage && nyc report --reporter=text-lcov > reports/coverage.lcov && codecov",
     "review:coverage": "npm run make:coverage && ecstatic reports/coverage",
     "review:todo": "grep --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs -rEI \"TODO|FIXME\" . 2>/dev/null > reports/todo.txt",
@@ -42,7 +46,7 @@
     "test": "NODE_ENV=test mocha tests"
   },
   "engines": {
-    "node": ">= 10.0.0"
+    "node": ">= 12.0.0"
   },
   "repository": {
     "type": "git",
@@ -69,6 +73,7 @@
     "base58check": "^2.0.0",
     "bcash": "bcoin-org/bcash#master",
     "bcoin": "bcoin-org/bcoin#master",
+    "commander": "^6.1.0",
     "content-type": "^1.0.4",
     "dotparser": "^0.3.0",
     "elliptic": "^6.4.0",
@@ -86,7 +91,7 @@
     "lodash.merge": "^4.6.2",
     "matrix-js-sdk": "martindale/matrix-js-sdk#silent-logger",
     "merkletreejs": "^0.1.6",
-    "mkdirp": "^0.5.1",
+    "mkdirp": "^1.0.4",
     "nat-upnp": "^1.1.1",
     "node-fetch": "^2.6.0",
     "node-torrent": "^0.2.2",
@@ -94,6 +99,7 @@
     "path-match": "^1.2.4",
     "pluralize": "^8.0.0",
     "rimraf": "^2.6.2",
+    "simple-aes": "^0.1.1",
     "struct": "^0.0.12",
     "torrent-stream": "^1.2.0"
   },
