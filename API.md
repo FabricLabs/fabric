@@ -66,6 +66,9 @@ RFC 5869.  Defaults to 32 byte output, matching Bitcoin&#39;s implementaton.</p>
 <dt><a href="#Key">Key</a></dt>
 <dd><p>Represents a cryptographic key.</p>
 </dd>
+<dt><a href="#KeyStore">KeyStore</a></dt>
+<dd><p>Provides an encrypted datastore for generic object storage.</p>
+</dd>
 <dt><a href="#Ledger">Ledger</a> ⇐ <code><a href="#Scribe">Scribe</a></code></dt>
 <dd><p>An ordered stack of pages.</p>
 </dd>
@@ -147,6 +150,9 @@ execute either the full set or none.</p>
 <dd><p>The <a href="#Transition">Transition</a> type reflects a change from one finite
 <a href="#State">State</a> to another.</p>
 </dd>
+<dt><a href="#Treasury">Treasury</a></dt>
+<dd><p>Manage a set of KeyPairs and their balances.</p>
+</dd>
 <dt><a href="#Value">Value</a></dt>
 <dd><p><a href="Number">Number</a>-like type.</p>
 </dd>
@@ -165,7 +171,7 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 <dt><a href="#Exchange">Exchange</a></dt>
 <dd><p>Implements a basic Exchange.</p>
 </dd>
-<dt><a href="#Matrix">Matrix</a> ⇐ <code><a href="#Interface">Interface</a></code></dt>
+<dt><a href="#Matrix">Matrix</a> ⇐ <code><a href="#Service">Service</a></code></dt>
 <dd><p>Service for interacting with Matrix.</p>
 </dd>
 </dl>
@@ -184,7 +190,6 @@ Manages interaction with the Bitcoin network.
             * [.UAString](#module_@fabric/core/services/bitcoin..Bitcoin+UAString)
             * [.tip](#module_@fabric/core/services/bitcoin..Bitcoin+tip)
             * [.height](#module_@fabric/core/services/bitcoin..Bitcoin+height)
-            * [.broadcast(tx)](#module_@fabric/core/services/bitcoin..Bitcoin+broadcast)
             * [._prepareTransaction(obj)](#module_@fabric/core/services/bitcoin..Bitcoin+_prepareTransaction)
             * [._handleCommittedBlock(block)](#module_@fabric/core/services/bitcoin..Bitcoin+_handleCommittedBlock)
             * [._handlePeerPacket(msg)](#module_@fabric/core/services/bitcoin..Bitcoin+_handlePeerPacket)
@@ -210,7 +215,6 @@ Manages interaction with the Bitcoin network.
         * [.UAString](#module_@fabric/core/services/bitcoin..Bitcoin+UAString)
         * [.tip](#module_@fabric/core/services/bitcoin..Bitcoin+tip)
         * [.height](#module_@fabric/core/services/bitcoin..Bitcoin+height)
-        * [.broadcast(tx)](#module_@fabric/core/services/bitcoin..Bitcoin+broadcast)
         * [._prepareTransaction(obj)](#module_@fabric/core/services/bitcoin..Bitcoin+_prepareTransaction)
         * [._handleCommittedBlock(block)](#module_@fabric/core/services/bitcoin..Bitcoin+_handleCommittedBlock)
         * [._handlePeerPacket(msg)](#module_@fabric/core/services/bitcoin..Bitcoin+_handlePeerPacket)
@@ -257,18 +261,6 @@ Chain tip (block hash of the chain with the most Proof of Work)
 Chain height (`=== length - 1`)
 
 **Kind**: instance property of [<code>Bitcoin</code>](#module_@fabric/core/services/bitcoin..Bitcoin)  
-<a name="module_@fabric/core/services/bitcoin..Bitcoin+broadcast"></a>
-
-#### bitcoin.broadcast(tx)
-Broadcast a transaction to the Bitcoin network.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#module_@fabric/core/services/bitcoin..Bitcoin)  
-**Unstable**:   
-
-| Param | Type | Description |
-| --- | --- | --- |
-| tx | <code>TX</code> | Bitcoin transaction |
-
 <a name="module_@fabric/core/services/bitcoin..Bitcoin+_prepareTransaction"></a>
 
 #### bitcoin.\_prepareTransaction(obj)
@@ -454,6 +446,7 @@ Fabric-based networking and storage.
     * [.envelop(selector)](#App+envelop) ⇒ [<code>App</code>](#App)
     * [.use(name, definition)](#App+use) ⇒ [<code>App</code>](#App)
     * [.render()](#App+render) ⇒ <code>String</code>
+    * [._registerService(name, type)](#App+_registerService) ⇒ [<code>Service</code>](#Service)
     * [.now()](#Scribe+now) ⇒ <code>Number</code>
     * [.trust(source)](#Scribe+trust) ⇒ [<code>Scribe</code>](#Scribe)
     * [.inherits(scribe)](#Scribe+inherits) ⇒ [<code>Scribe</code>](#Scribe)
@@ -576,6 +569,22 @@ Get the output of our program.
 **Kind**: instance method of [<code>App</code>](#App)  
 **Overrides**: [<code>render</code>](#State+render)  
 **Returns**: <code>String</code> - Output of the program.  
+<a name="App+_registerService"></a>
+
+### app.\_registerService(name, type) ⇒ [<code>Service</code>](#Service)
+Registers a named [Service](#Service) with the application.  Services are
+standardized interfaces for Fabric contracts, emitting [Message](#Message)
+events with a predictable lifecycle.
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Returns**: [<code>Service</code>](#Service) - The registered service instance.  
+**Internal**:   
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>String</code> | Internal name of the service. |
+| type | <code>Class</code> | The ES6 class definition implementing [Service](#Service). |
+
 <a name="Scribe+now"></a>
 
 ### app.now() ⇒ <code>Number</code>
@@ -1383,6 +1392,40 @@ create it from a known public key.
 | [settings.seed] | <code>String</code> | Mnemonic seed for initializing the key. |
 | [settings.public] | <code>String</code> | Public key in hex. |
 | [settings.private] | <code>String</code> | Private key in hex. |
+
+<a name="KeyStore"></a>
+
+## KeyStore
+Provides an encrypted datastore for generic object storage.
+
+**Kind**: global class  
+
+* [KeyStore](#KeyStore)
+    * [new KeyStore([configuration])](#new_KeyStore_new)
+    * [._setState(state)](#KeyStore+_setState) ⇒ [<code>Actor</code>](#Actor)
+
+<a name="new_KeyStore_new"></a>
+
+### new KeyStore([configuration])
+Create an instance of the Store.
+
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [configuration] | <code>FabricStoreConfiguration</code> |  | Settings to use. |
+| [configuration.name] | <code>String</code> | <code>&quot;DefaultStore&quot;</code> | Name of the Store. |
+
+<a name="KeyStore+_setState"></a>
+
+### keyStore.\_setState(state) ⇒ [<code>Actor</code>](#Actor)
+Saves an Object to the store.
+
+**Kind**: instance method of [<code>KeyStore</code>](#KeyStore)  
+**Returns**: [<code>Actor</code>](#Actor) - The local instance of the provided State's [Actor](#Actor).  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| state | <code>Object</code> | State to store. |
 
 <a name="Ledger"></a>
 
@@ -2358,7 +2401,7 @@ familiar semantics.
 
 
 * [Service](#Service)
-    * [new Service(settings)](#new_Service_new)
+    * [new Service(config)](#new_Service_new)
     * [.tick()](#Service+tick) ⇒ <code>Number</code>
     * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
     * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
@@ -2372,15 +2415,15 @@ familiar semantics.
 
 <a name="new_Service_new"></a>
 
-### new Service(settings)
+### new Service(config)
 Create an instance of a Service.
 
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
-| settings | <code>Object</code> |  | Configuration for this service. |
-| [settings.networking] | <code>Boolean</code> | <code>true</code> | Whether or not to connect to the network. |
-| [settings.@data] | <code>Object</code> |  | Internal data to assign. |
+| config | <code>Object</code> |  | Configuration for this service. |
+| [config.networking] | <code>Boolean</code> | <code>true</code> | Whether or not to connect to the network. |
+| [config.@data] | <code>Object</code> |  | Internal data to assign. |
 
 <a name="Service+tick"></a>
 
@@ -2955,6 +2998,33 @@ The [Transition](#Transition) type reflects a change from one finite
 | --- | --- | --- |
 | settings | <code>Object</code> | Configuration for the transition object. |
 
+<a name="Treasury"></a>
+
+## Treasury
+Manage a set of KeyPairs and their balances.
+
+**Kind**: global class  
+
+* [Treasury](#Treasury)
+    * [new Treasury([settings])](#new_Treasury_new)
+    * [.generateAddress()](#Treasury+generateAddress)
+
+<a name="new_Treasury_new"></a>
+
+### new Treasury([settings])
+Create an instance of the Treasury.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Configuration for the Treasury. |
+
+<a name="Treasury+generateAddress"></a>
+
+### treasury.generateAddress()
+Generates a new Bitcoin address.
+
+**Kind**: instance method of [<code>Treasury</code>](#Treasury)  
 <a name="Value"></a>
 
 ## Value
@@ -3278,21 +3348,26 @@ find and trade with real peers.
 
 <a name="Matrix"></a>
 
-## Matrix ⇐ [<code>Interface</code>](#Interface)
+## Matrix ⇐ [<code>Service</code>](#Service)
 Service for interacting with Matrix.
 
 **Kind**: global class  
-**Extends**: [<code>Interface</code>](#Interface)  
+**Extends**: [<code>Service</code>](#Service)  
 
-* [Matrix](#Matrix) ⇐ [<code>Interface</code>](#Interface)
+* [Matrix](#Matrix) ⇐ [<code>Service</code>](#Service)
     * [new Matrix([settings])](#new_Matrix_new)
     * [.state](#Matrix+state)
     * [._registerActor(actor)](#Matrix+_registerActor)
     * [.start()](#Matrix+start)
     * [.stop()](#Matrix+stop)
-    * [.cycle(val)](#Interface+cycle)
-    * [.log(...inputs)](#Interface+log)
-    * [.now()](#Interface+now) ⇒ <code>Number</code>
+    * [.tick()](#Service+tick) ⇒ <code>Number</code>
+    * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
+    * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
+    * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
+    * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
+    * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
+    * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
+    * [._send(message)](#Service+_send)
 
 <a name="new_Matrix_new"></a>
 
@@ -3317,6 +3392,7 @@ Getter for [State](#State).
 Register an Actor on the network.
 
 **Kind**: instance method of [<code>Matrix</code>](#Matrix)  
+**Overrides**: [<code>\_registerActor</code>](#Service+_registerActor)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -3330,39 +3406,104 @@ Start the service, including the initiation of an outbound connection
 to any peers designated in the service's configuration.
 
 **Kind**: instance method of [<code>Matrix</code>](#Matrix)  
-**Overrides**: [<code>start</code>](#Interface+start)  
+**Overrides**: [<code>start</code>](#Service+start)  
 <a name="Matrix+stop"></a>
 
 ### matrix.stop()
 Stop the service.
 
 **Kind**: instance method of [<code>Matrix</code>](#Matrix)  
-**Overrides**: [<code>stop</code>](#Interface+stop)  
-<a name="Interface+cycle"></a>
+<a name="Service+tick"></a>
 
-### matrix.cycle(val)
-Ticks the clock with a named [Cycle](Cycle).
+### matrix.tick() ⇒ <code>Number</code>
+Move forward one clock cycle.
 
 **Kind**: instance method of [<code>Matrix</code>](#Matrix)  
+<a name="Service+handler"></a>
+
+### matrix.handler(message) ⇒ [<code>Service</code>](#Service)
+Default route handler for an incoming message.  Follows the Activity
+Streams 2.0 spec: https://www.w3.org/TR/activitystreams-core/
+
+**Kind**: instance method of [<code>Matrix</code>](#Matrix)  
+**Returns**: [<code>Service</code>](#Service) - Chainable method.  
 
 | Param | Type | Description |
 | --- | --- | --- |
-| val | <code>String</code> | Name of cycle to scribe. |
+| message | <code>Activity</code> | Message object. |
 
-<a name="Interface+log"></a>
+<a name="Service+route"></a>
 
-### matrix.log(...inputs)
-Log some output to the console.
+### matrix.route(msg) ⇒ <code>Promise</code>
+Resolve a [State](#State) from a particular [Message](#Message) object.
 
 **Kind**: instance method of [<code>Matrix</code>](#Matrix)  
+**Returns**: <code>Promise</code> - Resolves with resulting [State](#State).  
 
 | Param | Type | Description |
 | --- | --- | --- |
-| ...inputs | <code>any</code> | Components of the message to long.  Can be a single {@link} String, many [String](String) objects, or anything else. |
+| msg | [<code>Message</code>](#Message) | Explicit Fabric [Message](#Message). |
 
-<a name="Interface+now"></a>
+<a name="Service+_GET"></a>
 
-### matrix.now() ⇒ <code>Number</code>
-Returns current timestamp.
+### matrix.\_GET(path) ⇒ <code>Promise</code>
+Retrieve a value from the Service's state.
 
 **Kind**: instance method of [<code>Matrix</code>](#Matrix)  
+**Returns**: <code>Promise</code> - Resolves with the result.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | Path of the value to retrieve. |
+
+<a name="Service+_PUT"></a>
+
+### matrix.\_PUT(path, value, [commit]) ⇒ <code>Promise</code>
+Store a value in the Service's state.
+
+**Kind**: instance method of [<code>Matrix</code>](#Matrix)  
+**Returns**: <code>Promise</code> - Resolves with with stored document.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| path | <code>String</code> |  | Path to store the value at. |
+| value | <code>Object</code> |  | Document to store. |
+| [commit] | <code>Boolean</code> | <code>false</code> | Sign the resulting state. |
+
+<a name="Service+connect"></a>
+
+### matrix.connect(notify) ⇒ <code>Promise</code>
+Attach to network.
+
+**Kind**: instance method of [<code>Matrix</code>](#Matrix)  
+**Returns**: <code>Promise</code> - Resolves to [Fabric](#Fabric).  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| notify | <code>Boolean</code> | <code>true</code> | Commit to changes. |
+
+<a name="Service+send"></a>
+
+### matrix.send(channel, message) ⇒ [<code>Service</code>](#Service)
+Send a message to a channel.
+
+**Kind**: instance method of [<code>Matrix</code>](#Matrix)  
+**Returns**: [<code>Service</code>](#Service) - Chainable method.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| channel | <code>String</code> | Channel name to which the message will be sent. |
+| message | <code>String</code> | Content of the message to send. |
+
+<a name="Service+_send"></a>
+
+### matrix.\_send(message)
+Sends a message.
+
+**Kind**: instance method of [<code>Matrix</code>](#Matrix)  
+**Overrides**: [<code>\_send</code>](#Service+_send)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| message | <code>Mixed</code> | Message to send. |
+

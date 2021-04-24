@@ -1,10 +1,10 @@
 'use strict';
 
+// External Dependencies
 const BN = require('bn.js');
 const jayson = require('jayson');
 
-const Label = require('../types/label');
-const Entity = require('../types/entity');
+// Fabric Types
 const Service = require('../types/service');
 const Message = require('../types/message');
 const Transition = require('../types/transition');
@@ -173,7 +173,6 @@ class Ethereum extends Service {
 
   async start () {
     const service = this;
-    let secure = false;
 
     // Assign Status
     service.status = 'starting';
@@ -183,18 +182,15 @@ class Ethereum extends Service {
 
     if (service.settings.mode === 'rpc') {
       const providers = service.settings.servers.map(x => new URL(x));
-      // TODO: loop through all providers
-      let provider = providers[0];
-
-      if (provider.protocol === 'https:') secure = true;
+      const provider = providers[0]; // TODO: loop through all providers
       const config = {
-        username: provider.username,
-        password: provider.password,
         host: provider.hostname,
         port: provider.port
       };
 
-      if (secure) {
+      if (provider.protocol === 'https:') {
+        const auth = provider.username + ':' + provider.password;
+        config.headers = { Authorization: `Basic ${Buffer.from(auth, 'utf8').toString('base64')}` };
         client = jayson.client.https(config);
       } else {
         client = jayson.client.http(config);

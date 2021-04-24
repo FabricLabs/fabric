@@ -1,8 +1,5 @@
 'use strict';
 
-// External Dependencies
-const jayson = require('jayson');
-
 // Fabric Types
 const Service = require('../types/service');
 const Machine = require('../types/machine');
@@ -18,7 +15,8 @@ class Lightning extends Service {
     this.settings = Object.assign({
       path: './stores/lightning',
       mode: 'rpc',
-      servers: ['unix:' + process.env.HOME + '/.lightning/bitcoin/lightning-cli']
+      servers: ['http://localhost:8555'],
+      interval: 1000
     }, this.settings, settings);
 
     this.machine = new Machine(this.settings);
@@ -33,73 +31,21 @@ class Lightning extends Service {
         confirmed: 0,
         unconfirmed: 0
       },
-      channels: {}
+      channels: {},
+      peers: {},
+      nodes: {}
     };
 
     return this;
-  }
-
-  set balances (value) {
-    this._state.balances = value;
-    this.commit();
-    return this
   }
 
   get balances () {
     return this._state.balances;
   }
 
-  async _syncOracleInfo () {
-    if (this.settings.mode === 'rest') {
-      const result = await this.rest._GET('/getInfo');
-      if (result && result.id) {
-        this._state.id = result.id;
-        this._state.name = result.name;
-      }
-      await this.commit();
-    }
-    return this._state;
-  }
-
-  async _syncBalanceFromOracle () {
-    const funds = await this.listFunds();
-    const balances = {
-      total: 0,
-      confirmed: 0,
-      unconfirmed: 0
-    };
-
-    for (let i = 0; i < funds.outputs.length; i++) {
-      if (funds.outputs[i].status === 'confirmed') {
-        balances.confirmed = balances.confirmed + funds.outputs[i].value;
-      } else if (funds.outputs[i].status === 'unconfirmed') {
-        balances.unconfirmed = balances.unconfirmed + funds.outputs[i].value;
-      }
-    }
-
-    balances.total = balances.confirmed + balances.unconfirmed;
-
-    const actor = new Actor(balances);
-    this.balances = balances;
-
-    return {
-      type: 'OracleBalance',
-      data: { content: balance },
-      signature: actor.sign().signature
-    };
-  }
-
   async start () {
     const service = this;
-    let secure = false;
-
-    // Assign Status
     service.status = 'starting';
-
-    // Local Variables
-    let client = null;
-
-    await super.start();
     await this.machine.start();
 
     if (this.settings.mode === 'rest') {
@@ -116,36 +62,9 @@ class Lightning extends Service {
       await this._syncOracleInfo();
     }
 
-    if (this.settings.mode === 'rpc') {
-      const providers = service.settings.servers.map(x => new URL(x));
-      // TODO: loop through all providers
-      let provider = providers[0];
-
-      if (provider.protocol === 'https:') secure = true;
-      const auth = provider.username + ':' + provider.password;
-      const config = {
-        headers: { 'Authorization': `Basic ${Buffer.from(auth, 'utf8').toString('base64')}` },
-        host: provider.hostname,
-        port: provider.port
-      };
-
-      if (secure) {
-        client = jayson.client.https(config);
-      } else {
-        client = jayson.client.http(config);
-      }
-
-      // Link generated client to `rpc` property
-      service.rpc = client;
-
-      await service._syncBalanceFromOracle();
-
-      // Assign Heartbeat
-      service.heartbeat = setInterval(service._heartbeat.bind(service), service.settings.interval);
-    }
+    service.heartbeat = setInterval(service._heartbeat.bind(service), service.settings.interval);
 
     this.status = 'started';
-
     return this;
   }
 
@@ -153,14 +72,53 @@ class Lightning extends Service {
     return this._makeRPCRequest('listfunds');
   }
 
-  async _makeRPCRequest (method, params = []) {
-    const self = this;
-    return new Promise((resolve, reject) => {
-      self.rpc.request(method, params, function (err, response) {
-        if (err) return reject(err);
-        return resolve(response.result);
-      });
-    });
+  async _heartbeat () {
+    await this._syncOracleInfo();
+    return this;
+  }
+
+  async _syncOracleInfo () {
+    if (this.settings.mode === 'rest') {
+      const result = await this.rest._GET('/getInfo');
+
+      if (result && result.id) {
+        this._state.id = result.id;
+        this._state.name = result.alias;
+        this._state.network = result.network;
+      }
+
+      await this._syncOracleBalance();
+      await this._syncOracleChannels();
+    }
+
+    return this._state;
+  }
+
+  async _syncOracleBalance () {
+    if (this.settings.mode === 'rest') {
+      const result = await this.rest._GET('/getBalance');
+      if (result) {
+        this._state.balances.total = result.totalBalance;
+        this._state.balances.confirmed = result.confBalance;
+        this._state.balances.unconfirmed = result.unconfBalance;
+        await this.commit();
+      }
+    }
+    return this._state;
+  }
+
+  async _syncOracleChannels () {
+    if (this.settings.mode === 'rest') {
+      const result = await this.rest._GET('/channel/listChannels');
+      const channels = result.map(x => new Actor(x));
+      this._state.channels = channels.reduce((obj, me) => {
+        obj[me.id] = me.data;
+        return obj;
+      }, {});
+      await this.commit();
+    }
+
+    return this._state;
   }
 }
 
