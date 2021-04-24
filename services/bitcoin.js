@@ -221,6 +221,10 @@ class Bitcoin extends Service {
     console.log('[SERVICES:BITCOIN]', 'Broadcasted!');
   }
 
+  async _heartbeat () {
+    await this._checkRPCBlockNumber();
+  }
+
   async _prepareBlock (obj) {
     if (!obj.transactions) throw new Error('Block must have "transactions" property.');
     if (!(obj.transactions instanceof Array)) throw new Error('Block must provide transactions as an Array.');
@@ -806,16 +810,8 @@ class Bitcoin extends Service {
    */
   async start () {
     if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', `Starting for network "${this.settings.network}"...`);
-
     const self = this;
-    const service = this;
-    let secure = false;
-
-    // Assign Status
-    service.status = 'starting';
-
-    // Local Variables
-    let client = null;
+    self.status = 'starting';
 
     if (this.settings.fullnode) {
       this.fullnode.on('peer connect', function peerConnectHandler (peer) {
@@ -853,40 +849,24 @@ class Bitcoin extends Service {
     // Start nodes
     if (this.settings.fullnode) await this._startLocalNode();
     if (this.settings.mode === 'rpc') {
-      const providers = service.settings.servers.map(x => new URL(x));
-      // TODO: loop through all providers
-      let provider = providers[0];
-      if (provider.protocol === 'https:') secure = true;
-      const auth = provider.username + ':' + provider.password;
+      const providers = self.settings.servers.map(x => new URL(x));
+      const provider = providers[0]; // TODO: loop through all providers
       const config = {
-        headers: { 'Authorization': `Basic ${Buffer.from(auth, 'utf8').toString('base64')}` },
         host: provider.hostname,
         port: provider.port
       };
 
-      if (secure) {
-        client = jayson.client.https(config);
+      if (provider.protocol === 'https:') {
+        const auth = provider.username + ':' + provider.password;
+        config.headers = { Authorization: `Basic ${Buffer.from(auth, 'utf8').toString('base64')}` };
+        self.rpc = jayson.client.https(config);
       } else {
-        client = jayson.client.http(config);
+        self.rpc = jayson.client.http(config);
       }
-
-      // Link generated client to `rpc` property
-      service.rpc = client;
 
       await this._syncBalanceFromOracle();
 
-      // Assign Heartbeat
-      // service.heartbeat = setInterval(service._heartbeat.bind(service), service.settings.interval);
-
-      // DEVCODE
-      // TODO: cleanup
-      try {
-        // await self._syncWithRPC();
-      } catch (exception) {
-        self.emit('error', `Could not prepare session with RPC host: ${exception}`);
-      }
-
-      self.heartbeat = setInterval(self._checkRPCBlockNumber.bind(self), self.settings.interval);
+      self.heartbeat = setInterval(self._heartbeat.bind(self), self.settings.interval);
     }
 
     // TODO: re-enable these
