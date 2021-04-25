@@ -5,6 +5,7 @@ const merge = require('lodash.merge');
 
 // Types
 const Actor = require('./actor');
+const KeyStore = require('./keystore');
 const Machine = require('./machine');
 const Message = require('./message');
 const Peer = require('./peer');
@@ -44,6 +45,7 @@ class App extends Scribe {
     this.node = new Peer(this.settings);
     this.actor = new Actor(this.settings);
     this.machine = new Machine(this.settings);
+    this.store = new KeyStore(this.settings);
 
     // TODO: replace these with KeyStore
     this.tips = new Storage({ path: './stores/tips' });
@@ -118,6 +120,7 @@ class App extends Scribe {
       this._appendWarning(`@${this.id} -- Checking for Service: ${name}`);
       if (this.settings.services.includes(name)) {
         this._appendWarning(`Starting service: ${name}`);
+        await this.services[name]._bindStore(this.store);
         await this.services[name].start();
       }
     }
