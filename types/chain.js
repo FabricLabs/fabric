@@ -23,15 +23,15 @@ class Chain extends Ledger {
   constructor (origin = {}) {
     super(origin);
 
-    this.name = (origin) ? origin.name : 'playnet';
-    this.config = Object.assign({
+    this.name = (origin) ? origin.name : '@fabric/playnet';
+    this.settings = Object.assign({
       name: this.name,
       type: 'sha256',
       validator: this.validate.bind(this)
     }, origin);
 
-    this.genesis = new Block(this.config);
-    this.mempool = new Mempool(this.config);
+    this.genesis = new Block(this.settings);
+    this.mempool = new Mempool(this.settings);
     this.miner = new Worker({ method: 'sha256' });
 
     // External State
@@ -184,7 +184,7 @@ class Chain extends Ledger {
 
   async _setGenesis (genesis) {
     let sample = new Chain(genesis);
-    this.config = sample.config;
+    this.settings = sample.settings;
     this.genesis = new Block(genesis);
   }
 

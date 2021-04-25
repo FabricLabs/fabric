@@ -1,8 +1,10 @@
 'use strict';
 
+// Dependencies
+const { EventEmitter } = require('events');
+
 // Fabric Types
 const Key = require('./key');
-const Entity = require('./entity');
 const Hash256 = require('./hash256');
 
 /**
@@ -10,7 +12,7 @@ const Hash256 = require('./hash256');
  * @emits message Fabric {@link Message} objects.
  * @property {String} id Unique identifier for this Actor.
  */
-class Actor extends Entity {
+class Actor extends EventEmitter {
   /**
    * Creates an {@link Actor}, which emits messages for other
    * Actors to subscribe to.  You can supply certain parameters
@@ -65,7 +67,7 @@ class Actor extends Entity {
   }
 
   get state () {
-    return Object.assign({}, this._state);
+    return Object.assign({}, this._state['@data']);
   }
 
   /**
@@ -74,6 +76,10 @@ class Actor extends Entity {
    */
   toBuffer () {
     return Buffer.from(JSON.stringify(this.value, null, '  '), 'utf8');
+  }
+
+  toObject () {
+    return this.state;
   }
 
   /**

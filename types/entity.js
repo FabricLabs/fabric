@@ -36,7 +36,7 @@ class Entity extends EventEmitter {
 
     // remove mutable variables
     Object.defineProperty(this, 'actor', { enumerable: false });
-    Object.defineProperty(this, 'machine', { enumerable: false });
+    // Object.defineProperty(this, 'machine', { enumerable: false });
 
     // return instance
     return this;

@@ -18,7 +18,7 @@ class Router extends Scribe {
   constructor (config) {
     super(config);
 
-    this.config = Object.assign({
+    this.settings = Object.assign({
       routes: {},
       handlers: {},
       trigger: '!'
@@ -42,7 +42,7 @@ class Router extends Scribe {
     let output = [];
     let parts = msg.object
       .split(/\s+/g)
-      .filter(x => x.charAt(0) === this.config.trigger)
+      .filter(x => x.charAt(0) === this.settings.trigger)
       .map(x => x.substr(1));
 
     for (let i in parts) {

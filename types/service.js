@@ -44,7 +44,7 @@ class Service extends Scribe {
     super(settings);
 
     // Configure (with defaults)
-    this.settings = this.config = Object.assign({
+    this.settings = Object.assign({
       name: 'service',
       path: './stores/service',
       networking: true,
@@ -59,12 +59,12 @@ class Service extends Scribe {
         messages: {},
         members: {}
       } */
-    }, this.config, settings);
+    }, this.settings, settings);
 
     // Reserve a place for ourselves
     this.agent = null;
     this.actor = null;
-    this.name = this.config.name;
+    this.name = this.settings.name;
     this.clock = 0;
     this.collections = {};
     this.definitions = {};
@@ -643,6 +643,11 @@ class Service extends Scribe {
     emitter.emit('attached');
 
     return service;
+  }
+
+  async _bindStore (store) {
+    this.store = store;
+    return this;
   }
 
   async _getActor (id) {
