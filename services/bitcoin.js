@@ -596,7 +596,7 @@ class Bitcoin extends Service {
           return false;
         }
       });
-  
+
       this.peer.on('error', this._handlePeerError.bind(this));
       this.peer.on('packet', this._handlePeerPacket.bind(this));
       this.peer.on('open', () => {
@@ -742,9 +742,11 @@ class Bitcoin extends Service {
 
   async _syncBalanceFromOracle () {
     const balance = await this._makeRPCRequest('getbalance');
-    this.balance = balance;
+    this._state.balance = balance;
+    this.emit('message', `balance sync: ${balance}`);
     const commit = await this.commit();
     const actor = new Actor(commit.data);
+    this.emit('message', `balance sync, commit: ${commit}`);
     return {
       type: 'OracleBalance',
       data: {
@@ -850,8 +852,7 @@ class Bitcoin extends Service {
     // Start nodes
     if (this.settings.fullnode) await this._startLocalNode();
     if (this.settings.mode === 'rpc') {
-      const providers = self.settings.servers.map(x => new URL(x));
-      const provider = providers[0]; // TODO: loop through all providers
+      const provider = new URL(self.settings.authority);
       const config = {
         host: provider.hostname,
         port: provider.port
