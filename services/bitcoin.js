@@ -81,7 +81,7 @@ class Bitcoin extends Service {
     // Internal Services
     this.provider = new Consensus({ provider: 'bcoin' });
     this.wallet = new Wallet(this.settings);
-    this.chain = new Chain(this.settings);
+    // this.chain = new Chain(this.settings);
 
     // ## Collections
     // ### Blocks
@@ -844,7 +844,7 @@ class Bitcoin extends Service {
 
     // Start services
     await this.wallet.start();
-    await this.chain.start();
+    // await this.chain.start();
 
     // Start nodes
     if (this.settings.fullnode) await this._startLocalNode();
@@ -864,7 +864,12 @@ class Bitcoin extends Service {
         self.rpc = jayson.client.http(config);
       }
 
-      await this._syncBalanceFromOracle();
+      try {
+        await this._syncBalanceFromOracle();
+      } catch (exception) {
+        this.emit('error', exception);
+        return this;
+      }
 
       self.heartbeat = setInterval(self._heartbeat.bind(self), self.settings.interval);
     }
