@@ -57,7 +57,7 @@ class Matrix extends Service {
   set status (value = this.status) {
     switch (value) {
       case 'READY':
-        this._state[`status`] =  value;
+        this._state[`status`] = value;
         break;
       default:
         return false;

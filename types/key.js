@@ -11,13 +11,11 @@ const ec = new EC('secp256k1');
 // External Dependencies
 // TODO: remove all external dependencies
 const bcoin = require('bcoin');
-const {
-  KeyRing,
-  Mnemonic
-} = require('bcoin');
+const { Mnemonic } = require('bcoin');
 
 // Fabric Types
 const Entity = require('./entity');
+const Machine = require('./machine');
 
 /**
  * Represents a cryptographic key.
@@ -58,11 +56,13 @@ class Key extends Entity {
     this.private = null;
     this.public = null;
 
+    this.machine = new Machine(this.settings);
+
     if (this.config.seed) {
       // Seed provided, compute keys
-      let mnemonic = new bcoin.Mnemonic(this.config.seed);
-      let master = bcoin.hd.fromMnemonic(mnemonic);
-      let ring = new bcoin.KeyRing(master, this.config.network);
+      const mnemonic = new bcoin.Mnemonic(this.config.seed);
+      const master = bcoin.hd.fromMnemonic(mnemonic);
+      const ring = new bcoin.KeyRing(master, this.config.network);
 
       // Assign keys
       this.master = master;
@@ -73,8 +73,7 @@ class Key extends Entity {
       this.keypair = ec.keyFromPrivate(this.config.private, 16);
     } else if (this.config.pubkey || this.config.public) {
       // Key is only public
-      let pubkey = this.config.pubkey || this.config.public;
-      this.keypair = ec.keyFromPublic(pubkey, 'hex');
+      this.keypair = ec.keyFromPublic(this.config.pubkey || this.config.public, 'hex');
     } else {
       // Generate new keys
       this.keypair = ec.genKeyPair();
@@ -93,19 +92,19 @@ class Key extends Entity {
     // DO NOT USE IN PRODUCTION
     this.pubkeyhash = crypto.createHash('sha256').update(this.pubkey).digest('hex');
 
-    let input = `${this.config.prefix}${this.pubkeyhash}`;
-    let hash = crypto.createHash('sha256').update(input).digest('hex');
-    let safe = crypto.createHash('sha256').update(hash).digest('hex');
-    let checksum = safe.substring(0, 8);
-    let address = `${input}${checksum}`;
+    const input = `${this.config.prefix}${this.pubkeyhash}`;
+    const hash = crypto.createHash('sha256').update(input).digest('hex');
+    const safe = crypto.createHash('sha256').update(hash).digest('hex');
+    const checksum = safe.substring(0, 8);
+    const address = `${input}${checksum}`;
 
     this.ripe = crypto.createHash('ripemd160').update(input).digest('hex');
     this.address = Base58Check.encode(this.ripe);
 
     this['@data'] = {
-      'type': 'Key',
-      'public': this.pubkey,
-      'address': this.address
+      type: 'Key',
+      public: this.pubkey,
+      address: this.address
     };
 
     this._state = {
@@ -132,7 +131,13 @@ class Key extends Entity {
   }
 
   get iv () {
-    return crypto.randomBytes(this.settings.cipher.iv.size);
+    const self = this;
+    const slices = [...Array(this.settings.cipher.iv.size)].map((x) => {
+      return self.machine.sip(8).toString(16);
+    });
+    const string = slices.join('');
+    const sip = Buffer.from(string, 'hex');
+    return sip.toString('hex');
   }
 
   encrypt (value) {
@@ -140,7 +145,10 @@ class Key extends Entity {
       const iv = Buffer.from(this.iv, 'hex');
       const cipher = crypto.createCipheriv(this.settings.mode, this.private.toBuffer(), iv);
       let encrypted = cipher.update(value);
-      encrypted = Buffer.concat([ encrypted, cipher.final() ]);
+      encrypted = Buffer.concat([
+        encrypted,
+        cipher.final()
+      ]);
       return iv.toString('hex') + ':' + encrypted.toString('hex');
     } catch (exception) {
       console.error('err:', exception);
@@ -154,7 +162,10 @@ class Key extends Entity {
       const blob = Buffer.from(parts.join(':'), 'hex');
       const decipher = crypto.createDecipheriv('aes-256-cbc', this.private.toBuffer(), iv);
       let decrypted = decipher.update(blob);
-      decrypted = Buffer.concat([ decrypted, decipher.final() ]);
+      decrypted = Buffer.concat([
+        decrypted,
+        decipher.final()
+      ]);
       return decrypted.toString();
     } catch (exception) {
       console.error('err:', exception);

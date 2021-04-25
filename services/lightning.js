@@ -32,6 +32,7 @@ class Lightning extends Service {
         unconfirmed: 0
       },
       channels: {},
+      invoices: {},
       peers: {},
       nodes: {}
     };
@@ -39,17 +40,24 @@ class Lightning extends Service {
     return this;
   }
 
+  static plugin (state) {
+    const lightning = new Lightning(state);
+    const plugin = new LightningPlugin(state);
+    plugin.addMethod('test', OP_TEST.bind(lightning));
+    // plugin.addMethod('init');
+    return plugin;
+  }
+
   get balances () {
     return this._state.balances;
   }
 
   async start () {
-    const service = this;
-    service.status = 'starting';
+    this.status = 'starting';
     await this.machine.start();
 
     if (this.settings.mode === 'rest') {
-      const providers = service.settings.servers.map(x => new URL(x));
+      const providers = this.settings.servers.map(x => new URL(x));
       // TODO: loop through all providers
       const provider = providers[0];
 
@@ -62,9 +70,9 @@ class Lightning extends Service {
       await this._syncOracleInfo();
     }
 
-    service.heartbeat = setInterval(service._heartbeat.bind(service), service.settings.interval);
-
+    this.heartbeat = setInterval(this._heartbeat.bind(this), this.settings.interval);
     this.status = 'started';
+
     return this;
   }
 
@@ -75,6 +83,41 @@ class Lightning extends Service {
   async _heartbeat () {
     await this._syncOracleInfo();
     return this;
+  }
+
+  async _generateSmallestInvoice () {
+    return await this._generateInvoice(1);
+  }
+
+  async _generateInvoice (amount, expiry = 120, description = 'nothing relevant') {
+    let result = null;
+
+    if (this.settings.mode === 'rest') {
+      const key = new Key();
+      const actor = new Actor({
+        id: key.id,
+        type: 'LightningInvoice',
+        data: { amount, expiry }
+      });
+
+      const invoice = await this.rest._POST('/invoice/genInvoice', {
+        label: actor.id,
+        amount: amount,
+        expiry: expiry,
+        description: description
+      });
+
+      result = Object.assign({}, actor.state, {
+        encoded: invoice.bolt11,
+        expiry: invoice.expires_at,
+        data: invoice
+      });
+
+      this._state.invoices[key.id] = result;
+      await this.commit();
+    }
+
+    return result;
   }
 
   async _syncOracleInfo () {

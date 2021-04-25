@@ -1,15 +1,13 @@
 'use strict';
 
 const crypto = require('crypto');
-
-const Events = require('events');
-const Machine = require('./machine');
+const { EventEmitter } = require('events');
 
 /**
  * Live instance of an ARC in Fabric.
  * @type {Object}
  */
-class Entity extends Events.EventEmitter {
+class Entity extends EventEmitter {
   /**
    * Generic template for virtual objects.
    * @param  {Object} [data={}] Pass an object to use.
@@ -22,7 +20,6 @@ class Entity extends Events.EventEmitter {
     if (!(this instanceof Entity)) return new Entity(data);
 
     // set internal properties
-    this.machine = new Machine();
     this.settings = {
       verbosity: 2 // Information && Warnings
     };

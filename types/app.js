@@ -137,6 +137,7 @@ class App extends Scribe {
   async stop () {
     this.log('[APP]', 'stopping...');
 
+    await this.node.stop();
     await this.tips.close();
     await this.stash.close();
 
