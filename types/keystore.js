@@ -50,6 +50,7 @@ class KeyStore extends Actor {
     this._state = {
       status: 'initialized',
       version: this.settings.version,
+      keys: [],
       value: {}
     };
 
@@ -100,20 +101,6 @@ class KeyStore extends Actor {
         signature: actor.sign().signature
       }]));
     }
-    return this;
-  }
-
-  async start () {
-    this.status = 'starting';
-    await this.open();
-    this.status = 'started';
-    return this;
-  }
-
-  async stop () {
-    this.status = 'stopping';
-    await this.close();
-    this.status = 'stopped';
     return this;
   }
 
@@ -248,37 +235,15 @@ class KeyStore extends Actor {
     if (!['open', 'deleting'].includes(this.status)) throw new Error(`Store is not writable.  Currently: ${this.status}`);
 
     const keystore = this;
-    const promise = new Promise(async (resolve, reject) => {
-      const ops = [];
-      const meta = { keys: [] };
-      const actor = new Actor(state);
-      const transition = {
-        subject: 'state',
-        predicate: 'becomes',
-        object: state
-      };
-
-      // Phase 1
+    const promise = new Promise((resolve, reject) => {
       for (const key in state) {
         if (Object.prototype.hasOwnProperty.call(state, key)) {
-          meta.keys.push(key);
+          keystore._state.keys.push(key);
           keystore._state.value[key] = state[key];
         }
       }
 
-      const serialized = actor.serialize();
-
-      // Phase 2
-      async function syncToDisk () {
-        try {
-          const saved = await keystore._syncStateToDisk();
-        } catch (exception) {
-          console.error('Save error:', exception);
-          return reject(exception);
-        }
-      }
-
-      return syncToDisk().then(resolve).catch(reject);
+      this._syncStateToDisk().then(resolve).catch(reject);
     });
 
     return promise;
@@ -286,14 +251,30 @@ class KeyStore extends Actor {
 
   async _syncStateToDisk () {
     if (!['open', 'deleting'].includes(this.status)) throw new Error(`Store is not writable.  Currently: ${this.status}`);
+
     const keystore = this;
     const promise = new Promise((resolve, reject) => {
       const actor = new Actor(this.state);
       const serialized = actor.serialize();
+      console.log('serialized:', serialized);
       return keystore.db.put('/', serialized).then(resolve).catch(reject);
     });
 
     return promise;
+  }
+
+  async start () {
+    this.status = 'starting';
+    await this.open();
+    this.status = 'started';
+    return this;
+  }
+
+  async stop () {
+    this.status = 'stopping';
+    await this.close();
+    this.status = 'stopped';
+    return this;
   }
 }
 
