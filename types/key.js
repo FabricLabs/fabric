@@ -131,19 +131,19 @@ class Key extends Entity {
   }
 
   get iv () {
-    return this.machine.slurp(16);
+    return this.machine.slurp(32).slice(0, 32);
   }
 
   encrypt (value) {
     try {
-      const iv = Buffer.from(this.iv, 'hex');
-      const cipher = crypto.createCipheriv(this.settings.mode, this.private.toBuffer(), iv);
+      const ivbuff = Buffer.from(this.iv, 'hex');
+      const cipher = crypto.createCipheriv(this.settings.mode, this.private.toBuffer(), ivbuff);
       let encrypted = cipher.update(value);
       encrypted = Buffer.concat([
         encrypted,
         cipher.final()
       ]);
-      return iv.toString('hex') + ':' + encrypted.toString('hex');
+      return ivbuff.toString('hex') + ':' + encrypted.toString('hex');
     } catch (exception) {
       console.error('err:', exception);
     }
@@ -154,7 +154,7 @@ class Key extends Entity {
       const parts = text.split(':');
       const iv = Buffer.from(parts.shift(), 'hex');
       const blob = Buffer.from(parts.join(':'), 'hex');
-      const decipher = crypto.createDecipheriv('aes-256-cbc', this.private.toBuffer(), iv);
+      const decipher = crypto.createDecipheriv(this.settings.mode, this.private.toBuffer(), iv);
       let decrypted = decipher.update(blob);
       decrypted = Buffer.concat([
         decrypted,

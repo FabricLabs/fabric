@@ -6,6 +6,7 @@ const Actor = require('./actor');
 const Key = require('./key');
 const Entity = require('./entity');
 const Store = require('./store');
+const KeyStore = require('./keystore');
 const Scribe = require('./scribe');
 const Stack = require('./stack');
 // const Swarm = require('./swarm');
@@ -82,7 +83,7 @@ class Service extends Scribe {
 
     if (this.settings.persistent) {
       try {
-        this.store = new Store(this.settings);
+        this.store = new KeyStore(this.settings);
       } catch (E) {
         console.error('Error:', E);
       }

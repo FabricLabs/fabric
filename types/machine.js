@@ -144,7 +144,7 @@ class Machine extends Scribe {
   }
 
   asBuffer () {
-    let data = this.serialize(this.state['@data']);
+    const data = this.serialize(this.state['@data']);
     return Buffer.from(data);
   }
 
@@ -158,10 +158,10 @@ class Machine extends Scribe {
   }
 
   commit () {
-    let self = this;
+    const self = this;
     if (!self.observer) return false;
 
-    let changes = monitor.generate(self.observer);
+    const changes = monitor.generate(self.observer);
 
     if (changes && changes.length) {
       let vector = new State({

@@ -199,7 +199,7 @@ class Bitcoin extends Service {
     if (this.settings.fullnode) {
       return this.fullnode.chain.tip.hash.toString('hex');
     } else {
-      return (this.chain.tip) ? this.chain.tip.toString('hex') : null;
+      return (this.chain && this.chain.tip) ? this.chain.tip.toString('hex') : null;
     }
   }
 
@@ -813,6 +813,7 @@ class Bitcoin extends Service {
     const self = this;
     self.status = 'starting';
 
+    if (this.store) await this.store.open();
     if (this.settings.fullnode) {
       this.fullnode.on('peer connect', function peerConnectHandler (peer) {
         self.emit('warning', `[SERVICES:BITCOIN]', 'Peer connected to Full Node: ${peer}`);

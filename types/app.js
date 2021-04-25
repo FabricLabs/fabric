@@ -12,7 +12,6 @@ const Peer = require('./peer');
 const Remote = require('./remote');
 const Resource = require('./resource');
 const Scribe = require('./scribe');
-const State = require('./state');
 const Storage = require('./store');
 // const Swarm = require('./swarm');
 
@@ -299,18 +298,24 @@ class App extends Scribe {
 
   /**
    * Get the output of our program.
-   * @return {String}           Output of the program.
+   * @return {String} Output of the program.
    */
-  render (component) {
-    let rendered = `<fabric-${this.name.toLowerCase()} />`;
-    let sample = new State(rendered);
+  render () {
+    const actor = new Actor(this._state);
+    const html = `<fabric-${this.name.toLowerCase()}>` +
+      `\n  <fabric-state id="${actor.id}">` +
+      `\n    <fabric-state-json integrity="sha256:${actor.preimage}">${actor.serialize()}</fabric-state-json>` +
+      '\n  </fabric-state>' +
+      `\n</fabric-${this.name.toLowerCase()}>\n`;
+
+    const sample = new Actor(html);
 
     if (this.element) {
-      this.element.setAttribute('integrity', `sha256:${sample.id}`);
-      this.element.innerHTML = rendered;
+      this.element.setAttribute('integrity', `sha256:${sample.preimage}`);
+      this.element.innerHTML = html;
     }
 
-    return rendered;
+    return html;
   }
 
   _registerCommand (command, method) {

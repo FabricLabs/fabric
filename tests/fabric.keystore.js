@@ -33,13 +33,14 @@ describe('@fabric/core/types/keystore', function () {
       assert.strictEqual(store.codec.key.pubkey, '0223cffd5e94da3c8915c6b868f06d15183c1aeffad8ddf58fcb35a428e3158e71');
     });
 
-    xit('can call _setState', async function () {
+    it('can call _setState', async function () {
       const store = new KeyStore(playnet);
       await store.open();
       await store._setState({
         content: 'Hello, world!'
       });
       await store.close();
+
       assert.ok(store);
     });
 
@@ -56,9 +57,12 @@ describe('@fabric/core/types/keystore', function () {
 
       await afterStore.open();
       const result = await afterStore._get();
+      console.log('result:', result);
 
       const afterHash = Hash256.digest(JSON.stringify(result));
       await afterStore.close();
+
+      console.log('result:', result);
 
       assert.ok(afterStore);
       assert.strictEqual(afterHash, '1dfe1b2c35883bd1fc24af16c160c2a101550633d0b7788f5ae9ed77c0a76db2');

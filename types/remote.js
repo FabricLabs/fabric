@@ -26,14 +26,14 @@ class Remote extends Resource {
   constructor (config = {}) {
     super(config);
 
-    this.config = Object.assign({
+    this.settings = Object.assign({
       authority: config.host || 'localhost',
       entropy: Math.random(),
       secure: true,
       port: 443
     }, config);
 
-    this.secure = this.config.secure;
+    this.secure = this.settings.secure;
 
     return this;
   }
@@ -66,14 +66,14 @@ class Remote extends Resource {
 
   async request (type, path, params = {}) {
     let self = this;
-    let parts = self.config.authority.split(':');
+    let parts = self.settings.authority.split(':');
 
     // TODO: use onion address for secure mode
     let host = parts[0] || ((self.secure) ? 'localhost' : 'localhost');
     let port = parts[1] || ((self.secure) ? 443 : 80);
 
-    if (this.config.port) {
-      port = this.config.port;
+    if (this.settings.port) {
+      port = this.settings.port;
     }
 
     let protocol = (!self.secure) ? 'http' : 'https';
@@ -93,10 +93,10 @@ class Remote extends Resource {
     };
 
     // TODO: break out into independent auth module
-    if (this.config.username || this.config.password) {
+    if (this.settings.username || this.settings.password) {
       headers['Authorization'] = `Basic ${Buffer.from([
-        this.config.username || '',
-        this.config.password || ''
+        this.settings.username || '',
+        this.settings.password || ''
       ].join(':')).toString('base64')}`;
     }
 

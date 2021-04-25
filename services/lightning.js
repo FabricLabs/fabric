@@ -7,15 +7,16 @@ const Remote = require('../types/remote');
 
 const OP_TEST = require('../contracts/test');
 const Actor = require('../types/actor');
+const Key = require('../types/key');
 
 class Lightning extends Service {
   constructor (settings = {}) {
     super(settings);
 
     this.settings = Object.assign({
+      authority: 'http://localhost:8555',
       path: './stores/lightning',
       mode: 'rpc',
-      servers: ['http://localhost:8555'],
       interval: 1000
     }, this.settings, settings);
 
@@ -57,16 +58,12 @@ class Lightning extends Service {
     await this.machine.start();
 
     if (this.settings.mode === 'rest') {
-      const providers = this.settings.servers.map(x => new URL(x));
-      // TODO: loop through all providers
-      const provider = providers[0];
-
+      const provider = new URL(this.settings.authority);
       this.rest = new Remote({
         authority: provider.hostname,
         username: provider.username,
         password: provider.password
       });
-
       await this._syncOracleInfo();
     }
 
