@@ -34,8 +34,9 @@ class App extends Scribe {
     if (!definition.resources) definition.resources = {};
 
     this.settings = this['@data'] = Object.assign({
-      prefix: '/',
       seed: 1,
+      path: './stores/fabric-application',
+      prefix: '/',
       services: []
     }, definition);
 

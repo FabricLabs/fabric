@@ -131,13 +131,7 @@ class Key extends Entity {
   }
 
   get iv () {
-    const self = this;
-    const slices = [...Array(this.settings.cipher.iv.size)].map((x) => {
-      return self.machine.sip(8).toString(16);
-    });
-    const string = slices.join('');
-    const sip = Buffer.from(string, 'hex');
-    return sip.toString('hex');
+    return this.machine.slurp(16);
   }
 
   encrypt (value) {
