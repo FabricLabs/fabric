@@ -27,18 +27,18 @@ describe('@fabric/core/types/machine', function () {
     });
 
     it('provides the predicted entropy on first sip with seed', function () {
-      const machine = new Machine(playnet);
+      const machine = new Machine({ seed: playnet.key.seed });
       const sip = machine.sip();
       assert.strictEqual(sip.length, 32);
-      assert.strictEqual(sip, 'b1ded69edb1e516fcf59be7819208f89');
+      assert.strictEqual(sip, '4e23efa7d67b7fd79228fb21ce279e21');
     });
 
     it('provides the predicted entropy on first slurp with seed', function () {
-      const machine = new Machine(playnet);
+      const machine = new Machine({ seed: playnet.key.seed });
       const slurp = machine.slurp();
       assert.ok(slurp);
       assert.strictEqual(slurp.length, 64);
-      assert.strictEqual(slurp, 'b1ded69edb1e516fcf59be7819208f89af35b7916cc82211cf18b2a9ff258747');
+      assert.strictEqual(slurp, '4e23efa7d67b7fd79228fb21ce279e21fb9d6a0a0c965df3c1169b9b30e326e1');
     });
 
     it('can compute a value', async function prove () {

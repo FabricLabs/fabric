@@ -84,7 +84,7 @@ class Machine extends Scribe {
   sip (n = 128) {
     const self = this;
     return new BN([...Array(n)].map(() => {
-      return self.bit();
+      return self.bit().toString();
     }).join(''), 2).toString(16);
   }
 
