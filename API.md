@@ -461,10 +461,10 @@ Aggregates a set of balances (inputs).
 
 * [Aggregator](#Aggregator)
     * [new Aggregator([settings])](#new_Aggregator_new)
-    * [._importBalances(list)](#Aggregator+_importBalances)
-    * [._sumBalances()](#Aggregator+_sumBalances)
+    * [._importBalances(list)](#Aggregator+_importBalances) ⇒ <code>AnchorBalance</code>
+    * [._computeBalances()](#Aggregator+_computeBalances) ⇒ <code>AnchorBalance</code>
     * [.commit()](#Aggregator+commit) ⇒ <code>AggregatorCommit</code>
-    * ["tree"](#Aggregator+event_tree)
+    * ["commit"](#Aggregator+event_commit)
 
 <a name="new_Aggregator_new"></a>
 
@@ -479,21 +479,23 @@ Create a new Aggregator.
 
 <a name="Aggregator+_importBalances"></a>
 
-### aggregator.\_importBalances(list)
+### aggregator.\_importBalances(list) ⇒ <code>AnchorBalance</code>
 Import a list of [AnchorBalance](AnchorBalance) instances.
 
 **Kind**: instance method of [<code>Aggregator</code>](#Aggregator)  
+**Returns**: <code>AnchorBalance</code> - Summary of resulting balances.  
 
 | Param | Type | Description |
 | --- | --- | --- |
 | list | <code>Array</code> | List of inputs to add. |
 
-<a name="Aggregator+_sumBalances"></a>
+<a name="Aggregator+_computeBalances"></a>
 
-### aggregator.\_sumBalances()
+### aggregator.\_computeBalances() ⇒ <code>AnchorBalance</code>
 Updates the state to reflect balances from current inputs.
 
 **Kind**: instance method of [<code>Aggregator</code>](#Aggregator)  
+**Returns**: <code>AnchorBalance</code> - Summary of balances.  
 <a name="Aggregator+commit"></a>
 
 ### aggregator.commit() ⇒ <code>AggregatorCommit</code>
@@ -501,18 +503,19 @@ Commits the balance of all input.
 
 **Kind**: instance method of [<code>Aggregator</code>](#Aggregator)  
 **Returns**: <code>AggregatorCommit</code> - Commit instance.  
-**Emits**: [<code>tree</code>](#Aggregator+event_tree)  
-<a name="Aggregator+event_tree"></a>
+**Emits**: [<code>commit</code>](#Aggregator+event_commit)  
+<a name="Aggregator+event_commit"></a>
 
-### "tree"
-Tree event.
+### "commit"
+Commit event.
 
 **Kind**: event emitted by [<code>Aggregator</code>](#Aggregator)  
 **Properties**
 
 | Name | Type | Description |
 | --- | --- | --- |
-| root | <code>Uint8Array</code> | [MerkleRoot](MerkleRoot) of the [Tree](#Tree). |
+| root | <code>Uint8Array</code> | Root of the [Tree](#Tree). |
+| leaves | <code>Array</code> | Leaves of the [Tree](#Tree). |
 
 <a name="App"></a>
 
@@ -3144,6 +3147,7 @@ Class implementing a Merkle Tree.
 * [Tree](#Tree)
     * [new Tree([settings])](#new_Tree_new)
     * [.addLeaf(leaf)](#Tree+addLeaf) ⇒ [<code>Tree</code>](#Tree)
+    * [.getLeaves()](#Tree+getLeaves) ⇒ <code>Array</code>
 
 <a name="new_Tree_new"></a>
 
@@ -3166,6 +3170,13 @@ Add a leaf to the tree.
 | --- | --- | --- |
 | leaf | <code>String</code> | Leaf to add to the tree. |
 
+<a name="Tree+getLeaves"></a>
+
+### tree.getLeaves() ⇒ <code>Array</code>
+Get a list of the [Tree](#Tree)'s leaves.
+
+**Kind**: instance method of [<code>Tree</code>](#Tree)  
+**Returns**: <code>Array</code> - A list of the [Tree](#Tree)'s leaves.  
 <a name="Value"></a>
 
 ## Value

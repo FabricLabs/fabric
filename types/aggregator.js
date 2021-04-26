@@ -50,17 +50,21 @@ class Aggregator extends Service {
   /**
    * Import a list of {@link AnchorBalance} instances.
    * @param {Array} list List of inputs to add.
+   * @returns {AnchorBalance} Summary of resulting balances.
    */
   _importBalances (list = []) {
     for (let i = 0; i < list.length; i++) {
       this._state.inputs.push(list[i]);
     }
+    this.commit();
+    return this.balances;
   }
 
   /**
    * Updates the state to reflect balances from current inputs.
+   * @returns {AnchorBalance} Summary of balances.
    */
-  _sumBalances () {
+  _computeBalances () {
     this._state.balances = this._state.inputs.reduce((o, e) => {
       o.total += e.total;
       o.confirmed += e.confirmed;
@@ -71,17 +75,18 @@ class Aggregator extends Service {
       confirmed: 0,
       unconfirmed: 0
     });
+    return this.balances;
   }
 
   /**
    * Commits the balance of all input.
-   * @fires Aggregator#tree
+   * @fires Aggregator#commit
    * @returns {AggregatorCommit} Commit instance.
    */
   commit () {
-    this._sumBalances();
+    this._computeBalances();
 
-    const actor = new Actor(this._state);
+    const actor = new Actor(this.balances);
     const signature = actor.sign().signature;
     const message = {
       id: actor.id,
@@ -93,16 +98,21 @@ class Aggregator extends Service {
       version: this.settings.version
     };
 
+    // Update Tree
     this._tree.addLeaf(actor.id);
     this._state.history.push(this._tree.root);
 
+    // Assign Root & Leaves
+    message.root = this._tree.root;
+    message.leaves = this._tree.getLeaves();
+
     /**
-     * Tree event.
-     * @event Aggregator#tree
+     * Commit event.
+     * @event Aggregator#commit
      * @type {Object}
-     * @property {Uint8Array} root {@link MerkleRoot} of the {@link Tree}.
+     * @property {Uint8Array} root Root of the {@link Tree}.
+     * @property {Array} leaves Leaves of the {@link Tree}.
      */
-    this.emit('tree', this._tree);
     this.emit('commit', message);
 
     return message;

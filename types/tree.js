@@ -44,11 +44,23 @@ class Tree extends Actor {
    * @returns {Tree}
    */
   addLeaf (leaf = '') {
-    this._tree = new MerkleTree(this.settings.leaves.concat([ leaf ]), Hash256.digest, {
+    this._tree = new MerkleTree(this.settings.leaves.concat([
+      leaf
+    ]), Hash256.digest, {
       isBitcoinTree: true
     });
 
+    this.emit('leaf', leaf);
+
     return this;
+  }
+
+  /**
+   * Get a list of the {@link Tree}'s leaves.
+   * @returns {Array} A list of the {@link Tree}'s leaves.
+   */
+  getLeaves () {
+    return this._tree.getLeaves();
   }
 }
 
