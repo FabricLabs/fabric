@@ -87,7 +87,6 @@
     "json-pointer": "^0.6.0",
     "level": "^5.0.1",
     "lodash.merge": "^4.6.2",
-    "matrix-js-sdk": "martindale/matrix-js-sdk#silent-logger",
     "merkletreejs": "^0.1.6",
     "minsc": "^0.2.0",
     "mkdirp": "^1.0.4",
