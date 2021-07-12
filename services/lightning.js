@@ -7,15 +7,16 @@ const Remote = require('../types/remote');
 
 const OP_TEST = require('../contracts/test');
 const Actor = require('../types/actor');
+const Key = require('../types/key');
 
 class Lightning extends Service {
   constructor (settings = {}) {
     super(settings);
 
     this.settings = Object.assign({
+      authority: 'http://localhost:8555',
       path: './stores/lightning',
       mode: 'rpc',
-      servers: ['http://localhost:8555'],
       interval: 1000
     }, this.settings, settings);
 
@@ -32,6 +33,7 @@ class Lightning extends Service {
         unconfirmed: 0
       },
       channels: {},
+      invoices: {},
       peers: {},
       nodes: {}
     };
@@ -39,32 +41,35 @@ class Lightning extends Service {
     return this;
   }
 
+  static plugin (state) {
+    const lightning = new Lightning(state);
+    const plugin = new LightningPlugin(state);
+    plugin.addMethod('test', OP_TEST.bind(lightning));
+    // plugin.addMethod('init');
+    return plugin;
+  }
+
   get balances () {
     return this._state.balances;
   }
 
   async start () {
-    const service = this;
-    service.status = 'starting';
+    this.status = 'starting';
     await this.machine.start();
 
     if (this.settings.mode === 'rest') {
-      const providers = service.settings.servers.map(x => new URL(x));
-      // TODO: loop through all providers
-      const provider = providers[0];
-
+      const provider = new URL(this.settings.authority);
       this.rest = new Remote({
         authority: provider.hostname,
         username: provider.username,
         password: provider.password
       });
-
       await this._syncOracleInfo();
     }
 
-    service.heartbeat = setInterval(service._heartbeat.bind(service), service.settings.interval);
-
+    this.heartbeat = setInterval(this._heartbeat.bind(this), this.settings.interval);
     this.status = 'started';
+
     return this;
   }
 
@@ -75,6 +80,41 @@ class Lightning extends Service {
   async _heartbeat () {
     await this._syncOracleInfo();
     return this;
+  }
+
+  async _generateSmallestInvoice () {
+    return await this._generateInvoice(1);
+  }
+
+  async _generateInvoice (amount, expiry = 120, description = 'nothing relevant') {
+    let result = null;
+
+    if (this.settings.mode === 'rest') {
+      const key = new Key();
+      const actor = new Actor({
+        id: key.id,
+        type: 'LightningInvoice',
+        data: { amount, expiry }
+      });
+
+      const invoice = await this.rest._POST('/invoice/genInvoice', {
+        label: actor.id,
+        amount: amount,
+        expiry: expiry,
+        description: description
+      });
+
+      result = Object.assign({}, actor.state, {
+        encoded: invoice.bolt11,
+        expiry: invoice.expires_at,
+        data: invoice
+      });
+
+      this._state.invoices[key.id] = result;
+      await this.commit();
+    }
+
+    return result;
   }
 
   async _syncOracleInfo () {

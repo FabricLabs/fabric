@@ -27,9 +27,11 @@ const MAX_FRAME_SIZE = 32; // max size of a stack frame in bytes
 const MAX_MEMORY_ALLOC = MAX_STACK_HEIGHT * MAX_FRAME_SIZE;
 const MAX_CHANNEL_VALUE = 100000000;
 
+const MACHINE_MAX_MEMORY = MAX_MEMORY_ALLOC * MAX_MESSAGE_SIZE;
+
 // FABRIC ONLY
-const LOG_MESSAGE_TYPE = parseInt(crypto.createHash('sha256').update('@types/GenericLogMessage').digest('hex'), 16);
-const GENERIC_LIST_TYPE = parseInt(crypto.createHash('sha256').update('@types/GenericList').digest('hex'), 16);
+const LOG_MESSAGE_TYPE = MAGIC_BYTES + parseInt(crypto.createHash('sha256').update('@types/GenericLogMessage').digest('hex').slice(0, 4), 16);
+const GENERIC_LIST_TYPE = MAGIC_BYTES + parseInt(crypto.createHash('sha256').update('@types/GenericList').digest('hex').slice(0, 4), 16);
 
 const OP_CYCLE = '00';
 const OP_DONE = 'ff';
@@ -111,6 +113,7 @@ module.exports = {
   MAX_MESSAGE_SIZE,
   MAX_STACK_HEIGHT,
   MAX_CHANNEL_VALUE,
+  MACHINE_MAX_MEMORY,
   OP_CYCLE,
   OP_DONE,
   OP_0,

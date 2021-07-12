@@ -81,7 +81,7 @@ class Bitcoin extends Service {
     // Internal Services
     this.provider = new Consensus({ provider: 'bcoin' });
     this.wallet = new Wallet(this.settings);
-    this.chain = new Chain(this.settings);
+    // this.chain = new Chain(this.settings);
 
     // ## Collections
     // ### Blocks
@@ -199,7 +199,7 @@ class Bitcoin extends Service {
     if (this.settings.fullnode) {
       return this.fullnode.chain.tip.hash.toString('hex');
     } else {
-      return (this.chain.tip) ? this.chain.tip.toString('hex') : null;
+      return (this.chain && this.chain.tip) ? this.chain.tip.toString('hex') : null;
     }
   }
 
@@ -596,7 +596,7 @@ class Bitcoin extends Service {
           return false;
         }
       });
-  
+
       this.peer.on('error', this._handlePeerError.bind(this));
       this.peer.on('packet', this._handlePeerPacket.bind(this));
       this.peer.on('open', () => {
@@ -742,9 +742,11 @@ class Bitcoin extends Service {
 
   async _syncBalanceFromOracle () {
     const balance = await this._makeRPCRequest('getbalance');
-    this.balance = balance;
+    this._state.balance = balance;
+    this.emit('message', `balance sync: ${balance}`);
     const commit = await this.commit();
     const actor = new Actor(commit.data);
+    this.emit('message', `balance sync, commit: ${commit}`);
     return {
       type: 'OracleBalance',
       data: {
@@ -813,6 +815,7 @@ class Bitcoin extends Service {
     const self = this;
     self.status = 'starting';
 
+    if (this.store) await this.store.open();
     if (this.settings.fullnode) {
       this.fullnode.on('peer connect', function peerConnectHandler (peer) {
         self.emit('warning', `[SERVICES:BITCOIN]', 'Peer connected to Full Node: ${peer}`);
@@ -844,13 +847,12 @@ class Bitcoin extends Service {
 
     // Start services
     await this.wallet.start();
-    await this.chain.start();
+    // await this.chain.start();
 
     // Start nodes
     if (this.settings.fullnode) await this._startLocalNode();
     if (this.settings.mode === 'rpc') {
-      const providers = self.settings.servers.map(x => new URL(x));
-      const provider = providers[0]; // TODO: loop through all providers
+      const provider = new URL(self.settings.authority);
       const config = {
         host: provider.hostname,
         port: provider.port
@@ -864,7 +866,12 @@ class Bitcoin extends Service {
         self.rpc = jayson.client.http(config);
       }
 
-      await this._syncBalanceFromOracle();
+      try {
+        await this._syncBalanceFromOracle();
+      } catch (exception) {
+        this.emit('error', exception);
+        return this;
+      }
 
       self.heartbeat = setInterval(self._heartbeat.bind(self), self.settings.interval);
     }
@@ -901,7 +908,7 @@ class Bitcoin extends Service {
     if (this.peer && this.peer.connected) await this.peer.destroy();
     if (this.fullnode) await this.fullnode.close();
     await this.wallet.stop();
-    await this.chain.stop();
+    // await this.chain.stop();
   }
 }
 

@@ -1,16 +1,19 @@
 'use strict';
 
+// Dependencies
+const { EventEmitter } = require('events');
+
 // Fabric Types
 const Key = require('./key');
-const Entity = require('./entity');
 const Hash256 = require('./hash256');
 
 /**
  * Generic Fabric Actor.
  * @emits message Fabric {@link Message} objects.
- * @property {String} id Unique identifier for this Actor.
+ * @property {String} id Unique identifier for this Actor (id === SHA256(preimage)).
+ * @property {String} preimage Input hash for the `id` property (preimage === SHA256(ActorState)).
  */
-class Actor extends Entity {
+class Actor extends EventEmitter {
   /**
    * Creates an {@link Actor}, which emits messages for other
    * Actors to subscribe to.  You can supply certain parameters
@@ -55,7 +58,7 @@ class Actor extends Entity {
   get preimage () {
     const input = {
       '@type': 'FabricActorState',
-      '@data': this.state
+      '@data': this.toObject()
     };
 
     const string = JSON.stringify(input, null, '  ');
@@ -65,7 +68,7 @@ class Actor extends Entity {
   }
 
   get state () {
-    return Object.assign({}, this._state);
+    return Object.assign({}, this._state['@data']);
   }
 
   /**
@@ -73,7 +76,23 @@ class Actor extends Entity {
    * @returns {Buffer}
    */
   toBuffer () {
-    return Buffer.from(JSON.stringify(this.value, null, '  '), 'utf8');
+    return Buffer.from(this.serialize(), 'utf8');
+  }
+
+  /**
+   * Returns the Actor's current state as an {@link Object}.
+   * @returns {Object}
+   */
+  toObject () {
+    return this._sortKeys(this.state);
+  }
+
+  /**
+   * Serialize the Actor's current state into a JSON-formatted string.
+   * @returns {String}
+   */
+  serialize () {
+    return JSON.stringify(this.toObject(), null, '  ');
   }
 
   /**
@@ -84,6 +103,20 @@ class Actor extends Entity {
     this.signature = this.key._sign(this.toBuffer());
     this.emit('signature', this.signature);
     return this;
+  }
+
+  /**
+   * Create a new {@link Object} with sorted properties.
+   * @param {Object} state Object to sort.
+   * @returns {Object} Re-sorted instance of `state` as provided.
+   */
+  _sortKeys (state) {
+    // TODO: investigate whether relying on default sort()
+    // or using a locally-defined function is the safest method
+    return Object.keys(state).sort().reduce((obj, key) => {
+      obj[key] = state[key];
+      return obj;
+    }, {});
   }
 }
 

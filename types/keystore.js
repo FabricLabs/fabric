@@ -27,7 +27,7 @@ class KeyStore extends Actor {
     super(settings);
     if (!settings.seed) settings.seed = process.env.FABRIC_SEED || null;
 
-    this.key = new Key(settings);
+    this.key = new Key(settings.key);
     this.settings = merge({
       name: 'DefaultStore',
       type: 'EncryptedFabricStore',
@@ -42,13 +42,15 @@ class KeyStore extends Actor {
     this.db = null;
 
     this.codec = new Codec({
-      key: { private: this.key.privkey },
+      key: this.settings.key,
       mode: this.settings.mode,
       version: this.settings.version
     });
 
     this._state = {
       status: 'initialized',
+      version: this.settings.version,
+      keys: [],
       value: {}
     };
 
@@ -60,13 +62,17 @@ class KeyStore extends Actor {
   get states () {
     return [
       'initialized',
+      'starting',
       'opening',
       'open',
+      'started',
       'writing',
       'closing',
       'closed',
       'deleting',
-      'deleted'
+      'deleted',
+      'stopping',
+      'stopped'
     ];
   }
 
@@ -79,6 +85,10 @@ class KeyStore extends Actor {
     if (!this.states.includes(value)) throw new Error(`Status value "${value}" is not one of ${this.states.length} valid states: ${JSON.stringify(this.states)}`);
     this._state.status = value;
     return this.status;
+  }
+
+  get state () {
+    return Object.assign({}, this._state.value);
   }
 
   async commit () {
@@ -96,30 +106,45 @@ class KeyStore extends Actor {
 
   async open () {
     const keystore = this;
-    const promise = new Promise(async (resolve, reject) => {
+    const promise = new Promise((resolve, reject) => {
       if (['open', 'writing'].includes(keystore.status)) return resolve(keystore);
       keystore.status = 'opening';
 
-      async function _handleOpen (err, db) {
-        keystore.status = 'open';
+      async function _handleDiskOpen (err, db) {
+        if (err) this.emit('error', `Could not open: ${err}`);
+        this.status = 'open';
+        let state = null;
+
         try {
-          await keystore._getState();
+          state = await this._getState();
         } catch (exception) {
-          ('Unable to load state:', exception);
+          this.emit('warning', `Could not retrieve state`);
         }
-        resolve(keystore);
+
+        if (state) {
+          // TODO: recursively cast { type, data } tuples as Buffer
+          // where type === 'Buffer' && data
+          await this._setState(state);
+          await this.commit();
+        }
+
+        return this;
       }
 
       try {
         keystore.db = level(keystore.settings.path, {
           keyEncoding: keystore.codec,
           valueEncoding: keystore.codec
-        }, _handleOpen.bind(keystore));
+        }, _handleDiskOpen.bind(keystore));
+
+        keystore.status = 'open';
+        resolve(keystore);
       } catch (exception) {
         keystore.status = 'closed';
-        reject(`Could not open store: ${exception}`);
+        reject(new Error(`Could not open store: ${exception}`));
       }
     });
+
     return promise;
   }
 
@@ -130,6 +155,11 @@ class KeyStore extends Actor {
     return this;
   }
 
+  async batch (ops) {
+    await this._batch(ops);
+    return this;
+  }
+
   async wipe () {
     if (this.status !== 'open') return this.emit('error', `Status not open: ${this.status}`);
     this.status = 'deleting';
@@ -137,6 +167,10 @@ class KeyStore extends Actor {
     await this.db.clear();
     this.status = 'deleted';
     return this;
+  }
+
+  async get (path = '*') {
+    return this._get(path);
   }
 
   async _handleStateChange (changes) {
@@ -151,7 +185,12 @@ class KeyStore extends Actor {
 
   async _get (key = '*') {
     if (key === '*') return Object.assign({}, this._state.value);
-    return pointer.get(this._state.value, `/${key}`);
+    try {
+      const result = pointer.get(this._state.value, `/${key}`);
+      return result;
+    } catch (exception) {
+      return null;
+    }
   }
 
   async _set (key, value) {
@@ -163,22 +202,25 @@ class KeyStore extends Actor {
     return this._get(key);
   }
 
+  async _batch (ops) {
+    await this.db.batch(ops);
+    return this;
+  }
+
   async _getState () {
-    if (!['open'].includes(this.status)) throw new Error(`Store is not open.  Currently: ${this.status}`);
     const keystore = this;
-    const promise = new Promise(async (resolve, reject) => {
-      try {
-        const result = await keystore.db.get('/');
-        // TODO: actor.deserialize();
-        const state = JSON.parse(result);
-        // TODO: recursively cast { type, data } tuples as Buffer
-        // where type === 'Buffer' && data
-        await keystore._setState(state);
-        await keystore.commit();
-        resolve(state);
-      } catch (exception) {
-        reject(exception);
+    const promise = new Promise((resolve, reject) => {
+      async function loadStateFromDisk () {
+        try {
+          const result = await keystore.db.get('/');
+          // TODO: actor.deserialize();
+          return JSON.parse(result);
+        } catch (exception) {
+          return null;
+        }
       }
+
+      loadStateFromDisk().then(resolve).catch(reject);
     });
     return promise;
   }
@@ -193,39 +235,46 @@ class KeyStore extends Actor {
     if (!['open', 'deleting'].includes(this.status)) throw new Error(`Store is not writable.  Currently: ${this.status}`);
 
     const keystore = this;
-    const promise = new Promise(async (resolve, reject) => {
-      const ops = [];
-      const meta = { keys: [] };
-      const actor = new Actor(state);
-      const transition = {
-        subject: 'state',
-        predicate: 'becomes',
-        object: state
-      };
-
-      // Phase 1
-      for (let key in state) {
+    const promise = new Promise((resolve, reject) => {
+      for (const key in state) {
         if (Object.prototype.hasOwnProperty.call(state, key)) {
-          meta.keys.push(key);
-          ops.push({ type: 'put', key: `/${key}`, value: state[key] });
+          keystore._state.keys.push(key);
           keystore._state.value[key] = state[key];
         }
       }
 
-      if (ops.length) await keystore.db.batch(ops).catch(reject);
-
-      // Phase 2
-      try {
-        await keystore.db.put('/', actor.serialize());
-        await keystore.commit();
-      } catch (exception) {
-        return reject(exception);
-      }
-
-      return resolve(actor);
+      this._syncStateToDisk().then(resolve).catch(reject);
     });
 
     return promise;
+  }
+
+  async _syncStateToDisk () {
+    if (!['open', 'deleting'].includes(this.status)) throw new Error(`Store is not writable.  Currently: ${this.status}`);
+
+    const keystore = this;
+    const promise = new Promise((resolve, reject) => {
+      const actor = new Actor(this.state);
+      const serialized = actor.serialize();
+      console.log('serialized:', serialized);
+      return keystore.db.put('/', serialized).then(resolve).catch(reject);
+    });
+
+    return promise;
+  }
+
+  async start () {
+    this.status = 'starting';
+    await this.open();
+    this.status = 'started';
+    return this;
+  }
+
+  async stop () {
+    this.status = 'stopping';
+    await this.close();
+    this.status = 'stopped';
+    return this;
   }
 }
 

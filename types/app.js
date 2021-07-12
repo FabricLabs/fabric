@@ -5,13 +5,13 @@ const merge = require('lodash.merge');
 
 // Types
 const Actor = require('./actor');
+const KeyStore = require('./keystore');
 const Machine = require('./machine');
 const Message = require('./message');
 const Peer = require('./peer');
 const Remote = require('./remote');
 const Resource = require('./resource');
 const Scribe = require('./scribe');
-const State = require('./state');
 const Storage = require('./store');
 // const Swarm = require('./swarm');
 
@@ -34,8 +34,9 @@ class App extends Scribe {
     if (!definition.resources) definition.resources = {};
 
     this.settings = this['@data'] = Object.assign({
-      prefix: '/',
       seed: 1,
+      path: './stores/fabric-application',
+      prefix: '/',
       services: []
     }, definition);
 
@@ -43,6 +44,7 @@ class App extends Scribe {
     this.node = new Peer(this.settings);
     this.actor = new Actor(this.settings);
     this.machine = new Machine(this.settings);
+    this.store = new KeyStore(this.settings);
 
     // TODO: replace these with KeyStore
     this.tips = new Storage({ path: './stores/tips' });
@@ -117,6 +119,7 @@ class App extends Scribe {
       this._appendWarning(`@${this.id} -- Checking for Service: ${name}`);
       if (this.settings.services.includes(name)) {
         this._appendWarning(`Starting service: ${name}`);
+        await this.services[name]._bindStore(this.store);
         await this.services[name].start();
       }
     }
@@ -137,6 +140,7 @@ class App extends Scribe {
   async stop () {
     this.log('[APP]', 'stopping...');
 
+    await this.node.stop();
     await this.tips.close();
     await this.stash.close();
 
@@ -294,18 +298,24 @@ class App extends Scribe {
 
   /**
    * Get the output of our program.
-   * @return {String}           Output of the program.
+   * @return {String} Output of the program.
    */
-  render (component) {
-    let rendered = `<fabric-${this.name.toLowerCase()} />`;
-    let sample = new State(rendered);
+  render () {
+    const actor = new Actor(this._state);
+    const html = `<fabric-${this.name.toLowerCase()}>` +
+      `\n  <fabric-state id="${actor.id}">` +
+      `\n    <fabric-state-json integrity="sha256:${actor.preimage}">${actor.serialize()}</fabric-state-json>` +
+      '\n  </fabric-state>' +
+      `\n</fabric-${this.name.toLowerCase()}>\n`;
+
+    const sample = new Actor(html);
 
     if (this.element) {
-      this.element.setAttribute('integrity', `sha256:${sample.id}`);
-      this.element.innerHTML = rendered;
+      this.element.setAttribute('integrity', `sha256:${sample.preimage}`);
+      this.element.innerHTML = html;
     }
 
-    return rendered;
+    return html;
   }
 
   _registerCommand (command, method) {

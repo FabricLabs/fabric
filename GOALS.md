@@ -4,6 +4,11 @@
 2. Make it work, make it right, make it fast.  In that order.
 3. Improve access to human liberty with every contribution.
 
+## Alternatives
+1. Secure Sovereignty
+2. Equivalent (or superior) Experience
+3. Eliminate Trusted Third Parties
+
 ## Mindset
 Precision engineering requires long periods of intense focus.  We seek healthy work/life balances,
 especially surrounding R&D related activities (Fabric Labs).  Striving for excellence is paramount,

@@ -14,6 +14,7 @@ class Codec {
       type: 'FabricCodec',
       version: 0,
       key: {
+        seed: null,
         private: null,
         public: null
       },

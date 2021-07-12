@@ -12,6 +12,9 @@
 <dt><a href="#Actor">Actor</a></dt>
 <dd><p>Generic Fabric Actor.</p>
 </dd>
+<dt><a href="#Aggregator">Aggregator</a></dt>
+<dd><p>Aggregates a set of balances (inputs).</p>
+</dd>
 <dt><a href="#App">App</a> ⇐ <code><a href="#Scribe">Scribe</a></code></dt>
 <dd><p>Web-friendly application framework for building single-page applications with
 Fabric-based networking and storage.</p>
@@ -152,6 +155,9 @@ execute either the full set or none.</p>
 </dd>
 <dt><a href="#Treasury">Treasury</a></dt>
 <dd><p>Manage a set of KeyPairs and their balances.</p>
+</dd>
+<dt><a href="#Tree">Tree</a></dt>
+<dd><p>Class implementing a Merkle Tree.</p>
 </dd>
 <dt><a href="#Value">Value</a></dt>
 <dd><p><a href="Number">Number</a>-like type.</p>
@@ -382,13 +388,17 @@ Generic Fabric Actor.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| id | <code>String</code> | Unique identifier for this Actor. |
+| id | <code>String</code> | Unique identifier for this Actor (id === SHA256(preimage)). |
+| preimage | <code>String</code> | Input hash for the `id` property (preimage === SHA256(ActorState)). |
 
 
 * [Actor](#Actor)
     * [new Actor([actor])](#new_Actor_new)
     * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
+    * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
+    * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
     * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
+    * [._sortKeys(state)](#Actor+_sortKeys) ⇒ <code>Object</code>
 
 <a name="new_Actor_new"></a>
 
@@ -412,12 +422,101 @@ what you share with others!
 Casts the Actor to a normalized Buffer.
 
 **Kind**: instance method of [<code>Actor</code>](#Actor)  
+<a name="Actor+toObject"></a>
+
+### actor.toObject() ⇒ <code>Object</code>
+Returns the Actor's current state as an [Object](Object).
+
+**Kind**: instance method of [<code>Actor</code>](#Actor)  
+<a name="Actor+serialize"></a>
+
+### actor.serialize() ⇒ <code>String</code>
+Serialize the Actor's current state into a JSON-formatted string.
+
+**Kind**: instance method of [<code>Actor</code>](#Actor)  
 <a name="Actor+sign"></a>
 
 ### actor.sign() ⇒ [<code>Actor</code>](#Actor)
 Signs the Actor.
 
 **Kind**: instance method of [<code>Actor</code>](#Actor)  
+<a name="Actor+_sortKeys"></a>
+
+### actor.\_sortKeys(state) ⇒ <code>Object</code>
+Create a new [Object](Object) with sorted properties.
+
+**Kind**: instance method of [<code>Actor</code>](#Actor)  
+**Returns**: <code>Object</code> - Re-sorted instance of `state` as provided.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| state | <code>Object</code> | Object to sort. |
+
+<a name="Aggregator"></a>
+
+## Aggregator
+Aggregates a set of balances (inputs).
+
+**Kind**: global class  
+
+* [Aggregator](#Aggregator)
+    * [new Aggregator([settings])](#new_Aggregator_new)
+    * [._importBalances(list)](#Aggregator+_importBalances) ⇒ <code>AnchorBalance</code>
+    * [._computeBalances()](#Aggregator+_computeBalances) ⇒ <code>AnchorBalance</code>
+    * [.commit()](#Aggregator+commit) ⇒ <code>AggregatorCommit</code>
+    * ["commit"](#Aggregator+event_commit)
+
+<a name="new_Aggregator_new"></a>
+
+### new Aggregator([settings])
+Create a new Aggregator.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Map of configuration values. |
+| [settings.inputs] | <code>Array</code> | Array of [AnchorBalance](AnchorBalance) instances. |
+
+<a name="Aggregator+_importBalances"></a>
+
+### aggregator.\_importBalances(list) ⇒ <code>AnchorBalance</code>
+Import a list of [AnchorBalance](AnchorBalance) instances.
+
+**Kind**: instance method of [<code>Aggregator</code>](#Aggregator)  
+**Returns**: <code>AnchorBalance</code> - Summary of resulting balances.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| list | <code>Array</code> | List of inputs to add. |
+
+<a name="Aggregator+_computeBalances"></a>
+
+### aggregator.\_computeBalances() ⇒ <code>AnchorBalance</code>
+Updates the state to reflect balances from current inputs.
+
+**Kind**: instance method of [<code>Aggregator</code>](#Aggregator)  
+**Returns**: <code>AnchorBalance</code> - Summary of balances.  
+<a name="Aggregator+commit"></a>
+
+### aggregator.commit() ⇒ <code>AggregatorCommit</code>
+Commits the balance of all input.
+
+**Kind**: instance method of [<code>Aggregator</code>](#Aggregator)  
+**Returns**: <code>AggregatorCommit</code> - Commit instance.  
+**Emits**: [<code>commit</code>](#Aggregator+event_commit)  
+<a name="Aggregator+event_commit"></a>
+
+### "commit"
+Commit event.
+
+**Kind**: event emitted by [<code>Aggregator</code>](#Aggregator)  
+**Properties**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| root | <code>Uint8Array</code> | Root of the [Tree](#Tree). |
+| leaves | <code>Array</code> | Leaves of the [Tree](#Tree). |
+
 <a name="App"></a>
 
 ## App ⇐ [<code>Scribe</code>](#Scribe)
@@ -446,7 +545,7 @@ Fabric-based networking and storage.
     * [.envelop(selector)](#App+envelop) ⇒ [<code>App</code>](#App)
     * [.use(name, definition)](#App+use) ⇒ [<code>App</code>](#App)
     * [.render()](#App+render) ⇒ <code>String</code>
-    * [._registerService(name, type)](#App+_registerService) ⇒ [<code>Service</code>](#Service)
+    * [._registerService(name, Service)](#App+_registerService) ⇒ [<code>Service</code>](#Service)
     * [.now()](#Scribe+now) ⇒ <code>Number</code>
     * [.trust(source)](#Scribe+trust) ⇒ [<code>Scribe</code>](#Scribe)
     * [.inherits(scribe)](#Scribe+inherits) ⇒ [<code>Scribe</code>](#Scribe)
@@ -571,7 +670,7 @@ Get the output of our program.
 **Returns**: <code>String</code> - Output of the program.  
 <a name="App+_registerService"></a>
 
-### app.\_registerService(name, type) ⇒ [<code>Service</code>](#Service)
+### app.\_registerService(name, Service) ⇒ [<code>Service</code>](#Service)
 Registers a named [Service](#Service) with the application.  Services are
 standardized interfaces for Fabric contracts, emitting [Message](#Message)
 events with a predictable lifecycle.
@@ -583,7 +682,7 @@ events with a predictable lifecycle.
 | Param | Type | Description |
 | --- | --- | --- |
 | name | <code>String</code> | Internal name of the service. |
-| type | <code>Class</code> | The ES6 class definition implementing [Service](#Service). |
+| Service | <code>Class</code> | The ES6 class definition implementing [Service](#Service). |
 
 <a name="Scribe+now"></a>
 
@@ -1590,31 +1689,44 @@ General-purpose state machine with [Vector](#Vector)-based instructions.
 **Kind**: global class  
 
 * [Machine](#Machine)
-    * [new Machine(config)](#new_Machine_new)
+    * [new Machine(settings)](#new_Machine_new)
     * [.sip([n])](#Machine+sip) ⇒ <code>Number</code>
+    * [.slurp([n])](#Machine+slurp) ⇒ <code>Number</code>
     * [.compute(input)](#Machine+compute) ⇒ <code>Promise</code>
 
 <a name="new_Machine_new"></a>
 
-### new Machine(config)
+### new Machine(settings)
 Create a Machine.
 
 
 | Param | Type | Description |
 | --- | --- | --- |
-| config | <code>Object</code> | Run-time configuration. |
+| settings | <code>Object</code> | Run-time configuration. |
 
 <a name="Machine+sip"></a>
 
 ### machine.sip([n]) ⇒ <code>Number</code>
-Get `n` bits of entropy.
+Get `n` bits of deterministic random data.
 
 **Kind**: instance method of [<code>Machine</code>](#Machine)  
 **Returns**: <code>Number</code> - Random bits from [Generator](Generator).  
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
-| [n] | <code>Number</code> | <code>32</code> | Number of bits to retrieve (max = 32). |
+| [n] | <code>Number</code> | <code>128</code> | Number of bits to retrieve. |
+
+<a name="Machine+slurp"></a>
+
+### machine.slurp([n]) ⇒ <code>Number</code>
+Get `n` bytes of deterministic random data.
+
+**Kind**: instance method of [<code>Machine</code>](#Machine)  
+**Returns**: <code>Number</code> - Random bytes from [Generator](Generator).  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [n] | <code>Number</code> | <code>32</code> | Number of bytes to retrieve. |
 
 <a name="Machine+compute"></a>
 
@@ -3025,6 +3137,46 @@ Create an instance of the Treasury.
 Generates a new Bitcoin address.
 
 **Kind**: instance method of [<code>Treasury</code>](#Treasury)  
+<a name="Tree"></a>
+
+## Tree
+Class implementing a Merkle Tree.
+
+**Kind**: global class  
+
+* [Tree](#Tree)
+    * [new Tree([settings])](#new_Tree_new)
+    * [.addLeaf(leaf)](#Tree+addLeaf) ⇒ [<code>Tree</code>](#Tree)
+    * [.getLeaves()](#Tree+getLeaves) ⇒ <code>Array</code>
+
+<a name="new_Tree_new"></a>
+
+### new Tree([settings])
+Create an instance of a Tree.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Configuration. |
+
+<a name="Tree+addLeaf"></a>
+
+### tree.addLeaf(leaf) ⇒ [<code>Tree</code>](#Tree)
+Add a leaf to the tree.
+
+**Kind**: instance method of [<code>Tree</code>](#Tree)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| leaf | <code>String</code> | Leaf to add to the tree. |
+
+<a name="Tree+getLeaves"></a>
+
+### tree.getLeaves() ⇒ <code>Array</code>
+Get a list of the [Tree](#Tree)'s leaves.
+
+**Kind**: instance method of [<code>Tree</code>](#Tree)  
+**Returns**: <code>Array</code> - A list of the [Tree](#Tree)'s leaves.  
 <a name="Value"></a>
 
 ## Value

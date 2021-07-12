@@ -1,10 +1,8 @@
 'use strict';
 
-const Actor = require('../types/actor');
 const assert = require('assert');
-const fs = require('fs');
-
-const data = require('../settings/test');
+const settings = require('../settings/test');
+const Actor = require('../types/actor');
 
 describe('@fabric/core/types/actor', function () {
   describe('Actor', function () {
@@ -13,12 +11,12 @@ describe('@fabric/core/types/actor', function () {
     });
 
     it('can smoothly create a new actor', function () {
-      let actor = new Actor();
+      const actor = new Actor();
       assert.ok(actor);
     });
 
     it('can sign some data', function () {
-      let actor = new Actor({
+      const actor = new Actor({
         content: 'Hello again, world!'
       });
 
@@ -26,20 +24,20 @@ describe('@fabric/core/types/actor', function () {
 
       assert.ok(actor);
       assert.ok(actor.signature);
-      assert.strictEqual(actor.id, '4fc21835a13a9e1fb1471c68ba47412bd8bd905bf58900e47042a6a45ec15e91');
+      assert.strictEqual(actor.id, '2ac9486cffac330ca9e2a748675b34676f27f1ba88582027fbfd2e1fbf4173b8');
     });
 
     it('can sign some data with a known seed', function () {
-      let actor = new Actor({
+      const actor = new Actor({
         content: 'Hello again, world!',
-        seed: data.key.seed
+        seed: settings.key.seed
       });
 
       actor.sign();
 
       assert.ok(actor);
       assert.ok(actor.signature);
-      assert.strictEqual(actor.id, '9d8a516d046906b237d664ad1ea7545c18028b74efe49685f145ff56b584b336');
+      assert.strictEqual(actor.id, '127a647890f14e2c7449b1eb625c90baa6e1e9345a0d4c672b6549dec339c995');
     });
   });
 });
