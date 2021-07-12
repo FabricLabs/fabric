@@ -43,10 +43,10 @@ class Collection extends Stack {
     this.path = `/` + this.name.toLowerCase();
 
     this._state = {};
-    this.state = {};
+    this.value = {};
 
     this.set(`${this.path}`, this.settings.data || {});
-    this.observer = monitor.observe(this.state);
+    this.observer = monitor.observe(this.value);
 
     Object.defineProperty(this, '@allocation', { enumerable: false });
     Object.defineProperty(this, '@buffer', { enumerable: false });
@@ -68,7 +68,7 @@ class Collection extends Stack {
    * @returns {MerkleTree}
    */
   asMerkleTree () {
-    let list = pointer.get(this.state, this.path);
+    let list = pointer.get(this.value, this.path);
     let stack = new Stack(Object.keys(list));
     return stack.asMerkleTree();
   }
@@ -91,8 +91,8 @@ class Collection extends Stack {
     let result = null;
 
     try {
-      if (this.settings.verbosity >= 5) console.log(`getting ${this.path}/${id} from:`, this.state);
-      result = pointer.get(this.state, `${this.path}/${id}`);
+      if (this.settings.verbosity >= 5) console.log(`getting ${this.path}/${id} from:`, this.value);
+      result = pointer.get(this.value, `${this.path}/${id}`);
     } catch (E) {
      // console.debug('[FABRIC:COLLECTION]', `@${this.name}`, Date.now(), `Could not find ID "${id}" in tree ${this.asMerkleTree()}`);
     }
@@ -106,7 +106,7 @@ class Collection extends Stack {
    * Retrieve the most recent element in the collection.
    */
   getLatest () {
-    let items = pointer.get(this.state, this.path);
+    let items = pointer.get(this.value, this.path);
     return items[items.length - 1];
   }
 
@@ -117,7 +117,7 @@ class Collection extends Stack {
    */
   findByField (name, value) {
     let result = null;
-    let items = pointer.get(this.state, this.path);
+    let items = pointer.get(this.value, this.path);
     // constant-time loop
     for (let id in items) {
       if (items[id][name] === value) {
@@ -134,7 +134,7 @@ class Collection extends Stack {
    */
   findByName (name) {
     let result = null;
-    let items = pointer.get(this.state, this.path);
+    let items = pointer.get(this.value, this.path);
     // constant-time loop
     for (let id in items) {
       if (items[id].name === name) {
@@ -151,7 +151,7 @@ class Collection extends Stack {
    */
   findBySymbol (symbol) {
     let result = null;
-    let items = pointer.get(this.state, this.path);
+    let items = pointer.get(this.value, this.path);
     // constant-time loop
     for (let id in items) {
       // TODO: fix bug here (check for symbol)
@@ -166,7 +166,7 @@ class Collection extends Stack {
   // TODO: deep search, consider GraphQL (!!!: to discuss)
   match (query = {}) {
     let result = null;
-    let items = pointer.get(this.state, this.path);
+    let items = pointer.get(this.value, this.path);
     let list = Object.keys(items).map((x) => {
       return items[x];
     });
@@ -209,7 +209,7 @@ class Collection extends Stack {
     if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'Patching target:', path, patches);
 
     try {
-      result = monitor.applyPatch(this.state, patches.map((op) => {
+      result = monitor.applyPatch(this.value, patches.map((op) => {
         op.path = `${link}${op.path}`;
         return op;
       })).newDocument;
@@ -272,7 +272,8 @@ class Collection extends Stack {
     try {
       result = pointer.get(this['@entity']['@data'], path);
     } catch (exception) {
-      console.error('[FABRIC:COLLECTION]', 'Could not retrieve path:', path, exception);
+      this.emit('warning', `[FABRIC:COLLECTION] Could not retrieve path: ${path} ${JSON.stringify(exception)}`);
+      // console.error('[FABRIC:COLLECTION]', 'Could not retrieve path:', path, exception);
     }
 
     return result;
@@ -285,7 +286,7 @@ class Collection extends Stack {
    */
   set (path, value) {
     pointer.set(this._state, path, value);
-    pointer.set(this.state, path, value);
+    pointer.set(this.value, path, value);
     pointer.set(this['@entity']['@data'], path, value);
 
     this.commit();
@@ -339,7 +340,7 @@ class Collection extends Stack {
    * @returns {Array}
    */
   map () {
-    return Collection.pointer.get(this.state, `${this.path}`);
+    return Collection.pointer.get(this.value, `${this.path}`);
   }
 
   /**
@@ -439,7 +440,7 @@ class Collection extends Stack {
       '@type': 'Snapshot',
       '@data': {
         path: this.path,
-        state: pointer.get(this.state, this.path)
+        state: pointer.get(this.value, this.path)
       }
     });
 
@@ -469,7 +470,7 @@ class Collection extends Stack {
     if (patches && patches.length) {
       const body = {
         changes: patches,
-        state: this.state
+        state: this.value
       };
 
       this.emit('transaction', body);

@@ -12,15 +12,16 @@ const Service = require('./service');
 
 /**
  * The {@link Circuit} is the mechanism through which {@link Fabric}
- * operates, a computable directed graph for execution be a network
- * of {@link Peer} components.  See also {@link Swarm} for deeper
- * inspection of {@link Machine} mechanics.
+ * operates, a computable directed graph describing a network of
+ * {@link Peer} components and their interactions (side effects).
+ * See also {@link Swarm} for deeper *inspection of {@link Machine}
+ * mechanics.
  */
 class Circuit extends Service {
   constructor (config = {}) {
     super(config);
 
-    this.config = Object.assign({
+    this.settings = Object.assign({
       edges: [],
       gates: [],
       loops: [],
@@ -28,7 +29,7 @@ class Circuit extends Service {
       wires: []
     }, config);
 
-    this['@data'] = this.config;
+    this['@data'] = this.settings;
 
     this.gates = [];
     this.transitions = [];
@@ -40,16 +41,16 @@ class Circuit extends Service {
       nodes: []
     };
 
-    for (let i in this.config.gates) {
+    for (let i in this.settings.gates) {
       this.transitions.push({
         name: `step`,
         from: 'cycle()',
-        to: `${this.config.gates[i]}`
+        to: `${this.settings.gates[i]}`
       });
     }
 
-    for (let i in this.config.wires) {
-      let wire = this.config.wires[i];
+    for (let i in this.settings.wires) {
+      let wire = this.settings.wires[i];
       this.transitions.push({ name: wire.name, from: wire.from, to: wire.to });
     }
 

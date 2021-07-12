@@ -12,7 +12,7 @@ class Vector extends Scribe {
   constructor (origin) {
     super(origin);
 
-    this.config = Object.assign({}, origin);
+    this.settings = Object.assign({}, origin);
 
     this.known = {};
     this.registry = {};
@@ -25,7 +25,9 @@ class Vector extends Scribe {
     return this;
   }
 
-  static fromObjectString (input) {
+  static fromObjectString (input = '') {
+    if (!input) throw new Error('Must provide input.');
+    if (typeof input !== 'string') input = JSON.stringify(input);
     let result = [];
     let object = JSON.parse(input);
 

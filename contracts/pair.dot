@@ -1,0 +1,4 @@
+digraph Pair {
+  "A<CurrencyBond>" -> "B<CurrencyBond>"
+  "B<CurrencyBond>" -> "A<CurrencyBond>"
+}

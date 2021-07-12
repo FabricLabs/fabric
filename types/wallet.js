@@ -74,16 +74,15 @@ class Wallet extends Service {
       decimals: 8,
       shardsize: 4,
       verbosity: 2,
-      witness: false,
+      witness: true,
       key: null
     }, settings);
 
-    this.database = new WalletDB({
-      db: 'memory',
-      network: this.settings.network
-    });
-
     bcoin.set(this.settings.network);
+
+    this.database = new WalletDB({
+      network: 'regtest'
+    });
 
     this.account = null;
     this.manager = null;
@@ -232,6 +231,10 @@ class Wallet extends Service {
     return txp;
   }
 
+  async _handleFabricTransaction (tx) {
+    console.log('[FABRIC:WALLET]', 'Handling Fabric Transaction:', tx);
+  }
+
   async addTransactionToWallet (transaction) {
     if (this.settings.verbosity >= 5) console.log('[AUDIT]', '[FABRIC:WALLET]', 'Adding transaction to Wallet:', transaction);
     let entity = new Entity(transaction);
@@ -309,19 +312,19 @@ class Wallet extends Service {
 
   async _spendToAddress (amount, address) {
     const mtx = new MTX();
-    const utxo = await this._getUnspentOutput(amount);
-    const change = await this._allocateSlot();
+    const change = await this.wallet.receiveAddress();
+    const coins = await this.wallet.getCoins();
 
-    if (!this._state.coins.length) throw new Error('No available funds.');
+    this.emit('message', `Amount to send: ${amount}`);
 
     mtx.addOutput({
-      address: address,
-      value: amount
+      address: recipient,
+      value: parseInt(amount)
     });
 
-    await mtx.fund(this._state.coins, {
+    await mtx.fund(coins, {
       rate: 10,
-      changeAddress: change.string
+      changeAddress: change
     });
 
     const sigs = mtx.sign(this.ring);
@@ -723,6 +726,12 @@ class Wallet extends Service {
     return this;
   }
 
+  async getUnusedAddress () {
+    let clean = await this.wallet.receiveAddress();
+    this.emit('message', `unused address: ${clean}`);
+    return clean;
+  }
+
   async getUnspentTransactionOutputs () {
     return this._state.transactions.filter(x => {
       return (x.spent === 0);
@@ -847,9 +856,40 @@ class Wallet extends Service {
     };
   }
 
-  async _createSeed () {
-    let mnemonic = new Mnemonic({ bits: 256 });
-    return { seed: mnemonic.toString() };
+  async _createSeed (password = null) {
+    const mnemonic = new Mnemonic({ bits: 256 });
+    const master = bcoin.hd.fromMnemonic(mnemonic);
+
+    await this._load();
+
+    const wallet = await this.database.create({
+      network: this.settings.network,
+      master: master
+    });
+
+    // TODO: allow override of wallet name
+    const account = await wallet.getAccount('default');
+    const data = {
+      seed: mnemonic.toString(),
+      master: master.privateKey.toString('hex'),
+      xpub: {
+        meta: {
+          depth: account.accountKey.depth,
+          parentFingerPrint: account.accountKey.parentFingerPrint,
+          childIndex: account.accountKey.childIndex,
+          chainCode: account.accountKey.chainCode.toString('hex'),
+          publicKey: account.accountKey.publicKey.toString('hex'),
+          fingerPrint: account.accountKey.fingerPrint
+        },
+        public: account.accountKey.publicKey.toString('hex')
+      },
+      key: {
+        private: master.privateKey.toString('hex'),
+        public: master.publicKey.toString('hex')
+      }
+    };
+
+    return data;
   }
 
   async _importSeed (seed) {
@@ -1212,13 +1252,6 @@ class Wallet extends Service {
       await this.database.open();
     }
 
-    // TODO: register account with this.wallet
-    let wallet = await this.wallet.createAccount({ name: obj.name });
-    if (this.settings.verbosity >= 4) console.log('bcoin wallet account:', wallet);
-    let actor = Object.assign({
-      account: wallet
-    }, obj);
-
     let account = await this.accounts.create(obj);
     if (this.settings.verbosity >= 4) console.log('registering account, created:', account);
 
@@ -1254,6 +1287,8 @@ class Wallet extends Service {
   async _load (settings = {}) {
     if (this.wallet) return this;
 
+    const self = this;
+
     this.status = 'loading';
     this.master = null;
 
@@ -1262,6 +1297,7 @@ class Wallet extends Service {
     }
 
     if (this.settings.key && this.settings.key.seed) {
+      this.emit('message', 'Restoring wallet from seed...');
       if (this.settings.verbosity >= 3) console.log('[AUDIT]', 'Restoring wallet from provided seed:', this.settings.key.seed);
       let mnemonic = new Mnemonic(this.settings.key.seed);
       this.master = bcoin.hd.fromMnemonic(mnemonic);
@@ -1287,6 +1323,7 @@ class Wallet extends Service {
     if (this.settings.verbosity >= 4) console.log('keyring:', this.ring);
     if (this.settings.verbosity >= 4) console.log('address from keyring:', this.ring.getAddress().toString());
 
+    // TODO: allow override of wallet name
     this.account = await this.wallet.getAccount('default');
 
     // Let's call it a shard!
@@ -1305,7 +1342,7 @@ class Wallet extends Service {
     this.state.transactions = this.settings.transaction;
     this.state.orders = this.settings.orders;
 
-    if (this.settings.verbosity >=5) console.log('[FABRIC:WALLET]', 'state after loading:', this.state);
+    if (this.settings.verbosity >= 5) console.log('[FABRIC:WALLET]', 'state after loading:', this.state);
 
     this.status = 'loaded';
     this.emit('ready');
@@ -1317,7 +1354,9 @@ class Wallet extends Service {
    * Start the wallet, including listening for transactions.
    */
   async start () {
-    return this._load();
+    this.status = 'STARTING';
+    await this._load();
+    this.status = 'STARTED';
   }
 }
 

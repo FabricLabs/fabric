@@ -1,9 +1,17 @@
 'use strict'; // commit (.) and continue (,) ⇒ ;
 
-const crypto = require('crypto');
+// Constants
+const {
+  MACHINE_MAX_MEMORY
+} = require('../constants');
+
+// Dependencies
 const arbitrary = require('arbitrary');
 const monitor = require('fast-json-patch');
+const BN = require('bn.js');
 
+// Fabric Types
+const Hash256 = require('./hash256');
 const Scribe = require('./scribe');
 const State = require('./state');
 const Vector = require('./vector');
@@ -14,23 +22,23 @@ const Vector = require('./vector');
 class Machine extends Scribe {
   /**
    * Create a Machine.
-   * @param       {Object} config Run-time configuration.
+   * @param       {Object} settings Run-time configuration.
    */
-  constructor (config) {
-    super(config);
+  constructor (settings) {
+    super(settings);
 
-    this.config = Object.assign({
+    this.settings = Object.assign({
       path: './stores/machine',
-      debug: true,
+      debug: false,
       deterministic: true,
       seed: 1 // TODO: select seed for production
-    }, config);
+    }, settings);
 
     this.clock = 0;
 
     // define integer field
-    this.seed = crypto.createHash('sha256').update(this.config.seed + '');
-    this.q = parseInt(this.seed.digest('hex'));
+    this.seed = Hash256.digest(this.settings.seed + '');
+    this.q = parseInt(this.seed.substring(0, 4), 16);
 
     // deterministic entropy and RNG
     this.generator = new arbitrary.default.Generator(this.q);
@@ -46,6 +54,11 @@ class Machine extends Scribe {
     this.observer = monitor.observe(this.state['@data']);
     this.vector = new Vector(this.state['@data']);
 
+    this._state = {
+      status: 'INITIALIZED',
+      memory: Buffer.alloc(MACHINE_MAX_MEMORY)
+    };
+
     Object.defineProperty(this, 'tip', function (val) {
       this.log(`tip requested: ${val}`);
       this.log(`tip requested, history: ${JSON.stringify(this.history)}`);
@@ -55,13 +68,36 @@ class Machine extends Scribe {
     return this;
   }
 
+  get id () {
+    return this.vector.id;
+  }
+
+  bit () {
+    return this.generator.next.bits(1);
+  }
+
   /**
-   * Get `n` bits of entropy.
-   * @param  {Number} [n=32] Number of bits to retrieve (max = 32).
+   * Get `n` bits of deterministic random data.
+   * @param  {Number} [n=128] Number of bits to retrieve.
    * @return {Number}        Random bits from {@link Generator}.
    */
-  sip (n = 32) {
-    return this.generator.next.bits(n);
+  sip (n = 128) {
+    const self = this;
+    return new BN([...Array(n)].map(() => {
+      return self.bit().toString();
+    }).join(''), 2).toString(16);
+  }
+
+  /**
+   * Get `n` bytes of deterministic random data.
+   * @param  {Number} [n=32] Number of bytes to retrieve.
+   * @return {Number}        Random bytes from {@link Generator}.
+   */
+  slurp (n = 32) {
+    const self = this;
+    return new BN([...Array(n * 8)].map(() => {
+      return self.bit();
+    }).join(''), 2).toString(16);
   }
 
   /**
@@ -108,7 +144,7 @@ class Machine extends Scribe {
   }
 
   asBuffer () {
-    let data = this.serialize(this.state['@data']);
+    const data = this.serialize(this.state['@data']);
     return Buffer.from(data);
   }
 
@@ -122,10 +158,10 @@ class Machine extends Scribe {
   }
 
   commit () {
-    let self = this;
+    const self = this;
     if (!self.observer) return false;
 
-    let changes = monitor.generate(self.observer);
+    const changes = monitor.generate(self.observer);
 
     if (changes && changes.length) {
       let vector = new State({

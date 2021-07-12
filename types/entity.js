@@ -1,15 +1,13 @@
 'use strict';
 
 const crypto = require('crypto');
-
-const Events = require('events');
-const Machine = require('./machine');
+const { EventEmitter } = require('events');
 
 /**
  * Live instance of an ARC in Fabric.
  * @type {Object}
  */
-class Entity extends Events.EventEmitter {
+class Entity extends EventEmitter {
   /**
    * Generic template for virtual objects.
    * @param  {Object} [data={}] Pass an object to use.
@@ -22,7 +20,9 @@ class Entity extends Events.EventEmitter {
     if (!(this instanceof Entity)) return new Entity(data);
 
     // set internal properties
-    this.machine = new Machine();
+    this.settings = {
+      verbosity: 2 // Information && Warnings
+    };
 
     // configure defaults
     this.actor = Object.assign({}, this._downsample(data));
@@ -36,7 +36,7 @@ class Entity extends Events.EventEmitter {
 
     // remove mutable variables
     Object.defineProperty(this, 'actor', { enumerable: false });
-    Object.defineProperty(this, 'machine', { enumerable: false });
+    // Object.defineProperty(this, 'machine', { enumerable: false });
 
     // return instance
     return this;
@@ -65,7 +65,7 @@ class Entity extends Events.EventEmitter {
   get id () {
     let data = this.toJSON();
     let hash = crypto.createHash('sha256').update(data).digest('hex');
-    // console.log('[RPG:ENTITY (pending upstream!)]', 'hash:', hash, 'data:', data);
+    if (this.settings.verbosity >= 5) console.log('[FABRIC:ENTITY (pending upstream!)]', 'hash:', hash, 'data:', data);
     return hash;
   }
 
@@ -88,6 +88,7 @@ class Entity extends Events.EventEmitter {
       default:
         result = JSON.stringify(this.toObject());
         break;
+      case 'Buffer':
       case 'String':
         result = JSON.stringify(this.toString());
         break;
@@ -101,7 +102,12 @@ class Entity extends Events.EventEmitter {
 
     switch (this.actor['@type']) {
       default:
-        result = this.toJSON();
+        result = JSON.stringify(this.actor['@data']);
+        break;
+      case 'Buffer':
+        const buffer = new Uint8Array(this.data);
+        const values = Object.values(this.data);
+        result = JSON.stringify(values);
         break;
       case 'String':
         // TODO: write up longer-form explanation as to why we use an Array here
@@ -129,10 +135,8 @@ class Entity extends Events.EventEmitter {
    * Return a {@link Fabric}-labeled {@link Object} for this {@link Entity}.
    * @param {Mixed} [input] Input to downsample.  If not provided, current Entity will be used. 
    */
-  _downsample (input) {
+  _downsample (input = this.data) {
     let result = {};
-
-    if (!input) input = this.data;
 
     if (typeof input === 'string') {
       result = {
@@ -145,8 +149,6 @@ class Entity extends Events.EventEmitter {
         '@data': input
       };
     } else if (input instanceof Buffer) {
-      console.log('[FABRIC:ENTITY]', 'input data:', input);
-      console.log('[FABRIC:ENTITY]', 'input stringified by local JS engine:', JSON.stringify(input));
       result = {
         '@type': 'Buffer',
         '@data': JSON.parse(JSON.stringify(input))[0]

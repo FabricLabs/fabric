@@ -6,27 +6,44 @@ const {
   HEADER_SIZE,
   MAX_MESSAGE_SIZE,
   OP_CYCLE,
+  LOG_MESSAGE_TYPE,
+  GENERIC_LIST_TYPE,
   P2P_GENERIC,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
   P2P_ROOT,
   P2P_PING,
   P2P_PONG,
+  P2P_START_CHAIN,
   P2P_INSTRUCTION,
   P2P_BASE_MESSAGE,
+  P2P_CHAIN_SYNC_REQUEST,
   P2P_STATE_ROOT,
   P2P_STATE_COMMITTMENT,
   P2P_STATE_CHANGE,
   P2P_STATE_REQUEST,
   P2P_TRANSACTION,
   P2P_CALL,
+  CHAT_MESSAGE,
+  BLOCK_CANDIDATE,
   PEER_CANDIDATE,
   SESSION_START
 } = require('../constants');
 
+// Dependencies
 const crypto = require('crypto');
+const struct = require('struct');
+
+// Fabric Types
+const Label = require('./label');
 const Vector = require('./vector');
+
+// Function Definitions
 const padDigits = require('../functions/padDigits');
+
+// Type Labels
+const TYPE_ETHEREUM_BLOCK        = parseInt((new Label('types/EthereumBlock'))._id, 16);
+const TYPE_ETHEREUM_BLOCK_NUMBER = parseInt((new Label('types/EthereumBlockNumber'))._id, 16);
 
 /**
  * The {@link Message} type defines the Application Messaging Protocol, or AMP.
@@ -64,11 +81,22 @@ class Message extends Vector {
       this.type = input.type;
     }
 
+    // Set various properties to be unenumerable
+    for (let name of [
+      '@input',
+      '@entity',
+      '_state',
+      'config',
+      'settings',
+      'stack',
+      'observer'
+    ]) Object.defineProperty(this, name, { enumerable: false });
+
     return this;
   }
 
   get body () {
-    return this.raw.data;
+    return JSON.parse(this.raw.data.toString('utf8'));
   }
 
   get byte () {
@@ -103,7 +131,7 @@ class Message extends Vector {
   }
 
   toRaw () {
-    return Buffer.from(this.asRaw());
+    return this.asRaw();
   }
 
   asTypedArray () {
@@ -132,6 +160,26 @@ class Message extends Vector {
 
   fromObject (input) {
     return new Message(input);
+  }
+
+  static parseBuffer (buffer) {
+    const message = struct()
+      .charsnt('magic', 4, 'hex')
+      .charsnt('version', 4, 'hex')
+      .charsnt('type', 4, 'hex')
+      .charsnt('size', 4, 'hex')
+      .charsnt('hash', 32, 'hex')
+      .charsnt('data', buffer.length - HEADER_SIZE);
+
+    message.allocate();
+    message._setBuff(buffer);
+
+    return message;
+  }
+
+  static fromBuffer (buffer) {
+    const parsed = Message.parseBuffer(buffer);
+    return Message.fromRaw(parsed.buffer());
   }
 
   static fromRaw (input) {
@@ -191,13 +239,14 @@ class Message extends Vector {
     return message;
   }
 
-  static fromVector (vector) {
+  static fromVector (vector = ['LogMessage', 'No vector provided.']) {
     let message = null;
 
     try {
-      message = new Message();
-      message.type = vector[0];
-      message.data = vector[1];
+      message = new Message({
+        type: vector[0],
+        data: vector[1]
+      });
     } catch (exception) {
       console.error('[FABRIC:MESSAGE]', 'Could not construct Message:', exception);
     }
@@ -216,26 +265,41 @@ class Message extends Vector {
   get types () {
     // Message Types
     return {
+      'GenericMessage': LOG_MESSAGE_TYPE,
+      'GenericLogMessage': LOG_MESSAGE_TYPE,
+      'GenericList': GENERIC_LIST_TYPE,
+      'GenericQueue': GENERIC_LIST_TYPE,
+      'FabricLogMessage': LOG_MESSAGE_TYPE,
+      'FabricServiceLogMessage': LOG_MESSAGE_TYPE,
+      'GenericTransferQueue': GENERIC_LIST_TYPE,
       // TODO: document Generic type
+      // P2P Commands
       'Generic': P2P_GENERIC,
       'Cycle': OP_CYCLE,
       'IdentityRequest': P2P_IDENT_REQUEST,
       'IdentityResponse': P2P_IDENT_RESPONSE,
+      'ChainSyncRequest': P2P_CHAIN_SYNC_REQUEST,
       // TODO: restore this type
       // 'StateRoot': P2P_ROOT,
       'Ping': P2P_PING,
       'Pong': P2P_PONG,
+      'BlockCandidate': BLOCK_CANDIDATE,
       'PeerCandidate': PEER_CANDIDATE,
       'PeerInstruction': P2P_INSTRUCTION,
       'PeerMessage': P2P_BASE_MESSAGE,
       'StartSession': SESSION_START,
+      'ChatMessage': CHAT_MESSAGE,
+      'StartChain': P2P_START_CHAIN,
       // TODO: restore above StateRoot type
       'StateRoot': P2P_STATE_ROOT,
       'StateCommitment': P2P_STATE_COMMITTMENT,
       'StateChange': P2P_STATE_CHANGE,
       'StateRequest': P2P_STATE_REQUEST,
       'Transaction': P2P_TRANSACTION,
-      'Call': P2P_CALL
+      'Call': P2P_CALL,
+      'LogMessage': LOG_MESSAGE_TYPE,
+      'EthereumBlock': TYPE_ETHEREUM_BLOCK,
+      'EthereumBlockNumber': TYPE_ETHEREUM_BLOCK_NUMBER
     };
   }
 
@@ -277,8 +341,14 @@ Object.defineProperty(Message.prototype, 'type', {
     const code = parseInt(this.raw.type.toString('hex'), 16);
     switch (code) {
       default:
-        console.warn('[FABRIC:MESSAGE]', "Unhandled message type:", code);
+        // console.warn('[FABRIC:MESSAGE]', "Unhandled message type:", code);
         return 'GenericMessage';
+      case LOG_MESSAGE_TYPE:
+        return 'GenericLogMessage';
+      case GENERIC_LIST_TYPE:
+        return 'GenericList';
+      case BLOCK_CANDIDATE:
+        return 'BlockCandidate';
       case OP_CYCLE:
         return 'Cycle';
       case P2P_PING:
@@ -287,6 +357,8 @@ Object.defineProperty(Message.prototype, 'type', {
         return 'Pong';
       case P2P_GENERIC:
         return 'Generic';
+      case P2P_CHAIN_SYNC_REQUEST:
+        return 'ChainSyncRequest';
       case P2P_IDENT_REQUEST:
         return 'IdentityRequest';
       case P2P_IDENT_RESPONSE:
@@ -307,11 +379,24 @@ Object.defineProperty(Message.prototype, 'type', {
         return 'PeerCandidate';
       case SESSION_START:
         return 'StartSession';
+      case CHAT_MESSAGE:
+        return 'ChatMessage';
+      case P2P_START_CHAIN:
+        return 'StartChain';
+      case TYPE_ETHEREUM_BLOCK:
+        return 'EthereumBlock';
+      case TYPE_ETHEREUM_BLOCK_NUMBER:
+        return 'EthereumBlockNumber';
     }
   },
   set (value) {
-    const code = this.types[value];
-    if (!code) throw new Error(`Unknown message type: ${value}`);
+    let code = this.types[value];
+    // Default to GenericMessage;
+    if (!code) {
+      this.emit('warning', `Unknown message type: ${value}`);
+      code = this.types['GenericMessage'];
+    }
+
     const padded = padDigits(code.toString(16), 8);
     this['@type'] = value;
     this.raw.type.write(padded, 'hex');

@@ -1,10 +1,12 @@
 'use strict';
 
 // internal dependencies
+const Actor = require('./actor');
 // const Disk = require('./disk');
 const Key = require('./key');
 const Entity = require('./entity');
 const Store = require('./store');
+const KeyStore = require('./keystore');
 const Scribe = require('./scribe');
 const Stack = require('./stack');
 // const Swarm = require('./swarm');
@@ -38,16 +40,17 @@ class Service extends Scribe {
    * @param       {Boolean} [config.networking=true] Whether or not to connect to the network.
    * @param       {Object} [config.@data] Internal data to assign.
    */
-  constructor (config = {}) {
+  constructor (settings = {}) {
     // Initialize Scribe, our logging tool
-    super(config);
+    super(settings);
 
     // Configure (with defaults)
-    this.settings = this.config = Object.assign({
+    this.settings = Object.assign({
       name: 'service',
       path: './stores/service',
       networking: true,
       persistent: true,
+      interval: 60000, // Mandatory Checkpoint Interval
       verbosity: 2, // 0 none, 1 error, 2 warning, 3 notice, 4 debug
       // TODO: export this as the default data in `inputs/fabric.json`
       // If the sha256(JSON.stringify(this.data)) is equal to this, it's
@@ -57,13 +60,16 @@ class Service extends Scribe {
         messages: {},
         members: {}
       } */
-    }, config);
+    }, this.settings, settings);
 
     // Reserve a place for ourselves
     this.agent = null;
-    this.name = this.config.name;
+    this.actor = null;
+    this.name = this.settings.name;
+    this.clock = 0;
     this.collections = {};
     this.definitions = {};
+    this.methods = {};
     this.clients = {};
     this.targets = [];
     this.origin = '';
@@ -73,11 +79,11 @@ class Service extends Scribe {
     //      Canvas
     //        can draw a canvas:
     //          Error: Not implemented yet
-    this.key = null; // new Key();
+    this.key = new Key(this.settings.key);
 
     if (this.settings.persistent) {
       try {
-        this.store = new Store(this.settings);
+        this.store = new KeyStore(this.settings);
       } catch (E) {
         console.error('Error:', E);
       }
@@ -95,9 +101,6 @@ class Service extends Scribe {
     /* if (this.settings.networking) {
       this.swarm = new Swarm(this.settings);
     } */
-
-    // Set ready status
-    this.status = 'ready';
 
     // Remove mutable variables
     Object.defineProperty(this, '@version', { enumerable: false });
@@ -119,6 +122,14 @@ class Service extends Scribe {
 
   init () {
     this.components = {};
+  }
+
+  /**
+   * Move forward one clock cycle.
+   * @returns {Number}
+   */
+  tick () {
+    return ++this.clock;
   }
 
   async process () {
@@ -274,6 +285,9 @@ class Service extends Scribe {
       console.log('Local Repository: `npm run docs` to open HTTP server at http://localhost:8000');
     };
 
+    // Define an Actor with all current settings
+    this.actor = new Actor(this.settings);
+
     /* await this.define('message', {
       name: 'message',
       handler: this.process.bind(this.state),
@@ -316,7 +330,7 @@ class Service extends Scribe {
 
       this.collections[key].on('changes', (changes) => {
         service._applyChanges(changes);
-        service.emit('message', {
+        service.emit('change', {
           type: 'Change',
           data: changes
         });
@@ -340,7 +354,11 @@ class Service extends Scribe {
     if (!this.state) this.state = {};
     this.observer = manager.observe(this.state);
 
-    this.status = 'started';
+    // Set a heartbeat
+    this.heartbeat = setInterval(this._heartbeat.bind(this), this.settings.interval);
+    this.status = 'ready';
+    this.emit('message', `[FABRIC:SERVICE] Started!`);
+    this.emit('ready');
 
     try {
       await this.commit();
@@ -354,6 +372,10 @@ class Service extends Scribe {
   async stop () {
     if (this.settings.networking) {
       await this.disconnect();
+    }
+
+    if (this.heartbeat) {
+      clearInterval(this.heartbeat);
     }
 
     if (this.settings.persistent) {
@@ -374,6 +396,8 @@ class Service extends Scribe {
    */
   async _GET (path) {
     let result = null;
+    if (typeof path !== 'string') return null;
+
     let parts = path.split('/');
     let list = `/${parts[1]}`;
     let name = crypto.createHash('sha256').update(list).digest('hex');
@@ -599,10 +623,6 @@ class Service extends Scribe {
       try {
         let patches = manager.generate(self.observer);
         if (patches.length) self.emit('patches', patches);
-        if (patches.length) self.emit('message', {
-          '@type': 'Commit',
-          '@data': patches
-        });
       } catch (E) {
         console.error('Could not generate patches:', E);
       }
@@ -626,6 +646,11 @@ class Service extends Scribe {
     return service;
   }
 
+  async _bindStore (store) {
+    this.store = store;
+    return this;
+  }
+
   async _getActor (id) {
     if (!id) return this.error('Parameter "id" is required.');
     let path = pointer.escape(id);
@@ -646,7 +671,7 @@ class Service extends Scribe {
   async _registerActor (actor) {
     if (!actor.id) return this.error('Client must have an id.');
 
-    console.log('Registering Actor:', actor.id, JSON.stringify(actor).slice(0, 32) + '…');
+    this.emit('message', `Registering Actor: ${actor.id} ${JSON.stringify(actor).slice(0, 32)}…`);
 
     let id = pointer.escape(actor.id);
     let path = `/actors/${id}`;
@@ -660,6 +685,7 @@ class Service extends Scribe {
       return this.error('Something went wrong saving:', E);
     }
 
+    await this.commit();
     this.emit('actor', this._GET(path));
 
     return this;
@@ -681,6 +707,10 @@ class Service extends Scribe {
     }
 
     return this;
+  }
+
+  async _registerMethod (name, method) {
+    this.methods[name] = method.bind(this);
   }
 
   async _updatePresence (id, status) {
@@ -731,6 +761,20 @@ class Service extends Scribe {
         changes: changes
       }
     });
+  }
+
+  async _heartbeat () {
+    return this.tick();
+  }
+
+  /**
+   * Sends a message.
+   * @param {Mixed} message Message to send.
+   */
+  async _send (message) {
+    const entity = new Entity(message);
+    await this._PUT(`/messages/${entity.id}`, message);
+    return entity.id;
   }
 }
 

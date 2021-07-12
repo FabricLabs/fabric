@@ -1,6 +1,6 @@
 'use strict';
 
-require('debug-trace')({ always: true });
+// require('debug-trace')({ always: true });
 
 const assert = require('assert');
 const Wallet = require('../types/wallet');
@@ -11,7 +11,7 @@ const settings = require('../settings/test');
 const options = Object.assign({}, settings, {
   network: 'regtest',
   // fullnode: true,
-  verbosity: 5
+  verbosity: 2
 });
 
 describe('@fabric/core/types/wallet', function () {

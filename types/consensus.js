@@ -6,7 +6,6 @@
 
 // For node...
 const bcoin = require('bcoin');
-const bcash = require('bcash');
 
 /**
  * Provides various network-specific rules.
@@ -25,7 +24,7 @@ class Consensus {
     }, settings);
 
     // TODO: define class ConsensusProvider
-    this.providers = { bcoin, bcash };
+    this.providers = { bcoin };
   }
 
   get SEQUENCE_GRANULARITY () {

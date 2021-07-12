@@ -14,12 +14,18 @@ const Consensus = require('./consensus');
 const Layer = require('./layer');
 
 /**
- * Creates a channel between two peers.
- * of many transactions over time, to be settled on-chain later.
+ * The {@link Channel} is a encrypted connection with a member of your
+ * {@link Peer} group, with some amount of $BTC bonded and paid for each
+ * correctly-validated message.
+ *
+ * Channels in Fabric are powerful tools for application development, as they
+ * can empower users with income opportunities in exchange for delivering
+ * service to the network.
  */
 class Channel extends Scribe {
   /**
-   * 
+   * Creates a channel between two peers.
+   * of many transactions over time, to be settled on-chain later.
    * @param {Object} [settings] Configuration for the channel.
    */
   constructor (settings) {
