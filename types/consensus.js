@@ -8,7 +8,16 @@
 const bcoin = require('bcoin');
 const bcash = require('bcash');
 
+/**
+ * Provides various network-specific rules.
+ */
 class Consensus {
+  /**
+   * Create an instance of a {@link Consensus} verifier.
+   * @param {Object} [settings] Configuration for the network.
+   * @param {String} [settings.network] Name of the network.
+   * @param {String} [settings.provider] Name of the source provider.
+   */
   constructor (settings = {}) {
     this.settings = Object.assign({
       network: 'mainnet',
@@ -31,6 +40,10 @@ class Consensus {
     return this.providers[this.settings.provider].SEQUENCE_TYPE_FLAG;
   }
 
+  get Block () {
+    return this.providers[this.settings.provider].Block;
+  }
+
   get FullNode () {
     return this.providers[this.settings.provider].FullNode;
   }
@@ -41,6 +54,10 @@ class Consensus {
 
   get Script () {
     return this.providers[this.settings.provider].Script;
+  }
+
+  get Transaction () {
+    return this.providers[this.settings.provider].Transaction;
   }
 
   // TODO: remove from {@link Consensus}

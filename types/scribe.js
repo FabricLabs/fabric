@@ -27,14 +27,11 @@ class Scribe extends State {
       tags: []
     }, config);
 
-    this.state = new State(config);
+    // internal state
+    this._state = new State(config);
 
     // signal ready
     this.status = 'ready';
-
-    Object.defineProperty(this, 'tags', {
-      enumerable: false
-    });
 
     return this;
   }
@@ -63,11 +60,11 @@ class Scribe extends State {
   trust (source) {
     let self = this;
 
-    source.on('message', async function (msg) {
-      console.log('[FABRIC:SCRIBE]', 'Our Scribe received the following message from a trusted source:', msg);
+    source.on('message', async function handleTrustedMessage (msg) {
+      // console.trace('[FABRIC:SCRIBE]', 'Our Scribe received the following message from a trusted source:', msg);
     });
 
-    source.on('transaction', async function (transaction) {
+    source.on('transaction', async function handleTrustedTransaction (transaction) {
       self.log('[SCRIBE]', '[EVENT:TRANSACTION]', 'apply this transaction to local state:', transaction);
       self.log('[PROPOSAL]', 'apply this transaction to local state:', transaction);
     });
@@ -153,6 +150,7 @@ class Scribe extends State {
     await this.open();
     await this.commit();
 
+    // TODO: enable
     // this.trust(this.state);
 
     this.status = 'started';

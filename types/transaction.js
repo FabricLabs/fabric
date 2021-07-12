@@ -7,6 +7,8 @@ const Entity = require('./entity');
 
 class Transaction extends Entity {
   constructor (settings = {}) {
+    super(settings);
+
     this.settings = Object.assign({
       type: 'Transaction'
     }, settings);

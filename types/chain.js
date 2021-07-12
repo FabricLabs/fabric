@@ -80,7 +80,11 @@ class Chain extends Ledger {
   }
 
   get leaves () {
-    return this.blocks.map(x => Buffer.from(x['@id'], 'hex'));
+    return this.blocks.map(x => Buffer.from(x.id, 'hex'));
+  }
+
+  get subsidy () {
+    return 50;
   }
 
   get _tree () {

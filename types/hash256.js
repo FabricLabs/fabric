@@ -24,13 +24,13 @@ class Hash256 {
   }
 
   /**
-   * 
-   * @param {String} input 
+   * Produce a SHA256 digest of some input data.
+   * @param {String|Buffer} input Content to digest.
    * @returns {String} `SHA256(input)` as a hexadecimal string.
    */
   static digest (input) {
-    if (typeof input !== 'string') {
-      throw new Error(`Input to process must be of type "String" to digest.`);
+    if (typeof input !== 'string' && !(input instanceof Buffer)) {
+      throw new Error(`Input to process must be of type "String" or "Buffer" to digest.`);
     }
 
     // consume and output as string
@@ -40,6 +40,17 @@ class Hash256 {
   // TODO: document `hash256.value`
   get value () {
     return Hash256.digest(this.settings.input);
+  }
+
+  /**
+   * Reverses the bytes of the digest.
+   */
+  static reverse (input = '') {
+    return Buffer.from(input, 'hex').reverse().toString('hex');
+  }
+
+  reverse (input = this.value) {
+    return Hash256.reverse(input);
   }
 }
 

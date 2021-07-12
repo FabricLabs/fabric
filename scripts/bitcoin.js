@@ -2,8 +2,8 @@
 
 const Bitcoin = require('../services/bitcoin');
 const config = {
-  // network: 'regtest'
-  network: 'testnet',
+  fullnode: true,
+  network: 'regtest',
   // network: 'main',
   verbosity: 4
 };

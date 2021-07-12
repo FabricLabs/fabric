@@ -1,16 +1,16 @@
 'use strict';
 
-const Fabric = require('../');
+const Chain = require('../types/chain');
 const assert = require('assert');
 
 describe('@fabric/core/types/chain', function () {
   describe('Chain', function () {
     it('is available from @fabric/core', function () {
-      assert.equal(Fabric.Chain instanceof Function, true);
+      assert.equal(Chain instanceof Function, true);
     });
 
     it('can cleanly start and stop a chain', async function () {
-      let chain = new Fabric.Chain();
+      let chain = new Chain();
 
       await chain.start();
       await chain.stop();
@@ -20,7 +20,7 @@ describe('@fabric/core/types/chain', function () {
     });
 
     it('can append an arbitrary message', async function () {
-      let chain = new Fabric.Chain();
+      let chain = new Chain();
 
       await chain.start();
       await chain.append({ debug: true, input: 'Hello, world.' });
@@ -31,7 +31,7 @@ describe('@fabric/core/types/chain', function () {
     });
 
     xit('generates a merkle tree with the expected proof of inclusion', async function () {
-      let chain = new Fabric.Chain();
+      let chain = new Chain();
 
       await chain.start();
       await chain.append({ debug: true, input: 'Hello, world.' });

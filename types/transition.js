@@ -57,7 +57,7 @@ class Transition extends Entity {
     return transition;
   }
 
-  static fromTarget (target) {
+  fromTarget (target) {
     let base = new Entity();
     let entity = this._describeTarget(target);
     let transition = new Transition({

@@ -33,6 +33,14 @@ class Oracle extends Store {
     this.resources = new Set();
     this.keys = new Set();
 
+    Object.defineProperty(this, '@allocation', { enumerable: false });
+    Object.defineProperty(this, '@buffer', { enumerable: false });
+    Object.defineProperty(this, '@encoding', { enumerable: false });
+    Object.defineProperty(this, '@parent', { enumerable: false });
+    Object.defineProperty(this, '@preimage', { enumerable: false });
+    Object.defineProperty(this, 'frame', { enumerable: false });
+    Object.defineProperty(this, 'services', { enumerable: false });
+
     return this;
   }
 

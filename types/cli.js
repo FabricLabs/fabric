@@ -1,623 +1,754 @@
 'use strict';
 
+// Constants
+const MAX_CHAT_MESSAGE_LENGTH = 2048;
+
+// External Dependencies
+const merge = require('lodash.merge');
+
+// Fabric Types
+const App = require('./app');
+const Peer = require('./peer');
+const Message = require('./message');
+
+// Services
+const Bitcoin = require('../services/bitcoin');
+
+// UI dependencies
+// TODO: use Jade to render pre-registered components
+// ```jade
+// fabric-application
+//   fabric-box
+//   fabric-row
+//     fabric-log
+//     fabric-list
+//   fabric-input
+// ```
 const blessed = require('blessed');
 
-// Core
-const Fabric = require('../lib/fabric');
-
-// Types
-const Key = require('./key');
-const State = require('./state');
-const Swarm = require('./swarm');
-const Renderer = require('./renderer');
-
-const DEFAULT_PEER_LIST = require('../assets/peers');
-
 /**
- * Base class for a terminal-like interface to the Fabric network.
- * @property {Object} config Initial {@link Vector}.
- * @property {Oracle} oracle Instance of {@link Oracle}.
+ * Provides a Command Line Interface (CLI) for interacting with
+ * the Fabric network using a terminal emulator.
  */
-class CLI extends Fabric {
+class CLI extends App {
   /**
-   * Base class for a terminal-like interface to the Fabric network.
-   * @param       {Object} configuration Configuration object for the CLI.
+   * Create a terminal-based interface for a {@link User}.
+   * @param {Object} [settings] Configuration values.
+   * @param {Array} [settings.currencies] List of currencies to support.
    */
-  constructor (config) {
-    super(config);
+  constructor (settings = {}) {
+    super(settings);
 
-    // TODO: use deep assign
-    this.config = Object.assign({
-      ui: './components/cli.jade',
-      oracle: true,
-      swarm: {
-        peer: {
-          port: process.env['PEER_PORT'] || 7777
-        },
-        peers: DEFAULT_PEER_LIST
-      }
-    }, config);
+    // Assign Settings
+    this.settings = merge({
+      listen: false,
+      services: [],
+      currencies: [ {
+        name: 'Bitcoin',
+        symbol: 'BTC'
+      } ]
+    }, this.settings, settings);
 
+    // Internal Components
+    this.node = new Peer(this.settings);
+    this.bitcoin = new Bitcoin({
+      fullnode: true,
+      network: 'regtest',
+      key: {
+        seed: (this.settings.wallet) ? this.settings.wallet.seed : this.settings.seed
+      },
+      peers: [
+        // '25.14.120.36:18444',
+        // '127.0.0.1:18444'
+      ],
+      services: [],
+      verbosity: 0
+    });
+
+    // Other Properties
+    this.screen = null;
+    this.history = [];
+    this.commands = {};
+    this.services = {};
     this.elements = {};
-    this.commandHistory = new Set();
-    this.renderer = new Renderer();
+    this.peers = {};
 
-    // set ready status
-    this.status = 'ready';
+    // State
+    this._state = {
+      anchor: 'BTC',
+      chains: {}
+    };
 
+    // Chainable
     return this;
   }
 
-  async _loadHistory () {
-    let cli = this;
-    let start = new Date();
-
-    cli._appendLogMessage({
-      actor: '[FABRIC]',
-      created: start.toISOString(),
-      input: 'Loading from history...'
-    });
-
-    // TODO: use method to only retrieve latest
-    let logs = await cli._GET('/messages') || [];
-    let messages = [];
-
-    console.log('logs loaded:', logs);
-
-    for (let i in logs) {
-      let message = await cli._GET(`/states/${logs[i]}`);
-
-      if (!message) {
-        cli.error(`Message ${logs[i]} was in the history, but not found in local storage.`);
-      } else {
-        messages.push(message);
-      }
-    }
-
-    messages.sort(function (a, b) {
-      return new Date(a.created) - new Date(b.created);
-    });
-
-    for (let i in messages) {
-      cli._appendMessage(messages[i]);
-    }
-
-    let finish = new Date();
-
-    cli._appendLogMessage({
-      actor: '[FABRIC]',
-      created: finish.toISOString(),
-      input: `Historical context loaded in ${finish - start}ms.  Welcome!`
-    });
-
-    cli._appendMessage({
-      actor: '[FABRIC]',
-      created: start.toISOString(),
-      input: 'Welcome, friend!'
-    });
-
-    return this;
+  async bootstrap () {
+    return true;
   }
 
-  // TODO: move to Fabric#Chat
-  async _handleConnectionOpen (connection) {
-    let self = this;
-
-    self.log('connection opened:', connection.address);
-    self.log('connection:', connection);
-
-    if (self.peerlist) {
-      self.peerlist.addItem(`${connection.address}`);
-      self.peerlist.setScrollPerc(100);
-    }
-
-    if (self.screen) {
-      self.screen.render();
-    }
-  }
-
-  // TODO: move to Fabric#Chat
-  async _handlePeerMessage (peer) {
-    let self = this;
-    let node = await self._PUT(`/peers/${peer.id}`, peer);
-    // let result = await self._POST(`/peers`, node);
-    return this;
-  }
-
-  async _handleSubmit (data) {
-    if (!data) return this.log('No data.');
-    if (!data.input) return this.log(`Input is required.`);
-
-    let now = new Date();
-
-    this.status = 'posting';
-    this.commandHistory.add(data.input);
-
-    if (data.input.charAt(0) === '/') {
-      let parts = data.input.trim().split(' ');
-      switch (parts[0].substring(1)) {
-        default:
-          this.log('Unknown command:', parts[0]);
-          break;
-        case 'help':
-          this.log('Available commands:',
-            '/help',
-            '/test',
-            '/keys',
-            '/peers',
-            '/ping',
-            '/state',
-            '/history',
-            '/connect',
-            '/clear',
-            '/wipe'
-          );
-          break;
-        case 'test':
-          this.log('test!');
-          break;
-        case 'keys':
-          this.log('keys:', this.oracle.keys);
-          break;
-        case 'peers':
-          this.log('peers:', this.swarm.peers);
-          break;
-        case 'ping':
-          this.log('pinging peers...');
-          // select a random number, broadcast with ping
-          this.swarm._broadcastTypedMessage(0x12, Math.random());
-          break;
-        case 'state':
-          this.log('state (self):', this.state.id, this.state);
-          // this.log('state (oracle):', this.oracle.state.id, this.oracle.state);
-          // this.log('state (machine):', this.oracle.machine.state.id, this.oracle.machine.state);
-          break;
-        case 'history':
-          this.log('history:', this.commandHistory);
-          break;
-        case 'connect':
-          this.swarm.connect(parts[1]);
-          break;
-        case 'clear':
-          this.logs.clearItems();
-          this.log('Cleared logs.');
-          break;
-        case 'wipe':
-          // await this.oracle.flush();
-          await this.flush();
-          this.log('shutting down in 5s...');
-          setTimeout(function () {
-            process.exit();
-          }, 5000);
-      }
-    } else {
-      this.log('sending:', data.input);
-
-      let state = new State(data.input);
-      let vector = new State({
-        '@type': 'Chat',
-        actor: this.actor,
-        method: 'sha256',
-        created: now.toISOString(),
-        parent: this.state.id,
-        integrity: `sha256:${state.id}`,
-        input: data.input
-      });
-
-      // TODO: visual indicator of "sending..." status
-      let link = await this._POST('/messages', vector['@data']).catch(this.log.bind(this));
-      let message = await this._GET(link).catch(this.log.bind(this));
-      let recov = await this._GET('/messages').catch(this.log.bind(this));
-      let outcome = new State(recov);
-      let blob = `/states/${outcome.id}`;
-
-      this.log('posted:', link);
-      this.log('message:', message);
-      this.log('recov:', recov);
-      this.log('link:', link);
-      this.log('blob:', blob);
-
-      this.log('outcome:', outcome);
-      this.log('yay, our data:', outcome['@data']['@data']);
-
-      if (!link) {
-        return this.log('Could not post message.');
-      }
-
-      return link;
-    }
-
-    this.elements.form.reset();
-    this.status = 'ready';
-
-    return this;
-  }
-
+  /**
+   * Starts (and renders) the CLI.
+   */
   async start () {
-    await super.start();
+    // Register Internal Commands
+    this._registerCommand('help', this._handleHelpRequest);
+    this._registerCommand('quit', this._handleQuitRequest);
+    this._registerCommand('exit', this._handleQuitRequest);
+    this._registerCommand('clear', this._handleClearRequest);
+    this._registerCommand('peers', this._handlePeerListRequest);
+    this._registerCommand('connect', this._handleConnectRequest);
+    this._registerCommand('disconnect', this._handleDisconnectRequest);
+    this._registerCommand('identity', this._handleIdentityRequest);
+    this._registerCommand('generate', this._handleGenerateRequest);
+    this._registerCommand('receive', this._handleReceiveAddressRequest);
+    this._registerCommand('balance', this._handleBalanceRequest);
+    this._registerCommand('service', this._handleServiceCommand);
+    this._registerCommand('sync', this._handleChainSyncRequest);
+    this._registerCommand('send', this._handleSendRequest);
 
-    console.log('CLI starting...');
+    await this.bootstrap();
 
-    let self = this;
-    let swarm = self.swarm = new Swarm(self.config.swarm);
+    // Render UI
+    this.render();
 
-    // log events
-    self.on('info', self.inform.bind(self));
-    self.on('warn', self.inform.bind(self));
-    self.on('error', self.inform.bind(self));
+    // Attach P2P handlers
+    this.node.on('ready', this._handleNodeReady.bind(this));
+    this.node.on('error', this._handlePeerError.bind(this));
+    this.node.on('warning', this._handlePeerWarning.bind(this));
+    this.node.on('message', this._handlePeerMessage.bind(this));
 
-    // swarm notifications
-    swarm.on('peer', self._handlePeerMessage.bind(self));
-    swarm.on('ready', self._handleReady.bind(self));
-    swarm.on('connections:open', self._handleConnectionOpen.bind(self));
-    swarm.on('connections:close', self._handleConnectionClose.bind(self));
+    this.node.on('peer', this._handlePeer.bind(this));
+    this.node.on('peer:candidate', this._handlePeerCandidate.bind(this));
+    this.node.on('connections:open', this._handleConnectionOpen.bind(this));
+    this.node.on('connections:close', this._handleConnectionClose.bind(this));
+    this.node.on('connection:error', this._handleConnectionError.bind(this));
+    this.node.on('session:update', this._handleSessionUpdate.bind(this));
+    // debug event
+    // this.node.on('socket:data', this._handleSocketData.bind(this));
 
-    self.on('changes', function (changes) {
-      self.log(`${changes.length} changes to self:`, changes);
-    });
+    // Attach Bitcoin handlers
+    this.bitcoin.on('ready', this._handleBitcoinReady.bind(this));
+    this.bitcoin.on('error', this._handleBitcoinError.bind(this));
+    this.bitcoin.on('message', this._handleBitcoinMessage.bind(this));
+    this.bitcoin.on('block', this._handleBitcoinBlock.bind(this));
+    this.bitcoin.on('tx', this._handleBitcoinTransaction.bind(this));
 
-    // await self.trust(self.store);
-    // await self.trust(self.swarm);
+    // Start Bitcoin service
+    await this.bitcoin.start();
 
-    await self.swarm.start();
-
-    await self._createInstance();
-    await self._assembleInterface();
-
-    return this;
-  }
-
-  inform (msg) {
-    try {
-      this._appendLogMessage(msg);
-    } catch (E) {
-      this.error('could not inform:', msg);
-    }
-  }
-
-  trust (source) {
-    let cli = this;
-
-    source.on('info', cli.log.bind(cli));
-    source.on('warn', cli.log.bind(cli));
-    source.on('error', cli.log.bind(cli));
-
-    source.on('changes', async function (changes) {
-      cli.log(`source (${source.constructor.name}) emitted changes:`, changes);
-      let state = await cli._applyChanges(changes);
-
-      cli.log(`magic:`, state);
-      cli.log(`magic data:`, state['@data']);
-      cli.log(`${changes.length} changes:`, changes);
-
-      // TODO: set relay policy
-      cli.emit('state', state);
-    });
-
-    // TODO: internalize to CLI
-    // TODO: fix route -- `channels/messages`
-    source.on(`channels/~1messages`, function (event) {
-      let state = new State(source['@data'].collections['/messages']['@data']);
-      cli.log(`@id: `, state.id);
-      cli._appendMessage(event['@data']);
-    });
-
-    return cli;
-  }
-
-  // TODO: move to Fabric#Chat
-  _appendMessage (message) {
-    let self = this;
-    let instance = Object.assign({
-      actor: message.actor,
-      created: new Date(),
-      input: message.input
-    }, { created: message.created });
-    let state = new State(instance);
-
-    if (self.elements.history) {
-      // TODO: use Stack
-      self.elements.history.pushLine(`[${state.id}] ${instance.created} ${(instance.actor) ? ' ' + instance.actor : ''}: ${instance.input}`);
-      self.elements.history.setScrollPerc(100);
-    }
-
-    if (self.screen) {
-      self.screen.render();
-    }
-  }
-
-  // TODO: move to Fabric#Chat
-  _appendLogMessage (message) {
-    let self = this;
-    let instance = Object.assign({
-      created: new Date(),
-      input: JSON.stringify(message)
-    }, message);
-
-    if (self.elements.logs) {
-      self.elements.logs.addItem(`${instance.created}: ${instance.input}`);
-      self.elements.logs.setScrollPerc(100);
-    }
-
-    if (self.screen) {
-      self.screen.render();
-    }
-  }
-
-  async _assembleInterface () {
-    let self = this;
-
-    self.elements = {};
-
-    self.elements.controls = blessed.box({
-      parent: self.screen,
-      border: {
-        type: 'line'
-      },
-      bottom: 0,
-      height: 3
-    });
-
-    self.elements.form = blessed.form({
-      parent: self.screen,
-      keys: true
-    });
-
-    self.elements.textbox = blessed.textbox({
-      parent: self.elements.form,
-      name: 'input',
-      input: true,
-      inputOnFocus: true,
-      focused: true,
-      value: '',
-      bottom: 1,
-      mouse: true,
-      height: 3,
-      width: '100%',
-      border: {
-        type: 'line'
-      },
-      keys: true
-    });
-
-    self.elements.submit = blessed.button({
-      parent: self.elements.form,
-      mouse: true,
-      // keys: true,
-      shrink: true,
-      bottom: 0,
-      right: 0,
-      name: 'submit',
-      content: '[ENTER] Send',
-      style: {
-        bg: 'blue'
-      },
-      padding: {
-        left: 1,
-        right: 1
+    for (const [name, service] of Object.entries(this.services)) {
+      this._appendWarning(`Checking for Service: ${name}`);
+      if (this.settings.services.includes(name)) {
+        this._appendWarning(`Starting service: ${name}`);
+        await this.services[name].start();
       }
-    });
+    }
 
-    self.elements.instructions = blessed.box({
-      parent: self.screen,
-      content: '[ESCAPE (2x)] exit]',
-      bottom: 0,
-      height: 1,
-      width: '100%-20',
-      padding: {
-        left: 1,
-        right: 1
-      }
-    });
-
-    self.elements.history = blessed.box({
-      parent: self.screen,
-      label: '[ History ]',
-      scrollable: true,
-      alwaysScroll: true,
-      keys: true,
-      mouse: true,
-      height: '100%-16',
-      width: '80%',
-      bottom: 16,
-      border: {
-        type: 'line'
-      }
-    });
-
-    self.peerlist = blessed.list({
-      parent: self.screen,
-      label: '[ Peers ]',
-      scrollable: true,
-      alwaysScroll: true,
-      keys: true,
-      mouse: true,
-      top: 0,
-      left: '80%+1',
-      bottom: 4,
-      right: 0,
-      border: {
-        type: 'line'
-      },
-      scrollbar: {}
-    });
-
-    self.elements.logs = blessed.list({
-      parent: self.screen,
-      label: '[ Logs ]',
-      scrollable: true,
-      alwaysScroll: true,
-      keys: true,
-      mouse: true,
-      height: 12,
-      width: '80%',
-      bottom: 4,
-      border: {
-        type: 'line'
-      },
-      scrollbar: {}
-    });
-
-    self.elements.textbox.key(['enter'], function (ch, key) {
-      self.elements.form.submit();
-      self.elements.textbox.clearValue();
-      self.elements.textbox.readInput();
-    });
-
-    self.elements.textbox.key(['up'], function (ch, key) {
-      self.log('up press:', self.commandHistory[0], ch, key);
-      self.elements.textbox.setValue(self.commandHistory[self.commandHistory.size - 1]);
-    });
-
-    self.elements.submit.on('press', function () {
-      self.form.submit();
-    });
-
-    self.elements.form.on('submit', self._handleSubmit.bind(self));
-
-    await self._loadHistory();
-    await self._requestLogin();
-
-    return this;
-  }
-
-  _createInstance () {
-    let self = this;
-
-    self.screen = blessed.screen({
-      smartCSR: true,
-      dockBorders: true
-    });
-
-    self.screen.key(['escape'], function (ch, key) {
-      self.screen.destroy();
-      // console.log('the machine:', self.machine);
-      // console.log('the mempool:', self.mempool);
-      process.exit();
-    });
-
-    self.renderer.screen = self.screen;
-    self.renderer._renderJadeFile('assets/client.jade');
-
-    return self;
-  }
-
-  _handleReady (event) {
+    // Start P2P node
+    this.node.start();
     this.emit('ready');
   }
 
   /**
-   * Update UI as necessary based on changes from Oracle.
-   * @param  {Message} msg Incoming {@link Message}.
-   * @return {CLI}
+   * Disconnect all interfaces and exit the process.
    */
-  _handleChanges (msg) {
-    let self = this;
+  async stop () {
+    await this.node.stop();
+    return process.exit(0);
+  }
 
-    self.log('handling changes:', msg);
+  async _appendMessage (msg) {
+    this.elements['messages'].log(`[${(new Date()).toISOString()}]: ${msg}`);
+    this.screen.render();
+  }
 
-    for (let i = 0; i < msg.length; i++) {
-      let instruction = msg[i];
-      // TODO: receive events from collection
-      // we should (probably) use Proxy() for this
-      switch (instruction.path.split('/')[1]) {
-        // TODO: fix Machine bug; only one delta should be emitted;
-        case 'messages':
-          // TODO: eliminate need for this check
-          // on startup, the Oracle emits a `changes` event with a full state
-          // snapshot... this might be useful overall, but the CLI (Chat) should
-          // either rely on this exclusively or not at all
-          if (self.history) {
-            self._appendMessage(instruction.value);
-          }
-          break;
-        case 'peers':
-          self.log('received unhandled peer notification:', instruction);
-          break;
+  async _appendWarning (msg) {
+    this._appendMessage(`{yellow-fg}${msg}{/yellow-fg}`)
+  }
+
+  async _appendError (msg) {
+    this._appendMessage(`{red-fg}${msg}{/red-fg}`)
+  }
+
+  async _handleBitcoinMessage (message) {
+    this._appendMessage(`Bitcoin service emitted message: ${message}`);
+  }
+
+  async _handleBitcoinBlock (block) {
+    this._appendMessage(`Bitcoin service emitted block, chain height now: ${this.bitcoin.fullnode.chain.height}`);
+    this._syncChainDisplay();
+    const message = Message.fromVector(['BlockCandidate', block.raw]);
+    this.node.relayFrom(this.node.id, message);
+  }
+
+  async _handleBitcoinTransaction (transaction) {
+    this._appendMessage(`Bitcoin service emitted transaction: ${JSON.stringify(transaction)}`);
+  }
+
+  async _handleBitcoinError (...msg) {
+    this._appendError(msg);
+  }
+
+  async _handleBitcoinWarning (...msg) {
+    this._appendWarning(msg);
+  }
+
+  async _handleBitcoinReady (bitcoin) {
+    this._syncChainDisplay();
+  }
+
+  async _handleConnectionOpen (msg) {
+    // this._appendMessage(`Node emitted "connections:open" event: ${JSON.stringify(msg)}`);
+    this._syncPeerList();
+  }
+
+  async _handleConnectionClose (msg) {
+    this._appendMessage(`Node emitted "connections:close" event: ${JSON.stringify(msg)}`);
+
+    for (const id in this.peers) {
+      const peer = this.peers[id];
+      this._appendMessage(`Checking: ${JSON.stringify(peer)}`);
+      if (peer.address === msg.address) {
+        this._appendMessage(`Address matches.`);
+        delete this.peers[id];
       }
     }
 
-    return this;
+    this._syncPeerList();
   }
 
-  _handleCollectionUpdate (change) {
-    let self = this;
+  async _handleConnectionError (msg) {
+    this._appendWarning(`Node emitted "connection:error" event: ${JSON.stringify(msg)}`);
+  }
 
-    self.log('handling collection update:', change);
+  async _handlePeer (peer) {
+    const self = this;
+    // console.log('[SCRIPTS:CHAT]', 'Peer emitted by node:', peer);
 
-    switch (change.path) {
+    if (!peer.id) {
+      self._appendMessage('Peer did not send an ID.  Event received: ' + JSON.stringify(peer));
+    }
+
+    if (!self.peers[peer.id]) {
+      self.peers[peer.id] = peer;
+      self.emit('peer', peer);
+    }
+
+    self._syncPeerList();
+    self.screen.render();
+  }
+
+  async _handlePeerCandidate (peer) {
+    const self = this;
+    self._appendMessage('Local node emitted "peer:candidate" event: ' + JSON.stringify(peer));
+    self.screen.render();
+  }
+
+  async _handleNodeReady (node) {
+    this.elements['identityString'].setContent(node.id);
+    this.emit('identity', {
+      id: node.id,
+      pubkey: node.pubkey
+    });
+  }
+
+  async _handlePeerError (message) {
+    this._appendError(`Local "error" event: ${JSON.stringify(message)} <${message.type}> ${message.data}`);
+  }
+
+  async _handlePeerWarning (message) {
+    this._appendWarning(`Local "warning" event: ${JSON.stringify(message)}`);
+  }
+
+  async _handlePeerMessage (message) {
+    switch (message.type) {
       default:
-        self.log('unhandled change path:', change.path);
-        break;
-      case '/messages':
-        if (self.history) {
-          // TODO: validate before append
-          self._appendMessage(change.data);
+        if (!message.type && !message.data) {
+          this._appendMessage(`Local "message" event: ${message}`);
+        } else {
+          this._appendMessage(`Local "message" event: <${message.type}> ${message.data}`);
         }
         break;
+      case 'ChatMessage':
+        try {
+          let parsed = JSON.parse(message.data);
+          this._appendMessage(`[@${parsed.actor}]: ${parsed.object.content}`);
+        } catch (exception) {
+          this._appendError(`Could not parse <ChatMessage> data (should be JSON): ${message.data}`);
+        }
+        break;
+      case 'BlockCandidate':
+        this._appendMessage(`Received Candidate Block from peer: <${message.type}> ${message.data}`);
+        this.bitcoin.append(message.data);
+        break;
     }
   }
 
-  _requestLogin () {
-    let self = this;
+  async _handleSessionUpdate (session) {
+    this._appendMessage(`Local session update: ${JSON.stringify(session, null, '  ')}`);
+  }
 
-    self.elements.login = blessed.prompt({
-      parent: self.screen,
-      fg: 'white',
-      top: 'center',
-      left: 'center',
-      width: '50%',
-      height: '50%',
-      content: 'What is your name?'
-    });
+  async _handleSocketData (data) {
+    this._appendMessage(`Local "socket:data" event: ${JSON.stringify(data)}`);
+  }
 
-    self.elements.login.readInput('What should others call you?', '', function (nick) {
-      self.nickname = nick;
-      self.identity = new Key();
-      self.log('Identity:', {
-        nickname: nick,
-        key: self.identity
-      });
-    });
+  async _handlePromptEnterKey (ch, key) {
+    this.elements['prompt'].historyIndex = this.history.length;
+    this.elements['form'].submit();
+    this.elements['prompt'].clearValue();
+    this.elements['prompt'].readInput();
+  }
 
-    self.elements.login.show();
-    self.elements.login.focus();
+  async _handlePromptUpKey (ch, key) {
+    const index = this.elements['prompt'].historyIndex;
+    if (index > 0) this.elements['prompt'].historyIndex--;
+    this.elements['prompt'].setValue(this.history[index]);
+    this.screen.render();
+  }
 
+  async _handlePromptDownKey (ch, key) {
+    const index = ++this.elements['prompt'].historyIndex;
+
+    if (index < this.history.length) {
+      this.elements['prompt'].setValue(this.history[index]);
+    } else {
+      this.elements['prompt'].historyIndex = this.history.length - 1;
+      this.elements['prompt'].setValue('');
+    }
+
+    this.screen.render();
+  }
+
+  async _handleGenerateRequest (params) {
+    if (!params[1]) params[1] = 1;
+    const count = params[1];
+    const address = await this.node.wallet.getUnusedAddress();
+    this._appendMessage(`Generating ${count} blocks to address: ${address}`);
+    this.bitcoin.generateBlocks(count, address);
+    return false;
+  }
+
+  _bindKeys () {
+    const self = this;
+    self.screen.key(['escape', 'q', 'C-c'], self.stop.bind(self));
+    self.elements['prompt'].key(['enter'], self._handlePromptEnterKey.bind(self));
+    self.elements['prompt'].key(['up'], self._handlePromptUpKey.bind(self));
+    self.elements['prompt'].key(['down'], self._handlePromptDownKey.bind(self));
+  }
+
+  _sendToAllServices (message) {
+    for (const [name, service] of Object.entries(this.services)) {
+      if (this.settings.services.includes(name)) {
+        service._send(message);
+      }
+    }
+  }
+
+  _handleFormSubmit (data) {
+    const self = this;
+    const content = data.input;
+
+    if (!content) return self._appendMessage('No message provided.');
+    if (content.length > MAX_CHAT_MESSAGE_LENGTH) return self._appendMessage(`Message exceeds maximum length (${MAX_CHAT_MESSAGE_LENGTH}).`);
+
+    // Modify history
+    self.history.push(data.input);
+
+    // Send as Chat Message if no handler registered
+    if (!self._processInput(data.input)) {
+      // Describe the activity for use in P2P message
+      let msg = {
+        actor: self.node.id,
+        object: {
+          created: Date.now(),
+          content: content
+        },
+        target: '/messages'
+      };
+
+      self.node.relayFrom(self.node.id, Message.fromVector(['ChatMessage', JSON.stringify(msg)]));
+      self._sendToAllServices(msg);
+    }
+
+    self.elements['form'].reset();
     self.screen.render();
-
-    return this;
   }
 
-  // TODO: move to Fabric#Chat
-  _handleConnectionClose (connection) {
-    let self = this;
+  _handleQuitRequest () {
+    this._appendMessage('Exiting...');
+    this.stop();
+    return false;
+  }
 
-    self.log('connection closed:', connection.address);
+  _handleClearRequest () {
+    this.elements['messages'].setContent('');
+    return false;
+  }
 
-    if (self.peerlist) {
-      self.peerlist.removeItem(`${connection.address}`);
-      self.peerlist.setScrollPerc(100);
-    }
+  _handlePeerListRequest (params) {
+    this._appendMessage('Peers: ' + JSON.stringify(this.peers, null, ' '));
+    return false;
+  }
 
-    if (self.screen) {
-      self.screen.render();
+  _handleConnectRequest (params) {
+    if (!params[1]) return this._appendMessage('You must specify an address to connect to.');
+    const address = params[1];
+    this._appendMessage('Connect request: ' + JSON.stringify(params));
+    this.node._connect(address);
+    return false;
+  }
+
+  _handleDisconnectRequest (params) {
+    if (!params[1]) return this._appendMessage('You must specify an peer to disconnect from.');
+    const id = params[1];
+    this._appendMessage('Disconnect request: ' + JSON.stringify(params));
+    this.node._disconnect(id);
+    return false;
+  }
+
+  _handleChainSyncRequest () {
+    this._appendMessage(`Sync starting for chain...`);
+
+    // TODO: test this on testnet / mainnet
+    this.bitcoin.fullnode.startSync();
+
+    const message = Message.fromVector(['ChainSyncRequest', JSON.stringify({
+      tip: this.bitcoin.fullnode.chain.tip
+    })]);
+    this.node.relayFrom(this.node.id, message);
+
+    return false;
+  }
+
+  async _handleSendRequest (params) {
+    if (!params[1]) return this._appendError('You must specify an address to send to.');
+    if (!params[2]) return this._appendError('You must specify an amount to send.');
+
+    const address = params[1];
+    const amount = params[2];
+
+    const tx = await this.node.wallet._spendToAddress(amount, address);
+    this._appendMessage('Transaction created:', tx);
+
+    return false;
+  }
+
+  async _handleBalanceRequest () {
+    const balance = await this.node.wallet.wallet.getBalance(1);
+    this._appendMessage(`{bold}Wallet Balance{/bold}: ${JSON.stringify(balance, null, '  ')}`);
+    return false;
+  }
+
+  async _handleReceiveAddressRequest () {
+    const address = await this.node.wallet.getUnusedAddress();
+    this._appendMessage(`{bold}Receive address{/bold}: ${JSON.stringify(address.toString(), null, '  ')}`);
+    return false;
+  }
+
+  _handleServiceCommand (params) {
+    switch (params[1]) {
+      case 'list':
+      default:
+        this._appendMessage(`{bold}Available Services{/bold}: ${JSON.stringify(Object.keys(this.services), null, '  ')}`);
+        break;
     }
   }
 
-  // TODO: move to Fabric#Chat
-  _handlePartMessage (message) {
-    let self = this;
+  _handleIdentityRequest () {
+    this._appendMessage(`Local Identity: ${JSON.stringify({
+      id: this.node.id,
+      address: this.node.server.address()
+    }, null, '  ')}`);
+  }
 
-    self.log('part message:', message);
+  _handleHelpRequest (data) {
+    const self = this;
+    const help = `Available Commands:\n${Object.keys(self.commands).map(x => `\t${x}`).join('\n')}`;
 
-    if (self.peerlist) {
-      self.peerlist.removeItem(message);
-      self.peerlist.setScrollPerc(100);
+    self._appendMessage(help);
+  }
+
+  _handleServiceMessage (msg) {
+    this.emit('message', 'received message from service:', msg);
+  }
+
+  _processInput (input) {
+    if (input.charAt(0) === '/') {
+      const parts = input.substring(1).split(' ');
+
+      if (this.commands[parts[0]]) {
+        this.commands[parts[0]].apply(this, [ parts ]);
+        return true;
+      }
+
+      this._appendError('Unhandled command: ' + parts[0]);
+
+      return true;
     }
 
-    if (self.screen) {
-      self.screen.render();
+    return false;
+  }
+
+  _syncChainDisplay () {
+    this.elements['chainTip'].setContent(`${this.bitcoin.tip} (height is ${this.bitcoin.fullnode.chain.height})`);
+  }
+
+  _syncPeerList () {
+    this.elements['peers'].clearItems();
+
+    for (const id in this.peers) {
+      const peer = this.peers[id];
+      const element = blessed.element({
+        name: peer.id,
+        content: `[✓] ${peer.id}@${peer.address}`
+      });
+
+      // TODO: use peer ID for managed list
+      // self.elements['peers'].insertItem(0, element);
+      this.elements['peers'].add(element.content);
     }
+  }
+
+  _registerCommand (command, method) {
+    this.commands[command] = method.bind(this);
+  }
+
+  _registerService (name, type) {
+    const self = this;
+    const service = new type(merge({}, this.settings, this.settings[name]));
+
+    if (this.services[name]) {
+      return this._appendWarning(`Service already registered: ${name}`);
+    }
+
+    this.services[name] = service;
+
+    this.services[name].on('error', function (msg) {
+      self._appendError(`Service "${name}" emitted error: ${JSON.stringify(msg, null, '  ')}`);
+    });
+
+    this.services[name].on('warning', function (msg) {
+      self._appendWarning(`Service warning from ${name}: ${JSON.stringify(msg, null, '  ')}`);
+    });
+
+    this.services[name].on('message', function (msg) {
+      self._appendMessage(`Service message from ${name}: ${JSON.stringify(msg, null, '  ')}`);
+      self.node.relayFrom(self.node.id, Message.fromVector(['ChatMessage', JSON.stringify(msg)]));
+    });
+
+    this.on('identity', function _registerActor (identity) {
+      if (this.settings.services.includes(name)) {
+        self._appendMessage(`Registering actor on service "${name}": ${JSON.stringify(identity)}`);
+
+        try {
+          this.services[name]._registerActor(identity);
+        } catch (exception) {
+          self._appendError(`Error from service "${name}" during _registerActor: ${exception}`);
+        }
+      }
+    });
+  }
+
+  render () {
+    const self = this;
+    const defaults = {
+      parent: self.screen,
+      border: {
+        type: 'line'
+      }
+    };
+
+    self.screen = blessed.screen({
+      smartCSR: true,
+      input: this.settings.input,
+      output: this.settings.output,
+      terminal: this.settings.terminal,
+      fullUnicode: this.settings.fullUnicode
+    });
+
+    self.elements['status'] = blessed.box({
+      parent: self.screen,
+      label: '[ Status ]',
+      border: {
+        type: 'line'
+      },
+      top: 0,
+      height: 5,
+      width: '100%'
+    });
+
+    self.elements['identity'] = blessed.box({
+      parent: self.elements['status'],
+      left: 1
+    });
+
+    self.elements['identityLabel'] = blessed.text({
+      parent: self.elements['identity'],
+      content: 'IDENTITY:',
+      top: 0,
+      bold: true
+    });
+
+    self.elements['identityString'] = blessed.text({
+      parent: self.elements['identity'],
+      content: '',
+      top: 0,
+      left: 10
+    });
+
+    self.elements['wallet'] = blessed.box({
+      parent: self.elements['status'],
+      right: 1,
+      width: 29,
+    });
+
+    self.elements['balance'] = blessed.text({
+      parent: self.elements['wallet'],
+      content: '0.00000000',
+      top: 0,
+      right: 4
+    });
+
+    self.elements['label'] = blessed.text({
+      parent: self.elements['wallet'],
+      content: 'BALANCE:',
+      top: 0,
+      right: 15,
+      bold: true
+    });
+
+    self.elements['denomination'] = blessed.text({
+      parent: self.elements['wallet'],
+      content: 'BTC',
+      top: 0,
+      right: 0
+    });
+
+    self.elements['chain'] = blessed.box({
+      parent: self.elements['status'],
+      top: 1,
+      left: 1
+    });
+
+    self.elements['chainLabel'] = blessed.box({
+      parent: self.elements['chain'],
+      content: 'CHAIN TIP:',
+      bold: true
+    });
+
+    self.elements['chainTip'] = blessed.box({
+      parent: self.elements['chain'],
+      content: '',
+      left: 11
+    });
+
+    self.elements['mempool'] = blessed.box({
+      parent: self.elements['status'],
+      top: 2,
+      left: 1,
+      width: 29
+    });
+
+    self.elements['mempoolLabel'] = blessed.box({
+      parent: self.elements['mempool'],
+      content: 'MEMPOOL SIZE:',
+      bold: true
+    });
+
+    self.elements['mempoolCount'] = blessed.box({
+      parent: self.elements['mempool'],
+      content: '0',
+      left: 14
+    });
+
+    self.elements['messages'] = blessed.log({
+      parent: self.screen,
+      label: '[ Messages ]',
+      border: {
+        type: 'line'
+      },
+      top: 5,
+      width: '80%',
+      bottom: 3,
+      mouse: true,
+      tags: true
+    });
+
+    self.elements['peers'] = blessed.list({
+      parent: self.screen,
+      label: '[ Peers ]',
+      border: {
+        type: 'line'
+      },
+      top: 5,
+      left: '80%+1',
+      bottom: 3
+    });
+
+    self.elements['controls'] = blessed.box({
+      parent: self.screen,
+      bottom: 0,
+      height: 3,
+      border: {
+        type: 'line'
+      }
+    });
+
+    self.elements['form'] = blessed.form({
+      parent: self.elements['controls'],
+      bottom: 0,
+      height: 1,
+      left: 1
+    });
+
+    self.elements['prompt'] = blessed.textbox({
+      parent: self.elements['form'],
+      name: 'input',
+      input: true,
+      keys: true,
+      inputOnFocus: true
+    });
+
+    // Set Index for Command History
+    this.elements['prompt'].historyIndex = -1;
+
+    // Render the screen.
+    self.screen.render();
+    self._bindKeys();
+
+    // TODO: clean up workaround (from https://github.com/chjj/blessed/issues/109)
+    self.elements['prompt'].oldFocus = self.elements['prompt'].focus;
+    self.elements['prompt'].focus = function () {
+      let oldListener = self.elements['prompt'].__listener;
+      let oldBlur = self.elements['prompt'].__done;
+
+      self.elements['prompt'].removeListener('keypress', self.elements['prompt'].__listener);
+      self.elements['prompt'].removeListener('blur', self.elements['prompt'].__done);
+
+      delete self.elements['prompt'].__listener;
+      delete self.elements['prompt'].__done;
+
+      self.elements['prompt'].screen.focusPop(self.elements['prompt'])
+
+      self.elements['prompt'].addListener('keypress', oldListener);
+      self.elements['prompt'].addListener('blur', oldBlur);
+
+      self.elements['prompt'].oldFocus();
+    }
+
+    // focus when clicked
+    self.elements['form'].on('click', function () {
+      self.elements['prompt'].focus();
+    });
+
+    self.elements['form'].on('submit', self._handleFormSubmit.bind(self));
+    self.elements['prompt'].focus();
+
+    setInterval(function () {
+      // self._appendMessage('10 seconds have passed.');
+      // self.bitcoin.generateBlock();
+    }, 10000);
   }
 }
 
