@@ -35,9 +35,9 @@ const manager = require('fast-json-patch');
 class Service extends Scribe {
   /**
    * Create an instance of a Service.
-   * @param       {Object} config Configuration for this service.
-   * @param       {Boolean} [config.networking=true] Whether or not to connect to the network.
-   * @param       {Object} [config.@data] Internal data to assign.
+   * @param       {Object} settings Configuration for this service.
+   * @param       {Boolean} [settings.networking=true] Whether or not to connect to the network.
+   * @param       {Object} [settings.@data] Internal data to assign.
    */
   constructor (settings = {}) {
     // Initialize Scribe, our logging tool
