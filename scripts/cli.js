@@ -84,6 +84,7 @@ async function main () {
   program.option('--receive', 'Generate a fresh receiving address.');
   program.option('--trust <PUBKEY@host:port>', 'Explicit trust of events from this peer.');
   program.option('--force', 'Force dangerous behavior.');
+  program.option('--noclobber', 'Test dangerous behavior.');
   program.option('--password <PASSWORD>', 'Specify the encryption passphrase.');
   program.option('-n, --keygen', 'Generate a new seed.  Consider the privacy of your surroundings!');
 
@@ -91,7 +92,7 @@ async function main () {
   program.parse(process.argv);
 
   // Read Environment
-  if (!environment.walletExists() || (program.keygen && program.force)) {
+  if (!environment.walletExists() || (program.keygen && (program.force || program.noclobber))) {
     seed = await wallet._createSeed();
   } else {
     seed = environment.readWallet();
@@ -104,22 +105,24 @@ async function main () {
   // Behaviors
   if (program.keygen) {
     // ### [!!!] Toxic Waste [!!!]
-    if (!environment.walletExists() || program.force) {
+    if (!environment.walletExists() || program.force || program.noclobber) {
       // TODO: remove from log output...
       console.warn('[FABRIC:KEYGEN]', 'GENERATED_SEED', '=', seed);
       console.warn('[FABRIC:KEYGEN]', 'Saving new wallet to path:', path);
       // console.warn('[FABRIC:KEYGEN]', 'Wallet password:', program.password);
 
-      try {
-        environment.makeStore();
-      } catch (exception) {
-        // console.error('[FABRIC:KEYGEN]', 'Could prepare wallet store:', exception);
-      }
+      if (!program.noclobber) {
+        try {
+          environment.makeStore();
+        } catch (exception) {
+          // console.error('[FABRIC:KEYGEN]', 'Could prepare wallet store:', exception);
+        }
 
-      fs.writeFileSync(file, JSON.stringify({
-        '@type': 'WalletStore',
-        '@data': seed
-      }, null, '  ') + '\n');
+        fs.writeFileSync(file, JSON.stringify({
+          '@type': 'WalletStore',
+          '@data': seed
+        }, null, '  ') + '\n');
+      }
 
       // TODO: replicate this program in C / ASM
       console.warn('[FABRIC:KEYGEN]', '[!!!]', 'WARNING!', 'TOXIC WASTE ABOVE', '[!!!]');
