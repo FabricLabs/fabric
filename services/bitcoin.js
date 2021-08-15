@@ -31,7 +31,6 @@ const NetAddress = bcoin.net.NetAddress;
 
 /**
  * Manages interaction with the Bitcoin network.
- * @module @fabric/core/services/bitcoin
  * @augments Service
  */
 class Bitcoin extends Service {
@@ -208,6 +207,11 @@ class Bitcoin extends Service {
     return this.fullnode.chain.height;
   }
 
+  /**
+   * Broadcast a transaction to the Bitcoin network.
+   * @unstable
+   * @param {TX} tx Bitcoin transaction
+   */
   async broadcast (msg) {
     console.log('[SERVICES:BITCOIN]', 'Broadcasting:', msg);
     const verify = await msg.verify();

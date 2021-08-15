@@ -18,6 +18,7 @@ const {
 
 // Fabric Types
 const Entity = require('./entity');
+const Machine = require('./machine');
 
 /**
  * Represents a cryptographic key.
@@ -45,12 +46,20 @@ class Key extends Entity {
       private: null,
       bits: 256,
       hd: true,
+      password: null,
+      cipher: {
+        iv: {
+          size: 16
+        }
+      },
       witness: true
     }, init);
 
     this.master = null;
     this.private = null;
     this.public = null;
+
+    this.machine = new Machine(this.settings);
 
     // TODO: design state machine for input (configuration)
     if (this.settings.seed) {
@@ -128,6 +137,10 @@ class Key extends Entity {
 
   get id () {
     return this.pubkeyhash;
+  }
+
+  get iv () {
+    return this.machine.slurp(32).slice(0, 32);
   }
 
   _sign (msg) {
