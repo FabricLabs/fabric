@@ -63,9 +63,10 @@ class Message extends Vector {
     this.raw = {
       magic: Buffer.alloc(4),
       version: Buffer.alloc(4),
-      type: Buffer.alloc(4),
-      size: Buffer.alloc(4),
+      type: Buffer.alloc(4), // TODO: 8, 32
+      size: Buffer.alloc(4), // TODO: 8, 32
       hash: Buffer.alloc(32),
+      parent: Buffer.alloc(32),
       Uint256: this.Uint256,
       data: null
     };

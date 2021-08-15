@@ -37,65 +37,78 @@ class Key extends Entity {
   constructor (init = {}) {
     super(init);
 
-    this.config = Object.assign({
+    this.settings = Object.assign({
       network: 'main',
       curve: 'secp256k1',
       prefix: '00',
       public: null,
       private: null,
       bits: 256,
-      hd: true
+      hd: true,
+      witness: true
     }, init);
 
     this.master = null;
     this.private = null;
     this.public = null;
 
-    if (this.config.seed) {
+    // TODO: design state machine for input (configuration)
+    if (this.settings.seed) {
       // Seed provided, compute keys
-      let mnemonic = new bcoin.Mnemonic(this.config.seed);
-      let master = bcoin.hd.fromMnemonic(mnemonic);
-      let ring = new bcoin.KeyRing(master, this.config.network);
+      const mnemonic = new Mnemonic(this.settings.seed);
+      const master = bcoin.hd.fromMnemonic(mnemonic);
 
       // Assign keys
       this.master = master;
-      this.keypair = ec.keyFromPrivate(ring.getPrivateKey('hex'));
+      this.keyring = new KeyRing(master, this.settings.network);
+      this.keyring.witness = this.settings.witness;
+      this.keypair = ec.keyFromPrivate(this.keyring.getPrivateKey('hex'));
+      this.address = this.keyring.getAddress().toString();
       this.status = 'seeded';
-    } else if (this.config.private) {
+    } else if (this.settings.private) {
+      const input = this.settings.private;
       // Key is private
-      this.keypair = ec.keyFromPrivate(this.config.private, 16);
-    } else if (this.config.pubkey || this.config.public) {
+      this.keyring = KeyRing.fromPrivate((input instanceof Buffer) ? input : Buffer.from(input, 'hex'), true);
+      this.keyring.witness = this.settings.witness;
+      this.keypair = ec.keyFromPrivate(this.settings.private);
+      this.address = this.keyring.getAddress();
+    } else if (this.settings.pubkey || this.settings.public) {
+      const input = this.settings.pubkey || this.settings.public;
       // Key is only public
-      let pubkey = this.config.pubkey || this.config.public;
-      this.keypair = ec.keyFromPublic(pubkey, 'hex');
+      this.keyring = KeyRing.fromKey((input instanceof Buffer) ? input : Buffer.from(input, 'hex'), true);
+      this.keyring.witness = this.settings.witness;
+      this.keypair = ec.keyFromPublic(this.keyring.publicKey);
+      this.address = this.keyring.address;
     } else {
       // Generate new keys
       this.keypair = ec.genKeyPair();
+      this.keyring = KeyRing.fromPrivate(this.keypair.getPrivate().toBuffer(), true);
+      this.keyring.witness = this.settings.witness;
+      this.address = this.keyring.getAddress();
     }
 
     this.private = this.keypair.getPrivate();
     this.public = this.keypair.getPublic(true);
+
+    // TODO: determine if this makes sense / needs to be private
+    this.privkey = (this.private) ? this.private.toString() : null;
 
     // STANDARD BEGINS HERE
     this.pubkey = this.public.encodeCompressed('hex');
 
     // BELOW THIS NON-STANDARD
     // DO NOT USE IN PRODUCTION
-    this.pubkeyhash = crypto.createHash('sha256').update(this.pubkey).digest('hex');
+    this.pubkeyhash = this.keyring.getKeyHash('hex');
 
-    let input = `${this.config.prefix}${this.pubkeyhash}`;
-    let hash = crypto.createHash('sha256').update(input).digest('hex');
-    let safe = crypto.createHash('sha256').update(hash).digest('hex');
-    let checksum = safe.substring(0, 8);
-    let address = `${input}${checksum}`;
-
-    this.ripe = crypto.createHash('ripemd160').update(input).digest('hex');
-    this.address = Base58Check.encode(this.ripe);
 
     this['@data'] = {
-      'type': 'Key',
-      'public': this.pubkey,
-      'address': this.address
+      type: 'Key',
+      public: this.pubkey,
+      address: this.address
+    };
+
+    this._state = {
+      pubkey: this.pubkey
     };
 
     Object.defineProperty(this, 'keypair', {
