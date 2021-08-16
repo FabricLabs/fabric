@@ -30,7 +30,7 @@ class Actor extends EventEmitter {
 
     // Monad value
     this.signature = null;
-    this.value = Object.assign({}, actor);
+    this.value = Object.assign({}, actor); // TODO: use Buffer?
     this.key = new Key({
       seed: actor.seed,
       public: actor.public || actor.pubkey,
@@ -38,7 +38,7 @@ class Actor extends EventEmitter {
     });
 
     // Indicate Risk
-    this.private = (this.key.seed || this.key.private);
+    this.private = !!(this.key.seed || this.key.private);
 
     // Internal State
     this._state = {

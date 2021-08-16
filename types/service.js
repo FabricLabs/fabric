@@ -224,6 +224,25 @@ class Service extends Scribe {
     return this;
   }
 
+  /**
+   * Attempt to acquire a lock for `duration` seconds.
+   * @param {Number} [duration=1000] Number of milliseconds to hold lock.
+   * @returns {Boolean} true if locked, false if unable to lock.
+   */
+  lock (duration = 1000) {
+    if (this._state.status === 'LOCKED') return false;
+    this._state.status = 'LOCKED';
+    this.locker = new Actor({
+      created: (new Date()).toISOString(),
+      contract: (setTimeout(() => {
+        delete this.locker;
+        this._state.status = 'UNLOCKED';
+      }, duration))
+    });
+
+    return true;
+  }
+
   async broadcast (msg) {
     if (!msg['@type']) throw new Error('Message must have a @type property.');
     if (!msg['@data']) throw new Error('Message must have a @data property.');
