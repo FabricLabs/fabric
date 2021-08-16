@@ -88,15 +88,15 @@ class Chain extends Ledger {
   }
 
   get _tree () {
-    let stack = new Stack(this.leaves);
+    const stack = new Stack(this.leaves);
     return stack.asMerkleTree();
   }
 
   async start () {
-    let chain = this;
+    const chain = this;
 
     try {
-      await chain.storage.start();
+      if (this.storage) await chain.storage.start();
       await chain.ledger.start();
     } catch (E) {
       console.error('Could not open storage:', E);
@@ -119,7 +119,7 @@ class Chain extends Ledger {
 
     try {
       await this.ledger.stop();
-      await this.storage.stop();
+      if (this.storage) await this.storage.stop();
     } catch (E) {
       console.error('Could not close storage:', E);
     }
@@ -136,10 +136,10 @@ class Chain extends Ledger {
   }
 
   async _load () {
-    let chain = this;
+    const chain = this;
 
-    let query = await chain.storage.get('/blocks');
-    let response = new State(query);
+    const query = await chain.storage.get('/blocks');
+    const response = new State(query);
 
     this.log('query:', query);
     this.log('response:', response);
@@ -153,8 +153,8 @@ class Chain extends Ledger {
       block = new State(block);
     }
 
-    let self = this;
-    let path = [self.indices.blocks, block.id].join('/');
+    const self = this;
+    const path = [self.indices.blocks, block.id].join('/');
 
     // Chains always have a genesis.
     if (self.blocks.length === 0 && !self.genesis) {
@@ -176,14 +176,14 @@ class Chain extends Ledger {
   }
 
   async _listBlocks () {
-    let self = this;
-    let blocks = await self.storage.get(self.indices.blocks);
+    const self = this;
+    const blocks = await self.storage.get(self.indices.blocks);
 
     return blocks;
   }
 
   async _setGenesis (genesis) {
-    let sample = new Chain(genesis);
+    const sample = new Chain(genesis);
     this.config = sample.config;
     this.genesis = new Block(genesis);
   }
