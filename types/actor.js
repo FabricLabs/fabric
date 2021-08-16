@@ -46,6 +46,12 @@ class Actor extends EventEmitter {
       '@data': this.value
     };
 
+    // Internal State
+    this._state = {
+      '@type': 'Actor',
+      '@data': this.value
+    };
+
     // Chainable
     return this;
   }

@@ -1343,7 +1343,7 @@ class Wallet extends Service {
     this.state.transactions = this.settings.transaction;
     this.state.orders = this.settings.orders;
 
-    if (this.settings.verbosity >=5) console.log('[FABRIC:WALLET]', 'state after loading:', this.state);
+    if (this.settings.verbosity >= 5) console.log('[FABRIC:WALLET]', 'state after loading:', this.state);
 
     this.status = 'loaded';
     this.emit('ready');
@@ -1355,9 +1355,9 @@ class Wallet extends Service {
    * Start the wallet, including listening for transactions.
    */
   async start () {
-    this.emit('message', `Wallet starting...`);
+    this.status = 'STARTING';
     await this._load();
-    this.emit('message', `Wallet started!`);
+    this.status = 'STARTED';
   }
 }
 

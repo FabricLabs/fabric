@@ -3,6 +3,7 @@
 // Types
 const Collection = require('../types/collection');
 const Entity = require('../types/entity');
+const Message = require('../types/message');
 const Service = require('../types/service');
 const State = require('../types/state');
 const Chain = require('../types/chain');
@@ -24,6 +25,7 @@ const jayson = require('jayson');
 
 // For node...
 const bcoin = require('bcoin');
+const Actor = require('../types/actor');
 
 // Used to connect to the Bitcoin network directly
 const FullNode = bcoin.FullNode;
@@ -78,7 +80,7 @@ class Bitcoin extends Service {
     // Internal Services
     this.provider = new Consensus({ provider: 'bcoin' });
     this.wallet = new Wallet(this.settings);
-    this.chain = new Chain(this.settings);
+    // this.chain = new Chain(this.settings);
 
     // ## Collections
     // ### Blocks
@@ -196,7 +198,7 @@ class Bitcoin extends Service {
     if (this.settings.fullnode) {
       return this.fullnode.chain.tip.hash.toString('hex');
     } else {
-      return this.chain.tip.toString('hex');
+      return (this.chain && this.chain.tip) ? this.chain.tip.toString('hex') : null;
     }
   }
 
@@ -221,6 +223,10 @@ class Bitcoin extends Service {
     // await this.spv.broadcast(msg);
     await this.spv.relay(msg);
     console.log('[SERVICES:BITCOIN]', 'Broadcasted!');
+  }
+
+  async _heartbeat () {
+    await this._checkRPCBlockNumber();
   }
 
   async _prepareBlock (obj) {
@@ -594,7 +600,7 @@ class Bitcoin extends Service {
           return false;
         }
       });
-  
+
       this.peer.on('error', this._handlePeerError.bind(this));
       this.peer.on('packet', this._handlePeerPacket.bind(this));
       this.peer.on('open', () => {
@@ -738,6 +744,22 @@ class Bitcoin extends Service {
     }
   }
 
+  async _syncBalanceFromOracle () {
+    const balance = await this._makeRPCRequest('getbalance');
+    this._state.balance = balance;
+    this.emit('message', `balance sync: ${balance}`);
+    const commit = await this.commit();
+    const actor = new Actor(commit.data);
+    this.emit('message', `balance sync, commit: ${commit}`);
+    return {
+      type: 'OracleBalance',
+      data: {
+        content: balance
+      },
+      signature: actor.sign().signature
+    };
+  }
+
   async _syncWithRPC () {
     const self = this;
 
@@ -766,8 +788,10 @@ class Bitcoin extends Service {
         version: block.version
       });
 
-      self.emit('message', `Block Raw: ${JSON.stringify(block, null, '  ')}`);
-      self.emit('message', `Block Entity: ${JSON.stringify(entity, null, '  ')}`);
+      self.emit('block', Message.fromVector(['BitcoinBlock', {
+        type: 'Entity',
+        data: entity.data
+      }]));
 
       /* const posted = await self.chain.append({
         hash: blockID,
@@ -792,9 +816,10 @@ class Bitcoin extends Service {
    */
   async start () {
     if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', `Starting for network "${this.settings.network}"...`);
-
     const self = this;
+    self.status = 'starting';
 
+    if (this.store) await this.store.open();
     if (this.settings.fullnode) {
       this.fullnode.on('peer connect', function peerConnectHandler (peer) {
         self.emit('warning', `[SERVICES:BITCOIN]', 'Peer connected to Full Node: ${peer}`);
@@ -826,38 +851,33 @@ class Bitcoin extends Service {
 
     // Start services
     await this.wallet.start();
-    await this.chain.start();
+    // await this.chain.start();
 
     // Start nodes
     if (this.settings.fullnode) await this._startLocalNode();
     if (this.settings.mode === 'rpc') {
-      // create a client
-      try {
-        self.rpc = jayson.client.http(this.settings.servers[0]);
+      const provider = new URL(self.settings.authority);
+      const config = {
+        host: provider.hostname,
+        port: provider.port
+      };
 
-        const genesisID = await self._requestBlockAtHeight(0);
-        const height = await self._requestChainHeight();
-        const best = await self._requestBestBlockHash();
-        const genesis = await self._requestBlock(genesisID);
-
-        self.emit('warning', `GENESIS: ${genesisID}`);
-        self.emit('warning', `GENESIS BLOCK: ${JSON.stringify(genesis, null, '  ')}`);
-        self.emit('warning', `HEIGHT: ${height}`);
-        self.emit('warning', `BEST: ${best}`);
-
-        await self._syncWithRPC();
-
-        const unspent = await self._listUnspent();
-        self.emit('warning', `UNSPENT: ${JSON.stringify(unspent, null, '  ')}`);
-
-        for (let i = 0; i < unspent.length; i++) {
-          await self.wallet._addOutputToSpendables(unspent[i]);
-        }
-      } catch (exception) {
-        self.emit('error', `Could not prepare session with RPC host: ${exception}`);
+      if (provider.protocol === 'https:') {
+        const auth = provider.username + ':' + provider.password;
+        config.headers = { Authorization: `Basic ${Buffer.from(auth, 'utf8').toString('base64')}` };
+        self.rpc = jayson.client.https(config);
+      } else {
+        self.rpc = jayson.client.http(config);
       }
 
-      self.heartbeat = setInterval(self._checkRPCBlockNumber.bind(self), self.settings.interval);
+      try {
+        await this._syncBalanceFromOracle();
+      } catch (exception) {
+        this.emit('error', exception);
+        return this;
+      }
+
+      self.heartbeat = setInterval(self._heartbeat.bind(self), self.settings.interval);
     }
 
     // TODO: re-enable these
@@ -892,7 +912,7 @@ class Bitcoin extends Service {
     if (this.peer && this.peer.connected) await this.peer.destroy();
     if (this.fullnode) await this.fullnode.close();
     await this.wallet.stop();
-    await this.chain.stop();
+    // await this.chain.stop();
   }
 }
 

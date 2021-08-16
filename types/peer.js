@@ -51,7 +51,7 @@ class Peer extends Scribe {
     super(config);
 
     this.name = 'Peer';
-    this.settings = this.config = merge({
+    this.settings = merge({
       address: '0.0.0.0',
       network: 'regtest',
       networking: true,
@@ -87,8 +87,8 @@ class Peer extends Scribe {
     // this.pkh = crypto.createHash('sha256').update(this.hex).digest('hex');
 
     // TODO: add getters for these
-    this.address = this.config.address;
-    this.port = this.config.port;
+    this.address = this.settings.address;
+    this.port = this.settings.port;
 
     // Public Details
     this.public = {
@@ -234,15 +234,9 @@ class Peer extends Scribe {
   async _sessionStart (socket, target) {
     const self = this;
     const address = `${target.address}:${target.port}`;
-
-    self.emit('message', `Starting session with address: ${address}`);
-
-    self.connections[address].session = new Session({
-      recipient: target.pubkey
-    });
-
+    self.emit('message', `Starting session with address: ${target.pubkey}@${address}`);
+    self.connections[address].session = new Session({ recipient: target.pubkey });
     await self.connections[address].session.start();
-
     self.emit('message', `Session created: ${JSON.stringify(self.connections[address].session)}`);
 
     if (!self.public.ip) {
@@ -261,7 +255,7 @@ class Peer extends Scribe {
       id: self.connections[address].session.id,
       identity: self.id,
       advertise: `${self.key.pubkey}@${self.public.ip}:${self.public.port}`,
-      signature: ''
+      signature: self.connections[address].session.key._sign(self.id)
     })];
     const message = Message.fromVector(vector);
 

@@ -1,10 +1,17 @@
 'use strict';
 
+// Dependencies
+const merge = require('lodash.merge');
+
+// Types
+const Actor = require('./actor');
+const KeyStore = require('./keystore');
 const Machine = require('./machine');
+const Message = require('./message');
+const Peer = require('./peer');
 const Remote = require('./remote');
 const Resource = require('./resource');
 const Scribe = require('./scribe');
-const State = require('./state');
 const Storage = require('./store');
 // const Swarm = require('./swarm');
 
@@ -27,35 +34,59 @@ class App extends Scribe {
     if (!definition.resources) definition.resources = {};
 
     this.settings = this['@data'] = Object.assign({
+      seed: 1,
+      path: './stores/fabric-application',
       prefix: '/',
-      seed: 1
+      services: []
     }, definition);
 
-    this.machine = new Machine(this['@data']);
+    // Internal Components
+    this.node = new Peer(this.settings);
+    this.actor = new Actor(this.settings);
+    this.machine = new Machine(this.settings);
+    this.store = new KeyStore(this.settings);
+
+    // TODO: replace these with KeyStore
     this.tips = new Storage({ path: './stores/tips' });
     this.stash = new Storage({ path: './stores/stash' });
+
+    // TODO: debug these in browser
     // this.swarm = new Swarm();
     // this.worker = new Worker();
 
     this.name = 'application';
     this.network = {};
+
+    // TODO: debug this in browser
     // this.element = document.createElement('fabric-app');
+
+    // Assign Properties
     this.bindings = {};
     this.authorities = {};
     this.components = {};
+    this.elements = {};
+    this.services = {};
+    this.commands = {};
     this.resources = {};
     this.templates = {};
     this.keys = [];
 
+    // Listen for Patches
     this.stash.on('patches', function (patches) {
       console.log('[FABRIC:APP]', 'heard patches!', patches);
     });
 
-    if (this['@data'].resources) {
-      for (let name in this['@data'].resources) {
+    if (this.settings.resources) {
+      for (const name in this['@data'].resources) {
         this.set(this.settings.prefix + this['@data'].resources[name].components.list, []);
       }
     }
+
+    // State
+    this._state = {
+      anchor: 'BTC',
+      chains: {}
+    };
 
     this.commit();
 
@@ -63,19 +94,17 @@ class App extends Scribe {
   }
 
   _bindEvents (element) {
-    for (let name in this.bindings) {
-      element.addEventListener(name, this.bindings[name]);
-    }
-
+    for (const name in this.bindings) element.addEventListener(name, this.bindings[name]);
     return element;
   }
 
   _unbindEvents (element) {
-    for (let name in this.bindings) {
-      element.removeEventListener(this.bindings[name]);
-    }
-
+    for (const name in this.bindings) element.removeEventListener(this.bindings[name]);
     return element;
+  }
+
+  async bootstrap () {
+    return true;
   }
 
   /**
@@ -83,7 +112,24 @@ class App extends Scribe {
    * @return {Promise}
    */
   async start () {
-    this.log('[APP]', 'started!');
+    this._appendMessage(`[FABRIC:APP] @${this.id} -- Starting...`);
+    this.status = 'STARTING';
+
+    for (const [name, service] of Object.entries(this.services)) {
+      this._appendWarning(`@${this.id} -- Checking for Service: ${name}`);
+      if (this.settings.services.includes(name)) {
+        this._appendWarning(`Starting service: ${name}`);
+        await this.services[name]._bindStore(this.store);
+        await this.services[name].start();
+      }
+    }
+
+    // Start P2P node
+    this.node.start();
+    this.status = 'STARTED';
+    this.emit('ready');
+    this._appendMessage(`[FABRIC:APP] @${this.id} -- Started!`);
+
     return this;
   }
 
@@ -94,6 +140,7 @@ class App extends Scribe {
   async stop () {
     this.log('[APP]', 'stopping...');
 
+    await this.node.stop();
     await this.tips.close();
     await this.stash.close();
 
@@ -173,6 +220,18 @@ class App extends Scribe {
     return this;
   }
 
+  async _appendMessage (msg) {
+    console.log(`[${(new Date()).toISOString()}]: ${msg}`);
+  }
+
+  async _appendWarning (msg) {
+    console.warn(`[${(new Date()).toISOString()}]: ${msg}`);
+  }
+
+  async _appendError (msg) {
+    console.error(`[${(new Date()).toISOString()}]: ${msg}`);
+  }
+
   /**
    * Configure the Application to use a specific element.
    * @param  {DOMElement} element DOM element to bind to.
@@ -239,18 +298,81 @@ class App extends Scribe {
 
   /**
    * Get the output of our program.
-   * @return {String}           Output of the program.
+   * @return {String} Output of the program.
    */
-  render (component) {
-    let rendered = `<fabric-${this.name.toLowerCase()} />`;
-    let sample = new State(rendered);
+  render () {
+    const actor = new Actor(this._state);
+    const html = `<fabric-${this.name.toLowerCase()}>` +
+      `\n  <fabric-state id="${actor.id}">` +
+      `\n    <fabric-state-json integrity="sha256:${actor.preimage}">${actor.serialize()}</fabric-state-json>` +
+      '\n  </fabric-state>' +
+      `\n</fabric-${this.name.toLowerCase()}>\n`;
+
+    const sample = new Actor(html);
 
     if (this.element) {
-      this.element.setAttribute('integrity', `sha256:${sample.id}`);
-      this.element.innerHTML = rendered;
+      this.element.setAttribute('integrity', `sha256:${sample.preimage}`);
+      this.element.innerHTML = html;
     }
 
-    return rendered;
+    return html;
+  }
+
+  _registerCommand (command, method) {
+    this.commands[command] = method.bind(this);
+  }
+
+  /**
+   * Registers a named {@link Service} with the application.  Services are
+   * standardized interfaces for Fabric contracts, emitting {@link Message}
+   * events with a predictable lifecycle.
+   * @internal
+   * @param {String} name Internal name of the service.
+   * @param {Class} Service The ES6 class definition implementing {@link Service}.
+   * @returns {Service} The registered service instance.
+   */
+  _registerService (name, Service) {
+    const self = this;
+    const service = new Service(merge({}, this.settings, this.settings[name]));
+
+    if (this.services[name]) {
+      return this._appendWarning(`Service already registered: ${name}`);
+    }
+
+    this.services[name] = service;
+
+    this.services[name].on('error', function (msg) {
+      self._appendError(`Service "${name}" emitted error: ${JSON.stringify(msg, null, '  ')}`);
+    });
+
+    this.services[name].on('warning', function (msg) {
+      self._appendWarning(`Service warning from ${name}: ${JSON.stringify(msg, null, '  ')}`);
+    });
+
+    this.services[name].on('message', function (msg) {
+      self._appendMessage(`@services/${name} -- <FabricServiceMessage>(${typeof msg}) ${JSON.stringify(msg, null, '  ')}`);
+      switch (msg['@type']) {
+        case 'ChatMessage':
+          self.node.relayFrom(self.node.id, Message.fromVector(['ChatMessage', JSON.stringify(msg)]));
+          break;
+        default:
+          break;
+      }
+    });
+
+    this.on('identity', function _registerActor (identity) {
+      if (this.settings.services.includes(name)) {
+        self._appendMessage(`Registering actor on service "${name}": ${JSON.stringify(identity)}`);
+
+        try {
+          this.services[name]._registerActor(identity);
+        } catch (exception) {
+          self._appendError(`Error from service "${name}" during _registerActor: ${exception}`);
+        }
+      }
+    });
+
+    return this.services[name];
   }
 }
 

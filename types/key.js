@@ -12,6 +12,7 @@ const ec = new EC('secp256k1');
 // TODO: remove all external dependencies
 const bcoin = require('bcoin');
 const {
+  Address,
   KeyRing,
   Mnemonic
 } = require('bcoin');
@@ -41,6 +42,7 @@ class Key extends Entity {
     this.settings = Object.assign({
       network: 'main',
       curve: 'secp256k1',
+      mode: 'aes-256-cbc',
       prefix: '00',
       public: null,
       private: null,
@@ -86,8 +88,8 @@ class Key extends Entity {
       // Key is only public
       this.keyring = KeyRing.fromKey((input instanceof Buffer) ? input : Buffer.from(input, 'hex'), true);
       this.keyring.witness = this.settings.witness;
-      this.keypair = ec.keyFromPublic(this.keyring.publicKey);
-      this.address = this.keyring.address;
+      this.keypair = ec.keyFromPublic(this.keyring.getPublic(true, 'hex'));
+      this.address = this.keyring.getAddress();
     } else {
       // Generate new keys
       this.keypair = ec.genKeyPair();
@@ -141,6 +143,38 @@ class Key extends Entity {
 
   get iv () {
     return this.machine.slurp(32).slice(0, 32);
+  }
+
+  encrypt (value) {
+    try {
+      const ivbuff = Buffer.from(this.iv, 'hex');
+      const cipher = crypto.createCipheriv(this.settings.mode, this.private.toBuffer(), ivbuff);
+      let encrypted = cipher.update(value);
+      encrypted = Buffer.concat([
+        encrypted,
+        cipher.final()
+      ]);
+      return ivbuff.toString('hex') + ':' + encrypted.toString('hex');
+    } catch (exception) {
+      console.error('err:', exception);
+    }
+  }
+
+  decrypt (text) {
+    try {
+      const parts = text.split(':');
+      const iv = Buffer.from(parts.shift(), 'hex');
+      const blob = Buffer.from(parts.join(':'), 'hex');
+      const decipher = crypto.createDecipheriv(this.settings.mode, this.private.toBuffer(), iv);
+      let decrypted = decipher.update(blob);
+      decrypted = Buffer.concat([
+        decrypted,
+        decipher.final()
+      ]);
+      return decrypted.toString();
+    } catch (exception) {
+      console.error('err:', exception);
+    }
   }
 
   _sign (msg) {

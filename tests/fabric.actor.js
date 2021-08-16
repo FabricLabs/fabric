@@ -1,9 +1,8 @@
 'use strict';
 
-const Actor = require('../types/actor');
 const assert = require('assert');
-
-const data = require('../settings/test');
+const settings = require('../settings/test');
+const Actor = require('../types/actor');
 
 describe('@fabric/core/types/actor', function () {
   describe('Actor', function () {
@@ -20,7 +19,7 @@ describe('@fabric/core/types/actor', function () {
     it('provides a risk indicator when seed is provided', function () {
       const actor = new Actor({
         content: 'Hello again, world!',
-        seed: data.key.seed
+        seed: settings.key.seed
       });
 
       actor.sign();

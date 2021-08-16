@@ -83,10 +83,6 @@ class CLI extends App {
     return this;
   }
 
-  async bootstrap () {
-    return true;
-  }
-
   /**
    * Starts (and renders) the CLI.
    */
@@ -508,46 +504,6 @@ class CLI extends App {
       // self.elements['peers'].insertItem(0, element);
       this.elements['peers'].add(element.content);
     }
-  }
-
-  _registerCommand (command, method) {
-    this.commands[command] = method.bind(this);
-  }
-
-  _registerService (name, type) {
-    const self = this;
-    const service = new type(merge({}, this.settings, this.settings[name]));
-
-    if (this.services[name]) {
-      return this._appendWarning(`Service already registered: ${name}`);
-    }
-
-    this.services[name] = service;
-
-    this.services[name].on('error', function (msg) {
-      self._appendError(`Service "${name}" emitted error: ${JSON.stringify(msg, null, '  ')}`);
-    });
-
-    this.services[name].on('warning', function (msg) {
-      self._appendWarning(`Service warning from ${name}: ${JSON.stringify(msg, null, '  ')}`);
-    });
-
-    this.services[name].on('message', function (msg) {
-      self._appendMessage(`Service message from ${name}: ${JSON.stringify(msg, null, '  ')}`);
-      self.node.relayFrom(self.node.id, Message.fromVector(['ChatMessage', JSON.stringify(msg)]));
-    });
-
-    this.on('identity', function _registerActor (identity) {
-      if (this.settings.services.includes(name)) {
-        self._appendMessage(`Registering actor on service "${name}": ${JSON.stringify(identity)}`);
-
-        try {
-          this.services[name]._registerActor(identity);
-        } catch (exception) {
-          self._appendError(`Error from service "${name}" during _registerActor: ${exception}`);
-        }
-      }
-    });
   }
 
   render () {

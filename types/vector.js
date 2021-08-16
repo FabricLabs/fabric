@@ -12,7 +12,7 @@ class Vector extends Scribe {
   constructor (origin) {
     super(origin);
 
-    this.config = Object.assign({}, origin);
+    this.settings = Object.assign({}, origin);
 
     this.known = {};
     this.registry = {};
