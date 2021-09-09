@@ -24,6 +24,13 @@ describe('@fabric/core/types/key', function () {
       assert.equal(key.public.encodeCompressed('hex'), '034f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa');
     });
 
+    it('can generate many keypairs', function () {
+      for (let i = 0; i < 1000; i++) {
+        const key = new Key();
+        assert.ok(key);
+      }
+    });
+
     it('can sign some data', function () {
       const key = new Key();
       const signature = key._sign(message['@data']);

@@ -1,6 +1,7 @@
 'use strict';
 
 // Types
+const Actor = require('../types/actor');
 const Collection = require('../types/collection');
 const Entity = require('../types/entity');
 const Message = require('../types/message');
@@ -14,9 +15,6 @@ const Consensus = require('../types/consensus');
 const BitcoinBlock = require('../types/bitcoin/block');
 const BitcoinTransaction = require('../types/bitcoin/transaction');
 
-const NODEA = require('../settings/node-a');
-const NODEB = require('../settings/node-b');
-
 // External Dependencies
 const jayson = require('jayson');
 // For the browser
@@ -25,7 +23,6 @@ const jayson = require('jayson');
 
 // For node...
 const bcoin = require('bcoin');
-const Actor = require('../types/actor');
 
 // Used to connect to the Bitcoin network directly
 const FullNode = bcoin.FullNode;
@@ -115,7 +112,7 @@ class Bitcoin extends Service {
       }
 
       this.fullnode = new FullNode({
-        network: 'regtest'
+        network: this.settings.network
       });
     }
 
@@ -862,9 +859,10 @@ class Bitcoin extends Service {
         port: provider.port
       };
 
+      const auth = provider.username + ':' + provider.password;
+      config.headers = { Authorization: `Basic ${Buffer.from(auth, 'utf8').toString('base64')}` };
+
       if (provider.protocol === 'https:') {
-        const auth = provider.username + ':' + provider.password;
-        config.headers = { Authorization: `Basic ${Buffer.from(auth, 'utf8').toString('base64')}` };
         self.rpc = jayson.client.https(config);
       } else {
         self.rpc = jayson.client.http(config);

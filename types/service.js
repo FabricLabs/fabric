@@ -6,10 +6,7 @@ const Actor = require('./actor');
 const Key = require('./key');
 const Entity = require('./entity');
 const Store = require('./store');
-const KeyStore = require('./keystore');
 const Scribe = require('./scribe');
-const Stack = require('./stack');
-// const Swarm = require('./swarm');
 const Collection = require('./collection');
 
 // external dependencies
@@ -83,7 +80,7 @@ class Service extends Scribe {
 
     if (this.settings.persistent) {
       try {
-        this.store = new KeyStore(this.settings);
+        this.store = new Store(this.settings);
       } catch (E) {
         console.error('Error:', E);
       }
@@ -609,9 +606,9 @@ class Service extends Scribe {
   }
 
   async commit () {
-    let self = this;
-    let ops = [];
-    let state = new Entity(self.state);
+    const self = this;
+    const ops = [];
+    const state = new Entity(self.state);
 
     if (self.settings.verbosity >= 4) console.log('[FABRIC:SERVICE]', 'Committing...');
 

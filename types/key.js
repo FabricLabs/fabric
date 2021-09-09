@@ -1,8 +1,5 @@
 'use strict';
 
-// TODO: replace with bcoin
-const Base58Check = require('base58check');
-
 // Dependencies
 const crypto = require('crypto');
 const EC = require('elliptic').ec;
@@ -93,7 +90,8 @@ class Key extends Entity {
     } else {
       // Generate new keys
       this.keypair = ec.genKeyPair();
-      this.keyring = KeyRing.fromPrivate(this.keypair.getPrivate().toBuffer(), true);
+      const input = this.keypair.getPrivate().toBuffer(null, 32);
+      this.keyring = KeyRing.fromPrivate(input, true);
       this.keyring.witness = this.settings.witness;
       this.address = this.keyring.getAddress();
     }
@@ -161,6 +159,8 @@ class Key extends Entity {
   }
 
   decrypt (text) {
+    if (text instanceof Buffer) text = text.toString('utf8');
+
     try {
       const parts = text.split(':');
       const iv = Buffer.from(parts.shift(), 'hex');
