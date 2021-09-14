@@ -1,13 +1,15 @@
 'use strict';
 
 // Settings
-const defaults = require('../settings/default');
 const playnet = require('../settings/playnet');
+const local = require('../settings/local');
 
 const settings = {
+  authority: local.authority,
   listen: true,
   // sideload playnet
   peers: [].concat(playnet.peers),
+  port: process.env.FABRIC_PORT || 7777,
   services: [
     // 'matrix'
   ],
@@ -21,7 +23,7 @@ const CLI = require('../types/cli');
 
 // Services
 const Bitcoin = require('../services/bitcoin');
-const Matrix = require('../services/matrix');
+// const Matrix = require('@fabric/matrix');
 
 // Program Definition
 async function OP_CHAT () {

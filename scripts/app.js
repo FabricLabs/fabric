@@ -1,28 +1,51 @@
 #!/usr/bin/env node
 'use strict';
 
-const Fabric = require('../');
+// Settings
+const settings = require('../settings/default');
+
+// Fabric Types
+const App = require('../types/app');
+
+// Fabric Services
+const Matrix = require('../services/matrix');
+const Lightning = require('../services/lightning');
+
+// Functions
+const _handleMessage = require('../functions/_handleMessage');
+const _handleWarning = require('../functions/_handleWarning');
+const _handleError = require('../functions/_handleError');
 
 async function main () {
-  let entropy = Math.random();
-  let fabric = new Fabric();
+  // Instantiate Application
+  const app = new App(settings);
 
-  // add starts here
-  let state = { entropy, fabric };
-  fabric.log('state:', state);
-
-  fabric.log('Defining Resources...');
-  fabric.define('Track', {
+  // Define Resources
+  await app.define('Example', {
     components: {
-      list: 'track-list',
-      view: 'track-view'
+      list: 'example-list',
+      view: 'example-view'
     }
   });
 
-  fabric.log('Starting processes...');
-  await fabric.start();
+  // Register Services
+  await app._registerService('lightning', Lightning);
+  await app._registerService('matrix', Matrix);
 
-  return this;
+  // Attach Listeners
+  app.on('message', _handleMessage);
+  app.on('warning', _handleWarning);
+  app.on('error', _handleError);
+
+  // Start the Application
+  await app.start();
+
+  // Render the UI
+  return app.render();
 }
 
-main();
+main().catch((exception) => {
+  console.error('[SCRIPTS:MAIN]', 'Main Process Exception:', exception);
+}).then((output) => {
+  console.log('[SCRIPTS:MAIN]', 'Main Process Output:', output);
+});

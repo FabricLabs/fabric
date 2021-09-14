@@ -21,15 +21,16 @@ class Swarm extends Scribe {
     super(config);
 
     this.name = 'Swarm';
-    this.settings = this.config = Object.assign({
+    this.settings = Object.assign({
       name: 'fabric',
       // TODO: define seed list
       seeds: [],
-      peers: []
+      peers: [],
+      contract: 0xC0D3F33D
     }, config);
 
     // create a peer for one's own $self
-    this.agent = new Peer(this.config);
+    this.agent = new Peer(this.settings);
 
     this.nodes = {};
     this.peers = {};
@@ -153,7 +154,7 @@ class Swarm extends Scribe {
       if (swarm.settings.verbosity >= 5) console.log('[FABRIC:SWARM]', '_fillPeerSlots()', 'Checking:', swarm.peers[id]);
       return swarm.peers[id].address;
     });
-    let candidates = swarm.config.peers.filter(function (address) {
+    let candidates = swarm.settings.peers.filter(function (address) {
       return !peers.includes(address);
     });
 

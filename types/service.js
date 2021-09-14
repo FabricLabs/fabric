@@ -7,8 +7,6 @@ const Key = require('./key');
 const Entity = require('./entity');
 const Store = require('./store');
 const Scribe = require('./scribe');
-const Stack = require('./stack');
-// const Swarm = require('./swarm');
 const Collection = require('./collection');
 
 // external dependencies
@@ -35,16 +33,16 @@ const manager = require('fast-json-patch');
 class Service extends Scribe {
   /**
    * Create an instance of a Service.
-   * @param       {Object} config Configuration for this service.
-   * @param       {Boolean} [config.networking=true] Whether or not to connect to the network.
-   * @param       {Object} [config.@data] Internal data to assign.
+   * @param       {Object} settings Configuration for this service.
+   * @param       {Boolean} [settings.networking=true] Whether or not to connect to the network.
+   * @param       {Object} [settings.@data] Internal data to assign.
    */
   constructor (settings = {}) {
     // Initialize Scribe, our logging tool
     super(settings);
 
     // Configure (with defaults)
-    this.settings = this.config = Object.assign({
+    this.settings = Object.assign({
       name: 'service',
       path: './stores/service',
       networking: true,
@@ -59,12 +57,12 @@ class Service extends Scribe {
         messages: {},
         members: {}
       } */
-    }, this.config, settings);
+    }, this.settings, settings);
 
     // Reserve a place for ourselves
     this.agent = null;
     this.actor = null;
-    this.name = this.config.name;
+    this.name = this.settings.name;
     this.clock = 0;
     this.collections = {};
     this.definitions = {};
@@ -222,6 +220,25 @@ class Service extends Scribe {
     }
 
     return this;
+  }
+
+  /**
+   * Attempt to acquire a lock for `duration` seconds.
+   * @param {Number} [duration=1000] Number of milliseconds to hold lock.
+   * @returns {Boolean} true if locked, false if unable to lock.
+   */
+  lock (duration = 1000) {
+    if (this._state.status === 'LOCKED') return false;
+    this._state.status = 'LOCKED';
+    this.locker = new Actor({
+      created: (new Date()).toISOString(),
+      contract: (setTimeout(() => {
+        delete this.locker;
+        this._state.status = 'UNLOCKED';
+      }, duration))
+    });
+
+    return true;
   }
 
   async broadcast (msg) {
@@ -589,9 +606,9 @@ class Service extends Scribe {
   }
 
   async commit () {
-    let self = this;
-    let ops = [];
-    let state = new Entity(self.state);
+    const self = this;
+    const ops = [];
+    const state = new Entity(self.state);
 
     if (self.settings.verbosity >= 4) console.log('[FABRIC:SERVICE]', 'Committing...');
 
@@ -643,6 +660,11 @@ class Service extends Scribe {
     emitter.emit('attached');
 
     return service;
+  }
+
+  async _bindStore (store) {
+    this.store = store;
+    return this;
   }
 
   async _getActor (id) {

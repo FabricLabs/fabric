@@ -88,7 +88,7 @@ class Interface extends Service {
 
   writeTo (position, data) {
     const entity = new Entity(data);
-    console.log('writing', entity.id, ':', entity.data, 'to', position, '...');
+    // console.log('writing', entity.id, ':', entity.data, 'to', position, '...');
 
     if (entity.id.length > this.memory.length) throw new Error('Insufficient memory.');
 

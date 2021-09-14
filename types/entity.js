@@ -1,15 +1,13 @@
 'use strict';
 
 const crypto = require('crypto');
-
-const Events = require('events');
-const Machine = require('./machine');
+const { EventEmitter } = require('events');
 
 /**
  * Live instance of an ARC in Fabric.
  * @type {Object}
  */
-class Entity extends Events.EventEmitter {
+class Entity extends EventEmitter {
   /**
    * Generic template for virtual objects.
    * @param  {Object} [data={}] Pass an object to use.
@@ -22,7 +20,6 @@ class Entity extends Events.EventEmitter {
     if (!(this instanceof Entity)) return new Entity(data);
 
     // set internal properties
-    this.machine = new Machine();
     this.settings = {
       verbosity: 2 // Information && Warnings
     };
@@ -39,7 +36,7 @@ class Entity extends Events.EventEmitter {
 
     // remove mutable variables
     Object.defineProperty(this, 'actor', { enumerable: false });
-    Object.defineProperty(this, 'machine', { enumerable: false });
+    // Object.defineProperty(this, 'machine', { enumerable: false });
 
     // return instance
     return this;
@@ -90,6 +87,9 @@ class Entity extends Events.EventEmitter {
     switch (this.actor['@type']) {
       default:
         result = JSON.stringify(this.toObject());
+        break;
+      case 'Function':
+        result = this._downsample();
         break;
       case 'Buffer':
       case 'String':
@@ -156,6 +156,16 @@ class Entity extends Events.EventEmitter {
         '@type': 'Buffer',
         '@data': JSON.parse(JSON.stringify(input))[0]
       };
+    } else if (input instanceof Function) {
+      try {
+        result = {
+          '@type': 'Function',
+          '@data': JSON.stringify(input)
+        };
+      } catch (E) {
+        console.error('Something could not be converted:', E, input);
+        process.exit();
+      }
     } else {
       try {
         result = {
@@ -163,7 +173,8 @@ class Entity extends Events.EventEmitter {
           '@data': JSON.parse(JSON.stringify(input))
         };
       } catch (E) {
-        console.log('Something could not be converted:', E, input);
+        console.error('Something could not be converted:', E, input);
+        process.exit();
       }
     }
 

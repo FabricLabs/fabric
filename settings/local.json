@@ -1,0 +1,6 @@
+{
+  "fullnode": true,
+  "authority": "http://some_username:some_password@localhost:18443",
+  "network": "regtest",
+  "verbosity": 3
+}

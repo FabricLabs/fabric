@@ -9,7 +9,7 @@
       "theme": "dark"
     },
     "edit-link": {
-      "base": "https://github.com/martindale/fabric/edit/lightning",
+      "base": "https://github.com/FabricLabs/fabric/edit/master",
       "label": "Edit This Page"
     },
     "scripts": {

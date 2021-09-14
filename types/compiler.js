@@ -266,7 +266,7 @@ class Compiler {
   }
 
   _renderToHTML (state = {}) {
-    return `<DOCTYPE html>
+    return `<!DOCTYPE html>
 <html>
   <head>
     <title>Fabric</title>

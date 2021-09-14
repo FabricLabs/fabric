@@ -18,6 +18,11 @@ class Environment extends Entity {
       store: process.env.HOME + '/.fabric'
     }, this.settings, settings);
 
+    this._state = {
+      status: 'INITIALIZED',
+      variables: process.env
+    };
+
     return this;
   }
 
@@ -83,6 +88,23 @@ class Environment extends Entity {
     }
 
     return seed;
+  }
+
+  start () {
+    this._state.status = 'STARTING';
+    let seed = null;
+
+    if (this.walletExists()) {
+      const wallet = this.readWallet();
+      seed = wallet['@data'].seed;
+    } else {
+      seed = this.readVariable('FABRIC_SEED');
+    }
+
+    this._state.seed = seed;
+    this._state.status = 'STARTED';
+
+    return this;
   }
 }
 
