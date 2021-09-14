@@ -6,6 +6,8 @@ const assert = require('assert');
 const message = require('../assets/message');
 
 describe('@fabric/core/types/key', function () {
+  this.timeout(10000);
+
   describe('Key', function () {
     it('is available from @fabric/core', function () {
       assert.equal(Key instanceof Function, true);
@@ -26,7 +28,7 @@ describe('@fabric/core/types/key', function () {
 
     it('can generate many keypairs', function () {
       // 31 byte keys every ~256 iterations
-      for (let i = 0; i < 512; i++) {
+      for (let i = 0; i < 1024; i++) {
         const key = new Key();
         assert.ok(key);
       }
