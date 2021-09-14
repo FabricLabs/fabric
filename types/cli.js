@@ -156,10 +156,11 @@ class CLI extends App {
     }
 
     // Attach P2P handlers
+    this.node.on('log', this._handlePeerLog.bind(this));
     this.node.on('ready', this._handleNodeReady.bind(this));
+    this.node.on('debug', this._handlePeerDebug.bind(this));
     this.node.on('error', this._handlePeerError.bind(this));
     this.node.on('warning', this._handlePeerWarning.bind(this));
-    this.node.on('log', this._handlePeerLog.bind(this));
     this.node.on('message', this._handlePeerMessage.bind(this));
 
     this.node.on('peer', this._handlePeer.bind(this));
@@ -281,6 +282,10 @@ class CLI extends App {
   async _appendMessage (msg) {
     this.elements['messages'].log(`[${(new Date()).toISOString()}]: ${msg}`);
     this.screen.render();
+  }
+
+  async _appendDebug (msg) {
+    this._appendMessage(`{green-fg}${msg}{/green-fg}`);
   }
 
   async _appendWarning (msg) {
@@ -473,6 +478,10 @@ class CLI extends App {
       id: node.id,
       pubkey: node.pubkey
     });
+  }
+
+  async _handlePeerDebug (message) {
+    this._appendDebug(message);
   }
 
   async _handlePeerError (message) {

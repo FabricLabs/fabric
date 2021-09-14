@@ -369,7 +369,7 @@ class Peer extends Scribe {
         // console.debug('[PEER]', `could not connect to peer ${authority} — Reason:`, err);
       });
 
-      self.connections[authority].on('close', function (err) {
+      self.connections[authority].on('close', function _handleSocketClose (err) {
         if (err) self.debug('socket closed on error:', err);
         if (err) self.emit('log', `socket closed on error: ${err}`);
 
@@ -755,11 +755,11 @@ class Peer extends Scribe {
     }
 
     switch (message.type) {
-      default:
-        console.log('unhandled base packet type:', message.type);
-        break;
       case 'collections:post':
         this.emit('collections:post', message.data);
+        break;
+      default:
+        console.log('unhandled base packet type:', message.type);
         break;
     }
   }
@@ -783,7 +783,9 @@ class Peer extends Scribe {
     }
 
     const raw = message.asRaw();
+    // self.emit('warning', `raw message: ${raw}`);
     const signature = await this.connections[address].session._appendMessage(raw);
+    self.emit('debug', `Signature: ${signature}`);
 
     try {
       const result = this.connections[address].write(raw);
@@ -797,8 +799,11 @@ class Peer extends Scribe {
   }
 
   relayFrom (origin, message) {
+    this.emit('log', `Relaying ${message.type} from ${origin}: <${typeof message.data}> ${message.data}}`);
+
     // For each known peer, send to the corresponding socket
     for (let id in this.peers) {
+      this.emit('log', `Is ${id} === ${origin}?`);
       if (id === origin) continue;
       let peer = this.peers[id];
 
