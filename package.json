@@ -76,7 +76,7 @@
     "commander": "^6.1.0",
     "content-type": "^1.0.4",
     "dotparser": "^0.3.0",
-    "elliptic": "^6.4.0",
+    "elliptic": "^6.5.4",
     "ethereumjs-vm": "^4.1.0",
     "fast-json-patch": "^2.0.7",
     "fd-chunk-store": "^2.0.0",

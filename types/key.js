@@ -75,8 +75,9 @@ class Key extends Entity {
       this.status = 'seeded';
     } else if (this.settings.private) {
       const input = this.settings.private;
+      const provision = (input instanceof Buffer) ? input : Buffer.from(input, 'hex');
       // Key is private
-      this.keyring = KeyRing.fromPrivate((input instanceof Buffer) ? input : Buffer.from(input, 'hex'), true);
+      this.keyring = KeyRing.fromPrivate(provision, true);
       this.keyring.witness = this.settings.witness;
       this.keypair = ec.keyFromPrivate(this.settings.private);
       this.address = this.keyring.getAddress();
@@ -84,8 +85,7 @@ class Key extends Entity {
       const input = this.settings.pubkey || this.settings.public;
       // Key is only public
       this.keyring = KeyRing.fromKey((input instanceof Buffer) ? input : Buffer.from(input, 'hex'), true);
-      this.keyring.witness = this.settings.witness;
-      this.keypair = ec.keyFromPublic(this.keyring.getPublic(true, 'hex'));
+      this.keypair = ec.keyFromPublic(this.keyring.getPublicKey(true, 'hex'));
       this.address = this.keyring.getAddress();
     } else {
       // Generate new keys

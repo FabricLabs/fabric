@@ -652,12 +652,20 @@ class Bitcoin extends Service {
 
     if (!address) address = await this.wallet.getUnusedAddress();
 
-    try {
-      block = await this.fullnode.miner.mineBlock(this.fullnode.chain.tip, address);
-      // Add the block to our chain
-      await this.fullnode.chain.add(block);
-    } catch (exception) {
-      return this.emit('message', `Could not mine block: ${exception}`);
+    switch (this.settings.mode) {
+      case 'rpc':
+        let address = await this._makeRPCRequest('getnewaddress');
+        await this._makeRPCRequest('generateblock', [address, []]);
+        break;
+      default:
+        try {
+          block = await this.fullnode.miner.mineBlock(this.fullnode.chain.tip, address);
+          // Add the block to our chain
+          await this.fullnode.chain.add(block);
+        } catch (exception) {
+          return this.emit('message', `Could not mine block: ${exception}`);
+        }
+        break;
     }
 
     return block;
@@ -700,7 +708,7 @@ class Bitcoin extends Service {
     const self = this;
     return new Promise((resolve, reject) => {
       self.rpc.request(method, params, function (err, response) {
-        if (err) return reject(err);
+        if (err) return reject({ error: err, response: response });
         return resolve(response.result);
       });
     });
@@ -742,12 +750,17 @@ class Bitcoin extends Service {
   }
 
   async _syncBalanceFromOracle () {
+    // Get balance
     const balance = await this._makeRPCRequest('getbalance');
+
+    // Update service data
     this._state.balance = balance;
-    this.emit('message', `balance sync: ${balance}`);
+
+    // Commit to state
     const commit = await this.commit();
     const actor = new Actor(commit.data);
-    this.emit('message', `balance sync, commit: ${commit}`);
+
+    // Return OracleBalance
     return {
       type: 'OracleBalance',
       data: {
@@ -853,7 +866,8 @@ class Bitcoin extends Service {
     // Start nodes
     if (this.settings.fullnode) await this._startLocalNode();
     if (this.settings.mode === 'rpc') {
-      const provider = new URL(self.settings.authority);
+      if (!this.settings.authority) return console.error('Error: No authority specified.  To use an RPC anchor, provide the "authority" parameter.');
+      const provider = new URL(this.settings.authority);
       const config = {
         host: provider.hostname,
         port: provider.port
@@ -889,7 +903,7 @@ class Bitcoin extends Service {
     // END TODO
 
     if (this.settings.fullnode) {
-      let genesis = await this.fullnode.getBlock(0);
+      const genesis = await this.fullnode.getBlock(0);
 
       // TODO: refactor Chain
       await this.chain._setGenesis(genesis.toJSON());

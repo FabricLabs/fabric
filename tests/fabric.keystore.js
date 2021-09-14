@@ -3,29 +3,29 @@
 const assert = require('assert');
 const playnet = require('../settings/playnet');
 
-const KeyStore = require('../types/keystore');
+const Keystore = require('../types/keystore');
 const Hash256 = require('../types/hash256');
 
 describe('@fabric/core/types/keystore', function () {
-  describe('KeyStore', function () {
+  describe('Keystore', function () {
     it('is available from @fabric/core', function () {
-      assert.strictEqual(KeyStore instanceof Function, true);
+      assert.strictEqual(Keystore instanceof Function, true);
     });
 
     it('can instantiate smoothly', async function () {
-      const store = new KeyStore();
+      const store = new Keystore();
       assert.ok(store);
     });
 
     it('can open and close smoothly', async function () {
-      const store = new KeyStore();
+      const store = new Keystore();
       await store.open();
       await store.close();
       assert.ok(store);
     });
 
     it('provides the appropriate codec', async function () {
-      const store = new KeyStore(playnet);
+      const store = new Keystore(playnet);
       await store.open();
       await store.close();
       assert.ok(store);
@@ -34,7 +34,7 @@ describe('@fabric/core/types/keystore', function () {
     });
 
     it('can call _setState', async function () {
-      const store = new KeyStore(playnet);
+      const store = new Keystore(playnet);
       await store.open();
       await store._setState({
         content: 'Hello, world!'
@@ -45,8 +45,8 @@ describe('@fabric/core/types/keystore', function () {
     });
 
     xit('can restore after _setState', async function () {
-      const beforeStore = new KeyStore(playnet);
-      const afterStore = new KeyStore(playnet);
+      const beforeStore = new Keystore(playnet);
+      const afterStore = new Keystore(playnet);
 
       await beforeStore.open();
       await beforeStore._setState({
@@ -69,7 +69,7 @@ describe('@fabric/core/types/keystore', function () {
     });
 
     xit('can wipe after _setState', async function () {
-      const store = new KeyStore();
+      const store = new Keystore();
       await store.open();
       await store._setState({
         content: 'Hello, world!',

@@ -402,13 +402,13 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
    * @param {Path} path Key to retrieve.
    * @returns {Mixed}
    */
-  get (path) {
+  get (path = '') {
     // return pointer.get(this.state, path);
     let result = null;
     try {
       result = pointer.get(this['@entity']['@data'], path);
     } catch (exception) {
-      console.error('[FABRIC:STATE]', 'Could not retrieve path:', path, exception);
+      console.error('[FABRIC:STATE]', 'Could not retrieve path:', path, pointer.get(this['@entity']['@data'], '/'), exception);
     }
     return result;
   }
@@ -422,7 +422,7 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
     // console.log('setting:', path, value);
     pointer.set(this.value, path, value);
     pointer.set(this['@entity']['@data'], path, value);
-    let result = pointer.set(this.value, path, value);
+    const result = pointer.set(this.value, path, value);
     this.commit();
     return result;
   }
