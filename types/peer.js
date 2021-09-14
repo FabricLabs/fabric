@@ -785,8 +785,14 @@ class Peer extends Scribe {
     const raw = message.asRaw();
     const signature = await this.connections[address].session._appendMessage(raw);
 
-    if (!result) {
-      self.emit('warning', 'Stream result false.');
+    try {
+      const result = this.connections[address].write(raw);
+
+      if (!result) {
+        self.emit('warning', 'Stream result false.');
+      }
+    } catch (exception) {
+      this.emit('error', `Exception writing to socket: ${exception}`);
     }
   }
 
