@@ -20,9 +20,6 @@ const Wallet = require('../types/wallet');
 const Machine = require('../types/machine');
 const Environment = require('../types/environment');
 
-// Services
-const Matrix = require('../services/matrix');
-
 // Contracts
 const OP_START = require('../contracts/node');
 const OP_CHAT = require('../contracts/chat');
