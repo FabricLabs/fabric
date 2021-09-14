@@ -53,7 +53,7 @@ describe('@fabric/core/types/compiler', function () {
       const html = compiler._renderToHTML();
       const hash = Hash256.digest(html);
       assert.ok(compiler);
-      assert.strictEqual(compiler.integrity, 'sha256-9ff48be2eb3d35599bf33a5d635b7007dc2ca0dbbc6e19797f615482e11e9f44');
+      assert.strictEqual(compiler.integrity, 'sha256-e4720ec234b4673cff23bd97dec51c6c5511f711942bb502617235e0797d3680');
       assert.strictEqual(hash, '280f20541e198b61bd52760338d71072b6f1968921587e171a5c0fab83227c4d');
     });
   });
