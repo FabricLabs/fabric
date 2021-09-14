@@ -906,7 +906,9 @@ class Bitcoin extends Service {
       const genesis = await this.fullnode.getBlock(0);
 
       // TODO: refactor Chain
-      await this.chain._setGenesis(genesis.toJSON());
+      if (this.chain) {
+        await this.chain._setGenesis(genesis.toJSON());
+      }
     }
 
     this.emit('ready', {
