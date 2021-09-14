@@ -90,7 +90,7 @@ describe('@fabric/core/types/interface', function () {
       const replica = bob.shared();
 
       alice.on('commit', function (commit) {
-        console.log('got commit:', commit);
+        // console.log('got commit:', commit);
       });
 
       alice.writeTo(0, 'Hello, world!');

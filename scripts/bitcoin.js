@@ -1,15 +1,10 @@
 'use strict';
 
 const Bitcoin = require('../services/bitcoin');
-const config = {
-  fullnode: true,
-  network: 'regtest',
-  // network: 'main',
-  verbosity: 4
-};
+const settings = require('../settings/local');
 
-async function main () {
-  let bitcoin = new Bitcoin(config);
+async function main (input = {}) {
+  const bitcoin = new Bitcoin(input);
 
   bitcoin.on('message', async function (msg) {
     console.log('[SCRIPTS:BITCOIN]', 'Received message:', msg);
@@ -18,6 +13,6 @@ async function main () {
   await bitcoin.start();
 }
 
-main().catch((E) => {
+main(settings).catch((E) => {
   console.error('[ALERT]', 'Service threw exception:', E);
 });

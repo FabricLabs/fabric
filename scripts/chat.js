@@ -2,8 +2,8 @@
 'use strict';
 
 // Configuration
-const PORT = process.env.PORT;
-const SEED = process.env.SEED;
+const PORT = process.env.FABRIC_PORT;
+const SEED = process.env.FABRIC_SEED;
 
 const defaults = require('../settings/default');
 const playnet = require('../settings/playnet');

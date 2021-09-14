@@ -18,6 +18,11 @@ class Environment extends Entity {
       store: process.env.HOME + '/.fabric'
     }, this.settings, settings);
 
+    this._state = {
+      status: 'INITIALIZED',
+      variables: process.env
+    };
+
     return this;
   }
 
@@ -27,6 +32,10 @@ class Environment extends Entity {
 
   walletExists () {
     return fs.existsSync(this.settings.path);
+  }
+
+  makeContractStore () {
+    fs.mkdirSync(this.settings.store);
   }
 
   makeStore () {
@@ -42,6 +51,21 @@ class Environment extends Entity {
     } catch (err) {
       fs.closeSync(fs.openSync(this.settings.path, 'w'));
     }
+  }
+
+  readContracts () {
+    const prefix = `${__dirname}/..`;
+    return fs.readdirSync(`${prefix}/contracts`).filter((x) => {
+      const parts = x.split('.');
+      return (parts[parts.length - 1] === 'js');
+    }).map((x) => {
+      const contract = fs.readFileSync(`${prefix}/contracts/${x}`);
+      const entity = new Entity(contract);
+      return {
+        '@id': entity.id,
+        '@data': entity.data
+      };
+    });
   }
 
   readVariable (name) {
@@ -64,6 +88,23 @@ class Environment extends Entity {
     }
 
     return seed;
+  }
+
+  start () {
+    this._state.status = 'STARTING';
+    let seed = null;
+
+    if (this.walletExists()) {
+      const wallet = this.readWallet();
+      seed = wallet['@data'].seed;
+    } else {
+      seed = this.readVariable('FABRIC_SEED');
+    }
+
+    this._state.seed = seed;
+    this._state.status = 'STARTED';
+
+    return this;
   }
 }
 

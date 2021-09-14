@@ -1,15 +1,25 @@
 'use strict';
 
-const MAX_CHAT_MESSAGE_LENGTH = 2048;
+// Constants
+const {
+  MAX_CHAT_MESSAGE_LENGTH,
+  BITCOIN_GENESIS
+} = require('../constants');
 
-// Dependencies
+// Internal Dependencies
+const fs = require('fs');
+
+// External Dependencies
 const merge = require('lodash.merge');
+const pointer = require('json-pointer'); // TODO: move uses to App
+const monitor = require('fast-json-patch'); // TODO: move uses to App
+const bcoin = require('bcoin'); // TODO: move to Wallet
 
-// Types
-const App = require('../types/app');
-const Entity = require('./entity');
-const Peer = require('../types/peer');
-const Message = require('../types/message');
+// Fabric Types
+const App = require('./app');
+const Peer = require('./peer');
+const Message = require('./message');
+const Hash256 = require('./hash256');
 
 // Services
 const Bitcoin = require('../services/bitcoin');
@@ -25,26 +35,37 @@ const Bitcoin = require('../services/bitcoin');
 //   fabric-input
 // ```
 const blessed = require('blessed');
+const Actor = require('./actor');
 
 /**
  * Provides a Command Line Interface (CLI) for interacting with
  * the Fabric network using a terminal emulator.
  */
 class CLI extends App {
+  /**
+   * Create a terminal-based interface for a {@link User}.
+   * @param {Object} [settings] Configuration values.
+   * @param {Array} [settings.currencies] List of currencies to support.
+   */
   constructor (settings = {}) {
     super(settings);
 
     // Assign Settings
     this.settings = merge({
       listen: false,
-      services: []
+      render: true,
+      services: [],
+      network: 'regtest',
+      interval: 1000
     }, this.settings, settings);
 
     // Internal Components
     this.node = new Peer(this.settings);
     this.bitcoin = new Bitcoin({
-      fullnode: true,
-      network: 'regtest',
+      authority: this.settings.authority,
+      mode: 'rpc',
+      fullnode: false,
+      network: this.settings.network,
       key: {
         seed: (this.settings.wallet) ? this.settings.wallet.seed : this.settings.seed
       },
@@ -61,18 +82,45 @@ class CLI extends App {
     this.history = [];
     this.commands = {};
     this.services = {};
+    this.documents = {};
+    this.requests = {};
     this.elements = {};
+    this.channels = {};
     this.peers = {};
 
     // State
     this._state = {
-      chains: {}
+      anchor: null,
+      balances: {
+        confirmed: 0,
+        unconfirmed: 0
+      },
+      contracts: {},
+      clock: 0
     };
 
     // Chainable
     return this;
   }
 
+  async bootstrap () {
+    return true;
+  }
+
+  async tick () {
+    // Poll for new information
+    // TODO: ZMQ
+    await this._syncChainDisplay();
+    await this._syncBalance();
+
+    // Increment clock and commit
+    this._state.clock++;
+    this.commit();
+  }
+
+  /**
+   * Starts (and renders) the CLI.
+   */
   async start () {
     // Register Internal Commands
     this._registerCommand('help', this._handleHelpRequest);
@@ -82,19 +130,35 @@ class CLI extends App {
     this._registerCommand('peers', this._handlePeerListRequest);
     this._registerCommand('connect', this._handleConnectRequest);
     this._registerCommand('disconnect', this._handleDisconnectRequest);
+    this._registerCommand('inventory', this._handleInventoryRequest);
+    this._registerCommand('channels', this._handleChannelRequest);
     this._registerCommand('identity', this._handleIdentityRequest);
     this._registerCommand('generate', this._handleGenerateRequest);
     this._registerCommand('receive', this._handleReceiveAddressRequest);
     this._registerCommand('balance', this._handleBalanceRequest);
     this._registerCommand('service', this._handleServiceCommand);
+    this._registerCommand('publish', this._handlePublishCommand);
+    this._registerCommand('request', this._handleRequestCommand);
+    this._registerCommand('import', this._handleImportCommand);
+    this._registerCommand('join', this._handleJoinRequest);
     this._registerCommand('sync', this._handleChainSyncRequest);
     this._registerCommand('send', this._handleSendRequest);
+    this._registerCommand('fund', this._handleFundRequest);
+    this._registerCommand('state', this._handleStateRequest);
+    this._registerCommand('set', this._handleSetRequest);
+    this._registerCommand('get', this._handleGetRequest);
 
-    // Render UI
-    this.render();
+    await this.bootstrap();
+
+    if (this.settings.render) {
+      // Render UI
+      this.render();
+    }
 
     // Attach P2P handlers
+    this.node.on('log', this._handlePeerLog.bind(this));
     this.node.on('ready', this._handleNodeReady.bind(this));
+    this.node.on('debug', this._handlePeerDebug.bind(this));
     this.node.on('error', this._handlePeerError.bind(this));
     this.node.on('warning', this._handlePeerWarning.bind(this));
     this.node.on('message', this._handlePeerMessage.bind(this));
@@ -108,12 +172,16 @@ class CLI extends App {
     // debug event
     // this.node.on('socket:data', this._handleSocketData.bind(this));
 
-    // Attach Bitcoin handlers
+    // this.node.on('DocumentPublish', this._handlePeerDocumentPublish.bind(this));
+    // this.node.on('DocumentRequest', this._handlePeerDocumentRequest.bind(this));
+
+    // Attach Anchor handlers
     this.bitcoin.on('ready', this._handleBitcoinReady.bind(this));
     this.bitcoin.on('error', this._handleBitcoinError.bind(this));
+    this.bitcoin.on('warning', this._handleBitcoinWarning.bind(this));
     this.bitcoin.on('message', this._handleBitcoinMessage.bind(this));
     this.bitcoin.on('block', this._handleBitcoinBlock.bind(this));
-    this.bitcoin.on('tx', this._handleBitcoinTransaction.bind(this));
+    this.bitcoin.on('transaction', this._handleBitcoinTransaction.bind(this));
 
     // Start Bitcoin service
     await this.bitcoin.start();
@@ -126,14 +194,89 @@ class CLI extends App {
       }
     }
 
+    this.observer = monitor.observe(this._state);
+
+    // Bind remaining internals
+    // this.on('changes', this._handleChanges.bind(this));
+
     // Start P2P node
     this.node.start();
+
+    // Attach Heartbeat
+    this.heartbeat = setInterval(this.tick.bind(this), this.settings.interval);
+
+    // Emit Ready
     this.emit('ready');
+
+    // Chainable
+    return this;
   }
 
+  /**
+   * Disconnect all interfaces and exit the process.
+   */
   async stop () {
     await this.node.stop();
     return process.exit(0);
+  }
+
+  get (path = '') {
+    let result = null;
+
+    try {
+      result = pointer.get(this._state, path);
+    } catch (exception) {
+      this._appendError(`Could not retrieve path "${path}": ${exception}`);
+    }
+
+    return result;
+  }
+
+  set (path, value) {
+    if (!path) return this._appendError('Must provide a path.');
+    if (!value) return this._appendError('Must provide a value.');
+
+    try {
+      pointer.set(this._state, path, value);
+    } catch (exception) {
+      this._appendError(`Could not set path "${path}": ${exception}`);
+    }
+
+    this.commit();
+
+    return this.get(path);
+  }
+
+  commit () {
+    ++this.clock;
+
+    this['@parent'] = this.id;
+    this['@preimage'] = this.toString();
+    this['@constructor'] = this.constructor;
+
+    let changes = null;
+
+    if (this.observer) {
+      changes = monitor.generate(this.observer);
+    }
+
+    this['@id'] = this.id;
+
+    if (changes && changes.length) {
+      // this._appendMessage(`Changes: ${JSON.stringify(changes, null, '  ')}`);
+
+      this.emit('changes', changes);
+      this.emit('state', this['@state']);
+      this.emit('message', {
+        '@type': 'Transaction',
+        '@data': {
+          'changes': changes,
+          'state': changes
+        }
+      });
+    }
+
+    return this;
   }
 
   async _appendMessage (msg) {
@@ -141,16 +284,104 @@ class CLI extends App {
     this.screen.render();
   }
 
+  async _appendDebug (msg) {
+    this._appendMessage(`{green-fg}${msg}{/green-fg}`);
+  }
+
   async _appendWarning (msg) {
-    this._appendMessage(`{yellow-fg}${msg}{/yellow-fg}`)
+    this._appendMessage(`{yellow-fg}${msg}{/yellow-fg}`);
   }
 
   async _appendError (msg) {
-    this._appendMessage(`{red-fg}${msg}{/red-fg}`)
+    this._appendMessage(`{red-fg}${msg}{/red-fg}`);
+  }
+
+  async _handleChanges (changes) {
+    this._appendMessage(`New Changes: ${JSON.stringify(changes, null, '  ')}`);
+  }
+
+  async _handleStateRequest (params) {
+    const value = await this.get(``);
+    this._appendMessage('{bold}Current State{/bold}: ' + JSON.stringify(value, null, ' '));
+    return false;
+  }
+
+  async _handleGetRequest (params) {
+    if (!params[1]) return this._appendError(`Must provide a document name.`);
+    const value = await this.get(`/${params[1]}`);
+    this._appendMessage('Value: ' + JSON.stringify(value, null, ' '));
+    return false;
+  }
+
+  async _handleSetRequest (params) {
+    if (!params[1]) return this._appendError(`Must provide a document name.`);
+    if (!params[2]) return this._appendError(`Must provide a document.`);
+    const result = await this.set(`/${params[1]}`, params[2]);
+    this._appendMessage('Result: ' + JSON.stringify(result, null, ' '));
+    return false;
+  }
+
+  async _handleFundRequest (params) {
+    if (!params[1]) return this._appendError(`Must provide a channel ID.`);
+    if (!params[2]) return this._appendError(`Must provide a funding amount.`);
+    this._fundChannel(params[1], params[2]);
+  }
+
+  async _handleChannelRequest (params) {
+    this._appendMessage(`{bold}Channels:{/bold} ${JSON.stringify(this.channels, null, '  ')}`);
+  }
+
+  async _fundChannel (id, amount) {
+    this._appendMessage(`Funding channel ${id} with ${amount} BTC...`);
+    // TODO: create payment channel (@fabric/core/types/channel)
+  }
+
+  async _handleJoinRequest (params) {
+    if (!params[1]) return this._appendError(`You must specify a sidechain.`);
+  }
+
+  async _handleInventoryRequest (params) {
+    this._appendMessage(`{bold}Inventory:{/bold} ${JSON.stringify(this.documents, null, '  ')}`);
+  }
+
+  async _handleImportCommand (params) {
+    if (!params[1]) return this._appendError(`You must provide a file to import.`);
+    if (!fs.existsSync(params[1])) return this._appendError(`File does not exist: ${params[1]}`);
+    const content = fs.readFileSync(params[1]);
+    const actor = new Actor(content);
+    this._appendMessage(`File contents (${content.length} bytes):\n---${content}\n---\nDocument ID: ${actor.id}`);
+    this.documents[actor.id] = content;
+  }
+
+  async _handlePublishCommand (params) {
+    if (!params[1]) return this._appendError(`You must specify the file to publish.`);
+    if (!params[2]) return this._appendError(`You must specify the rate to pay.`);
+    if (!this.documents[params[1]]) return this._appendError(`This file does not exist in the local library.`);
+    const message = Message.fromVector(['DocumentPublish', {
+      id: params[1],
+      content: this.documents[params[1]],
+      reward: params[2]
+    }]);
+    this.node.broadcast(message);
+  }
+
+  async _handleRequestCommand (params) {
+    if (!params[1]) return this._appendError(`You must specify the file to request.`);
+    if (!params[2]) return this._appendError(`You must specify the rate to pay.`);
+    const message = Message.fromVector(['DocumentRequest', {
+      document: params[1]
+    }]);
+    this.node.broadcast(message);
   }
 
   async _handleBitcoinMessage (message) {
-    this._appendMessage(`Bitcoin service emitted message: ${message}`);
+    switch (message['@type']) {
+      case 'Snapshot':
+        break;
+      default:
+        this._appendMessage(`Bitcoin service emitted message: ${JSON.stringify(message)}`);
+        break;
+    }
   }
 
   async _handleBitcoinBlock (block) {
@@ -166,6 +397,10 @@ class CLI extends App {
 
   async _handleBitcoinError (...msg) {
     this._appendError(msg);
+  }
+
+  async _handleBitcoinWarning (...msg) {
+    this._appendWarning(msg);
   }
 
   async _handleBitcoinReady (bitcoin) {
@@ -204,13 +439,31 @@ class CLI extends App {
       self._appendMessage('Peer did not send an ID.  Event received: ' + JSON.stringify(peer));
     }
 
+    // TODO: use @fabric/core/types/channel
+    const channel = {
+      id: Hash256.digest(`${self.node.id}:${peer.id}`),
+      counterparty: peer.id
+    };
+
     if (!self.peers[peer.id]) {
       self.peers[peer.id] = peer;
       self.emit('peer', peer);
     }
 
+    if (!self.channels[channel.id]) {
+      self.channels[channel.id] = channel;
+    }
+
     self._syncPeerList();
     self.screen.render();
+  }
+
+  async _handlePeerDocumentPublish (message) {
+    this._appendMessage('Peer requested document publish: ' + JSON.stringify(message));
+  }
+
+  async _handlePeerDocumentRequest (message) {
+    this._appendMessage('Peer requested document delivery: ' + JSON.stringify(message));
   }
 
   async _handlePeerCandidate (peer) {
@@ -227,6 +480,10 @@ class CLI extends App {
     });
   }
 
+  async _handlePeerDebug (message) {
+    this._appendDebug(message);
+  }
+
   async _handlePeerError (message) {
     this._appendError(`Local "error" event: ${JSON.stringify(message)} <${message.type}> ${message.data}`);
   }
@@ -235,18 +492,15 @@ class CLI extends App {
     this._appendWarning(`Local "warning" event: ${JSON.stringify(message)}`);
   }
 
+  async _handlePeerLog (message) {
+    this._appendMessage(message);
+  }
+
   async _handlePeerMessage (message) {
     switch (message.type) {
-      default:
-        if (!message.type && !message.data) {
-          this._appendMessage(`Local "message" event: ${message}`);
-        } else {
-          this._appendMessage(`Local "message" event: <${message.type}> ${message.data}`);
-        }
-        break;
       case 'ChatMessage':
         try {
-          let parsed = JSON.parse(message.data);
+          const parsed = JSON.parse(message.data);
           this._appendMessage(`[@${parsed.actor}]: ${parsed.object.content}`);
         } catch (exception) {
           this._appendError(`Could not parse <ChatMessage> data (should be JSON): ${message.data}`);
@@ -255,6 +509,13 @@ class CLI extends App {
       case 'BlockCandidate':
         this._appendMessage(`Received Candidate Block from peer: <${message.type}> ${message.data}`);
         this.bitcoin.append(message.data);
+        break;
+      default:
+        if (!message.type && !message.data) {
+          this._appendMessage(`Local "message" event: ${message}`);
+        } else {
+          this._appendMessage(`Local "message" event: <${message.type}> ${message.data}`);
+        }
         break;
     }
   }
@@ -395,6 +656,18 @@ class CLI extends App {
     return false;
   }
 
+  async spend (to, amount) {
+    let tx = null;
+
+    try {
+      tx = await this.bitcoin._makeRPCRequest('sendtoaddress', [to, amount]);
+    } catch (exception) {
+      this._appendError(`Could not create transaction: ${JSON.stringify(exception)}`);
+    }
+
+    return tx;
+  }
+
   async _handleSendRequest (params) {
     if (!params[1]) return this._appendError('You must specify an address to send to.');
     if (!params[2]) return this._appendError('You must specify an amount to send.');
@@ -402,21 +675,21 @@ class CLI extends App {
     const address = params[1];
     const amount = params[2];
 
-    const tx = await this.node.wallet._spendToAddress(amount, address);
-    this._appendMessage('Transaction created:', tx);
+    const tx = await this.spend(address, amount);
+    this._appendMessage(`Transaction created: ${tx}`);
 
     return false;
   }
 
   async _handleBalanceRequest () {
-    const balance = await this.node.wallet.wallet.getBalance(1);
+    const balance = await this._getBalance();
     this._appendMessage(`{bold}Wallet Balance{/bold}: ${JSON.stringify(balance, null, '  ')}`);
     return false;
   }
 
   async _handleReceiveAddressRequest () {
     const address = await this.node.wallet.getUnusedAddress();
-    this._appendMessage(`{bold}Receive address:{/bold}: ${JSON.stringify(address.toString(), null, '  ')}`);
+    this._appendMessage(`{bold}Receive address{/bold}: ${JSON.stringify(address.toString(), null, '  ')}`);
     return false;
   }
 
@@ -424,7 +697,7 @@ class CLI extends App {
     switch (params[1]) {
       case 'list':
       default:
-        this._appendMessage(`{bold}Available Services:{/bold}: ${JSON.stringify(Object.keys(this.services), null, '  ')}`);
+        this._appendMessage(`{bold}Available Services{/bold}: ${JSON.stringify(Object.keys(this.services), null, '  ')}`);
         break;
     }
   }
@@ -464,8 +737,23 @@ class CLI extends App {
     return false;
   }
 
-  _syncChainDisplay () {
-    this.elements['chainTip'].setContent(`${this.bitcoin.tip} (height is ${this.bitcoin.fullnode.chain.height})`);
+  async _syncChainDisplay () {
+    const height = await this.bitcoin._makeRPCRequest('getblockcount');
+    const stats = await this.bitcoin._makeRPCRequest('getblockchaininfo');
+    this.elements['chainTip'].setContent(`${stats.bestblockhash} (height is ${height})`);
+    this.screen.render();
+  }
+
+  async _syncBalance () {
+    const balance = await this._getBalance();
+    this._state.balances.confirmed = balance;
+    this.elements['balance'].setContent(balance.toFixed(8));
+    this.screen.render();
+  }
+
+  async _getBalance () {
+    const result = await this.bitcoin._syncBalanceFromOracle();
+    return result.data.content;
   }
 
   _syncPeerList () {
@@ -490,7 +778,8 @@ class CLI extends App {
 
   _registerService (name, type) {
     const self = this;
-    const service = new type(this.settings);
+    const settings = merge({}, this.settings, this.settings[name]);
+    const service = new type(settings);
 
     if (this.services[name]) {
       return this._appendWarning(`Service already registered: ${name}`);
@@ -502,17 +791,22 @@ class CLI extends App {
       self._appendError(`Service "${name}" emitted error: ${JSON.stringify(msg, null, '  ')}`);
     });
 
+    this.services[name].on('warning', function (msg) {
+      self._appendWarning(`Service warning from ${name}: ${JSON.stringify(msg, null, '  ')}`);
+    });
+
     this.services[name].on('message', function (msg) {
-      self._appendMessage(`service message from ${name}: ${JSON.stringify(msg, null, '  ')}`);
+      self._appendMessage(`Service message from ${name}: ${JSON.stringify(msg, null, '  ')}`);
       self.node.relayFrom(self.node.id, Message.fromVector(['ChatMessage', JSON.stringify(msg)]));
     });
 
-    this.on('identity', function _registerActor (identity) {
+    this.on('identity', async function _registerActor (identity) {
       if (this.settings.services.includes(name)) {
         self._appendMessage(`Registering actor on service "${name}": ${JSON.stringify(identity)}`);
 
         try {
-          this.services[name]._registerActor(identity);
+          let registration = await this.services[name]._registerActor(identity);
+          self._appendMessage(`Registered Actor: ${JSON.stringify(registration, null, '  ')}`);
         } catch (exception) {
           self._appendError(`Error from service "${name}" during _registerActor: ${exception}`);
         }
@@ -584,7 +878,7 @@ class CLI extends App {
       parent: self.elements['wallet'],
       content: 'BALANCE:',
       top: 0,
-      right: 15,
+      right: 20,
       bold: true
     });
 
@@ -632,6 +926,7 @@ class CLI extends App {
       left: 14
     });
 
+    // MAIN LOG OUTPUT
     self.elements['messages'] = blessed.log({
       parent: self.screen,
       label: '[ Messages ]',
@@ -705,9 +1000,9 @@ class CLI extends App {
       self.elements['prompt'].addListener('blur', oldBlur);
 
       self.elements['prompt'].oldFocus();
-    }
+    };
 
-    //focus when clicked
+    // focus when clicked
     self.elements['form'].on('click', function () {
       self.elements['prompt'].focus();
     });

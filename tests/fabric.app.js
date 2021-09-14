@@ -1,6 +1,6 @@
 'use strict';
 
-const Fabric = require('../');
+const App = require('../types/app');
 
 const assert = require('assert');
 const expect = require('chai').expect;
@@ -8,30 +8,30 @@ const expect = require('chai').expect;
 describe('@fabric/core/types/app', function () {
   describe('App', function () {
     it('is available from @fabric/core', function () {
-      assert.equal(Fabric.App instanceof Function, true);
+      assert.equal(App instanceof Function, true);
     });
 
     xit('should expose a constructor', function () {
-      assert.equal(typeof Fabric.App, 'function');
+      assert.equal(typeof App, 'function');
     });
 
     it('has a normal lifecycle', async function () {
-      let app = new Fabric.App();
+      let app = new App();
       await app.start();
       await app.stop();
       assert.ok(app);
     });
 
     xit('should create an application smoothly', async function () {
-      let app = new Fabric.App();
+      let app = new App();
       await app.start();
       await app.stop();
       assert.ok(app);
     });
 
     xit('should load data from an oracle', async function () {
-      let app = new Fabric.App();
-      let oracle = new Fabric.Oracle({
+      let app = new App();
+      let oracle = new Oracle({
         path: './data/oracle'
       });
 

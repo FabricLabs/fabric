@@ -15,13 +15,14 @@ const Message = require('./message');
 const State = require('./state');
 const Machine = require('./machine');
 const Secret = require('./secret');
+const Service = require('./service');
 
 /**
  * Interfaces compile abstract contract code into {@link Chain}-executable transactions, or "chaincode". For example, the "Bitcoin" interface might compile a Swap contract into Script, preparing a valid Bitcoin transaction for broadcast which executes the swap contract.
  * @augments EventEmitter
  * @property {String} status Human-friendly value representing the Interface's current {@link State}.
  */
-class Interface extends EventEmitter {
+class Interface extends Service {
   /**
    * Define an {@link Interface} by creating an instance of this class.
    * @param {Object} settings Configuration values.
@@ -69,14 +70,6 @@ class Interface extends EventEmitter {
     return this._state.set(`/status`, value);
   }
 
-  /**
-   * Getter for {@link State}.
-   */
-  get state () {
-    // TODO: remove old use of `@data` while internal to Fabric
-    return this._state['@data'];
-  }
-
   async patch (transaction) {
     // TODO: apply `transaction.operations` to Interface state
     await this.state._applyChanges(transaction.operations);
@@ -95,7 +88,7 @@ class Interface extends EventEmitter {
 
   writeTo (position, data) {
     const entity = new Entity(data);
-    console.log('writing', entity.id, ':', entity.data, 'to', position, '...');
+    // console.log('writing', entity.id, ':', entity.data, 'to', position, '...');
 
     if (entity.id.length > this.memory.length) throw new Error('Insufficient memory.');
 
@@ -115,6 +108,7 @@ class Interface extends EventEmitter {
     this.status = 'starting';
     await this.machine.start();
     this.status = 'started';
+    this.emit('ready', { name: this.settings.name });
     return this;
   }
 

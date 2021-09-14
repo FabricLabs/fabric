@@ -20,21 +20,18 @@ class Scribe extends State {
     super(config);
 
     // assign the defaults;
-    this.settings = this.config = Object.assign({
+    this.settings = Object.assign({
       verbose: true,
       verbosity: 2, // 0 none, 1 error, 2 warning, 3 notice, 4 debug
       path: './stores/scribe',
       tags: []
     }, config);
 
-    this.state = new State(config);
+    // internal state
+    this._state = new State(config);
 
     // signal ready
     this.status = 'ready';
-
-    Object.defineProperty(this, 'tags', {
-      enumerable: false
-    });
 
     return this;
   }
@@ -81,7 +78,7 @@ class Scribe extends State {
    * @return {Scribe}        The configured instance of the Scribe.
    */
   inherits (scribe) {
-    return this.tags.push(scribe.config.namespace);
+    return this.tags.push(scribe.settings.namespace);
   }
 
   log (...inputs) {
@@ -103,7 +100,7 @@ class Scribe extends State {
     inputs.unshift(`[${this.constructor.name.toUpperCase()}]`);
     inputs.unshift(`[${now}]`);
 
-    if (this.config.verbose) {
+    if (this.settings.verbose) {
       console.error.apply(null, ['[SCRIBE]'].concat(inputs));
     }
 
@@ -116,7 +113,7 @@ class Scribe extends State {
     inputs.unshift(`[${this.constructor.name.toUpperCase()}]`);
     inputs.unshift(`[${now}]`);
 
-    if (this.config.verbose) {
+    if (this.settings.verbose) {
       console.warn.apply(null, ['[SCRIBE]'].concat(inputs));
     }
 
@@ -129,7 +126,7 @@ class Scribe extends State {
     inputs.unshift(`[${this.constructor.name.toUpperCase()}]`);
     inputs.unshift(`[${now}]`);
 
-    if (this.config.verbose) {
+    if (this.settings.verbose) {
       console.debug.apply(null, ['[SCRIBE]'].concat(inputs));
     }
 
@@ -148,11 +145,12 @@ class Scribe extends State {
 
   async start () {
     this.status = 'starting';
-    this['@data'] = this.config;
+    this['@data'] = this.settings;
 
     await this.open();
     await this.commit();
 
+    // TODO: enable
     // this.trust(this.state);
 
     this.status = 'started';

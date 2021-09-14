@@ -1,54 +1,125 @@
 'use strict';
 
-const Fabric = require('../');
+const {
+  MAX_TX_PER_BLOCK
+} = require('../constants');
+
+const Chain = require('../types/chain');
+const Block = require('../types/block');
 const assert = require('assert');
 
 describe('@fabric/core/types/chain', function () {
   describe('Chain', function () {
     it('is available from @fabric/core', function () {
-      assert.equal(Fabric.Chain instanceof Function, true);
+      assert.equal(Chain instanceof Function, true);
     });
 
     it('can cleanly start and stop a chain', async function () {
-      let chain = new Fabric.Chain();
+      const chain = new Chain();
 
       await chain.start();
       await chain.stop();
 
       assert.ok(chain);
-      assert.ok(chain.ledger);
     });
 
     it('can append an arbitrary message', async function () {
-      let chain = new Fabric.Chain();
+      const chain = new Chain();
 
       await chain.start();
       await chain.append({ debug: true, input: 'Hello, world.' });
       await chain.stop();
 
       assert.ok(chain);
-      assert.ok(chain.ledger);
+    });
+
+    it('can append a known block', async function () {
+      const chain = new Chain();
+      const block = new Block({ debug: true, input: 'Hello, world.' });
+
+      assert.strictEqual(block.id, '6d2deb1d439472428e7cdeed4ee8e7c708502cfdc037122139d1e9898f0b6b68');
+
+      await chain.start();
+      await chain.append(block);
+      await chain.stop();
+
+      assert.ok(chain);
+    });
+
+    it('can mine a second block', async function () {
+      const chain = new Chain();
+      const block = new Block({ debug: true, input: 'Hello, world.' });
+
+      assert.strictEqual(block.id, '6d2deb1d439472428e7cdeed4ee8e7c708502cfdc037122139d1e9898f0b6b68');
+
+      await chain.start();
+      await chain.append(block);
+      const second = await chain.generateBlock();
+      assert.strictEqual(second.id, '6bd5c73d3d4064d2c0e9e34682c6c49a89f1c650430bc60b4df6ea761a5c51aa');
+      await chain.stop();
+
+      assert.ok(chain);
+    });
+
+    it('can mine a second block with transactions', async function () {
+      const chain = new Chain();
+      const block = new Block({ debug: true, input: 'Hello, world.' });
+
+      assert.strictEqual(block.id, '6d2deb1d439472428e7cdeed4ee8e7c708502cfdc037122139d1e9898f0b6b68');
+
+      await chain.start();
+      await chain.append(block);
+
+      const tx = await chain.proposeTransaction({ input: 'Hello again, world!' });
+      const second = await chain.generateBlock();
+      assert.strictEqual(second.id, '118f303884f05a2744630ad536395ba2d6a6d2f89d5c12f351a91827a0f2ced1');
+      await chain.stop();
+
+      assert.ok(chain);
+    });
+
+    it('fails gracefully if too many transactions', async function () {
+      const chain = new Chain();
+      const block = new Block({ debug: true, input: 'Hello, world.' });
+
+      assert.strictEqual(block.id, '6d2deb1d439472428e7cdeed4ee8e7c708502cfdc037122139d1e9898f0b6b68');
+
+      await chain.start();
+      await chain.append(block);
+
+      for (let i = 0; i < MAX_TX_PER_BLOCK + 1; i++) {
+        await chain.proposeTransaction({ input: 'Hello again, world!' });
+      }
+
+      const second = await chain.generateBlock();
+      assert.strictEqual(second.id, 'c9577a3392070bda1a8aabcc4337fb4190dd3efb546b1ce7efcb0a436c9283a8');
+      await chain.stop();
+
+      assert.strictEqual(chain._state.blocks[chain.tip].transactions.length, 100);
+      assert.strictEqual(chain.mempool.length, 1);
+
+      assert.ok(chain);
     });
 
     xit('generates a merkle tree with the expected proof of inclusion', async function () {
-      let chain = new Fabric.Chain();
+      const chain = new Chain();
 
       await chain.start();
       await chain.append({ debug: true, input: 'Hello, world.' });
       await chain.append({ debug: true, input: 'Why trust?  Verify.' });
       await chain.stop();
 
-      let sample = chain.blocks.map(b => Buffer.from(b['@id'], 'hex'));
-      let tree = chain['@tree'];
-      let root = tree.getRoot();
+      const sample = chain.blocks.map(b => Buffer.from(b['@id'], 'hex'));
+      const tree = chain['@tree'];
+      const root = tree.getRoot();
 
-      let proofs = {
+      const proofs = {
         genesis: tree.getProof(sample[0], 0),
         'blocks/1': tree.getProof(sample[1], 1),
         'blocks/2': tree.getProof(sample[2], 2)
       };
 
-      let verifiers = {
+      const verifiers = {
         genesis: tree.verify(proofs.genesis, sample[0], root),
         'blocks/1': tree.verify(proofs['blocks/1'], sample[1], root),
         'blocks/2': tree.verify(proofs['blocks/2'], sample[2], root),
