@@ -150,9 +150,6 @@ execute either the full set or none.</p>
 <dd><p>The <a href="#Transition">Transition</a> type reflects a change from one finite
 <a href="#State">State</a> to another.</p>
 </dd>
-<dt><a href="#Treasury">Treasury</a></dt>
-<dd><p>Manage a set of KeyPairs and their balances.</p>
-</dd>
 <dt><a href="#Value">Value</a></dt>
 <dd><p><a href="Number">Number</a>-like type.</p>
 </dd>
@@ -446,7 +443,6 @@ Fabric-based networking and storage.
     * [.envelop(selector)](#App+envelop) ⇒ [<code>App</code>](#App)
     * [.use(name, definition)](#App+use) ⇒ [<code>App</code>](#App)
     * [.render()](#App+render) ⇒ <code>String</code>
-    * [._registerService(name, type)](#App+_registerService) ⇒ [<code>Service</code>](#Service)
     * [.now()](#Scribe+now) ⇒ <code>Number</code>
     * [.trust(source)](#Scribe+trust) ⇒ [<code>Scribe</code>](#Scribe)
     * [.inherits(scribe)](#Scribe+inherits) ⇒ [<code>Scribe</code>](#Scribe)
@@ -569,22 +565,6 @@ Get the output of our program.
 **Kind**: instance method of [<code>App</code>](#App)  
 **Overrides**: [<code>render</code>](#State+render)  
 **Returns**: <code>String</code> - Output of the program.  
-<a name="App+_registerService"></a>
-
-### app.\_registerService(name, type) ⇒ [<code>Service</code>](#Service)
-Registers a named [Service](#Service) with the application.  Services are
-standardized interfaces for Fabric contracts, emitting [Message](#Message)
-events with a predictable lifecycle.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: [<code>Service</code>](#Service) - The registered service instance.  
-**Internal**:   
-
-| Param | Type | Description |
-| --- | --- | --- |
-| name | <code>String</code> | Internal name of the service. |
-| type | <code>Class</code> | The ES6 class definition implementing [Service](#Service). |
-
 <a name="Scribe+now"></a>
 
 ### app.now() ⇒ <code>Number</code>
@@ -2998,33 +2978,6 @@ The [Transition](#Transition) type reflects a change from one finite
 | --- | --- | --- |
 | settings | <code>Object</code> | Configuration for the transition object. |
 
-<a name="Treasury"></a>
-
-## Treasury
-Manage a set of KeyPairs and their balances.
-
-**Kind**: global class  
-
-* [Treasury](#Treasury)
-    * [new Treasury([settings])](#new_Treasury_new)
-    * [.generateAddress()](#Treasury+generateAddress)
-
-<a name="new_Treasury_new"></a>
-
-### new Treasury([settings])
-Create an instance of the Treasury.
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [settings] | <code>Object</code> | Configuration for the Treasury. |
-
-<a name="Treasury+generateAddress"></a>
-
-### treasury.generateAddress()
-Generates a new Bitcoin address.
-
-**Kind**: instance method of [<code>Treasury</code>](#Treasury)  
 <a name="Value"></a>
 
 ## Value
