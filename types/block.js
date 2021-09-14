@@ -1,22 +1,27 @@
 'use strict';
 
-const State = require('./state');
+const Actor = require('./actor');
+const merge = require('lodash.merge');
 
-class Block extends State {
-  constructor (data) {
-    super(data);
+class Block extends Actor {
+  constructor (input = {}) {
+    super(input);
 
-    this['@data'] = Object.assign({}, data);
-    this['@data']['@type'] = 'Block';
-
-    this['@id'] = this.id;
+    this._state = merge({
+      parent: null,
+      transactions: {},
+      signature: null
+    }, input);
 
     return this;
   }
 
+  get transactions () {
+    return this._state.transactions;
+  }
+
   validate () {
-    this.log('[BLOCK]', 'validate', this['@data']);
-    this.log('Not yet implemented: Block.validate()');
+    // TODO: implement validators
   }
 }
 

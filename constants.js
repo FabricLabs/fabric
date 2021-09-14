@@ -25,6 +25,7 @@ const MAX_MESSAGE_SIZE = 4096 - HEADER_SIZE;
 const MAX_STACK_HEIGHT = 32; // max height of stack (number of elements)
 const MAX_FRAME_SIZE = 32; // max size of a stack frame in bytes
 const MAX_MEMORY_ALLOC = MAX_STACK_HEIGHT * MAX_FRAME_SIZE;
+const MAX_TX_PER_BLOCK = 100;
 const MAX_CHANNEL_VALUE = 100000000;
 
 const MACHINE_MAX_MEMORY = MAX_MEMORY_ALLOC * MAX_MESSAGE_SIZE;
@@ -117,6 +118,7 @@ module.exports = {
   MAX_STACK_HEIGHT,
   MAX_CHANNEL_VALUE,
   MAX_CHAT_MESSAGE_LENGTH,
+  MAX_TX_PER_BLOCK,
   MACHINE_MAX_MEMORY,
   OP_CYCLE,
   OP_DONE,

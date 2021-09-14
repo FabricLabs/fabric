@@ -2,6 +2,7 @@
 
 // Dependencies
 const { EventEmitter } = require('events');
+const monitor = require('fast-json-patch');
 
 // Fabric Types
 const Key = require('./key');
@@ -46,12 +47,6 @@ class Actor extends EventEmitter {
       '@data': this.value
     };
 
-    // Internal State
-    this._state = {
-      '@type': 'Actor',
-      '@data': this.value
-    };
-
     // Chainable
     return this;
   }
@@ -74,7 +69,7 @@ class Actor extends EventEmitter {
   }
 
   get state () {
-    return Object.assign({}, this._state['@data']);
+    return Object.assign({}, this.value);
   }
 
   /**
