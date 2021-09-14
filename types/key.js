@@ -1,8 +1,5 @@
 'use strict';
 
-// TODO: replace with bcoin
-const Base58Check = require('base58check');
-
 // Dependencies
 const crypto = require('crypto');
 const EC = require('elliptic').ec;
@@ -63,6 +60,7 @@ class Key extends Entity {
 
     this.machine = new Machine(this.settings);
 
+    // TODO: design state machine for input (configuration)
     if (this.settings.seed) {
       // Seed provided, compute keys
       const mnemonic = new Mnemonic(this.settings.seed);
@@ -77,8 +75,9 @@ class Key extends Entity {
       this.status = 'seeded';
     } else if (this.settings.private) {
       const input = this.settings.private;
+      const provision = (input instanceof Buffer) ? input : Buffer.from(input, 'hex');
       // Key is private
-      this.keyring = KeyRing.fromPrivate((input instanceof Buffer) ? input : Buffer.from(input, 'hex'), true);
+      this.keyring = KeyRing.fromPrivate(provision, true);
       this.keyring.witness = this.settings.witness;
       this.keypair = ec.keyFromPrivate(this.settings.private);
       this.address = this.keyring.getAddress();
@@ -86,13 +85,13 @@ class Key extends Entity {
       const input = this.settings.pubkey || this.settings.public;
       // Key is only public
       this.keyring = KeyRing.fromKey((input instanceof Buffer) ? input : Buffer.from(input, 'hex'), true);
-      this.keyring.witness = this.settings.witness;
-      this.keypair = ec.keyFromPublic(this.keyring.getPublic(true, 'hex'));
+      this.keypair = ec.keyFromPublic(this.keyring.getPublicKey(true, 'hex'));
       this.address = this.keyring.getAddress();
     } else {
       // Generate new keys
       this.keypair = ec.genKeyPair();
-      this.keyring = KeyRing.fromPrivate(this.keypair.getPrivate().toBuffer(), true);
+      const input = this.keypair.getPrivate().toBuffer(null, 32);
+      this.keyring = KeyRing.fromPrivate(input, true);
       this.keyring.witness = this.settings.witness;
       this.address = this.keyring.getAddress();
     }
@@ -160,6 +159,8 @@ class Key extends Entity {
   }
 
   decrypt (text) {
+    if (text instanceof Buffer) text = text.toString('utf8');
+
     try {
       const parts = text.split(':');
       const iv = Buffer.from(parts.shift(), 'hex');

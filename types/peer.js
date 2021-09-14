@@ -181,12 +181,12 @@ class Peer extends Scribe {
     const peer = this;
 
     // Alert listeners
-    peer.emit('message', 'Peer stopping...');
+    peer.emit('log', 'Peer stopping...');
 
     peer.upnp.close();
 
     for (const id in peer.connections) {
-      peer.emit('message', `Closing connection: ${id}`);
+      peer.emit('log', `Closing connection: ${id}`);
       const connection = peer.connections[id];
       const closer = async function () {
         return new Promise((resolve, reject) => {
@@ -234,14 +234,14 @@ class Peer extends Scribe {
   async _sessionStart (socket, target) {
     const self = this;
     const address = `${target.address}:${target.port}`;
-    self.emit('message', `Starting session with address: ${target.pubkey}@${address}`);
+    self.emit('log', `Starting session with address: ${target.pubkey}@${address}`);
     self.connections[address].session = new Session({ recipient: target.pubkey });
     await self.connections[address].session.start();
-    self.emit('message', `Session created: ${JSON.stringify(self.connections[address].session)}`);
+    self.emit('log', `Session created: ${JSON.stringify(self.connections[address].session)}`);
 
     if (!self.public.ip) {
       self.public.ip = socket.localAddress;
-      self.emit('message', `Local socket was null, changed to: ${self.public.ip}`);
+      self.emit('log', `Local socket was null, changed to: ${self.public.ip}`);
     }
 
     // TODO: consolidate with similar _handleConnection segment
@@ -344,6 +344,8 @@ class Peer extends Scribe {
       target.port = parts[1];
     }
 
+    if (target.pubkey === self.id) return this.emit('error', 'Cannot connect to self.');
+
     const authority = `${target.address}:${target.port}`;
 
     if (this.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Connecting to address:', authority);
@@ -367,9 +369,9 @@ class Peer extends Scribe {
         // console.debug('[PEER]', `could not connect to peer ${authority} — Reason:`, err);
       });
 
-      self.connections[authority].on('close', function (err) {
+      self.connections[authority].on('close', function _handleSocketClose (err) {
         if (err) self.debug('socket closed on error:', err);
-        if (err) self.emit('message', `socket closed on error: ${err}`);
+        if (err) self.emit('log', `socket closed on error: ${err}`);
 
         self.emit('warning', `Connection closed: ${authority}`);
 
@@ -387,7 +389,7 @@ class Peer extends Scribe {
         self._handleSocketData.apply(self, [ this, authority, data ]);
       });
 
-      self.emit('message', `Starting connection to address: ${authority}`);
+      self.emit('log', `Starting connection to address: ${authority}`);
 
       // TODO: replace with handshake
       // NOTE: the handler is only called once per connection!
@@ -438,7 +440,7 @@ class Peer extends Scribe {
   async _handleConnection (socket) {
     const self = this;
     const address = [socket.remoteAddress, socket.remotePort].join(':');
-    if (this.settings.verbosity >= 4) self.emit('message', `[FABRIC:PEER] [0x${self.id}] Incoming connection from address: ${address}`);
+    if (this.settings.verbosity >= 4) self.emit('log', `[FABRIC:PEER] [0x${self.id}] Incoming connection from address: ${address}`);
 
     self.emit('connections:open', {
       address: address,
@@ -622,6 +624,13 @@ class Peer extends Scribe {
 
         response = Message.fromVector(['StateRoot', JSON.stringify(self.state)]);
         break;
+      case 'DocumentPublish':
+        this.emit('log', `Document published from peer: ${message.data}`);
+        this.emit('DocumentPublish', message.data);
+        break;
+      case 'DocumentRequest':
+        this.emit('DocumentRequest', message.data);
+        break;
       case 'BlockCandidate':
         break;
       case 'PeerCandidate':
@@ -664,7 +673,8 @@ class Peer extends Scribe {
           let peer = {
             id: session.identity,
             address: packet.origin,
-            advertise: `${self.pubkeyhash}@${self.public.ip}:${self.public.port}`
+            advertise: `${self.pubkeyhash}@${self.public.ip}:${self.public.port}`,
+            status: 'unfunded'
           };
 
           if (self.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Peer to register:', peer);
@@ -745,11 +755,11 @@ class Peer extends Scribe {
     }
 
     switch (message.type) {
-      default:
-        console.log('unhandled base packet type:', message.type);
-        break;
       case 'collections:post':
         this.emit('collections:post', message.data);
+        break;
+      default:
+        console.log('unhandled base packet type:', message.type);
         break;
     }
   }
@@ -772,17 +782,28 @@ class Peer extends Scribe {
       return false;
     }
 
-    const signature = await this.connections[address].session._appendMessage(message.asRaw());
-    const result = this.connections[address].write(message.asRaw());
+    const raw = message.asRaw();
+    // self.emit('warning', `raw message: ${raw}`);
+    const signature = await this.connections[address].session._appendMessage(raw);
+    self.emit('debug', `Signature: ${signature}`);
 
-    if (!result) {
-      self.emit('warning', 'Stream result false.');
+    try {
+      const result = this.connections[address].write(raw);
+
+      if (!result) {
+        self.emit('warning', 'Stream result false.');
+      }
+    } catch (exception) {
+      this.emit('error', `Exception writing to socket: ${exception}`);
     }
   }
 
   relayFrom (origin, message) {
+    this.emit('log', `Relaying ${message.type} from ${origin}: <${typeof message.data}> ${message.data}}`);
+
     // For each known peer, send to the corresponding socket
     for (let id in this.peers) {
+      this.emit('log', `Is ${id} === ${origin}?`);
       if (id === origin) continue;
       let peer = this.peers[id];
 
@@ -869,7 +890,7 @@ class Peer extends Scribe {
         const details = self.server.address();
         const address = `tcp://${details.address}:${details.port}`;
         const complete = function () {
-          self.emit('message', `Now listening on ${address} [!!!]`);
+          self.emit('log', `Now listening on ${address} [!!!]`);
           return resolve(address);
         }
 
@@ -884,16 +905,16 @@ class Peer extends Scribe {
           ttl: 10
         }, function (err) {
           if (err) {
-            self.emit('message', `error configuring upnp: ${err}`);
+            self.emit('log', `error configuring upnp: ${err}`);
             return complete();
           }
 
           self.upnp.externalIp(function (err, ip) {
             if (err) {
-              self.emit('message', `Could not retrieve public IP: ${err}`);
+              self.emit('log', `Could not retrieve public IP: ${err}`);
             } else {
               self.public.ip = ip;
-              self.emit('message', `UPNP configured!  External IP: ${ip}`);
+              self.emit('log', `UPNP configured!  External IP: ${ip}`);
             }
 
             return complete();

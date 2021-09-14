@@ -1,49 +1,25 @@
 'use strict';
 
+const MAX_BLOCK_COUNT = 9;
+
 const Block = require('../types/block');
 const Chain = require('../types/chain');
 
-const genesis = require('../assets/block');
+const genesis = require('../assets/genesis');
 
 async function main () {
-  let chain = new Chain();
+  const chain = new Chain(genesis);
 
-  chain.on('candidate', async function (block) {
-    console.log('chain received candidate block:', block);
+  for (let i = 0; i < MAX_BLOCK_COUNT; i++) {
+    // Mine a block
+    await chain.mine();
+  }
 
-    let candidate = new Block(block);
-    let isValid = candidate.validate();
-
-    candidate.compute();
-
-    console.log('isValid:', isValid);
-
-    if (!isValid) {
-      // TODO: disconnect peers
-      return false;
-    }
-
-    await chain.append(candidate);
-
-    console.log('chain length:', chain['@data'].length);
-
-    if (chain['@data'].length < max) {
-      await chain.mine();
-    } else {
-      console.log('Chain filled!');
-      console.log('Chain:', chain);
-    }
-  });
-
-  let start = new Block(genesis);
-  await chain.append(start);
-
-  console.log('starting... chain:', chain['@id']);
-  console.log('mining...');
-
-  await chain.mine();
-
-  console.log('chain id:', chain['@id']);
+  return chain.toString();
 }
 
-main();
+main().catch((exception) => {
+  console.error('[EXAMPLES:BLOCKCHAIN]', exception);
+}).then((output) => {
+  console.log('[EXAMPLES:BLOCKCHAIN]', 'Output:', output);
+});

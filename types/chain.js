@@ -1,12 +1,16 @@
 'use strict';
 
+const {
+  MAX_TX_PER_BLOCK
+} = require('../constants');
+
+const monitor = require('fast-json-patch');
+
+const Actor = require('./actor');
 const Block = require('./block');
 const Ledger = require('./ledger');
-const Mempool = require('./mempool');
 const Stack = require('./stack');
 const State = require('./state');
-const Store = require('./store');
-const Worker = require('./worker');
 
 /**
  * Chain.
@@ -30,35 +34,15 @@ class Chain extends Ledger {
       validator: this.validate.bind(this)
     }, origin);
 
-    this.genesis = new Block(this.settings);
-    this.mempool = new Mempool(this.settings);
-    this.miner = new Worker({ method: 'sha256' });
-
-    // External State
-    this.state = {
-      blocks: []
+    // Internal State
+    this._state = {
+      blocks: {},
+      genesis: null,
+      consensus: null,
+      transactions: {},
+      mempool: [],
+      ledger: []
     };
-
-    // TODO: set this up via define?
-    this.indices = {
-      blocks: '/blocks',
-      transactions: '/transactions'
-    };
-
-    this.ledger = new Ledger();
-    this.storage = new Store({
-      path: './stores/chain'
-    });
-
-    Object.defineProperty(this, 'ledger', {
-      enumerable: false,
-      writable: false
-    });
-
-    Object.defineProperty(this, 'storage', {
-      enumerable: false,
-      writable: false
-    });
 
     return this;
   }
@@ -67,8 +51,12 @@ class Chain extends Ledger {
     return new Chain(data);
   }
 
+  get consensus () {
+    return this.tip;
+  }
+
   get tip () {
-    return this.ledger.tip;
+    return this._state.consensus;
   }
 
   get root () {
@@ -76,37 +64,41 @@ class Chain extends Ledger {
   }
 
   get blocks () {
-    return this.state.blocks || [];
+    return this._state.ledger;
   }
 
   get leaves () {
-    return this.blocks.map(x => Buffer.from(x.id, 'hex'));
+    return this.blocks.map(x => Buffer.from(x, 'hex'));
   }
 
   get subsidy () {
     return 50;
   }
 
+  get mempool () {
+    return this._state.mempool;
+  }
+
   get _tree () {
-    let stack = new Stack(this.leaves);
+    const stack = new Stack(this.leaves);
     return stack.asMerkleTree();
   }
 
+  trust (source) {
+    const self = this;
+
+    source.on('message', function TODO (message) {
+      self.emit('debug', `Message from trusted source: ${message}`);
+    });
+
+    return self;
+  }
+
   async start () {
-    let chain = this;
+    const chain = this;
 
-    try {
-      await chain.storage.start();
-      await chain.ledger.start();
-    } catch (E) {
-      console.error('Could not open storage:', E);
-    }
-
-    // TODO: define all state transitions
-    chain.state.blocks = [chain.genesis];
-
-    // blindly bind all events
-    this.trust(chain.ledger);
+    // Monitor changes
+    this.observer = monitor.observe(this._state);
 
     // before returning, ensure a commit
     await chain.commit();
@@ -116,12 +108,14 @@ class Chain extends Ledger {
 
   async stop () {
     await this.commit();
+    return this;
+  }
 
-    try {
-      await this.ledger.stop();
-      await this.storage.stop();
-    } catch (E) {
-      console.error('Could not close storage:', E);
+  async attach (application) {
+    if (!application.store) {
+      this.emit('error', `Application has no "store" property.`);
+    } else {
+      this.store = application.store;
     }
 
     return this;
@@ -136,10 +130,10 @@ class Chain extends Ledger {
   }
 
   async _load () {
-    let chain = this;
+    const chain = this;
 
-    let query = await chain.storage.get('/blocks');
-    let response = new State(query);
+    const query = await chain.storage.get('/blocks');
+    const response = new State(query);
 
     this.log('query:', query);
     this.log('response:', response);
@@ -149,78 +143,88 @@ class Chain extends Ledger {
   }
 
   async append (block) {
-    if (!block['@id'] || !block['@data']) {
-      block = new State(block);
+    if (!block) throw new Error('Must provide a block.');
+    if (!(block instanceof Block)) {
+      block = new Block(block);
     }
 
-    let self = this;
-    let path = [self.indices.blocks, block.id].join('/');
-
-    // Chains always have a genesis.
-    if (self.blocks.length === 0 && !self.genesis) {
-      self.genesis = block['@id'];
+    if (this.blocks.length <= 0) {
+      this._state.genesis = block.id;
     }
 
-    await self.ledger.append(block['@data']);
-    await self.storage._PUT(path, block);
+    this._state.blocks[block.id] = block;
+    this._state.ledger.push(block.id);
+    this._state.consensus = block.id;
 
-    self.state.blocks.push(block);
+    await this.commit();
 
-    self['@tree'] = this._tree;
+    this.emit('block', block);
 
-    self.emit('block', block['@id'], block['@data']);
-
-    await self.commit();
-
-    return self;
+    return this;
   }
 
   async _listBlocks () {
-    let self = this;
-    let blocks = await self.storage.get(self.indices.blocks);
+    return this.blocks;
+  }
+
+  async proposeTransaction (transaction) {
+    const actor = new Actor(transaction);
+
+    this._state.transactions[actor.id] = actor;
+    this._state.mempool.push(actor.id);
+
+    return actor;
+  }
+
+  async generateBlock () {
+    const proposal = {
+      parent: this.consensus,
+      transactions: []
+    };
+
+    // TODO: _sortFees
+    if (this.mempool.length) {
+      for (let i = 0; i < MAX_TX_PER_BLOCK; i++) {
+        const candidate = this.mempool.shift();
+        if (candidate) {
+          proposal.transactions.push(candidate);
+        }
+      }
+    }
+
+    const block = new Block(proposal);
+    await this.append(block);
+
+    return block;
+  }
+
+  async generateBlocks (count = 1) {
+    const blocks = [];
+
+    for (let i = 0; i < count; i++) {
+      const block = await this.generateBlock();
+      blocks.push(block);
+    }
 
     return blocks;
   }
 
-  async _setGenesis (genesis) {
-    let sample = new Chain(genesis);
-    this.settings = sample.settings;
-    this.genesis = new Block(genesis);
-  }
-
-  async mine () {
-    let block = new State({
-      parent: this.id
-    });
-    return block.commit();
-  }
-
   async commit () {
-    // reject invalid chains
-    if (!this.ledger || !this.ledger.pages) return null;
+    let changes = null;
 
-    let input = this.ledger.pages;
-    let state = new State(input);
-    let commit = await state.commit();
-    let script = []; // validation
-
-    this['@data'] = input;
-    this['@id'] = state.id;
-
-    script.push(`${state.id.toString('hex')}`);
-    script.push(`OP_PUSH32`);
-    script.push(`OP_ALLOC`);
-    script.push(`${JSON.stringify(state['@data'])}`);
-    script.push(`OP_SHA256`);
-    script.push(`${state.id}`);
-    script.push(`OP_EQUALVERIFY`);
-
-    if (commit['@changes']) {
-      this.emit('state', state['@data']);
-      // this.emit('changes', commit['@changes']);
+    if (this.observer) {
+      changes = monitor.generate(this.observer);
     }
 
-    return new Block(commit['@changes']);
+    if (changes) {
+      this.emit('changes', {
+        type: 'StateChanges',
+        data: changes
+      });
+    }
+
+    const state = new Actor(this._state);
+    return state.id;
   }
 
   async verify (level = 4, depth = 6) {

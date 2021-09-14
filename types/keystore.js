@@ -27,13 +27,12 @@ class KeyStore extends Actor {
     super(settings);
     if (!settings.seed) settings.seed = process.env.FABRIC_SEED || null;
 
-    this.key = new Key(settings.key);
     this.settings = merge({
       name: 'DefaultStore',
       type: 'EncryptedFabricStore',
       path: './stores/keystore',
       mode: 'aes-256-cbc',
-      key: { private: Buffer.from(this.key.privkey, 'hex') },
+      key: null,
       version: 0
     }, this.settings, settings);
 
@@ -111,7 +110,7 @@ class KeyStore extends Actor {
       keystore.status = 'opening';
 
       async function _handleDiskOpen (err, db) {
-        if (err) this.emit('error', `Could not open: ${err}`);
+        if (err) return this.emit('error', `Could not open: ${err}`);
         this.status = 'open';
         let state = null;
 
@@ -251,12 +250,10 @@ class KeyStore extends Actor {
 
   async _syncStateToDisk () {
     if (!['open', 'deleting'].includes(this.status)) throw new Error(`Store is not writable.  Currently: ${this.status}`);
-
     const keystore = this;
     const promise = new Promise((resolve, reject) => {
       const actor = new Actor(this.state);
       const serialized = actor.serialize();
-      console.log('serialized:', serialized);
       return keystore.db.put('/', serialized).then(resolve).catch(reject);
     });
 

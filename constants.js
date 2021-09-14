@@ -25,13 +25,17 @@ const MAX_MESSAGE_SIZE = 4096 - HEADER_SIZE;
 const MAX_STACK_HEIGHT = 32; // max height of stack (number of elements)
 const MAX_FRAME_SIZE = 32; // max size of a stack frame in bytes
 const MAX_MEMORY_ALLOC = MAX_STACK_HEIGHT * MAX_FRAME_SIZE;
+const MAX_TX_PER_BLOCK = 100;
 const MAX_CHANNEL_VALUE = 100000000;
 
 const MACHINE_MAX_MEMORY = MAX_MEMORY_ALLOC * MAX_MESSAGE_SIZE;
+const MAX_CHAT_MESSAGE_LENGTH = 2048;
 
 // FABRIC ONLY
 const LOG_MESSAGE_TYPE = MAGIC_BYTES + parseInt(crypto.createHash('sha256').update('@types/GenericLogMessage').digest('hex').slice(0, 4), 16);
 const GENERIC_LIST_TYPE = MAGIC_BYTES + parseInt(crypto.createHash('sha256').update('@types/GenericList').digest('hex').slice(0, 4), 16);
+const DOCUMENT_PUBLISH_TYPE = 998;
+const DOCUMENT_REQUEST_TYPE = 999;
 
 const OP_CYCLE = '00';
 const OP_DONE = 'ff';
@@ -113,6 +117,8 @@ module.exports = {
   MAX_MESSAGE_SIZE,
   MAX_STACK_HEIGHT,
   MAX_CHANNEL_VALUE,
+  MAX_CHAT_MESSAGE_LENGTH,
+  MAX_TX_PER_BLOCK,
   MACHINE_MAX_MEMORY,
   OP_CYCLE,
   OP_DONE,
@@ -144,6 +150,8 @@ module.exports = {
   P2P_TRANSACTION,
   P2P_CALL,
   PEER_CANDIDATE,
+  DOCUMENT_PUBLISH_TYPE,
+  DOCUMENT_REQUEST_TYPE,
   SESSION_START,
   VERSION_NUMBER
 };

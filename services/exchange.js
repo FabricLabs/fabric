@@ -9,6 +9,7 @@ const BTCB = require('../currencies/btcb');
 const merge = require('lodash.merge');
 
 // Fabric Types
+const Actor = require('../types/actor');
 const Entity = require('../types/entity');
 const Collection = require('../types/collection');
 const Message = require('../types/message');
@@ -75,6 +76,7 @@ class Exchange extends Service {
     if (!this.settings.debug) return;
     for (let i = 0; i < this.settings.orders.length; i++) {
       const order = this.settings.orders[i];
+      order.signature = Buffer.alloc(64);
       const posted = await this._postOrder(order);
       this.emit('message', `Posted Order: ${posted}`);
     }
@@ -103,10 +105,12 @@ class Exchange extends Service {
 
     const state = await this.orders.create(entity);
     this.emit('message', `Order [${entity.id}] posted: ${state}`);
+
     if (!this._state.orders[entity.id]) this._state.orders[entity.id] = entity;
 
     await this.commit();
     this.emit('message', Message.fromVector(['PostedExchangeOrder', state]));
+
     return state;
   }
 

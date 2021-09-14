@@ -1092,7 +1092,7 @@ class Wallet extends Service {
   }
 
   async _createOrderForPubkey (pubkey) {
-    console.log('creating ORDER transaction with pubkey:', pubkey);
+    this.emit('message', `creating ORDER transaction with pubkey: ${pubkey}`);
 
     let mtx = new MTX();
     let data = new Script();
@@ -1101,8 +1101,8 @@ class Wallet extends Service {
     let secret = 'fixed secret :)';
     let sechash = require('crypto').createHash('sha256').update(secret).digest('hex');
 
-    console.log('SECRET CREATED:', secret);
-    console.log('SECHASH:', sechash);
+    this.emit('message', `SECRET CREATED: ${secret}`);
+    this.emit('message', `SECHASH: ${sechash}`);
 
     data.pushSym('OP_IF');
     data.pushSym('OP_SHA256');
@@ -1118,11 +1118,12 @@ class Wallet extends Service {
     data.pushSym('OP_CHECKSIG');
     data.compile();
 
-    console.log('[AUDIT]', 'address data:', data);
+    this.emit('message', `[AUDIT] address data: ${data}`);
     let segwitAddress = await this.getAddressForScript(data);
     let address = await this.getAddressFromRedeemScript(data);
-    console.log('[AUDIT]', 'segwit address:', segwitAddress);
-    console.log('[AUDIT]', 'normal address:', address);
+
+    this.emit('message', `[AUDIT] segwit address: ${segwitAddress}`);
+    this.emit('message', `[AUDIT] normal address: ${address}`);
 
     mtx.addOutput({
       address: address,
@@ -1144,8 +1145,8 @@ class Wallet extends Service {
     let tx = mtx.toTX();
     let sig = await mtx.sign(this.ring);
 
-    console.log('transaction:', tx);
-    console.log('sig:', sig);
+    this.emit('message', 'transaction:', tx);
+    this.emit('message', 'sig:', sig);
 
     return {
       tx: tx,

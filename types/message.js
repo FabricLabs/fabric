@@ -25,6 +25,8 @@ const {
   P2P_TRANSACTION,
   P2P_CALL,
   CHAT_MESSAGE,
+  DOCUMENT_PUBLISH_TYPE,
+  DOCUMENT_REQUEST_TYPE,
   BLOCK_CANDIDATE,
   PEER_CANDIDATE,
   SESSION_START
@@ -63,9 +65,10 @@ class Message extends Vector {
     this.raw = {
       magic: Buffer.alloc(4),
       version: Buffer.alloc(4),
-      type: Buffer.alloc(4),
-      size: Buffer.alloc(4),
+      type: Buffer.alloc(4), // TODO: 8, 32
+      size: Buffer.alloc(4), // TODO: 8, 32
       hash: Buffer.alloc(32),
+      parent: Buffer.alloc(32),
       Uint256: this.Uint256,
       data: null
     };
@@ -283,6 +286,8 @@ class Message extends Vector {
       // 'StateRoot': P2P_ROOT,
       'Ping': P2P_PING,
       'Pong': P2P_PONG,
+      'DocumentRequest': DOCUMENT_REQUEST_TYPE,
+      'DocumentPublish': DOCUMENT_PUBLISH_TYPE,
       'BlockCandidate': BLOCK_CANDIDATE,
       'PeerCandidate': PEER_CANDIDATE,
       'PeerInstruction': P2P_INSTRUCTION,
@@ -340,13 +345,14 @@ Object.defineProperty(Message.prototype, 'type', {
   get () {
     const code = parseInt(this.raw.type.toString('hex'), 16);
     switch (code) {
-      default:
-        // console.warn('[FABRIC:MESSAGE]', "Unhandled message type:", code);
-        return 'GenericMessage';
       case LOG_MESSAGE_TYPE:
         return 'GenericLogMessage';
       case GENERIC_LIST_TYPE:
         return 'GenericList';
+      case DOCUMENT_PUBLISH_TYPE:
+        return 'DocumentPublish';
+      case DOCUMENT_REQUEST_TYPE:
+        return 'DocumentRequest';
       case BLOCK_CANDIDATE:
         return 'BlockCandidate';
       case OP_CYCLE:
@@ -387,6 +393,8 @@ Object.defineProperty(Message.prototype, 'type', {
         return 'EthereumBlock';
       case TYPE_ETHEREUM_BLOCK_NUMBER:
         return 'EthereumBlockNumber';
+      default:
+        return 'GenericMessage';
     }
   },
   set (value) {

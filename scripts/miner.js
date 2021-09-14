@@ -1,5 +1,7 @@
 'use strict';
 
+const BLOCK_INTERVAL = process.env.BLOCK_INTERVAL || 60000;
+
 const Bitcoin = require('../services/bitcoin');
 const settings = require('../settings/local');
 
@@ -11,6 +13,10 @@ async function main (input = {}) {
   });
 
   await bitcoin.start();
+
+  setInterval(() => {
+    bitcoin.generateBlock();
+  }, BLOCK_INTERVAL);
 }
 
 main(settings).catch((E) => {

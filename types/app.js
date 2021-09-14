@@ -34,10 +34,11 @@ class App extends Scribe {
     if (!definition.resources) definition.resources = {};
 
     this.settings = this['@data'] = Object.assign({
-      seed: 1,
+      seed: null,
       path: './stores/fabric-application',
       prefix: '/',
-      services: []
+      services: [],
+      verbosity: 1
     }, definition);
 
     // Internal Components
@@ -221,7 +222,7 @@ class App extends Scribe {
   }
 
   async _appendMessage (msg) {
-    console.log(`[${(new Date()).toISOString()}]: ${msg}`);
+    if (this.settings.verbosity > 2) console.log(`[${(new Date()).toISOString()}]: ${msg}`);
   }
 
   async _appendWarning (msg) {

@@ -2,6 +2,7 @@
 
 // Dependencies
 const { EventEmitter } = require('events');
+const monitor = require('fast-json-patch');
 
 // Fabric Types
 const Key = require('./key');
@@ -30,15 +31,15 @@ class Actor extends EventEmitter {
 
     // Monad value
     this.signature = null;
-    this.value = Object.assign({}, actor);
+    this.value = Object.assign({}, actor); // TODO: use Buffer?
     this.key = new Key({
       seed: actor.seed,
-      public: actor.public,
+      public: actor.public || actor.pubkey,
       private: actor.private
     });
 
     // Indicate Risk
-    this.private = (this.key.seed || this.key.private);
+    this.private = !!(this.key.seed || this.key.private);
 
     // Internal State
     this._state = {
@@ -68,7 +69,7 @@ class Actor extends EventEmitter {
   }
 
   get state () {
-    return Object.assign({}, this._state['@data']);
+    return Object.assign({}, this.value);
   }
 
   /**

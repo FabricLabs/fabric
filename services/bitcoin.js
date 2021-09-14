@@ -1,6 +1,7 @@
 'use strict';
 
 // Types
+const Actor = require('../types/actor');
 const Collection = require('../types/collection');
 const Entity = require('../types/entity');
 const Message = require('../types/message');
@@ -14,9 +15,6 @@ const Consensus = require('../types/consensus');
 const BitcoinBlock = require('../types/bitcoin/block');
 const BitcoinTransaction = require('../types/bitcoin/transaction');
 
-const NODEA = require('../settings/node-a');
-const NODEB = require('../settings/node-b');
-
 // External Dependencies
 const jayson = require('jayson');
 // For the browser
@@ -25,7 +23,6 @@ const jayson = require('jayson');
 
 // For node...
 const bcoin = require('bcoin');
-const Actor = require('../types/actor');
 
 // Used to connect to the Bitcoin network directly
 const FullNode = bcoin.FullNode;
@@ -33,7 +30,6 @@ const NetAddress = bcoin.net.NetAddress;
 
 /**
  * Manages interaction with the Bitcoin network.
- * @module @fabric/core/services/bitcoin
  * @augments Service
  */
 class Bitcoin extends Service {
@@ -116,7 +112,7 @@ class Bitcoin extends Service {
       }
 
       this.fullnode = new FullNode({
-        network: 'regtest'
+        network: this.settings.network
       });
     }
 
@@ -210,6 +206,11 @@ class Bitcoin extends Service {
     return this.fullnode.chain.height;
   }
 
+  /**
+   * Broadcast a transaction to the Bitcoin network.
+   * @unstable
+   * @param {TX} tx Bitcoin transaction
+   */
   async broadcast (msg) {
     console.log('[SERVICES:BITCOIN]', 'Broadcasting:', msg);
     const verify = await msg.verify();
@@ -651,12 +652,20 @@ class Bitcoin extends Service {
 
     if (!address) address = await this.wallet.getUnusedAddress();
 
-    try {
-      block = await this.fullnode.miner.mineBlock(this.fullnode.chain.tip, address);
-      // Add the block to our chain
-      await this.fullnode.chain.add(block);
-    } catch (exception) {
-      return this.emit('message', `Could not mine block: ${exception}`);
+    switch (this.settings.mode) {
+      case 'rpc':
+        let address = await this._makeRPCRequest('getnewaddress');
+        await this._makeRPCRequest('generateblock', [address, []]);
+        break;
+      default:
+        try {
+          block = await this.fullnode.miner.mineBlock(this.fullnode.chain.tip, address);
+          // Add the block to our chain
+          await this.fullnode.chain.add(block);
+        } catch (exception) {
+          return this.emit('message', `Could not mine block: ${exception}`);
+        }
+        break;
     }
 
     return block;
@@ -698,8 +707,9 @@ class Bitcoin extends Service {
   async _makeRPCRequest (method, params = []) {
     const self = this;
     return new Promise((resolve, reject) => {
+      if (!self.rpc) return reject('RPC manager does not exist.');
       self.rpc.request(method, params, function (err, response) {
-        if (err) return reject(err);
+        if (err) return reject({ error: err, response: response });
         return resolve(response.result);
       });
     });
@@ -741,12 +751,17 @@ class Bitcoin extends Service {
   }
 
   async _syncBalanceFromOracle () {
+    // Get balance
     const balance = await this._makeRPCRequest('getbalance');
+
+    // Update service data
     this._state.balance = balance;
-    this.emit('message', `balance sync: ${balance}`);
+
+    // Commit to state
     const commit = await this.commit();
     const actor = new Actor(commit.data);
-    this.emit('message', `balance sync, commit: ${commit}`);
+
+    // Return OracleBalance
     return {
       type: 'OracleBalance',
       data: {
@@ -852,15 +867,17 @@ class Bitcoin extends Service {
     // Start nodes
     if (this.settings.fullnode) await this._startLocalNode();
     if (this.settings.mode === 'rpc') {
-      const provider = new URL(self.settings.authority);
+      if (!this.settings.authority) return console.error('Error: No authority specified.  To use an RPC anchor, provide the "authority" parameter.');
+      const provider = new URL(this.settings.authority);
       const config = {
         host: provider.hostname,
         port: provider.port
       };
 
+      const auth = provider.username + ':' + provider.password;
+      config.headers = { Authorization: `Basic ${Buffer.from(auth, 'utf8').toString('base64')}` };
+
       if (provider.protocol === 'https:') {
-        const auth = provider.username + ':' + provider.password;
-        config.headers = { Authorization: `Basic ${Buffer.from(auth, 'utf8').toString('base64')}` };
         self.rpc = jayson.client.https(config);
       } else {
         self.rpc = jayson.client.http(config);
@@ -887,10 +904,12 @@ class Bitcoin extends Service {
     // END TODO
 
     if (this.settings.fullnode) {
-      let genesis = await this.fullnode.getBlock(0);
+      const genesis = await this.fullnode.getBlock(0);
 
       // TODO: refactor Chain
-      await this.chain._setGenesis(genesis.toJSON());
+      if (this.chain) {
+        await this.chain._setGenesis(genesis.toJSON());
+      }
     }
 
     this.emit('ready', {

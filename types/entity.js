@@ -88,6 +88,9 @@ class Entity extends EventEmitter {
       default:
         result = JSON.stringify(this.toObject());
         break;
+      case 'Function':
+        result = this._downsample();
+        break;
       case 'Buffer':
       case 'String':
         result = JSON.stringify(this.toString());
@@ -153,6 +156,16 @@ class Entity extends EventEmitter {
         '@type': 'Buffer',
         '@data': JSON.parse(JSON.stringify(input))[0]
       };
+    } else if (input instanceof Function) {
+      try {
+        result = {
+          '@type': 'Function',
+          '@data': JSON.stringify(input)
+        };
+      } catch (E) {
+        console.error('Something could not be converted:', E, input);
+        process.exit();
+      }
     } else {
       try {
         result = {
@@ -160,7 +173,8 @@ class Entity extends EventEmitter {
           '@data': JSON.parse(JSON.stringify(input))
         };
       } catch (E) {
-        console.log('Something could not be converted:', E, input);
+        console.error('Something could not be converted:', E, input);
+        process.exit();
       }
     }
 

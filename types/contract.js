@@ -1,13 +1,18 @@
 'use strict';
 
 const parser = require('dotparser');
-const State = require('./state');
+const Actor = require('./actor');
 
-class Contract extends State {
-  constructor (graph) {
-    super(graph);
+const template = {
+  name: 'Template',
+  balances: {}
+};
 
-    this['@data'] = graph;
+class Contract extends Actor {
+  constructor (settings = template) {
+    super(settings);
+
+    this['@data'] = settings;
 
     return this;
   }
