@@ -251,11 +251,12 @@
             <a class="pilcrow" href="#section-8">&#182;</a>
           </div>
           <p>An example configuration object, encoded as <a href="https://json.org/">JSON</a>:</p>
-          <pre><code class="language-json">{
+          <pre><code class="lang-json">{
   <span class="hljs-attr">&quot;name&quot;</span>: <span class="hljs-string">&quot;@examples/oracle&quot;</span>,
   <span class="hljs-attr">&quot;description&quot;</span>: <span class="hljs-string">&quot;a simple Oracle example&quot;</span>,
   <span class="hljs-attr">&quot;version&quot;</span>: <span class="hljs-string">&quot;0.1.0&quot;</span>
-}</code></pre>
+}
+</code></pre>
           <p>Configuration files are most commonly stored in <code>config.json</code>, but you can
             also use an existing <code>package.json</code> to pre-load an Oracle with some state.</p>
 
@@ -267,7 +268,7 @@
 <span class="hljs-keyword">const</span> config = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;./config&#x27;</span>);
 
 <span class="hljs-comment">/**
- * An {@link Oracle} offers a simple, self-contained {@link Service} for Fabric-
+ * An {<span class="hljs-doctag">@link </span>Oracle} offers a simple, self-contained {<span class="hljs-doctag">@link </span>Service} for Fabric-
  * capable agents.  The `main()` function allocates necessary resources, then
  * starts the service.
  */</span>
