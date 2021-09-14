@@ -91,6 +91,10 @@ class CLI extends App {
     // State
     this._state = {
       anchor: null,
+      balances: {
+        confirmed: 0,
+        unconfirmed: 0
+      },
       contracts: {},
       clock: 0
     };
