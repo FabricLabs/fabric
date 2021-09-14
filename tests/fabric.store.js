@@ -31,7 +31,6 @@ describe('@fabric/core/types/store', function () {
       await store.stop().catch(store.error.bind(store));
 
       assert.ok(store);
-      console.log('set:', set);
 
       assert.equal(typeof set, 'string');
       assert.equal(typeof set, typeof samples.input.hello);
