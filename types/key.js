@@ -178,17 +178,14 @@ class Key extends Entity {
   }
 
   _sign (msg) {
-    // console.log(`[KEY] signing: ${msg}...`);
     if (typeof msg !== 'string') msg = JSON.stringify(msg);
-    let hmac = crypto.createHash('sha256').update(msg).digest('hex');
-    let signature = this.keypair.sign(hmac);
-    // console.log(`[KEY] signature:`, signature);
-    return signature.toDER();
+    const hmac = crypto.createHash('sha256').update(msg).digest('hex');
+    return this.keypair.sign(hmac).toDER();
   }
 
   _verify (msg, sig) {
-    let hmac = crypto.createHash('sha256').update(msg).digest('hex');
-    let valid = this.keypair.verify(hmac, sig);
+    const hmac = crypto.createHash('sha256').update(msg).digest('hex');
+    const valid = this.keypair.verify(hmac, sig);
     return valid;
   }
 

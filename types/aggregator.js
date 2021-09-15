@@ -2,6 +2,8 @@
 
 // Dependencies
 const merge = require('lodash.merge');
+
+// Fabric Types
 const Service = require('./service');
 const Actor = require('./actor');
 const Tree = require('./tree');

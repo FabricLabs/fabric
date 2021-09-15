@@ -17,14 +17,10 @@ const BitcoinTransaction = require('../types/bitcoin/transaction');
 
 // External Dependencies
 const jayson = require('jayson');
-// For the browser
-// ATTN: breaks after 1.0.2
-// const bcoin = require('bcoin/lib/bcoin-browser');
+// TODO: remove bcoin
+const bcoin = require('bcoin/lib/bcoin-browser'); // ATTN: breaks after 1.0.2
 
-// For node...
-const bcoin = require('bcoin');
-
-// Used to connect to the Bitcoin network directly
+// Convenience Labels
 const FullNode = bcoin.FullNode;
 const NetAddress = bcoin.net.NetAddress;
 
@@ -54,7 +50,8 @@ class Bitcoin extends Service {
       name: '@services/bitcoin',
       mode: 'rpc',
       network: 'regtest',
-      path: './stores/bitcoin-regtest',
+      path: './stores/bitcoin',
+      mining: false,
       listen: false,
       fullnode: false,
       nodes: ['127.0.0.1'],

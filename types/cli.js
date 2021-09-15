@@ -13,7 +13,6 @@ const fs = require('fs');
 const merge = require('lodash.merge');
 const pointer = require('json-pointer'); // TODO: move uses to App
 const monitor = require('fast-json-patch'); // TODO: move uses to App
-const bcoin = require('bcoin'); // TODO: move to Wallet
 
 // Fabric Types
 const App = require('./app');
@@ -52,6 +51,7 @@ class CLI extends App {
 
     // Assign Settings
     this.settings = merge({
+      debug: true,
       listen: false,
       render: true,
       services: [],
@@ -481,7 +481,9 @@ class CLI extends App {
   }
 
   async _handlePeerDebug (message) {
-    this._appendDebug(message);
+    if (this.settings.debug) {
+      this._appendDebug(message);
+    }
   }
 
   async _handlePeerError (message) {
@@ -493,7 +495,7 @@ class CLI extends App {
   }
 
   async _handlePeerLog (message) {
-    this._appendMessage(message);
+    this._appendMessage(`[NODE] ${message}`);
   }
 
   async _handlePeerMessage (message) {
@@ -593,7 +595,7 @@ class CLI extends App {
     // Send as Chat Message if no handler registered
     if (!self._processInput(data.input)) {
       // Describe the activity for use in P2P message
-      let msg = {
+      const msg = {
         actor: self.node.id,
         object: {
           created: Date.now(),
@@ -602,7 +604,10 @@ class CLI extends App {
         target: '/messages'
       };
 
-      self.node.relayFrom(self.node.id, Message.fromVector(['ChatMessage', JSON.stringify(msg)]));
+      const message = Message.fromVector(['ChatMessage', JSON.stringify(msg)]);
+      this._appendDebug(`Chat Message created (${message.data.length} bytes): ${message.data}`);
+
+      self.node.relayFrom(self.node.id, message);
       self._sendToAllServices(msg);
     }
 

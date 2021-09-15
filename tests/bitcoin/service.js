@@ -4,13 +4,14 @@
 
 const assert = require('assert');
 // const Wallet = require('../types/wallet');
-const Bitcoin = require('../services/bitcoin');
+const Bitcoin = require('../../services/bitcoin');
 
-const message = require('../assets/message');
-const settings = require('../settings/test');
+const message = require('../../assets/message');
+const settings = require('../../settings/test');
 const options = Object.assign({}, settings, {
   network: 'regtest',
   fullnode: true,
+  mode: 'full',
   verbosity: 2
 });
 
@@ -73,7 +74,11 @@ describe('@fabric/core/services/bitcoin', function () {
         assert.equal(bitcoin.height, 1);
       }
 
-      await test();
+      try {
+        await test();
+      } catch (exception) {
+        console.error('Exception in test:', exception);
+      }
     });
   });
 });

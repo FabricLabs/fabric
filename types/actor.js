@@ -88,6 +88,10 @@ class Actor extends EventEmitter {
     return this._sortKeys(this.state);
   }
 
+  toString () {
+    return this.serialize();
+  }
+
   /**
    * Serialize the Actor's current state into a JSON-formatted string.
    * @returns {String}
