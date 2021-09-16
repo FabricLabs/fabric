@@ -484,9 +484,7 @@ class CLI extends App {
   }
 
   async _handlePeerDebug (message) {
-    if (this.settings.debug) {
-      this._appendDebug(message);
-    }
+    this._appendDebug(message);
   }
 
   async _handlePeerError (message) {

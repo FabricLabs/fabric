@@ -701,14 +701,25 @@ class Bitcoin extends Service {
     }
   }
 
+  async _registerActor (actor) {
+    this.emit('message', `Bitcoin Actor to Register: ${JSON.stringify(actor, null, '  ')}`);
+  }
+
   async _makeRPCRequest (method, params = []) {
     const self = this;
     return new Promise((resolve, reject) => {
       if (!self.rpc) return reject('RPC manager does not exist.');
-      self.rpc.request(method, params, function (err, response) {
-        if (err) return reject({ error: err, response: response });
-        return resolve(response.result);
-      });
+      try {
+        self.rpc.request(method, params, function (err, response) {
+          if (err) return reject({
+            error: err,
+            response: response
+          });
+          return resolve(response.result);
+        });
+      } catch (exception) {
+        return reject(exception);
+      }
     });
   }
 

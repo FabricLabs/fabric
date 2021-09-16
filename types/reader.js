@@ -60,7 +60,7 @@ class Reader extends EventEmitter {
   }
 
   _takeBytes (count) {
-    let bytes = [];
+    const bytes = [];
 
     for (let i = 0; i < count; i++) {
       bytes.push(this.queue.shift());
@@ -82,14 +82,10 @@ class Reader extends EventEmitter {
     parts.push(header.slice(8, 12)); // type
     parts.push(header.slice(12, 16)); // payload size
 
-    const map = parts.map((x) => {
-      return Buffer.from(x, 'hex');
-    });
+    const map = parts.map((x) => Buffer.from(x, 'hex'));
+    const elements = map.map((x) => parseInt(x.toString('hex'), 16));
 
-    const elements = map.map((x) => {
-      return parseInt(x.toString('hex'), 16);
-    });
-
+    // Read header
     const magic = elements[0];
     const version = elements[1];
     const type = elements[2];

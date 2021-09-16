@@ -72,8 +72,8 @@ class Message extends Vector {
       data: null
     };
 
-    this.raw.magic.write(`${MAGIC_BYTES.toString(16)}`, 'hex');
-    this.raw.version.write(`${padDigits(VERSION_NUMBER.toString(16), 8)}`, 'hex');
+    this.raw.magic.write(MAGIC_BYTES.toString(16), 'hex');
+    this.raw.version.write(padDigits(VERSION_NUMBER.toString(16), 8), 'hex');
 
     if (input.data && input.type) {
       this.type = input.type;
