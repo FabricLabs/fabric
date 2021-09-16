@@ -465,11 +465,13 @@ class Service extends Scribe {
   }
 
   async _POST (path, data, commit = true) {
-    console.log('[SERVICE]', '_POST', path, data);
+    if (!path) throw new Error('Path must be provided.');
+    if (!data) throw new Error('Data must be provided.');
+
+    const name = crypto.createHash('sha256').update(path).digest('hex');
+    const hash = crypto.createHash('sha256').update(JSON.stringify(data)).digest('hex');
 
     let result = null;
-    let name = crypto.createHash('sha256').update(path).digest('hex');
-    let hash = crypto.createHash('sha256').update(JSON.stringify(data)).digest('hex');
 
     // always use locally computed values
     data.address = hash;
@@ -481,7 +483,7 @@ class Service extends Scribe {
     try {
       memory = await pointer.get(this.state, path);
     } catch (E) {
-      console.warn('[FABRIC:SERVICE]', 'posting to unloaded collection:', path);
+      this.emit('warning', `[FABRIC:SERVICE] posting to unloaded collection: ${path}`);
       memory = [];
     }
 
@@ -504,7 +506,7 @@ class Service extends Scribe {
       console.log('NOPE:', E);
     }
 
-    await this.commit();
+    if (commit) await this.commit();
 
     return result;
   }

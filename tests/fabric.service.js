@@ -15,7 +15,7 @@ describe('@fabric/core/types/service', function () {
     });
 
     it('can create an instance', async function provenance () {
-      let service = new Service({
+      const service = new Service({
         name: 'Test'
       });
 
@@ -39,6 +39,39 @@ describe('@fabric/core/types/service', function () {
         console.error('Exception stopping:', E);
       }
 
+      assert.ok(service);
+    });
+  });
+
+  describe('_POST()', function () {
+    it('can call _POST successfully', async function () {
+      const service = new Service();
+      await service.start();
+      const link = await service._POST('/examples', { content: 'Hello, world!' });
+      await service.stop();
+      assert.strictEqual(link, '/examples/e3e7b6becc03c8a11a95bcbf6a4827bd9978c894d721b375bb8d9b0ba8a794ea');
+      assert.ok(service);
+    });
+
+    it('provides a valid collection index', async function () {
+      const service = new Service();
+      await service.start();
+      const link = await service._POST('/examples', { content: 'Hello, world!' });
+      const result = await service._GET('/examples');
+      await service.stop();
+      assert.ok(result);
+      assert.strictEqual(result.length, 1);
+      assert.ok(service);
+    });
+
+    it('provides the posted document in the expected location', async function () {
+      const service = new Service();
+      await service.start();
+      const link = await service._POST('/examples', { content: 'Hello, world!' });
+      const result = await service._GET(link);
+      await service.stop();
+      assert.ok(result);
+      assert.strictEqual(result.address, 'e3e7b6becc03c8a11a95bcbf6a4827bd9978c894d721b375bb8d9b0ba8a794ea');
       assert.ok(service);
     });
   });
