@@ -13,9 +13,10 @@ class NOISE extends Service {
     super(settings);
 
     this.settings = merge({
+      persistent: false,
       interface: '0.0.0.0',
       port: 9735
-    }, this.settings, settings);
+    }, settings);
 
     this.key = null;
     this.server = null;
@@ -70,16 +71,16 @@ class NOISE extends Service {
     if (this.connections[actor.id]) return this.emit('error', `Already connected to ${pair} 0x${actor.id}`);
 
     this.connections[actor.id] = new net.Socket();
-    this.connections[actor.id].on('data', (data) => {
-      self.emit('log', `[CLIENT] Received: ${data.toString()}`);
-
-      if (data.toString() === 'Hello, world!') {
-        this.write('Hello back!\r\n');
+    this.connections[actor.id].on('data', async (data) => {
+      const response = 'Hello back, client!';
+      const trimmed = data.toString().trim();
+      if (trimmed === response) {
+        self.emit('log', `[CLIENT] Received ${response} — saying goodbye...`);
+        this.connections[actor.id].write('Goodbye, server.');
+        await self.disconnect(actor.id);
       } else {
-        console.log('received:', data.toString());
+        console.log('[CLIENT] Received unexpected data:', trimmed);
       }
-
-      this.close();
     });
 
     this.connections[actor.id].on('end', () => {
@@ -96,11 +97,32 @@ class NOISE extends Service {
     return this.connections[actor.id];
   }
 
+  async disconnect (id) {
+    if (!this.connections[id]) return true;
+
+    const pair = `${this.connections[id].remoteAddress}:${this.connections[id].remotePort}`;
+
+    try {
+      this.connections[id].destroy();
+    } catch (exception) {
+      console.error(`Exception closing socket ${pair} 0x${id}: ${exception}`);
+    }
+
+    this.emit('connections:close', {
+      id: id
+    });
+
+    delete this.connections[id];
+
+    return true;
+  }
+
   async _serverErrorHandler (error) {
     this.emit('error', error);
   }
 
   async _inboundConnectionHandler (c) {
+    const self = this;
     const pair = `${c.remoteAddress}:${c.remotePort}`;
     const actor = new Actor(pair);
 
@@ -115,12 +137,19 @@ class NOISE extends Service {
     this.connections[actor.id] = c;
 
     c.on('close', () => {
-      console.log('client disconnected');
-      delete this.connections[actor.id];
+      self.emit('log', `[SERVER] Client disconnected: ${pair} 0x${actor.id}`);
+      self.disconnect(actor.id);
     });
 
     c.on('data', (data) => {
-      console.log('[SERVER]', 'Data from client:', data.toString());
+      const hello = 'Hello, world!';
+      const trimmed = data.toString().trim();
+      if (trimmed === hello) {
+        self.emit('log', `[SERVER] Received ${hello}.  Sending response...`);
+        c.write('Hello back, client!\r\n');
+      } else {
+        this.emit('log', `[SERVER] Unknown input: ${trimmed}`);
+      }
     });
 
     return this;

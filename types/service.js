@@ -48,7 +48,7 @@ class Service extends Scribe {
       name: 'service',
       path: './stores/service',
       networking: true,
-      persistent: true,
+      persistent: false,
       interval: 60000, // Mandatory Checkpoint Interval
       verbosity: 2, // 0 none, 1 error, 2 warning, 3 notice, 4 debug
       // TODO: export this as the default data in `inputs/fabric.json`

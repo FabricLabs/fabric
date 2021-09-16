@@ -2,16 +2,12 @@
 
 // Testing
 const assert = require('assert');
-const Fabric = require('../');
-
-const config = require('../settings/test');
-const handler = require('../functions/handleException');
 const Service = require('../types/service');
 
 describe('@fabric/core/types/service', function () {
   describe('Service', function () {
     it('is available from @fabric/core', function () {
-      assert.equal(Fabric.Service instanceof Function, true);
+      assert.strictEqual(Service instanceof Function, true);
     });
 
     it('can create an instance', async function provenance () {
@@ -23,7 +19,7 @@ describe('@fabric/core/types/service', function () {
     });
 
     it('can start offering service', async function () {
-      let service = new Service({
+      const service = new Service({
         name: 'fun'
       });
 
@@ -169,7 +165,7 @@ describe('@fabric/core/types/service', function () {
       await service.start();
       const channel = await service._registerChannel({ name: 'Chat of Chad' });
       const registration = await service._registerActor({ name: 'Chad' });
-      const join = await service.subscribe(registration.id, channel.id);
+      const join = await service._addMemberToChannel(registration.id, channel.id);
       const after = await service._getChannel(channel.id);
 
       await service.stop();
@@ -190,7 +186,7 @@ describe('@fabric/core/types/service', function () {
       await service.start();
       const channel = await service._registerChannel({ name: 'Chat of Chad' });
       const registration = await service._registerActor({ name: 'Chad' });
-      const join = await service.subscribe(registration.id, channel.id);
+      const join = await service._addMemberToChannel(registration.id, channel.id);
       await service.stop();
       assert.ok(service);
       assert.ok(registration);
@@ -204,7 +200,7 @@ describe('@fabric/core/types/service', function () {
       await service.start();
       const channel = await service._registerChannel({ name: 'Chat of Chad' });
       const registration = await service._registerActor({ name: 'Chad' });
-      const join = await service.subscribe(registration.id, channel.id);
+      const join = await service._addMemberToChannel(registration.id, channel.id);
       await service.stop();
       assert.ok(service);
       assert.ok(registration);
@@ -219,7 +215,7 @@ describe('@fabric/core/types/service', function () {
       const channel = await service._registerChannel({ name: 'Chat of Chad' });
       const registration = await service._registerActor({ name: 'Chad' });
       const members = await service._getMembers(channel.id);
-      const join = await service.subscribe(registration.id, channel.id);
+      const join = await service._addMemberToChannel(registration.id, channel.id);
       await service.stop();
       assert.ok(service);
       assert.ok(registration);
