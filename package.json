@@ -138,6 +138,10 @@
   },
   "nyc": {
     "exclude": [
+      "assets",
+      "contracts",
+      "currencies",
+      "functions",
       "tests",
       "data"
     ],

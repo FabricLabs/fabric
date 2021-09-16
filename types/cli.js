@@ -155,7 +155,7 @@ class CLI extends App {
       this.render();
     }
 
-    // Attach P2P handlers
+    // Attach P2P message handlers
     this.node.on('log', this._handlePeerLog.bind(this));
     this.node.on('ready', this._handleNodeReady.bind(this));
     this.node.on('debug', this._handlePeerDebug.bind(this));
@@ -163,17 +163,17 @@ class CLI extends App {
     this.node.on('warning', this._handlePeerWarning.bind(this));
     this.node.on('message', this._handlePeerMessage.bind(this));
 
+    // Attach P2P event handlers
     this.node.on('peer', this._handlePeer.bind(this));
     this.node.on('peer:candidate', this._handlePeerCandidate.bind(this));
     this.node.on('connections:open', this._handleConnectionOpen.bind(this));
     this.node.on('connections:close', this._handleConnectionClose.bind(this));
     this.node.on('connection:error', this._handleConnectionError.bind(this));
     this.node.on('session:update', this._handleSessionUpdate.bind(this));
-    // debug event
-    // this.node.on('socket:data', this._handleSocketData.bind(this));
 
-    // this.node.on('DocumentPublish', this._handlePeerDocumentPublish.bind(this));
-    // this.node.on('DocumentRequest', this._handlePeerDocumentRequest.bind(this));
+    // Document Exchange
+    this.node.on('DocumentPublish', this._handlePeerDocumentPublish.bind(this));
+    this.node.on('DocumentRequest', this._handlePeerDocumentRequest.bind(this));
 
     // Attach Anchor handlers
     this.bitcoin.on('ready', this._handleBitcoinReady.bind(this));
@@ -186,6 +186,7 @@ class CLI extends App {
     // Start Bitcoin service
     await this.bitcoin.start();
 
+    // Start all services
     for (const [name, service] of Object.entries(this.services)) {
       this._appendWarning(`Checking for Service: ${name}`);
       if (this.settings.services.includes(name)) {
@@ -194,9 +195,11 @@ class CLI extends App {
       }
     }
 
+    // Track state changes
     this.observer = monitor.observe(this._state);
 
     // Bind remaining internals
+    // TODO: enable
     // this.on('changes', this._handleChanges.bind(this));
 
     // Start P2P node
@@ -743,17 +746,25 @@ class CLI extends App {
   }
 
   async _syncChainDisplay () {
-    const height = await this.bitcoin._makeRPCRequest('getblockcount');
-    const stats = await this.bitcoin._makeRPCRequest('getblockchaininfo');
-    this.elements['chainTip'].setContent(`${stats.bestblockhash} (height is ${height})`);
-    this.screen.render();
+    try {
+      const height = await this.bitcoin._makeRPCRequest('getblockcount');
+      const stats = await this.bitcoin._makeRPCRequest('getblockchaininfo');
+      this.elements['chainTip'].setContent(`${stats.bestblockhash} (height is ${height})`);
+      this.screen.render();
+    } catch (exception) {
+      if (this.settings.debug) this._appendError(`Could not sync chain: ${JSON.stringify(exception)}`);
+    }
   }
 
   async _syncBalance () {
-    const balance = await this._getBalance();
-    this._state.balances.confirmed = balance;
-    this.elements['balance'].setContent(balance.toFixed(8));
-    this.screen.render();
+    try {
+      const balance = await this._getBalance();
+      this._state.balances.confirmed = balance;
+      this.elements['balance'].setContent(balance.toFixed(8));
+      this.screen.render();
+    } catch (exception) {
+      if (this.settings.debug) this._appendError(`Could not sync balance: ${JSON.stringify(exception)}`);
+    }
   }
 
   async _getBalance () {
