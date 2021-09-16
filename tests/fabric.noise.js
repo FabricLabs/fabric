@@ -1,7 +1,5 @@
 'use strict';
 
-const log = require('why-is-node-running');
-
 const NOISE = require('../types/noise');
 const assert = require('assert');
 
