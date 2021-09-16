@@ -4,6 +4,7 @@
 const Actor = require('./actor');
 // const Disk = require('./disk');
 const Key = require('./key');
+const Hash256 = require('./hash256');
 const Entity = require('./entity');
 const Store = require('./store');
 const Scribe = require('./scribe');
@@ -558,10 +559,30 @@ class Service extends Scribe {
     return this;
   }
 
-  async subscribe (id) {
-    this.log(`subscribing to ${id}...`);
-    let subscription = new Entity();
-    return subscription;
+  async subscribe (actorID, channelID) {
+    if (!actorID) throw new Error('Must provide actor ID.');
+    if (!channelID) throw new Error('Must provide channel ID.');
+
+    const label = Hash256.digest(actorID + channelID);
+    const actor = await this._getActor(actorID);
+    const channel = await this._getChannel(channelID);
+
+    if (!actor) throw new Error(`Actor does not exist: ${actorID}`);
+    if (!channel) throw new Error(`Channel does not exist: ${channelID}`);
+
+    const link = await this._POST('/subscriptions', { label });
+
+    await this._applyChanges([
+      { op: 'add', value: channelID, path: `/actors/${actor.id}/subscriptions/0` },
+      { op: 'add', value: channelID, path: `/channels/${channel.id}/members/0` }
+    ]);
+
+    await this.commit();
+
+    const result = await this._GET(link);
+    this.emit('subscription', result);
+
+    return result;
   }
 
   async join (id) {
@@ -695,13 +716,11 @@ class Service extends Scribe {
       }, actor);
     }
 
-    this.emit('log', `Registering Actor: ${actor.id} ${JSON.stringify(actor).slice(0, 32)}…`);
-
     const id = pointer.escape(actor.id);
     const path = `/actors/${id}`;
 
     try {
-      await this._PUT(path, Object.assign({
+      await this._PUT(path, merge({
         name: actor.id,
         subscriptions: []
       }, actor, { id }));
@@ -710,27 +729,43 @@ class Service extends Scribe {
     }
 
     await this.commit();
-    this.emit('actor', await this._GET(path));
 
-    return this;
+    const registration = await this._GET(path);
+    this.emit('actor', registration);
+
+    return registration;
   }
 
   async _registerChannel (channel) {
-    if (!channel.id) return this.error('Channel must have an id.');
+    if (!channel.id) {
+      const entity = new Actor(channel);
+      channel = merge({
+        id: entity.id,
+        members: []
+      }, channel);
+    }
 
-    let target = pointer.escape(channel.id);
-    let path = `/channels/${target}`;
+    const target = pointer.escape(channel.id);
+    const path = `/channels/${target}`;
 
     try {
-      this._PUT(path, Object.assign({
+      this._PUT(path, merge({
         members: []
       }, channel));
-      this.emit('channel', this._GET(path));
     } catch (E) {
       this.log(`Failed to register channel "${channel.id}":`, E);
     }
 
-    return this;
+    await this.commit();
+
+    const registration = await this._GET(path);
+    this.emit('channel', registration);
+
+    return registration;
+  }
+
+  async _addMemberToChannel (memberID, channelID) {
+    return this.subscribe(memberID, channelID);
   }
 
   async _registerMethod (name, method) {
@@ -738,24 +773,33 @@ class Service extends Scribe {
   }
 
   async _updatePresence (id, status) {
-    let target = pointer.escape(id);
-    let presence = (status === 'online') ? 'online' : 'offline';
+    const target = pointer.escape(id);
+    const presence = (status === 'online') ? 'online' : 'offline';
     return this._PUT(`/actors/${target}/presence`, presence);
   }
 
   async _getPresence (id) {
-    let member = this._GET(`/actors/${id}`) || {};
+    const member = await this._GET(`/actors/${id}`);
     return member.presence || null;
   }
 
   async _getMembers (id) {
-    let channel = this._GET(`/channels/${id}`) || {};
+    const channel = await this._GET(`/channels/${id}`);
+    if (!channel) throw new Error(`No such channel: ${id}`);
     return channel.members || null;
   }
 
   async _getSubscriptions (id) {
-    let member = this._GET(`/actors/${id}`) || {};
+    const member = await this._GET(`/actors/${id}`);
     return member.subscriptions || null;
+  }
+
+  async _listActors () {
+    return Object.values(await this._GET('/actors'));
+  }
+
+  async _listChannels () {
+    return Object.values(await this._GET('/channels'));
   }
 
   async _applyChanges (changes) {

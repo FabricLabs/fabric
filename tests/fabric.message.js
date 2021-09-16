@@ -79,20 +79,12 @@ describe('@fabric/core/types/message', function () {
         },
         target: '/messages'
       });
+
       const message = Message.fromVector(['ChatMessage', data]);
-
-      console.log('original data:', `(${data.length} bytes)`, typeof data, data);
-
       const buffer = message.toBuffer();
-      console.log('buffer:', buffer);
-      console.log('buffer as string:', buffer.toString('utf8'));
-
       const restored = Message.fromBuffer(buffer);
-      console.log('restored:', restored);
-      console.log('restored data:', `(${restored.data.length} bytes)`, restored.data.constructor.name, restored.data);
 
       assert.strictEqual(restored.data, '{"actor":"deadbeefbabe","object":{"content":"Hello, world!"},"target":"/messages"}');
-
       assert.ok(message);
       assert.strictEqual(message.id, '9df866854b4e8bf23c7e9e3db0121e35ecb75ff001489c8a839545c98c67f722');
     });

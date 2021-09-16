@@ -126,6 +126,108 @@ describe('@fabric/core/types/service', function () {
     });
   });
 
+  describe('_registerChannel()', function () {
+    it('can register a channel successfully', async function () {
+      const service = new Service();
+      await service.start();
+      const registration = await service._registerChannel({ name: 'Chat of Chad' });
+      await service.stop();
+      assert.ok(service);
+      assert.ok(registration);
+    });
+  });
+
+  describe('_listChannels()', function () {
+    it('can list channels successfully', async function () {
+      const service = new Service();
+      await service.start();
+      const registration = await service._registerChannel({ name: 'Chat of Chad' });
+      const result = await service._listChannels();
+      await service.stop();
+      assert.ok(service);
+      assert.ok(registration);
+      assert.strictEqual(result.length, 1);
+    });
+  });
+
+  describe('_listActors()', function () {
+    it('can list channels successfully', async function () {
+      const service = new Service();
+      await service.start();
+      const registration = await service._registerActor({ name: 'Chad' });
+      const result = await service._listActors();
+      await service.stop();
+      assert.ok(service);
+      assert.ok(registration);
+      assert.strictEqual(result.length, 1);
+    });
+  });
+
+  describe('_addMemberToChannel()', function () {
+    it('can add a member to a channel successfully', async function () {
+      const service = new Service();
+      await service.start();
+      const channel = await service._registerChannel({ name: 'Chat of Chad' });
+      const registration = await service._registerActor({ name: 'Chad' });
+      const join = await service.subscribe(registration.id, channel.id);
+      const after = await service._getChannel(channel.id);
+
+      await service.stop();
+
+      assert.ok(service);
+      assert.ok(registration);
+      assert.ok(join);
+      assert.ok(after);
+      assert.ok(after.members);
+
+      assert.strictEqual(after.members.length, 1);
+    });
+  });
+
+  describe('_getSubscriptions()', function () {
+    it('can retrieve actor subscriptions successfully', async function () {
+      const service = new Service();
+      await service.start();
+      const channel = await service._registerChannel({ name: 'Chat of Chad' });
+      const registration = await service._registerActor({ name: 'Chad' });
+      const join = await service.subscribe(registration.id, channel.id);
+      await service.stop();
+      assert.ok(service);
+      assert.ok(registration);
+      assert.ok(join);
+    });
+  });
+
+  describe('_getSubscriptions()', function () {
+    it('can retrieve actor subscriptions successfully', async function () {
+      const service = new Service();
+      await service.start();
+      const channel = await service._registerChannel({ name: 'Chat of Chad' });
+      const registration = await service._registerActor({ name: 'Chad' });
+      const join = await service.subscribe(registration.id, channel.id);
+      await service.stop();
+      assert.ok(service);
+      assert.ok(registration);
+      assert.ok(join);
+    });
+  });
+
+  describe('_getMembers()', function () {
+    it('can retrieve channel members successfully', async function () {
+      const service = new Service();
+      await service.start();
+      const channel = await service._registerChannel({ name: 'Chat of Chad' });
+      const registration = await service._registerActor({ name: 'Chad' });
+      const members = await service._getMembers(channel.id);
+      const join = await service.subscribe(registration.id, channel.id);
+      await service.stop();
+      assert.ok(service);
+      assert.ok(registration);
+      assert.ok(members);
+      assert.ok(join);
+    });
+  });
+
   describe('_POST()', function () {
     it('can call _POST successfully', async function () {
       const service = new Service();
@@ -145,6 +247,9 @@ describe('@fabric/core/types/service', function () {
       assert.ok(result);
       assert.strictEqual(result.length, 1);
       assert.ok(service);
+      assert.ok(link);
+      assert.ok(result);
+      assert.ok(result.length, 1);
     });
 
     it('provides the posted document in the expected location', async function () {
