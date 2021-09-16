@@ -15,6 +15,7 @@ const stream = require('stream');
 const path = require('path');
 
 // npm-based modules
+const merge = require('lodash.merge');
 const pointer = require('json-pointer');
 const manager = require('fast-json-patch');
 
@@ -42,7 +43,7 @@ class Service extends Scribe {
     super(settings);
 
     // Configure (with defaults)
-    this.settings = Object.assign({
+    this.settings = merge({
       name: 'service',
       path: './stores/service',
       networking: true,
@@ -686,13 +687,18 @@ class Service extends Scribe {
    * @param  {Object}  actor Instance of the {@link Actor}.
    * @return {Promise}       Resolves upon successful registration.
    */
-  async _registerActor (actor) {
-    if (!actor.id) return this.error('Client must have an id.');
+  async _registerActor (actor = {}) {
+    if (!actor.id) {
+      const entity = new Actor(actor);
+      actor = merge({
+        id: entity.id
+      }, actor);
+    }
 
-    this.emit('message', `Registering Actor: ${actor.id} ${JSON.stringify(actor).slice(0, 32)}…`);
+    this.emit('log', `Registering Actor: ${actor.id} ${JSON.stringify(actor).slice(0, 32)}…`);
 
-    let id = pointer.escape(actor.id);
-    let path = `/actors/${id}`;
+    const id = pointer.escape(actor.id);
+    const path = `/actors/${id}`;
 
     try {
       await this._PUT(path, Object.assign({
@@ -704,7 +710,7 @@ class Service extends Scribe {
     }
 
     await this.commit();
-    this.emit('actor', this._GET(path));
+    this.emit('actor', await this._GET(path));
 
     return this;
   }

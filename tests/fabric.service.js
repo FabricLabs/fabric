@@ -43,6 +43,89 @@ describe('@fabric/core/types/service', function () {
     });
   });
 
+  describe('_registerActor()', function () {
+    it('can register an actor successfully', async function () {
+      const service = new Service();
+      await service.start();
+      const registration = await service._registerActor({ name: 'Sally' });
+      await service.stop();
+      assert.ok(service);
+      assert.ok(registration);
+    });
+
+    it('emits the "actor" event', function (done) {
+      async function test () {
+        const service = new Service();
+
+        service.on('actor', async function (actor) {
+          if (actor.name && actor.name === 'Sally') {
+            await service.stop();
+            done();
+          }
+        });
+
+        await service.start();
+        await service._registerActor({ name: 'Sally' });
+      }
+
+      test();
+    });
+
+    it('create an empty actor', function (done) {
+      async function test () {
+        const service = new Service();
+
+        service.on('actor', async function (actor) {
+          if (actor.id && actor.id === 'b9d8bce32d234014b3f45b37ee432b445fbdad036487ced2b5926b14aaa41683') {
+            await service.stop();
+            done();
+          }
+        });
+
+        await service.start();
+        await service._registerActor();
+      }
+
+      test();
+    });
+
+    it('create an actor from an object', function (done) {
+      async function test () {
+        const service = new Service();
+
+        service.on('actor', async function (actor) {
+          if (actor.id && actor.id === 'b9d8bce32d234014b3f45b37ee432b445fbdad036487ced2b5926b14aaa41683') {
+            await service.stop();
+            done();
+          }
+        });
+
+        await service.start();
+        await service._registerActor({});
+      }
+
+      test();
+    });
+
+    it('create an actor from an array', function (done) {
+      async function test () {
+        const service = new Service();
+
+        service.on('actor', async function (actor) {
+          if (actor.id && actor.id === 'b9d8bce32d234014b3f45b37ee432b445fbdad036487ced2b5926b14aaa41683') {
+            await service.stop();
+            done();
+          }
+        });
+
+        await service.start();
+        await service._registerActor([]);
+      }
+
+      test();
+    });
+  });
+
   describe('_POST()', function () {
     it('can call _POST successfully', async function () {
       const service = new Service();
