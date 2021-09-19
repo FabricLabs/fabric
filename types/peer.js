@@ -61,7 +61,7 @@ class Peer extends Scribe {
     }, config);
 
     // Network Internals
-    this.upnp = upnp.createClient();
+    this.upnp = null;
     this.server = net.createServer(this._handleConnection.bind(this));
     this.stream = new stream.Transform({
       transform (chunk, encoding, callback) {
@@ -147,6 +147,9 @@ class Peer extends Scribe {
     let address = null;
 
     if (this.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Peer starting...');
+    if (this.settings.upnp) {
+      this.upnp = upnp.createClient();
+    }
 
     try {
       await this.wallet.start();
