@@ -2,11 +2,20 @@
 Fabric works best when installed globally (or on your `$PATH`). For most use
 cases, we can install Fabric with simply:
 
-> `$ npm i -g FabricLabs/fabric`
+> `$ npm i -g FabricLabs/fabric`  
 > `$ fabric --keygen`
 
 This should create (or read) a folder `~/.fabric` with a JSON configuration
 file. Take care, as this file is not (currently) encrypted.
+
+## Using Environment Variables
+You may use the following environment variables for simple configuration:
+
+- `FABRIC_SEED` to specify a BIP 39 seed phrase for your Fabric node
+- `FABRIC_PORT` to specify the TCP port upon which to listen
+
+### WARNING: TODO
+- `FABRIC_PASSPHRASE` to specify the derivation passphrase
 
 ## Using Your Own Full Node
 ### Setup Bitcoin Core
