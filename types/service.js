@@ -530,11 +530,10 @@ class Service extends Scribe {
     });
 
     try {
-      let prior = await this.store.get('/');
-      let state = JSON.parse(prior);
-      this.state = state;
-    } catch (E) {
-      this.warn('[DOORMAN:SERVICE]', 'Could not restore state:', E);
+      const prior = await this.store.get('/');
+      this.state = JSON.parse(prior);
+    } catch (exception) {
+      this.emit('warning', `[FABRIC:SERVICE] Could not restore state: ${exception}`);
     }
 
     if (this.settings.networking && this.swarm) {

@@ -57,7 +57,7 @@ class Peer extends Scribe {
       listen: false,
       peers: [],
       port: 7777,
-      upnp: true
+      upnp: false
     }, config);
 
     // Network Internals
