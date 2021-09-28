@@ -309,12 +309,6 @@ class Peer extends Scribe {
 
     if (response) {
       self.meta.messages.outbound++;
-      if (!socket.writable) {
-        // console.trace('[FABRIC:PEER]', 'Socket is not writable.');
-        self.emit('error', `Socket is not writable, message was: ${JSON.stringify(response.toObject(), null, '  ')}`);
-        return false;
-      }
-
       self.sendToSocket(address, response);
     }
   }
