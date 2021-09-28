@@ -1,7 +1,10 @@
 'use strict';
 
-const NOISE = require('../types/noise');
 const assert = require('assert');
+const NOISE = require('../types/noise');
+const Key = require('../types/key');
+
+const SECP256K1_TEST_KEY = 'ebb2c082fd7727890a28ac82f6bdf97bad8de9f5d7c9028692de1a255cad3e0f';
 
 describe('@fabric/core/types/noise', function () {
   describe('NOISE', function () {
@@ -11,7 +14,7 @@ describe('@fabric/core/types/noise', function () {
       assert.strictEqual(NOISE instanceof Function, true);
     });
 
-    it('can smoothly create a new NOISE session', function (done) {
+    xit('can smoothly create a new NOISE session', function (done) {
       async function test () {
         const alice = new NOISE({ port: 9376 });
         const bobby = new NOISE({ seed: 'online near enter kingdom raw guide worry math nephew canvas true spoil brick slight ordinary wreck grass quarter pull fly shed chaos bullet goose' });
@@ -61,6 +64,21 @@ describe('@fabric/core/types/noise', function () {
       }
 
       test();
+    });
+  });
+
+  describe('ChaCha20Poly1305', function () {
+    it('can encrypt and decrypt', function () {
+      const noise = new NOISE();
+      const key = new Key({
+        private: Buffer.from(SECP256K1_TEST_KEY, 'hex')
+      });
+
+      const privkey = key.privkey;
+      const nonce = 0x01n;
+      const ad = '';
+      const plaintext = 'Hello, world!';
+      const encrypted = noise.encryptWithAD(privkey, nonce, ad, plaintext);
     });
   });
 });
