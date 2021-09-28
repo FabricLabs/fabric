@@ -1,12 +1,26 @@
 'use strict';
 
+// Constants
+const PROTOCOL_NAME = 'Noise_XK_secp256k1_ChaChaPoly_SHA256';
+const NOISE_PROLOGUE = 'lightning';
+const NOISE_VERSION_BYTE = Buffer.from('00', 'hex');
+
+// Dependencies
 const net = require('net');
+const crypto = require('crypto');
 const merge = require('lodash.merge');
+
+// Cryptography
+const EC = require('elliptic').ec;
+const ec = new EC('secp256k1');
+
+// Types Used
+const Reader = require('./reader');
 const Service = require('./service');
 const Key = require('./key');
 const Actor = require('./actor');
-
-const NOISE_VERSION_BYTE = Buffer.from('00', 'hex');
+const HKDF = require('./hkdf');
+const Hash256 = require('./hash256');
 
 class NOISE extends Service {
   constructor (settings = {}) {
@@ -15,7 +29,8 @@ class NOISE extends Service {
     this.settings = merge({
       persistent: false,
       interface: '0.0.0.0',
-      port: 9735
+      port: 9735,
+      timeout: 60000
     }, settings);
 
     this.key = null;
@@ -33,7 +48,7 @@ class NOISE extends Service {
   }
 
   async start () {
-    if (!this.key) this.key = new Key();
+    if (!this.key) this.key = new Key(this.settings);
 
     // Create TCP server
     this.server = net.createServer(this._inboundConnectionHandler.bind(this));
@@ -108,11 +123,14 @@ class NOISE extends Service {
       console.error(`Exception closing socket ${pair} 0x${id}: ${exception}`);
     }
 
+    if (this.connections[id]._timeout) clearTimeout(this.connections[id]._timeout);
+
+    delete this.connections[id];
+
+    // All clean, emit event
     this.emit('connections:close', {
       id: id
     });
-
-    delete this.connections[id];
 
     return true;
   }
@@ -121,6 +139,11 @@ class NOISE extends Service {
     this.emit('error', error);
   }
 
+  /**
+   * Handler for inbound connections to the local host.
+   * @param {net.Socket} c Instance of the connection itself.
+   * @returns {NOISE} Current instance of the {@link NOISE} service.
+   */
   async _inboundConnectionHandler (c) {
     const self = this;
     const pair = `${c.remoteAddress}:${c.remotePort}`;
@@ -128,14 +151,17 @@ class NOISE extends Service {
 
     this.emit('log', `[SERVER] New inbound connection, return pair: ${pair} 0x${actor.id}`);
 
+    // If we already have this connection, abort
     if (this.connections[actor.id]) {
       this.emit('warning', `[SERVER] Connection ${pair} already exists.`);
-      c.destroy();
+      c.destroy(); // TODO: test various network conditions (safe closure vs. network interruption)
       return this;
     }
 
+    // Track internal map of connections
     this.connections[actor.id] = c;
 
+    // Bind Event Listeners
     c.on('close', () => {
       self.emit('log', `[SERVER] Client disconnected: ${pair} 0x${actor.id}`);
       self.disconnect(actor.id);
@@ -162,6 +188,21 @@ class NOISE extends Service {
     this._state.status = 'READY';
     await this.commit();
     return this;
+  }
+
+  async _updatePresence (actorID) {
+    const service = this;
+    const c = service.connections[actorID];
+
+    if (!c) return service.emit('error', `No such actor: ${actorID}`);
+    if (c._timeout) clearTimeout(c._timeout);
+
+    c._timeout = setTimeout(() => {
+      c.destroy();
+      delete service.connections[actorID];
+    }, service.settings.timeout);
+
+    return true;
   }
 }
 

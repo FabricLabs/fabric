@@ -46,11 +46,11 @@ class Reader extends EventEmitter {
       this.queue.push(data[i]);
     }
 
-    this._readFrame();
+    this._readFabricFrame();
   }
 
   _readBytes (count) {
-    let bytes = [];
+    const bytes = [];
 
     for (let i = 0; i < count; i++) {
       bytes.push(this.queue[i]);
@@ -69,7 +69,7 @@ class Reader extends EventEmitter {
     return bytes;
   }
 
-  _readFrame () {
+  _readFabricFrame () {
     if (this._bufferedBytes < HEADER_SIZE) return;
 
     // Read up to HEADER_SIZE bytes
