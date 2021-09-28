@@ -47,6 +47,88 @@ class NOISE extends Service {
     return this;
   }
 
+  /**
+   * Performs an Elliptic-Curve Diffie-Hellman operation using `k`, which is a valid secp256k1 private key, and `rk`, which is a valid public key.
+   * @param {Buffer} k Private key.
+   * @param {Buffer} rk Public key.
+   */
+  ECDH (k, rk) {
+    let key = null;
+    let ecdh = null;
+    let remote = null;
+
+    try {
+      key = ec.keyFromPrivate(k, 'hex');
+    } catch (exception) {
+      console.error('could not read private key:', exception);
+    }
+
+    try {
+      remote = ec.keyFromPublic(rk, 'hex');
+    } catch (exception) {
+      console.error('could not read public key:', exception);
+    }
+
+    try {
+      ecdh = key.derive(remote.pub);
+    } catch (exception) {
+      console.error('could not derive:', exception);
+    }
+
+    const derived = ecdh.toString('hex');
+    const hash = Hash256.digest(derived);
+
+    return hash;
+    // TODO: The returned value is the SHA256 of the compressed format of the generated point.
+  }
+
+  /**
+   * Generate 32 bytes of cryptographic randomness following RFC 5869.
+   * @param {Buffer} salt Salt.
+   * @param {Buffer} ikm Initial key material.
+   */
+  HKDF (salt, ikm) {
+    const hkdf = new HKDF({
+      initial: ikm,
+      salt: salt
+    });
+    return hkdf.derive('');
+  }
+
+  encryptWithAD (k, n, ad, plaintext = '') {
+    const nonce = Buffer.alloc(12, 0x00);
+    nonce.writeBigUInt64LE(n, 4);
+
+    const cipher = crypto.createCipheriv('chacha20-poly1305', k, nonce, {
+      authTagLength: 16
+    });
+
+    cipher.setAAD(ad);
+    cipher.update(plaintext);
+
+    const output = cipher.final();
+    const mac = cipher.getAuthTag();
+
+    return mac || output;
+  }
+
+  decryptWithAD (k, n, ad, ciphertext) {
+    const nonce = Buffer.alloc(12, 0x00);
+    nonce.writeBigUInt64LE(n, 4);
+
+    const authTag = Buffer.from('9ef622cec7a5719261031e9ca91049d4', 'hex');
+    const decipher = crypto.createDecipheriv('chacha20-poly1305', k, nonce, {
+      authTagLength: 16
+    });
+
+    decipher.setAAD(ad);
+    decipher.update(ciphertext);
+    decipher.setAuthTag(authTag);
+
+    const output = decipher.final();
+    return output;
+  }
+
   async start () {
     if (!this.key) this.key = new Key(this.settings);
 
