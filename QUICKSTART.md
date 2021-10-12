@@ -2,15 +2,13 @@
 
 ## Prerequisites
 0. (optional) Install NVM: `https://nvm.sh`
-1. Install Node 12.16
-2. Run `node --version` and verify the output matches 12.16
-3. See #1
+1. Install Node 12.16 (use `nvm install 12.16` if using `nvm`)
 
 ## Instructions
 0. Meet the prerequisites (above)
 1. Install Fabric Core: `npm i --save @fabric/core`
 
-_**Note:** for development releases, use `npm i --save martindale/fabric#fabric` instead._
+_**Note:** for development releases, use `npm i --save FabricLabs/fabric#develop` instead._
 
 ## Sample Program
 Create the file `scripts/quickstart.js` using the following code:

@@ -1,11 +1,3 @@
-## Modules
-
-<dl>
-<dt><a href="#module_@fabric/core/services/bitcoin">@fabric/core/services/bitcoin</a> ⇐ <code><a href="#Service">Service</a></code></dt>
-<dd><p>Manages interaction with the Bitcoin network.</p>
-</dd>
-</dl>
-
 ## Classes
 
 <dl>
@@ -97,6 +89,9 @@ within the network.</p>
 <dt><a href="#Peer">Peer</a></dt>
 <dd><p>An in-memory representation of a node in our network.</p>
 </dd>
+<dt><a href="#Reader">Reader</a></dt>
+<dd><p>Read from a byte stream, seeking valid Fabric messages.</p>
+</dd>
 <dt><a href="#Remote">Remote</a> : <code><a href="#Remote">Remote</a></code></dt>
 <dd><p>Interact with a remote <a href="#Resource">Resource</a>.</p>
 </dd>
@@ -153,9 +148,6 @@ execute either the full set or none.</p>
 <dd><p>The <a href="#Transition">Transition</a> type reflects a change from one finite
 <a href="#State">State</a> to another.</p>
 </dd>
-<dt><a href="#Treasury">Treasury</a></dt>
-<dd><p>Manage a set of KeyPairs and their balances.</p>
-</dd>
 <dt><a href="#Tree">Tree</a></dt>
 <dd><p>Class implementing a Merkle Tree.</p>
 </dd>
@@ -174,209 +166,25 @@ execute either the full set or none.</p>
 almost like &quot;threads&quot;, as they run asynchronously over the duration of a
 contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</p>
 </dd>
+<dt><a href="#Bitcoin">Bitcoin</a> ⇐ <code><a href="#Service">Service</a></code></dt>
+<dd><p>Manages interaction with the Bitcoin network.</p>
+</dd>
+<dt><a href="#Bitmessage">Bitmessage</a> ⇐ <code><a href="#Interface">Interface</a></code></dt>
+<dd><p>Manages interaction with the Bitmessage network.</p>
+</dd>
+<dt><a href="#Elements">Elements</a> ⇐ <code><a href="#Interface">Interface</a></code></dt>
+<dd><p>Manages interaction with the Elements network.</p>
+</dd>
 <dt><a href="#Exchange">Exchange</a></dt>
 <dd><p>Implements a basic Exchange.</p>
 </dd>
-<dt><a href="#Matrix">Matrix</a> ⇐ <code><a href="#Service">Service</a></code></dt>
-<dd><p>Service for interacting with Matrix.</p>
+<dt><a href="#Liquid">Liquid</a> ⇐ <code><a href="#Interface">Interface</a></code></dt>
+<dd><p>Manages interaction with the Liquid network.</p>
 </dd>
+<dt><a href="#Markdown">Markdown</a></dt>
+<dd></dd>
 </dl>
 
-<a name="module_@fabric/core/services/bitcoin"></a>
-
-## @fabric/core/services/bitcoin ⇐ [<code>Service</code>](#Service)
-Manages interaction with the Bitcoin network.
-
-**Extends**: [<code>Service</code>](#Service)  
-
-* [@fabric/core/services/bitcoin](#module_@fabric/core/services/bitcoin) ⇐ [<code>Service</code>](#Service)
-    * [~Bitcoin](#module_@fabric/core/services/bitcoin..Bitcoin)
-        * [new Bitcoin([settings])](#new_module_@fabric/core/services/bitcoin..Bitcoin_new)
-        * _instance_
-            * [.UAString](#module_@fabric/core/services/bitcoin..Bitcoin+UAString)
-            * [.tip](#module_@fabric/core/services/bitcoin..Bitcoin+tip)
-            * [.height](#module_@fabric/core/services/bitcoin..Bitcoin+height)
-            * [._prepareTransaction(obj)](#module_@fabric/core/services/bitcoin..Bitcoin+_prepareTransaction)
-            * [._handleCommittedBlock(block)](#module_@fabric/core/services/bitcoin..Bitcoin+_handleCommittedBlock)
-            * [._handlePeerPacket(msg)](#module_@fabric/core/services/bitcoin..Bitcoin+_handlePeerPacket)
-            * [._handleBlockFromSPV(msg)](#module_@fabric/core/services/bitcoin..Bitcoin+_handleBlockFromSPV)
-            * [._handleTransactionFromSPV(tx)](#module_@fabric/core/services/bitcoin..Bitcoin+_handleTransactionFromSPV)
-            * [._subscribeToShard(shard)](#module_@fabric/core/services/bitcoin..Bitcoin+_subscribeToShard)
-            * [._connectSPV()](#module_@fabric/core/services/bitcoin..Bitcoin+_connectSPV)
-            * [.connect(addr)](#module_@fabric/core/services/bitcoin..Bitcoin+connect)
-            * [.start()](#module_@fabric/core/services/bitcoin..Bitcoin+start)
-            * [.stop()](#module_@fabric/core/services/bitcoin..Bitcoin+stop)
-        * _static_
-            * [.Transaction](#module_@fabric/core/services/bitcoin..Bitcoin.Transaction)
-            * [.MutableTransaction](#module_@fabric/core/services/bitcoin..Bitcoin.MutableTransaction)
-
-<a name="module_@fabric/core/services/bitcoin..Bitcoin"></a>
-
-### @fabric/core/services/bitcoin~Bitcoin
-**Kind**: inner class of [<code>@fabric/core/services/bitcoin</code>](#module_@fabric/core/services/bitcoin)  
-
-* [~Bitcoin](#module_@fabric/core/services/bitcoin..Bitcoin)
-    * [new Bitcoin([settings])](#new_module_@fabric/core/services/bitcoin..Bitcoin_new)
-    * _instance_
-        * [.UAString](#module_@fabric/core/services/bitcoin..Bitcoin+UAString)
-        * [.tip](#module_@fabric/core/services/bitcoin..Bitcoin+tip)
-        * [.height](#module_@fabric/core/services/bitcoin..Bitcoin+height)
-        * [._prepareTransaction(obj)](#module_@fabric/core/services/bitcoin..Bitcoin+_prepareTransaction)
-        * [._handleCommittedBlock(block)](#module_@fabric/core/services/bitcoin..Bitcoin+_handleCommittedBlock)
-        * [._handlePeerPacket(msg)](#module_@fabric/core/services/bitcoin..Bitcoin+_handlePeerPacket)
-        * [._handleBlockFromSPV(msg)](#module_@fabric/core/services/bitcoin..Bitcoin+_handleBlockFromSPV)
-        * [._handleTransactionFromSPV(tx)](#module_@fabric/core/services/bitcoin..Bitcoin+_handleTransactionFromSPV)
-        * [._subscribeToShard(shard)](#module_@fabric/core/services/bitcoin..Bitcoin+_subscribeToShard)
-        * [._connectSPV()](#module_@fabric/core/services/bitcoin..Bitcoin+_connectSPV)
-        * [.connect(addr)](#module_@fabric/core/services/bitcoin..Bitcoin+connect)
-        * [.start()](#module_@fabric/core/services/bitcoin..Bitcoin+start)
-        * [.stop()](#module_@fabric/core/services/bitcoin..Bitcoin+stop)
-    * _static_
-        * [.Transaction](#module_@fabric/core/services/bitcoin..Bitcoin.Transaction)
-        * [.MutableTransaction](#module_@fabric/core/services/bitcoin..Bitcoin.MutableTransaction)
-
-<a name="new_module_@fabric/core/services/bitcoin..Bitcoin_new"></a>
-
-#### new Bitcoin([settings])
-Creates an instance of the Bitcoin service.
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [settings] | <code>Object</code> | Map of configuration options for the Bitcoin service. |
-| [settings.network] | <code>String</code> | One of `regtest`, `testnet`, or `mainnet`. |
-| [settings.nodes] | <code>Array</code> | List of address:port pairs to trust. |
-| [settings.seeds] | <code>Array</code> | Bitcoin peers to request chain from (address:port). |
-| [settings.fullnode] | <code>Boolean</code> | Run a full node. |
-
-<a name="module_@fabric/core/services/bitcoin..Bitcoin+UAString"></a>
-
-#### bitcoin.UAString
-User Agent string for the Bitcoin P2P network.
-
-**Kind**: instance property of [<code>Bitcoin</code>](#module_@fabric/core/services/bitcoin..Bitcoin)  
-<a name="module_@fabric/core/services/bitcoin..Bitcoin+tip"></a>
-
-#### bitcoin.tip
-Chain tip (block hash of the chain with the most Proof of Work)
-
-**Kind**: instance property of [<code>Bitcoin</code>](#module_@fabric/core/services/bitcoin..Bitcoin)  
-<a name="module_@fabric/core/services/bitcoin..Bitcoin+height"></a>
-
-#### bitcoin.height
-Chain height (`=== length - 1`)
-
-**Kind**: instance property of [<code>Bitcoin</code>](#module_@fabric/core/services/bitcoin..Bitcoin)  
-<a name="module_@fabric/core/services/bitcoin..Bitcoin+_prepareTransaction"></a>
-
-#### bitcoin.\_prepareTransaction(obj)
-Prepares a [Transaction](Transaction) for storage.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#module_@fabric/core/services/bitcoin..Bitcoin)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| obj | <code>Transaction</code> | Transaction to prepare. |
-
-<a name="module_@fabric/core/services/bitcoin..Bitcoin+_handleCommittedBlock"></a>
-
-#### bitcoin.\_handleCommittedBlock(block)
-Receive a committed block.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#module_@fabric/core/services/bitcoin..Bitcoin)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| block | <code>Block</code> | Block to handle. |
-
-<a name="module_@fabric/core/services/bitcoin..Bitcoin+_handlePeerPacket"></a>
-
-#### bitcoin.\_handlePeerPacket(msg)
-Process a message from a peer in the Bitcoin network.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#module_@fabric/core/services/bitcoin..Bitcoin)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| msg | <code>PeerPacket</code> | Message from peer. |
-
-<a name="module_@fabric/core/services/bitcoin..Bitcoin+_handleBlockFromSPV"></a>
-
-#### bitcoin.\_handleBlockFromSPV(msg)
-Hand a [Block](Block) message as supplied by an [SPV](SPV) client.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#module_@fabric/core/services/bitcoin..Bitcoin)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| msg | <code>BlockMessage</code> | A [Message](#Message) as passed by the [SPV](SPV) source. |
-
-<a name="module_@fabric/core/services/bitcoin..Bitcoin+_handleTransactionFromSPV"></a>
-
-#### bitcoin.\_handleTransactionFromSPV(tx)
-Verify and interpret a [BitcoinTransaction](BitcoinTransaction), as received from an
-[SPVSource](SPVSource).
-
-**Kind**: instance method of [<code>Bitcoin</code>](#module_@fabric/core/services/bitcoin..Bitcoin)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| tx | <code>BitcoinTransaction</code> | Incoming transaction from the SPV source. |
-
-<a name="module_@fabric/core/services/bitcoin..Bitcoin+_subscribeToShard"></a>
-
-#### bitcoin.\_subscribeToShard(shard)
-Attach event handlers for a supplied list of addresses.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#module_@fabric/core/services/bitcoin..Bitcoin)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| shard | <code>Shard</code> | List of addresses to monitor. |
-
-<a name="module_@fabric/core/services/bitcoin..Bitcoin+_connectSPV"></a>
-
-#### bitcoin.\_connectSPV()
-Initiate outbound connections to configured SPV nodes.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#module_@fabric/core/services/bitcoin..Bitcoin)  
-<a name="module_@fabric/core/services/bitcoin..Bitcoin+connect"></a>
-
-#### bitcoin.connect(addr)
-Connect to a Fabric [Peer](#Peer).
-
-**Kind**: instance method of [<code>Bitcoin</code>](#module_@fabric/core/services/bitcoin..Bitcoin)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| addr | <code>String</code> | Address to connect to. |
-
-<a name="module_@fabric/core/services/bitcoin..Bitcoin+start"></a>
-
-#### bitcoin.start()
-Start the Bitcoin service, including the initiation of outbound requests.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#module_@fabric/core/services/bitcoin..Bitcoin)  
-<a name="module_@fabric/core/services/bitcoin..Bitcoin+stop"></a>
-
-#### bitcoin.stop()
-Stop the Bitcoin service.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#module_@fabric/core/services/bitcoin..Bitcoin)  
-<a name="module_@fabric/core/services/bitcoin..Bitcoin.Transaction"></a>
-
-#### Bitcoin.Transaction
-Provides bcoin's implementation of `TX` internally.  This static may be
-removed in the future.
-
-**Kind**: static property of [<code>Bitcoin</code>](#module_@fabric/core/services/bitcoin..Bitcoin)  
-<a name="module_@fabric/core/services/bitcoin..Bitcoin.MutableTransaction"></a>
-
-#### Bitcoin.MutableTransaction
-Provides bcoin's implementation of `MTX` internally.  This static may be
-removed in the future.
-
-**Kind**: static property of [<code>Bitcoin</code>](#module_@fabric/core/services/bitcoin..Bitcoin)  
 <a name="Actor"></a>
 
 ## Actor
@@ -1992,6 +1800,23 @@ Start listening for connections.
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: [<code>Peer</code>](#Peer) - Chainable method.  
 **Emits**: <code>Peer#event:ready</code>  
+<a name="Reader"></a>
+
+## Reader
+Read from a byte stream, seeking valid Fabric messages.
+
+**Kind**: global class  
+<a name="new_Reader_new"></a>
+
+### new Reader(settings)
+Create an instance of a [Reader](#Reader), which can listen to a byte stream
+for valid Fabric messages.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| settings | <code>Object</code> | Settings for the stream. |
+
 <a name="Remote"></a>
 
 ## Remote : [<code>Remote</code>](#Remote)
@@ -2513,9 +2338,10 @@ familiar semantics.
 
 
 * [Service](#Service)
-    * [new Service(config)](#new_Service_new)
+    * [new Service(settings)](#new_Service_new)
     * [.tick()](#Service+tick) ⇒ <code>Number</code>
     * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
+    * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
     * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
     * [.start()](#Service+start)
     * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
@@ -2527,15 +2353,15 @@ familiar semantics.
 
 <a name="new_Service_new"></a>
 
-### new Service(config)
+### new Service(settings)
 Create an instance of a Service.
 
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
-| config | <code>Object</code> |  | Configuration for this service. |
-| [config.networking] | <code>Boolean</code> | <code>true</code> | Whether or not to connect to the network. |
-| [config.@data] | <code>Object</code> |  | Internal data to assign. |
+| settings | <code>Object</code> |  | Configuration for this service. |
+| [settings.networking] | <code>Boolean</code> | <code>true</code> | Whether or not to connect to the network. |
+| [settings.@data] | <code>Object</code> |  | Internal data to assign. |
 
 <a name="Service+tick"></a>
 
@@ -2555,6 +2381,18 @@ Streams 2.0 spec: https://www.w3.org/TR/activitystreams-core/
 | Param | Type | Description |
 | --- | --- | --- |
 | message | <code>Activity</code> | Message object. |
+
+<a name="Service+lock"></a>
+
+### service.lock([duration]) ⇒ <code>Boolean</code>
+Attempt to acquire a lock for `duration` seconds.
+
+**Kind**: instance method of [<code>Service</code>](#Service)  
+**Returns**: <code>Boolean</code> - true if locked, false if unable to lock.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [duration] | <code>Number</code> | <code>1000</code> | Number of milliseconds to hold lock. |
 
 <a name="Service+route"></a>
 
@@ -3110,33 +2948,6 @@ The [Transition](#Transition) type reflects a change from one finite
 | --- | --- | --- |
 | settings | <code>Object</code> | Configuration for the transition object. |
 
-<a name="Treasury"></a>
-
-## Treasury
-Manage a set of KeyPairs and their balances.
-
-**Kind**: global class  
-
-* [Treasury](#Treasury)
-    * [new Treasury([settings])](#new_Treasury_new)
-    * [.generateAddress()](#Treasury+generateAddress)
-
-<a name="new_Treasury_new"></a>
-
-### new Treasury([settings])
-Create an instance of the Treasury.
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [settings] | <code>Object</code> | Configuration for the Treasury. |
-
-<a name="Treasury+generateAddress"></a>
-
-### treasury.generateAddress()
-Generates a new Bitcoin address.
-
-**Kind**: instance method of [<code>Treasury</code>](#Treasury)  
 <a name="Tree"></a>
 
 ## Tree
@@ -3478,6 +3289,542 @@ Handle a task.
 | --- | --- | --- |
 | input | [<code>Vector</code>](#Vector) | Input vector. |
 
+<a name="Bitcoin"></a>
+
+## Bitcoin ⇐ [<code>Service</code>](#Service)
+Manages interaction with the Bitcoin network.
+
+**Kind**: global class  
+**Extends**: [<code>Service</code>](#Service)  
+
+* [Bitcoin](#Bitcoin) ⇐ [<code>Service</code>](#Service)
+    * [new Bitcoin([settings])](#new_Bitcoin_new)
+    * _instance_
+        * [.UAString](#Bitcoin+UAString)
+        * [.tip](#Bitcoin+tip)
+        * [.height](#Bitcoin+height)
+        * [.broadcast(tx)](#Bitcoin+broadcast)
+        * [._prepareTransaction(obj)](#Bitcoin+_prepareTransaction)
+        * [._handleCommittedBlock(block)](#Bitcoin+_handleCommittedBlock)
+        * [._handlePeerPacket(msg)](#Bitcoin+_handlePeerPacket)
+        * [._handleBlockFromSPV(msg)](#Bitcoin+_handleBlockFromSPV)
+        * [._handleTransactionFromSPV(tx)](#Bitcoin+_handleTransactionFromSPV)
+        * [._subscribeToShard(shard)](#Bitcoin+_subscribeToShard)
+        * [._connectSPV()](#Bitcoin+_connectSPV)
+        * [.connect(addr)](#Bitcoin+connect)
+        * [.start()](#Bitcoin+start)
+        * [.stop()](#Bitcoin+stop)
+        * [.tick()](#Service+tick) ⇒ <code>Number</code>
+        * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
+        * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
+        * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
+        * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
+        * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
+        * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
+        * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
+        * [._send(message)](#Service+_send)
+    * _static_
+        * [.Transaction](#Bitcoin.Transaction)
+        * [.MutableTransaction](#Bitcoin.MutableTransaction)
+
+<a name="new_Bitcoin_new"></a>
+
+### new Bitcoin([settings])
+Creates an instance of the Bitcoin service.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Map of configuration options for the Bitcoin service. |
+| [settings.network] | <code>String</code> | One of `regtest`, `testnet`, or `mainnet`. |
+| [settings.nodes] | <code>Array</code> | List of address:port pairs to trust. |
+| [settings.seeds] | <code>Array</code> | Bitcoin peers to request chain from (address:port). |
+| [settings.fullnode] | <code>Boolean</code> | Run a full node. |
+
+<a name="Bitcoin+UAString"></a>
+
+### bitcoin.UAString
+User Agent string for the Bitcoin P2P network.
+
+**Kind**: instance property of [<code>Bitcoin</code>](#Bitcoin)  
+<a name="Bitcoin+tip"></a>
+
+### bitcoin.tip
+Chain tip (block hash of the chain with the most Proof of Work)
+
+**Kind**: instance property of [<code>Bitcoin</code>](#Bitcoin)  
+<a name="Bitcoin+height"></a>
+
+### bitcoin.height
+Chain height (`=== length - 1`)
+
+**Kind**: instance property of [<code>Bitcoin</code>](#Bitcoin)  
+<a name="Bitcoin+broadcast"></a>
+
+### bitcoin.broadcast(tx)
+Broadcast a transaction to the Bitcoin network.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Unstable**:   
+
+| Param | Type | Description |
+| --- | --- | --- |
+| tx | <code>TX</code> | Bitcoin transaction |
+
+<a name="Bitcoin+_prepareTransaction"></a>
+
+### bitcoin.\_prepareTransaction(obj)
+Prepares a [Transaction](Transaction) for storage.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| obj | <code>Transaction</code> | Transaction to prepare. |
+
+<a name="Bitcoin+_handleCommittedBlock"></a>
+
+### bitcoin.\_handleCommittedBlock(block)
+Receive a committed block.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| block | <code>Block</code> | Block to handle. |
+
+<a name="Bitcoin+_handlePeerPacket"></a>
+
+### bitcoin.\_handlePeerPacket(msg)
+Process a message from a peer in the Bitcoin network.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | <code>PeerPacket</code> | Message from peer. |
+
+<a name="Bitcoin+_handleBlockFromSPV"></a>
+
+### bitcoin.\_handleBlockFromSPV(msg)
+Hand a [Block](Block) message as supplied by an [SPV](SPV) client.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | <code>BlockMessage</code> | A [Message](#Message) as passed by the [SPV](SPV) source. |
+
+<a name="Bitcoin+_handleTransactionFromSPV"></a>
+
+### bitcoin.\_handleTransactionFromSPV(tx)
+Verify and interpret a [BitcoinTransaction](BitcoinTransaction), as received from an
+[SPVSource](SPVSource).
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| tx | <code>BitcoinTransaction</code> | Incoming transaction from the SPV source. |
+
+<a name="Bitcoin+_subscribeToShard"></a>
+
+### bitcoin.\_subscribeToShard(shard)
+Attach event handlers for a supplied list of addresses.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| shard | <code>Shard</code> | List of addresses to monitor. |
+
+<a name="Bitcoin+_connectSPV"></a>
+
+### bitcoin.\_connectSPV()
+Initiate outbound connections to configured SPV nodes.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+<a name="Bitcoin+connect"></a>
+
+### bitcoin.connect(addr)
+Connect to a Fabric [Peer](#Peer).
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>connect</code>](#Service+connect)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| addr | <code>String</code> | Address to connect to. |
+
+<a name="Bitcoin+start"></a>
+
+### bitcoin.start()
+Start the Bitcoin service, including the initiation of outbound requests.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>start</code>](#Service+start)  
+<a name="Bitcoin+stop"></a>
+
+### bitcoin.stop()
+Stop the Bitcoin service.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+<a name="Service+tick"></a>
+
+### bitcoin.tick() ⇒ <code>Number</code>
+Move forward one clock cycle.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+<a name="Service+handler"></a>
+
+### bitcoin.handler(message) ⇒ [<code>Service</code>](#Service)
+Default route handler for an incoming message.  Follows the Activity
+Streams 2.0 spec: https://www.w3.org/TR/activitystreams-core/
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: [<code>Service</code>](#Service) - Chainable method.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| message | <code>Activity</code> | Message object. |
+
+<a name="Service+lock"></a>
+
+### bitcoin.lock([duration]) ⇒ <code>Boolean</code>
+Attempt to acquire a lock for `duration` seconds.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>Boolean</code> - true if locked, false if unable to lock.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [duration] | <code>Number</code> | <code>1000</code> | Number of milliseconds to hold lock. |
+
+<a name="Service+route"></a>
+
+### bitcoin.route(msg) ⇒ <code>Promise</code>
+Resolve a [State](#State) from a particular [Message](#Message) object.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>Promise</code> - Resolves with resulting [State](#State).  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | [<code>Message</code>](#Message) | Explicit Fabric [Message](#Message). |
+
+<a name="Service+_GET"></a>
+
+### bitcoin.\_GET(path) ⇒ <code>Promise</code>
+Retrieve a value from the Service's state.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>Promise</code> - Resolves with the result.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | Path of the value to retrieve. |
+
+<a name="Service+_PUT"></a>
+
+### bitcoin.\_PUT(path, value, [commit]) ⇒ <code>Promise</code>
+Store a value in the Service's state.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>Promise</code> - Resolves with with stored document.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| path | <code>String</code> |  | Path to store the value at. |
+| value | <code>Object</code> |  | Document to store. |
+| [commit] | <code>Boolean</code> | <code>false</code> | Sign the resulting state. |
+
+<a name="Service+send"></a>
+
+### bitcoin.send(channel, message) ⇒ [<code>Service</code>](#Service)
+Send a message to a channel.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: [<code>Service</code>](#Service) - Chainable method.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| channel | <code>String</code> | Channel name to which the message will be sent. |
+| message | <code>String</code> | Content of the message to send. |
+
+<a name="Service+_registerActor"></a>
+
+### bitcoin.\_registerActor(actor) ⇒ <code>Promise</code>
+Register an [Actor](#Actor) with the [Service](#Service).
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>\_registerActor</code>](#Service+_registerActor)  
+**Returns**: <code>Promise</code> - Resolves upon successful registration.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| actor | <code>Object</code> | Instance of the [Actor](#Actor). |
+
+<a name="Service+_send"></a>
+
+### bitcoin.\_send(message)
+Sends a message.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| message | <code>Mixed</code> | Message to send. |
+
+<a name="Bitcoin.Transaction"></a>
+
+### Bitcoin.Transaction
+Provides bcoin's implementation of `TX` internally.  This static may be
+removed in the future.
+
+**Kind**: static property of [<code>Bitcoin</code>](#Bitcoin)  
+<a name="Bitcoin.MutableTransaction"></a>
+
+### Bitcoin.MutableTransaction
+Provides bcoin's implementation of `MTX` internally.  This static may be
+removed in the future.
+
+**Kind**: static property of [<code>Bitcoin</code>](#Bitcoin)  
+<a name="Bitmessage"></a>
+
+## Bitmessage ⇐ [<code>Interface</code>](#Interface)
+Manages interaction with the Bitmessage network.
+
+**Kind**: global class  
+**Extends**: [<code>Interface</code>](#Interface)  
+
+* [Bitmessage](#Bitmessage) ⇐ [<code>Interface</code>](#Interface)
+    * [new Bitmessage([settings])](#new_Bitmessage_new)
+    * [.start()](#Bitmessage+start)
+    * [.stop()](#Bitmessage+stop)
+    * [.cycle(val)](#Interface+cycle)
+    * [.log(...inputs)](#Interface+log)
+    * [.now()](#Interface+now) ⇒ <code>Number</code>
+
+<a name="new_Bitmessage_new"></a>
+
+### new Bitmessage([settings])
+Creates an instance of the Bitmessage service.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Map of configuration options for the Bitmessage service. |
+| [settings.network] | <code>String</code> | One of `regtest`, `testnet`, or `mainnet`. |
+| [settings.nodes] | <code>Array</code> | List of address:port pairs to trust. |
+| [settings.seeds] | <code>Array</code> | Bitmessage peers to request chain from (address:port). |
+| [settings.fullnode] | <code>Boolean</code> | Run a full node. |
+
+<a name="Bitmessage+start"></a>
+
+### bitmessage.start()
+Start the Bitmessage service, including the initiation of outbound requests.
+
+**Kind**: instance method of [<code>Bitmessage</code>](#Bitmessage)  
+**Overrides**: [<code>start</code>](#Interface+start)  
+<a name="Bitmessage+stop"></a>
+
+### bitmessage.stop()
+Stop the Bitmessage service.
+
+**Kind**: instance method of [<code>Bitmessage</code>](#Bitmessage)  
+**Overrides**: [<code>stop</code>](#Interface+stop)  
+<a name="Interface+cycle"></a>
+
+### bitmessage.cycle(val)
+Ticks the clock with a named [Cycle](Cycle).
+
+**Kind**: instance method of [<code>Bitmessage</code>](#Bitmessage)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| val | <code>String</code> | Name of cycle to scribe. |
+
+<a name="Interface+log"></a>
+
+### bitmessage.log(...inputs)
+Log some output to the console.
+
+**Kind**: instance method of [<code>Bitmessage</code>](#Bitmessage)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| ...inputs | <code>any</code> | Components of the message to long.  Can be a single {@link} String, many [String](String) objects, or anything else. |
+
+<a name="Interface+now"></a>
+
+### bitmessage.now() ⇒ <code>Number</code>
+Returns current timestamp.
+
+**Kind**: instance method of [<code>Bitmessage</code>](#Bitmessage)  
+<a name="Elements"></a>
+
+## Elements ⇐ [<code>Interface</code>](#Interface)
+Manages interaction with the Elements network.
+
+**Kind**: global class  
+**Extends**: [<code>Interface</code>](#Interface)  
+
+* [Elements](#Elements) ⇐ [<code>Interface</code>](#Interface)
+    * [new Elements([settings])](#new_Elements_new)
+    * [._prepareTransaction(obj)](#Elements+_prepareTransaction)
+    * [._handleCommittedBlock(block)](#Elements+_handleCommittedBlock)
+    * [._handlePeerPacket(msg)](#Elements+_handlePeerPacket)
+    * [._handleBlockFromSPV(msg)](#Elements+_handleBlockFromSPV)
+    * [._handleTransactionFromSPV(tx)](#Elements+_handleTransactionFromSPV)
+    * [._subscribeToShard(shard)](#Elements+_subscribeToShard)
+    * [._connectSPV()](#Elements+_connectSPV)
+    * [.connect(addr)](#Elements+connect)
+    * [.start()](#Elements+start)
+    * [.stop()](#Elements+stop)
+    * [.cycle(val)](#Interface+cycle)
+    * [.log(...inputs)](#Interface+log)
+    * [.now()](#Interface+now) ⇒ <code>Number</code>
+
+<a name="new_Elements_new"></a>
+
+### new Elements([settings])
+Creates an instance of the Elements service.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Map of configuration options for the Elements service. |
+| [settings.network] | <code>String</code> | One of `regtest`, `testnet`, or `mainnet`. |
+| [settings.nodes] | <code>Array</code> | List of address:port pairs to trust. |
+| [settings.seeds] | <code>Array</code> | Elements peers to request chain from (address:port). |
+| [settings.fullnode] | <code>Boolean</code> | Run a full node. |
+
+<a name="Elements+_prepareTransaction"></a>
+
+### elements.\_prepareTransaction(obj)
+Prepares a [Transaction](Transaction) for storage.
+
+**Kind**: instance method of [<code>Elements</code>](#Elements)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| obj | <code>Transaction</code> | Transaction to prepare. |
+
+<a name="Elements+_handleCommittedBlock"></a>
+
+### elements.\_handleCommittedBlock(block)
+Receive a committed block.
+
+**Kind**: instance method of [<code>Elements</code>](#Elements)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| block | <code>Block</code> | Block to handle. |
+
+<a name="Elements+_handlePeerPacket"></a>
+
+### elements.\_handlePeerPacket(msg)
+Process a message from a peer in the Elements network.
+
+**Kind**: instance method of [<code>Elements</code>](#Elements)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | <code>PeerPacket</code> | Message from peer. |
+
+<a name="Elements+_handleBlockFromSPV"></a>
+
+### elements.\_handleBlockFromSPV(msg)
+Hand a [Block](Block) message as supplied by an [SPV](SPV) client.
+
+**Kind**: instance method of [<code>Elements</code>](#Elements)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | <code>BlockMessage</code> | A [Message](#Message) as passed by the [SPV](SPV) source. |
+
+<a name="Elements+_handleTransactionFromSPV"></a>
+
+### elements.\_handleTransactionFromSPV(tx)
+Verify and interpret a [ElementsTransaction](ElementsTransaction), as received from an
+[SPVSource](SPVSource).
+
+**Kind**: instance method of [<code>Elements</code>](#Elements)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| tx | <code>ElementsTransaction</code> | Incoming transaction from the SPV source. |
+
+<a name="Elements+_subscribeToShard"></a>
+
+### elements.\_subscribeToShard(shard)
+Attach event handlers for a supplied list of addresses.
+
+**Kind**: instance method of [<code>Elements</code>](#Elements)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| shard | <code>Shard</code> | List of addresses to monitor. |
+
+<a name="Elements+_connectSPV"></a>
+
+### elements.\_connectSPV()
+Initiate outbound connections to configured SPV nodes.
+
+**Kind**: instance method of [<code>Elements</code>](#Elements)  
+<a name="Elements+connect"></a>
+
+### elements.connect(addr)
+Connect to a Fabric [Peer](#Peer).
+
+**Kind**: instance method of [<code>Elements</code>](#Elements)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| addr | <code>String</code> | Address to connect to. |
+
+<a name="Elements+start"></a>
+
+### elements.start()
+Start the Elements service, including the initiation of outbound requests.
+
+**Kind**: instance method of [<code>Elements</code>](#Elements)  
+**Overrides**: [<code>start</code>](#Interface+start)  
+<a name="Elements+stop"></a>
+
+### elements.stop()
+Stop the Elements service.
+
+**Kind**: instance method of [<code>Elements</code>](#Elements)  
+**Overrides**: [<code>stop</code>](#Interface+stop)  
+<a name="Interface+cycle"></a>
+
+### elements.cycle(val)
+Ticks the clock with a named [Cycle](Cycle).
+
+**Kind**: instance method of [<code>Elements</code>](#Elements)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| val | <code>String</code> | Name of cycle to scribe. |
+
+<a name="Interface+log"></a>
+
+### elements.log(...inputs)
+Log some output to the console.
+
+**Kind**: instance method of [<code>Elements</code>](#Elements)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| ...inputs | <code>any</code> | Components of the message to long.  Can be a single {@link} String, many [String](String) objects, or anything else. |
+
+<a name="Interface+now"></a>
+
+### elements.now() ⇒ <code>Number</code>
+Returns current timestamp.
+
+**Kind**: instance method of [<code>Elements</code>](#Elements)  
 <a name="Exchange"></a>
 
 ## Exchange
@@ -3498,164 +3845,181 @@ find and trade with real peers.
 | settings.fees | <code>Object</code> | Map of fee settings (all values in BTC). |
 | settings.fees.minimum | <code>Object</code> | Minimum fee (satoshis). |
 
-<a name="Matrix"></a>
+<a name="Liquid"></a>
 
-## Matrix ⇐ [<code>Service</code>](#Service)
-Service for interacting with Matrix.
+## Liquid ⇐ [<code>Interface</code>](#Interface)
+Manages interaction with the Liquid network.
 
 **Kind**: global class  
-**Extends**: [<code>Service</code>](#Service)  
+**Extends**: [<code>Interface</code>](#Interface)  
 
-* [Matrix](#Matrix) ⇐ [<code>Service</code>](#Service)
-    * [new Matrix([settings])](#new_Matrix_new)
-    * [.state](#Matrix+state)
-    * [._registerActor(actor)](#Matrix+_registerActor)
-    * [.start()](#Matrix+start)
-    * [.stop()](#Matrix+stop)
-    * [.tick()](#Service+tick) ⇒ <code>Number</code>
-    * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
-    * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
-    * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
-    * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
-    * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
-    * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
-    * [._send(message)](#Service+_send)
+* [Liquid](#Liquid) ⇐ [<code>Interface</code>](#Interface)
+    * [new Liquid([settings])](#new_Liquid_new)
+    * [._prepareTransaction(obj)](#Liquid+_prepareTransaction)
+    * [._handleCommittedBlock(block)](#Liquid+_handleCommittedBlock)
+    * [._handlePeerPacket(msg)](#Liquid+_handlePeerPacket)
+    * [._handleBlockFromSPV(msg)](#Liquid+_handleBlockFromSPV)
+    * [._handleTransactionFromSPV(tx)](#Liquid+_handleTransactionFromSPV)
+    * [._subscribeToShard(shard)](#Liquid+_subscribeToShard)
+    * [._connectSPV()](#Liquid+_connectSPV)
+    * [.connect(addr)](#Liquid+connect)
+    * [.start()](#Liquid+start)
+    * [.stop()](#Liquid+stop)
+    * [.cycle(val)](#Interface+cycle)
+    * [.log(...inputs)](#Interface+log)
+    * [.now()](#Interface+now) ⇒ <code>Number</code>
 
-<a name="new_Matrix_new"></a>
+<a name="new_Liquid_new"></a>
 
-### new Matrix([settings])
-Create an instance of a Matrix client, connect to the
-network, and relay messages received from therein.
+### new Liquid([settings])
+Creates an instance of the Liquid service.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Map of configuration options for the Liquid service. |
+| [settings.network] | <code>String</code> | One of `regtest`, `testnet`, or `mainnet`. |
+| [settings.nodes] | <code>Array</code> | List of address:port pairs to trust. |
+| [settings.seeds] | <code>Array</code> | Liquid peers to request chain from (address:port). |
+| [settings.fullnode] | <code>Boolean</code> | Run a full node. |
+
+<a name="Liquid+_prepareTransaction"></a>
+
+### liquid.\_prepareTransaction(obj)
+Prepares a [Transaction](Transaction) for storage.
+
+**Kind**: instance method of [<code>Liquid</code>](#Liquid)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| obj | <code>Transaction</code> | Transaction to prepare. |
+
+<a name="Liquid+_handleCommittedBlock"></a>
+
+### liquid.\_handleCommittedBlock(block)
+Receive a committed block.
+
+**Kind**: instance method of [<code>Liquid</code>](#Liquid)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| block | <code>Block</code> | Block to handle. |
+
+<a name="Liquid+_handlePeerPacket"></a>
+
+### liquid.\_handlePeerPacket(msg)
+Process a message from a peer in the Liquid network.
+
+**Kind**: instance method of [<code>Liquid</code>](#Liquid)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | <code>PeerPacket</code> | Message from peer. |
+
+<a name="Liquid+_handleBlockFromSPV"></a>
+
+### liquid.\_handleBlockFromSPV(msg)
+Hand a [Block](Block) message as supplied by an [SPV](SPV) client.
+
+**Kind**: instance method of [<code>Liquid</code>](#Liquid)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | <code>BlockMessage</code> | A [Message](#Message) as passed by the [SPV](SPV) source. |
+
+<a name="Liquid+_handleTransactionFromSPV"></a>
+
+### liquid.\_handleTransactionFromSPV(tx)
+Verify and interpret a [LiquidTransaction](LiquidTransaction), as received from an
+[SPVSource](SPVSource).
+
+**Kind**: instance method of [<code>Liquid</code>](#Liquid)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| tx | <code>LiquidTransaction</code> | Incoming transaction from the SPV source. |
+
+<a name="Liquid+_subscribeToShard"></a>
+
+### liquid.\_subscribeToShard(shard)
+Attach event handlers for a supplied list of addresses.
+
+**Kind**: instance method of [<code>Liquid</code>](#Liquid)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| shard | <code>Shard</code> | List of addresses to monitor. |
+
+<a name="Liquid+_connectSPV"></a>
+
+### liquid.\_connectSPV()
+Initiate outbound connections to configured SPV nodes.
+
+**Kind**: instance method of [<code>Liquid</code>](#Liquid)  
+<a name="Liquid+connect"></a>
+
+### liquid.connect(addr)
+Connect to a Fabric [Peer](#Peer).
+
+**Kind**: instance method of [<code>Liquid</code>](#Liquid)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| addr | <code>String</code> | Address to connect to. |
+
+<a name="Liquid+start"></a>
+
+### liquid.start()
+Start the Liquid service, including the initiation of outbound requests.
+
+**Kind**: instance method of [<code>Liquid</code>](#Liquid)  
+**Overrides**: [<code>start</code>](#Interface+start)  
+<a name="Liquid+stop"></a>
+
+### liquid.stop()
+Stop the Liquid service.
+
+**Kind**: instance method of [<code>Liquid</code>](#Liquid)  
+**Overrides**: [<code>stop</code>](#Interface+stop)  
+<a name="Interface+cycle"></a>
+
+### liquid.cycle(val)
+Ticks the clock with a named [Cycle](Cycle).
+
+**Kind**: instance method of [<code>Liquid</code>](#Liquid)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| val | <code>String</code> | Name of cycle to scribe. |
+
+<a name="Interface+log"></a>
+
+### liquid.log(...inputs)
+Log some output to the console.
+
+**Kind**: instance method of [<code>Liquid</code>](#Liquid)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| ...inputs | <code>any</code> | Components of the message to long.  Can be a single {@link} String, many [String](String) objects, or anything else. |
+
+<a name="Interface+now"></a>
+
+### liquid.now() ⇒ <code>Number</code>
+Returns current timestamp.
+
+**Kind**: instance method of [<code>Liquid</code>](#Liquid)  
+<a name="Markdown"></a>
+
+## Markdown
+**Kind**: global class  
+<a name="new_Markdown_new"></a>
+
+### new Markdown(settings)
+Instantiate an instance of the Markdown service.
 
 
 | Param | Type | Description |
 | --- | --- | --- |
-| [settings] | <code>Object</code> | Configuration values. |
-
-<a name="Matrix+state"></a>
-
-### matrix.state
-Getter for [State](#State).
-
-**Kind**: instance property of [<code>Matrix</code>](#Matrix)  
-<a name="Matrix+_registerActor"></a>
-
-### matrix.\_registerActor(actor)
-Register an Actor on the network.
-
-**Kind**: instance method of [<code>Matrix</code>](#Matrix)  
-**Overrides**: [<code>\_registerActor</code>](#Service+_registerActor)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| actor | <code>Object</code> | Actor to register. |
-| actor.pubkey | <code>Object</code> | Hex-encoded pubkey. |
-
-<a name="Matrix+start"></a>
-
-### matrix.start()
-Start the service, including the initiation of an outbound connection
-to any peers designated in the service's configuration.
-
-**Kind**: instance method of [<code>Matrix</code>](#Matrix)  
-**Overrides**: [<code>start</code>](#Service+start)  
-<a name="Matrix+stop"></a>
-
-### matrix.stop()
-Stop the service.
-
-**Kind**: instance method of [<code>Matrix</code>](#Matrix)  
-<a name="Service+tick"></a>
-
-### matrix.tick() ⇒ <code>Number</code>
-Move forward one clock cycle.
-
-**Kind**: instance method of [<code>Matrix</code>](#Matrix)  
-<a name="Service+handler"></a>
-
-### matrix.handler(message) ⇒ [<code>Service</code>](#Service)
-Default route handler for an incoming message.  Follows the Activity
-Streams 2.0 spec: https://www.w3.org/TR/activitystreams-core/
-
-**Kind**: instance method of [<code>Matrix</code>](#Matrix)  
-**Returns**: [<code>Service</code>](#Service) - Chainable method.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| message | <code>Activity</code> | Message object. |
-
-<a name="Service+route"></a>
-
-### matrix.route(msg) ⇒ <code>Promise</code>
-Resolve a [State](#State) from a particular [Message](#Message) object.
-
-**Kind**: instance method of [<code>Matrix</code>](#Matrix)  
-**Returns**: <code>Promise</code> - Resolves with resulting [State](#State).  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| msg | [<code>Message</code>](#Message) | Explicit Fabric [Message](#Message). |
-
-<a name="Service+_GET"></a>
-
-### matrix.\_GET(path) ⇒ <code>Promise</code>
-Retrieve a value from the Service's state.
-
-**Kind**: instance method of [<code>Matrix</code>](#Matrix)  
-**Returns**: <code>Promise</code> - Resolves with the result.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | <code>String</code> | Path of the value to retrieve. |
-
-<a name="Service+_PUT"></a>
-
-### matrix.\_PUT(path, value, [commit]) ⇒ <code>Promise</code>
-Store a value in the Service's state.
-
-**Kind**: instance method of [<code>Matrix</code>](#Matrix)  
-**Returns**: <code>Promise</code> - Resolves with with stored document.  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| path | <code>String</code> |  | Path to store the value at. |
-| value | <code>Object</code> |  | Document to store. |
-| [commit] | <code>Boolean</code> | <code>false</code> | Sign the resulting state. |
-
-<a name="Service+connect"></a>
-
-### matrix.connect(notify) ⇒ <code>Promise</code>
-Attach to network.
-
-**Kind**: instance method of [<code>Matrix</code>](#Matrix)  
-**Returns**: <code>Promise</code> - Resolves to [Fabric](#Fabric).  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| notify | <code>Boolean</code> | <code>true</code> | Commit to changes. |
-
-<a name="Service+send"></a>
-
-### matrix.send(channel, message) ⇒ [<code>Service</code>](#Service)
-Send a message to a channel.
-
-**Kind**: instance method of [<code>Matrix</code>](#Matrix)  
-**Returns**: [<code>Service</code>](#Service) - Chainable method.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| channel | <code>String</code> | Channel name to which the message will be sent. |
-| message | <code>String</code> | Content of the message to send. |
-
-<a name="Service+_send"></a>
-
-### matrix.\_send(message)
-Sends a message.
-
-**Kind**: instance method of [<code>Matrix</code>](#Matrix)  
-**Overrides**: [<code>\_send</code>](#Service+_send)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| message | <code>Mixed</code> | Message to send. |
+| settings | <code>Config</code> | Map of configuration values. |
 
