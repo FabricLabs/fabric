@@ -49,6 +49,12 @@ class Reader extends EventEmitter {
     this._readFabricFrame();
   }
 
+  _addBytes (data) {
+    for (let i = 0; i < data.length; i++) {
+      this.queue.push(data[i]);
+    }
+  }
+
   _readBytes (count) {
     const bytes = [];
 
@@ -66,6 +72,20 @@ class Reader extends EventEmitter {
       bytes.push(this.queue.shift());
     }
 
+    return bytes;
+  }
+
+  _promiseBytes (count = 1) {
+    const self = this;
+    return new Promise((resolve, reject) => {
+      const bytes = self._readBytes(count);
+      return resolve(bytes);
+    });
+  }
+
+  _readFrame (size = 1) {
+    const bytes = this._readBytes(size);
+    this.emit('candidate', bytes);
     return bytes;
   }
 

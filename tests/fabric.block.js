@@ -19,6 +19,11 @@ describe('@fabric/core/types/block', function () {
       assert.strictEqual(block.id, '6d2deb1d439472428e7cdeed4ee8e7c708502cfdc037122139d1e9898f0b6b68');
     });
 
+    it('can sign a known block', function () {
+      const block = new Block({ debug: true, input: 'Hello, world.' });
+      assert.strictEqual(block.id, '6d2deb1d439472428e7cdeed4ee8e7c708502cfdc037122139d1e9898f0b6b68');
+    });
+
     xit('can smoothly create a new block from data', function () {
       let block = new Block({
         name: 'fun'

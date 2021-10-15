@@ -20,6 +20,14 @@ class Block extends Actor {
     return this._state.transactions;
   }
 
+  sign () {
+    const actor = new Actor(this._state);
+    const data = actor.toString();
+    const array = this.key._sign(data);
+    this._state.signature = Buffer.from(array);
+    return this._state.signature;
+  }
+
   validate () {
     // TODO: implement validators
   }

@@ -11,6 +11,15 @@
     <![endif]-->
   <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
   <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+  <script>
+    window.dataLayer = window.dataLayer || [];
+
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag('js', new Date());
+    gtag('config', 'G-09Y57FL980');
+  </script>
 </head>
 
 <body>
@@ -24,9 +33,9 @@
 
       <header>
 
-        <h2><span class="attribs"><span class="type-signature"></span></span>Fabric<span class="signature">(settings<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h2>
+        <h2><span class="attribs"><span class="type-signature"></span></span>Fabric<span class="signature">(config)</span><span class="type-signature"></span></h2>
 
-        <div class="class-description">Interact with the Fabric network as if it were a local object.</div>
+        <div class="class-description">Reliable decentralized infrastructure.</div>
 
 
       </header>
@@ -41,12 +50,21 @@
 
 
 
-          <h4 class="name" id="Fabric"><span class="type-signature"></span>new Fabric<span class="signature">(settings<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h4>
+          <h4 class="name" id="Fabric"><span class="type-signature"></span>new Fabric<span class="signature">(config)</span><span class="type-signature"></span></h4>
 
 
 
 
 
+
+          <div class="description">
+            The <a href="Fabric.html">Fabric</a> type implements a peer-to-peer protocol for
+            establishing and settling of mutually-agreed upon proofs of
+            work. Contract execution takes place in the local node first,
+            then is optionally shared with the network.
+
+            Utilizing
+          </div>
 
 
 
@@ -69,7 +87,59 @@
                 <th>Type</th>
 
 
-                <th>Attributes</th>
+
+
+
+                <th class="last">Description</th>
+              </tr>
+            </thead>
+
+            <tbody>
+
+
+              <tr>
+
+                <td class="name"><code>config</code></td>
+
+
+                <td class="type">
+
+
+                  <span class="param-type"><a href="Vector.html">Vector</a></span>
+
+
+
+                </td>
+
+
+
+
+
+                <td class="description last">Initial configuration for the Fabric engine. This can be considered the "genesis" state for any contract using the system. If a chain of events is maintained over long periods of time, `state` can be considered "in contention", and it is demonstrated that the outstanding value of the contract remains to be settled.</td>
+              </tr>
+
+
+            </tbody>
+          </table>
+
+
+
+
+
+
+          <h5 class="subsection-title">Properties:</h5>
+
+
+
+          <table class="props">
+            <thead>
+              <tr>
+
+                <th>Name</th>
+
+
+                <th>Type</th>
+
 
 
 
@@ -83,24 +153,13 @@
 
               <tr>
 
-                <td class="name"><code>settings</code></td>
+                <td class="name"><code>Block</code></td>
 
 
                 <td class="type">
 
 
-                  <span class="param-type">Object</span>
-
-
-
-                </td>
-
-
-                <td class="attributes">
-
-                  &lt;optional><br>
-
-
+                  <span class="param-type">Class</span>
 
 
 
@@ -109,75 +168,13 @@
 
 
 
-                <td class="description last">Configuration for the layer.
-                  <h6>Properties</h6>
 
-
-                  <table class="params">
-                    <thead>
-                      <tr>
-
-                        <th>Name</th>
-
-
-                        <th>Type</th>
-
-
-                        <th>Attributes</th>
-
-
-
-
-                        <th class="last">Description</th>
-                      </tr>
-                    </thead>
-
-                    <tbody>
-
-
-                      <tr>
-
-                        <td class="name"><code>port</code></td>
-
-
-                        <td class="type">
-
-
-                          <span class="param-type">Object</span>
-
-
-
-                        </td>
-
-
-                        <td class="attributes">
-
-                          &lt;optional><br>
-
-
-
-
-
-                        </td>
-
-
-
-
-                        <td class="description last">Port to bind to for incoming TCP connections.</td>
-                      </tr>
-
-
-                    </tbody>
-                  </table>
-
-                </td>
+                <td class="description last"></td>
               </tr>
 
 
             </tbody>
           </table>
-
-
 
 
 
@@ -213,7 +210,7 @@
             <dd class="tag-source">
               <ul class="dummy">
                 <li>
-                  <a href="types_fabric.js.html">types/fabric.js</a>, <a href="types_fabric.js.html#line24">line 24</a>
+                  <a href="types_fabric.js.html">types/fabric.js</a>, <a href="types_fabric.js.html#line56">line 56</a>
                 </li>
               </ul>
             </dd>
@@ -229,6 +226,13 @@
 
 
 
+
+          <h5>Fires:</h5>
+          <ul>
+            <li>Fabric#event:thread</li>
+
+            <li>Fabric#event:step Emitted on a `compute` step.</li>
+          </ul>
 
 
 
@@ -263,6 +267,588 @@
 
 
 
+        <h3 class="subsection-title">Methods</h3>
+
+
+
+
+
+
+
+        <h4 class="name" id="compute"><span class="type-signature"></span>compute<span class="signature">()</span><span class="type-signature"> &rarr; {<a href="Fabric.html">Fabric</a>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Process the current stack.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_fabric.js.html">types/fabric.js</a>, <a href="types_fabric.js.html#line429">line 429</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Resulting instance of the stack.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="Fabric.html">Fabric</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="push"><span class="type-signature"></span>push<span class="signature">(value)</span><span class="type-signature"> &rarr; {<a href="Stack.html">Stack</a>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Push an instruction onto the stack.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>value</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Instruction</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_fabric.js.html">types/fabric.js</a>, <a href="types_fabric.js.html#line268">line 268</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="Stack.html">Stack</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="register"><span class="type-signature">(async) </span>register<span class="signature">(service)</span><span class="type-signature"></span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Register an available <a href="Service.html">Service</a> using an ES6 Class.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>service</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Class</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">The ES6 Class.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_fabric.js.html">types/fabric.js</a>, <a href="types_fabric.js.html#line198">line 198</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="trust"><span class="type-signature"></span>trust<span class="signature">(source)</span><span class="type-signature"> &rarr; {<a href="Fabric.html">Fabric</a>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Blindly consume messages from a Source, relying on `this.chain` to
+          verify results.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>source</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">EventEmitter</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Any object which implements the `EventEmitter` pattern.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_fabric.js.html">types/fabric.js</a>, <a href="types_fabric.js.html#line339">line 339</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Returns itself.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="Fabric.html">Fabric</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
 
 
 
@@ -276,33 +862,37 @@
   </div>
   <nav>
     <h2><a href="index.html">Home</a></h2>
-    <h3>Modules</h3>
-    <ul>
-      <li><a href="module-services_bitcoin.html">services/bitcoin</a></li>
-      <li><a href="module-services_matrix.html">services/matrix</a></li>
-    </ul>
     <h3>Classes</h3>
     <ul>
+      <li><a href="Actor.html">Actor</a></li>
+      <li><a href="Aggregator.html">Aggregator</a></li>
       <li><a href="App.html">App</a></li>
+      <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="Bitmessage.html">Bitmessage</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Compiler.html">Compiler</a></li>
       <li><a href="Consensus.html">Consensus</a></li>
+      <li><a href="Elements.html">Elements</a></li>
       <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Exchange.html">Exchange</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
+      <li><a href="KeyStore.html">KeyStore</a></li>
+      <li><a href="Liquid.html">Liquid</a></li>
       <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Markdown.html">Markdown</a></li>
       <li><a href="Mempool.html">Mempool</a></li>
       <li><a href="Message.html">Message</a></li>
-      <li><a href="module-services_bitcoin-Bitcoin.html">Bitcoin</a></li>
-      <li><a href="module-services_matrix-Matrix.html">Matrix</a></li>
       <li><a href="Oracle.html">Oracle</a></li>
       <li><a href="Path.html">Path</a></li>
       <li><a href="Peer.html">Peer</a></li>
+      <li><a href="Reader.html">Reader</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Router.html">Router</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
@@ -316,10 +906,15 @@
       <li><a href="Swap.html">Swap</a></li>
       <li><a href="Swarm.html">Swarm</a></li>
       <li><a href="Transition.html">Transition</a></li>
+      <li><a href="Tree.html">Tree</a></li>
       <li><a href="Value.html">Value</a></li>
       <li><a href="Vector.html">Vector</a></li>
       <li><a href="Walker.html">Walker</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
+    </ul>
+    <h3>Events</h3>
+    <ul>
+      <li><a href="Aggregator.html#event:commit">commit</a></li>
     </ul>
   </nav>
   <br class="clear" />
