@@ -4,10 +4,11 @@ const {
   MAX_MESSAGE_SIZE
 } = require('../constants');
 
+// Dependencies
 const crypto = require('crypto');
+const EventEmitter = require('events').EventEmitter;
 const monitor = require('fast-json-patch');
 const pointer = require('json-pointer');
-const EventEmitter = require('events').EventEmitter;
 
 /**
  * The {@link State} is the core of most {@link User}-facing interactions.  To

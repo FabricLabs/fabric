@@ -1,9 +1,7 @@
 'use strict';
 
-// TODO: note that generally, requirements are loosely ordered by
-// their relative importance to the file in question
-const crypto = require('crypto');
 const level = require('level');
+const crypto = require('crypto');
 const pointer = require('json-pointer');
 
 // internal components
@@ -28,7 +26,9 @@ class Store extends Scribe {
     super(settings);
 
     this.settings = Object.assign({
+      name: '@fabric/store',
       path: './stores/store',
+      type: 'leveldb',
       persistent: true,
       verbosity: 2, // 0 none, 1 error, 2 warning, 3 notice, 4 debug
     }, settings);

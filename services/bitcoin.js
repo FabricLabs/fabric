@@ -1,5 +1,8 @@
 'use strict';
 
+// Services
+const ZMQ = require('./zmq');
+
 // Types
 const Actor = require('../types/actor');
 const Collection = require('../types/collection');
@@ -54,11 +57,10 @@ class Bitcoin extends Service {
       mining: false,
       listen: false,
       fullnode: false,
+      zmq: true,
       nodes: ['127.0.0.1'],
       seeds: ['127.0.0.1'],
-      servers: [
-        'http://username:password@localhost:18443'
-      ],
+      servers: [],
       peers: [],
       port: 18444,
       interval: 10 * 60 * 1000, // every 10 minutes, write a checkpoint
@@ -148,6 +150,9 @@ class Bitcoin extends Service {
       workers: true
     });
 
+    // TODO: import ZMQ settings
+    this.zmq = new ZMQ();
+
     // Define Bitcoin P2P Messages
     this.define('VersionPacket', { type: 0 });
     this.define('VerAckPacket', { type: 1 });
@@ -201,6 +206,21 @@ class Bitcoin extends Service {
    */
   get height () {
     return this.fullnode.chain.height;
+  }
+
+  async tick () {
+    ++this.clock;
+
+    await this._checkRPCBlockNumber();
+    await this._checkAllTargetBalances();
+
+    const beat = Message.fromVector(['Generic', {
+      clock: this.clock,
+      created: now,
+      state: this._state
+    }]);
+
+    this.emit('beat', beat);
   }
 
   /**
@@ -619,6 +639,11 @@ class Bitcoin extends Service {
     }
   }
 
+  async _startZMQ () {
+    await this.zmq.start();
+    return this;
+  }
+
   async _startLocalNode () {
     const self = this;
 
@@ -668,7 +693,7 @@ class Bitcoin extends Service {
     return block;
   }
 
-  async generateBlocks (count = 1, address) {
+  async generateBlocks (count = 1, address = this.wallet.receive) {
     const blocks = [];
 
     if (!address) address = await this.wallet.getUnusedAddress();
@@ -874,6 +899,7 @@ class Bitcoin extends Service {
 
     // Start nodes
     if (this.settings.fullnode) await this._startLocalNode();
+    if (this.settings.zmq) await this._startZMQ();
     if (this.settings.mode === 'rpc') {
       if (!this.settings.authority) return console.error('Error: No authority specified.  To use an RPC anchor, provide the "authority" parameter.');
       const provider = new URL(this.settings.authority);

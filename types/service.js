@@ -71,6 +71,7 @@ class Service extends Scribe {
     this.methods = {};
     this.clients = {};
     this.targets = [];
+    this.history = [];
     this.origin = '';
 
     // TODO: fix this
@@ -135,6 +136,10 @@ class Service extends Scribe {
     console.log('process created');
   }
 
+  get status () {
+    return this._state.status;
+  }
+
   get members () {
     return this['@data'].members;
   }
@@ -154,6 +159,11 @@ class Service extends Scribe {
   set state (value) {
     // console.trace('[FABRIC:SERVICE]', 'Setting state:', value);
     this._state = value;
+  }
+
+  set status (value) {
+    this._state.status = value.toUpperCase();
+    return this.status;
   }
 
   static fromName (name) {
@@ -633,7 +643,7 @@ class Service extends Scribe {
     const ops = [];
     const state = new Entity(self.state);
 
-    if (self.settings.verbosity >= 4) console.log('[FABRIC:SERVICE]', 'Committing...');
+    if (self.settings.verbosity >= 4) this.emit('log', '[FABRIC:SERVICE] Committing...');
 
     // assemble all necessary info, emit Snapshot regardless of storage status
     try {
@@ -661,7 +671,10 @@ class Service extends Scribe {
     if (self.observer) {
       try {
         let patches = manager.generate(self.observer);
-        if (patches.length) self.emit('patches', patches);
+        if (patches.length) {
+          this.history.push(patches);
+          self.emit('patches', patches);
+        }
       } catch (E) {
         console.error('Could not generate patches:', E);
       }
