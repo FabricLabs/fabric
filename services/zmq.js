@@ -37,7 +37,7 @@ class ZMQ extends Service {
 
   /**
    * Opens the connection and subscribes to the requested channels.
-   * @returns {ZMQ}
+   * @returns {ZMQ} Instance of the service.
    */
   async start () {
     const self = this;
@@ -64,11 +64,13 @@ class ZMQ extends Service {
 
   /**
    * Closes the connection to the ZMQ publisher.
+   * @returns {ZMQ} Instance of the service.
    */
   async stop () {
     this.status = 'STOPPING';
     this.socket.close();
     this.status = 'STOPPED';
+    return this;
   }
 
   subscribe (name) {
