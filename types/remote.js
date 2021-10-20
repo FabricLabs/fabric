@@ -27,7 +27,7 @@ class Remote extends Resource {
     super(config);
 
     this.settings = Object.assign({
-      authority: config.host || 'localhost',
+      authority: 'localhost',
       entropy: Math.random(),
       secure: true,
       port: 443
@@ -100,17 +100,21 @@ class Remote extends Resource {
       ].join(':')).toString('base64')}`;
     }
 
-    if (params.body) {
-      try {
-        opts.body = JSON.stringify(params.body);
-        delete params.body;
-      } catch (E) {
-        console.error('Could not prepare request:', E);
-      }
-    }
+    switch (params.mode) {
+      case 'query':
+        url += '?' + querystring.stringify(params.body);
+        break;
+      default:
+        try {
+          opts.body = JSON.stringify(params.body);
+        } catch (exception) {
+          console.error('[FABRIC:REMOTE] Could not prepare request:', exception);
+        }
 
-    if (params && Object.keys(params).length) {
-      url += '?' + querystring.stringify(params);
+        opts = Object.assign(opts, {
+          body: params.body || null
+        });
+        break;
     }
 
     try {
@@ -192,10 +196,22 @@ class Remote extends Resource {
    */
   async _POST (key, obj, params) {
     let result = null;
+    let options = null;
 
-    const options = Object.assign({}, params, {
-      body: obj
-    });
+    switch (params.mode) {
+      case 'query':
+        options = Object.assign({}, {
+          body: obj,
+          mode: 'query'
+        });
+        break;
+      default:
+        options = Object.assign({}, params, {
+          body: obj,
+          mode: 'body'
+        });
+        break;
+    }
 
     result = await this.request('post', key, options);
 
