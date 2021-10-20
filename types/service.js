@@ -1,24 +1,26 @@
 'use strict';
 
-// internal dependencies
-const Actor = require('./actor');
-// const Disk = require('./disk');
-const Key = require('./key');
-const Hash256 = require('./hash256');
-const Entity = require('./entity');
-const Store = require('./store');
-const Scribe = require('./scribe');
-const Collection = require('./collection');
-
-// external dependencies
+// Dependencies
 const crypto = require('crypto');
 const stream = require('stream');
 const path = require('path');
 
-// npm-based modules
+// Public modules
+// TODO: remove
 const merge = require('lodash.merge');
 const pointer = require('json-pointer');
 const manager = require('fast-json-patch');
+
+// Fabric Types
+const Actor = require('./actor');
+const Collection = require('./collection');
+const Resource = require('./resource');
+const Entity = require('./entity');
+const Hash256 = require('./hash256');
+const Key = require('./key');
+const Message = require('./message');
+const Scribe = require('./scribe');
+const Store = require('./store');
 
 /**
  * The "Service" is a simple model for processing messages in a distributed
@@ -65,9 +67,10 @@ class Service extends Scribe {
     this.agent = null;
     this.actor = null;
     this.name = this.settings.name;
-    this.clock = 0;
+
     this.collections = {};
     this.definitions = {};
+    this.resources = {};
     this.methods = {};
     this.clients = {};
     this.targets = [];
@@ -93,7 +96,11 @@ class Service extends Scribe {
     /* this.state = Object.assign({
       messages: {} // always define a list of messages for Fabric services
     }, this.config['@data']); */
-    this._state = {};
+    this._state = {
+      clock: 0,
+      services: {},
+      version: 0 // TODO: change to 1 for 0.1.0
+    };
 
     // Keeps track of changes
     this.observer = null;
@@ -120,20 +127,8 @@ class Service extends Scribe {
     return this;
   }
 
-  init () {
-    this.components = {};
-  }
-
-  /**
-   * Move forward one clock cycle.
-   * @returns {Number}
-   */
-  tick () {
-    return ++this.clock;
-  }
-
-  async process () {
-    console.log('process created');
+  get clock () {
+    return parseInt(this._state.clock);
   }
 
   get status () {
@@ -148,12 +143,12 @@ class Service extends Scribe {
     return this._targets;
   }
 
-  set targets (value) {
-    this._targets = value;
-  }
-
   get state () {
     return this._state;
+  }
+
+  set clock (value) {
+    this._state.clock = parseInt(value);
   }
 
   set state (value) {
@@ -164,6 +159,10 @@ class Service extends Scribe {
   set status (value) {
     this._state.status = value.toUpperCase();
     return this.status;
+  }
+
+  set targets (value) {
+    this._targets = value;
   }
 
   static fromName (name) {
@@ -184,6 +183,147 @@ class Service extends Scribe {
     }
 
     return plugin;
+  }
+
+  alert (msg) {
+    // TODO: promise
+    // return Promise.all(Object.entries(this.services).filter().map())
+    for (const [name, service] of Object.entries(this.services)) {
+      if (!this.settings.services.includes(name)) continue;
+      service.alert(msg);
+    }
+  }
+
+  /**
+   * Called by Web Components.
+   * TODO: move to @fabric/http/types/spa
+   */
+  init () {
+    this.components = {};
+  }
+
+  /**
+   * Move forward one clock cycle.
+   * @returns {Number}
+   */
+  tick () {
+    return this.beat();
+  }
+
+  beat () {
+    const now = (new Date()).toISOString();
+
+    // Increment clock
+    ++this._clock;
+
+    // TODO: remove async, use local state instead
+    // i.e., queue worker job
+    const beat = Message.fromVector(['Generic', {
+      clock: this._clock,
+      created: now,
+      state: this._state
+    }]);
+
+    // TODO: parse JSON types in @fabric/core/types/message
+    let data = beat.data;
+
+    try {
+      data = JSON.parse(data);
+      data = JSON.stringify(data, null, '  ');
+    } catch (exception) {
+      this.emit('error', `Exception parsing beat: ${exception}`);
+    }
+
+    this.emit('beat', beat);
+    this.commit();
+
+    return this;
+  }
+
+  append (block) {
+    if (this.best !== block.parent) throw new Error(`Block does not attach to current chain.  Block ID: ${block.id} Block Parent: ${block.parent} Current Best: ${this.best}`);
+  }
+
+  /**
+   * Explicitly trust all events from a known source.
+   * @param  {EventEmitter} source Emitter of events.
+   * @return {Sensemaker}          Instance of Sensemaker after binding events.
+   */
+  trust (source, name = source.constructor.name) {
+    // Constants
+    const self = this;
+
+    // Attach Event Listeners
+    if (source.settings && source.settings.debug) source.on('debug', this._handleTrustedDebug.bind(this));
+    if (source.settings && source.settings.verbosity >= 0) {
+      source.on('audit', async function _handleTrustedAudit (audit) {
+        const now = (new Date()).toISOString();
+        const template = {
+          content: audit,
+          created: now,
+          type: 'Audit'
+        };
+
+        const actor = new Actor(template);
+        // TODO: transaction log
+      });
+    }
+
+    if (source.settings && source.settings.verbosity >= 3) {
+      source.on('log', async function _handleTrustedLog (log) {
+        console.log(`[FABRIC:SERVICE] Source "${name}" emitted log:`, log);
+      });
+    }
+
+    source.on('ready', async function _handleTrustedReady (info) {
+      console.log(`[FABRIC:SERVICE] Source "${name}" emitted ready:`, info);
+    });
+
+    source.on('warning', async function _handleTrustedWarning (warning) {
+      console.warn(`[FABRIC:SERVICE] Source "${name}" emitted warning:`, warning);
+    });
+
+    source.on('error', async function _handleTrustedError (error) {
+      console.error(`[FABRIC:SERVICE] Source "${name}" emitted error:`, error);
+    });
+
+    source.on('actor', async function (actor) {
+      console.log(`[FABRIC:SERVICE] Source "${name}" emitted actor:`, actor);
+    });
+
+    source.on('tip', async function (hash) {
+      self.alert(`[FABRIC:SERVICE] New ${name} chaintip: ${hash}`);
+    });
+
+    source.on('patches', async function (patches) {
+      self.emit('debug', `[FABRIC:SERVICE] [${name}] Service State:`, source._state);
+    });
+
+    source.on('channel', async function (channel) {
+      console.log(`[FABRIC:SERVICE] Source "${name}" emitted channel:`, channel);
+    });
+
+    source.on('beat', async function (beat) {
+      self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted beat: ${JSON.stringify(beat, null, '  ')}`);
+      try {
+        await self.commit();
+      } catch (exception) {
+        self.emit('error', `Could not process beat: ${exception}`);
+      }
+    });
+
+    source.on('changes', async function (changes) {
+      console.log(`[FABRIC:SERVICE] Source "${name}" emitted changes:`, changes);
+    });
+
+    source.on('commit', async function (commit) {
+      console.log(`[FABRIC:SERVICE] Source "${name}" committed:`, commit);
+    });
+
+    source.on('message', async function (message) {
+      self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted message: ${JSON.stringify(message.toObject ? message.toObject() : message, null, '  ')}`);
+      await self._handleTrustedMessage(message);
+    });
   }
 
   define (name, value) {
@@ -251,6 +391,19 @@ class Service extends Scribe {
     });
 
     return true;
+  }
+
+  _defineResource (name, definition) {
+    const resource = Object.assign({
+      name: name
+    }, definition);
+
+    this.resources[name] = new Resource(resource);
+    this.emit('resource', this.resources[name]);
+  }
+
+  async process () {
+    console.log('process created');
   }
 
   async broadcast (msg) {
@@ -373,26 +526,22 @@ class Service extends Scribe {
       }
     }
 
+    await this._startAllServices();
+
     if (this.settings.networking) {
       await this.connect();
     }
 
     // TODO: re-re-evaluate a better approach... oh how I long for Object.observe!
     // this.observer = manager.observe(this.state, this._handleStateChange.bind(this));
-    if (!this.state) this.state = {};
-    this.observer = manager.observe(this.state);
+    this.observer = manager.observe(this._state);
 
     // Set a heartbeat
-    this.heartbeat = setInterval(this._heartbeat.bind(this), this.settings.interval);
-    this.status = 'ready';
-    this.emit('message', `[FABRIC:SERVICE] Started!`);
-    this.emit('ready');
+    await this._startHeart();
 
-    try {
-      await this.commit();
-    } catch (E) {
-      console.error('Could not commit:', E);
-    }
+    this.status = 'ready';
+    this.emit('log', '[FABRIC:SERVICE] Started!');
+    this.emit('ready');
 
     return this;
   }
@@ -638,17 +787,16 @@ class Service extends Scribe {
     return this;
   }
 
-  async commit () {
+  commit () {
+    if (this.settings.verbosity >= 4) this.emit('log', '[FABRIC:SERVICE] Committing...');
+
     const self = this;
     const ops = [];
-    const state = new Entity(self.state);
-
-    if (self.settings.verbosity >= 4) this.emit('log', '[FABRIC:SERVICE] Committing...');
 
     // assemble all necessary info, emit Snapshot regardless of storage status
     try {
-      ops.push({ type: 'put', key: 'snapshot', value: state.toJSON() });
-      this.emit('message', {
+      ops.push({ type: 'put', key: 'snapshot', value: self._state });
+      this.emit('debug', {
         '@type': 'Snapshot',
         '@data': self.state
       });
@@ -657,20 +805,20 @@ class Service extends Scribe {
       console.error('Could not commit to state:', E);
     }
 
-    if (this.store) {
+    if (this.settings.persistent) {
       // TODO: add robust + convenient database opener
-      try {
-        await this.store.batch(ops, function shareChanges () {
-          // TODO: notify status?
-        });
-      } catch (E) {
-        console.error('[FABRIC:SERVICE]', 'Threw Exception:', E);
-      }
+      this.store.batch(ops, function shareChanges () {
+        // TODO: notify status?
+      }).catch((exception) => {
+        self.emit('error', `Could not write to store: ${exception}`);
+      }).then((output) => {
+        self.emit('commit', { output });
+      });
     }
 
     if (self.observer) {
       try {
-        let patches = manager.generate(self.observer);
+        const patches = manager.generate(self.observer);
         if (patches.length) {
           this.history.push(patches);
           self.emit('patches', patches);
@@ -684,7 +832,7 @@ class Service extends Scribe {
   }
 
   async _attachBindings (emitter) {
-    let service = this;
+    const service = this;
 
     emitter.on('attached', function () {
       service.emit('attached', {
@@ -855,6 +1003,71 @@ class Service extends Scribe {
     const entity = new Entity(message);
     await this._PUT(`/messages/${entity.id}`, message);
     return entity.id;
+  }
+
+  async _registerService (name, Service) {
+    const self = this;
+    const settings = merge({}, this.settings, this.settings[name]);
+    const service = new Service(settings);
+
+    if (this.services[name]) {
+      return this._appendWarning(`Service already registered: ${name}`);
+    }
+
+    this.services[name] = service;
+    this.services[name].on('error', function (msg) {
+      self.emit('error', `Service "${name}" emitted error: ${JSON.stringify(msg, null, '  ')}`);
+    });
+
+    this.services[name].on('warning', function (msg) {
+      self.emit('warning', `Service warning from ${name}: ${JSON.stringify(msg, null, '  ')}`);
+    });
+
+    this.services[name].on('message', function (msg) {
+      self.emit('message', `Service message from ${name}: ${JSON.stringify(msg, null, '  ')}`);
+    });
+
+    this.on('identity', async function _registerActor (identity) {
+      if (this.settings.services.includes(name)) {
+        self.emit('log', `Registering actor on service "${name}": ${JSON.stringify(identity)}`);
+
+        try {
+          let registration = await this.services[name]._registerActor(identity);
+          self.emit('log', `Registered Actor: ${JSON.stringify(registration, null, '  ')}`);
+        } catch (exception) {
+          self.emit('error', `Error from service "${name}" during _registerActor: ${exception}`);
+        }
+      }
+    });
+
+    if (service.routes && service.routes.length) {
+      for (let i = 0; i < service.routes.length; i++) {
+        const route = service.routes[i];
+        this.http._addRoute(route.method, route.path, route.handler);
+      }
+    }
+
+    await this.commit();
+
+    return this;
+  }
+
+  async _startAllServices () {
+    // Start all Services
+    for (const [name, service] of Object.entries(this.services)) {
+      if (this.settings.services.includes(name)) {
+        this.emit('debug', `Starting service "${name}" (with trust)`);
+        // TODO: evaluate @fabric/core/types/store
+        // TODO: isomorphic @fabric/core/types/store
+        // await this.services[name]._bindStore(this.store);
+        this.trust(this.services[name], name);
+        await this.services[name].start();
+      }
+    }
+  }
+
+  async _startHeart () {
+    this._heart = setInterval(this.beat.bind(this), this.settings.interval);
   }
 }
 

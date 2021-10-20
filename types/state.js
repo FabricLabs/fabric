@@ -30,7 +30,6 @@ class State extends EventEmitter {
   constructor (data = {}) {
     super(data);
 
-    this['@version'] = 0x01;
     this['@input'] = data || null;
     this['@data'] = data || {};
     this['@meta'] = {};
@@ -95,7 +94,7 @@ class State extends EventEmitter {
     });
 
     // start at zero
-    this.clock = 0;
+    this._clock = 0;
 
     // set various #meta
     this['@type'] = this['@entity']['@type'];
@@ -432,7 +431,7 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
    * Increment the vector clock, broadcast all changes as a transaction.
    */
   commit () {
-    ++this.clock;
+    ++this._clock;
 
     this['@parent'] = this.id;
     this['@preimage'] = this.toString();

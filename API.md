@@ -186,6 +186,9 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 <dt><a href="#ZMQ">ZMQ</a></dt>
 <dd><p>Connect and subscribe to ZeroMQ publishers.</p>
 </dd>
+<dt><del><a href="#HTTPServer">HTTPServer</a></del></dt>
+<dd><p>Deprecated 2021-10-16.</p>
+</dd>
 </dl>
 
 <a name="Actor"></a>
@@ -3478,6 +3481,7 @@ Stop the Bitcoin service.
 Move forward one clock cycle.
 
 **Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>tick</code>](#Service+tick)  
 <a name="Service+handler"></a>
 
 ### bitcoin.handler(message) ⇒ [<code>Service</code>](#Service)
@@ -4064,3 +4068,11 @@ Closes the connection to the ZMQ publisher.
 
 **Kind**: instance method of [<code>ZMQ</code>](#ZMQ)  
 **Returns**: [<code>ZMQ</code>](#ZMQ) - Instance of the service.  
+<a name="HTTPServer"></a>
+
+## ~~HTTPServer~~
+***Deprecated***
+
+Deprecated 2021-10-16.
+
+**Kind**: global class  

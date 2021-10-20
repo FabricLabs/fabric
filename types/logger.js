@@ -1,7 +1,10 @@
 'use strict';
 
+// Dependencies
 const fs = require('fs');
 const mkdirp = require('mkdirp');
+
+// Fabric Types
 const Actor = require('./actor');
 
 class Logger extends Actor {
@@ -9,14 +12,19 @@ class Logger extends Actor {
     super(settings);
 
     this.settings = Object.assign({
+      name: this.id,
       path: './logs'
     }, settings);
+
+    this._state = {
+      status: 'STOPPED'
+    };
 
     return this;
   }
 
   get path () {
-    return `${this.settings.path}/${this.id}.log`;
+    return `${this.settings.path}/${this.settings.name}.log`;
   }
 
   async log (msg) {
@@ -33,15 +41,19 @@ class Logger extends Actor {
   }
 
   async start () {
+    this._state.status = 'STARTING';
     await mkdirp(this.settings.path);
     this.stream = fs.createWriteStream(this.path, {
       flags: 'a'
     });
+    this._state.status = 'STARTED';
     return this;
   }
 
   async stop () {
+    this._state.status = 'STOPPING';
     if (this.stream) this.stream.close();
+    this._state.status = 'STOPPED';
     return this;
   }
 }

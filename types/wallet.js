@@ -315,7 +315,7 @@ class Wallet extends Service {
     const change = await this.wallet.receiveAddress();
     const coins = await this.wallet.getCoins();
 
-    this.emit('message', `Amount to send: ${amount}`);
+    this.emit('log', `Amount to send: ${amount}`);
 
     mtx.addOutput({
       address: recipient,
@@ -728,7 +728,7 @@ class Wallet extends Service {
 
   async getUnusedAddress () {
     let clean = await this.wallet.receiveAddress();
-    this.emit('message', `unused address: ${clean}`);
+    this.emit('log', `unused address: ${clean}`);
     return clean;
   }
 
@@ -1092,7 +1092,7 @@ class Wallet extends Service {
   }
 
   async _createOrderForPubkey (pubkey) {
-    this.emit('message', `creating ORDER transaction with pubkey: ${pubkey}`);
+    this.emit('log', `creating ORDER transaction with pubkey: ${pubkey}`);
 
     let mtx = new MTX();
     let data = new Script();
@@ -1101,8 +1101,8 @@ class Wallet extends Service {
     let secret = 'fixed secret :)';
     let sechash = require('crypto').createHash('sha256').update(secret).digest('hex');
 
-    this.emit('message', `SECRET CREATED: ${secret}`);
-    this.emit('message', `SECHASH: ${sechash}`);
+    this.emit('log', `SECRET CREATED: ${secret}`);
+    this.emit('log', `SECHASH: ${sechash}`);
 
     data.pushSym('OP_IF');
     data.pushSym('OP_SHA256');
@@ -1118,12 +1118,12 @@ class Wallet extends Service {
     data.pushSym('OP_CHECKSIG');
     data.compile();
 
-    this.emit('message', `[AUDIT] address data: ${data}`);
+    this.emit('log', `[AUDIT] address data: ${data}`);
     let segwitAddress = await this.getAddressForScript(data);
     let address = await this.getAddressFromRedeemScript(data);
 
-    this.emit('message', `[AUDIT] segwit address: ${segwitAddress}`);
-    this.emit('message', `[AUDIT] normal address: ${address}`);
+    this.emit('log', `[AUDIT] segwit address: ${segwitAddress}`);
+    this.emit('log', `[AUDIT] normal address: ${address}`);
 
     mtx.addOutput({
       address: address,
@@ -1145,8 +1145,8 @@ class Wallet extends Service {
     let tx = mtx.toTX();
     let sig = await mtx.sign(this.ring);
 
-    this.emit('message', 'transaction:', tx);
-    this.emit('message', 'sig:', sig);
+    this.emit('log', 'transaction:', tx);
+    this.emit('log', 'sig:', sig);
 
     return {
       tx: tx,
@@ -1239,10 +1239,8 @@ class Wallet extends Service {
   }
 
   async _handleWalletBalance (balance) {
-    if (this.settings.verbosity >= 4) console.log('wallet balance:', balance);
-    await this._PUT(`/balance`, balance);
-
-    let depositor = new State({ name: this.settings.name || 'default' });
+    await this._PUT('/balance', balance);
+    const depositor = new State({ name: this.settings.name || 'default' });
     await this._PUT(`/depositors/${depositor.id}/balance`, balance);
     this.emit('balance', balance);
   }
@@ -1253,7 +1251,7 @@ class Wallet extends Service {
       await this.database.open();
     }
 
-    let account = await this.accounts.create(obj);
+    const account = await this.accounts.create(obj);
     if (this.settings.verbosity >= 4) console.log('registering account, created:', account);
 
     if (this.manager) {
@@ -1298,7 +1296,7 @@ class Wallet extends Service {
     }
 
     if (this.settings.key && this.settings.key.seed) {
-      this.emit('message', 'Restoring wallet from seed...');
+      this.emit('log', 'Restoring wallet from seed...');
       if (this.settings.verbosity >= 3) console.log('[AUDIT]', 'Restoring wallet from provided seed:', this.settings.key.seed);
       let mnemonic = new Mnemonic(this.settings.key.seed);
       this.master = bcoin.hd.fromMnemonic(mnemonic);
@@ -1332,7 +1330,7 @@ class Wallet extends Service {
     // console.log('shard created:', await this.addresses.asMerkleTree());
     // console.log('shard created:', this.shard);
 
-    if (this.settings.verbosity >= 3) console.log('[AUDIT]', 'Wallet account:', this.account);
+    if (this.settings.verbosity >= 3) this.emit('log', `[AUDIT] Wallet account ${JSON.stringify(this.account, null, '  ')}`);
     // TODO: also retrieve key for address
     // let key = this.master.derivePath('m/44/0/0/0/0');
     // TODO: label as identity address
