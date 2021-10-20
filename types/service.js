@@ -257,6 +257,7 @@ class Service extends Scribe {
     if (source.settings && source.settings.debug) source.on('debug', this._handleTrustedDebug.bind(this));
     if (source.settings && source.settings.verbosity >= 0) {
       source.on('audit', async function _handleTrustedAudit (audit) {
+        /*
         const now = (new Date()).toISOString();
         const template = {
           content: audit,
@@ -266,64 +267,63 @@ class Service extends Scribe {
 
         const actor = new Actor(template);
         // TODO: transaction log
+        */
       });
     }
 
-    if (source.settings && source.settings.verbosity >= 3) {
-      source.on('log', async function _handleTrustedLog (log) {
+    return {
+      _handleActor: source.on('actor', async function (actor) {
+        console.log(`[FABRIC:SERVICE] Source "${name}" emitted actor:`, actor);
+      }),
+      _handleAlert: source.on('alert', async function (alert) {
+        self.alert(`[FABRIC:SERVICE] [ALERT] [!!!] ${name} alerted: ${alert}`);
+      }),
+      _handleBeat: source.on('beat', async function (beat) {
+        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted beat: ${JSON.stringify(beat, null, '  ')}`);
+        const ops = [
+          { op: 'replace', path: `/services/${name}`, value: beat.state }
+        ];
+
+        try {
+          manager.applyPatch(self._state, ops);
+          await self.commit();
+        } catch (exception) {
+          self.emit('error', `Could not process beat: ${exception}`);
+        }
+      }),
+      _handleChanges: source.on('changes', async function (changes) {
+        console.log(`[FABRIC:SERVICE] Source "${name}" emitted changes:`, changes);
+      }),
+      _handleChannel: source.on('channel', async function (channel) {
+        console.log(`[FABRIC:SERVICE] Source "${name}" emitted channel:`, channel);
+      }),
+      _handleCommit: source.on('commit', async function (commit) {
+        console.log(`[FABRIC:SERVICE] Source "${name}" committed:`, commit);
+      }),
+      _handleError: source.on('error', async function _handleTrustedError (error) {
+        console.error(`[FABRIC:SERVICE] Source "${name}" emitted error:`, error);
+      }),
+      _handleLog: source.on('log', async function _handleTrustedLog (log) {
         console.log(`[FABRIC:SERVICE] Source "${name}" emitted log:`, log);
-      });
-    }
-
-    source.on('ready', async function _handleTrustedReady (info) {
-      console.log(`[FABRIC:SERVICE] Source "${name}" emitted ready:`, info);
-    });
-
-    source.on('warning', async function _handleTrustedWarning (warning) {
-      console.warn(`[FABRIC:SERVICE] Source "${name}" emitted warning:`, warning);
-    });
-
-    source.on('error', async function _handleTrustedError (error) {
-      console.error(`[FABRIC:SERVICE] Source "${name}" emitted error:`, error);
-    });
-
-    source.on('actor', async function (actor) {
-      console.log(`[FABRIC:SERVICE] Source "${name}" emitted actor:`, actor);
-    });
-
-    source.on('tip', async function (hash) {
-      self.alert(`[FABRIC:SERVICE] New ${name} chaintip: ${hash}`);
-    });
-
-    source.on('patches', async function (patches) {
-      self.emit('debug', `[FABRIC:SERVICE] [${name}] Service State:`, source._state);
-    });
-
-    source.on('channel', async function (channel) {
-      console.log(`[FABRIC:SERVICE] Source "${name}" emitted channel:`, channel);
-    });
-
-    source.on('beat', async function (beat) {
-      self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted beat: ${JSON.stringify(beat, null, '  ')}`);
-      try {
-        await self.commit();
-      } catch (exception) {
-        self.emit('error', `Could not process beat: ${exception}`);
-      }
-    });
-
-    source.on('changes', async function (changes) {
-      console.log(`[FABRIC:SERVICE] Source "${name}" emitted changes:`, changes);
-    });
-
-    source.on('commit', async function (commit) {
-      console.log(`[FABRIC:SERVICE] Source "${name}" committed:`, commit);
-    });
-
-    source.on('message', async function (message) {
-      self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted message: ${JSON.stringify(message.toObject ? message.toObject() : message, null, '  ')}`);
-      await self._handleTrustedMessage(message);
-    });
+      }),
+      _handleMessage: source.on('message', async function (message) {
+        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted message: ${JSON.stringify(message.toObject ? message.toObject() : message, null, '  ')}`);
+        await self._handleTrustedMessage(message);
+      }),
+      _handlePatches: source.on('patches', async function (patches) {
+        self.emit('debug', `[FABRIC:SERVICE] [${name}] Service State:`, source._state);
+        // TODO: apply changes to parent (self)
+      }),
+      _handleReady: source.on('ready', async function _handleTrustedReady (info) {
+        console.log(`[FABRIC:SERVICE] Source "${name}" emitted ready:`, info);
+      }),
+      _handleTip: source.on('tip', async function (hash) {
+        self.alert(`[FABRIC:SERVICE] New ${name} chaintip: ${hash}`);
+      }),
+      _handleWarning: source.on('warning', async function _handleTrustedWarning (warning) {
+        console.warn(`[FABRIC:SERVICE] Source "${name}" emitted warning:`, warning);
+      })
+    };
   }
 
   define (name, value) {
@@ -400,6 +400,14 @@ class Service extends Scribe {
 
     this.resources[name] = new Resource(resource);
     this.emit('resource', this.resources[name]);
+  }
+
+  _handleTrustedDebug (message) {
+    this.emit('debug', `[FABRIC:SERVICE] Trusted Source emitted debug: ${message}`);
+  }
+
+  _handleTrustedMessage (message) {
+    this.emit('message', message);
   }
 
   async process () {
@@ -1028,11 +1036,11 @@ class Service extends Scribe {
     });
 
     this.on('identity', async function _registerActor (identity) {
-      if (this.settings.services.includes(name)) {
+      if (self.settings.services && self.settings.services.includes(name)) {
         self.emit('log', `Registering actor on service "${name}": ${JSON.stringify(identity)}`);
 
         try {
-          let registration = await this.services[name]._registerActor(identity);
+          let registration = await self.services[name]._registerActor(identity);
           self.emit('log', `Registered Actor: ${JSON.stringify(registration, null, '  ')}`);
         } catch (exception) {
           self.emit('error', `Error from service "${name}" during _registerActor: ${exception}`);
