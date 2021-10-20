@@ -209,6 +209,7 @@ class CLI extends App {
     this.heartbeat = setInterval(this.tick.bind(this), this.settings.interval);
 
     // Emit Ready
+    this.status = 'READY';
     this.emit('ready');
 
     // Chainable

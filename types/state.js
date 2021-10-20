@@ -105,7 +105,7 @@ class State extends EventEmitter {
     this.services = ['json'];
     // TODO: re-enable
     // this.name = this['@entity'].name || this.id;
-    this.link = `/entities/${this.fingerprint()}`;
+    this.path = `/entities/${this.fingerprint()}`;
 
     if (this['@entity']['@data']) {
       try {

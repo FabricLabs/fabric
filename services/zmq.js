@@ -25,7 +25,8 @@ class ZMQ extends Service {
       port: 29000,
       subscriptions: [
         'hashblock',
-        'rawblock'
+        'rawblock',
+        'sequence'
       ]
     }, settings);
 
@@ -44,12 +45,13 @@ class ZMQ extends Service {
 
     this.socket.connect(`tcp://${this.settings.host}:${this.settings.port}`);
     this.socket.on('message', function _handleSocketMessage (topic, message) {
-      self.emit('log', `ZMQ message @ channels/${topic.toString()} (${message.length} bytes) ⇒ ${message.toString('hex')}`);
+      const path = `channels/${topic.toString()}`;
+      self.emit('debug', `ZMQ message @ [${path}] (${message.length} bytes) ⇒ ${message.toString('hex')}`);
       self.emit('message', Message.fromVector(['Generic', {
         topic: topic.toString(),
         message: message.toString('hex'),
         encoding: 'hex'
-      }]));
+      }]).toObject());
     });
 
     for (let i = 0; i < this.settings.subscriptions.length; i++) {

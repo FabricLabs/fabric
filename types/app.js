@@ -11,7 +11,7 @@ const Message = require('./message');
 const Peer = require('./peer');
 const Remote = require('./remote');
 const Resource = require('./resource');
-const Scribe = require('./scribe');
+const Service = require('./service');
 const Storage = require('./store');
 // const Swarm = require('./swarm');
 
@@ -22,7 +22,8 @@ const Storage = require('./store');
  * @property {Collection} components Interface elements.
  * @property {Store} stash Routable {@link Datastore}.
  */
-class App extends Scribe {
+// class App extends Scribe {
+class App extends Service {
   /**
    * Generic bundle for building Fabric applications.
    * @param  {Object} definition Application definition.  See `config` for examples.
