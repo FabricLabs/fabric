@@ -68,7 +68,6 @@
   "homepage": "https://github.com/FabricLabs/fabric#readme",
   "dependencies": {
     "@webassemblyjs/ast": "^1.8.5",
-    "append-only-torrent": "^1.0.0",
     "arbitrary": "^1.4.10",
     "base58check": "^2.0.0",
     "bcoin": "bcoin-org/bcoin#master",
@@ -91,7 +90,6 @@
     "mkdirp": "^1.0.4",
     "nat-upnp": "^1.1.1",
     "node-fetch": "^2.6.0",
-    "node-torrent": "^0.2.2",
     "opentimestamps": "^0.4.9",
     "p-event": "^4.2.0",
     "path-match": "^1.2.4",
