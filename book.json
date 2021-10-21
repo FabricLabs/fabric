@@ -1,13 +1,19 @@
 {
-  "theme": "./themes/clarity",
-  "plugins": ["exercises", "edit-link", "page-toc", "scripts"],
+  "author": "Fabric Labs",
+  "title": "Fabric Developer's Handbook",
+  "description": "Build & Run P2P Applications with Fabric",
+  "language": "en",
+  "plugins": ["edit-link"],
   "pluginsConfig": {
+    "theme-api": {
+      "theme": "dark"
+    },
     "edit-link": {
-      "base": "https://github.com/martindale/fabric/edit/master",
+      "base": "https://github.com/FabricLabs/fabric/edit/master",
       "label": "Edit This Page"
     },
     "scripts": {
-      "files": ["./assets/app.js"]
+      "files": ["./assets/fabric.min.js"]
     }
   }
 }

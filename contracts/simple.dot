@@ -1,0 +1,11 @@
+digraph Simple {
+  rankdir = LR
+  label = "\nFigure 1: A Simple Program"
+  input -> output
+  
+  subgraph cluster_variables {
+    label = "Δ"
+    input
+    output
+  }
+}

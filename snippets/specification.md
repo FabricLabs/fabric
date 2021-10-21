@@ -234,6 +234,20 @@ Resources must be addressable – the definition of a Resource must be accessibl
 
 Resources must also be versioned.
 
+### Protocol
+
+```
+OPEN_CHANNEL       # SIGHASH_SINGLE|ANYONECANPAY 2-of-2 multisig HTLC
+PROPOSE_PROGRAM    # out-of-band negotiation with OP_RETURN address
+AWAIT_CONFIRMATION # await block chain for corresponding bond
+ACCEPT_PEER        # create and share swap transactions
+AWAIT_CONFIRMATION # await block chain for thermodynamic security
+PROCESS_WORK       # process incoming messages as work
+AWAIT_CONFIRMATION # await block chain for thermodynamic security
+CLOSE_CHANNEL      # settle final balances on chain
+AWAIT_CONFIRMATION # await block chain for thermodynamic security
+```
+
 **Headers:**
 NAMESPACE, NAME, VERSION, SIGNATURE
 soundtrack, artist, 1, aedb1458acfgc14cc12...

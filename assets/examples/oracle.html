@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+  <title>oracle.js</title>
+  <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+  <meta name="viewport" content="width=device-width, target-densitydpi=160dpi, initial-scale=1.0; maximum-scale=1.0; user-scalable=0;">
+  <link rel="stylesheet" media="all" href="docco.css" />
+</head>
+<body>
+  <div id="container">
+    <div id="background"></div>
+    
+      <ul id="jump_to">
+        <li>
+          <a class="large" href="javascript:void(0);">Jump To &hellip;</a>
+          <a class="small" href="javascript:void(0);">+</a>
+          <div id="jump_wrapper">
+          <div id="jump_page_wrapper">
+            <div id="jump_page">
+              
+                
+                <a class="source" href="app.html">
+                  app.js
+                </a>
+              
+                
+                <a class="source" href="bitcoin.html">
+                  bitcoin.js
+                </a>
+              
+                
+                <a class="source" href="blockchain.html">
+                  blockchain.js
+                </a>
+              
+                
+                <a class="source" href="chain.html">
+                  chain.js
+                </a>
+              
+                
+                <a class="source" href="cli.html">
+                  cli.js
+                </a>
+              
+                
+                <a class="source" href="collection.html">
+                  collection.js
+                </a>
+              
+                
+                <a class="source" href="fabric.html">
+                  fabric.js
+                </a>
+              
+                
+                <a class="source" href="game.html">
+                  game.js
+                </a>
+              
+                
+                <a class="source" href="http.html">
+                  http.js
+                </a>
+              
+                
+                <a class="source" href="index.html">
+                  index.js
+                </a>
+              
+                
+                <a class="source" href="network.html">
+                  network.js
+                </a>
+              
+                
+                <a class="source" href="oracle.html">
+                  oracle.js
+                </a>
+              
+                
+                <a class="source" href="p2pkh.html">
+                  p2pkh.js
+                </a>
+              
+                
+                <a class="source" href="service.html">
+                  service.js
+                </a>
+              
+                
+                <a class="source" href="store.html">
+                  store.js
+                </a>
+              
+                
+                <a class="source" href="witness.html">
+                  witness.js
+                </a>
+              
+            </div>
+          </div>
+        </li>
+      </ul>
+    
+    <ul class="sections">
+        
+          <li id="title">
+              <div class="annotation">
+                  <h1>oracle.js</h1>
+              </div>
+          </li>
+        
+        
+        
+        <li id="section-1">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-1">&#182;</a>
+              </div>
+              <p>An example of an <a href="https://dev.fabric.pub/docs/Oracle.html">Oracle</a> built with <a href="https://github.com/FabricLabs/fabric">@fabric/core</a>, a framework for building high-throughput distributed systems with Bitcoin.</p>
+
+            </div>
+            
+        </li>
+        
+        
+        <li id="section-2">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-2">&#182;</a>
+              </div>
+              <p>An <strong>Oracle</strong> offers a simple, self- contained
+<a href="https://dev.fabric.pub/docs/Service.html">Service</a> for establishing and
+verifying claims made against an underlying trust anchor.</p>
+
+            </div>
+            
+        </li>
+        
+        
+        <li id="section-3">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-3">&#182;</a>
+              </div>
+              <p>When combined with an HTML browser, an Oracle can be used to manage
+long-running <a href="https://dev.fabric.pub/docs/State.html">State</a> for
+offline-first applications.</p>
+
+            </div>
+            
+        </li>
+        
+        
+        <li id="section-4">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-4">&#182;</a>
+              </div>
+              <h3 id="quick-start">Quick Start</h3>
+<p>Run locally with <code>node examples/oracle.js</code> — use Node 8, <em>a la</em> <code>nvm use 8</code>
+if you’re using <a href="https://nvm.sh">NVM</a>, or from
+<a href="https://nodejs.org">nodejs.org</a> if not!</p>
+
+            </div>
+            
+        </li>
+        
+        
+        <li id="section-5">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-5">&#182;</a>
+              </div>
+              <p>TODO: use bottom panel for inline execution (<em>a la</em> “Run this Code &raquo;”)</p>
+<h3 id="source">Source</h3>
+
+            </div>
+            
+        </li>
+        
+        
+        <li id="section-6">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-6">&#182;</a>
+              </div>
+              <p>First, let’s ensure <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Strict_mode">strict mode</a> is used to parse our code.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-meta">'use strict'</span>;</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-7">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-7">&#182;</a>
+              </div>
+              <p>Require <code>@fabric/core</code> as the <code>Fabric</code> constant.  This allows us to use <a href="https://dev.fabric.pub">the
+Fabric API</a> directly: <code>new Fabric.&lt;type&gt;()</code></p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-keyword">const</span> Fabric = <span class="hljs-built_in">require</span>(<span class="hljs-string">'@fabric/core'</span>);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-8">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-8">&#182;</a>
+              </div>
+              <p>An example configuration object, encoded as <a href="https://json.org/">JSON</a>:</p>
+<pre><code class="language-json">{
+  <span class="hljs-attr">"name"</span>: <span class="hljs-string">"@examples/oracle"</span>,
+  <span class="hljs-attr">"description"</span>: <span class="hljs-string">"a simple Oracle example"</span>,
+  <span class="hljs-attr">"version"</span>: <span class="hljs-string">"0.1.0"</span>
+}</code></pre>
+<p>Configuration files are most commonly stored in <code>config.json</code>, but you can
+also use an existing <code>package.json</code> to pre-load an Oracle with some state.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>
+<span class="hljs-keyword">const</span> config = <span class="hljs-built_in">require</span>(<span class="hljs-string">'./config'</span>);
+
+<span class="hljs-comment">/**
+ * An {@link Oracle} offers a simple, self-contained {@link Service} for Fabric-
+ * capable agents.  The `main()` function allocates necessary resources, then
+ * starts the service.
+ */</span>
+<span class="hljs-keyword">async</span> <span class="hljs-function"><span class="hljs-keyword">function</span> <span class="hljs-title">main</span> (<span class="hljs-params"></span>) </span>{</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-9">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-9">&#182;</a>
+              </div>
+              <p>Our primary objective is to create an Oracle, so we do that next by passing
+the <code>config</code> constant from earlier into the <code>Fabric.Oracle</code> constructor.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>  <span class="hljs-keyword">let</span> oracle = <span class="hljs-keyword">new</span> Fabric.Oracle(config);</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-10">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-10">&#182;</a>
+              </div>
+              <p>The <code>oracle</code> variable contains our Oracle, so now let’s define a Resource
+for it to manage.</p>
+
+            </div>
+            
+        </li>
+        
+        
+        <li id="section-11">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-11">&#182;</a>
+              </div>
+              <h3 id="resources">Resources</h3>
+<p>An Oracle’s purpose is to provide a canonical reference for a list of
+<a href="https://dev.fabric.pub/resources">Resources</a>, which require both a <code>name</code>
+and a <code>definition</code>.  Resources can be thought of as “typed collections”,
+with atomic operations such as <code>POP</code> and <code>PUSH</code> for managing their
+contents.</p>
+
+            </div>
+            
+        </li>
+        
+        
+        <li id="section-12">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-12">&#182;</a>
+              </div>
+              <p>Here, we define a <code>Request</code> as a resource with one field, <code>input</code>, which is
+both <code>required</code> and restricted to a maximum size of 2048 bytes.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>  oracle.define(<span class="hljs-string">'Request'</span>, {
+    <span class="hljs-attr">attributes</span>: {
+      <span class="hljs-attr">input</span>: { <span class="hljs-attr">type</span>: <span class="hljs-string">'String'</span>, <span class="hljs-attr">required</span>: <span class="hljs-literal">true</span>, <span class="hljs-attr">max</span>: <span class="hljs-number">2048</span> }
+    }
+  });</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-13">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-13">&#182;</a>
+              </div>
+              <p>Now that a Resource has been defined, start the Oracle.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>  <span class="hljs-keyword">await</span> oracle.start();</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-14">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-14">&#182;</a>
+              </div>
+              <p>Log some output.</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre>  <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'oracle started!'</span>);
+  <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'oracle:'</span>, oracle);
+}</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-15">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-15">&#182;</a>
+              </div>
+              <p>We’ve defined our program.  Start the main process!</p>
+
+            </div>
+            
+            <div class="content"><div class='highlight'><pre><span class="hljs-built_in">module</span>.exports = main();</pre></div></div>
+            
+        </li>
+        
+        
+        <li id="section-16">
+            <div class="annotation">
+              
+              <div class="pilwrap ">
+                <a class="pilcrow" href="#section-16">&#182;</a>
+              </div>
+              <p>Fabric exposes a powerful API through <code>@fabric/core</code>, a standard library for
+building decentralized applications.  You can install it now by using the
+<code>npm install --save @fabric/core</code> command, or use
+<code>npm install FabricLabs/fabric#develop</code> for bleeding-edge <a href="https://to.fabric.pub/#beta:fabric.pub">#beta</a> testing.</p>
+
+            </div>
+            
+        </li>
+        
+    </ul>
+  </div>
+</body>
+</html>
