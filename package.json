@@ -103,7 +103,7 @@
     "zeromq": "^5.2.8"
   },
   "devDependencies": {
-    "@fabric/http": "FabricLabs/web#develop",
+    "@fabric/http": "FabricLabs/web#portal-develop",
     "blessed": "^0.1.81",
     "body-parser": "^1.18.2",
     "chai": "^4.0.2",

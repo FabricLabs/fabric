@@ -183,6 +183,9 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 </dd>
 <dt><a href="#Markdown">Markdown</a></dt>
 <dd></dd>
+<dt><a href="#Redis">Redis</a></dt>
+<dd><p>Connect and subscribe to ZeroMQ servers.</p>
+</dd>
 <dt><a href="#ZMQ">ZMQ</a></dt>
 <dd><p>Connect and subscribe to ZeroMQ publishers.</p>
 </dd>
@@ -349,7 +352,6 @@ Fabric-based networking and storage.
 
 * [App](#App) ⇐ [<code>Scribe</code>](#Scribe)
     * [new App(definition)](#new_App_new)
-    * [.id](#State+id) : <code>Boolean</code>
     * [.start()](#App+start) ⇒ <code>Promise</code>
     * [.stop()](#App+stop) ⇒ <code>Promise</code>
     * [.define(name, structure)](#App+define) ⇒ <code>Object</code>
@@ -363,13 +365,6 @@ Fabric-based networking and storage.
     * [.now()](#Scribe+now) ⇒ <code>Number</code>
     * [.trust(source)](#Scribe+trust) ⇒ [<code>Scribe</code>](#Scribe)
     * [.inherits(scribe)](#Scribe+inherits) ⇒ [<code>Scribe</code>](#Scribe)
-    * [.toString()](#State+toString) ⇒ <code>String</code>
-    * [.serialize([input])](#State+serialize) ⇒ <code>Buffer</code>
-    * [.deserialize(input)](#State+deserialize) ⇒ [<code>State</code>](#State)
-    * [.fork()](#State+fork) ⇒ [<code>State</code>](#State)
-    * [.get(path)](#State+get) ⇒ <code>Mixed</code>
-    * [.set(path)](#State+set) ⇒ <code>Mixed</code>
-    * [.commit()](#State+commit)
 
 <a name="new_App_new"></a>
 
@@ -381,12 +376,6 @@ Generic bundle for building Fabric applications.
 | --- | --- | --- |
 | definition | <code>Object</code> | Application definition.  See `config` for examples. |
 
-<a name="State+id"></a>
-
-### app.id : <code>Boolean</code>
-Identity function.
-
-**Kind**: instance property of [<code>App</code>](#App)  
 <a name="App+start"></a>
 
 ### app.start() ⇒ <code>Promise</code>
@@ -480,7 +469,6 @@ Define a named [Resource](#Resource).
 Get the output of our program.
 
 **Kind**: instance method of [<code>App</code>](#App)  
-**Overrides**: [<code>render</code>](#State+render)  
 **Returns**: <code>String</code> - Output of the program.  
 <a name="App+_registerService"></a>
 
@@ -529,72 +517,6 @@ Use an existing Scribe instance as a parent.
 | --- | --- | --- |
 | scribe | [<code>Scribe</code>](#Scribe) | Instance of Scribe to use as parent. |
 
-<a name="State+toString"></a>
-
-### app.toString() ⇒ <code>String</code>
-Unmarshall an existing state to an instance of a [Blob](Blob).
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: <code>String</code> - Serialized [Blob](Blob).  
-<a name="State+serialize"></a>
-
-### app.serialize([input]) ⇒ <code>Buffer</code>
-Convert to [Buffer](Buffer).
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: <code>Buffer</code> - [Store](#Store)-able blob.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [input] | <code>Mixed</code> | Input to serialize. |
-
-<a name="State+deserialize"></a>
-
-### app.deserialize(input) ⇒ [<code>State</code>](#State)
-Take a hex-encoded input and convert to a [State](#State) object.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: [<code>State</code>](#State) - [description]  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| input | <code>String</code> | [description] |
-
-<a name="State+fork"></a>
-
-### app.fork() ⇒ [<code>State</code>](#State)
-Creates a new child [State](#State), with `@parent` set to
-the current [State](#State) by immutable identifier.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-<a name="State+get"></a>
-
-### app.get(path) ⇒ <code>Mixed</code>
-Retrieve a key from the [State](#State).
-
-**Kind**: instance method of [<code>App</code>](#App)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | [<code>Path</code>](#Path) | Key to retrieve. |
-
-<a name="State+set"></a>
-
-### app.set(path) ⇒ <code>Mixed</code>
-Set a key in the [State](#State) to a particular value.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | [<code>Path</code>](#Path) | Key to retrieve. |
-
-<a name="State+commit"></a>
-
-### app.commit()
-Increment the vector clock, broadcast all changes as a transaction.
-
-**Kind**: instance method of [<code>App</code>](#App)  
 <a name="Chain"></a>
 
 ## Chain
@@ -1227,11 +1149,11 @@ Interfaces compile abstract contract code into [Chain](#Chain)-executable transa
 
 * [Interface](#Interface) ⇐ <code>EventEmitter</code>
     * [new Interface(settings)](#new_Interface_new)
+    * [.log(...inputs)](#Interface+log)
+    * [.now()](#Interface+now) ⇒ <code>Number</code>
     * [.start()](#Interface+start)
     * [.stop()](#Interface+stop)
     * [.cycle(val)](#Interface+cycle)
-    * [.log(...inputs)](#Interface+log)
-    * [.now()](#Interface+now) ⇒ <code>Number</code>
 
 <a name="new_Interface_new"></a>
 
@@ -1243,6 +1165,23 @@ Define an [Interface](#Interface) by creating an instance of this class.
 | --- | --- | --- |
 | settings | <code>Object</code> | Configuration values. |
 
+<a name="Interface+log"></a>
+
+### interface.log(...inputs)
+Log some output to the console.
+
+**Kind**: instance method of [<code>Interface</code>](#Interface)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| ...inputs | <code>any</code> | Components of the message to long.  Can be a single {@link} String, many [String](String) objects, or anything else. |
+
+<a name="Interface+now"></a>
+
+### interface.now() ⇒ <code>Number</code>
+Returns current timestamp.
+
+**Kind**: instance method of [<code>Interface</code>](#Interface)  
 <a name="Interface+start"></a>
 
 ### interface.start()
@@ -1266,23 +1205,6 @@ Ticks the clock with a named [Cycle](Cycle).
 | --- | --- | --- |
 | val | <code>String</code> | Name of cycle to scribe. |
 
-<a name="Interface+log"></a>
-
-### interface.log(...inputs)
-Log some output to the console.
-
-**Kind**: instance method of [<code>Interface</code>](#Interface)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| ...inputs | <code>any</code> | Components of the message to long.  Can be a single {@link} String, many [String](String) objects, or anything else. |
-
-<a name="Interface+now"></a>
-
-### interface.now() ⇒ <code>Number</code>
-Returns current timestamp.
-
-**Kind**: instance method of [<code>Interface</code>](#Interface)  
 <a name="Key"></a>
 
 ## Key
@@ -1357,26 +1279,11 @@ An ordered stack of pages.
 
 
 * [Ledger](#Ledger) ⇐ [<code>Scribe</code>](#Scribe)
-    * [.id](#State+id) : <code>Boolean</code>
     * [.append(item)](#Ledger+append) ⇒ <code>Promise</code>
     * [.now()](#Scribe+now) ⇒ <code>Number</code>
     * [.trust(source)](#Scribe+trust) ⇒ [<code>Scribe</code>](#Scribe)
     * [.inherits(scribe)](#Scribe+inherits) ⇒ [<code>Scribe</code>](#Scribe)
-    * [.toString()](#State+toString) ⇒ <code>String</code>
-    * [.serialize([input])](#State+serialize) ⇒ <code>Buffer</code>
-    * [.deserialize(input)](#State+deserialize) ⇒ [<code>State</code>](#State)
-    * [.fork()](#State+fork) ⇒ [<code>State</code>](#State)
-    * [.get(path)](#State+get) ⇒ <code>Mixed</code>
-    * [.set(path)](#State+set) ⇒ <code>Mixed</code>
-    * [.commit()](#State+commit)
-    * [.render()](#State+render) ⇒ <code>String</code>
 
-<a name="State+id"></a>
-
-### ledger.id : <code>Boolean</code>
-Identity function.
-
-**Kind**: instance property of [<code>Ledger</code>](#Ledger)  
 <a name="Ledger+append"></a>
 
 ### ledger.append(item) ⇒ <code>Promise</code>
@@ -1420,81 +1327,6 @@ Use an existing Scribe instance as a parent.
 | --- | --- | --- |
 | scribe | [<code>Scribe</code>](#Scribe) | Instance of Scribe to use as parent. |
 
-<a name="State+toString"></a>
-
-### ledger.toString() ⇒ <code>String</code>
-Unmarshall an existing state to an instance of a [Blob](Blob).
-
-**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
-**Returns**: <code>String</code> - Serialized [Blob](Blob).  
-<a name="State+serialize"></a>
-
-### ledger.serialize([input]) ⇒ <code>Buffer</code>
-Convert to [Buffer](Buffer).
-
-**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
-**Returns**: <code>Buffer</code> - [Store](#Store)-able blob.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [input] | <code>Mixed</code> | Input to serialize. |
-
-<a name="State+deserialize"></a>
-
-### ledger.deserialize(input) ⇒ [<code>State</code>](#State)
-Take a hex-encoded input and convert to a [State](#State) object.
-
-**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
-**Returns**: [<code>State</code>](#State) - [description]  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| input | <code>String</code> | [description] |
-
-<a name="State+fork"></a>
-
-### ledger.fork() ⇒ [<code>State</code>](#State)
-Creates a new child [State](#State), with `@parent` set to
-the current [State](#State) by immutable identifier.
-
-**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
-<a name="State+get"></a>
-
-### ledger.get(path) ⇒ <code>Mixed</code>
-Retrieve a key from the [State](#State).
-
-**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | [<code>Path</code>](#Path) | Key to retrieve. |
-
-<a name="State+set"></a>
-
-### ledger.set(path) ⇒ <code>Mixed</code>
-Set a key in the [State](#State) to a particular value.
-
-**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | [<code>Path</code>](#Path) | Key to retrieve. |
-
-<a name="State+commit"></a>
-
-### ledger.commit()
-Increment the vector clock, broadcast all changes as a transaction.
-
-**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
-**Overrides**: [<code>commit</code>](#State+commit)  
-<a name="State+render"></a>
-
-### ledger.render() ⇒ <code>String</code>
-Compose a JSON string for network consumption.
-
-**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
-**Overrides**: [<code>render</code>](#State+render)  
-**Returns**: <code>String</code> - JSON-encoded [String](String).  
 <a name="Machine"></a>
 
 ## Machine
@@ -2345,7 +2177,9 @@ familiar semantics.
 
 * [Service](#Service)
     * [new Service(settings)](#new_Service_new)
+    * [.init()](#Service+init)
     * [.tick()](#Service+tick) ⇒ <code>Number</code>
+    * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
     * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
     * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
     * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
@@ -2369,12 +2203,31 @@ Create an instance of a Service.
 | [settings.networking] | <code>Boolean</code> | <code>true</code> | Whether or not to connect to the network. |
 | [settings.@data] | <code>Object</code> |  | Internal data to assign. |
 
+<a name="Service+init"></a>
+
+### service.init()
+Called by Web Components.
+TODO: move to @fabric/http/types/spa
+
+**Kind**: instance method of [<code>Service</code>](#Service)  
 <a name="Service+tick"></a>
 
 ### service.tick() ⇒ <code>Number</code>
 Move forward one clock cycle.
 
 **Kind**: instance method of [<code>Service</code>](#Service)  
+<a name="Service+trust"></a>
+
+### service.trust(source) ⇒ [<code>Service</code>](#Service)
+Explicitly trust all events from a known source.
+
+**Kind**: instance method of [<code>Service</code>](#Service)  
+**Returns**: [<code>Service</code>](#Service) - Instance of Service after binding events.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| source | <code>EventEmitter</code> | Emitter of events. |
+
 <a name="Service+handler"></a>
 
 ### service.handler(message) ⇒ [<code>Service</code>](#Service)
@@ -3320,7 +3173,9 @@ Manages interaction with the Bitcoin network.
         * [.connect(addr)](#Bitcoin+connect)
         * [.start()](#Bitcoin+start)
         * [.stop()](#Bitcoin+stop)
+        * [.init()](#Service+init)
         * [.tick()](#Service+tick) ⇒ <code>Number</code>
+        * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
         * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
         * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
         * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
@@ -3475,6 +3330,13 @@ Start the Bitcoin service, including the initiation of outbound requests.
 Stop the Bitcoin service.
 
 **Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+<a name="Service+init"></a>
+
+### bitcoin.init()
+Called by Web Components.
+TODO: move to @fabric/http/types/spa
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
 <a name="Service+tick"></a>
 
 ### bitcoin.tick() ⇒ <code>Number</code>
@@ -3482,6 +3344,18 @@ Move forward one clock cycle.
 
 **Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
 **Overrides**: [<code>tick</code>](#Service+tick)  
+<a name="Service+trust"></a>
+
+### bitcoin.trust(source) ⇒ [<code>Service</code>](#Service)
+Explicitly trust all events from a known source.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: [<code>Service</code>](#Service) - Instance of Service after binding events.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| source | <code>EventEmitter</code> | Emitter of events. |
+
 <a name="Service+handler"></a>
 
 ### bitcoin.handler(message) ⇒ [<code>Service</code>](#Service)
@@ -3608,9 +3482,9 @@ Manages interaction with the Bitmessage network.
     * [new Bitmessage([settings])](#new_Bitmessage_new)
     * [.start()](#Bitmessage+start)
     * [.stop()](#Bitmessage+stop)
-    * [.cycle(val)](#Interface+cycle)
     * [.log(...inputs)](#Interface+log)
     * [.now()](#Interface+now) ⇒ <code>Number</code>
+    * [.cycle(val)](#Interface+cycle)
 
 <a name="new_Bitmessage_new"></a>
 
@@ -3640,17 +3514,6 @@ Stop the Bitmessage service.
 
 **Kind**: instance method of [<code>Bitmessage</code>](#Bitmessage)  
 **Overrides**: [<code>stop</code>](#Interface+stop)  
-<a name="Interface+cycle"></a>
-
-### bitmessage.cycle(val)
-Ticks the clock with a named [Cycle](Cycle).
-
-**Kind**: instance method of [<code>Bitmessage</code>](#Bitmessage)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| val | <code>String</code> | Name of cycle to scribe. |
-
 <a name="Interface+log"></a>
 
 ### bitmessage.log(...inputs)
@@ -3668,6 +3531,17 @@ Log some output to the console.
 Returns current timestamp.
 
 **Kind**: instance method of [<code>Bitmessage</code>](#Bitmessage)  
+<a name="Interface+cycle"></a>
+
+### bitmessage.cycle(val)
+Ticks the clock with a named [Cycle](Cycle).
+
+**Kind**: instance method of [<code>Bitmessage</code>](#Bitmessage)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| val | <code>String</code> | Name of cycle to scribe. |
+
 <a name="Elements"></a>
 
 ## Elements ⇐ [<code>Interface</code>](#Interface)
@@ -3688,9 +3562,9 @@ Manages interaction with the Elements network.
     * [.connect(addr)](#Elements+connect)
     * [.start()](#Elements+start)
     * [.stop()](#Elements+stop)
-    * [.cycle(val)](#Interface+cycle)
     * [.log(...inputs)](#Interface+log)
     * [.now()](#Interface+now) ⇒ <code>Number</code>
+    * [.cycle(val)](#Interface+cycle)
 
 <a name="new_Elements_new"></a>
 
@@ -3804,17 +3678,6 @@ Stop the Elements service.
 
 **Kind**: instance method of [<code>Elements</code>](#Elements)  
 **Overrides**: [<code>stop</code>](#Interface+stop)  
-<a name="Interface+cycle"></a>
-
-### elements.cycle(val)
-Ticks the clock with a named [Cycle](Cycle).
-
-**Kind**: instance method of [<code>Elements</code>](#Elements)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| val | <code>String</code> | Name of cycle to scribe. |
-
 <a name="Interface+log"></a>
 
 ### elements.log(...inputs)
@@ -3832,6 +3695,17 @@ Log some output to the console.
 Returns current timestamp.
 
 **Kind**: instance method of [<code>Elements</code>](#Elements)  
+<a name="Interface+cycle"></a>
+
+### elements.cycle(val)
+Ticks the clock with a named [Cycle](Cycle).
+
+**Kind**: instance method of [<code>Elements</code>](#Elements)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| val | <code>String</code> | Name of cycle to scribe. |
+
 <a name="Exchange"></a>
 
 ## Exchange
@@ -3872,9 +3746,9 @@ Manages interaction with the Liquid network.
     * [.connect(addr)](#Liquid+connect)
     * [.start()](#Liquid+start)
     * [.stop()](#Liquid+stop)
-    * [.cycle(val)](#Interface+cycle)
     * [.log(...inputs)](#Interface+log)
     * [.now()](#Interface+now) ⇒ <code>Number</code>
+    * [.cycle(val)](#Interface+cycle)
 
 <a name="new_Liquid_new"></a>
 
@@ -3988,17 +3862,6 @@ Stop the Liquid service.
 
 **Kind**: instance method of [<code>Liquid</code>](#Liquid)  
 **Overrides**: [<code>stop</code>](#Interface+stop)  
-<a name="Interface+cycle"></a>
-
-### liquid.cycle(val)
-Ticks the clock with a named [Cycle](Cycle).
-
-**Kind**: instance method of [<code>Liquid</code>](#Liquid)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| val | <code>String</code> | Name of cycle to scribe. |
-
 <a name="Interface+log"></a>
 
 ### liquid.log(...inputs)
@@ -4016,6 +3879,17 @@ Log some output to the console.
 Returns current timestamp.
 
 **Kind**: instance method of [<code>Liquid</code>](#Liquid)  
+<a name="Interface+cycle"></a>
+
+### liquid.cycle(val)
+Ticks the clock with a named [Cycle](Cycle).
+
+**Kind**: instance method of [<code>Liquid</code>](#Liquid)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| val | <code>String</code> | Name of cycle to scribe. |
+
 <a name="Markdown"></a>
 
 ## Markdown
@@ -4030,6 +3904,44 @@ Instantiate an instance of the Markdown service.
 | --- | --- | --- |
 | settings | <code>Config</code> | Map of configuration values. |
 
+<a name="Redis"></a>
+
+## Redis
+Connect and subscribe to ZeroMQ servers.
+
+**Kind**: global class  
+
+* [Redis](#Redis)
+    * [new Redis([settings])](#new_Redis_new)
+    * [.start()](#Redis+start) ⇒ [<code>Redis</code>](#Redis)
+    * [.stop()](#Redis+stop) ⇒ [<code>Redis</code>](#Redis)
+
+<a name="new_Redis_new"></a>
+
+### new Redis([settings])
+Creates an instance of a ZeroMQ subscriber.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Settings for the Redis connection. |
+| [settings.host] | <code>String</code> | Host for the Redis server. |
+| [settings.port] | <code>Number</code> | Remote ZeroMQ service port. |
+
+<a name="Redis+start"></a>
+
+### redis.start() ⇒ [<code>Redis</code>](#Redis)
+Opens the connection and subscribes to the requested channels.
+
+**Kind**: instance method of [<code>Redis</code>](#Redis)  
+**Returns**: [<code>Redis</code>](#Redis) - Instance of the service.  
+<a name="Redis+stop"></a>
+
+### redis.stop() ⇒ [<code>Redis</code>](#Redis)
+Closes the connection to the Redis server.
+
+**Kind**: instance method of [<code>Redis</code>](#Redis)  
+**Returns**: [<code>Redis</code>](#Redis) - Instance of the service.  
 <a name="ZMQ"></a>
 
 ## ZMQ
