@@ -105,7 +105,6 @@ class State extends EventEmitter {
     this.services = ['json'];
     // TODO: re-enable
     // this.name = this['@entity'].name || this.id;
-    this.path = `/entities/${this.fingerprint()}`;
 
     if (this['@entity']['@data']) {
       try {
@@ -139,10 +138,18 @@ class State extends EventEmitter {
     return this.fingerprint();
   }
 
+  get path () {
+    return `/entities/${this.fingerprint()}`;
+  }
+
   get state () {
     return this.value;
     // TODO: re-enable the below, map security considerations
     // return Object.assign({}, this.value);
+  }
+
+  set path (value) {
+    return this.path;
   }
 
   set state (value) {
