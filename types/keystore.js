@@ -254,7 +254,9 @@ class KeyStore extends Actor {
     const promise = new Promise((resolve, reject) => {
       const actor = new Actor(this.state);
       const serialized = actor.serialize();
-      return keystore.db.put('/', serialized).then(resolve).catch(reject);
+      if (keystore.db) {
+        keystore.db.put('/', serialized).then(resolve).catch(reject);
+      }
     });
 
     return promise;
