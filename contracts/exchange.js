@@ -45,9 +45,9 @@ const CLI = require('../types/cli');
 
 // Services
 const Bitcoin = require('../services/bitcoin');
-const Ethereum = require('../services/ethereum');
-const Exchange = require('../services/exchange');
-const Lightning = require('../services/lightning');
+// const Ethereum = require('../services/ethereum');
+// const Exchange = require('../services/exchange');
+// const Lightning = require('../services/lightning');
 
 // Program Definition
 async function OP_EXCHANGE () {

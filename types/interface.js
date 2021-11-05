@@ -31,13 +31,13 @@ class Interface extends Service {
   constructor (settings = {}) {
     super(settings);
 
-    this.clock = new BN();
+    this.ticker = new BN();
     this.identity = new BN(1);
     this.tags = ['pre-release'];
     this.settings = Object.assign({
       prefix: '/',
       script: '(1)',
-      type: 'miniscript'
+      type: 'javascript'
     }, settings);
 
     // define singletons
@@ -63,17 +63,11 @@ class Interface extends Service {
   }
 
   get status () {
-    return this._state.get(`/status`);
+    return this._state.get('/status');
   }
 
   set status (value = this.status) {
-    return this._state.set(`/status`, value);
-  }
-
-  async patch (transaction) {
-    // TODO: apply `transaction.operations` to Interface state
-    await this.state._applyChanges(transaction.operations);
-    return this;
+    return this._state.set('/status', value);
   }
 
   shared (count = 1) {
@@ -99,45 +93,6 @@ class Interface extends Service {
     this.commit();
 
     return this.shared();
-  }
-
-  /** Start the {@link Interface}.
-   */
-  async start () {
-    this.cycle('start');
-    this.status = 'starting';
-    await this.machine.start();
-    this.status = 'started';
-    this.emit('ready', { name: this.settings.name });
-    return this;
-  }
-
-  /** Stop the Interface. */
-  async stop () {
-    this.cycle('stop');
-    this.status = 'stopping';
-    await this.machine.stop();
-    this.status = 'stopped';
-    return this;
-  }
-
-  /**
-   * Ticks the clock with a named {@link Cycle}.
-   * @param {String} val Name of cycle to scribe.
-   */
-  async cycle (val) {
-    if (typeof val !== 'string') throw new Error('Input must be a {@link String} object.');
-    this.clock.add(this.identity);
-    this.emit('cycle', val);
-    return this;
-  }
-
-  async _handleStateChange (change) {
-    this.log('[FABRIC:INTERFACE]', 'Received State change:', change);
-    let data = JSON.stringify({ changes: change });
-    // this.emit('message', Message.fromVector(['Transaction', data]));
-    this.emit('transaction', Message.fromVector(['Transaction', data]));
-    return 1;
   }
 
   commit () {
@@ -193,6 +148,50 @@ class Interface extends Service {
    */
   now () {
     return new Date().getTime();
+  }
+
+  async patch (transaction) {
+    // TODO: apply `transaction.operations` to Interface state
+    await this.state._applyChanges(transaction.operations);
+    return this;
+  }
+
+  /** Start the {@link Interface}.
+   */
+  async start () {
+    this.cycle('start');
+    this.status = 'starting';
+    await this.machine.start();
+    this.status = 'started';
+    this.emit('ready', { name: this.settings.name });
+    return this;
+  }
+
+  /** Stop the Interface. */
+  async stop () {
+    this.cycle('stop');
+    this.status = 'stopping';
+    await this.machine.stop();
+    this.status = 'stopped';
+    return this;
+  }
+
+  /**
+   * Ticks the clock with a named {@link Cycle}.
+   * @param {String} val Name of cycle to scribe.
+   */
+  async cycle (val) {
+    if (typeof val !== 'string') throw new Error('Input must be a {@link String} object.');
+    this.ticker.add(this.identity);
+    this.emit('cycle', val);
+    return this;
+  }
+
+  async _handleStateChange (change) {
+    this.log('[FABRIC:INTERFACE]', 'Received State change:', change);
+    let data = JSON.stringify({ changes: change });
+    this.emit('transaction', Message.fromVector(['Transaction', data]));
+    return 1;
   }
 }
 

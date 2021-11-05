@@ -65,23 +65,22 @@ class Remote extends Resource {
   }
 
   async request (type, path, params = {}) {
-    let self = this;
-    let parts = self.settings.authority.split(':');
+    const self = this;
+    const parts = self.settings.authority.split(':');
 
     // TODO: use onion address for secure mode
-    let host = parts[0] || ((self.secure) ? 'localhost' : 'localhost');
+    const host = parts[0] || ((self.secure) ? 'localhost' : 'localhost');
     let port = parts[1] || ((self.secure) ? 443 : 80);
 
     if (this.settings.port) {
       port = this.settings.port;
     }
 
-    let protocol = (!self.secure) ? 'http' : 'https';
+    const protocol = (!self.secure) ? 'http' : 'https';
     let url = `${protocol}://${host}:${port}${path}`;
 
     let result = null;
     let response = null;
-    let body = null;
     let headers = {
       'Accept': CONTENT_TYPE,
       'Content-Type': CONTENT_TYPE
@@ -120,7 +119,7 @@ class Remote extends Resource {
     try {
       response = await fetch(url, opts);
     } catch (e) {
-      console.error('[REMOTE]', 'exception:', e);
+      self.emit('error', `[REMOTE] exception: ${e}`);
     }
 
     if (!response) {
@@ -131,20 +130,26 @@ class Remote extends Resource {
     }
 
     switch (response.status) {
+      case 404:
+        result = {
+          status: 'error',
+          message: 'Document not found.'
+        };
+        break;
       default:
         if (response.ok) {
           const formatter = parser.parse(response.headers.get('content-type'));
           switch (formatter.type) {
-            default:
-              if (this.settings.verbosity >= 4) console.warn('[FABRIC:REMOTE]', 'Unhandled headers content type:', formatter.type);
-              result = await response.text();
-              break;
             case 'application/json':
               try {
                 result = await response.json();
               } catch (E) {
                 console.error('[REMOTE]', 'Could not parse JSON:', E);
               }
+              break;
+            default:
+              if (this.settings.verbosity >= 4) self.emit('warning', `[FABRIC:REMOTE] Unhandled headers content type: ${formatter.type}`);
+              result = await response.text();
               break;
           }
         } else {
@@ -156,12 +161,6 @@ class Remote extends Resource {
             result = response.text();
           }
         }
-        break;
-      case 404:
-        result = {
-          status: 'error',
-          message: 'Document not found.'
-        };
         break;
     }
 
@@ -194,7 +193,7 @@ class Remote extends Resource {
    * @param  {Object} params - Map of parameters to supply.
    * @return {Mixed}        Result of request.
    */
-  async _POST (key, obj, params) {
+  async _POST (key, obj, params = {}) {
     let result = null;
     let options = null;
 

@@ -247,7 +247,7 @@ class Service extends Scribe {
   /**
    * Explicitly trust all events from a known source.
    * @param  {EventEmitter} source Emitter of events.
-   * @return {Sensemaker}          Instance of Sensemaker after binding events.
+   * @return {Service} Instance of Service after binding events.
    */
   trust (source, name = source.constructor.name) {
     // Constants
