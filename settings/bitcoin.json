@@ -15,5 +15,18 @@
         "spends": ["0000000000000000000000000000000000000000000000000000000000000000FFFFFFFF"]
       }
     ]
+  },
+  "bootstrap": {
+    "dns": [
+      "dnsseed.bitcoin.dashjr.org",
+      "dnsseed.bluematt.me",
+      "dnsseed.emzy.de",
+      "seed.bitcoin.jonasschnelli.ch",
+      "seed.bitcoin.sipa.be",
+      "seed.bitcoin.sprovoost.nl",
+      "seed.bitcoinstats.com",
+      "seed.bitcoin.wiz.biz",
+      "seed.btc.petertodd.org"
+    ]
   }
 }

@@ -9,7 +9,7 @@ const jayson = require('jayson');
 const monitor = require('fast-json-patch');
 
 // TODO: remove bcoin
-const bcoin = require('bcoin/lib/bcoin-browser'); // ATTN: breaks after 1.0.2
+const bcoin = require('bcoin');
 
 // Services
 const ZMQ = require('./zmq');
@@ -768,7 +768,8 @@ class Bitcoin extends Service {
 
     // Generate the specified number of blocks
     for (let i = 0; i < count; i++) {
-      blocks.push( await this.generateBlock(address) );
+      const block = await this.generateBlock(address);
+      blocks.push(block);
     }
 
     return blocks;
@@ -801,13 +802,17 @@ class Bitcoin extends Service {
   async _makeRPCRequest (method, params = []) {
     const self = this;
     return new Promise((resolve, reject) => {
-      if (!self.rpc) return reject('RPC manager does not exist.');
+      if (!self.rpc) return reject(new Error('RPC manager does not exist.'));
       try {
         self.rpc.request(method, params, function (err, response) {
-          if (err) return reject({
-            error: err,
-            response: response
-          });
+          if (err) {
+            self.emit('error', err);
+            return reject(new Error({
+              error: err,
+              response: response
+            }));
+          }
+
           return resolve(response.result);
         });
       } catch (exception) {
@@ -828,6 +833,10 @@ class Bitcoin extends Service {
 
   async _requestBestBlockHash () {
     return this._makeRPCRequest('getbestblockhash', []);
+  }
+
+  async _requestBlockHeader (hash) {
+    return this._makeRPCRequest('getblockheader', [hash]);
   }
 
   async _requestBlock (hash) {
@@ -871,6 +880,18 @@ class Bitcoin extends Service {
     } catch (exception) {
       this.emit('error', `[${this.settings.name}] Could not make request to RPC host: ${JSON.stringify(exception)}`);
     }
+
+    await this.commit();
+  }
+
+  async _syncHeaders () {
+    const height = await this._requestChainHeight();
+    for (let i = 0; i <= height; i++) {
+      const hash = await this._requestBlockAtHeight(i);
+      await this._requestBlockHeader(hash); // state updates happen here
+    }
+    await this.commit();
+    return this;
   }
 
   async _syncBalanceFromOracle () {
@@ -900,6 +921,7 @@ class Bitcoin extends Service {
     const best = await this._requestBestBlockHash();
     const height = await this._requestChainHeight();
 
+    // TODO: headers-only sync
     // TODO: async (i.e., Promise.all) chainsync
     for (let i = 0; i <= height; i++) {
       const hash = await this._requestBlockAtHeight(i);
@@ -917,7 +939,8 @@ class Bitcoin extends Service {
    * Start the Bitcoin service, including the initiation of outbound requests.
    */
   async start () {
-    if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', `Starting for network "${this.settings.network}"...`);
+    this.emit('debug', `[SERVICES:BITCOIN] Starting for network "${this.settings.network}"...`);
+
     const self = this;
     self.status = 'starting';
 

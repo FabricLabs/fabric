@@ -124,7 +124,7 @@
     "jsdoc-to-markdown": "^4.0.1",
     "json-to-dot": "^1.1.0",
     "mocha": "^5.2.0",
-    "nyc": "^15.0.0",
+    "nyc": "^15.1.0",
     "page": "^1.7.1",
     "raw-loader": "^0.5.1",
     "semistandard": "^14.2.0",
