@@ -19,7 +19,6 @@ const Entity = require('./entity');
 const Hash256 = require('./hash256');
 const Key = require('./key');
 const Message = require('./message');
-const Scribe = require('./scribe');
 const Store = require('./store');
 
 /**
@@ -31,10 +30,10 @@ const Store = require('./store');
  * this prototype.  In general, `connect` and `send` are the highest-priority
  * jobs, and by default the `fabric` property will serve as an I/O stream using
  * familiar semantics.
- *
+ * @access protected
  * @property map The "map" is a hashtable of "key" => "value" pairs.
  */
-class Service extends Scribe {
+class Service extends Actor {
   /**
    * Create an instance of a Service.
    * @param       {Object} settings Configuration for this service.
@@ -98,7 +97,10 @@ class Service extends Scribe {
     }, this.config['@data']); */
     this._state = {
       clock: 0,
-      services: {},
+      epochs: {}, // snapshots of history (by ID)
+      history: [], // list of ...
+      status: 'PAUSED',
+      content: {},
       version: 0 // TODO: change to 1 for 0.1.0
     };
 
@@ -157,6 +159,8 @@ class Service extends Scribe {
   }
 
   set status (value) {
+    if (!value) return this.status;
+    if (!this._state.status) this._state.status = 'PAUSED';
     this._state.status = value.toUpperCase();
     return this.status;
   }
@@ -190,8 +194,18 @@ class Service extends Scribe {
     // return Promise.all(Object.entries(this.services).filter().map())
     for (const [name, service] of Object.entries(this.services)) {
       if (!this.settings.services.includes(name)) continue;
+      if (!service.alert) {
+        console.error('Service', name, 'does not have an alert function?');
+        continue;
+      }
+
       service.alert(msg);
     }
+  }
+
+  identify () {
+    this.emit('auth', this.key.pubkey);
+    return this.key.pubkey;
   }
 
   /**
@@ -224,12 +238,18 @@ class Service extends Scribe {
       state: this._state
     }]);
 
+    if (!beat) {
+      this.emit('error', 'Beat could not construct a Message!');
+      console.trace();
+      process.exit();
+    }
+
     // TODO: parse JSON types in @fabric/core/types/message
     let data = beat.data;
 
     try {
-      data = JSON.parse(data);
-      data = JSON.stringify(data, null, '  ');
+      const parsed = JSON.parse(data);
+      data = JSON.stringify(parsed, null, '  ');
     } catch (exception) {
       this.emit('error', `Exception parsing beat: ${exception}`);
     }
@@ -242,6 +262,32 @@ class Service extends Scribe {
 
   append (block) {
     if (this.best !== block.parent) throw new Error(`Block does not attach to current chain.  Block ID: ${block.id} Block Parent: ${block.parent} Current Best: ${this.best}`);
+  }
+
+  /**
+   * Retrieve a key from the {@link State}.
+   * @param {Path} path Key to retrieve.
+   * @returns {Mixed}
+   */
+  get (path = '') {
+    let result = null;
+    try {
+      result = pointer.get(this._state.content, path);
+    } catch (exception) {
+      console.error('[FABRIC:STATE]', 'Could not retrieve path:', path, pointer.get(this['@entity']['@data'], '/'), exception);
+    }
+    return result;
+  }
+
+  /**
+   * Set a key in the {@link State} to a particular value.
+   * @param {Path} path Key to retrieve.
+   * @returns {Mixed}
+   */
+  set (path, value) {
+    const result = pointer.set(this._state.content, path, value);
+    this.commit();
+    return result;
   }
 
   /**
@@ -461,18 +507,12 @@ class Service extends Scribe {
    * to any peers designated in the service's configuration.
    */
   async start () {
+    this.emit('debug', `[FABRIC:SERVICE] Starting as ${this.id}...`);
+
     const service = this;
 
     // Assign status and process
     this.status = 'starting';
-    this.process = function Process (msg) {
-      console.log('[FABRIC:SERVICE]', 'Unterminated message:', msg);
-      console.log('### Heads Up!');
-      console.log('Please see documentation before continuing further:');
-      console.log('Legacy Web: https://dev.fabric.pub/docs/');
-      console.log('Fabric: fabric:docs');
-      console.log('Local Repository: `npm run docs` to open HTTP server at http://localhost:8000');
-    };
 
     // Define an Actor with all current settings
     this.actor = new Actor(this.settings);
@@ -483,7 +523,7 @@ class Service extends Scribe {
       exclusive: true // override all previous types
     }); */
 
-    for (let name in this.settings.resources) {
+    for (const name in this.settings.resources) {
       const resource = this.settings.resources[name];
       const attribute = resource.routes.list.split('/')[1];
       const key = crypto.createHash('sha256').update(resource.routes.list).digest('hex');
@@ -549,7 +589,7 @@ class Service extends Scribe {
 
     this.status = 'ready';
     this.emit('log', '[FABRIC:SERVICE] Started!');
-    this.emit('ready');
+    this.ready();
 
     return this;
   }
@@ -696,11 +736,13 @@ class Service extends Scribe {
       }
     });
 
-    try {
-      const prior = await this.store.get('/');
-      this.state = JSON.parse(prior);
-    } catch (exception) {
-      this.emit('warning', `[FABRIC:SERVICE] Could not restore state: ${exception}`);
+    if (this.store) {
+      try {
+        const prior = await this.store.get('/');
+        this.state = JSON.parse(prior);
+      } catch (exception) {
+        this.emit('warning', `[FABRIC:SERVICE] Could not restore state: ${exception}`);
+      }
     }
 
     if (this.settings.networking && this.swarm) {
@@ -769,20 +811,20 @@ class Service extends Scribe {
   async send (channel, message, extra) {
     if (this.debug) console.log('[SERVICE]', 'send()', 'Sending:', channel, message, extra);
 
-    let path = Buffer.alloc(256);
-    let payload = Buffer.alloc(2048);
-    let checksum = Buffer.alloc(64);
-    let entropy = Buffer.alloc(1726); // fill to 4096
+    const path = Buffer.alloc(256);
+    const payload = Buffer.alloc(2048);
+    const checksum = Buffer.alloc(64);
+    const entropy = Buffer.alloc(1726); // fill to 4096
 
     path.write(channel);
     payload.write(message);
 
-    let msg = Buffer.concat([ path, payload ]);
-    let hash = crypto.createHash('sha256').update(msg).digest('hex');
+    const msg = Buffer.concat([ path, payload ]);
+    const hash = crypto.createHash('sha256').update(msg).digest('hex');
 
     checksum.write(hash);
 
-    let block = Buffer.concat([
+    const block = Buffer.concat([
       Buffer.from([0x01]), // version byte
       Buffer.from([0x00]), // placeholder
       checksum,
@@ -1061,9 +1103,11 @@ class Service extends Scribe {
   }
 
   async _startAllServices () {
+    if (!this.services) return this.emit('warning', 'Tried to start subservices, but none existed.');
     // Start all Services
     for (const [name, service] of Object.entries(this.services)) {
-      if (this.settings.services.includes(name)) {
+      // TODO: re-evaluate inclusion on Service itself
+      if (this.settings.services && this.settings.services.includes(name)) {
         this.emit('debug', `Starting service "${name}" (with trust)`);
         // TODO: evaluate @fabric/core/types/store
         // TODO: isomorphic @fabric/core/types/store
@@ -1072,6 +1116,8 @@ class Service extends Scribe {
         await this.services[name].start();
       }
     }
+
+    return this;
   }
 
   async _startHeart () {

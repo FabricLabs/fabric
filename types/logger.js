@@ -43,9 +43,7 @@ class Logger extends Actor {
   async start () {
     this._state.status = 'STARTING';
     await mkdirp(this.settings.path);
-    this.stream = fs.createWriteStream(this.path, {
-      flags: 'a'
-    });
+    this.stream = fs.createWriteStream(this.path, { flags: 'a+' });
     this._state.status = 'STARTED';
     return this;
   }
@@ -55,6 +53,11 @@ class Logger extends Actor {
     if (this.stream) this.stream.close();
     this._state.status = 'STOPPED';
     return this;
+  }
+
+  async _getLastLine () {
+    if (!fs.existsSync(this.path)) await this.log({ status: 'EMPTY' });
+    return fs.readFileSync(this.path).toString('utf8').split('\n');
   }
 }
 

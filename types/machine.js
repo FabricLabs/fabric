@@ -12,14 +12,13 @@ const BN = require('bn.js');
 
 // Fabric Types
 const Hash256 = require('./hash256');
-const Scribe = require('./scribe');
+const Actor = require('./actor');
 const State = require('./state');
-const Vector = require('./vector');
 
 /**
  * General-purpose state machine with {@link Vector}-based instructions.
  */
-class Machine extends Scribe {
+class Machine extends Actor {
   /**
    * Create a Machine.
    * @param       {Object} settings Run-time configuration.
@@ -47,17 +46,7 @@ class Machine extends Scribe {
     this.known = {}; // definitions
     this.script = []; // input
     this.stack = []; // output
-
-    this.state = new State(); // JS map
     this.history = []; // State tree
-
-    this.observer = monitor.observe(this.state['@data']);
-    this.vector = new Vector(this.state['@data']);
-
-    this._state = {
-      status: 'INITIALIZED',
-      memory: Buffer.alloc(MACHINE_MAX_MEMORY)
-    };
 
     Object.defineProperty(this, 'tip', function (val) {
       this.log(`tip requested: ${val}`);
@@ -66,10 +55,6 @@ class Machine extends Scribe {
     });
 
     return this;
-  }
-
-  get id () {
-    return this.vector.id;
   }
 
   bit () {
@@ -112,18 +97,18 @@ class Machine extends Scribe {
 
     this.emit('tick', this.clock);
 
-    for (let i in this.script) {
-      let instruction = this.script[i];
+    for (const i in this.script) {
+      const instruction = this.script[i];
 
       if (this.known[instruction]) {
-        let op = new State({
+        const op = new State({
           '@type': 'Cycle',
           parent: this.id,
           state: this.state,
           known: this.known,
           input: input
         });
-        let data = this.known[instruction].call(op, input);
+        const data = this.known[instruction].call(op, input);
         this.stack.push(data);
       } else {
         this.stack.push(instruction | 0);
@@ -137,10 +122,9 @@ class Machine extends Scribe {
     this.state['@data'] = this.stack;
     this.state['@id'] = this.id;
 
-    let commit = await this.commit();
-    let state = await this.state.commit();
+    this.commit();
 
-    return state;
+    return this.state;
   }
 
   asBuffer () {

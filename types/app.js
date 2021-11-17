@@ -34,7 +34,7 @@ class App extends Service {
 
     if (!definition.resources) definition.resources = {};
 
-    this.settings = this['@data'] = Object.assign({
+    this.settings = Object.assign({
       seed: null,
       path: './stores/fabric-application',
       prefix: '/',
@@ -79,8 +79,8 @@ class App extends Service {
     });
 
     if (this.settings.resources) {
-      for (const name in this['@data'].resources) {
-        this.set(this.settings.prefix + this['@data'].resources[name].components.list, []);
+      for (const name in this.resources) {
+        this.set(this.settings.prefix + this.resources[name].components.list, []);
       }
     }
 
@@ -107,6 +107,10 @@ class App extends Service {
 
   async bootstrap () {
     return true;
+  }
+
+  async _signWithOwnID (input) {
+    return this.key.sign(input);
   }
 
   /**
@@ -140,12 +144,11 @@ class App extends Service {
    * @return {Promise}
    */
   async stop () {
-    this.log('[APP]', 'stopping...');
-
+    this.emit('log', '[FABRIC:APP] Stopping...');
     await this.node.stop();
     await this.tips.close();
     await this.stash.close();
-
+    this.emit('log', '[FABRIC:APP] Stopped!');
     return this;
   }
 
@@ -156,12 +159,12 @@ class App extends Service {
    * @return {Object}           [description]
    */
   async define (name, structure) {
-    let self = this;
+    const self = this;
 
     self.log('[APP]', 'defining:', name, structure);
 
     try {
-      let resource = new Resource(structure);
+      const resource = new Resource(structure);
 
       resource._sign();
       resource.trust(self.stash);

@@ -1,6 +1,7 @@
 'use strict';
 
 const config = require('../settings/default');
+const merge = require('lodash.merge');
 
 // External Dependencies
 const BN = require('bn.js');
@@ -22,6 +23,7 @@ const State = require('./state');
 // const bcoin = require('bcoin/lib/bcoin-browser');
 // For the node...
 const bcoin = require('bcoin');
+const Actor = require('@fabric/core/types/actor');
 
 // TODO: most of these should be converted to use Consensus,
 // provided above.  Refactor these to use `this.provider` or
@@ -61,12 +63,12 @@ class Wallet extends Service {
     this.marshall = {
       agents: [],
       collections: {
-        'transactions': null, // not yet loaded, seek for Buffer,
-        'orders': null
+        transactions: null, // not yet loaded, seek for Buffer,
+        orders: null
       }
     };
 
-    this.settings = Object.assign({
+    this.settings = merge({
       name: 'primary',
       network: config.network,
       language: config.language,
@@ -103,7 +105,7 @@ class Wallet extends Service {
     this.coins = new Collection();
     this.secrets = new Collection({
       methods: {
-        'create': this._prepareSecret.bind(this)
+        create: this._prepareSecret.bind(this)
       }
     });
 
@@ -115,33 +117,27 @@ class Wallet extends Service {
     this.consensus = new Consensus();
 
     // Internal State
-    this._state = {
-      space: {}, // tracks addresses in shard
-      coins: [],
-      keys: {},
-      transactions: [],
-      orders: [],
-      outputs: []
-    };
-
-    // External State
-    this.state = {
+    this._state = merge(this._state, {
+      actors: {},
       asset: this.settings.asset || null,
       balances: {
         confirmed: 0,
         unconfirmed: 0
       },
-      coins: [],
-      keys: [],
-      transactions: [],
-      orders: []
-    };
+      space: {}, // tracks addresses in shard
+      keys: {},
+      services: {},
+      status: 'PAUSED',
+      transactions: {},
+      orders: {},
+      outputs: {}
+    });
 
     Object.defineProperty(this, 'database', { enumerable: false });
     // TODO: remove these
     Object.defineProperty(this, 'accounts', { enumerable: false });
     Object.defineProperty(this, 'addresses', { enumerable: false });
-    Object.defineProperty(this, 'coins', { enumerable: false });
+    Object.defineProperty(this, 'utxos', { enumerable: false });
     Object.defineProperty(this, 'keys', { enumerable: false });
     Object.defineProperty(this, 'outputs', { enumerable: false });
     Object.defineProperty(this, 'secrets', { enumerable: false });
@@ -149,13 +145,7 @@ class Wallet extends Service {
     Object.defineProperty(this, 'transactions', { enumerable: false });
     Object.defineProperty(this, 'wallet', { enumerable: false });
 
-    this.status = 'closed';
-
     return this;
-  }
-
-  get id () {
-    return this.settings.id || this.entity.id;
   }
 
   get balance () {
@@ -192,17 +182,15 @@ class Wallet extends Service {
     // TODO: parse as {@link Message}
     // TODO: store in this.messages
     switch (msg['@type']) {
-      default:
-        return console.warn('[FABRIC:WALLET]', `Unhandled message type: ${msg['@type']}`);
       case 'ServiceMessage':
         return this._processServiceMessage(msg['@data']);
+      default:
+        return console.warn('[FABRIC:WALLET]', `Unhandled message type: ${msg['@type']}`);
     }
   }
 
   async _processServiceMessage (msg) {
     switch (msg['@type']) {
-      default:
-        return console.warn('[FABRIC:WALLET]', `Unhandled message type: ${msg['@type']}`);
       case 'BitcoinBlock':
         this.processBitcoinBlock(msg['@data']);
         break;
@@ -210,6 +198,8 @@ class Wallet extends Service {
         // TODO: validate destination is this wallet
         this.addTransactionToWallet(msg['@data']);
         break;
+      default:
+        return console.warn('[FABRIC:WALLET]', `Unhandled message type: ${msg['@type']}`);
     }
   }
 
@@ -217,10 +207,10 @@ class Wallet extends Service {
     if (this.settings.verbosity >= 4) console.log('[FABRIC:WALLET]', 'Processing block:', block);
     if (!block.block) return 0;
     for (let i = 0; i < block.block.hashes.length; i++) {
-      let txid = block.block.hashes[i].toString('hex');
+      const txid = block.block.hashes[i].toString('hex');
       // ATTN: Eric
       // TODO: process transaction
-      // console.log('found txid in block:', txid);
+      console.log('found txid in block:', txid);
     }
   }
 
@@ -254,7 +244,7 @@ class Wallet extends Service {
 
       if (address) {
         this._state.outputs.push(output);
-        this._state.coins.push(new Coin(transaction.outputs[i]));
+        this._state.utxos.push(new Coin(transaction.outputs[i]));
         this.emit('payment', {
           '@type': 'WalletPayment',
           '@data': {
@@ -335,7 +325,7 @@ class Wallet extends Service {
   }
 
   async _getUnspentOutput (amount) {
-    if (!this._state.coins.length) throw new Error('No available funds.');
+    if (!this._state.utxos.length) throw new Error('No available funds.');
     // TODO: use coin selection
     const mtx = new MTX();
 
@@ -345,7 +335,7 @@ class Wallet extends Service {
       value: amount
     });
 
-    await mtx.fund(this._state.coins, {
+    await mtx.fund(this._state.utxos, {
       // Use a rate of 10,000 satoshis per kb.
       // With the `fullnode` object, you can
       // use the fee estimator for this instead
@@ -356,7 +346,7 @@ class Wallet extends Service {
     });
     // TODO: use the MTX to select outputs
 
-    return this._state.coins[0];
+    return this._state.utxos[0];
   }
 
   /**
@@ -525,7 +515,7 @@ class Wallet extends Service {
       amount: amount
     });
 
-    await mtx.fund(this._state.coins, {
+    await mtx.fund(this._state.utxos, {
       rate: 10000, // TODO: fee calculation
       changeAddress: change.address
     });
@@ -566,7 +556,7 @@ class Wallet extends Service {
       amount: amount
     });
 
-    await mtx.fund(this._state.coins, {
+    await mtx.fund(this._state.utxos, {
       rate: 10000, // TODO: fee calculation
       changeAddress: change.address
     });
@@ -722,7 +712,7 @@ class Wallet extends Service {
   }
 
   async _addOutputToSpendables (coin) {
-    this._state.coins.push(coin);
+    this._state.utxos.push(coin);
     return this;
   }
 
@@ -815,7 +805,7 @@ class Wallet extends Service {
 
     // TODO: wallet._getSpendableOutput()
     let coin = Coin.fromTX(coinbase, 0, -1);
-    this._state.coins.push(coin);
+    this._state.utxos.push(coin);
 
     // console.log('coinbase:', coinbase);
 
@@ -844,9 +834,9 @@ class Wallet extends Service {
     let index = fund.index || 0;
     let hashType = Script.hashType.ANYONECANPAY | Script.hashType.ALL;
 
-    mtx.addCoin(this._state.coins[0]);
-    mtx.scriptInput(index, this._state.coins[0], this.keyring);
-    mtx.signInput(index, this._state.coins[0], this.keyring, hashType);
+    mtx.addCoin(this._state.utxos[0]);
+    mtx.scriptInput(index, this._state.utxos[0], this.keyring);
+    mtx.signInput(index, this._state.utxos[0], this.keyring, hashType);
 
     await this.commit();
 
@@ -967,7 +957,7 @@ class Wallet extends Service {
 
     await this._load();
 
-    console.log('funding transaction with coins:', this._state.coins);
+    console.log('funding transaction with coins:', this._state.utxos);
 
     // INSERT 1 Output
     mtx.addOutput({
@@ -975,7 +965,7 @@ class Wallet extends Service {
       value: amount
     });
 
-    out = await mtx.fund(this._state.coins, {
+    out = await mtx.fund(this._state.utxos, {
       // TODO: fee estimation
       rate: 10000,
       changeAddress: self.ring.getAddress()
@@ -1136,7 +1126,7 @@ class Wallet extends Service {
     let coinbase = await this._getFreeCoinbase();
 
     // TODO: load available outputs from wallet
-    let out = await mtx.fund(this._state.coins, {
+    let out = await mtx.fund(this._state.utxos, {
       // TODO: fee estimation
       rate: 10000,
       changeAddress: this.ring.getAddress()
@@ -1281,12 +1271,10 @@ class Wallet extends Service {
 
   /**
    * Initialize the wallet, including keys and addresses.
-   * @param {Object} settings 
+   * @param {Object} settings Settings to load.
    */
   async _load (settings = {}) {
     if (this.wallet) return this;
-
-    const self = this;
 
     this.status = 'loading';
     this.master = null;
@@ -1298,7 +1286,7 @@ class Wallet extends Service {
     if (this.settings.key && this.settings.key.seed) {
       this.emit('log', 'Restoring wallet from seed...');
       if (this.settings.verbosity >= 3) console.log('[AUDIT]', 'Restoring wallet from provided seed:', this.settings.key.seed);
-      let mnemonic = new Mnemonic(this.settings.key.seed);
+      const mnemonic = new Mnemonic(this.settings.key.seed);
       this.master = bcoin.hd.fromMnemonic(mnemonic);
       this.seed = new EncryptedPromise({ data: this.settings.key.seed });
     } else {
@@ -1338,10 +1326,11 @@ class Wallet extends Service {
     // TODO: notify downstream of short-circuit removal
 
     // finally, assign state...
-    this.state.transactions = this.settings.transaction;
-    this.state.orders = this.settings.orders;
+    this._state.transactions = this.settings.transaction;
+    this._state.orders = this.settings.orders;
+    this._state.outputs = this.state.actors;
 
-    if (this.settings.verbosity >= 5) console.log('[FABRIC:WALLET]', 'state after loading:', this.state);
+    if (this.settings.verbosity >= 5) console.log('[FABRIC:WALLET]', 'state after loading:', this._state);
 
     this.status = 'loaded';
     this.emit('ready');

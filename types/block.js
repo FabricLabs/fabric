@@ -10,7 +10,7 @@ class Block extends Actor {
     this._state = merge({
       parent: null,
       transactions: {},
-      signature: null
+      signatures: []
     }, input);
 
     return this;

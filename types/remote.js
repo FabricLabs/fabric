@@ -10,7 +10,9 @@ const Resource = require('./resource');
 const CONTENT_TYPE = 'application/json';
 
 /**
- * Interact with a remote {@link Resource}.
+ * Interact with a remote {@link Resource}.  This is currently the only
+ * HTTP-related code that should remain in @fabric/core — all else must
+ * be moved to @fabric/http before final release!
  * @type {Remote}
  * @property {Object} config
  * @property {Boolean} secure
@@ -40,7 +42,7 @@ class Remote extends Resource {
 
   /**
    * Enumerate the available Resources on the remote host.
-   * @return {Configuration}
+   * @return {Configuration} An object with enumerable key/value pairs for the Application Resource Contract.
    */
   async enumerate () {
     let options = await this._OPTIONS('/');
@@ -64,6 +66,13 @@ class Remote extends Resource {
     return options;
   }
 
+  /**
+   * Make an HTTP request to the configured authority.
+   * @param {String} type One of `GET`, `PUT`, `POST`, `DELETE`, or `OPTIONS`.
+   * @param {String} path The path to request from the authority.
+   * @param {Object} [params] Options.
+   * @returns {FabricHTTPResult}
+   */
   async request (type, path, params = {}) {
     const self = this;
     const parts = self.settings.authority.split(':');
@@ -116,6 +125,7 @@ class Remote extends Resource {
         break;
     }
 
+    // Core Logic
     try {
       response = await fetch(url, opts);
     } catch (e) {
@@ -171,7 +181,7 @@ class Remote extends Resource {
    * HTTP PUT against the configured Authority.
    * @param  {String} path - HTTP Path to request.
    * @param  {Object} body - Map of parameters to supply.
-   * @return {Mixed}        [description]
+   * @return {FabricHTTPResult|String} Result of request.
    */
   async _PUT (key, body) {
     return this.request('put', key, { body });
@@ -181,7 +191,7 @@ class Remote extends Resource {
    * HTTP GET against the configured Authority.
    * @param  {String} path - HTTP Path to request.
    * @param  {Object} params - Map of parameters to supply.
-   * @return {Mixed}        [description]
+   * @return {FabricHTTPResult|String} Result of request.
    */
   async _GET (key, params) {
     return this.request('get', key, params);
@@ -191,7 +201,7 @@ class Remote extends Resource {
    * HTTP POST against the configured Authority.
    * @param  {String} path - HTTP Path to request.
    * @param  {Object} params - Map of parameters to supply.
-   * @return {Mixed}        Result of request.
+   * @return {FabricHTTPResult|String} Result of request.
    */
   async _POST (key, obj, params = {}) {
     let result = null;

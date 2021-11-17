@@ -1,19 +1,26 @@
 'use strict';
 
+// Constants
 const {
   MAX_MESSAGE_SIZE
 } = require('../constants');
 
 // Dependencies
 const crypto = require('crypto');
-const EventEmitter = require('events').EventEmitter;
 const monitor = require('fast-json-patch');
 const pointer = require('json-pointer');
+
+// Fabric Types
+const Actor = require('@fabric/core/types/actor');
+
+// Local Services
+const json = require('../functions/json');
 
 /**
  * The {@link State} is the core of most {@link User}-facing interactions.  To
  * interact with the {@link User}, simply propose a change in the state by
  * committing to the outcome.  This workflow keeps app design quite simple!
+ * @access protected
  * @augments EventEmitter
  * @property {Number} size Size of state in bytes.
  * @property {Buffer} @buffer Byte-for-byte memory representation of state.
@@ -21,7 +28,7 @@ const pointer = require('json-pointer');
  * @property {Mixed} @data Local instance of the state.
  * @property {String} @id Unique identifier for this data.
  */
-class State extends EventEmitter {
+class State extends Actor {
   /**
    * Creates a snapshot of some information.
    * @param  {Mixed} data Input data.
@@ -70,29 +77,6 @@ class State extends EventEmitter {
       this['@entity']['@data'] = data;
     }
 
-    Object.defineProperty(this, `size`, {
-      enumerable: true,
-      get: function count () {
-        return this['@buffer'].length;
-      }
-    });
-
-    Object.defineProperty(this, 'domain', {
-      enumerable: false
-    });
-
-    Object.defineProperty(this, '_events', {
-      enumerable: false
-    });
-
-    Object.defineProperty(this, '_eventsCount', {
-      enumerable: false
-    });
-
-    Object.defineProperty(this, '_maxListeners', {
-      enumerable: false
-    });
-
     // start at zero
     this._clock = 0;
 
@@ -121,25 +105,49 @@ class State extends EventEmitter {
     Object.defineProperty(this, '@allocation', { enumerable: false });
     Object.defineProperty(this, '@buffer', { enumerable: false });
     Object.defineProperty(this, '@encoding', { enumerable: false });
+    Object.defineProperty(this, 'key', { enumerable: false });
     Object.defineProperty(this, 'services', { enumerable: false });
 
+    Object.defineProperty(this, 'size', {
+      enumerable: true,
+      get: function count () {
+        return this['@buffer'].length;
+      }
+    });
+
+    Object.defineProperty(this, 'domain', {
+      enumerable: false
+    });
+
+    Object.defineProperty(this, '_events', {
+      enumerable: false
+    });
+
+    Object.defineProperty(this, '_eventsCount', {
+      enumerable: false
+    });
+
+    Object.defineProperty(this, '_maxListeners', {
+      enumerable: false
+    });
+
     return this;
+  }
+
+  static get json () {
+    return json;
+  }
+
+  static get html () {
+    return json;
   }
 
   static get pointer () {
     return pointer;
   }
 
-  /**
-   * Identity function.
-   * @type {Boolean}
-   */
-  get id () {
-    return this.fingerprint();
-  }
-
   get path () {
-    return `/entities/${this.fingerprint()}`;
+    return `/entities/${this.id}`;
   }
 
   get state () {
@@ -220,7 +228,7 @@ class State extends EventEmitter {
   }
 
   fingerprint () {
-    let map = {};
+    const map = {};
     map['@method'] = 'sha256';
     map['@input'] = this.serialize(this['@entity']['@data']);
     map['@buffer'] = crypto.createHash('sha256').update(map['@input'], 'utf8');
@@ -239,11 +247,12 @@ class State extends EventEmitter {
     return Buffer.from(this['@data']['@data']);
   }
 
+  /** Converts the State to an HTML document. */
   toHTML () {
-    let state = this;
-    let solution = state['@output'].toString('utf8');
-    let confirmed = String(solution);
-    let raw = `X-Claim-ID: ${this.id}
+    const state = this;
+    const solution = state['@output'].toString('utf8');
+    const confirmed = String(solution);
+    const raw = `<html>X-Claim-ID: ${this.id}
 X-Claim-Integrity: sha256
 X-Claim-Type: Response
 X-Claim-Result: ${state.id}
@@ -256,7 +265,7 @@ Document Type (local JSON): ${this.constructor.name}
 Document Path: ${this.path}
 Document Name: ${this.name}
 Document Integrity: sha256:${this.id}
-Document Data (local JSON): ${confirmed}
+Document Data (local JSON, <${confirmed.length}> bytes: ${confirmed}
 Document Source:
 \`\`\`
 ${confirmed}
@@ -269,7 +278,7 @@ Labs: https://github.com/FabricLabs
 To edit this message, visit this URL: https://github.com/FabricLabs/fabric/edit/master/types/state.js
 
 ## Onboarding
-When you're ready to continue, visit the following URL: https://dev.fabric.pub/WELCOME.html
+When you're ready to continue, visit the following URL: https://dev.fabric.pub/WELCOME.html</html>
 `;
 
     return raw;
@@ -294,7 +303,7 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
 
   pack (data) {
     if (!data) data = this['@data'];
-    return JSON.stringify(data);
+    return json(data);
   }
 
   /**
@@ -302,14 +311,12 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
    * @param  {Mixed} [input] Input to serialize.
    * @return {Buffer}       {@link Store}-able blob.
    */
-  serialize (input, encoding = 'json') {
-    if (!input) input = this['@data'];
-
+  serialize (input = this.state, encoding = 'json') {
+    const state = {};
     let result = null;
-    let state = {};
 
     if (typeof input === 'string') {
-      result = Buffer.from(`${JSON.stringify(input)}`, 'utf8');
+      return Buffer.from(`${json(input)}`, 'utf8');
     } else if (input instanceof Array) {
       result = Buffer.from(`${JSON.stringify(input)}`, 'utf8');
     } else if (input instanceof Buffer) {
@@ -318,9 +325,6 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
       return this.serialize(input['@data']);
     } else {
       switch (input.constructor.name) {
-        default:
-          result = input.toString('utf8');
-          break;
         case 'Function':
           result = Buffer.from(input.toString('utf8'));
           break;
@@ -332,11 +336,15 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
           break;
         case 'Object':
           result = Buffer.from(JSON.stringify(input));
+          break;
+        default:
+          result = input.toString('utf8');
+          break;
       }
 
       // strip special fields
       // TODO: order?
-      for (let name in input) {
+      for (const name in input) {
         if (name.charAt(0) === '@') {
           continue;
         } else {
@@ -345,7 +353,7 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
       }
     }
 
-    return result;
+    return JSON.parse(json(result));
   }
 
   /**
