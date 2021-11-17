@@ -14,7 +14,6 @@ const ec = new EC('secp256k1');
 
 // External Dependencies
 // TODO: remove all external dependencies
-const bip39 = require('bip39');
 const HD = require('../node_modules/bcoin/lib/hd');
 const KeyRing = require('../node_modules/bcoin/lib/primitives/keyring');
 const Mnemonic = require('../node_modules/bcoin/lib/hd/mnemonic');
