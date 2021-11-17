@@ -78,6 +78,9 @@ RFC 5869.  Defaults to 32 byte output, matching Bitcoin&#39;s implementaton.</p>
 Each <a href="#Actor">Actor</a> in the network receives and broadcasts messages,
 selectively disclosing new routes to peers which may have open circuits.</p>
 </dd>
+<dt><a href="#Node">Node</a></dt>
+<dd><p>Full definition of a Fabric node.</p>
+</dd>
 <dt><a href="#Oracle">Oracle</a> ⇐ <code><a href="#Store">Store</a></code></dt>
 <dd><p>An Oracle manages one or more collections, using a <code>mempool</code> for
 transitive state.</p>
@@ -93,7 +96,9 @@ within the network.</p>
 <dd><p>Read from a byte stream, seeking valid Fabric messages.</p>
 </dd>
 <dt><a href="#Remote">Remote</a> : <code><a href="#Remote">Remote</a></code></dt>
-<dd><p>Interact with a remote <a href="#Resource">Resource</a>.</p>
+<dd><p>Interact with a remote <a href="#Resource">Resource</a>.  This is currently the only
+HTTP-related code that should remain in @fabric/core — all else must
+be moved to @fabric/http before final release!</p>
 </dd>
 <dt><a href="#Resource">Resource</a></dt>
 <dd><p>Generic interface for collections of digital objects.</p>
@@ -118,6 +123,9 @@ familiar semantics.</p>
 <dt><a href="#Session">Session</a></dt>
 <dd><p>The <a href="#Session">Session</a> type describes a connection between <a href="#Peer">Peer</a>
 objects, and includes its own lifecycle.</p>
+</dd>
+<dt><a href="#Signer">Signer</a></dt>
+<dd><p>Generic Fabric Signer.</p>
 </dd>
 <dt><a href="#Snapshot">Snapshot</a></dt>
 <dd><p>A type of message to be expected from a <a href="#Service">Service</a>.</p>
@@ -169,20 +177,9 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 <dt><a href="#Bitcoin">Bitcoin</a> ⇐ <code><a href="#Service">Service</a></code></dt>
 <dd><p>Manages interaction with the Bitcoin network.</p>
 </dd>
-<dt><a href="#Bitmessage">Bitmessage</a> ⇐ <code><a href="#Interface">Interface</a></code></dt>
-<dd><p>Manages interaction with the Bitmessage network.</p>
-</dd>
-<dt><a href="#Elements">Elements</a> ⇐ <code><a href="#Interface">Interface</a></code></dt>
-<dd><p>Manages interaction with the Elements network.</p>
-</dd>
 <dt><a href="#Exchange">Exchange</a></dt>
 <dd><p>Implements a basic Exchange.</p>
 </dd>
-<dt><a href="#Liquid">Liquid</a> ⇐ <code><a href="#Interface">Interface</a></code></dt>
-<dd><p>Manages interaction with the Liquid network.</p>
-</dd>
-<dt><a href="#Markdown">Markdown</a></dt>
-<dd></dd>
 <dt><a href="#Redis">Redis</a></dt>
 <dd><p>Connect and subscribe to ZeroMQ servers.</p>
 </dd>
@@ -191,6 +188,12 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 </dd>
 <dt><del><a href="#HTTPServer">HTTPServer</a></del></dt>
 <dd><p>Deprecated 2021-10-16.</p>
+</dd>
+<dt><del><a href="#Scribe">Scribe</a></del></dt>
+<dd><p>Deprecated 2021-11-06.</p>
+</dd>
+<dt><del><a href="#Stash">Stash</a></del></dt>
+<dd><p>Deprecated 2021-11-06.</p>
 </dd>
 </dl>
 
@@ -1439,6 +1442,24 @@ Returns a [Buffer](Buffer) of the complete message.
 
 **Kind**: instance method of [<code>Message</code>](#Message)  
 **Returns**: <code>Buffer</code> - Buffer of the encoded [Message](#Message).  
+<a name="Node"></a>
+
+## Node
+Full definition of a Fabric node.
+
+**Kind**: global class  
+<a name="Node+trust"></a>
+
+### node.trust(source, settings)
+Explicitly trusts an [EventEmitter](EventEmitter).
+
+**Kind**: instance method of [<code>Node</code>](#Node)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| source | <code>EventEmitter</code> | Actor to listen to. |
+| settings | <code>Object</code> \| <code>String</code> | Label for the trusted messages, or a configuration object. |
+
 <a name="Oracle"></a>
 
 ## Oracle ⇐ [<code>Store</code>](#Store)
@@ -1663,7 +1684,9 @@ for valid Fabric messages.
 <a name="Remote"></a>
 
 ## Remote : [<code>Remote</code>](#Remote)
-Interact with a remote [Resource](#Resource).
+Interact with a remote [Resource](#Resource).  This is currently the only
+HTTP-related code that should remain in @fabric/core — all else must
+be moved to @fabric/http before final release!
 
 **Kind**: global class  
 **Properties**
@@ -1677,9 +1700,10 @@ Interact with a remote [Resource](#Resource).
 * [Remote](#Remote) : [<code>Remote</code>](#Remote)
     * [new Remote(target)](#new_Remote_new)
     * [.enumerate()](#Remote+enumerate) ⇒ <code>Configuration</code>
-    * [._PUT(path, body)](#Remote+_PUT) ⇒ <code>Mixed</code>
-    * [._GET(path, params)](#Remote+_GET) ⇒ <code>Mixed</code>
-    * [._POST(path, params)](#Remote+_POST) ⇒ <code>Mixed</code>
+    * [.request(type, path, [params])](#Remote+request) ⇒ <code>FabricHTTPResult</code>
+    * [._PUT(path, body)](#Remote+_PUT) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
+    * [._GET(path, params)](#Remote+_GET) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
+    * [._POST(path, params)](#Remote+_POST) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
     * [._OPTIONS(path, params)](#Remote+_OPTIONS) ⇒ <code>Object</code>
     * [._PATCH(path, body)](#Remote+_PATCH) ⇒ <code>Object</code>
     * [._DELETE(path, params)](#Remote+_DELETE) ⇒ <code>Object</code>
@@ -1702,13 +1726,27 @@ An in-memory representation of a node in our network.
 Enumerate the available Resources on the remote host.
 
 **Kind**: instance method of [<code>Remote</code>](#Remote)  
+**Returns**: <code>Configuration</code> - An object with enumerable key/value pairs for the Application Resource Contract.  
+<a name="Remote+request"></a>
+
+### remote.request(type, path, [params]) ⇒ <code>FabricHTTPResult</code>
+Make an HTTP request to the configured authority.
+
+**Kind**: instance method of [<code>Remote</code>](#Remote)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| type | <code>String</code> | One of `GET`, `PUT`, `POST`, `DELETE`, or `OPTIONS`. |
+| path | <code>String</code> | The path to request from the authority. |
+| [params] | <code>Object</code> | Options. |
+
 <a name="Remote+_PUT"></a>
 
-### remote.\_PUT(path, body) ⇒ <code>Mixed</code>
+### remote.\_PUT(path, body) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
 HTTP PUT against the configured Authority.
 
 **Kind**: instance method of [<code>Remote</code>](#Remote)  
-**Returns**: <code>Mixed</code> - [description]  
+**Returns**: <code>FabricHTTPResult</code> \| <code>String</code> - Result of request.  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -1717,11 +1755,11 @@ HTTP PUT against the configured Authority.
 
 <a name="Remote+_GET"></a>
 
-### remote.\_GET(path, params) ⇒ <code>Mixed</code>
+### remote.\_GET(path, params) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
 HTTP GET against the configured Authority.
 
 **Kind**: instance method of [<code>Remote</code>](#Remote)  
-**Returns**: <code>Mixed</code> - [description]  
+**Returns**: <code>FabricHTTPResult</code> \| <code>String</code> - Result of request.  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -1730,11 +1768,11 @@ HTTP GET against the configured Authority.
 
 <a name="Remote+_POST"></a>
 
-### remote.\_POST(path, params) ⇒ <code>Mixed</code>
+### remote.\_POST(path, params) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
 HTTP POST against the configured Authority.
 
 **Kind**: instance method of [<code>Remote</code>](#Remote)  
-**Returns**: <code>Mixed</code> - Result of request.  
+**Returns**: <code>FabricHTTPResult</code> \| <code>String</code> - Result of request.  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -2185,6 +2223,8 @@ familiar semantics.
     * [new Service(settings)](#new_Service_new)
     * [.init()](#Service+init)
     * [.tick()](#Service+tick) ⇒ <code>Number</code>
+    * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
+    * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
     * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
     * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
     * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
@@ -2222,6 +2262,28 @@ TODO: move to @fabric/http/types/spa
 Move forward one clock cycle.
 
 **Kind**: instance method of [<code>Service</code>](#Service)  
+<a name="Service+get"></a>
+
+### service.get(path) ⇒ <code>Mixed</code>
+Retrieve a key from the [State](#State).
+
+**Kind**: instance method of [<code>Service</code>](#Service)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | [<code>Path</code>](#Path) | Key to retrieve. |
+
+<a name="Service+set"></a>
+
+### service.set(path) ⇒ <code>Mixed</code>
+Set a key in the [State](#State) to a particular value.
+
+**Kind**: instance method of [<code>Service</code>](#Service)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | [<code>Path</code>](#Path) | Key to retrieve. |
+
 <a name="Service+trust"></a>
 
 ### service.trust(source) ⇒ [<code>Service</code>](#Service)
@@ -2387,6 +2449,48 @@ Opens the [Session](#Session) for interaction.
 Closes the [Session](#Session), preventing further interaction.
 
 **Kind**: instance method of [<code>Session</code>](#Session)  
+<a name="Signer"></a>
+
+## Signer
+Generic Fabric Signer.
+
+**Kind**: global class  
+**Emits**: <code>event:message Fabric {@link Message} objects.</code>  
+**Access**: protected  
+**Properties**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| id | <code>String</code> | Unique identifier for this Signer (id === SHA256(preimage)). |
+| preimage | <code>String</code> | Input hash for the `id` property (preimage === SHA256(SignerState)). |
+
+
+* [Signer](#Signer)
+    * [new Signer([actor])](#new_Signer_new)
+    * [.sign()](#Signer+sign) ⇒ [<code>Signer</code>](#Signer)
+
+<a name="new_Signer_new"></a>
+
+### new Signer([actor])
+Creates an [Signer](#Signer), which emits messages for other
+Signers to subscribe to.  You can supply certain parameters
+for the actor, including key material [!!!] — be mindful of
+what you share with others!
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [actor] | <code>Object</code> | Object to use as the actor. |
+| [actor.seed] | <code>String</code> | BIP24 Mnemonic to use as a seed phrase. |
+| [actor.public] | <code>Buffer</code> | Public key. |
+| [actor.private] | <code>Buffer</code> | Private key. |
+
+<a name="Signer+sign"></a>
+
+### signer.sign() ⇒ [<code>Signer</code>](#Signer)
+Signs some data.
+
+**Kind**: instance method of [<code>Signer</code>](#Signer)  
 <a name="Snapshot"></a>
 
 ## Snapshot
@@ -3112,9 +3216,9 @@ Initialize the wallet, including keys and addresses.
 
 **Kind**: instance method of [<code>Wallet</code>](#Wallet)  
 
-| Param | Type |
-| --- | --- |
-| settings | <code>Object</code> | 
+| Param | Type | Description |
+| --- | --- | --- |
+| settings | <code>Object</code> | Settings to load. |
 
 <a name="Wallet+start"></a>
 
@@ -3182,6 +3286,8 @@ Manages interaction with the Bitcoin network.
         * [.stop()](#Bitcoin+stop)
         * [.init()](#Service+init)
         * [.tick()](#Service+tick) ⇒ <code>Number</code>
+        * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
+        * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
         * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
         * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
         * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
@@ -3351,6 +3457,28 @@ Move forward one clock cycle.
 
 **Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
 **Overrides**: [<code>tick</code>](#Service+tick)  
+<a name="Service+get"></a>
+
+### bitcoin.get(path) ⇒ <code>Mixed</code>
+Retrieve a key from the [State](#State).
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | [<code>Path</code>](#Path) | Key to retrieve. |
+
+<a name="Service+set"></a>
+
+### bitcoin.set(path) ⇒ <code>Mixed</code>
+Set a key in the [State](#State) to a particular value.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | [<code>Path</code>](#Path) | Key to retrieve. |
+
 <a name="Service+trust"></a>
 
 ### bitcoin.trust(source) ⇒ [<code>Service</code>](#Service)
@@ -3477,242 +3605,6 @@ Provides bcoin's implementation of `MTX` internally.  This static may be
 removed in the future.
 
 **Kind**: static property of [<code>Bitcoin</code>](#Bitcoin)  
-<a name="Bitmessage"></a>
-
-## Bitmessage ⇐ [<code>Interface</code>](#Interface)
-Manages interaction with the Bitmessage network.
-
-**Kind**: global class  
-**Extends**: [<code>Interface</code>](#Interface)  
-
-* [Bitmessage](#Bitmessage) ⇐ [<code>Interface</code>](#Interface)
-    * [new Bitmessage([settings])](#new_Bitmessage_new)
-    * [.start()](#Bitmessage+start)
-    * [.stop()](#Bitmessage+stop)
-    * [.log(...inputs)](#Interface+log)
-    * [.now()](#Interface+now) ⇒ <code>Number</code>
-    * [.cycle(val)](#Interface+cycle)
-
-<a name="new_Bitmessage_new"></a>
-
-### new Bitmessage([settings])
-Creates an instance of the Bitmessage service.
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [settings] | <code>Object</code> | Map of configuration options for the Bitmessage service. |
-| [settings.network] | <code>String</code> | One of `regtest`, `testnet`, or `mainnet`. |
-| [settings.nodes] | <code>Array</code> | List of address:port pairs to trust. |
-| [settings.seeds] | <code>Array</code> | Bitmessage peers to request chain from (address:port). |
-| [settings.fullnode] | <code>Boolean</code> | Run a full node. |
-
-<a name="Bitmessage+start"></a>
-
-### bitmessage.start()
-Start the Bitmessage service, including the initiation of outbound requests.
-
-**Kind**: instance method of [<code>Bitmessage</code>](#Bitmessage)  
-**Overrides**: [<code>start</code>](#Interface+start)  
-<a name="Bitmessage+stop"></a>
-
-### bitmessage.stop()
-Stop the Bitmessage service.
-
-**Kind**: instance method of [<code>Bitmessage</code>](#Bitmessage)  
-**Overrides**: [<code>stop</code>](#Interface+stop)  
-<a name="Interface+log"></a>
-
-### bitmessage.log(...inputs)
-Log some output to the console.
-
-**Kind**: instance method of [<code>Bitmessage</code>](#Bitmessage)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| ...inputs | <code>any</code> | Components of the message to long.  Can be a single {@link} String, many [String](String) objects, or anything else. |
-
-<a name="Interface+now"></a>
-
-### bitmessage.now() ⇒ <code>Number</code>
-Returns current timestamp.
-
-**Kind**: instance method of [<code>Bitmessage</code>](#Bitmessage)  
-<a name="Interface+cycle"></a>
-
-### bitmessage.cycle(val)
-Ticks the clock with a named [Cycle](Cycle).
-
-**Kind**: instance method of [<code>Bitmessage</code>](#Bitmessage)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| val | <code>String</code> | Name of cycle to scribe. |
-
-<a name="Elements"></a>
-
-## Elements ⇐ [<code>Interface</code>](#Interface)
-Manages interaction with the Elements network.
-
-**Kind**: global class  
-**Extends**: [<code>Interface</code>](#Interface)  
-
-* [Elements](#Elements) ⇐ [<code>Interface</code>](#Interface)
-    * [new Elements([settings])](#new_Elements_new)
-    * [._prepareTransaction(obj)](#Elements+_prepareTransaction)
-    * [._handleCommittedBlock(block)](#Elements+_handleCommittedBlock)
-    * [._handlePeerPacket(msg)](#Elements+_handlePeerPacket)
-    * [._handleBlockFromSPV(msg)](#Elements+_handleBlockFromSPV)
-    * [._handleTransactionFromSPV(tx)](#Elements+_handleTransactionFromSPV)
-    * [._subscribeToShard(shard)](#Elements+_subscribeToShard)
-    * [._connectSPV()](#Elements+_connectSPV)
-    * [.connect(addr)](#Elements+connect)
-    * [.start()](#Elements+start)
-    * [.stop()](#Elements+stop)
-    * [.log(...inputs)](#Interface+log)
-    * [.now()](#Interface+now) ⇒ <code>Number</code>
-    * [.cycle(val)](#Interface+cycle)
-
-<a name="new_Elements_new"></a>
-
-### new Elements([settings])
-Creates an instance of the Elements service.
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [settings] | <code>Object</code> | Map of configuration options for the Elements service. |
-| [settings.network] | <code>String</code> | One of `regtest`, `testnet`, or `mainnet`. |
-| [settings.nodes] | <code>Array</code> | List of address:port pairs to trust. |
-| [settings.seeds] | <code>Array</code> | Elements peers to request chain from (address:port). |
-| [settings.fullnode] | <code>Boolean</code> | Run a full node. |
-
-<a name="Elements+_prepareTransaction"></a>
-
-### elements.\_prepareTransaction(obj)
-Prepares a [Transaction](Transaction) for storage.
-
-**Kind**: instance method of [<code>Elements</code>](#Elements)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| obj | <code>Transaction</code> | Transaction to prepare. |
-
-<a name="Elements+_handleCommittedBlock"></a>
-
-### elements.\_handleCommittedBlock(block)
-Receive a committed block.
-
-**Kind**: instance method of [<code>Elements</code>](#Elements)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| block | <code>Block</code> | Block to handle. |
-
-<a name="Elements+_handlePeerPacket"></a>
-
-### elements.\_handlePeerPacket(msg)
-Process a message from a peer in the Elements network.
-
-**Kind**: instance method of [<code>Elements</code>](#Elements)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| msg | <code>PeerPacket</code> | Message from peer. |
-
-<a name="Elements+_handleBlockFromSPV"></a>
-
-### elements.\_handleBlockFromSPV(msg)
-Hand a [Block](Block) message as supplied by an [SPV](SPV) client.
-
-**Kind**: instance method of [<code>Elements</code>](#Elements)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| msg | <code>BlockMessage</code> | A [Message](#Message) as passed by the [SPV](SPV) source. |
-
-<a name="Elements+_handleTransactionFromSPV"></a>
-
-### elements.\_handleTransactionFromSPV(tx)
-Verify and interpret a [ElementsTransaction](ElementsTransaction), as received from an
-[SPVSource](SPVSource).
-
-**Kind**: instance method of [<code>Elements</code>](#Elements)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| tx | <code>ElementsTransaction</code> | Incoming transaction from the SPV source. |
-
-<a name="Elements+_subscribeToShard"></a>
-
-### elements.\_subscribeToShard(shard)
-Attach event handlers for a supplied list of addresses.
-
-**Kind**: instance method of [<code>Elements</code>](#Elements)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| shard | <code>Shard</code> | List of addresses to monitor. |
-
-<a name="Elements+_connectSPV"></a>
-
-### elements.\_connectSPV()
-Initiate outbound connections to configured SPV nodes.
-
-**Kind**: instance method of [<code>Elements</code>](#Elements)  
-<a name="Elements+connect"></a>
-
-### elements.connect(addr)
-Connect to a Fabric [Peer](#Peer).
-
-**Kind**: instance method of [<code>Elements</code>](#Elements)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| addr | <code>String</code> | Address to connect to. |
-
-<a name="Elements+start"></a>
-
-### elements.start()
-Start the Elements service, including the initiation of outbound requests.
-
-**Kind**: instance method of [<code>Elements</code>](#Elements)  
-**Overrides**: [<code>start</code>](#Interface+start)  
-<a name="Elements+stop"></a>
-
-### elements.stop()
-Stop the Elements service.
-
-**Kind**: instance method of [<code>Elements</code>](#Elements)  
-**Overrides**: [<code>stop</code>](#Interface+stop)  
-<a name="Interface+log"></a>
-
-### elements.log(...inputs)
-Log some output to the console.
-
-**Kind**: instance method of [<code>Elements</code>](#Elements)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| ...inputs | <code>any</code> | Components of the message to long.  Can be a single {@link} String, many [String](String) objects, or anything else. |
-
-<a name="Interface+now"></a>
-
-### elements.now() ⇒ <code>Number</code>
-Returns current timestamp.
-
-**Kind**: instance method of [<code>Elements</code>](#Elements)  
-<a name="Interface+cycle"></a>
-
-### elements.cycle(val)
-Ticks the clock with a named [Cycle](Cycle).
-
-**Kind**: instance method of [<code>Elements</code>](#Elements)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| val | <code>String</code> | Name of cycle to scribe. |
-
 <a name="Exchange"></a>
 
 ## Exchange
@@ -3732,184 +3624,6 @@ find and trade with real peers.
 | settings | <code>Object</code> | Map of settings to values. |
 | settings.fees | <code>Object</code> | Map of fee settings (all values in BTC). |
 | settings.fees.minimum | <code>Object</code> | Minimum fee (satoshis). |
-
-<a name="Liquid"></a>
-
-## Liquid ⇐ [<code>Interface</code>](#Interface)
-Manages interaction with the Liquid network.
-
-**Kind**: global class  
-**Extends**: [<code>Interface</code>](#Interface)  
-
-* [Liquid](#Liquid) ⇐ [<code>Interface</code>](#Interface)
-    * [new Liquid([settings])](#new_Liquid_new)
-    * [._prepareTransaction(obj)](#Liquid+_prepareTransaction)
-    * [._handleCommittedBlock(block)](#Liquid+_handleCommittedBlock)
-    * [._handlePeerPacket(msg)](#Liquid+_handlePeerPacket)
-    * [._handleBlockFromSPV(msg)](#Liquid+_handleBlockFromSPV)
-    * [._handleTransactionFromSPV(tx)](#Liquid+_handleTransactionFromSPV)
-    * [._subscribeToShard(shard)](#Liquid+_subscribeToShard)
-    * [._connectSPV()](#Liquid+_connectSPV)
-    * [.connect(addr)](#Liquid+connect)
-    * [.start()](#Liquid+start)
-    * [.stop()](#Liquid+stop)
-    * [.log(...inputs)](#Interface+log)
-    * [.now()](#Interface+now) ⇒ <code>Number</code>
-    * [.cycle(val)](#Interface+cycle)
-
-<a name="new_Liquid_new"></a>
-
-### new Liquid([settings])
-Creates an instance of the Liquid service.
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [settings] | <code>Object</code> | Map of configuration options for the Liquid service. |
-| [settings.network] | <code>String</code> | One of `regtest`, `testnet`, or `mainnet`. |
-| [settings.nodes] | <code>Array</code> | List of address:port pairs to trust. |
-| [settings.seeds] | <code>Array</code> | Liquid peers to request chain from (address:port). |
-| [settings.fullnode] | <code>Boolean</code> | Run a full node. |
-
-<a name="Liquid+_prepareTransaction"></a>
-
-### liquid.\_prepareTransaction(obj)
-Prepares a [Transaction](Transaction) for storage.
-
-**Kind**: instance method of [<code>Liquid</code>](#Liquid)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| obj | <code>Transaction</code> | Transaction to prepare. |
-
-<a name="Liquid+_handleCommittedBlock"></a>
-
-### liquid.\_handleCommittedBlock(block)
-Receive a committed block.
-
-**Kind**: instance method of [<code>Liquid</code>](#Liquid)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| block | <code>Block</code> | Block to handle. |
-
-<a name="Liquid+_handlePeerPacket"></a>
-
-### liquid.\_handlePeerPacket(msg)
-Process a message from a peer in the Liquid network.
-
-**Kind**: instance method of [<code>Liquid</code>](#Liquid)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| msg | <code>PeerPacket</code> | Message from peer. |
-
-<a name="Liquid+_handleBlockFromSPV"></a>
-
-### liquid.\_handleBlockFromSPV(msg)
-Hand a [Block](Block) message as supplied by an [SPV](SPV) client.
-
-**Kind**: instance method of [<code>Liquid</code>](#Liquid)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| msg | <code>BlockMessage</code> | A [Message](#Message) as passed by the [SPV](SPV) source. |
-
-<a name="Liquid+_handleTransactionFromSPV"></a>
-
-### liquid.\_handleTransactionFromSPV(tx)
-Verify and interpret a [LiquidTransaction](LiquidTransaction), as received from an
-[SPVSource](SPVSource).
-
-**Kind**: instance method of [<code>Liquid</code>](#Liquid)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| tx | <code>LiquidTransaction</code> | Incoming transaction from the SPV source. |
-
-<a name="Liquid+_subscribeToShard"></a>
-
-### liquid.\_subscribeToShard(shard)
-Attach event handlers for a supplied list of addresses.
-
-**Kind**: instance method of [<code>Liquid</code>](#Liquid)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| shard | <code>Shard</code> | List of addresses to monitor. |
-
-<a name="Liquid+_connectSPV"></a>
-
-### liquid.\_connectSPV()
-Initiate outbound connections to configured SPV nodes.
-
-**Kind**: instance method of [<code>Liquid</code>](#Liquid)  
-<a name="Liquid+connect"></a>
-
-### liquid.connect(addr)
-Connect to a Fabric [Peer](#Peer).
-
-**Kind**: instance method of [<code>Liquid</code>](#Liquid)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| addr | <code>String</code> | Address to connect to. |
-
-<a name="Liquid+start"></a>
-
-### liquid.start()
-Start the Liquid service, including the initiation of outbound requests.
-
-**Kind**: instance method of [<code>Liquid</code>](#Liquid)  
-**Overrides**: [<code>start</code>](#Interface+start)  
-<a name="Liquid+stop"></a>
-
-### liquid.stop()
-Stop the Liquid service.
-
-**Kind**: instance method of [<code>Liquid</code>](#Liquid)  
-**Overrides**: [<code>stop</code>](#Interface+stop)  
-<a name="Interface+log"></a>
-
-### liquid.log(...inputs)
-Log some output to the console.
-
-**Kind**: instance method of [<code>Liquid</code>](#Liquid)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| ...inputs | <code>any</code> | Components of the message to long.  Can be a single {@link} String, many [String](String) objects, or anything else. |
-
-<a name="Interface+now"></a>
-
-### liquid.now() ⇒ <code>Number</code>
-Returns current timestamp.
-
-**Kind**: instance method of [<code>Liquid</code>](#Liquid)  
-<a name="Interface+cycle"></a>
-
-### liquid.cycle(val)
-Ticks the clock with a named [Cycle](Cycle).
-
-**Kind**: instance method of [<code>Liquid</code>](#Liquid)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| val | <code>String</code> | Name of cycle to scribe. |
-
-<a name="Markdown"></a>
-
-## Markdown
-**Kind**: global class  
-<a name="new_Markdown_new"></a>
-
-### new Markdown(settings)
-Instantiate an instance of the Markdown service.
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| settings | <code>Config</code> | Map of configuration values. |
 
 <a name="Redis"></a>
 
@@ -3993,5 +3707,158 @@ Closes the connection to the ZMQ publisher.
 ***Deprecated***
 
 Deprecated 2021-10-16.
+
+**Kind**: global class  
+<a name="Scribe"></a>
+
+## ~~Scribe~~
+***Deprecated***
+
+Deprecated 2021-11-06.
+
+**Kind**: global class  
+
+* ~~[Scribe](#Scribe)~~
+    * [new Scribe(config)](#new_Scribe_new)
+    * [.now()](#Scribe+now) ⇒ <code>Number</code>
+    * [.trust(source)](#Scribe+trust) ⇒ [<code>Scribe</code>](#Scribe)
+    * [.inherits(scribe)](#Scribe+inherits) ⇒ [<code>Scribe</code>](#Scribe)
+    * [.toHTML()](#State+toHTML)
+    * [.toString()](#State+toString) ⇒ <code>String</code>
+    * [.serialize([input])](#State+serialize) ⇒ <code>Buffer</code>
+    * [.deserialize(input)](#State+deserialize) ⇒ [<code>State</code>](#State)
+    * [.fork()](#State+fork) ⇒ [<code>State</code>](#State)
+    * [.get(path)](#State+get) ⇒ <code>Mixed</code>
+    * [.set(path)](#State+set) ⇒ <code>Mixed</code>
+    * [.commit()](#State+commit)
+    * [.render()](#State+render) ⇒ <code>String</code>
+
+<a name="new_Scribe_new"></a>
+
+### new Scribe(config)
+The "Scribe" is a simple tag-based recordkeeper.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| config | <code>Object</code> | General configuration object. |
+| config.verbose | <code>Boolean</code> | Should the Scribe be noisy? |
+
+<a name="Scribe+now"></a>
+
+### scribe.now() ⇒ <code>Number</code>
+Retrives the current timestamp, in milliseconds.
+
+**Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Returns**: <code>Number</code> - [Number](Number) representation of the millisecond [Integer](Integer) value.  
+<a name="Scribe+trust"></a>
+
+### scribe.trust(source) ⇒ [<code>Scribe</code>](#Scribe)
+Blindly bind event handlers to the [Source](Source).
+
+**Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Returns**: [<code>Scribe</code>](#Scribe) - Instance of the [Scribe](#Scribe).  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| source | <code>Source</code> | Event stream. |
+
+<a name="Scribe+inherits"></a>
+
+### scribe.inherits(scribe) ⇒ [<code>Scribe</code>](#Scribe)
+Use an existing Scribe instance as a parent.
+
+**Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Returns**: [<code>Scribe</code>](#Scribe) - The configured instance of the Scribe.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| scribe | [<code>Scribe</code>](#Scribe) | Instance of Scribe to use as parent. |
+
+<a name="State+toHTML"></a>
+
+### scribe.toHTML()
+Converts the State to an HTML document.
+
+**Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+<a name="State+toString"></a>
+
+### scribe.toString() ⇒ <code>String</code>
+Unmarshall an existing state to an instance of a [Blob](Blob).
+
+**Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Returns**: <code>String</code> - Serialized [Blob](Blob).  
+<a name="State+serialize"></a>
+
+### scribe.serialize([input]) ⇒ <code>Buffer</code>
+Convert to [Buffer](Buffer).
+
+**Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Returns**: <code>Buffer</code> - [Store](#Store)-able blob.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [input] | <code>Mixed</code> | Input to serialize. |
+
+<a name="State+deserialize"></a>
+
+### scribe.deserialize(input) ⇒ [<code>State</code>](#State)
+Take a hex-encoded input and convert to a [State](#State) object.
+
+**Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Returns**: [<code>State</code>](#State) - [description]  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>String</code> | [description] |
+
+<a name="State+fork"></a>
+
+### scribe.fork() ⇒ [<code>State</code>](#State)
+Creates a new child [State](#State), with `@parent` set to
+the current [State](#State) by immutable identifier.
+
+**Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+<a name="State+get"></a>
+
+### scribe.get(path) ⇒ <code>Mixed</code>
+Retrieve a key from the [State](#State).
+
+**Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | [<code>Path</code>](#Path) | Key to retrieve. |
+
+<a name="State+set"></a>
+
+### scribe.set(path) ⇒ <code>Mixed</code>
+Set a key in the [State](#State) to a particular value.
+
+**Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | [<code>Path</code>](#Path) | Key to retrieve. |
+
+<a name="State+commit"></a>
+
+### scribe.commit()
+Increment the vector clock, broadcast all changes as a transaction.
+
+**Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+<a name="State+render"></a>
+
+### scribe.render() ⇒ <code>String</code>
+Compose a JSON string for network consumption.
+
+**Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Returns**: <code>String</code> - JSON-encoded [String](String).  
+<a name="Stash"></a>
+
+## ~~Stash~~
+***Deprecated***
+
+Deprecated 2021-11-06.
 
 **Kind**: global class  
