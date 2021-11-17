@@ -1,10 +1,11 @@
 'use strict';
 
+// Dependencies
 const level = require('level');
 const crypto = require('crypto');
 const pointer = require('json-pointer');
 
-// internal components
+// Fabric Types
 const Collection = require('./collection');
 const Entity = require('./entity');
 const Scribe = require('./scribe');
@@ -63,20 +64,25 @@ class Store extends Scribe {
     return this;
   }
 
+  _getPathForKey (key) {
+    const path = pointer.escape(key);
+    return this.sha256(path);
+  }
+
   async _errorHandler (err) {
     console.error('[FABRIC:STORE]', 'Error condition:', err);
   }
 
   async _setEncrypted (path, value, passphrase = '') {
-    let secret = value; // TODO: encrypt value
-    let name = crypto.createHash('sha256').createHash(path).digest('hex');
+    const secret = value; // TODO: encrypt value
+    const name = crypto.createHash('sha256').createHash(path).digest('hex');
     return this.set(`/secrets/${name}`, secret);
   }
 
   async _getEncrypted (path, passphrase = '') {
-    let name = crypto.createHash('sha256').createHash(path).digest('hex');
-    let secret = this.get(`/secrets/${name}`);
-    let decrypted = secret; // TODO: decrypt value
+    const name = crypto.createHash('sha256').createHash(path).digest('hex');
+    const secret = this.get(`/secrets/${name}`);
+    const decrypted = secret; // TODO: decrypt value
     return decrypted;
   }
 
@@ -86,9 +92,8 @@ class Store extends Scribe {
    * @return {Vector}     Returned from `storage.set`
    */
   async _REGISTER (obj) {
-    let store = this;
-    let result = null;
-    let vector = new State(obj);
+    const actor = new Actor(obj);
+    const existing = await this._GET(`/entities/${actor.id}`);
 
     store.log('[STORE]', '_REGISTER', vector.id, vector['@type']);
 
@@ -142,11 +147,12 @@ class Store extends Scribe {
 
   async _PATCH (key, patch) {
     this.log('[STORE]', '_PATCH', 'patch:', key, typeof patch, patch);
-    let root = {};
-    let current = await this._GET(key);
+
+    const root = {};
+    const current = await this._GET(key);
 
     if (this.settings.verbosity >= 3) console.warn('current value, no typecheck:', typeof current, current);
-    let result = Object.assign(root, current || {}, patch);
+    const result = Object.assign(root, current || {}, patch);
     if (this.settings.verbosity >= 5) console.log('[STORE]', 'Patch result:', result);
 
     try {
@@ -294,15 +300,16 @@ class Store extends Scribe {
     }
 
     try {
-      let input = await self.db.get(`/collections/${router}`);
-      let collection = JSON.parse(input);
+      const input = await self.db.get(`/collections/${router}`);
+      const collection = JSON.parse(input);
 
+      // We found a collection, return it
       if (collection) {
-        let answer = [];
+        const answer = [];
 
         for (let i = 0; i < collection.length; i++) {
-          let code = `/entities/${collection[i]}`;
-          let entity = await this._GET(code);
+          const code = `/entities/${collection[i]}`;
+          const entity = await this._GET(code);
           answer.push(entity);
         }
 
@@ -335,10 +342,11 @@ class Store extends Scribe {
     }
 
     switch (type) {
-      default:
-        return State.fromHex(state);
       case 'Buffer':
         return Buffer.from(state, 'hex');
+      default:
+        // TODO: convert...
+        return state;
     }
   }
 

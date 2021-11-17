@@ -1,8 +1,5 @@
 'use strict';
 
-// Convenience bindings for JavaScript
-const EventEmitter = require('events').EventEmitter;
-
 // Dependencies
 const BN = require('bn.js');
 const merge = require('lodash.merge');
@@ -34,7 +31,7 @@ class Interface extends Service {
     this.ticker = new BN();
     this.identity = new BN(1);
     this.tags = ['pre-release'];
-    this.settings = Object.assign({
+    this.settings = merge({
       prefix: '/',
       script: '(1)',
       type: 'javascript'

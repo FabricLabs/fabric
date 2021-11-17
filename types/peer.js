@@ -85,10 +85,6 @@ class Peer extends Scribe {
     // this.hex = this.key.public.encodeCompressed('hex');
     // this.pkh = crypto.createHash('sha256').update(this.hex).digest('hex');
 
-    // TODO: add getters for these
-    this.address = this.settings.address;
-    this.port = this.settings.port;
-
     // Public Details
     this.public = {
       ip: null,
@@ -134,6 +130,14 @@ class Peer extends Scribe {
   get state () {
     // TODO: use Proxy
     return Object.assign({}, this._state);
+  }
+
+  get address () {
+    return this.settings.interface || this.settings.address;
+  }
+
+  get port () {
+    return this.settings.port || 7777;
   }
 
   set state (value) {
@@ -950,7 +954,7 @@ class Peer extends Scribe {
   async listen () {
     const self = this;
     const promise = new Promise((resolve, reject) => {
-      self.server.listen(self.settings.port, self.settings.address, function listenComplete (error) {
+      self.server.listen(self.port, self.address, function listenComplete (error) {
         if (error) return reject(error);
 
         const details = self.server.address();

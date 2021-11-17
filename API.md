@@ -201,6 +201,7 @@ Generic Fabric Actor.
 
 **Kind**: global class  
 **Emits**: <code>event:message Fabric {@link Message} objects.</code>  
+**Access**: protected  
 **Properties**
 
 | Name | Type | Description |
@@ -211,11 +212,12 @@ Generic Fabric Actor.
 
 * [Actor](#Actor)
     * [new Actor([actor])](#new_Actor_new)
+    * [.commit()](#Actor+commit) ⇒ <code>String</code>
     * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
     * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
     * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
     * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
-    * [._sortKeys(state)](#Actor+_sortKeys) ⇒ <code>Object</code>
+    * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
 
 <a name="new_Actor_new"></a>
 
@@ -233,6 +235,14 @@ what you share with others!
 | [actor.public] | <code>Buffer</code> | Public key. |
 | [actor.private] | <code>Buffer</code> | Private key. |
 
+<a name="Actor+commit"></a>
+
+### actor.commit() ⇒ <code>String</code>
+Resolve the current state to a commitment.
+
+**Kind**: instance method of [<code>Actor</code>](#Actor)  
+**Returns**: <code>String</code> - 32-byte ID  
+**Emits**: <code>event:Actor Current malleable state.</code>  
 <a name="Actor+toBuffer"></a>
 
 ### actor.toBuffer() ⇒ <code>Buffer</code>
@@ -257,18 +267,13 @@ Serialize the Actor's current state into a JSON-formatted string.
 Signs the Actor.
 
 **Kind**: instance method of [<code>Actor</code>](#Actor)  
-<a name="Actor+_sortKeys"></a>
+<a name="Actor+unpause"></a>
 
-### actor.\_sortKeys(state) ⇒ <code>Object</code>
-Create a new [Object](Object) with sorted properties.
+### actor.unpause() ⇒ [<code>Actor</code>](#Actor)
+Toggles `status` property to unpaused.
+@
 
 **Kind**: instance method of [<code>Actor</code>](#Actor)  
-**Returns**: <code>Object</code> - Re-sorted instance of `state` as provided.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| state | <code>Object</code> | Object to sort. |
-
 <a name="Aggregator"></a>
 
 ## Aggregator
@@ -1830,12 +1835,12 @@ Process incoming messages.
 
 * [Router](#Router) ⇐ [<code>Scribe</code>](#Scribe)
     * [new Router(map)](#new_Router_new)
-    * [.id](#State+id) : <code>Boolean</code>
     * [.route(msg)](#Router+route) ⇒ <code>Array</code>
     * [.use(plugin, name)](#Router+use) ⇒ [<code>Router</code>](#Router)
     * [.now()](#Scribe+now) ⇒ <code>Number</code>
     * [.trust(source)](#Scribe+trust) ⇒ [<code>Scribe</code>](#Scribe)
     * [.inherits(scribe)](#Scribe+inherits) ⇒ [<code>Scribe</code>](#Scribe)
+    * [.toHTML()](#State+toHTML)
     * [.toString()](#State+toString) ⇒ <code>String</code>
     * [.serialize([input])](#State+serialize) ⇒ <code>Buffer</code>
     * [.deserialize(input)](#State+deserialize) ⇒ [<code>State</code>](#State)
@@ -1855,12 +1860,6 @@ Maintains a list of triggers ("commands") and their behaviors.
 | --- | --- | --- |
 | map | <code>Object</code> | Map of command names => behaviors. |
 
-<a name="State+id"></a>
-
-### router.id : <code>Boolean</code>
-Identity function.
-
-**Kind**: instance property of [<code>Router</code>](#Router)  
 <a name="Router+route"></a>
 
 ### router.route(msg) ⇒ <code>Array</code>
@@ -1917,6 +1916,12 @@ Use an existing Scribe instance as a parent.
 | --- | --- | --- |
 | scribe | [<code>Scribe</code>](#Scribe) | Instance of Scribe to use as parent. |
 
+<a name="State+toHTML"></a>
+
+### router.toHTML()
+Converts the State to an HTML document.
+
+**Kind**: instance method of [<code>Router</code>](#Router)  
 <a name="State+toString"></a>
 
 ### router.toString() ⇒ <code>String</code>
@@ -2006,10 +2011,10 @@ Simple tag-based recordkeeper.
 
 * [Scribe](#Scribe) ⇐ [<code>State</code>](#State)
     * [new Scribe(config)](#new_Scribe_new)
-    * [.id](#State+id) : <code>Boolean</code>
     * [.now()](#Scribe+now) ⇒ <code>Number</code>
     * [.trust(source)](#Scribe+trust) ⇒ [<code>Scribe</code>](#Scribe)
     * [.inherits(scribe)](#Scribe+inherits) ⇒ [<code>Scribe</code>](#Scribe)
+    * [.toHTML()](#State+toHTML)
     * [.toString()](#State+toString) ⇒ <code>String</code>
     * [.serialize([input])](#State+serialize) ⇒ <code>Buffer</code>
     * [.deserialize(input)](#State+deserialize) ⇒ [<code>State</code>](#State)
@@ -2030,12 +2035,6 @@ The "Scribe" is a simple tag-based recordkeeper.
 | config | <code>Object</code> | General configuration object. |
 | config.verbose | <code>Boolean</code> | Should the Scribe be noisy? |
 
-<a name="State+id"></a>
-
-### scribe.id : <code>Boolean</code>
-Identity function.
-
-**Kind**: instance property of [<code>Scribe</code>](#Scribe)  
 <a name="Scribe+now"></a>
 
 ### scribe.now() ⇒ <code>Number</code>
@@ -2067,6 +2066,12 @@ Use an existing Scribe instance as a parent.
 | --- | --- | --- |
 | scribe | [<code>Scribe</code>](#Scribe) | Instance of Scribe to use as parent. |
 
+<a name="State+toHTML"></a>
+
+### scribe.toHTML()
+Converts the State to an HTML document.
+
+**Kind**: instance method of [<code>Scribe</code>](#Scribe)  
 <a name="State+toString"></a>
 
 ### scribe.toString() ⇒ <code>String</code>
@@ -2168,6 +2173,7 @@ jobs, and by default the `fabric` property will serve as an I/O stream using
 familiar semantics.
 
 **Kind**: global class  
+**Access**: protected  
 **Properties**
 
 | Name | Description |
@@ -2451,6 +2457,7 @@ committing to the outcome.  This workflow keeps app design quite simple!
 
 **Kind**: global class  
 **Extends**: <code>EventEmitter</code>  
+**Access**: protected  
 **Properties**
 
 | Name | Type | Description |
@@ -2465,7 +2472,7 @@ committing to the outcome.  This workflow keeps app design quite simple!
 * [State](#State) ⇐ <code>EventEmitter</code>
     * [new State(data)](#new_State_new)
     * _instance_
-        * [.id](#State+id) : <code>Boolean</code>
+        * [.toHTML()](#State+toHTML)
         * [.toString()](#State+toString) ⇒ <code>String</code>
         * [.serialize([input])](#State+serialize) ⇒ <code>Buffer</code>
         * [.deserialize(input)](#State+deserialize) ⇒ [<code>State</code>](#State)
@@ -2487,12 +2494,12 @@ Creates a snapshot of some information.
 | --- | --- | --- |
 | data | <code>Mixed</code> | Input data. |
 
-<a name="State+id"></a>
+<a name="State+toHTML"></a>
 
-### state.id : <code>Boolean</code>
-Identity function.
+### state.toHTML()
+Converts the State to an HTML document.
 
-**Kind**: instance property of [<code>State</code>](#State)  
+**Kind**: instance method of [<code>State</code>](#State)  
 <a name="State+toString"></a>
 
 ### state.toString() ⇒ <code>String</code>
