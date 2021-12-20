@@ -70,6 +70,7 @@ class Service extends Actor {
     this.collections = {};
     this.definitions = {};
     this.resources = {};
+    this.services = {};
     this.methods = {};
     this.clients = {};
     this.targets = [];
@@ -99,6 +100,7 @@ class Service extends Actor {
       clock: 0,
       epochs: {}, // snapshots of history (by ID)
       history: [], // list of ...
+      services: {}, // stores sub-service state
       status: 'PAUSED',
       content: {},
       version: 0 // TODO: change to 1 for 0.1.0
@@ -440,10 +442,7 @@ class Service extends Actor {
   }
 
   _defineResource (name, definition) {
-    const resource = Object.assign({
-      name: name
-    }, definition);
-
+    const resource = Object.assign({ name }, definition);
     this.resources[name] = new Resource(resource);
     this.emit('resource', this.resources[name]);
   }
@@ -846,10 +845,11 @@ class Service extends Actor {
     // assemble all necessary info, emit Snapshot regardless of storage status
     try {
       ops.push({ type: 'put', key: 'snapshot', value: self._state });
-      this.emit('debug', {
-        '@type': 'Snapshot',
-        '@data': self.state
-      });
+      this.emit('debug', JSON.stringify({
+        '@data': self.state,
+        '@from': 'COMMIT',
+        '@type': 'Snapshot'
+      }));
     } catch (E) {
       console.error('Error saving state:', self.state);
       console.error('Could not commit to state:', E);
@@ -878,7 +878,12 @@ class Service extends Actor {
       }
     }
 
-    return this;
+    const commit = new Actor(self._state);
+    return commit.id;
+  }
+
+  async _handleBitcoinCommit (commit) {
+    console.log('[FABRIC:SERVICE] Handling (Bitcoin?) commit:', commit);
   }
 
   async _attachBindings (emitter) {
