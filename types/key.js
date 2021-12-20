@@ -14,9 +14,9 @@ const ec = new EC('secp256k1');
 
 // External Dependencies
 // TODO: remove all external dependencies
-const HD = require('../node_modules/bcoin/lib/hd');
-const KeyRing = require('../node_modules/bcoin/lib/primitives/keyring');
-const Mnemonic = require('../node_modules/bcoin/lib/hd/mnemonic');
+const HD = require('bcoin/lib/hd');
+const KeyRing = require('bcoin/lib/primitives/keyring');
+const Mnemonic = require('bcoin/lib/hd/mnemonic');
 
 // Fabric Types
 // const Entity = require('./entity');

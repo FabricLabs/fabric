@@ -64,7 +64,10 @@ class Bitcoin extends Service {
       mining: false,
       listen: false,
       fullnode: false,
-      zmq: true,
+      zmq: {
+        host: 'localhost',
+        port: 29000
+      },
       nodes: ['127.0.0.1'],
       seeds: ['127.0.0.1'],
       servers: [],
@@ -154,8 +157,13 @@ class Bitcoin extends Service {
     this.define('SendCmpctPacket', { type: 22 });
 
     this._state = {
-      status: 'READY',
+      status: 'PAUSED',
+      balances: { // safe up to 2^53-1 (all satoshis can be represented in 52 bits!)
+        confirmed: 0,
+        unconfirmed: 0
+      },
       blocks: {},
+      genesis: this.settings.genesis,
       tip: this.settings.genesis
     };
 
@@ -177,6 +185,10 @@ class Bitcoin extends Service {
    */
   static get MutableTransaction () {
     return bcoin.TX;
+  }
+
+  get balance () {
+    return this._state.balances.confirmed;
   }
 
   get best () {
@@ -806,11 +818,10 @@ class Bitcoin extends Service {
       try {
         self.rpc.request(method, params, function (err, response) {
           if (err) {
-            self.emit('error', err);
-            return reject(new Error({
-              error: err,
+            return resolve({
+              error: (err.error) ? JSON.parse(JSON.parse(err.error)) : err,
               response: response
-            }));
+            });
           }
 
           return resolve(response.result);
@@ -829,6 +840,10 @@ class Bitcoin extends Service {
 
   async _getBalanceForAddress (address) {
     return this._makeRPCRequest('getreceivedbyaddress', [address]);
+  }
+
+  async _listChainBlocks () {
+    return Object.keys(this._state.blocks);
   }
 
   async _requestBestBlockHash () {
@@ -915,9 +930,15 @@ class Bitcoin extends Service {
     };
   }
 
-  async _syncWithRPC () {
-    this.genesis = await this._requestBlockAtHeight(0);
+  async _syncChainOverRPC () {
+    // Try to get the reported Genesis Block (Chain ID)
+    try {
+      this.genesis = await this._requestBlockAtHeight(0);
+    } catch (exception) {
+      this.emit('error', `Could not retrive genesis block: ${JSON.stringify(exception)}`);
+    }
 
+    // Get the best block hash (and height)
     const best = await this._requestBestBlockHash();
     const height = await this._requestChainHeight();
 
@@ -928,10 +949,19 @@ class Bitcoin extends Service {
       await this._requestRawBlock(hash); // state updates happen here
     }
 
+    // Assign values
     this.best = best;
     this.height = height;
 
+    this.commit();
+
+    return this;
+  }
+
+  async _syncWithRPC () {
+    await this._syncChainOverRPC();
     await this.commit();
+
     return this;
   }
 
@@ -992,7 +1022,7 @@ class Bitcoin extends Service {
     if (this.settings.fullnode) await this._startLocalNode();
     if (this.settings.zmq) await this._startZMQ();
     if (this.settings.mode === 'rpc') {
-      if (!this.settings.authority) return console.error('Error: No authority specified.  To use an RPC anchor, provide the "authority" parameter.');
+      if (!this.settings.authority) return this.emit('error', 'Error: No authority specified.  To use an RPC anchor, provide the "authority" parameter.');
       const provider = new URL(this.settings.authority);
       const config = {
         host: provider.hostname,
@@ -1009,7 +1039,10 @@ class Bitcoin extends Service {
       }
 
 
+      // Heartbeat
       self._heart = setInterval(self.tick.bind(self), self.settings.interval);
+
+      // Sync!
       await self._syncWithRPC();
     }
 

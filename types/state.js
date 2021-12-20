@@ -11,7 +11,7 @@ const monitor = require('fast-json-patch');
 const pointer = require('json-pointer');
 
 // Fabric Types
-const Actor = require('@fabric/core/types/actor');
+const Actor = require('./actor');
 
 // Local Services
 const json = require('../functions/json');
@@ -86,9 +86,8 @@ class State extends Actor {
     // this['@id'] = this.id;
 
     // set internal data
-    this.services = ['json'];
-    // TODO: re-enable
-    // this.name = this['@entity'].name || this.id;
+    this.services = { json };
+    this.name = this['@entity'].name || this.id;
 
     if (this['@entity']['@data']) {
       try {
@@ -171,14 +170,14 @@ class State extends Actor {
    * @return {State}       Resulting instance of the {@link State}.
    */
   static fromJSON (input) {
-    if (typeof input !== 'string') return null;
-
     let result = null;
 
-    try {
-      result = JSON.parse(input);
-    } catch (E) {
-      console.error('Failure in fromJSON:', E);
+    if (typeof input === 'string') {
+      try {
+        result = JSON.parse(input);
+      } catch (E) {
+        console.error('Failure in fromJSON:', E);
+      }
     }
 
     return result;
@@ -192,23 +191,6 @@ class State extends Actor {
   static fromString (input) {
     if (typeof input !== 'string') return null;
     return this.fromJSON(input);
-  }
-
-  async _getState () {
-    let self = this;
-    let results = await Promise.all([
-      async function () {
-        return self.value;
-      }
-    ]).then(([
-      state
-    ]) => {
-      return {
-        state
-      };
-    }).catch(e => console.error(e));
-
-    return results;
   }
 
   sha256 (value) {

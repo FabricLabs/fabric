@@ -12,6 +12,9 @@
     "example": "examples",
     "test": "tests"
   },
+  "engines": {
+    "node": "^12.20.2"
+  },
   "scripts": {
     "book": "npm run dev",
     "build": "npm run make:all",
@@ -45,9 +48,6 @@
     "test:bitcoin": "mocha tests/bitcoin.core.js",
     "test:ethereum": "mocha tests/ethereum.core.js",
     "test": "NODE_ENV=test mocha tests"
-  },
-  "engines": {
-    "node": "^12.20"
   },
   "repository": {
     "type": "git",

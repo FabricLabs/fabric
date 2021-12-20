@@ -26,18 +26,18 @@ const merge = require('lodash.merge');
 const upnp = require('nat-upnp');
 
 // Fabric Types
+const Actor = require('./actor');
 const Key = require('./key');
 const Machine = require('./machine');
 const Message = require('./message');
 const Session = require('./session');
 const Reader = require('./reader');
-const Scribe = require('./scribe');
 const Wallet = require('./wallet');
 
 /**
  * An in-memory representation of a node in our network.
  */
-class Peer extends Scribe {
+class Peer extends Actor {
   /**
    * Create an instance of {@link Peer}.
    * @param {Object} [config] Initialization Vector for this peer.
