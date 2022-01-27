@@ -37,8 +37,8 @@ const crypto = require('crypto');
 const struct = require('struct');
 
 // Fabric Types
+const Actor = require('./actor');
 const Label = require('./label');
-const Vector = require('./vector');
 
 // Function Definitions
 const padDigits = require('../functions/padDigits');
@@ -53,11 +53,11 @@ const TYPE_ETHEREUM_BLOCK_NUMBER = parseInt((new Label('types/EthereumBlockNumbe
  * selectively disclosing new routes to peers which may have open circuits.
  * @type {Object}
  */
-class Message extends Vector {
+class Message extends Actor {
   /**
-   * The `Message` type is standardized in {@link Fabric} as a {@link Vector}, which can be added to any other vector to compute a resulting state.
-   * @param  {Vector} message Message vector.  Will be serialized by {@link Vector#_serialize}.
-   * @return {Vector} Instance of the message.
+   * The `Message` type is standardized in {@link Fabric} as a {@link Array}, which can be added to any other vector to compute a resulting state.
+   * @param  {Object} message Message vector.  Will be serialized by {@link Array#_serialize}.
+   * @return {Message} Instance of the message.
    */
   constructor (input = {}) {
     super(input);
@@ -297,7 +297,7 @@ class Message extends Vector {
   }
 
   get header () {
-    let parts = [
+    const parts = [
       Buffer.from(this.raw.magic, 'hex'),
       Buffer.from(this.raw.version, 'hex'),
       Buffer.from(this.raw.type, 'hex'),

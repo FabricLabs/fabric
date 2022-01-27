@@ -1,6 +1,7 @@
 'use strict';
 
 // Dependencies
+const crypto = require('crypto');
 const { EventEmitter } = require('events');
 const monitor = require('fast-json-patch');
 
@@ -79,6 +80,10 @@ class Actor extends EventEmitter {
     return result;
   }
 
+  static randomBytes (count = 32) {
+    return crypto.randomBytes(count);
+  }
+
   get id () {
     const buffer = Buffer.from(this.preimage, 'hex');
     return Hash256.digest(buffer);
@@ -114,6 +119,10 @@ class Actor extends EventEmitter {
     this.log.push(...state.id);
     this.emit('commit', state);
     return state.id;
+  }
+
+  debug (...params) {
+    this.emit('debug', params);
   }
 
   /**

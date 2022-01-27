@@ -7,12 +7,12 @@ const merge = require('lodash.merge');
 const BN = require('bn.js');
 
 // Types
+const Actor = require('./actor');
 const EncryptedPromise = require('./promise');
 const Transaction = require('./transaction');
 const Collection = require('./collection');
 const Consensus = require('./consensus');
 const Channel = require('./channel');
-const Entity = require('./entity');
 const Hash256 = require('./hash256');
 const Service = require('./service');
 const Secret = require('./secret');
@@ -23,7 +23,6 @@ const State = require('./state');
 // const bcoin = require('bcoin/lib/bcoin-browser');
 // For the node...
 const bcoin = require('bcoin');
-const Actor = require('@fabric/core/types/actor');
 
 // TODO: most of these should be converted to use Consensus,
 // provided above.  Refactor these to use `this.provider` or
@@ -113,7 +112,7 @@ class Wallet extends Service {
     this.txids = new Collection();
     this.outputs = new Collection();
 
-    this.entity = new Entity(this.settings);
+    this.entity = new Actor(this.settings);
     this.consensus = new Consensus();
 
     // Internal State
@@ -227,7 +226,7 @@ class Wallet extends Service {
 
   async addTransactionToWallet (transaction) {
     if (this.settings.verbosity >= 5) console.log('[AUDIT]', '[FABRIC:WALLET]', 'Adding transaction to Wallet:', transaction);
-    let entity = new Entity(transaction);
+    let entity = new Actor(transaction);
     if (!transaction.spent) transaction.spent = false;
     if (!transaction.outputs) transaction.outputs = [];
     this._state.transactions.push(transaction);
@@ -417,7 +416,7 @@ class Wallet extends Service {
       partials.push(script);
     }
 
-    let entity = new Entity({
+    let entity = new Actor({
       comment: 'List of transactions to validate.',
       orders: partials,
       transactions: partials
@@ -479,7 +478,7 @@ class Wallet extends Service {
     console.log('parts:', partials);
     console.log('leftover:', leftover);
 
-    let entity = new Entity({
+    let entity = new Actor({
       comment: 'List of transactions to validate.',
       orders: partials,
       transactions: partials,
@@ -1255,7 +1254,7 @@ class Wallet extends Service {
   }
 
   async _prepareSecret (state) {
-    const entity = new Entity(state);
+    const entity = new Actor(state);
     return entity;
   }
 

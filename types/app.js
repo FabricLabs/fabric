@@ -9,7 +9,7 @@ const KeyStore = require('./keystore');
 const Machine = require('./machine');
 const Message = require('./message');
 const Peer = require('./peer');
-const Remote = require('./remote');
+// const Remote = require('./remote');
 const Resource = require('./resource');
 const Service = require('./service');
 const Storage = require('./store');
@@ -196,14 +196,14 @@ class App extends Service {
 
     console.warn('[APP]', 'deferring authority:', authority);
 
-    if (typeof authority === 'string') {
+    /* if (typeof authority === 'string') {
       self.remote = new Remote({
         host: authority
       });
       resources = await self.remote.enumerate();
     } else {
       resources = authority.resources;
-    }
+    } */
 
     if (!resources) {
       resources = {};

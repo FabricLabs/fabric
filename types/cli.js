@@ -762,7 +762,7 @@ class CLI extends App {
       this.elements['balance'].setContent(balance.toFixed(8));
       this.screen.render();
     } catch (exception) {
-      if (this.settings.debug) this._appendError(`Could not sync balance: ${JSON.stringify(exception)}`);
+      // if (this.settings.debug) this._appendError(`Could not sync balance: ${JSON.stringify(exception)}`);
     }
   }
 
