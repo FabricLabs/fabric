@@ -18,7 +18,7 @@ const Service = require('../types/service');
 
 // Services
 const Bitcoin = require('../services/bitcoin');
-const Ethereum = require('../services/ethereum');
+// const Ethereum = require('../services/ethereum');
 
 // Testing
 const assert = require('assert');
