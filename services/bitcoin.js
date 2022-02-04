@@ -292,6 +292,10 @@ class Bitcoin extends Service {
     console.log('[SERVICES:BITCOIN]', 'Broadcasted!');
   }
 
+  async processSpendMessage (message) {
+    return this._processSpendMessage(message);
+  }
+
   async _processRawBlock (raw) {
     const block = bcoin.Block.fromRaw(raw);
     console.log('rawBlock:', block);
@@ -304,7 +308,7 @@ class Bitcoin extends Service {
 
     const actor = new Actor(message);
      // sendtoaddress "address" amount ( "comment" "comment_to" subtractfeefromamount replaceable conf_target "estimate_mode" avoid_reuse fee_rate verbose )
-    await this._makeRPCRequest('sendtoaddress', [
+    const txid = await this._makeRPCRequest('sendtoaddress', [
       message.destination,
       message.amount,
       message.comment || `_processSendMessage ${actor.id} ${message.created}`,
@@ -636,6 +640,23 @@ class Bitcoin extends Service {
 
   async _loadPrivateKey (key) {
     return this._makeRPCRequest('importprivkey', [key]);
+  }
+
+  async _loadWallet (name) {
+    const actor = new Actor({ content: name });
+    const created = await this._makeRPCRequest('createwallet', [
+      actor.id,
+      false,
+      false, // blank (use sethdseed)
+      '', // passphrase
+      true, // avoid reuse
+      true, // descriptors
+    ]);
+    const wallet = await this._makeRPCRequest('loadwallet', [actor.id]);
+
+    return {
+      id: actor.id
+    };
   }
 
   /**
@@ -1093,6 +1114,7 @@ class Bitcoin extends Service {
         self.rpc = jayson.http(config);
       }
 
+      const wallet = await this._loadWallet();
 
       // Heartbeat
       self._heart = setInterval(self.tick.bind(self), self.settings.interval);
