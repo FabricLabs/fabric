@@ -884,6 +884,11 @@ class Bitcoin extends Service {
     return info.blocks;
   }
 
+  async getBalances () {
+    const balances = await this._makeRPCRequest('getbalances');
+    return balances.mine;
+  }
+
   async getUnusedAddress () {
     const address = await this._makeRPCRequest('getnewaddress');
     return address;
