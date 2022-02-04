@@ -21,6 +21,7 @@ async function main (input = {}) {
     const height = await bitcoin.getChainHeight();
     const balances = await bitcoin.getBalances();
     console.log('[FABRIC:PLAYNET] Current block height:', height);
+    console.log('[FABRIC:PLAYNET] Current address:', bitcoin.addresses[0]);
     console.log('[FABRIC:PLAYNET] Spendable balance:', balances.trusted);
   }
 
