@@ -6,6 +6,7 @@ const {
   HEADER_SIZE,
   MAX_MESSAGE_SIZE,
   OP_CYCLE,
+  GENERIC_MESSAGE_TYPE,
   LOG_MESSAGE_TYPE,
   GENERIC_LIST_TYPE,
   P2P_GENERIC,
@@ -236,7 +237,7 @@ class Message extends Actor {
   get types () {
     // Message Types
     return {
-      'GenericMessage': LOG_MESSAGE_TYPE,
+      'GenericMessage': GENERIC_MESSAGE_TYPE,
       'GenericLogMessage': LOG_MESSAGE_TYPE,
       'GenericList': GENERIC_LIST_TYPE,
       'GenericQueue': GENERIC_LIST_TYPE,
@@ -313,6 +314,8 @@ Object.defineProperty(Message.prototype, 'type', {
   get () {
     const code = parseInt(this.raw.type.toString('hex'), 16);
     switch (code) {
+      case GENERIC_MESSAGE_TYPE:
+        return 'GenericMessage';
       case LOG_MESSAGE_TYPE:
         return 'GenericLogMessage';
       case GENERIC_LIST_TYPE:

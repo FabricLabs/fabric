@@ -5,11 +5,12 @@ const {
 } = require('../constants');
 
 // External Dependencies
-const jayson = require('jayson');
+const jayson = require('jayson/lib/client');
 const monitor = require('fast-json-patch');
 
 // TODO: remove bcoin
 const bcoin = require('bcoin');
+const bitcoin = require('bitcoinjs-lib');
 
 // Services
 const ZMQ = require('./zmq');
@@ -220,6 +221,14 @@ class Bitcoin extends Service {
     return this._state.height;
   }
 
+  get networks () {
+    return {
+      'mainnet': bitcoin.networks.mainnet,
+      'regtest': bitcoin.networks.regtest,
+      'testnet': bitcoin.networks.testnet
+    };
+  }
+
   set best (best) {
     if (best === this.best) return this.best;
     if (best !== this.best) {
@@ -231,6 +240,15 @@ class Bitcoin extends Service {
   set height (value) {
     this._state.height = parseInt(value);
     this.commit();
+  }
+
+  validateAddress (address) {
+    try {
+      bitcoin.address.toOutputScript(address, this.networks[this.settings.network]);
+      return true;
+    } catch (e) {
+      return false;
+    }
   }
 
   async tick () {
@@ -277,6 +295,28 @@ class Bitcoin extends Service {
   async _processRawBlock (raw) {
     const block = bcoin.Block.fromRaw(raw);
     console.log('rawBlock:', block);
+  }
+
+  async _processSpendMessage (message) {
+    if (!message) throw new Error('Message is required.');
+    if (!message.amount) throw new Error('Message must provide an amount.');
+    if (!message.destination) throw new Error('Message must provide a destination.');
+
+    const actor = new Actor(message);
+     // sendtoaddress "address" amount ( "comment" "comment_to" subtractfeefromamount replaceable conf_target "estimate_mode" avoid_reuse fee_rate verbose )
+    await this._makeRPCRequest('sendtoaddress', [
+      message.destination,
+      message.amount,
+      message.comment || `_processSendMessage ${actor.id} ${message.created}`,
+      message.recipient || 'Unknown Recipient',
+      false,
+      false,
+      1,
+      'conservative',
+      true
+    ]);
+
+    return txid;
   }
 
   async _heartbeat () {
@@ -590,6 +630,14 @@ class Bitcoin extends Service {
     return 1;
   }
 
+  async _dumpPrivateKey (address) {
+    return this._makeRPCRequest('dumpprivkey', [address]);
+  }
+
+  async _loadPrivateKey (key) {
+    return this._makeRPCRequest('importprivkey', [key]);
+  }
+
   /**
    * Attach event handlers for a supplied list of addresses.
    * @param {Shard} shard List of addresses to monitor.
@@ -752,12 +800,11 @@ class Bitcoin extends Service {
   async generateBlock (address) {
     let block = null;
 
-    if (!address) address = await this.wallet.getUnusedAddress();
+    if (!address) address = await this.getUnusedAddress();
 
     switch (this.settings.mode) {
       case 'rpc':
-        address = await this._makeRPCRequest('getnewaddress');
-        await this._makeRPCRequest('generateblock', [address, []]);
+        const result = await this._makeRPCRequest('generatetoaddress', [1, address]);
         break;
       default:
         try {
@@ -776,8 +823,6 @@ class Bitcoin extends Service {
   async generateBlocks (count = 1, address = this.wallet.receive) {
     const blocks = [];
 
-    if (!address) address = await this.wallet.getUnusedAddress();
-
     // Generate the specified number of blocks
     for (let i = 0; i < count; i++) {
       const block = await this.generateBlock(address);
@@ -785,6 +830,16 @@ class Bitcoin extends Service {
     }
 
     return blocks;
+  }
+
+  async getChainHeight () {
+    const info = await this._makeRPCRequest('getblockchaininfo');
+    return info.blocks;
+  }
+
+  async getUnusedAddress () {
+    const address = await this._makeRPCRequest('getnewaddress');
+    return address;
   }
 
   async append (raw) {
@@ -1033,9 +1088,9 @@ class Bitcoin extends Service {
       config.headers = { Authorization: `Basic ${Buffer.from(auth, 'utf8').toString('base64')}` };
 
       if (provider.protocol === 'https:') {
-        self.rpc = jayson.client.https(config);
+        self.rpc = jayson.https(config);
       } else {
-        self.rpc = jayson.client.http(config);
+        self.rpc = jayson.http(config);
       }
 
 

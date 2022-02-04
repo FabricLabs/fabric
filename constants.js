@@ -38,6 +38,7 @@ const MACHINE_MAX_MEMORY = MAX_MEMORY_ALLOC * MAX_MESSAGE_SIZE;
 const MAX_CHAT_MESSAGE_LENGTH = 2048;
 
 // FABRIC ONLY
+const GENERIC_MESSAGE_TYPE = MAGIC_BYTES + parseInt(crypto.createHash('sha256').update('@types/GenericMessage').digest('hex').slice(0, 4), 16);
 const LOG_MESSAGE_TYPE = MAGIC_BYTES + parseInt(crypto.createHash('sha256').update('@types/GenericLogMessage').digest('hex').slice(0, 4), 16);
 const GENERIC_LIST_TYPE = MAGIC_BYTES + parseInt(crypto.createHash('sha256').update('@types/GenericList').digest('hex').slice(0, 4), 16);
 const DOCUMENT_PUBLISH_TYPE = 998;
@@ -107,6 +108,7 @@ module.exports = {
   BITCOIN_GENESIS_ROOT,
   FABRIC_KEY_DERIVATION_PATH,
   HEADER_SIZE,
+  GENERIC_MESSAGE_TYPE,
   LOG_MESSAGE_TYPE,
   GENERIC_LIST_TYPE,
   LARGE_COLLECTION_SIZE,

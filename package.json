@@ -74,6 +74,7 @@
     "bcoin": "bcoin-org/bcoin#v2.2.0",
     "bip-schnorr": "^0.6.4",
     "bip39": "^3.0.4",
+    "bitcoinjs-lib": "^6.0.0",
     "clightningjs": "^0.2.2",
     "commander": "^6.1.0",
     "content-type": "^1.0.4",

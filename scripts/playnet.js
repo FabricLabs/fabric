@@ -1,5 +1,7 @@
 'use strict';
 
+const playnet = require('../settings/playnet');
+
 const Bitcoin = require('../services/bitcoin');
 const Environment = require('../types/environment');
 
@@ -14,7 +16,6 @@ const settings = {
 };
 
 async function main (input = {}) {
-  const address = '';
   const bitcoin = new Bitcoin(input.bitcoin);
   await bitcoin.start();
 
@@ -22,9 +23,9 @@ async function main (input = {}) {
     const height = await bitcoin.getChainHeight();
     console.log('[FABRIC:PLAYNET] Current block height:', height);
   }
-  
+
   async function generate () {
-    const block = await bitcoin.generateBlock(address);
+    const block = await bitcoin.generateBlock(playnet.bitcoin.address);
     report();
   }
 
@@ -33,7 +34,9 @@ async function main (input = {}) {
   return { id: bitcoin.id };
 }
 
-console.log('[FABRIC:PLAYNET] Settings:', settings);
+const safe = Object.assign({}, settings);
+safe.seed = '*********************';
+console.log('[FABRIC:PLAYNET] Settings:', safe);
 
 main(settings).catch((exception) => {
   console.error('[FABRIC:PLAYNET] Main Process Exception:', exception);
