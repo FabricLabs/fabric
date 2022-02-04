@@ -91,6 +91,9 @@ class Bitcoin extends Service {
     // this.chain = new Chain(this.settings);
 
     // ## Collections
+    // ### Addresses
+    this.addresses = [];
+
     // ### Blocks
     this.blocks = new Collection({
       name: 'Block',
@@ -306,6 +309,10 @@ class Bitcoin extends Service {
     if (!message.amount) throw new Error('Message must provide an amount.');
     if (!message.destination) throw new Error('Message must provide a destination.');
 
+    if (message.amount instanceof String) {
+      message.amount = message.amount.fixed().toPrecision(8); // TODO: evaluate precision behavior
+    }
+
     const actor = new Actor(message);
      // sendtoaddress "address" amount ( "comment" "comment_to" subtractfeefromamount replaceable conf_target "estimate_mode" avoid_reuse fee_rate verbose )
     const txid = await this._makeRPCRequest('sendtoaddress', [
@@ -319,6 +326,11 @@ class Bitcoin extends Service {
       'conservative',
       true
     ]);
+
+    if (txid.error) {
+      this.emit('error', `Could not create transaction: ${txid.error}`);
+      return false;
+    }
 
     return txid;
   }
@@ -652,7 +664,21 @@ class Bitcoin extends Service {
       true, // avoid reuse
       true, // descriptors
     ]);
+
     const wallet = await this._makeRPCRequest('loadwallet', [actor.id]);
+
+    /* if (created.error && wallet.error) {
+      return this.emit('error', `Could not create or load wallet: ${created.error || wallet.error}`);
+    } */
+
+    try {
+      this.addresses = await this._listAddresses();
+    } catch (exception) {}
+
+    if (!this.addresses.length) {
+      const address = await this.getUnusedAddress();
+      this.addresses.push(address);
+    }
 
     return {
       id: actor.id
@@ -885,6 +911,10 @@ class Bitcoin extends Service {
 
   async _registerActor (actor) {
     this.emit('log', `Bitcoin Actor to Register: ${JSON.stringify(actor, null, '  ')}`);
+  }
+
+  async _listAddresses () {
+    return this._makeRPCRequest('listreceivedbyaddress', [1, true]);
   }
 
   async _makeRPCRequest (method, params = []) {

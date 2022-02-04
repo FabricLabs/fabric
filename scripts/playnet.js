@@ -1,7 +1,5 @@
 'use strict';
 
-const playnet = require('../settings/playnet');
-
 const Bitcoin = require('../services/bitcoin');
 const Environment = require('../types/environment');
 
@@ -25,7 +23,7 @@ async function main (input = {}) {
   }
 
   async function generate () {
-    const block = await bitcoin.generateBlock(playnet.bitcoin.address);
+    const block = await bitcoin.generateBlock(bitcoin.addresses[0].address);
     report();
   }
 

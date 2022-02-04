@@ -8,5 +8,5 @@ bitcoind \
   -zmqpubrawtx=tcp://127.0.0.1:29100 \
   -zmqpubhashtx=tcp://127.0.0.1:29100 \
   -zmqpubhashblock=tcp://127.0.0.1:29100 \
-  --rpcuser='ahp7iuGhae8mooBahFaYieyaixei6too' \
-  --rpcpassword='naiRe9wo5vieFayohje5aegheenoh4ee'
+  -rpcuser='ahp7iuGhae8mooBahFaYieyaixei6too' \
+  -rpcpassword='naiRe9wo5vieFayohje5aegheenoh4ee'
