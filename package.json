@@ -75,6 +75,7 @@
     "bip-schnorr": "^0.6.4",
     "bip39": "^3.0.4",
     "bitcoinjs-lib": "^6.0.0",
+    "blessed": "^0.1.81",
     "clightningjs": "^0.2.2",
     "commander": "^6.1.0",
     "content-type": "^1.0.4",
@@ -107,7 +108,6 @@
   },
   "devDependencies": {
     "@fabric/http": "FabricLabs/fabric-http#portal-develop",
-    "blessed": "^0.1.81",
     "body-parser": "^1.18.2",
     "chai": "^4.0.2",
     "codecov": "^3.6.1",
