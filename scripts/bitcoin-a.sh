@@ -1,6 +1,7 @@
 #!/bin/bash
 bitcoind \
   -regtest \
+  -server \
   -datadir=./stores/bitcoin-a \
   -port=18445 \
   -rpcport=18444 \

@@ -8,6 +8,14 @@ const {
 const jayson = require('jayson/lib/client');
 const monitor = require('fast-json-patch');
 
+// crypto support libraries
+// TODO: replace with  `secp256k1`
+const ECPairFactory = require('ecpair').default;
+const ecc = require('tiny-secp256k1');
+const bip65 = require('bip65');
+
+const ECPair = ECPairFactory(ecc);
+
 // TODO: remove bcoin
 const bcoin = require('bcoin');
 const bitcoin = require('bitcoinjs-lib');
@@ -646,8 +654,16 @@ class Bitcoin extends Service {
     return 1;
   }
 
+  async _dumpKeyPair (address) {
+    const wif = await this._makeRPCRequest('dumpprivkey', [address]);
+    const pair = ECPair.fromWIF(wif, this.networks[this.settings.network]);
+    return pair;
+  }
+
   async _dumpPrivateKey (address) {
-    return this._makeRPCRequest('dumpprivkey', [address]);
+    const wif = await this._makeRPCRequest('dumpprivkey', [address]);
+    const pair = ECPair.fromWIF(wif, this.networks[this.settings.network]);
+    return pair.privateKey;
   }
 
   async _loadPrivateKey (key) {
@@ -662,7 +678,7 @@ class Bitcoin extends Service {
       false, // blank (use sethdseed)
       '', // passphrase
       true, // avoid reuse
-      true, // descriptors
+      false, // descriptors
     ]);
 
     const wallet = await this._makeRPCRequest('loadwallet', [actor.id]);
@@ -929,6 +945,7 @@ class Bitcoin extends Service {
       try {
         self.rpc.request(method, params, function (err, response) {
           if (err) {
+            // TODO: replace with reject()
             return resolve({
               error: (err.error) ? JSON.parse(JSON.parse(err.error)) : err,
               response: response
@@ -998,6 +1015,74 @@ class Bitcoin extends Service {
 
   async _signRawTransactionWithWallet (rawTX, prevouts = []) {
     return this._makeRPCRequest('signrawtransaction', [rawTX, JSON.stringify(prevouts)]);
+  }
+
+  async _createSwapScript (options) {
+    const locktime = bip65.encode({ blocks: options.constraints.blocktime });
+    const sequence = bitcoin.script.number.encode(locktime).toString('hex');
+
+    const asm = `
+      OP_IF OP_SHA256 ` + options.hash + ` OP_EQUALVERIFY
+        ` + options.counterparty.toString('hex') + `
+      OP_ELSE
+        ` + sequence + `
+        OP_CHECKSEQUENCEVERIFY
+        OP_DROP
+        ` + options.initiator.toString('hex') + `
+      OP_ENDIF
+      OP_CHECKSIG
+    `;
+
+    const clean = asm.trim().replace(/\s+/g, ' ');
+    return bitcoin.script.fromASM(clean);
+  }
+
+  async _createSwapTX (options) {
+    const network = this.networks[this.settings.network];
+    const tx = new bitcoin.Transaction();
+
+    tx.locktime = bip65.encode({ blocks: options.constraints.blocktime });
+
+    const input = options.inputs[0];
+    tx.addInput(Buffer.from(input.txid, 'hex').reverse(), input.vout, 0xfffffffe);
+
+    const output = bitcoin.address.toOutputScript(options.destination, network);
+    tx.addOutput(output, options.amount * 100000000);
+
+    return tx;
+  }
+
+  async _spendSwapTX (options) {
+    const network = this.networks[this.settings.network];
+    const tx = options.tx;
+    const hashtype = bitcoin.Transaction.SIGHASH_ALL;
+    const sighash = tx.hashForSignature(0, options.script, hashtype);
+    const scriptsig = bitcoin.payments.p2sh({
+      redeem: {
+        input: bitcoin.script.compile([
+          bitcoin.script.signature.encode(options.signer.sign(sighash), hashtype),
+          bitcoin.opcodes.OP_TRUE
+        ]),
+        output: options.script
+      },
+      network: network
+    });
+
+    tx.setInputScript(0, scriptsig.input);
+
+    return tx;
+  }
+
+  async _buildPSBT () {
+    return new bitcoin.Psbt();
+  }
+
+  async _buildTX () {
+    return new bitcoin.TransactionBuilder();
+  }
+
+  async _spendRawTX (raw) {
+    return this._makeRPCRequest('sendrawtransaction', [ raw ]);
   }
 
   async _syncBestBlock () {
