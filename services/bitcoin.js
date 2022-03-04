@@ -691,6 +691,9 @@ class Bitcoin extends Service {
       this.addresses = await this._listAddresses();
     } catch (exception) {}
 
+    // console.log('addresses:', this.addresses);
+    if (this.addresses.error) this.addresses = [];
+
     if (!this.addresses.length) {
       const address = await this.getUnusedAddress();
       this.addresses.push(address);
