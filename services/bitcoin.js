@@ -13,6 +13,7 @@ const monitor = require('fast-json-patch');
 const ECPairFactory = require('ecpair').default;
 const ecc = require('tiny-secp256k1');
 const bip65 = require('bip65');
+const bip68 = require('bip68');
 
 const ECPair = ECPairFactory(ecc);
 
@@ -39,8 +40,13 @@ const BitcoinBlock = require('../types/bitcoin/block');
 const BitcoinTransaction = require('../types/bitcoin/transaction');
 
 // Convenience Labels
+const Amount = bcoin.Amount;
+const Coin = bcoin.Coin;
 const FullNode = bcoin.FullNode;
+const KeyRing = bcoin.KeyRing;
+const MTX = bcoin.MTX;
 const NetAddress = bcoin.net.NetAddress;
+const Script = bcoin.Script;
 
 /**
  * Manages interaction with the Bitcoin network.
@@ -230,6 +236,10 @@ class Bitcoin extends Service {
    */
   get height () {
     return this._state.height;
+  }
+
+  get lib () {
+    return bitcoin;
   }
 
   get networks () {
@@ -986,6 +996,14 @@ class Bitcoin extends Service {
     return this._makeRPCRequest('getblock', [hash]);
   }
 
+  async _getMempool (hash) {
+    return this._makeRPCRequest('getrawmempool');
+  }
+
+  async _requestRawTransaction (hash) {
+    return this._makeRPCRequest('getrawtransaction', [hash]);
+  }
+
   async _requestRawBlock (hash) {
     const self = this;
     const request = this._makeRPCRequest('getblock', [hash, 0]);
@@ -1013,14 +1031,170 @@ class Bitcoin extends Service {
     return this._makeRPCRequest('listunspent', []);
   }
 
+  async _encodeSequenceForNBlocks (time) {
+    return bip68.encode({ blocks: time });
+  }
+
+  async _encodeSequenceTargetBlock (height) {
+    const locktime = bip65.encode({ blocks: height });
+    return bitcoin.script.number.encode(locktime).toString('hex');
+  }
+
   async _signRawTransactionWithWallet (rawTX, prevouts = []) {
     return this._makeRPCRequest('signrawtransaction', [rawTX, JSON.stringify(prevouts)]);
   }
 
-  async _createSwapScript (options) {
-    const locktime = bip65.encode({ blocks: options.constraints.blocktime });
-    const sequence = bitcoin.script.number.encode(locktime).toString('hex');
+  async _getUTXOSetMeta (utxos) {
+    const coins = [];
+    const keys = [];
 
+    let inputSum = 0;
+    let inputCount = 0;
+
+    for (let i = 0; i < utxos.length; i++) {
+      const candidate = utxos[i];
+      const template = {
+        hash: Buffer.from(candidate.txid, 'hex').reverse(),
+        index: candidate.vout,
+        value: Amount.fromBTC(candidate.amount).toValue(),
+        script: Script.fromAddress(candidate.address)
+      };
+
+      const c = Coin.fromOptions(template);
+      const keypair = await this._dumpKeyPair(candidate.address);
+
+      coins.push(c);
+      keys.push(keypair);
+
+      inputCount++;
+      // TODO: not rely on parseFloat
+      // use bitwise...
+      inputSum += parseFloat(template.value);
+    }
+
+    return {
+      inputs: {
+        count: inputCount,
+        total: inputSum
+      }
+    };
+  }
+
+  /**
+   * Creates an unsigned Bitcoin transaction.
+   * @param {Object} options 
+   * @returns {ContractProposal} Instance of the proposal.
+   */
+  async _createContractProposal (options = {}) {
+    const mtx = new MTX();
+    const keys = [];
+    const rate = await this._estimateFeeRate();
+    const utxos = await this._listUnspent();
+    const coins = await this._getCoinsFromInputs(utxos);
+    const meta = await this._getUTXOSetMeta(utxos);
+
+    // TODO: report FundingError: Not enough funds
+    await mtx.fund(coins, {
+      rate: rate,
+      changeAddress: options.change
+    });
+
+    return {
+      change: options.change,
+      inputs: utxos,
+      keys: keys,
+      meta: meta,
+      mtx: mtx,
+      // raw: raw,
+      // tx: tx
+    };
+  }
+
+  async _createContractFromProposal (proposal) {
+    const tx = proposal.mtx.toTX();
+    const raw = tx.toRaw().toString('hex');
+    return {
+      tx: tx,
+      raw: raw
+    };
+  }
+
+  async _getCoinsFromInputs (inputs = []) {
+    const coins = [];
+    const keys = [];
+
+    let inputSum = 0;
+    let inputCount = 0;
+
+    for (let i = 0; i < inputs.length; i++) {
+      const candidate = inputs[i];
+      const template = {
+        hash: Buffer.from(candidate.txid, 'hex').reverse(),
+        index: candidate.vout,
+        value: Amount.fromBTC(candidate.amount).toValue(),
+        script: Script.fromAddress(candidate.address)
+      };
+
+      const c = Coin.fromOptions(template);
+      const keypair = await this._dumpKeyPair(candidate.address);
+
+      coins.push(c);
+      keys.push(keypair);
+
+      inputCount++;
+      // TODO: not rely on parseFloat
+      // use bitwise...
+      inputSum += parseFloat(template.value);
+    }
+
+    return coins;
+  }
+
+  async _getKeysFromCoins (coins) {
+    console.log('coins:', coins);
+  }
+
+  async _attachOutputToContract (output, contract) {
+    // TODO: add support for segwit, taproot
+    // is the scriptpubkey still set?
+    const scriptpubkey = output.scriptpubkey;
+    const value = output.value;
+    // contract.mtx.addOutput(scriptpubkey, value);
+    return contract;
+  }
+
+  async _signInputForContract (index, contract) {
+
+  }
+
+  async _signAllContractInputs (contract) {
+
+  }
+
+  async _generateScriptAddress () {
+    const script = new Script();
+    script.pushOp(bcoin.opcodes.OP_); // Segwit version
+    script.pushData(ring.getKeyHash());
+    script.compile();
+
+    return {
+      address: script.getAddress(),
+      script: script
+    };
+  }
+
+  async _estimateFeeRate (options = {}) {
+    // satoshis per kilobyte
+    // TODO: use satoshis/vbyte
+    return 10000;
+  }
+
+  async _coinSelectNaive (options = {}) {
+
+  }
+
+  async _createSwapScript (options) {
+    const sequence = await this._encodeSequenceTargetBlock(options.constraints.blocktime);
     const asm = `
       OP_IF OP_SHA256 ` + options.hash + ` OP_EQUALVERIFY
         ` + options.counterparty.toString('hex') + `
@@ -1052,6 +1226,13 @@ class Bitcoin extends Service {
     return tx;
   }
 
+  async _p2shForOutput (output) {
+    return bitcoin.payments.p2sh({
+      redeem: { output },
+      network: this.networks[this.settings.network]
+    });
+  }
+
   async _spendSwapTX (options) {
     const network = this.networks[this.settings.network];
     const tx = options.tx;
@@ -1073,8 +1254,211 @@ class Bitcoin extends Service {
     return tx;
   }
 
-  async _buildPSBT () {
-    return new bitcoin.Psbt();
+  async _createP2WPKHTransaction (options) {
+    const p2wpkh = this._createPayment(options);
+    const psbt = new bitcoin.Psbt({ network: this.networks[this.settings.network] })
+      .addInput(options.input)
+      .addOutput({
+        address: options.change,
+        value: 2e4,
+      })
+      .signInput(0, p2wpkh.keys[0]);
+
+    psbt.finalizeAllInputs();
+    const tx = psbt.extractTransaction();
+    return tx;
+  }
+
+  async _createP2WKHPayment (options) {
+    return bitcoin.payments.p2wsh({
+      pubkey: options.pubkey, 
+      network: this.networks[this.settings.network]
+    });
+  }
+
+  _createPayment (options) {
+    return bitcoin.payments.p2wpkh({
+      pubkey: options.pubkey,
+      network: this.networks[this.settings.network]
+    });
+  }
+
+  async _getInputData (options = {}) {
+    const unspent = options.input;
+    const isSegwit = true;
+    const redeemType = 'p2wpkh';
+    const raw = await this._requestRawTransaction(unspent.txid);
+    const tx = bitcoin.Transaction.fromHex(raw);
+
+    // for non segwit inputs, you must pass the full transaction buffer
+    const nonWitnessUtxo = Buffer.from(raw, 'hex');
+    // for segwit inputs, you only need the output script and value as an object.
+    const witnessUtxo = await this._getWitnessUTXO(tx.outs[unspent.vout]);
+    const mixin = isSegwit ? { witnessUtxo } : { nonWitnessUtxo };
+    const mixin2 = {};
+
+    switch (redeemType) {
+      case 'p2sh':
+        mixin2.redeemScript = payment.redeem.output;
+        break;
+      case 'p2wsh':
+        mixin2.witnessScript = payment.redeem.output;
+        break;
+      case 'p2sh-p2wsh':
+        mixin2.witnessScript = payment.redeem.redeem.output;
+        mixin2.redeemScript = payment.redeem.output;
+        break;
+    }
+
+    return {
+      hash: unspent.txId,
+      index: unspent.vout,
+      ...mixin,
+      ...mixin2,
+    };
+  }
+
+  /**
+   * Create a Partially-Signed Bitcoin Transaction (PSBT).
+   * @param {Object} options Parameters for the PSBT.
+   * @returns {PSBT} Instance of the PSBT.
+   */
+  async _buildPSBT (options = {}) {
+    const psbt = new bitcoin.Psbt({
+      network: this.networks[this.settings.network]
+    });
+
+    for (let i = 0; i < options.inputs.length; i++) {
+      const input = options.inputs[i];
+      const data = {
+        hash: input.txid,
+        index: input.vout
+      };
+
+      psbt.addInput(data);
+    }
+
+    for (let i = 0; i < options.outputs.length; i++) {
+      const output = options.outputs[i];
+      const data = {
+        address: output.address,
+        value: output.value
+      };
+
+      psbt.addOutput(data);
+    }
+
+    return psbt;
+  }
+
+  async _signAllInputs (psbt, keypair) {
+    psbt.signAllInputs(keypair);
+    return psbt;
+  }
+
+  async _finalizePSBT (psbt) {
+    return psbt.finalizeAllInputs();
+  }
+
+  async _psbtToRawTX (psbt) {
+    return psbt.extractTransaction().toHex();
+  }
+
+  async _createTX (options = {}) {
+    const psbt = await this._buildPSBT(options);
+
+    return psbt;
+  }
+
+  _getFinalScriptsForInput (inputIndex, input, script, isSegwit, isP2SH, isP2WSH) {
+    const options = {
+      inputIndex,
+      input,
+      script,
+      isSegwit,
+      isP2SH,
+      isP2WSH
+    };
+
+    const decompiled = bitcoin.script.decompile(options.script);
+    // TODO: SECURITY !!!
+    // This is a very naive implementation of a script-validating heuristic.
+    // DO NOT USE IN PRODUCTION
+    //
+    // Checking if first OP is OP_IF... should do better check in production!
+    // You may even want to check the public keys in the script against a
+    // whitelist depending on the circumstances!!!
+    // You also want to check the contents of the input to see if you have enough
+    // info to actually construct the scriptSig and Witnesses.
+    if (!decompiled || decompiled[0] !== bitcoin.opcodes.OP_IF) {
+      throw new Error(`Can not finalize input #${inputIndex}`);
+    }
+
+    const signature = (options.input.partialSig)
+      ? options.input.partialSig[0].signature
+      : undefined;
+
+    const template = {
+      network: this.networks[this.settings.network],
+      output: options.script,
+      input: bitcoin.script.compile([
+        signature,
+        bitcoin.opcodes.OP_TRUE
+      ])
+    };
+
+    let payment = null;
+
+    if (options.isP2WSH && options.isSegwit) {
+      payment = bitcoin.payments.p2wsh({
+        network: this.networks[this.settings.network],
+        redeem: template,
+      });
+    }
+
+    if (options.isP2SH) {
+      payment = bitcoin.payments.p2sh({
+        network: this.networks[this.settings.network],
+        redeem: template,
+      });
+    }
+
+    return {
+      finalScriptSig: payment.input,
+      finalScriptWitness: payment.witness && payment.witness.length > 0
+        ? this._witnessStackToScriptWitness(payment.witness)
+        : undefined
+    };
+  }
+
+  _witnessStackToScriptWitness (stack) {
+    const buffer = Buffer.alloc(0);
+
+    function writeSlice (slice) {
+      buffer = Buffer.concat([buffer, Buffer.from(slice)]);
+    }
+
+    function writeVarInt (i) {
+      const currentLen = buffer.length;
+      const varintLen = varuint.encodingLength(i);
+
+      buffer = Buffer.concat([buffer, Buffer.allocUnsafe(varintLen)]);
+      varuint.encode(i, buffer, currentLen);
+    }
+
+    function writeVarSlice (slice) {
+      writeVarInt(slice.length);
+      writeSlice(slice);
+    }
+
+    function writeVector (vector) {
+      writeVarInt(vector.length);
+      vector.forEach(writeVarSlice);
+    }
+
+    writeVector(stack);
+
+    return buffer;
   }
 
   async _buildTX () {

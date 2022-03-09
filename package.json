@@ -75,6 +75,7 @@
     "bip-schnorr": "^0.6.4",
     "bip39": "^3.0.4",
     "bip65": "^1.0.3",
+    "bip68": "^1.0.4",
     "bitcoinjs-lib": "^6.0.0",
     "blessed": "^0.1.81",
     "clightningjs": "^0.2.2",

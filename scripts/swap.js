@@ -1,6 +1,8 @@
 'use strict';
 
 const MIN_SWAP_BLOCKS = 1;
+const BID_VALUE = 1;
+const ASK_VALUE = 1;
 
 const settings = require('../settings/local');
 
@@ -19,11 +21,12 @@ async function main (input = {}) {
   await btca.start();
   await btcb.start();
 
+  const network = btca.networks[btca.settings.network];
   const secret = crypto.randomBytes(32);
   const hash = crypto.createHash('sha256').update(secret).digest('hex');
 
   const startHeightA = await btca.getChainHeight();
-  const startHeightB = await btca.getChainHeight();
+  const startHeightB = await btcb.getChainHeight();
 
   const aliceA = await btca.getUnusedAddress();
   const bobbyA = await btca.getUnusedAddress();
@@ -40,6 +43,7 @@ async function main (input = {}) {
   const bobbyUTXOs = await btcb._listUnspent();
 
   const aliceRedeemAddress = await btca.getUnusedAddress();
+  const aliceRedeemKeyPair = await btca._dumpKeyPair(aliceRedeemAddress);
 
   console.log('secret:', secret);
   console.log('utxos:', aliceUTXOs);
@@ -47,8 +51,8 @@ async function main (input = {}) {
 
   const aliceOffer = await btca._createSwapScript({
     inputs: aliceUTXOs,
-    offer: { amount: 1 },
-    ask: { amount: 1 },
+    offer: { amount: BID_VALUE },
+    ask: { amount: ASK_VALUE },
     initiator: aliceAKeyPair.publicKey,
     counterparty: bobbyAKeyPair.publicKey,
     destination: aliceRedeemAddress,
@@ -60,7 +64,7 @@ async function main (input = {}) {
 
   console.log('aliceOffer:', aliceOffer);
   const aliceBondTX = await btca._createSwapTX({
-    amount: 1,
+    amount: BID_VALUE,
     script: aliceOffer,
     destination: aliceRedeemAddress,
     inputs: [ aliceUTXOs[0] ],
@@ -69,6 +73,9 @@ async function main (input = {}) {
     }
   });
   console.log('bond tx:', aliceBondTX);
+
+  // Sequence & TX Construction
+  const sequence = await btca._encodeSequenceForNBlocks(MIN_SWAP_BLOCKS);
 
   const spend = await btca._spendSwapTX({
     tx: aliceBondTX,
@@ -79,11 +86,36 @@ async function main (input = {}) {
   console.log('spend:', spend);
   console.log('spend hex:', spend.toHex());
 
-  const psbt = await btca._buildPSBT();
+  const psbt = await btca._buildPSBT({
+    inputs: aliceUTXOs,
+    network: network
+  });
+
+  const p2sh = await btca._p2shForOutput(aliceOffer);
+  psbt.addInput({
+    hash: aliceUTXOs[0].txid,
+    index: aliceUTXOs[0].vout,
+    sequence: sequence,
+    redeemScript: p2sh.redeem.output
+  });
+
+  psbt.addOutput({
+    network: network,
+    address: aliceRedeemAddress,
+    value: BID_VALUE
+  });
+
+  psbt.finalizeInput(0, btca._getFinalScriptsForInput.bind(btca));
+
   console.log('psbt:', psbt);
 
   const result = await btca._spendRawTX(spend.toHex());
   console.log('result:', result);
+
+  /*
+  btca.on('transaction', btca._evaluateTXForSwap.bind(btca));
+  btcb.on('transaction', btcb._evaluateTXForSwap.bind(btca));
+  */
 
   const bobClaim = await btca._createSwapSpend({});
   const aliceRedeem = await btcb._createSwapRedeem({});
