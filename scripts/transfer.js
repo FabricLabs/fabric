@@ -21,52 +21,42 @@ const {
 
 // const Node = require('../types/node');
 const Bitcoin = require('../services/bitcoin');
+const Lightning = require('../services/lightning');
 
 async function main (input = {}) {
-  const btca = new Bitcoin(BTCA);
-  // const btcb = new Bitcoin(BTCB);
+  const bitcoin = new Bitcoin(BTCA);
 
-  await btca.start();
-  // await btcb.start();
+  await bitcoin.start();
 
   // const network = btca.networks[btca.settings.network];
   // const secret = crypto.randomBytes(32);
   // const hash = crypto.createHash('sha256').update(secret).digest('hex');
 
-  const startHeightA = await btca.getChainHeight();
-  // const startHeightB = await btcb.getChainHeight();
-  const chaininfo = await btca._makeRPCRequest('getmempoolinfo');
-  const minrelayfee = chaininfo.minrelaytxfee;
-
-  console.log('chaininfo:', chaininfo);
-  console.log('minrelayfe:', minrelayfee);
-
-  const aliceA = await btca.getUnusedAddress();
-  // const bobbyA = await btca.getUnusedAddress();
-
-  // const aliceB = await btcb.getUnusedAddress();
-  // const bobbyB = await btcb.getUnusedAddress();
-
-  const aliceAKeyPair = await btca._dumpKeyPair(aliceA);
-  // const bobbyAKeyPair = await btca._dumpKeyPair(bobbyA);
-  // const aliceBKeyPair = await btcb._dumpKeyPair(aliceB);
-  // const bobbyBKeyPair = await btcb._dumpKeyPair(bobbyB);
-
-  const aliceRedeemAddress = await btca.getUnusedAddress();
-  const aliceRedeemKeyPair = await btca._dumpKeyPair(aliceRedeemAddress);
-
-  const initialmempool = await btca._makeRPCRequest('getrawmempool');
+  const initialmempool = await bitcoin._makeRPCRequest('getrawmempool');
   console.log('initial mempool:', initialmempool);
 
   // mine a block if transactions in mempool
   if (initialmempool && initialmempool.length) {
-    await btca.generateBlock();
+    await bitcoin.generateBlock();
   }
 
-  const aliceUTXOs = await btca._listUnspent();
+  const startHeight = await bitcoin.getChainHeight();
+  const chaininfo = await bitcoin._makeRPCRequest('getmempoolinfo');
+  const minrelayfee = chaininfo.minrelaytxfee;
+
+  console.log('chaininfo:', chaininfo);
+  console.log('minrelayfee:', minrelayfee);
+
+  const aliceFirstAddress = await bitcoin.getUnusedAddress();
+  const aliceFirstKeyPair = await bitcoin._dumpKeyPair(aliceFirstAddress);
+
+  const aliceRedeemAddress = await bitcoin.getUnusedAddress();
+  const aliceRedeemKeyPair = await bitcoin._dumpKeyPair(aliceRedeemAddress);
+
+  const aliceUTXOs = await bitcoin._listUnspent();
   // const bobbyUTXOs = await btcb._listUnspent();
 
-  const contract = await btca._createContractProposal({
+  const contract = await bitcoin._createContractProposal({
     change: aliceRedeemAddress
   });
 
@@ -76,8 +66,8 @@ async function main (input = {}) {
   console.log('[!!!] Number of Keys matches number of Outputs:', (contract.keys.length === contract.inputs.length) === true);
   console.log('[!!!] Contract Transaction:', contract.tx);
 
-  const coins = await btca._getCoinsFromInputs(aliceUTXOs);
-  const keys = await btca._getKeysFromCoins(coins);
+  const coins = await bitcoin._getCoinsFromInputs(aliceUTXOs);
+  const keys = await bitcoin._getKeysFromCoins(coins);
 
   console.log('keys:', keys);
 
@@ -88,9 +78,9 @@ async function main (input = {}) {
     value: Amount.fromBTC(utxo.amount).toValue()
   }, contract); */
   const utxo = aliceUTXOs[0];
-  const keypair = await btca._dumpKeyPair(utxo.address);
-  const raw = await btca._requestRawTransaction(utxo.txid);
-  const tx = btca.lib.Transaction.fromHex(raw);
+  const keypair = await bitcoin._dumpKeyPair(utxo.address);
+  const raw = await bitcoin._requestRawTransaction(utxo.txid);
+  const tx = bitcoin.lib.Transaction.fromHex(raw);
 
   const ring = new KeyRing(keypair.privateKey);
   const address = ring.getAddress();
@@ -106,7 +96,7 @@ async function main (input = {}) {
     script: Script.fromAddress(address)
   };
 
-  mtx.addOutput(aliceA, Amount.fromBTC(TRANSFER_VALUE).toValue());
+  mtx.addOutput(aliceFirstAddress, Amount.fromBTC(TRANSFER_VALUE).toValue());
 
   console.log('ring:', ring);
 
@@ -131,10 +121,10 @@ async function main (input = {}) {
   const broadcastRaw = broadcastTX.toRaw().toString('hex');
   console.log('broadcast raw:', broadcastRaw);
 
-  const result = await btca._spendRawTX(broadcastRaw);
+  const result = await bitcoin._spendRawTX(broadcastRaw);
   console.log('result:', result);
 
-  const mempool = await btca._getMempool();
+  const mempool = await bitcoin._getMempool();
   console.log('mempool after:', mempool);
 
   /* const p2wpkh = await btca._createP2WPKHTransaction({
