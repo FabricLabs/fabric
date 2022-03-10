@@ -45,6 +45,8 @@ class Actor extends EventEmitter {
       content: this.value || {}
     };
 
+    this.monitor = monitor.observe(this._state.content, this._handleMonitorChanges.bind(this));
+
     // Chainable
     return this;
   }
@@ -206,6 +208,12 @@ class Actor extends EventEmitter {
    */
   _getState () {
     return this.state;
+  }
+
+  _handleMonitorChanges (changes) {
+    console.log('got monitor changes from actor:', changes);
+    // TODO: emit global state event here
+    // after verify, commit
   }
 
   _readObject (input = {}) {
