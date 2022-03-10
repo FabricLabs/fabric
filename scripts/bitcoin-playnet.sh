@@ -1,5 +1,5 @@
 #!/bin/bash
-bitcoin-qt \
+bitcoind \
   -regtest \
   -server \
   -datadir=./stores/bitcoin-playnet \
