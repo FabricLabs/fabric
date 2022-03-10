@@ -5,11 +5,21 @@ const {
 } = require('../constants');
 
 // External Dependencies
-const jayson = require('jayson');
+const jayson = require('jayson/lib/client');
 const monitor = require('fast-json-patch');
+
+// crypto support libraries
+// TODO: replace with  `secp256k1`
+const ECPairFactory = require('ecpair').default;
+const ecc = require('tiny-secp256k1');
+const bip65 = require('bip65');
+const bip68 = require('bip68');
+
+const ECPair = ECPairFactory(ecc);
 
 // TODO: remove bcoin
 const bcoin = require('bcoin');
+const bitcoin = require('bitcoinjs-lib');
 
 // Services
 const ZMQ = require('./zmq');
@@ -30,8 +40,13 @@ const BitcoinBlock = require('../types/bitcoin/block');
 const BitcoinTransaction = require('../types/bitcoin/transaction');
 
 // Convenience Labels
+const Amount = bcoin.Amount;
+const Coin = bcoin.Coin;
 const FullNode = bcoin.FullNode;
+const KeyRing = bcoin.KeyRing;
+const MTX = bcoin.MTX;
 const NetAddress = bcoin.net.NetAddress;
+const Script = bcoin.Script;
 
 /**
  * Manages interaction with the Bitcoin network.
@@ -90,6 +105,9 @@ class Bitcoin extends Service {
     // this.chain = new Chain(this.settings);
 
     // ## Collections
+    // ### Addresses
+    this.addresses = [];
+
     // ### Blocks
     this.blocks = new Collection({
       name: 'Block',
@@ -220,6 +238,18 @@ class Bitcoin extends Service {
     return this._state.height;
   }
 
+  get lib () {
+    return bitcoin;
+  }
+
+  get networks () {
+    return {
+      'mainnet': bitcoin.networks.mainnet,
+      'regtest': bitcoin.networks.regtest,
+      'testnet': bitcoin.networks.testnet
+    };
+  }
+
   set best (best) {
     if (best === this.best) return this.best;
     if (best !== this.best) {
@@ -231,6 +261,15 @@ class Bitcoin extends Service {
   set height (value) {
     this._state.height = parseInt(value);
     this.commit();
+  }
+
+  validateAddress (address) {
+    try {
+      bitcoin.address.toOutputScript(address, this.networks[this.settings.network]);
+      return true;
+    } catch (e) {
+      return false;
+    }
   }
 
   async tick () {
@@ -274,9 +313,44 @@ class Bitcoin extends Service {
     console.log('[SERVICES:BITCOIN]', 'Broadcasted!');
   }
 
+  async processSpendMessage (message) {
+    return this._processSpendMessage(message);
+  }
+
   async _processRawBlock (raw) {
     const block = bcoin.Block.fromRaw(raw);
     console.log('rawBlock:', block);
+  }
+
+  async _processSpendMessage (message) {
+    if (!message) throw new Error('Message is required.');
+    if (!message.amount) throw new Error('Message must provide an amount.');
+    if (!message.destination) throw new Error('Message must provide a destination.');
+
+    if (message.amount instanceof String) {
+      message.amount = message.amount.fixed().toPrecision(8); // TODO: evaluate precision behavior
+    }
+
+    const actor = new Actor(message);
+     // sendtoaddress "address" amount ( "comment" "comment_to" subtractfeefromamount replaceable conf_target "estimate_mode" avoid_reuse fee_rate verbose )
+    const txid = await this._makeRPCRequest('sendtoaddress', [
+      message.destination,
+      message.amount,
+      message.comment || `_processSendMessage ${actor.id} ${message.created}`,
+      message.recipient || 'Unknown Recipient',
+      false,
+      false,
+      1,
+      'conservative',
+      true
+    ]);
+
+    if (txid.error) {
+      this.emit('error', `Could not create transaction: ${txid.error}`);
+      return false;
+    }
+
+    return txid;
   }
 
   async _heartbeat () {
@@ -590,6 +664,53 @@ class Bitcoin extends Service {
     return 1;
   }
 
+  async _dumpKeyPair (address) {
+    const wif = await this._makeRPCRequest('dumpprivkey', [address]);
+    const pair = ECPair.fromWIF(wif, this.networks[this.settings.network]);
+    return pair;
+  }
+
+  async _dumpPrivateKey (address) {
+    const wif = await this._makeRPCRequest('dumpprivkey', [address]);
+    const pair = ECPair.fromWIF(wif, this.networks[this.settings.network]);
+    return pair.privateKey;
+  }
+
+  async _loadPrivateKey (key) {
+    return this._makeRPCRequest('importprivkey', [key]);
+  }
+
+  async _loadWallet (name) {
+    const actor = new Actor({ content: name });
+    const created = await this._makeRPCRequest('createwallet', [
+      actor.id,
+      false,
+      false, // blank (use sethdseed)
+      '', // passphrase
+      true, // avoid reuse
+      false, // descriptors
+    ]);
+
+    const wallet = await this._makeRPCRequest('loadwallet', [actor.id]);
+
+    /* if (created.error && wallet.error) {
+      return this.emit('error', `Could not create or load wallet: ${created.error || wallet.error}`);
+    } */
+
+    try {
+      this.addresses = await this._listAddresses();
+    } catch (exception) {}
+
+    if (!this.addresses.length) {
+      const address = await this.getUnusedAddress();
+      this.addresses.push(address);
+    }
+
+    return {
+      id: actor.id
+    };
+  }
+
   /**
    * Attach event handlers for a supplied list of addresses.
    * @param {Shard} shard List of addresses to monitor.
@@ -752,12 +873,11 @@ class Bitcoin extends Service {
   async generateBlock (address) {
     let block = null;
 
-    if (!address) address = await this.wallet.getUnusedAddress();
+    if (!address) address = await this.getUnusedAddress();
 
     switch (this.settings.mode) {
       case 'rpc':
-        address = await this._makeRPCRequest('getnewaddress');
-        await this._makeRPCRequest('generateblock', [address, []]);
+        const result = await this._makeRPCRequest('generatetoaddress', [1, address]);
         break;
       default:
         try {
@@ -776,8 +896,6 @@ class Bitcoin extends Service {
   async generateBlocks (count = 1, address = this.wallet.receive) {
     const blocks = [];
 
-    if (!address) address = await this.wallet.getUnusedAddress();
-
     // Generate the specified number of blocks
     for (let i = 0; i < count; i++) {
       const block = await this.generateBlock(address);
@@ -785,6 +903,21 @@ class Bitcoin extends Service {
     }
 
     return blocks;
+  }
+
+  async getChainHeight () {
+    const info = await this._makeRPCRequest('getblockchaininfo');
+    return info.blocks;
+  }
+
+  async getBalances () {
+    const balances = await this._makeRPCRequest('getbalances');
+    return balances.mine;
+  }
+
+  async getUnusedAddress () {
+    const address = await this._makeRPCRequest('getnewaddress');
+    return address;
   }
 
   async append (raw) {
@@ -811,6 +944,10 @@ class Bitcoin extends Service {
     this.emit('log', `Bitcoin Actor to Register: ${JSON.stringify(actor, null, '  ')}`);
   }
 
+  async _listAddresses () {
+    return this._makeRPCRequest('listreceivedbyaddress', [1, true]);
+  }
+
   async _makeRPCRequest (method, params = []) {
     const self = this;
     return new Promise((resolve, reject) => {
@@ -818,6 +955,7 @@ class Bitcoin extends Service {
       try {
         self.rpc.request(method, params, function (err, response) {
           if (err) {
+            // TODO: replace with reject()
             return resolve({
               error: (err.error) ? JSON.parse(JSON.parse(err.error)) : err,
               response: response
@@ -858,6 +996,14 @@ class Bitcoin extends Service {
     return this._makeRPCRequest('getblock', [hash]);
   }
 
+  async _getMempool (hash) {
+    return this._makeRPCRequest('getrawmempool');
+  }
+
+  async _requestRawTransaction (hash) {
+    return this._makeRPCRequest('getrawtransaction', [hash]);
+  }
+
   async _requestRawBlock (hash) {
     const self = this;
     const request = this._makeRPCRequest('getblock', [hash, 0]);
@@ -885,8 +1031,442 @@ class Bitcoin extends Service {
     return this._makeRPCRequest('listunspent', []);
   }
 
+  async _encodeSequenceForNBlocks (time) {
+    return bip68.encode({ blocks: time });
+  }
+
+  async _encodeSequenceTargetBlock (height) {
+    const locktime = bip65.encode({ blocks: height });
+    return bitcoin.script.number.encode(locktime).toString('hex');
+  }
+
   async _signRawTransactionWithWallet (rawTX, prevouts = []) {
     return this._makeRPCRequest('signrawtransaction', [rawTX, JSON.stringify(prevouts)]);
+  }
+
+  async _getUTXOSetMeta (utxos) {
+    const coins = [];
+    const keys = [];
+
+    let inputSum = 0;
+    let inputCount = 0;
+
+    for (let i = 0; i < utxos.length; i++) {
+      const candidate = utxos[i];
+      const template = {
+        hash: Buffer.from(candidate.txid, 'hex').reverse(),
+        index: candidate.vout,
+        value: Amount.fromBTC(candidate.amount).toValue(),
+        script: Script.fromAddress(candidate.address)
+      };
+
+      const c = Coin.fromOptions(template);
+      const keypair = await this._dumpKeyPair(candidate.address);
+
+      coins.push(c);
+      keys.push(keypair);
+
+      inputCount++;
+      // TODO: not rely on parseFloat
+      // use bitwise...
+      inputSum += parseFloat(template.value);
+    }
+
+    return {
+      inputs: {
+        count: inputCount,
+        total: inputSum
+      }
+    };
+  }
+
+  /**
+   * Creates an unsigned Bitcoin transaction.
+   * @param {Object} options 
+   * @returns {ContractProposal} Instance of the proposal.
+   */
+  async _createContractProposal (options = {}) {
+    const mtx = new MTX();
+    const keys = [];
+    const rate = await this._estimateFeeRate();
+    const utxos = await this._listUnspent();
+    const coins = await this._getCoinsFromInputs(utxos);
+    const meta = await this._getUTXOSetMeta(utxos);
+
+    // TODO: report FundingError: Not enough funds
+    await mtx.fund(coins, {
+      rate: rate,
+      changeAddress: options.change
+    });
+
+    return {
+      change: options.change,
+      inputs: utxos,
+      keys: keys,
+      meta: meta,
+      mtx: mtx,
+      // raw: raw,
+      // tx: tx
+    };
+  }
+
+  async _createContractFromProposal (proposal) {
+    const tx = proposal.mtx.toTX();
+    const raw = tx.toRaw().toString('hex');
+    return {
+      tx: tx,
+      raw: raw
+    };
+  }
+
+  async _getCoinsFromInputs (inputs = []) {
+    const coins = [];
+    const keys = [];
+
+    let inputSum = 0;
+    let inputCount = 0;
+
+    for (let i = 0; i < inputs.length; i++) {
+      const candidate = inputs[i];
+      const template = {
+        hash: Buffer.from(candidate.txid, 'hex').reverse(),
+        index: candidate.vout,
+        value: Amount.fromBTC(candidate.amount).toValue(),
+        script: Script.fromAddress(candidate.address)
+      };
+
+      const c = Coin.fromOptions(template);
+      const keypair = await this._dumpKeyPair(candidate.address);
+
+      coins.push(c);
+      keys.push(keypair);
+
+      inputCount++;
+      // TODO: not rely on parseFloat
+      // use bitwise...
+      inputSum += parseFloat(template.value);
+    }
+
+    return coins;
+  }
+
+  async _getKeysFromCoins (coins) {
+    console.log('coins:', coins);
+  }
+
+  async _attachOutputToContract (output, contract) {
+    // TODO: add support for segwit, taproot
+    // is the scriptpubkey still set?
+    const scriptpubkey = output.scriptpubkey;
+    const value = output.value;
+    // contract.mtx.addOutput(scriptpubkey, value);
+    return contract;
+  }
+
+  async _signInputForContract (index, contract) {
+
+  }
+
+  async _signAllContractInputs (contract) {
+
+  }
+
+  async _generateScriptAddress () {
+    const script = new Script();
+    script.pushOp(bcoin.opcodes.OP_); // Segwit version
+    script.pushData(ring.getKeyHash());
+    script.compile();
+
+    return {
+      address: script.getAddress(),
+      script: script
+    };
+  }
+
+  async _estimateFeeRate (options = {}) {
+    // satoshis per kilobyte
+    // TODO: use satoshis/vbyte
+    return 10000;
+  }
+
+  async _coinSelectNaive (options = {}) {
+
+  }
+
+  async _createSwapScript (options) {
+    const sequence = await this._encodeSequenceTargetBlock(options.constraints.blocktime);
+    const asm = `
+      OP_IF OP_SHA256 ` + options.hash + ` OP_EQUALVERIFY
+        ` + options.counterparty.toString('hex') + `
+      OP_ELSE
+        ` + sequence + `
+        OP_CHECKSEQUENCEVERIFY
+        OP_DROP
+        ` + options.initiator.toString('hex') + `
+      OP_ENDIF
+      OP_CHECKSIG
+    `;
+
+    const clean = asm.trim().replace(/\s+/g, ' ');
+    return bitcoin.script.fromASM(clean);
+  }
+
+  async _createSwapTX (options) {
+    const network = this.networks[this.settings.network];
+    const tx = new bitcoin.Transaction();
+
+    tx.locktime = bip65.encode({ blocks: options.constraints.blocktime });
+
+    const input = options.inputs[0];
+    tx.addInput(Buffer.from(input.txid, 'hex').reverse(), input.vout, 0xfffffffe);
+
+    const output = bitcoin.address.toOutputScript(options.destination, network);
+    tx.addOutput(output, options.amount * 100000000);
+
+    return tx;
+  }
+
+  async _p2shForOutput (output) {
+    return bitcoin.payments.p2sh({
+      redeem: { output },
+      network: this.networks[this.settings.network]
+    });
+  }
+
+  async _spendSwapTX (options) {
+    const network = this.networks[this.settings.network];
+    const tx = options.tx;
+    const hashtype = bitcoin.Transaction.SIGHASH_ALL;
+    const sighash = tx.hashForSignature(0, options.script, hashtype);
+    const scriptsig = bitcoin.payments.p2sh({
+      redeem: {
+        input: bitcoin.script.compile([
+          bitcoin.script.signature.encode(options.signer.sign(sighash), hashtype),
+          bitcoin.opcodes.OP_TRUE
+        ]),
+        output: options.script
+      },
+      network: network
+    });
+
+    tx.setInputScript(0, scriptsig.input);
+
+    return tx;
+  }
+
+  async _createP2WPKHTransaction (options) {
+    const p2wpkh = this._createPayment(options);
+    const psbt = new bitcoin.Psbt({ network: this.networks[this.settings.network] })
+      .addInput(options.input)
+      .addOutput({
+        address: options.change,
+        value: 2e4,
+      })
+      .signInput(0, p2wpkh.keys[0]);
+
+    psbt.finalizeAllInputs();
+    const tx = psbt.extractTransaction();
+    return tx;
+  }
+
+  async _createP2WKHPayment (options) {
+    return bitcoin.payments.p2wsh({
+      pubkey: options.pubkey, 
+      network: this.networks[this.settings.network]
+    });
+  }
+
+  _createPayment (options) {
+    return bitcoin.payments.p2wpkh({
+      pubkey: options.pubkey,
+      network: this.networks[this.settings.network]
+    });
+  }
+
+  async _getInputData (options = {}) {
+    const unspent = options.input;
+    const isSegwit = true;
+    const redeemType = 'p2wpkh';
+    const raw = await this._requestRawTransaction(unspent.txid);
+    const tx = bitcoin.Transaction.fromHex(raw);
+
+    // for non segwit inputs, you must pass the full transaction buffer
+    const nonWitnessUtxo = Buffer.from(raw, 'hex');
+    // for segwit inputs, you only need the output script and value as an object.
+    const witnessUtxo = await this._getWitnessUTXO(tx.outs[unspent.vout]);
+    const mixin = isSegwit ? { witnessUtxo } : { nonWitnessUtxo };
+    const mixin2 = {};
+
+    switch (redeemType) {
+      case 'p2sh':
+        mixin2.redeemScript = payment.redeem.output;
+        break;
+      case 'p2wsh':
+        mixin2.witnessScript = payment.redeem.output;
+        break;
+      case 'p2sh-p2wsh':
+        mixin2.witnessScript = payment.redeem.redeem.output;
+        mixin2.redeemScript = payment.redeem.output;
+        break;
+    }
+
+    return {
+      hash: unspent.txId,
+      index: unspent.vout,
+      ...mixin,
+      ...mixin2,
+    };
+  }
+
+  /**
+   * Create a Partially-Signed Bitcoin Transaction (PSBT).
+   * @param {Object} options Parameters for the PSBT.
+   * @returns {PSBT} Instance of the PSBT.
+   */
+  async _buildPSBT (options = {}) {
+    const psbt = new bitcoin.Psbt({
+      network: this.networks[this.settings.network]
+    });
+
+    for (let i = 0; i < options.inputs.length; i++) {
+      const input = options.inputs[i];
+      const data = {
+        hash: input.txid,
+        index: input.vout
+      };
+
+      psbt.addInput(data);
+    }
+
+    for (let i = 0; i < options.outputs.length; i++) {
+      const output = options.outputs[i];
+      const data = {
+        address: output.address,
+        value: output.value
+      };
+
+      psbt.addOutput(data);
+    }
+
+    return psbt;
+  }
+
+  async _signAllInputs (psbt, keypair) {
+    psbt.signAllInputs(keypair);
+    return psbt;
+  }
+
+  async _finalizePSBT (psbt) {
+    return psbt.finalizeAllInputs();
+  }
+
+  async _psbtToRawTX (psbt) {
+    return psbt.extractTransaction().toHex();
+  }
+
+  async _createTX (options = {}) {
+    const psbt = await this._buildPSBT(options);
+
+    return psbt;
+  }
+
+  _getFinalScriptsForInput (inputIndex, input, script, isSegwit, isP2SH, isP2WSH) {
+    const options = {
+      inputIndex,
+      input,
+      script,
+      isSegwit,
+      isP2SH,
+      isP2WSH
+    };
+
+    const decompiled = bitcoin.script.decompile(options.script);
+    // TODO: SECURITY !!!
+    // This is a very naive implementation of a script-validating heuristic.
+    // DO NOT USE IN PRODUCTION
+    //
+    // Checking if first OP is OP_IF... should do better check in production!
+    // You may even want to check the public keys in the script against a
+    // whitelist depending on the circumstances!!!
+    // You also want to check the contents of the input to see if you have enough
+    // info to actually construct the scriptSig and Witnesses.
+    if (!decompiled || decompiled[0] !== bitcoin.opcodes.OP_IF) {
+      throw new Error(`Can not finalize input #${inputIndex}`);
+    }
+
+    const signature = (options.input.partialSig)
+      ? options.input.partialSig[0].signature
+      : undefined;
+
+    const template = {
+      network: this.networks[this.settings.network],
+      output: options.script,
+      input: bitcoin.script.compile([
+        signature,
+        bitcoin.opcodes.OP_TRUE
+      ])
+    };
+
+    let payment = null;
+
+    if (options.isP2WSH && options.isSegwit) {
+      payment = bitcoin.payments.p2wsh({
+        network: this.networks[this.settings.network],
+        redeem: template,
+      });
+    }
+
+    if (options.isP2SH) {
+      payment = bitcoin.payments.p2sh({
+        network: this.networks[this.settings.network],
+        redeem: template,
+      });
+    }
+
+    return {
+      finalScriptSig: payment.input,
+      finalScriptWitness: payment.witness && payment.witness.length > 0
+        ? this._witnessStackToScriptWitness(payment.witness)
+        : undefined
+    };
+  }
+
+  _witnessStackToScriptWitness (stack) {
+    const buffer = Buffer.alloc(0);
+
+    function writeSlice (slice) {
+      buffer = Buffer.concat([buffer, Buffer.from(slice)]);
+    }
+
+    function writeVarInt (i) {
+      const currentLen = buffer.length;
+      const varintLen = varuint.encodingLength(i);
+
+      buffer = Buffer.concat([buffer, Buffer.allocUnsafe(varintLen)]);
+      varuint.encode(i, buffer, currentLen);
+    }
+
+    function writeVarSlice (slice) {
+      writeVarInt(slice.length);
+      writeSlice(slice);
+    }
+
+    function writeVector (vector) {
+      writeVarInt(vector.length);
+      vector.forEach(writeVarSlice);
+    }
+
+    writeVector(stack);
+
+    return buffer;
+  }
+
+  async _buildTX () {
+    return new bitcoin.TransactionBuilder();
+  }
+
+  async _spendRawTX (raw) {
+    return this._makeRPCRequest('sendrawtransaction', [ raw ]);
   }
 
   async _syncBestBlock () {
@@ -1033,11 +1613,12 @@ class Bitcoin extends Service {
       config.headers = { Authorization: `Basic ${Buffer.from(auth, 'utf8').toString('base64')}` };
 
       if (provider.protocol === 'https:') {
-        self.rpc = jayson.client.https(config);
+        self.rpc = jayson.https(config);
       } else {
-        self.rpc = jayson.client.http(config);
+        self.rpc = jayson.http(config);
       }
 
+      const wallet = await this._loadWallet();
 
       // Heartbeat
       self._heart = setInterval(self.tick.bind(self), self.settings.interval);

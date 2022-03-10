@@ -21,17 +21,20 @@ class Node extends Service {
   constructor (settings = {}) {
     super(settings);
 
+    // Settings
     this.settings = merge({
       name: '@fabric/node',
       full: true,
-      bitcoin: {
-        authority: 'http://localhost:18443'
-      },
-      service: Service
+      autorun: true,
+      bitcoin: false,
+      peering: true,
+      service: Service,
+      settings: {}
     }, defaults, settings);
 
-    this.node = null;
-    this.bitcoin = null;
+    // Local Services
+    this.node = new Peer(this.settings);
+    this.bitcoin = new Bitcoin(this.settings.bitcoin);
     this.program = null;
 
     return this;
@@ -91,21 +94,22 @@ class Node extends Service {
       debug: (!environment.readVariable('DEBUG')),
       seed: environment.readVariable('FABRIC_SEED'),
       port: environment.readVariable('FABRIC_PORT')
-    }, this.settings);
+    }, this.settings.settings);
 
-    // Local Services
-    this.node = new Peer();
+    // Local Contract
     this.program = new this.settings.service(input);
-    this.bitcoin = new Bitcoin(this.settings);
 
+    // Attach Listeners
     this.trust(this.node, 'PEER:LOCAL');
     this.trust(this.program, 'PROGRAM'); // TODO: debug why 'ready' events come twice?
     this.trust(this.bitcoin, 'BITCOIN');
 
-    await this.program.start();
-    await this.bitcoin.start();
-    await this.node.start();
+    // Start Services
+    if (this.settings.autorun) await this.program.start();
+    if (this.settings.bitcoin) await this.bitcoin.start();
+    if (this.settings.peering) await this.node.start();
 
+    // Notify Listeners
     this.emit('ready', {
       id: this.id
     });
