@@ -58,15 +58,8 @@ Finally, run the program:
 }
 ```
 
-
-
 ## Setup Local Bitcoin Node
-
-  
-
 For testing purposes, we recommend running `bitcoin-qt` using the bash command with `scripts/bitcoin-playnet.sh`. Follow these steps to get setup:
-
-  
 
 1. Download the [bitcoin-core client](https://bitcoin.org/bin/) to your system. 
 2. (Recommended) Download SHA256SUMS.sig and SHA256SUMS to verify hashes match, using these commands in the terminal:

@@ -52,7 +52,7 @@ digraph Portal {
     "T1-ETH: geth (Chain C)"
   }
 
-  # Networks
+  # Networks (Fabric)
   "portal@fabric/core/types/node:7777" -> {
     "example@fabric/core/types/node:7777"
     "alice@fabric/core/types/node:7777"
@@ -69,7 +69,8 @@ digraph Portal {
     "portal@fabric/core/types/node:7777"
     "bob@fabric/core/types/node:7777"
   }
-  
+
+  # BTC A Nodes
   "S1-BTCA: bitcoind (Chain A)" -> {
     "T1-BTCA: bitcoind (Chain A)"
     "A1-BTCA: bitcoind (Chain A)"
