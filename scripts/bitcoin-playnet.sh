@@ -2,6 +2,7 @@
 bitcoind \
   -regtest \
   -server \
+  -txindex \
   -datadir=./stores/bitcoin-playnet \
   -fallbackfee=0.00001 \
   -port=20445 \

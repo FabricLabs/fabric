@@ -2,7 +2,7 @@
 
 ## Prerequisites
 0. (optional) Install NVM: `https://nvm.sh`
-1. Install Node 12.16 (use `nvm install 12.16` if using `nvm`)
+1. Install Node 12.20.2 (use `nvm install 12.20.2` if using `nvm`)
 
 ## Instructions
 0. Meet the prerequisites (above)

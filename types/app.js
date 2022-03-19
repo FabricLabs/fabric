@@ -18,7 +18,7 @@ const Storage = require('./store');
 /**
  * Web-friendly application framework for building single-page applications with
  * Fabric-based networking and storage.
- * @extends Scribe
+ * @extends Service
  * @property {Collection} components Interface elements.
  * @property {Store} stash Routable {@link Datastore}.
  */

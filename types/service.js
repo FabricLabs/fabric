@@ -1,5 +1,7 @@
 'use strict';
 
+const PATCHES_ENABLED = false;
+
 // Dependencies
 const crypto = require('crypto');
 const stream = require('stream');
@@ -866,7 +868,7 @@ class Service extends Actor {
       });
     }
 
-    if (self.observer) {
+    if (PATCHES_ENABLED && self.observer) {
       try {
         const patches = manager.generate(self.observer);
         if (patches.length) {
@@ -879,6 +881,7 @@ class Service extends Actor {
     }
 
     const commit = new Actor(self._state);
+    this.emit('commit', commit);
     return commit.id;
   }
 

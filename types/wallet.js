@@ -22,7 +22,7 @@ const State = require('./state');
 // For the browser...
 // const bcoin = require('bcoin/lib/bcoin-browser');
 // For the node...
-const bcoin = require('bcoin');
+const bcoin = require('bcoin/lib/bcoin-browser');
 
 // TODO: most of these should be converted to use Consensus,
 // provided above.  Refactor these to use `this.provider` or
