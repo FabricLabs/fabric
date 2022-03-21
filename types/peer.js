@@ -461,7 +461,7 @@ class Peer extends Actor {
     socket.session = new Session();
 
     socket.on('close', function terminate () {
-      self.log('connection closed:', address);
+      self.emit('log', `connection closed: ${address}`);
       self.emit('connections:close', { address: address });
       self._disconnect(address);
     });

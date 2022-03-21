@@ -28,12 +28,16 @@ class Machine extends Actor {
 
     this.settings = Object.assign({
       path: './stores/machine',
+      clock: 0,
       debug: false,
       deterministic: true,
-      seed: 1 // TODO: select seed for production
+      frequency: 1, // Hz
+      seed: 1, // TODO: select seed for production
+      states: {}
     }, settings);
 
-    this.clock = 0;
+    // internal clock
+    this.clock = this.settings.clock;
 
     // define integer field
     this.seed = Hash256.digest(this.settings.seed + '');
@@ -48,6 +52,7 @@ class Machine extends Actor {
     this.stack = []; // output
     this.history = []; // State tree
 
+    // Tip
     Object.defineProperty(this, 'tip', function (val) {
       this.log(`tip requested: ${val}`);
       this.log(`tip requested, history: ${JSON.stringify(this.history)}`);
@@ -163,6 +168,23 @@ class Machine extends Actor {
     }
 
     return changes;
+  }
+
+  async start () {
+    this.status = 'STARTING';
+    this._governor = setInterval(
+      this.compute.bind(this),
+      this.settings.frequency * 1000
+    );
+    this.status = 'STARTED';
+    return this;
+  }
+
+  async stop () {
+    this.status = 'STOPPING';
+    if (this._governor) clearInterval(this._governor);
+    this.status = 'STOPPED';
+    return this;
   }
 }
 

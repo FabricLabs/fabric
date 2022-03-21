@@ -33,14 +33,14 @@ class Actor extends EventEmitter {
   constructor (actor = {}) {
     super(actor);
 
-    this.log = [];
+    this.commits = [];
     this.signature = null;
     this.value = this._readObject(actor); // TODO: use Buffer?
 
     // Internal State
     this._state = {
-      '@type': 'Actor',
-      '@data': this.value,
+      type: 'Actor',
+      data: this.value,
       status: 'PAUSED',
       content: this.value || {}
     };
@@ -93,8 +93,8 @@ class Actor extends EventEmitter {
 
   get preimage () {
     const input = {
-      '@type': 'FabricActorState',
-      '@data': this.toObject()
+      'type': 'FabricActorState',
+      'object': this.toObject()
     };
 
     const string = JSON.stringify(input, null, '  ');
@@ -104,11 +104,19 @@ class Actor extends EventEmitter {
   }
 
   get state () {
-    return this._state.content;
+    return Object.assign({}, this._state.content);
+  }
+
+  get status () {
+    return this._state.status;
   }
 
   get type () {
     return this._state['@type'];
+  }
+
+  set status (value) {
+    this._state.status = value;
   }
 
   /**
@@ -118,13 +126,34 @@ class Actor extends EventEmitter {
    */
   commit () {
     const state = new Actor(this._state.content);
-    this.log.push(...state.id);
-    this.emit('commit', state);
-    return state.id;
+    const commit = new Actor({
+      state: state.id
+    });
+
+    this.history.push(commit);
+    this.emit('commit', commit);
+    return commit.id;
   }
 
   debug (...params) {
     this.emit('debug', params);
+  }
+
+  log (...params) {
+    this.emit('log', ...params);
+  }
+
+  mutate (seed) {
+    if (seed === 0 || !seed) seed = this.randomBytes(32).toString('hex');
+
+    const patches = [
+      { op: 'replace', path: '/seed', value: seed }
+    ];
+
+    monitor.applyPatch(this._state.content, patches);
+    this.commit();
+
+    return this;
   }
 
   /**
@@ -157,6 +186,10 @@ class Actor extends EventEmitter {
     this.status = 'PAUSING';
     this.commit();
     return this;
+  }
+
+  randomBytes (count = 32) {
+    return crypto.randomBytes(count);
   }
 
   /**
@@ -227,6 +260,7 @@ class Actor extends EventEmitter {
     } else if (input instanceof Buffer) {
       state = Object.assign(state, {
         type: 'Buffer',
+        size: input.length,
         content: input.toString('hex'),
         encoding: 'hex'
       });
