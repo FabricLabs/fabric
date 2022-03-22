@@ -31,7 +31,7 @@ describe('@fabric/core/types/actor', function () {
       const actor = new Actor('Hello again, world!');
       assert.ok(actor);
       assert.ok(actor.id);
-      assert.strictEqual(actor.id, '20b7a6ca518b710e9ea151f1c04fe6d19e68c20bb96266384a6752632cb3166c');
+      assert.strictEqual(actor.id, '7e5ef12f0db57e49860ef60ae7c0e9d58b2a752bbdb4c294264632d1779cfab9');
     });
 
     it('can uniquely identify some known object', function () {

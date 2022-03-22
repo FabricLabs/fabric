@@ -115,6 +115,10 @@ class Actor extends EventEmitter {
     return this._state['@type'];
   }
 
+  set state (value) {
+    this._state.content = value;
+  }
+
   set status (value) {
     this._state.status = value;
   }
@@ -255,7 +259,9 @@ class Actor extends EventEmitter {
     if (typeof input === 'string') {
       state = Object.assign(state, {
         type: 'String',
-        content: input
+        size: input.length,
+        content: input,
+        encoding: 'utf8'
       });
     } else if (input instanceof Buffer) {
       state = Object.assign(state, {

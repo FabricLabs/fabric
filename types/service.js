@@ -137,6 +137,10 @@ class Service extends Actor {
     return parseInt(this._state.clock);
   }
 
+  get heartbeat () {
+    return this._heart;
+  }
+
   get status () {
     return this._state.status;
   }
@@ -600,8 +604,8 @@ class Service extends Actor {
       await this.disconnect();
     }
 
-    if (this.heartbeat) {
-      clearInterval(this.heartbeat);
+    if (this._heart) {
+      clearInterval(this._heart);
     }
 
     if (this.settings.persistent) {

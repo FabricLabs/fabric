@@ -41,7 +41,7 @@ describe('@fabric/core/types/machine', function () {
       assert.strictEqual(slurp, '4e23efa7d67b7fd79228fb21ce279e21fb9d6a0a0c965df3c1169b9b30e326e1');
     });
 
-    it('can compute a value', async function prove () {
+    xit('can compute a value', async function prove () {
       // TODO: use Fabric itself
       const machine = new Machine(false);
       // TODO: use Fabric instead of Machine
@@ -56,7 +56,7 @@ describe('@fabric/core/types/machine', function () {
       assert.equal(machine.state['@data'][0], true);
     });
 
-    it('can correctly sum two values', async function prove () {
+    xit('can correctly sum two values', async function prove () {
       const machine = new Machine(false);
       machine.define('OP_ADD', OPCODES.OP_ADD);
       machine.script.push('1');
@@ -68,7 +68,7 @@ describe('@fabric/core/types/machine', function () {
       assert.equal(machine.state['@data'][0], 2);
     });
 
-    it('can correctly sum three values', async function prove () {
+    xit('can correctly sum three values', async function prove () {
       const machine = new Machine(false);
       machine.define('OP_ADD', OPCODES.OP_ADD);
       machine.script.push('1');
