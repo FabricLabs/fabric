@@ -20,6 +20,8 @@
     "build": "npm run make:all",
     "build:all": "npm run make:all",
     "chat": "node scripts/cli.js chat",
+    "clean": "rm -rf node_modules",
+    "clean:all": "rm -rf node_modules package-lock.json",
     "cli": "npm run chat",
     "coverage": "nyc npm test",
     "dev": "npm run make:dev && http-server -p 8000 _book",
@@ -27,6 +29,8 @@
     "examples": "npm run make:examples && http-server -p 8000 examples",
     "keygen": "node scripts/keygen.js",
     "local": "npm run build && http-server -p 8000 ./assets",
+    "lint": "semistandard",
+    "lint:fix": "semistandard --fix",
     "make:all": "npm run make:service && npm run make:app && npm run make:lib && npm run make:dev && npm run make:binary",
     "make:api": "jsdoc2md --configure jsdoc.json --files types/*.js services/*.js settings/deprecations.js README.md > API.md",
     "make:app": "webpack --progress examples/app.js -o assets/app.js",
@@ -157,6 +161,13 @@
       "node12-linux-x64",
       "node12-macos-x64",
       "node12-windows-x64"
+    ]
+  },
+  "semistandard": {
+    "ignore": [
+      "assets/",
+      "logs/",
+      "stores/"
     ]
   }
 }
