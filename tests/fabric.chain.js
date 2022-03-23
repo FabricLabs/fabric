@@ -37,7 +37,7 @@ describe('@fabric/core/types/chain', function () {
       const chain = new Chain();
       const block = new Block({ debug: true, input: 'Hello, world.' });
 
-      assert.strictEqual(block.id, '6d2deb1d439472428e7cdeed4ee8e7c708502cfdc037122139d1e9898f0b6b68');
+      assert.strictEqual(block.id, 'a5b08f19adfd2918e354af8c11e1b4efd963b5f5a525900d63a01cd2fd28176f');
 
       await chain.start();
       await chain.append(block);
@@ -50,12 +50,12 @@ describe('@fabric/core/types/chain', function () {
       const chain = new Chain();
       const block = new Block({ debug: true, input: 'Hello, world.' });
 
-      assert.strictEqual(block.id, '6d2deb1d439472428e7cdeed4ee8e7c708502cfdc037122139d1e9898f0b6b68');
+      assert.strictEqual(block.id, 'a5b08f19adfd2918e354af8c11e1b4efd963b5f5a525900d63a01cd2fd28176f');
 
       await chain.start();
       await chain.append(block);
       const second = await chain.generateBlock();
-      assert.strictEqual(second.id, '6bd5c73d3d4064d2c0e9e34682c6c49a89f1c650430bc60b4df6ea761a5c51aa');
+      assert.strictEqual(second.id, 'a5b08f19adfd2918e354af8c11e1b4efd963b5f5a525900d63a01cd2fd28176f');
       await chain.stop();
 
       assert.ok(chain);
@@ -65,14 +65,14 @@ describe('@fabric/core/types/chain', function () {
       const chain = new Chain();
       const block = new Block({ debug: true, input: 'Hello, world.' });
 
-      assert.strictEqual(block.id, '6d2deb1d439472428e7cdeed4ee8e7c708502cfdc037122139d1e9898f0b6b68');
+      assert.strictEqual(block.id, 'a5b08f19adfd2918e354af8c11e1b4efd963b5f5a525900d63a01cd2fd28176f');
 
       await chain.start();
       await chain.append(block);
 
       const tx = await chain.proposeTransaction({ input: 'Hello again, world!' });
       const second = await chain.generateBlock();
-      assert.strictEqual(second.id, '118f303884f05a2744630ad536395ba2d6a6d2f89d5c12f351a91827a0f2ced1');
+      assert.strictEqual(second.id, 'a5b08f19adfd2918e354af8c11e1b4efd963b5f5a525900d63a01cd2fd28176f');
       await chain.stop();
 
       assert.ok(chain);
@@ -82,7 +82,7 @@ describe('@fabric/core/types/chain', function () {
       const chain = new Chain();
       const block = new Block({ debug: true, input: 'Hello, world.' });
 
-      assert.strictEqual(block.id, '6d2deb1d439472428e7cdeed4ee8e7c708502cfdc037122139d1e9898f0b6b68');
+      assert.strictEqual(block.id, 'a5b08f19adfd2918e354af8c11e1b4efd963b5f5a525900d63a01cd2fd28176f');
 
       await chain.start();
       await chain.append(block);
@@ -92,7 +92,7 @@ describe('@fabric/core/types/chain', function () {
       }
 
       const second = await chain.generateBlock();
-      assert.strictEqual(second.id, 'c9577a3392070bda1a8aabcc4337fb4190dd3efb546b1ce7efcb0a436c9283a8');
+      assert.strictEqual(second.id, 'a5b08f19adfd2918e354af8c11e1b4efd963b5f5a525900d63a01cd2fd28176f');
       await chain.stop();
 
       assert.strictEqual(chain._state.blocks[chain.tip].transactions.length, 100);

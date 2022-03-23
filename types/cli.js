@@ -180,11 +180,11 @@ class CLI extends App {
     this.bitcoin.on('error', this._handleBitcoinError.bind(this));
     this.bitcoin.on('warning', this._handleBitcoinWarning.bind(this));
     this.bitcoin.on('message', this._handleBitcoinMessage.bind(this));
+    this.bitcoin.on('log', this._handleBitcoinLog.bind(this));
+    this.bitcoin.on('commit', this._handleBitcoinCommit.bind(this));
+    this.bitcoin.on('sync', this._handleBitcoinSync.bind(this));
     this.bitcoin.on('block', this._handleBitcoinBlock.bind(this));
     this.bitcoin.on('transaction', this._handleBitcoinTransaction.bind(this));
-
-    // Start Bitcoin service
-    await this.bitcoin.start();
 
     // Start all services
     for (const [name, service] of Object.entries(this.services)) {
@@ -201,6 +201,9 @@ class CLI extends App {
     // Bind remaining internals
     // TODO: enable
     // this.on('changes', this._handleChanges.bind(this));
+
+    // Start Bitcoin service
+    await this.bitcoin.start();
 
     // Start P2P node
     this.node.start();
@@ -388,11 +391,23 @@ class CLI extends App {
     }
   }
 
+  async _handleBitcoinLog (log) {
+    this._appendMessage(`[SERVICES:BITCOIN] ${log}`);
+  }
+
+  async _handleBitcoinCommit (commit) {
+    // this._appendMessage(`Bitcoin service emitted commit: ${JSON.stringify(commit)}`);
+  }
+
+  async _handleBitcoinSync (sync) {
+    this._appendMessage(`Bitcoin service emitted sync: ${JSON.stringify(sync)}`);
+  }
+
   async _handleBitcoinBlock (block) {
-    this._appendMessage(`Bitcoin service emitted block, chain height now: ${this.bitcoin.fullnode.chain.height}`);
+    // this._appendMessage(`Bitcoin service emitted block ${JSON.stringify(block)}, chain height now: ${this.bitcoin.height}`);
     this._syncChainDisplay();
-    const message = Message.fromVector(['BlockCandidate', block.raw]);
-    this.node.relayFrom(this.node.id, message);
+    // const message = Message.fromVector(['BlockCandidate', block.raw]);
+    // this.node.relayFrom(this.node.id, message);
   }
 
   async _handleBitcoinTransaction (transaction) {
@@ -748,7 +763,16 @@ class CLI extends App {
     try {
       const height = await this.bitcoin._makeRPCRequest('getblockcount');
       const stats = await this.bitcoin._makeRPCRequest('getblockchaininfo');
-      this.elements['chainTip'].setContent(`${stats.bestblockhash} (height is ${height})`);
+      const progress = this.bitcoin._state.headers.length;
+      const unconfirmed = 0.0;
+      const bonded = 0.0;
+
+      this.elements['heightValue'].setContent(`${height}`);
+      this.elements['chainTip'].setContent(`${stats.bestblockhash}`);
+      this.elements['unconfirmedValue'].setContent(`${bonded}`);
+      this.elements['bondedValue'].setContent(`${bonded}`);
+      this.elements['progressStatus'].setContent(`${progress} of ${height} (${((progress / height) * 100).toPrecision(2)} %)`);
+
       this.screen.render();
     } catch (exception) {
       if (this.settings.debug) this._appendError(`Could not sync chain: ${JSON.stringify(exception)}`);
@@ -853,7 +877,7 @@ class CLI extends App {
         type: 'line'
       },
       top: 0,
-      height: 5,
+      height: 6,
       width: '100%'
     });
 
@@ -871,7 +895,7 @@ class CLI extends App {
 
     self.elements['identityString'] = blessed.text({
       parent: self.elements['identity'],
-      content: '',
+      content: 'loading...',
       top: 0,
       left: 10
     });
@@ -880,6 +904,7 @@ class CLI extends App {
       parent: self.elements['status'],
       right: 1,
       width: 29,
+      height: 4
     });
 
     self.elements['balance'] = blessed.text({
@@ -893,7 +918,7 @@ class CLI extends App {
       parent: self.elements['wallet'],
       content: 'BALANCE:',
       top: 0,
-      right: 20,
+      right: 29,
       bold: true
     });
 
@@ -904,38 +929,121 @@ class CLI extends App {
       right: 0
     });
 
-    self.elements['chain'] = blessed.box({
+    self.elements['unconfirmed'] = blessed.box({
       parent: self.elements['status'],
       top: 1,
       left: 1
     });
 
-    self.elements['chainLabel'] = blessed.box({
+    self.elements['unconfirmedLabel'] = blessed.text({
+      parent: self.elements['unconfirmed'],
+      content: 'UNCONFIRMED:',
+      top: 0,
+      right: 30,
+      bold: true
+    });
+
+    self.elements['unconfirmedValue'] = blessed.text({
+      parent: self.elements['unconfirmed'],
+      content: 'syncing...',
+      top: 0,
+      right: 1
+    });
+
+    self.elements['bonded'] = blessed.box({
+      parent: self.elements['status'],
+      top: 2,
+      left: 1
+    });
+
+    self.elements['bondedLabel'] = blessed.text({
+      parent: self.elements['bonded'],
+      content: 'BONDED:',
+      top: 0,
+      right: 30,
+      bold: true
+    });
+
+    self.elements['bondedValue'] = blessed.text({
+      parent: self.elements['bonded'],
+      content: 'syncing...',
+      top: 0,
+      right: 1
+    });
+
+    self.elements['progress'] = blessed.box({
+      parent: self.elements['status'],
+      top: 3,
+      left: 1
+    });
+
+    self.elements['progressLabel'] = blessed.text({
+      parent: self.elements['progress'],
+      content: 'SYNC:',
+      top: 0,
+      right: 30,
+      bold: true
+    });
+
+    self.elements['progressStatus'] = blessed.text({
+      parent: self.elements['progress'],
+      content: 'syncing...',
+      top: 0,
+      right: 1
+    });
+
+    self.elements['chain'] = blessed.box({
+      parent: self.elements['status'],
+      top: 1,
+      left: 1,
+      width: 100
+    });
+
+    self.elements['chainLabel'] = blessed.text({
       parent: self.elements['chain'],
       content: 'CHAIN TIP:',
       bold: true
     });
 
-    self.elements['chainTip'] = blessed.box({
+    self.elements['chainTip'] = blessed.text({
       parent: self.elements['chain'],
-      content: '',
+      content: 'loading...',
       left: 11
+    });
+
+    self.elements['height'] = blessed.box({
+      parent: self.elements['status'],
+      top: 2,
+      left: 1,
+    });
+
+    self.elements['heightLabel'] = blessed.text({
+      parent: self.elements['height'],
+      content: 'CHAIN HEIGHT:',
+      bold: true
+    });
+
+    self.elements['heightValue'] = blessed.text({
+      parent: self.elements['height'],
+      content: 'loading...',
+      left: 14,
+      width: 50
     });
 
     self.elements['mempool'] = blessed.box({
       parent: self.elements['status'],
-      top: 2,
+      top: 3,
       left: 1,
       width: 29
     });
 
-    self.elements['mempoolLabel'] = blessed.box({
+    self.elements['mempoolLabel'] = blessed.text({
       parent: self.elements['mempool'],
       content: 'MEMPOOL SIZE:',
       bold: true
     });
 
-    self.elements['mempoolCount'] = blessed.box({
+    self.elements['mempoolCount'] = blessed.text({
       parent: self.elements['mempool'],
       content: '0',
       left: 14
@@ -948,7 +1056,7 @@ class CLI extends App {
       border: {
         type: 'line'
       },
-      top: 5,
+      top: 6,
       width: '80%',
       bottom: 3,
       mouse: true,
@@ -961,7 +1069,7 @@ class CLI extends App {
       border: {
         type: 'line'
       },
-      top: 5,
+      top: 6,
       left: '80%+1',
       bottom: 3
     });

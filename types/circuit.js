@@ -26,7 +26,8 @@ class Circuit extends Actor {
       gates: [],
       loops: [],
       nodes: [],
-      wires: []
+      wires: [],
+      methods: {}
     }, config);
 
     this['@data'] = this.settings;

@@ -1,13 +1,9 @@
 #!/bin/bash
 bitcoind \
-  -regtest \
   -server \
   -txindex \
-  -datadir=./stores/bitcoin-playnet \
-  -fallbackfee=0.00001 \
-  -port=20445 \
-  -rpcport=20444 \
-  -connect=65.21.231.166:20445 \
+  -dbcache=4000 \
+  -datadir=./stores/bitcoin-mainnet \
   -zmqpubrawblock=tcp://127.0.0.1:29500 \
   -zmqpubrawtx=tcp://127.0.0.1:29500 \
   -zmqpubhashtx=tcp://127.0.0.1:29500 \

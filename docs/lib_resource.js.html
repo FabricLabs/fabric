@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
-<<<<<<< HEAD <head>
+
+<head>
   <meta charset="utf-8">
   <title>JSDoc: Source: lib/resource.js</title>
 
@@ -11,39 +12,10 @@
     <![endif]-->
   <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
   <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
-  =======
+</head>
 
-  <head>
-    <meta charset="utf-8">
-    <title>JSDoc: Source: lib/resource.js</title>
+<body>
 
-    <script src="scripts/prettify/prettify.js"> </script>
-    <script src="scripts/prettify/lang-css.js"> </script>
-    <!--[if lt IE 9]>
-      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
-    <![endif]-->
-    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
-    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
-    >>>>>>> 641d093137022ea676044cc6f36a267d9d8b89db
-  </head>
-
-  <body>
-
-    <<<<<<< HEAD <div id="main">
-
-      <h1 class="page-title">Source: lib/resource.js</h1>
-
-
-
-
-
-
-      <section>
-        <article>
-          <pre class="prettyprint source linenums"><code>'use strict';
-
-const Vector = require('./vector');
-=======
   <div id="main">
 
     <h1 class="page-title">Source: lib/resource.js</h1>
@@ -62,44 +34,12 @@ const pluralize = require('pluralize');
 
 const State = require('./state');
 const Store = require('./store');
->>>>>>> 641d093137022ea676044cc6f36a267d9d8b89db
 
 /**
  * Generic interface for collections of digital objects.
  * @param       {Object} definition Initial parameters
  * @constructor
  */
-<<<<<<< HEAD
-class Resource extends Vector {
-  constructor (init) {
-    super(init);
-
-    if (!(this instanceof Resource)) {
-      return new Resource(init);
-    }
-
-    this['@data'] = init || this.prototype;
-
-    this.clock = 0;
-    this.stack = [];
-    this.known = {};
-
-    this.routes = init.routes || {
-      query: '/'
-    };
-
-    this.init();
-  }
-
-  async get (id) {
-    console.log('[RESOURCE]', 'get', id);
-    
-    try {
-      return this.store.get(this.routes.query + id);
-    } catch (E) {
-      console.error(E);
-    }
-=======
 class Resource extends Store {
   constructor (definition = {}) {
     super(definition);
@@ -122,113 +62,10 @@ class Resource extends Store {
       list: [this.name.toLowerCase(), 'list'].join('-'),
       view: [this.name.toLowerCase(), 'view'].join('-')
     }, definition.components);
->>>>>>> 641d093137022ea676044cc6f36a267d9d8b89db
 
     return this;
   }
 
-<<<<<<< HEAD
-  async set (id, data) {
-    console.log('[RESOURCE]', 'set', id, data);
-
-    try {
-      return this.store.set(this.routes.query + id);
-    } catch (E) {
-      console.error(E);
-    }
-
-    return this;
-  }
-
-  async list (id) {
-    return this.store.get(this.routes.query);
-  }
-
-  async describe () {
-    this.http.put(resource.routes.set, self.router);
-    this.http.get(resource.routes.get, self.router);
-    this.http.post(resource.routes.insert, self.router);
-    this.http.patch(resource.routes.update, self.router);
-    this.http.delete(resource.routes.delete, self.router);
-    this.http.options(resource.routes.options, self.router);
-  }
-}
-
-Resource.prototype.trust = function (store) {
-  if (this.store) {
-    this.store.close();
-  }
-
-  this.store = store;
-  
-  return this;
-}
-
-Resource.prototype.attach = function (app) {
-  this.store = app.stash;
-}
-
-Resource.prototype.create = async function (obj) {
-  let self = this;
-  let vector = new Fabric.Vector(obj)._sign();
-  let current = await self.store.get(self.routes.query);
-  if (!current) current = [];
-  if (typeof current === 'string') current = JSON.parse(current);
-
-  console.log('vector:', vector);
-  console.log('current:', current);
-
-  current.unshift(vector);
-
-  try {
-    await self.store.set(self.routes.query, current);
-  } catch (E) {
-    console.error(E);
-  }
-  
-  return vector;
-}
-
-Resource.prototype.update = async function (id, update) {
-  let self = this;
-  let vector = new Fabric.Vector(update)._sign();
-  let current = await self.store.get(id);
-  if (!current) current = {};
-
-  console.log('vector:', vector);
-  console.log('current:', current);
-
-  try {
-    await self.store.set(id, vector['@data']);
-  } catch (E) {
-    console.error(E);
-  }
-
-  return vector;
-}
-
-Resource.prototype.query = async function (inquiry) {
-  let self = this;
-  let current = await self.store.get(self.routes.query);
-
-  if (typeof current === 'string') current = JSON.parse(current);
-
-  return current;
-}
-
-Resource.prototype.get = function () {
-  
-}
-
-Resource.prototype.delete = function () {
-  
-}
-
-Resource.asStruct = function () {
-  var obj = this.prototype;
-  obj.name = this.name;
-  return obj;
-=======
   static asStruct () {
     var obj = this.prototype;
     obj.name = this.name;
@@ -292,100 +129,56 @@ Resource.asStruct = function () {
   render () {
     return `&lt;fabric-resource name="${this.name}">&lt;code>${JSON.stringify(this.definition)}&lt;/code>&lt;/fabric-resource>`;
   }
->>>>>>> 641d093137022ea676044cc6f36a267d9d8b89db
 }
 
 module.exports = Resource;
 </code></pre>
-          <<<<<<< HEAD </article>
-            =======
-        </article>
-        >>>>>>> 641d093137022ea676044cc6f36a267d9d8b89db
-      </section>
+      </article>
+    </section>
 
 
 
 
-      <<<<<<< HEAD </div>
+  </div>
 
-        <nav>
-          <h2><a href="index.html">Home</a></h2>
-          <h3>Modules</h3>
-          <ul>
-            <li><a href="module-Fabric.html">Fabric</a></li>
-          </ul>
-          <h3>Classes</h3>
-          <ul>
-            <li><a href="App.html">App</a></li>
-            <li><a href="Chain.html">Chain</a></li>
-            <li><a href="Fabric.html">Fabric</a></li>
-            <li><a href="Message.html">Message</a></li>
-            <li><a href="Oracle.html">Oracle</a></li>
-            <li><a href="Peer.html">Peer</a></li>
-            <li><a href="Remote.html">Remote</a></li>
-            <li><a href="Resource.html">Resource</a></li>
-            <li><a href="Storage.html">Storage</a></li>
-            <li><a href="Vector.html">Vector</a></li>
-            <li><a href="Walker.html">Walker</a></li>
-            <li><a href="Worker.html">Worker</a></li>
-          </ul>
-        </nav>
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="App.html">App</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Compiler.html">Compiler</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="Oracle.html">Oracle</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="Remote.html">Remote</a></li>
+      <li><a href="Router.html">Router</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Stack.html">Stack</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
+    </ul>
+  </nav>
 
-        <br class="clear">
+  <br class="clear">
 
-        <footer>
-          Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.5.5</a> on Sun Jan 28 2018 01:45:56 GMT+0000 (GMT)
-        </footer>
+  <footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.6.0-dev</a> on Mon Jul 01 2019 21:32:25 GMT-0700 (Pacific Daylight Time)
+  </footer>
 
-        <script>
-          prettyPrint();
-        </script>
-        <script src="scripts/linenumber.js"> </script>
-  </body>
-
-</html>
-=======
-</div>
-
-<nav>
-  <h2><a href="index.html">Home</a></h2>
-  <h3>Classes</h3>
-  <ul>
-    <li><a href="App.html">App</a></li>
-    <li><a href="Chain.html">Chain</a></li>
-    <li><a href="CLI.html">CLI</a></li>
-    <li><a href="Compiler.html">Compiler</a></li>
-    <li><a href="Entity.html">Entity</a></li>
-    <li><a href="Fabric.html">Fabric</a></li>
-    <li><a href="Machine.html">Machine</a></li>
-    <li><a href="Message.html">Message</a></li>
-    <li><a href="Oracle.html">Oracle</a></li>
-    <li><a href="Peer.html">Peer</a></li>
-    <li><a href="Remote.html">Remote</a></li>
-    <li><a href="Router.html">Router</a></li>
-    <li><a href="Scribe.html">Scribe</a></li>
-    <li><a href="Script.html">Script</a></li>
-    <li><a href="Service.html">Service</a></li>
-    <li><a href="Stack.html">Stack</a></li>
-    <li><a href="State.html">State</a></li>
-    <li><a href="Store.html">Store</a></li>
-    <li><a href="Swarm.html">Swarm</a></li>
-    <li><a href="Vector.html">Vector</a></li>
-    <li><a href="Walker.html">Walker</a></li>
-  </ul>
-</nav>
-
-<br class="clear">
-
-<footer>
-  Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.6.0-dev</a> on Mon Jul 01 2019 21:32:25 GMT-0700 (Pacific Daylight Time)
-</footer>
-
-<script>
-  prettyPrint();
-</script>
-<script src="scripts/linenumber.js"> </script>
+  <script>
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"> </script>
 </body>
 
 </html>
->>>>>>> 641d093137022ea676044cc6f36a267d9d8b89db

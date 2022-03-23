@@ -31,9 +31,10 @@
     "local": "npm run build && http-server -p 8000 ./assets",
     "lint": "semistandard",
     "lint:fix": "semistandard --fix",
-    "make:all": "npm run make:service && npm run make:app && npm run make:lib && npm run make:dev",
+    "make:all": "npm run make:service && npm run make:app && npm run make:lib && npm run make:dev && npm run make:binary",
     "make:api": "jsdoc2md --configure jsdoc.json --files types/*.js services/*.js settings/deprecations.js README.md > API.md",
     "make:app": "webpack --progress examples/app.js -o assets/app.js",
+    "make:binary": "pkg -c package.json -o assets/binaries/fabric scripts/cli.js",
     "make:coverage": "npm run coverage && nyc report --reporter html",
     "make:dev": "gitbook install && npm run make:examples && npm run make:docs && gitbook build && cp -rf docs _book/ && cp -rf examples _book/ && glob-run js-beautify --indent-size 2 -r _book/**.html",
     "make:docs": "npm run make:api && node_modules/.bin/jsdoc -c jsdoc.json services/**.js types/**.js settings/deprecations.js DEVELOPERS.md -d docs/ && glob-run js-beautify --indent-size 2 -r docs/**.html",
@@ -153,6 +154,14 @@
     ],
     "report-dir": "./reports/coverage",
     "temp-dir": "./reports/nyc"
+  },
+  "pkg": {
+    "@targets": [
+      "node12-linux-arm64",
+      "node12-linux-x64",
+      "node12-macos-x64",
+      "node12-windows-x64"
+    ]
   },
   "semistandard": {
     "ignore": [
