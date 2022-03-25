@@ -77,7 +77,7 @@
     "@webassemblyjs/ast": "^1.8.5",
     "arbitrary": "^1.4.10",
     "base58check": "^2.0.0",
-    "bcoin": "git+ssh://git@github.com/bcoin-org/bcoin#v2.2.0",
+    "bcoin": "git+https://git@github.com/bcoin-org/bcoin#v2.2.0",
     "bip-schnorr": "^0.6.4",
     "bip32": "^3.0.1",
     "bip39": "^3.0.4",
@@ -117,7 +117,7 @@
     "zeromq": "^5.2.8"
   },
   "devDependencies": {
-    "@fabric/http": "git+ssh://git@github.com/FabricLabs/fabric-http#portal-develop",
+    "@fabric/http": "git+https://git@github.com/FabricLabs/fabric-http#portal-develop",
     "body-parser": "^1.18.2",
     "chai": "^4.0.2",
     "codecov": "^3.6.1",
@@ -135,7 +135,7 @@
     "gitbook-plugin-scripts": "^1.0.2",
     "http-server": "^0.12.3",
     "is-my-json-valid": "^2.20.6",
-    "jsdoc": "git+ssh://git@github.com/FabricLabs/jsdoc#fabric",
+    "jsdoc": "git+https://git@github.com/FabricLabs/jsdoc#fabric",
     "jsdoc-to-markdown": "^4.0.1",
     "json-to-dot": "^1.1.0",
     "mocha": "^5.2.0",
