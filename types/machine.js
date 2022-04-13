@@ -32,8 +32,9 @@ class Machine extends Actor {
       debug: false,
       deterministic: true,
       frequency: 1, // Hz
+      script: [],
       seed: 1, // TODO: select seed for production
-      states: {}
+      type: 'fabric'
     }, settings);
 
     // internal clock
@@ -48,9 +49,18 @@ class Machine extends Actor {
     this.entropy = this.sip();
 
     this.known = {}; // definitions
-    this.script = []; // input
+    this.script = this.settings.script; // input
     this.stack = []; // output
     this.history = []; // State tree
+
+    this._state = {
+      content: {
+        clock: this.clock
+      },
+      status: 'PAUSED'
+    };
+
+    this.observer = monitor.observe(this._state.content);
 
     // Tip
     Object.defineProperty(this, 'tip', function (val) {
@@ -98,7 +108,7 @@ class Machine extends Actor {
    * @return {Promise}
    */
   async compute (input) {
-    ++this.clock;
+    this._state.content.clock = ++this.clock;
 
     this.emit('tick', this.clock);
 
@@ -121,11 +131,13 @@ class Machine extends Actor {
     }
 
     if (this.stack.length > 1) {
-      this.warn('Stack is dirty:', this.stack);
+      // this.warn('Stack is dirty:', this.stack);
     }
 
-    this.state['@data'] = this.stack;
-    this.state['@id'] = this.id;
+    // this.state['@data'] = this.stack;
+    // this.state['@id'] = this.id;
+
+    this._state.content = this.stack[this.stack.length - 1];
 
     this.commit();
 
@@ -165,6 +177,7 @@ class Machine extends Actor {
       self.history.push(vector);
 
       self.emit('transaction', vector);
+      self.emit('changes', changes);
     }
 
     return changes;
@@ -172,10 +185,7 @@ class Machine extends Actor {
 
   async start () {
     this.status = 'STARTING';
-    this._governor = setInterval(
-      this.compute.bind(this),
-      this.settings.frequency * 1000
-    );
+    this._governor = setInterval(this.compute.bind(this), this.settings.frequency * 1000);
     this.status = 'STARTED';
     return this;
   }

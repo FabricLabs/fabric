@@ -66,10 +66,11 @@ class Message extends Actor {
     this.raw = {
       magic: Buffer.alloc(4),
       version: Buffer.alloc(4),
+      parent: Buffer.alloc(32),
       type: Buffer.alloc(4), // TODO: 8, 32
       size: Buffer.alloc(4), // TODO: 8, 32
       hash: Buffer.alloc(32),
-      parent: Buffer.alloc(32),
+      signature: Buffer.alloc(64),
       data: null
     };
 
@@ -127,6 +128,11 @@ class Message extends Actor {
     return Buffer.from((this.raw && this.raw.hash) ? `0x${padDigits(this.raw.hash, 8)}` : crypto.randomBytes(32));
   }
 
+  set signature (value) {
+    if (value instanceof Buffer) value = value.toString('hex');
+    this.raw.signature.write(value, 'hex');
+  }
+
   toBuffer () {
     return this.asRaw();
   }
@@ -158,8 +164,10 @@ class Message extends Actor {
       headers: {
         magic: parseInt(`0x${this.raw.magic.toString('hex')}`, 16),
         version: parseInt(`${this.raw.version.toString('hex')}`, 16),
+        parent: this.raw.parent.toString('hex'),
         type: parseInt(`${this.raw.type.toString('hex')}`, 16),
         size: parseInt(`${this.raw.size.toString('hex')}`, 16),
+        signature: this.raw.signature.toString('hex'),
         hash: this.raw.hash.toString('hex')
       },
       type: this.type,
@@ -175,9 +183,11 @@ class Message extends Actor {
     const message = struct()
       .charsnt('magic', 4, 'hex')
       .charsnt('version', 4, 'hex')
+      .charsnt('parent', 32, 'hex')
       .charsnt('type', 4, 'hex')
       .charsnt('size', 4, 'hex')
       .charsnt('hash', 32, 'hex')
+      .charsnt('signature', 64, 'hex')
       .charsnt('data', buffer.length - HEADER_SIZE);
 
     message.allocate();
@@ -201,9 +211,11 @@ class Message extends Actor {
     message.raw = {
       magic: input.slice(0, 4),
       version: input.slice(4, 8),
-      type: input.slice(8, 12),
-      size: input.slice(12, 16),
-      hash: input.slice(16, 48)
+      parent: input.slice(8, 40),
+      type: input.slice(40, 44),
+      size: input.slice(44, 48),
+      hash: input.slice(48, 80),
+      signature: input.slice(80, 144)
     };
 
     message.data = input.slice(HEADER_SIZE);
@@ -289,6 +301,10 @@ class Message extends Actor {
     return this.raw.magic;
   }
 
+  get signature () {
+    return parseInt(Buffer.from(this.raw.signature, 'hex'));
+  }
+
   get size () {
     return parseInt(Buffer.from(this.raw.size, 'hex'));
   }
@@ -303,6 +319,7 @@ class Message extends Actor {
       Buffer.from(this.raw.version, 'hex'),
       Buffer.from(this.raw.type, 'hex'),
       Buffer.from(this.raw.size, 'hex'),
+      Buffer.from(this.raw.signature, 'hex'),
       Buffer.from(this.raw.hash, 'hex')
     ];
 
