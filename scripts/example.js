@@ -21,7 +21,7 @@ function App (input) {
   // these are available to the entire app
   function doStuff () {
     console.log('leaked data:', this);
-    let tip = advanceChain();
+    const tip = advanceChain();
     return {
       tip: tip,
       response: 'Did stuff.',
@@ -37,7 +37,7 @@ function App (input) {
     };
   }
 
-  let output = doStuff();
+  const output = doStuff();
   console.log('output:', output);
 
   advanceChain();
@@ -47,7 +47,7 @@ function App (input) {
 
 util.inherits(App, Fabric);
 
-var worker = new Worker(App);
+const worker = new Worker(App);
 
 console.log('worker:', worker);
 console.log('method:', worker.method);
@@ -59,18 +59,17 @@ function every (list) {
 }
 
 function main (input) {
-  let cores = [Buffer.alloc(32), 'EXAMPLE_STRING', 'input is an array'];
+  const cores = [Buffer.alloc(32), 'EXAMPLE_STRING', 'input is an array'];
 
   for (let i = 1; i < 5; i++) {
-    cores.push({ name: `core-${i}` })
+    cores.push({ name: `core-${i}` });
   }
 
   cores.push(Genesis);
 
-  let many = every(cores);
+  const many = every(cores);
 
   console.log('many:', many);
-
 }
 
 main(process.stdin);

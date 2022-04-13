@@ -117,7 +117,6 @@ class Key {
     // DO NOT USE IN PRODUCTION
     this.pubkeyhash = this.keyring.getKeyHash('hex');
 
-
     this['@data'] = {
       type: 'Key',
       public: this.pubkey,

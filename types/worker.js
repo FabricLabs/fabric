@@ -34,7 +34,7 @@ class Worker extends Service {
    * @return {String}       Outcome of the requested job.
    */
   async compute (input) {
-    let output = await this.machine.compute(input);
+    const output = await this.machine.compute(input);
 
     console.log('[FABRIC:WORKER]', this.machine.clock, 'Computed output:', output);
 

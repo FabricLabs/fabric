@@ -11,16 +11,16 @@ describe('@fabric/core/types/environment', function () {
     });
 
     it('can check for store', async function () {
-      let environment = new Environment();
-      let exists = environment.storeExists();
+      const environment = new Environment();
+      const exists = environment.storeExists();
 
       assert.ok(environment);
       assert.equal(typeof exists, 'boolean');
     });
 
     it('can check for wallet', async function () {
-      let environment = new Environment();
-      let exists = environment.walletExists();
+      const environment = new Environment();
+      const exists = environment.walletExists();
 
       assert.ok(environment);
       assert.equal(typeof exists, 'boolean');

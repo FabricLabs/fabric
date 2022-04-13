@@ -1,4 +1,4 @@
-'use strict'
+'use strict';
 
 // Constants
 const {
@@ -23,7 +23,7 @@ const Key = require('./key');
 class Session extends Entity {
   /**
    * Creates a new {@link Session}.
-   * @param {Object} settings 
+   * @param {Object} settings
    */
   constructor (settings = {}) {
     super(settings);
@@ -122,15 +122,15 @@ class Session extends Entity {
   }
 
   _getEvenKey () {
-    let key = new Key();
-    let num = new BN(key.public.encode('hex'), 16);
+    const key = new Key();
+    const num = new BN(key.public.encode('hex'), 16);
     if (!num.isEven()) return this._getEvenKey();
     return key;
   }
 
   _getOddKey () {
-    let key = new Key();
-    let num = new BN(key.public.encode('hex'), 16);
+    const key = new Key();
+    const num = new BN(key.public.encode('hex'), 16);
     if (!num.isOdd()) return this._getOddKey();
     return key;
   }
@@ -169,7 +169,7 @@ class Session extends Entity {
 
   async commit () {
     if (!this.key) throw new Error('No key for session!');
-    let signature = this.key._sign(this.state);
+    const signature = this.key._sign(this.state);
     return Buffer.from(signature).toString('hex');
   }
 
@@ -185,7 +185,7 @@ class Session extends Entity {
     this.messages.push(id);
     this.meta.messages = this.messages.length;
 
-    let signature = await this.commit();
+    const signature = await this.commit();
 
     this.emit('message', {
       type: 'AddMessage',

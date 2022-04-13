@@ -27,7 +27,7 @@ class Collection extends Stack {
       type: Entity,
       deterministic: true,
       name: '@fabric/store',
-      path: `./collections`,
+      path: './collections',
       fields: { id: 'id' },
       key: 'id'
     }, configuration);
@@ -37,7 +37,7 @@ class Collection extends Stack {
 
     // Set name to plural version, define path for storage
     this.name = pluralize(this.settings.name);
-    this.path = `/` + this.name.toLowerCase();
+    this.path = '/' + this.name.toLowerCase();
 
     this._state = {};
     this.value = {};
@@ -65,8 +65,8 @@ class Collection extends Stack {
    * @returns {MerkleTree}
    */
   asMerkleTree () {
-    let list = pointer.get(this.value, this.path);
-    let stack = new Stack(Object.keys(list));
+    const list = pointer.get(this.value, this.path);
+    const stack = new Stack(Object.keys(list));
     return stack.asMerkleTree();
   }
 
@@ -91,7 +91,7 @@ class Collection extends Stack {
       if (this.settings.verbosity >= 5) console.log(`getting ${this.path}/${id} from:`, this.value);
       result = pointer.get(this.value, `${this.path}/${id}`);
     } catch (E) {
-     // console.debug('[FABRIC:COLLECTION]', `@${this.name}`, Date.now(), `Could not find ID "${id}" in tree ${this.asMerkleTree()}`);
+      // console.debug('[FABRIC:COLLECTION]', `@${this.name}`, Date.now(), `Could not find ID "${id}" in tree ${this.asMerkleTree()}`);
     }
 
     result = this._wrapResult(result);
@@ -103,7 +103,7 @@ class Collection extends Stack {
    * Retrieve the most recent element in the collection.
    */
   getLatest () {
-    let items = pointer.get(this.value, this.path);
+    const items = pointer.get(this.value, this.path);
     return items[items.length - 1];
   }
 
@@ -114,12 +114,12 @@ class Collection extends Stack {
    */
   findByField (name, value) {
     let result = null;
-    let items = pointer.get(this.value, this.path);
+    const items = pointer.get(this.value, this.path);
     // constant-time loop
-    for (let id in items) {
+    for (const id in items) {
       if (items[id][name] === value) {
         // use only first result
-        result = (result) ? result : items[id];
+        result = (result) || items[id];
       }
     }
     return result;
@@ -131,12 +131,12 @@ class Collection extends Stack {
    */
   findByName (name) {
     let result = null;
-    let items = pointer.get(this.value, this.path);
+    const items = pointer.get(this.value, this.path);
     // constant-time loop
-    for (let id in items) {
+    for (const id in items) {
       if (items[id].name === name) {
         // use only first result
-        result = (result) ? result : items[id];
+        result = (result) || items[id];
       }
     }
     return result;
@@ -148,13 +148,13 @@ class Collection extends Stack {
    */
   findBySymbol (symbol) {
     let result = null;
-    let items = pointer.get(this.value, this.path);
+    const items = pointer.get(this.value, this.path);
     // constant-time loop
-    for (let id in items) {
+    for (const id in items) {
       // TODO: fix bug here (check for symbol)
       if (items[id].symbol === symbol) {
         // use only first result
-        result = (result) ? result : items[id];
+        result = (result) || items[id];
       }
     }
     return result;
@@ -163,14 +163,14 @@ class Collection extends Stack {
   // TODO: deep search, consider GraphQL (!!!: to discuss)
   match (query = {}) {
     let result = null;
-    let items = pointer.get(this.value, this.path);
-    let list = Object.keys(items).map((x) => {
+    const items = pointer.get(this.value, this.path);
+    const list = Object.keys(items).map((x) => {
       return items[x];
     });
 
     try {
       result = list.filter((x) => {
-        for (let field in query) {
+        for (const field in query) {
           if (x[field] !== query[field]) return false;
         }
         return true;
@@ -185,7 +185,7 @@ class Collection extends Stack {
   _wrapResult (result) {
     // TODO: enable upstream specification via pure JSON
     if (this.settings.type.name !== 'Entity') {
-      let Type = this.settings.type;
+      const Type = this.settings.type;
       result = new Type(result || {});
     }
 
@@ -200,7 +200,7 @@ class Collection extends Stack {
    * @param {Array} patches List of operations to apply.
    */
   async _patchTarget (path, patches) {
-    let link = `${path}`;
+    const link = `${path}`;
     let result = null;
 
     if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'Patching target:', path, patches);
@@ -227,7 +227,7 @@ class Collection extends Stack {
   async push (data, commit = true) {
     super.push(data);
 
-    let state = new State(data);
+    const state = new State(data);
 
     this['@entity'].states[this.id] = this['@data'];
     this['@entity'].states[state.id] = state['@data'];
@@ -296,10 +296,10 @@ class Collection extends Stack {
    * @returns {Array}
    */
   list () {
-    let map = this.map();
-    let ids = Object.keys(map);
+    const map = this.map();
+    const ids = Object.keys(map);
     // TODO: `list()` should return an Array
-    let result = {};
+    const result = {};
 
     for (let i = 0; i < ids.length; i++) {
       result[ids[i]] = this._wrapResult(map[ids[i]]);
@@ -314,16 +314,16 @@ class Collection extends Stack {
    * type, supplied in the constructor.
    */
   toTypedArray () {
-    let map = this.map();
-    let ids = Object.keys(map);
+    const map = this.map();
+    const ids = Object.keys(map);
     return ids.map((x) => this._wrapResult(map[ids[x]]));
   }
 
   typedMap () {
-    let map = this.map();
-    let ids = Object.keys(map);
+    const map = this.map();
+    const ids = Object.keys(map);
     // TODO: `list()` should return an Array
-    let result = {};
+    const result = {};
 
     for (let i = 0; i < ids.length; i++) {
       result[ids[i]] = this._wrapResult(map[ids[i]]);
@@ -350,12 +350,12 @@ class Collection extends Stack {
     if (!this.settings.deterministic) input.created = Date.now();
 
     let result = null;
-    let entity = new Entity(input);
-    let link = `${this.path}/${entity.id}`;
+    const entity = new Entity(input);
+    const link = `${this.path}/${entity.id}`;
     // TODO: enable specifying names (again)
     // let link = `${this.path}/${(entity.data[this.settings.fields.id] || entity.id)}`;
     // TODO: handle duplicates (when desired, i.e., "unique" in settings)
-    let current = await this.getByID(entity.id);
+    const current = await this.getByID(entity.id);
     if (current) {
       if (this.settings.verbosity >= 5) console.log('[FABRIC:COLLECTION]', 'Exact entity exists:', current);
     }
@@ -406,10 +406,10 @@ class Collection extends Stack {
     if (input['@data']) input = input['@data'];
 
     let result = null;
-    let size = await this.push(input, false);
-    let state = this['@entity'].states[this['@data'][size - 1]];
-    let entity = new Entity(state);
-    let link = `${this.path}/${input.id || entity.id}`;
+    const size = await this.push(input, false);
+    const state = this['@entity'].states[this['@data'][size - 1]];
+    const entity = new Entity(state);
+    const link = `${this.path}/${input.id || entity.id}`;
 
     if (this.settings.verbosity >= 4) console.log('state.data:', state.data);
     if (this.settings.verbosity >= 4) console.log('state:', state);
@@ -445,10 +445,10 @@ class Collection extends Stack {
   }
 
   async importList (list) {
-    let ids = [];
+    const ids = [];
 
     for (let i = 0; i < list.length; i++) {
-      let item = await this.import(list[i]);
+      const item = await this.import(list[i]);
       ids.push(item.id);
     }
 

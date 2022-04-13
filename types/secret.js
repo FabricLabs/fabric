@@ -22,7 +22,7 @@ class Secret extends EncryptedPromise {
     return {
       hash: this._state.blob,
       content: this._state.blob.toString()
-    }
+    };
   }
 }
 

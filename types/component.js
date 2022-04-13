@@ -8,8 +8,8 @@ const Service = require('./service');
 class Component extends Service {
   constructor (config) {
     this.config = Object.assign({
-      'encoding': 'jade',
-      'input': 'fabric-component Hello, world!'
+      encoding: 'jade',
+      input: 'fabric-component Hello, world!'
     }, config);
 
     this['@encoding'] = 'html';

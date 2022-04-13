@@ -254,9 +254,9 @@ class Bitcoin extends Service {
 
   get networks () {
     return {
-      'mainnet': bitcoin.networks.mainnet,
-      'regtest': bitcoin.networks.regtest,
-      'testnet': bitcoin.networks.testnet
+      mainnet: bitcoin.networks.mainnet,
+      regtest: bitcoin.networks.regtest,
+      testnet: bitcoin.networks.testnet
     };
   }
 
@@ -342,7 +342,7 @@ class Bitcoin extends Service {
     }
 
     const actor = new Actor(message);
-     // sendtoaddress "address" amount ( "comment" "comment_to" subtractfeefromamount replaceable conf_target "estimate_mode" avoid_reuse fee_rate verbose )
+    // sendtoaddress "address" amount ( "comment" "comment_to" subtractfeefromamount replaceable conf_target "estimate_mode" avoid_reuse fee_rate verbose )
     const txid = await this._makeRPCRequest('sendtoaddress', [
       message.destination,
       message.amount,
@@ -372,10 +372,10 @@ class Bitcoin extends Service {
     if (!(obj.transactions instanceof Array)) throw new Error('Block must provide transactions as an Array.');
 
     for (const tx of obj.transactions) {
-      let transaction = await this.transactions.create(tx);
+      const transaction = await this.transactions.create(tx);
     }
 
-    let entity = new Entity(obj);
+    const entity = new Entity(obj);
     return Object.assign({}, obj, {
       id: entity.id
     });
@@ -386,7 +386,7 @@ class Bitcoin extends Service {
    * @param {Transaction} obj Transaction to prepare.
    */
   async _prepareTransaction (obj) {
-    let entity = new Entity(obj);
+    const entity = new Entity(obj);
     return Object.assign({}, obj, {
       id: entity.id
     });
@@ -399,7 +399,7 @@ class Bitcoin extends Service {
   async _handleCommittedBlock (block) {
     // console.log('[FABRIC:BITCOIN]', 'Handling Committed Block:', block);
     for (let i = 0; i < block.transactions.length; i++) {
-      let txid = block.transactions[i];
+      const txid = block.transactions[i];
       await this.transactions.create({
         hash: txid.toString('hex')
       });
@@ -418,13 +418,13 @@ class Bitcoin extends Service {
 
   async _registerBlock (obj) {
     let result = null;
-    let state = new State(obj);
-    let transform = [state.id, state.render()];
+    const state = new State(obj);
+    const transform = [state.id, state.render()];
     let prior = null;
 
     // TODO: ensure all appropriate fields, valid block
-    let path = `/blocks/${obj.hash}`;
-    let hash = require('crypto').createHash('sha256').update(obj.data).digest('hex');
+    const path = `/blocks/${obj.hash}`;
+    const hash = require('crypto').createHash('sha256').update(obj.data).digest('hex');
 
     // TODO: verify local hash (see below)
     console.log('local hash from node:', hash);
@@ -442,7 +442,7 @@ class Bitcoin extends Service {
       return prior;
     }
 
-    let block = Object.assign({
+    const block = Object.assign({
       id: obj.hash,
       type: 'Block',
       // TODO: enable sharing of local hashes
@@ -458,9 +458,9 @@ class Bitcoin extends Service {
     }
 
     for (let i = 0; i < obj.transactions.length; i++) {
-      let tx = obj.transactions[i];
+      const tx = obj.transactions[i];
       console.log('[AUDIT]', 'tx found in block:', tx);
-      let transaction = await this._registerTransaction({
+      const transaction = await this._registerTransaction({
         id: tx.txid + '',
         hash: tx.hash + '',
         confirmations: 1
@@ -470,16 +470,16 @@ class Bitcoin extends Service {
     }
 
     this.emit(path, result);
-    this.emit(`message`, {
+    this.emit('message', {
       '@type': 'BlockRegistration',
       '@data': result,
-      actor: `services/btc`,
-      target: `/blocks`,
+      actor: 'services/btc',
+      target: '/blocks',
       object: result,
       origin: {
         type: 'Link',
         name: 'btc',
-        link: `/services/btc`
+        link: '/services/btc'
       }
     });
 
@@ -492,17 +492,17 @@ class Bitcoin extends Service {
 
   async _registerTransaction (obj) {
     await this._PUT(`/transactions/${obj.hash}`, obj);
-    let tx = await this._GET(`/transactions/${obj.hash}`);
+    const tx = await this._GET(`/transactions/${obj.hash}`);
     console.log('registered tx:', tx);
 
-    let txns = await this._GET(`/transactions`);
-    let txids = Object.keys(txns);
-    let inputs = [];
-    let outputs = [];
+    const txns = await this._GET('/transactions');
+    const txids = Object.keys(txns);
+    const inputs = [];
+    const outputs = [];
 
     if (obj.inputs) {
       for (let i = 0; obj.inputs.length; i++) {
-        let input = obj.inputs[i];
+        const input = obj.inputs[i];
 
         if (input.address) {
           await this._registerAddress({
@@ -516,7 +516,7 @@ class Bitcoin extends Service {
 
     if (obj.outputs) {
       for (let i = 0; obj.outputs.length; i++) {
-        let output = obj.outputs[i];
+        const output = obj.outputs[i];
 
         if (output.address) {
           await this._registerAddress({
@@ -528,7 +528,7 @@ class Bitcoin extends Service {
       }
     }
 
-    let transaction = Object.assign({
+    const transaction = Object.assign({
       id: obj.hash,
       hash: obj.hash,
       inputs: inputs,
@@ -538,16 +538,16 @@ class Bitcoin extends Service {
     // await this._PUT(`/transactions`, txids);
     await this.commit();
 
-    this.emit(`message`, {
+    this.emit('message', {
       '@type': 'TransactionRegistration',
       '@data': tx,
-      actor: `services/bitcoin`,
-      target: `/transactions`,
+      actor: 'services/bitcoin',
+      target: '/transactions',
       object: transaction,
       origin: {
         type: 'Link',
         name: 'Bitcoin',
-        link: `/services/bitcoin`
+        link: '/services/bitcoin'
       }
     });
 
@@ -570,16 +570,16 @@ class Bitcoin extends Service {
         console.warn('[SERVICES:BITCOIN]', 'unhandled peer packet:', msg.cmd);
         break;
       case 'block':
-        let blk = msg.block.toBlock();
-        let sample = blk.toJSON();
-        let headers = msg.block.toHeaders();
-        let txids = sample.txs.map(x => x.hash);
-        let block = await this._registerBlock({
+        const blk = msg.block.toBlock();
+        const sample = blk.toJSON();
+        const headers = msg.block.toHeaders();
+        const txids = sample.txs.map(x => x.hash);
+        const block = await this._registerBlock({
           headers: headers,
           transactions: txids,
           root: blk.createMerkleRoot('hex'),
           hash: sample.hash,
-          data: msg.block.toBlock()._raw,
+          data: msg.block.toBlock()._raw
         });
 
         console.log('registered block:', block);
@@ -588,7 +588,7 @@ class Bitcoin extends Service {
         this.peer.getData(msg.items);
         break;
       case 'tx':
-        let transaction = await this._registerTransaction({
+        const transaction = await this._registerTransaction({
           id: msg.tx.txid() + '',
           hash: msg.tx.hash('hex') + '',
           confirmations: 0
@@ -601,7 +601,7 @@ class Bitcoin extends Service {
   }
 
   async _handleBlockMessage (msg) {
-    let template = {
+    const template = {
       hash: msg.hash('hex'),
       parent: msg.prevBlock.toString('hex'),
       transactions: msg.txs.map((tx) => {
@@ -611,7 +611,7 @@ class Bitcoin extends Service {
       raw: msg.toRaw().toString('hex')
     };
 
-    let block = await this.blocks.create(template);
+    const block = await this.blocks.create(template);
   }
 
   async _handleConnectMessage (entry, block) {
@@ -629,7 +629,7 @@ class Bitcoin extends Service {
    */
   async _handleBlockFromSPV (msg) {
     if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'SPV Received block:', msg);
-    let block = await this.blocks.create({
+    const block = await this.blocks.create({
       hash: msg.hash('hex'),
       parent: msg.prevBlock.toString('hex'),
       transactions: msg.hashes,
@@ -639,7 +639,7 @@ class Bitcoin extends Service {
     // if (this.settings.verbosity >= 5) console.log('created block:', block);
     if (this.settings.verbosity >= 5) console.log('block count:', Object.keys(this.blocks.list()).length);
 
-    let message = {
+    const message = {
       '@type': 'BitcoinBlock',
       '@data': block
     };
@@ -658,7 +658,7 @@ class Bitcoin extends Service {
    */
   async _handleTransactionFromSPV (tx) {
     if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'SPV Received TX:', tx);
-    let msg = {
+    const msg = {
       '@type': 'BitcoinTransaction',
       '@data': {
         hash: tx.hash('hex'),
@@ -698,7 +698,7 @@ class Bitcoin extends Service {
       false, // blank (use sethdseed)
       '', // passphrase
       true, // avoid reuse
-      false, // descriptors
+      false // descriptors
     ]);
 
     const wallet = await this._makeRPCRequest('loadwallet', [actor.id]);
@@ -730,10 +730,10 @@ class Bitcoin extends Service {
    */
   async _subscribeToShard (shard) {
     for (let i = 0; i < shard.length; i++) {
-      let slice = shard[i];
+      const slice = shard[i];
       // TODO: fix @types/wallet to use named types for Addresses...
       // i.e., this next line should be unnecessary!
-      let address = bcoin.Address.fromString(slice.string, this.settings.network);
+      const address = bcoin.Address.fromString(slice.string, this.settings.network);
       if (this.settings.verbosity >= 4) console.log('[DEBUG]', `[@0x${slice.string}] === ${slice.string}`);
       this.spv.pool.watchAddress(address);
     }
@@ -754,14 +754,14 @@ class Bitcoin extends Service {
     this.spv.on('block', this._handleBlockFromSPV.bind(this));
 
     // get peer from known address
-    let addr = new NetAddress({
+    const addr = new NetAddress({
       host: '127.0.0.1',
       // port: this.fullnode.pool.options.port
       port: this.provider.port
     });
 
     // connect this.spv with fullNode
-    let peer = this.spv.pool.createOutbound(addr);
+    const peer = this.spv.pool.createOutbound(addr);
     if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', 'Peer connection created:', peer);
     this.spv.pool.peers.add(peer);
 
@@ -771,17 +771,17 @@ class Bitcoin extends Service {
 
   async _connectToSeedNodes () {
     for (let i = 0; i < this.settings.seeds.length; i++) {
-      let node = this.settings.seeds[i];
+      const node = this.settings.seeds[i];
       this.connect(node);
     }
   }
 
   async _connectToEdgeNodes () {
-    let bitcoin = this;
+    const bitcoin = this;
 
-    for (let id in this.settings.nodes) {
-      let node = this.settings.nodes[id];
-      let peer = bcoin.Peer.fromOptions({
+    for (const id in this.settings.nodes) {
+      const node = this.settings.nodes[id];
+      const peer = bcoin.Peer.fromOptions({
         network: this.settings.network,
         agent: this.UAString,
         hasWitness: () => {
@@ -864,13 +864,13 @@ class Bitcoin extends Service {
     if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', `Starting fullnode for network "${this.settings.network}"...`);
 
     for (const candidate of this.settings.seeds) {
-      let parts = candidate.split(':');
-      let addr = new NetAddress({
+      const parts = candidate.split(':');
+      const addr = new NetAddress({
         host: parts[0],
         port: parseInt(parts[1]) || this.provider.port
       });
 
-      let peer = this.fullnode.pool.createOutbound(addr);
+      const peer = this.fullnode.pool.createOutbound(addr);
       this.fullnode.pool.peers.add(peer);
     }
 
@@ -1106,7 +1106,7 @@ class Bitcoin extends Service {
 
   /**
    * Creates an unsigned Bitcoin transaction.
-   * @param {Object} options 
+   * @param {Object} options
    * @returns {ContractProposal} Instance of the proposal.
    */
   async _createContractProposal (options = {}) {
@@ -1128,7 +1128,7 @@ class Bitcoin extends Service {
       inputs: utxos,
       keys: keys,
       meta: meta,
-      mtx: mtx,
+      mtx: mtx
       // raw: raw,
       // tx: tx
     };
@@ -1284,7 +1284,7 @@ class Bitcoin extends Service {
       .addInput(options.input)
       .addOutput({
         address: options.change,
-        value: 2e4,
+        value: 2e4
       })
       .signInput(0, p2wpkh.keys[0]);
 
@@ -1295,7 +1295,7 @@ class Bitcoin extends Service {
 
   async _createP2WKHPayment (options) {
     return bitcoin.payments.p2wsh({
-      pubkey: options.pubkey, 
+      pubkey: options.pubkey,
       network: this.networks[this.settings.network]
     });
   }
@@ -1338,7 +1338,7 @@ class Bitcoin extends Service {
       hash: unspent.txId,
       index: unspent.vout,
       ...mixin,
-      ...mixin2,
+      ...mixin2
     };
   }
 
@@ -1436,14 +1436,14 @@ class Bitcoin extends Service {
     if (options.isP2WSH && options.isSegwit) {
       payment = bitcoin.payments.p2wsh({
         network: this.networks[this.settings.network],
-        redeem: template,
+        redeem: template
       });
     }
 
     if (options.isP2SH) {
       payment = bitcoin.payments.p2sh({
         network: this.networks[this.settings.network],
-        redeem: template,
+        redeem: template
       });
     }
 
@@ -1490,7 +1490,7 @@ class Bitcoin extends Service {
   }
 
   async _spendRawTX (raw) {
-    return this._makeRPCRequest('sendrawtransaction', [ raw ]);
+    return this._makeRPCRequest('sendrawtransaction', [raw]);
   }
 
   async _syncBestBlock () {
@@ -1552,7 +1552,7 @@ class Bitcoin extends Service {
   async _syncRawHeadersForBlock (hash) {
     const header = await this._requestRawBlockHeader(hash);
     if (header.error) return this.emit('error', header.error);
-    const raw =  Buffer.from(header, 'hex');
+    const raw = Buffer.from(header, 'hex');
     this.headers.push(raw);
     return this;
   }
@@ -1620,7 +1620,7 @@ class Bitcoin extends Service {
     this.peer.on('packet', this._handlePeerPacket.bind(this));
     // NOTE: we always ask for genesis block on peer open
     this.peer.on('open', () => {
-      let block = self.peer.getBlock([this.network.genesis.hash]);
+      const block = self.peer.getBlock([this.network.genesis.hash]);
     });
 
     if (this.store) await this.store.open();

@@ -9,12 +9,12 @@ class Disk {
   }
 
   exists (path) {
-    let full = [this.root, path].join('/');
+    const full = [this.root, path].join('/');
     return fs.existsSync(full);
   }
 
   get (path) {
-    let full = [this.root, path].join('/');
+    const full = [this.root, path].join('/');
     return require(full);
   }
 }

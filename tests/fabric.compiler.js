@@ -34,20 +34,20 @@ describe('@fabric/core/types/compiler', function () {
     });
 
     it('can read a JavaScript contract', function () {
-      const body = fs.readFileSync(`./contracts/node.js`);
+      const body = fs.readFileSync('./contracts/node.js');
       const compiler = Compiler._fromJavaScript(body);
       assert.ok(compiler);
     });
 
     it('can compile a JavaScript contract', async function () {
-      const body = fs.readFileSync(`./contracts/node.js`);
+      const body = fs.readFileSync('./contracts/node.js');
       const compiler = Compiler._fromJavaScript(body);
       await compiler.start();
       assert.ok(compiler);
     });
 
     it('can compile to HTML', async function () {
-      const body = fs.readFileSync(`./contracts/node.js`);
+      const body = fs.readFileSync('./contracts/node.js');
       const compiler = Compiler._fromJavaScript(body);
       await compiler.start();
       const html = compiler._renderToHTML();

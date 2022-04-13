@@ -10,12 +10,12 @@ describe('@fabric/core/types/entity', function () {
     });
 
     it('can generate a known string', function () {
-      let entity = new Fabric.Entity({ foo: 'bar' });
+      const entity = new Fabric.Entity({ foo: 'bar' });
       assert.equal(entity.toString(), '{"foo":"bar"}');
     });
 
     it('can generate a known buffer', function () {
-      let entity = new Fabric.Entity({ foo: 'bar' });
+      const entity = new Fabric.Entity({ foo: 'bar' });
       assert.equal(entity.toBuffer(), '{"foo":"bar"}');
     });
   });

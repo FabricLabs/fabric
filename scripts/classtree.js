@@ -3,17 +3,17 @@
 const fs = require('fs');
 const path = process.argv[2];
 
-let files = fs.readdirSync(path);
-let classExtends = {};
+const files = fs.readdirSync(path);
+const classExtends = {};
 
 for (let i = 0; i < files.length; i++) {
   if (!files[i].includes('.js')) continue;
-  let text = fs.readFileSync(path + "/" + files[i], 'utf8');
-  let ci = text.indexOf('class ');
+  const text = fs.readFileSync(path + '/' + files[i], 'utf8');
+  const ci = text.indexOf('class ');
 
   let decl = '';
   if (ci >= 0) {
-    for (var j = ci; j < text.length; j++) {
+    for (let j = ci; j < text.length; j++) {
       if (text[j] === '{') break;
       decl += text[j];
     }
@@ -22,14 +22,14 @@ for (let i = 0; i < files.length; i++) {
   decl = decl.trim();
   if (!decl) continue;
 
-  let parts = decl.split(' ');
+  const parts = decl.split(' ');
   if (parts.length > 4) continue;
 
-  let className = parts[1];
+  const className = parts[1];
   let extendsClassName = null;
 
   if (parts.includes('extends')) {
-    let classPath = parts[3].split('.');
+    const classPath = parts[3].split('.');
     extendsClassName = classPath[classPath.length - 1];
   }
 
@@ -37,10 +37,10 @@ for (let i = 0; i < files.length; i++) {
   if (!classExtends[extendsClassName]) classExtends[extendsClassName] = null;
 }
 
-classExtends['EventEmitter'] = null;
+classExtends.EventEmitter = null;
 
-function buildSubtree(subtree, parent=null) {
-  for (let k in classExtends) {
+function buildSubtree (subtree, parent = null) {
+  for (const k in classExtends) {
     if (k === 'null' || k === null) continue;
     if (classExtends[k] === parent) {
       subtree[k] = {};

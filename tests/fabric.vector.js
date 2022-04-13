@@ -10,7 +10,7 @@ describe('@fabric/core/types/vector', function () {
     });
 
     it('can restore from garbage', async function () {
-      let vector = Vector.fromObjectString('{ "0": { "type": "Buffer", "data": [0, 0, 0, 0] } }');
+      const vector = Vector.fromObjectString('{ "0": { "type": "Buffer", "data": [0, 0, 0, 0] } }');
       assert.strictEqual(vector instanceof Array, true);
       assert.strictEqual(vector[0] instanceof Buffer, true);
       assert.strictEqual(vector[0].toString('hex'), '00000000');

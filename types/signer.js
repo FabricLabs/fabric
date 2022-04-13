@@ -62,7 +62,7 @@ class Signer extends Actor {
   sign (data = this.toBuffer()) {
     this._lastSignature = new Actor({ message: data, signature: this.signature });
     this.signature = schnorr.sign(this.key.private, data);
-    this.emit('signature', );
+    this.emit('signature');
     return this.signature.toString('hex');
   }
 }

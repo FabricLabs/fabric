@@ -9,9 +9,9 @@ class Hash256 {
   /**
    * Create an instance of a `Hash256` object by calling `new Hash256()`,
    * where `settings` can be provided to supply a particular input object.
-   * 
+   *
    * If the `settings` is not a string, `input` must be provided.
-   * @param {Object} settings 
+   * @param {Object} settings
    * @param {String} settings.input Input string to map as 256-bit hash.
    */
   constructor (settings = {}) {
@@ -30,7 +30,7 @@ class Hash256 {
    */
   static digest (input) {
     if (typeof input !== 'string' && !(input instanceof Buffer)) {
-      throw new Error(`Input to process must be of type "String" or "Buffer" to digest.`);
+      throw new Error('Input to process must be of type "String" or "Buffer" to digest.');
     }
 
     // consume and output as string

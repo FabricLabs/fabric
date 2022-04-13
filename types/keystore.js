@@ -117,7 +117,7 @@ class KeyStore extends Actor {
         try {
           state = await this._getState();
         } catch (exception) {
-          this.emit('warning', `Could not retrieve state`);
+          this.emit('warning', 'Could not retrieve state');
         }
 
         if (state) {

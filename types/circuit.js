@@ -42,16 +42,16 @@ class Circuit extends Actor {
       nodes: []
     };
 
-    for (let i in this.settings.gates) {
+    for (const i in this.settings.gates) {
       this.transitions.push({
-        name: `step`,
+        name: 'step',
         from: 'cycle()',
         to: `${this.settings.gates[i]}`
       });
     }
 
-    for (let i in this.settings.wires) {
-      let wire = this.settings.wires[i];
+    for (const i in this.settings.wires) {
+      const wire = this.settings.wires[i];
       this.transitions.push({ name: wire.name, from: wire.from, to: wire.to });
     }
 
@@ -100,7 +100,7 @@ class Circuit extends Actor {
   }
 
   compute (input) {
-    let output = input;
+    const output = input;
 
     // empty resolves to Identity function f(x) = x
 
@@ -108,10 +108,10 @@ class Circuit extends Actor {
   }
 
   scramble () {
-    let key = crypto.randomBytes(32);
-    let machine = new Machine({ seed: key });
-    let seed = machine.sip();
-    let gates = [];
+    const key = crypto.randomBytes(32);
+    const machine = new Machine({ seed: key });
+    const seed = machine.sip();
+    const gates = [];
 
     for (let i = 0; i < this._state.steps.length; i++) {
       gates.push({
@@ -128,7 +128,7 @@ class Circuit extends Actor {
   }
 
   render () {
-    let hash = crypto.createHash('sha256').update(this.dot).digest('base64');
+    const hash = crypto.createHash('sha256').update(this.dot).digest('base64');
     return `<fabric-circuit>
   <fabric-code-snippet data-bind="${this.hash}" data-integrity="sha256-${hash}">${this.dot}</fabric-code-snippet>
   <fabric-canvas>
@@ -155,8 +155,8 @@ class Circuit extends Actor {
   }
 
   async _step () {
-    let circuit = this;
-    let origin = circuit.hash + '';
+    const circuit = this;
+    const origin = circuit.hash + '';
 
     console.log('[CIRCUIT:STEP]', this.graph);
     console.log('[CIRCUIT:STEP]', 'woo:', this.toObject());
@@ -205,11 +205,11 @@ class Circuit extends Actor {
 
     this.emit(origin, this.dot);
 
-    await this._PUT(`/output`, Buffer.alloc((256 ** 3) / 8), false);
-    await this._PUT(`/source`, this.dot, false);
-    await this._PUT(`/status`, this.graph.state, false);
+    await this._PUT('/output', Buffer.alloc((256 ** 3) / 8), false);
+    await this._PUT('/source', this.dot, false);
+    await this._PUT('/status', this.graph.state, false);
 
-    let commit = await this.commit();
+    const commit = await this.commit();
 
     console.log('commit:', commit);
 

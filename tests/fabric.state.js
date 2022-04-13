@@ -10,14 +10,14 @@ describe('@fabric/core/types/state', function () {
     });
 
     xit('provides an accurate "@id" attribute', function () {
-      let state = new Fabric.State(message['@data']);
+      const state = new Fabric.State(message['@data']);
 
       assert.ok(state);
       assert.equal(state.id, message['@id']);
     });
 
     xit('can serialize to a sane element', function () {
-      let state = new Fabric.State(message['@data']);
+      const state = new Fabric.State(message['@data']);
 
       assert.ok(state);
       assert.equal(state.id, message['@id']);
@@ -25,7 +25,7 @@ describe('@fabric/core/types/state', function () {
     });
 
     xit('can deserialize from a string', function () {
-      let state = Fabric.State.fromString(JSON.stringify(message['@data']));
+      const state = Fabric.State.fromString(JSON.stringify(message['@data']));
 
       assert.ok(state);
       assert.equal(state.id, message['@id']);

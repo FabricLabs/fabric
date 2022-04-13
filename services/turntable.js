@@ -30,7 +30,7 @@ class Turntable extends Service {
     // Connect to TTFM
     this.agent = await TtfmApi.connect({
       email: this.settings.login,
-      password: this.settings.password,
+      password: this.settings.password
     });
 
     this.agent.onUserJoin(this._handleUserJoin.bind(this));
@@ -60,13 +60,13 @@ class Turntable extends Service {
   }
 
   async _defer (method, params = [], delay = 30000) {
-    if (this.timers['autobop']) clearTimeout(this.timers['autobop']);
+    if (this.timers.autobop) clearTimeout(this.timers.autobop);
     const self = this;
     const timer = setTimeout(() => {
       method.call(self, params);
     }, delay);
 
-    return this.timers['autobop'] = timer;
+    return this.timers.autobop = timer;
   }
 
   async _handleUserJoin (data) {

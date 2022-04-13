@@ -10,7 +10,7 @@ describe('@fabric/core/types/ledger', function () {
     });
 
     it('can cleanly start and stop', async function () {
-      let ledger = new Fabric.Ledger();
+      const ledger = new Fabric.Ledger();
 
       await ledger.start();
       await ledger.stop();
@@ -19,7 +19,7 @@ describe('@fabric/core/types/ledger', function () {
     });
 
     xit('can append an arbitrary message', async function () {
-      let ledger = new Fabric.Ledger();
+      const ledger = new Fabric.Ledger();
 
       await ledger.start();
       await ledger.append({ debug: true, input: 'Hello, world.' });
@@ -29,9 +29,9 @@ describe('@fabric/core/types/ledger', function () {
     });
 
     xit('can append multiple arbitrary messages', async function () {
-      let ledger = new Fabric.Ledger();
-      let one = new Fabric.Vector({ debug: true, input: 'Hello, world.' });
-      let two = new Fabric.Vector({ debug: true, input: 'Why trust?  Verify.' });
+      const ledger = new Fabric.Ledger();
+      const one = new Fabric.Vector({ debug: true, input: 'Hello, world.' });
+      const two = new Fabric.Vector({ debug: true, input: 'Why trust?  Verify.' });
 
       await ledger.start();
       await ledger.append(one['@data']);
@@ -49,11 +49,11 @@ describe('@fabric/core/types/ledger', function () {
     });
 
     xit('can replicate state', async function () {
-      let anchor = new Fabric.Ledger();
-      let sample = new Fabric.Ledger({ path: './stores/tests' });
+      const anchor = new Fabric.Ledger();
+      const sample = new Fabric.Ledger({ path: './stores/tests' });
 
-      let one = new Fabric.Vector({ debug: true, input: 'Hello, world.' });
-      let two = new Fabric.Vector({ debug: true, input: 'Why trust?  Verify.' });
+      const one = new Fabric.Vector({ debug: true, input: 'Hello, world.' });
+      const two = new Fabric.Vector({ debug: true, input: 'Why trust?  Verify.' });
 
       sample.trust(anchor);
 

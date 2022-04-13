@@ -12,7 +12,7 @@ describe('@fabric/core/types/oracle', function () {
     });
 
     it('can use _SET', async function () {
-      let oracle = new Oracle();
+      const oracle = new Oracle();
 
       await oracle.start();
       await oracle._SET('sample', message['@data']);
@@ -22,11 +22,11 @@ describe('@fabric/core/types/oracle', function () {
     });
 
     xit('can store a string value', async function () {
-      let oracle = new Oracle();
+      const oracle = new Oracle();
 
       await oracle.start();
-      let set = await oracle._SET('sample', message['@data']);
-      let get = await oracle._GET('sample');
+      const set = await oracle._SET('sample', message['@data']);
+      const get = await oracle._GET('sample');
       await oracle.stop();
 
       assert.ok(oracle);

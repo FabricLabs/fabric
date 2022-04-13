@@ -10,7 +10,7 @@ describe('@fabric/core/types/tree', function () {
     });
 
     it('can construct an empty tree', async function () {
-      let tree = new Tree();
+      const tree = new Tree();
       assert.ok(tree);
       assert.ok(tree._tree);
       assert.ok(tree.root);
@@ -18,7 +18,7 @@ describe('@fabric/core/types/tree', function () {
     });
 
     it('can construct a known tree', async function () {
-      let tree = new Tree(['foo', 'bar']);
+      const tree = new Tree(['foo', 'bar']);
       assert.ok(tree);
       assert.ok(tree._tree);
       assert.strictEqual(tree.root.toString('hex'), '906b5aaf65ae98f8c98848de5e81ba865659f16fd53aefa4c78b34176f068079'); // TODO: wat?

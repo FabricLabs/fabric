@@ -41,7 +41,7 @@ describe('@fabric/core/types/wallet', function () {
         ];
 
         const keys = pairs.map((x) => {
-          return wallet.publicKeyFromString(x)
+          return wallet.publicKeyFromString(x);
         });
 
         const address = await wallet._createMultisigAddress(2, 3, keys);

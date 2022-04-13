@@ -90,7 +90,7 @@ class Oracle extends Store {
       }),
       this.define('Hash', {
         attributes: {
-          'sha256': { type: 'String', required: true, max: 32 },
+          sha256: { type: 'String', required: true, max: 32 },
           '@data': { type: 'String', required: true, max: 2048 }
         }
       })
@@ -115,9 +115,9 @@ class Oracle extends Store {
   }
 
   async _sync () {
-    for (let name in this.machine.state) {
-      let data = this.machine.state[name];
-      let path = `/${name}`;
+    for (const name in this.machine.state) {
+      const data = this.machine.state[name];
+      const path = `/${name}`;
       await this._PUT(path, data);
     }
   }
@@ -125,7 +125,7 @@ class Oracle extends Store {
   async flush () {
     this.log('[ORACLE]', 'flush requested:', this.keys);
 
-    for (let item of this.keys) {
+    for (const item of this.keys) {
       this.log('...flushing:', item);
       try {
         await this._DELETE(item);

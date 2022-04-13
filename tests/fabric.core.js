@@ -53,7 +53,7 @@ describe('@fabric/core', function () {
 
     // This doubles as an example pattern for running Fabric nodes.
     it('can start and stop smoothly', function (done) {
-      let fabric = new Fabric();
+      const fabric = new Fabric();
 
       // We'll use Events in this first example, as they're essential to the
       // design of Fabric as a protocol for communication.
@@ -70,16 +70,16 @@ describe('@fabric/core', function () {
     });
 
     it('generates the correct, hard-coded genesis seed', async function provenance () {
-      let seed = new Fabric.Entity(genesis['@data']);
+      const seed = new Fabric.Entity(genesis['@data']);
 
       assert.equal(seed.id, genesis['@id']);
       assert.equal(seed.id, samples.output.fabric);
     });
 
     it('serializes strings correctly', async function () {
-      let state = new Fabric.Entity('Hello, world!');
-      let hash = crypto.createHash('sha256').update('"Hello, world!"', 'utf8').digest('hex');
-      let rendered = state.serialize();
+      const state = new Fabric.Entity('Hello, world!');
+      const hash = crypto.createHash('sha256').update('"Hello, world!"', 'utf8').digest('hex');
+      const rendered = state.serialize();
 
       assert.equal(rendered.toString(), '"Hello, world!"');
       assert.equal(state.id, samples.output.hello);
@@ -90,9 +90,9 @@ describe('@fabric/core', function () {
     });
 
     xit('serializes lists correctly', async function () {
-      let state = new Fabric.State(['Hello, world!']);
-      let hash = crypto.createHash('sha256').update('["Hello, world!"]', 'utf8').digest('hex');
-      let rendered = state.render();
+      const state = new Fabric.State(['Hello, world!']);
+      const hash = crypto.createHash('sha256').update('["Hello, world!"]', 'utf8').digest('hex');
+      const rendered = state.render();
 
       assert.equal(rendered.toString('utf8'), '["Hello, world!"]');
       assert.equal(state.id, samples.output.collection);
@@ -103,9 +103,9 @@ describe('@fabric/core', function () {
     });
 
     xit('manages lists effectively', async function () {
-      let state = new Fabric.State(['Hello, world!']);
-      let hash = crypto.createHash('sha256').update('["Hello, world!"]', 'utf8').digest('hex');
-      let rendered = state.render();
+      const state = new Fabric.State(['Hello, world!']);
+      const hash = crypto.createHash('sha256').update('["Hello, world!"]', 'utf8').digest('hex');
+      const rendered = state.render();
 
       assert.equal(rendered.toString(), '["Hello, world!"]');
       assert.equal(state.id, samples.output.collection);
@@ -116,10 +116,10 @@ describe('@fabric/core', function () {
     });
 
     xit('manages maps effectively', async function () {
-      let sample = { entropy: Math.random() };
-      let state = new Fabric.State(sample);
-      let hash = crypto.createHash('sha256').update(JSON.stringify(sample), 'utf8').digest('hex');
-      let rendered = state.render();
+      const sample = { entropy: Math.random() };
+      const state = new Fabric.State(sample);
+      const hash = crypto.createHash('sha256').update(JSON.stringify(sample), 'utf8').digest('hex');
+      const rendered = state.render();
 
       assert.equal(rendered, JSON.stringify(sample));
       assert.equal(state.id, hash);
@@ -130,8 +130,8 @@ describe('@fabric/core', function () {
       const n = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141;
       const x_G = 0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798;
       const y_G = 0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8;
-      let schnorr = new Schnorr();
-      let product = schnorr.multiply(p, n);
+      const schnorr = new Schnorr();
+      const product = schnorr.multiply(p, n);
 
       console.log('schnorr:', schnorr);
       console.log('product:', product);
@@ -141,9 +141,9 @@ describe('@fabric/core', function () {
     });
 
     xit('can verify a chain of one', async function () {
-      let state = new Fabric.State(['Hello, world!']);
-      let hash = crypto.createHash('sha256').update('["Hello, world!"]', 'utf8').digest('hex');
-      let rendered = state.render();
+      const state = new Fabric.State(['Hello, world!']);
+      const hash = crypto.createHash('sha256').update('["Hello, world!"]', 'utf8').digest('hex');
+      const rendered = state.render();
 
       assert.equal(rendered, '["Hello, world!"]');
       assert.equal(state.id, samples.output.collection);
@@ -154,19 +154,19 @@ describe('@fabric/core', function () {
     });
 
     xit('passes some sanity checks', async function () {
-      let buffer = Buffer.from('"Hello, world!"', 'utf8');
-      let state = new Fabric.Entity('Hello, world!');
-      let hash = crypto.createHash('sha256').update('"Hello, world!"', 'utf8').digest('hex');
-      let reconstructed = Fabric.State.fromString('"Hello, world!"');
+      const buffer = Buffer.from('"Hello, world!"', 'utf8');
+      const state = new Fabric.Entity('Hello, world!');
+      const hash = crypto.createHash('sha256').update('"Hello, world!"', 'utf8').digest('hex');
+      const reconstructed = Fabric.State.fromString('"Hello, world!"');
       assert.equal(state.id, samples.output.hello);
       assert.equal(state.id, hash);
     });
 
     xit('passes longer sanity checks', async function () {
-      let buffer = Buffer.from('["Hello, world!"]', 'utf8');
-      let state = new Fabric.State(['Hello, world!']);
-      let hash = crypto.createHash('sha256').update('["Hello, world!"]', 'utf8').digest('hex');
-      let rendered = state.render();
+      const buffer = Buffer.from('["Hello, world!"]', 'utf8');
+      const state = new Fabric.State(['Hello, world!']);
+      const hash = crypto.createHash('sha256').update('["Hello, world!"]', 'utf8').digest('hex');
+      const rendered = state.render();
 
       assert.equal(state.id, samples.output.collection);
       assert.equal(state.id, hash);
@@ -174,16 +174,16 @@ describe('@fabric/core', function () {
     });
 
     xit('can store and retrieve a buffer', async function () {
-      let buffer = Buffer.from(message['@data'], 'utf8');
-      let fabric = new Fabric({
+      const buffer = Buffer.from(message['@data'], 'utf8');
+      const fabric = new Fabric({
         path: './stores/test',
         persistent: false
       });
 
       await fabric.start();
 
-      let set = await fabric._SET('assets/test', buffer);
-      let get = await fabric._GET('assets/test');
+      const set = await fabric._SET('assets/test', buffer);
+      const get = await fabric._GET('assets/test');
 
       await fabric.stop();
 
@@ -195,16 +195,16 @@ describe('@fabric/core', function () {
     });
 
     xit('can store and retrieve an array', async function () {
-      let array = [message['@data']];
-      let fabric = new Fabric({
+      const array = [message['@data']];
+      const fabric = new Fabric({
         path: './stores/secondary',
         persistent: false
       });
 
       await fabric.start();
 
-      let set = await fabric._SET('assets/test', array);
-      let get = await fabric._GET('assets/test');
+      const set = await fabric._SET('assets/test', array);
+      const get = await fabric._GET('assets/test');
 
       await fabric.stop();
 
@@ -215,16 +215,16 @@ describe('@fabric/core', function () {
     });
 
     xit('can store and retrieve a string', async function () {
-      let string = message['@data'];
-      let fabric = new Fabric({
+      const string = message['@data'];
+      const fabric = new Fabric({
         path: './stores/strings',
         persistent: false
       });
 
       await fabric.start();
 
-      let set = await fabric._SET('assets/test', string);
-      let get = await fabric._GET('assets/test');
+      const set = await fabric._SET('assets/test', string);
+      const get = await fabric._GET('assets/test');
 
       await fabric.stop();
 
@@ -234,20 +234,20 @@ describe('@fabric/core', function () {
     });
 
     xit('can store and retrieve a blob', async function datastore () {
-      let blob = { blob: message['@data'] };
-      let fabric = new Fabric({
+      const blob = { blob: message['@data'] };
+      const fabric = new Fabric({
         path: './stores/blob',
         persistent: false
       });
 
       await fabric.start();
 
-      let set = await fabric._SET('assets/test', blob);
-      let get = await fabric._GET('assets/test');
+      const set = await fabric._SET('assets/test', blob);
+      const get = await fabric._GET('assets/test');
 
       await fabric.stop();
 
-      let samples = {
+      const samples = {
         set: new Fabric.State(set),
         // put: new Fabric.State(put),
         get: new Fabric.State(get)
@@ -258,14 +258,14 @@ describe('@fabric/core', function () {
     });
 
     xit('can store and retrieve an object', async function datastore () {
-      let fabric = new Fabric({
+      const fabric = new Fabric({
         persistent: false
       });
 
       await fabric.start();
 
-      let put = await fabric._SET('assets/genesis', genesis['@data']);
-      let get = await fabric._GET('assets/genesis');
+      const put = await fabric._SET('assets/genesis', genesis['@data']);
+      const get = await fabric._GET('assets/genesis');
 
       await fabric.stop();
 

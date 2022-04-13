@@ -42,10 +42,10 @@ async function main () {
   }
 
   const COMMANDS = {
-    'START': OP_START,
-    'CHAT': OP_CHAT,
-    'EXCHANGE': OP_EXCHANGE,
-    'TEST': OP_TEST
+    START: OP_START,
+    CHAT: OP_CHAT,
+    EXCHANGE: OP_EXCHANGE,
+    TEST: OP_TEST
   };
 
   // Argument Parsing
@@ -58,19 +58,19 @@ async function main () {
   // Declare Commands
   program.command('chat', { isDefault: true })
     .description('Open P2P chat.')
-    .action(COMMANDS['CHAT'].bind(program));
+    .action(COMMANDS.CHAT.bind(program));
 
   program.command('node')
     .description('Initiate peer bootstrapping.')
-    .action(COMMANDS['START'].bind(program));
+    .action(COMMANDS.START.bind(program));
 
   program.command('exchange')
     .description('Runs a local exchange node.')
-    .action(COMMANDS['EXCHANGE'].bind(program));
+    .action(COMMANDS.EXCHANGE.bind(program));
 
   program.command('test')
     .description('Run the test chain.')
-    .action(COMMANDS['TEST'].bind(program));
+    .action(COMMANDS.TEST.bind(program));
 
   // Options
   program.option('--earn', 'Enable earning.');

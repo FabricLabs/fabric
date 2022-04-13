@@ -87,7 +87,7 @@ class Exchange extends Service {
     // Set a heartbeat
     this.heartbeat = setInterval(this._heartbeat.bind(this), this.settings.interval);
     await this.bootstrap();
-    this.emit('message', `[FABRIC:EXCHANGE] Started!`);
+    this.emit('message', '[FABRIC:EXCHANGE] Started!');
     this.emit('ready');
   }
 

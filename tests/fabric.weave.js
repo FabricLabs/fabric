@@ -10,13 +10,13 @@ describe('@fabric/core/types/weave', function () {
     });
 
     it('can construct an empty weave', async function () {
-      let weave = new Weave();
+      const weave = new Weave();
       assert.ok(weave);
       assert.strictEqual(weave._state.status, 'initialized');
     });
 
     it('can construct a known weave', async function () {
-      let weave = new Weave(['foo', 'bar']);
+      const weave = new Weave(['foo', 'bar']);
       assert.ok(weave);
       assert.strictEqual(weave._state.root, '906b5aaf65ae98f8c98848de5e81ba865659f16fd53aefa4c78b34176f068079'); // TODO: wat?
     });

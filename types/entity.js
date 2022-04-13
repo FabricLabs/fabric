@@ -56,15 +56,15 @@ class Entity extends EventEmitter {
   }
 
   get buffer () {
-    let entity = this;
+    const entity = this;
     return function buffer () {
       return Buffer.from(entity.toJSON(), 'utf8');
-    }
+    };
   }
 
   get id () {
-    let data = this.toJSON();
-    let hash = crypto.createHash('sha256').update(data).digest('hex');
+    const data = this.toJSON();
+    const hash = crypto.createHash('sha256').update(data).digest('hex');
     if (this.settings.verbosity >= 5) console.log('[FABRIC:ENTITY (pending upstream!)]', 'hash:', hash, 'data:', data);
     return hash;
   }
@@ -136,7 +136,7 @@ class Entity extends EventEmitter {
 
   /**
    * Return a {@link Fabric}-labeled {@link Object} for this {@link Entity}.
-   * @param {Mixed} [input] Input to downsample.  If not provided, current Entity will be used. 
+   * @param {Mixed} [input] Input to downsample.  If not provided, current Entity will be used.
    */
   _downsample (input = this.data) {
     let result = {};

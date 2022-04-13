@@ -27,7 +27,7 @@ class Path extends String {
   isValid () {
     return (
       this.id.length === 32
-    ) ? true : false;
+    );
   }
 }
 

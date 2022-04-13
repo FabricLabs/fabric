@@ -13,7 +13,7 @@ class Local extends Service {
 
   handler (message) {
     this.log('[LOCAL:HANDLER]', 'handling message:', message);
-    let data = Object.assign({
+    const data = Object.assign({
       actor: message.user,
       target: message.channel,
       object: message.text,

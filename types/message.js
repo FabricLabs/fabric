@@ -45,7 +45,7 @@ const Label = require('./label');
 const padDigits = require('../functions/padDigits');
 
 // Type Labels
-const TYPE_ETHEREUM_BLOCK        = parseInt((new Label('types/EthereumBlock'))._id, 16);
+const TYPE_ETHEREUM_BLOCK = parseInt((new Label('types/EthereumBlock'))._id, 16);
 const TYPE_ETHEREUM_BLOCK_NUMBER = parseInt((new Label('types/EthereumBlockNumber'))._id, 16);
 
 /**
@@ -87,7 +87,7 @@ class Message extends Actor {
     }
 
     // Set various properties to be unenumerable
-    for (let name of [
+    for (const name of [
       '@input',
       '@entity',
       '_state',
@@ -237,50 +237,50 @@ class Message extends Actor {
   get types () {
     // Message Types
     return {
-      'GenericMessage': GENERIC_MESSAGE_TYPE,
-      'GenericLogMessage': LOG_MESSAGE_TYPE,
-      'GenericList': GENERIC_LIST_TYPE,
-      'GenericQueue': GENERIC_LIST_TYPE,
-      'FabricLogMessage': LOG_MESSAGE_TYPE,
-      'FabricServiceLogMessage': LOG_MESSAGE_TYPE,
-      'GenericTransferQueue': GENERIC_LIST_TYPE,
+      GenericMessage: GENERIC_MESSAGE_TYPE,
+      GenericLogMessage: LOG_MESSAGE_TYPE,
+      GenericList: GENERIC_LIST_TYPE,
+      GenericQueue: GENERIC_LIST_TYPE,
+      FabricLogMessage: LOG_MESSAGE_TYPE,
+      FabricServiceLogMessage: LOG_MESSAGE_TYPE,
+      GenericTransferQueue: GENERIC_LIST_TYPE,
       // TODO: document Generic type
       // P2P Commands
-      'Generic': P2P_GENERIC,
-      'Cycle': OP_CYCLE,
-      'IdentityRequest': P2P_IDENT_REQUEST,
-      'IdentityResponse': P2P_IDENT_RESPONSE,
-      'ChainSyncRequest': P2P_CHAIN_SYNC_REQUEST,
+      Generic: P2P_GENERIC,
+      Cycle: OP_CYCLE,
+      IdentityRequest: P2P_IDENT_REQUEST,
+      IdentityResponse: P2P_IDENT_RESPONSE,
+      ChainSyncRequest: P2P_CHAIN_SYNC_REQUEST,
       // TODO: restore this type
       // 'StateRoot': P2P_ROOT,
-      'Ping': P2P_PING,
-      'Pong': P2P_PONG,
-      'DocumentRequest': DOCUMENT_REQUEST_TYPE,
-      'DocumentPublish': DOCUMENT_PUBLISH_TYPE,
-      'BlockCandidate': BLOCK_CANDIDATE,
-      'PeerCandidate': PEER_CANDIDATE,
-      'PeerInstruction': P2P_INSTRUCTION,
-      'PeerMessage': P2P_BASE_MESSAGE,
-      'StartSession': SESSION_START,
-      'ChatMessage': CHAT_MESSAGE,
-      'StartChain': P2P_START_CHAIN,
+      Ping: P2P_PING,
+      Pong: P2P_PONG,
+      DocumentRequest: DOCUMENT_REQUEST_TYPE,
+      DocumentPublish: DOCUMENT_PUBLISH_TYPE,
+      BlockCandidate: BLOCK_CANDIDATE,
+      PeerCandidate: PEER_CANDIDATE,
+      PeerInstruction: P2P_INSTRUCTION,
+      PeerMessage: P2P_BASE_MESSAGE,
+      StartSession: SESSION_START,
+      ChatMessage: CHAT_MESSAGE,
+      StartChain: P2P_START_CHAIN,
       // TODO: restore above StateRoot type
-      'StateRoot': P2P_STATE_ROOT,
-      'StateCommitment': P2P_STATE_COMMITTMENT,
-      'StateChange': P2P_STATE_CHANGE,
-      'StateRequest': P2P_STATE_REQUEST,
-      'Transaction': P2P_TRANSACTION,
-      'Call': P2P_CALL,
-      'LogMessage': LOG_MESSAGE_TYPE,
-      'EthereumBlock': TYPE_ETHEREUM_BLOCK,
-      'EthereumBlockNumber': TYPE_ETHEREUM_BLOCK_NUMBER
+      StateRoot: P2P_STATE_ROOT,
+      StateCommitment: P2P_STATE_COMMITTMENT,
+      StateChange: P2P_STATE_CHANGE,
+      StateRequest: P2P_STATE_REQUEST,
+      Transaction: P2P_TRANSACTION,
+      Call: P2P_CALL,
+      LogMessage: LOG_MESSAGE_TYPE,
+      EthereumBlock: TYPE_ETHEREUM_BLOCK,
+      EthereumBlockNumber: TYPE_ETHEREUM_BLOCK_NUMBER
     };
   }
 
   get codes () {
     return Object.entries(this.types).reduce((ret, entry) => {
-      const [ key, value ] = entry;
-      ret[ value ] = key;
+      const [key, value] = entry;
+      ret[value] = key;
       return ret;
     }, {});
   }
@@ -373,7 +373,7 @@ Object.defineProperty(Message.prototype, 'type', {
     // Default to GenericMessage;
     if (!code) {
       this.emit('warning', `Unknown message type: ${value}`);
-      code = this.types['GenericMessage'];
+      code = this.types.GenericMessage;
     }
 
     const padded = padDigits(code.toString(16), 8);

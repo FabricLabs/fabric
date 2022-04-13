@@ -117,7 +117,7 @@ class Compiler {
 
     // Assign Body
     const initial = this.settings.body || Buffer.from('', 'utf8');
-    const body = Buffer.concat([ initial ].concat(contents));
+    const body = Buffer.concat([initial].concat(contents));
     const entity = new Entity(body);
     const abstract = this._getJavaScriptAST(body);
 
@@ -153,7 +153,7 @@ class Compiler {
       '@language': 'JavaScript',
       input: input,
       interpreters: {
-        'WebAssembly': ast
+        WebAssembly: ast
       }
     };
   }
@@ -166,7 +166,7 @@ class Compiler {
       input: input,
       script: output,
       interpreters: {
-        'Minsc': output
+        Minsc: output
       }
     };
   }
@@ -180,16 +180,16 @@ class Compiler {
       input: input,
       output: result,
       interpreters: {
-        'EthereumJSVM': result
+        EthereumJSVM: result
       }
     };
   }
 
   _fromPath (filename) {
-    let src = fs.readFileSync(filename, 'utf8');
-    let tokens = lex(src);
-    let ast = parse(tokens, { filename, src });
-    let html = this.render(ast);
+    const src = fs.readFileSync(filename, 'utf8');
+    const tokens = lex(src);
+    const ast = parse(tokens, { filename, src });
+    const html = this.render(ast);
     return html;
   }
 
@@ -206,22 +206,22 @@ class Compiler {
     let result = '';
 
     if (ast.type === 'Block') {
-      for (let n in ast.nodes) {
+      for (const n in ast.nodes) {
         result += this.render(ast.nodes[n], screen, ui, eventHandlers, depth);
       }
     } else if (ast.type === 'Tag') {
       // /////////////////////////////////////
-      let space = ' '.repeat(depth * 2);
+      const space = ' '.repeat(depth * 2);
       // result += depth;
 
-      let attrs = [];
-      let params = {};
-      for (let a in ast.attrs) {
-        let attr = ast.attrs[a];
+      const attrs = [];
+      const params = {};
+      for (const a in ast.attrs) {
+        const attr = ast.attrs[a];
         attrs.push(attr.name + '=' + attr.val);
 
         if (attr.val[0] === "'") {
-          let content = attr.val.substring(1, attr.val.length - 1);
+          const content = attr.val.substring(1, attr.val.length - 1);
           if (content[0] === '{') {
             params[attr.name] = JSON.parse(content);
           } else {
@@ -235,12 +235,12 @@ class Compiler {
       params.parent = screen;
 
       if (screen) {
-        let element = blessed[ast.name](params);
-        for (let p in params) {
+        const element = blessed[ast.name](params);
+        for (const p in params) {
           if (p.startsWith('on')) {
-            let handler = eventHandlers[ params[p] ];
+            const handler = eventHandlers[params[p]];
             if (p.startsWith('onkey')) {
-              let key = p.substr(5);
+              const key = p.substr(5);
               element.key([key], handler);
             } else {
               element.on(p.substr(2), handler);
@@ -250,7 +250,7 @@ class Compiler {
         if (params.id) ui[params.id] = element;
       }
 
-      var attrsStr = attrs.join(' ');
+      let attrsStr = attrs.join(' ');
       if (attrsStr) attrsStr = ' ' + attrsStr;
 
       if (ast.selfClosing) {

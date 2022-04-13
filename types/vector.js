@@ -28,10 +28,10 @@ class Vector extends Scribe {
   static fromObjectString (input = '') {
     if (!input) throw new Error('Must provide input.');
     if (typeof input !== 'string') input = JSON.stringify(input);
-    let result = [];
-    let object = JSON.parse(input);
+    const result = [];
+    const object = JSON.parse(input);
 
-    for (let i in object) {
+    for (const i in object) {
       let element = object[i];
 
       if (element instanceof Array) {
@@ -65,8 +65,8 @@ class Vector extends Scribe {
   }
 
   toObject () {
-    let object = {};
-    for (let property in this['@data']) {
+    const object = {};
+    for (const property in this['@data']) {
       if (property.charAt(0) !== '@') {
         object[property] = this['@data'][property];
       }

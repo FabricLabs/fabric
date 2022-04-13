@@ -277,8 +277,8 @@ class CLI extends App {
       this.emit('message', {
         '@type': 'Transaction',
         '@data': {
-          'changes': changes,
-          'state': changes
+          changes: changes,
+          state: changes
         }
       });
     }
@@ -287,7 +287,7 @@ class CLI extends App {
   }
 
   async _appendMessage (msg) {
-    this.elements['messages'].log(`[${(new Date()).toISOString()}]: ${msg}`);
+    this.elements.messages.log(`[${(new Date()).toISOString()}]: ${msg}`);
     this.screen.render();
   }
 
@@ -308,29 +308,29 @@ class CLI extends App {
   }
 
   async _handleStateRequest (params) {
-    const value = await this.get(``);
+    const value = await this.get('');
     this._appendMessage('{bold}Current State{/bold}: ' + JSON.stringify(value, null, ' '));
     return false;
   }
 
   async _handleGetRequest (params) {
-    if (!params[1]) return this._appendError(`Must provide a document name.`);
+    if (!params[1]) return this._appendError('Must provide a document name.');
     const value = await this.get(`/${params[1]}`);
     this._appendMessage('Value: ' + JSON.stringify(value, null, ' '));
     return false;
   }
 
   async _handleSetRequest (params) {
-    if (!params[1]) return this._appendError(`Must provide a document name.`);
-    if (!params[2]) return this._appendError(`Must provide a document.`);
+    if (!params[1]) return this._appendError('Must provide a document name.');
+    if (!params[2]) return this._appendError('Must provide a document.');
     const result = await this.set(`/${params[1]}`, params[2]);
     this._appendMessage('Result: ' + JSON.stringify(result, null, ' '));
     return false;
   }
 
   async _handleFundRequest (params) {
-    if (!params[1]) return this._appendError(`Must provide a channel ID.`);
-    if (!params[2]) return this._appendError(`Must provide a funding amount.`);
+    if (!params[1]) return this._appendError('Must provide a channel ID.');
+    if (!params[2]) return this._appendError('Must provide a funding amount.');
     this._fundChannel(params[1], params[2]);
   }
 
@@ -344,7 +344,7 @@ class CLI extends App {
   }
 
   async _handleJoinRequest (params) {
-    if (!params[1]) return this._appendError(`You must specify a sidechain.`);
+    if (!params[1]) return this._appendError('You must specify a sidechain.');
   }
 
   async _handleInventoryRequest (params) {
@@ -352,7 +352,7 @@ class CLI extends App {
   }
 
   async _handleImportCommand (params) {
-    if (!params[1]) return this._appendError(`You must provide a file to import.`);
+    if (!params[1]) return this._appendError('You must provide a file to import.');
     if (!fs.existsSync(params[1])) return this._appendError(`File does not exist: ${params[1]}`);
     const content = fs.readFileSync(params[1]);
     const actor = new Actor(content);
@@ -361,9 +361,9 @@ class CLI extends App {
   }
 
   async _handlePublishCommand (params) {
-    if (!params[1]) return this._appendError(`You must specify the file to publish.`);
-    if (!params[2]) return this._appendError(`You must specify the rate to pay.`);
-    if (!this.documents[params[1]]) return this._appendError(`This file does not exist in the local library.`);
+    if (!params[1]) return this._appendError('You must specify the file to publish.');
+    if (!params[2]) return this._appendError('You must specify the rate to pay.');
+    if (!this.documents[params[1]]) return this._appendError('This file does not exist in the local library.');
     const message = Message.fromVector(['DocumentPublish', {
       id: params[1],
       content: this.documents[params[1]],
@@ -373,8 +373,8 @@ class CLI extends App {
   }
 
   async _handleRequestCommand (params) {
-    if (!params[1]) return this._appendError(`You must specify the file to request.`);
-    if (!params[2]) return this._appendError(`You must specify the rate to pay.`);
+    if (!params[1]) return this._appendError('You must specify the file to request.');
+    if (!params[2]) return this._appendError('You must specify the rate to pay.');
     const message = Message.fromVector(['DocumentRequest', {
       document: params[1]
     }]);
@@ -438,7 +438,7 @@ class CLI extends App {
       const peer = this.peers[id];
       this._appendMessage(`Checking: ${JSON.stringify(peer)}`);
       if (peer.address === msg.address) {
-        this._appendMessage(`Address matches.`);
+        this._appendMessage('Address matches.');
         delete this.peers[id];
       }
     }
@@ -492,7 +492,7 @@ class CLI extends App {
   }
 
   async _handleNodeReady (node) {
-    this.elements['identityString'].setContent(node.id);
+    this.elements.identityString.setContent(node.id);
     this.emit('identity', {
       id: node.id,
       pubkey: node.pubkey
@@ -548,27 +548,27 @@ class CLI extends App {
   }
 
   async _handlePromptEnterKey (ch, key) {
-    this.elements['prompt'].historyIndex = this.history.length;
-    this.elements['form'].submit();
-    this.elements['prompt'].clearValue();
-    this.elements['prompt'].readInput();
+    this.elements.prompt.historyIndex = this.history.length;
+    this.elements.form.submit();
+    this.elements.prompt.clearValue();
+    this.elements.prompt.readInput();
   }
 
   async _handlePromptUpKey (ch, key) {
-    const index = this.elements['prompt'].historyIndex;
-    if (index > 0) this.elements['prompt'].historyIndex--;
-    this.elements['prompt'].setValue(this.history[index]);
+    const index = this.elements.prompt.historyIndex;
+    if (index > 0) this.elements.prompt.historyIndex--;
+    this.elements.prompt.setValue(this.history[index]);
     this.screen.render();
   }
 
   async _handlePromptDownKey (ch, key) {
-    const index = ++this.elements['prompt'].historyIndex;
+    const index = ++this.elements.prompt.historyIndex;
 
     if (index < this.history.length) {
-      this.elements['prompt'].setValue(this.history[index]);
+      this.elements.prompt.setValue(this.history[index]);
     } else {
-      this.elements['prompt'].historyIndex = this.history.length - 1;
-      this.elements['prompt'].setValue('');
+      this.elements.prompt.historyIndex = this.history.length - 1;
+      this.elements.prompt.setValue('');
     }
 
     this.screen.render();
@@ -586,9 +586,9 @@ class CLI extends App {
   _bindKeys () {
     const self = this;
     self.screen.key(['escape', 'q', 'C-c'], self.stop.bind(self));
-    self.elements['prompt'].key(['enter'], self._handlePromptEnterKey.bind(self));
-    self.elements['prompt'].key(['up'], self._handlePromptUpKey.bind(self));
-    self.elements['prompt'].key(['down'], self._handlePromptDownKey.bind(self));
+    self.elements.prompt.key(['enter'], self._handlePromptEnterKey.bind(self));
+    self.elements.prompt.key(['up'], self._handlePromptUpKey.bind(self));
+    self.elements.prompt.key(['down'], self._handlePromptDownKey.bind(self));
   }
 
   _sendToAllServices (message) {
@@ -628,7 +628,7 @@ class CLI extends App {
       self._sendToAllServices(msg);
     }
 
-    self.elements['form'].reset();
+    self.elements.form.reset();
     self.screen.render();
   }
 
@@ -639,7 +639,7 @@ class CLI extends App {
   }
 
   _handleClearRequest () {
-    this.elements['messages'].setContent('');
+    this.elements.messages.setContent('');
     return false;
   }
 
@@ -665,7 +665,7 @@ class CLI extends App {
   }
 
   _handleChainSyncRequest () {
-    this._appendMessage(`Sync starting for chain...`);
+    this._appendMessage('Sync starting for chain...');
 
     // TODO: test this on testnet / mainnet
     this.bitcoin.fullnode.startSync();
@@ -747,7 +747,7 @@ class CLI extends App {
       const parts = input.substring(1).split(' ');
 
       if (this.commands[parts[0]]) {
-        this.commands[parts[0]].apply(this, [ parts ]);
+        this.commands[parts[0]].apply(this, [parts]);
         return true;
       }
 
@@ -767,11 +767,11 @@ class CLI extends App {
       const unconfirmed = 0.0;
       const bonded = 0.0;
 
-      this.elements['heightValue'].setContent(`${height}`);
-      this.elements['chainTip'].setContent(`${stats.bestblockhash}`);
-      this.elements['unconfirmedValue'].setContent(`${bonded}`);
-      this.elements['bondedValue'].setContent(`${bonded}`);
-      this.elements['progressStatus'].setContent(`${progress} of ${height} (${((progress / height) * 100).toPrecision(2)} %)`);
+      this.elements.heightValue.setContent(`${height}`);
+      this.elements.chainTip.setContent(`${stats.bestblockhash}`);
+      this.elements.unconfirmedValue.setContent(`${bonded}`);
+      this.elements.bondedValue.setContent(`${bonded}`);
+      this.elements.progressStatus.setContent(`${progress} of ${height} (${((progress / height) * 100).toPrecision(2)} %)`);
 
       this.screen.render();
     } catch (exception) {
@@ -783,7 +783,7 @@ class CLI extends App {
     try {
       const balance = await this._getBalance();
       this._state.balances.confirmed = balance;
-      this.elements['balance'].setContent(balance.toFixed(8));
+      this.elements.balance.setContent(balance.toFixed(8));
       this.screen.render();
     } catch (exception) {
       // if (this.settings.debug) this._appendError(`Could not sync balance: ${JSON.stringify(exception)}`);
@@ -796,7 +796,7 @@ class CLI extends App {
   }
 
   _syncPeerList () {
-    this.elements['peers'].clearItems();
+    this.elements.peers.clearItems();
 
     for (const id in this.peers) {
       const peer = this.peers[id];
@@ -807,7 +807,7 @@ class CLI extends App {
 
       // TODO: use peer ID for managed list
       // self.elements['peers'].insertItem(0, element);
-      this.elements['peers'].add(element.content);
+      this.elements.peers.add(element.content);
     }
   }
 
@@ -844,7 +844,7 @@ class CLI extends App {
         self._appendMessage(`Registering actor on service "${name}": ${JSON.stringify(identity)}`);
 
         try {
-          let registration = await this.services[name]._registerActor(identity);
+          const registration = await this.services[name]._registerActor(identity);
           self._appendMessage(`Registered Actor: ${JSON.stringify(registration, null, '  ')}`);
         } catch (exception) {
           self._appendError(`Error from service "${name}" during _registerActor: ${exception}`);
@@ -870,7 +870,7 @@ class CLI extends App {
       fullUnicode: this.settings.fullUnicode
     });
 
-    self.elements['status'] = blessed.box({
+    self.elements.status = blessed.box({
       parent: self.screen,
       label: '[ Status ]',
       border: {
@@ -881,176 +881,176 @@ class CLI extends App {
       width: '100%'
     });
 
-    self.elements['identity'] = blessed.box({
-      parent: self.elements['status'],
+    self.elements.identity = blessed.box({
+      parent: self.elements.status,
       left: 1
     });
 
-    self.elements['identityLabel'] = blessed.text({
-      parent: self.elements['identity'],
+    self.elements.identityLabel = blessed.text({
+      parent: self.elements.identity,
       content: 'IDENTITY:',
       top: 0,
       bold: true
     });
 
-    self.elements['identityString'] = blessed.text({
-      parent: self.elements['identity'],
+    self.elements.identityString = blessed.text({
+      parent: self.elements.identity,
       content: 'loading...',
       top: 0,
       left: 10
     });
 
-    self.elements['wallet'] = blessed.box({
-      parent: self.elements['status'],
+    self.elements.wallet = blessed.box({
+      parent: self.elements.status,
       right: 1,
       width: 29,
       height: 4
     });
 
-    self.elements['balance'] = blessed.text({
-      parent: self.elements['wallet'],
+    self.elements.balance = blessed.text({
+      parent: self.elements.wallet,
       content: '0.00000000',
       top: 0,
       right: 4
     });
 
-    self.elements['label'] = blessed.text({
-      parent: self.elements['wallet'],
+    self.elements.label = blessed.text({
+      parent: self.elements.wallet,
       content: 'BALANCE:',
       top: 0,
       right: 29,
       bold: true
     });
 
-    self.elements['denomination'] = blessed.text({
-      parent: self.elements['wallet'],
+    self.elements.denomination = blessed.text({
+      parent: self.elements.wallet,
       content: 'BTC',
       top: 0,
       right: 0
     });
 
-    self.elements['unconfirmed'] = blessed.box({
-      parent: self.elements['status'],
+    self.elements.unconfirmed = blessed.box({
+      parent: self.elements.status,
       top: 1,
       left: 1
     });
 
-    self.elements['unconfirmedLabel'] = blessed.text({
-      parent: self.elements['unconfirmed'],
+    self.elements.unconfirmedLabel = blessed.text({
+      parent: self.elements.unconfirmed,
       content: 'UNCONFIRMED:',
       top: 0,
       right: 30,
       bold: true
     });
 
-    self.elements['unconfirmedValue'] = blessed.text({
-      parent: self.elements['unconfirmed'],
+    self.elements.unconfirmedValue = blessed.text({
+      parent: self.elements.unconfirmed,
       content: 'syncing...',
       top: 0,
       right: 1
     });
 
-    self.elements['bonded'] = blessed.box({
-      parent: self.elements['status'],
+    self.elements.bonded = blessed.box({
+      parent: self.elements.status,
       top: 2,
       left: 1
     });
 
-    self.elements['bondedLabel'] = blessed.text({
-      parent: self.elements['bonded'],
+    self.elements.bondedLabel = blessed.text({
+      parent: self.elements.bonded,
       content: 'BONDED:',
       top: 0,
       right: 30,
       bold: true
     });
 
-    self.elements['bondedValue'] = blessed.text({
-      parent: self.elements['bonded'],
+    self.elements.bondedValue = blessed.text({
+      parent: self.elements.bonded,
       content: 'syncing...',
       top: 0,
       right: 1
     });
 
-    self.elements['progress'] = blessed.box({
-      parent: self.elements['status'],
+    self.elements.progress = blessed.box({
+      parent: self.elements.status,
       top: 3,
       left: 1
     });
 
-    self.elements['progressLabel'] = blessed.text({
-      parent: self.elements['progress'],
+    self.elements.progressLabel = blessed.text({
+      parent: self.elements.progress,
       content: 'SYNC:',
       top: 0,
       right: 30,
       bold: true
     });
 
-    self.elements['progressStatus'] = blessed.text({
-      parent: self.elements['progress'],
+    self.elements.progressStatus = blessed.text({
+      parent: self.elements.progress,
       content: 'syncing...',
       top: 0,
       right: 1
     });
 
-    self.elements['chain'] = blessed.box({
-      parent: self.elements['status'],
+    self.elements.chain = blessed.box({
+      parent: self.elements.status,
       top: 1,
       left: 1,
       width: 100
     });
 
-    self.elements['chainLabel'] = blessed.text({
-      parent: self.elements['chain'],
+    self.elements.chainLabel = blessed.text({
+      parent: self.elements.chain,
       content: 'CHAIN TIP:',
       bold: true
     });
 
-    self.elements['chainTip'] = blessed.text({
-      parent: self.elements['chain'],
+    self.elements.chainTip = blessed.text({
+      parent: self.elements.chain,
       content: 'loading...',
       left: 11
     });
 
-    self.elements['height'] = blessed.box({
-      parent: self.elements['status'],
+    self.elements.height = blessed.box({
+      parent: self.elements.status,
       top: 2,
-      left: 1,
+      left: 1
     });
 
-    self.elements['heightLabel'] = blessed.text({
-      parent: self.elements['height'],
+    self.elements.heightLabel = blessed.text({
+      parent: self.elements.height,
       content: 'CHAIN HEIGHT:',
       bold: true
     });
 
-    self.elements['heightValue'] = blessed.text({
-      parent: self.elements['height'],
+    self.elements.heightValue = blessed.text({
+      parent: self.elements.height,
       content: 'loading...',
       left: 14,
       width: 50
     });
 
-    self.elements['mempool'] = blessed.box({
-      parent: self.elements['status'],
+    self.elements.mempool = blessed.box({
+      parent: self.elements.status,
       top: 3,
       left: 1,
       width: 29
     });
 
-    self.elements['mempoolLabel'] = blessed.text({
-      parent: self.elements['mempool'],
+    self.elements.mempoolLabel = blessed.text({
+      parent: self.elements.mempool,
       content: 'MEMPOOL SIZE:',
       bold: true
     });
 
-    self.elements['mempoolCount'] = blessed.text({
-      parent: self.elements['mempool'],
+    self.elements.mempoolCount = blessed.text({
+      parent: self.elements.mempool,
       content: '0',
       left: 14
     });
 
     // MAIN LOG OUTPUT
-    self.elements['messages'] = blessed.log({
+    self.elements.messages = blessed.log({
       parent: self.screen,
       label: '[ Messages ]',
       border: {
@@ -1063,7 +1063,7 @@ class CLI extends App {
       tags: true
     });
 
-    self.elements['peers'] = blessed.list({
+    self.elements.peers = blessed.list({
       parent: self.screen,
       label: '[ Peers ]',
       border: {
@@ -1074,7 +1074,7 @@ class CLI extends App {
       bottom: 3
     });
 
-    self.elements['controls'] = blessed.box({
+    self.elements.controls = blessed.box({
       parent: self.screen,
       bottom: 0,
       height: 3,
@@ -1083,15 +1083,15 @@ class CLI extends App {
       }
     });
 
-    self.elements['form'] = blessed.form({
-      parent: self.elements['controls'],
+    self.elements.form = blessed.form({
+      parent: self.elements.controls,
       bottom: 0,
       height: 1,
       left: 1
     });
 
-    self.elements['prompt'] = blessed.textbox({
-      parent: self.elements['form'],
+    self.elements.prompt = blessed.textbox({
+      parent: self.elements.form,
       name: 'input',
       input: true,
       keys: true,
@@ -1099,39 +1099,39 @@ class CLI extends App {
     });
 
     // Set Index for Command History
-    this.elements['prompt'].historyIndex = -1;
+    this.elements.prompt.historyIndex = -1;
 
     // Render the screen.
     self.screen.render();
     self._bindKeys();
 
     // TODO: clean up workaround (from https://github.com/chjj/blessed/issues/109)
-    self.elements['prompt'].oldFocus = self.elements['prompt'].focus;
-    self.elements['prompt'].focus = function () {
-      let oldListener = self.elements['prompt'].__listener;
-      let oldBlur = self.elements['prompt'].__done;
+    self.elements.prompt.oldFocus = self.elements.prompt.focus;
+    self.elements.prompt.focus = function () {
+      const oldListener = self.elements.prompt.__listener;
+      const oldBlur = self.elements.prompt.__done;
 
-      self.elements['prompt'].removeListener('keypress', self.elements['prompt'].__listener);
-      self.elements['prompt'].removeListener('blur', self.elements['prompt'].__done);
+      self.elements.prompt.removeListener('keypress', self.elements.prompt.__listener);
+      self.elements.prompt.removeListener('blur', self.elements.prompt.__done);
 
-      delete self.elements['prompt'].__listener;
-      delete self.elements['prompt'].__done;
+      delete self.elements.prompt.__listener;
+      delete self.elements.prompt.__done;
 
-      self.elements['prompt'].screen.focusPop(self.elements['prompt'])
+      self.elements.prompt.screen.focusPop(self.elements.prompt);
 
-      self.elements['prompt'].addListener('keypress', oldListener);
-      self.elements['prompt'].addListener('blur', oldBlur);
+      self.elements.prompt.addListener('keypress', oldListener);
+      self.elements.prompt.addListener('blur', oldBlur);
 
-      self.elements['prompt'].oldFocus();
+      self.elements.prompt.oldFocus();
     };
 
     // focus when clicked
-    self.elements['form'].on('click', function () {
-      self.elements['prompt'].focus();
+    self.elements.form.on('click', function () {
+      self.elements.prompt.focus();
     });
 
-    self.elements['form'].on('submit', self._handleFormSubmit.bind(self));
-    self.elements['prompt'].focus();
+    self.elements.form.on('submit', self._handleFormSubmit.bind(self));
+    self.elements.prompt.focus();
 
     setInterval(function () {
       // self._appendMessage('10 seconds have passed.');

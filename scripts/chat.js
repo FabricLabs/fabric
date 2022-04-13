@@ -42,7 +42,7 @@ const settings = {
   port: PORT,
   seed: SEED,
   key: {
-    SEED,
+    SEED
   },
   // TODO: remove Wallet-specfic configuration
   wallet: {
@@ -59,7 +59,7 @@ async function main () {
   }
 
   const COMMANDS = {
-    'START': async function OP_START () {
+    START: async function OP_START () {
       const peer = new Peer();
 
       peer.on('ready', () => {
@@ -68,7 +68,7 @@ async function main () {
 
       await peer.start();
     },
-    'CHAT': async function OP_CHAT () {
+    CHAT: async function OP_CHAT () {
       // Configure Earning
       if (program.earn) {
         SETTINGS.earn = true;
@@ -99,11 +99,11 @@ async function main () {
 
   program.command('start', { isDefault: true })
     .description('Initiate peer bootstrapping.')
-    .action(COMMANDS['START'].bind(program));
+    .action(COMMANDS.START.bind(program));
 
   program.command('chat')
     .description('Open P2P chat.')
-    .action(COMMANDS['CHAT'].bind(program));
+    .action(COMMANDS.CHAT.bind(program));
 
   program.option('--earn', 'Enable earning.');
   program.option('--seed <SEED PHRASE>', 'Load from mnemonic seed.');

@@ -12,7 +12,7 @@ class Transaction extends Entity {
     this.settings = Object.assign({
       type: 'Transaction'
     }, settings);
-  
+
     this.clock = 0;
     this.stack = [];
     this.known = {};
@@ -24,6 +24,6 @@ class Transaction extends Entity {
 
     return this;
   }
-} 
+}
 
 module.exports = Transaction;

@@ -79,7 +79,7 @@ class Weave extends Actor {
     };
 
     // Store in state
-    this._state.keys[ ephemeral.id ] = key;
+    this._state.keys[ephemeral.id] = key;
 
     return {
       actor: actor.id,

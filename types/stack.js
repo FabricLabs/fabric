@@ -36,7 +36,7 @@ class Stack extends State {
     this['@data'] = [];
 
     if (list instanceof Array) {
-      for (let i in list) {
+      for (const i in list) {
         this.push(list[i]);
       }
     }
@@ -59,7 +59,7 @@ class Stack extends State {
    * @return {Number}      Resulting size of the stack.
    */
   push (data) {
-    let state = new State(data);
+    const state = new State(data);
 
     this['@entity'].states[this.id] = this['@data'];
     this['@entity'].states[state.id] = state['@data'];
@@ -85,7 +85,7 @@ class Stack extends State {
   }
 
   pop () {
-    let element = this['@data'].pop();
+    const element = this['@data'].pop();
     return element;
   }
 
@@ -104,11 +104,11 @@ class Stack extends State {
   }
 
   commit () {
-    let stack = this;
-    let changes = super.commit();
+    const stack = this;
+    const changes = super.commit();
 
     if (changes.length) {
-      let data = Object.assign({}, {
+      const data = Object.assign({}, {
         parent: stack.tip,
         changes: changes
       });

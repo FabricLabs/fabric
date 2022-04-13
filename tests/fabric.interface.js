@@ -30,7 +30,6 @@ describe('@fabric/core/types/interface', function () {
 
       await net.stop();
       assert.equal(net.status, 'stopped');
-
     });
 
     it('runs through a known circuit', async function () {

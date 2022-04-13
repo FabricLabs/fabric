@@ -47,7 +47,7 @@ const LightningMessage = require('../types/lightning/message');
 describe('@fabric/core/services/lightning', function () {
   describe('Lightning', function () {
     it('can create an instance', async function provenance () {
-      let lightning = new Lightning({
+      const lightning = new Lightning({
         name: 'Test'
       });
 
@@ -55,14 +55,14 @@ describe('@fabric/core/services/lightning', function () {
     });
 
     it('can create a message', async function provenance () {
-      let lightning = new Lightning({
+      const lightning = new Lightning({
         name: 'Test'
       });
 
-      let entropy = await lightning.machine.sip();
-      let message = Message.fromVector(['Cycle', entropy.toString(8)]);
-      let next = await lightning.machine.sip();
-      let prediction = Message.fromVector(['Cycle', next.toString(8)]);
+      const entropy = await lightning.machine.sip();
+      const message = Message.fromVector(['Cycle', entropy.toString(8)]);
+      const next = await lightning.machine.sip();
+      const prediction = Message.fromVector(['Cycle', next.toString(8)]);
 
       assert.ok(lightning);
       assert.ok(message);

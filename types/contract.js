@@ -51,7 +51,7 @@ class Contract extends Actor {
     contract.graphs = graphs;
 
     return contract;
-  };
+  }
 
   static fromGraph (graphs) {
     const circuit = {

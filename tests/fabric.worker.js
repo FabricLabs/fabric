@@ -10,8 +10,8 @@ describe('@fabric/core/types/worker', function () {
     });
 
     xit('can handle a task', async function () {
-      let worker = new Fabric.Worker();
-      let result = await worker.compute(1);
+      const worker = new Fabric.Worker();
+      const result = await worker.compute(1);
       console.log('worker:', worker);
       console.log('result:', result);
     });

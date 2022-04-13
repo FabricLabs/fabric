@@ -93,8 +93,8 @@ class Actor extends EventEmitter {
 
   get preimage () {
     const input = {
-      'type': 'FabricActorState',
-      'object': this.toObject()
+      type: 'FabricActorState',
+      object: this.toObject()
     };
 
     const string = JSON.stringify(input, null, '  ');

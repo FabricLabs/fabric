@@ -27,7 +27,7 @@ class Mempool extends Service {
 
     this._state = {
       transactions: []
-    }
+    };
 
     return this;
   }

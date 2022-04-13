@@ -19,7 +19,7 @@ describe('@fabric/core/types/hkdf', function () {
     });
 
     it('can generate correct PRK', function () {
-      let hkdf = new HKDF({
+      const hkdf = new HKDF({
         initial: vectors.ikm.toString(),
         salt: vectors.salt.toString()
       });
@@ -30,7 +30,7 @@ describe('@fabric/core/types/hkdf', function () {
     });
 
     it('can generate correct HKDF output', function () {
-      let hkdf = new HKDF({
+      const hkdf = new HKDF({
         initial: vectors.ikm.toString(),
         salt: vectors.salt.toString()
       });

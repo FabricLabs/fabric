@@ -126,13 +126,13 @@ class Swarm extends Actor {
   }
 
   _registerPeer (peer) {
-    let swarm = this;
+    const swarm = this;
     if (!swarm.peers[peer.id]) swarm.peers[peer.id] = peer;
     swarm.emit('peer', peer);
   }
 
   _scheduleReconnect (peer) {
-    let swarm = this;
+    const swarm = this;
     this.log('schedule reconnect:', peer);
 
     // TODO: store timers globally (ConnectionManager?)
@@ -148,13 +148,13 @@ class Swarm extends Actor {
   }
 
   _fillPeerSlots () {
-    let swarm = this;
-    let slots = MAX_PEERS - Object.keys(this.nodes).length;
-    let peers = Object.keys(this.peers).map(function (id) {
+    const swarm = this;
+    const slots = MAX_PEERS - Object.keys(this.nodes).length;
+    const peers = Object.keys(this.peers).map(function (id) {
       if (swarm.settings.verbosity >= 5) console.log('[FABRIC:SWARM]', '_fillPeerSlots()', 'Checking:', swarm.peers[id]);
       return swarm.peers[id].address;
     });
-    let candidates = swarm.settings.peers.filter(function (address) {
+    const candidates = swarm.settings.peers.filter(function (address) {
       return !peers.includes(address);
     });
 
@@ -168,7 +168,7 @@ class Swarm extends Actor {
 
   async _connectSeedNodes () {
     if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', 'Connecting to seed nodes...', this.settings.seeds);
-    for (let id in this.settings.seeds) {
+    for (const id in this.settings.seeds) {
       if (this.settings.verbosity >= 5) console.log('[FABRIC:SWARM]', 'Iterating on seed:', this.settings.seeds[id]);
       this.connect(this.settings.seeds[id]);
     }

@@ -58,7 +58,7 @@ class Scribe extends State {
    * @return {Scribe}        Instance of the {@link Scribe}.
    */
   trust (source) {
-    let self = this;
+    const self = this;
 
     source.on('message', async function handleTrustedMessage (msg) {
       // console.trace('[FABRIC:SCRIBE]', 'Our Scribe received the following message from a trusted source:', msg);
@@ -82,7 +82,7 @@ class Scribe extends State {
   }
 
   log (...inputs) {
-    let now = this.now();
+    const now = this.now();
 
     inputs.unshift(`[${this.constructor.name.toUpperCase()}]`);
     inputs.unshift(`[${now}]`);
@@ -95,7 +95,7 @@ class Scribe extends State {
   }
 
   error (...inputs) {
-    let now = this.now();
+    const now = this.now();
 
     inputs.unshift(`[${this.constructor.name.toUpperCase()}]`);
     inputs.unshift(`[${now}]`);
@@ -108,7 +108,7 @@ class Scribe extends State {
   }
 
   warn (...inputs) {
-    let now = this.now();
+    const now = this.now();
 
     inputs.unshift(`[${this.constructor.name.toUpperCase()}]`);
     inputs.unshift(`[${now}]`);
@@ -121,7 +121,7 @@ class Scribe extends State {
   }
 
   debug (...inputs) {
-    let now = this.now();
+    const now = this.now();
 
     inputs.unshift(`[${this.constructor.name.toUpperCase()}]`);
     inputs.unshift(`[${now}]`);

@@ -20,7 +20,7 @@ describe('@fabric/core/types/peer', function () {
     });
 
     it('can cleanly start and stop', async function () {
-      let peer = new Peer();
+      const peer = new Peer();
 
       await peer.start();
       await peer.stop();
@@ -30,10 +30,12 @@ describe('@fabric/core/types/peer', function () {
 
     it('can receive a connection', function (done) {
       async function test () {
-        let server = new Peer(Object.assign({ verbosity: 2 }, NODEA, { listen: true, port: settings.port, upnp: false, peers: [] }));
-        let client = new Peer(Object.assign({ verbosity: 2 }, NODEB, { peers: [
+        const server = new Peer(Object.assign({ verbosity: 2 }, NODEA, { listen: true, port: settings.port, upnp: false, peers: [] }));
+        const client = new Peer(Object.assign({ verbosity: 2 }, NODEB, {
+          peers: [
           `${server.key.pubkey}@localhost:${settings.port}`
-        ] }));
+          ]
+        }));
 
         async function handleClientMessage (msg) {
           console.log(`[TEST:SERVER] event "message" - <${typeof msg}>`, msg);

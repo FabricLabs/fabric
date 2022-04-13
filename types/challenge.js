@@ -8,7 +8,7 @@ class Challenge extends State {
   }
 
   validate (state) {
-    let output = state._sign();
+    const output = state._sign();
     if (output['@id'] === this['@id']) {
       return true;
     } else {

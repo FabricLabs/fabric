@@ -12,38 +12,38 @@ describe('@fabric/core/types/collection', function () {
     });
 
     xit('starts as empty', async function () {
-      let set = new Fabric.Collection();
+      const set = new Fabric.Collection();
       assert.equal(set.render(), '[]');
     });
 
     it('can hold a single entity', async function () {
-      let set = new Fabric.Collection();
+      const set = new Fabric.Collection();
       set.push('test');
       // console.log('the set:', set);
-      let populated = await set.populate();
+      const populated = await set.populate();
       // console.log('populated:', populated);
       assert.equal(JSON.stringify(populated), '["test"]');
     });
 
     it('can restore from an Array object', async function () {
-      let set = new Fabric.Collection(['test']);
-      let populated = await set.populate();
+      const set = new Fabric.Collection(['test']);
+      const populated = await set.populate();
       assert.equal(JSON.stringify(populated), '["test"]');
     });
 
     xit('can restore from a more complex Array object', async function () {
-      let set = new Fabric.Collection(['test', { text: 'Hello, world!' }]);
-      let populated = await set.populate();
+      const set = new Fabric.Collection(['test', { text: 'Hello, world!' }]);
+      const populated = await set.populate();
       assert.equal(JSON.stringify(populated), '["test",{"text":"Hello, world!"}]');
     });
 
     xit('manages a collection of objects', async function () {
-      let set = new Fabric.Collection();
+      const set = new Fabric.Collection();
 
       set.push('Α');
       set.push('Ω');
 
-      let populated = await set.populate();
+      const populated = await set.populate();
 
       // console.log('set:', set);
       // console.log('populated:', populated);
@@ -54,55 +54,54 @@ describe('@fabric/core/types/collection', function () {
     });
 
     xit('can import with commit', async () => {
-      let set = new Fabric.Collection();
-      let res = await set.import(samples.list[0]);
+      const set = new Fabric.Collection();
+      const res = await set.import(samples.list[0]);
       assert.equal(set.len, 1);
     });
 
     xit('can import without commit', async () => {
-      let set = new Fabric.Collection();
-      let res = await set.import(samples.list[0], false);
+      const set = new Fabric.Collection();
+      const res = await set.import(samples.list[0], false);
       assert.equal(set.len, 1);
     });
 
     xit('can import list', async () => {
-      let set = new Fabric.Collection();
-      let res = await set.importList(samples.list);
+      const set = new Fabric.Collection();
+      const res = await set.importList(samples.list);
       assert.equal(set.len, 3);
     });
 
     xit('can create with commit', async () => {
-      let set = new Fabric.Collection();
-      let res = await set.create(samples.list[0]);
+      const set = new Fabric.Collection();
+      const res = await set.create(samples.list[0]);
 
       assert.equal(set.len, 1);
     });
 
     xit('can create without commit', async () => {
-      let set = new Fabric.Collection();
-      let res = await set.create(samples.list[0], false);
+      const set = new Fabric.Collection();
+      const res = await set.create(samples.list[0], false);
 
       assert.equal(set.len, 1);
     });
 
     // let converters = ['map', 'typedMap', 'toTypedArray', 'list'];
-    let converters = ['map', 'typedMap', 'list'];
+    const converters = ['map', 'typedMap', 'list'];
 
     converters.forEach(converter => {
       xit('can convert to ' + converter, async () => {
-        let set = new Fabric.Collection();
-        let res = await set.importList(samples.list);
-        let map = set[converter]();
+        const set = new Fabric.Collection();
+        const res = await set.importList(samples.list);
+        const map = set[converter]();
 
-        for (var i in map) {
-          let item = map[i];
-          for (var k in item) {
-            let j = converter == 'toTypedArray' ? i : i - 1;
+        for (const i in map) {
+          const item = map[i];
+          for (const k in item) {
+            const j = converter == 'toTypedArray' ? i : i - 1;
             assert.equal(item[k], samples.list[j][k]);
           }
         }
       });
     });
-
   });
 });

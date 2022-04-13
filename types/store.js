@@ -31,7 +31,7 @@ class Store extends Scribe {
       path: './stores/store',
       type: 'leveldb',
       persistent: true,
-      verbosity: 2, // 0 none, 1 error, 2 warning, 3 notice, 4 debug
+      verbosity: 2 // 0 none, 1 error, 2 warning, 3 notice, 4 debug
     }, settings);
 
     this['@entity'] = {
@@ -98,9 +98,9 @@ class Store extends Scribe {
     store.log('[STORE]', '_REGISTER', vector.id, vector['@type']);
 
     try {
-      let item = await this._GET(`/entities/${vector.id}`);
+      const item = await this._GET(`/entities/${vector.id}`);
     } catch (E) {
-      this.warn('[STORE]', '_REGISTER', `Could not read from store:`, E);
+      this.warn('[STORE]', '_REGISTER', 'Could not read from store:', E);
     }
 
     try {
@@ -156,7 +156,7 @@ class Store extends Scribe {
     if (this.settings.verbosity >= 5) console.log('[STORE]', 'Patch result:', result);
 
     try {
-      let action = await this._PUT(key, result);
+      const action = await this._PUT(key, result);
     } catch (E) {
       console.error('Could not modify:', E);
     }
@@ -176,10 +176,10 @@ class Store extends Scribe {
     this['@method'] = '_POST';
 
     // preamble
-    let self = this;
-    let path = pointer.escape(key);
-    let router = this.sha256(path);
-    let address = `/collections/${router}`;
+    const self = this;
+    const path = pointer.escape(key);
+    const router = this.sha256(path);
+    const address = `/collections/${router}`;
 
     if (!this.keys[address]) {
       // TODO: store metadata
@@ -192,15 +192,15 @@ class Store extends Scribe {
     // TODO: check for commit state
     self['@entity']['@data'].addresses[router] = address;
 
-    let state = new State(value);
-    let serial = state.serialize();
-    let digest = this.sha256(serial);
+    const state = new State(value);
+    const serial = state.serialize();
+    const digest = this.sha256(serial);
 
     // defaults
-    let actor = null;
-    let list = null;
-    let type = null;
-    let tip = null;
+    const actor = null;
+    const list = null;
+    const type = null;
+    const tip = null;
 
     if (!self.db) {
       await self.open().catch(self._errorHandler.bind(self));
@@ -236,14 +236,14 @@ class Store extends Scribe {
       }
 
       // Add Element to Collection
-      let height = origin.push(value);
+      const height = origin.push(value);
 
       // Store the object at an entity locale
-      let object = await self._PUT(`/entities/${state.id}`, value);
-      let serialized = await origin.serialize();
+      const object = await self._PUT(`/entities/${state.id}`, value);
+      const serialized = await origin.serialize();
 
       // Write serialized Collection to disk
-      let answer = await self.db.put(address, serialized.toString());
+      const answer = await self.db.put(address, serialized.toString());
     } catch (E) {
       console.log('Could not POST:', key, value, E);
       return false;
@@ -253,23 +253,23 @@ class Store extends Scribe {
   }
 
   async _PUSH (key, data) {
-    let id = pointer.escape(key);
-    let path = `/stacks/${id}`;
+    const id = pointer.escape(key);
+    const path = `/stacks/${id}`;
     let list = await this._GET(path);
     if (!list) list = [];
-    let vector = new State(data);
-    let stack = new Stack(list);
-    let result = stack.push(vector.id);
-    let actor = await this._REGISTER(data);
-    let blob = await this._PUT(`/blobs/${vector.id}`, vector['@data']);
-    let saved = await this._SET(path, stack['@data']);
-    let commit = await this.commit();
-    let output = await this._GET(`/blobs/${vector.id}`);
+    const vector = new State(data);
+    const stack = new Stack(list);
+    const result = stack.push(vector.id);
+    const actor = await this._REGISTER(data);
+    const blob = await this._PUT(`/blobs/${vector.id}`, vector['@data']);
+    const saved = await this._SET(path, stack['@data']);
+    const commit = await this.commit();
+    const output = await this._GET(`/blobs/${vector.id}`);
     return output;
   }
 
   async populate (element) {
-    let map = [];
+    const map = [];
 
     for (let i = 0; i < element.length; i++) {
       map[i] = await this._GET(`/entities/${element[i]}`);
@@ -287,9 +287,9 @@ class Store extends Scribe {
     // if (this.settings.verbosity >= 5) this.log('[STORE]', 'get:', key);
     // console.trace('[FABRIC:STORE]', 'Internal get():', key);
 
-    let self = this;
-    let id = pointer.escape(key);
-    let router = this.sha256(id);
+    const self = this;
+    const id = pointer.escape(key);
+    const router = this.sha256(id);
 
     let type = null;
     let state = null;
@@ -329,7 +329,7 @@ class Store extends Scribe {
       try {
         type = await self.db.get(`/types/${tip}`);
       } catch (E) {
-        if (this.settings.verbosity >= 2) console.error(`cannot get type`, E);
+        if (this.settings.verbosity >= 2) console.error('cannot get type', E);
       }
 
       try {
@@ -359,26 +359,26 @@ class Store extends Scribe {
     // this.log('[STORE]', `(${this['@method']})`, 'set:', key, value.constructor.name, value);
     if (this.settings.verbosity >= 5) this.log('[STORE]', `(${this['@method']})`, 'set:', key, typeof value, value);
 
-    let self = this;
+    const self = this;
     let collection = null;
 
     // Let's use the document's key as the identifying value.
     // This is what defines our key => value store.
     // All functions can be run as a map of an original input vector, allowing
     // binary scoping across trees of varying complexity.
-    let id = pointer.escape(key);
-    let router = this.sha256(id);
+    const id = pointer.escape(key);
+    const router = this.sha256(id);
 
     // locals
-    let origin = new State(self['@data']);
-    let vector = new State(value);
-    let serial = vector.serialize(value);
-    let digest = this.sha256(serial);
+    const origin = new State(self['@data']);
+    const vector = new State(value);
+    const serial = vector.serialize(value);
+    const digest = this.sha256(serial);
     let batched = null;
 
     // Since we're using JavaScript, we can use Object literals.
     // See also: https://to.fabric.pub/#purity:fabric.pub
-    let pure = {
+    const pure = {
       '@id': vector.id,
       '@data': value,
       // TODO: document the special case of "null"
@@ -393,7 +393,7 @@ class Store extends Scribe {
       await self.open();
     }
 
-    let ops = [
+    const ops = [
       { type: 'put', key: `/states/${pure['@id']}`, value: serial.toString('hex'), encoding: 'hex' },
       { type: 'put', key: `/blobs/${pure['@id']}`, value: serial.toString('hex'), encoding: 'hex' },
       { type: 'put', key: `/types/${pure['@id']}`, value: pure['@type'] },
@@ -424,7 +424,7 @@ class Store extends Scribe {
       } catch (E) {
         console.error('BATCH FAILURE:', E);
       }
- 
+
       try {
         await Promise.all(ops.map(op => {
           return self.db.put(op.key, op.value);
@@ -486,16 +486,16 @@ class Store extends Scribe {
    * @return {Store}        Resulting instance of {@link Store} with new trust.
    */
   trust (source) {
-    let store = this;
-    let name = `/sources/${store.id}`;
+    const store = this;
+    const name = `/sources/${store.id}`;
 
     source.on('put', function (key, value) {
       // store.log('[TRUST:SOURCE]', source.constructor.name, 'emitted a put event', name, key, value.constructor.name, value);
       if (store.settings.verbosity >= 5) console.log('[TRUST:SOURCE]', source.constructor.name, 'emitted a put event', name, key, value.constructor.name, value);
 
-      let id = pointer.escape(key);
-      let router = store.sha256(id);
-      let state = new State(value);
+      const id = pointer.escape(key);
+      const router = store.sha256(id);
+      const state = new State(value);
 
       pointer.set(store['@entity']['@data'], `${name}`, value);
       pointer.set(store['@entity']['@data'], `/states/${state.id}`, value);
@@ -567,14 +567,14 @@ class Store extends Scribe {
   async flush () {
     if (this.settings.verbosity >= 4) console.log('[FABRIC:STORE]', 'Flushing database...');
 
-    for (let name in this['@entity']['@data'].addresses) {
-      let address = this['@entity']['@data'].addresses[name];
+    for (const name in this['@entity']['@data'].addresses) {
+      const address = this['@entity']['@data'].addresses[name];
       if (this.settings.verbosity >= 3) console.log('found address:', address);
       if (address) await this.del(address);
     }
 
     try {
-      await this.del(`/collections`);
+      await this.del('/collections');
       await this.commit();
     } catch (E) {
       console.error('Could not wipe database:', E);
@@ -599,7 +599,7 @@ class Store extends Scribe {
   async start () {
     if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Starting:', this.settings.path);
     this.status = 'starting';
-    let keys = null;
+    const keys = null;
 
     try {
       await this.open();

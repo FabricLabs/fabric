@@ -57,13 +57,13 @@ class Channel extends Scribe {
       '@data': { enumerable: false },
       '@input': { enumerable: false },
       // 'id': { enumerable: false },
-      'config': { enumerable: false },
-      'key': { enumerable: false },
-      'observer': { enumerable: false },
-      'provider': { enumerable: false },
-      'settings': { enumerable: false },
+      config: { enumerable: false },
+      key: { enumerable: false },
+      observer: { enumerable: false },
+      provider: { enumerable: false },
+      settings: { enumerable: false },
       // 'size': { enumerable: false },
-      'state': { enumerable: false },
+      state: { enumerable: false }
     });
 
     this['@id'] = this.id;
@@ -112,7 +112,7 @@ class Channel extends Scribe {
 
   commit () {
     const commit = new Entity(this._state);
-    this.emit('commit', commit)
+    this.emit('commit', commit);
     return commit;
   }
 
@@ -153,14 +153,14 @@ class Channel extends Scribe {
   }
 
   async _getSpendableOutput () {
-    let mtx = new this.provider.MTX();
-    let script = new this.provider.Script();
+    const mtx = new this.provider.MTX();
+    const script = new this.provider.Script();
 
-    let tx = mtx.toTX();
+    const tx = mtx.toTX();
     // TODO: remove short-circuit
     return {
-      '@type': "BitcoinTransactionOutput",
-      "@data": {
+      '@type': 'BitcoinTransactionOutput',
+      '@data': {
         script: script,
         transaction: tx
       }

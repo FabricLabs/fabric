@@ -215,7 +215,7 @@ class Wallet extends Service {
 
   async _attachTXID (txid) {
     // TODO: check that `txid` is a proper TXID
-    let txp = await this.txids.create(txid);
+    const txp = await this.txids.create(txid);
     if (this.settings.verbosity >= 5) console.log('[AUDIT]', `Attached TXID ${txid} to Wallet ID ${this.id}, result:`, txp);
     return txp;
   }
@@ -226,7 +226,7 @@ class Wallet extends Service {
 
   async addTransactionToWallet (transaction) {
     if (this.settings.verbosity >= 5) console.log('[AUDIT]', '[FABRIC:WALLET]', 'Adding transaction to Wallet:', transaction);
-    let entity = new Actor(transaction);
+    const entity = new Actor(transaction);
     if (!transaction.spent) transaction.spent = false;
     if (!transaction.outputs) transaction.outputs = [];
     this._state.transactions.push(transaction);
@@ -234,8 +234,8 @@ class Wallet extends Service {
     if (this.settings.verbosity >= 5) console.log('[FABRIC:WALLET]', 'Wallet transactions now:', this._state.transactions);
 
     for (let i = 0; i < transaction.outputs.length; i++) {
-      let output = transaction.outputs[i].toJSON();
-      let address = await this._findAddressInCurrentShard(output.address);
+      const output = transaction.outputs[i].toJSON();
+      const address = await this._findAddressInCurrentShard(output.address);
 
       // TODO: test these outputs
       // console.log('output to parse:', output);
@@ -268,7 +268,7 @@ class Wallet extends Service {
 
   async _findAddressInCurrentShard (address) {
     for (let i = 0; i < this.shard.length; i++) {
-      let slice = this.shard[i];
+      const slice = this.shard[i];
       if (slice.string === address) return slice;
     }
     return null;
@@ -350,18 +350,18 @@ class Wallet extends Service {
 
   /**
    * Returns a bech32 address for the provided {@link Script}.
-   * @param {Script} script 
+   * @param {Script} script
    */
   getAddressForScript (script) {
     // TODO: use Fabric.Script
-    let p2wsh = script.forWitness();
-    let address = p2wsh.getAddress().toBech32(this.settings.network);
+    const p2wsh = script.forWitness();
+    const address = p2wsh.getAddress().toBech32(this.settings.network);
     return address;
   }
 
   /**
    * Generate a {@link BitcoinAddress} for the supplied {@link BitcoinScript}.
-   * @param {BitcoinScript} redeemScript 
+   * @param {BitcoinScript} redeemScript
    */
   getAddressFromRedeemScript (redeemScript) {
     if (!redeemScript) return null;
@@ -378,22 +378,22 @@ class Wallet extends Service {
     if (!order.asset) throw new Error('Order parameter "asset" is required.');
     if (!order.amount) throw new Error('Order parameter "amount" is required.');
 
-    let leftover = order.amount % (10 * this.settings.decimals);
-    let parts = order.amount / (10 * this.settings.decimals);
+    const leftover = order.amount % (10 * this.settings.decimals);
+    const parts = order.amount / (10 * this.settings.decimals);
 
-    let partials = [];
+    const partials = [];
     // TODO: remove short-circuit
-    let cb = await this._generateFakeCoinbase(order.amount);
-    let mtx = new MTX();
-    let script = new Script();
+    const cb = await this._generateFakeCoinbase(order.amount);
+    const mtx = new MTX();
+    const script = new Script();
 
-    let secret = await this.generateSecret();
-    let image = Buffer.from(secret.hash);
+    const secret = await this.generateSecret();
+    const image = Buffer.from(secret.hash);
 
     console.log('secret generated:', secret);
     console.log('image of secret:', image);
 
-    let refund = await this.ring.getPublicKey();
+    const refund = await this.ring.getPublicKey();
     console.log('refund:', refund);
 
     script.pushSym('OP_IF');
@@ -416,7 +416,7 @@ class Wallet extends Service {
       partials.push(script);
     }
 
-    let entity = new Actor({
+    const entity = new Actor({
       comment: 'List of transactions to validate.',
       orders: partials,
       transactions: partials
@@ -437,22 +437,22 @@ class Wallet extends Service {
       console.log('contract counterparty artificially generated:', contract.counterparty);
     }
 
-    let leftover = contract.amount % this.settings.decimals;
-    let parts = contract.amount / this.settings.decimals;
+    const leftover = contract.amount % this.settings.decimals;
+    const parts = contract.amount / this.settings.decimals;
 
-    let partials = [];
+    const partials = [];
     // TODO: remove short-circuit
-    let cb = await this._generateFakeCoinbase(contract.amount);
-    let mtx = new MTX();
-    let script = new Script();
+    const cb = await this._generateFakeCoinbase(contract.amount);
+    const mtx = new MTX();
+    const script = new Script();
 
-    let secret = await this.generateSecret();
-    let image = Buffer.from(secret.hash);
+    const secret = await this.generateSecret();
+    const image = Buffer.from(secret.hash);
 
     console.log('secret generated:', secret);
     console.log('image of secret:', image);
 
-    let refund = await this.ring.getPublicKey();
+    const refund = await this.ring.getPublicKey();
     console.log('refund:', refund);
 
     script.pushSym('OP_IF');
@@ -478,7 +478,7 @@ class Wallet extends Service {
     console.log('parts:', partials);
     console.log('leftover:', leftover);
 
-    let entity = new Actor({
+    const entity = new Actor({
       comment: 'List of transactions to validate.',
       orders: partials,
       transactions: partials,
@@ -498,16 +498,16 @@ class Wallet extends Service {
   }
 
   async generateSignedTransactionTo (address, amount) {
-    if (!address) throw new Error(`Parameter "address" is required.`);
-    if (!amount) throw new Error(`Parameter "amount" is required.`);
+    if (!address) throw new Error('Parameter "address" is required.');
+    if (!amount) throw new Error('Parameter "amount" is required.');
 
-    let bn = new BN(amount + '', 10);
+    const bn = new BN(amount + '', 10);
     // TODO: labeled keypairs
-    let clean = await this.generateCleanKeyPair();
-    let change = await this.generateCleanKeyPair();
+    const clean = await this.generateCleanKeyPair();
+    const change = await this.generateCleanKeyPair();
 
-    let mtx = new MTX();
-    let cb = await this._generateFakeCoinbase(amount);
+    const mtx = new MTX();
+    const cb = await this._generateFakeCoinbase(amount);
 
     mtx.addOutput({
       address: address,
@@ -522,10 +522,10 @@ class Wallet extends Service {
     mtx.sign(this.ring);
     // mtx.signInput(0, this.ring);
 
-    let tx = mtx.toTX();
-    let output = Coin.fromTX(mtx, 0, -1);
-    let raw = mtx.toRaw();
-    let hash = Hash256.digest(raw.toString('hex'));
+    const tx = mtx.toTX();
+    const output = Coin.fromTX(mtx, 0, -1);
+    const raw = mtx.toRaw();
+    const hash = Hash256.digest(raw.toString('hex'));
 
     return {
       type: 'BitcoinTransaction',
@@ -539,16 +539,16 @@ class Wallet extends Service {
   }
 
   async generateOrderRootTo (pubkey, amount) {
-    if (!pubkey) throw new Error(`Parameter "pubkey" is required.`);
-    if (!amount) throw new Error(`Parameter "amount" is required.`);
+    if (!pubkey) throw new Error('Parameter "pubkey" is required.');
+    if (!amount) throw new Error('Parameter "amount" is required.');
 
-    let bn = new BN(amount + '', 10);
+    const bn = new BN(amount + '', 10);
     // TODO: labeled keypairs
-    let clean = await this.generateCleanKeyPair();
-    let change = await this.generateCleanKeyPair();
+    const clean = await this.generateCleanKeyPair();
+    const change = await this.generateCleanKeyPair();
 
-    let mtx = new MTX();
-    let cb = await this._generateFakeCoinbase(amount);
+    const mtx = new MTX();
+    const cb = await this._generateFakeCoinbase(amount);
 
     mtx.addOutput({
       address: address,
@@ -563,7 +563,7 @@ class Wallet extends Service {
     mtx.sign(this.ring);
     // mtx.signInput(0, this.ring);
 
-    let tx = mtx.toTX();
+    const tx = mtx.toTX();
     let output = null;
 
     try {
@@ -572,8 +572,8 @@ class Wallet extends Service {
       console.error('[FABRIC:WALLET]', 'Could not generate output:', exception);
     }
 
-    let raw = mtx.toRaw();
-    let hash = Hash256.digest(raw.toString('hex'));
+    const raw = mtx.toRaw();
+    const hash = Hash256.digest(raw.toString('hex'));
 
     return {
       type: 'BitcoinTransaction',
@@ -587,7 +587,7 @@ class Wallet extends Service {
   }
 
   addInputForCrowdfund (coin, inputIndex, mtx, keyring, hashType) {
-    let sampleCoin = coin instanceof Coin ? coin : Coin.fromJSON(coin);
+    const sampleCoin = coin instanceof Coin ? coin : Coin.fromJSON(coin);
     if (!hashType) hashType = Script.hashType.ANYONECANPAY | Script.hashType.ALL;
 
     mtx.addCoin(sampleCoin);
@@ -610,8 +610,8 @@ class Wallet extends Service {
   }
 
   getFeeForInput (coin, address, keyring, rate) {
-    let fundingTarget = 100000000; // 1 BTC (arbitrary for purposes of this function)
-    let testMTX = new MTX();
+    const fundingTarget = 100000000; // 1 BTC (arbitrary for purposes of this function)
+    const testMTX = new MTX();
 
     // TODO: restore swap code, abstract input types
     // this.addInputForCrowdfund(coin, 0, testMTX, this.keyring);
@@ -622,9 +622,9 @@ class Wallet extends Service {
   async _createAccount (data) {
     // console.log('wallet creating account with data:', data);
     await this._load();
-    let existing = await this.wallet.getAccount(data.name);
+    const existing = await this.wallet.getAccount(data.name);
     if (existing) return existing;
-    let account = await this.wallet.createAccount(data);
+    const account = await this.wallet.createAccount(data);
     return account;
   }
 
@@ -652,7 +652,7 @@ class Wallet extends Service {
 
   async _splitCoinbase (funderKeyring, coin, targetAmount, txRate) {
     // loop through each coinbase coin to split
-    let coins = [];
+    const coins = [];
 
     const mtx = new MTX();
 
@@ -694,7 +694,7 @@ class Wallet extends Service {
   async composeCrowdfund (coins) {
     const funderCoins = {};
     // Loop through each coinbase
-    for (let index in coins) {
+    for (const index in coins) {
       const coinbase = coins[index][0];
       // estimate fee for each coin (assuming their split coins will use same tx type)
       const estimatedFee = getFeeForInput(coinbase, fundeeAddress, funders[index], txRate);
@@ -716,7 +716,7 @@ class Wallet extends Service {
   }
 
   async getUnusedAddress () {
-    let clean = await this.wallet.receiveAddress();
+    const clean = await this.wallet.receiveAddress();
     this.emit('log', `unused address: ${clean}`);
     return clean;
   }
@@ -729,13 +729,13 @@ class Wallet extends Service {
 
   async _generateFakeCoinbase (amount = 1) {
     // TODO: use Satoshis for all calculations
-    let num = new BN(amount, 10);
+    const num = new BN(amount, 10);
 
     // TODO: remove all fake coinbases
     // TODO: remove all short-circuits
     // fake coinbase
-    let cb = new MTX();
-    let clean = await this.generateCleanKeyPair();
+    const cb = new MTX();
+    const clean = await this.generateCleanKeyPair();
 
     // Coinbase Input
     cb.addInput({
@@ -751,8 +751,8 @@ class Wallet extends Service {
     });
 
     // TODO: remove short-circuit
-    let coin = Coin.fromTX(cb, 0, -1);
-    let tx = cb.toTX();
+    const coin = Coin.fromTX(cb, 0, -1);
+    const tx = cb.toTX();
 
     // TODO: remove entirely, test short-circuit removal
     // await this._addOutputToSpendables(coin);
@@ -767,9 +767,9 @@ class Wallet extends Service {
   }
 
   async _getFreeCoinbase (amount = 1) {
-    let num = new BN(amount, 10);
-    let max = new BN('5000000000000', 10); // upper limit per coinbase
-    let hun = new BN('100000000', 10); // one hundred million
+    const num = new BN(amount, 10);
+    const max = new BN('5000000000000', 10); // upper limit per coinbase
+    const hun = new BN('100000000', 10); // one hundred million
     let value = num.mul(hun); // amount in Satoshis
 
     if (value.gt(max)) {
@@ -777,8 +777,8 @@ class Wallet extends Service {
       value = max;
     }
 
-    let v = value.toString(10);
-    let w = parseInt(v);
+    const v = value.toString(10);
+    const w = parseInt(v);
 
     await this._load();
 
@@ -803,7 +803,7 @@ class Wallet extends Service {
     }
 
     // TODO: wallet._getSpendableOutput()
-    let coin = Coin.fromTX(coinbase, 0, -1);
+    const coin = Coin.fromTX(coinbase, 0, -1);
     this._state.utxos.push(coin);
 
     // console.log('coinbase:', coinbase);
@@ -813,10 +813,10 @@ class Wallet extends Service {
 
   /**
    * Signs a transaction with the keyring.
-   * @param {BcoinTX} tx 
+   * @param {BcoinTX} tx
    */
   async _sign (tx) {
-    let signature = await tx.sign(this.keyring);
+    const signature = await tx.sign(this.keyring);
     console.log('signing tx:', tx);
     console.log('signing sig:', signature);
     return Object.assign({}, tx, { signature });
@@ -824,14 +824,14 @@ class Wallet extends Service {
 
   /**
    * Create a crowdfunding transaction.
-   * @param {Object} fund 
+   * @param {Object} fund
    */
   async _createCrowdfund (fund = {}) {
     if (!fund.amount) return null;
     if (!fund.address) return null;
 
-    let index = fund.index || 0;
-    let hashType = Script.hashType.ANYONECANPAY | Script.hashType.ALL;
+    const index = fund.index || 0;
+    const hashType = Script.hashType.ANYONECANPAY | Script.hashType.ALL;
 
     mtx.addCoin(this._state.utxos[0]);
     mtx.scriptInput(index, this._state.utxos[0], this.keyring);
@@ -882,16 +882,16 @@ class Wallet extends Service {
   }
 
   async _importSeed (seed) {
-    let mnemonic = new Mnemonic(seed);
+    const mnemonic = new Mnemonic(seed);
     return this._loadSeed(mnemonic.toString());
   }
 
   async _createIncentivizedTransaction (config) {
     console.log('creating incentivized transaction with config:', config);
 
-    let mtx = new MTX();
-    let data = new Script();
-    let clean = await this.generateCleanKeyPair();
+    const mtx = new MTX();
+    const data = new Script();
+    const clean = await this.generateCleanKeyPair();
 
     data.pushSym('OP_IF');
     data.pushSym('OP_SHA256');
@@ -909,7 +909,7 @@ class Wallet extends Service {
     data.compile();
 
     console.log('address data:', data);
-    let segwitAddress = await this.getAddressForScript(data);
+    const segwitAddress = await this.getAddressForScript(data);
 
     mtx.addOutput({
       address: segwitAddress,
@@ -917,7 +917,7 @@ class Wallet extends Service {
     });
 
     // TODO: load available outputs from wallet
-    let out = await mtx.fund([] /* coins */, {
+    const out = await mtx.fund([] /* coins */, {
       // TODO: fee estimation
       rate: 10000,
       changeAddress: this.ring.getAddress()
@@ -930,8 +930,8 @@ class Wallet extends Service {
   async _getBondAddress () {
     await this._load();
 
-    let script = new Script();
-    let clean = await this.generateCleanKeyPair();
+    const script = new Script();
+    const clean = await this.generateCleanKeyPair();
 
     if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'getting bond address, clean:', clean);
 
@@ -949,10 +949,10 @@ class Wallet extends Service {
   }
 
   async _getSpendableOutput (target, amount = 0) {
-    let self = this;
-    let key = null;
+    const self = this;
+    const key = null;
     let out = null;
-    let mtx = new MTX();
+    const mtx = new MTX();
 
     await this._load();
 
@@ -994,10 +994,10 @@ class Wallet extends Service {
 
   async getRedeemTX (address, fee, fundingTX, fundingTXoutput, redeemScript, inputScript, locktime, privateKey) {
     // Create a mutable transaction object
-    let redeemTX = new MTX();
+    const redeemTX = new MTX();
 
-    // Get the output we want to spend (coins sent to the P2SH address) 
-    let coin = Coin.fromTX(fundingTX, fundingTXoutput, -1);
+    // Get the output we want to spend (coins sent to the P2SH address)
+    const coin = Coin.fromTX(fundingTX, fundingTXoutput, -1);
 
     // Add that coin as an input to our transaction
     redeemTX.addCoin(coin);
@@ -1029,7 +1029,7 @@ class Wallet extends Service {
     }
 
     // Create the signature authorizing the input script to spend the coin
-    let sig = await this.signInput(
+    const sig = await this.signInput(
       redeemTX,
       0,
       redeemScript,
@@ -1050,11 +1050,11 @@ class Wallet extends Service {
 
   /**
    * Generate {@link Script} for claiming a {@link Swap}.
-   * @param {*} redeemScript 
-   * @param {*} secret 
+   * @param {*} redeemScript
+   * @param {*} secret
    */
   async _getSwapInputScript (redeemScript, secret) {
-    let inputSwap = new Script();
+    const inputSwap = new Script();
 
     inputSwap.pushInt(0); // signature placeholder
     inputSwap.pushData(secret);
@@ -1067,10 +1067,10 @@ class Wallet extends Service {
 
   /**
    * Generate {@link Script} for reclaiming funds commited to a {@link Swap}.
-   * @param {*} redeemScript 
+   * @param {*} redeemScript
    */
   async _getRefundInputScript (redeemScript) {
-    let inputRefund = new Script();
+    const inputRefund = new Script();
 
     inputRefund.pushInt(0); // signature placeholder
     inputRefund.pushInt(0); // <false>
@@ -1083,12 +1083,12 @@ class Wallet extends Service {
   async _createOrderForPubkey (pubkey) {
     this.emit('log', `creating ORDER transaction with pubkey: ${pubkey}`);
 
-    let mtx = new MTX();
-    let data = new Script();
-    let clean = await this.generateCleanKeyPair();
+    const mtx = new MTX();
+    const data = new Script();
+    const clean = await this.generateCleanKeyPair();
 
-    let secret = 'fixed secret :)';
-    let sechash = require('crypto').createHash('sha256').update(secret).digest('hex');
+    const secret = 'fixed secret :)';
+    const sechash = require('crypto').createHash('sha256').update(secret).digest('hex');
 
     this.emit('log', `SECRET CREATED: ${secret}`);
     this.emit('log', `SECHASH: ${sechash}`);
@@ -1108,8 +1108,8 @@ class Wallet extends Service {
     data.compile();
 
     this.emit('log', `[AUDIT] address data: ${data}`);
-    let segwitAddress = await this.getAddressForScript(data);
-    let address = await this.getAddressFromRedeemScript(data);
+    const segwitAddress = await this.getAddressForScript(data);
+    const address = await this.getAddressFromRedeemScript(data);
 
     this.emit('log', `[AUDIT] segwit address: ${segwitAddress}`);
     this.emit('log', `[AUDIT] normal address: ${address}`);
@@ -1122,17 +1122,17 @@ class Wallet extends Service {
     // ensure a coin exists...
     // NOTE: this is tracked in this._state.coins
     // and thus does not need to be cast to a variable...
-    let coinbase = await this._getFreeCoinbase();
+    const coinbase = await this._getFreeCoinbase();
 
     // TODO: load available outputs from wallet
-    let out = await mtx.fund(this._state.utxos, {
+    const out = await mtx.fund(this._state.utxos, {
       // TODO: fee estimation
       rate: 10000,
       changeAddress: this.ring.getAddress()
     });
 
-    let tx = mtx.toTX();
-    let sig = await mtx.sign(this.ring);
+    const tx = mtx.toTX();
+    const sig = await mtx.sign(this.ring);
 
     this.emit('log', 'transaction:', tx);
     this.emit('log', 'sig:', sig);
@@ -1146,13 +1146,13 @@ class Wallet extends Service {
 
   async _scanBlockForTransactions (block) {
     console.log('[AUDIT]', 'Scanning block for transactions:', block);
-    let found = [];
+    const found = [];
   }
 
   async _scanChainForTransactions (chain) {
     console.log('[AUDIT]', 'Scanning chain for transactions:', chain);
 
-    let transactions = [];
+    const transactions = [];
 
     for (let i = 0; i < chain.blocks.length; i++) {
       transactions.concat(await this._scanBlockForTransactions(chain.blocks[i]));
@@ -1162,13 +1162,13 @@ class Wallet extends Service {
   }
 
   async _createChannel (channel) {
-    let element = new Channel(channel);
+    const element = new Channel(channel);
     return element;
   }
 
   async _allocateSlot () {
     for (let i = 0; i < Object.keys(this._state.space).length; i++) {
-      let slot = this._state.space[Object.keys(this._state.space)[i]];
+      const slot = this._state.space[Object.keys(this._state.space)[i]];
       if (!slot.allocation) {
         this._state.space[Object.keys(this._state.space)[i]].allocation = new Secret();
         return this._state.space[Object.keys(this._state.space)[i]];
@@ -1180,14 +1180,14 @@ class Wallet extends Service {
     await this._load();
 
     // aggregate results for return
-    let slice = [];
+    const slice = [];
 
     if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'generating {@link Space} with settings:', this.settings);
 
     // iterate over length of shard, aggregate addresses
     for (let i = 0; i < size; i++) {
-      let addr = this.account.deriveReceive(i).getAddress('string', this.settings.network);
-      let address = await this.addresses.create({
+      const addr = this.account.deriveReceive(i).getAddress('string', this.settings.network);
+      const address = await this.addresses.create({
         string: addr,
         label: `shared address ${i} for wallet ${this.id}`,
         allocation: null
@@ -1216,8 +1216,8 @@ class Wallet extends Service {
 
     this.index++;
 
-    let key = this.master.derivePath(`m/44'/0'/0'/0/${this.index}`);
-    let keyring = bcoin.KeyRing.fromPrivate(key.privateKey);
+    const key = this.master.derivePath(`m/44'/0'/0'/0/${this.index}`);
+    const keyring = bcoin.KeyRing.fromPrivate(key.privateKey);
 
     return {
       index: this.index,

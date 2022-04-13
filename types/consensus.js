@@ -68,7 +68,7 @@ class Consensus {
     return {
       // TODO: compute from chain height
       subsidy: 50
-    }
+    };
   }
 
   get port () {

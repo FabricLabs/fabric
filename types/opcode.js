@@ -4,7 +4,7 @@ const Vector = require('./vector');
 
 class Opcode {
   constructor (definition) {
-    let opcode = this;
+    const opcode = this;
 
     opcode.config = Object.assign({}, definition);
     opcode.vector = new Vector(definition)._sign();

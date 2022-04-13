@@ -275,7 +275,7 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
   }
 
   overlay (data) {
-    let state = new State(data);
+    const state = new State(data);
     this['@parent'] = this['@id'];
     this['@data'] = Object.assign({}, this['@data'], state['@data']);
     this['@did'] = `did:fabric:${this.id}`;
@@ -349,7 +349,7 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
     if (typeof input === 'string') {
       // Let's create a state object...
       try {
-        let state = new State(input);
+        const state = new State(input);
         // Assign our output to the state data
         output = state['@data'];
       } catch (E) {
@@ -358,7 +358,7 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
 
       return output;
     } else {
-      this.log('WARNING:', `input not a string`, input);
+      this.log('WARNING:', 'input not a string', input);
     }
 
     if (!output) return null;
@@ -373,9 +373,9 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
   }
 
   flatten () {
-    let map = {};
+    const map = {};
 
-    for (let k in this['@data']) {
+    for (const k in this['@data']) {
       map[k] = this.serialize(this['@data'][k]);
     }
 
@@ -388,7 +388,7 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
    * @returns {State}
    */
   fork () {
-    let data = Object.assign({
+    const data = Object.assign({
       '@parent': this.id
     }, this['@data']);
     return new State(data);
@@ -446,8 +446,8 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
       this.emit('message', {
         '@type': 'Transaction',
         '@data': {
-          'changes': this['@changes'],
-          'state': this['@changes']
+          changes: this['@changes'],
+          state: this['@changes']
         }
       });
     }

@@ -199,7 +199,7 @@ class Peer extends Actor {
       const closer = async function () {
         return new Promise((resolve, reject) => {
           // Give socket a timeout to close cleanly, destroy if failed
-          let deadline = setTimeout(function () {
+          const deadline = setTimeout(function () {
             console.warn('[FABRIC:PEER]', 'end() timed out for peer:', id, 'Calling destroy...');
             connection.destroy();
             resolve();
@@ -213,7 +213,7 @@ class Peer extends Actor {
             resolve();
           });
         });
-      }
+      };
       await closer();
     }
 
@@ -225,7 +225,7 @@ class Peer extends Actor {
           resolve();
         });
       });
-    }
+    };
 
     await terminator();
 
@@ -268,7 +268,7 @@ class Peer extends Actor {
     const message = Message.fromVector(vector);
 
     if (!socket.writable) {
-      self.emit('error', `Socket is not writable.`);
+      self.emit('error', 'Socket is not writable.');
       return false;
     }
 
@@ -330,11 +330,11 @@ class Peer extends Actor {
   }
 
   _connect (address) {
-    let self = this;
-    let parts = address.split(':');
-    let known = Object.keys(self.connections);
-    let keyparts = parts[0].split('@');
-    let target = {
+    const self = this;
+    const parts = address.split(':');
+    const known = Object.keys(self.connections);
+    const keyparts = parts[0].split('@');
+    const target = {
       pubkey: null,
       address: null,
       port: null
@@ -367,7 +367,7 @@ class Peer extends Actor {
       });
 
       self.connections[authority]._reader.on('message', function (msg) {
-        self._processCompleteDataPacket.apply(self, [ self.connections[authority], authority, msg ]);
+        self._processCompleteDataPacket.apply(self, [self.connections[authority], authority, msg]);
       });
 
       self.connections[authority].on('error', function (err) {
@@ -395,7 +395,7 @@ class Peer extends Actor {
 
       // TODO: unify as _dataHandler
       self.connections[authority].on('data', async function peerDataHandler (data) {
-        self._handleSocketData.apply(self, [ this, authority, data ]);
+        self._handleSocketData.apply(self, [this, authority, data]);
       });
 
       self.emit('log', `Starting connection to address: ${authority}`);
@@ -404,7 +404,7 @@ class Peer extends Actor {
       // NOTE: the handler is only called once per connection!
       self.connections[authority].connect(target.port, target.address, async function connectionAttemptComplete (error) {
         if (error) return new Error(`Could not establish connection: ${error}`);
-        await self._sessionStart.apply(self, [ this, target ]);
+        await self._sessionStart.apply(self, [this, target]);
         self._maintainConnection(authority);
       });
     } catch (E) {
@@ -468,7 +468,7 @@ class Peer extends Actor {
 
     socket.on('data', function inboundPeerHandler (data) {
       try {
-        self._handleSocketData.apply(self, [ socket, address, data ]);
+        self._handleSocketData.apply(self, [socket, address, data]);
       } catch (exception) {
         self.emit('error', `Could not handle socket data: ${exception}`);
       }
@@ -482,7 +482,7 @@ class Peer extends Actor {
     });
 
     this.connections[address]._reader.on('message', function (msg) {
-      self._processCompleteDataPacket.apply(self, [ self.connections[address], address, msg ]);
+      self._processCompleteDataPacket.apply(self, [self.connections[address], address, msg]);
     });
 
     self._maintainConnection(address);
@@ -529,11 +529,11 @@ class Peer extends Actor {
 
   _registerPeer (peer) {
     if (this.settings.verbosity >= 6) console.warn('[AUDIT]', 'Registering peer:', peer);
-    let self = this;
+    const self = this;
 
     if (!peer) return false;
     if (!peer.id) {
-      self.log(`Peer attribute 'id' is required.`);
+      self.log('Peer attribute \'id\' is required.');
       return false;
     }
 
@@ -628,7 +628,7 @@ class Peer extends Actor {
         break;
       case 'IdentityResponse':
         if (!self.peers[message.data]) {
-          let peer = {
+          const peer = {
             id: message.data,
             address: packet.origin
           };
@@ -686,12 +686,12 @@ class Peer extends Actor {
 
         // TODO: avoid using JSON in overall protocol
         // TODO: validate signature
-        let valid = true;
+        const valid = true;
         // TODO: restore session identity
         if (valid && session/* && session.identity */) {
           if (self.settings.verbosity >= 6) console.log('[AUDIT]', 'Session is valid...');
 
-          let peer = {
+          const peer = {
             id: session.identity,
             address: packet.origin,
             advertise: `${self.pubkeyhash}@${self.public.ip}:${self.public.port}`,
@@ -719,8 +719,8 @@ class Peer extends Actor {
           const state = JSON.parse(message.data);
           self.emit('state', state);
           response = {
-            'type': 'Receipt',
-            'data': state
+            type: 'Receipt',
+            data: state
           };
         } catch (E) {
           console.error('[FABRIC:PEER]', 'Could not parse StateRoot:', E);
@@ -739,12 +739,12 @@ class Peer extends Actor {
         break;
       case P2P_INSTRUCTION:
         // TODO: use Fabric.Script / Fabric.Machine
-        let stack = message.data.split(' ');
+        const stack = message.data.split(' ');
         switch (stack[1]) {
           case 'SIGN':
-            let signature = self.key._sign(stack[0]);
-            let buffer = Buffer.from(signature);
-            let script = [buffer.toString('hex'), 'CHECKSIG'].join(' ');
+            const signature = self.key._sign(stack[0]);
+            const buffer = Buffer.from(signature);
+            const script = [buffer.toString('hex'), 'CHECKSIG'].join(' ');
 
             response = Message.fromVector([P2P_INSTRUCTION, script]);
             break;
@@ -898,7 +898,7 @@ class Peer extends Actor {
     }
 
     if (typeof message !== 'string') message = JSON.stringify(message);
-    let hash = crypto.createHash('sha256').update(message).digest('hex');
+    const hash = crypto.createHash('sha256').update(message).digest('hex');
 
     // Do not relay duplicate messages
     if (this.messages.has(hash)) {
@@ -909,12 +909,12 @@ class Peer extends Actor {
       this.messages.add(hash);
     }
 
-    for (let id in this.peers) {
-      let peer = this.peers[id];
+    for (const id in this.peers) {
+      const peer = this.peers[id];
       // TODO: select type byte for state updates
       // TODO: require `Message` type before broadcast (or, preferrably, cast as necessary)
       // let msg = Message.fromVector([P2P_BASE_MESSAGE, message]);
-      let msg = Message.fromVector(['PeerMessage', message]);
+      const msg = Message.fromVector(['PeerMessage', message]);
 
       try {
         this.sendToSocket(peer.address, msg);
@@ -928,7 +928,7 @@ class Peer extends Actor {
     if (!message) message = '';
     if (typeof message !== 'string') message = JSON.stringify(message);
 
-    let id = crypto.createHash('sha256').update(message).digest('hex');
+    const id = crypto.createHash('sha256').update(message).digest('hex');
 
     if (this.messages.has(id)) {
       this.log('attempted to broadcast duplicate message');
@@ -938,10 +938,10 @@ class Peer extends Actor {
       this.messages.add(id);
     }
 
-    for (let id in this.peers) {
-      let peer = this.peers[id];
+    for (const id in this.peers) {
+      const peer = this.peers[id];
       // TODO: select type byte for state updates
-      let msg = Message.fromVector([type, message]);
+      const msg = Message.fromVector([type, message]);
       this.sendToSocket(peer.address, msg);
     }
   }
@@ -962,7 +962,7 @@ class Peer extends Actor {
         const complete = function () {
           self.emit('log', `Now listening on ${address} [!!!]`);
           return resolve(address);
-        }
+        };
 
         if (!self.settings.upnp) {
           return complete();

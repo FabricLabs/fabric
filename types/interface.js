@@ -105,7 +105,7 @@ class Interface extends Service {
     delete solution['@data'];
     delete solution['@entity'];
     delete solution['@preimage'];
-    delete solution['observer'];
+    delete solution.observer;
 
     const state = new Entity(solution.state);
     solution.state = state.id;
@@ -186,7 +186,7 @@ class Interface extends Service {
 
   async _handleStateChange (change) {
     this.log('[FABRIC:INTERFACE]', 'Received State change:', change);
-    let data = JSON.stringify({ changes: change });
+    const data = JSON.stringify({ changes: change });
     this.emit('transaction', Message.fromVector(['Transaction', data]));
     return 1;
   }

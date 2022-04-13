@@ -168,7 +168,7 @@ class Fabric extends Service {
     if (!service) return new Error('Service must be provided.');
 
     try {
-      let name = service.name || service.constructor.name;
+      const name = service.name || service.constructor.name;
       this.modules[name.toLowerCase()] = service;
       this.emit('message', {
         '@type': 'ServiceRegistration',
@@ -182,9 +182,9 @@ class Fabric extends Service {
   }
 
   async enable (name) {
-    let self = this;
+    const self = this;
     let Module = null;
-    let config = Object.assign({
+    const config = Object.assign({
       name: name,
       path: `./stores/${name}`
     }, this.config[name]);
@@ -211,7 +211,7 @@ class Fabric extends Service {
         '@data': { name: name }
       });
     } catch (E) {
-      console.error(`exceptioning:`, E);
+      console.error('exceptioning:', E);
     }
 
     return this;
@@ -235,7 +235,7 @@ class Fabric extends Service {
    * @return {Stack}
    */
   push (value) {
-    let name = value.constructor.name;
+    const name = value.constructor.name;
     if (name !== 'Vector') value = new Vector(value)._sign();
     this.machine.script.push(value);
     return this.machine.script;
@@ -249,18 +249,18 @@ class Fabric extends Service {
 
   define (name, description) {
     this.log(`Defining resource "${name}":`, description);
-    let vector = new Fabric.State(description);
-    let resource = new Fabric.Resource(name, description);
-    this.log(`Resource:`, resource);
-    this.log(`Resource as vector:`, vector);
+    const vector = new Fabric.State(description);
+    const resource = new Fabric.Resource(name, description);
+    this.log('Resource:', resource);
+    this.log('Resource as vector:', vector);
     return resource;
   }
 
   identify (vector) {
     if (!vector) vector = {};
 
-    let self = this;
-    let key = new Key();
+    const self = this;
+    const key = new Key();
 
     self.identity = { key };
 
@@ -281,18 +281,18 @@ class Fabric extends Service {
   send (target, message) {
     // console.log('sending:', target, message);
     return this.emit('message', {
-      'target': target,
-      'object': message
+      target: target,
+      object: message
     });
   }
 
   broadcast (msg, data) {
-    var self = this;
+    const self = this;
 
     self.emit(msg, data);
 
     Object.keys(self.peers).forEach(function tell (id) {
-      var peer = self.peers[id];
+      const peer = self.peers[id];
       peer.send(msg);
     });
 
@@ -306,7 +306,7 @@ class Fabric extends Service {
    * @return {Fabric}        Returns itself.
    */
   trust (source) {
-    let self = this;
+    const self = this;
 
     this.warn('[TRUST]', 'trusting:', typeof source);
 
@@ -357,10 +357,10 @@ class Fabric extends Service {
     });
 
     source.on('message', async function (msg) {
-      let now = Date.now();
-      let id = [now, msg.actor, msg.target, msg.object].join('/');
-      let hash = crypto.createHash('sha256').update(id).digest('hex');
-      let message = {
+      const now = Date.now();
+      const id = [now, msg.actor, msg.target, msg.object].join('/');
+      const hash = crypto.createHash('sha256').update(id).digest('hex');
+      const message = {
         id: [source.name, 'messages', (msg.id || hash)].join('/'),
         actor: [source.name, 'actors', msg.actor].join('/'),
         target: [source.name, 'channels', msg.target].join('/'),
@@ -375,7 +375,7 @@ class Fabric extends Service {
       this.log('message:', message);
       self.emit('message', message);
 
-      let response = await self.parse(message);
+      const response = await self.parse(message);
       if (response) {
         await source.send(msg.target, response, {
           parent: message

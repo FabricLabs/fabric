@@ -39,16 +39,16 @@ class Router extends Scribe {
     if (!msg.actor || !msg.object || !msg.target) return null;
     if (typeof msg.object !== 'string') return null;
 
-    let output = [];
-    let parts = msg.object
+    const output = [];
+    const parts = msg.object
       .split(/\s+/g)
       .filter(x => x.charAt(0) === this.settings.trigger)
       .map(x => x.substr(1));
 
-    for (let i in parts) {
-      let token = parts[i];
-      let command = token.toLowerCase();
-      let handler = this.handlers[command];
+    for (const i in parts) {
+      const token = parts[i];
+      const command = token.toLowerCase();
+      const handler = this.handlers[command];
       let result = null;
 
       if (handler) {

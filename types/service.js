@@ -53,7 +53,7 @@ class Service extends Actor {
       networking: true,
       persistent: false,
       interval: 60000, // Mandatory Checkpoint Interval
-      verbosity: 2, // 0 none, 1 error, 2 warning, 3 notice, 4 debug
+      verbosity: 2 // 0 none, 1 error, 2 warning, 3 notice, 4 debug
       // TODO: export this as the default data in `inputs/fabric.json`
       // If the sha256(JSON.stringify(this.data)) is equal to this, it's
       // considered a valid Fabric object (for now!)
@@ -178,9 +178,9 @@ class Service extends Actor {
   }
 
   static fromName (name) {
-    let local = `services/${name}`;
-    let deep = `/../node_modules/@fabric/core/${local}.js`;
-    let fallback = path.dirname(require.main.filename) + deep;
+    const local = `services/${name}`;
+    const deep = `/../node_modules/@fabric/core/${local}.js`;
+    const fallback = path.dirname(require.main.filename) + deep;
     let plugin = null;
 
     try {
@@ -404,7 +404,7 @@ class Service extends Actor {
   }
 
   toString () {
-    let entity = new Entity(this.state);
+    const entity = new Entity(this.state);
     return entity.toString();
   }
 
@@ -469,8 +469,8 @@ class Service extends Actor {
     if (!msg['@type']) throw new Error('Message must have a @type property.');
     if (!msg['@data']) throw new Error('Message must have a @data property.');
 
-    for (let name in this.clients) {
-      let target = this.clients[name];
+    for (const name in this.clients) {
+      const target = this.clients[name];
       console.log('[FABRIC:SERVICE]', 'Sending broadcast to client:', target);
     }
 
@@ -491,8 +491,8 @@ class Service extends Actor {
     if (this.definitions[msg.type]) {
       console.log('[FABRIC:SERVICE]', this.name, 'received a well-defined message type from message in requested route:', msg);
 
-      let handler = this.definitions[msg.type].handler;
-      let state = handler.apply(this.state, [msg]);
+      const handler = this.definitions[msg.type].handler;
+      const state = handler.apply(this.state, [msg]);
 
       console.log('sample:', state);
       console.log('sample.channels:', state.channels);
@@ -500,7 +500,7 @@ class Service extends Actor {
 
       result = state;
 
-      let commit = await this.commit();
+      const commit = await this.commit();
       console.log('commit:', commit);
     }
 
@@ -628,14 +628,14 @@ class Service extends Actor {
     let result = null;
     if (typeof path !== 'string') return null;
 
-    let parts = path.split('/');
-    let list = `/${parts[1]}`;
-    let name = crypto.createHash('sha256').update(list).digest('hex');
+    const parts = path.split('/');
+    const list = `/${parts[1]}`;
+    const name = crypto.createHash('sha256').update(list).digest('hex');
 
     if (path === '/') return this.state;
     if (this.collections[name]) {
       if (parts[2]) {
-        let inner = this.collections[name].filter((x) => {
+        const inner = this.collections[name].filter((x) => {
           return (x.address === parts[2]);
         })[0];
         return inner;
@@ -690,7 +690,7 @@ class Service extends Actor {
     // always use locally computed values
     data.address = hash;
 
-    let object = new Entity(data);
+    const object = new Entity(data);
     let collection = null;
     let memory = null;
 
@@ -824,7 +824,7 @@ class Service extends Actor {
     path.write(channel);
     payload.write(message);
 
-    const msg = Buffer.concat([ path, payload ]);
+    const msg = Buffer.concat([path, payload]);
     const hash = crypto.createHash('sha256').update(msg).digest('hex');
 
     checksum.write(hash);
@@ -915,13 +915,13 @@ class Service extends Actor {
 
   async _getActor (id) {
     if (!id) return this.error('Parameter "id" is required.');
-    let path = pointer.escape(id);
+    const path = pointer.escape(id);
     return this._GET(`/actors/${path}`);
   }
 
   async _getChannel (id) {
     if (!id) return this.error('Parameter "id" is required.');
-    let target = pointer.escape(id);
+    const target = pointer.escape(id);
     return this._GET(`/channels/${target}`);
   }
 
@@ -1094,7 +1094,7 @@ class Service extends Actor {
         self.emit('log', `Registering actor on service "${name}": ${JSON.stringify(identity)}`);
 
         try {
-          let registration = await self.services[name]._registerActor(identity);
+          const registration = await self.services[name]._registerActor(identity);
           self.emit('log', `Registered Actor: ${JSON.stringify(registration, null, '  ')}`);
         } catch (exception) {
           self.emit('error', `Error from service "${name}" during _registerActor: ${exception}`);

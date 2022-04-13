@@ -14,21 +14,21 @@ describe('@fabric/core/types/app', function () {
     it('should expose a constructor', function () {
       assert(Scribe instanceof Function);
     });
-    
+
     xit('should inherit to a stack', function () {
-      let parent = new Scribe({ namespace: 'parent' });
-      let scribe = new Scribe();
-  
+      const parent = new Scribe({ namespace: 'parent' });
+      const scribe = new Scribe();
+
       scribe.inherits(parent);
-  
+
       console.log('scribe stack:', scribe.stack);
       assert.equal(scribe.stack[0], 'parent');
     });
-    
+
     xit('should log some series of tags', function () {
-      let scribe = new Scribe();
-      let result = scribe.log('debug', 'messaging', 'some data');
-  
+      const scribe = new Scribe();
+      const result = scribe.log('debug', 'messaging', 'some data');
+
       assert.ok(result);
     });
   });

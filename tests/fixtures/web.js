@@ -6,21 +6,21 @@ global.LOCAL_SERVER_CONFIG = {
 
 const http = require('http');
 
-class Server{
-  constructor(){
+class Server {
+  constructor () {
     this.server = http.createServer((req, res) => {
       res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({status:200}));
+      res.end(JSON.stringify({ status: 200 }));
     });
   }
 
-  async start(){
+  async start () {
     return this.server.listen(LOCAL_SERVER_CONFIG.port);
   }
 
-  async stop(){
+  async stop () {
     return this.server.close();
   }
 }
 
-module.exports = {Server}
+module.exports = { Server };

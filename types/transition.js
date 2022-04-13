@@ -40,15 +40,15 @@ class Transition extends Entity {
   }
 
   static between (origin, target) {
-    let x = new Entity(origin);
-    let y = new Entity(target);
+    const x = new Entity(origin);
+    const y = new Entity(target);
 
-    let actor = Object.assign({}, origin);
-    let observer = monitor.observe(actor);
+    const actor = Object.assign({}, origin);
+    const observer = monitor.observe(actor);
 
     Object.assign(actor, target);
 
-    let transition = new Transition({
+    const transition = new Transition({
       origin: x.id,
       target: y.id,
       changes: monitor.generate(observer)
@@ -58,9 +58,9 @@ class Transition extends Entity {
   }
 
   fromTarget (target) {
-    let base = new Entity();
-    let entity = this._describeTarget(target);
-    let transition = new Transition({
+    const base = new Entity();
+    const entity = this._describeTarget(target);
+    const transition = new Transition({
       origin: base.id,
       target: entity.id
     });
@@ -72,8 +72,8 @@ class Transition extends Entity {
     if (!state) throw new Error('State must be provided.');
     if (!(state instanceof Entity)) throw new Error('State not of known Entity type.');
 
-    let instance = Object.assign({}, state);
-    let observer = monitor.observe(instance);
+    const instance = Object.assign({}, state);
+    const observer = monitor.observe(instance);
 
     try {
       monitor.applyPatch(instance, this._state.changes);
@@ -81,7 +81,7 @@ class Transition extends Entity {
       console.error('Could not apply changes:', E);
     }
 
-    let changes = monitor.generate(observer);
+    const changes = monitor.generate(observer);
     // console.log('changes:', changes);
     return instance;
   }
@@ -103,7 +103,7 @@ class Transition extends Entity {
 
   _describeTarget (target) {
     if (!target) throw new Error('No target specified.');
-    let entity = new Entity(target);
+    const entity = new Entity(target);
     this._setTarget(entity.id);
     return entity;
   }

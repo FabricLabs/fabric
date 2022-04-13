@@ -113,7 +113,7 @@ class Chain extends Ledger {
 
   async attach (application) {
     if (!application.store) {
-      this.emit('error', `Application has no "store" property.`);
+      this.emit('error', 'Application has no "store" property.');
     } else {
       this.store = application.store;
     }
@@ -234,9 +234,9 @@ class Chain extends Ledger {
   }
 
   validate (chain) {
-    let valid = false;
+    const valid = false;
     for (let i = 0; i < chain.height; i++) {
-      let block = chain.blocks[i];
+      const block = chain.blocks[i];
     }
     return valid;
   }

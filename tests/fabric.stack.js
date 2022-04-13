@@ -12,7 +12,7 @@ describe('@fabric/core/types/stack', function () {
     });
 
     it('can restore state from an Array-like object', function () {
-      let stack = new Fabric.Stack(['test']);
+      const stack = new Fabric.Stack(['test']);
       // console.log('stack:', stack);
       // console.log('stack.render():', stack.render());
 
@@ -22,7 +22,7 @@ describe('@fabric/core/types/stack', function () {
 
     xit('can instantiate from a serialized state', function () {
       // TODO: migrate to Stack
-      let stack = Fabric.Vector.fromObjectString('{ "0": { "type": "Buffer", "data": [0, 0, 0, 0 ] } }');
+      const stack = Fabric.Vector.fromObjectString('{ "0": { "type": "Buffer", "data": [0, 0, 0, 0 ] } }');
       assert.equal(stack instanceof Array, true);
       assert.equal(stack[0] instanceof Buffer, true);
       assert.equal(stack[0].toString('hex'), '00000000');
@@ -30,10 +30,10 @@ describe('@fabric/core/types/stack', function () {
     });
 
     xit('can push an element onto the stack', function () {
-      let stack = new Fabric.Stack();
+      const stack = new Fabric.Stack();
 
-      let one = stack.push('foo');
-      let two = stack.push('bar');
+      const one = stack.push('foo');
+      const two = stack.push('bar');
 
       assert.equal(one, 1);
       assert.equal(two, 2);
@@ -42,12 +42,12 @@ describe('@fabric/core/types/stack', function () {
     });
 
     xit('mimics JavaScript semantics', function () {
-      let stack = new Fabric.Stack();
+      const stack = new Fabric.Stack();
 
       stack.push('foo');
       stack.push('bar');
 
-      let last = stack.pop();
+      const last = stack.pop();
 
       assert.equal(last, 'bar');
     });

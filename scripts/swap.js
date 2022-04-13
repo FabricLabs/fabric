@@ -67,7 +67,7 @@ async function main (input = {}) {
     amount: BID_VALUE,
     script: aliceOffer,
     destination: aliceRedeemAddress,
-    inputs: [ aliceUTXOs[0] ],
+    inputs: [aliceUTXOs[0]],
     constraints: {
       blocktime: startHeightA + MIN_SWAP_BLOCKS
     }

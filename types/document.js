@@ -22,10 +22,10 @@ class Document extends Vector {
    * @return {Promise}       Promise which resolves on compilation.
    */
   async compile (input) {
-    let vector = new Vector(input)._sign();
-    let contract = [
+    const vector = new Vector(input)._sign();
+    const contract = [
       `extends ${input[0]}`,
-      `block body`,
+      'block body',
       `  ${input[1]}(state="${vector.id}") {{state}}`
     ].join('\n');
 

@@ -25,7 +25,7 @@ describe('@fabric/core/types/block', function () {
     });
 
     xit('can smoothly create a new block from data', function () {
-      let block = new Block({
+      const block = new Block({
         name: 'fun'
       });
       assert.strictEqual(block.id, '4636f10c63fef5a1e0e5206358afff993e212a032fba091cf282c9bf3d35da85');

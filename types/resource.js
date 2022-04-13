@@ -21,7 +21,7 @@ class Resource extends Store {
 
     this['@data'] = definition;
     this.name = definition.name || 'Radical';
-    this.names = [ this.name, pluralize(this.name) ];
+    this.names = [this.name, pluralize(this.name)];
     this.definition = definition;
 
     this.routes = Object.assign({
@@ -38,7 +38,7 @@ class Resource extends Store {
   }
 
   static asStruct () {
-    var obj = this.prototype;
+    const obj = this.prototype;
     obj.name = this.name;
     return obj;
   }
@@ -70,9 +70,9 @@ class Resource extends Store {
    * @return {Vector}     Resulting Vector with deterministic identifier.
    */
   async create (obj) {
-    let self = this;
-    let vector = new State(obj);
-    let collection = await self.store._POST(self.routes.list, vector['@data']);
+    const self = this;
+    const vector = new State(obj);
+    const collection = await self.store._POST(self.routes.list, vector['@data']);
     return vector;
   }
 
@@ -83,17 +83,17 @@ class Resource extends Store {
    * @return {Vector}        Resulting Vector instance with updated identifier.
    */
   async update (id, update) {
-    let self = this;
-    let path = `${self.routes.list}/${id}`;
-    let vector = new State(update);
-    let patches = self.store._PATCH(path, update);
-    let result = self.store._GET(path);
+    const self = this;
+    const path = `${self.routes.list}/${id}`;
+    const vector = new State(update);
+    const patches = self.store._PATCH(path, update);
+    const result = self.store._GET(path);
     return result;
   }
 
   async query (inquiry) {
-    let self = this;
-    let collection = await self.store._GET(self.routes.list);
+    const self = this;
+    const collection = await self.store._GET(self.routes.list);
     return collection;
   }
 

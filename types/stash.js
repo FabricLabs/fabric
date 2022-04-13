@@ -32,15 +32,15 @@ Stash.prototype.open = function load () {
 };
 
 Stash.prototype.get = async function GET (key) {
-  var self = this;
-  var value = await self.db.getItem(key);
+  const self = this;
+  const value = await self.db.getItem(key);
   if (!value) return null;
   // if (typeof value !== 'string') return JSON.parse(value);
   return value;
 };
 
 Stash.prototype.set = async function PUT (key, value) {
-  var self = this;
+  const self = this;
   if (typeof value !== 'string') {
     value = self._serialize(value);
   }

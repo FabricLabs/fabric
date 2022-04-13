@@ -123,7 +123,7 @@ describe('@fabric/core/types/chain', function () {
         genesis: tree.verify(proofs.genesis, sample[0], root),
         'blocks/1': tree.verify(proofs['blocks/1'], sample[1], root),
         'blocks/2': tree.verify(proofs['blocks/2'], sample[2], root),
-        invalid: tree.verify(proofs['genesis'], Buffer.alloc(32), root)
+        invalid: tree.verify(proofs.genesis, Buffer.alloc(32), root)
       };
 
       assert.ok(chain);

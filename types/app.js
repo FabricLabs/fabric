@@ -191,7 +191,7 @@ class App extends Service {
    * @return {App}           The configured application as deferred to `authority`.
    */
   async defer (authority) {
-    let self = this;
+    const self = this;
     let resources = {};
 
     console.warn('[APP]', 'deferring authority:', authority);
@@ -253,12 +253,12 @@ class App extends Service {
    * @return {App}           Configured instance of the Application.
    */
   consume (resources) {
-    let self = this;
+    const self = this;
 
     self.element.resources = resources;
 
-    for (let key in resources) {
-      let def = resources[key];
+    for (const key in resources) {
+      const def = resources[key];
       self.define(def.name, def);
     }
 
@@ -273,7 +273,7 @@ class App extends Service {
    */
   envelop (selector) {
     try {
-      let element = document.querySelector(selector);
+      const element = document.querySelector(selector);
 
       if (!element) {
         this.log('[FABRIC:APP]', 'envelop()', 'could not find element:', selector);

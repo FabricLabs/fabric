@@ -24,7 +24,7 @@ class Datastore extends Store {
   }
 
   route (path) {
-    let parts = path.split('/');
+    const parts = path.split('/');
     if (!parts.length) return '/';
     switch (parts.length) {
       case 1:
@@ -41,21 +41,21 @@ class Datastore extends Store {
   }
 
   _loadFrom (dir) {
-    let self = this;
-    let files = fs.readdirSync(dir);
+    const self = this;
+    const files = fs.readdirSync(dir);
 
     this.log('_loadFrom', dir, 'files:', files);
 
     for (let i = 0; i < files.length; i++) {
-      let content = fs.readFileSync(files[i]);
+      const content = fs.readFileSync(files[i]);
       self.log('_loadFrom', 'content:', content);
       self['@data'][files[i]] = content;
     }
   }
 
   _apply (delta) {
-    let datastore = this;
-    let document = monitor.applyPatch(datastore['@data'], delta);
+    const datastore = this;
+    const document = monitor.applyPatch(datastore['@data'], delta);
 
     datastore._sign();
     document.commit();
@@ -67,8 +67,8 @@ class Datastore extends Store {
   }
 
   ping () {
-    let datastore = this;
-    let ping = new Transaction({
+    const datastore = this;
+    const ping = new Transaction({
       entropy: Math.random(),
       timestamp: Date.now(),
       identity: datastore.identity
@@ -86,8 +86,8 @@ class Datastore extends Store {
   }
 
   spam () {
-    var datastore = this;
-    for (var i = 0; i < 10; i++) {
+    const datastore = this;
+    for (let i = 0; i < 10; i++) {
       datastore.ping();
     }
   }

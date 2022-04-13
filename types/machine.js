@@ -153,7 +153,7 @@ class Machine extends Actor {
     const changes = monitor.generate(self.observer);
 
     if (changes && changes.length) {
-      let vector = new State({
+      const vector = new State({
         '@type': 'Change',
         '@data': changes,
         method: 'patch',

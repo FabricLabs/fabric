@@ -50,7 +50,7 @@ Walker.prototype._explore = function crawl (path, map = {}) {
  */
 Walker.prototype._define = async function crawl (dir, map = {}) {
   const self = this;
-  var list = [];
+  let list = [];
 
   if (dir instanceof Array) {
     list = dir.map(function (x) {
@@ -62,11 +62,11 @@ Walker.prototype._define = async function crawl (dir, map = {}) {
     });
   }
 
-  for (var i = 0; i < list.length; i++) {
-    let file = list[i];
-    let isDir = fs.statSync(file).isDirectory();
-    let content = (isDir) ? await self._define(file, map) : fs.readFileSync(file);
-    let result = content.toString('utf8');
+  for (let i = 0; i < list.length; i++) {
+    const file = list[i];
+    const isDir = fs.statSync(file).isDirectory();
+    const content = (isDir) ? await self._define(file, map) : fs.readFileSync(file);
+    const result = content.toString('utf8');
 
     map[file] = result;
   }

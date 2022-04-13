@@ -54,15 +54,15 @@ class CircuitView extends Component {
       }])
     }));
 
-    let transition = d3.transition().delay(100).duration(1000);
+    const transition = d3.transition().delay(100).duration(1000);
     d3.select('#circuit-svg').style('width', '100%').style('width', '500px').graphviz().transition(transition).renderDot(this.circuit.dot);
     d3.select('#circuit-svg svg').style('width', '100%').style('width', '500px');
   }
 
   _loadFromPath () {
-    let path = document.location.pathname;
-    let parts = path.split('/')[2];
-    let wires = parts.split(OP_SEPARATOR).map((instruction, i) => {
+    const path = document.location.pathname;
+    const parts = path.split('/')[2];
+    const wires = parts.split(OP_SEPARATOR).map((instruction, i) => {
       return {
         name: instruction,
         from: instruction,
@@ -84,8 +84,8 @@ class CircuitView extends Component {
 
     window.app.circuit._registerMethod('_advanceCircuit', this._advanceCircuit.bind(this));
 
-    let svg = this.querySelector('#circuit-svg');
-    let circuit = this._loadFromPath();
+    const svg = this.querySelector('#circuit-svg');
+    const circuit = this._loadFromPath();
 
     return this;
   }
