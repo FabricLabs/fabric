@@ -1,5 +1,29 @@
 'use strict';
 
+const {
+  BITCOIN_GENESIS
+} = require('../constants');
+
+// External Dependencies
+const jayson = require('jayson/lib/client');
+const monitor = require('fast-json-patch');
+
+// crypto support libraries
+// TODO: replace with  `secp256k1`
+const ECPairFactory = require('ecpair').default;
+const ecc = require('tiny-secp256k1');
+const bip65 = require('bip65');
+const bip68 = require('bip68');
+
+const ECPair = ECPairFactory(ecc);
+
+// TODO: remove bcoin
+const bcoin = require('bcoin/lib/bcoin-browser');
+const bitcoin = require('bitcoinjs-lib');
+
+// Services
+const ZMQ = require('./zmq');
+
 // Types
 const Actor = require('../types/actor');
 const Collection = require('../types/collection');
@@ -15,18 +39,14 @@ const Consensus = require('../types/consensus');
 const BitcoinBlock = require('../types/bitcoin/block');
 const BitcoinTransaction = require('../types/bitcoin/transaction');
 
-// External Dependencies
-const jayson = require('jayson');
-// For the browser
-// ATTN: breaks after 1.0.2
-// const bcoin = require('bcoin/lib/bcoin-browser');
-
-// For node...
-const bcoin = require('bcoin');
-
-// Used to connect to the Bitcoin network directly
+// Convenience Labels
+const Amount = bcoin.Amount;
+const Coin = bcoin.Coin;
 const FullNode = bcoin.FullNode;
+const KeyRing = bcoin.KeyRing;
+const MTX = bcoin.MTX;
 const NetAddress = bcoin.net.NetAddress;
+const Script = bcoin.Script;
 
 /**
  * Manages interaction with the Bitcoin network.
@@ -53,15 +73,19 @@ class Bitcoin extends Service {
     this.settings = Object.assign({
       name: '@services/bitcoin',
       mode: 'rpc',
+      genesis: BITCOIN_GENESIS,
       network: 'regtest',
-      path: './stores/bitcoin-regtest',
+      path: './stores/bitcoin',
+      mining: false,
       listen: false,
       fullnode: false,
+      zmq: {
+        host: 'localhost',
+        port: 29000
+      },
       nodes: ['127.0.0.1'],
       seeds: ['127.0.0.1'],
-      servers: [
-        'http://username:password@localhost:18443'
-      ],
+      servers: [],
       peers: [],
       port: 18444,
       interval: 10 * 60 * 1000, // every 10 minutes, write a checkpoint
@@ -75,20 +99,24 @@ class Bitcoin extends Service {
     this.network = bcoin.Network.get(this.settings.network);
 
     // Internal Services
+    this.observer = null;
     this.provider = new Consensus({ provider: 'bcoin' });
     this.wallet = new Wallet(this.settings);
     // this.chain = new Chain(this.settings);
 
     // ## Collections
+    // ### Addresses
+    this.addresses = [];
+
     // ### Blocks
     this.blocks = new Collection({
       name: 'Block',
       type: BitcoinBlock,
       methods: {
-        'create': this._prepareBlock.bind(this)
+        create: this._prepareBlock.bind(this)
       },
       listeners: {
-        'create': this._handleCommittedBlock.bind(this)
+        create: this._handleCommittedBlock.bind(this)
       }
     });
 
@@ -97,20 +125,14 @@ class Bitcoin extends Service {
       name: 'Transaction',
       type: BitcoinTransaction,
       methods: {
-        'create': this._prepareTransaction.bind(this)
+        create: this._prepareTransaction.bind(this)
       },
       listeners: {
-        'create': this._handleCommittedTransaction.bind(this)
+        create: this._handleCommittedTransaction.bind(this)
       }
     });
 
     if (this.settings.fullnode) {
-      let logLevel = 'none';
-
-      if (this.settings.verbosity > 2) {
-        logLevel = 'debug';
-      }
-
       this.fullnode = new FullNode({
         network: this.settings.network
       });
@@ -123,18 +145,6 @@ class Bitcoin extends Service {
       hasWitness: () => {
         return false;
       }
-    });
-
-    // Bitcoin events
-    this.peer.on('error', this._handlePeerError.bind(this));
-    this.peer.on('packet', this._handlePeerPacket.bind(this));
-    // NOTE: we always ask for genesis block on peer open
-    this.peer.on('open', () => {
-      console.log('PEER IS OPEN:', this);
-      // triggers block event
-      // pre-seeds genesis block for the rest of us.
-      let block = this.peer.getBlock([this.network.genesis.hash]);
-      console.log('block recovered:', block);
     });
 
     // Attach to the network
@@ -151,6 +161,9 @@ class Bitcoin extends Service {
       workers: true
     });
 
+    // TODO: import ZMQ settings
+    this.zmq = new ZMQ();
+
     // Define Bitcoin P2P Messages
     this.define('VersionPacket', { type: 0 });
     this.define('VerAckPacket', { type: 1 });
@@ -160,6 +173,19 @@ class Bitcoin extends Service {
     this.define('BlockPacket', { type: 13 });
     this.define('FeeFilterPacket', { type: 21 });
     this.define('SendCmpctPacket', { type: 22 });
+
+    this._state = {
+      status: 'PAUSED',
+      balances: { // safe up to 2^53-1 (all satoshis can be represented in 52 bits!)
+        confirmed: 0,
+        unconfirmed: 0
+      },
+      chain: [],
+      blocks: {},
+      headers: [],
+      genesis: this.settings.genesis,
+      tip: this.settings.genesis
+    };
 
     // Chainable
     return this;
@@ -179,6 +205,14 @@ class Bitcoin extends Service {
    */
   static get MutableTransaction () {
     return bcoin.TX;
+  }
+
+  get balance () {
+    return this._state.balances.confirmed;
+  }
+
+  get best () {
+    return this._state.tip;
   }
 
   /**
@@ -203,7 +237,74 @@ class Bitcoin extends Service {
    * Chain height (`=== length - 1`)
    */
   get height () {
-    return this.fullnode.chain.height;
+    return this._state.height;
+  }
+
+  get headers () {
+    return this._state.headers;
+  }
+
+  set headers (value) {
+    this._state.headers = value;
+  }
+
+  get lib () {
+    return bitcoin;
+  }
+
+  get networks () {
+    return {
+      'mainnet': bitcoin.networks.mainnet,
+      'regtest': bitcoin.networks.regtest,
+      'testnet': bitcoin.networks.testnet
+    };
+  }
+
+  set best (best) {
+    if (best === this.best) return this.best;
+    if (best !== this.best) {
+      this._state.tip = best;
+      this.emit('tip', best);
+    }
+  }
+
+  set height (value) {
+    this._state.height = parseInt(value);
+    this.commit();
+  }
+
+  validateAddress (address) {
+    try {
+      bitcoin.address.toOutputScript(address, this.networks[this.settings.network]);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  async tick () {
+    const self = this;
+    const now = (new Date()).toISOString();
+    ++this._clock;
+
+    Promise.all([
+      this._syncBestBlock(),
+      this._checkAllTargetBalances()
+    ]).catch((exception) => {
+      self.emit('error', `Unable to synchronize: ${exception}`);
+    }).then((output) => {
+      self.emit('log', `Tick output: ${JSON.stringify(output, null, '  ')}`);
+      const beat = {
+        clock: self._clock,
+        created: now,
+        state: self._state
+      };
+
+      self.emit('beat', beat);
+      self.commit();
+    });
+
+    return this;
   }
 
   /**
@@ -222,8 +323,48 @@ class Bitcoin extends Service {
     console.log('[SERVICES:BITCOIN]', 'Broadcasted!');
   }
 
+  async processSpendMessage (message) {
+    return this._processSpendMessage(message);
+  }
+
+  async _processRawBlock (raw) {
+    const block = bcoin.Block.fromRaw(raw);
+    console.log('rawBlock:', block);
+  }
+
+  async _processSpendMessage (message) {
+    if (!message) throw new Error('Message is required.');
+    if (!message.amount) throw new Error('Message must provide an amount.');
+    if (!message.destination) throw new Error('Message must provide a destination.');
+
+    if (message.amount instanceof String) {
+      message.amount = message.amount.fixed().toPrecision(8); // TODO: evaluate precision behavior
+    }
+
+    const actor = new Actor(message);
+     // sendtoaddress "address" amount ( "comment" "comment_to" subtractfeefromamount replaceable conf_target "estimate_mode" avoid_reuse fee_rate verbose )
+    const txid = await this._makeRPCRequest('sendtoaddress', [
+      message.destination,
+      message.amount,
+      message.comment || `_processSendMessage ${actor.id} ${message.created}`,
+      message.recipient || 'Unknown Recipient',
+      false,
+      false,
+      1,
+      'conservative',
+      true
+    ]);
+
+    if (txid.error) {
+      this.emit('error', `Could not create transaction: ${txid.error}`);
+      return false;
+    }
+
+    return txid;
+  }
+
   async _heartbeat () {
-    await this._checkRPCBlockNumber();
+    await this._syncBestBlock();
   }
 
   async _prepareBlock (obj) {
@@ -476,7 +617,7 @@ class Bitcoin extends Service {
   async _handleConnectMessage (entry, block) {
     try {
       const count = await this.wallet.database.addBlock(entry, block.txs);
-      this.emit('message', `Added block to wallet database, transactions added: ${count}`);
+      this.emit('log', `Added block to wallet database, transactions added: ${count}`);
     } catch (exception) {
       this.emit('error', `Could not add block to WalletDB: ${exception}`);
     }
@@ -531,6 +672,56 @@ class Bitcoin extends Service {
     this.emit('message', { '@type': 'ServiceMessage', '@data': msg });
 
     return 1;
+  }
+
+  async _dumpKeyPair (address) {
+    const wif = await this._makeRPCRequest('dumpprivkey', [address]);
+    const pair = ECPair.fromWIF(wif, this.networks[this.settings.network]);
+    return pair;
+  }
+
+  async _dumpPrivateKey (address) {
+    const wif = await this._makeRPCRequest('dumpprivkey', [address]);
+    const pair = ECPair.fromWIF(wif, this.networks[this.settings.network]);
+    return pair.privateKey;
+  }
+
+  async _loadPrivateKey (key) {
+    return this._makeRPCRequest('importprivkey', [key]);
+  }
+
+  async _loadWallet (name) {
+    const actor = new Actor({ content: name });
+    const created = await this._makeRPCRequest('createwallet', [
+      actor.id,
+      false,
+      false, // blank (use sethdseed)
+      '', // passphrase
+      true, // avoid reuse
+      false, // descriptors
+    ]);
+
+    const wallet = await this._makeRPCRequest('loadwallet', [actor.id]);
+
+    /* if (created.error && wallet.error) {
+      return this.emit('error', `Could not create or load wallet: ${created.error || wallet.error}`);
+    } */
+
+    try {
+      this.addresses = await this._listAddresses();
+    } catch (exception) {}
+
+    // console.log('addresses:', this.addresses);
+    if (this.addresses.error) this.addresses = [];
+
+    if (!this.addresses.length) {
+      const address = await this.getUnusedAddress();
+      this.addresses.push(address);
+    }
+
+    return {
+      id: actor.id
+    };
   }
 
   /**
@@ -622,6 +813,51 @@ class Bitcoin extends Service {
     }
   }
 
+  async _startZMQ () {
+    const self = this;
+
+    this.zmq.on('log', async function _handleZMQLogEvent (event) {
+      self.emit('debug', `[BITCOIN:ZMQ] Log: ${event}`);
+    });
+
+    this.zmq.on('message', async function _handleZMQMessage (event) {
+      self.emit('debug', `[BITCOIN:ZMQ] Message: ${JSON.stringify(event)}`);
+
+      let data = null;
+
+      try {
+        data = JSON.parse(event.data);
+      } catch (exception) {
+        self.emit('error', 'Could not parse raw block:', event.data);
+      }
+
+      if (!data || !data.topic) return;
+
+      switch (data.topic) {
+        case 'hashblock':
+          try {
+            await self._requestBlock(data.message);
+          } catch (exception) {
+            self.emit('error', `Could not retrieve reported block: ${data.message}`);
+          }
+          break;
+        case 'rawblock':
+          try {
+            await self._processRawBlock(data.message);
+          } catch (exception) {
+            self.emit('error', `Could not retrieve reported block: ${data.message}`);
+          }
+          break;
+        default:
+          self.emit('warning', `[BITCOIN:ZMQ] Unhandled topic: ${data.topic}`);
+          break;
+      }
+    });
+
+    await this.zmq.start();
+    return this;
+  }
+
   async _startLocalNode () {
     const self = this;
 
@@ -650,12 +886,11 @@ class Bitcoin extends Service {
   async generateBlock (address) {
     let block = null;
 
-    if (!address) address = await this.wallet.getUnusedAddress();
+    if (!address) address = await this.getUnusedAddress();
 
     switch (this.settings.mode) {
       case 'rpc':
-        let address = await this._makeRPCRequest('getnewaddress');
-        await this._makeRPCRequest('generateblock', [address, []]);
+        const result = await this._makeRPCRequest('generatetoaddress', [1, address]);
         break;
       default:
         try {
@@ -663,7 +898,7 @@ class Bitcoin extends Service {
           // Add the block to our chain
           await this.fullnode.chain.add(block);
         } catch (exception) {
-          return this.emit('message', `Could not mine block: ${exception}`);
+          return this.emit('error', `Could not mine block: ${exception}`);
         }
         break;
     }
@@ -671,24 +906,38 @@ class Bitcoin extends Service {
     return block;
   }
 
-  async generateBlocks (count = 1, address) {
+  async generateBlocks (count = 1, address = this.wallet.receive) {
     const blocks = [];
-
-    if (!address) address = await this.wallet.getUnusedAddress();
 
     // Generate the specified number of blocks
     for (let i = 0; i < count; i++) {
-      blocks.push( await this.generateBlock(address) );
+      const block = await this.generateBlock(address);
+      blocks.push(block);
     }
 
     return blocks;
   }
 
+  async getChainHeight () {
+    const info = await this._makeRPCRequest('getblockchaininfo');
+    return info.blocks;
+  }
+
+  async getBalances () {
+    const balances = await this._makeRPCRequest('getbalances');
+    return balances.mine;
+  }
+
+  async getUnusedAddress () {
+    const address = await this._makeRPCRequest('getnewaddress');
+    return address;
+  }
+
   async append (raw) {
     const block = bcoin.Block.fromRaw(raw, 'hex');
-    this.emit('message', `Parsed block: ${JSON.stringify(block)}`);
+    this.emit('debug', `Parsed block: ${JSON.stringify(block)}`);
     const added = await this.fullnode.chain.add(block);
-    if (!added) this.emit('message', `Block not added to chain.`);
+    if (!added) this.emit('warning', 'Block not added to chain.');
     return added;
   }
 
@@ -704,27 +953,98 @@ class Bitcoin extends Service {
     }
   }
 
+  async _registerActor (actor) {
+    this.emit('log', `Bitcoin Actor to Register: ${JSON.stringify(actor, null, '  ')}`);
+  }
+
+  async _listAddresses () {
+    return this._makeRPCRequest('listreceivedbyaddress', [1, true]);
+  }
+
   async _makeRPCRequest (method, params = []) {
     const self = this;
     return new Promise((resolve, reject) => {
-      if (!self.rpc) return reject('RPC manager does not exist.');
-      self.rpc.request(method, params, function (err, response) {
-        if (err) return reject({ error: err, response: response });
-        return resolve(response.result);
-      });
+      if (!self.rpc) return reject(new Error('RPC manager does not exist.'));
+      try {
+        self.rpc.request(method, params, function (err, response) {
+          if (err) {
+            // TODO: replace with reject()
+            return resolve({
+              error: (err.error) ? JSON.parse(JSON.parse(err.error)) : err,
+              response: response
+            });
+          }
+
+          return resolve(response.result);
+        });
+      } catch (exception) {
+        return reject(exception);
+      }
     });
+  }
+
+  async _checkAllTargetBalances () {
+    for (let i = 0; i < this.settings.targets.length; i++) {
+      const balance = await this._getBalanceForAddress(this.settings.targets[i]);
+    }
+  }
+
+  async _getBalanceForAddress (address) {
+    return this._makeRPCRequest('getreceivedbyaddress', [address]);
+  }
+
+  async _listChainBlocks () {
+    return Object.keys(this._state.blocks);
   }
 
   async _requestBestBlockHash () {
     return this._makeRPCRequest('getbestblockhash', []);
   }
 
+  async _requestBlockHeader (hash) {
+    return this._makeRPCRequest('getblockheader', [hash]);
+  }
+
+  async _requestRawBlockHeader (hash) {
+    return this._makeRPCRequest('getblockheader', [hash, false]);
+  }
+
   async _requestBlock (hash) {
     return this._makeRPCRequest('getblock', [hash]);
   }
 
+  async _getMempool (hash) {
+    return this._makeRPCRequest('getrawmempool');
+  }
+
+  async _requestRawTransaction (hash) {
+    return this._makeRPCRequest('getrawtransaction', [hash]);
+  }
+
+  async _syncRawBlock (hash) {
+    const self = this;
+    const raw = await this._requestRawBlock(hash);
+
+    if (!self._state.blocks[hash]) {
+      self._state.blocks[hash] = raw;
+      const actor = new Actor({ raw });
+      self.emit('block', actor);
+    }
+
+    return this;
+  }
+
+  async _requestRawBlock (hash) {
+    return this._makeRPCRequest('getblock', [hash, 0]);
+  }
+
   async _requestBlockAtHeight (height) {
     return this._makeRPCRequest('getblockhash', [height]);
+  }
+
+  async _getHeaderAtHeight (height) {
+    const hash = await this._requestBlockAtHeight(height);
+    return this._makeRPCRequest('getblockheader', [hash]);
   }
 
   async _requestChainHeight () {
@@ -735,19 +1055,459 @@ class Bitcoin extends Service {
     return this._makeRPCRequest('listunspent', []);
   }
 
+  async _encodeSequenceForNBlocks (time) {
+    return bip68.encode({ blocks: time });
+  }
+
+  async _encodeSequenceTargetBlock (height) {
+    const locktime = bip65.encode({ blocks: height });
+    return bitcoin.script.number.encode(locktime).toString('hex');
+  }
+
   async _signRawTransactionWithWallet (rawTX, prevouts = []) {
     return this._makeRPCRequest('signrawtransaction', [rawTX, JSON.stringify(prevouts)]);
   }
 
-  async _checkRPCBlockNumber () {
-    try {
-      const best = await this._requestBestBlockHash();
-      if (best !== this.best) {
-        this.best = best;
-      }
-    } catch (exception) {
-      this.emit('error', `[${this.settings.name}] Could not make request to RPC host: ${JSON.stringify(exception)}`);
+  async _getUTXOSetMeta (utxos) {
+    const coins = [];
+    const keys = [];
+
+    let inputSum = 0;
+    let inputCount = 0;
+
+    for (let i = 0; i < utxos.length; i++) {
+      const candidate = utxos[i];
+      const template = {
+        hash: Buffer.from(candidate.txid, 'hex').reverse(),
+        index: candidate.vout,
+        value: Amount.fromBTC(candidate.amount).toValue(),
+        script: Script.fromAddress(candidate.address)
+      };
+
+      const c = Coin.fromOptions(template);
+      const keypair = await this._dumpKeyPair(candidate.address);
+
+      coins.push(c);
+      keys.push(keypair);
+
+      inputCount++;
+      // TODO: not rely on parseFloat
+      // use bitwise...
+      inputSum += parseFloat(template.value);
     }
+
+    return {
+      inputs: {
+        count: inputCount,
+        total: inputSum
+      }
+    };
+  }
+
+  /**
+   * Creates an unsigned Bitcoin transaction.
+   * @param {Object} options 
+   * @returns {ContractProposal} Instance of the proposal.
+   */
+  async _createContractProposal (options = {}) {
+    const mtx = new MTX();
+    const keys = [];
+    const rate = await this._estimateFeeRate();
+    const utxos = await this._listUnspent();
+    const coins = await this._getCoinsFromInputs(utxos);
+    const meta = await this._getUTXOSetMeta(utxos);
+
+    // TODO: report FundingError: Not enough funds
+    await mtx.fund(coins, {
+      rate: rate,
+      changeAddress: options.change
+    });
+
+    return {
+      change: options.change,
+      inputs: utxos,
+      keys: keys,
+      meta: meta,
+      mtx: mtx,
+      // raw: raw,
+      // tx: tx
+    };
+  }
+
+  async _createContractFromProposal (proposal) {
+    const tx = proposal.mtx.toTX();
+    const raw = tx.toRaw().toString('hex');
+    return {
+      tx: tx,
+      raw: raw
+    };
+  }
+
+  async _getCoinsFromInputs (inputs = []) {
+    const coins = [];
+    const keys = [];
+
+    let inputSum = 0;
+    let inputCount = 0;
+
+    for (let i = 0; i < inputs.length; i++) {
+      const candidate = inputs[i];
+      const template = {
+        hash: Buffer.from(candidate.txid, 'hex').reverse(),
+        index: candidate.vout,
+        value: Amount.fromBTC(candidate.amount).toValue(),
+        script: Script.fromAddress(candidate.address)
+      };
+
+      const c = Coin.fromOptions(template);
+      const keypair = await this._dumpKeyPair(candidate.address);
+
+      coins.push(c);
+      keys.push(keypair);
+
+      inputCount++;
+      // TODO: not rely on parseFloat
+      // use bitwise...
+      inputSum += parseFloat(template.value);
+    }
+
+    return coins;
+  }
+
+  async _getKeysFromCoins (coins) {
+    console.log('coins:', coins);
+  }
+
+  async _attachOutputToContract (output, contract) {
+    // TODO: add support for segwit, taproot
+    // is the scriptpubkey still set?
+    const scriptpubkey = output.scriptpubkey;
+    const value = output.value;
+    // contract.mtx.addOutput(scriptpubkey, value);
+    return contract;
+  }
+
+  async _signInputForContract (index, contract) {
+
+  }
+
+  async _signAllContractInputs (contract) {
+
+  }
+
+  async _generateScriptAddress () {
+    const script = new Script();
+    script.pushOp(bcoin.opcodes.OP_); // Segwit version
+    script.pushData(ring.getKeyHash());
+    script.compile();
+
+    return {
+      address: script.getAddress(),
+      script: script
+    };
+  }
+
+  async _estimateFeeRate (options = {}) {
+    // satoshis per kilobyte
+    // TODO: use satoshis/vbyte
+    return 10000;
+  }
+
+  async _coinSelectNaive (options = {}) {
+
+  }
+
+  async _createSwapScript (options) {
+    const sequence = await this._encodeSequenceTargetBlock(options.constraints.blocktime);
+    const asm = `
+      OP_IF OP_SHA256 ` + options.hash + ` OP_EQUALVERIFY
+        ` + options.counterparty.toString('hex') + `
+      OP_ELSE
+        ` + sequence + `
+        OP_CHECKSEQUENCEVERIFY
+        OP_DROP
+        ` + options.initiator.toString('hex') + `
+      OP_ENDIF
+      OP_CHECKSIG
+    `;
+
+    const clean = asm.trim().replace(/\s+/g, ' ');
+    return bitcoin.script.fromASM(clean);
+  }
+
+  async _createSwapTX (options) {
+    const network = this.networks[this.settings.network];
+    const tx = new bitcoin.Transaction();
+
+    tx.locktime = bip65.encode({ blocks: options.constraints.blocktime });
+
+    const input = options.inputs[0];
+    tx.addInput(Buffer.from(input.txid, 'hex').reverse(), input.vout, 0xfffffffe);
+
+    const output = bitcoin.address.toOutputScript(options.destination, network);
+    tx.addOutput(output, options.amount * 100000000);
+
+    return tx;
+  }
+
+  async _p2shForOutput (output) {
+    return bitcoin.payments.p2sh({
+      redeem: { output },
+      network: this.networks[this.settings.network]
+    });
+  }
+
+  async _spendSwapTX (options) {
+    const network = this.networks[this.settings.network];
+    const tx = options.tx;
+    const hashtype = bitcoin.Transaction.SIGHASH_ALL;
+    const sighash = tx.hashForSignature(0, options.script, hashtype);
+    const scriptsig = bitcoin.payments.p2sh({
+      redeem: {
+        input: bitcoin.script.compile([
+          bitcoin.script.signature.encode(options.signer.sign(sighash), hashtype),
+          bitcoin.opcodes.OP_TRUE
+        ]),
+        output: options.script
+      },
+      network: network
+    });
+
+    tx.setInputScript(0, scriptsig.input);
+
+    return tx;
+  }
+
+  async _createP2WPKHTransaction (options) {
+    const p2wpkh = this._createPayment(options);
+    const psbt = new bitcoin.Psbt({ network: this.networks[this.settings.network] })
+      .addInput(options.input)
+      .addOutput({
+        address: options.change,
+        value: 2e4,
+      })
+      .signInput(0, p2wpkh.keys[0]);
+
+    psbt.finalizeAllInputs();
+    const tx = psbt.extractTransaction();
+    return tx;
+  }
+
+  async _createP2WKHPayment (options) {
+    return bitcoin.payments.p2wsh({
+      pubkey: options.pubkey, 
+      network: this.networks[this.settings.network]
+    });
+  }
+
+  _createPayment (options) {
+    return bitcoin.payments.p2wpkh({
+      pubkey: options.pubkey,
+      network: this.networks[this.settings.network]
+    });
+  }
+
+  async _getInputData (options = {}) {
+    const unspent = options.input;
+    const isSegwit = true;
+    const redeemType = 'p2wpkh';
+    const raw = await this._requestRawTransaction(unspent.txid);
+    const tx = bitcoin.Transaction.fromHex(raw);
+
+    // for non segwit inputs, you must pass the full transaction buffer
+    const nonWitnessUtxo = Buffer.from(raw, 'hex');
+    // for segwit inputs, you only need the output script and value as an object.
+    const witnessUtxo = await this._getWitnessUTXO(tx.outs[unspent.vout]);
+    const mixin = isSegwit ? { witnessUtxo } : { nonWitnessUtxo };
+    const mixin2 = {};
+
+    switch (redeemType) {
+      case 'p2sh':
+        mixin2.redeemScript = payment.redeem.output;
+        break;
+      case 'p2wsh':
+        mixin2.witnessScript = payment.redeem.output;
+        break;
+      case 'p2sh-p2wsh':
+        mixin2.witnessScript = payment.redeem.redeem.output;
+        mixin2.redeemScript = payment.redeem.output;
+        break;
+    }
+
+    return {
+      hash: unspent.txId,
+      index: unspent.vout,
+      ...mixin,
+      ...mixin2,
+    };
+  }
+
+  /**
+   * Create a Partially-Signed Bitcoin Transaction (PSBT).
+   * @param {Object} options Parameters for the PSBT.
+   * @returns {PSBT} Instance of the PSBT.
+   */
+  async _buildPSBT (options = {}) {
+    const psbt = new bitcoin.Psbt({
+      network: this.networks[this.settings.network]
+    });
+
+    for (let i = 0; i < options.inputs.length; i++) {
+      const input = options.inputs[i];
+      const data = {
+        hash: input.txid,
+        index: input.vout
+      };
+
+      psbt.addInput(data);
+    }
+
+    for (let i = 0; i < options.outputs.length; i++) {
+      const output = options.outputs[i];
+      const data = {
+        address: output.address,
+        value: output.value
+      };
+
+      psbt.addOutput(data);
+    }
+
+    return psbt;
+  }
+
+  async _signAllInputs (psbt, keypair) {
+    psbt.signAllInputs(keypair);
+    return psbt;
+  }
+
+  async _finalizePSBT (psbt) {
+    return psbt.finalizeAllInputs();
+  }
+
+  async _psbtToRawTX (psbt) {
+    return psbt.extractTransaction().toHex();
+  }
+
+  async _createTX (options = {}) {
+    const psbt = await this._buildPSBT(options);
+
+    return psbt;
+  }
+
+  _getFinalScriptsForInput (inputIndex, input, script, isSegwit, isP2SH, isP2WSH) {
+    const options = {
+      inputIndex,
+      input,
+      script,
+      isSegwit,
+      isP2SH,
+      isP2WSH
+    };
+
+    const decompiled = bitcoin.script.decompile(options.script);
+    // TODO: SECURITY !!!
+    // This is a very naive implementation of a script-validating heuristic.
+    // DO NOT USE IN PRODUCTION
+    //
+    // Checking if first OP is OP_IF... should do better check in production!
+    // You may even want to check the public keys in the script against a
+    // whitelist depending on the circumstances!!!
+    // You also want to check the contents of the input to see if you have enough
+    // info to actually construct the scriptSig and Witnesses.
+    if (!decompiled || decompiled[0] !== bitcoin.opcodes.OP_IF) {
+      throw new Error(`Can not finalize input #${inputIndex}`);
+    }
+
+    const signature = (options.input.partialSig)
+      ? options.input.partialSig[0].signature
+      : undefined;
+
+    const template = {
+      network: this.networks[this.settings.network],
+      output: options.script,
+      input: bitcoin.script.compile([
+        signature,
+        bitcoin.opcodes.OP_TRUE
+      ])
+    };
+
+    let payment = null;
+
+    if (options.isP2WSH && options.isSegwit) {
+      payment = bitcoin.payments.p2wsh({
+        network: this.networks[this.settings.network],
+        redeem: template,
+      });
+    }
+
+    if (options.isP2SH) {
+      payment = bitcoin.payments.p2sh({
+        network: this.networks[this.settings.network],
+        redeem: template,
+      });
+    }
+
+    return {
+      finalScriptSig: payment.input,
+      finalScriptWitness: payment.witness && payment.witness.length > 0
+        ? this._witnessStackToScriptWitness(payment.witness)
+        : undefined
+    };
+  }
+
+  _witnessStackToScriptWitness (stack) {
+    const buffer = Buffer.alloc(0);
+
+    function writeSlice (slice) {
+      buffer = Buffer.concat([buffer, Buffer.from(slice)]);
+    }
+
+    function writeVarInt (i) {
+      const currentLen = buffer.length;
+      const varintLen = varuint.encodingLength(i);
+
+      buffer = Buffer.concat([buffer, Buffer.allocUnsafe(varintLen)]);
+      varuint.encode(i, buffer, currentLen);
+    }
+
+    function writeVarSlice (slice) {
+      writeVarInt(slice.length);
+      writeSlice(slice);
+    }
+
+    function writeVector (vector) {
+      writeVarInt(vector.length);
+      vector.forEach(writeVarSlice);
+    }
+
+    writeVector(stack);
+
+    return buffer;
+  }
+
+  async _buildTX () {
+    return new bitcoin.TransactionBuilder();
+  }
+
+  async _spendRawTX (raw) {
+    return this._makeRPCRequest('sendrawtransaction', [ raw ]);
+  }
+
+  async _syncBestBlock () {
+    const best = await this._requestBestBlockHash();
+    if (best.error) return this.emit('error', `[${this.settings.name}] Could not make request to RPC host: ${best.error}`);
+    this.best = best;
+    await this.commit();
+  }
+
+  async _syncHeaders () {
+    const height = await this._requestChainHeight();
+    for (let i = 0; i <= height; i++) {
+      const hash = await this._requestBlockAtHeight(i);
+      await this._syncHeadersForBlock(hash);
+    }
+    await this.commit();
+    return this;
   }
 
   async _syncBalanceFromOracle () {
@@ -771,64 +1531,97 @@ class Bitcoin extends Service {
     };
   }
 
-  async _syncWithRPC () {
-    const self = this;
-
-    // const genesisID = await self._requestBlockAtHeight(0);
-    // const genesis = await self._requestBlock(genesisID);
-    const height = await self._requestChainHeight();
-    // const best = await self._requestBestBlockHash();
-
-    // TODO: test and verify append() on chain length 0 sets genesis
-    /* await self.chain._setGenesis({
-      hash: genesisID
-    }); */
-
-    for (let i = 0; i <= height; i++) {
-      const blockID = await self._requestBlockAtHeight(i);
-      const block = await self._requestBlock(blockID);
-
-      const entity = new Entity({
-        hash: blockID,
-        bits: block.bits,
-        nonce: block.nonce,
-        time: block.time,
-        size: block.size,
-        parent: block.previousblockhash,
-        weight: block.weight,
-        version: block.version
-      });
-
-      self.emit('block', Message.fromVector(['BitcoinBlock', {
-        type: 'Entity',
-        data: entity.data
-      }]));
-
-      /* const posted = await self.chain.append({
-        hash: blockID,
-        bits: block.bits,
-        nonce: block.nonce,
-        time: block.time,
-        size: block.size,
-        weight: block.weight,
-        version: block.version
-      });
-
-      // TODO: subscribe to this event in CLI
-      self.emit('message', {
-        '@type': 'BlockNotification',
-        '@data': posted
-      }); */
+  async _syncChainInfoOverRPC () {
+    // Try to get the reported Genesis Block (Chain ID)
+    try {
+      this.genesis = await this._requestBlockAtHeight(0);
+    } catch (exception) {
+      this.emit('error', `Could not retrive genesis block: ${JSON.stringify(exception)}`);
     }
+
+    // Get the best block hash (and height)
+    const best = await this._requestBestBlockHash();
+    const height = await this._requestChainHeight();
+
+    this.best = best;
+    this.height = height;
+
+    return this;
+  }
+
+  async _syncRawHeadersForBlock (hash) {
+    const header = await this._requestRawBlockHeader(hash);
+    if (header.error) return this.emit('error', header.error);
+    const raw =  Buffer.from(header, 'hex');
+    this.headers.push(raw);
+    return this;
+  }
+
+  async _syncChainHeadersOverRPC () {
+    for (let i = 0; i <= this.height; i++) {
+      const progress = now - start;
+      const hash = await this._requestBlockAtHeight(i);
+      await this._syncRawHeadersForBlock(hash);
+    }
+
+    return this;
+  }
+
+  async _syncRawChainOverRPC () {
+    // TODO: async (i.e., Promise.all) chainsync
+    for (let i = 0; i <= this.height; i++) {
+      this.emit('log', `Getting block: ${i}`);
+      const hash = await this._requestBlockAtHeight(i);
+      this._state.chain[i] = hash;
+      this.emit('log', `blocks[${i}] = ${hash}`);
+      await this._syncRawBlock(hash); // state updates happen here
+    }
+  }
+
+  async _syncChainOverRPC () {
+    await this._syncChainInfoOverRPC();
+
+    this.emit('log', `Beginning chain sync for height ${this.height} with best block: ${this.best}`);
+
+    await this._syncBestBlock();
+    await this._syncChainHeadersOverRPC(this.best);
+    // await this._syncRawChainOverRPC();
+
+    this.state.status = 'READY';
+    this.emit('sync', {
+      best: this.best,
+      height: this.height
+    });
+
+    this.commit();
+
+    return this;
+  }
+
+  async _syncWithRPC () {
+    await this._syncChainInfoOverRPC();
+    await this._syncChainOverRPC();
+    await this.commit();
+
+    return this;
   }
 
   /**
    * Start the Bitcoin service, including the initiation of outbound requests.
    */
   async start () {
-    if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', `Starting for network "${this.settings.network}"...`);
+    this.emit('debug', `[SERVICES:BITCOIN] Starting for network "${this.settings.network}"...`);
+
     const self = this;
     self.status = 'starting';
+
+    // Bitcoin events
+    this.peer.on('error', this._handlePeerError.bind(this));
+    this.peer.on('packet', this._handlePeerPacket.bind(this));
+    // NOTE: we always ask for genesis block on peer open
+    this.peer.on('open', () => {
+      let block = self.peer.getBlock([this.network.genesis.hash]);
+    });
 
     if (this.store) await this.store.open();
     if (this.settings.fullnode) {
@@ -840,12 +1633,12 @@ class Bitcoin extends Service {
       this.fullnode.on('connect', this._handleConnectMessage.bind(this));
 
       this.fullnode.on('tx', async function fullnodeTxHandler (tx) {
-        self.emit('message', `tx event: ${JSON.stringify(tx)}`);
+        self.emit('log', `tx event: ${JSON.stringify(tx)}`);
       });
     }
 
     this.wallet.on('message', function (msg) {
-      self.emit('message', `wallet msg: ${msg}`);
+      self.emit('log', `wallet msg: ${msg}`);
     });
 
     this.wallet.on('warning', function (msg) {
@@ -857,8 +1650,10 @@ class Bitcoin extends Service {
     });
 
     this.wallet.database.on('tx', function (tx) {
-      self.emit('message', `wallet tx!!!!!! ${JSON.stringify(tx, null, '  ')}`);
+      self.emit('debug', `wallet tx!!!!!! ${JSON.stringify(tx, null, '  ')}`);
     });
+
+    this.observer = monitor.observe(this._state);
 
     // Start services
     await this.wallet.start();
@@ -866,8 +1661,9 @@ class Bitcoin extends Service {
 
     // Start nodes
     if (this.settings.fullnode) await this._startLocalNode();
+    if (this.settings.zmq) await this._startZMQ();
     if (this.settings.mode === 'rpc') {
-      if (!this.settings.authority) return console.error('Error: No authority specified.  To use an RPC anchor, provide the "authority" parameter.');
+      if (!this.settings.authority) return this.emit('error', 'Error: No authority specified.  To use an RPC anchor, provide the "authority" parameter.');
       const provider = new URL(this.settings.authority);
       const config = {
         host: provider.hostname,
@@ -878,19 +1674,18 @@ class Bitcoin extends Service {
       config.headers = { Authorization: `Basic ${Buffer.from(auth, 'utf8').toString('base64')}` };
 
       if (provider.protocol === 'https:') {
-        self.rpc = jayson.client.https(config);
+        self.rpc = jayson.https(config);
       } else {
-        self.rpc = jayson.client.http(config);
+        self.rpc = jayson.http(config);
       }
 
-      try {
-        await this._syncBalanceFromOracle();
-      } catch (exception) {
-        this.emit('error', exception);
-        return this;
-      }
+      const wallet = await this._loadWallet();
 
-      self.heartbeat = setInterval(self._heartbeat.bind(self), self.settings.interval);
+      // Heartbeat
+      self._heart = setInterval(self.tick.bind(self), self.settings.interval);
+
+      // Sync!
+      await self._syncWithRPC();
     }
 
     // TODO: re-enable these
@@ -903,20 +1698,15 @@ class Bitcoin extends Service {
     // this.peer.tryOpen();
     // END TODO
 
-    if (this.settings.fullnode) {
-      const genesis = await this.fullnode.getBlock(0);
-
-      // TODO: refactor Chain
-      if (this.chain) {
-        await this.chain._setGenesis(genesis.toJSON());
-      }
-    }
-
     this.emit('ready', {
+      id: this.id,
       tip: this.tip
     });
 
-    if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', 'Service started!');
+    if (this.settings.verbosity >= 4) {
+      this.emit('log', '[SERVICES:BITCOIN] Service started!');
+    }
+
     return this;
   }
 
@@ -928,6 +1718,13 @@ class Bitcoin extends Service {
     if (this.fullnode) await this.fullnode.close();
     await this.wallet.stop();
     // await this.chain.stop();
+
+    if (this._heart) {
+      clearInterval(this._heart);
+      delete this._heart;
+    }
+
+    return this;
   }
 }
 

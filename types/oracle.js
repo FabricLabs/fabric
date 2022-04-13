@@ -59,7 +59,7 @@ class Oracle extends Store {
   }
 
   async define (name, definition) {
-    let resource = Object.assign({
+    const resource = Object.assign({
       name: name
     }, definition);
 

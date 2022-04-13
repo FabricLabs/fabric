@@ -20,7 +20,7 @@ const {
 const Entity = require('./entity');
 const Hash256 = require('./hash256');
 const Machine = require('./machine');
-const Ethereum = require('../services/ethereum');
+// const Ethereum = require('../services/ethereum');
 
 // TODO: have Lexer review
 // TODO: render the following:

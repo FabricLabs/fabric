@@ -2,6 +2,8 @@
 
 // Dependencies
 const merge = require('lodash.merge');
+
+// Fabric Types
 const Service = require('./service');
 const Actor = require('./actor');
 const Tree = require('./tree');
@@ -87,14 +89,14 @@ class Aggregator extends Service {
     this._computeBalances();
 
     const actor = new Actor(this.balances);
-    const signature = actor.sign().signature;
+    // const signature = null;
     const message = {
       id: actor.id,
       type: 'AggregatorCommit',
       actor: this.id,
       object: actor.toObject(),
       target: '/commits',
-      signature: signature,
+      // signature: signature,
       version: this.settings.version
     };
 

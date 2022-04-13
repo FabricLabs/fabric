@@ -10,7 +10,7 @@ class Block extends Actor {
     this._state = merge({
       parent: null,
       transactions: {},
-      signature: null
+      signatures: []
     }, input);
 
     return this;
@@ -18,6 +18,14 @@ class Block extends Actor {
 
   get transactions () {
     return this._state.transactions;
+  }
+
+  sign () {
+    const actor = new Actor(this._state);
+    const data = actor.toString();
+    const array = this.key._sign(data);
+    this._state.signature = Buffer.from(array);
+    return this._state.signature;
   }
 
   validate () {

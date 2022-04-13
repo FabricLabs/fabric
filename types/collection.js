@@ -24,14 +24,11 @@ class Collection extends Stack {
     // TODO: document `listeners` handler (currently only `create`)
     this.settings = Object.assign({
       atomic: true,
-      // TODO: document determinism
-      deterministic: true,
-      name: 'Collection',
       type: Entity,
-      path: `./stores/collection`,
-      fields: {
-        id: 'id'
-      },
+      deterministic: true,
+      name: '@fabric/store',
+      path: `./collections`,
+      fields: { id: 'id' },
       key: 'id'
     }, configuration);
 
@@ -463,8 +460,7 @@ class Collection extends Stack {
   }
 
   commit () {
-    if (this.settings.verbosity >= 4) console.log('[FABRIC:COLLECTION]', 'Committing...');
-    // const changes = super.commit();
+    if (this.settings.verbosity >= 4) this.emit('debug', '[FABRIC:COLLECTION] Committing...');
     const patches = monitor.generate(this.observer);
 
     if (patches && patches.length) {
@@ -474,16 +470,15 @@ class Collection extends Stack {
       };
 
       this.emit('transaction', body);
+      this.emit('patches', patches);
       this.emit('message', {
         '@type': 'Transaction',
         '@data': body
       });
     }
-
-    // if (changes) this.emit('patches', changes);
   }
 
-  get len(){
+  get len () {
     return Object.keys(this.list()).length;
   }
 }

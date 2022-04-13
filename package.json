@@ -12,11 +12,16 @@
     "example": "examples",
     "test": "tests"
   },
+  "engines": {
+    "node": "^12.20.2"
+  },
   "scripts": {
     "book": "npm run dev",
     "build": "npm run make:all",
     "build:all": "npm run make:all",
     "chat": "node scripts/cli.js chat",
+    "clean": "rm -rf node_modules",
+    "clean:all": "rm -rf node_modules package-lock.json",
     "cli": "npm run chat",
     "coverage": "nyc npm test",
     "dev": "npm run make:dev && http-server -p 8000 _book",
@@ -24,19 +29,23 @@
     "examples": "npm run make:examples && http-server -p 8000 examples",
     "keygen": "node scripts/keygen.js",
     "local": "npm run build && http-server -p 8000 ./assets",
-    "make:all": "npm run make:service && npm run make:app && npm run make:lib && npm run make:dev",
-    "make:api": "jsdoc2md --configure jsdoc.json --files types/*.js services/*.js README.md > API.md",
+    "lint": "semistandard",
+    "lint:fix": "semistandard --fix",
+    "make:all": "npm run make:service && npm run make:app && npm run make:lib && npm run make:dev && npm run make:binary",
+    "make:api": "jsdoc2md --configure jsdoc.json --files types/*.js services/*.js settings/deprecations.js README.md > API.md",
     "make:app": "webpack --progress examples/app.js -o assets/app.js",
+    "make:binary": "pkg -c package.json -o assets/binaries/fabric scripts/cli.js",
     "make:coverage": "npm run coverage && nyc report --reporter html",
     "make:dev": "gitbook install && npm run make:examples && npm run make:docs && gitbook build && cp -rf docs _book/ && cp -rf examples _book/ && glob-run js-beautify --indent-size 2 -r _book/**.html",
-    "make:docs": "npm run make:api && node_modules/.bin/jsdoc -c jsdoc.json services/**.js types/**.js DEVELOPERS.md -d docs/ && glob-run js-beautify --indent-size 2 -r docs/**.html",
+    "make:docs": "npm run make:api && node_modules/.bin/jsdoc -c jsdoc.json services/**.js types/**.js settings/deprecations.js DEVELOPERS.md -d docs/ && glob-run js-beautify --indent-size 2 -r docs/**.html",
     "make:examples": "docco --output examples/ examples/*.js && glob-run js-beautify --indent-size 2 -r examples/*.html",
     "make:lib": "NODE_ENV=production webpack scripts/fabric.js -o assets/fabric.min.js",
     "make:service": "NODE_ENV=production webpack --target=webworker examples/service.js -o assets/service.js",
     "make:viewer": "NODE_ENV=production webpack components/circuit-viewer.js -o assets/viewer.min.js",
     "report:coverage": "npm run make:coverage && nyc report --reporter=text-lcov > reports/coverage.lcov && codecov",
+    "report:todo": "grep --exclude-dir=.git --exclude-dir=_book --exclude-dir=assets --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs -rEI \"TODO|FIXME\" . > reports/TODO.txt",
     "review:coverage": "npm run make:coverage && http-server -p 8000 reports/coverage",
-    "review:todo": "grep --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs -rEI \"TODO|FIXME\" . 2>/dev/null > reports/TODO.txt",
+    "review:todo": "npm run report:todo && cat reports/TODO.txt && echo '\nOutstanding TODO items (@fabric/core):' && wc -l reports/TODO.txt && echo '\nIssues List: https://github.com/FabricLabs/fabric/issues\nDisclosures: securiy@fabric.pub\n\n'",
     "playnet": "node scripts/playnet.js",
     "start": "node scripts/app.js",
     "static": "npm run build:scripts && http-server -p 8000 assets",
@@ -44,9 +53,6 @@
     "test:bitcoin": "mocha tests/bitcoin.core.js",
     "test:ethereum": "mocha tests/ethereum.core.js",
     "test": "NODE_ENV=test mocha tests"
-  },
-  "engines": {
-    "node": "^12.16"
   },
   "repository": {
     "type": "git",
@@ -68,16 +74,21 @@
   "homepage": "https://github.com/FabricLabs/fabric#readme",
   "dependencies": {
     "@webassemblyjs/ast": "^1.8.5",
-    "append-only-torrent": "^1.0.0",
     "arbitrary": "^1.4.10",
     "base58check": "^2.0.0",
-    "bcoin": "bcoin-org/bcoin#master",
+    "bcoin": "bcoin-org/bcoin#v2.2.0",
+    "bip-schnorr": "^0.6.4",
+    "bip39": "^3.0.4",
+    "bip65": "^1.0.3",
+    "bip68": "^1.0.4",
+    "bitcoinjs-lib": "^6.0.0",
+    "blessed": "^0.1.81",
     "clightningjs": "^0.2.2",
     "commander": "^6.1.0",
     "content-type": "^1.0.4",
     "dotparser": "^0.3.0",
+    "ecpair": "^2.0.1",
     "elliptic": "^6.5.4",
-    "ethereumjs-vm": "^4.1.0",
     "fast-json-patch": "^2.0.7",
     "fd-chunk-store": "^2.0.0",
     "glob-run": "^0.1.6",
@@ -85,28 +96,25 @@
     "jayson": "^3.4.4",
     "js-beautify": "^1.10.0",
     "json-pointer": "^0.6.0",
-    "level": "^5.0.1",
+    "level": "^7.0.1",
     "lodash.merge": "^4.6.2",
     "merkletreejs": "^0.1.6",
     "minsc": "^0.2.0",
     "mkdirp": "^1.0.4",
     "nat-upnp": "^1.1.1",
-    "node-fetch": "^2.6.0",
-    "node-torrent": "^0.2.2",
-    "opentimestamps": "^0.4.9",
     "p-event": "^4.2.0",
     "path-match": "^1.2.4",
     "pluralize": "^8.0.0",
+    "redis": "^3.1.2",
     "rimraf": "^2.6.2",
     "simple-aes": "^0.1.1",
     "struct": "^0.0.12",
-    "torrent-stream": "^1.2.0",
+    "tiny-secp256k1": "^2.2.0",
     "ts-morph": "^10.0.2",
-    "ttfm": "chrisinajar/ttfm"
+    "zeromq": "^5.2.8"
   },
   "devDependencies": {
-    "@fabric/http": "FabricLabs/web#develop",
-    "blessed": "^0.1.81",
+    "@fabric/http": "FabricLabs/fabric-http#portal-develop",
     "body-parser": "^1.18.2",
     "chai": "^4.0.2",
     "codecov": "^3.6.1",
@@ -126,9 +134,8 @@
     "jsdoc": "FabricLabs/jsdoc#fabric",
     "jsdoc-to-markdown": "^4.0.1",
     "json-to-dot": "^1.1.0",
-    "localforage": "^1.7.2",
     "mocha": "^5.2.0",
-    "nyc": "^15.0.0",
+    "nyc": "^15.1.0",
     "page": "^1.7.1",
     "raw-loader": "^0.5.1",
     "semistandard": "^14.2.0",
@@ -138,10 +145,29 @@
   },
   "nyc": {
     "exclude": [
+      "assets",
+      "contracts",
+      "currencies",
+      "functions",
       "tests",
       "data"
     ],
     "report-dir": "./reports/coverage",
     "temp-dir": "./reports/nyc"
+  },
+  "pkg": {
+    "@targets": [
+      "node12-linux-arm64",
+      "node12-linux-x64",
+      "node12-macos-x64",
+      "node12-windows-x64"
+    ]
+  },
+  "semistandard": {
+    "ignore": [
+      "assets/",
+      "logs/",
+      "stores/"
+    ]
   }
 }

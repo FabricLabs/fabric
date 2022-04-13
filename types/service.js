@@ -1,22 +1,27 @@
 'use strict';
 
-// internal dependencies
-const Actor = require('./actor');
-// const Disk = require('./disk');
-const Key = require('./key');
-const Entity = require('./entity');
-const Store = require('./store');
-const Scribe = require('./scribe');
-const Collection = require('./collection');
+const PATCHES_ENABLED = false;
 
-// external dependencies
+// Dependencies
 const crypto = require('crypto');
 const stream = require('stream');
 const path = require('path');
 
-// npm-based modules
+// Public modules
+// TODO: remove
+const merge = require('lodash.merge');
 const pointer = require('json-pointer');
 const manager = require('fast-json-patch');
+
+// Fabric Types
+const Actor = require('./actor');
+const Collection = require('./collection');
+const Resource = require('./resource');
+const Entity = require('./entity');
+const Hash256 = require('./hash256');
+const Key = require('./key');
+const Message = require('./message');
+const Store = require('./store');
 
 /**
  * The "Service" is a simple model for processing messages in a distributed
@@ -27,10 +32,10 @@ const manager = require('fast-json-patch');
  * this prototype.  In general, `connect` and `send` are the highest-priority
  * jobs, and by default the `fabric` property will serve as an I/O stream using
  * familiar semantics.
- *
+ * @access protected
  * @property map The "map" is a hashtable of "key" => "value" pairs.
  */
-class Service extends Scribe {
+class Service extends Actor {
   /**
    * Create an instance of a Service.
    * @param       {Object} settings Configuration for this service.
@@ -42,11 +47,11 @@ class Service extends Scribe {
     super(settings);
 
     // Configure (with defaults)
-    this.settings = Object.assign({
+    this.settings = merge({
       name: 'service',
       path: './stores/service',
       networking: true,
-      persistent: true,
+      persistent: false,
       interval: 60000, // Mandatory Checkpoint Interval
       verbosity: 2, // 0 none, 1 error, 2 warning, 3 notice, 4 debug
       // TODO: export this as the default data in `inputs/fabric.json`
@@ -63,12 +68,15 @@ class Service extends Scribe {
     this.agent = null;
     this.actor = null;
     this.name = this.settings.name;
-    this.clock = 0;
+
     this.collections = {};
     this.definitions = {};
+    this.resources = {};
+    this.services = {};
     this.methods = {};
     this.clients = {};
     this.targets = [];
+    this.history = [];
     this.origin = '';
 
     // TODO: fix this
@@ -90,7 +98,15 @@ class Service extends Scribe {
     /* this.state = Object.assign({
       messages: {} // always define a list of messages for Fabric services
     }, this.config['@data']); */
-    this._state = {};
+    this._state = {
+      clock: 0,
+      epochs: {}, // snapshots of history (by ID)
+      history: [], // list of ...
+      services: {}, // stores sub-service state
+      status: 'PAUSED',
+      content: {},
+      version: 0 // TODO: change to 1 for 0.1.0
+    };
 
     // Keeps track of changes
     this.observer = null;
@@ -117,20 +133,16 @@ class Service extends Scribe {
     return this;
   }
 
-  init () {
-    this.components = {};
+  get clock () {
+    return parseInt(this._state.clock);
   }
 
-  /**
-   * Move forward one clock cycle.
-   * @returns {Number}
-   */
-  tick () {
-    return ++this.clock;
+  get heartbeat () {
+    return this._heart;
   }
 
-  async process () {
-    console.log('process created');
+  get status () {
+    return this._state.status;
   }
 
   get members () {
@@ -141,17 +153,28 @@ class Service extends Scribe {
     return this._targets;
   }
 
-  set targets (value) {
-    this._targets = value;
-  }
-
   get state () {
     return this._state;
+  }
+
+  set clock (value) {
+    this._state.clock = parseInt(value);
   }
 
   set state (value) {
     // console.trace('[FABRIC:SERVICE]', 'Setting state:', value);
     this._state = value;
+  }
+
+  set status (value) {
+    if (!value) return this.status;
+    if (!this._state.status) this._state.status = 'PAUSED';
+    this._state.status = value.toUpperCase();
+    return this.status;
+  }
+
+  set targets (value) {
+    this._targets = value;
   }
 
   static fromName (name) {
@@ -172,6 +195,189 @@ class Service extends Scribe {
     }
 
     return plugin;
+  }
+
+  alert (msg) {
+    // TODO: promise
+    // return Promise.all(Object.entries(this.services).filter().map())
+    for (const [name, service] of Object.entries(this.services)) {
+      if (!this.settings.services.includes(name)) continue;
+      if (!service.alert) {
+        console.error('Service', name, 'does not have an alert function?');
+        continue;
+      }
+
+      service.alert(msg);
+    }
+  }
+
+  identify () {
+    this.emit('auth', this.key.pubkey);
+    return this.key.pubkey;
+  }
+
+  /**
+   * Called by Web Components.
+   * TODO: move to @fabric/http/types/spa
+   */
+  init () {
+    this.components = {};
+  }
+
+  /**
+   * Move forward one clock cycle.
+   * @returns {Number}
+   */
+  tick () {
+    return this.beat();
+  }
+
+  beat () {
+    const now = (new Date()).toISOString();
+
+    // Increment clock
+    ++this._clock;
+
+    // TODO: remove async, use local state instead
+    // i.e., queue worker job
+    const beat = Message.fromVector(['Generic', {
+      clock: this._clock,
+      created: now,
+      state: this._state
+    }]);
+
+    if (!beat) {
+      this.emit('error', 'Beat could not construct a Message!');
+      console.trace();
+      process.exit();
+    }
+
+    // TODO: parse JSON types in @fabric/core/types/message
+    let data = beat.data;
+
+    try {
+      const parsed = JSON.parse(data);
+      data = JSON.stringify(parsed, null, '  ');
+    } catch (exception) {
+      this.emit('error', `Exception parsing beat: ${exception}`);
+    }
+
+    this.emit('beat', beat);
+    this.commit();
+
+    return this;
+  }
+
+  append (block) {
+    if (this.best !== block.parent) throw new Error(`Block does not attach to current chain.  Block ID: ${block.id} Block Parent: ${block.parent} Current Best: ${this.best}`);
+  }
+
+  /**
+   * Retrieve a key from the {@link State}.
+   * @param {Path} path Key to retrieve.
+   * @returns {Mixed}
+   */
+  get (path = '') {
+    let result = null;
+    try {
+      result = pointer.get(this._state.content, path);
+    } catch (exception) {
+      console.error('[FABRIC:STATE]', 'Could not retrieve path:', path, pointer.get(this['@entity']['@data'], '/'), exception);
+    }
+    return result;
+  }
+
+  /**
+   * Set a key in the {@link State} to a particular value.
+   * @param {Path} path Key to retrieve.
+   * @returns {Mixed}
+   */
+  set (path, value) {
+    const result = pointer.set(this._state.content, path, value);
+    this.commit();
+    return result;
+  }
+
+  /**
+   * Explicitly trust all events from a known source.
+   * @param  {EventEmitter} source Emitter of events.
+   * @return {Service} Instance of Service after binding events.
+   */
+  trust (source, name = source.constructor.name) {
+    // Constants
+    const self = this;
+
+    // Attach Event Listeners
+    if (source.settings && source.settings.debug) source.on('debug', this._handleTrustedDebug.bind(this));
+    if (source.settings && source.settings.verbosity >= 0) {
+      source.on('audit', async function _handleTrustedAudit (audit) {
+        /*
+        const now = (new Date()).toISOString();
+        const template = {
+          content: audit,
+          created: now,
+          type: 'Audit'
+        };
+
+        const actor = new Actor(template);
+        // TODO: transaction log
+        */
+      });
+    }
+
+    return {
+      _handleActor: source.on('actor', async function (actor) {
+        console.log(`[FABRIC:SERVICE] Source "${name}" emitted actor:`, actor);
+      }),
+      _handleAlert: source.on('alert', async function (alert) {
+        self.alert(`[FABRIC:SERVICE] [ALERT] [!!!] ${name} alerted: ${alert}`);
+      }),
+      _handleBeat: source.on('beat', async function (beat) {
+        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted beat: ${JSON.stringify(beat, null, '  ')}`);
+        const ops = [
+          { op: 'replace', path: `/services/${name}`, value: beat.state }
+        ];
+
+        try {
+          manager.applyPatch(self._state, ops);
+          await self.commit();
+        } catch (exception) {
+          self.emit('error', `Could not process beat: ${exception}`);
+        }
+      }),
+      _handleChanges: source.on('changes', async function (changes) {
+        console.log(`[FABRIC:SERVICE] Source "${name}" emitted changes:`, changes);
+      }),
+      _handleChannel: source.on('channel', async function (channel) {
+        console.log(`[FABRIC:SERVICE] Source "${name}" emitted channel:`, channel);
+      }),
+      _handleCommit: source.on('commit', async function (commit) {
+        console.log(`[FABRIC:SERVICE] Source "${name}" committed:`, commit);
+      }),
+      _handleError: source.on('error', async function _handleTrustedError (error) {
+        console.error(`[FABRIC:SERVICE] Source "${name}" emitted error:`, error);
+      }),
+      _handleLog: source.on('log', async function _handleTrustedLog (log) {
+        console.log(`[FABRIC:SERVICE] Source "${name}" emitted log:`, log);
+      }),
+      _handleMessage: source.on('message', async function (message) {
+        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted message: ${JSON.stringify(message.toObject ? message.toObject() : message, null, '  ')}`);
+        await self._handleTrustedMessage(message);
+      }),
+      _handlePatches: source.on('patches', async function (patches) {
+        self.emit('debug', `[FABRIC:SERVICE] [${name}] Service State:`, source._state);
+        // TODO: apply changes to parent (self)
+      }),
+      _handleReady: source.on('ready', async function _handleTrustedReady (info) {
+        console.log(`[FABRIC:SERVICE] Source "${name}" emitted ready:`, info);
+      }),
+      _handleTip: source.on('tip', async function (hash) {
+        self.alert(`[FABRIC:SERVICE] New ${name} chaintip: ${hash}`);
+      }),
+      _handleWarning: source.on('warning', async function _handleTrustedWarning (warning) {
+        console.warn(`[FABRIC:SERVICE] Source "${name}" emitted warning:`, warning);
+      })
+    };
   }
 
   define (name, value) {
@@ -241,6 +447,24 @@ class Service extends Scribe {
     return true;
   }
 
+  _defineResource (name, definition) {
+    const resource = Object.assign({ name }, definition);
+    this.resources[name] = new Resource(resource);
+    this.emit('resource', this.resources[name]);
+  }
+
+  _handleTrustedDebug (message) {
+    this.emit('debug', `[FABRIC:SERVICE] Trusted Source emitted debug: ${message}`);
+  }
+
+  _handleTrustedMessage (message) {
+    this.emit('message', message);
+  }
+
+  async process () {
+    console.log('process created');
+  }
+
   async broadcast (msg) {
     if (!msg['@type']) throw new Error('Message must have a @type property.');
     if (!msg['@data']) throw new Error('Message must have a @data property.');
@@ -288,18 +512,12 @@ class Service extends Scribe {
    * to any peers designated in the service's configuration.
    */
   async start () {
+    this.emit('debug', `[FABRIC:SERVICE] Starting as ${this.id}...`);
+
     const service = this;
 
     // Assign status and process
     this.status = 'starting';
-    this.process = function Process (msg) {
-      console.log('[FABRIC:SERVICE]', 'Unterminated message:', msg);
-      console.log('### Heads Up!');
-      console.log('Please see documentation before continuing further:');
-      console.log('Legacy Web: https://dev.fabric.pub/docs/');
-      console.log('Fabric: fabric:docs');
-      console.log('Local Repository: `npm run docs` to open HTTP server at http://localhost:8000');
-    };
 
     // Define an Actor with all current settings
     this.actor = new Actor(this.settings);
@@ -310,7 +528,7 @@ class Service extends Scribe {
       exclusive: true // override all previous types
     }); */
 
-    for (let name in this.settings.resources) {
+    for (const name in this.settings.resources) {
       const resource = this.settings.resources[name];
       const attribute = resource.routes.list.split('/')[1];
       const key = crypto.createHash('sha256').update(resource.routes.list).digest('hex');
@@ -361,26 +579,22 @@ class Service extends Scribe {
       }
     }
 
+    await this._startAllServices();
+
     if (this.settings.networking) {
       await this.connect();
     }
 
     // TODO: re-re-evaluate a better approach... oh how I long for Object.observe!
     // this.observer = manager.observe(this.state, this._handleStateChange.bind(this));
-    if (!this.state) this.state = {};
-    this.observer = manager.observe(this.state);
+    this.observer = manager.observe(this._state);
 
     // Set a heartbeat
-    this.heartbeat = setInterval(this._heartbeat.bind(this), this.settings.interval);
-    this.status = 'ready';
-    this.emit('message', `[FABRIC:SERVICE] Started!`);
-    this.emit('ready');
+    await this._startHeart();
 
-    try {
-      await this.commit();
-    } catch (E) {
-      console.error('Could not commit:', E);
-    }
+    this.status = 'ready';
+    this.emit('log', '[FABRIC:SERVICE] Started!');
+    this.ready();
 
     return this;
   }
@@ -390,8 +604,8 @@ class Service extends Scribe {
       await this.disconnect();
     }
 
-    if (this.heartbeat) {
-      clearInterval(this.heartbeat);
+    if (this._heart) {
+      clearInterval(this._heart);
     }
 
     if (this.settings.persistent) {
@@ -465,11 +679,13 @@ class Service extends Scribe {
   }
 
   async _POST (path, data, commit = true) {
-    console.log('[SERVICE]', '_POST', path, data);
+    if (!path) throw new Error('Path must be provided.');
+    if (!data) throw new Error('Data must be provided.');
+
+    const name = crypto.createHash('sha256').update(path).digest('hex');
+    const hash = crypto.createHash('sha256').update(JSON.stringify(data)).digest('hex');
 
     let result = null;
-    let name = crypto.createHash('sha256').update(path).digest('hex');
-    let hash = crypto.createHash('sha256').update(JSON.stringify(data)).digest('hex');
 
     // always use locally computed values
     data.address = hash;
@@ -481,7 +697,7 @@ class Service extends Scribe {
     try {
       memory = await pointer.get(this.state, path);
     } catch (E) {
-      console.warn('[FABRIC:SERVICE]', 'posting to unloaded collection:', path);
+      this.emit('warning', `[FABRIC:SERVICE] posting to unloaded collection: ${path}`);
       memory = [];
     }
 
@@ -504,7 +720,7 @@ class Service extends Scribe {
       console.log('NOPE:', E);
     }
 
-    await this.commit();
+    if (commit) await this.commit();
 
     return result;
   }
@@ -525,12 +741,13 @@ class Service extends Scribe {
       }
     });
 
-    try {
-      let prior = await this.store.get('/');
-      let state = JSON.parse(prior);
-      this.state = state;
-    } catch (E) {
-      this.warn('[DOORMAN:SERVICE]', 'Could not restore state:', E);
+    if (this.store) {
+      try {
+        const prior = await this.store.get('/');
+        this.state = JSON.parse(prior);
+      } catch (exception) {
+        this.emit('warning', `[FABRIC:SERVICE] Could not restore state: ${exception}`);
+      }
     }
 
     if (this.settings.networking && this.swarm) {
@@ -555,10 +772,30 @@ class Service extends Scribe {
     return this;
   }
 
-  async subscribe (id) {
-    this.log(`subscribing to ${id}...`);
-    let subscription = new Entity();
-    return subscription;
+  async subscribe (actorID, channelID) {
+    if (!actorID) throw new Error('Must provide actor ID.');
+    if (!channelID) throw new Error('Must provide channel ID.');
+
+    const label = Hash256.digest(actorID + channelID);
+    const actor = await this._getActor(actorID);
+    const channel = await this._getChannel(channelID);
+
+    if (!actor) throw new Error(`Actor does not exist: ${actorID}`);
+    if (!channel) throw new Error(`Channel does not exist: ${channelID}`);
+
+    const link = await this._POST('/subscriptions', { label });
+
+    await this._applyChanges([
+      { op: 'add', value: channelID, path: `/actors/${actor.id}/subscriptions/0` },
+      { op: 'add', value: channelID, path: `/channels/${channel.id}/members/0` }
+    ]);
+
+    await this.commit();
+
+    const result = await this._GET(link);
+    this.emit('subscription', result);
+
+    return result;
   }
 
   async join (id) {
@@ -579,20 +816,20 @@ class Service extends Scribe {
   async send (channel, message, extra) {
     if (this.debug) console.log('[SERVICE]', 'send()', 'Sending:', channel, message, extra);
 
-    let path = Buffer.alloc(256);
-    let payload = Buffer.alloc(2048);
-    let checksum = Buffer.alloc(64);
-    let entropy = Buffer.alloc(1726); // fill to 4096
+    const path = Buffer.alloc(256);
+    const payload = Buffer.alloc(2048);
+    const checksum = Buffer.alloc(64);
+    const entropy = Buffer.alloc(1726); // fill to 4096
 
     path.write(channel);
     payload.write(message);
 
-    let msg = Buffer.concat([ path, payload ]);
-    let hash = crypto.createHash('sha256').update(msg).digest('hex');
+    const msg = Buffer.concat([ path, payload ]);
+    const hash = crypto.createHash('sha256').update(msg).digest('hex');
 
     checksum.write(hash);
 
-    let block = Buffer.concat([
+    const block = Buffer.concat([
       Buffer.from([0x01]), // version byte
       Buffer.from([0x00]), // placeholder
       checksum,
@@ -605,50 +842,59 @@ class Service extends Scribe {
     return this;
   }
 
-  async commit () {
+  commit () {
+    if (this.settings.verbosity >= 4) this.emit('log', '[FABRIC:SERVICE] Committing...');
+
     const self = this;
     const ops = [];
-    const state = new Entity(self.state);
-
-    if (self.settings.verbosity >= 4) console.log('[FABRIC:SERVICE]', 'Committing...');
 
     // assemble all necessary info, emit Snapshot regardless of storage status
     try {
-      ops.push({ type: 'put', key: 'snapshot', value: state.toJSON() });
-      this.emit('message', {
-        '@type': 'Snapshot',
-        '@data': self.state
-      });
+      ops.push({ type: 'put', key: 'snapshot', value: self._state });
+      this.emit('debug', JSON.stringify({
+        '@data': self.state,
+        '@from': 'COMMIT',
+        '@type': 'Snapshot'
+      }));
     } catch (E) {
       console.error('Error saving state:', self.state);
       console.error('Could not commit to state:', E);
     }
 
-    if (this.store) {
+    if (this.settings.persistent) {
       // TODO: add robust + convenient database opener
-      try {
-        await this.store.batch(ops, function shareChanges () {
-          // TODO: notify status?
-        });
-      } catch (E) {
-        console.error('[FABRIC:SERVICE]', 'Threw Exception:', E);
-      }
+      this.store.batch(ops, function shareChanges () {
+        // TODO: notify status?
+      }).catch((exception) => {
+        self.emit('error', `Could not write to store: ${exception}`);
+      }).then((output) => {
+        self.emit('commit', { output });
+      });
     }
 
-    if (self.observer) {
+    if (PATCHES_ENABLED && self.observer) {
       try {
-        let patches = manager.generate(self.observer);
-        if (patches.length) self.emit('patches', patches);
+        const patches = manager.generate(self.observer);
+        if (patches.length) {
+          this.history.push(patches);
+          self.emit('patches', patches);
+        }
       } catch (E) {
         console.error('Could not generate patches:', E);
       }
     }
 
-    return this;
+    const commit = new Actor(self._state);
+    this.emit('commit', commit);
+    return commit.id;
+  }
+
+  async _handleBitcoinCommit (commit) {
+    console.log('[FABRIC:SERVICE] Handling (Bitcoin?) commit:', commit);
   }
 
   async _attachBindings (emitter) {
-    let service = this;
+    const service = this;
 
     emitter.on('attached', function () {
       service.emit('attached', {
@@ -684,16 +930,19 @@ class Service extends Scribe {
    * @param  {Object}  actor Instance of the {@link Actor}.
    * @return {Promise}       Resolves upon successful registration.
    */
-  async _registerActor (actor) {
-    if (!actor.id) return this.error('Client must have an id.');
+  async _registerActor (actor = {}) {
+    if (!actor.id) {
+      const entity = new Actor(actor);
+      actor = merge({
+        id: entity.id
+      }, actor);
+    }
 
-    this.emit('message', `Registering Actor: ${actor.id} ${JSON.stringify(actor).slice(0, 32)}…`);
-
-    let id = pointer.escape(actor.id);
-    let path = `/actors/${id}`;
+    const id = pointer.escape(actor.id);
+    const path = `/actors/${id}`;
 
     try {
-      await this._PUT(path, Object.assign({
+      await this._PUT(path, merge({
         name: actor.id,
         subscriptions: []
       }, actor, { id }));
@@ -702,27 +951,43 @@ class Service extends Scribe {
     }
 
     await this.commit();
-    this.emit('actor', this._GET(path));
 
-    return this;
+    const registration = await this._GET(path);
+    this.emit('actor', registration);
+
+    return registration;
   }
 
   async _registerChannel (channel) {
-    if (!channel.id) return this.error('Channel must have an id.');
+    if (!channel.id) {
+      const entity = new Actor(channel);
+      channel = merge({
+        id: entity.id,
+        members: []
+      }, channel);
+    }
 
-    let target = pointer.escape(channel.id);
-    let path = `/channels/${target}`;
+    const target = pointer.escape(channel.id);
+    const path = `/channels/${target}`;
 
     try {
-      this._PUT(path, Object.assign({
+      this._PUT(path, merge({
         members: []
       }, channel));
-      this.emit('channel', this._GET(path));
     } catch (E) {
       this.log(`Failed to register channel "${channel.id}":`, E);
     }
 
-    return this;
+    await this.commit();
+
+    const registration = await this._GET(path);
+    this.emit('channel', registration);
+
+    return registration;
+  }
+
+  async _addMemberToChannel (memberID, channelID) {
+    return this.subscribe(memberID, channelID);
   }
 
   async _registerMethod (name, method) {
@@ -730,24 +995,33 @@ class Service extends Scribe {
   }
 
   async _updatePresence (id, status) {
-    let target = pointer.escape(id);
-    let presence = (status === 'online') ? 'online' : 'offline';
+    const target = pointer.escape(id);
+    const presence = (status === 'online') ? 'online' : 'offline';
     return this._PUT(`/actors/${target}/presence`, presence);
   }
 
   async _getPresence (id) {
-    let member = this._GET(`/actors/${id}`) || {};
+    const member = await this._GET(`/actors/${id}`);
     return member.presence || null;
   }
 
   async _getMembers (id) {
-    let channel = this._GET(`/channels/${id}`) || {};
+    const channel = await this._GET(`/channels/${id}`);
+    if (!channel) throw new Error(`No such channel: ${id}`);
     return channel.members || null;
   }
 
   async _getSubscriptions (id) {
-    let member = this._GET(`/actors/${id}`) || {};
+    const member = await this._GET(`/actors/${id}`);
     return member.subscriptions || null;
+  }
+
+  async _listActors () {
+    return Object.values(await this._GET('/actors'));
+  }
+
+  async _listChannels () {
+    return Object.values(await this._GET('/channels'));
   }
 
   async _applyChanges (changes) {
@@ -791,6 +1065,75 @@ class Service extends Scribe {
     const entity = new Entity(message);
     await this._PUT(`/messages/${entity.id}`, message);
     return entity.id;
+  }
+
+  async _registerService (name, Service) {
+    const self = this;
+    const settings = merge({}, this.settings, this.settings[name]);
+    const service = new Service(settings);
+
+    if (this.services[name]) {
+      return this._appendWarning(`Service already registered: ${name}`);
+    }
+
+    this.services[name] = service;
+    this.services[name].on('error', function (msg) {
+      self.emit('error', `Service "${name}" emitted error: ${JSON.stringify(msg, null, '  ')}`);
+    });
+
+    this.services[name].on('warning', function (msg) {
+      self.emit('warning', `Service warning from ${name}: ${JSON.stringify(msg, null, '  ')}`);
+    });
+
+    this.services[name].on('message', function (msg) {
+      self.emit('message', `Service message from ${name}: ${JSON.stringify(msg, null, '  ')}`);
+    });
+
+    this.on('identity', async function _registerActor (identity) {
+      if (self.settings.services && self.settings.services.includes(name)) {
+        self.emit('log', `Registering actor on service "${name}": ${JSON.stringify(identity)}`);
+
+        try {
+          let registration = await self.services[name]._registerActor(identity);
+          self.emit('log', `Registered Actor: ${JSON.stringify(registration, null, '  ')}`);
+        } catch (exception) {
+          self.emit('error', `Error from service "${name}" during _registerActor: ${exception}`);
+        }
+      }
+    });
+
+    if (service.routes && service.routes.length) {
+      for (let i = 0; i < service.routes.length; i++) {
+        const route = service.routes[i];
+        this.http._addRoute(route.method, route.path, route.handler);
+      }
+    }
+
+    await this.commit();
+
+    return this;
+  }
+
+  async _startAllServices () {
+    if (!this.services) return this.emit('warning', 'Tried to start subservices, but none existed.');
+    // Start all Services
+    for (const [name, service] of Object.entries(this.services)) {
+      // TODO: re-evaluate inclusion on Service itself
+      if (this.settings.services && this.settings.services.includes(name)) {
+        this.emit('debug', `Starting service "${name}" (with trust)`);
+        // TODO: evaluate @fabric/core/types/store
+        // TODO: isomorphic @fabric/core/types/store
+        // await this.services[name]._bindStore(this.store);
+        this.trust(this.services[name], name);
+        await this.services[name].start();
+      }
+    }
+
+    return this;
+  }
+
+  async _startHeart () {
+    this._heart = setInterval(this.beat.bind(this), this.settings.interval);
   }
 }
 

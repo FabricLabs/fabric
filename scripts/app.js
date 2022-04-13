@@ -8,7 +8,6 @@ const settings = require('../settings/default');
 const App = require('../types/app');
 
 // Fabric Services
-const Matrix = require('../services/matrix');
 const Lightning = require('../services/lightning');
 
 // Functions
@@ -30,7 +29,6 @@ async function main () {
 
   // Register Services
   await app._registerService('lightning', Lightning);
-  await app._registerService('matrix', Matrix);
 
   // Attach Listeners
   app.on('message', _handleMessage);

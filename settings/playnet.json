@@ -22,6 +22,9 @@
       "service": "btcb"
     }
   ],
+  "bitcoin": {
+    "address": "bcrt1qr26ree4yhcnxsn7rdxj5hgwf6awz2jmwe8t9q6"
+  },
   "btca": {
     "name": "BTCA",
     "mode": "rpc",

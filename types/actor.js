@@ -1,15 +1,19 @@
 'use strict';
 
 // Dependencies
+const crypto = require('crypto');
 const { EventEmitter } = require('events');
 const monitor = require('fast-json-patch');
 
 // Fabric Types
-const Key = require('./key');
 const Hash256 = require('./hash256');
+
+// Fabric Functions
+const _sortKeys = require('../functions/_sortKeys');
 
 /**
  * Generic Fabric Actor.
+ * @access protected
  * @emits message Fabric {@link Message} objects.
  * @property {String} id Unique identifier for this Actor (id === SHA256(preimage)).
  * @property {String} preimage Input hash for the `id` property (preimage === SHA256(ActorState)).
@@ -29,26 +33,57 @@ class Actor extends EventEmitter {
   constructor (actor = {}) {
     super(actor);
 
-    // Monad value
+    this.commits = [];
     this.signature = null;
-    this.value = Object.assign({}, actor); // TODO: use Buffer?
-    this.key = new Key({
-      seed: actor.seed,
-      public: actor.public || actor.pubkey,
-      private: actor.private
-    });
-
-    // Indicate Risk
-    this.private = !!(this.key.seed || this.key.private);
+    this.value = this._readObject(actor); // TODO: use Buffer?
 
     // Internal State
     this._state = {
-      '@type': 'Actor',
-      '@data': this.value
+      type: 'Actor',
+      data: this.value,
+      status: 'PAUSED',
+      content: this.value || {}
     };
+
+    this.monitor = monitor.observe(this._state.content, this._handleMonitorChanges.bind(this));
 
     // Chainable
     return this;
+  }
+
+  static fromAny (input = {}) {
+    let state = null;
+
+    if (typeof input === 'string') {
+      state = { content: input };
+    } else if (input instanceof Buffer) {
+      state = { content: input.toString('hex') };
+    } else {
+      state = Object.assign({}, input);
+    }
+
+    return new Actor(state);
+  }
+
+  static fromJSON (input) {
+    let result = null;
+
+    if (typeof input === 'string' && input.length) {
+      console.log('trying to parse as JSON:', input);
+      try {
+        result = JSON.parse(input);
+      } catch (E) {
+        console.error('Failure in fromJSON:', E);
+      }
+    } else {
+      console.trace('Invalid input:', typeof input);
+    }
+
+    return result;
+  }
+
+  static randomBytes (count = 32) {
+    return crypto.randomBytes(count);
   }
 
   get id () {
@@ -58,8 +93,8 @@ class Actor extends EventEmitter {
 
   get preimage () {
     const input = {
-      '@type': 'FabricActorState',
-      '@data': this.toObject()
+      'type': 'FabricActorState',
+      'object': this.toObject()
     };
 
     const string = JSON.stringify(input, null, '  ');
@@ -69,7 +104,60 @@ class Actor extends EventEmitter {
   }
 
   get state () {
-    return Object.assign({}, this.value);
+    return Object.assign({}, this._state.content);
+  }
+
+  get status () {
+    return this._state.status;
+  }
+
+  get type () {
+    return this._state['@type'];
+  }
+
+  set state (value) {
+    this._state.content = value;
+  }
+
+  set status (value) {
+    this._state.status = value;
+  }
+
+  /**
+   * Resolve the current state to a commitment.
+   * @emits Actor Current malleable state.
+   * @returns {String} 32-byte ID
+   */
+  commit () {
+    const state = new Actor(this._state.content);
+    const commit = new Actor({
+      state: state.id
+    });
+
+    this.history.push(commit);
+    this.emit('commit', commit);
+    return commit.id;
+  }
+
+  debug (...params) {
+    this.emit('debug', params);
+  }
+
+  log (...params) {
+    this.emit('log', ...params);
+  }
+
+  mutate (seed) {
+    if (seed === 0 || !seed) seed = this.randomBytes(32).toString('hex');
+
+    const patches = [
+      { op: 'replace', path: '/seed', value: seed }
+    ];
+
+    monitor.applyPatch(this._state.content, patches);
+    this.commit();
+
+    return this;
   }
 
   /**
@@ -85,7 +173,27 @@ class Actor extends EventEmitter {
    * @returns {Object}
    */
   toObject () {
-    return this._sortKeys(this.state);
+    return _sortKeys(this.state);
+  }
+
+  toString (format = 'json') {
+    switch (format) {
+      case 'hex':
+        return Buffer.from(this.serialize(), 'utf8').toString('hex');
+      case 'json':
+      default:
+        return this.serialize();
+    }
+  }
+
+  pause () {
+    this.status = 'PAUSING';
+    this.commit();
+    return this;
+  }
+
+  randomBytes (count = 32) {
+    return crypto.randomBytes(count);
   }
 
   /**
@@ -93,7 +201,18 @@ class Actor extends EventEmitter {
    * @returns {String}
    */
   serialize () {
-    return JSON.stringify(this.toObject(), null, '  ');
+    let json = null;
+
+    try {
+      json = JSON.stringify(this.toObject(), null, '  ');
+    } catch (exception) {
+      json = JSON.stringify({
+        type: 'Error',
+        content: `Exception serializing: ${exception}`
+      }, null, '  ');
+    }
+
+    return json;
   }
 
   /**
@@ -101,23 +220,61 @@ class Actor extends EventEmitter {
    * @returns {Actor}
    */
   sign () {
-    this.signature = this.key._sign(this.toBuffer());
+    throw new Error('Unimplemented on this branch.  Use @fabric/core/types/signer instead.');
+    /* this.signature = this.key._sign(this.toBuffer());
     this.emit('signature', this.signature);
+    return this; */
+  }
+
+  /**
+   * Toggles `status` property to unpaused.
+   * @
+   * @returns {Actor}
+   */
+  unpause () {
+    this.status = 'UNPAUSING';
+    this.commit();
+    this.status = 'UNPAUSED';
     return this;
   }
 
   /**
-   * Create a new {@link Object} with sorted properties.
-   * @param {Object} state Object to sort.
-   * @returns {Object} Re-sorted instance of `state` as provided.
+   * Incurs 1 SYSCALL
+   * @access private
+   * @returns {Object}
    */
-  _sortKeys (state) {
-    // TODO: investigate whether relying on default sort()
-    // or using a locally-defined function is the safest method
-    return Object.keys(state).sort().reduce((obj, key) => {
-      obj[key] = state[key];
-      return obj;
-    }, {});
+  _getState () {
+    return this.state;
+  }
+
+  _handleMonitorChanges (changes) {
+    console.log('got monitor changes from actor:', changes);
+    // TODO: emit global state event here
+    // after verify, commit
+  }
+
+  _readObject (input = {}) {
+    let state = {};
+
+    if (typeof input === 'string') {
+      state = Object.assign(state, {
+        type: 'String',
+        size: input.length,
+        content: input,
+        encoding: 'utf8'
+      });
+    } else if (input instanceof Buffer) {
+      state = Object.assign(state, {
+        type: 'Buffer',
+        size: input.length,
+        content: input.toString('hex'),
+        encoding: 'hex'
+      });
+    } else {
+      state = Object.assign(state, input);
+    }
+
+    return state;
   }
 }
 

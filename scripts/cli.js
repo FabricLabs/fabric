@@ -56,13 +56,13 @@ async function main () {
   program.name('fabric');
 
   // Declare Commands
-  program.command('start', { isDefault: true })
-    .description('Initiate peer bootstrapping.')
-    .action(COMMANDS['START'].bind(program));
-
-  program.command('chat')
+  program.command('chat', { isDefault: true })
     .description('Open P2P chat.')
     .action(COMMANDS['CHAT'].bind(program));
+
+  program.command('node')
+    .description('Initiate peer bootstrapping.')
+    .action(COMMANDS['START'].bind(program));
 
   program.command('exchange')
     .description('Runs a local exchange node.')

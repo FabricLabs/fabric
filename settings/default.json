@@ -2,7 +2,24 @@
   "name": "@fabric/core",
   "description": "Application Resource Contract for the Fabric Execution Environment.",
   "language": "english",
-  "network": "testnet",
+  "network": "regtest",
+  "interface": "0.0.0.0",
+  "port": "7777",
+  "resources": {
+    "Event": {
+      "name": "Event",
+      "@comment": "// TODO: remove routes, add by default",
+      "routes": {
+        "list": "/events",
+        "view": "/events/:id"
+      }
+    }
+  },
   "stack": [],
-  "state": {}
+  "state": {
+    "status": "PAUSED",
+    "states": {},
+    "events": []
+  },
+  "history": []
 }

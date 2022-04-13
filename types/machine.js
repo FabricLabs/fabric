@@ -12,14 +12,13 @@ const BN = require('bn.js');
 
 // Fabric Types
 const Hash256 = require('./hash256');
-const Scribe = require('./scribe');
+const Actor = require('./actor');
 const State = require('./state');
-const Vector = require('./vector');
 
 /**
  * General-purpose state machine with {@link Vector}-based instructions.
  */
-class Machine extends Scribe {
+class Machine extends Actor {
   /**
    * Create a Machine.
    * @param       {Object} settings Run-time configuration.
@@ -29,12 +28,16 @@ class Machine extends Scribe {
 
     this.settings = Object.assign({
       path: './stores/machine',
+      clock: 0,
       debug: false,
       deterministic: true,
-      seed: 1 // TODO: select seed for production
+      frequency: 1, // Hz
+      seed: 1, // TODO: select seed for production
+      states: {}
     }, settings);
 
-    this.clock = 0;
+    // internal clock
+    this.clock = this.settings.clock;
 
     // define integer field
     this.seed = Hash256.digest(this.settings.seed + '');
@@ -47,18 +50,9 @@ class Machine extends Scribe {
     this.known = {}; // definitions
     this.script = []; // input
     this.stack = []; // output
-
-    this.state = new State(); // JS map
     this.history = []; // State tree
 
-    this.observer = monitor.observe(this.state['@data']);
-    this.vector = new Vector(this.state['@data']);
-
-    this._state = {
-      status: 'INITIALIZED',
-      memory: Buffer.alloc(MACHINE_MAX_MEMORY)
-    };
-
+    // Tip
     Object.defineProperty(this, 'tip', function (val) {
       this.log(`tip requested: ${val}`);
       this.log(`tip requested, history: ${JSON.stringify(this.history)}`);
@@ -66,10 +60,6 @@ class Machine extends Scribe {
     });
 
     return this;
-  }
-
-  get id () {
-    return this.vector.id;
   }
 
   bit () {
@@ -112,18 +102,18 @@ class Machine extends Scribe {
 
     this.emit('tick', this.clock);
 
-    for (let i in this.script) {
-      let instruction = this.script[i];
+    for (const i in this.script) {
+      const instruction = this.script[i];
 
       if (this.known[instruction]) {
-        let op = new State({
+        const op = new State({
           '@type': 'Cycle',
           parent: this.id,
           state: this.state,
           known: this.known,
           input: input
         });
-        let data = this.known[instruction].call(op, input);
+        const data = this.known[instruction].call(op, input);
         this.stack.push(data);
       } else {
         this.stack.push(instruction | 0);
@@ -137,10 +127,9 @@ class Machine extends Scribe {
     this.state['@data'] = this.stack;
     this.state['@id'] = this.id;
 
-    let commit = await this.commit();
-    let state = await this.state.commit();
+    this.commit();
 
-    return state;
+    return this.state;
   }
 
   asBuffer () {
@@ -179,6 +168,23 @@ class Machine extends Scribe {
     }
 
     return changes;
+  }
+
+  async start () {
+    this.status = 'STARTING';
+    this._governor = setInterval(
+      this.compute.bind(this),
+      this.settings.frequency * 1000
+    );
+    this.status = 'STARTED';
+    return this;
+  }
+
+  async stop () {
+    this.status = 'STOPPING';
+    if (this._governor) clearInterval(this._governor);
+    this.status = 'STOPPED';
+    return this;
   }
 }
 

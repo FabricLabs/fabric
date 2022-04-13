@@ -2,7 +2,6 @@
 
 // Dependencies
 const assert = require('assert');
-const EventEmitter = require('events').EventEmitter;
 
 // Fabric Types
 const Reader = require('../types/reader');
@@ -15,9 +14,9 @@ describe('@fabric/core/types/reader', function () {
     });
 
     it('can parse a well-formatted message', function (done) {
-      let reader = new Reader();
-      let source = new EventEmitter();
-      let message = Message.fromVector(['Generic', 'Hello, world!']);
+      const reader = new Reader();
+      const message = Message.fromVector(['Generic', 'Hello, world!']);
+      const raw = message.toRaw();
 
       reader.on('message', function (msg) {
         const message = Message.fromBuffer(msg);
@@ -25,7 +24,7 @@ describe('@fabric/core/types/reader', function () {
         done();
       });
 
-      reader._addData(message.toRaw());
+      reader._addData(raw);
 
       assert.ok(reader);
       assert.strictEqual(message.toObject().headers.hash, '315f5bdb76d078c43b8ac0064e4a0164612b1fce77c869345bfc94c75894edd3');

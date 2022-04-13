@@ -4,6 +4,7 @@
 const crypto = require('crypto');
 
 // components
+const Actor = require('../types/actor');
 const App = require('../types/app');
 const Block = require('../types/block');
 const Chain = require('../types/chain');
@@ -21,7 +22,7 @@ const Opcode = require('../types/opcode');
 const Oracle = require('../types/oracle');
 // const Peer = require('./peer');
 const Program = require('../types/program');
-const Remote = require('../types/remote');
+// const Remote = require('../types/remote');
 const Resource = require('../types/resource');
 const Service = require('../types/service');
 const Scribe = require('../types/scribe');
@@ -39,7 +40,7 @@ const Worker = require('../types/worker');
  * Reliable decentralized infrastructure.
  * @property {Class} Block
  */
-class Fabric extends Scribe {
+class Fabric extends Service {
   /**
    * The {@link Fabric} type implements a peer-to-peer protocol for
    * establishing and settling of mutually-agreed upon proofs of
@@ -56,18 +57,15 @@ class Fabric extends Scribe {
   constructor (vector = {}) {
     super(vector);
 
-    // set local config
-    this.config = Object.assign({
+    // local settings
+    this.settings = Object.assign({
       path: './stores/fabric',
       persistent: false
     }, vector);
 
     // start with reference to object
-    this.ident = new State(this.config);
-    this.state = new State(vector); // State
-
-    // TODO: remove this
-    this['@entity'] = {};
+    this.ident = new Actor(this.config);
+    this.state = new Actor(vector); // State
 
     // build maps
     this.agent = {}; // Identity
@@ -82,6 +80,11 @@ class Fabric extends Scribe {
     this.machine = new Machine(this.config);
     this.store = new Store(this.config);
     // this.script = new Script(this.config);
+
+    this._state = {
+      status: 'PAUSED',
+      content: this.state.data
+    };
 
     // provide instance
     return this;
@@ -155,40 +158,6 @@ class Fabric extends Scribe {
 
   async _DELETE (key) {
     return this.store._DELETE(key);
-  }
-
-  async start () {
-    await super.start();
-
-    for (let i in this.config.services) {
-      let name = this.config.services[i];
-      let service = Service.fromName(name);
-      await this.register(service);
-      await this.enable(name);
-    }
-
-    // identify ourselves to the network
-    await this.identify();
-
-    return this;
-  }
-
-  async stop () {
-    this.log('Stopping...');
-
-    for (let name in this.services) {
-      await this.services[name].stop();
-    }
-
-    if (this.chain) {
-      await this.chain.stop();
-    }
-
-    await super.stop();
-
-    this.emit('done');
-
-    return this;
   }
 
   /**

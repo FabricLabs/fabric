@@ -19,7 +19,7 @@ class Resource extends Store {
       return new Resource(definition);
     }
 
-    this['@data'] = definition || this.prototype;
+    this['@data'] = definition;
     this.name = definition.name || 'Radical';
     this.names = [ this.name, pluralize(this.name) ];
     this.definition = definition;
@@ -51,7 +51,7 @@ class Resource extends Store {
     this.store = app.stash;
   }
 
-  async list (id) {
+  async list () {
     return this.store.get(this.routes.list);
   }
 

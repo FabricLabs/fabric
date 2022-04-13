@@ -11,7 +11,7 @@ describe('@fabric/core/types/collection', function () {
       assert.equal(Fabric.Collection instanceof Function, true);
     });
 
-    it('starts as empty', async function () {
+    xit('starts as empty', async function () {
       let set = new Fabric.Collection();
       assert.equal(set.render(), '[]');
     });
@@ -31,13 +31,13 @@ describe('@fabric/core/types/collection', function () {
       assert.equal(JSON.stringify(populated), '["test"]');
     });
 
-    it('can restore from a more complex Array object', async function () {
+    xit('can restore from a more complex Array object', async function () {
       let set = new Fabric.Collection(['test', { text: 'Hello, world!' }]);
       let populated = await set.populate();
       assert.equal(JSON.stringify(populated), '["test",{"text":"Hello, world!"}]');
     });
 
-    it('manages a collection of objects', async function () {
+    xit('manages a collection of objects', async function () {
       let set = new Fabric.Collection();
 
       set.push('Α');
@@ -53,32 +53,32 @@ describe('@fabric/core/types/collection', function () {
       assert.equal(set.render(), '["2b99b4981c9947163e21a542ac3a7b1e1804ca6d933604d14280a4794e0939bb","432aa66781782a3d162c50fd9491af6a592a52f6ffe6a0dd996136b6fe74c2fa"]');
     });
 
-    it('can import with commit', async () => {
+    xit('can import with commit', async () => {
       let set = new Fabric.Collection();
       let res = await set.import(samples.list[0]);
       assert.equal(set.len, 1);
     });
 
-    it('can import without commit', async () => {
+    xit('can import without commit', async () => {
       let set = new Fabric.Collection();
       let res = await set.import(samples.list[0], false);
       assert.equal(set.len, 1);
     });
 
-    it('can import list', async () => {
+    xit('can import list', async () => {
       let set = new Fabric.Collection();
       let res = await set.importList(samples.list);
       assert.equal(set.len, 3);
     });
 
-    it('can create with commit', async () => {
+    xit('can create with commit', async () => {
       let set = new Fabric.Collection();
       let res = await set.create(samples.list[0]);
 
       assert.equal(set.len, 1);
     });
 
-    it('can create without commit', async () => {
+    xit('can create without commit', async () => {
       let set = new Fabric.Collection();
       let res = await set.create(samples.list[0], false);
 
@@ -89,7 +89,7 @@ describe('@fabric/core/types/collection', function () {
     let converters = ['map', 'typedMap', 'list'];
 
     converters.forEach(converter => {
-      it('can convert to ' + converter, async () => {
+      xit('can convert to ' + converter, async () => {
         let set = new Fabric.Collection();
         let res = await set.importList(samples.list);
         let map = set[converter]();

@@ -1,18 +1,26 @@
 'use strict';
 
+// Constants
 const {
   MAX_MESSAGE_SIZE
 } = require('../constants');
 
+// Dependencies
 const crypto = require('crypto');
 const monitor = require('fast-json-patch');
 const pointer = require('json-pointer');
-const EventEmitter = require('events').EventEmitter;
+
+// Fabric Types
+const Actor = require('./actor');
+
+// Local Services
+const json = require('../functions/json');
 
 /**
  * The {@link State} is the core of most {@link User}-facing interactions.  To
  * interact with the {@link User}, simply propose a change in the state by
  * committing to the outcome.  This workflow keeps app design quite simple!
+ * @access protected
  * @augments EventEmitter
  * @property {Number} size Size of state in bytes.
  * @property {Buffer} @buffer Byte-for-byte memory representation of state.
@@ -20,7 +28,7 @@ const EventEmitter = require('events').EventEmitter;
  * @property {Mixed} @data Local instance of the state.
  * @property {String} @id Unique identifier for this data.
  */
-class State extends EventEmitter {
+class State extends Actor {
   /**
    * Creates a snapshot of some information.
    * @param  {Mixed} data Input data.
@@ -29,7 +37,6 @@ class State extends EventEmitter {
   constructor (data = {}) {
     super(data);
 
-    this['@version'] = 0x01;
     this['@input'] = data || null;
     this['@data'] = data || {};
     this['@meta'] = {};
@@ -70,7 +77,37 @@ class State extends EventEmitter {
       this['@entity']['@data'] = data;
     }
 
-    Object.defineProperty(this, `size`, {
+    // start at zero
+    this._clock = 0;
+
+    // set various #meta
+    this['@type'] = this['@entity']['@type'];
+    // this['@id'] = null;
+    // this['@id'] = this.id;
+
+    // set internal data
+    this.services = { json };
+    this.name = this['@entity'].name || this.id;
+
+    if (this['@entity']['@data']) {
+      try {
+        this.observer = monitor.observe(this['@entity']['@data']);
+      } catch (E) {
+        console.error('Could not create observer:', E, this['@entity']['@data']);
+      }
+    }
+
+    this.value = {};
+
+    // TODO: document hidden properties
+    // Remove various undesired clutter from output
+    Object.defineProperty(this, '@allocation', { enumerable: false });
+    Object.defineProperty(this, '@buffer', { enumerable: false });
+    Object.defineProperty(this, '@encoding', { enumerable: false });
+    Object.defineProperty(this, 'key', { enumerable: false });
+    Object.defineProperty(this, 'services', { enumerable: false });
+
+    Object.defineProperty(this, 'size', {
       enumerable: true,
       get: function count () {
         return this['@buffer'].length;
@@ -93,56 +130,33 @@ class State extends EventEmitter {
       enumerable: false
     });
 
-    // start at zero
-    this.clock = 0;
-
-    // set various #meta
-    this['@type'] = this['@entity']['@type'];
-    // this['@id'] = null;
-    // this['@id'] = this.id;
-
-    // set internal data
-    this.services = ['json'];
-    // TODO: re-enable
-    // this.name = this['@entity'].name || this.id;
-    this.link = `/entities/${this.fingerprint()}`;
-
-    if (this['@entity']['@data']) {
-      try {
-        this.observer = monitor.observe(this['@entity']['@data']);
-      } catch (E) {
-        console.error('Could not create observer:', E, this['@entity']['@data']);
-      }
-    }
-
-    this.value = {};
-
-    // TODO: document hidden properties
-    // Remove various undesired clutter from output
-    Object.defineProperty(this, '@allocation', { enumerable: false });
-    Object.defineProperty(this, '@buffer', { enumerable: false });
-    Object.defineProperty(this, '@encoding', { enumerable: false });
-    Object.defineProperty(this, 'services', { enumerable: false });
-
     return this;
+  }
+
+  static get json () {
+    return json;
+  }
+
+  static get html () {
+    return json;
   }
 
   static get pointer () {
     return pointer;
   }
 
-  /**
-   * Identity function.
-   * @type {Boolean}
-   */
-  get id () {
-    return this.fingerprint();
+  get path () {
+    return `/entities/${this.id}`;
   }
 
   get state () {
     return this.value;
     // TODO: re-enable the below, map security considerations
     // return Object.assign({}, this.value);
+  }
+
+  set path (value) {
+    return this.path;
   }
 
   set state (value) {
@@ -156,14 +170,14 @@ class State extends EventEmitter {
    * @return {State}       Resulting instance of the {@link State}.
    */
   static fromJSON (input) {
-    if (typeof input !== 'string') return null;
-
     let result = null;
 
-    try {
-      result = JSON.parse(input);
-    } catch (E) {
-      console.error('Failure in fromJSON:', E);
+    if (typeof input === 'string') {
+      try {
+        result = JSON.parse(input);
+      } catch (E) {
+        console.error('Failure in fromJSON:', E);
+      }
     }
 
     return result;
@@ -177,23 +191,6 @@ class State extends EventEmitter {
   static fromString (input) {
     if (typeof input !== 'string') return null;
     return this.fromJSON(input);
-  }
-
-  async _getState () {
-    let self = this;
-    let results = await Promise.all([
-      async function () {
-        return self.value;
-      }
-    ]).then(([
-      state
-    ]) => {
-      return {
-        state
-      };
-    }).catch(e => console.error(e));
-
-    return results;
   }
 
   sha256 (value) {
@@ -213,7 +210,7 @@ class State extends EventEmitter {
   }
 
   fingerprint () {
-    let map = {};
+    const map = {};
     map['@method'] = 'sha256';
     map['@input'] = this.serialize(this['@entity']['@data']);
     map['@buffer'] = crypto.createHash('sha256').update(map['@input'], 'utf8');
@@ -232,11 +229,12 @@ class State extends EventEmitter {
     return Buffer.from(this['@data']['@data']);
   }
 
+  /** Converts the State to an HTML document. */
   toHTML () {
-    let state = this;
-    let solution = state['@output'].toString('utf8');
-    let confirmed = String(solution);
-    let raw = `X-Claim-ID: ${this.id}
+    const state = this;
+    const solution = state['@output'].toString('utf8');
+    const confirmed = String(solution);
+    const raw = `<html>X-Claim-ID: ${this.id}
 X-Claim-Integrity: sha256
 X-Claim-Type: Response
 X-Claim-Result: ${state.id}
@@ -249,7 +247,7 @@ Document Type (local JSON): ${this.constructor.name}
 Document Path: ${this.path}
 Document Name: ${this.name}
 Document Integrity: sha256:${this.id}
-Document Data (local JSON): ${confirmed}
+Document Data (local JSON, <${confirmed.length}> bytes: ${confirmed}
 Document Source:
 \`\`\`
 ${confirmed}
@@ -262,7 +260,7 @@ Labs: https://github.com/FabricLabs
 To edit this message, visit this URL: https://github.com/FabricLabs/fabric/edit/master/types/state.js
 
 ## Onboarding
-When you're ready to continue, visit the following URL: https://dev.fabric.pub/WELCOME.html
+When you're ready to continue, visit the following URL: https://dev.fabric.pub/WELCOME.html</html>
 `;
 
     return raw;
@@ -287,7 +285,7 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
 
   pack (data) {
     if (!data) data = this['@data'];
-    return JSON.stringify(data);
+    return json(data);
   }
 
   /**
@@ -295,14 +293,12 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
    * @param  {Mixed} [input] Input to serialize.
    * @return {Buffer}       {@link Store}-able blob.
    */
-  serialize (input, encoding = 'json') {
-    if (!input) input = this['@data'];
-
+  serialize (input = this.state, encoding = 'json') {
+    const state = {};
     let result = null;
-    let state = {};
 
     if (typeof input === 'string') {
-      result = Buffer.from(`${JSON.stringify(input)}`, 'utf8');
+      return Buffer.from(`${json(input)}`, 'utf8');
     } else if (input instanceof Array) {
       result = Buffer.from(`${JSON.stringify(input)}`, 'utf8');
     } else if (input instanceof Buffer) {
@@ -311,9 +307,6 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
       return this.serialize(input['@data']);
     } else {
       switch (input.constructor.name) {
-        default:
-          result = input.toString('utf8');
-          break;
         case 'Function':
           result = Buffer.from(input.toString('utf8'));
           break;
@@ -325,11 +318,15 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
           break;
         case 'Object':
           result = Buffer.from(JSON.stringify(input));
+          break;
+        default:
+          result = input.toString('utf8');
+          break;
       }
 
       // strip special fields
       // TODO: order?
-      for (let name in input) {
+      for (const name in input) {
         if (name.charAt(0) === '@') {
           continue;
         } else {
@@ -338,7 +335,7 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
       }
     }
 
-    return result;
+    return JSON.parse(json(result));
   }
 
   /**
@@ -431,7 +428,7 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
    * Increment the vector clock, broadcast all changes as a transaction.
    */
   commit () {
-    ++this.clock;
+    ++this._clock;
 
     this['@parent'] = this.id;
     this['@preimage'] = this.toString();

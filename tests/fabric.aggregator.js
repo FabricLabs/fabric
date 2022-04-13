@@ -43,9 +43,9 @@ describe('@fabric/core/types/aggregator', function () {
           aggregator.on('commit', (commit) => {
             assert.ok(commit);
             assert.strictEqual(commit.root instanceof Uint8Array, true);
-            assert.strictEqual(commit.root.toString('hex'), '632ad963e04ee92c0e575d5d7c674cc99ccb17b78fb269663f0bdefb4c9e792d');
-            assert.strictEqual(commit.id, '632ad963e04ee92c0e575d5d7c674cc99ccb17b78fb269663f0bdefb4c9e792d');
-            assert.strictEqual(commit.actor, '788a0e9bd64e02cba5c1f290fedb287871ca993e6a5cdf2689074c1d52dd6dfa');
+            assert.strictEqual(commit.root.toString('hex'), '00f7a33177c358ec85e2779a7a93a46b838b349a5322bc3c52633c3bd22c9316');
+            assert.strictEqual(commit.id, '00f7a33177c358ec85e2779a7a93a46b838b349a5322bc3c52633c3bd22c9316');
+            assert.strictEqual(commit.actor, 'f4b881ef53637d192ecb35359ae44f25284b93acb4126ecb84a7ff793c608f7e');
             assert.strictEqual(aggregator.balances.total, 1);
             done();
           });
@@ -66,9 +66,9 @@ describe('@fabric/core/types/aggregator', function () {
             if (++count >= 2) {
               assert.ok(commit);
               assert.strictEqual(commit.root instanceof Uint8Array, true);
-              assert.strictEqual(commit.root.toString('hex'), '068f7d173519f1498e114baffa9fd75f93d3de4e40cd1d64f8127d22ddab2973');
-              assert.strictEqual(commit.id, '068f7d173519f1498e114baffa9fd75f93d3de4e40cd1d64f8127d22ddab2973');
-              assert.strictEqual(commit.actor, '7182f9b168c702bd6d27e0e4249df6b589eb406723c07f3351943a8597e60917');
+              assert.strictEqual(commit.root.toString('hex'), '3fa149ded407f186a554d8fbe99c17a971acf4a618e85d4e0088efbd447bd2e7');
+              assert.strictEqual(commit.id, '3fa149ded407f186a554d8fbe99c17a971acf4a618e85d4e0088efbd447bd2e7');
+              assert.strictEqual(commit.actor, 'cb896879545d912ea9fcde43ff8bcfd3c532dd075ef8c8525eb465f623b653fb');
               assert.strictEqual(aggregator.balances.total, 2);
               done();
             }

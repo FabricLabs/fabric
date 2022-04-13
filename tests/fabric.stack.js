@@ -5,7 +5,7 @@ const Fabric = require('../');
 const assert = require('assert');
 const expect = require('chai').expect;
 
-describe('@fabric/core/types/app', function () {
+describe('@fabric/core/types/stack', function () {
   describe('Stack', function () {
     it('is available from @fabric/core', function () {
       assert.equal(Fabric.Stack instanceof Function, true);
@@ -17,7 +17,7 @@ describe('@fabric/core/types/app', function () {
       // console.log('stack.render():', stack.render());
 
       // TODO: move to constants, verify
-      assert.equal(stack.id, 'dc0422e42d8bac213c34031a1af2a99223fbad851887d1dd03f11d144f0cfe75');
+      assert.equal(stack.id, 'a5b08f19adfd2918e354af8c11e1b4efd963b5f5a525900d63a01cd2fd28176f');
     });
 
     xit('can instantiate from a serialized state', function () {
