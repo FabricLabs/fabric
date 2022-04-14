@@ -162,7 +162,7 @@ class Message extends Actor {
   toObject () {
     return {
       headers: {
-        magic: parseInt(`0x${this.raw.magic.toString('hex')}`, 16),
+        magic: parseInt(`${this.raw.magic.toString('hex')}`, 16),
         version: parseInt(`${this.raw.version.toString('hex')}`, 16),
         parent: this.raw.parent.toString('hex'),
         type: parseInt(`${this.raw.type.toString('hex')}`, 16),
@@ -196,6 +196,24 @@ class Message extends Actor {
     return message;
   }
 
+  static parseRawMessage (buffer) {
+    const message = {
+      magic: buffer.slice(0, 4),
+      version: buffer.slice(4, 8),
+      parent: buffer.slice(8, 40),
+      type: buffer.slice(40, 44),
+      size: buffer.slice(44, 48),
+      hash: buffer.slice(48, 80),
+      signature: buffer.slice(80, 144)
+    };
+
+    if (buffer.length >= 144) {
+      message.data = buffer.slice(144, buffer.length);
+    }
+
+    return message;
+  };
+
   static fromBuffer (buffer) {
     return Message.fromRaw(buffer);
   }
@@ -213,9 +231,9 @@ class Message extends Actor {
       version: input.slice(4, 8),
       parent: input.slice(8, 40),
       type: input.slice(40, 44),
-      size: input.slice(44, 48),
-      hash: input.slice(48, 80),
-      signature: input.slice(80, 144)
+      size: input.slice(40, 48),
+      hash: input.slice(40, 80),
+      signature: input.slice(0, 144)
     };
 
     message.data = input.slice(HEADER_SIZE);
