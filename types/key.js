@@ -11,17 +11,19 @@ const crypto = require('crypto');
 const BN = require('bn.js');
 const EC = require('elliptic').ec;
 const ec = new EC('secp256k1');
+const ecc = require('tiny-secp256k1');
 
 // External Dependencies
 // TODO: remove all external dependencies
+const BIP32 = require('bip32').default;
+const bip32 = new BIP32(ecc);
+const bip39 = require('bip39');
+
+// bcoin
+// TODO: remove (!!!)
 const bcoin = require('bcoin/lib/bcoin-browser');
-const HD = bcoin.hd;
 const KeyRing = bcoin.KeyRing;
 const Mnemonic = bcoin.hd.Mnemonic;
-
-// Fabric Types
-// const Entity = require('./entity');
-// const Machine = require('./machine');
 
 /**
  * Represents a cryptographic key.
@@ -71,47 +73,66 @@ class Key {
     // TODO: consider using sha256(masterprivkey) or sha256(sha256(...))?
     this._starseed = this.settings.seed || crypto.randomBytes(4).readUInt32BE();
 
-    const radix = 10;
-    const parsed = parseInt(this._starseed, radix);
-
-    this.generator = new Generator(parsed);
-
     // TODO: design state machine for input (configuration)
     if (this.settings.seed) {
-      // Seed provided, compute keys
-      const mnemonic = new Mnemonic(this.settings.seed);
-      const master = HD.fromMnemonic(mnemonic);
-
-      // Assign keys
-      this.master = master;
-      this.keyring = new KeyRing(master, this.settings.network);
-      this.keyring.witness = this.settings.witness;
-      this.keypair = ec.keyFromPrivate(this.keyring.getPrivateKey('hex'));
-      this.address = this.keyring.getAddress().toString();
-      this.status = 'seeded';
+      this._mode = 'FROM_SEED';
     } else if (this.settings.private) {
-      const input = this.settings.private;
-      const provision = (input instanceof Buffer) ? input : Buffer.from(input, 'hex');
-      // Key is private
-      this.keyring = KeyRing.fromPrivate(provision, true);
-      this.keyring.witness = this.settings.witness;
-      this.keypair = ec.keyFromPrivate(this.settings.private);
-      this.address = this.keyring.getAddress();
+      this._mode = 'FROM_SEED';
+    } else if (this.settings.xprv) {
+      this._mode = 'FROM_XPRV';
+    } else if (this.settings.xpub) {
+      this._mode = 'FROM_XPUB';
     } else if (this.settings.pubkey || this.settings.public) {
-      const input = this.settings.pubkey || this.settings.public;
-      // Key is only public
-      this.keyring = KeyRing.fromKey((input instanceof Buffer) ? input : Buffer.from(input, 'hex'), true);
-      this.keypair = ec.keyFromPublic(this.keyring.getPublicKey(true, 'hex'));
-      this.address = this.keyring.getAddress();
+      this._mode = 'FROM_PUBLIC_KEY';
     } else {
-      // Generate new keys
-      this.keypair = ec.genKeyPair();
-      const input = this.keypair.getPrivate().toBuffer(null, 32);
-      this.keyring = KeyRing.fromPrivate(input, true);
-      this.keyring.witness = this.settings.witness;
-      this.address = this.keyring.getAddress();
+      this._mode = 'FROM_RANDOM';
     }
 
+    switch (this._mode) {
+      case 'FROM_SEED':
+        const seed = bip39.mnemonicToSeedSync(this.settings.seed);
+        const root = bip32.fromSeed(seed);
+        this.xprv = root.toBase58();
+        this.xpub = root.neutered().toBase58();
+        this.master = root;
+        this.keypair = ec.keyFromPrivate(root.privateKey);
+        // this.address = this.keyring.getAddress().toString();
+        this.status = 'seeded';
+        break;
+      case 'FROM_XPRV':
+        const restored = bip32.fromBase58(this.settings.xprv);
+        this.xprv = restored.toBase58();
+        this.xpub = restored.neutered().toBase58();
+        this.keypair = ec.keyFromPrivate(restored.privateKey);
+        break;
+      case 'FROM_XPUB':
+        break;
+      case 'FROM_PRIVATE_KEY':
+        // Key is private
+        const provision = (this.settings.private instanceof Buffer) ? this.settings.private : Buffer.from(this.settings.private, 'hex');
+        this.keyring = KeyRing.fromPrivate(provision, true);
+        this.keyring.witness = this.settings.witness;
+        this.keypair = ec.keyFromPrivate(this.settings.private);
+        this.address = this.keyring.getAddress();
+        break;
+      case 'FROM_PUBLIC_KEY':
+        const pubkey = this.settings.pubkey || this.settings.public;
+        // Key is only public
+        this.keyring = KeyRing.fromKey((pubkey instanceof Buffer) ? pubkey : Buffer.from(pubkey, 'hex'), true);
+        this.keypair = ec.keyFromPublic(this.keyring.getPublicKey(true, 'hex'));
+        this.address = this.keyring.getAddress();
+        break;
+      case 'FROM_RANDOM':
+        // Generate new keys
+        this.keypair = ec.genKeyPair();
+        const privkey = this.keypair.getPrivate().toBuffer(null, 32);
+        this.keyring = KeyRing.fromPrivate(privkey, true);
+        this.keyring.witness = this.settings.witness;
+        this.address = this.keyring.getAddress();
+        break;
+    }
+
+    // Read the pair
     this.private = this.keypair.getPrivate();
     this.public = this.keypair.getPublic(true);
 
@@ -123,8 +144,9 @@ class Key {
 
     // BELOW THIS NON-STANDARD
     // DO NOT USE IN PRODUCTION
-    this.pubkeyhash = this.keyring.getKeyHash('hex');
-
+    // this.pubkeyhash = this.keyring.getKeyHash('hex');
+    this.pubkeyhash = '';
+    this.generator = new Generator(parseInt(this._starseed, 10));
 
     this['@data'] = {
       type: 'Key',
@@ -136,17 +158,9 @@ class Key {
       pubkey: this.pubkey
     };
 
-    Object.defineProperty(this, 'keyring', {
-      enumerable: false
-    });
-
-    Object.defineProperty(this, 'keypair', {
-      enumerable: false
-    });
-
-    Object.defineProperty(this, 'private', {
-      enumerable: false
-    });
+    Object.defineProperty(this, 'keyring', { enumerable: false });
+    Object.defineProperty(this, 'keypair', { enumerable: false });
+    Object.defineProperty(this, 'private', { enumerable: false });
 
     return this;
   }

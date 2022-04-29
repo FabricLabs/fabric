@@ -41,6 +41,8 @@
   },
   "key": {
     "seed": "letter drastic census knock shield matter crime demand gloom echo romance lizard zebra deliver baby key tackle fire update please sketch coconut balance able",
-    "public": "0223cffd5e94da3c8915c6b868f06d15183c1aeffad8ddf58fcb35a428e3158e71"
+    "public": "0223cffd5e94da3c8915c6b868f06d15183c1aeffad8ddf58fcb35a428e3158e71",
+    "xprv": "xprv9s21ZrQH143K2jKS8iCu5QQg34zf7k5h1nfJZbuWQxDDSRmyLxt6BmJARp1SwfGtMAwPNEeQmUJpD5DosB4f3YxaJZiUS2wq6TzsNzFiEjJ",
+    "xpub": "xpub661MyMwAqRbcFDPuEjjuSYMQb6q9XCoYP1auMzK7yHkCKE77tWCLjZceH4xFT1ZCc3FKpeMnii9JMLHp7n9dvDvz8MJ1CYge2digpGRjk7D"
   }
 }

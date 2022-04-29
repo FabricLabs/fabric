@@ -242,6 +242,10 @@ class Actor extends EventEmitter {
     return this;
   }
 
+  _getField (name) {
+    return this._state.content[name];
+  }
+
   /**
    * Incurs 1 SYSCALL
    * @access private

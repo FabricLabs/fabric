@@ -78,6 +78,7 @@
     "base58check": "^2.0.0",
     "bcoin": "bcoin-org/bcoin#v2.2.0",
     "bip-schnorr": "^0.6.4",
+    "bip32": "^3.0.1",
     "bip39": "^3.0.4",
     "bip65": "^1.0.3",
     "bip68": "^1.0.4",
@@ -109,7 +110,7 @@
     "rimraf": "^2.6.2",
     "simple-aes": "^0.1.1",
     "struct": "^0.0.12",
-    "tiny-secp256k1": "^2.2.0",
+    "tiny-secp256k1": "^2.2.1",
     "ts-morph": "^10.0.2",
     "zeromq": "^5.2.8"
   },
