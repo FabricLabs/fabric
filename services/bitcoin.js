@@ -18,7 +18,7 @@ const bip68 = require('bip68');
 const ECPair = ECPairFactory(ecc);
 
 // TODO: remove bcoin
-const bcoin = require('bcoin/lib/bcoin-browser');
+const bcoin = require('bcoin');
 const bitcoin = require('bitcoinjs-lib');
 
 // Services

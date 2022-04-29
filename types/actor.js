@@ -34,7 +34,7 @@ class Actor extends EventEmitter {
     super(actor);
 
     this.commits = [];
-    this.signature = null;
+    // this.signature = Buffer.alloc(64);
     this.value = this._readObject(actor); // TODO: use Buffer?
 
     // Internal State
@@ -215,6 +215,10 @@ class Actor extends EventEmitter {
     return json;
   }
 
+  sha256 (value) {
+    return Hash256.digest(value);
+  }
+
   /**
    * Signs the Actor.
    * @returns {Actor}
@@ -253,6 +257,11 @@ class Actor extends EventEmitter {
     // after verify, commit
   }
 
+  /**
+   * Parse an Object into a corresponding Fabric state.
+   * @param {Object} input Object to read as input.
+   * @returns {Object} Fabric state.
+   */
   _readObject (input = {}) {
     let state = {};
 

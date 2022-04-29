@@ -275,6 +275,7 @@ class Store extends Actor {
       switch (value.constructor.name) {
         default:
           value = JSON.stringify(value);
+          break;
       }
     }
 

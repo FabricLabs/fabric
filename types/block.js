@@ -13,6 +13,10 @@ class Block extends Actor {
       signatures: []
     }, input);
 
+    Object.defineProperty(this, '_events', { enumerable: false });
+    Object.defineProperty(this, '_eventCount', { enumerable: false });
+    Object.defineProperty(this, 'observer', { enumerable: false });
+
     return this;
   }
 

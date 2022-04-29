@@ -110,8 +110,8 @@ class CLI extends App {
   async tick () {
     // Poll for new information
     // TODO: ZMQ
-    await this._syncChainDisplay();
-    await this._syncBalance();
+    // await this._syncChainDisplay();
+    // await this._syncBalance();
 
     // Increment clock and commit
     this._state.clock++;
@@ -203,13 +203,13 @@ class CLI extends App {
     // this.on('changes', this._handleChanges.bind(this));
 
     // Start Bitcoin service
-    await this.bitcoin.start();
+    this.bitcoin.start();
 
     // Start P2P node
     this.node.start();
 
     // Attach Heartbeat
-    this.heartbeat = setInterval(this.tick.bind(this), this.settings.interval);
+    this._heart = setInterval(this.tick.bind(this), this.settings.interval);
 
     // Emit Ready
     this.status = 'READY';

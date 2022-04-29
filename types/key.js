@@ -65,8 +65,16 @@ class Key {
     this.private = null;
     this.public = null;
 
-    this._starseed = this.settings.seed || crypto.randomBytes(4).toString('ascii');
-    this.generator = new Generator(parseFloat(this._starseed));
+    // Configure Deterministic Random
+    // WARNING: this will currently loop after 2^32 bits
+    // TODO: evaluate compression when treating seed phrase as ascii
+    // TODO: consider using sha256(masterprivkey) or sha256(sha256(...))?
+    this._starseed = this.settings.seed || crypto.randomBytes(4).readUInt32BE();
+
+    const radix = 10;
+    const parsed = parseInt(this._starseed, radix);
+
+    this.generator = new Generator(parsed);
 
     // TODO: design state machine for input (configuration)
     if (this.settings.seed) {

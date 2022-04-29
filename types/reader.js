@@ -131,7 +131,7 @@ class Reader extends EventEmitter {
       data
     };
 
-    this.emit('debug', `Reader Proposal: ${JSON.stringify(proposal, null, '  ')}`);
+    // this.emit('debug', `Reader Proposal: ${JSON.stringify(proposal, null, '  ')}`);
     this.emit('message', frame);
   }
 }
