@@ -8,7 +8,7 @@ const StateMachine = require('javascript-state-machine');
 
 // Fabric Types
 const Machine = require('./machine');
-const Service = require('./service');
+const Actor = require('./actor');
 
 /**
  * The {@link Circuit} is the mechanism through which {@link Fabric}
@@ -17,7 +17,7 @@ const Service = require('./service');
  * See also {@link Swarm} for deeper *inspection of {@link Machine}
  * mechanics.
  */
-class Circuit extends Service {
+class Circuit extends Actor {
   constructor (config = {}) {
     super(config);
 
@@ -26,7 +26,8 @@ class Circuit extends Service {
       gates: [],
       loops: [],
       nodes: [],
-      wires: []
+      wires: [],
+      methods: {}
     }, config);
 
     this['@data'] = this.settings;

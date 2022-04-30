@@ -1,0 +1,135 @@
+digraph Portal {
+  rankdir = LR
+
+  subgraph cluster_portal {
+    label = "portaldefi.com"
+
+    "portaldefi.com"
+
+    "portal@fabric/core/types/node:7777"
+    "portal@fabric/http/types/bridge:80"
+
+    "S1-BTCA: bitcoind (Chain A)"
+    "S1-BTCB: bitcoind (Chain B)"
+    "S1-ETH: Nethermind (Chain C)"
+
+    "S1-BTCA: lightningd (Chain A)"
+  }
+
+  subgraph cluster_outsider {
+    label = "third-party.com"
+
+    "third-party.com"
+
+    "example@fabric/core/types/node:7777"
+    "example@fabric/http/types/bridge:80"
+
+    "T1-BTCA: bitcoind (Chain A)"
+    "T1-ETH: geth (Chain C)"
+  }
+
+  "portaldefi.com" -> {
+    "portal@fabric/core/types/node:7777"
+    "portal@fabric/http/types/bridge:80"
+  }
+
+  "portal@fabric/core/types/node:7777" -> {
+    "S1-BTCA: bitcoind (Chain A)"
+    "S1-BTCB: bitcoind (Chain B)"
+    "S1-ETH: Nethermind (Chain C)"
+    "S1-BTCA: lightningd (Chain A)"
+  }
+
+  "S1-BTCA: lightningd (Chain A)" -> "S1-BTCA: bitcoind (Chain A)"
+
+  "third-party.com" -> {
+    "example@fabric/core/types/node:7777"
+    "example@fabric/http/types/bridge:80"
+  }
+
+  "example@fabric/core/types/node:7777" -> {
+    "T1-BTCA: bitcoind (Chain A)"
+    "T1-ETH: geth (Chain C)"
+  }
+
+  # Networks (Fabric)
+  "portal@fabric/core/types/node:7777" -> {
+    "example@fabric/core/types/node:7777"
+    "alice@fabric/core/types/node:7777"
+    "bob@fabric/core/types/node:7777"
+  }
+
+  "example@fabric/core/types/node:7777" -> {
+    "portal@fabric/core/types/node:7777"
+    "alice@fabric/core/types/node:7777"
+    "bob@fabric/core/types/node:7777"
+  }
+
+  "alice@fabric/core/types/node:7777" -> {
+    "portal@fabric/core/types/node:7777"
+    "bob@fabric/core/types/node:7777"
+  }
+
+  # BTC A Nodes
+  "S1-BTCA: bitcoind (Chain A)" -> {
+    "T1-BTCA: bitcoind (Chain A)"
+    "A1-BTCA: bitcoind (Chain A)"
+    "B1-BTCA: bitcoind (Chain A)"
+  }
+
+  "T1-BTCA: bitcoind (Chain A)" -> {
+    "A1-BTCA: bitcoind (Chain A)"
+    "S1-BTCA: bitcoind (Chain A)"
+    "B1-BTCA: bitcoind (Chain A)"
+  }
+
+  "A1-BTCA: bitcoind (Chain A)" -> {
+    "T1-BTCA: bitcoind (Chain A)"
+    "S1-BTCA: bitcoind (Chain A)"
+    "B1-BTCA: bitcoind (Chain A)"
+  }
+
+  "B1-BTCA: bitcoind (Chain A)" -> {
+    "S1-BTCA: bitcoind (Chain A)"
+    "T1-BTCA: bitcoind (Chain A)"
+    "A1-BTCA: bitcoind (Chain A)"
+  }
+
+  # Fabric
+  subgraph cluster_fabric {
+    label = "Fabric Network"
+  }
+
+  # Users
+  subgraph cluster_users {
+    subgraph cluster_alice {
+      label = "Alice"
+      "Alice"
+      "alice@fabric/core/types/node:7777"
+      "A1-BTCA: bitcoind (Chain A)"
+      "A1-BTCB: bitcoind (Chain B)"
+      "A1-@portal/web"
+    }
+
+    subgraph cluster_bob {
+      label = "Bob"
+      "Bob"
+      "bob@fabric/core/types/node:7777"
+      "B1-BTCA: bitcoind (Chain A)"
+      "B1-BTCB: bitcoind (Chain B)"
+    }
+
+    subgraph cluster_charlie {
+      "Charlie"
+    }
+  }
+
+  {
+    "Alice"
+    "Bob"
+  } -> "portal@fabric/http/types/bridge:80"
+
+  {
+    "Charlie"
+  } -> "example@fabric/http/types/bridge:80"
+}

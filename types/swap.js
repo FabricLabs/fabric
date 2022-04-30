@@ -92,8 +92,8 @@ class Swap {
     const hash = crypto.createHash('sha256').update(secret).digest('hex');
 
     return {
-      'secret': secret,
-      'hash': hash
+      secret: secret,
+      hash: hash
     };
   }
 
@@ -109,8 +109,8 @@ class Swap {
     const publicKey = keyring.publicKey;
 
     return {
-      'publicKey': publicKey,
-      'privateKey': privateKey
+      publicKey: publicKey,
+      privateKey: privateKey
     };
   }
 

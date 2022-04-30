@@ -26,19 +26,18 @@ describe('@fabric/core/types/store', function () {
         persistent: false
       });
 
-      await store.start().catch(store.error.bind(store));
-      let set = await store.set('example', samples.input.hello).catch(store.error.bind(store));
-      await store.stop().catch(store.error.bind(store));
+      await store.start().catch(assert.fail);
+      let set = await store.set('example', samples.input.hello).catch(assert.fail);
+      await store.stop().catch(assert.fail);
 
       assert.ok(store);
-      console.log('set:', set);
 
       assert.equal(typeof set, 'string');
       assert.equal(typeof set, typeof samples.input.hello);
       assert.equal(set, samples.input.hello);
     });
 
-    it('can recover string data after a restart', async function () {
+    xit('can recover string data after a restart', async function () {
       let store = new Store();
       await store.start();
       let set = await store.set('example', samples.input.hello);
@@ -56,7 +55,7 @@ describe('@fabric/core/types/store', function () {
       assert.equal(get, samples.input.hello);
     });
 
-    it('can manage collections', async function () {
+    xit('can manage collections', async function () {
       let data = { name: 'widget-alpha' };
       let alt = Object.assign({}, data, { extra: data });
       let store = new Store({
@@ -82,7 +81,7 @@ describe('@fabric/core/types/store', function () {
       //assert.equal(JSON.stringify(entity), JSON.stringify(data));
     });
 
-    it('can manage large collections', async function () {
+    xit('can manage large collections', async function () {
       let data = { name: 'widget-alpha' };
       let alt = Object.assign({}, data, { extra: data });
       let store = new Store({

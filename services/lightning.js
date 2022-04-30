@@ -1,9 +1,11 @@
 'use strict';
 
+// Dependencies
+const Remote = require('@fabric/http/types/remote');
+
 // Fabric Types
 const Service = require('../types/service');
 const Machine = require('../types/machine');
-const Remote = require('../types/remote');
 
 const OP_TEST = require('../contracts/test');
 const Actor = require('../types/actor');

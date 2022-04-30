@@ -20,6 +20,10 @@ If you're already familiar with `node` and have a project already started, try
 `npm install --save @fabric/core` to install [Fabric Core](https://fabric.pub),
 the primary library used for most Fabric-based applications.
 
+You'll also want `bitcoind` installed, and fully synchronized with your
+preferred network.  You can use `scripts/playnet.sh` to run a local playnet
+node, for which you can use the faucet: https://faucet.playnet.fabric.pub
+
 Fork and clone [the Fabric GitHub repository][fabric-github] and launch a local
 web server with `npm run examples` to view the examples, or `npm run docs` once
 you're ready to integrate Fabric into your application.

@@ -6,6 +6,7 @@ const {
   HEADER_SIZE,
   MAX_MESSAGE_SIZE,
   OP_CYCLE,
+  GENERIC_MESSAGE_TYPE,
   LOG_MESSAGE_TYPE,
   GENERIC_LIST_TYPE,
   P2P_GENERIC,
@@ -37,8 +38,8 @@ const crypto = require('crypto');
 const struct = require('struct');
 
 // Fabric Types
+const Actor = require('./actor');
 const Label = require('./label');
-const Vector = require('./vector');
 
 // Function Definitions
 const padDigits = require('../functions/padDigits');
@@ -53,11 +54,11 @@ const TYPE_ETHEREUM_BLOCK_NUMBER = parseInt((new Label('types/EthereumBlockNumbe
  * selectively disclosing new routes to peers which may have open circuits.
  * @type {Object}
  */
-class Message extends Vector {
+class Message extends Actor {
   /**
-   * The `Message` type is standardized in {@link Fabric} as a {@link Vector}, which can be added to any other vector to compute a resulting state.
-   * @param  {Vector} message Message vector.  Will be serialized by {@link Vector#_serialize}.
-   * @return {Vector} Instance of the message.
+   * The `Message` type is standardized in {@link Fabric} as a {@link Array}, which can be added to any other vector to compute a resulting state.
+   * @param  {Object} message Message vector.  Will be serialized by {@link Array#_serialize}.
+   * @return {Message} Instance of the message.
    */
   constructor (input = {}) {
     super(input);
@@ -65,23 +66,25 @@ class Message extends Vector {
     this.raw = {
       magic: Buffer.alloc(4),
       version: Buffer.alloc(4),
+      parent: Buffer.alloc(32),
       type: Buffer.alloc(4), // TODO: 8, 32
       size: Buffer.alloc(4), // TODO: 8, 32
       hash: Buffer.alloc(32),
-      parent: Buffer.alloc(32),
-      Uint256: this.Uint256,
+      signature: Buffer.alloc(64),
       data: null
     };
 
-    this.raw.magic.write(`${MAGIC_BYTES.toString(16)}`, 'hex');
-    this.raw.version.write(`${padDigits(VERSION_NUMBER.toString(16), 8)}`, 'hex');
+    this.raw.magic.write(MAGIC_BYTES.toString(16), 'hex');
+    this.raw.version.write(padDigits(VERSION_NUMBER.toString(16), 8), 'hex');
 
-    if (input.data) {
-      this.data = JSON.stringify(input.data);
-    }
-
-    if (input.type) {
+    if (input.data && input.type) {
       this.type = input.type;
+
+      if (typeof input.data !== 'string') {
+        this.data = JSON.stringify(input.data);
+      } else {
+        this.data = input.data;
+      }
     }
 
     // Set various properties to be unenumerable
@@ -99,12 +102,12 @@ class Message extends Vector {
   }
 
   get body () {
-    return JSON.parse(this.raw.data.toString('utf8'));
+    return this.raw.data.toString('utf8');
   }
 
   get byte () {
-    let input = 0 + '';
-    let num = Buffer.from(`0x${padDigits(input, 8)}`, 'hex');
+    const input = 0 + '';
+    const num = Buffer.from(`0x${padDigits(input, 8)}`, 'hex');
     return num;
   }
 
@@ -123,6 +126,15 @@ class Message extends Vector {
   get Uint256 () {
     // 256 bits
     return Buffer.from((this.raw && this.raw.hash) ? `0x${padDigits(this.raw.hash, 8)}` : crypto.randomBytes(32));
+  }
+
+  set signature (value) {
+    if (value instanceof Buffer) value = value.toString('hex');
+    this.raw.signature.write(value, 'hex');
+  }
+
+  toBuffer () {
+    return this.asRaw();
   }
 
   /**
@@ -150,10 +162,12 @@ class Message extends Vector {
   toObject () {
     return {
       headers: {
-        magic: parseInt(`0x${this.raw.magic.toString('hex')}`, 16),
+        magic: parseInt(`${this.raw.magic.toString('hex')}`, 16),
         version: parseInt(`${this.raw.version.toString('hex')}`, 16),
+        parent: this.raw.parent.toString('hex'),
         type: parseInt(`${this.raw.type.toString('hex')}`, 16),
         size: parseInt(`${this.raw.size.toString('hex')}`, 16),
+        signature: this.raw.signature.toString('hex'),
         hash: this.raw.hash.toString('hex')
       },
       type: this.type,
@@ -169,9 +183,11 @@ class Message extends Vector {
     const message = struct()
       .charsnt('magic', 4, 'hex')
       .charsnt('version', 4, 'hex')
+      .charsnt('parent', 32, 'hex')
       .charsnt('type', 4, 'hex')
       .charsnt('size', 4, 'hex')
       .charsnt('hash', 32, 'hex')
+      .charsnt('signature', 64, 'hex')
       .charsnt('data', buffer.length - HEADER_SIZE);
 
     message.allocate();
@@ -180,64 +196,47 @@ class Message extends Vector {
     return message;
   }
 
+  static parseRawMessage (buffer) {
+    const message = {
+      magic: buffer.slice(0, 4),
+      version: buffer.slice(4, 8),
+      parent: buffer.slice(8, 40),
+      type: buffer.slice(40, 44),
+      size: buffer.slice(44, 48),
+      hash: buffer.slice(48, 80),
+      signature: buffer.slice(80, 144)
+    };
+
+    if (buffer.length >= 144) {
+      message.data = buffer.slice(144, buffer.length);
+    }
+
+    return message;
+  };
+
   static fromBuffer (buffer) {
-    const parsed = Message.parseBuffer(buffer);
-    return Message.fromRaw(parsed.buffer());
+    return Message.fromRaw(buffer);
   }
 
   static fromRaw (input) {
     if (!input) return null;
+    if (!(input instanceof Buffer)) throw new Error('Input must be a buffer.');
     // if (input.length < HEADER_SIZE) return null;
     // if (input.length > MAX_MESSAGE_SIZE) return new Error('Input too large.');
 
     const message = new Message();
 
-    try {
-      if (input instanceof String) input = Buffer.from([input], 'hex');
-      let obj = JSON.parse(input.toString('utf8'));
-      return new Message(obj);
-    } catch (E) {
-      // console.warn('[FABRIC:MESSAGE]', 'Could not parse string as JSON:', input.toString('utf8'), E);
-    }
+    message.raw = {
+      magic: input.slice(0, 4),
+      version: input.slice(4, 8),
+      parent: input.slice(8, 40),
+      type: input.slice(40, 44),
+      size: input.slice(40, 48),
+      hash: input.slice(40, 80),
+      signature: input.slice(0, 144)
+    };
 
-    if (input.headers) {
-      message.raw = {
-        magic: parseInt(input.headers['magic'], 10),
-        version: parseInt(input.headers['version'], 10),
-        type: parseInt(input.headers['type'], 10),
-        size: parseInt(input.headers['size'], 10),
-        hash: parseInt(input.headers['hash'], 16)
-      };
-
-      message.data = Buffer.from(input.data, 'utf8');
-    } else if (input instanceof Buffer) {
-      let size = input.length - HEADER_SIZE;
-
-      message.raw = {
-        magic: input.slice(0, 4),
-        version: input.slice(4, 8),
-        type: input.slice(8, 12),
-        size: input.slice(12, 16),
-        hash: input.slice(16, 48)
-      };
-
-      message.data = input.slice(HEADER_SIZE, HEADER_SIZE + size);
-    } else {
-      let input = Buffer.from(input, 'hex');
-      let size = input.length - HEADER_SIZE;
-
-      // TODO: eliminate this type
-      message['@type'] = 'rarifiedHex';
-      message.raw = {
-        magic: input.slice(0, 4),
-        version: input.slice(4, 8),
-        type: input.slice(8, 12),
-        size: input.slice(12, 16),
-        hash: input.slice(16, 48)
-      };
-
-      message.data = input.slice(HEADER_SIZE, HEADER_SIZE + size);
-    }
+    message.data = input.slice(HEADER_SIZE);
 
     return message;
   }
@@ -268,7 +267,7 @@ class Message extends Vector {
   get types () {
     // Message Types
     return {
-      'GenericMessage': LOG_MESSAGE_TYPE,
+      'GenericMessage': GENERIC_MESSAGE_TYPE,
       'GenericLogMessage': LOG_MESSAGE_TYPE,
       'GenericList': GENERIC_LIST_TYPE,
       'GenericQueue': GENERIC_LIST_TYPE,
@@ -320,6 +319,10 @@ class Message extends Vector {
     return this.raw.magic;
   }
 
+  get signature () {
+    return parseInt(Buffer.from(this.raw.signature, 'hex'));
+  }
+
   get size () {
     return parseInt(Buffer.from(this.raw.size, 'hex'));
   }
@@ -329,11 +332,12 @@ class Message extends Vector {
   }
 
   get header () {
-    let parts = [
+    const parts = [
       Buffer.from(this.raw.magic, 'hex'),
       Buffer.from(this.raw.version, 'hex'),
       Buffer.from(this.raw.type, 'hex'),
       Buffer.from(this.raw.size, 'hex'),
+      Buffer.from(this.raw.signature, 'hex'),
       Buffer.from(this.raw.hash, 'hex')
     ];
 
@@ -345,6 +349,8 @@ Object.defineProperty(Message.prototype, 'type', {
   get () {
     const code = parseInt(this.raw.type.toString('hex'), 16);
     switch (code) {
+      case GENERIC_MESSAGE_TYPE:
+        return 'GenericMessage';
       case LOG_MESSAGE_TYPE:
         return 'GenericLogMessage';
       case GENERIC_LIST_TYPE:

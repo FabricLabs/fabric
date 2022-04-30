@@ -39,7 +39,7 @@ class Channel extends Scribe {
       mode: 'bidirectional'
     }, settings);
 
-    this.key = new Key();
+    // this.key = new Key();
     this.secret = new Secret();
     this.provider = new Consensus({ provider: this.settings.provider });
 

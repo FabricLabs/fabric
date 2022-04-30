@@ -9,20 +9,21 @@ const KeyStore = require('./keystore');
 const Machine = require('./machine');
 const Message = require('./message');
 const Peer = require('./peer');
-const Remote = require('./remote');
+// const Remote = require('./remote');
 const Resource = require('./resource');
-const Scribe = require('./scribe');
+const Service = require('./service');
 const Storage = require('./store');
 // const Swarm = require('./swarm');
 
 /**
  * Web-friendly application framework for building single-page applications with
  * Fabric-based networking and storage.
- * @extends Scribe
+ * @extends Service
  * @property {Collection} components Interface elements.
  * @property {Store} stash Routable {@link Datastore}.
  */
-class App extends Scribe {
+// class App extends Scribe {
+class App extends Service {
   /**
    * Generic bundle for building Fabric applications.
    * @param  {Object} definition Application definition.  See `config` for examples.
@@ -33,7 +34,7 @@ class App extends Scribe {
 
     if (!definition.resources) definition.resources = {};
 
-    this.settings = this['@data'] = Object.assign({
+    this.settings = Object.assign({
       seed: null,
       path: './stores/fabric-application',
       prefix: '/',
@@ -78,8 +79,8 @@ class App extends Scribe {
     });
 
     if (this.settings.resources) {
-      for (const name in this['@data'].resources) {
-        this.set(this.settings.prefix + this['@data'].resources[name].components.list, []);
+      for (const name in this.resources) {
+        this.set(this.settings.prefix + this.resources[name].components.list, []);
       }
     }
 
@@ -106,6 +107,10 @@ class App extends Scribe {
 
   async bootstrap () {
     return true;
+  }
+
+  async _signWithOwnID (input) {
+    return this.key.sign(input);
   }
 
   /**
@@ -139,12 +144,11 @@ class App extends Scribe {
    * @return {Promise}
    */
   async stop () {
-    this.log('[APP]', 'stopping...');
-
+    this.emit('log', '[FABRIC:APP] Stopping...');
     await this.node.stop();
     await this.tips.close();
     await this.stash.close();
-
+    this.emit('log', '[FABRIC:APP] Stopped!');
     return this;
   }
 
@@ -155,12 +159,12 @@ class App extends Scribe {
    * @return {Object}           [description]
    */
   async define (name, structure) {
-    let self = this;
+    const self = this;
 
     self.log('[APP]', 'defining:', name, structure);
 
     try {
-      let resource = new Resource(structure);
+      const resource = new Resource(structure);
 
       resource._sign();
       resource.trust(self.stash);
@@ -192,14 +196,14 @@ class App extends Scribe {
 
     console.warn('[APP]', 'deferring authority:', authority);
 
-    if (typeof authority === 'string') {
+    /* if (typeof authority === 'string') {
       self.remote = new Remote({
         host: authority
       });
       resources = await self.remote.enumerate();
     } else {
       resources = authority.resources;
-    }
+    } */
 
     if (!resources) {
       resources = {};

@@ -26,6 +26,18 @@ class Environment extends Entity {
     return this;
   }
 
+  get SEED_FILE () {
+    return '.FABRIC_SEED';
+  }
+
+  get XPRV_FILE () {
+    return '.FABRIC_XPRV';
+  }
+
+  get XPUB_FILE () {
+    return '.FABRIC_XPUB';
+  }
+
   storeExists () {
     return fs.existsSync(this.settings.store);
   }
@@ -73,7 +85,11 @@ class Environment extends Entity {
   }
 
   readWallet (password) {
-    let data = fs.readFileSync(this.settings.path);
+    if (!this.walletExists()) return false;
+    const data = fs.readFileSync(this.settings.path, {
+      encoding: 'utf8'
+    });
+
     let seed = null;
     let secret = null;
 
@@ -90,18 +106,30 @@ class Environment extends Entity {
     return seed;
   }
 
+  readSeedFile () {
+    const path = `${process.cwd()}/${this.SEED_FILE}`;
+    if (!fs.existsSync(path)) return false;
+    return fs.readFileSync(path, {
+      encoding: 'utf8'
+    });
+  }
+
   start () {
     this._state.status = 'STARTING';
-    let seed = null;
 
-    if (this.walletExists()) {
-      const wallet = this.readWallet();
-      seed = wallet['@data'].seed;
+    this.seed = null;
+    this.local = this.readSeedFile();
+    this.wallet = this.readWallet();
+
+    if (this.local) {
+      this.seed = this.local;
+    } else if (this.wallet) {
+      this.seed = this.wallet['@data'].seed;
     } else {
-      seed = this.readVariable('FABRIC_SEED');
+      this.seed = this.readVariable('FABRIC_SEED');
     }
 
-    this._state.seed = seed;
+    this._state.seed = this.seed;
     this._state.status = 'STARTED';
 
     return this;

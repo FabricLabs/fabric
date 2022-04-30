@@ -1,23 +1,21 @@
 'use strict';
 
-// TODO: note that generally, requirements are loosely ordered by
-// their relative importance to the file in question
-const crypto = require('crypto');
+// Dependencies
 const level = require('level');
+const crypto = require('crypto');
 const pointer = require('json-pointer');
 
-// internal components
+// Fabric Types
+const Actor = require('./actor');
 const Collection = require('./collection');
 const Entity = require('./entity');
-const Scribe = require('./scribe');
 const Stack = require('./stack');
-const State = require('./state');
 
 /**
  * Long-term storage.
  * @property {Mixed} settings Current configuration.
  */
-class Store extends Scribe {
+class Store extends Actor {
   /**
    * Create an instance of a {@link Store} to manage long-term storage, which is
    * particularly useful when building a user-facing {@link Product}.
@@ -28,7 +26,9 @@ class Store extends Scribe {
     super(settings);
 
     this.settings = Object.assign({
+      name: '@fabric/store',
       path: './stores/store',
+      type: 'leveldb',
       persistent: true,
       verbosity: 2, // 0 none, 1 error, 2 warning, 3 notice, 4 debug
     }, settings);
@@ -38,19 +38,22 @@ class Store extends Scribe {
       '@data': {}
     };
 
-    this['@entity']['@data'].types = {};
-    this['@entity']['@data'].blobs = {};
-    this['@entity']['@data'].states = {};
-    this['@entity']['@data'].addresses = {};
-    this['@entity']['@data'].collections = {};
-    this['@entity']['@data'].tips = {};
-
     this.keys = {};
     this.commits = new Collection({
       type: 'State'
     });
 
-    Object.assign(this['@data'], this['@entity']['@data']);
+    this._state = {
+      actors: {},
+      collections: {},
+      content: {},
+      documents: {},
+      metadata: {},
+      indices: {},
+      routes: {},
+      status: 'PAUSED',
+      tips: {}
+    };
 
     Object.defineProperty(this, '@allocation', { enumerable: false });
     Object.defineProperty(this, '@buffer', { enumerable: false });
@@ -63,20 +66,25 @@ class Store extends Scribe {
     return this;
   }
 
+  _getPathForKey (key) {
+    const path = pointer.escape(key);
+    return this.sha256(path);
+  }
+
   async _errorHandler (err) {
     console.error('[FABRIC:STORE]', 'Error condition:', err);
   }
 
   async _setEncrypted (path, value, passphrase = '') {
-    let secret = value; // TODO: encrypt value
-    let name = crypto.createHash('sha256').createHash(path).digest('hex');
+    const secret = value; // TODO: encrypt value
+    const name = crypto.createHash('sha256').createHash(path).digest('hex');
     return this.set(`/secrets/${name}`, secret);
   }
 
   async _getEncrypted (path, passphrase = '') {
-    let name = crypto.createHash('sha256').createHash(path).digest('hex');
-    let secret = this.get(`/secrets/${name}`);
-    let decrypted = secret; // TODO: decrypt value
+    const name = crypto.createHash('sha256').createHash(path).digest('hex');
+    const secret = this.get(`/secrets/${name}`);
+    const decrypted = secret; // TODO: decrypt value
     return decrypted;
   }
 
@@ -86,9 +94,8 @@ class Store extends Scribe {
    * @return {Vector}     Returned from `storage.set`
    */
   async _REGISTER (obj) {
-    let store = this;
-    let result = null;
-    let vector = new State(obj);
+    const actor = new Actor(obj);
+    const existing = await this._GET(`/entities/${actor.id}`);
 
     store.log('[STORE]', '_REGISTER', vector.id, vector['@type']);
 
@@ -142,11 +149,12 @@ class Store extends Scribe {
 
   async _PATCH (key, patch) {
     this.log('[STORE]', '_PATCH', 'patch:', key, typeof patch, patch);
-    let root = {};
-    let current = await this._GET(key);
+
+    const root = {};
+    const current = await this._GET(key);
 
     if (this.settings.verbosity >= 3) console.warn('current value, no typecheck:', typeof current, current);
-    let result = Object.assign(root, current || {}, patch);
+    const result = Object.assign(root, current || {}, patch);
     if (this.settings.verbosity >= 5) console.log('[STORE]', 'Patch result:', result);
 
     try {
@@ -262,6 +270,55 @@ class Store extends Scribe {
     return output;
   }
 
+  async encodeValue (value) {
+    if (!(value instanceof String)) {
+      switch (value.constructor.name) {
+        default:
+          value = JSON.stringify(value);
+          break;
+      }
+    }
+
+    return Buffer.from(value, 'utf8').toString('hex');
+  }
+
+  async getDataInfo (value) {
+    let type = null;
+    let size = null;
+    let hash = null;
+
+    switch (value.constructor.name) {
+      case 'String':
+        type = 'JSONString';
+        size = value.length;
+        hash = this.sha256(value);
+        break;
+      default:
+        console.error('unhandled type:', value.constructor.name);
+        type = 'Unhandled';
+        break;
+    }
+
+    return {
+      hash,
+      size,
+      type
+    };
+  }
+
+  async getRouteInfo (path) {
+    if (path.substring(0, 1) !== '/') path = '/' + path;
+
+    const id = pointer.escape(path);
+    const router = this.sha256(id);
+
+    return {
+      path: path,
+      pointer: id,
+      index: router
+    };
+  }
+
   async populate (element) {
     let map = [];
 
@@ -278,68 +335,19 @@ class Store extends Scribe {
    * @return {Promise}     Resolves on complete.  `null` if not found.
    */
   async get (key) {
-    // if (this.settings.verbosity >= 5) this.log('[STORE]', 'get:', key);
-    // console.trace('[FABRIC:STORE]', 'Internal get():', key);
+    const route = await this.getRouteInfo(key);
+    const result = pointer.get(this._state.content, route.path);
+    const type = this._state.metadata[route.index].type;
 
-    let self = this;
-    let id = pointer.escape(key);
-    let router = this.sha256(id);
-
-    let type = null;
-    let state = null;
-    let tip = null;
-
-    if (!self.db) {
-      await self.open();
-    }
-
-    try {
-      let input = await self.db.get(`/collections/${router}`);
-      let collection = JSON.parse(input);
-
-      if (collection) {
-        let answer = [];
-
-        for (let i = 0; i < collection.length; i++) {
-          let code = `/entities/${collection[i]}`;
-          let entity = await this._GET(code);
-          answer.push(entity);
-        }
-
-        return answer;
-      }
-    } catch (E) {
-      // console.error('could not get collection:', E);
-    }
-
-    try {
-      tip = await self.db.get(`/tips/${router}`);
-    } catch (E) {
-      if (this.settings.verbosity >= 4) console.error(`cannot get tip [${router}] "/tips/${router}":`, E);
-    }
-
-    if (tip) {
-      try {
-        type = await self.db.get(`/types/${tip}`);
-      } catch (E) {
-        if (this.settings.verbosity >= 2) console.error(`cannot get type`, E);
-      }
-
-      try {
-        state = await self.db.get(`/states/${tip}`);
-      } catch (E) {
-        if (this.settings.verbosity >= 2) console.error(`cannot get state [${tip}] "/states/${tip}":`, E);
-      }
-    } else {
-      return null;
-    }
+    let output = null;
 
     switch (type) {
       default:
-        return State.fromHex(state);
-      case 'Buffer':
-        return Buffer.from(state, 'hex');
+        output = result;
+        break;
     }
+
+    return output;
   }
 
   /**
@@ -348,91 +356,30 @@ class Store extends Scribe {
    * @param       {Mixed} value Content to store at `key`.
    */
   async set (key, value) {
-    // this.log('[STORE]', `(${this['@method']})`, 'set:', key, value.constructor.name, value);
-    if (this.settings.verbosity >= 5) this.log('[STORE]', `(${this['@method']})`, 'set:', key, typeof value, value);
-
-    let self = this;
-    let collection = null;
+    const route = await this.getRouteInfo(key);
+    const info = await this.getDataInfo(value);
+    const data = await this.encodeValue(value);
 
     // Let's use the document's key as the identifying value.
     // This is what defines our key => value store.
     // All functions can be run as a map of an original input vector, allowing
     // binary scoping across trees of varying complexity.
-    let id = pointer.escape(key);
-    let router = this.sha256(id);
+    const hash = this.sha256(value);
+    const actor = new Actor({
+      type: 'FabricDocument',
+      content: data,
+      encoding: 'json',
+      original: value
+    });
 
-    // locals
-    let origin = new State(self['@data']);
-    let vector = new State(value);
-    let serial = vector.serialize(value);
-    let digest = this.sha256(serial);
-    let batched = null;
+    this._state.actors[actor.id] = actor;
+    this._state.documents[hash] = value;
+    this._state.indices[route.index] = route.pointer;
+    this._state.metadata[route.index] = info;
 
-    // Since we're using JavaScript, we can use Object literals.
-    // See also: https://to.fabric.pub/#purity:fabric.pub
-    let pure = {
-      '@id': vector.id,
-      '@data': value,
-      // TODO: document the special case of "null"
-      '@type': (value) ? value.constructor.name : 'null',
-      '@link': `/states/${vector.id}`,
-      '@state': vector,
-      '@parent': origin.id,
-      '@buffer': serial
-    };
+    pointer.set(this._state.content, route.path, value);
 
-    if (!self.db || self.db._status === 'closed') {
-      await self.open();
-    }
-
-    let ops = [
-      { type: 'put', key: `/states/${pure['@id']}`, value: serial.toString('hex'), encoding: 'hex' },
-      { type: 'put', key: `/blobs/${pure['@id']}`, value: serial.toString('hex'), encoding: 'hex' },
-      { type: 'put', key: `/types/${pure['@id']}`, value: pure['@type'] },
-      { type: 'put', key: `/tips/${router}`, value: pure['@id'] },
-      { type: 'put', key: `/names/${router}`, value: id }
-    ];
-
-    try {
-      collection = await self.db.get(`/collections/${router}`);
-    } catch (E) {
-      // console.error('could not get collection:', E);
-    }
-
-    // if (this.settings.verbosity >= 5) console.log('[FABRIC:STORE]', `Applying ops to path "${key}" :`, ops);
-
-    // TODO: make work for single instance deletes
-    if (collection && value === null) {
-      // console.warn('[FABRIC:STORE]', 'Value is null and target is a Collection');
-      // ops.push({ type: 'del', key: `/collections/${router}` });
-      await self.db.del(`/collections/${router}`);
-      await self.db.del(`/states/${pure['@id']}`);
-    } else {
-      try {
-        batched = await self.db.batch(ops);
-        // TODO: document verbosity 6
-        // NOTE: breaks with Fabric
-        if (this.settings.verbosity >= 6) console.log('batched result:', batched);
-      } catch (E) {
-        console.error('BATCH FAILURE:', E);
-      }
- 
-      try {
-        await Promise.all(ops.map(op => {
-          return self.db.put(op.key, op.value);
-        }));
-      } catch (E) {
-        console.error(E);
-      }
-    }
-
-    try {
-      const commit = await this.commit();
-    } catch (E) {
-      console.error('Could not commit:', E);
-    }
-
-    this['@entity']['@data'].addresses[router] = `/tips/${router}`;
+    this.commit();
 
     return this.get(key);
   }

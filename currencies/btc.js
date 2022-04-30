@@ -6,4 +6,4 @@ module.exports = {
   name: 'Bitcoin',
   symbol: 'BTC',
   ledger: BITCOIN_GENESIS
-}
+};

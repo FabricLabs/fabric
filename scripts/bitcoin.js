@@ -1,18 +1,14 @@
 'use strict';
 
+const Node = require('../types/node');
 const Bitcoin = require('../services/bitcoin');
 const settings = require('../settings/local');
 
 async function main (input = {}) {
-  const bitcoin = new Bitcoin(input);
-
-  bitcoin.on('message', async function (msg) {
-    console.log('[SCRIPTS:BITCOIN]', 'Received message:', msg);
-  });
-
-  await bitcoin.start();
+  const node = new Node({ service: Bitcoin, settings: input });
+  await node.start();
 }
 
 main(settings).catch((E) => {
-  console.error('[ALERT]', 'Service threw exception:', E);
+  console.trace('[ALERT]', 'Service threw exception:', E);
 });

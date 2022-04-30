@@ -1,27 +1,32 @@
 'use strict';
 
+// Constants
+const {
+  FABRIC_KEY_DERIVATION_PATH
+} = require('../constants');
+
 // Dependencies
+const Generator = require('arbitrary').default.Generator;
 const crypto = require('crypto');
+const BN = require('bn.js');
 const EC = require('elliptic').ec;
 const ec = new EC('secp256k1');
 
 // External Dependencies
 // TODO: remove all external dependencies
-const bcoin = require('bcoin');
-const {
-  Address,
-  KeyRing,
-  Mnemonic
-} = require('bcoin');
+const bcoin = require('bcoin/lib/bcoin-browser');
+const HD = bcoin.hd;
+const KeyRing = bcoin.KeyRing;
+const Mnemonic = bcoin.hd.Mnemonic;
 
 // Fabric Types
-const Entity = require('./entity');
-const Machine = require('./machine');
+// const Entity = require('./entity');
+// const Machine = require('./machine');
 
 /**
  * Represents a cryptographic key.
  */
-class Key extends Entity {
+class Key {
   /**
    * Create an instance of a Fabric Key, either restoring from some known
    * values or from prior knowledge.  For instance, you can call `new Key()`
@@ -33,38 +38,49 @@ class Key extends Entity {
    * @param {String} [settings.public] Public key in hex.
    * @param {String} [settings.private] Private key in hex.
    */
-  constructor (init = {}) {
-    super(init);
-
+  constructor (input = {}) {
     this.settings = Object.assign({
       network: 'main',
       curve: 'secp256k1',
+      derivation: FABRIC_KEY_DERIVATION_PATH,
       mode: 'aes-256-cbc',
       prefix: '00',
       public: null,
       private: null,
       bits: 256,
       hd: true,
+      seed: null,
       password: null,
+      index: 0,
       cipher: {
         iv: {
           size: 16
         }
       },
       witness: true
-    }, init);
+    }, input);
 
+    this.clock = 0;
     this.master = null;
     this.private = null;
     this.public = null;
 
-    this.machine = new Machine(this.settings);
+    // Configure Deterministic Random
+    // WARNING: this will currently loop after 2^32 bits
+    // TODO: evaluate compression when treating seed phrase as ascii
+    // TODO: consider using sha256(masterprivkey) or sha256(sha256(...))?
+    this._starseed = this.settings.seed || crypto.randomBytes(4).readUInt32BE();
+
+    const radix = 10;
+    const parsed = parseInt(this._starseed, radix);
+
+    this.generator = new Generator(parsed);
 
     // TODO: design state machine for input (configuration)
     if (this.settings.seed) {
       // Seed provided, compute keys
       const mnemonic = new Mnemonic(this.settings.seed);
-      const master = bcoin.hd.fromMnemonic(mnemonic);
+      const master = HD.fromMnemonic(mnemonic);
 
       // Assign keys
       this.master = master;
@@ -120,6 +136,10 @@ class Key extends Entity {
       pubkey: this.pubkey
     };
 
+    Object.defineProperty(this, 'keyring', {
+      enumerable: false
+    });
+
     Object.defineProperty(this, 'keypair', {
       enumerable: false
     });
@@ -140,7 +160,15 @@ class Key extends Entity {
   }
 
   get iv () {
-    return this.machine.slurp(32).slice(0, 32);
+    const self = this;
+    const bits = new BN([...Array(128)].map(() => {
+      return self.bit().toString();
+    }).join(''), 2).toString(16);
+    return Buffer.from(bits.toString(16), 'hex');
+  }
+
+  bit () {
+    return this.generator.next.bits(1);
   }
 
   encrypt (value) {
@@ -178,21 +206,18 @@ class Key extends Entity {
   }
 
   _sign (msg) {
-    // console.log(`[KEY] signing: ${msg}...`);
     if (typeof msg !== 'string') msg = JSON.stringify(msg);
-    let hmac = crypto.createHash('sha256').update(msg).digest('hex');
-    let signature = this.keypair.sign(hmac);
-    // console.log(`[KEY] signature:`, signature);
-    return signature.toDER();
+    const hmac = crypto.createHash('sha256').update(msg).digest('hex');
+    return this.keypair.sign(hmac).toDER();
   }
 
   _verify (msg, sig) {
-    let hmac = crypto.createHash('sha256').update(msg).digest('hex');
-    let valid = this.keypair.verify(hmac, sig);
+    const hmac = crypto.createHash('sha256').update(msg).digest('hex');
+    const valid = this.keypair.verify(hmac, sig);
     return valid;
   }
 
-  derive (path = `m/44'/0'/0'/0/0`) {
+  derive (path = this.settings.derivation) {
     if (!this.master) throw new Error('You cannot derive without a master key.  Provide a seed phrase.');
     return this.master.derivePath(path);
   }

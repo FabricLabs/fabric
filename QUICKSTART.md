@@ -2,15 +2,13 @@
 
 ## Prerequisites
 0. (optional) Install NVM: `https://nvm.sh`
-1. Install Node 12.16
-2. Run `node --version` and verify the output matches 12.16
-3. See #1
+1. Install Node 12.20.2 (use `nvm install 12.20.2` if using `nvm`)
 
 ## Instructions
 0. Meet the prerequisites (above)
 1. Install Fabric Core: `npm i --save @fabric/core`
 
-_**Note:** for development releases, use `npm i --save martindale/fabric#fabric` instead._
+_**Note:** for development releases, use `npm i --save FabricLabs/fabric#develop` instead._
 
 ## Sample Program
 Create the file `scripts/quickstart.js` using the following code:
@@ -59,3 +57,36 @@ Finally, run the program:
   keys: []
 }
 ```
+
+## Setup Local Bitcoin Node
+For testing purposes, we recommend running `bitcoin-qt` using the bash command with `scripts/bitcoin-playnet.sh`. Follow these steps to get setup:
+
+1. Download the [bitcoin-core client](https://bitcoin.org/bin/) to your system. 
+2. (Recommended) Download SHA256SUMS.sig and SHA256SUMS to verify hashes match, using these commands in the terminal:
+	```
+	$ cat SHA256SUMS # view the sha-256 file hashes 
+	$ sha256sum downloaded_file.name # compute hash of downloaded file
+	```
+3. (Recommended) Verify hashes with a Bitcoin Core Release Signing Key, keys to respective versions can be found [here](https://bitcoin.org/en/download).
+	```
+	$ gpg --verify SHA256SUMS.sig SHA256SUMS # verify file is signed
+	```
+4. Continue with the bitcoin-core installation to your system.
+5. Check installation in terminal by running `bitcoind --version` or `bitcoin-qt --version`. If the terminal outputs something like `Bitcoin Core version vXX.X.X` then you are ready to run the scripts 
+6. Navigate your terminal window to the [fabric](https://github.com/fabriclabs/fabric) directory and create a new directory named "bitcoin-playnet" inside "stores" 
+	```
+	$ cd stores && mkdir bitcoin-playnet
+	```
+	There should now be a directory path `/fabric/stores/bitcoin-playnet`. 	
+	Return to the parent directory of the repo `cd ..`, now you are ready to run the script
+7. Run the playnet bash script with 
+	```
+	$ ./scripts/bitcoin-playnet.sh
+	```
+	A bitcoin client should now pop up
+8. Create or restore a dev wallet (not to be used with real funds)
+9. (optional) view the debug log with this command in a new terminal window 
+	```
+	$ tail -f stores/bitcoin-playnet/regtest/debug.log
+	```
+You are now ready for playnet!

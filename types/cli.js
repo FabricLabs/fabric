@@ -13,7 +13,6 @@ const fs = require('fs');
 const merge = require('lodash.merge');
 const pointer = require('json-pointer'); // TODO: move uses to App
 const monitor = require('fast-json-patch'); // TODO: move uses to App
-const bcoin = require('bcoin'); // TODO: move to Wallet
 
 // Fabric Types
 const App = require('./app');
@@ -52,6 +51,7 @@ class CLI extends App {
 
     // Assign Settings
     this.settings = merge({
+      debug: true,
       listen: false,
       render: true,
       services: [],
@@ -110,8 +110,8 @@ class CLI extends App {
   async tick () {
     // Poll for new information
     // TODO: ZMQ
-    await this._syncChainDisplay();
-    await this._syncBalance();
+    // await this._syncChainDisplay();
+    // await this._syncBalance();
 
     // Increment clock and commit
     this._state.clock++;
@@ -155,7 +155,7 @@ class CLI extends App {
       this.render();
     }
 
-    // Attach P2P handlers
+    // Attach P2P message handlers
     this.node.on('log', this._handlePeerLog.bind(this));
     this.node.on('ready', this._handleNodeReady.bind(this));
     this.node.on('debug', this._handlePeerDebug.bind(this));
@@ -163,29 +163,30 @@ class CLI extends App {
     this.node.on('warning', this._handlePeerWarning.bind(this));
     this.node.on('message', this._handlePeerMessage.bind(this));
 
+    // Attach P2P event handlers
     this.node.on('peer', this._handlePeer.bind(this));
     this.node.on('peer:candidate', this._handlePeerCandidate.bind(this));
     this.node.on('connections:open', this._handleConnectionOpen.bind(this));
     this.node.on('connections:close', this._handleConnectionClose.bind(this));
     this.node.on('connection:error', this._handleConnectionError.bind(this));
     this.node.on('session:update', this._handleSessionUpdate.bind(this));
-    // debug event
-    // this.node.on('socket:data', this._handleSocketData.bind(this));
 
-    // this.node.on('DocumentPublish', this._handlePeerDocumentPublish.bind(this));
-    // this.node.on('DocumentRequest', this._handlePeerDocumentRequest.bind(this));
+    // Document Exchange
+    this.node.on('DocumentPublish', this._handlePeerDocumentPublish.bind(this));
+    this.node.on('DocumentRequest', this._handlePeerDocumentRequest.bind(this));
 
     // Attach Anchor handlers
     this.bitcoin.on('ready', this._handleBitcoinReady.bind(this));
     this.bitcoin.on('error', this._handleBitcoinError.bind(this));
     this.bitcoin.on('warning', this._handleBitcoinWarning.bind(this));
     this.bitcoin.on('message', this._handleBitcoinMessage.bind(this));
+    this.bitcoin.on('log', this._handleBitcoinLog.bind(this));
+    this.bitcoin.on('commit', this._handleBitcoinCommit.bind(this));
+    this.bitcoin.on('sync', this._handleBitcoinSync.bind(this));
     this.bitcoin.on('block', this._handleBitcoinBlock.bind(this));
     this.bitcoin.on('transaction', this._handleBitcoinTransaction.bind(this));
 
-    // Start Bitcoin service
-    await this.bitcoin.start();
-
+    // Start all services
     for (const [name, service] of Object.entries(this.services)) {
       this._appendWarning(`Checking for Service: ${name}`);
       if (this.settings.services.includes(name)) {
@@ -194,18 +195,24 @@ class CLI extends App {
       }
     }
 
+    // Track state changes
     this.observer = monitor.observe(this._state);
 
     // Bind remaining internals
+    // TODO: enable
     // this.on('changes', this._handleChanges.bind(this));
+
+    // Start Bitcoin service
+    this.bitcoin.start();
 
     // Start P2P node
     this.node.start();
 
     // Attach Heartbeat
-    this.heartbeat = setInterval(this.tick.bind(this), this.settings.interval);
+    this._heart = setInterval(this.tick.bind(this), this.settings.interval);
 
     // Emit Ready
+    this.status = 'READY';
     this.emit('ready');
 
     // Chainable
@@ -384,11 +391,23 @@ class CLI extends App {
     }
   }
 
+  async _handleBitcoinLog (log) {
+    this._appendMessage(`[SERVICES:BITCOIN] ${log}`);
+  }
+
+  async _handleBitcoinCommit (commit) {
+    // this._appendMessage(`Bitcoin service emitted commit: ${JSON.stringify(commit)}`);
+  }
+
+  async _handleBitcoinSync (sync) {
+    this._appendMessage(`Bitcoin service emitted sync: ${JSON.stringify(sync)}`);
+  }
+
   async _handleBitcoinBlock (block) {
-    this._appendMessage(`Bitcoin service emitted block, chain height now: ${this.bitcoin.fullnode.chain.height}`);
+    // this._appendMessage(`Bitcoin service emitted block ${JSON.stringify(block)}, chain height now: ${this.bitcoin.height}`);
     this._syncChainDisplay();
-    const message = Message.fromVector(['BlockCandidate', block.raw]);
-    this.node.relayFrom(this.node.id, message);
+    // const message = Message.fromVector(['BlockCandidate', block.raw]);
+    // this.node.relayFrom(this.node.id, message);
   }
 
   async _handleBitcoinTransaction (transaction) {
@@ -493,7 +512,7 @@ class CLI extends App {
   }
 
   async _handlePeerLog (message) {
-    this._appendMessage(message);
+    this._appendMessage(`[NODE] ${message}`);
   }
 
   async _handlePeerMessage (message) {
@@ -593,7 +612,7 @@ class CLI extends App {
     // Send as Chat Message if no handler registered
     if (!self._processInput(data.input)) {
       // Describe the activity for use in P2P message
-      let msg = {
+      const msg = {
         actor: self.node.id,
         object: {
           created: Date.now(),
@@ -602,7 +621,10 @@ class CLI extends App {
         target: '/messages'
       };
 
-      self.node.relayFrom(self.node.id, Message.fromVector(['ChatMessage', JSON.stringify(msg)]));
+      const message = Message.fromVector(['ChatMessage', JSON.stringify(msg)]);
+      this._appendDebug(`Chat Message created (${message.data.length} bytes): ${message.data}`);
+
+      self.node.relayFrom(self.node.id, message);
       self._sendToAllServices(msg);
     }
 
@@ -738,17 +760,34 @@ class CLI extends App {
   }
 
   async _syncChainDisplay () {
-    const height = await this.bitcoin._makeRPCRequest('getblockcount');
-    const stats = await this.bitcoin._makeRPCRequest('getblockchaininfo');
-    this.elements['chainTip'].setContent(`${stats.bestblockhash} (height is ${height})`);
-    this.screen.render();
+    try {
+      const height = await this.bitcoin._makeRPCRequest('getblockcount');
+      const stats = await this.bitcoin._makeRPCRequest('getblockchaininfo');
+      const progress = this.bitcoin._state.headers.length;
+      const unconfirmed = 0.0;
+      const bonded = 0.0;
+
+      this.elements['heightValue'].setContent(`${height}`);
+      this.elements['chainTip'].setContent(`${stats.bestblockhash}`);
+      this.elements['unconfirmedValue'].setContent(`${bonded}`);
+      this.elements['bondedValue'].setContent(`${bonded}`);
+      this.elements['progressStatus'].setContent(`${progress} of ${height} (${((progress / height) * 100).toPrecision(2)} %)`);
+
+      this.screen.render();
+    } catch (exception) {
+      if (this.settings.debug) this._appendError(`Could not sync chain: ${JSON.stringify(exception)}`);
+    }
   }
 
   async _syncBalance () {
-    const balance = await this._getBalance();
-    this._state.balances.confirmed = balance;
-    this.elements['balance'].setContent(balance.toFixed(8));
-    this.screen.render();
+    try {
+      const balance = await this._getBalance();
+      this._state.balances.confirmed = balance;
+      this.elements['balance'].setContent(balance.toFixed(8));
+      this.screen.render();
+    } catch (exception) {
+      // if (this.settings.debug) this._appendError(`Could not sync balance: ${JSON.stringify(exception)}`);
+    }
   }
 
   async _getBalance () {
@@ -838,7 +877,7 @@ class CLI extends App {
         type: 'line'
       },
       top: 0,
-      height: 5,
+      height: 6,
       width: '100%'
     });
 
@@ -856,7 +895,7 @@ class CLI extends App {
 
     self.elements['identityString'] = blessed.text({
       parent: self.elements['identity'],
-      content: '',
+      content: 'loading...',
       top: 0,
       left: 10
     });
@@ -865,6 +904,7 @@ class CLI extends App {
       parent: self.elements['status'],
       right: 1,
       width: 29,
+      height: 4
     });
 
     self.elements['balance'] = blessed.text({
@@ -878,7 +918,7 @@ class CLI extends App {
       parent: self.elements['wallet'],
       content: 'BALANCE:',
       top: 0,
-      right: 20,
+      right: 29,
       bold: true
     });
 
@@ -889,38 +929,121 @@ class CLI extends App {
       right: 0
     });
 
-    self.elements['chain'] = blessed.box({
+    self.elements['unconfirmed'] = blessed.box({
       parent: self.elements['status'],
       top: 1,
       left: 1
     });
 
-    self.elements['chainLabel'] = blessed.box({
+    self.elements['unconfirmedLabel'] = blessed.text({
+      parent: self.elements['unconfirmed'],
+      content: 'UNCONFIRMED:',
+      top: 0,
+      right: 30,
+      bold: true
+    });
+
+    self.elements['unconfirmedValue'] = blessed.text({
+      parent: self.elements['unconfirmed'],
+      content: 'syncing...',
+      top: 0,
+      right: 1
+    });
+
+    self.elements['bonded'] = blessed.box({
+      parent: self.elements['status'],
+      top: 2,
+      left: 1
+    });
+
+    self.elements['bondedLabel'] = blessed.text({
+      parent: self.elements['bonded'],
+      content: 'BONDED:',
+      top: 0,
+      right: 30,
+      bold: true
+    });
+
+    self.elements['bondedValue'] = blessed.text({
+      parent: self.elements['bonded'],
+      content: 'syncing...',
+      top: 0,
+      right: 1
+    });
+
+    self.elements['progress'] = blessed.box({
+      parent: self.elements['status'],
+      top: 3,
+      left: 1
+    });
+
+    self.elements['progressLabel'] = blessed.text({
+      parent: self.elements['progress'],
+      content: 'SYNC:',
+      top: 0,
+      right: 30,
+      bold: true
+    });
+
+    self.elements['progressStatus'] = blessed.text({
+      parent: self.elements['progress'],
+      content: 'syncing...',
+      top: 0,
+      right: 1
+    });
+
+    self.elements['chain'] = blessed.box({
+      parent: self.elements['status'],
+      top: 1,
+      left: 1,
+      width: 100
+    });
+
+    self.elements['chainLabel'] = blessed.text({
       parent: self.elements['chain'],
       content: 'CHAIN TIP:',
       bold: true
     });
 
-    self.elements['chainTip'] = blessed.box({
+    self.elements['chainTip'] = blessed.text({
       parent: self.elements['chain'],
-      content: '',
+      content: 'loading...',
       left: 11
+    });
+
+    self.elements['height'] = blessed.box({
+      parent: self.elements['status'],
+      top: 2,
+      left: 1,
+    });
+
+    self.elements['heightLabel'] = blessed.text({
+      parent: self.elements['height'],
+      content: 'CHAIN HEIGHT:',
+      bold: true
+    });
+
+    self.elements['heightValue'] = blessed.text({
+      parent: self.elements['height'],
+      content: 'loading...',
+      left: 14,
+      width: 50
     });
 
     self.elements['mempool'] = blessed.box({
       parent: self.elements['status'],
-      top: 2,
+      top: 3,
       left: 1,
       width: 29
     });
 
-    self.elements['mempoolLabel'] = blessed.box({
+    self.elements['mempoolLabel'] = blessed.text({
       parent: self.elements['mempool'],
       content: 'MEMPOOL SIZE:',
       bold: true
     });
 
-    self.elements['mempoolCount'] = blessed.box({
+    self.elements['mempoolCount'] = blessed.text({
       parent: self.elements['mempool'],
       content: '0',
       left: 14
@@ -933,7 +1056,7 @@ class CLI extends App {
       border: {
         type: 'line'
       },
-      top: 5,
+      top: 6,
       width: '80%',
       bottom: 3,
       mouse: true,
@@ -946,7 +1069,7 @@ class CLI extends App {
       border: {
         type: 'line'
       },
-      top: 5,
+      top: 6,
       left: '80%+1',
       bottom: 3
     });

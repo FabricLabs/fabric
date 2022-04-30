@@ -8,11 +8,14 @@ const Chain = require('../types/chain');
 const genesis = require('../assets/genesis');
 
 async function main () {
-  const chain = new Chain(genesis);
+  const chain = new Chain();
+  const origin = new Block(genesis);
+
+  await chain.append(origin);
 
   for (let i = 0; i < MAX_BLOCK_COUNT; i++) {
     // Mine a block
-    await chain.mine();
+    await chain.generateBlock();
   }
 
   return chain.toString();
