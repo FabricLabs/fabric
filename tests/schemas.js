@@ -9,19 +9,13 @@ const Actor = require('../types/actor');
 
 // Schema Validation
 const schemas = require('../schemas');
-const samples = require('../samples');
-
 const validate = validator(schemas.Actor);
 
 describe('JSON Schema Compliance', function () {
   describe('@fabric/core/types/actor', function () {
     it('produces valid JSON', function () {
-      const actor = new Actor({
-        name: 'Satoshi Nakamoto'
-      });
-
-      const json = samples.Actor;
-      const valid = validate(json);
+      const actor = new Actor({ name: 'Satoshi Nakamoto' });
+      const valid = validate(actor);
 
       assert.ok(valid);
       assert.ok(actor);
