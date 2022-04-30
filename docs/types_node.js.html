@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Source: types/node.js &middot; Docs</title>
+  <script src="scripts/prettify/prettify.js"> </script>
+  <script src="scripts/prettify/lang-css.js"> </script>
+  <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+  <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+  <script>
+    window.dataLayer = window.dataLayer || [];
+
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag('js', new Date());
+    gtag('config', 'G-09Y57FL980');
+  </script>
+</head>
+
+<body>
+  <div id="main">
+    <h1 class="page-title">Source: types/node.js</h1>
+
+
+
+
+    <section>
+      <article>
+        <pre class="prettyprint source linenums"><code>'use strict';
+
+// Settings
+const merge = require('lodash.merge');
+const defaults = require('../settings/default');
+
+// Fabric Types
+const Peer = require('../types/peer');
+const Service = require('../types/service');
+const Bitcoin = require('../services/bitcoin');
+
+// Environment
+// TODO: re-evaluate, remove
+const Environment = require('../types/environment');
+const environment = new Environment();
+
+/**
+ * Full definition of a Fabric node.
+ */
+class Node extends Service {
+  /**
+   * Manage a Fabric service.
+   * @param {Object} settings Configuration for the node.
+   * @returns {Node} Instance of the managed service.
+   */
+  constructor (settings = {}) {
+    super(settings);
+
+    // Settings
+    this.settings = merge({
+      name: '@fabric/node',
+      full: true,
+      autorun: true,
+      bitcoin: false,
+      peering: true,
+      service: Service,
+      settings: {}
+    }, defaults, settings);
+
+    // Local Services
+    this.node = new Peer(this.settings);
+    this.bitcoin = new Bitcoin(this.settings.bitcoin);
+    this.program = null;
+
+    return this;
+  }
+
+  /**
+   * Explicitly trusts an {@link EventEmitter}.
+   * @param {EventEmitter} source Actor to listen to.
+   * @param {Object|String} settings Label for the trusted messages, or a configuration object.
+   */
+  trust (source, settings = {}) {
+    let extra = '';
+
+    if (typeof settings === 'string') {
+      extra = `[${settings}]`;
+    }
+
+    source.on('debug', function (debug) {
+      console.debug(`[FABRIC:DEBUG] ${extra}`, debug);
+    });
+
+    source.on('info', function (info) {
+      console.log(`[FABRIC:INFO] ${extra}`, info);
+    });
+
+    source.on('log', function (log) {
+      console.log(`[FABRIC:LOG] ${extra}`, log);
+    });
+
+    source.on('warning', function (warn) {
+      console.warn(`[FABRIC:WARNING] ${extra}`, warn);
+    });
+
+    source.on('error', function (error) {
+      console.error(`[FABRIC:ERROR] ${extra}`, error);
+    });
+
+    source.on('exception', function (error) {
+      console.error(`[FABRIC:EXCEPTION] ${extra}`, error);
+    });
+
+    source.on('message', function (msg) {
+      console.log(`[FABRIC:MESSAGE] ${extra}`, msg);
+    });
+
+    source.on('ready', function () {
+      console.log(`[FABRIC] ${extra}`, `&lt;${source.constructor.name}>`, 'Claimed ready!');
+    });
+  }
+
+  async start () {
+    // Read Environment
+    environment.start();
+
+    // Prepare Input
+    const input = merge({
+      debug: (!environment.readVariable('DEBUG')),
+      seed: environment.readVariable('FABRIC_SEED'),
+      port: environment.readVariable('FABRIC_PORT')
+    }, this.settings.settings);
+
+    // Local Contract
+    this.program = new this.settings.service(input);
+
+    // Attach Listeners
+    this.trust(this.node, 'PEER:LOCAL');
+    this.trust(this.program, 'PROGRAM'); // TODO: debug why 'ready' events come twice?
+    this.trust(this.bitcoin, 'BITCOIN');
+
+    // Start Services
+    if (this.settings.autorun) await this.program.start();
+    if (this.settings.bitcoin) await this.bitcoin.start();
+    if (this.settings.peering) await this.node.start();
+
+    // Notify Listeners
+    this.emit('ready', {
+      id: this.id
+    });
+
+    return this;
+  }
+
+  async _call (method, params) {
+    return this.program[method].call(this.program, params);
+  }
+}
+
+module.exports = Node;
+</code></pre>
+      </article>
+    </section>
+
+
+
+  </div>
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="Actor.html">Actor</a></li>
+      <li><a href="Aggregator.html">Aggregator</a></li>
+      <li><a href="App.html">App</a></li>
+      <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="Channel.html">Channel</a></li>
+      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Compiler.html">Compiler</a></li>
+      <li><a href="Consensus.html">Consensus</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Exchange.html">Exchange</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
+      <li><a href="HKDF.html">HKDF</a></li>
+      <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Interface.html">Interface</a></li>
+      <li><a href="Key.html">Key</a></li>
+      <li><a href="KeyStore.html">KeyStore</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Mempool.html">Mempool</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="Node.html">Node</a></li>
+      <li><a href="Oracle.html">Oracle</a></li>
+      <li><a href="Path.html">Path</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="Reader.html">Reader</a></li>
+      <li><a href="Redis.html">Redis</a></li>
+      <li><a href="Router.html">Router</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Session.html">Session</a></li>
+      <li><a href="Signer.html">Signer</a></li>
+      <li><a href="Snapshot.html">Snapshot</a></li>
+      <li><a href="Stack.html">Stack</a></li>
+      <li><a href="Stash.html">Stash</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="Swap.html">Swap</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
+      <li><a href="Transition.html">Transition</a></li>
+      <li><a href="Tree.html">Tree</a></li>
+      <li><a href="Value.html">Value</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
+      <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="ZMQ.html">ZMQ</a></li>
+    </ul>
+    <h3>Events</h3>
+    <ul>
+      <li><a href="Aggregator.html#event:commit">commit</a></li>
+    </ul>
+  </nav>
+  <br class="clear" />
+  <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>
+  <script type="text/javascript">
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"></script>
+</body>
+
+</html>

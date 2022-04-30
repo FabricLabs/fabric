@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Source: types/aggregator.js &middot; Docs</title>
+  <script src="scripts/prettify/prettify.js"> </script>
+  <script src="scripts/prettify/lang-css.js"> </script>
+  <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+  <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+  <script>
+    window.dataLayer = window.dataLayer || [];
+
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag('js', new Date());
+    gtag('config', 'G-09Y57FL980');
+  </script>
+</head>
+
+<body>
+  <div id="main">
+    <h1 class="page-title">Source: types/aggregator.js</h1>
+
+
+
+
+    <section>
+      <article>
+        <pre class="prettyprint source linenums"><code>'use strict';
+
+// Dependencies
+const merge = require('lodash.merge');
+
+// Fabric Types
+const Service = require('./service');
+const Actor = require('./actor');
+const Tree = require('./tree');
+
+/**
+ * Aggregates a set of balances (inputs).
+ */
+class Aggregator extends Service {
+  /**
+   * Create a new Aggregator.
+   * @param {Object} [settings] Map of configuration values.
+   * @param {Array} [settings.inputs] Array of {@link AnchorBalance} instances.
+   * @returns {Aggregator} Instance of the {@link Aggregator}.
+   */
+  constructor (settings = {}) {
+    super(settings);
+
+    this.settings = merge({
+      inputs: [],
+      version: 0
+    }, this.settings, settings);
+
+    this.actor = new Actor({ inputs: this.settings.inputs });
+    this._tree = new Tree();
+    this._state = {
+      balances: {
+        total: 0,
+        confirmed: 0,
+        unconfirmed: 0
+      },
+      inputs: this.settings.inputs,
+      history: []
+    };
+
+    return this;
+  }
+
+  get id () {
+    return this.actor.id;
+  }
+
+  get balances () {
+    return Object.assign({}, this._state.balances);
+  }
+
+  /**
+   * Import a list of {@link AnchorBalance} instances.
+   * @param {Array} list List of inputs to add.
+   * @returns {AnchorBalance} Summary of resulting balances.
+   */
+  _importBalances (list = []) {
+    for (let i = 0; i &lt; list.length; i++) {
+      this._state.inputs.push(list[i]);
+    }
+    this.commit();
+    return this.balances;
+  }
+
+  /**
+   * Updates the state to reflect balances from current inputs.
+   * @returns {AnchorBalance} Summary of balances.
+   */
+  _computeBalances () {
+    this._state.balances = this._state.inputs.reduce((o, e) => {
+      o.total += e.total;
+      o.confirmed += e.confirmed;
+      o.unconfirmed += e.unconfirmed;
+      return o;
+    }, {
+      total: 0,
+      confirmed: 0,
+      unconfirmed: 0
+    });
+    return this.balances;
+  }
+
+  /**
+   * Commits the balance of all input.
+   * @fires Aggregator#commit
+   * @returns {AggregatorCommit} Commit instance.
+   */
+  commit () {
+    this._computeBalances();
+
+    const actor = new Actor(this.balances);
+    // const signature = null;
+    const message = {
+      id: actor.id,
+      type: 'AggregatorCommit',
+      actor: this.id,
+      object: actor.toObject(),
+      target: '/commits',
+      // signature: signature,
+      version: this.settings.version
+    };
+
+    // Update Tree
+    this._tree.addLeaf(actor.id);
+    this._state.history.push(this._tree.root);
+
+    // Assign Root &amp; Leaves
+    message.root = this._tree.root;
+    message.leaves = this._tree.getLeaves();
+
+    /**
+     * Commit event.
+     * @event Aggregator#commit
+     * @type {Object}
+     * @property {Uint8Array} root Root of the {@link Tree}.
+     * @property {Array} leaves Leaves of the {@link Tree}.
+     */
+    this.emit('commit', message);
+
+    return message;
+  }
+}
+
+module.exports = Aggregator;
+</code></pre>
+      </article>
+    </section>
+
+
+
+  </div>
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="Actor.html">Actor</a></li>
+      <li><a href="Aggregator.html">Aggregator</a></li>
+      <li><a href="App.html">App</a></li>
+      <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="Channel.html">Channel</a></li>
+      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Compiler.html">Compiler</a></li>
+      <li><a href="Consensus.html">Consensus</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Exchange.html">Exchange</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
+      <li><a href="HKDF.html">HKDF</a></li>
+      <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Interface.html">Interface</a></li>
+      <li><a href="Key.html">Key</a></li>
+      <li><a href="KeyStore.html">KeyStore</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Mempool.html">Mempool</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="Node.html">Node</a></li>
+      <li><a href="Oracle.html">Oracle</a></li>
+      <li><a href="Path.html">Path</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="Reader.html">Reader</a></li>
+      <li><a href="Redis.html">Redis</a></li>
+      <li><a href="Router.html">Router</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Session.html">Session</a></li>
+      <li><a href="Signer.html">Signer</a></li>
+      <li><a href="Snapshot.html">Snapshot</a></li>
+      <li><a href="Stack.html">Stack</a></li>
+      <li><a href="Stash.html">Stash</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="Swap.html">Swap</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
+      <li><a href="Transition.html">Transition</a></li>
+      <li><a href="Tree.html">Tree</a></li>
+      <li><a href="Value.html">Value</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
+      <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="ZMQ.html">ZMQ</a></li>
+    </ul>
+    <h3>Events</h3>
+    <ul>
+      <li><a href="Aggregator.html#event:commit">commit</a></li>
+    </ul>
+  </nav>
+  <br class="clear" />
+  <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>
+  <script type="text/javascript">
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"></script>
+</body>
+
+</html>
