@@ -131,6 +131,7 @@
     "gitbook-plugin-page-toc": "^1.1.0",
     "gitbook-plugin-scripts": "^1.0.2",
     "http-server": "^0.12.3",
+    "is-my-json-valid": "^2.20.6",
     "jsdoc": "FabricLabs/jsdoc#fabric",
     "jsdoc-to-markdown": "^4.0.1",
     "json-to-dot": "^1.1.0",
