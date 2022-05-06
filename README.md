@@ -87,6 +87,7 @@ Fabric is an extensible framework, supporting a variety of plugins.
 | Package                            | Description                                | Status                                                                                                                                       |
 |------------------------------------|--------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------|
 | [`@fabric/http`][http-plugin]      | serve Fabric apps to the legacy web (HTTP) | [![Build Status][badge-http-status]][http-test-status] [![Coverage Status][badge-http-coverage]][badge-http-coverage]                        |
+| [`@fabric/bitcoin`][bitcoin-plugin]      | TBD | [![Build Status][badge-bitcoin-status]][bitcoin-test-status] [![Coverage Status][badge-bitcoin-coverage]][badge-bitcoin-coverage]                        |
 | [`@fabric/doorman`][doorman]       | an artificially intelligent assistant      | [![Build Status][badge-doorman-status]][doorman-test-status] [![Coverage Status][badge-doorman-coverage]][doorman-coverage-home]             |
 | [`@fabric/soundtrack`][soundtrack] | collaborative jukebox                      | [![Build Status][badge-soundtrack-status]][soundtrack-test-status] [![Coverage Status][badge-soundtrack-coverage]][soundtrack-coverage-home] |
 
@@ -126,6 +127,8 @@ Fabric on Twitter: [@FabricProtocol][twitter]
 [badge-contributors]: https://img.shields.io/github/contributors/FabricLabs/fabric.svg?style=flat-square
 [badge-chat]: https://img.shields.io/matrix/hub:fabric.pub.svg?server_fqdn=matrix.org&style=flat-square
 
+[badge-bitcoin-status]: https://img.shields.io/travis/FabricLabs/fabric-bitcoin.svg?branch=master&style=flat-square
+[badge-bitcoin-coverage]: https://img.shields.io/codecov/c/github/FabricLabs/fabric-bitcoin.svg?style=flat-square
 [badge-doorman-status]: https://img.shields.io/travis/FabricLabs/doorman.svg?branch=master&style=flat-square
 [badge-doorman-coverage]: https://img.shields.io/codecov/c/github/FabricLabs/doorman.svg?style=flat-square
 [badge-http-status]: https://img.shields.io/travis/FabricLabs/web.svg?branch=master&style=flat-square
