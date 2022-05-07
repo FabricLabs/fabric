@@ -24,7 +24,7 @@ class Identity extends Actor {
       }
     };
 
-    return;
+    return this;
   }
 
   get accountID () {
@@ -50,7 +50,11 @@ class Identity extends Actor {
   }
 
   get pubkey () {
-    return this.key.derive(this.derivation).publicKey.toString('hex');
+    return this.key.public.x.toString('hex');
+  }
+
+  get pubkeyhash () {
+    return Hash256.digest(this.pubkey);
   }
 
   loadAccountByID (id = 0) {
@@ -60,16 +64,14 @@ class Identity extends Actor {
 
   toString () {
     if (this.settings.debug) console.log('master key:', this.key.master.publicKey);
-    const keypair = this.key.derive(this.derivation);
-    if (this.settings.debug) console.log('derived key:', keypair.publicKey);
     if (this.settings.debug) console.log('pubkey for id:', this.pubkey);
+
     const bech32 = new Bech32({
       hrp: 'id',
       content: Hash256.digest(this.pubkey)
     });
 
-    if (this.settings.debug) console.log('option A:', Hash256.digest(this.pubkey));
-    if (this.settings.debug) console.log('option B:', Hash256.digest(keypair.publicKey));
+    if (this.settings.debug) console.log('bech32:', bech32);
 
     return bech32.toString();
   }

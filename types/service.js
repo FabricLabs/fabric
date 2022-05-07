@@ -1125,7 +1125,12 @@ class Service extends Actor {
         // TODO: isomorphic @fabric/core/types/store
         // await this.services[name]._bindStore(this.store);
         this.trust(this.services[name], name);
-        await this.services[name].start();
+
+        try {
+          await this.services[name].start();
+        } catch (exception) {
+          this.emit('warning', `Could not start the "${name}" service due to exception: ${JSON.stringify(exception, null, '  ')}`);
+        }
       }
     }
 
