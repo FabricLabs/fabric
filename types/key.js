@@ -44,6 +44,7 @@ class Key {
    */
   constructor (input = {}) {
     this.settings = Object.assign({
+      debug: false,
       network: 'main',
       curve: 'secp256k1',
       derivation: FABRIC_KEY_DERIVATION_PATH,
@@ -90,6 +91,8 @@ class Key {
       this._mode = 'FROM_RANDOM';
     }
 
+    if (this.settings.debug) console.debug('mode:', this._mode);
+
     switch (this._mode) {
       case 'FROM_SEED':
         const seed = bip39.mnemonicToSeedSync(this.settings.seed);
@@ -105,6 +108,7 @@ class Key {
         const restored = bip32.fromBase58(this.settings.xprv);
         this.xprv = restored.toBase58();
         this.xpub = restored.neutered().toBase58();
+        this.master = restored;
         this.keypair = ec.keyFromPrivate(restored.privateKey);
         break;
       case 'FROM_XPUB':
@@ -234,7 +238,7 @@ class Key {
   }
 
   derive (path = this.settings.derivation) {
-    if (!this.master) throw new Error('You cannot derive without a master key.  Provide a seed phrase.');
+    if (!this.master) throw new Error('You cannot derive without a master key.  Provide a seed phrase or an xprv.');
     return this.master.derivePath(path);
   }
 }

@@ -1,23 +1,26 @@
 'use strict';
 
-const settings = require('../settings/local');
-const Bech32 = require('../types/bech32');
+const SAMPLE = {
+  debug: true,
+  seed: 'cricket grocery kingdom wool double wood happy predict worth pave build pepper bullet farm churn exhibit grit isolate short theory help vehicle denial slide'
+}
+
+// const settings = require('../settings/local');
+const Identity = require('../types/identity');
 
 async function main (input = {}) {
-  const identity = new Bech32({
-    content: settings.public,
-    hrp: 'id'
-  });
+  const identity = new Identity(input);
 
   return {
+    id: identity.toString(),
     identity: {
-      pubkey: settings.public
+      pubkey: identity.pubkey
     },
-    bech32m: identity.toString()
+    derivation: identity.derivation
   };
 }
 
-main(settings).catch((exception) => {
+main(SAMPLE).catch((exception) => {
   console.error('[FABRIC:IDENTITY]', 'Main Process Exception:', exception);
 }).then((output) => {
   console.log('[FABRIC:IDENTITY]', 'Current Identity:', output);
