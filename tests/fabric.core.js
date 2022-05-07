@@ -10,7 +10,6 @@ const config = require('../settings/test');
 
 // Core
 const Fabric = require('../');
-const Web = require('@fabric/http');
 
 // Modules
 const Service = require('../types/service');
