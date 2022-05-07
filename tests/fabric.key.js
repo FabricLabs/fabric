@@ -24,11 +24,16 @@ describe('@fabric/core/types/key', function () {
         private: '1111111111111111111111111111111111111111111111111111111111111111'
       });
 
-      assert.equal(key.public.encodeCompressed('hex'), '034f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa');
+      assert.equal(key.pubkey, '034f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa');
     });
 
     it('can load from an existing seed', function () {
       const key = new Key({ seed: playnet.key.seed });
+      assert.equal(key.public.encodeCompressed('hex'), '0223cffd5e94da3c8915c6b868f06d15183c1aeffad8ddf58fcb35a428e3158e71');
+    });
+
+    it('can load from an existing xprv', function () {
+      const key = new Key({ xprv: playnet.key.xprv });
       assert.equal(key.public.encodeCompressed('hex'), '0223cffd5e94da3c8915c6b868f06d15183c1aeffad8ddf58fcb35a428e3158e71');
     });
 

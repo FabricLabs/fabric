@@ -5,9 +5,11 @@ const {
   FABRIC_KEY_DERIVATION_PATH
 } = require('../constants');
 
+// Node Modules
+const crypto = require('crypto');
+
 // Dependencies
 const Generator = require('arbitrary').default.Generator;
-const crypto = require('crypto');
 const BN = require('bn.js');
 const EC = require('elliptic').ec;
 const ec = new EC('secp256k1');
@@ -77,7 +79,7 @@ class Key {
     if (this.settings.seed) {
       this._mode = 'FROM_SEED';
     } else if (this.settings.private) {
-      this._mode = 'FROM_SEED';
+      this._mode = 'FROM_PRIVATE_KEY';
     } else if (this.settings.xprv) {
       this._mode = 'FROM_XPRV';
     } else if (this.settings.xpub) {
