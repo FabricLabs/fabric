@@ -141,7 +141,7 @@ class Key {
       !this.settings.seed &&
       !this.settings.private &&
       !this.settings.xprv
-    ) ? null : this.keypair.getPrivate();
+    ) ? false : this.keypair.getPrivate();
 
     this.public = this.keypair.getPublic(true);
 

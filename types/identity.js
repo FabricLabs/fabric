@@ -41,6 +41,10 @@ class Identity extends Actor {
     return `m/44'/0'/${this.accountID}'/0/${this.index}`;
   }
 
+  get id () {
+    return this.toString();
+  }
+
   get index () {
     return this._state.content.index;
   }
@@ -54,7 +58,8 @@ class Identity extends Actor {
   }
 
   get pubkeyhash () {
-    return Hash256.digest(this.pubkey);
+    const input = Buffer.from(this.pubkey, 'hex');
+    return Hash256.digest(input);
   }
 
   loadAccountByID (id = 0) {
@@ -68,7 +73,7 @@ class Identity extends Actor {
 
     const bech32 = new Bech32({
       hrp: 'id',
-      content: Hash256.digest(this.pubkey)
+      content: this.pubkeyhash
     });
 
     if (this.settings.debug) console.log('bech32:', bech32);

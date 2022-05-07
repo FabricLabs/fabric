@@ -16,20 +16,25 @@ class Bech32 {
     return this;
   }
 
+  get content () {
+    return this.settings.content;
+  }
+
   get hrp () {
     return this.settings.hrp;
   }
 
-  get content () {
-    return this.settings.hrp;
+  get words () {
+    const buffer = (this.content instanceof Buffer) ? this.content : Buffer.from(this.content, 'hex');
+    return bech32.toWords(buffer);
   }
 
-  decode (input = '') {
+  static decode (input = '') {
     return bech32m.decode(input);
   }
 
   toString () {
-    return bech32m.encode(this.hrp, this.content);
+    return bech32m.encode(this.hrp, this.words);
   }
 }
 
