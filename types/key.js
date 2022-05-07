@@ -112,6 +112,8 @@ class Key {
         this.keypair = ec.keyFromPrivate(restored.privateKey);
         break;
       case 'FROM_XPUB':
+        const xpub = bip32.fromBase58(this.settings.xpub);
+        this.keypair = ec.keyFromPublic(xpub.publicKey);
         break;
       case 'FROM_PRIVATE_KEY':
         // Key is private
@@ -119,27 +121,28 @@ class Key {
         this.keyring = KeyRing.fromPrivate(provision, true);
         this.keyring.witness = this.settings.witness;
         this.keypair = ec.keyFromPrivate(this.settings.private);
-        this.address = this.keyring.getAddress();
         break;
       case 'FROM_PUBLIC_KEY':
         const pubkey = this.settings.pubkey || this.settings.public;
         // Key is only public
-        this.keyring = KeyRing.fromKey((pubkey instanceof Buffer) ? pubkey : Buffer.from(pubkey, 'hex'), true);
-        this.keypair = ec.keyFromPublic(this.keyring.getPublicKey(true, 'hex'));
-        this.address = this.keyring.getAddress();
+        this.keypair = ec.keyFromPublic((pubkey instanceof Buffer) ? pubkey : Buffer.from(pubkey, 'hex'));
         break;
       case 'FROM_RANDOM':
-        // Generate new keys
-        this.keypair = ec.genKeyPair();
-        const privkey = this.keypair.getPrivate().toBuffer(null, 32);
-        this.keyring = KeyRing.fromPrivate(privkey, true);
-        this.keyring.witness = this.settings.witness;
-        this.address = this.keyring.getAddress();
+        const entropy = crypto.randomBytes(32);
+        const mnemonic = bip39.entropyToMnemonic(entropy.toString('hex'));
+        const interim = bip39.mnemonicToSeedSync(mnemonic);
+        this.master = bip32.fromSeed(interim);
+        this.keypair = ec.keyFromPrivate(this.master.privateKey);
         break;
     }
 
     // Read the pair
-    this.private = this.keypair.getPrivate();
+    this.private = (
+      !this.settings.seed &&
+      !this.settings.private &&
+      !this.settings.xprv
+    ) ? null : this.keypair.getPrivate();
+
     this.public = this.keypair.getPublic(true);
 
     // TODO: determine if this makes sense / needs to be private

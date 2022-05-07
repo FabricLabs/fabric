@@ -37,6 +37,11 @@ describe('@fabric/core/types/key', function () {
       assert.equal(key.public.encodeCompressed('hex'), '0223cffd5e94da3c8915c6b868f06d15183c1aeffad8ddf58fcb35a428e3158e71');
     });
 
+    it('can load from an existing xpub', function () {
+      const key = new Key({ xpub: playnet.key.xpub });
+      assert.equal(key.public.encodeCompressed('hex'), '0223cffd5e94da3c8915c6b868f06d15183c1aeffad8ddf58fcb35a428e3158e71');
+    });
+
     it('can generate many keypairs', function () {
       // 31 byte keys every ~256 iterations
       for (let i = 0; i < 1024; i++) {
