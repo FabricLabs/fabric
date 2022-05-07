@@ -24,6 +24,10 @@ class Bech32 {
     return this.settings.hrp;
   }
 
+  decode (input = '') {
+    return bech32m.decode(input);
+  }
+
   toString () {
     return bech32m.encode(this.hrp, this.content);
   }
