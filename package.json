@@ -16,6 +16,7 @@
     "node": "^12.20.2"
   },
   "scripts": {
+    "audit": "npx yarn audit --json --level critical > reports/AUDIT.log",
     "book": "npm run dev",
     "build": "npm run make:all",
     "build:all": "npm run make:all",
