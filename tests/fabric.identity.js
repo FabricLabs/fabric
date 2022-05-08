@@ -8,8 +8,6 @@ const SAMPLE = {
 };
 
 describe('@fabric/core/types/identity', function () {
-  this.timeout(10000);
-
   describe('Identity', function () {
     it('is available from @fabric/core', function () {
       assert.equal(Identity instanceof Function, true);
@@ -18,6 +16,15 @@ describe('@fabric/core/types/identity', function () {
     it('can create a new ECDSA identity', function () {
       const identity = new Identity();
       assert.ok(identity);
+    });
+
+    it('provides the correct public key for a known seed phrase', function () {
+      const identity = new Identity({
+        seed: SAMPLE.seed
+      });
+
+      assert.ok(identity);
+      assert.equal(identity.pubkey, '3b7a27a51582e9e9cc1d820dc9105bdbd12dfe96c471a1a5cf5cff7e8fab566');
     });
   });
 });

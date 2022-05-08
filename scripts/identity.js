@@ -14,7 +14,7 @@ const Key = require('../types/key');
 
 async function main (input = {}) {
   const master =  new Key({ seed: SAMPLE.seed });
-  const key = new Key({ public: X_PUBKEY });
+  const child = new Key({ public: X_PUBKEY });
   const identity = new Identity(input);
   const frompub = new Identity({ public: X_PUBKEY });
 

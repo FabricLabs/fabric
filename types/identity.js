@@ -62,6 +62,13 @@ class Identity extends Actor {
     return Hash256.digest(input);
   }
 
+  static fromString (input = '') {
+    const parsed = Bech32.decode(input);
+    return {
+      content: parsed.content.toString('hex')
+    };
+  }
+
   loadAccountByID (id = 0) {
     this._state.content.accountID = id;
     return this;

@@ -1,7 +1,7 @@
 'use strict';
 
+const bech32 = require('bech32-buffer');
 const {
-  bech32,
   bech32m
 } = require('bech32');
 
@@ -26,11 +26,15 @@ class Bech32 {
 
   get words () {
     const buffer = (this.content instanceof Buffer) ? this.content : Buffer.from(this.content, 'hex');
-    return bech32.toWords(buffer);
+    return bech32m.toWords(buffer);
   }
 
   static decode (input = '') {
-    return bech32m.decode(input);
+    const decoded = bech32.decode(input);
+    return {
+      prefix: decoded.prefix,
+      content: decoded.data
+    };
   }
 
   toString () {
