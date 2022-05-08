@@ -7,8 +7,6 @@ const message = require('../assets/message');
 const playnet = require('../settings/playnet');
 
 describe('@fabric/core/types/bech32', function () {
-  this.timeout(10000);
-
   describe('Bech32', function () {
     it('is available from @fabric/core', function () {
       assert.equal(Bech32 instanceof Function, true);
