@@ -5,6 +5,7 @@ const schnorr = require('bip-schnorr');
 
 // Fabric Types
 const Actor = require('./actor');
+const Hash256 = require('./hash256');
 const Key = require('./key');
 
 /**
@@ -60,9 +61,24 @@ class Signer extends Actor {
    * @returns {Signer}
    */
   sign (data = this.toBuffer()) {
+    if (!(data instanceof Buffer)) {
+      switch (data.constructor.name) {
+        default:
+          console.warn('unhandled data to sign:', data.constructor.name, data);
+          break;
+      }
+    }
+
     this._lastSignature = new Actor({ message: data, signature: this.signature });
-    this.signature = schnorr.sign(this.key.private, data);
-    this.emit('signature', );
+
+    // Hash & sign
+    this._preimage = Hash256.digest(data);
+    this.signature = schnorr.sign(this.key.private, this._preimage);
+
+    this.emit('signature', {
+      signature: this.signature.toString('hex')
+    });
+
     return this.signature.toString('hex');
   }
 }

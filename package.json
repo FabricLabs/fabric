@@ -43,7 +43,7 @@
     "make:lib": "NODE_ENV=production webpack scripts/fabric.js -o assets/fabric.min.js",
     "make:service": "NODE_ENV=production webpack --target=webworker examples/service.js -o assets/service.js",
     "make:viewer": "NODE_ENV=production webpack components/circuit-viewer.js -o assets/viewer.min.js",
-    "report:coverage": "npm run make:coverage && nyc report --reporter=text-lcov > reports/coverage.lcov && codecov",
+    "report:coverage": "npm run make:coverage && nyc report --reporter=text-lcov > reports/coverage.lcov",
     "report:todo": "grep --exclude-dir=.git --exclude-dir=_book --exclude-dir=assets --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs -rEI \"TODO|FIXME\" . > reports/TODO.txt",
     "review:coverage": "npm run make:coverage && http-server -p 8000 reports/coverage",
     "review:todo": "npm run report:todo && cat reports/TODO.txt && echo '\nOutstanding TODO items (@fabric/core):' && wc -l reports/TODO.txt && echo '\nIssues List: https://github.com/FabricLabs/fabric/issues\nDisclosures: securiy@fabric.pub\n\n'",
@@ -74,6 +74,7 @@
   },
   "homepage": "https://github.com/FabricLabs/fabric#readme",
   "dependencies": {
+    "@fabric/zmq": "FabricLabs/fabric-zmq#master",
     "@webassemblyjs/ast": "^1.8.5",
     "arbitrary": "^1.4.10",
     "base58check": "^2.0.0",
@@ -113,8 +114,7 @@
     "simple-aes": "^0.1.1",
     "struct": "^0.0.12",
     "tiny-secp256k1": "^2.2.1",
-    "ts-morph": "^10.0.2",
-    "zeromq": "^5.2.8"
+    "ts-morph": "^10.0.2"
   },
   "devDependencies": {
     "@fabric/http": "FabricLabs/fabric-http#feature-cuts",

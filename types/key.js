@@ -21,12 +21,6 @@ const BIP32 = require('bip32').default;
 const bip32 = new BIP32(ecc);
 const bip39 = require('bip39');
 
-// bcoin
-// TODO: remove (!!!)
-const bcoin = require('bcoin/lib/bcoin-browser');
-const KeyRing = bcoin.KeyRing;
-const Mnemonic = bcoin.hd.Mnemonic;
-
 /**
  * Represents a cryptographic key.
  */
@@ -118,8 +112,6 @@ class Key {
       case 'FROM_PRIVATE_KEY':
         // Key is private
         const provision = (this.settings.private instanceof Buffer) ? this.settings.private : Buffer.from(this.settings.private, 'hex');
-        this.keyring = KeyRing.fromPrivate(provision, true);
-        this.keyring.witness = this.settings.witness;
         this.keypair = ec.keyFromPrivate(this.settings.private);
         break;
       case 'FROM_PUBLIC_KEY':
@@ -167,7 +159,7 @@ class Key {
       pubkey: this.pubkey
     };
 
-    Object.defineProperty(this, 'keyring', { enumerable: false });
+    // Object.defineProperty(this, 'keyring', { enumerable: false });
     Object.defineProperty(this, 'keypair', { enumerable: false });
     Object.defineProperty(this, 'private', { enumerable: false });
 
@@ -175,7 +167,7 @@ class Key {
   }
 
   static Mnemonic (seed) {
-    return new Mnemonic(seed);
+    return new Key({ seed });
   }
 
   get id () {
@@ -242,7 +234,13 @@ class Key {
 
   derive (path = this.settings.derivation) {
     if (!this.master) throw new Error('You cannot derive without a master key.  Provide a seed phrase or an xprv.');
-    return this.master.derivePath(path);
+    const derived = this.master.derivePath(path);
+    const options = {
+      private: derived.privateKey.encodeCompressed('hex'),
+      public: derived.publicKey.encodeCompressed('hex')
+    };
+
+    return new Key(options);
   }
 }
 
