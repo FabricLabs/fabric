@@ -22,7 +22,7 @@ const bcoin = require('bcoin');
 const bitcoin = require('bitcoinjs-lib');
 
 // Services
-const ZMQ = require('./zmq');
+const ZMQ = require('@fabric/zmq');
 
 // Types
 const Actor = require('../types/actor');
