@@ -16,9 +16,8 @@
     "node": "^12.20.2"
   },
   "scripts": {
-    "book": "npm run dev",
     "build": "npm run make:all",
-    "build:all": "npm run make:all",
+    "build:book": "npm run make:book && npm run tidy",
     "chat": "node scripts/cli.js chat",
     "clean": "rm -rf node_modules",
     "clean:all": "rm -rf node_modules package-lock.json",
@@ -34,9 +33,10 @@
     "make:all": "npm run make:service && npm run make:app && npm run make:lib && npm run make:dev && npm run make:binary",
     "make:api": "jsdoc2md --configure jsdoc.json --files types/*.js services/*.js settings/deprecations.js README.md > API.md",
     "make:app": "webpack --progress examples/app.js -o assets/app.js",
+    "make:book": "mkdir -p _book && honkit build",
     "make:binary": "pkg -c package.json -o assets/binaries/fabric scripts/cli.js",
     "make:coverage": "npm run coverage && nyc report --reporter html",
-    "make:dev": "gitbook install && npm run make:examples && npm run make:docs && gitbook build && cp -rf docs _book/ && cp -rf examples _book/ && glob-run js-beautify --indent-size 2 -r _book/**.html",
+    "make:dev": "npm run make:examples && npm run make:docs && npm run make:book && cp -rf docs _book/ && cp -rf examples _book/ && npm run:tidy",
     "make:docs": "npm run make:api && node_modules/.bin/jsdoc -c jsdoc.json services/**.js types/**.js settings/deprecations.js DEVELOPERS.md -d docs/ && glob-run js-beautify --indent-size 2 -r docs/**.html",
     "make:examples": "docco --output examples/ examples/*.js && glob-run js-beautify --indent-size 2 -r examples/*.html",
     "make:lib": "NODE_ENV=production webpack scripts/fabric.js -o assets/fabric.min.js",
@@ -52,7 +52,8 @@
     "test:app": "npm run make:service && npm run make:app && NODE_ENV=test mocha tests/fabric.app.js",
     "test:bitcoin": "mocha tests/bitcoin.core.js",
     "test:ethereum": "mocha tests/ethereum.core.js",
-    "test": "NODE_ENV=test mocha tests"
+    "test": "NODE_ENV=test mocha tests",
+    "tidy": "glob-run js-beautify --indent-size 2 -r _book/**.html"
   },
   "repository": {
     "type": "git",
@@ -130,6 +131,7 @@
     "gitbook-plugin-exercises": "^3.0.0",
     "gitbook-plugin-page-toc": "^1.1.0",
     "gitbook-plugin-scripts": "^1.0.2",
+    "honkit": "^3.7.1",
     "http-server": "^0.12.3",
     "is-my-json-valid": "^2.20.6",
     "jsdoc": "FabricLabs/jsdoc#fabric",
