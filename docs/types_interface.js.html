@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Source: types/interface.js &middot; Docs</title>
+  <script src="scripts/prettify/prettify.js"> </script>
+  <script src="scripts/prettify/lang-css.js"> </script>
+  <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+  <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+  <script>
+    window.dataLayer = window.dataLayer || [];
+
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag('js', new Date());
+    gtag('config', 'G-09Y57FL980');
+  </script>
+</head>
+
+<body>
+  <div id="main">
+    <h1 class="page-title">Source: types/interface.js</h1>
+
+
+
+
+    <section>
+      <article>
+        <pre class="prettyprint source linenums"><code>'use strict';
+
+// Dependencies
+const BN = require('bn.js');
+const merge = require('lodash.merge');
+// const monitor = require('fast-json-patch');
+
+// Fabric types
+const Entity = require('./entity');
+const Circuit = require('./circuit');
+const Message = require('./message');
+const State = require('./state');
+const Machine = require('./machine');
+const Secret = require('./secret');
+const Service = require('./service');
+
+/**
+ * Interfaces compile abstract contract code into {@link Chain}-executable transactions, or "chaincode". For example, the "Bitcoin" interface might compile a Swap contract into Script, preparing a valid Bitcoin transaction for broadcast which executes the swap contract.
+ * @augments EventEmitter
+ * @property {String} status Human-friendly value representing the Interface's current {@link State}.
+ */
+class Interface extends Service {
+  /**
+   * Define an {@link Interface} by creating an instance of this class.
+   * @param {Object} settings Configuration values.
+   * @return {Interface}      Instance of the {@link Interface}.
+   */
+  constructor (settings = {}) {
+    super(settings);
+
+    this.ticker = new BN();
+    this.identity = new BN(1);
+    this.tags = ['pre-release'];
+    this.settings = merge({
+      prefix: '/',
+      script: '(1)',
+      type: 'javascript'
+    }, settings);
+
+    // define singletons
+    // TODO: remove these... ~E
+    this.circuit = new Circuit(this.settings);
+    this.machine = new Machine(this.settings);
+    this.secret = new Secret(this.settings);
+
+    // Shared State
+    // TODO: use Layer
+    this.memory = Buffer.alloc(4096);
+    this.pointers = {}; // Map of addresses -> pointers
+
+    // internal state
+    this._state = new State(settings);
+    this.status = 'initialized';
+
+    // Bind {@link Message} handler
+    this._state.on('changes', this._handleStateChange.bind(this));
+
+    // ensure chain-ability
+    return this;
+  }
+
+  get status () {
+    return this._state.get('/status');
+  }
+
+  set status (value = this.status) {
+    return this._state.set('/status', value);
+  }
+
+  shared (count = 1) {
+    const data = new Entity(this.memory);
+    const id = data.id;
+
+    this.pointers[0] = id;
+    this.memory.writeUInt8(id);
+
+    return id;
+  }
+
+  writeTo (position, data) {
+    const entity = new Entity(data);
+    // console.log('writing', entity.id, ':', entity.data, 'to', position, '...');
+
+    if (entity.id.length > this.memory.length) throw new Error('Insufficient memory.');
+
+    for (let i = 0; i &lt; entity.id.length; i++) {
+      this.memory.writeUInt8(entity.id[i], position + i);
+    }
+
+    this.commit();
+
+    return this.shared();
+  }
+
+  commit () {
+    const entity = new Entity(this._state);
+    const solution = merge({}, entity.data, {
+      // TODO: document why @input is removed
+      '@input': null,
+      '@data': null,
+      '@entity': null
+    });
+
+    delete solution['@input'];
+    delete solution['@data'];
+    delete solution['@entity'];
+    delete solution['@preimage'];
+    delete solution['observer'];
+
+    const state = new Entity(solution.state);
+    solution.state = state.id;
+
+    const vector = JSON.stringify(solution, null, '  ');
+    const commit = {
+      '@type': 'Commit',
+      '@data': vector.id,
+      '@solution': vector
+    };
+
+    this.emit('commit', commit);
+
+    return commit;
+  }
+
+  /**
+   * Log some output to the console.
+   * @param  {...any} inputs Components of the message to long.  Can be a single {@link} String, many {@link String} objects, or anything else.
+   */
+  log (...inputs) {
+    const now = this.now();
+
+    inputs.unshift(`[${this.constructor.name.toUpperCase()}]`);
+    inputs.unshift(`[${now}]`);
+
+    if (this.settings.verbosity >= 3) {
+      console.log.apply(null, this.tags.concat(inputs));
+    }
+
+    return this.emit('info', this.tags.concat(inputs));
+  }
+
+  /**
+   * Returns current timestamp.
+   * @returns {Number}
+   */
+  now () {
+    return new Date().getTime();
+  }
+
+  async patch (transaction) {
+    // TODO: apply `transaction.operations` to Interface state
+    await this.state._applyChanges(transaction.operations);
+    return this;
+  }
+
+  /** Start the {@link Interface}.
+   */
+  async start () {
+    this.cycle('start');
+    this.status = 'starting';
+    await this.machine.start();
+    this.status = 'started';
+    this.emit('ready', { name: this.settings.name });
+    return this;
+  }
+
+  /** Stop the Interface. */
+  async stop () {
+    this.cycle('stop');
+    this.status = 'stopping';
+    await this.machine.stop();
+    this.status = 'stopped';
+    return this;
+  }
+
+  /**
+   * Ticks the clock with a named {@link Cycle}.
+   * @param {String} val Name of cycle to scribe.
+   */
+  async cycle (val) {
+    if (typeof val !== 'string') throw new Error('Input must be a {@link String} object.');
+    this.ticker.add(this.identity);
+    this.emit('cycle', val);
+    return this;
+  }
+
+  async _handleStateChange (change) {
+    this.log('[FABRIC:INTERFACE]', 'Received State change:', change);
+    let data = JSON.stringify({ changes: change });
+    this.emit('transaction', Message.fromVector(['Transaction', data]));
+    return 1;
+  }
+}
+
+module.exports = Interface;
+</code></pre>
+      </article>
+    </section>
+
+
+
+  </div>
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="Actor.html">Actor</a></li>
+      <li><a href="Aggregator.html">Aggregator</a></li>
+      <li><a href="App.html">App</a></li>
+      <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="Channel.html">Channel</a></li>
+      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Compiler.html">Compiler</a></li>
+      <li><a href="Consensus.html">Consensus</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Exchange.html">Exchange</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
+      <li><a href="HKDF.html">HKDF</a></li>
+      <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Interface.html">Interface</a></li>
+      <li><a href="Key.html">Key</a></li>
+      <li><a href="KeyStore.html">KeyStore</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Mempool.html">Mempool</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="Node.html">Node</a></li>
+      <li><a href="Oracle.html">Oracle</a></li>
+      <li><a href="Path.html">Path</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="Reader.html">Reader</a></li>
+      <li><a href="Redis.html">Redis</a></li>
+      <li><a href="Router.html">Router</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Session.html">Session</a></li>
+      <li><a href="Signer.html">Signer</a></li>
+      <li><a href="Snapshot.html">Snapshot</a></li>
+      <li><a href="Stack.html">Stack</a></li>
+      <li><a href="Stash.html">Stash</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="Swap.html">Swap</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
+      <li><a href="Transition.html">Transition</a></li>
+      <li><a href="Tree.html">Tree</a></li>
+      <li><a href="Value.html">Value</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
+      <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="ZMQ.html">ZMQ</a></li>
+    </ul>
+    <h3>Events</h3>
+    <ul>
+      <li><a href="Aggregator.html#event:commit">commit</a></li>
+    </ul>
+  </nav>
+  <br class="clear" />
+  <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>
+  <script type="text/javascript">
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"></script>
+</body>
+
+</html>

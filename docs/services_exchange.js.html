@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Source: services/exchange.js &middot; Docs</title>
+  <script src="scripts/prettify/prettify.js"> </script>
+  <script src="scripts/prettify/lang-css.js"> </script>
+  <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+  <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+  <script>
+    window.dataLayer = window.dataLayer || [];
+
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag('js', new Date());
+    gtag('config', 'G-09Y57FL980');
+  </script>
+</head>
+
+<body>
+  <div id="main">
+    <h1 class="page-title">Source: services/exchange.js</h1>
+
+
+
+
+    <section>
+      <article>
+        <pre class="prettyprint source linenums"><code>'use strict';
+
+// Constants
+const BTC = require('../currencies/btc');
+const BTCA = require('../currencies/btca');
+const BTCB = require('../currencies/btcb');
+
+// Dependencies
+const merge = require('lodash.merge');
+
+// Fabric Types
+const Actor = require('../types/actor');
+const Entity = require('../types/entity');
+const Collection = require('../types/collection');
+const Message = require('../types/message');
+const Service = require('../types/service');
+
+/**
+ * Implements a basic Exchange.
+ */
+class Exchange extends Service {
+  /**
+   * Create an instance of the Exchange.  You may run two instances at
+   * once to simulate two-party contracts, or use the Fabric Market to
+   * find and trade with real peers.
+   * @param {Object} settings Map of settings to values.
+   * @param {Object} settings.fees Map of fee settings (all values in BTC).
+   * @param {Object} settings.fees.minimum Minimum fee (satoshis).
+   * @returns Exchnge
+   */
+  constructor (settings = {}) {
+    super(settings);
+
+    // Configures Defaults
+    this.settings = merge({
+      anchor: 'BTC', // Symbol of Primary Timestamping Asset (PTA)
+      path: './stores/exchange-playnet',
+      debug: false,
+      orders: [], // Pre-define a list of Orders
+      premium: {
+        type: 'bips',
+        value: 2000 // 2000 bips === 20%
+      },
+      currencies: [
+        BTC,
+        BTCA,
+        BTCB
+      ],
+      fees: {
+        minimum: 20000 // satoshis
+      }
+    }, settings, this.settings);
+
+    // TODO: finalize Collection API in #docs-update
+    this.orders = new Collection(this.settings.orders);
+    this.currencies = new Collection(this.settings.currencies);
+
+    // Internal State
+    this._state = {
+      actors: {}, // Fabric Actors
+      blocks: {}, // Fabric Blocks
+      chains: {}, // Fabric Chains
+      channels: {}, // Fabric Channels
+      oracles: {}, // Fabric Oracles
+      pairs: {}, // Portal Pairs
+      transactions: {}, // Fabric Transactions
+      witnesses: {}, // Fabric Witnesses
+      orders: {} // Portal Orders
+    };
+
+    // Chainable
+    return this;
+  }
+
+  async bootstrap () {
+    if (!this.settings.debug) return;
+    for (let i = 0; i &lt; this.settings.orders.length; i++) {
+      const order = this.settings.orders[i];
+      order.signature = Buffer.alloc(64);
+      const posted = await this._postOrder(order);
+      this.emit('message', `Posted Order: ${posted}`);
+    }
+    return this;
+  }
+
+  async start () {
+    // Set a heartbeat
+    this.heartbeat = setInterval(this._heartbeat.bind(this), this.settings.interval);
+    await this.bootstrap();
+    this.emit('message', `[FABRIC:EXCHANGE] Started!`);
+    this.emit('ready');
+  }
+
+  async _heartbeat () {
+    await super._heartbeat();
+    await this._matchOrders(this._state.orders);
+  }
+
+  async _postOrder (order) {
+    if (!order) return new Error('Order must be provided.');
+    if (!order.signature) return new Error('Order must be signed.');
+
+    const entity = new Entity(order);
+    this.emit('message', `Posting order [${entity.id}] ...`);
+
+    const state = await this.orders.create(entity);
+    this.emit('message', `Order [${entity.id}] posted: ${state}`);
+
+    if (!this._state.orders[entity.id]) this._state.orders[entity.id] = entity;
+
+    await this.commit();
+    this.emit('message', Message.fromVector(['PostedExchangeOrder', state]));
+
+    return state;
+  }
+
+  async _matchOrders (orders) {
+    const exchange = this;
+    const incomplete = Object.values(orders).filter(x => (x.status !== 'completed'));
+    const haves = incomplete.filter(x => (x.have === exchange.settings.anchor));
+    const wants = incomplete.filter(x => (x.want === exchange.settings.anchor));
+    return {
+      type: 'ExchangeOrderExecution',
+      data: {
+        haves,
+        wants
+      }
+    };
+  }
+}
+
+module.exports = Exchange;
+</code></pre>
+      </article>
+    </section>
+
+
+
+  </div>
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="Actor.html">Actor</a></li>
+      <li><a href="Aggregator.html">Aggregator</a></li>
+      <li><a href="App.html">App</a></li>
+      <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="Channel.html">Channel</a></li>
+      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Compiler.html">Compiler</a></li>
+      <li><a href="Consensus.html">Consensus</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Exchange.html">Exchange</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
+      <li><a href="HKDF.html">HKDF</a></li>
+      <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Interface.html">Interface</a></li>
+      <li><a href="Key.html">Key</a></li>
+      <li><a href="KeyStore.html">KeyStore</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Mempool.html">Mempool</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="Node.html">Node</a></li>
+      <li><a href="Oracle.html">Oracle</a></li>
+      <li><a href="Path.html">Path</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="Reader.html">Reader</a></li>
+      <li><a href="Redis.html">Redis</a></li>
+      <li><a href="Router.html">Router</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Session.html">Session</a></li>
+      <li><a href="Signer.html">Signer</a></li>
+      <li><a href="Snapshot.html">Snapshot</a></li>
+      <li><a href="Stack.html">Stack</a></li>
+      <li><a href="Stash.html">Stash</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="Swap.html">Swap</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
+      <li><a href="Transition.html">Transition</a></li>
+      <li><a href="Tree.html">Tree</a></li>
+      <li><a href="Value.html">Value</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
+      <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="ZMQ.html">ZMQ</a></li>
+    </ul>
+    <h3>Events</h3>
+    <ul>
+      <li><a href="Aggregator.html#event:commit">commit</a></li>
+    </ul>
+  </nav>
+  <br class="clear" />
+  <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>
+  <script type="text/javascript">
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"></script>
+</body>
+
+</html>

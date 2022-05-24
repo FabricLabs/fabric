@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="utf-8">
-  <title>Class: Remote &middot; Docs</title>
+  <title>Class: Actor &middot; Docs</title>
   <script src="scripts/prettify/prettify.js"> </script>
   <script src="scripts/prettify/lang-css.js"> </script>
   <!--[if lt IE 9]>
@@ -24,7 +24,7 @@
 
 <body>
   <div id="main">
-    <h1 class="page-title">Class: Remote</h1>
+    <h1 class="page-title">Class: Actor</h1>
 
 
 
@@ -33,9 +33,9 @@
 
       <header>
 
-        <h2><span class="attribs"><span class="type-signature"></span></span>Remote<span class="signature">(target)</span><span class="type-signature"></span></h2>
+        <h2><span class="attribs"><span class="type-signature">(protected) </span></span>Actor<span class="signature">(actor<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {<a href="Actor.html">Actor</a>}</span></h2>
 
-        <div class="class-description">Interact with a remote <a href="Resource.html">Resource</a>.</div>
+        <div class="class-description">Generic Fabric Actor.</div>
 
 
       </header>
@@ -50,7 +50,7 @@
 
 
 
-          <h4 class="name" id="Remote"><span class="type-signature"></span>new Remote<span class="signature">(target)</span><span class="type-signature"></span></h4>
+          <h4 class="name" id="Actor"><span class="type-signature">(protected) </span>new Actor<span class="signature">(actor<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {<a href="Actor.html">Actor</a>}</span></h4>
 
 
 
@@ -58,7 +58,10 @@
 
 
           <div class="description">
-            An in-memory representation of a node in our network.
+            Creates an <a href="Actor.html">Actor</a>, which emits messages for other
+            Actors to subscribe to. You can supply certain parameters
+            for the actor, including key material [!!!] — be mindful of
+            what you share with others!
           </div>
 
 
@@ -82,6 +85,8 @@
                 <th>Type</th>
 
 
+                <th>Attributes</th>
+
 
 
 
@@ -94,7 +99,7 @@
 
               <tr>
 
-                <td class="name"><code>target</code></td>
+                <td class="name"><code>actor</code></td>
 
 
                 <td class="type">
@@ -107,10 +112,20 @@
                 </td>
 
 
+                <td class="attributes">
+
+                  &lt;optional><br>
 
 
 
-                <td class="description last">Target object.
+
+
+                </td>
+
+
+
+
+                <td class="description last">Object to use as the actor.
                   <h6>Properties</h6>
 
 
@@ -124,6 +139,8 @@
                         <th>Type</th>
 
 
+                        <th>Attributes</th>
+
 
 
 
@@ -136,7 +153,7 @@
 
                       <tr>
 
-                        <td class="name"><code>host</code></td>
+                        <td class="name"><code>seed</code></td>
 
 
                         <td class="type">
@@ -149,23 +166,44 @@
                         </td>
 
 
+                        <td class="attributes">
+
+                          &lt;optional><br>
 
 
 
-                        <td class="description last">Named host, e.g. "localhost".</td>
+
+
+                        </td>
+
+
+
+
+                        <td class="description last">BIP24 Mnemonic to use as a seed phrase.</td>
                       </tr>
 
 
 
                       <tr>
 
-                        <td class="name"><code>secure</code></td>
+                        <td class="name"><code>public</code></td>
 
 
                         <td class="type">
 
 
-                          <span class="param-type">String</span>
+                          <span class="param-type">Buffer</span>
+
+
+
+                        </td>
+
+
+                        <td class="attributes">
+
+                          &lt;optional><br>
+
+
 
 
 
@@ -174,8 +212,40 @@
 
 
 
+                        <td class="description last">Public key.</td>
+                      </tr>
 
-                        <td class="description last">Require TLS session.</td>
+
+
+                      <tr>
+
+                        <td class="name"><code>private</code></td>
+
+
+                        <td class="type">
+
+
+                          <span class="param-type">Buffer</span>
+
+
+
+                        </td>
+
+
+                        <td class="attributes">
+
+                          &lt;optional><br>
+
+
+
+
+
+                        </td>
+
+
+
+
+                        <td class="description last">Private key.</td>
                       </tr>
 
 
@@ -220,13 +290,13 @@
 
               <tr>
 
-                <td class="name"><code>config</code></td>
+                <td class="name"><code>id</code></td>
 
 
                 <td class="type">
 
 
-                  <span class="param-type">Object</span>
+                  <span class="param-type">String</span>
 
 
 
@@ -236,20 +306,20 @@
 
 
 
-                <td class="description last"></td>
+                <td class="description last">Unique identifier for this Actor (id === SHA256(preimage)).</td>
               </tr>
 
 
 
               <tr>
 
-                <td class="name"><code>secure</code></td>
+                <td class="name"><code>preimage</code></td>
 
 
                 <td class="type">
 
 
-                  <span class="param-type">Boolean</span>
+                  <span class="param-type">String</span>
 
 
 
@@ -259,7 +329,7 @@
 
 
 
-                <td class="description last"></td>
+                <td class="description last">Input hash for the `id` property (preimage === SHA256(ActorState)).</td>
               </tr>
 
 
@@ -300,7 +370,7 @@
             <dd class="tag-source">
               <ul class="dummy">
                 <li>
-                  <a href="types_remote.js.html">types/remote.js</a>, <a href="types_remote.js.html#line26">line 26</a>
+                  <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line33">line 33</a>
                 </li>
               </ul>
             </dd>
@@ -317,6 +387,10 @@
 
 
 
+          <h5>Fires:</h5>
+          <ul>
+            <li>event:message Fabric <a href="Message.html">Message</a> objects.</li>
+          </ul>
 
 
 
@@ -325,6 +399,29 @@
 
 
 
+
+
+
+          <h5>Returns:</h5>
+
+
+          <div class="param-desc">
+            Instance of the Actor. Call <a href="Actor.html#sign">Actor#sign</a> to emit a Signature.
+          </div>
+
+
+
+          <dl>
+            <dt>
+              Type
+            </dt>
+            <dd>
+
+              <span class="param-type"><a href="Actor.html">Actor</a></span>
+
+
+            </dd>
+          </dl>
 
 
 
@@ -358,7 +455,7 @@
 
 
 
-        <h4 class="name" id="_DELETE"><span class="type-signature">(async) </span>_DELETE<span class="signature">(path, params)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+        <h4 class="name" id="_readObject"><span class="type-signature"></span>_readObject<span class="signature">(input)</span><span class="type-signature"> &rarr; {Object}</span></h4>
 
 
 
@@ -366,7 +463,7 @@
 
 
         <div class="description">
-          HTTP DELETE on the configured Authority.
+          Parse an Object into a corresponding Fabric state.
         </div>
 
 
@@ -402,30 +499,7 @@
 
             <tr>
 
-              <td class="name"><code>path</code></td>
-
-
-              <td class="type">
-
-
-                <span class="param-type">String</span>
-
-
-
-              </td>
-
-
-
-
-
-              <td class="description last">HTTP Path to request.</td>
-            </tr>
-
-
-
-            <tr>
-
-              <td class="name"><code>params</code></td>
+              <td class="name"><code>input</code></td>
 
 
               <td class="type">
@@ -441,7 +515,7 @@
 
 
 
-              <td class="description last">Map of parameters to supply.</td>
+              <td class="description last">Object to read as input.</td>
             </tr>
 
 
@@ -484,7 +558,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_remote.js.html">types/remote.js</a>, <a href="types_remote.js.html#line231">line 231</a>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line265">line 265</a>
               </li>
             </ul>
           </dd>
@@ -515,7 +589,7 @@
 
 
         <div class="param-desc">
-          - Full description of remote resource.
+          Fabric state.
         </div>
 
 
@@ -544,7 +618,7 @@
 
 
 
-        <h4 class="name" id="_GET"><span class="type-signature">(async) </span>_GET<span class="signature">(path, params)</span><span class="type-signature"> &rarr; {Mixed}</span></h4>
+        <h4 class="name" id="commit"><span class="type-signature"></span>commit<span class="signature">()</span><span class="type-signature"> &rarr; {String}</span></h4>
 
 
 
@@ -552,7 +626,7 @@
 
 
         <div class="description">
-          HTTP GET against the configured Authority.
+          Resolve the current state to a commitment.
         </div>
 
 
@@ -561,78 +635,6 @@
 
 
 
-
-
-        <h5>Parameters:</h5>
-
-
-        <table class="params">
-          <thead>
-            <tr>
-
-              <th>Name</th>
-
-
-              <th>Type</th>
-
-
-
-
-
-              <th class="last">Description</th>
-            </tr>
-          </thead>
-
-          <tbody>
-
-
-            <tr>
-
-              <td class="name"><code>path</code></td>
-
-
-              <td class="type">
-
-
-                <span class="param-type">String</span>
-
-
-
-              </td>
-
-
-
-
-
-              <td class="description last">HTTP Path to request.</td>
-            </tr>
-
-
-
-            <tr>
-
-              <td class="name"><code>params</code></td>
-
-
-              <td class="type">
-
-
-                <span class="param-type">Object</span>
-
-
-
-              </td>
-
-
-
-
-
-              <td class="description last">Map of parameters to supply.</td>
-            </tr>
-
-
-          </tbody>
-        </table>
 
 
 
@@ -670,7 +672,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_remote.js.html">types/remote.js</a>, <a href="types_remote.js.html#line183">line 183</a>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line131">line 131</a>
               </li>
             </ul>
           </dd>
@@ -687,6 +689,11 @@
 
 
 
+        <h5>Fires:</h5>
+        <ul>
+          <li>event:Actor Current malleable state.</li>
+        </ul>
+
 
 
 
@@ -701,7 +708,7 @@
 
 
         <div class="param-desc">
-          [description]
+          32-byte ID
         </div>
 
 
@@ -712,7 +719,7 @@
           </dt>
           <dd>
 
-            <span class="param-type">Mixed</span>
+            <span class="param-type">String</span>
 
 
           </dd>
@@ -730,7 +737,7 @@
 
 
 
-        <h4 class="name" id="_OPTIONS"><span class="type-signature">(async) </span>_OPTIONS<span class="signature">(path, params)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+        <h4 class="name" id="serialize"><span class="type-signature"></span>serialize<span class="signature">()</span><span class="type-signature"> &rarr; {String}</span></h4>
 
 
 
@@ -738,7 +745,7 @@
 
 
         <div class="description">
-          HTTP OPTIONS on the configured Authority.
+          Serialize the Actor's current state into a JSON-formatted string.
         </div>
 
 
@@ -747,78 +754,6 @@
 
 
 
-
-
-        <h5>Parameters:</h5>
-
-
-        <table class="params">
-          <thead>
-            <tr>
-
-              <th>Name</th>
-
-
-              <th>Type</th>
-
-
-
-
-
-              <th class="last">Description</th>
-            </tr>
-          </thead>
-
-          <tbody>
-
-
-            <tr>
-
-              <td class="name"><code>path</code></td>
-
-
-              <td class="type">
-
-
-                <span class="param-type">String</span>
-
-
-
-              </td>
-
-
-
-
-
-              <td class="description last">HTTP Path to request.</td>
-            </tr>
-
-
-
-            <tr>
-
-              <td class="name"><code>params</code></td>
-
-
-              <td class="type">
-
-
-                <span class="param-type">Object</span>
-
-
-
-              </td>
-
-
-
-
-
-              <td class="description last">Map of parameters to supply.</td>
-            </tr>
-
-
-          </tbody>
-        </table>
 
 
 
@@ -856,7 +791,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_remote.js.html">types/remote.js</a>, <a href="types_remote.js.html#line211">line 211</a>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line203">line 203</a>
               </li>
             </ul>
           </dd>
@@ -886,9 +821,335 @@
         <h5>Returns:</h5>
 
 
-        <div class="param-desc">
-          - Full description of remote resource.
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">String</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="sign"><span class="type-signature"></span>sign<span class="signature">()</span><span class="type-signature"> &rarr; {<a href="Actor.html">Actor</a>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Signs the Actor.
         </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line226">line 226</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="Actor.html">Actor</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="toBuffer"><span class="type-signature"></span>toBuffer<span class="signature">()</span><span class="type-signature"> &rarr; {Buffer}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Casts the Actor to a normalized Buffer.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line167">line 167</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Buffer</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="toObject"><span class="type-signature"></span>toObject<span class="signature">()</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Returns the Actor's current state as an Object.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line175">line 175</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
 
 
 
@@ -916,7 +1177,7 @@
 
 
 
-        <h4 class="name" id="_PATCH"><span class="type-signature">(async) </span>_PATCH<span class="signature">(path, body)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+        <h4 class="name" id="unpause"><span class="type-signature"></span>unpause<span class="signature">()</span><span class="type-signature"> &rarr; {<a href="Actor.html">Actor</a>}</span></h4>
 
 
 
@@ -924,565 +1185,8 @@
 
 
         <div class="description">
-          HTTP PATCH on the configured Authority.
-        </div>
-
-
-
-
-
-
-
-
-
-        <h5>Parameters:</h5>
-
-
-        <table class="params">
-          <thead>
-            <tr>
-
-              <th>Name</th>
-
-
-              <th>Type</th>
-
-
-
-
-
-              <th class="last">Description</th>
-            </tr>
-          </thead>
-
-          <tbody>
-
-
-            <tr>
-
-              <td class="name"><code>path</code></td>
-
-
-              <td class="type">
-
-
-                <span class="param-type">String</span>
-
-
-
-              </td>
-
-
-
-
-
-              <td class="description last">HTTP Path to request.</td>
-            </tr>
-
-
-
-            <tr>
-
-              <td class="name"><code>body</code></td>
-
-
-              <td class="type">
-
-
-                <span class="param-type">Object</span>
-
-
-
-              </td>
-
-
-
-
-
-              <td class="description last">Map of parameters to supply.</td>
-            </tr>
-
-
-          </tbody>
-        </table>
-
-
-
-
-
-
-        <dl class="details">
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-          <dt class="tag-source">Source:</dt>
-          <dd class="tag-source">
-            <ul class="dummy">
-              <li>
-                <a href="types_remote.js.html">types/remote.js</a>, <a href="types_remote.js.html#line221">line 221</a>
-              </li>
-            </ul>
-          </dd>
-
-
-
-
-
-
-
-        </dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        <h5>Returns:</h5>
-
-
-        <div class="param-desc">
-          - Full description of remote resource.
-        </div>
-
-
-
-        <dl>
-          <dt>
-            Type
-          </dt>
-          <dd>
-
-            <span class="param-type">Object</span>
-
-
-          </dd>
-        </dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-        <h4 class="name" id="_POST"><span class="type-signature">(async) </span>_POST<span class="signature">(path, params)</span><span class="type-signature"> &rarr; {Mixed}</span></h4>
-
-
-
-
-
-
-        <div class="description">
-          HTTP POST against the configured Authority.
-        </div>
-
-
-
-
-
-
-
-
-
-        <h5>Parameters:</h5>
-
-
-        <table class="params">
-          <thead>
-            <tr>
-
-              <th>Name</th>
-
-
-              <th>Type</th>
-
-
-
-
-
-              <th class="last">Description</th>
-            </tr>
-          </thead>
-
-          <tbody>
-
-
-            <tr>
-
-              <td class="name"><code>path</code></td>
-
-
-              <td class="type">
-
-
-                <span class="param-type">String</span>
-
-
-
-              </td>
-
-
-
-
-
-              <td class="description last">HTTP Path to request.</td>
-            </tr>
-
-
-
-            <tr>
-
-              <td class="name"><code>params</code></td>
-
-
-              <td class="type">
-
-
-                <span class="param-type">Object</span>
-
-
-
-              </td>
-
-
-
-
-
-              <td class="description last">Map of parameters to supply.</td>
-            </tr>
-
-
-          </tbody>
-        </table>
-
-
-
-
-
-
-        <dl class="details">
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-          <dt class="tag-source">Source:</dt>
-          <dd class="tag-source">
-            <ul class="dummy">
-              <li>
-                <a href="types_remote.js.html">types/remote.js</a>, <a href="types_remote.js.html#line193">line 193</a>
-              </li>
-            </ul>
-          </dd>
-
-
-
-
-
-
-
-        </dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        <h5>Returns:</h5>
-
-
-        <div class="param-desc">
-          Result of request.
-        </div>
-
-
-
-        <dl>
-          <dt>
-            Type
-          </dt>
-          <dd>
-
-            <span class="param-type">Mixed</span>
-
-
-          </dd>
-        </dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-        <h4 class="name" id="_PUT"><span class="type-signature">(async) </span>_PUT<span class="signature">(path, body)</span><span class="type-signature"> &rarr; {Mixed}</span></h4>
-
-
-
-
-
-
-        <div class="description">
-          HTTP PUT against the configured Authority.
-        </div>
-
-
-
-
-
-
-
-
-
-        <h5>Parameters:</h5>
-
-
-        <table class="params">
-          <thead>
-            <tr>
-
-              <th>Name</th>
-
-
-              <th>Type</th>
-
-
-
-
-
-              <th class="last">Description</th>
-            </tr>
-          </thead>
-
-          <tbody>
-
-
-            <tr>
-
-              <td class="name"><code>path</code></td>
-
-
-              <td class="type">
-
-
-                <span class="param-type">String</span>
-
-
-
-              </td>
-
-
-
-
-
-              <td class="description last">HTTP Path to request.</td>
-            </tr>
-
-
-
-            <tr>
-
-              <td class="name"><code>body</code></td>
-
-
-              <td class="type">
-
-
-                <span class="param-type">Object</span>
-
-
-
-              </td>
-
-
-
-
-
-              <td class="description last">Map of parameters to supply.</td>
-            </tr>
-
-
-          </tbody>
-        </table>
-
-
-
-
-
-
-        <dl class="details">
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-          <dt class="tag-source">Source:</dt>
-          <dd class="tag-source">
-            <ul class="dummy">
-              <li>
-                <a href="types_remote.js.html">types/remote.js</a>, <a href="types_remote.js.html#line173">line 173</a>
-              </li>
-            </ul>
-          </dd>
-
-
-
-
-
-
-
-        </dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        <h5>Returns:</h5>
-
-
-        <div class="param-desc">
-          [description]
-        </div>
-
-
-
-        <dl>
-          <dt>
-            Type
-          </dt>
-          <dd>
-
-            <span class="param-type">Mixed</span>
-
-
-          </dd>
-        </dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-        <h4 class="name" id="enumerate"><span class="type-signature">(async) </span>enumerate<span class="signature">()</span><span class="type-signature"> &rarr; {Configuration}</span></h4>
-
-
-
-
-
-
-        <div class="description">
-          Enumerate the available Resources on the remote host.
+          Toggles `status` property to unpaused.
+          @
         </div>
 
 
@@ -1528,7 +1232,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_remote.js.html">types/remote.js</a>, <a href="types_remote.js.html#line45">line 45</a>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line238">line 238</a>
               </li>
             </ul>
           </dd>
@@ -1566,7 +1270,7 @@
           </dt>
           <dd>
 
-            <span class="param-type">Configuration</span>
+            <span class="param-type"><a href="Actor.html">Actor</a></span>
 
 
           </dd>
@@ -1610,23 +1314,28 @@
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
+      <li><a href="HTTPServer.html">HTTPServer</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
       <li><a href="KeyStore.html">KeyStore</a></li>
       <li><a href="Machine.html">Machine</a></li>
       <li><a href="Mempool.html">Mempool</a></li>
       <li><a href="Message.html">Message</a></li>
+      <li><a href="Node.html">Node</a></li>
       <li><a href="Oracle.html">Oracle</a></li>
       <li><a href="Path.html">Path</a></li>
       <li><a href="Peer.html">Peer</a></li>
-      <li><a href="Remote.html">Remote</a></li>
+      <li><a href="Reader.html">Reader</a></li>
+      <li><a href="Redis.html">Redis</a></li>
       <li><a href="Router.html">Router</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
+      <li><a href="Signer.html">Signer</a></li>
       <li><a href="Snapshot.html">Snapshot</a></li>
       <li><a href="Stack.html">Stack</a></li>
+      <li><a href="Stash.html">Stash</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
       <li><a href="Swap.html">Swap</a></li>
@@ -1637,6 +1346,7 @@
       <li><a href="Vector.html">Vector</a></li>
       <li><a href="Walker.html">Walker</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
     <h3>Events</h3>
     <ul>
