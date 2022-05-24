@@ -938,9 +938,7 @@ class Service extends Actor {
   async _registerActor (actor = {}) {
     if (!actor.id) {
       const entity = new Actor(actor);
-      actor = merge({
-        id: entity.id
-      }, actor);
+      actor = { ...entity.toObject(), id: entity.id };
     }
 
     const id = pointer.escape(actor.id);
