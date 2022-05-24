@@ -80,7 +80,7 @@
     "base58check": "^2.0.0",
     "bcoin": "bcoin-org/bcoin#v2.2.0",
     "bech32-buffer": "^0.2.0",
-    "bip-schnorr": "^0.6.4",
+    "bip-schnorr": "^0.6.6",
     "bip32": "^3.0.1",
     "bip39": "^3.0.4",
     "bip65": "^1.0.3",
