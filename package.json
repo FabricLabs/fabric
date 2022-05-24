@@ -36,7 +36,7 @@
     "make:book": "mkdir -p _book && honkit build",
     "make:binary": "pkg -c package.json -o assets/binaries/fabric scripts/cli.js",
     "make:coverage": "npm run coverage && nyc report --reporter html",
-    "make:dev": "npm run make:examples && npm run make:docs && npm run make:book && cp -rf docs _book/ && cp -rf examples _book/ && npm run:tidy",
+    "make:dev": "npm run make:examples && npm run make:docs && npm run make:book && cp -rf docs _book/ && cp -rf examples _book/ && npm run tidy",
     "make:docs": "npm run make:api && node_modules/.bin/jsdoc -c jsdoc.json services/**.js types/**.js settings/deprecations.js DEVELOPERS.md -d docs/ && glob-run js-beautify --indent-size 2 -r docs/**.html",
     "make:examples": "docco --output examples/ examples/*.js && glob-run js-beautify --indent-size 2 -r examples/*.html",
     "make:lib": "NODE_ENV=production webpack scripts/fabric.js -o assets/fabric.min.js",
