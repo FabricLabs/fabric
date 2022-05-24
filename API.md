@@ -95,11 +95,6 @@ within the network.</p>
 <dt><a href="#Reader">Reader</a></dt>
 <dd><p>Read from a byte stream, seeking valid Fabric messages.</p>
 </dd>
-<dt><a href="#Remote">Remote</a> : <code><a href="#Remote">Remote</a></code></dt>
-<dd><p>Interact with a remote <a href="#Resource">Resource</a>.  This is currently the only
-HTTP-related code that should remain in @fabric/core — all else must
-be moved to @fabric/http before final release!</p>
-</dd>
 <dt><a href="#Resource">Resource</a></dt>
 <dd><p>Generic interface for collections of digital objects.</p>
 </dd>
@@ -1428,12 +1423,12 @@ selectively disclosing new routes to peers which may have open circuits.
 <a name="new_Message_new"></a>
 
 ### new Message(message)
-The `Message` type is standardized in [Fabric](#Fabric) as a [Vector](#Vector), which can be added to any other vector to compute a resulting state.
+The `Message` type is standardized in [Fabric](#Fabric) as a [Array](Array), which can be added to any other vector to compute a resulting state.
 
 
 | Param | Type | Description |
 | --- | --- | --- |
-| message | [<code>Vector</code>](#Vector) | Message vector.  Will be serialized by [_serialize](#Vector+_serialize). |
+| message | <code>Object</code> | Message vector.  Will be serialized by [Array#_serialize](Array#_serialize). |
 
 <a name="Message+asRaw"></a>
 
@@ -1680,143 +1675,6 @@ for valid Fabric messages.
 | Param | Type | Description |
 | --- | --- | --- |
 | settings | <code>Object</code> | Settings for the stream. |
-
-<a name="Remote"></a>
-
-## Remote : [<code>Remote</code>](#Remote)
-Interact with a remote [Resource](#Resource).  This is currently the only
-HTTP-related code that should remain in @fabric/core — all else must
-be moved to @fabric/http before final release!
-
-**Kind**: global class  
-**Properties**
-
-| Name | Type |
-| --- | --- |
-| config | <code>Object</code> | 
-| secure | <code>Boolean</code> | 
-
-
-* [Remote](#Remote) : [<code>Remote</code>](#Remote)
-    * [new Remote(target)](#new_Remote_new)
-    * [.enumerate()](#Remote+enumerate) ⇒ <code>Configuration</code>
-    * [.request(type, path, [params])](#Remote+request) ⇒ <code>FabricHTTPResult</code>
-    * [._PUT(path, body)](#Remote+_PUT) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
-    * [._GET(path, params)](#Remote+_GET) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
-    * [._POST(path, params)](#Remote+_POST) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
-    * [._OPTIONS(path, params)](#Remote+_OPTIONS) ⇒ <code>Object</code>
-    * [._PATCH(path, body)](#Remote+_PATCH) ⇒ <code>Object</code>
-    * [._DELETE(path, params)](#Remote+_DELETE) ⇒ <code>Object</code>
-
-<a name="new_Remote_new"></a>
-
-### new Remote(target)
-An in-memory representation of a node in our network.
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| target | <code>Object</code> | Target object. |
-| target.host | <code>String</code> | Named host, e.g. "localhost". |
-| target.secure | <code>String</code> | Require TLS session. |
-
-<a name="Remote+enumerate"></a>
-
-### remote.enumerate() ⇒ <code>Configuration</code>
-Enumerate the available Resources on the remote host.
-
-**Kind**: instance method of [<code>Remote</code>](#Remote)  
-**Returns**: <code>Configuration</code> - An object with enumerable key/value pairs for the Application Resource Contract.  
-<a name="Remote+request"></a>
-
-### remote.request(type, path, [params]) ⇒ <code>FabricHTTPResult</code>
-Make an HTTP request to the configured authority.
-
-**Kind**: instance method of [<code>Remote</code>](#Remote)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| type | <code>String</code> | One of `GET`, `PUT`, `POST`, `DELETE`, or `OPTIONS`. |
-| path | <code>String</code> | The path to request from the authority. |
-| [params] | <code>Object</code> | Options. |
-
-<a name="Remote+_PUT"></a>
-
-### remote.\_PUT(path, body) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
-HTTP PUT against the configured Authority.
-
-**Kind**: instance method of [<code>Remote</code>](#Remote)  
-**Returns**: <code>FabricHTTPResult</code> \| <code>String</code> - Result of request.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | <code>String</code> | HTTP Path to request. |
-| body | <code>Object</code> | Map of parameters to supply. |
-
-<a name="Remote+_GET"></a>
-
-### remote.\_GET(path, params) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
-HTTP GET against the configured Authority.
-
-**Kind**: instance method of [<code>Remote</code>](#Remote)  
-**Returns**: <code>FabricHTTPResult</code> \| <code>String</code> - Result of request.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | <code>String</code> | HTTP Path to request. |
-| params | <code>Object</code> | Map of parameters to supply. |
-
-<a name="Remote+_POST"></a>
-
-### remote.\_POST(path, params) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
-HTTP POST against the configured Authority.
-
-**Kind**: instance method of [<code>Remote</code>](#Remote)  
-**Returns**: <code>FabricHTTPResult</code> \| <code>String</code> - Result of request.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | <code>String</code> | HTTP Path to request. |
-| params | <code>Object</code> | Map of parameters to supply. |
-
-<a name="Remote+_OPTIONS"></a>
-
-### remote.\_OPTIONS(path, params) ⇒ <code>Object</code>
-HTTP OPTIONS on the configured Authority.
-
-**Kind**: instance method of [<code>Remote</code>](#Remote)  
-**Returns**: <code>Object</code> - - Full description of remote resource.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | <code>String</code> | HTTP Path to request. |
-| params | <code>Object</code> | Map of parameters to supply. |
-
-<a name="Remote+_PATCH"></a>
-
-### remote.\_PATCH(path, body) ⇒ <code>Object</code>
-HTTP PATCH on the configured Authority.
-
-**Kind**: instance method of [<code>Remote</code>](#Remote)  
-**Returns**: <code>Object</code> - - Full description of remote resource.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | <code>String</code> | HTTP Path to request. |
-| body | <code>Object</code> | Map of parameters to supply. |
-
-<a name="Remote+_DELETE"></a>
-
-### remote.\_DELETE(path, params) ⇒ <code>Object</code>
-HTTP DELETE on the configured Authority.
-
-**Kind**: instance method of [<code>Remote</code>](#Remote)  
-**Returns**: <code>Object</code> - - Full description of remote resource.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | <code>String</code> | HTTP Path to request. |
-| params | <code>Object</code> | Map of parameters to supply. |
 
 <a name="Resource"></a>
 
@@ -3282,6 +3140,8 @@ Manages interaction with the Bitcoin network.
         * [._subscribeToShard(shard)](#Bitcoin+_subscribeToShard)
         * [._connectSPV()](#Bitcoin+_connectSPV)
         * [.connect(addr)](#Bitcoin+connect)
+        * [._createContractProposal(options)](#Bitcoin+_createContractProposal) ⇒ <code>ContractProposal</code>
+        * [._buildPSBT(options)](#Bitcoin+_buildPSBT) ⇒ <code>PSBT</code>
         * [.start()](#Bitcoin+start)
         * [.stop()](#Bitcoin+stop)
         * [.init()](#Service+init)
@@ -3429,6 +3289,30 @@ Connect to a Fabric [Peer](#Peer).
 | Param | Type | Description |
 | --- | --- | --- |
 | addr | <code>String</code> | Address to connect to. |
+
+<a name="Bitcoin+_createContractProposal"></a>
+
+### bitcoin.\_createContractProposal(options) ⇒ <code>ContractProposal</code>
+Creates an unsigned Bitcoin transaction.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>ContractProposal</code> - Instance of the proposal.  
+
+| Param | Type |
+| --- | --- |
+| options | <code>Object</code> | 
+
+<a name="Bitcoin+_buildPSBT"></a>
+
+### bitcoin.\_buildPSBT(options) ⇒ <code>PSBT</code>
+Create a Partially-Signed Bitcoin Transaction (PSBT).
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>PSBT</code> - Instance of the PSBT.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| options | <code>Object</code> | Parameters for the PSBT. |
 
 <a name="Bitcoin+start"></a>
 
