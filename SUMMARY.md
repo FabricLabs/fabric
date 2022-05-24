@@ -4,13 +4,17 @@ Welcome to Fabric!
 ## Overview
 * [🤔 Introduction][readme]
 * [👀 Quick Start][quickstart]
-* [🖨️ API Reference Sheet][api-md]
-* [🤯 Developer Guide][developers]
+* [🏦 Services Overview][services]
 
 ## Documentation
-* [📜 Code Samples][api-examples]
+* [🤯 Developer Introduction][developers]
 * [🖥️ API Documentation][api-docs]
-* [🏦 Services Overview][services]
+* [🖨️ API Reference Sheet][api-md]
+* [📜 Code Samples][api-examples]
+
+## Guides
+* [⚙️ Settings][settings]
+* [💁 Contributing][contributing]
 
 ## Archive
 * [📄 Whitepaper (latest)][whitepaper]
@@ -26,4 +30,7 @@ Welcome to Fabric!
 [whitepaper]: whitepaper.md
 [whitepaper-2015]: whitepaper-2015.md
 [developers]: DEVELOPERS.md
+[actors]: ACTORS.md
 [services]: SERVICES.md
+[settings]: SETTINGS.md
+[contributing]: CONTRIBUTING.md
