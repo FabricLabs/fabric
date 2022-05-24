@@ -105,7 +105,6 @@
     "merkletreejs": "^0.1.6",
     "minsc": "^0.2.0",
     "mkdirp": "^1.0.4",
-    "nat-upnp": "^1.1.1",
     "p-event": "^4.2.0",
     "path-match": "^1.2.4",
     "pluralize": "^8.0.0",

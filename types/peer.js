@@ -23,7 +23,7 @@ const stream = require('stream');
 
 // Dependencies
 const merge = require('lodash.merge');
-const upnp = require('nat-upnp');
+// const upnp = require('nat-upnp');
 
 // Fabric Types
 const Actor = require('./actor');
