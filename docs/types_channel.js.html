@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Source: types/channel.js &middot; Docs</title>
+  <script src="scripts/prettify/prettify.js"> </script>
+  <script src="scripts/prettify/lang-css.js"> </script>
+  <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+  <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+  <script>
+    window.dataLayer = window.dataLayer || [];
+
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag('js', new Date());
+    gtag('config', 'G-09Y57FL980');
+  </script>
+</head>
+
+<body>
+  <div id="main">
+    <h1 class="page-title">Source: types/channel.js</h1>
+
+
+
+
+    <section>
+      <article>
+        <pre class="prettyprint source linenums"><code>'use strict';
+
+const {
+  MAX_CHANNEL_VALUE
+} = require('../constants');
+
+const BN = require('bn.js');
+const Key = require('./key');
+const Entity = require('./entity');
+const Scribe = require('./scribe');
+const Secret = require('./secret');
+
+const Consensus = require('./consensus');
+const Layer = require('./layer');
+
+/**
+ * The {@link Channel} is a encrypted connection with a member of your
+ * {@link Peer} group, with some amount of $BTC bonded and paid for each
+ * correctly-validated message.
+ *
+ * Channels in Fabric are powerful tools for application development, as they
+ * can empower users with income opportunities in exchange for delivering
+ * service to the network.
+ */
+class Channel extends Scribe {
+  /**
+   * Creates a channel between two peers.
+   * of many transactions over time, to be settled on-chain later.
+   * @param {Object} [settings] Configuration for the channel.
+   */
+  constructor (settings) {
+    super(settings);
+
+    // assign internal settings
+    this.settings = Object.assign({
+      asset: null,
+      maximum: MAX_CHANNEL_VALUE, // 1 BTC in satoshis
+      provider: 'bcoin',
+      mode: 'bidirectional'
+    }, settings);
+
+    // this.key = new Key();
+    this.secret = new Secret();
+    this.provider = new Consensus({ provider: this.settings.provider });
+
+    this._state = {
+      counterparty: this.settings.counterparty || {},
+      value: {
+        incoming: 0,
+        outgoing: 0
+      },
+      inputs: []
+    };
+
+    Object.defineProperties(this, {
+      '@allocation': { enumerable: false },
+      '@data': { enumerable: false },
+      '@input': { enumerable: false },
+      // 'id': { enumerable: false },
+      'config': { enumerable: false },
+      'key': { enumerable: false },
+      'observer': { enumerable: false },
+      'provider': { enumerable: false },
+      'settings': { enumerable: false },
+      // 'size': { enumerable: false },
+      'state': { enumerable: false },
+    });
+
+    this['@id'] = this.id;
+    this.status = 'initialized';
+
+    return this;
+  }
+
+  set state (value) {
+    this._state = value;
+  }
+
+  get state () {
+    return Object.assign({}, this._state);
+  }
+
+  get counterparty () {
+    return this._state.counterparty || null;
+  }
+
+  get balance () {
+    return this._state.value.outgoing;
+  }
+
+  set balance (amount) {
+    this._state.value.outgoing = amount;
+    this.commit();
+    return this.balance;
+  }
+
+  /**
+   * Add an amount to the channel's balance.
+   * @param {Number} amount Amount value to add to current outgoing balance.
+   */
+  add (amount) {
+    const value = new BN(amount + '');
+    const layer = new Layer({
+      parents: [this._parent],
+      uint256: value
+    });
+
+    this._state.value.outgoing += amount;
+    this.commit();
+    return this.balance;
+  }
+
+  commit () {
+    const commit = new Entity(this._state);
+    this.emit('commit', commit)
+    return commit;
+  }
+
+  /**
+   * Fund the channel.
+   * @param {Mixed} input Instance of a {@link Transaction}.
+   */
+  async fund (input) {
+    this._layer = new Layer({ inputs: [input] });
+    this._state.inputs.push(input);
+    this.commit();
+  }
+
+  /**
+   * Opens a {@link Channel} with a {@link Peer}.
+   * @param {Object} channel Channel settings.
+   */
+  async open (channel = {}) {
+    if (!channel.recipient) return console.error('Channel recipient must be provided.');
+    this.status = 'opening';
+    this._state.session = {
+      counterparty: channel.recipient,
+      settings: channel
+    };
+    this.status = 'opened';
+    this.commit();
+  }
+
+  async close () {
+    this.status = 'closed';
+    this.commit();
+  }
+
+  async _setDestinationAddress (address) {
+    console.log('[FABRIC:CHANNEL]', `Setting destination address to ${address} on counterparty:`, this.counterparty);
+    this.counterparty.address = address;
+    this.commit();
+  }
+
+  async _getSpendableOutput () {
+    let mtx = new this.provider.MTX();
+    let script = new this.provider.Script();
+
+    let tx = mtx.toTX();
+    // TODO: remove short-circuit
+    return {
+      '@type': "BitcoinTransactionOutput",
+      "@data": {
+        script: script,
+        transaction: tx
+      }
+    };
+  }
+}
+
+module.exports = Channel;
+</code></pre>
+      </article>
+    </section>
+
+
+
+  </div>
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="Actor.html">Actor</a></li>
+      <li><a href="Aggregator.html">Aggregator</a></li>
+      <li><a href="App.html">App</a></li>
+      <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="Channel.html">Channel</a></li>
+      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Compiler.html">Compiler</a></li>
+      <li><a href="Consensus.html">Consensus</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Exchange.html">Exchange</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
+      <li><a href="HKDF.html">HKDF</a></li>
+      <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Interface.html">Interface</a></li>
+      <li><a href="Key.html">Key</a></li>
+      <li><a href="KeyStore.html">KeyStore</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Mempool.html">Mempool</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="Node.html">Node</a></li>
+      <li><a href="Oracle.html">Oracle</a></li>
+      <li><a href="Path.html">Path</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="Reader.html">Reader</a></li>
+      <li><a href="Redis.html">Redis</a></li>
+      <li><a href="Router.html">Router</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Session.html">Session</a></li>
+      <li><a href="Signer.html">Signer</a></li>
+      <li><a href="Snapshot.html">Snapshot</a></li>
+      <li><a href="Stack.html">Stack</a></li>
+      <li><a href="Stash.html">Stash</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="Swap.html">Swap</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
+      <li><a href="Transition.html">Transition</a></li>
+      <li><a href="Tree.html">Tree</a></li>
+      <li><a href="Value.html">Value</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
+      <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="ZMQ.html">ZMQ</a></li>
+    </ul>
+    <h3>Events</h3>
+    <ul>
+      <li><a href="Aggregator.html#event:commit">commit</a></li>
+    </ul>
+  </nav>
+  <br class="clear" />
+  <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>
+  <script type="text/javascript">
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"></script>
+</body>
+
+</html>

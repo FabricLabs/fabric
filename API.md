@@ -7,7 +7,7 @@
 <dt><a href="#Aggregator">Aggregator</a></dt>
 <dd><p>Aggregates a set of balances (inputs).</p>
 </dd>
-<dt><a href="#App">App</a> ⇐ <code><a href="#Scribe">Scribe</a></code></dt>
+<dt><a href="#App">App</a> ⇐ <code><a href="#Service">Service</a></code></dt>
 <dd><p>Web-friendly application framework for building single-page applications with
 Fabric-based networking and storage.</p>
 </dd>
@@ -95,11 +95,6 @@ within the network.</p>
 <dt><a href="#Reader">Reader</a></dt>
 <dd><p>Read from a byte stream, seeking valid Fabric messages.</p>
 </dd>
-<dt><a href="#Remote">Remote</a> : <code><a href="#Remote">Remote</a></code></dt>
-<dd><p>Interact with a remote <a href="#Resource">Resource</a>.  This is currently the only
-HTTP-related code that should remain in @fabric/core — all else must
-be moved to @fabric/http before final release!</p>
-</dd>
 <dt><a href="#Resource">Resource</a></dt>
 <dd><p>Generic interface for collections of digital objects.</p>
 </dd>
@@ -137,9 +132,6 @@ objects, and includes its own lifecycle.</p>
 <dd><p>The <a href="#State">State</a> is the core of most <a href="User">User</a>-facing interactions.  To
 interact with the <a href="User">User</a>, simply propose a change in the state by
 committing to the outcome.  This workflow keeps app design quite simple!</p>
-</dd>
-<dt><a href="#Storage">Storage</a></dt>
-<dd><p>Persistent data storage.</p>
 </dd>
 <dt><a href="#Store">Store</a></dt>
 <dd><p>Long-term storage.</p>
@@ -221,6 +213,7 @@ Generic Fabric Actor.
     * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
     * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
     * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
+    * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
 
 <a name="new_Actor_new"></a>
 
@@ -277,6 +270,18 @@ Toggles `status` property to unpaused.
 @
 
 **Kind**: instance method of [<code>Actor</code>](#Actor)  
+<a name="Actor+_readObject"></a>
+
+### actor.\_readObject(input) ⇒ <code>Object</code>
+Parse an Object into a corresponding Fabric state.
+
+**Kind**: instance method of [<code>Actor</code>](#Actor)  
+**Returns**: <code>Object</code> - Fabric state.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>Object</code> | Object to read as input. |
+
 <a name="Aggregator"></a>
 
 ## Aggregator
@@ -344,12 +349,12 @@ Commit event.
 
 <a name="App"></a>
 
-## App ⇐ [<code>Scribe</code>](#Scribe)
+## App ⇐ [<code>Service</code>](#Service)
 Web-friendly application framework for building single-page applications with
 Fabric-based networking and storage.
 
 **Kind**: global class  
-**Extends**: [<code>Scribe</code>](#Scribe)  
+**Extends**: [<code>Service</code>](#Service)  
 **Properties**
 
 | Name | Type | Description |
@@ -358,7 +363,7 @@ Fabric-based networking and storage.
 | stash | [<code>Store</code>](#Store) | Routable [Datastore](Datastore). |
 
 
-* [App](#App) ⇐ [<code>Scribe</code>](#Scribe)
+* [App](#App) ⇐ [<code>Service</code>](#Service)
     * [new App(definition)](#new_App_new)
     * [.start()](#App+start) ⇒ <code>Promise</code>
     * [.stop()](#App+stop) ⇒ <code>Promise</code>
@@ -370,9 +375,20 @@ Fabric-based networking and storage.
     * [.use(name, definition)](#App+use) ⇒ [<code>App</code>](#App)
     * [.render()](#App+render) ⇒ <code>String</code>
     * [._registerService(name, Service)](#App+_registerService) ⇒ [<code>Service</code>](#Service)
-    * [.now()](#Scribe+now) ⇒ <code>Number</code>
-    * [.trust(source)](#Scribe+trust) ⇒ [<code>Scribe</code>](#Scribe)
-    * [.inherits(scribe)](#Scribe+inherits) ⇒ [<code>Scribe</code>](#Scribe)
+    * [.init()](#Service+init)
+    * [.tick()](#Service+tick) ⇒ <code>Number</code>
+    * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
+    * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
+    * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
+    * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
+    * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
+    * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
+    * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
+    * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
+    * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
+    * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
+    * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
+    * [._send(message)](#Service+_send)
 
 <a name="new_App_new"></a>
 
@@ -390,6 +406,7 @@ Generic bundle for building Fabric applications.
 Start the program.
 
 **Kind**: instance method of [<code>App</code>](#App)  
+**Overrides**: [<code>start</code>](#Service+start)  
 <a name="App+stop"></a>
 
 ### app.stop() ⇒ <code>Promise</code>
@@ -494,36 +511,163 @@ events with a predictable lifecycle.
 | name | <code>String</code> | Internal name of the service. |
 | Service | <code>Class</code> | The ES6 class definition implementing [Service](#Service). |
 
-<a name="Scribe+now"></a>
+<a name="Service+init"></a>
 
-### app.now() ⇒ <code>Number</code>
-Retrives the current timestamp, in milliseconds.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: <code>Number</code> - [Number](Number) representation of the millisecond [Integer](Integer) value.  
-<a name="Scribe+trust"></a>
-
-### app.trust(source) ⇒ [<code>Scribe</code>](#Scribe)
-Blindly bind event handlers to the [Source](Source).
+### app.init()
+Called by Web Components.
+TODO: move to @fabric/http/types/spa
 
 **Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: [<code>Scribe</code>](#Scribe) - Instance of the [Scribe](#Scribe).  
+<a name="Service+tick"></a>
+
+### app.tick() ⇒ <code>Number</code>
+Move forward one clock cycle.
+
+**Kind**: instance method of [<code>App</code>](#App)  
+<a name="Service+get"></a>
+
+### app.get(path) ⇒ <code>Mixed</code>
+Retrieve a key from the [State](#State).
+
+**Kind**: instance method of [<code>App</code>](#App)  
 
 | Param | Type | Description |
 | --- | --- | --- |
-| source | <code>Source</code> | Event stream. |
+| path | [<code>Path</code>](#Path) | Key to retrieve. |
 
-<a name="Scribe+inherits"></a>
+<a name="Service+set"></a>
 
-### app.inherits(scribe) ⇒ [<code>Scribe</code>](#Scribe)
-Use an existing Scribe instance as a parent.
+### app.set(path) ⇒ <code>Mixed</code>
+Set a key in the [State](#State) to a particular value.
 
 **Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: [<code>Scribe</code>](#Scribe) - The configured instance of the Scribe.  
 
 | Param | Type | Description |
 | --- | --- | --- |
-| scribe | [<code>Scribe</code>](#Scribe) | Instance of Scribe to use as parent. |
+| path | [<code>Path</code>](#Path) | Key to retrieve. |
+
+<a name="Service+trust"></a>
+
+### app.trust(source) ⇒ [<code>Service</code>](#Service)
+Explicitly trust all events from a known source.
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Returns**: [<code>Service</code>](#Service) - Instance of Service after binding events.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| source | <code>EventEmitter</code> | Emitter of events. |
+
+<a name="Service+handler"></a>
+
+### app.handler(message) ⇒ [<code>Service</code>](#Service)
+Default route handler for an incoming message.  Follows the Activity
+Streams 2.0 spec: https://www.w3.org/TR/activitystreams-core/
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Returns**: [<code>Service</code>](#Service) - Chainable method.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| message | <code>Activity</code> | Message object. |
+
+<a name="Service+lock"></a>
+
+### app.lock([duration]) ⇒ <code>Boolean</code>
+Attempt to acquire a lock for `duration` seconds.
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Returns**: <code>Boolean</code> - true if locked, false if unable to lock.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [duration] | <code>Number</code> | <code>1000</code> | Number of milliseconds to hold lock. |
+
+<a name="Service+route"></a>
+
+### app.route(msg) ⇒ <code>Promise</code>
+Resolve a [State](#State) from a particular [Message](#Message) object.
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Returns**: <code>Promise</code> - Resolves with resulting [State](#State).  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | [<code>Message</code>](#Message) | Explicit Fabric [Message](#Message). |
+
+<a name="Service+_GET"></a>
+
+### app.\_GET(path) ⇒ <code>Promise</code>
+Retrieve a value from the Service's state.
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Returns**: <code>Promise</code> - Resolves with the result.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | Path of the value to retrieve. |
+
+<a name="Service+_PUT"></a>
+
+### app.\_PUT(path, value, [commit]) ⇒ <code>Promise</code>
+Store a value in the Service's state.
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Returns**: <code>Promise</code> - Resolves with with stored document.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| path | <code>String</code> |  | Path to store the value at. |
+| value | <code>Object</code> |  | Document to store. |
+| [commit] | <code>Boolean</code> | <code>false</code> | Sign the resulting state. |
+
+<a name="Service+connect"></a>
+
+### app.connect(notify) ⇒ <code>Promise</code>
+Attach to network.
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Returns**: <code>Promise</code> - Resolves to [Fabric](#Fabric).  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| notify | <code>Boolean</code> | <code>true</code> | Commit to changes. |
+
+<a name="Service+send"></a>
+
+### app.send(channel, message) ⇒ [<code>Service</code>](#Service)
+Send a message to a channel.
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Returns**: [<code>Service</code>](#Service) - Chainable method.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| channel | <code>String</code> | Channel name to which the message will be sent. |
+| message | <code>String</code> | Content of the message to send. |
+
+<a name="Service+_registerActor"></a>
+
+### app.\_registerActor(actor) ⇒ <code>Promise</code>
+Register an [Actor](#Actor) with the [Service](#Service).
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Returns**: <code>Promise</code> - Resolves upon successful registration.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| actor | <code>Object</code> | Instance of the [Actor](#Actor). |
+
+<a name="Service+_send"></a>
+
+### app.\_send(message)
+Sends a message.
+
+**Kind**: instance method of [<code>App</code>](#App)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| message | <code>Mixed</code> | Message to send. |
 
 <a name="Chain"></a>
 
@@ -537,8 +681,7 @@ Chain.
 | --- | --- | --- |
 | name | <code>String</code> | Current name. |
 | indices | <code>Map</code> |  |
-| ledger | [<code>Ledger</code>](#Ledger) |  |
-| storage | [<code>Storage</code>](#Storage) |  |
+| storage | <code>Storage</code> |  |
 
 <a name="new_Chain_new"></a>
 
@@ -1291,6 +1434,15 @@ An ordered stack of pages.
     * [.now()](#Scribe+now) ⇒ <code>Number</code>
     * [.trust(source)](#Scribe+trust) ⇒ [<code>Scribe</code>](#Scribe)
     * [.inherits(scribe)](#Scribe+inherits) ⇒ [<code>Scribe</code>](#Scribe)
+    * [.toHTML()](#State+toHTML)
+    * [.toString()](#State+toString) ⇒ <code>String</code>
+    * [.serialize([input])](#State+serialize) ⇒ <code>Buffer</code>
+    * [.deserialize(input)](#State+deserialize) ⇒ [<code>State</code>](#State)
+    * [.fork()](#State+fork) ⇒ [<code>State</code>](#State)
+    * [.get(path)](#State+get) ⇒ <code>Mixed</code>
+    * [.set(path)](#State+set) ⇒ <code>Mixed</code>
+    * [.commit()](#State+commit)
+    * [.render()](#State+render) ⇒ <code>String</code>
 
 <a name="Ledger+append"></a>
 
@@ -1335,6 +1487,87 @@ Use an existing Scribe instance as a parent.
 | --- | --- | --- |
 | scribe | [<code>Scribe</code>](#Scribe) | Instance of Scribe to use as parent. |
 
+<a name="State+toHTML"></a>
+
+### ledger.toHTML()
+Converts the State to an HTML document.
+
+**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+<a name="State+toString"></a>
+
+### ledger.toString() ⇒ <code>String</code>
+Unmarshall an existing state to an instance of a [Blob](Blob).
+
+**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+**Returns**: <code>String</code> - Serialized [Blob](Blob).  
+<a name="State+serialize"></a>
+
+### ledger.serialize([input]) ⇒ <code>Buffer</code>
+Convert to [Buffer](Buffer).
+
+**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+**Returns**: <code>Buffer</code> - [Store](#Store)-able blob.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [input] | <code>Mixed</code> | Input to serialize. |
+
+<a name="State+deserialize"></a>
+
+### ledger.deserialize(input) ⇒ [<code>State</code>](#State)
+Take a hex-encoded input and convert to a [State](#State) object.
+
+**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+**Returns**: [<code>State</code>](#State) - [description]  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>String</code> | [description] |
+
+<a name="State+fork"></a>
+
+### ledger.fork() ⇒ [<code>State</code>](#State)
+Creates a new child [State](#State), with `@parent` set to
+the current [State](#State) by immutable identifier.
+
+**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+<a name="State+get"></a>
+
+### ledger.get(path) ⇒ <code>Mixed</code>
+Retrieve a key from the [State](#State).
+
+**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | [<code>Path</code>](#Path) | Key to retrieve. |
+
+<a name="State+set"></a>
+
+### ledger.set(path) ⇒ <code>Mixed</code>
+Set a key in the [State](#State) to a particular value.
+
+**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | [<code>Path</code>](#Path) | Key to retrieve. |
+
+<a name="State+commit"></a>
+
+### ledger.commit()
+Increment the vector clock, broadcast all changes as a transaction.
+
+**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+**Overrides**: [<code>commit</code>](#State+commit)  
+<a name="State+render"></a>
+
+### ledger.render() ⇒ <code>String</code>
+Compose a JSON string for network consumption.
+
+**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+**Overrides**: [<code>render</code>](#State+render)  
+**Returns**: <code>String</code> - JSON-encoded [String](String).  
 <a name="Machine"></a>
 
 ## Machine
@@ -1428,12 +1661,12 @@ selectively disclosing new routes to peers which may have open circuits.
 <a name="new_Message_new"></a>
 
 ### new Message(message)
-The `Message` type is standardized in [Fabric](#Fabric) as a [Vector](#Vector), which can be added to any other vector to compute a resulting state.
+The `Message` type is standardized in [Fabric](#Fabric) as a [Array](Array), which can be added to any other vector to compute a resulting state.
 
 
 | Param | Type | Description |
 | --- | --- | --- |
-| message | [<code>Vector</code>](#Vector) | Message vector.  Will be serialized by [_serialize](#Vector+_serialize). |
+| message | <code>Object</code> | Message vector.  Will be serialized by [Array#_serialize](Array#_serialize). |
 
 <a name="Message+asRaw"></a>
 
@@ -1448,6 +1681,21 @@ Returns a [Buffer](Buffer) of the complete message.
 Full definition of a Fabric node.
 
 **Kind**: global class  
+
+* [Node](#Node)
+    * [new Node(settings)](#new_Node_new)
+    * [.trust(source, settings)](#Node+trust)
+
+<a name="new_Node_new"></a>
+
+### new Node(settings)
+Manage a Fabric service.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| settings | <code>Object</code> | Configuration for the node. |
+
 <a name="Node+trust"></a>
 
 ### node.trust(source, settings)
@@ -1680,143 +1928,6 @@ for valid Fabric messages.
 | Param | Type | Description |
 | --- | --- | --- |
 | settings | <code>Object</code> | Settings for the stream. |
-
-<a name="Remote"></a>
-
-## Remote : [<code>Remote</code>](#Remote)
-Interact with a remote [Resource](#Resource).  This is currently the only
-HTTP-related code that should remain in @fabric/core — all else must
-be moved to @fabric/http before final release!
-
-**Kind**: global class  
-**Properties**
-
-| Name | Type |
-| --- | --- |
-| config | <code>Object</code> | 
-| secure | <code>Boolean</code> | 
-
-
-* [Remote](#Remote) : [<code>Remote</code>](#Remote)
-    * [new Remote(target)](#new_Remote_new)
-    * [.enumerate()](#Remote+enumerate) ⇒ <code>Configuration</code>
-    * [.request(type, path, [params])](#Remote+request) ⇒ <code>FabricHTTPResult</code>
-    * [._PUT(path, body)](#Remote+_PUT) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
-    * [._GET(path, params)](#Remote+_GET) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
-    * [._POST(path, params)](#Remote+_POST) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
-    * [._OPTIONS(path, params)](#Remote+_OPTIONS) ⇒ <code>Object</code>
-    * [._PATCH(path, body)](#Remote+_PATCH) ⇒ <code>Object</code>
-    * [._DELETE(path, params)](#Remote+_DELETE) ⇒ <code>Object</code>
-
-<a name="new_Remote_new"></a>
-
-### new Remote(target)
-An in-memory representation of a node in our network.
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| target | <code>Object</code> | Target object. |
-| target.host | <code>String</code> | Named host, e.g. "localhost". |
-| target.secure | <code>String</code> | Require TLS session. |
-
-<a name="Remote+enumerate"></a>
-
-### remote.enumerate() ⇒ <code>Configuration</code>
-Enumerate the available Resources on the remote host.
-
-**Kind**: instance method of [<code>Remote</code>](#Remote)  
-**Returns**: <code>Configuration</code> - An object with enumerable key/value pairs for the Application Resource Contract.  
-<a name="Remote+request"></a>
-
-### remote.request(type, path, [params]) ⇒ <code>FabricHTTPResult</code>
-Make an HTTP request to the configured authority.
-
-**Kind**: instance method of [<code>Remote</code>](#Remote)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| type | <code>String</code> | One of `GET`, `PUT`, `POST`, `DELETE`, or `OPTIONS`. |
-| path | <code>String</code> | The path to request from the authority. |
-| [params] | <code>Object</code> | Options. |
-
-<a name="Remote+_PUT"></a>
-
-### remote.\_PUT(path, body) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
-HTTP PUT against the configured Authority.
-
-**Kind**: instance method of [<code>Remote</code>](#Remote)  
-**Returns**: <code>FabricHTTPResult</code> \| <code>String</code> - Result of request.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | <code>String</code> | HTTP Path to request. |
-| body | <code>Object</code> | Map of parameters to supply. |
-
-<a name="Remote+_GET"></a>
-
-### remote.\_GET(path, params) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
-HTTP GET against the configured Authority.
-
-**Kind**: instance method of [<code>Remote</code>](#Remote)  
-**Returns**: <code>FabricHTTPResult</code> \| <code>String</code> - Result of request.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | <code>String</code> | HTTP Path to request. |
-| params | <code>Object</code> | Map of parameters to supply. |
-
-<a name="Remote+_POST"></a>
-
-### remote.\_POST(path, params) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
-HTTP POST against the configured Authority.
-
-**Kind**: instance method of [<code>Remote</code>](#Remote)  
-**Returns**: <code>FabricHTTPResult</code> \| <code>String</code> - Result of request.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | <code>String</code> | HTTP Path to request. |
-| params | <code>Object</code> | Map of parameters to supply. |
-
-<a name="Remote+_OPTIONS"></a>
-
-### remote.\_OPTIONS(path, params) ⇒ <code>Object</code>
-HTTP OPTIONS on the configured Authority.
-
-**Kind**: instance method of [<code>Remote</code>](#Remote)  
-**Returns**: <code>Object</code> - - Full description of remote resource.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | <code>String</code> | HTTP Path to request. |
-| params | <code>Object</code> | Map of parameters to supply. |
-
-<a name="Remote+_PATCH"></a>
-
-### remote.\_PATCH(path, body) ⇒ <code>Object</code>
-HTTP PATCH on the configured Authority.
-
-**Kind**: instance method of [<code>Remote</code>](#Remote)  
-**Returns**: <code>Object</code> - - Full description of remote resource.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | <code>String</code> | HTTP Path to request. |
-| body | <code>Object</code> | Map of parameters to supply. |
-
-<a name="Remote+_DELETE"></a>
-
-### remote.\_DELETE(path, params) ⇒ <code>Object</code>
-HTTP DELETE on the configured Authority.
-
-**Kind**: instance method of [<code>Remote</code>](#Remote)  
-**Returns**: <code>Object</code> - - Full description of remote resource.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | <code>String</code> | HTTP Path to request. |
-| params | <code>Object</code> | Map of parameters to supply. |
 
 <a name="Resource"></a>
 
@@ -2690,20 +2801,6 @@ absolute authority over their own domain, so choose your States wisely.
 | --- | --- | --- |
 | input | <code>String</code> | Arbitrary input. |
 
-<a name="Storage"></a>
-
-## Storage
-Persistent data storage.
-
-**Kind**: global class  
-<a name="new_Storage_new"></a>
-
-### new Storage(config)
-
-| Param | Type | Description |
-| --- | --- | --- |
-| config | <code>Object</code> | Configuration for internal datastore. |
-
 <a name="Store"></a>
 
 ## Store
@@ -3282,6 +3379,8 @@ Manages interaction with the Bitcoin network.
         * [._subscribeToShard(shard)](#Bitcoin+_subscribeToShard)
         * [._connectSPV()](#Bitcoin+_connectSPV)
         * [.connect(addr)](#Bitcoin+connect)
+        * [._createContractProposal(options)](#Bitcoin+_createContractProposal) ⇒ <code>ContractProposal</code>
+        * [._buildPSBT(options)](#Bitcoin+_buildPSBT) ⇒ <code>PSBT</code>
         * [.start()](#Bitcoin+start)
         * [.stop()](#Bitcoin+stop)
         * [.init()](#Service+init)
@@ -3429,6 +3528,30 @@ Connect to a Fabric [Peer](#Peer).
 | Param | Type | Description |
 | --- | --- | --- |
 | addr | <code>String</code> | Address to connect to. |
+
+<a name="Bitcoin+_createContractProposal"></a>
+
+### bitcoin.\_createContractProposal(options) ⇒ <code>ContractProposal</code>
+Creates an unsigned Bitcoin transaction.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>ContractProposal</code> - Instance of the proposal.  
+
+| Param | Type |
+| --- | --- |
+| options | <code>Object</code> | 
+
+<a name="Bitcoin+_buildPSBT"></a>
+
+### bitcoin.\_buildPSBT(options) ⇒ <code>PSBT</code>
+Create a Partially-Signed Bitcoin Transaction (PSBT).
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>PSBT</code> - Instance of the PSBT.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| options | <code>Object</code> | Parameters for the PSBT. |
 
 <a name="Bitcoin+start"></a>
 

@@ -1,0 +1,3945 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Class: Scribe &middot; Docs</title>
+  <script src="scripts/prettify/prettify.js"> </script>
+  <script src="scripts/prettify/lang-css.js"> </script>
+  <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+  <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+  <script>
+    window.dataLayer = window.dataLayer || [];
+
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag('js', new Date());
+    gtag('config', 'G-09Y57FL980');
+  </script>
+</head>
+
+<body>
+  <div id="main">
+    <h1 class="page-title">Class: Scribe</h1>
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2><span class="attribs"><span class="type-signature"></span></span>Scribe<span class="signature">(config)</span><span class="type-signature"></span></h2>
+
+        <div class="class-description">Simple tag-based recordkeeper.</div>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+
+
+          <h2>Constructor</h2>
+
+
+
+          <h4 class="name" id="Scribe"><span class="type-signature"></span>new Scribe<span class="signature">(config)</span><span class="type-signature"></span></h4>
+
+
+
+
+
+
+          <div class="description">
+            The "Scribe" is a simple tag-based recordkeeper.
+          </div>
+
+
+
+
+
+
+
+
+
+          <h5>Parameters:</h5>
+
+
+          <table class="params">
+            <thead>
+              <tr>
+
+                <th>Name</th>
+
+
+                <th>Type</th>
+
+
+
+
+
+                <th class="last">Description</th>
+              </tr>
+            </thead>
+
+            <tbody>
+
+
+              <tr>
+
+                <td class="name"><code>config</code></td>
+
+
+                <td class="type">
+
+
+                  <span class="param-type">Object</span>
+
+
+
+                </td>
+
+
+
+
+
+                <td class="description last">General configuration object.
+                  <h6>Properties</h6>
+
+
+                  <table class="params">
+                    <thead>
+                      <tr>
+
+                        <th>Name</th>
+
+
+                        <th>Type</th>
+
+
+
+
+
+                        <th class="last">Description</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+
+
+                      <tr>
+
+                        <td class="name"><code>verbose</code></td>
+
+
+                        <td class="type">
+
+
+                          <span class="param-type">Boolean</span>
+
+
+
+                        </td>
+
+
+
+
+
+                        <td class="description last">Should the Scribe be noisy?</td>
+                      </tr>
+
+
+                    </tbody>
+                  </table>
+
+                </td>
+              </tr>
+
+
+            </tbody>
+          </table>
+
+
+
+
+
+
+          <h5 class="subsection-title">Properties:</h5>
+
+
+
+          <table class="props">
+            <thead>
+              <tr>
+
+                <th>Name</th>
+
+
+                <th>Type</th>
+
+
+
+
+
+                <th class="last">Description</th>
+              </tr>
+            </thead>
+
+            <tbody>
+
+
+              <tr>
+
+                <td class="name"><code>config</code></td>
+
+
+                <td class="type">
+
+
+                  <span class="param-type">Object</span>
+
+
+
+                </td>
+
+
+
+
+
+                <td class="description last">Current configuration.</td>
+              </tr>
+
+
+            </tbody>
+          </table>
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_scribe.js.html">types/scribe.js</a>, <a href="types_scribe.js.html#line19">line 19</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        </div>
+
+
+        <h3 class="subsection-title">Extends</h3>
+
+
+
+
+        <ul>
+          <li><a href="State.html">State</a></li>
+        </ul>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h3 class="subsection-title">Methods</h3>
+
+
+
+
+
+
+
+        <h4 class="name" id="commit"><span class="type-signature"></span>commit<span class="signature">()</span><span class="type-signature"></span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Increment the vector clock, broadcast all changes as a transaction.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="State.html#commit">State#commit</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_state.js.html">types/state.js</a>, <a href="types_state.js.html#line430">line 430</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="deserialize"><span class="type-signature"></span>deserialize<span class="signature">(input)</span><span class="type-signature"> &rarr; {<a href="State.html">State</a>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Take a hex-encoded input and convert to a <a href="State.html">State</a> object.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>input</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">[description]</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="State.html#deserialize">State#deserialize</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_state.js.html">types/state.js</a>, <a href="types_state.js.html#line346">line 346</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          [description]
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="State.html">State</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="fork"><span class="type-signature"></span>fork<span class="signature">()</span><span class="type-signature"> &rarr; {<a href="State.html">State</a>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Creates a new child <a href="State.html">State</a>, with `@parent` set to
+          the current <a href="State.html">State</a> by immutable identifier.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="State.html#fork">State#fork</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_state.js.html">types/state.js</a>, <a href="types_state.js.html#line390">line 390</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="State.html">State</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="get"><span class="type-signature"></span>get<span class="signature">(path)</span><span class="type-signature"> &rarr; {Mixed}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Retrieve a key from the <a href="State.html">State</a>.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>path</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type"><a href="Path.html">Path</a></span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Key to retrieve.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="State.html#get">State#get</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_state.js.html">types/state.js</a>, <a href="types_state.js.html#line402">line 402</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Mixed</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="inherits"><span class="type-signature"></span>inherits<span class="signature">(scribe)</span><span class="type-signature"> &rarr; {<a href="Scribe.html">Scribe</a>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Use an existing Scribe instance as a parent.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>scribe</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type"><a href="Scribe.html">Scribe</a></span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Instance of Scribe to use as parent.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_scribe.js.html">types/scribe.js</a>, <a href="types_scribe.js.html#line80">line 80</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          The configured instance of the Scribe.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="Scribe.html">Scribe</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="now"><span class="type-signature"></span>now<span class="signature">()</span><span class="type-signature"> &rarr; {Number}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Retrives the current timestamp, in milliseconds.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_scribe.js.html">types/scribe.js</a>, <a href="types_scribe.js.html#line42">line 42</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Number representation of the millisecond Integer value.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Number</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="render"><span class="type-signature"></span>render<span class="signature">()</span><span class="type-signature"> &rarr; {String}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Compose a JSON string for network consumption.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="State.html#render">State#render</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_state.js.html">types/state.js</a>, <a href="types_state.js.html#line462">line 462</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          JSON-encoded String.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">String</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="serialize"><span class="type-signature"></span>serialize<span class="signature">(input<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Buffer}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Convert to Buffer.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>input</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Mixed</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">Input to serialize.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="State.html#serialize">State#serialize</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_state.js.html">types/state.js</a>, <a href="types_state.js.html#line296">line 296</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          <a href="Store.html">Store</a>-able blob.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Buffer</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="set"><span class="type-signature"></span>set<span class="signature">(path)</span><span class="type-signature"> &rarr; {Mixed}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Set a key in the <a href="State.html">State</a> to a particular value.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>path</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type"><a href="Path.html">Path</a></span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Key to retrieve.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="State.html#set">State#set</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_state.js.html">types/state.js</a>, <a href="types_state.js.html#line418">line 418</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Mixed</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="toHTML"><span class="type-signature"></span>toHTML<span class="signature">()</span><span class="type-signature"></span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Converts the State to an HTML document.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="State.html#toHTML">State#toHTML</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_state.js.html">types/state.js</a>, <a href="types_state.js.html#line233">line 233</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="toString"><span class="type-signature"></span>toString<span class="signature">()</span><span class="type-signature"> &rarr; {String}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Unmarshall an existing state to an instance of a Blob.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="State.html#toString">State#toString</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_state.js.html">types/state.js</a>, <a href="types_state.js.html#line273">line 273</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Serialized Blob.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">String</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="trust"><span class="type-signature"></span>trust<span class="signature">(source)</span><span class="type-signature"> &rarr; {<a href="Scribe.html">Scribe</a>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Blindly bind event handlers to the Source.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>source</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Source</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Event stream.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_scribe.js.html">types/scribe.js</a>, <a href="types_scribe.js.html#line60">line 60</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Instance of the <a href="Scribe.html">Scribe</a>.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="Scribe.html">Scribe</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2><span class="attribs"><span class="type-signature"></span></span>Scribe<span class="signature">()</span><span class="type-signature"></span></h2>
+
+        <div class="class-description">Deprecated 2021-11-06.</div>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+
+
+          <h2>Constructor</h2>
+
+
+
+          <h4 class="name" id="Scribe"><span class="type-signature"></span>new Scribe<span class="signature">()</span><span class="type-signature"></span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="important tag-deprecated">Deprecated:</dt>
+            <dd class="yes-def tag-deprecated">
+              <ul class="dummy">
+                <li>Yes</li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="settings_deprecations.js.html">settings/deprecations.js</a>, <a href="settings_deprecations.js.html#line17">line 17</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h3 class="subsection-title">Methods</h3>
+
+
+
+
+
+
+
+        <h4 class="name" id="commit"><span class="type-signature"></span>commit<span class="signature">()</span><span class="type-signature"></span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Increment the vector clock, broadcast all changes as a transaction.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="State.html#commit">State#commit</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_state.js.html">types/state.js</a>, <a href="types_state.js.html#line430">line 430</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="deserialize"><span class="type-signature"></span>deserialize<span class="signature">(input)</span><span class="type-signature"> &rarr; {<a href="State.html">State</a>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Take a hex-encoded input and convert to a <a href="State.html">State</a> object.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>input</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">[description]</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="State.html#deserialize">State#deserialize</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_state.js.html">types/state.js</a>, <a href="types_state.js.html#line346">line 346</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          [description]
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="State.html">State</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="fork"><span class="type-signature"></span>fork<span class="signature">()</span><span class="type-signature"> &rarr; {<a href="State.html">State</a>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Creates a new child <a href="State.html">State</a>, with `@parent` set to
+          the current <a href="State.html">State</a> by immutable identifier.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="State.html#fork">State#fork</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_state.js.html">types/state.js</a>, <a href="types_state.js.html#line390">line 390</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="State.html">State</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="get"><span class="type-signature"></span>get<span class="signature">(path)</span><span class="type-signature"> &rarr; {Mixed}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Retrieve a key from the <a href="State.html">State</a>.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>path</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type"><a href="Path.html">Path</a></span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Key to retrieve.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="State.html#get">State#get</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_state.js.html">types/state.js</a>, <a href="types_state.js.html#line402">line 402</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Mixed</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="inherits"><span class="type-signature"></span>inherits<span class="signature">(scribe)</span><span class="type-signature"> &rarr; {<a href="Scribe.html">Scribe</a>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Use an existing Scribe instance as a parent.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>scribe</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type"><a href="Scribe.html">Scribe</a></span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Instance of Scribe to use as parent.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_scribe.js.html">types/scribe.js</a>, <a href="types_scribe.js.html#line80">line 80</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          The configured instance of the Scribe.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="Scribe.html">Scribe</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="now"><span class="type-signature"></span>now<span class="signature">()</span><span class="type-signature"> &rarr; {Number}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Retrives the current timestamp, in milliseconds.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_scribe.js.html">types/scribe.js</a>, <a href="types_scribe.js.html#line42">line 42</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Number representation of the millisecond Integer value.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Number</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="render"><span class="type-signature"></span>render<span class="signature">()</span><span class="type-signature"> &rarr; {String}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Compose a JSON string for network consumption.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="State.html#render">State#render</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_state.js.html">types/state.js</a>, <a href="types_state.js.html#line462">line 462</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          JSON-encoded String.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">String</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="serialize"><span class="type-signature"></span>serialize<span class="signature">(input<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Buffer}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Convert to Buffer.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>input</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Mixed</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">Input to serialize.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="State.html#serialize">State#serialize</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_state.js.html">types/state.js</a>, <a href="types_state.js.html#line296">line 296</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          <a href="Store.html">Store</a>-able blob.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Buffer</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="set"><span class="type-signature"></span>set<span class="signature">(path)</span><span class="type-signature"> &rarr; {Mixed}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Set a key in the <a href="State.html">State</a> to a particular value.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>path</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type"><a href="Path.html">Path</a></span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Key to retrieve.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="State.html#set">State#set</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_state.js.html">types/state.js</a>, <a href="types_state.js.html#line418">line 418</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Mixed</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="toHTML"><span class="type-signature"></span>toHTML<span class="signature">()</span><span class="type-signature"></span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Converts the State to an HTML document.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="State.html#toHTML">State#toHTML</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_state.js.html">types/state.js</a>, <a href="types_state.js.html#line233">line 233</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="toString"><span class="type-signature"></span>toString<span class="signature">()</span><span class="type-signature"> &rarr; {String}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Unmarshall an existing state to an instance of a Blob.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="State.html#toString">State#toString</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_state.js.html">types/state.js</a>, <a href="types_state.js.html#line273">line 273</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Serialized Blob.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">String</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="trust"><span class="type-signature"></span>trust<span class="signature">(source)</span><span class="type-signature"> &rarr; {<a href="Scribe.html">Scribe</a>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Blindly bind event handlers to the Source.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>source</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Source</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Event stream.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_scribe.js.html">types/scribe.js</a>, <a href="types_scribe.js.html#line60">line 60</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Instance of the <a href="Scribe.html">Scribe</a>.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="Scribe.html">Scribe</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+  </div>
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="Actor.html">Actor</a></li>
+      <li><a href="Aggregator.html">Aggregator</a></li>
+      <li><a href="App.html">App</a></li>
+      <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="Channel.html">Channel</a></li>
+      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Compiler.html">Compiler</a></li>
+      <li><a href="Consensus.html">Consensus</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Exchange.html">Exchange</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
+      <li><a href="HKDF.html">HKDF</a></li>
+      <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Interface.html">Interface</a></li>
+      <li><a href="Key.html">Key</a></li>
+      <li><a href="KeyStore.html">KeyStore</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Mempool.html">Mempool</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="Node.html">Node</a></li>
+      <li><a href="Oracle.html">Oracle</a></li>
+      <li><a href="Path.html">Path</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="Reader.html">Reader</a></li>
+      <li><a href="Redis.html">Redis</a></li>
+      <li><a href="Router.html">Router</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Session.html">Session</a></li>
+      <li><a href="Signer.html">Signer</a></li>
+      <li><a href="Snapshot.html">Snapshot</a></li>
+      <li><a href="Stack.html">Stack</a></li>
+      <li><a href="Stash.html">Stash</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="Swap.html">Swap</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
+      <li><a href="Transition.html">Transition</a></li>
+      <li><a href="Tree.html">Tree</a></li>
+      <li><a href="Value.html">Value</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
+      <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="ZMQ.html">ZMQ</a></li>
+    </ul>
+    <h3>Events</h3>
+    <ul>
+      <li><a href="Aggregator.html#event:commit">commit</a></li>
+    </ul>
+  </nav>
+  <br class="clear" />
+  <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>
+  <script type="text/javascript">
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Source: types/hash256.js &middot; Docs</title>
+  <script src="scripts/prettify/prettify.js"> </script>
+  <script src="scripts/prettify/lang-css.js"> </script>
+  <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+  <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+  <script>
+    window.dataLayer = window.dataLayer || [];
+
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag('js', new Date());
+    gtag('config', 'G-09Y57FL980');
+  </script>
+</head>
+
+<body>
+  <div id="main">
+    <h1 class="page-title">Source: types/hash256.js</h1>
+
+
+
+
+    <section>
+      <article>
+        <pre class="prettyprint source linenums"><code>'use strict';
+
+const crypto = require('crypto');
+
+/**
+ * Simple interaction with 256-bit spaces.
+ */
+class Hash256 {
+  /**
+   * Create an instance of a `Hash256` object by calling `new Hash256()`,
+   * where `settings` can be provided to supply a particular input object.
+   * 
+   * If the `settings` is not a string, `input` must be provided.
+   * @param {Object} settings 
+   * @param {String} settings.input Input string to map as 256-bit hash.
+   */
+  constructor (settings = {}) {
+    if (typeof settings === 'string') settings = { input: settings };
+    if (!settings.input) settings.input = crypto.randomBytes(32).toString('hex');
+
+    this.settings = Object.assign({
+      hash: Hash256.digest(settings.input)
+    }, settings);
+  }
+
+  /**
+   * Produce a SHA256 digest of some input data.
+   * @param {String|Buffer} input Content to digest.
+   * @returns {String} `SHA256(input)` as a hexadecimal string.
+   */
+  static digest (input) {
+    if (typeof input !== 'string' &amp;&amp; !(input instanceof Buffer)) {
+      throw new Error(`Input to process must be of type "String" or "Buffer" to digest.`);
+    }
+
+    // consume and output as string
+    return crypto.createHash('sha256').update(input).digest('hex');
+  }
+
+  // TODO: document `hash256.value`
+  get value () {
+    return Hash256.digest(this.settings.input);
+  }
+
+  /**
+   * Reverses the bytes of the digest.
+   */
+  static reverse (input = '') {
+    return Buffer.from(input, 'hex').reverse().toString('hex');
+  }
+
+  reverse (input = this.value) {
+    return Hash256.reverse(input);
+  }
+}
+
+module.exports = Hash256;</code></pre>
+      </article>
+    </section>
+
+
+
+  </div>
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="Actor.html">Actor</a></li>
+      <li><a href="Aggregator.html">Aggregator</a></li>
+      <li><a href="App.html">App</a></li>
+      <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="Channel.html">Channel</a></li>
+      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Compiler.html">Compiler</a></li>
+      <li><a href="Consensus.html">Consensus</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Exchange.html">Exchange</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
+      <li><a href="HKDF.html">HKDF</a></li>
+      <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Interface.html">Interface</a></li>
+      <li><a href="Key.html">Key</a></li>
+      <li><a href="KeyStore.html">KeyStore</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Mempool.html">Mempool</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="Node.html">Node</a></li>
+      <li><a href="Oracle.html">Oracle</a></li>
+      <li><a href="Path.html">Path</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="Reader.html">Reader</a></li>
+      <li><a href="Redis.html">Redis</a></li>
+      <li><a href="Router.html">Router</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Session.html">Session</a></li>
+      <li><a href="Signer.html">Signer</a></li>
+      <li><a href="Snapshot.html">Snapshot</a></li>
+      <li><a href="Stack.html">Stack</a></li>
+      <li><a href="Stash.html">Stash</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="Swap.html">Swap</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
+      <li><a href="Transition.html">Transition</a></li>
+      <li><a href="Tree.html">Tree</a></li>
+      <li><a href="Value.html">Value</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
+      <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="ZMQ.html">ZMQ</a></li>
+    </ul>
+    <h3>Events</h3>
+    <ul>
+      <li><a href="Aggregator.html#event:commit">commit</a></li>
+    </ul>
+  </nav>
+  <br class="clear" />
+  <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>
+  <script type="text/javascript">
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"></script>
+</body>
+
+</html>

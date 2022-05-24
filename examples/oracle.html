@@ -237,7 +237,7 @@
 
         <div class="content">
           <div class='highlight'>
-            <pre><span class="hljs-keyword">const</span> Oracle = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;@fabric/core/types/oracle&#x27;</span>);</pre>
+            <pre><span class="hljs-keyword">const</span> <span class="hljs-title class_">Oracle</span> = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;@fabric/core/types/oracle&#x27;</span>);</pre>
           </div>
         </div>
 
@@ -251,11 +251,12 @@
             <a class="pilcrow" href="#section-8">&#182;</a>
           </div>
           <p>An example configuration object, encoded as <a href="https://json.org/">JSON</a>:</p>
-          <pre><code class="language-json">{
-  <span class="hljs-attr">&quot;name&quot;</span>: <span class="hljs-string">&quot;@examples/oracle&quot;</span>,
-  <span class="hljs-attr">&quot;description&quot;</span>: <span class="hljs-string">&quot;a simple Oracle example&quot;</span>,
-  <span class="hljs-attr">&quot;version&quot;</span>: <span class="hljs-string">&quot;0.1.0&quot;</span>
-}</code></pre>
+          <pre><code class="lang-json"><span class="hljs-punctuation">{</span>
+  <span class="hljs-attr">&quot;name&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;@examples/oracle&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;description&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;a simple Oracle example&quot;</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">&quot;version&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;0.1.0&quot;</span>
+<span class="hljs-punctuation">}</span>
+</code></pre>
           <p>Configuration files are most commonly stored in <code>config.json</code>, but you can
             also use an existing <code>package.json</code> to pre-load an Oracle with some state.</p>
 
@@ -267,11 +268,11 @@
 <span class="hljs-keyword">const</span> config = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;./config&#x27;</span>);
 
 <span class="hljs-comment">/**
- * An {@link Oracle} offers a simple, self-contained {@link Service} for Fabric-
+ * An {<span class="hljs-doctag">@link</span> Oracle} offers a simple, self-contained {<span class="hljs-doctag">@link</span> Service} for Fabric-
  * capable agents.  The `main()` function allocates necessary resources, then
  * starts the service.
  */</span>
-<span class="hljs-keyword">async</span> <span class="hljs-function"><span class="hljs-keyword">function</span> <span class="hljs-title">main</span> (<span class="hljs-params"></span>) </span>{</pre>
+<span class="hljs-keyword">async</span> <span class="hljs-keyword">function</span> <span class="hljs-title function_">main</span> () {</pre>
           </div>
         </div>
 
@@ -291,7 +292,7 @@
 
         <div class="content">
           <div class='highlight'>
-            <pre>  <span class="hljs-keyword">const</span> oracle = <span class="hljs-keyword">new</span> Oracle(config);</pre>
+            <pre>  <span class="hljs-keyword">const</span> oracle = <span class="hljs-keyword">new</span> <span class="hljs-title class_">Oracle</span>(config);</pre>
           </div>
         </div>
 
@@ -344,7 +345,7 @@
 
         <div class="content">
           <div class='highlight'>
-            <pre>  oracle.define(<span class="hljs-string">&#x27;Request&#x27;</span>, {
+            <pre>  oracle.<span class="hljs-title function_">define</span>(<span class="hljs-string">&#x27;Request&#x27;</span>, {
     <span class="hljs-attr">attributes</span>: {
       <span class="hljs-attr">input</span>: { <span class="hljs-attr">type</span>: <span class="hljs-string">&#x27;String&#x27;</span>, <span class="hljs-attr">required</span>: <span class="hljs-literal">true</span>, <span class="hljs-attr">max</span>: <span class="hljs-number">2048</span> }
     }
@@ -367,7 +368,7 @@
 
         <div class="content">
           <div class='highlight'>
-            <pre>  <span class="hljs-keyword">await</span> oracle.start();</pre>
+            <pre>  <span class="hljs-keyword">await</span> oracle.<span class="hljs-title function_">start</span>();</pre>
           </div>
         </div>
 
@@ -386,8 +387,8 @@
 
         <div class="content">
           <div class='highlight'>
-            <pre>  <span class="hljs-built_in">console</span>.log(<span class="hljs-string">&#x27;oracle started!&#x27;</span>);
-  <span class="hljs-built_in">console</span>.log(<span class="hljs-string">&#x27;oracle:&#x27;</span>, oracle);
+            <pre>  <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;oracle started!&#x27;</span>);
+  <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;oracle:&#x27;</span>, oracle);
 }</pre>
           </div>
         </div>
@@ -407,7 +408,7 @@
 
         <div class="content">
           <div class='highlight'>
-            <pre><span class="hljs-built_in">module</span>.exports = main();</pre>
+            <pre><span class="hljs-variable language_">module</span>.<span class="hljs-property">exports</span> = <span class="hljs-title function_">main</span>();</pre>
           </div>
         </div>
 
