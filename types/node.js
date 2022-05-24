@@ -85,6 +85,10 @@ class Node extends Service {
       console.log(`[FABRIC:MESSAGE] ${extra}`, msg);
     });
 
+    source.on('commit', function (msg) {
+      console.log(`[FABRIC:COMMIT] ${extra}`, msg);
+    });
+
     source.on('ready', function () {
       console.log(`[FABRIC] ${extra}`, `<${source.constructor.name}>`, 'Claimed ready!');
     });
