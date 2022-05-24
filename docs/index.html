@@ -52,30 +52,185 @@
         <h1>Fabric Developer Resources</h1>
         <p>There's a lot of information to cover with regards to building decentralized
           applications, so grab a coffee ☕ and settle in.</p>
+        <h2>Quick Start</h2>
+        <ol start="0">
+          <li><code>nvm use 12.22</code> (you can get <code>nvm</code> from <a href="https://nvm.sh">nvm.sh</a>)</li>
+          <li><code>npm install -g @fabric/core</code> to install <code>fabric</code> to your global node environment</li>
+          <li><code>fabric start</code> should be enough to get you up and running! Try the <code>/help</code> command for more options.</li>
+        </ol>
+        <p>That's it! Let's take a look at overall Fabric system and how you, as a developer, might interact with it.</p>
         <h2>Architecture</h2>
+        <p>Fabric is two things — a protocol for machines to exchange information (&quot;the Fabric Protocol&quot;), and a sotware library (<code>@fabric/core</code>) offering up many tools and utilities for building your own networks which speak this protocol.</p>
+        <h3>Overview</h3>
+        <p>Using Fabric to interface securely with decentralized systems, you'll start by following the instructions above to obtain a globally-available version of the <code>fabric</code> command-line client, which provides the majority of tools you'll need along the way.</p>
+        <p>The <code>@fabric/core</code> library consists of a few key components:</p>
+        <ol start="0">
+          <li><code>assets</code><sup>~</sup> [???] — this may or may not be included in the final release (function may change). Contains the static build.</li>
+          <li><code>contracts</code> — a list of Maintainer-reviewed smart contracts, written in any of: <code>.pur</code> for Purity (our own language), <code>.bsc</code> for Bitcoin Script, <code>.msc</code> for <a href="https://min.sc">Minsc</a>, and even <code>.sol</code> for Solidity). We may choose to remove some of these before launch, your mileage may vary.</li>
+          <li><code>components</code> — generic &quot;interface&quot; elements for describing Types to users.</li>
+          <li><code>resources</code> — Fabric-based definitions for <code>@fabric/core/types/resource</code>.</li>
+          <li><code>services</code> — Maintainer-accepted definitions of the <code>Service</code> class. Yes, you can submit your own!</li>
+          <li><code>types</code> — a library of ES6 classes implementing various bits; <code>Actor</code>, <code>Channel</code>, <code>Oracle</code>, <code>Service</code>, and <code>Signer</code> are all interesting. :)</li>
+        </ol>
+        <p>Let's go over each in more detail.</p>
+        <h4>0. Assets</h4>
+        <p>All files in this folder will be imported to the default &quot;inventory&quot; for the <code>0.1</code> release. Additionally, when using <code>@fabric/http/types/server</code> all of these files will be available directly at the root path, <code>/</code> (configurable). Used for any generated files required for the <em>default</em> Fabric runtime (not downstream), including binaries and other important media. Don't commit here unless absolutely necessary!</p>
+        <h5>0.1: Inventory</h5>
+        <p>We're focused on enabling Lightning-based document exchange for <code>0.1</code> — the upcoming, first &quot;official&quot; release of Fabric. Fabric nodes (anyone running <code>fabric chat</code>) will be able to:</p>
+        <ol>
+          <li>Load a file from disk into local inventory by using <code>/import &lt;filename&gt;</code></li>
+          <li>Offer up that file to peers by using <code>/publish &lt;documentID&gt; &lt;rate&gt;</code></li>
+          <li>Request a file from the network by using <code>/request &lt;documentID&gt; &lt;rate&gt;</code></li>
+        </ol>
+        <p>Once this core set of features is complete and sufficiently covered by tests, we'll begin pushing for <code>0.1.0-RC1</code> and triggering the formal security audit. <code>0.1.0-RC2</code> will surely exist afterwards, but hopefully it'll be the last one before <code>v0.1.0</code> itself.</p>
+        <h5>0.2: The Future</h5>
+        <p>You can use <a href="https://github.com/FabricLabs/fabric/projects/1">the Official Fabric Roadmap</a> to look ahead to what we have planned. :)</p>
+        <h4>1. Contracts</h4>
+        <p>Peer-to-peer applications (or, &quot;agreements&quot;) are self-enforcing; the two peers in any particular arrangement (a <code>Channel</code> usually) agree to update their contract's state (or &quot;status&quot; for legal folks) after reliably responding to their counterparty's requests (in the form of a Layer 2, spendable UTXO to which you hold the secret) for the duration of the contract. Should the contract expire, an &quot;exit&quot; clause is provided and all parties are able to spend funds at Layer 1 again. In all cases, both parties have already signed the latest, most-valid state, and maintain full control over their own deposit.</p>
+        <p>Before establishing an agreement, Fabric-speaking peers must first establish a &quot;Payment Channel&quot; using Lightning, Raiden, or something similar.<sup>[Note]</sup></p>
+        <p><small><strong>Note:</strong> for security's sake, we're only implementing Bitcoin. PRs welcome.</small></p>
+        <h5>1.1: Application Resource Contracts</h5>
+        <p>All agreements in Fabric are represented as well-formed descriptions of <strong>Resources</strong><sup>[TODO: link here]</sup> — a term we use to describe a standardized service a peer might offer. Each node in the Fabric network decides which resources they provide (determining which contracts they run), and what prices they accept for participation. This, in concert with the bidders requesting these resources, forms the &quot;Information Market&quot; discussed in Fabric's whitepaper.</p>
+        <p>To create an</p>
+        <h5>1.2a: Convergence</h5>
+        <p>You'll read in the Components section about our thoughts on User Interface Design, especially Software Development Inteface Design. Maybe someday we'll have a blog to share this on, but my personal goal is to design my software one time, and have it adapt to each platform while still retaining complete, functionality — even if, for example, mobile and desktop users might have different access profiles (usage patterns).</p>
+        <p>This raises the question: <strong>how should peer-to-peer contracts be written?</strong></p>
+        <p>We can easily take the philosophical route in saying &quot;any way the users want&quot; but... that's a lot of engineering, and we won't get there without help from a strong community of contributors. My thoughts are that we start with something small (in terms of implementation cost), formalize it, then start offering up other contract types through the <code>type</code> setting of the <code>Machine</code> class.</p>
+        <h5>1.2b: JavaScript</h5>
+        <p><strong>Right now, we're starting with a subset of JavaScript.</strong> Why? Because it's the only tool non-developers can use <em>right now</em> to get started on their learning journey.</p>
+        <p>But also aecause it's easy. Yes yes, it's arbitrary code, and browsers are notably insecure; <em>sooooo</em> we started work on a formal grammar, and hope to publish it as some kind of standalone language.</p>
+        <p>In any case, we're limiting everything to pure functions and a stack-based execution model. This will lend itself to easy migration of existing work to other purely-functional languages, and even to <em>formal verification</em> when we get the resources to accomplish that. :)</p>
+        <p>While Turing Completeness <em>is</em> possible with a Fabric-based system (take note!), we've been careful to avoid any obvious footguns, and are doing our best to iron out all the cryptography-based gotchas. Code review is everything!</p>
+        <h4>4. Components</h4>
+        <p>Fabric aims to assist more than just developers, and in doing so we are seeking to build a visual composer for functional, reasonably-well secured applications, both on native platforms like <code>x86</code> and <code>ARM</code> but also for what we call <a href="https://web.fabric.pub">the &quot;legacy&quot; web</a>.</p>
+        <p>As you may know, the World Wide Web is still an incredible place, but due in part to oversight in its design, it lacks a lot of the privacy and security guarantees that we've come to expect from Bitcoin and other decentralized systems. The browser-based web is full of complexity, the enemy of security, so we've set out to define some kind of interface language that <em>isn't</em> web first, not even NATIVE FIRST, but rather <em>terminal</em> first.</p>
+        <p>You've probably encountered the Fabric CLI when you first installed Fabric: <code>npm i -g @fabric/core</code> — this is our barebones prototype for implementation in whatever we choose for the final version. we've already identified a few off-the-shelf solutions which don't mandate a specific downstream package (Native Web Components, in particular, stand out). Feel free to chat with about it in [Grove][grove] or using <a href="https://github.com/FabricLabs/fabric/discussions">GitHub Discussions</a> for more formality and structure.</p>
+        <h4>5. Resources</h4>
+        <p>Fabric makes a truly decentralized web possible by establishing formal contracts surrounding the concept of a <strong>Resource</strong>. Generally, a &quot;Resource&quot; is a committed agreement to provide some data, document or otherwise, in exchange for a pre-determined fee. Providers of services within the Fabric network will deliver the document (or a proof of delivery) in the form of an HTLC (&quot;Hash or Time Locked Contract&quot;) on the selected Layer 2 network.</p>
+        <p>In Fabric, we describe these broadly as &quot;Application Resource Contracts&quot; — or, just ARCs for short. They are the complete set of &quot;storyline arcs&quot; any particular contract can take.</p>
+        <h5>An Example Resource</h5>
+        <p><code>resources/document.json</code></p>
+        <pre class="prettyprint source lang-json"><code>{
+  &quot;name&quot;: &quot;Document&quot;,
+  &quot;description&quot;: &quot;A generic document resource.  All data treated as raw bytes, no additional protocols or parameters.&quot;,
+  &quot;creator&quot;: &quot;022380f37b7479c224089be7156d25251db5136d24d030f1261b6e3a1f59a8b49b&quot;,
+  &quot;owner&quot;: &quot;022380f37b7479c224089be7156d25251db5136d24d030f1261b6e3a1f59a8b49b&quot;,
+  &quot;labels&quot;: [&quot;example&quot;, &quot;bitcoin&quot;, &quot;lightning&quot;, &quot;fabric&quot;],
+  &quot;paths&quot;: {
+    &quot;list&quot;: &quot;/documents&quot;,
+    &quot;view&quot;: &quot;/documents/:id&quot;
+  },
+  &quot;components&quot;: {
+    &quot;list&quot;: &quot;DocumentList&quot;,
+    &quot;view&quot;: &quot;DocumentView&quot;
+  },
+  &quot;constraints&quot;: {
+    &quot;state&quot;: {
+      &quot;clock&quot;: {
+        &quot;$lte&quot;: 1000
+      }
+    }
+  },
+  &quot;roles&quot;: {
+    &quot;list&quot;: [&quot;*&quot;],
+    &quot;view&quot;: [&quot;*&quot;],
+    &quot;create&quot;: [&quot;~owner&quot;],
+    &quot;update&quot;: [&quot;~owner&quot;],
+    &quot;delete&quot;: [&quot;~owner&quot;],
+  }
+}
+</code></pre>
+        <p>You can see this is a declarative, JSON-based description of a &quot;generic document&quot; resource. It contains a human-friendly description, and a few other configuration values which we'll go over in more detail later.</p>
+        <h5>Interesting Properties of a Fabric Resource Definition</h5>
+        <ul>
+          <li><code>components</code> — named list of user-sourced events to their corresponding user interface elements (currently all written for terminals, the Fabric CLI).</li>
+          <li><code>constraints</code> — limitations to hold the system accountable for. Here, we specify that the clock<sup>Note</sup> never exceed 1000 cycles, so a single document stored in this collection could be served 999 other times before the resource is considered &quot;consumed&quot; — in this way we can also constrain other arbitrary aspects of the application state.</li>
+        </ul>
+        <p><small><strong>Note (a long one):</strong> all classes in Fabric will carry with them a vector clock, incremented any time the state is updated using the <code>commit()</code> method found on anything inheriting from the <code>Actor</code> class. Some incoming messages can generate multiple clock events, so be careful with your global event relay policies! With each new state, channel balances will be updated (unless <code>NOOP</code>, a full burn of all bonds), so it will be important to test lower cycle times on high-latency and low-reliability connections.</small></p>
+        <p>Importantly, the <code>Resource</code> type is used in combination with the <code>Service</code> type to define exactly what features that service provides to other consumers of its information.</p>
+        <h4>5. Services</h4>
         <p>Fabric relies on <code>Message</code> objects passed between nodes to exchange information,
-          like transaction data and requests for computation (RFCs).</p>
-        <h3>Actors</h3>
-        <p>The <a href="Actor.html"><code>Actor</code></a> is the primary tool for interacting with Fabric. It uses the
-          familiar JavaScript <code>EventEmitter</code> pattern:</p>
-        <pre class="prettyprint source lang-js"><code>const Actor = require('@fabric/core/types/actor');
-const actor = new Actor();
+          like transaction data and requests for computation (RFCs). Services offer up
+          one or more &quot;Resources&quot; as described above, emitting events for any listening consumer,
+          or sometimes, for connectivity with external networks (like the World Wide Web).</p>
+        <p>The <code>Service</code> class can be extended to add Fabric support to your favorite project.</p>
+        <h5>An Example Fabric Service</h5>
+        <pre class="prettyprint source lang-js"><code>// Fabric Dependencies
+const Service = require('@fabric/core/types/service');
 
-actor.on('message', (msg) => {
-  console.log('message from actor:', msg);
-});
+// Class Definition
+class MyClockService extends Service {
+  constructor (input = {}) {
+    // Mandatory
+    super(input);
+
+    // Try to configure, else return null
+    try {
+      // Apply the input to some defaults
+      this.settings = Object.assign({
+        clock: 0,    // vector clock start
+        frequency: 1 // Hz
+      }, input);
+    } catch (exception) {
+      // Failed to apply input to an object {}...
+      // Maybe we should switch to TypeScript? ;)
+      console.error('Could not create MyService:', exception);
+      return null;
+    }
+
+    // Currently mandatory
+    // TODO: make optional
+    this._state = {
+      content: null
+    };
+
+    // Chainable pattern
+    return this;
+  }
+
+  // Called once per 
+  tick () {
+    const origin = this.get('clock');
+    console.log('clock:', origin);
+    this.set('clock', origin++);
+    this.
+  }
+
+  // custom start function
+  // you can obviously call `super.start()` and `super.stop()`
+  // but this is an example :) and we haven't fully defined expected behaviors yet!
+  async start () {
+    // super.start(); // disabled for clean example
+    
+  }
+}
 </code></pre>
-        <p>Actors carry with them cryptographic signatures, accessible via the <code>sign()</code> method:</p>
-        <pre class="prettyprint source lang-js"><code>const Actor = require('@fabric/core/types/actor');
-const actor = new Actor();
-const signature = actor.sign().signature;
-</code></pre>
-        <h3>Messages</h3>
-        <p>The <code>Message</code> class provides a variety of message-formatting options.</p>
-        <h3>Services</h3>
-        <p>Services are special Actors which can be used to interact with various external
-          networks.</p>
+        <p>Services will define how, if any, an ecosystem emerges and <em>actually</em> succeeds at replacing the web. They enable a common API between otherwise disparate projects, such as between Bitcoin and Ethereum.</p>
         <p>See <a href="../SERVICES.html">the Services Overview</a> for more information.</p>
+        <h4>6. Types</h4>
+        <p><code>@fabric/core</code> is a NodeJS-targeted software library, but you don't need the whole kit-and-kaboodle. Our pattern is to expose CommonJS-based ES6 classes, for several reasons, including maximum compatibility, so you will typically import a Fabric class like this:</p>
+        <pre class="prettyprint source lang-js"><code>const Actor = require('@fabric/core/types/actor');
+</code></pre>
+        <p>Grab what you need, use what you take. :)</p>
+        <h5>Fabric Types by Example</h5>
+        <p>Create and sign some string message using the built-in Schnorr <code>Signer</code> type:</p>
+        <pre class="prettyprint source lang-js"><code>const Hash256 = require('@fabric/core/types/hash256');
+const Signer = require('@fabric/core/types/signer');
+const message = 'Hello, world!';
+const signer = new Signer();
+const signature = signer.sign(message);
+console.log('Message:', message);
+console.log('Message Hash:', Hash256.digest(message));
+console.log('Signer Pubkey:', signer.public);
+console.log('Purported Signature:', message);
+</code></pre>
+        <h1>Parking Lot</h1>
+        <h2>TODO</h2>
+        <ul>
+          <li>[ ] Write Markdown CMS</li>
+          <li>[ ] Remove TODOs</li>
+          <li>[ ] Commit and Publish</li>
+        </ul>
       </article>
     </section>
 
@@ -110,6 +265,7 @@ const signature = actor.sign().signature;
       <li><a href="Machine.html">Machine</a></li>
       <li><a href="Mempool.html">Mempool</a></li>
       <li><a href="Message.html">Message</a></li>
+      <li><a href="Node.html">Node</a></li>
       <li><a href="Oracle.html">Oracle</a></li>
       <li><a href="Path.html">Path</a></li>
       <li><a href="Peer.html">Peer</a></li>

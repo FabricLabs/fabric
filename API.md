@@ -7,7 +7,7 @@
 <dt><a href="#Aggregator">Aggregator</a></dt>
 <dd><p>Aggregates a set of balances (inputs).</p>
 </dd>
-<dt><a href="#App">App</a> ⇐ <code><a href="#Scribe">Scribe</a></code></dt>
+<dt><a href="#App">App</a> ⇐ <code><a href="#Service">Service</a></code></dt>
 <dd><p>Web-friendly application framework for building single-page applications with
 Fabric-based networking and storage.</p>
 </dd>
@@ -216,6 +216,7 @@ Generic Fabric Actor.
     * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
     * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
     * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
+    * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
 
 <a name="new_Actor_new"></a>
 
@@ -272,6 +273,18 @@ Toggles `status` property to unpaused.
 @
 
 **Kind**: instance method of [<code>Actor</code>](#Actor)  
+<a name="Actor+_readObject"></a>
+
+### actor.\_readObject(input) ⇒ <code>Object</code>
+Parse an Object into a corresponding Fabric state.
+
+**Kind**: instance method of [<code>Actor</code>](#Actor)  
+**Returns**: <code>Object</code> - Fabric state.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>Object</code> | Object to read as input. |
+
 <a name="Aggregator"></a>
 
 ## Aggregator
@@ -339,12 +352,12 @@ Commit event.
 
 <a name="App"></a>
 
-## App ⇐ [<code>Scribe</code>](#Scribe)
+## App ⇐ [<code>Service</code>](#Service)
 Web-friendly application framework for building single-page applications with
 Fabric-based networking and storage.
 
 **Kind**: global class  
-**Extends**: [<code>Scribe</code>](#Scribe)  
+**Extends**: [<code>Service</code>](#Service)  
 **Properties**
 
 | Name | Type | Description |
@@ -353,7 +366,7 @@ Fabric-based networking and storage.
 | stash | [<code>Store</code>](#Store) | Routable [Datastore](Datastore). |
 
 
-* [App](#App) ⇐ [<code>Scribe</code>](#Scribe)
+* [App](#App) ⇐ [<code>Service</code>](#Service)
     * [new App(definition)](#new_App_new)
     * [.start()](#App+start) ⇒ <code>Promise</code>
     * [.stop()](#App+stop) ⇒ <code>Promise</code>
@@ -365,9 +378,20 @@ Fabric-based networking and storage.
     * [.use(name, definition)](#App+use) ⇒ [<code>App</code>](#App)
     * [.render()](#App+render) ⇒ <code>String</code>
     * [._registerService(name, Service)](#App+_registerService) ⇒ [<code>Service</code>](#Service)
-    * [.now()](#Scribe+now) ⇒ <code>Number</code>
-    * [.trust(source)](#Scribe+trust) ⇒ [<code>Scribe</code>](#Scribe)
-    * [.inherits(scribe)](#Scribe+inherits) ⇒ [<code>Scribe</code>](#Scribe)
+    * [.init()](#Service+init)
+    * [.tick()](#Service+tick) ⇒ <code>Number</code>
+    * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
+    * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
+    * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
+    * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
+    * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
+    * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
+    * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
+    * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
+    * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
+    * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
+    * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
+    * [._send(message)](#Service+_send)
 
 <a name="new_App_new"></a>
 
@@ -385,6 +409,7 @@ Generic bundle for building Fabric applications.
 Start the program.
 
 **Kind**: instance method of [<code>App</code>](#App)  
+**Overrides**: [<code>start</code>](#Service+start)  
 <a name="App+stop"></a>
 
 ### app.stop() ⇒ <code>Promise</code>
@@ -489,36 +514,163 @@ events with a predictable lifecycle.
 | name | <code>String</code> | Internal name of the service. |
 | Service | <code>Class</code> | The ES6 class definition implementing [Service](#Service). |
 
-<a name="Scribe+now"></a>
+<a name="Service+init"></a>
 
-### app.now() ⇒ <code>Number</code>
-Retrives the current timestamp, in milliseconds.
-
-**Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: <code>Number</code> - [Number](Number) representation of the millisecond [Integer](Integer) value.  
-<a name="Scribe+trust"></a>
-
-### app.trust(source) ⇒ [<code>Scribe</code>](#Scribe)
-Blindly bind event handlers to the [Source](Source).
+### app.init()
+Called by Web Components.
+TODO: move to @fabric/http/types/spa
 
 **Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: [<code>Scribe</code>](#Scribe) - Instance of the [Scribe](#Scribe).  
+<a name="Service+tick"></a>
+
+### app.tick() ⇒ <code>Number</code>
+Move forward one clock cycle.
+
+**Kind**: instance method of [<code>App</code>](#App)  
+<a name="Service+get"></a>
+
+### app.get(path) ⇒ <code>Mixed</code>
+Retrieve a key from the [State](#State).
+
+**Kind**: instance method of [<code>App</code>](#App)  
 
 | Param | Type | Description |
 | --- | --- | --- |
-| source | <code>Source</code> | Event stream. |
+| path | [<code>Path</code>](#Path) | Key to retrieve. |
 
-<a name="Scribe+inherits"></a>
+<a name="Service+set"></a>
 
-### app.inherits(scribe) ⇒ [<code>Scribe</code>](#Scribe)
-Use an existing Scribe instance as a parent.
+### app.set(path) ⇒ <code>Mixed</code>
+Set a key in the [State](#State) to a particular value.
 
 **Kind**: instance method of [<code>App</code>](#App)  
-**Returns**: [<code>Scribe</code>](#Scribe) - The configured instance of the Scribe.  
 
 | Param | Type | Description |
 | --- | --- | --- |
-| scribe | [<code>Scribe</code>](#Scribe) | Instance of Scribe to use as parent. |
+| path | [<code>Path</code>](#Path) | Key to retrieve. |
+
+<a name="Service+trust"></a>
+
+### app.trust(source) ⇒ [<code>Service</code>](#Service)
+Explicitly trust all events from a known source.
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Returns**: [<code>Service</code>](#Service) - Instance of Service after binding events.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| source | <code>EventEmitter</code> | Emitter of events. |
+
+<a name="Service+handler"></a>
+
+### app.handler(message) ⇒ [<code>Service</code>](#Service)
+Default route handler for an incoming message.  Follows the Activity
+Streams 2.0 spec: https://www.w3.org/TR/activitystreams-core/
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Returns**: [<code>Service</code>](#Service) - Chainable method.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| message | <code>Activity</code> | Message object. |
+
+<a name="Service+lock"></a>
+
+### app.lock([duration]) ⇒ <code>Boolean</code>
+Attempt to acquire a lock for `duration` seconds.
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Returns**: <code>Boolean</code> - true if locked, false if unable to lock.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [duration] | <code>Number</code> | <code>1000</code> | Number of milliseconds to hold lock. |
+
+<a name="Service+route"></a>
+
+### app.route(msg) ⇒ <code>Promise</code>
+Resolve a [State](#State) from a particular [Message](#Message) object.
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Returns**: <code>Promise</code> - Resolves with resulting [State](#State).  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | [<code>Message</code>](#Message) | Explicit Fabric [Message](#Message). |
+
+<a name="Service+_GET"></a>
+
+### app.\_GET(path) ⇒ <code>Promise</code>
+Retrieve a value from the Service's state.
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Returns**: <code>Promise</code> - Resolves with the result.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | Path of the value to retrieve. |
+
+<a name="Service+_PUT"></a>
+
+### app.\_PUT(path, value, [commit]) ⇒ <code>Promise</code>
+Store a value in the Service's state.
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Returns**: <code>Promise</code> - Resolves with with stored document.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| path | <code>String</code> |  | Path to store the value at. |
+| value | <code>Object</code> |  | Document to store. |
+| [commit] | <code>Boolean</code> | <code>false</code> | Sign the resulting state. |
+
+<a name="Service+connect"></a>
+
+### app.connect(notify) ⇒ <code>Promise</code>
+Attach to network.
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Returns**: <code>Promise</code> - Resolves to [Fabric](#Fabric).  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| notify | <code>Boolean</code> | <code>true</code> | Commit to changes. |
+
+<a name="Service+send"></a>
+
+### app.send(channel, message) ⇒ [<code>Service</code>](#Service)
+Send a message to a channel.
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Returns**: [<code>Service</code>](#Service) - Chainable method.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| channel | <code>String</code> | Channel name to which the message will be sent. |
+| message | <code>String</code> | Content of the message to send. |
+
+<a name="Service+_registerActor"></a>
+
+### app.\_registerActor(actor) ⇒ <code>Promise</code>
+Register an [Actor](#Actor) with the [Service](#Service).
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Returns**: <code>Promise</code> - Resolves upon successful registration.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| actor | <code>Object</code> | Instance of the [Actor](#Actor). |
+
+<a name="Service+_send"></a>
+
+### app.\_send(message)
+Sends a message.
+
+**Kind**: instance method of [<code>App</code>](#App)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| message | <code>Mixed</code> | Message to send. |
 
 <a name="Chain"></a>
 
@@ -532,7 +684,6 @@ Chain.
 | --- | --- | --- |
 | name | <code>String</code> | Current name. |
 | indices | <code>Map</code> |  |
-| ledger | [<code>Ledger</code>](#Ledger) |  |
 | storage | [<code>Storage</code>](#Storage) |  |
 
 <a name="new_Chain_new"></a>
@@ -1286,6 +1437,15 @@ An ordered stack of pages.
     * [.now()](#Scribe+now) ⇒ <code>Number</code>
     * [.trust(source)](#Scribe+trust) ⇒ [<code>Scribe</code>](#Scribe)
     * [.inherits(scribe)](#Scribe+inherits) ⇒ [<code>Scribe</code>](#Scribe)
+    * [.toHTML()](#State+toHTML)
+    * [.toString()](#State+toString) ⇒ <code>String</code>
+    * [.serialize([input])](#State+serialize) ⇒ <code>Buffer</code>
+    * [.deserialize(input)](#State+deserialize) ⇒ [<code>State</code>](#State)
+    * [.fork()](#State+fork) ⇒ [<code>State</code>](#State)
+    * [.get(path)](#State+get) ⇒ <code>Mixed</code>
+    * [.set(path)](#State+set) ⇒ <code>Mixed</code>
+    * [.commit()](#State+commit)
+    * [.render()](#State+render) ⇒ <code>String</code>
 
 <a name="Ledger+append"></a>
 
@@ -1330,6 +1490,87 @@ Use an existing Scribe instance as a parent.
 | --- | --- | --- |
 | scribe | [<code>Scribe</code>](#Scribe) | Instance of Scribe to use as parent. |
 
+<a name="State+toHTML"></a>
+
+### ledger.toHTML()
+Converts the State to an HTML document.
+
+**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+<a name="State+toString"></a>
+
+### ledger.toString() ⇒ <code>String</code>
+Unmarshall an existing state to an instance of a [Blob](Blob).
+
+**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+**Returns**: <code>String</code> - Serialized [Blob](Blob).  
+<a name="State+serialize"></a>
+
+### ledger.serialize([input]) ⇒ <code>Buffer</code>
+Convert to [Buffer](Buffer).
+
+**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+**Returns**: <code>Buffer</code> - [Store](#Store)-able blob.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [input] | <code>Mixed</code> | Input to serialize. |
+
+<a name="State+deserialize"></a>
+
+### ledger.deserialize(input) ⇒ [<code>State</code>](#State)
+Take a hex-encoded input and convert to a [State](#State) object.
+
+**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+**Returns**: [<code>State</code>](#State) - [description]  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>String</code> | [description] |
+
+<a name="State+fork"></a>
+
+### ledger.fork() ⇒ [<code>State</code>](#State)
+Creates a new child [State](#State), with `@parent` set to
+the current [State](#State) by immutable identifier.
+
+**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+<a name="State+get"></a>
+
+### ledger.get(path) ⇒ <code>Mixed</code>
+Retrieve a key from the [State](#State).
+
+**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | [<code>Path</code>](#Path) | Key to retrieve. |
+
+<a name="State+set"></a>
+
+### ledger.set(path) ⇒ <code>Mixed</code>
+Set a key in the [State](#State) to a particular value.
+
+**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | [<code>Path</code>](#Path) | Key to retrieve. |
+
+<a name="State+commit"></a>
+
+### ledger.commit()
+Increment the vector clock, broadcast all changes as a transaction.
+
+**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+**Overrides**: [<code>commit</code>](#State+commit)  
+<a name="State+render"></a>
+
+### ledger.render() ⇒ <code>String</code>
+Compose a JSON string for network consumption.
+
+**Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+**Overrides**: [<code>render</code>](#State+render)  
+**Returns**: <code>String</code> - JSON-encoded [String](String).  
 <a name="Machine"></a>
 
 ## Machine
@@ -1443,6 +1684,21 @@ Returns a [Buffer](Buffer) of the complete message.
 Full definition of a Fabric node.
 
 **Kind**: global class  
+
+* [Node](#Node)
+    * [new Node(settings)](#new_Node_new)
+    * [.trust(source, settings)](#Node+trust)
+
+<a name="new_Node_new"></a>
+
+### new Node(settings)
+Manage a Fabric service.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| settings | <code>Object</code> | Configuration for the node. |
+
 <a name="Node+trust"></a>
 
 ### node.trust(source, settings)
