@@ -125,7 +125,6 @@
     "eccrypto": "^1.0.3",
     "eslint": "^5.16.0",
     "express": "^4.16.2",
-    "gitbook-cli": "^2.3.2",
     "gitbook-plugin-edit-link": "^2.0.2",
     "gitbook-plugin-exercises": "^3.0.0",
     "gitbook-plugin-page-toc": "^1.1.0",
