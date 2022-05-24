@@ -2,7 +2,7 @@
 
 ## Prerequisites
 0. (optional) Install NVM: `https://nvm.sh`
-1. Install Node 12.16 (use `nvm install 12.16` if using `nvm`)
+1. Install Node 12.20.2 (use `nvm install 12.20.2` if using `nvm`)
 
 ## Instructions
 0. Meet the prerequisites (above)
@@ -58,15 +58,8 @@ Finally, run the program:
 }
 ```
 
-
-
 ## Setup Local Bitcoin Node
-
-  
-
 For testing purposes, we recommend running `bitcoin-qt` using the bash command with `scripts/bitcoin-playnet.sh`. Follow these steps to get setup:
-
-  
 
 1. Download the [bitcoin-core client](https://bitcoin.org/bin/) to your system. 
 2. (Recommended) Download SHA256SUMS.sig and SHA256SUMS to verify hashes match, using these commands in the terminal:

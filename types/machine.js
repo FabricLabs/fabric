@@ -28,12 +28,17 @@ class Machine extends Actor {
 
     this.settings = Object.assign({
       path: './stores/machine',
+      clock: 0,
       debug: false,
       deterministic: true,
-      seed: 1 // TODO: select seed for production
+      frequency: 1, // Hz
+      script: [],
+      seed: 1, // TODO: select seed for production
+      type: 'fabric'
     }, settings);
 
-    this.clock = 0;
+    // internal clock
+    this.clock = this.settings.clock;
 
     // define integer field
     this.seed = Hash256.digest(this.settings.seed + '');
@@ -44,10 +49,20 @@ class Machine extends Actor {
     this.entropy = this.sip();
 
     this.known = {}; // definitions
-    this.script = []; // input
+    this.script = this.settings.script; // input
     this.stack = []; // output
     this.history = []; // State tree
 
+    this._state = {
+      content: {
+        clock: this.clock
+      },
+      status: 'PAUSED'
+    };
+
+    this.observer = monitor.observe(this._state.content);
+
+    // Tip
     Object.defineProperty(this, 'tip', function (val) {
       this.log(`tip requested: ${val}`);
       this.log(`tip requested, history: ${JSON.stringify(this.history)}`);
@@ -93,7 +108,7 @@ class Machine extends Actor {
    * @return {Promise}
    */
   async compute (input) {
-    ++this.clock;
+    this._state.content.clock = ++this.clock;
 
     this.emit('tick', this.clock);
 
@@ -116,11 +131,13 @@ class Machine extends Actor {
     }
 
     if (this.stack.length > 1) {
-      this.warn('Stack is dirty:', this.stack);
+      // this.warn('Stack is dirty:', this.stack);
     }
 
-    this.state['@data'] = this.stack;
-    this.state['@id'] = this.id;
+    // this.state['@data'] = this.stack;
+    // this.state['@id'] = this.id;
+
+    this._state.content = this.stack[this.stack.length - 1];
 
     this.commit();
 
@@ -160,9 +177,24 @@ class Machine extends Actor {
       self.history.push(vector);
 
       self.emit('transaction', vector);
+      self.emit('changes', changes);
     }
 
     return changes;
+  }
+
+  async start () {
+    this.status = 'STARTING';
+    this._governor = setInterval(this.compute.bind(this), this.settings.frequency * 1000);
+    this.status = 'STARTED';
+    return this;
+  }
+
+  async stop () {
+    this.status = 'STOPPING';
+    if (this._governor) clearInterval(this._governor);
+    this.status = 'STOPPED';
+    return this;
   }
 }
 

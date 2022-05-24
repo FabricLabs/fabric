@@ -180,7 +180,9 @@ class Bitcoin extends Service {
         confirmed: 0,
         unconfirmed: 0
       },
+      chain: [],
       blocks: {},
+      headers: [],
       genesis: this.settings.genesis,
       tip: this.settings.genesis
     };
@@ -236,6 +238,14 @@ class Bitcoin extends Service {
    */
   get height () {
     return this._state.height;
+  }
+
+  get headers () {
+    return this._state.headers;
+  }
+
+  set headers (value) {
+    this._state.headers = value;
   }
 
   get lib () {
@@ -995,6 +1005,10 @@ class Bitcoin extends Service {
     return this._makeRPCRequest('getblockheader', [hash]);
   }
 
+  async _requestRawBlockHeader (hash) {
+    return this._makeRPCRequest('getblockheader', [hash, false]);
+  }
+
   async _requestBlock (hash) {
     return this._makeRPCRequest('getblock', [hash]);
   }
@@ -1007,23 +1021,30 @@ class Bitcoin extends Service {
     return this._makeRPCRequest('getrawtransaction', [hash]);
   }
 
-  async _requestRawBlock (hash) {
+  async _syncRawBlock (hash) {
     const self = this;
-    const request = this._makeRPCRequest('getblock', [hash, 0]);
+    const raw = await this._requestRawBlock(hash);
 
-    request.then(async (result) => {
-      if (!self._state.blocks[hash]) {
-        self._state.blocks[hash] = result;
-        const actor = new Actor(result);
-        self.emit('block', result);
-      }
-    });
+    if (!self._state.blocks[hash]) {
+      self._state.blocks[hash] = raw;
+      const actor = new Actor({ raw });
+      self.emit('block', actor);
+    }
 
-    return request;
+    return this;
+  }
+
+  async _requestRawBlock (hash) {
+    return this._makeRPCRequest('getblock', [hash, 0]);
   }
 
   async _requestBlockAtHeight (height) {
     return this._makeRPCRequest('getblockhash', [height]);
+  }
+
+  async _getHeaderAtHeight (height) {
+    const hash = await this._requestBlockAtHeight(height);
+    return this._makeRPCRequest('getblockheader', [hash]);
   }
 
   async _requestChainHeight () {
@@ -1473,12 +1494,9 @@ class Bitcoin extends Service {
   }
 
   async _syncBestBlock () {
-    try {
-      this.best = await this._requestBestBlockHash();
-    } catch (exception) {
-      this.emit('error', `[${this.settings.name}] Could not make request to RPC host: ${JSON.stringify(exception)}`);
-    }
-
+    const best = await this._requestBestBlockHash();
+    if (best.error) return this.emit('error', `[${this.settings.name}] Could not make request to RPC host: ${best.error}`);
+    this.best = best;
     await this.commit();
   }
 
@@ -1486,7 +1504,7 @@ class Bitcoin extends Service {
     const height = await this._requestChainHeight();
     for (let i = 0; i <= height; i++) {
       const hash = await this._requestBlockAtHeight(i);
-      await this._requestBlockHeader(hash); // state updates happen here
+      await this._syncHeadersForBlock(hash);
     }
     await this.commit();
     return this;
@@ -1513,7 +1531,7 @@ class Bitcoin extends Service {
     };
   }
 
-  async _syncChainOverRPC () {
+  async _syncChainInfoOverRPC () {
     // Try to get the reported Genesis Block (Chain ID)
     try {
       this.genesis = await this._requestBlockAtHeight(0);
@@ -1525,16 +1543,55 @@ class Bitcoin extends Service {
     const best = await this._requestBestBlockHash();
     const height = await this._requestChainHeight();
 
-    // TODO: headers-only sync
-    // TODO: async (i.e., Promise.all) chainsync
-    for (let i = 0; i <= height; i++) {
-      const hash = await this._requestBlockAtHeight(i);
-      await this._requestRawBlock(hash); // state updates happen here
-    }
-
-    // Assign values
     this.best = best;
     this.height = height;
+
+    return this;
+  }
+
+  async _syncRawHeadersForBlock (hash) {
+    const header = await this._requestRawBlockHeader(hash);
+    if (header.error) return this.emit('error', header.error);
+    const raw =  Buffer.from(header, 'hex');
+    this.headers.push(raw);
+    return this;
+  }
+
+  async _syncChainHeadersOverRPC () {
+    for (let i = 0; i <= this.height; i++) {
+      const progress = now - start;
+      const hash = await this._requestBlockAtHeight(i);
+      await this._syncRawHeadersForBlock(hash);
+    }
+
+    return this;
+  }
+
+  async _syncRawChainOverRPC () {
+    // TODO: async (i.e., Promise.all) chainsync
+    for (let i = 0; i <= this.height; i++) {
+      this.emit('log', `Getting block: ${i}`);
+      const hash = await this._requestBlockAtHeight(i);
+      this._state.chain[i] = hash;
+      this.emit('log', `blocks[${i}] = ${hash}`);
+      await this._syncRawBlock(hash); // state updates happen here
+    }
+  }
+
+  async _syncChainOverRPC () {
+    await this._syncChainInfoOverRPC();
+
+    this.emit('log', `Beginning chain sync for height ${this.height} with best block: ${this.best}`);
+
+    await this._syncBestBlock();
+    await this._syncChainHeadersOverRPC(this.best);
+    // await this._syncRawChainOverRPC();
+
+    this.state.status = 'READY';
+    this.emit('sync', {
+      best: this.best,
+      height: this.height
+    });
 
     this.commit();
 
@@ -1542,6 +1599,7 @@ class Bitcoin extends Service {
   }
 
   async _syncWithRPC () {
+    await this._syncChainInfoOverRPC();
     await this._syncChainOverRPC();
     await this.commit();
 

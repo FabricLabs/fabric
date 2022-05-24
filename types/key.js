@@ -14,9 +14,10 @@ const ec = new EC('secp256k1');
 
 // External Dependencies
 // TODO: remove all external dependencies
-const HD = require('bcoin/lib/hd');
-const KeyRing = require('bcoin/lib/primitives/keyring');
-const Mnemonic = require('bcoin/lib/hd/mnemonic');
+const bcoin = require('bcoin/lib/bcoin-browser');
+const HD = bcoin.hd;
+const KeyRing = bcoin.KeyRing;
+const Mnemonic = bcoin.hd.Mnemonic;
 
 // Fabric Types
 // const Entity = require('./entity');
@@ -64,8 +65,16 @@ class Key {
     this.private = null;
     this.public = null;
 
-    this._starseed = this.settings.seed || crypto.randomBytes(4).toString('ascii');
-    this.generator = new Generator(parseFloat(this._starseed));
+    // Configure Deterministic Random
+    // WARNING: this will currently loop after 2^32 bits
+    // TODO: evaluate compression when treating seed phrase as ascii
+    // TODO: consider using sha256(masterprivkey) or sha256(sha256(...))?
+    this._starseed = this.settings.seed || crypto.randomBytes(4).readUInt32BE();
+
+    const radix = 10;
+    const parsed = parseInt(this._starseed, radix);
+
+    this.generator = new Generator(parsed);
 
     // TODO: design state machine for input (configuration)
     if (this.settings.seed) {

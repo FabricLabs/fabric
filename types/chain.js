@@ -8,7 +8,6 @@ const monitor = require('fast-json-patch');
 
 const Actor = require('./actor');
 const Block = require('./block');
-const Ledger = require('./ledger');
 const Stack = require('./stack');
 const State = require('./state');
 
@@ -16,10 +15,9 @@ const State = require('./state');
  * Chain.
  * @property {String} name Current name.
  * @property {Map} indices
- * @property {Ledger} ledger
  * @property {Storage} storage
  */
-class Chain extends Ledger {
+class Chain extends Actor {
   /**
    * Holds an immutable chain of events.
    * @param       {Vector} genesis Initial state for the chain of events.

@@ -461,7 +461,7 @@ class Peer extends Actor {
     socket.session = new Session();
 
     socket.on('close', function terminate () {
-      self.log('connection closed:', address);
+      self.emit('log', `connection closed: ${address}`);
       self.emit('connections:close', { address: address });
       self._disconnect(address);
     });
@@ -578,7 +578,7 @@ class Peer extends Actor {
 
     if (!message) return console.error('Hard failure:', packet);
     if (this.messages.has(message.id)) {
-      this.emit('debug', `Received duplicate message ${message.id} from [${origin}] in packet: ${JSON.stringify(packet, null, '  ')}`);
+      // this.emit('debug', `Received duplicate message ${message.id} from [${origin}] in packet: ${JSON.stringify(packet, null, '  ')}`);
       return false;
     } else {
       this.memory[message.id] = message;
@@ -843,17 +843,15 @@ class Peer extends Actor {
 
     let authorized = false;
 
-    if (message['@data'] && message['@data'].type) {
-      this.emit('debug', `Message Type Defined: ${message['@data'].type}`);
-
-      switch (message['@data'].type) {
+    if (message.type) {
+      switch (message.type) {
         case 'ChatMessage':
           authorized = true;
           break;
         case 'PeerCandidate':
           break;
         default:
-          this.emit('debug', `Unhandled type: ${message['@data'].type}`);
+          this.emit('debug', `Unhandled type: ${message.type}`);
           break;
       }
     } else {

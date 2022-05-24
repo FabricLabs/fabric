@@ -5,13 +5,13 @@ const {
 } = require('../constants');
 
 const Peer = require('./peer');
-const Scribe = require('./scribe');
+const Actor = require('./actor');
 
 /**
  * Orchestrates a network of peers.
  * @type {String}
  */
-class Swarm extends Scribe {
+class Swarm extends Actor {
   /**
    * Create an instance of a {@link Swarm}.
    * @param  {Object} config Configuration object.
@@ -180,8 +180,8 @@ class Swarm extends Scribe {
    */
   async start () {
     if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', 'Starting...');
-    await super.start();
-    await this.trust(this.agent);
+    // await super.start();
+    // await this.trust(this.agent);
     await this.agent.start();
     await this._connectSeedNodes();
     if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', 'Started!');
@@ -191,7 +191,7 @@ class Swarm extends Scribe {
   async stop () {
     if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', 'Stopping...');
     await this.agent.stop();
-    await super.stop();
+    // await super.stop();
     if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', 'Stopped!');
     return this;
   }

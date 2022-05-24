@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
-<<<<<<< HEAD <head>
+
+<head>
   <meta charset="utf-8">
   <title>JSDoc: Source: lib/vector.js</title>
 
@@ -11,48 +12,10 @@
     <![endif]-->
   <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
   <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
-  =======
+</head>
 
-  <head>
-    <meta charset="utf-8">
-    <title>JSDoc: Source: lib/vector.js</title>
+<body>
 
-    <script src="scripts/prettify/prettify.js"> </script>
-    <script src="scripts/prettify/lang-css.js"> </script>
-    <!--[if lt IE 9]>
-      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
-    <![endif]-->
-    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
-    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
-    >>>>>>> 641d093137022ea676044cc6f36a267d9d8b89db
-  </head>
-
-  <body>
-
-    <<<<<<< HEAD <div id="main">
-
-      <h1 class="page-title">Source: lib/vector.js</h1>
-
-
-
-
-
-
-      <section>
-        <article>
-          <pre class="prettyprint source linenums"><code>'use strict';
-
-const util = require('util')
-const crypto = require('crypto');
-
-const jsonpatch = require('fast-json-patch');
-
-const StateMachine = require('javascript-state-machine');
-const StateMachineHistory = require('javascript-state-machine/lib/history')
-const Digraph = require('javascript-state-machine/lib/visualize');
-
-class Vector extends require('events').EventEmitter {
-=======
   <div id="main">
 
     <h1 class="page-title">Source: lib/vector.js</h1>
@@ -70,346 +33,142 @@ const Scribe = require('./scribe');
 const Stack = require('./stack');
 
 class Vector extends Scribe {
->>>>>>> 641d093137022ea676044cc6f36a267d9d8b89db
   /**
    * An "Initialization" Vector.
    * @param       {Object} - Input state (will map to `@data`.)
    * @constructor
    */
-<<<<<<< HEAD
-  constructor (a) {
-    super(a);
+  constructor (origin) {
+    super(origin);
 
-    if (!(this instanceof Vector)) {
-      return new Vector(a);
-    }
+    this.config = Object.assign({}, origin);
 
-    this['@data'] = a || {};
-  
-    this.clock = 0;
-    this.stack = [];
     this.known = {};
+    this.registry = {};
 
-    this.init();
+    this.stack = new Stack();
+    this.script = [];
+
+    this.status = 'initialized';
 
     return this;
   }
-}
 
-Vector.prototype.registry = {};
+  static fromObjectString (input) {
+    let result = [];
+    let object = JSON.parse(input);
 
-Vector.prototype.init = function attach () {
-  var self = this;
-  self.observer = jsonpatch.observe(self['@data']);
-  return this;
-};
+    for (let i in object) {
+      let element = object[i];
 
-Vector.prototype.use = function define (method, plugin) {
-  var self = this;
-  self.known[method] = plugin;
-};
-
-Vector.prototype.validate = function validate (input) {
-  return true;
-};
-
-/**
- * _serialize is a placeholder, should be discussed.
- * @param {String} input - What to serialize.  Defaults to `this['@data']`.
- * @return {String} - resulting string [JSON-encoded version of the local `@data` value.]
- */
-Vector.prototype._serialize = function toString (input) {
-  if (!input) input = this['@data'];
-
-  //console.log('serializing:', typeof input, input);
-  // TODO: standardize on a serialization format
-  var output = JSON.stringify(input);
-  //console.log('serialized:', output);
-
-  return output;
-};
-
-Vector.prototype._deserialize = function fromString (input) {
-  // TODO: standardize on a serialization format
-  return JSON.parse(input);
-};
-
-Vector.prototype._orderSpace = function sortObject (o) {
-  var self = this;
-  // TODO: implement this recursively
-  return Object.keys(o).sort().reduce(function (result, key) {
-    result[key] = o[key];
-    return result;
-  }, {});
-};
-
-/**
- * Compute the `sha256` hash of the input entity's `@data` field.
- * @param  {Object} entity Input object; expects `@data`.
- * @return {Object}        Transformed entity with `@id` set to the `sha256` hash of `@data`.
- */
-Vector.prototype._identify = function (entity) {
-  var self = this;
-  var sort = self._orderSpace(entity['@data']);
-  var raw = self._serialize(sort);
-
-  entity['@id'] = crypto.createHash('sha256').update(raw).digest('hex');
-  
-  return entity;
-}
-
-Vector.prototype._sign = function identify () {
-  var self = this;
-  var sort = self._orderSpace(self['@data']);
-  var raw = self._serialize(sort);
-  
-  if (!self.logs) self.logs = [];
-
-  if (!raw) return this;
-
-  self['@id'] = crypto.createHash('sha256').update(raw).digest('hex');
-
-  //console.log('claim:', self['@id'], typeof raw, raw);
-
-  self.registry[self['@id']] = self['@data'];
-  self.emit('mutation', jsonpatch.generate(self.observer));
-
-  return self;
-};
-
-Vector.prototype.patch = function apply (patchset) {
-  var self = this;
-  var test = jsonpatch.applyPatch(self['@data'], patchset).newDocument;
-
-  return self;
-};
-
-/**
- * Computes the next "step" for our current Vector.
- * @param  {String} input - Input state, undefined if desired.
- * @return {Vector} - Makes this Vector chainable.  Possible antipattern.
- */
-Vector.prototype.compute = function step (state) {
-  this.clock += 1;
-
-  var self = this;
-  var mem = [];
-
-  function follow (input) {
-    for (var i = 0; i &lt; input.length; i++) {
-      var instruction = input[i];
-      //console.log('instruction:', instruction);
-
-      if (instruction instanceof Array) {
-        follow(instruction);
+      if (element instanceof Array) {
+        element = Buffer.from(element);
       } else {
-        //console.log('step:', instruction);
-        
-        var transmute = self.known[instruction];
-        if (typeof transmute == 'function') {
-          //console.log('KNOWN:', typeof transmute, transmute);
-          self['@data'] = transmute.call(self, self['@data'], mem);
-          mem.push(self['@data']);
-
-          self._sign();
-        }
+        element = Buffer.from(element.data);
       }
+
+      result.push(element);
     }
+
+    return result;
   }
 
-  follow(self.stack);
+  /**
+   * _serialize is a placeholder, should be discussed.
+   * @param {String} input - What to serialize.  Defaults to `this.state`.
+   * @return {String} - resulting string [JSON-encoded version of the local `@data` value.]
+   */
+  _serialize (input) {
+    return this.toString(input);
+  }
 
-  // TODO: document that ALL VECTORS MUST SIGN
-  self._sign();
+  _deserialize (input) {
+    return this.fromString(input);
+  }
 
-  return self;
-};
+  // TODO: standardize on a serialization format
+  fromString (input) {
+    return JSON.parse(input);
+  }
 
-Vector.prototype.render = function log () {
-  var self = this;
-  var obj = self['@data'];
-  
-  obj._sign();
+  toObject () {
+    let object = {};
+    for (let property in this['@data']) {
+      if (property.charAt(0) !== '@') {
+        object[property] = this['@data'][property];
+      }
+    }
+    return object;
+  }
 
-  return obj;
-};
+  /**
+   * Render the output to a {@link String}.
+   * @param  {Mixed} input Arbitrary input.
+   * @return {String}
+   */
+  toString (input) {
+    if (!input) input = this.state;
+    // TODO: standardize on a serialization format
+    return JSON.stringify(input);
+  }
+
+  validate (input) {
+    return true;
+  }
+
+  async step () {
+    return super.compute((this.clock | 0));
+  }
+}
 
 module.exports = Vector;
 </code></pre>
-        </article>
-        =======
-        constructor (origin) {
-        super(origin);
-
-        this.config = Object.assign({}, origin);
-
-        this.known = {};
-        this.registry = {};
-
-        this.stack = new Stack();
-        this.script = [];
-
-        this.status = 'initialized';
-
-        return this;
-        }
-
-        static fromObjectString (input) {
-        let result = [];
-        let object = JSON.parse(input);
-
-        for (let i in object) {
-        let element = object[i];
-
-        if (element instanceof Array) {
-        element = Buffer.from(element);
-        } else {
-        element = Buffer.from(element.data);
-        }
-
-        result.push(element);
-        }
-
-        return result;
-        }
-
-        /**
-        * _serialize is a placeholder, should be discussed.
-        * @param {String} input - What to serialize. Defaults to `this.state`.
-        * @return {String} - resulting string [JSON-encoded version of the local `@data` value.]
-        */
-        _serialize (input) {
-        return this.toString(input);
-        }
-
-        _deserialize (input) {
-        return this.fromString(input);
-        }
-
-        // TODO: standardize on a serialization format
-        fromString (input) {
-        return JSON.parse(input);
-        }
-
-        toObject () {
-        let object = {};
-        for (let property in this['@data']) {
-        if (property.charAt(0) !== '@') {
-        object[property] = this['@data'][property];
-        }
-        }
-        return object;
-        }
-
-        /**
-        * Render the output to a {@link String}.
-        * @param {Mixed} input Arbitrary input.
-        * @return {String}
-        */
-        toString (input) {
-        if (!input) input = this.state;
-        // TODO: standardize on a serialization format
-        return JSON.stringify(input);
-        }
-
-        validate (input) {
-        return true;
-        }
-
-        async step () {
-        return super.compute((this.clock | 0));
-        }
-        }
-
-        module.exports = Vector;
-        </code></pre>
-        </article>
-        >>>>>>> 641d093137022ea676044cc6f36a267d9d8b89db
-      </section>
+      </article>
+    </section>
 
 
 
 
-      <<<<<<< HEAD </div>
+  </div>
 
-        <nav>
-          <h2><a href="index.html">Home</a></h2>
-          <h3>Modules</h3>
-          <ul>
-            <li><a href="module-Fabric.html">Fabric</a></li>
-          </ul>
-          <h3>Classes</h3>
-          <ul>
-            <li><a href="App.html">App</a></li>
-            <li><a href="Chain.html">Chain</a></li>
-            <li><a href="Fabric.html">Fabric</a></li>
-            <li><a href="Message.html">Message</a></li>
-            <li><a href="Oracle.html">Oracle</a></li>
-            <li><a href="Peer.html">Peer</a></li>
-            <li><a href="Remote.html">Remote</a></li>
-            <li><a href="Resource.html">Resource</a></li>
-            <li><a href="Storage.html">Storage</a></li>
-            <li><a href="Vector.html">Vector</a></li>
-            <li><a href="Walker.html">Walker</a></li>
-            <li><a href="Worker.html">Worker</a></li>
-          </ul>
-        </nav>
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="App.html">App</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Compiler.html">Compiler</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="Oracle.html">Oracle</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="Remote.html">Remote</a></li>
+      <li><a href="Router.html">Router</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Stack.html">Stack</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
+    </ul>
+  </nav>
 
-        <br class="clear">
+  <br class="clear">
 
-        <footer>
-          Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.5.5</a> on Sun Jan 28 2018 01:45:56 GMT+0000 (GMT)
-        </footer>
+  <footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.6.0-dev</a> on Mon Jul 01 2019 21:32:25 GMT-0700 (Pacific Daylight Time)
+  </footer>
 
-        <script>
-          prettyPrint();
-        </script>
-        <script src="scripts/linenumber.js"> </script>
-  </body>
-
-</html>
-=======
-</div>
-
-<nav>
-  <h2><a href="index.html">Home</a></h2>
-  <h3>Classes</h3>
-  <ul>
-    <li><a href="App.html">App</a></li>
-    <li><a href="Chain.html">Chain</a></li>
-    <li><a href="CLI.html">CLI</a></li>
-    <li><a href="Compiler.html">Compiler</a></li>
-    <li><a href="Entity.html">Entity</a></li>
-    <li><a href="Fabric.html">Fabric</a></li>
-    <li><a href="Machine.html">Machine</a></li>
-    <li><a href="Message.html">Message</a></li>
-    <li><a href="Oracle.html">Oracle</a></li>
-    <li><a href="Peer.html">Peer</a></li>
-    <li><a href="Remote.html">Remote</a></li>
-    <li><a href="Router.html">Router</a></li>
-    <li><a href="Scribe.html">Scribe</a></li>
-    <li><a href="Script.html">Script</a></li>
-    <li><a href="Service.html">Service</a></li>
-    <li><a href="Stack.html">Stack</a></li>
-    <li><a href="State.html">State</a></li>
-    <li><a href="Store.html">Store</a></li>
-    <li><a href="Swarm.html">Swarm</a></li>
-    <li><a href="Vector.html">Vector</a></li>
-    <li><a href="Walker.html">Walker</a></li>
-  </ul>
-</nav>
-
-<br class="clear">
-
-<footer>
-  Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.6.0-dev</a> on Mon Jul 01 2019 21:32:25 GMT-0700 (Pacific Daylight Time)
-</footer>
-
-<script>
-  prettyPrint();
-</script>
-<script src="scripts/linenumber.js"> </script>
+  <script>
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"> </script>
 </body>
 
 </html>
->>>>>>> 641d093137022ea676044cc6f36a267d9d8b89db

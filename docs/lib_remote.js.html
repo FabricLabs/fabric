@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
-<<<<<<< HEAD <head>
+
+<head>
   <meta charset="utf-8">
   <title>JSDoc: Source: lib/remote.js</title>
 
@@ -11,43 +12,10 @@
     <![endif]-->
   <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
   <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
-  =======
+</head>
 
-  <head>
-    <meta charset="utf-8">
-    <title>JSDoc: Source: lib/remote.js</title>
+<body>
 
-    <script src="scripts/prettify/prettify.js"> </script>
-    <script src="scripts/prettify/lang-css.js"> </script>
-    <!--[if lt IE 9]>
-      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
-    <![endif]-->
-    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
-    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
-    >>>>>>> 641d093137022ea676044cc6f36a267d9d8b89db
-  </head>
-
-  <body>
-
-    <<<<<<< HEAD <div id="main">
-
-      <h1 class="page-title">Source: lib/remote.js</h1>
-
-
-
-
-
-
-      <section>
-        <article>
-          <pre class="prettyprint source linenums"><code>'use strict';
-
-var crypto = require('crypto');
-var util = require('util');
-var rest = require('wreck');
-
-var _ = require('./functions');
-=======
   <div id="main">
 
     <h1 class="page-title">Source: lib/remote.js</h1>
@@ -65,535 +33,316 @@ const querystring = require('querystring');
 
 const fetch = require('node-fetch');
 const Resource = require('./resource');
->>>>>>> 641d093137022ea676044cc6f36a267d9d8b89db
 
 const CONTENT_TYPE = 'application/json';
 
 /**
-<<<<<<< HEAD
- * An in-memory representation of a node in our network.
- * @exports Remote
- * @type {Vector}
- * @param       {Object} initial - Target object.
- * @constructor
+ * Interact with a remote {@link Resource}.
+ * @type {Remote}
+ * @property {Object} config
+ * @property {Boolean} secure
  */
-function Remote (init) {
-  this['@data'] = init || {};
+class Remote extends Resource {
+  /**
+   * An in-memory representation of a node in our network.
+   * @param       {Object} target - Target object.
+   * @param       {String} target.host - Named host, e.g. "localhost".
+   * @param       {String} target.secure - Require TLS session.
+   * @constructor
+   */
+  constructor (config = {}) {
+    super(config);
 
-  this.clock = 0;
-  this.stack = [];
-  this.known = {};
+    this.config = Object.assign({
+      authority: config.host || 'localhost',
+      entropy: Math.random(),
+      secure: true,
+      port: 443
+    }, config);
 
-  this.secure = (init.secure) ? true : false;
+    this.secure = this.config.secure;
 
-  this.init();
-}
-
-util.inherits(Remote, require('./vector'));
-
-Remote.prototype.enumerate = async function () {
-  var self = this;
-  var options = await self._OPTIONS('/');
-
-  if (!options) {
-    console.log('nothing:', options);
-    return [];
-  }
-  
-  options.resources = options.resources.map(function(r) {
-    return {
-      name: r.name,
-      description: r.description,
-      components: _.merge({
-        query: 'maki-resource-query',
-        get: 'maki-resource-get'
-      }, r.components),
-      routes: r.routes,
-      attributes: r.attributes,
-      names: r.names,
-    }
-  });
-  
-  return options.resources;
-}
-
-/**
- * HTTP PUT against the configured Authority.
- * @param  {String} path - HTTP Path to request.
- * @param  {Object} obj - Map of parameters to supply.
- * @return {Mixed}        [description]
- */
-Remote.prototype._PUT = async function (key, obj) {
-  var self = this;
-  var host = self['@data'].host;
-  var protocol = (!self.secure) ? 'http' : 'https';
-  var url = protocol + '://' + host + key;
-
-  var result = null;
-
-  try {
-    let response = await rest.request('PUT', url, {
-      headers: {
-        'Accept': CONTENT_TYPE
-      },
-      payload: obj
-    });
-
-    console.log('[REMOTE]', '_PUT', key, obj, typeof response, response.length);
-    result = await rest.read(response, {
-      json: true
-    });
-
-    console.log('[REMOTE]', '_PUT', 'response:', key, typeof result, result);
-  } catch (e) {
-    console.error('[REMOTE]', 'exception:', e);
+    return this;
   }
 
-  return result;
-};
+  /**
+   * Enumerate the available Resources on the remote host.
+   * @return {Configuration}
+   */
+  async enumerate () {
+    let options = await this._OPTIONS('/');
+    let results = [];
 
-/**
- * HTTP GET against the configured Authority.
- * @param  {String} path - HTTP Path to request.
- * @param  {Object} params - Map of parameters to supply.
- * @return {Mixed}        [description]
- */
-Remote.prototype._GET = async function (key, params) {
-  var self = this;
-  var host = self['@data'].host;
-  var protocol = (!self.secure) ? 'http' : 'https';
-  var url = protocol + '://' + host + key;
-
-  try {
-    var response = await rest.request('GET', url, {
-      headers: {
-        'Accept': CONTENT_TYPE
-      }
-    });
-    var result = await rest.read(response, {
-      json: true
-    });
-  } catch (e) {
-    console.error('[REMOTE]', 'exception:', e);
-  }
-
-  return result;
-};
-
-/**
- * HTTP POST against the configured Authority.
- * @param  {String} path - HTTP Path to request.
- * @param  {Object} params - Map of parameters to supply.
- * @return {Mixed}        [description]
- */
-Remote.prototype._POST = async function (key, obj, params) {
-  var self = this;
-  var host = self['@data'].host;
-  var protocol = (!self.secure) ? 'http' : 'https';
-  var url = protocol + '://' + host + key;
-
-  console.log('[REMOTE]', 'posting:', key, obj);
-
-  try {
-    var response = await rest.request('POST', url, {
-      headers: {
-        'Accept': CONTENT_TYPE
-      },
-      payload: obj,
-      redirect303: true
-    });
-    var result = await rest.read(response, {
-      json: true
-    });
-
-    console.log('output:', result);
-
-  } catch (e) {
-    console.error('[REMOTE]', 'exception:', e);
-  }
-
-  return result;
-};
-
-/**
- * HTTP OPTIONS on the configured Authority.
- * @param  {String} path - HTTP Path to request.
- * @param  {Object} params - Map of parameters to supply.
- * @return {Object} - Full description of remote resource.
- */
-Remote.prototype._OPTIONS = async function (key, params) {
-  var self = this;
-  var host = self['@data'].host;
-  var protocol = (!self.secure) ? 'http' : 'https';
-  var url = protocol + '://' + host + key;
-
-  try {
-    var response = await rest.request('OPTIONS', url, {
-      headers: {
-        'Accept': CONTENT_TYPE
-      }
-    });
-    var result = await rest.read(response, {
-      json: true
-    });
-  } catch (e) {
-    console.error('[REMOTE]', 'exception:', e);
-  }
-
-  return result;
-};
-
-module.exports = Remote;
-</code></pre>
-        </article>
-        =======
-        * Interact with a remote {@link Resource}.
-        * @type {Remote}
-        * @property {Object} config
-        * @property {Boolean} secure
-        */
-        class Remote extends Resource {
-        /**
-        * An in-memory representation of a node in our network.
-        * @param {Object} target - Target object.
-        * @param {String} target.host - Named host, e.g. "localhost".
-        * @param {String} target.secure - Require TLS session.
-        * @constructor
-        */
-        constructor (config = {}) {
-        super(config);
-
-        this.config = Object.assign({
-        authority: config.host || 'localhost',
-        entropy: Math.random(),
-        secure: true,
-        port: 443
-        }, config);
-
-        this.secure = this.config.secure;
-
-        return this;
-        }
-
-        /**
-        * Enumerate the available Resources on the remote host.
-        * @return {Configuration}
-        */
-        async enumerate () {
-        let options = await this._OPTIONS('/');
-        let results = [];
-
-        for (let name in options) {
-        let definition = options[name];
-        results.push({
+    for (let name in options) {
+      let definition = options[name];
+      results.push({
         name: definition.name,
         description: definition.description,
         components: Object.assign({
-        list: 'maki-resource-list',
-        view: 'maki-resource-view'
+          list: 'maki-resource-list',
+          view: 'maki-resource-view'
         }, definition.components),
         routes: definition.routes,
         attributes: definition.attributes,
         names: definition.names
-        });
-        }
+      });
+    }
 
-        return options;
-        }
+    return options;
+  }
 
-        /**
-        * HTTP PUT against the configured Authority.
-        * @param {String} path - HTTP Path to request.
-        * @param {Object} obj - Map of parameters to supply.
-        * @return {Mixed} [description]
-        */
-        async _PUT (key, obj) {
-        let self = this;
-        let host = self.config.authority;
-        let port = self.config.port;
-        let protocol = (!self.secure) ? 'http' : 'https';
-        let url = `${protocol}://${host}:${port}${key}`;
+  /**
+   * HTTP PUT against the configured Authority.
+   * @param  {String} path - HTTP Path to request.
+   * @param  {Object} obj - Map of parameters to supply.
+   * @return {Mixed}        [description]
+   */
+  async _PUT (key, obj) {
+    let self = this;
+    let host = self.config.authority;
+    let port = self.config.port;
+    let protocol = (!self.secure) ? 'http' : 'https';
+    let url = `${protocol}://${host}:${port}${key}`;
 
-        let result = null;
+    let result = null;
 
-        try {
-        result = await fetch(url, {
+    try {
+      result = await fetch(url, {
         method: 'put',
         headers: {
-        'Accept': CONTENT_TYPE
+          'Accept': CONTENT_TYPE
         },
         body: obj
-        });
-        } catch (e) {
-        console.error('[REMOTE]', 'exception:', e);
-        }
+      });
+    } catch (e) {
+      console.error('[REMOTE]', 'exception:', e);
+    }
 
-        return result;
-        }
+    return result;
+  }
 
-        /**
-        * HTTP GET against the configured Authority.
-        * @param {String} path - HTTP Path to request.
-        * @param {Object} params - Map of parameters to supply.
-        * @return {Mixed} [description]
-        */
-        async _GET (key, params) {
-        let self = this;
-        let host = self.config.authority;
-        let port = self.config.port;
-        let protocol = (!self.secure) ? 'http' : 'https';
-        let url = `${protocol}://${host}:${port}${key}`;
-        let result = null;
-        let headers = {
-        'Accept': CONTENT_TYPE
-        };
+  /**
+   * HTTP GET against the configured Authority.
+   * @param  {String} path - HTTP Path to request.
+   * @param  {Object} params - Map of parameters to supply.
+   * @return {Mixed}        [description]
+   */
+  async _GET (key, params) {
+    let self = this;
+    let host = self.config.authority;
+    let port = self.config.port;
+    let protocol = (!self.secure) ? 'http' : 'https';
+    let url = `${protocol}://${host}:${port}${key}`;
+    let result = null;
+    let headers = {
+      'Accept': CONTENT_TYPE
+    };
 
-        if (this.config.username &amp;&amp; this.config.password) {
-        headers['Authorization'] = `Basic ${Buffer.from([
+    if (this.config.username &amp;&amp; this.config.password) {
+      headers['Authorization'] = `Basic ${Buffer.from([
         this.config.username,
         this.config.password
-        ].join(':')).toString('base64')}`;
-        }
+      ].join(':')).toString('base64')}`;
+    }
 
-        if (params) {
-        url += '?' + querystring.stringify(params);
-        }
+    if (params) {
+      url += '?' + querystring.stringify(params);
+    }
 
-        try {
-        result = await fetch(url, {
+    try {
+      result = await fetch(url, {
         method: 'get',
         headers: headers
-        });
-        } catch (e) {
-        console.error('[REMOTE]', 'exception:', e);
-        }
+      });
+    } catch (e) {
+      console.error('[REMOTE]', 'exception:', e);
+    }
 
-        return result;
-        }
+    return result;
+  }
 
-        /**
-        * HTTP POST against the configured Authority.
-        * @param {String} path - HTTP Path to request.
-        * @param {Object} params - Map of parameters to supply.
-        * @return {Mixed} [description]
-        */
-        async _POST (key, obj, params) {
-        let self = this;
-        let host = self.config.authority;
-        let port = self.config.port;
-        let protocol = (!self.secure) ? 'http' : 'https';
-        let url = `${protocol}://${host}:${port}${key}`;
-        let result = null;
+  /**
+   * HTTP POST against the configured Authority.
+   * @param  {String} path - HTTP Path to request.
+   * @param  {Object} params - Map of parameters to supply.
+   * @return {Mixed}        [description]
+   */
+  async _POST (key, obj, params) {
+    let self = this;
+    let host = self.config.authority;
+    let port = self.config.port;
+    let protocol = (!self.secure) ? 'http' : 'https';
+    let url = `${protocol}://${host}:${port}${key}`;
+    let result = null;
 
-        try {
-        result = await fetch(url, {
+    try {
+      result = await fetch(url, {
         method: 'post',
         headers: {
-        'Accept': CONTENT_TYPE
+          'Accept': CONTENT_TYPE
         },
         body: obj
-        });
-        } catch (e) {
-        console.error('[REMOTE]', 'exception:', e);
-        }
+      });
+    } catch (e) {
+      console.error('[REMOTE]', 'exception:', e);
+    }
 
-        /* try {
-        let response = await rest.request('POST', url, {
+    /* try {
+      let response = await rest.request('POST', url, {
         headers: {
-        'Accept': CONTENT_TYPE
+          'Accept': CONTENT_TYPE
         },
         payload: obj,
         // TODO: report to `wreck` as NOT WORKING
         redirect303: true
-        });
+      });
 
-        if (response.statusCode === 303) {
+      if (response.statusCode === 303) {
         result = await self._GET(response.headers.location);
-        } else {
+      } else {
         result = await rest.read(response, { json: true });
-        }
-        } catch (e) {
-        console.error('[REMOTE]', 'exception:', e);
-        } */
+      }
+    } catch (e) {
+      console.error('[REMOTE]', 'exception:', e);
+    } */
 
-        return result;
-        }
+    return result;
+  }
 
-        /**
-        * HTTP OPTIONS on the configured Authority.
-        * @param {String} path - HTTP Path to request.
-        * @param {Object} params - Map of parameters to supply.
-        * @return {Object} - Full description of remote resource.
-        */
-        async _OPTIONS (key, params) {
-        let self = this;
-        let host = self.config.authority;
-        let port = self.config.port;
-        let protocol = (!self.secure) ? 'http' : 'https';
-        let url = `${protocol}://${host}:${port}${key}`;
-        let result = null;
+  /**
+   * HTTP OPTIONS on the configured Authority.
+   * @param  {String} path - HTTP Path to request.
+   * @param  {Object} params - Map of parameters to supply.
+   * @return {Object} - Full description of remote resource.
+   */
+  async _OPTIONS (key, params) {
+    let self = this;
+    let host = self.config.authority;
+    let port = self.config.port;
+    let protocol = (!self.secure) ? 'http' : 'https';
+    let url = `${protocol}://${host}:${port}${key}`;
+    let result = null;
 
-        try {
-        result = await fetch(url, {
+    try {
+      result = await fetch(url, {
         method: 'options',
         headers: {
-        'Accept': CONTENT_TYPE
+          'Accept': CONTENT_TYPE
         }
-        });
-        } catch (e) {
-        console.error('[REMOTE]', 'exception:', e);
-        }
+      });
+    } catch (e) {
+      console.error('[REMOTE]', 'exception:', e);
+    }
 
-        return result;
-        }
+    return result;
+  }
 
-        /**
-        * HTTP PATCH on the configured Authority.
-        * @param {String} path - HTTP Path to request.
-        * @param {Object} params - Map of parameters to supply.
-        * @return {Object} - Full description of remote resource.
-        */
-        async _PATCH (key, params) {
-        let self = this;
-        let host = self.config.authority;
-        let port = self.config.port;
-        let protocol = (!self.secure) ? 'http' : 'https';
-        let url = `${protocol}://${host}:${port}${key}`;
-        let result = null;
+  /**
+   * HTTP PATCH on the configured Authority.
+   * @param  {String} path - HTTP Path to request.
+   * @param  {Object} params - Map of parameters to supply.
+   * @return {Object} - Full description of remote resource.
+   */
+  async _PATCH (key, params) {
+    let self = this;
+    let host = self.config.authority;
+    let port = self.config.port;
+    let protocol = (!self.secure) ? 'http' : 'https';
+    let url = `${protocol}://${host}:${port}${key}`;
+    let result = null;
 
-        try {
-        result = await fetch(url, {
+    try {
+      result = await fetch(url, {
         method: 'patch',
         headers: {
-        'Accept': CONTENT_TYPE
+          'Accept': CONTENT_TYPE
         },
         body: params
-        });
-        } catch (e) {
-        console.error('[REMOTE]', 'exception:', e);
-        }
+      });
+    } catch (e) {
+      console.error('[REMOTE]', 'exception:', e);
+    }
 
-        return result;
-        }
+    return result;
+  }
 
-        /**
-        * HTTP DELETE on the configured Authority.
-        * @param {String} path - HTTP Path to request.
-        * @param {Object} params - Map of parameters to supply.
-        * @return {Object} - Full description of remote resource.
-        */
-        async _DELETE (key, params) {
-        let self = this;
-        let host = self.config.authority;
-        let port = self.config.port;
-        let protocol = (!self.secure) ? 'http' : 'https';
-        let url = `${protocol}://${host}:${port}${key}`;
-        let result = null;
+  /**
+   * HTTP DELETE on the configured Authority.
+   * @param  {String} path - HTTP Path to request.
+   * @param  {Object} params - Map of parameters to supply.
+   * @return {Object} - Full description of remote resource.
+   */
+  async _DELETE (key, params) {
+    let self = this;
+    let host = self.config.authority;
+    let port = self.config.port;
+    let protocol = (!self.secure) ? 'http' : 'https';
+    let url = `${protocol}://${host}:${port}${key}`;
+    let result = null;
 
-        try {
-        result = await fetch(url, {
+    try {
+      result = await fetch(url, {
         method: 'delete',
         headers: {
-        'Accept': CONTENT_TYPE
+          'Accept': CONTENT_TYPE
         }
-        });
-        } catch (e) {
-        console.error('[REMOTE]', 'exception:', e);
-        }
+      });
+    } catch (e) {
+      console.error('[REMOTE]', 'exception:', e);
+    }
 
-        return result;
-        }
-        }
+    return result;
+  }
+}
 
-        module.exports = Remote;
-        </code></pre>
-        </article>
-        >>>>>>> 641d093137022ea676044cc6f36a267d9d8b89db
-      </section>
-
+module.exports = Remote;
+</code></pre>
+      </article>
+    </section>
 
 
 
-      <<<<<<< HEAD </div>
 
-        <nav>
-          <h2><a href="index.html">Home</a></h2>
-          <h3>Modules</h3>
-          <ul>
-            <li><a href="module-Fabric.html">Fabric</a></li>
-          </ul>
-          <h3>Classes</h3>
-          <ul>
-            <li><a href="App.html">App</a></li>
-            <li><a href="Chain.html">Chain</a></li>
-            <li><a href="Fabric.html">Fabric</a></li>
-            <li><a href="Message.html">Message</a></li>
-            <li><a href="Oracle.html">Oracle</a></li>
-            <li><a href="Peer.html">Peer</a></li>
-            <li><a href="Remote.html">Remote</a></li>
-            <li><a href="Resource.html">Resource</a></li>
-            <li><a href="Storage.html">Storage</a></li>
-            <li><a href="Vector.html">Vector</a></li>
-            <li><a href="Walker.html">Walker</a></li>
-            <li><a href="Worker.html">Worker</a></li>
-          </ul>
-        </nav>
+  </div>
 
-        <br class="clear">
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="App.html">App</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Compiler.html">Compiler</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="Oracle.html">Oracle</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="Remote.html">Remote</a></li>
+      <li><a href="Router.html">Router</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Stack.html">Stack</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
+    </ul>
+  </nav>
 
-        <footer>
-          Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.5.5</a> on Sun Jan 28 2018 01:45:56 GMT+0000 (GMT)
-        </footer>
+  <br class="clear">
 
-        <script>
-          prettyPrint();
-        </script>
-        <script src="scripts/linenumber.js"> </script>
-  </body>
+  <footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.6.0-dev</a> on Mon Jul 01 2019 21:32:25 GMT-0700 (Pacific Daylight Time)
+  </footer>
 
-</html>
-=======
-</div>
-
-<nav>
-  <h2><a href="index.html">Home</a></h2>
-  <h3>Classes</h3>
-  <ul>
-    <li><a href="App.html">App</a></li>
-    <li><a href="Chain.html">Chain</a></li>
-    <li><a href="CLI.html">CLI</a></li>
-    <li><a href="Compiler.html">Compiler</a></li>
-    <li><a href="Entity.html">Entity</a></li>
-    <li><a href="Fabric.html">Fabric</a></li>
-    <li><a href="Machine.html">Machine</a></li>
-    <li><a href="Message.html">Message</a></li>
-    <li><a href="Oracle.html">Oracle</a></li>
-    <li><a href="Peer.html">Peer</a></li>
-    <li><a href="Remote.html">Remote</a></li>
-    <li><a href="Router.html">Router</a></li>
-    <li><a href="Scribe.html">Scribe</a></li>
-    <li><a href="Script.html">Script</a></li>
-    <li><a href="Service.html">Service</a></li>
-    <li><a href="Stack.html">Stack</a></li>
-    <li><a href="State.html">State</a></li>
-    <li><a href="Store.html">Store</a></li>
-    <li><a href="Swarm.html">Swarm</a></li>
-    <li><a href="Vector.html">Vector</a></li>
-    <li><a href="Walker.html">Walker</a></li>
-  </ul>
-</nav>
-
-<br class="clear">
-
-<footer>
-  Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.6.0-dev</a> on Mon Jul 01 2019 21:32:25 GMT-0700 (Pacific Daylight Time)
-</footer>
-
-<script>
-  prettyPrint();
-</script>
-<script src="scripts/linenumber.js"> </script>
+  <script>
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"> </script>
 </body>
 
 </html>
->>>>>>> 641d093137022ea676044cc6f36a267d9d8b89db

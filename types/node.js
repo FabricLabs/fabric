@@ -18,6 +18,11 @@ const environment = new Environment();
  * Full definition of a Fabric node.
  */
 class Node extends Service {
+  /**
+   * Manage a Fabric service.
+   * @param {Object} settings Configuration for the node.
+   * @returns {Node} Instance of the managed service.
+   */
   constructor (settings = {}) {
     super(settings);
 
@@ -115,6 +120,10 @@ class Node extends Service {
     });
 
     return this;
+  }
+
+  async _call (method, params) {
+    return this.program[method].call(this.program, params);
   }
 }
 

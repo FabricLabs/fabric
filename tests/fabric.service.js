@@ -72,7 +72,7 @@ describe('@fabric/core/types/service', function () {
         const service = new Service();
 
         service.on('actor', async function (actor) {
-          if (actor.id && actor.id === 'b9d8bce32d234014b3f45b37ee432b445fbdad036487ced2b5926b14aaa41683') {
+          if (actor.id && actor.id === 'a5b08f19adfd2918e354af8c11e1b4efd963b5f5a525900d63a01cd2fd28176f') {
             await service.stop();
             done();
           }
@@ -90,7 +90,7 @@ describe('@fabric/core/types/service', function () {
         const service = new Service();
 
         service.on('actor', async function (actor) {
-          if (actor.id && actor.id === 'b9d8bce32d234014b3f45b37ee432b445fbdad036487ced2b5926b14aaa41683') {
+          if (actor.id && actor.id === 'a5b08f19adfd2918e354af8c11e1b4efd963b5f5a525900d63a01cd2fd28176f') {
             await service.stop();
             done();
           }
@@ -108,7 +108,7 @@ describe('@fabric/core/types/service', function () {
         const service = new Service();
 
         service.on('actor', async function (actor) {
-          if (actor.id && actor.id === 'b9d8bce32d234014b3f45b37ee432b445fbdad036487ced2b5926b14aaa41683') {
+          if (actor.id && actor.id === 'a5b08f19adfd2918e354af8c11e1b4efd963b5f5a525900d63a01cd2fd28176f') {
             await service.stop();
             done();
           }

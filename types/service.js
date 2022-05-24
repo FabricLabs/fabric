@@ -1,5 +1,7 @@
 'use strict';
 
+const PATCHES_ENABLED = false;
+
 // Dependencies
 const crypto = require('crypto');
 const stream = require('stream');
@@ -133,6 +135,10 @@ class Service extends Actor {
 
   get clock () {
     return parseInt(this._state.clock);
+  }
+
+  get heartbeat () {
+    return this._heart;
   }
 
   get status () {
@@ -598,8 +604,8 @@ class Service extends Actor {
       await this.disconnect();
     }
 
-    if (this.heartbeat) {
-      clearInterval(this.heartbeat);
+    if (this._heart) {
+      clearInterval(this._heart);
     }
 
     if (this.settings.persistent) {
@@ -866,7 +872,7 @@ class Service extends Actor {
       });
     }
 
-    if (self.observer) {
+    if (PATCHES_ENABLED && self.observer) {
       try {
         const patches = manager.generate(self.observer);
         if (patches.length) {
@@ -879,6 +885,7 @@ class Service extends Actor {
     }
 
     const commit = new Actor(self._state);
+    this.emit('commit', commit);
     return commit.id;
   }
 
