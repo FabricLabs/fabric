@@ -154,7 +154,7 @@ class Service extends Actor {
   }
 
   get state () {
-    return this._state;
+    return Object.assign({}, this._state.content);
   }
 
   set clock (value) {
@@ -850,7 +850,7 @@ class Service extends Actor {
 
     // assemble all necessary info, emit Snapshot regardless of storage status
     try {
-      ops.push({ type: 'put', key: 'snapshot', value: self._state });
+      ops.push({ type: 'put', key: 'snapshot', value: self.state });
       this.emit('debug', JSON.stringify({
         '@data': self.state,
         '@from': 'COMMIT',
@@ -884,8 +884,13 @@ class Service extends Actor {
       }
     }
 
-    const commit = new Actor(self._state);
-    this.emit('commit', commit);
+    const commit = new Actor({
+      type: 'Commit',
+      state: self.state
+    });
+
+    this.emit('commit', { ...commit.toObject(), id: commit.id });
+
     return commit.id;
   }
 
