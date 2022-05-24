@@ -293,7 +293,7 @@
 
 
         <ul>
-          <li><a href="Scribe.html">Scribe</a></li>
+          <li><a href="Service.html">Service</a></li>
         </ul>
 
 
@@ -313,6 +313,612 @@
 
 
         <h3 class="subsection-title">Methods</h3>
+
+
+
+
+
+
+
+        <h4 class="name" id="_GET"><span class="type-signature">(async) </span>_GET<span class="signature">(path)</span><span class="type-signature"> &rarr; {Promise}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Retrieve a value from the Service's state.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>path</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Path of the value to retrieve.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="Service.html#_GET">Service#_GET</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line627">line 627</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Resolves with the result.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Promise</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="_PUT"><span class="type-signature">(async) </span>_PUT<span class="signature">(path, value, commit<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Promise}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Store a value in the Service's state.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+              <th>Default</th>
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>path</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+              </td>
+
+
+              <td class="description last">Path to store the value at.</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>value</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+              </td>
+
+
+              <td class="description last">Document to store.</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>commit</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Boolean</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+                false
+
+              </td>
+
+
+              <td class="description last">Sign the resulting state.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="Service.html#_PUT">Service#_PUT</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line661">line 661</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Resolves with with stored document.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Promise</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="_registerActor"><span class="type-signature">(async) </span>_registerActor<span class="signature">(actor)</span><span class="type-signature"> &rarr; {Promise}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Register an <a href="Actor.html">Actor</a> with the <a href="Service.html">Service</a>.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>actor</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Instance of the <a href="Actor.html">Actor</a>.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="Service.html#_registerActor">Service#_registerActor</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line933">line 933</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Resolves upon successful registration.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Promise</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
 
 
 
@@ -508,6 +1114,156 @@
 
 
 
+        <h4 class="name" id="_send"><span class="type-signature">(async) </span>_send<span class="signature">(message)</span><span class="type-signature"></span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Sends a message.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>message</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Mixed</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Message to send.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="Service.html#_send">Service#_send</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line1064">line 1064</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         <h4 class="name" id="attach"><span class="type-signature"></span>attach<span class="signature">(element)</span><span class="type-signature"> &rarr; {<a href="App.html">App</a>}</span></h4>
 
 
@@ -671,7 +1427,7 @@
 
 
 
-        <h4 class="name" id="commit"><span class="type-signature"></span>commit<span class="signature">()</span><span class="type-signature"></span></h4>
+        <h4 class="name" id="connect"><span class="type-signature">(async) </span>connect<span class="signature">(notify)</span><span class="type-signature"> &rarr; {Promise}</span></h4>
 
 
 
@@ -679,7 +1435,7 @@
 
 
         <div class="description">
-          Increment the vector clock, broadcast all changes as a transaction.
+          Attach to network.
         </div>
 
 
@@ -688,6 +1444,63 @@
 
 
 
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+              <th>Default</th>
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>notify</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Boolean</span>
+
+
+
+              </td>
+
+
+
+
+              <td class="default">
+
+                true
+
+              </td>
+
+
+              <td class="description last">Commit to changes.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
 
 
 
@@ -707,7 +1520,7 @@
           <dd class="tag-overrides">
             <ul class="dummy">
               <li>
-                <a href="Scribe.html#commit">Scribe#commit</a>
+                <a href="Service.html#connect">Service#connect</a>
               </li>
             </ul>
           </dd>
@@ -734,7 +1547,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_state.js.html">types/state.js</a>, <a href="types_state.js.html#line430">line 430</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line733">line 733</a>
               </li>
             </ul>
           </dd>
@@ -759,6 +1572,28 @@
 
 
 
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Resolves to <a href="Fabric.html">Fabric</a>.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Promise</span>
+
+
+          </dd>
+        </dl>
 
 
 
@@ -1284,178 +2119,6 @@
 
 
 
-        <h4 class="name" id="deserialize"><span class="type-signature"></span>deserialize<span class="signature">(input)</span><span class="type-signature"> &rarr; {<a href="State.html">State</a>}</span></h4>
-
-
-
-
-
-
-        <div class="description">
-          Take a hex-encoded input and convert to a <a href="State.html">State</a> object.
-        </div>
-
-
-
-
-
-
-
-
-
-        <h5>Parameters:</h5>
-
-
-        <table class="params">
-          <thead>
-            <tr>
-
-              <th>Name</th>
-
-
-              <th>Type</th>
-
-
-
-
-
-              <th class="last">Description</th>
-            </tr>
-          </thead>
-
-          <tbody>
-
-
-            <tr>
-
-              <td class="name"><code>input</code></td>
-
-
-              <td class="type">
-
-
-                <span class="param-type">String</span>
-
-
-
-              </td>
-
-
-
-
-
-              <td class="description last">[description]</td>
-            </tr>
-
-
-          </tbody>
-        </table>
-
-
-
-
-
-
-        <dl class="details">
-
-
-
-
-
-
-
-
-          <dt class="tag-overrides">Overrides:</dt>
-          <dd class="tag-overrides">
-            <ul class="dummy">
-              <li>
-                <a href="Scribe.html#deserialize">Scribe#deserialize</a>
-              </li>
-            </ul>
-          </dd>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-          <dt class="tag-source">Source:</dt>
-          <dd class="tag-source">
-            <ul class="dummy">
-              <li>
-                <a href="types_state.js.html">types/state.js</a>, <a href="types_state.js.html#line346">line 346</a>
-              </li>
-            </ul>
-          </dd>
-
-
-
-
-
-
-
-        </dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        <h5>Returns:</h5>
-
-
-        <div class="param-desc">
-          [description]
-        </div>
-
-
-
-        <dl>
-          <dt>
-            Type
-          </dt>
-          <dd>
-
-            <span class="param-type"><a href="State.html">State</a></span>
-
-
-          </dd>
-        </dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
         <h4 class="name" id="envelop"><span class="type-signature"></span>envelop<span class="signature">(selector)</span><span class="type-signature"> &rarr; {<a href="App.html">App</a>}</span></h4>
 
 
@@ -1620,126 +2283,6 @@
 
 
 
-        <h4 class="name" id="fork"><span class="type-signature"></span>fork<span class="signature">()</span><span class="type-signature"> &rarr; {<a href="State.html">State</a>}</span></h4>
-
-
-
-
-
-
-        <div class="description">
-          Creates a new child <a href="State.html">State</a>, with `@parent` set to
-          the current <a href="State.html">State</a> by immutable identifier.
-        </div>
-
-
-
-
-
-
-
-
-
-
-
-
-
-        <dl class="details">
-
-
-
-
-
-
-
-
-          <dt class="tag-overrides">Overrides:</dt>
-          <dd class="tag-overrides">
-            <ul class="dummy">
-              <li>
-                <a href="Scribe.html#fork">Scribe#fork</a>
-              </li>
-            </ul>
-          </dd>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-          <dt class="tag-source">Source:</dt>
-          <dd class="tag-source">
-            <ul class="dummy">
-              <li>
-                <a href="types_state.js.html">types/state.js</a>, <a href="types_state.js.html#line390">line 390</a>
-              </li>
-            </ul>
-          </dd>
-
-
-
-
-
-
-
-        </dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        <h5>Returns:</h5>
-
-
-
-
-        <dl>
-          <dt>
-            Type
-          </dt>
-          <dd>
-
-            <span class="param-type"><a href="State.html">State</a></span>
-
-
-          </dd>
-        </dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
         <h4 class="name" id="get"><span class="type-signature"></span>get<span class="signature">(path)</span><span class="type-signature"> &rarr; {Mixed}</span></h4>
 
 
@@ -1825,7 +2368,7 @@
           <dd class="tag-overrides">
             <ul class="dummy">
               <li>
-                <a href="Scribe.html#get">Scribe#get</a>
+                <a href="Service.html#get">Service#get</a>
               </li>
             </ul>
           </dd>
@@ -1852,7 +2395,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_state.js.html">types/state.js</a>, <a href="types_state.js.html#line402">line 402</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line280">line 280</a>
               </li>
             </ul>
           </dd>
@@ -1908,7 +2451,7 @@
 
 
 
-        <h4 class="name" id="inherits"><span class="type-signature"></span>inherits<span class="signature">(scribe)</span><span class="type-signature"> &rarr; {<a href="Scribe.html">Scribe</a>}</span></h4>
+        <h4 class="name" id="handler"><span class="type-signature"></span>handler<span class="signature">(message)</span><span class="type-signature"> &rarr; {<a href="Service.html">Service</a>}</span></h4>
 
 
 
@@ -1916,7 +2459,8 @@
 
 
         <div class="description">
-          Use an existing Scribe instance as a parent.
+          Default route handler for an incoming message. Follows the Activity
+          Streams 2.0 spec: https://www.w3.org/TR/activitystreams-core/
         </div>
 
 
@@ -1952,13 +2496,13 @@
 
             <tr>
 
-              <td class="name"><code>scribe</code></td>
+              <td class="name"><code>message</code></td>
 
 
               <td class="type">
 
 
-                <span class="param-type"><a href="Scribe.html">Scribe</a></span>
+                <span class="param-type">Activity</span>
 
 
 
@@ -1968,7 +2512,7 @@
 
 
 
-              <td class="description last">Instance of Scribe to use as parent.</td>
+              <td class="description last">Message object.</td>
             </tr>
 
 
@@ -1993,7 +2537,7 @@
           <dd class="tag-overrides">
             <ul class="dummy">
               <li>
-                <a href="Scribe.html#inherits">Scribe#inherits</a>
+                <a href="Service.html#handler">Service#handler</a>
               </li>
             </ul>
           </dd>
@@ -2020,7 +2564,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_scribe.js.html">types/scribe.js</a>, <a href="types_scribe.js.html#line80">line 80</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line417">line 417</a>
               </li>
             </ul>
           </dd>
@@ -2051,7 +2595,7 @@
 
 
         <div class="param-desc">
-          The configured instance of the Scribe.
+          Chainable method.
         </div>
 
 
@@ -2062,7 +2606,7 @@
           </dt>
           <dd>
 
-            <span class="param-type"><a href="Scribe.html">Scribe</a></span>
+            <span class="param-type"><a href="Service.html">Service</a></span>
 
 
           </dd>
@@ -2080,7 +2624,7 @@
 
 
 
-        <h4 class="name" id="now"><span class="type-signature"></span>now<span class="signature">()</span><span class="type-signature"> &rarr; {Number}</span></h4>
+        <h4 class="name" id="init"><span class="type-signature"></span>init<span class="signature">()</span><span class="type-signature"></span></h4>
 
 
 
@@ -2088,7 +2632,8 @@
 
 
         <div class="description">
-          Retrives the current timestamp, in milliseconds.
+          Called by Web Components.
+          TODO: move to @fabric/http/types/spa
         </div>
 
 
@@ -2116,7 +2661,7 @@
           <dd class="tag-overrides">
             <ul class="dummy">
               <li>
-                <a href="Scribe.html#now">Scribe#now</a>
+                <a href="Service.html#init">Service#init</a>
               </li>
             </ul>
           </dd>
@@ -2143,7 +2688,177 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_scribe.js.html">types/scribe.js</a>, <a href="types_scribe.js.html#line42">line 42</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line223">line 223</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="lock"><span class="type-signature"></span>lock<span class="signature">(duration<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Boolean}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Attempt to acquire a lock for `duration` seconds.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+              <th>Default</th>
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>duration</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Number</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+                1000
+
+              </td>
+
+
+              <td class="description last">Number of milliseconds to hold lock.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="Service.html#lock">Service#lock</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line436">line 436</a>
               </li>
             </ul>
           </dd>
@@ -2174,7 +2889,7 @@
 
 
         <div class="param-desc">
-          Number representation of the millisecond Integer value.
+          true if locked, false if unable to lock.
         </div>
 
 
@@ -2185,7 +2900,7 @@
           </dt>
           <dd>
 
-            <span class="param-type">Number</span>
+            <span class="param-type">Boolean</span>
 
 
           </dd>
@@ -2234,15 +2949,6 @@
 
 
 
-
-          <dt class="tag-overrides">Overrides:</dt>
-          <dd class="tag-overrides">
-            <ul class="dummy">
-              <li>
-                <a href="Scribe.html#render">Scribe#render</a>
-              </li>
-            </ul>
-          </dd>
 
 
 
@@ -2326,7 +3032,7 @@
 
 
 
-        <h4 class="name" id="serialize"><span class="type-signature"></span>serialize<span class="signature">(input<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Buffer}</span></h4>
+        <h4 class="name" id="route"><span class="type-signature">(async) </span>route<span class="signature">(msg)</span><span class="type-signature"> &rarr; {Promise}</span></h4>
 
 
 
@@ -2334,7 +3040,7 @@
 
 
         <div class="description">
-          Convert to Buffer.
+          Resolve a <a href="State.html">State</a> from a particular <a href="Message.html">Message</a> object.
         </div>
 
 
@@ -2358,8 +3064,6 @@
               <th>Type</th>
 
 
-              <th>Attributes</th>
-
 
 
 
@@ -2372,24 +3076,13 @@
 
             <tr>
 
-              <td class="name"><code>input</code></td>
+              <td class="name"><code>msg</code></td>
 
 
               <td class="type">
 
 
-                <span class="param-type">Mixed</span>
-
-
-
-              </td>
-
-
-              <td class="attributes">
-
-                &lt;optional><br>
-
-
+                <span class="param-type"><a href="Message.html">Message</a></span>
 
 
 
@@ -2398,7 +3091,8 @@
 
 
 
-              <td class="description last">Input to serialize.</td>
+
+              <td class="description last">Explicit Fabric <a href="Message.html">Message</a>.</td>
             </tr>
 
 
@@ -2423,7 +3117,7 @@
           <dd class="tag-overrides">
             <ul class="dummy">
               <li>
-                <a href="Scribe.html#serialize">Scribe#serialize</a>
+                <a href="Service.html#route">Service#route</a>
               </li>
             </ul>
           </dd>
@@ -2450,7 +3144,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_state.js.html">types/state.js</a>, <a href="types_state.js.html#line296">line 296</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line485">line 485</a>
               </li>
             </ul>
           </dd>
@@ -2481,7 +3175,7 @@
 
 
         <div class="param-desc">
-          <a href="Store.html">Store</a>-able blob.
+          Resolves with resulting <a href="State.html">State</a>.
         </div>
 
 
@@ -2492,7 +3186,202 @@
           </dt>
           <dd>
 
-            <span class="param-type">Buffer</span>
+            <span class="param-type">Promise</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="send"><span class="type-signature">(async) </span>send<span class="signature">(channel, message)</span><span class="type-signature"> &rarr; {<a href="Service.html">Service</a>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Send a message to a channel.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>channel</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Channel name to which the message will be sent.</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>message</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Content of the message to send.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="Service.html#send">Service#send</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line816">line 816</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Chainable method.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="Service.html">Service</a></span>
 
 
           </dd>
@@ -2595,7 +3484,7 @@
           <dd class="tag-overrides">
             <ul class="dummy">
               <li>
-                <a href="Scribe.html#set">Scribe#set</a>
+                <a href="Service.html#set">Service#set</a>
               </li>
             </ul>
           </dd>
@@ -2622,7 +3511,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_state.js.html">types/state.js</a>, <a href="types_state.js.html#line418">line 418</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line295">line 295</a>
               </li>
             </ul>
           </dd>
@@ -2709,6 +3598,15 @@
 
 
 
+
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="Service.html#start">Service#start</a>
+              </li>
+            </ul>
+          </dd>
 
 
 
@@ -2898,7 +3796,7 @@
 
 
 
-        <h4 class="name" id="toHTML"><span class="type-signature"></span>toHTML<span class="signature">()</span><span class="type-signature"></span></h4>
+        <h4 class="name" id="tick"><span class="type-signature"></span>tick<span class="signature">()</span><span class="type-signature"> &rarr; {Number}</span></h4>
 
 
 
@@ -2906,7 +3804,7 @@
 
 
         <div class="description">
-          Converts the State to an HTML document.
+          Move forward one clock cycle.
         </div>
 
 
@@ -2934,7 +3832,7 @@
           <dd class="tag-overrides">
             <ul class="dummy">
               <li>
-                <a href="Scribe.html#toHTML">Scribe#toHTML</a>
+                <a href="Service.html#tick">Service#tick</a>
               </li>
             </ul>
           </dd>
@@ -2961,108 +3859,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_state.js.html">types/state.js</a>, <a href="types_state.js.html#line233">line 233</a>
-              </li>
-            </ul>
-          </dd>
-
-
-
-
-
-
-
-        </dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        <h4 class="name" id="toString"><span class="type-signature"></span>toString<span class="signature">()</span><span class="type-signature"> &rarr; {String}</span></h4>
-
-
-
-
-
-
-        <div class="description">
-          Unmarshall an existing state to an instance of a Blob.
-        </div>
-
-
-
-
-
-
-
-
-
-
-
-
-
-        <dl class="details">
-
-
-
-
-
-
-
-
-          <dt class="tag-overrides">Overrides:</dt>
-          <dd class="tag-overrides">
-            <ul class="dummy">
-              <li>
-                <a href="Scribe.html#toString">Scribe#toString</a>
-              </li>
-            </ul>
-          </dd>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-          <dt class="tag-source">Source:</dt>
-          <dd class="tag-source">
-            <ul class="dummy">
-              <li>
-                <a href="types_state.js.html">types/state.js</a>, <a href="types_state.js.html#line273">line 273</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line231">line 231</a>
               </li>
             </ul>
           </dd>
@@ -3092,10 +3889,6 @@
         <h5>Returns:</h5>
 
 
-        <div class="param-desc">
-          Serialized Blob.
-        </div>
-
 
 
         <dl>
@@ -3104,7 +3897,7 @@
           </dt>
           <dd>
 
-            <span class="param-type">String</span>
+            <span class="param-type">Number</span>
 
 
           </dd>
@@ -3122,7 +3915,7 @@
 
 
 
-        <h4 class="name" id="trust"><span class="type-signature"></span>trust<span class="signature">(source)</span><span class="type-signature"> &rarr; {<a href="Scribe.html">Scribe</a>}</span></h4>
+        <h4 class="name" id="trust"><span class="type-signature"></span>trust<span class="signature">(source)</span><span class="type-signature"> &rarr; {<a href="Service.html">Service</a>}</span></h4>
 
 
 
@@ -3130,7 +3923,7 @@
 
 
         <div class="description">
-          Blindly bind event handlers to the Source.
+          Explicitly trust all events from a known source.
         </div>
 
 
@@ -3172,7 +3965,7 @@
               <td class="type">
 
 
-                <span class="param-type">Source</span>
+                <span class="param-type">EventEmitter</span>
 
 
 
@@ -3182,7 +3975,7 @@
 
 
 
-              <td class="description last">Event stream.</td>
+              <td class="description last">Emitter of events.</td>
             </tr>
 
 
@@ -3207,7 +4000,7 @@
           <dd class="tag-overrides">
             <ul class="dummy">
               <li>
-                <a href="Scribe.html#trust">Scribe#trust</a>
+                <a href="Service.html#trust">Service#trust</a>
               </li>
             </ul>
           </dd>
@@ -3234,7 +4027,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_scribe.js.html">types/scribe.js</a>, <a href="types_scribe.js.html#line60">line 60</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line306">line 306</a>
               </li>
             </ul>
           </dd>
@@ -3265,7 +4058,7 @@
 
 
         <div class="param-desc">
-          Instance of the <a href="Scribe.html">Scribe</a>.
+          Instance of Service after binding events.
         </div>
 
 
@@ -3276,7 +4069,7 @@
           </dt>
           <dd>
 
-            <span class="param-type"><a href="Scribe.html">Scribe</a></span>
+            <span class="param-type"><a href="Service.html">Service</a></span>
 
 
           </dd>
@@ -3513,6 +4306,7 @@
       <li><a href="Machine.html">Machine</a></li>
       <li><a href="Mempool.html">Mempool</a></li>
       <li><a href="Message.html">Message</a></li>
+      <li><a href="Node.html">Node</a></li>
       <li><a href="Oracle.html">Oracle</a></li>
       <li><a href="Path.html">Path</a></li>
       <li><a href="Peer.html">Peer</a></li>

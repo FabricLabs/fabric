@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Source: types/session.js &middot; Docs</title>
+  <script src="scripts/prettify/prettify.js"> </script>
+  <script src="scripts/prettify/lang-css.js"> </script>
+  <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+  <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+  <script>
+    window.dataLayer = window.dataLayer || [];
+
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag('js', new Date());
+    gtag('config', 'G-09Y57FL980');
+  </script>
+</head>
+
+<body>
+  <div id="main">
+    <h1 class="page-title">Source: types/session.js</h1>
+
+
+
+
+    <section>
+      <article>
+        <pre class="prettyprint source linenums"><code>'use strict'
+
+// Constants
+const {
+  LIGHTNING_PROTOCOL_H_INIT,
+  LIGHTNING_PROTOCOL_PROLOGUE
+} = require('../constants');
+
+// Dependencies
+const BN = require('bn.js');
+const event = require('p-event');
+const struct = require('struct');
+const crypto = require('crypto');
+
+// Fabric Types
+const Entity = require('./entity');
+const Key = require('./key');
+
+/**
+ * The {@link Session} type describes a connection between {@link Peer}
+ * objects, and includes its own lifecycle.
+ */
+class Session extends Entity {
+  /**
+   * Creates a new {@link Session}.
+   * @param {Object} settings 
+   */
+  constructor (settings = {}) {
+    super(settings);
+
+    this.settings = Object.assign({
+      ephemeral: true,
+      initiator: null,
+      recipient: null
+    }, settings);
+
+    // Session Key
+    this.key = this._getOddKey();
+    this.derived = null;
+
+    // Internal State
+    this._state = {
+      clock: 0,
+      meta: {
+        messages: 0,
+        received: 0,
+        sent: 0
+      }
+    };
+
+    // Protocol Components
+    this.components = {};
+
+    // Map of messages
+    this.store = {};
+
+    // List of Session messages
+    this.messages = [];
+
+    // Status flag
+    this.status = 'initialized';
+
+    return this;
+  }
+
+  get id () {
+    return this.key.id;
+  }
+
+  get clock () {
+    return this._state.clock;
+  }
+
+  set clock (value) {
+    this._state.clock = value;
+  }
+
+  get state () {
+    return Object.assign({}, this._state);
+  }
+
+  get meta () {
+    return this.state.meta;
+  }
+
+  set meta (value) {
+    this.state.meta = value;
+  }
+
+  TypedMessage (type, data) {
+    const message = struct()
+      .charsnt('type', 64) // 64 B
+      .charsnt('data', Math.pow(2, 22)); // 4 MB
+
+    // Allocate memory
+    message.allocate();
+
+    message.fields.type = type;
+    message.fields.data = data;
+
+    return message;
+  }
+
+  fingerprint (buffer) {
+    if (!(buffer instanceof Buffer)) throw new Error('Input must be a buffer.');
+    return this.hash(buffer).digest('hex');
+  }
+
+  hash (buffer) {
+    if (!(buffer instanceof Buffer)) throw new Error('Input must be a buffer.');
+    return crypto.createHash('sha256').update(buffer);
+  }
+
+  // TODO: implement
+  encrypt (data) {
+    return data;
+  }
+
+  // TODO: implement
+  decrypt (data) {
+    return data;
+  }
+
+  _getEvenKey () {
+    let key = new Key();
+    let num = new BN(key.public.encode('hex'), 16);
+    if (!num.isEven()) return this._getEvenKey();
+    return key;
+  }
+
+  _getOddKey () {
+    let key = new Key();
+    let num = new BN(key.public.encode('hex'), 16);
+    if (!num.isOdd()) return this._getOddKey();
+    return key;
+  }
+
+  /**
+   * Opens the {@link Session} for interaction.
+   */
+  async start () {
+    this.status = 'starting';
+
+    const target = new Key({ public: this.settings.recipient });
+    this.derived = this.key.keypair.derive(target.public);
+
+    const key = new BN(this.key.public.encode('hex'), 16);
+    const start = this.TypedMessage('SessionStart', key.toString(10));
+
+    await this._appendMessage(start.buffer());
+
+    this.components.h = this.hash(Buffer.from(LIGHTNING_PROTOCOL_H_INIT, 'ascii'));
+    this.components.ck = this.hash(Buffer.from(LIGHTNING_PROTOCOL_H_INIT, 'ascii'));
+
+    this.components.h.update(Buffer.from(LIGHTNING_PROTOCOL_PROLOGUE, 'ascii'));
+
+    this.status = 'started';
+    return this;
+  }
+
+  /**
+   * Closes the {@link Session}, preventing further interaction.
+   */
+  async stop () {
+    this.status = 'stopping';
+    this.status = 'stopped';
+    return this;
+  }
+
+  async commit () {
+    if (!this.key) throw new Error('No key for session!');
+    let signature = this.key._sign(this.state);
+    return Buffer.from(signature).toString('hex');
+  }
+
+  async _appendMessage (message) {
+    this.clock++;
+
+    const id = this.fingerprint(message);
+
+    if (!this.settings.ephemeral) {
+      this.store[id] = message;
+    }
+
+    this.messages.push(id);
+    this.meta.messages = this.messages.length;
+
+    let signature = await this.commit();
+
+    this.emit('message', {
+      type: 'AddMessage',
+      data: { id, signature }
+    });
+
+    return signature;
+  }
+}
+
+module.exports = Session;
+</code></pre>
+      </article>
+    </section>
+
+
+
+  </div>
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="Actor.html">Actor</a></li>
+      <li><a href="Aggregator.html">Aggregator</a></li>
+      <li><a href="App.html">App</a></li>
+      <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="Channel.html">Channel</a></li>
+      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Compiler.html">Compiler</a></li>
+      <li><a href="Consensus.html">Consensus</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Exchange.html">Exchange</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
+      <li><a href="HKDF.html">HKDF</a></li>
+      <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Interface.html">Interface</a></li>
+      <li><a href="Key.html">Key</a></li>
+      <li><a href="KeyStore.html">KeyStore</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Mempool.html">Mempool</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="Node.html">Node</a></li>
+      <li><a href="Oracle.html">Oracle</a></li>
+      <li><a href="Path.html">Path</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="Reader.html">Reader</a></li>
+      <li><a href="Redis.html">Redis</a></li>
+      <li><a href="Router.html">Router</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Session.html">Session</a></li>
+      <li><a href="Signer.html">Signer</a></li>
+      <li><a href="Snapshot.html">Snapshot</a></li>
+      <li><a href="Stack.html">Stack</a></li>
+      <li><a href="Stash.html">Stash</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="Swap.html">Swap</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
+      <li><a href="Transition.html">Transition</a></li>
+      <li><a href="Tree.html">Tree</a></li>
+      <li><a href="Value.html">Value</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
+      <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="ZMQ.html">ZMQ</a></li>
+    </ul>
+    <h3>Events</h3>
+    <ul>
+      <li><a href="Aggregator.html#event:commit">commit</a></li>
+    </ul>
+  </nav>
+  <br class="clear" />
+  <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>
+  <script type="text/javascript">
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"></script>
+</body>
+
+</html>
