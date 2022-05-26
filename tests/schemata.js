@@ -8,8 +8,8 @@ const validator = require('is-my-json-valid');
 const Actor = require('../types/actor');
 
 // Schema Validation
-const schemas = require('../schemas');
-const validate = validator(schemas.Actor);
+const schemata = require('../schemata');
+const validate = validator(schemata.Actor);
 
 describe('JSON Schema Compliance', function () {
   describe('@fabric/core/types/actor', function () {
