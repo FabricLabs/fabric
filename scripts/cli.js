@@ -12,10 +12,10 @@ const file = path + '/wallet.json';
 
 // Dependencies
 const fs = require('fs');
+const bip39 = require('bip39');
 const { Command } = require('commander');
 
 // Fabric Types
-const Entity = require('../types/entity');
 const Wallet = require('../types/wallet');
 const Machine = require('../types/machine');
 const Environment = require('../types/environment');
@@ -24,10 +24,10 @@ const Environment = require('../types/environment');
 const OP_START = require('../contracts/node');
 const OP_CHAT = require('../contracts/chat');
 const OP_EXCHANGE = require('../contracts/exchange');
+const OP_SETUP = require('../contracts/setup');
 const OP_TEST = require('../contracts/test');
 
 // Singletons
-const wallet = new Wallet();
 const environment = new Environment();
 
 // ### [!!!] Toxic Waste [!!!]
@@ -35,16 +35,11 @@ let seed = null;
 
 // Define Main Program
 async function main () {
-  if (!environment.walletExists()) {
-    seed = await wallet._createSeed();
-  } else {
-    seed = environment.readWallet();
-  }
-
   const COMMANDS = {
     'START': OP_START,
     'CHAT': OP_CHAT,
     'EXCHANGE': OP_EXCHANGE,
+    'SETUP': OP_SETUP,
     'TEST': OP_TEST
   };
 
@@ -55,14 +50,18 @@ async function main () {
   // Configure Program
   program.name('fabric');
 
-  // Declare Commands
-  program.command('chat', { isDefault: true })
-    .description('Open P2P chat.')
-    .action(COMMANDS['CHAT'].bind(program));
+  program.command('setup', { isDefault: true })
+    .description('Ensures your environment configuration.')
+    .action(COMMANDS['SETUP'].bind(environment));
 
+  // Declare Commands
   program.command('node')
     .description('Initiate peer bootstrapping.')
     .action(COMMANDS['START'].bind(program));
+
+  program.command('chat')
+    .description('Open P2P chat.')
+    .action(COMMANDS['CHAT'].bind(program));
 
   program.command('exchange')
     .description('Runs a local exchange node.')
@@ -89,8 +88,16 @@ async function main () {
   program.parse(process.argv);
 
   // Read Environment
-  if (!environment.walletExists() || (program.keygen && (program.force || program.noclobber))) {
-    seed = await wallet._createSeed();
+  if (!environment.walletExists() || program.keygen) {
+    // ### [!!!] Begin Toxic Waste [!!!]
+    seed = bip39.generateMnemonic();
+    // TODO: remove from log output...
+    console.warn('[FABRIC:KEYGEN]', 'GENERATED_SEED', '=', seed);
+    console.warn('[FABRIC:KEYGEN]', '[!!!]', 'WARNING!', 'TOXIC WASTE ABOVE', '[!!!]');
+    console.warn('[FABRIC:KEYGEN]', '[!!!]', 'The above is PRIVATE KEY MATERIAL, which can be used to');
+    console.warn('[FABRIC:KEYGEN]', '[!!!]', 'spend funds from this wallet & deanonymize historical transactions.');
+    console.error('[FABRIC:KEYGEN]', '[!!!]', 'DO NOT DISTRIBUTE', '[!!!]');
+    // ### [!!!] End Toxic Waste [!!!]
   } else {
     seed = environment.readWallet();
   }
@@ -101,13 +108,11 @@ async function main () {
 
   // Behaviors
   if (program.keygen) {
-    // ### [!!!] Toxic Waste [!!!]
-    if (!environment.walletExists() || program.force || program.noclobber) {
-      // TODO: remove from log output...
-      console.warn('[FABRIC:KEYGEN]', 'GENERATED_SEED', '=', seed);
+    if (
+      !environment.walletExists() &&
+      program.force
+    ) {
       console.warn('[FABRIC:KEYGEN]', 'Saving new wallet to path:', path);
-      // console.warn('[FABRIC:KEYGEN]', 'Wallet password:', program.password);
-
       if (!program.noclobber) {
         try {
           environment.makeStore();
@@ -120,12 +125,6 @@ async function main () {
           '@data': seed
         }, null, '  ') + '\n');
       }
-
-      // TODO: replicate this program in C / ASM
-      console.warn('[FABRIC:KEYGEN]', '[!!!]', 'WARNING!', 'TOXIC WASTE ABOVE', '[!!!]');
-      console.warn('[FABRIC:KEYGEN]', '[!!!]', 'The above is PRIVATE KEY MATERIAL, which can be used to');
-      console.warn('[FABRIC:KEYGEN]', '[!!!]', 'spend funds from this wallet & deanonymize historical transactions.');
-      console.error('[FABRIC:KEYGEN]', '[!!!]', 'DO NOT DISTRIBUTE', '[!!!]');
     } else {
       console.warn('[FABRIC:KEYGEN]', 'Key file exists, no data will be written.  Use --force to override.');
       console.warn('[FABRIC:KEYGEN]', '[WARNING]', '--force DESTROYS ALL DATA: DOUBLE-CHECK YOUR BACKUPS!');

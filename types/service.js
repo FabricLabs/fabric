@@ -48,10 +48,15 @@ class Service extends Actor {
 
     // Configure (with defaults)
     this.settings = merge({
-      name: 'service',
+      name: 'Service',
       path: './stores/service',
       networking: true,
       persistent: false,
+      state: {
+        actors: {}, // TODO: schema
+        channels: {}, // TODO: schema
+        messages: {} // TODO: schema
+      },
       interval: 60000, // Mandatory Checkpoint Interval
       verbosity: 2, // 0 none, 1 error, 2 warning, 3 notice, 4 debug
       // TODO: export this as the default data in `inputs/fabric.json`
@@ -104,7 +109,7 @@ class Service extends Actor {
       history: [], // list of ...
       services: {}, // stores sub-service state
       status: 'PAUSED',
-      content: {},
+      content: this.settings.state,
       version: 0 // TODO: change to 1 for 0.1.0
     };
 

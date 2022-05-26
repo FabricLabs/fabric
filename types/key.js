@@ -120,8 +120,7 @@ class Key {
         this.keypair = ec.keyFromPublic((pubkey instanceof Buffer) ? pubkey : Buffer.from(pubkey, 'hex'));
         break;
       case 'FROM_RANDOM':
-        const entropy = crypto.randomBytes(32);
-        const mnemonic = bip39.entropyToMnemonic(entropy.toString('hex'));
+        const mnemonic = bip39.generateMnemonic()
         const interim = bip39.mnemonicToSeedSync(mnemonic);
         this.master = bip32.fromSeed(interim);
         this.keypair = ec.keyFromPrivate(this.master.privateKey);

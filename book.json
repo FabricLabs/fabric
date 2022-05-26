@@ -15,5 +15,6 @@
     "scripts": {
       "files": ["./assets/fabric.min.js"]
     }
-  }
+  },
+  "root": "_book"
 }
