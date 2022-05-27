@@ -9,33 +9,17 @@ let
     inherit pkgs nodejs system;
   };
 
+  patchNodeGyp = name: nodePackages."${name}".override {
+    buildInputs = [ pkgs.nodePackages.node-gyp-build ];
+    preRebuild = ''
+      sed -i -e "s|#!/usr/bin/env node|#! ${nodejs}/bin/node|" node_modules/node-gyp-build/bin.js
+    '';
+  };
+
 in
   nodePackages // {
-    nodeDependencies = nodePackages.nodeDependencies.override {
-      buildInputs = [ pkgs.nodePackages.node-gyp-build ];
-      preRebuild = ''
-        sed -i -e "s|#!/usr/bin/env node|#! ${nodejs}/bin/node|" node_modules/node-gyp-build/bin.js
-      '';
-    };
-
-    package = nodePackages.package.override {
-      buildInputs = [ pkgs.nodePackages.node-gyp-build ];
-      preRebuild = ''
-        sed -i -e "s|#!/usr/bin/env node|#! ${nodejs}/bin/node|" node_modules/node-gyp-build/bin.js
-      '';
-    };
-
-    shell = nodePackages.shell.override {
-      buildInputs = [ pkgs.nodePackages.node-gyp-build ];
-      preRebuild = ''
-      sed -i -e "s|#!/usr/bin/env node|#! ${nodejs}/bin/node|" node_modules/node-gyp-build/bin.js
-      '';
-    };
-
-    tarball = nodePackages.tarball.override {
-      buildInputs = [ pkgs.nodePackages.node-gyp-build ];
-      preRebuild = ''
-        sed -i -e "s|#!/usr/bin/env node|#! ${nodejs}/bin/node|" node_modules/node-gyp-build/bin.js
-      '';
-    };
+    nodeDependencies = patchNodeGyp "nodeDependencies";
+    package = patchNodeGyp "package";
+    shell = patchNodeGyp "shell";
+    tarball = patchNodeGyp "tarball";
   }
