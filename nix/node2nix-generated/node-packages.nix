@@ -2107,7 +2107,7 @@ let
     name = "_at_fabric_slash_core";
     packageName = "@fabric/core";
     version = "0.1.0-dev";
-    src = ../..;
+    src = nix-gitignore.gitignoreSourcePure [ ".git" ../../.gitignore ] ../..;
     dependencies = [
       sources."@nodelib/fs.scandir-2.1.5"
       sources."@nodelib/fs.stat-2.0.5"
