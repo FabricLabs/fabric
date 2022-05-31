@@ -74,7 +74,7 @@
   },
   "homepage": "https://github.com/FabricLabs/fabric#readme",
   "dependencies": {
-    "@fabric/zmq": "FabricLabs/fabric-zmq#master",
+    "@fabric/zmq": "git+https://git@github.com/FabricLabs/fabric-zmq#master",
     "@webassemblyjs/ast": "^1.8.5",
     "arbitrary": "^1.4.10",
     "base58check": "^2.0.0",
@@ -130,7 +130,7 @@
     "gitbook-plugin-scripts": "^1.0.2",
     "http-server": "^0.12.3",
     "is-my-json-valid": "^2.20.6",
-    "jsdoc": "FabricLabs/jsdoc#fabric",
+    "jsdoc": "git+https://git@github.com/FabricLabs/jsdoc#fabric",
     "jsdoc-to-markdown": "^4.0.1",
     "json-to-dot": "^1.1.0",
     "mocha": "^5.2.0",

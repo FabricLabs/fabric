@@ -248,7 +248,7 @@ class Service extends Actor {
     const beat = Message.fromVector(['Generic', {
       clock: this._clock,
       created: now,
-      state: this._state
+      state: this._state.content
     }]);
 
     if (!beat) {
