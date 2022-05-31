@@ -13,7 +13,7 @@
     "test": "tests"
   },
   "engines": {
-    "node": "^12.20.2"
+    "node": "^16.15.0"
   },
   "scripts": {
     "audit": "npx yarn audit --json --level critical > reports/AUDIT.log",
@@ -157,10 +157,10 @@
   },
   "pkg": {
     "@targets": [
-      "node12-linux-arm64",
-      "node12-linux-x64",
-      "node12-macos-x64",
-      "node12-windows-x64"
+      "node16-linux-arm64",
+      "node16-linux-x64",
+      "node16-macos-x64",
+      "node16-windows-x64"
     ]
   },
   "semistandard": {
