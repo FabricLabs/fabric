@@ -1,7 +1,7 @@
 'use strict';
 
-const Environment = require('@fabric/core/types/environment');
-const environment = new Environment({ namespace: 'portal' });
+const Environment = require('../types/environment');
+const environment = new Environment({ namespace: 'fabric' });
 
 const settings = {
   seed: environment.readVariable('FABRIC_SEED'),
