@@ -1,25 +1,20 @@
-{ pkgs ? import <nixpkgs> { inherit system; }
-, system ? builtins.currentSystem
-}:
+{ pkgs ? import <nixpkgs> {} }:
 
 let
-  nodejs = pkgs.nodejs-12_x;
-
-  nodePackages = import ./nix/node2nix-generated/default.nix {
-    inherit pkgs nodejs system;
-  };
-
-  patchNodeGyp = name: nodePackages."${name}".override {
-    buildInputs = [ pkgs.nodePackages.node-gyp-build ];
-    preRebuild = ''
-      sed -i -e "s|#!/usr/bin/env node|#! ${nodejs}/bin/node|" node_modules/node-gyp-build/bin.js
-    '';
-  };
+  nodePackages = import ./nix { inherit pkgs; };
 
 in
-  nodePackages // {
-    nodeDependencies = patchNodeGyp "nodeDependencies";
-    package = patchNodeGyp "package";
-    shell = patchNodeGyp "shell";
-    tarball = patchNodeGyp "tarball";
-  }
+{
+  inherit (nodePackages) package;
+
+  # This job checks if the automatically generated directory
+  # ./node2nix-generated matches with the output of ./generate-node2nix.nix.
+  check-node2nix-generated = pkgs.runCommandNoCC "check-node2nix-generated" {
+    nativeBuildInputs = [ pkgs.diffutils ];
+    actual = import ./nix/generate-node2nix.nix { inherit pkgs; };
+    expected = ./nix/node2nix-generated;
+  } ''
+    diff -r -U 3 $actual $expected
+    touch $out
+  '';
+}
