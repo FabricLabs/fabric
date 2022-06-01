@@ -140,9 +140,7 @@
     "page": "^1.7.1",
     "raw-loader": "^0.5.1",
     "semistandard": "^14.2.0",
-    "semistandard-loader": "^0.0.4",
-    "webpack": "4",
-    "webpack-cli": "3.3.2"
+    "semistandard-loader": "^0.0.4"
   },
   "nyc": {
     "exclude": [
