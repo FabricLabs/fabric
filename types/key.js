@@ -8,18 +8,25 @@ const {
 // Node Modules
 const crypto = require('crypto');
 
-// Dependencies
+// Deterministic Random
+// TODO: remove
 const Generator = require('arbitrary').default.Generator;
+
+// Dependencies
+// TODO: remove all external dependencies
 const BN = require('bn.js');
 const EC = require('elliptic').ec;
 const ec = new EC('secp256k1');
 const ecc = require('tiny-secp256k1');
+const payments = require('bitcoinjs-lib/src/payments');
 
-// External Dependencies
-// TODO: remove all external dependencies
+// Simple Key Management
 const BIP32 = require('bip32').default;
 const bip32 = new BIP32(ecc);
 const bip39 = require('bip39');
+
+// NOTE: see also @fabric/passport
+// expect a bech32m identifier using prefix "id"
 
 /**
  * Represents a cryptographic key.
@@ -35,6 +42,7 @@ class Key {
    * @param {String} [settings.seed] Mnemonic seed for initializing the key.
    * @param {String} [settings.public] Public key in hex.
    * @param {String} [settings.private] Private key in hex.
+   * @param {String} [settings.purpose=44] Constrains derivations to this space.
    */
   constructor (input = {}) {
     this.settings = Object.assign({
@@ -46,6 +54,8 @@ class Key {
       prefix: '00',
       public: null,
       private: null,
+      purpose: 44,
+      account: 0,
       bits: 256,
       hd: true,
       seed: null,
@@ -99,11 +109,10 @@ class Key {
         this.status = 'seeded';
         break;
       case 'FROM_XPRV':
-        const restored = bip32.fromBase58(this.settings.xprv);
-        this.xprv = restored.toBase58();
-        this.xpub = restored.neutered().toBase58();
-        this.master = restored;
-        this.keypair = ec.keyFromPrivate(restored.privateKey);
+        this.master = bip32.fromBase58(this.settings.xprv);
+        this.xprv = this.master.toBase58();
+        this.xpub = this.master.neutered().toBase58();
+        this.keypair = ec.keyFromPrivate(this.master.privateKey);
         break;
       case 'FROM_XPUB':
         const xpub = bip32.fromBase58(this.settings.xpub);
@@ -120,7 +129,7 @@ class Key {
         this.keypair = ec.keyFromPublic((pubkey instanceof Buffer) ? pubkey : Buffer.from(pubkey, 'hex'));
         break;
       case 'FROM_RANDOM':
-        const mnemonic = bip39.generateMnemonic()
+        const mnemonic = bip39.generateMnemonic();
         const interim = bip39.mnemonicToSeedSync(mnemonic);
         this.master = bip32.fromSeed(interim);
         this.keypair = ec.keyFromPrivate(this.master.privateKey);
@@ -169,6 +178,10 @@ class Key {
     return new Key({ seed });
   }
 
+  get account () {
+    return this.settings.account;
+  }
+
   get id () {
     return this.pubkeyhash;
   }
@@ -181,8 +194,33 @@ class Key {
     return Buffer.from(bits.toString(16), 'hex');
   }
 
+  get purpose () {
+    return this.settings.purpose;
+  }
+
   bit () {
     return this.generator.next.bits(1);
+  }
+
+  deriveAccountReceive (index) {
+    return this.deriveAddress(index);
+  }
+
+  deriveAddress (index = 0, change = 0) {
+    const pair = this.deriveKeyPair(this.account, index, change);
+    return payments.p2pkh({
+      pubkey: Buffer.from(pair.public, 'hex')
+    });
+  }
+
+  deriveKeyPair (addressID = 0, change = 0) {
+    const path = `m/${this.purpose}'/0'/${this.account}'/${change}/${addressID}`;
+    const derived = this.master.derivePath(path);
+    const pair = ec.keyFromPrivate(derived.privateKey);
+    return {
+      private: pair.getPrivate('hex'),
+      public: pair.getPublic(true, 'hex')
+    };
   }
 
   encrypt (value) {

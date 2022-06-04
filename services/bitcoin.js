@@ -818,6 +818,7 @@ class Bitcoin extends Service {
 
     this.zmq.on('log', async function _handleZMQLogEvent (event) {
       self.emit('debug', `[BITCOIN:ZMQ] Log: ${event}`);
+      self.emit('log', `[BITCOIN:ZMQ] Log: ${event}`);
     });
 
     this.zmq.on('message', async function _handleZMQMessage (event) {
@@ -1649,9 +1650,11 @@ class Bitcoin extends Service {
       self.emit('error', `wallet error: ${msg}`);
     });
 
-    this.wallet.database.on('tx', function (tx) {
-      self.emit('debug', `wallet tx!!!!!! ${JSON.stringify(tx, null, '  ')}`);
-    });
+    if (this.wallet.database) {
+      this.wallet.database.on('tx', function (tx) {
+        self.emit('debug', `wallet tx!!!!!! ${JSON.stringify(tx, null, '  ')}`);
+      });
+    }
 
     this.observer = monitor.observe(this._state);
 

@@ -1,5 +1,6 @@
 // Program Definition
 async function OP_SETUP (command = {}) {
+  // TODO: discuss w/ @ChronicSmoke
   const environment = this;
   const walletExists = environment.walletExists(); // Generic / Global
   const any = (candidate => (candidate && typeof candidate !== 'undefined'));

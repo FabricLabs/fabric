@@ -6,6 +6,7 @@ const PATCHES_ENABLED = false;
 const crypto = require('crypto');
 const stream = require('stream');
 const path = require('path');
+const EventEmitter = require('events').EventEmitter;
 
 // Public modules
 // TODO: remove
@@ -309,6 +310,8 @@ class Service extends Actor {
    * @return {Service} Instance of Service after binding events.
    */
   trust (source, name = source.constructor.name) {
+    if (!(source instanceof EventEmitter)) throw new Error('Source is not an EventEmitter.')
+
     // Constants
     const self = this;
 

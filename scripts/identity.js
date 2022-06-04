@@ -6,9 +6,12 @@ const SAMPLE = {
 }
 
 const DERIVATION = `m/44'/0'/0'/0/0`;
+const PREFIX = 'id'; // <Buffer 69, 64>
 const X_PUBKEY = '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798';
 
 // const settings = require('../settings/local');
+const Bech32 = require('../types/bech32');
+const Hash256 = require('../types/hash256');
 const Identity = require('../types/identity');
 const Key = require('../types/key');
 

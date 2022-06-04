@@ -124,7 +124,9 @@ class Peer extends Actor {
   }
 
   get pubkeyhash () {
-    return this.wallet.ring.getKeyHash('hex');
+    // TODO: switch to child pubkey
+    // path: m/7777'/0'/0/0
+    return this.key.pubkeyhash;
   }
 
   get state () {
