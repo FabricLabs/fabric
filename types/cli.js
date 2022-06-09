@@ -87,6 +87,7 @@ class CLI extends App {
     this.elements = {};
     this.channels = {};
     this.peers = {};
+    this.connections = {};
 
     // State
     this._state = {
@@ -164,11 +165,15 @@ class CLI extends App {
     this.node.on('message', this._handlePeerMessage.bind(this));
 
     // Attach P2P event handlers
-    this.node.on('peer', this._handlePeer.bind(this));
-    this.node.on('peer:candidate', this._handlePeerCandidate.bind(this));
+    // Raw Connections
+    this.node.on('connection', this._handleConnection.bind(this));
     this.node.on('connections:open', this._handleConnectionOpen.bind(this));
     this.node.on('connections:close', this._handleConnectionClose.bind(this));
     this.node.on('connection:error', this._handleConnectionError.bind(this));
+
+    // Peer Events
+    this.node.on('peer', this._handlePeer.bind(this));
+    this.node.on('peer:candidate', this._handlePeerCandidate.bind(this));
     this.node.on('session:update', this._handleSessionUpdate.bind(this));
 
     // Document Exchange
@@ -203,7 +208,7 @@ class CLI extends App {
     // this.on('changes', this._handleChanges.bind(this));
 
     // Start Bitcoin service
-    this.bitcoin.start();
+    // this.bitcoin.start();
 
     // Start P2P node
     this.node.start();
@@ -405,6 +410,7 @@ class CLI extends App {
 
   async _handleBitcoinBlock (block) {
     // this._appendMessage(`Bitcoin service emitted block ${JSON.stringify(block)}, chain height now: ${this.bitcoin.height}`);
+    // await this.bitcoin._syncChainInfoOverRPC();
     this._syncChainDisplay();
     // const message = Message.fromVector(['BlockCandidate', block.raw]);
     // this.node.relayFrom(this.node.id, message);
@@ -428,6 +434,7 @@ class CLI extends App {
 
   async _handleConnectionOpen (msg) {
     // this._appendMessage(`Node emitted "connections:open" event: ${JSON.stringify(msg)}`);
+    this._syncConnectionList();
     this._syncPeerList();
   }
 
@@ -443,11 +450,40 @@ class CLI extends App {
       }
     }
 
+    for (const id in this.connections) {
+      const connections = this.connections[id];
+      this._appendMessage(`Checking: ${JSON.stringify(connections)}`);
+      if (connections.address === msg.address) {
+        this._appendMessage(`Address matches.`);
+        delete this.connectionss[id];
+      }
+    }
+
     this._syncPeerList();
   }
 
   async _handleConnectionError (msg) {
     this._appendWarning(`Node emitted "connection:error" event: ${JSON.stringify(msg)}`);
+  }
+
+  async _handleConnection (connection) {
+    if (!connection.id) {
+      this._appendMessage('Peer did not send an ID.  Event received: ' + JSON.stringify(connection));
+    }
+
+    // TODO: use @fabric/core/types/channel
+    const channel = {
+      id: Hash256.digest(`${this.node.id}:${connection.id}`),
+      counterparty: connection.id
+    };
+
+    if (!this.connections[connection.id]) {
+      this.connections[connection.id] = connection;
+      this.emit('connection', connection);
+    }
+
+    this._syncConnectionList();
+    this.screen.render();
   }
 
   async _handlePeer (peer) {
@@ -795,6 +831,22 @@ class CLI extends App {
     return result.data.content;
   }
 
+  _syncConnectionList () {
+    this.elements['connections'].clearItems();
+
+    for (const id in this.connections) {
+      const connection = this.connections[id];
+      const element = blessed.element({
+        name: connection.id,
+        content: `[✓] ${connection.id}@${connection.address}`
+      });
+
+      // TODO: use peer ID for managed list
+      // self.elements['connections'].insertItem(0, element);
+      this.elements['connections'].add(element.content);
+    }
+  }
+
   _syncPeerList () {
     this.elements['peers'].clearItems();
 
@@ -855,12 +907,6 @@ class CLI extends App {
 
   render () {
     const self = this;
-    const defaults = {
-      parent: self.screen,
-      border: {
-        type: 'line'
-      }
-    };
 
     self.screen = blessed.screen({
       smartCSR: true,
@@ -1057,7 +1103,7 @@ class CLI extends App {
         type: 'line'
       },
       top: 6,
-      width: '80%',
+      width: '60%',
       bottom: 3,
       mouse: true,
       tags: true
@@ -1066,6 +1112,18 @@ class CLI extends App {
     self.elements['peers'] = blessed.list({
       parent: self.screen,
       label: '[ Peers ]',
+      border: {
+        type: 'line'
+      },
+      top: 6,
+      left: '60%+1',
+      bottom: 3,
+      width: '20%'
+    });
+
+    self.elements['connections'] = blessed.list({
+      parent: self.screen,
+      label: '[ Connections ]',
       border: {
         type: 'line'
       },

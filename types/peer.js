@@ -168,6 +168,7 @@ class Peer extends Actor {
     }
 
     if (this.settings.networking) {
+      this.emit('warning', `Networking enabled.  Connecting to peers: ${JSON.stringify(this.settings.peers)}`);
       for (const candidate of this.settings.peers) {
         this._connect(candidate);
       }
@@ -202,7 +203,7 @@ class Peer extends Actor {
         return new Promise((resolve, reject) => {
           // Give socket a timeout to close cleanly, destroy if failed
           let deadline = setTimeout(function () {
-            console.warn('[FABRIC:PEER]', 'end() timed out for peer:', id, 'Calling destroy...');
+            peer.emit('warning', `[FABRIC:PEER] end() timed out for peer "${id}" so calling destroy...`);
             connection.destroy();
             resolve();
           }, 5000);
@@ -244,11 +245,15 @@ class Peer extends Actor {
   async _sessionStart (socket, target) {
     const self = this;
     const address = `${target.address}:${target.port}`;
-    self.emit('log', `Starting session with address: ${target.pubkey}@${address}`);
+
+    self.emit('debug', `Starting session with address: ${target.pubkey}@${address}`);
     self.connections[address].session = new Session({ recipient: target.pubkey });
     await self.connections[address].session.start();
-    self.emit('log', `Session created: ${JSON.stringify(self.connections[address].session)}`);
 
+    self.emit('debug', `Session created: ${JSON.stringify(self.connections[address].session)}`);
+
+    // First time seeing our local address, use it
+    // TODO: evaluate trust model
     if (!self.public.ip) {
       self.public.ip = socket.localAddress;
       self.emit('log', `Local socket was null, changed to: ${self.public.ip}`);
@@ -267,6 +272,7 @@ class Peer extends Actor {
       advertise: `${self.key.pubkey}@${self.public.ip}:${self.public.port}`,
       signature: self.connections[address].session.key._sign(self.id)
     })];
+
     const message = Message.fromVector(vector);
 
     if (!socket.writable) {
@@ -398,6 +404,10 @@ class Peer extends Actor {
       // TODO: unify as _dataHandler
       self.connections[authority].on('data', async function peerDataHandler (data) {
         self._handleSocketData.apply(self, [ this, authority, data ]);
+      });
+
+      self.emit('connection', {
+        id: authority
       });
 
       self.emit('log', `Starting connection to address: ${authority}`);

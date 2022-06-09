@@ -6,7 +6,7 @@ const local = require('../settings/local');
 
 const settings = {
   authority: local.authority,
-  listen: true,
+  listen: local.listen,
   // sideload playnet
   peers: [].concat(playnet.peers),
   port: process.env.FABRIC_PORT || 7777,
@@ -22,7 +22,6 @@ const settings = {
 const CLI = require('../types/cli');
 
 // Services
-const Bitcoin = require('../services/bitcoin');
 // const Matrix = require('@fabric/matrix');
 
 // Program Definition
@@ -43,7 +42,6 @@ async function OP_CHAT () {
 
   // ## Services
   // TODO: reconcile API wth @fabric/doorman as appears at: https://github.com/FabricLabs/doorman
-  chat._registerService('bitcoin', Bitcoin);
   // chat._registerService('matrix', Matrix);
   // chat._registerService('rpg', RPG);
 
