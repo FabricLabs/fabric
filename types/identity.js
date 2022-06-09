@@ -4,6 +4,7 @@ const Actor = require('./actor');
 const Bech32 = require('./bech32');
 const Hash256 = require('./hash256');
 const Key = require('./key');
+const Signer = require('./signer');
 
 class Identity extends Actor {
   constructor (settings = {}) {
@@ -16,6 +17,7 @@ class Identity extends Actor {
     }, this.settings, settings);
 
     this.key = new Key(this.settings);
+    this.signer = new Signer(this.settings);
 
     this._state = {
       content: {
@@ -86,6 +88,11 @@ class Identity extends Actor {
     if (this.settings.debug) console.log('bech32:', bech32);
 
     return bech32.toString();
+  }
+
+  _signAsSchnorr (input) {
+    if (!input) input = this.pubkeyhash;
+    const signature = this.signer.sign(input)
   }
 }
 
