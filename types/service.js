@@ -109,6 +109,7 @@ class Service extends Actor {
       epochs: {}, // snapshots of history (by ID)
       history: [], // list of ...
       services: {}, // stores sub-service state
+      content: {},
       status: 'PAUSED',
       content: this.settings.state,
       version: 0 // TODO: change to 1 for 0.1.0
