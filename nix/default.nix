@@ -3,7 +3,7 @@
 }:
 
 let
-  nodejs = pkgs.nodejs-12_x;
+  nodejs = pkgs.nodejs-16_x;
 
   nodePackages = import ./node2nix-generated {
     inherit pkgs nodejs system;
