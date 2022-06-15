@@ -23,7 +23,7 @@
     "chat": "node scripts/cli.js chat",
     "clean": "rm -rf node_modules",
     "clean:lock": "rm -f package-lock.json",
-    "clean:nix": "rm -f default.nix node-env.nix node-packages.nix",
+    "clean:nix": "rm -f nix/node2nix-generated/*",
     "cli": "npm run chat",
     "coverage": "nyc npm test",
     "dev": "npm run make:dev && http-server -p 8000 _book",
