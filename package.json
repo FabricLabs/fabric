@@ -127,7 +127,7 @@
     "eslint": "^8.17.0",
     "gitbook-cli": "^2.3.2",
     "gitbook-plugin-edit-link": "^2.0.2",
-    "gitbook-plugin-exercises": "^1.0.0",
+    "gitbook-plugin-exercises": "^3.0.0",
     "gitbook-plugin-page-toc": "^1.1.1",
     "gitbook-plugin-scripts": "^1.0.2",
     "http-server": "^14.1.1",
@@ -140,7 +140,7 @@
     "page": "^1.11.6",
     "raw-loader": "^4.0.2",
     "semistandard": "^16.0.1",
-    "semistandard-loader": "^0.0.3"
+    "semistandard-loader": "^0.0.4"
   },
   "nyc": {
     "exclude": [
