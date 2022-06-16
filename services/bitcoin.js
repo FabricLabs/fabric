@@ -43,7 +43,6 @@ const BitcoinTransaction = require('../types/bitcoin/transaction');
 const Amount = bcoin.Amount;
 const Coin = bcoin.Coin;
 const FullNode = bcoin.FullNode;
-const KeyRing = bcoin.KeyRing;
 const MTX = bcoin.MTX;
 const NetAddress = bcoin.net.NetAddress;
 const Script = bcoin.Script;
@@ -1560,6 +1559,7 @@ class Bitcoin extends Service {
 
   async _syncChainHeadersOverRPC () {
     for (let i = 0; i <= this.height; i++) {
+      const now = Date.now();
       const progress = now - start;
       const hash = await this._requestBlockAtHeight(i);
       await this._syncRawHeadersForBlock(hash);
