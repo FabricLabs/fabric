@@ -1558,11 +1558,27 @@ class Bitcoin extends Service {
   }
 
   async _syncChainHeadersOverRPC () {
+    const start = Date.now();
+
+    let last = 0;
+    let rate = 0;
+    let before = 0;
+
     for (let i = 0; i <= this.height; i++) {
       const now = Date.now();
       const progress = now - start;
       const hash = await this._requestBlockAtHeight(i);
       await this._syncRawHeadersForBlock(hash);
+
+      const epoch = Math.floor((progress / 1000) % 1000);
+
+      if (epoch > last) {
+        rate = `${i - before}`;
+        before = i;
+        last = epoch;
+
+        this.emit('debug', `timing: epochs[${epoch}] ${now} ${i} processed @ ${rate}/sec (${progress/1000}s elapsed)`);
+      }
     }
 
     return this;
