@@ -24,7 +24,7 @@
     "clean": "rm -rf node_modules",
     "clean:all": "rm -rf node_modules package-lock.json",
     "cli": "npm run chat",
-    "coverage": "nyc npm test",
+    "coverage": "c8 npm test",
     "dev": "npm run make:dev && http-server -p 8000 _book",
     "docs": "npm run make:api && npm run make:docs && http-server -p 8000 docs",
     "examples": "npm run make:examples && http-server -p 8000 examples",
@@ -36,7 +36,7 @@
     "make:api": "jsdoc2md --configure jsdoc.json --files types/*.js services/*.js settings/deprecations.js README.md > API.md",
     "make:app": "webpack --progress examples/app.js -o assets/app.js",
     "make:binary": "pkg -c package.json -o assets/binaries/fabric scripts/cli.js",
-    "make:coverage": "npm run coverage && nyc report --reporter html",
+    "make:coverage": "npm run coverage && c8 report --reporter html",
     "make:dev": "gitbook install && npm run make:examples && npm run make:docs && gitbook build && cp -rf docs _book/ && cp -rf examples _book/ && glob-run js-beautify --indent-size 2 -r _book/**.html",
     "make:docs": "npm run make:api && node_modules/.bin/jsdoc -c jsdoc.json services/**.js types/**.js settings/deprecations.js DEVELOPERS.md -d docs/ && glob-run js-beautify --indent-size 2 -r docs/**.html",
     "make:examples": "docco --output examples/ examples/*.js && glob-run js-beautify --indent-size 2 -r examples/*.html",
@@ -44,7 +44,7 @@
     "make:service": "NODE_ENV=production webpack --target=webworker examples/service.js -o assets/service.js",
     "make:viewer": "NODE_ENV=production webpack components/circuit-viewer.js -o assets/viewer.min.js",
     "report:credits": "node_modules/.bin/license-checker --json > reports/credits.json",
-    "report:coverage": "npm run make:coverage && nyc report --reporter=text-lcov > reports/coverage.lcov",
+    "report:coverage": "npm run make:coverage && c8 report --reporter=text-lcov > reports/coverage.lcov",
     "report:legal": "node_modules/.bin/license-checker --json > reports/licenses.json",
     "report:todo": "grep --exclude-dir=.git --exclude-dir=_book --exclude-dir=assets --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs -rEI \"TODO|FIXME\" . > reports/TODO.txt",
     "review:coverage": "npm run make:coverage && http-server -p 8000 reports/coverage",
@@ -119,6 +119,7 @@
   },
   "devDependencies": {
     "chai": "^4.0.2",
+    "c8": "^7.11.3",
     "codecov": "^3.6.1",
     "cross-env": "^5.1.3",
     "debug-trace": "^2.2.1",
@@ -136,13 +137,12 @@
     "jsdoc-to-markdown": "^4.0.1",
     "json-to-dot": "^1.1.0",
     "mocha": "^5.2.0",
-    "nyc": "^15.1.0",
     "page": "^1.7.1",
     "raw-loader": "^0.5.1",
     "semistandard": "^14.2.0",
     "semistandard-loader": "^0.0.4"
   },
-  "nyc": {
+  "c8": {
     "exclude": [
       "assets",
       "contracts",
@@ -152,7 +152,7 @@
       "data"
     ],
     "report-dir": "./reports/coverage",
-    "temp-dir": "./reports/nyc"
+    "temp-dir": "./reports/c8"
   },
   "pkg": {
     "@targets": [
