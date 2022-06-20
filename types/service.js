@@ -6,6 +6,7 @@ const PATCHES_ENABLED = false;
 const crypto = require('crypto');
 const stream = require('stream');
 const path = require('path');
+const EventEmitter = require('events').EventEmitter;
 
 // Public modules
 // TODO: remove
@@ -48,10 +49,15 @@ class Service extends Actor {
 
     // Configure (with defaults)
     this.settings = merge({
-      name: 'service',
+      name: 'Service',
       path: './stores/service',
       networking: true,
       persistent: false,
+      state: {
+        actors: {}, // TODO: schema
+        channels: {}, // TODO: schema
+        messages: {} // TODO: schema
+      },
       interval: 60000, // Mandatory Checkpoint Interval
       verbosity: 2, // 0 none, 1 error, 2 warning, 3 notice, 4 debug
       // TODO: export this as the default data in `inputs/fabric.json`
@@ -103,8 +109,9 @@ class Service extends Actor {
       epochs: {}, // snapshots of history (by ID)
       history: [], // list of ...
       services: {}, // stores sub-service state
-      status: 'PAUSED',
       content: {},
+      status: 'PAUSED',
+      content: this.settings.state,
       version: 0 // TODO: change to 1 for 0.1.0
     };
 
@@ -154,7 +161,7 @@ class Service extends Actor {
   }
 
   get state () {
-    return this._state;
+    return Object.assign({}, this._state.content);
   }
 
   set clock (value) {
@@ -243,7 +250,7 @@ class Service extends Actor {
     const beat = Message.fromVector(['Generic', {
       clock: this._clock,
       created: now,
-      state: this._state
+      state: this._state.content
     }]);
 
     if (!beat) {
@@ -304,6 +311,8 @@ class Service extends Actor {
    * @return {Service} Instance of Service after binding events.
    */
   trust (source, name = source.constructor.name) {
+    if (!(source instanceof EventEmitter)) throw new Error('Source is not an EventEmitter.')
+
     // Constants
     const self = this;
 
@@ -850,7 +859,7 @@ class Service extends Actor {
 
     // assemble all necessary info, emit Snapshot regardless of storage status
     try {
-      ops.push({ type: 'put', key: 'snapshot', value: self._state });
+      ops.push({ type: 'put', key: 'snapshot', value: self.state });
       this.emit('debug', JSON.stringify({
         '@data': self.state,
         '@from': 'COMMIT',
@@ -884,8 +893,13 @@ class Service extends Actor {
       }
     }
 
-    const commit = new Actor(self._state);
-    this.emit('commit', commit);
+    const commit = new Actor({
+      type: 'Commit',
+      state: self.state
+    });
+
+    this.emit('commit', { ...commit.toObject(), id: commit.id });
+
     return commit.id;
   }
 
@@ -933,9 +947,7 @@ class Service extends Actor {
   async _registerActor (actor = {}) {
     if (!actor.id) {
       const entity = new Actor(actor);
-      actor = merge({
-        id: entity.id
-      }, actor);
+      actor = { ...entity.toObject(), id: entity.id };
     }
 
     const id = pointer.escape(actor.id);
@@ -1125,7 +1137,12 @@ class Service extends Actor {
         // TODO: isomorphic @fabric/core/types/store
         // await this.services[name]._bindStore(this.store);
         this.trust(this.services[name], name);
-        await this.services[name].start();
+
+        try {
+          await this.services[name].start();
+        } catch (exception) {
+          this.emit('warning', `Could not start the "${name}" service due to exception: ${JSON.stringify(exception, null, '  ')}`);
+        }
       }
     }
 

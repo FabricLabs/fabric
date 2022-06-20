@@ -1,8 +1,7 @@
 'use strict';
 
-// Settings
+// Dependencies
 const merge = require('lodash.merge');
-const defaults = require('../settings/default');
 
 // Fabric Types
 const Peer = require('../types/peer');
@@ -35,7 +34,7 @@ class Node extends Service {
       peering: true,
       service: Service,
       settings: {}
-    }, defaults, settings);
+    }, this.settings, settings);
 
     // Local Services
     this.node = new Peer(this.settings);
@@ -51,14 +50,11 @@ class Node extends Service {
    * @param {Object|String} settings Label for the trusted messages, or a configuration object.
    */
   trust (source, settings = {}) {
-    let extra = '';
-
-    if (typeof settings === 'string') {
-      extra = `[${settings}]`;
-    }
+    const self = this;
+    const extra = (typeof settings === 'string') ? `[${settings}] ` : '';
 
     source.on('debug', function (debug) {
-      console.debug(`[FABRIC:DEBUG] ${extra}`, debug);
+      self.emit('debug', `[FABRIC:DEBUG] ${extra}${debug}`);
     });
 
     source.on('info', function (info) {
@@ -66,7 +62,7 @@ class Node extends Service {
     });
 
     source.on('log', function (log) {
-      console.log(`[FABRIC:LOG] ${extra}`, log);
+      self.emit('log', `[FABRIC:LOG] ${extra}${log}`);
     });
 
     source.on('warning', function (warn) {
@@ -83,6 +79,10 @@ class Node extends Service {
 
     source.on('message', function (msg) {
       console.log(`[FABRIC:MESSAGE] ${extra}`, msg);
+    });
+
+    source.on('commit', function (msg) {
+      console.log(`[FABRIC:COMMIT] ${extra}`, msg);
     });
 
     source.on('ready', function () {

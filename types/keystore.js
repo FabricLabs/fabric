@@ -16,12 +16,12 @@ const Key = require('./key');
 /**
  * Provides an encrypted datastore for generic object storage.
  */
-class KeyStore extends Actor {
+class Keystore extends Actor {
   /**
    * Create an instance of the Store.
    * @param {FabricStoreConfiguration} [configuration] Settings to use.
    * @param {String} [configuration.name="DefaultStore"] Name of the Store.
-   * @returns {KeyStore} Instance of the store.
+   * @returns {Keystore} Instance of the store.
    */
   constructor (settings = {}) {
     super(settings);
@@ -254,6 +254,7 @@ class KeyStore extends Actor {
     const promise = new Promise((resolve, reject) => {
       const actor = new Actor(this.state);
       const serialized = actor.serialize();
+      if (!serialized) throw new Error(`Could not serialize: ${JSON.stringify(this.state, null, '  ')}`)
       if (keystore.db) {
         keystore.db.put('/', serialized).then(resolve).catch(reject);
       }
@@ -277,4 +278,4 @@ class KeyStore extends Actor {
   }
 }
 
-module.exports = KeyStore;
+module.exports = Keystore;

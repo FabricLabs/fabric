@@ -24,8 +24,8 @@ describe('@fabric/core/types/wallet', function () {
       async function test () {
         const wallet = new Wallet(options);
         const origin = await wallet.generateCleanKeyPair();
-        const pubkey = await wallet.publicKeyFromString(origin.public);
-        assert.equal(origin.public, pubkey.toString('hex'));
+        const pubkey = wallet.publicKeyFromString(origin.public);
+        assert.equal(origin.public, pubkey);
       }
 
       await test();
@@ -47,7 +47,7 @@ describe('@fabric/core/types/wallet', function () {
         const address = await wallet._createMultisigAddress(2, 3, keys);
 
         // TODO: replace with fixture
-        assert.equal(address, '2NAjx1UE2pyie3xN16AWBsbHhJSGAxLX7aY');
+        assert.equal(address, 'bc1qe0thuvr6w5frdghkdsa5j8gnu27nq6t0f0ucgnr7nyjvsl88fmlqr304t0');
       }
 
       await test();

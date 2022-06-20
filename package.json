@@ -13,16 +13,18 @@
     "test": "tests"
   },
   "engines": {
-    "node": "^12.20.2"
+    "node": "^16.15.0"
   },
   "scripts": {
+    "audit": "npx yarn audit --json --level critical > reports/AUDIT.log",
+    "book": "npm run dev",
     "build": "npm run make:all",
     "build:book": "npm run make:book && npm run tidy",
     "chat": "node scripts/cli.js chat",
     "clean": "rm -rf node_modules",
     "clean:all": "rm -rf node_modules package-lock.json",
     "cli": "npm run chat",
-    "coverage": "nyc npm test",
+    "coverage": "c8 npm test",
     "dev": "npm run make:dev && http-server -p 8000 _book",
     "docs": "npm run make:api && npm run make:docs && http-server -p 8000 docs",
     "examples": "npm run make:examples && http-server -p 8000 examples",
@@ -35,14 +37,16 @@
     "make:app": "### ERROR: Not yet implemented.  Debug: `examples/app.js` to `assets/app.js`",
     "make:book": "mkdir -p _book && honkit build",
     "make:binary": "pkg -c package.json -o assets/binaries/fabric scripts/cli.js",
-    "make:coverage": "npm run coverage && nyc report --reporter html",
-    "make:dev": "npm run make:app npm run make:examples && npm run make:docs && npm run make:book && cp -rf docs _book/ && cp -rf examples _book/ && npm run tidy",
+    "make:coverage": "npm run coverage && c8 report --reporter html",
+    "make:dev": "gitbook install && npm run make:examples && npm run make:docs && gitbook build && cp -rf docs _book/ && cp -rf examples _book/ && glob-run js-beautify --indent-size 2 -r _book/**.html",
     "make:docs": "npm run make:api && node_modules/.bin/jsdoc -c jsdoc.json services/**.js types/**.js settings/deprecations.js DEVELOPERS.md -d docs/ && glob-run js-beautify --indent-size 2 -r docs/**.html",
     "make:examples": "docco --output examples/ examples/*.js && glob-run js-beautify --indent-size 2 -r examples/*.html",
     "make:lib": "### ERROR: Not yet implemented.  Debug: `scripts/fabric.js` to `assets/fabric.min.js`",
     "make:service": "### ERROR: Not yet implemented.  Debug: ` examples/service.js` to `aassets/service.js`",
     "make:viewer": "### ERROR: Not yet implemented.  Debug: `components/circuit-viewer.js` to `aassets/viewer.min.js`",
-    "report:coverage": "npm run make:coverage && nyc report --reporter=text-lcov > reports/coverage.lcov && codecov",
+    "report:credits": "node_modules/.bin/license-checker --json > reports/credits.json",
+    "report:coverage": "npm run make:coverage && c8 report --reporter=text-lcov > reports/coverage.lcov",
+    "report:legal": "node_modules/.bin/license-checker --json > reports/licenses.json",
     "report:todo": "grep --exclude-dir=.git --exclude-dir=_book --exclude-dir=assets --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs -rEI \"TODO|FIXME\" . > reports/TODO.txt",
     "review:coverage": "npm run make:coverage && http-server -p 8000 reports/coverage",
     "review:todo": "npm run report:todo && cat reports/TODO.txt && echo '\nOutstanding TODO items (@fabric/core):' && wc -l reports/TODO.txt && echo '\nIssues List: https://github.com/FabricLabs/fabric/issues\nDisclosures: securiy@fabric.pub\n\n'",
@@ -74,11 +78,13 @@
   },
   "homepage": "https://github.com/FabricLabs/fabric#readme",
   "dependencies": {
+    "@fabric/zmq": "github:FabricLabs/fabric-zmq#master",
     "@webassemblyjs/ast": "^1.8.5",
     "arbitrary": "^1.4.10",
     "base58check": "^2.0.0",
-    "bcoin": "bcoin-org/bcoin#v2.2.0",
-    "bip-schnorr": "^0.6.4",
+    "bcoin": "github:bcoin-org/bcoin#v2.2.0",
+    "bech32-buffer": "^0.2.0",
+    "bip-schnorr": "^0.6.6",
     "bip32": "^3.0.1",
     "bip39": "^3.0.4",
     "bip65": "^1.0.3",
@@ -96,14 +102,13 @@
     "glob-run": "^0.1.6",
     "javascript-state-machine": "^3.1.0",
     "jayson": "^3.4.4",
-    "js-beautify": "^1.10.0",
+    "js-beautify": "^1.14.3",
     "json-pointer": "^0.6.0",
     "level": "^7.0.1",
     "lodash.merge": "^4.6.2",
     "merkletreejs": "^0.1.6",
     "minsc": "^0.2.0",
     "mkdirp": "^1.0.4",
-    "nat-upnp": "^1.1.1",
     "p-event": "^4.2.0",
     "path-match": "^1.2.4",
     "pluralize": "^8.0.0",
@@ -112,21 +117,18 @@
     "simple-aes": "^0.1.1",
     "struct": "^0.0.12",
     "tiny-secp256k1": "^2.2.1",
-    "ts-morph": "^10.0.2",
-    "zeromq": "^5.2.8"
+    "ts-morph": "^10.0.2"
   },
   "devDependencies": {
-    "@fabric/http": "FabricLabs/fabric-http#portal-develop",
-    "body-parser": "^1.18.2",
     "chai": "^4.0.2",
+    "c8": "^7.11.3",
     "codecov": "^3.6.1",
-    "compiled-jade-render": "^1.0.2",
     "cross-env": "^5.1.3",
     "debug-trace": "^2.2.1",
     "docco": "^0.7.0",
     "eccrypto": "^1.0.3",
     "eslint": "^5.16.0",
-    "express": "^4.16.2",
+    "gitbook-cli": "^2.3.2",
     "gitbook-plugin-edit-link": "^2.0.2",
     "gitbook-plugin-exercises": "^3.0.0",
     "gitbook-plugin-page-toc": "^1.1.0",
@@ -134,17 +136,16 @@
     "honkit": "^3.7.1",
     "http-server": "^0.12.3",
     "is-my-json-valid": "^2.20.6",
-    "jsdoc": "FabricLabs/jsdoc#fabric",
+    "jsdoc": "git+https://git@github.com/FabricLabs/jsdoc#fabric",
     "jsdoc-to-markdown": "^4.0.1",
     "json-to-dot": "^1.1.0",
     "mocha": "^5.2.0",
-    "nyc": "^15.1.0",
     "page": "^1.7.1",
     "raw-loader": "^0.5.1",
     "semistandard": "^14.2.0",
     "semistandard-loader": "^0.0.4"
   },
-  "nyc": {
+  "c8": {
     "exclude": [
       "assets",
       "contracts",
@@ -154,14 +155,14 @@
       "data"
     ],
     "report-dir": "./reports/coverage",
-    "temp-dir": "./reports/nyc"
+    "temp-dir": "./reports/c8"
   },
   "pkg": {
     "@targets": [
-      "node12-linux-arm64",
-      "node12-linux-x64",
-      "node12-macos-x64",
-      "node12-windows-x64"
+      "node16-linux-arm64",
+      "node16-linux-x64",
+      "node16-macos-x64",
+      "node16-windows-x64"
     ]
   },
   "semistandard": {

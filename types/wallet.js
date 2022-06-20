@@ -1,15 +1,19 @@
 'use strict';
 
-const config = require('../settings/default');
-const merge = require('lodash.merge');
-
 // External Dependencies
 const BN = require('bn.js');
+const merge = require('lodash.merge');
+const payments = require('bitcoinjs-lib/src/payments');
+
+// Mnemonics
+const ecc = require('tiny-secp256k1');
+const BIP32 = require('bip32').default;
+const bip32 = new BIP32(ecc);
+const bip39 = require('bip39');
 
 // Types
+const Key = require('./key');
 const Actor = require('./actor');
-const EncryptedPromise = require('./promise');
-const Transaction = require('./transaction');
 const Collection = require('./collection');
 const Consensus = require('./consensus');
 const Channel = require('./channel');
@@ -17,29 +21,6 @@ const Hash256 = require('./hash256');
 const Service = require('./service');
 const Secret = require('./secret');
 const State = require('./state');
-
-// Bcoin
-// For the browser...
-// const bcoin = require('bcoin/lib/bcoin-browser');
-// For the node...
-const bcoin = require('bcoin/lib/bcoin-browser');
-
-// TODO: most of these should be converted to use Consensus,
-// provided above.  Refactor these to use `this.provider` or
-// `this.consensus` for maximum portability.
-// ATTN: @martindale
-// Convenience classes...
-const Address = bcoin.Address;
-const Coin = bcoin.Coin;
-const WalletDB = bcoin.WalletDB;
-const WalletKey = bcoin.wallet.WalletKey;
-const Outpoint = bcoin.Outpoint;
-const Output = bcoin.Output;
-const Keyring = bcoin.wallet.WalletKey;
-const Mnemonic = bcoin.hd.Mnemonic;
-const HD = bcoin.hd;
-const MTX = bcoin.MTX;
-const Script = bcoin.Script;
 
 /**
  * Manage keys and track their balances.
@@ -69,8 +50,8 @@ class Wallet extends Service {
 
     this.settings = merge({
       name: 'primary',
-      network: config.network,
-      language: config.language,
+      network: 'regtest',
+      language: 'english',
       locktime: 144,
       decimals: 8,
       shardsize: 4,
@@ -79,11 +60,12 @@ class Wallet extends Service {
       key: null
     }, settings);
 
-    bcoin.set(this.settings.network);
+    // bcoin.set(this.settings.network);
 
-    this.database = new WalletDB({
+    this.database = null;
+    /* this.database = new WalletDB({
       network: 'regtest'
-    });
+    }); */
 
     this.account = null;
     this.manager = null;
@@ -91,27 +73,30 @@ class Wallet extends Service {
     this.master = null;
     this.ring = null;
     this.seed = null;
-    this.key = null;
 
     // TODO: enable wordlist translations
     // this.words = Mnemonic.getWordlist(this.settings.language).words;
     this.mnemonic = null;
     this.index = 0;
 
+    // Storage
     this.accounts = new Collection();
     this.addresses = new Collection();
     this.keys = new Collection();
     this.coins = new Collection();
+    this.transactions = new Collection();
+    this.txids = new Collection();
+    this.outputs = new Collection();
+
+    // Encrypted Storage
     this.secrets = new Collection({
       methods: {
         create: this._prepareSecret.bind(this)
       }
     });
 
-    this.transactions = new Collection();
-    this.txids = new Collection();
-    this.outputs = new Collection();
-
+    // Internals
+    this.key = new Key(this.settings.key);
     this.entity = new Actor(this.settings);
     this.consensus = new Consensus();
 
@@ -132,8 +117,9 @@ class Wallet extends Service {
       outputs: {}
     });
 
-    Object.defineProperty(this, 'database', { enumerable: false });
+    // Cleanup log output
     // TODO: remove these
+    Object.defineProperty(this, 'database', { enumerable: false });
     Object.defineProperty(this, 'accounts', { enumerable: false });
     Object.defineProperty(this, 'addresses', { enumerable: false });
     Object.defineProperty(this, 'utxos', { enumerable: false });
@@ -279,19 +265,19 @@ class Wallet extends Service {
 
     // Check for required fields
     if (!m) throw new Error('Parameter 0 required: m');
-    if (!m) throw new Error('Parameter 1 required: n');
+    if (!n) throw new Error('Parameter 1 required: n');
     if (!keys || !keys.length) throw new Error('Parameter 2 required: keys');
 
     try {
       // Compose the address
-      const multisig = Script.fromMultisig(m, n, keys);
-      const address = multisig.getAddress().toBase58(this.settings.network);
+      const pubkeys = keys.map(key => Buffer.from(key, 'hex'));
+      const payment = payments.p2wsh({
+        redeem: payments.p2ms({ m, pubkeys })
+      });
 
-      // TODO: remove this audit message
-      if (this.settings.verbosity >= 5) console.log('[FABRIC:WALLET]', 'Created multisig address:', address);
 
       // Assign to output
-      result = address;
+      result = payment.address;
     } catch (exception) {
       console.error('[FABRIC:WALLET]', 'Could not create multisig address:', exception);
     }
@@ -846,8 +832,11 @@ class Wallet extends Service {
   }
 
   async _createSeed (password = null) {
-    const mnemonic = new Mnemonic({ bits: 256 });
-    const master = bcoin.hd.fromMnemonic(mnemonic);
+    const mnemonic = bip39.generateMnemonic(256);
+    const interim = bip39.mnemonicToSeedSync(mnemonic);
+    const master = bip32.fromSeed(interim);
+
+    this.keypair = ec.keyFromPrivate(this.master.privateKey);
 
     await this._load();
 
@@ -1186,7 +1175,7 @@ class Wallet extends Service {
 
     // iterate over length of shard, aggregate addresses
     for (let i = 0; i < size; i++) {
-      let addr = this.account.deriveReceive(i).getAddress('string', this.settings.network);
+      const addr = this.key.deriveAccountReceive(i);
       let address = await this.addresses.create({
         string: addr,
         label: `shared address ${i} for wallet ${this.id}`,
@@ -1208,23 +1197,23 @@ class Wallet extends Service {
    */
   publicKeyFromString (input) {
     const buf = Buffer.from(input, 'hex');
-    return bcoin.KeyRing.fromPublic(buf).publicKey;
+    const key = new Key({ public: buf });
+    return key.pubkey;
   }
 
   async generateCleanKeyPair () {
     if (this.status !== 'loaded') await this._load();
 
-    this.index++;
-
-    let key = this.master.derivePath(`m/44'/0'/0'/0/${this.index}`);
-    let keyring = bcoin.KeyRing.fromPrivate(key.privateKey);
-
-    return {
+    const pair = this.key.deriveKeyPair(++this.index);
+    const keypair = {
       index: this.index,
-      public: keyring.publicKey.toString('hex'),
-      address: keyring.getAddress('string'),
-      keyring: keyring
+      public: pair.public,
+      address: payments.p2pkh({
+        pubkey: Buffer.from(pair.public, 'hex')
+      })
     };
+
+    return keypair;
   }
 
   async _handleWalletBalance (balance) {
@@ -1278,39 +1267,32 @@ class Wallet extends Service {
     this.status = 'loading';
     this.master = null;
 
-    if (!this.database.db.loaded) {
+    if (this.database && !this.database.db.loaded) {
       await this.database.open();
     }
 
-    if (this.settings.key && this.settings.key.seed) {
-      this.emit('log', 'Restoring wallet from seed...');
-      if (this.settings.verbosity >= 3) console.log('[AUDIT]', 'Restoring wallet from provided seed:', this.settings.key.seed);
-      const mnemonic = new Mnemonic(this.settings.key.seed);
-      this.master = bcoin.hd.fromMnemonic(mnemonic);
-      this.seed = new EncryptedPromise({ data: this.settings.key.seed });
+    if (this.database) {
+      try {
+        this.wallet = await this.database.create({
+          network: this.settings.network,
+          master: this.master
+        });
+      } catch (E) {
+        console.error('Could not create wallet:', E);
+      }
     } else {
-      if (this.settings.verbosity >= 3) console.log('[AUDIT]', 'Generating new HD key for wallet...');
-      this.master = bcoin.hd.generate(this.settings.network);
-    }
-
-    try {
-      this.wallet = await this.database.create({
-        network: this.settings.network,
-        master: this.master
-      });
-    } catch (E) {
-      console.error('Could not create wallet:', E);
+      // stub
+      this.wallet = {};
     }
 
     // Setup Ring
-    this.ring = new bcoin.KeyRing(this.master, this.settings.network);
-    this.ring.witness = this.settings.witness; // designates witness
+    this.ring = null;
 
     if (this.settings.verbosity >= 4) console.log('keyring:', this.ring);
     if (this.settings.verbosity >= 4) console.log('address from keyring:', this.ring.getAddress().toString());
 
     // TODO: allow override of wallet name
-    this.account = await this.wallet.getAccount('default');
+    this.account = null;
 
     // Let's call it a shard!
     this.shard = await this.getFirstAddressSlice(this.settings.shardsize);

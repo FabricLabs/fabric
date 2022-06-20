@@ -5,6 +5,7 @@ const schnorr = require('bip-schnorr');
 
 // Fabric Types
 const Actor = require('./actor');
+const Hash256 = require('./hash256');
 const Key = require('./key');
 
 /**
@@ -55,15 +56,54 @@ class Signer extends Actor {
     return this;
   }
 
+  get pubkey () {
+    // TODO: encode pubkey correctly for verification
+    const x = this.key.keypair.getPublic().getX();
+    return schnorr.convert.intToBuffer(x).toString('hex');
+  }
+
   /**
    * Signs some data.
    * @returns {Signer}
    */
   sign (data = this.toBuffer()) {
+    if (!(data instanceof Buffer)) {
+      switch (data.constructor.name) {
+        default:
+          this.emit('warning', `unhandled data to sign: ${data.constructor.name} ${JSON.stringify(data)}`);
+          break;
+      }
+    }
+
     this._lastSignature = new Actor({ message: data, signature: this.signature });
-    this.signature = schnorr.sign(this.key.private, data);
-    this.emit('signature', );
+
+    // Hash & sign
+    // TODO: check with bip-schnorr on behavior of signing > 32 byte messages
+    this._preimage = Buffer.from(Hash256.digest(data), 'hex');
+    this.signature = schnorr.sign(this.key.keypair.getPrivate('hex'), this._preimage);
+
+    this.emit('signature', {
+      content: data,
+      preimage: this._preimage,
+      pubkey: this._pubkey,
+      signature: this.signature.toString('hex')
+    });
+
     return this.signature.toString('hex');
+  }
+
+  verify (pubkey, message, signature) {
+    if (!(pubkey instanceof Buffer)) pubkey = Buffer.from(pubkey, 'hex');
+    if (!(message instanceof Buffer)) message = Buffer.from(message, 'hex');
+    if (!(signature instanceof Buffer)) signature = Buffer.from(signature, 'hex');
+
+    try {
+      schnorr.verify(pubkey, message, signature);
+      return true;
+    } catch (exception) {
+      console.error(exception);
+      return false;
+    }
   }
 }
 

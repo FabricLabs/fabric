@@ -14,7 +14,7 @@ class Federation extends Actor {
   /**
    * Create an instance of a federation.
    * @param {Object} [settings] Settings.
-   * @returns 
+   * @returns {Federation} Instance of the federation.
    */
   constructor (settings = {}) {
     super(settings);

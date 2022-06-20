@@ -91,6 +91,9 @@ Fabric is an extensible framework, supporting a variety of plugins.
 | Package                            | Description                                | Status                                                                                                                                       |
 |------------------------------------|--------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------|
 | [`@fabric/http`][http-plugin]      | serve Fabric apps to the legacy web (HTTP) | [![Build Status][badge-http-status]][http-test-status] [![Coverage Status][badge-http-coverage]][badge-http-coverage]                        |
+| [`@fabric/matrix`][matrix-plugin]  | connect to Matrix servers                  | [![Build Status][badge-matrix-status]][matrix-test-status] [![Coverage Status][badge-matrix-coverage]][badge-matrix-coverage]                |
+| [`@fabric/twilio`][twilio-plugin]  | send (and receive) SMS and phone calls     | [![Build Status][badge-twilio-status]][twilio-test-status] [![Coverage Status][badge-twilio-coverage]][badge-twilio-coverage]                |
+| [`@fabric/zapier`][zapier-plugin]  | interact with arbitrary zapier triggers    | [![Build Status][badge-zapier-status]][zapier-test-status] [![Coverage Status][badge-zapier-coverage]][badge-zapier-coverage]                |
 | [`@fabric/doorman`][doorman]       | an artificially intelligent assistant      | [![Build Status][badge-doorman-status]][doorman-test-status] [![Coverage Status][badge-doorman-coverage]][doorman-coverage-home]             |
 | [`@fabric/soundtrack`][soundtrack] | collaborative jukebox                      | [![Build Status][badge-soundtrack-status]][soundtrack-test-status] [![Coverage Status][badge-soundtrack-coverage]][soundtrack-coverage-home] |
 
@@ -113,12 +116,15 @@ collection of empassioned educators eager to help you.
 Fabric on Twitter: [@FabricProtocol][twitter]
 
 [fabric-github]: https://github.com/FabricLabs/fabric
-[http-plugin]: https://github.com/FabricLabs/web
+[http-plugin]: https://github.com/FabricLabs/fabric-http
+[matrix-plugin]: https://github.com/FabricLabs/fabric-matrix
+[twilio-plugin]: https://github.com/FabricLabs/fabric-twilio
+[zapier-plugin]: https://github.com/FabricLabs/fabric-zapier
 [api-docs]: https://dev.fabric.pub
 [chat]: https://chat.fabric.pub
 [edit-readme]: https://github.com/FabricLabs/fabric/edit/master/README.md
 [contributors]: https://github.com/FabricLabs/fabric/graphs/contributors
-[build-status]: https://travis-ci.org/FabricLabs/fabric
+[build-status]: https://app.travis-ci.com/github/FabricLabs/fabric
 [coverage]: https://codecov.io/gh/FabricLabs/fabric
 
 [learning]: https://to.fabric.pub/#learning:fabric.pub
@@ -132,17 +138,26 @@ Fabric on Twitter: [@FabricProtocol][twitter]
 
 [badge-doorman-status]: https://img.shields.io/travis/FabricLabs/doorman.svg?branch=master&style=flat-square
 [badge-doorman-coverage]: https://img.shields.io/codecov/c/github/FabricLabs/doorman.svg?style=flat-square
-[badge-http-status]: https://img.shields.io/travis/FabricLabs/web.svg?branch=master&style=flat-square
-[badge-http-coverage]: https://img.shields.io/codecov/c/github/FabricLabs/web.svg?style=flat-square
+[badge-http-status]: https://img.shields.io/travis/FabricLabs/fabric-http.svg?branch=master&style=flat-square
+[badge-http-coverage]: https://img.shields.io/codecov/c/github/FabricLabs/fabric-http.svg?style=flat-square
+[badge-matrix-status]: https://img.shields.io/travis/FabricLabs/fabric-matrix.svg?branch=master&style=flat-square
+[badge-matrix-coverage]: https://img.shields.io/codecov/c/github/FabricLabs/fabric-matrix.svg?style=flat-square
+[badge-twilio-status]: https://img.shields.io/travis/FabricLabs/fabric-twilio.svg?branch=master&style=flat-square
+[badge-twilio-coverage]: https://img.shields.io/codecov/c/github/FabricLabs/fabric-twilio.svg?style=flat-square
+[badge-zapier-status]: https://img.shields.io/travis/FabricLabs/fabric-zapier.svg?branch=master&style=flat-square
+[badge-zapier-coverage]: https://img.shields.io/codecov/c/github/FabricLabs/fabric-zapier.svg?style=flat-square
 [badge-soundtrack-status]: https://img.shields.io/travis/FabricLabs/soundtrack.svg?branch=master&style=flat-square
 [badge-soundtrack-coverage]: https://img.shields.io/codecov/c/github/FabricLabs/soundtrack.svg?style=flat-square
 
-[doorman-test-status]: https://travis-ci.org/FabricLabs/doorman
-[http-test-status]: https://travis-ci.org/FabricLabs/web
-[soundtrack-test-status]: https://travis-ci.org/FabricLabs/soundtrack
+[doorman-test-status]: https://app.travis-ci.com/github/FabricLabs/doorman
+[http-test-status]: https://app.travis-ci.com/github/FabricLabs/fabric-http
+[matrix-test-status]: https://app.travis-ci.com/github/FabricLabs/fabric-matrix
+[twilio-test-status]: https://app.travis-ci.com/github/FabricLabs/fabric-twilio
+[zapier-test-status]: https://app.travis-ci.com/github/FabricLabs/fabric-zapier
+[soundtrack-test-status]: https://app.travis-ci.com/github/FabricLabs/soundtrack
 
 [doorman-coverage-home]: https://codecov.io/gh/FabricLabs/doorman
-[http-coverage-home]: https://codecov.io/gh/FabricLabs/web
+[http-coverage-home]: https://codecov.io/gh/FabricLabs/fabric-http
 [soundtrack-coverage-home]: https://codecov.io/gh/FabricLabs/soundtrack
 
 [soundtrack.io]: https://soundtrack.io

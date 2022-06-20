@@ -49,7 +49,6 @@ class Machine extends Actor {
     this.entropy = this.sip();
 
     this.known = {}; // definitions
-    this.script = this.settings.script; // input
     this.stack = []; // output
     this.history = []; // State tree
 
@@ -70,6 +69,10 @@ class Machine extends Actor {
     });
 
     return this;
+  }
+
+  get script () {
+    return this.settings.script;
   }
 
   bit () {
@@ -98,6 +101,10 @@ class Machine extends Actor {
     return new BN([...Array(n * 8)].map(() => {
       return self.bit();
     }).join(''), 2).toString(16);
+  }
+
+  validateCycle (i) {
+    return false;
   }
 
   /**

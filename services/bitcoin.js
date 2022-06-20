@@ -22,7 +22,7 @@ const bcoin = require('bcoin');
 const bitcoin = require('bitcoinjs-lib');
 
 // Services
-const ZMQ = require('./zmq');
+const ZMQ = require('@fabric/zmq');
 
 // Types
 const Actor = require('../types/actor');
@@ -43,7 +43,6 @@ const BitcoinTransaction = require('../types/bitcoin/transaction');
 const Amount = bcoin.Amount;
 const Coin = bcoin.Coin;
 const FullNode = bcoin.FullNode;
-const KeyRing = bcoin.KeyRing;
 const MTX = bcoin.MTX;
 const NetAddress = bcoin.net.NetAddress;
 const Script = bcoin.Script;
@@ -818,6 +817,7 @@ class Bitcoin extends Service {
 
     this.zmq.on('log', async function _handleZMQLogEvent (event) {
       self.emit('debug', `[BITCOIN:ZMQ] Log: ${event}`);
+      self.emit('log', `[BITCOIN:ZMQ] Log: ${event}`);
     });
 
     this.zmq.on('message', async function _handleZMQMessage (event) {
@@ -1558,10 +1558,27 @@ class Bitcoin extends Service {
   }
 
   async _syncChainHeadersOverRPC () {
+    const start = Date.now();
+
+    let last = 0;
+    let rate = 0;
+    let before = 0;
+
     for (let i = 0; i <= this.height; i++) {
+      const now = Date.now();
       const progress = now - start;
       const hash = await this._requestBlockAtHeight(i);
       await this._syncRawHeadersForBlock(hash);
+
+      const epoch = Math.floor((progress / 1000) % 1000);
+
+      if (epoch > last) {
+        rate = `${i - before}`;
+        before = i;
+        last = epoch;
+
+        this.emit('debug', `timing: epochs[${epoch}] ${now} ${i} processed @ ${rate}/sec (${progress/1000}s elapsed)`);
+      }
     }
 
     return this;
@@ -1649,9 +1666,11 @@ class Bitcoin extends Service {
       self.emit('error', `wallet error: ${msg}`);
     });
 
-    this.wallet.database.on('tx', function (tx) {
-      self.emit('debug', `wallet tx!!!!!! ${JSON.stringify(tx, null, '  ')}`);
-    });
+    if (this.wallet.database) {
+      this.wallet.database.on('tx', function (tx) {
+        self.emit('debug', `wallet tx!!!!!! ${JSON.stringify(tx, null, '  ')}`);
+      });
+    }
 
     this.observer = monitor.observe(this._state);
 
