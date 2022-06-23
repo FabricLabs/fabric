@@ -45,7 +45,7 @@ class Actor extends EventEmitter {
       content: this.value || {}
     };
 
-    this.monitor = monitor.observe(this._state.content, this._handleMonitorChanges.bind(this));
+    this.observer = monitor.observe(this._state.content, this._handleMonitorChanges.bind(this));
 
     // Chainable
     return this;
@@ -103,6 +103,8 @@ class Actor extends EventEmitter {
     return Hash256.digest(buffer);
   }
 
+  // TODO: ES2018 "private" field for _state
+  // Use: Map, Proxy (cc: @anandsuresh)
   get state () {
     return Object.assign({}, this._state.content);
   }
