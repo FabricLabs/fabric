@@ -33,14 +33,14 @@ class Actor extends EventEmitter {
   constructor (actor = {}) {
     super(actor);
 
-    this.commits = [];
+    this.history = [];
     // this.signature = Buffer.alloc(64);
     this.value = this._readObject(actor); // TODO: use Buffer?
 
     // Internal State
     this._state = {
       type: 'Actor',
-      data: this.value,
+      data: this.value, // deprecated
       status: 'PAUSED',
       content: this.value || {}
     };
@@ -103,10 +103,8 @@ class Actor extends EventEmitter {
     return Hash256.digest(buffer);
   }
 
-  // TODO: ES2018 "private" field for _state
-  // Use: Map, Proxy (cc: @anandsuresh)
   get state () {
-    return Object.assign({}, this._state.content);
+    return JSON.parse(JSON.stringify(this._state.content));
   }
 
   get status () {
@@ -131,7 +129,7 @@ class Actor extends EventEmitter {
    * @returns {String} 32-byte ID
    */
   commit () {
-    const state = new Actor(this._state.content);
+    const state = new Actor(this.state);
     const commit = new Actor({
       state: state.id
     });
@@ -143,6 +141,10 @@ class Actor extends EventEmitter {
 
   debug (...params) {
     this.emit('debug', params);
+  }
+
+  get (path) {
+    return pointer.get(this._state.content, path);
   }
 
   log (...params) {
@@ -157,8 +159,15 @@ class Actor extends EventEmitter {
     ];
 
     monitor.applyPatch(this._state.content, patches);
+    console.log('new state:', this._state.content);
     this.commit();
 
+    return this;
+  }
+
+  set (path, value) {
+    pointer.set(this._state.content, path, value);
+    this.commit();
     return this;
   }
 
