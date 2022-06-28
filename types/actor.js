@@ -8,8 +8,62 @@ const monitor = require('fast-json-patch');
 // Fabric Types
 const Hash256 = require('./hash256');
 
-// Fabric Functions
-const _sortKeys = require('../functions/_sortKeys');
+/**
+ * Used to hold internal state for each object
+ *
+ * Since JavaScript does not have the notion of true private fields, we use a
+ * WeakMap to hold the internal state of instances, using `this` as the key. The
+ * use of WeakMap instead of Map ensure that instances can be garbage-collected
+ * even when they are used as keys in the WeakMap.
+ *
+ * @type {WeakMap}
+ */
+const STATE = new WeakMap();
+
+/**
+ * Normalizes a state object by re-arranging its keys in alphabetical order
+ *
+ * @param {Object} state The state to be normalized
+ * @returns {Object} The normalized state object
+ */
+function normalizeState (state) {
+  return Object.keys(state)
+    .sort()
+    .reduce((obj, key) => {
+      obj[key] = state[key];
+      return obj;
+    }, {});
+}
+
+/**
+ * Parses a state object from the provided input and normalizes it
+ *
+ * @param {String|Buffer|Object} input The input to parse
+ * @returns {Object} The normalized state object
+ */
+function parseState (input) {
+  let state;
+
+  if (typeof input === 'string') {
+    state = {
+      type: 'String',
+      size: input.length,
+      content: input,
+      encoding: 'utf8'
+    };
+  } else if (input instanceof Buffer) {
+    state = {
+      type: 'Buffer',
+      size: input.length,
+      content: input.toString('hex'),
+      encoding: 'hex'
+    };
+  } else {
+    state = Object.assign({}, input);
+  }
+
+  return normalizeState(state);
+}
 
 /**
  * Generic Fabric Actor.
@@ -20,72 +74,88 @@ const _sortKeys = require('../functions/_sortKeys');
  */
 class Actor extends EventEmitter {
   /**
-   * Creates an {@link Actor}, which emits messages for other
-   * Actors to subscribe to.  You can supply certain parameters
-   * for the actor, including key material [!!!] — be mindful of
-   * what you share with others!
-   * @param {Object} [actor] Object to use as the actor.
-   * @param {String} [actor.seed] BIP24 Mnemonic to use as a seed phrase.
-   * @param {Buffer} [actor.public] Public key.
-   * @param {Buffer} [actor.private] Private key.
-   * @returns {Actor} Instance of the Actor.  Call {@link Actor#sign} to emit a {@link Signature}.
+   * Creates an {@link Actor}, which emits messages that can be subscribed to by
+   * other Actors
+   *
+   * @param {Object} [actor] Object to use as the actor
+   * @param {String} [actor.seed] BIP24 Mnemonic to use as a seed phrase
+   * @param {Buffer} [actor.public] Public key
+   * @param {Buffer} [actor.private] Private key
+   * @returns {Actor} Instance of the Actor. Call {@link Actor#sign} to emit a
+   * {@link Signature}.
    */
   constructor (actor = {}) {
     super(actor);
 
-    this.commits = [];
-    // this.signature = Buffer.alloc(64);
-    this.value = this._readObject(actor); // TODO: use Buffer?
-
-    // Internal State
-    this._state = {
-      type: 'Actor',
-      data: this.value,
-      status: 'PAUSED',
-      content: this.value || {}
+    const value = parseState(actor);
+    const state = {
+      history: [],
+      // signature: Buffer.alloc(64),
+      state: {
+        type: 'Actor',
+        data: value,
+        status: 'PAUSED',
+        content: value || {}
+      }
     };
 
-    this.observer = monitor.observe(this._state.content, this._handleMonitorChanges.bind(this));
+    STATE.set(this, state);
+
+    this.observer = monitor.observe(state.content, (...args) => this._handleMonitorChanges(...args));
 
     // Chainable
     return this;
   }
 
-  static fromAny (input = {}) {
-    let state = null;
-
-    if (typeof input === 'string') {
-      state = { content: input };
-    } else if (input instanceof Buffer) {
-      state = { content: input.toString('hex') };
-    } else {
-      state = Object.assign({}, input);
+  /**
+   * Parses a JSON object from a string
+   * @param {String} str A string representation of a JSON object
+   * @returns {Object}
+   */
+  static fromString (str) {
+    if (typeof str !== 'string') {
+      throw new Error(`Expected a string; got ${typeof str}!`);
+    } else if (str.length <= 0) {
+      throw new Error(`Got a string with length ${str.length}!`);
     }
 
-    return new Actor(state);
+    let obj;
+
+    try {
+      obj = JSON.parse(str);
+    } catch (err) {
+      obj = null;
+    }
+
+    return obj;
   }
 
-  static fromJSON (input) {
-    let result = null;
+  /**
+   * Converts a JSON object to a string
+   * @param {Object} obj The JSON object to be converted into a string
+   * @returns {Object} An object parsed from the string or describing an error
+   */
+  static toJSON (obj) {
+    let json = null;
 
-    if (typeof input === 'string' && input.length) {
-      console.log('trying to parse as JSON:', input);
-      try {
-        result = JSON.parse(input);
-      } catch (E) {
-        console.error('Failure in fromJSON:', E);
-      }
-    } else {
-      console.trace('Invalid input:', typeof input);
+    try {
+      json = JSON.stringify(obj, null, '  ');
+    } catch (err) {
+      json = JSON.stringify({ content: err, type: 'Error' }, null, '  ');
     }
 
-    return result;
+    return json;
   }
 
   static randomBytes (count = 32) {
     return crypto.randomBytes(count);
   }
 
+  /**
+   * Returns the unique identifier of the actor
+   *
+   * @returns {String} A hexadecimal string
+   */
   get id () {
     const buffer = Buffer.from(this.preimage, 'hex');
     return Hash256.digest(buffer);
@@ -93,8 +163,8 @@ class Actor extends EventEmitter {
 
   get preimage () {
     const input = {
-      'type': 'FabricActorState',
-      'object': this.toObject()
+      type: 'FabricActorState',
+      object: this.toObject()
     };
 
     const string = JSON.stringify(input, null, '  ');
@@ -103,8 +173,6 @@ class Actor extends EventEmitter {
     return Hash256.digest(buffer);
   }
 
-  // TODO: ES2018 "private" field for _state
-  // Use: Map, Proxy (cc: @anandsuresh)
   get state () {
     return Object.assign({}, this._state.content);
   }
@@ -123,6 +191,51 @@ class Actor extends EventEmitter {
 
   set status (value) {
     this._state.status = value;
+  }
+
+  /**
+   * Returns the Actor's current state as an {@link Object}.
+   * @returns {Object}
+   */
+  toObject () {
+    return _sortKeys(this.state);
+  }
+
+  /**
+   * Returns the Actor's current state as a JSON string
+   * @returns {String}
+   */
+  toJSON () {
+    let json = null;
+
+    try {
+      json = JSON.stringify(this.toObject(), null, '  ');
+    } catch (exception) {
+      json = JSON.stringify({
+        type: 'Error',
+        content: `Exception serializing: ${exception}`
+      }, null, '  ');
+    }
+
+    return json;
+  }
+
+  /**
+   * Casts the Actor to a normalized Buffer.
+   * @returns {Buffer}
+   */
+  toBuffer () {
+    return Buffer.from(this.serialize(), 'utf8');
+  }
+
+  toString (format = 'json') {
+    switch (format) {
+      case 'hex':
+        return Buffer.from(this.serialize(), 'utf8').toString('hex');
+      case 'json':
+      default:
+        return this.serialize();
+    }
   }
 
   /**
@@ -160,32 +273,6 @@ class Actor extends EventEmitter {
     this.commit();
 
     return this;
-  }
-
-  /**
-   * Casts the Actor to a normalized Buffer.
-   * @returns {Buffer}
-   */
-  toBuffer () {
-    return Buffer.from(this.serialize(), 'utf8');
-  }
-
-  /**
-   * Returns the Actor's current state as an {@link Object}.
-   * @returns {Object}
-   */
-  toObject () {
-    return _sortKeys(this.state);
-  }
-
-  toString (format = 'json') {
-    switch (format) {
-      case 'hex':
-        return Buffer.from(this.serialize(), 'utf8').toString('hex');
-      case 'json':
-      default:
-        return this.serialize();
-    }
   }
 
   pause () {
@@ -293,4 +380,8 @@ class Actor extends EventEmitter {
   }
 }
 
+/**
+ * Export the Actor class
+ * @type {Actor}
+ */
 module.exports = Actor;
