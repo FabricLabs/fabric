@@ -135,7 +135,7 @@
     "honkit": "^3.7.1",
     "http-server": "^0.12.3",
     "is-my-json-valid": "^2.20.6",
-    "jsdoc": "git+https://git@github.com/FabricLabs/jsdoc#fabric",
+    "jsdoc": "github:FabricLabs/jsdoc#fabric",
     "jsdoc-to-markdown": "^4.0.1",
     "json-to-dot": "^1.1.0",
     "mocha": "^5.2.0",

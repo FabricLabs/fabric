@@ -104,7 +104,7 @@ class Actor extends EventEmitter {
   }
 
   get state () {
-    return JSON.parse(JSON.stringify(this._state.content));
+    return JSON.parse(JSON.stringify(this._state.content || {}));
   }
 
   get status () {
