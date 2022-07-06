@@ -79,7 +79,6 @@
   "homepage": "https://github.com/FabricLabs/fabric#readme",
   "dependencies": {
     "@fabric/zmq": "github:FabricLabs/fabric-zmq#master",
-    "@webassemblyjs/ast": "^1.8.5",
     "arbitrary": "^1.4.10",
     "base58check": "^2.0.0",
     "bech32-buffer": "^0.2.0",
