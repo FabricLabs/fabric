@@ -15,7 +15,7 @@ const bip39 = require('bip39');
 const Key = require('./key');
 const Actor = require('./actor');
 const Collection = require('./collection');
-const Consensus = require('./consensus');
+// const Consensus = require('./consensus');
 const Channel = require('./channel');
 const Hash256 = require('./hash256');
 const Service = require('./service');
@@ -98,7 +98,7 @@ class Wallet extends Service {
     // Internals
     this.key = new Key(this.settings.key);
     this.entity = new Actor(this.settings);
-    this.consensus = new Consensus();
+    // this.consensus = new Consensus();
 
     // Internal State
     this._state = merge(this._state, {
