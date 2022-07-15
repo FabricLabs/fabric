@@ -10,7 +10,8 @@ class Block extends Actor {
     this._state = merge({
       parent: null,
       transactions: {},
-      signatures: []
+      signatures: [],
+      content: {}
     }, input);
 
     Object.defineProperty(this, '_events', { enumerable: false });

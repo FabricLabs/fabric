@@ -90,20 +90,20 @@ class Environment extends Entity {
       encoding: 'utf8'
     });
 
-    let seed = null;
+    let wallet = null;
     let secret = null;
 
     try {
-      seed = JSON.parse(data);
+      wallet = JSON.parse(data);
       secret = new EncryptedPromise({
         password: password,
-        ciphertext: seed['@data']
+        ciphertext: wallet['@data']
       });
     } catch (exception) {
       console.error('[FABRIC:KEYGEN]', 'Could not load wallet data:', exception);
     }
 
-    return seed;
+    return wallet;
   }
 
   readSeedFile () {

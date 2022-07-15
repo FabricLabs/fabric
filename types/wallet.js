@@ -268,16 +268,12 @@ class Wallet extends Service {
     if (!n) throw new Error('Parameter 1 required: n');
     if (!keys || !keys.length) throw new Error('Parameter 2 required: keys');
 
-    console.log('keys:', keys);
-
     try {
       // Compose the address
       const pubkeys = keys.map(key => Buffer.from(key, 'hex'));
       const payment = payments.p2wsh({
         redeem: payments.p2ms({ m, pubkeys })
       });
-
-      console.log('payment:', payment);
 
       // Assign to output
       result = payment.address;
@@ -1201,7 +1197,6 @@ class Wallet extends Service {
    */
   publicKeyFromString (input) {
     const buf = Buffer.from(input, 'hex');
-    console.log('buf:', buf);
     const key = new Key({ public: buf });
     return key.pubkey;
   }
@@ -1218,8 +1213,6 @@ class Wallet extends Service {
       })
       // keyring: keyring
     };
-
-    console.trace('keypair:', keypair);
 
     return keypair;
   }
