@@ -16,7 +16,7 @@ const Key = require('./key');
 const Actor = require('./actor');
 const Collection = require('./collection');
 // const Consensus = require('./consensus');
-const Channel = require('./channel');
+// const Channel = require('./channel');
 const Hash256 = require('./hash256');
 const Service = require('./service');
 const Secret = require('./secret');
@@ -268,6 +268,8 @@ class Wallet extends Service {
     if (!n) throw new Error('Parameter 1 required: n');
     if (!keys || !keys.length) throw new Error('Parameter 2 required: keys');
 
+    console.log('keys:', keys);
+
     try {
       // Compose the address
       const pubkeys = keys.map(key => Buffer.from(key, 'hex'));
@@ -275,6 +277,7 @@ class Wallet extends Service {
         redeem: payments.p2ms({ m, pubkeys })
       });
 
+      console.log('payment:', payment);
 
       // Assign to output
       result = payment.address;
@@ -1175,6 +1178,7 @@ class Wallet extends Service {
 
     // iterate over length of shard, aggregate addresses
     for (let i = 0; i < size; i++) {
+      // let addr = this.account.deriveReceive(i).getAddress('string', this.settings.network);
       const addr = this.key.deriveAccountReceive(i);
       let address = await this.addresses.create({
         string: addr,
@@ -1197,6 +1201,7 @@ class Wallet extends Service {
    */
   publicKeyFromString (input) {
     const buf = Buffer.from(input, 'hex');
+    console.log('buf:', buf);
     const key = new Key({ public: buf });
     return key.pubkey;
   }
@@ -1211,7 +1216,10 @@ class Wallet extends Service {
       address: payments.p2pkh({
         pubkey: Buffer.from(pair.public, 'hex')
       })
+      // keyring: keyring
     };
+
+    console.trace('keypair:', keypair);
 
     return keypair;
   }
@@ -1287,12 +1295,15 @@ class Wallet extends Service {
 
     // Setup Ring
     this.ring = null;
+    // this.ring = new bcoin.KeyRing(this.master, this.settings.network);
+    // this.ring.witness = this.settings.witness; // designates witness
 
     if (this.settings.verbosity >= 4) console.log('keyring:', this.ring);
     if (this.settings.verbosity >= 4) console.log('address from keyring:', this.ring.getAddress().toString());
 
     // TODO: allow override of wallet name
     this.account = null;
+    // this.account = await this.wallet.getAccount('default');
 
     // Let's call it a shard!
     this.shard = await this.getFirstAddressSlice(this.settings.shardsize);

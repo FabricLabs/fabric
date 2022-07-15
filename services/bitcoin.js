@@ -18,7 +18,7 @@ const bip68 = require('bip68');
 const ECPair = ECPairFactory(ecc);
 
 // TODO: remove bcoin
-const bcoin = require('bcoin');
+// const bcoin = require('bcoin');
 const bitcoin = require('bitcoinjs-lib');
 
 // Services
@@ -33,19 +33,19 @@ const Service = require('../types/service');
 const State = require('../types/state');
 const Chain = require('../types/chain');
 const Wallet = require('../types/wallet');
-const Consensus = require('../types/consensus');
+// const Consensus = require('../types/consensus');
 
 // Special Types (internal to Bitcoin)
 const BitcoinBlock = require('../types/bitcoin/block');
 const BitcoinTransaction = require('../types/bitcoin/transaction');
 
 // Convenience Labels
-const Amount = bcoin.Amount;
-const Coin = bcoin.Coin;
-const FullNode = bcoin.FullNode;
-const MTX = bcoin.MTX;
-const NetAddress = bcoin.net.NetAddress;
-const Script = bcoin.Script;
+// const Amount = bcoin.Amount;
+// const Coin = bcoin.Coin;
+// const FullNode = bcoin.FullNode;
+// const MTX = bcoin.MTX;
+// const NetAddress = bcoin.net.NetAddress;
+// const Script = bcoin.Script;
 
 /**
  * Manages interaction with the Bitcoin network.
@@ -78,6 +78,9 @@ class Bitcoin extends Service {
       mining: false,
       listen: false,
       fullnode: false,
+      spv: {
+        port: 18332
+      },
       zmq: {
         host: 'localhost',
         port: 29000
@@ -94,12 +97,12 @@ class Bitcoin extends Service {
     if (this.settings.verbosity >= 4) console.log('[DEBUG]', 'Instance of Bitcoin service created, settings:', this.settings);
 
     // Bcoin for JS full node
-    bcoin.set(this.settings.network);
-    this.network = bcoin.Network.get(this.settings.network);
+    // bcoin.set(this.settings.network);
+    // this.network = bcoin.Network.get(this.settings.network);
 
     // Internal Services
     this.observer = null;
-    this.provider = new Consensus({ provider: 'bcoin' });
+    // this.provider = new Consensus({ provider: 'bcoin' });
     this.wallet = new Wallet(this.settings);
     // this.chain = new Chain(this.settings);
 
@@ -138,19 +141,19 @@ class Bitcoin extends Service {
     }
 
     // Local Bitcoin Node
-    this.peer = bcoin.Peer.fromOptions({
+    this.peer = null; /* bcoin.Peer.fromOptions({
       agent: this.UAString,
       network: this.settings.network,
       hasWitness: () => {
         return false;
       }
-    });
+    }); */
 
     // Attach to the network
-    this.spv = new bcoin.SPVNode({
+    this.spv = null; /* new bcoin.SPVNode({
       agent: this.UAString + ' (SPV)',
       network: this.settings.network,
-      port: this.provider.port,
+      port: this.settings.spv.port,
       http: false,
       listen: false,
       // httpPort: 48449, // TODO: disable HTTP entirely!
@@ -158,7 +161,7 @@ class Bitcoin extends Service {
       logLevel: (this.settings.verbosity >= 4) ? 'spam' : 'error',
       maxOutbound: 1,
       workers: true
-    });
+    }); */
 
     // TODO: import ZMQ settings
     this.zmq = new ZMQ();
@@ -270,6 +273,63 @@ class Bitcoin extends Service {
   set height (value) {
     this._state.height = parseInt(value);
     this.commit();
+  }
+
+  createKeySpendOutput (publicKey) {
+    // x-only pubkey (remove 1 byte y parity)
+    const myXOnlyPubkey = publicKey.slice(1, 33);
+    const commitHash = bitcoin.crypto.taggedHash('TapTweak', myXOnlyPubkey);
+    const tweakResult = ecc.xOnlyPointAddTweak(myXOnlyPubkey, commitHash);
+    if (tweakResult === null) throw new Error('Invalid Tweak');
+
+    const { xOnlyPubkey: tweaked } = tweakResult;
+
+    // scriptPubkey
+    return Buffer.concat([
+      // witness v1, PUSH_DATA 32 bytes
+      Buffer.from([0x51, 0x20]),
+      // x-only tweaked pubkey
+      tweaked,
+    ]);
+  }
+
+  createSigned (key, txid, vout, amountToSend, scriptPubkeys, values) {
+    const tx = new bitcoin.Transaction();
+
+    tx.version = 2;
+
+    // Add input
+    tx.addInput(Buffer.from(txid, 'hex').reverse(), vout);
+
+    // Add output
+    tx.addOutput(scriptPubkeys[0], amountToSend);
+
+    const sighash = tx.hashForWitnessV1(
+      0, // which input
+      scriptPubkeys, // All previous outputs of all inputs
+      values, // All previous values of all inputs
+      bitcoin.Transaction.SIGHASH_DEFAULT // sighash flag, DEFAULT is schnorr-only (DEFAULT == ALL)
+    );
+
+    const signature = Buffer.from(signTweaked(sighash, key));
+
+    // witness stack for keypath spend is just the signature.
+    // If sighash is not SIGHASH_DEFAULT (ALL) then you must add 1 byte with sighash value
+    tx.ins[0].witness = [signature];
+
+    return tx;
+  }
+
+  signTweaked (messageHash, key) {
+    // Order of the curve (N) - 1
+    const N_LESS_1 = Buffer.from('fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140', 'hex');
+    // 1 represented as 32 bytes BE
+    const ONE = Buffer.from('0000000000000000000000000000000000000000000000000000000000000001', 'hex');
+    const privateKey = (key.publicKey[0] === 2) ? key.privateKey : ecc.privateAdd(ecc.privateSub(N_LESS_1, key.privateKey), ONE);
+    const tweakHash = bitcoin.crypto.taggedHash('TapTweak', key.publicKey.slice(1, 33));
+    const newPrivateKey = ecc.privateAdd(privateKey, tweakHash);
+    if (newPrivateKey === null) throw new Error('Invalid Tweak');
+    return ecc.signSchnorr(messageHash, newPrivateKey, Buffer.alloc(32));
   }
 
   validateAddress (address) {
@@ -1042,6 +1102,11 @@ class Bitcoin extends Service {
     return this._makeRPCRequest('getblockhash', [height]);
   }
 
+  async _syncHeaderAtHeight (height) {
+    const hash = await this._requestBlockAtHeight(height);
+    return this._makeRPCRequest('getblockheader', [hash]);
+  }
+
   async _getHeaderAtHeight (height) {
     const hash = await this._requestBlockAtHeight(height);
     return this._makeRPCRequest('getblockheader', [hash]);
@@ -1554,6 +1619,13 @@ class Bitcoin extends Service {
     if (header.error) return this.emit('error', header.error);
     const raw =  Buffer.from(header, 'hex');
     this.headers.push(raw);
+    return this;
+  }
+
+  async _syncHeadersForBlock (hash) {
+    const header = await this._requestBlockHeader(hash);
+    // this.headers[hash] = header;
+    this.emit('log', `headers[${hash}] = ${JSON.stringify(header)}`);
     return this;
   }
 

@@ -10,7 +10,7 @@ const Entity = require('./entity');
 const Scribe = require('./scribe');
 const Secret = require('./secret');
 
-const Consensus = require('./consensus');
+// const Consensus = require('./consensus');
 const Layer = require('./layer');
 
 /**
@@ -41,7 +41,7 @@ class Channel extends Scribe {
 
     // this.key = new Key();
     this.secret = new Secret();
-    this.provider = new Consensus({ provider: this.settings.provider });
+    // this.provider = new Consensus({ provider: this.settings.provider });
 
     this._state = {
       counterparty: this.settings.counterparty || {},

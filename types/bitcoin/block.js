@@ -1,6 +1,6 @@
 'use strict';
 
-const Consensus = require('../consensus');
+// const Consensus = require('../consensus');
 const Transaction = require('./transaction');
 
 class BitcoinBlock {
@@ -10,7 +10,7 @@ class BitcoinBlock {
       network: 'regtest'
     }, settings);
 
-    this.consensus = new Consensus(this.settings);
+    // this.consensus = new Consensus(this.settings);
     this._state = {
       transactions: []
     };
