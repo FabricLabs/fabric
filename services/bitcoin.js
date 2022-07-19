@@ -1705,10 +1705,10 @@ class Bitcoin extends Service {
     self.status = 'starting';
 
     // Bitcoin events
-    this.peer.on('error', this._handlePeerError.bind(this));
-    this.peer.on('packet', this._handlePeerPacket.bind(this));
+    if (this.peer) this.peer.on('error', this._handlePeerError.bind(this));
+    if (this.peer) this.peer.on('packet', this._handlePeerPacket.bind(this));
     // NOTE: we always ask for genesis block on peer open
-    this.peer.on('open', () => {
+    if (this.peer) this.peer.on('open', () => {
       let block = self.peer.getBlock([this.network.genesis.hash]);
     });
 
