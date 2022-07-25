@@ -1,49 +1,18 @@
+/**
+ * OP_SETUP () : Configures the environment for Fabric.
+ */
+
+// Dependencies
+const crypto = require('crypto');
+
 // Program Definition
 async function OP_SETUP (command = {}) {
-  // TODO: discuss w/ @ChronicSmoke
-  const environment = this;
-  const walletExists = environment.walletExists(); // Generic / Global
-  const any = (candidate => (candidate && typeof candidate !== 'undefined'));
-  const name = 'wallet.json';
-
-  // TODO: use in walletExists
-  const destination = [
-    environment.readVariable('FABRIC_WALLET')
-  ].find(any) || `${environment.readVariable('HOME')}/.fabric/${name}`;
-
-  const seed = [
-    command.seed,
-    environment.seed,
-    environment['FABRIC_SEED'],
-    environment.readVariable('FABRIC_SEED')
-  ].find(any);
-
-  try {
-    wallet = environment.readWallet();
-  } catch (exception) {
-    console.error(exception);
-  }
-
-  if (!walletExists) {
-    const file = JSON.stringify({
-      '@type': 'WalletStore',
-      '@data': {
-        seed: null,
-        master: null,
-        key: {
-          private: null
-        }
-      }
-    }, null, '  ') + '\n';
-
-    const buffer = Buffer.from(file, 'utf8');
-    const hash = crypto.createHash('sha256').update(buffer).digest('hex');
-
-    console.log('Wallet Exists!');
-  }
+  this.start();
 
   // Report to console
-  console.log(`Wallet: [${(wallet) ? wallet.id : 'unknown' }]:`, wallet);
+  console.log(`Wallet: [${(this.wallet) ? this.wallet.id : 'unknown' }]:`, this.wallet.export());
+  console.log(`Wallet State:`, this.wallet.state);
+  console.log(`Wallet Keys:`, this.wallet.state.keys);
 
   // Success!
   return 1;

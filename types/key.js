@@ -59,6 +59,7 @@ class Key {
       bits: 256,
       hd: true,
       seed: null,
+      passphrase: '',
       password: null,
       index: 0,
       cipher: {
@@ -99,7 +100,7 @@ class Key {
 
     switch (this._mode) {
       case 'FROM_SEED':
-        const seed = bip39.mnemonicToSeedSync(this.settings.seed);
+        const seed = bip39.mnemonicToSeedSync(this.settings.seed, this.settings.passphrase);
         const root = bip32.fromSeed(seed);
         this.xprv = root.toBase58();
         this.xpub = root.neutered().toBase58();
@@ -121,7 +122,7 @@ class Key {
       case 'FROM_PRIVATE_KEY':
         // Key is private
         const provision = (this.settings.private instanceof Buffer) ? this.settings.private : Buffer.from(this.settings.private, 'hex');
-        this.keypair = ec.keyFromPrivate(this.settings.private);
+        this.keypair = ec.keyFromPrivate(provision);
         break;
       case 'FROM_PUBLIC_KEY':
         const pubkey = this.settings.pubkey || this.settings.public;

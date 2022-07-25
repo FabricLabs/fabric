@@ -2,6 +2,7 @@
 
 // External Dependencies
 const BN = require('bn.js');
+const EC = require('elliptic').ec;
 const merge = require('lodash.merge');
 const payments = require('bitcoinjs-lib/src/payments');
 
@@ -57,7 +58,8 @@ class Wallet extends Service {
       shardsize: 4,
       verbosity: 2,
       witness: true,
-      key: null
+      key: null,
+      version: 1
     }, settings);
 
     // bcoin.set(this.settings.network);
@@ -96,6 +98,7 @@ class Wallet extends Service {
     });
 
     // Internals
+    this.ec = new EC('secp256k1');
     this.key = new Key(this.settings.key);
     this.entity = new Actor(this.settings);
     // this.consensus = new Consensus();
@@ -107,6 +110,12 @@ class Wallet extends Service {
       balances: {
         confirmed: 0,
         unconfirmed: 0
+      },
+      content: {
+        balances: {
+          spendable: 0
+        },
+        keys: {}
       },
       space: {}, // tracks addresses in shard
       keys: {},
@@ -141,6 +150,123 @@ class Wallet extends Service {
     return this.get('/orders');
   }
 
+  get version () {
+    return this.settings.version;
+  }
+
+  /**
+   * Create a new seed phrase.
+   * @param {String} passphrase BIP 39 passphrase for key derivation.
+   * @returns {FabricSeed} The seed object.
+   */
+  static createSeed (passphrase = '') {
+    const mnemonic = bip39.generateMnemonic(256);
+    const interim = bip39.mnemonicToSeedSync(mnemonic, passphrase);
+    const master = bip32.fromSeed(interim);
+
+    return {
+      phrase: mnemonic.toString(),
+      master: master.privateKey.toString('hex'),
+      xprv: master.toBase58()
+    };
+  }
+
+  /**
+   * Create a new {@link Wallet} from a seed object.
+   * @param {FabricSeed} seed Fabric seed.
+   * @returns {Wallet} Instance of the wallet.
+   */
+  static fromSeed (seed) {
+    return new Wallet({
+      key: {
+        seed: seed.phrase
+      }
+    });
+  }
+
+  derive (path = `m/7777'/7777'/0'/0/0`) {
+    return this.key.master.derivePath(path);
+  }
+
+  export () {
+    return {
+      type: 'FabricWallet',
+      object: {
+        // TODO: export this.logs
+        // TODO: reduce to C mem equivalent
+        logs: [
+          { method: 'genesis', params: [JSON.stringify({ id: this.id })] },
+          {
+            method: 'transaction',
+            params: [
+              JSON.stringify({
+                changes: [
+                  { method: 'replace', path: '/status', value: 'PAUSED' }
+                ]
+              }),
+              1 // Version
+            ]
+          }
+        ],
+        master: {
+          private: this.key.master.privateKey.toString('hex'),
+          public: this.key.master.publicKey.toString('hex')
+        },
+        seed: this.key.seed,
+        xprv: this.key.master.toBase58()
+      },
+      version: this.version
+    };
+  }
+
+  loadKey (keypair) {
+    console.log('loading keypair:', keypair);
+    const id = { public: keypair.public.toString('hex') };
+
+    // Addresses
+    // P2PKH: Pay to Public Key Hash
+    const p2pkh = payments.p2pkh({
+      pubkey: keypair.public
+    });
+
+    // P2WPKH: Pay to Witness Public Key Hash
+    const p2wpkh = payments.p2wpkh({
+      pubkey: keypair.public
+    });
+
+    // P2TR: Pay to Tap Root
+    // const p2t2 = 
+    /*
+
+    */
+
+    const key = {
+      addresses: {
+        p2pkh: p2pkh.address,
+        p2wpkh: p2wpkh.address
+      },
+      private: keypair.private.toString('hex'),
+      public: keypair.public.toString('hex')
+    };
+
+    const actor = new Actor(id);
+
+    this._state.content.keys[actor.id] = key;
+
+    this.commit();
+
+    return this;
+  }
+
+  /**
+   * Start the wallet, including listening for transactions.
+   */
+  start () {
+    this.status = 'STARTING';
+    this._load();
+    this.status = 'STARTED';
+  }
+
   trust (emitter) {
     const wallet = this;
     const listener = emitter.on('message', this._handleGenericMessage.bind(this));
@@ -172,6 +298,34 @@ class Wallet extends Service {
       default:
         return console.warn('[FABRIC:WALLET]', `Unhandled message type: ${msg['@type']}`);
     }
+  }
+
+  /**
+   * Initialize the wallet, including keys and addresses.
+   * @param {Object} settings Settings to load.
+   */
+  _load (settings = {}) {
+    if (this.wallet) return this;
+
+    this.keypair = this.ec.keyFromPrivate(this.key.master.privateKey);
+    this.wallet = {
+      keypair: this.keypair
+    };
+
+    this.loadKey({
+      private: this.key.master.privateKey,
+      public: this.key.master.publicKey
+    });
+
+    /* for (let i = 0; i < 20; i++) {
+      const account = this.derive(`m/44'/0'/0'/0/${i}`);
+      this.loadKey({
+        private: account.privateKey.toString('hex'),
+        public: account.publicKey.toString('hex')
+      });
+    } */
+
+    return this;
   }
 
   async _processServiceMessage (msg) {
@@ -830,43 +984,22 @@ class Wallet extends Service {
     };
   }
 
-  async _createSeed (password = null) {
+  async _createFromFreshSeed (passphrase = '') {
+    console.log('creating fresh seed with passphrase:', passphrase);
+    const seed = await this._createSeed(passphrase);
+    return seed;
+  }
+
+  async _createSeed (passphrase = '') {
     const mnemonic = bip39.generateMnemonic(256);
-    const interim = bip39.mnemonicToSeedSync(mnemonic);
+    const interim = bip39.mnemonicToSeedSync(mnemonic, passphrase);
     const master = bip32.fromSeed(interim);
 
-    this.keypair = ec.keyFromPrivate(this.master.privateKey);
-
-    await this._load();
-
-    const wallet = await this.database.create({
-      network: this.settings.network,
-      master: master
-    });
-
-    // TODO: allow override of wallet name
-    const account = await wallet.getAccount('default');
-    const data = {
-      seed: mnemonic.toString(),
+    return {
+      phrase: mnemonic.toString(),
       master: master.privateKey.toString('hex'),
-      xpub: {
-        meta: {
-          depth: account.accountKey.depth,
-          parentFingerPrint: account.accountKey.parentFingerPrint,
-          childIndex: account.accountKey.childIndex,
-          chainCode: account.accountKey.chainCode.toString('hex'),
-          publicKey: account.accountKey.publicKey.toString('hex'),
-          fingerPrint: account.accountKey.fingerPrint
-        },
-        public: account.accountKey.publicKey.toString('hex')
-      },
-      key: {
-        private: master.privateKey.toString('hex'),
-        public: master.publicKey.toString('hex')
-      }
+      xprv: master.toBase58()
     };
-
-    return data;
   }
 
   async _importSeed (seed) {
@@ -1256,80 +1389,6 @@ class Wallet extends Service {
 
   async _unload () {
     return this.database.close();
-  }
-
-  /**
-   * Initialize the wallet, including keys and addresses.
-   * @param {Object} settings Settings to load.
-   */
-  async _load (settings = {}) {
-    if (this.wallet) return this;
-
-    this.status = 'loading';
-    this.master = null;
-
-    if (this.database && !this.database.db.loaded) {
-      await this.database.open();
-    }
-
-    if (this.database) {
-      try {
-        this.wallet = await this.database.create({
-          network: this.settings.network,
-          master: this.master
-        });
-      } catch (E) {
-        console.error('Could not create wallet:', E);
-      }
-    } else {
-      // stub
-      this.wallet = {};
-    }
-
-    // Setup Ring
-    this.ring = null;
-    // this.ring = new bcoin.KeyRing(this.master, this.settings.network);
-    // this.ring.witness = this.settings.witness; // designates witness
-
-    if (this.settings.verbosity >= 4) console.log('keyring:', this.ring);
-    if (this.settings.verbosity >= 4) console.log('address from keyring:', this.ring.getAddress().toString());
-
-    // TODO: allow override of wallet name
-    this.account = null;
-    // this.account = await this.wallet.getAccount('default');
-
-    // Let's call it a shard!
-    this.shard = await this.getFirstAddressSlice(this.settings.shardsize);
-    // console.log('shard created:', await this.addresses.asMerkleTree());
-    // console.log('shard created:', this.shard);
-
-    if (this.settings.verbosity >= 3) this.emit('log', `[AUDIT] Wallet account ${JSON.stringify(this.account, null, '  ')}`);
-    // TODO: also retrieve key for address
-    // let key = this.master.derivePath('m/44/0/0/0/0');
-    // TODO: label as identity address
-    // this.address = await this.account.receiveAddress();
-    // TODO: notify downstream of short-circuit removal
-
-    // finally, assign state...
-    this._state.transactions = this.settings.transaction;
-    this._state.orders = this.settings.orders;
-    this._state.outputs = this.state.actors;
-
-    if (this.settings.verbosity >= 5) console.log('[FABRIC:WALLET]', 'state after loading:', this._state);
-
-    this.status = 'loaded';
-    this.emit('ready');
-
-    return this;
-  }
-
-  /**
-   * Start the wallet, including listening for transactions.
-   */
-  async start () {
-    this.status = 'STARTING';
-    await this._load();
-    this.status = 'STARTED';
   }
 }
 
