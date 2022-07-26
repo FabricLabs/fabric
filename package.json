@@ -96,7 +96,7 @@
     "elliptic": "6.5.4",
     "fast-json-patch": "2.0.7",
     "fd-chunk-store": "2.0.0",
-    "glob-run": "0.1.6",
+    "glob-run": "0.1.7",
     "javascript-state-machine": "3.1.0",
     "jayson": "3.4.4",
     "js-beautify": "1.14.3",
