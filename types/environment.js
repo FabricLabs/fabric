@@ -1,5 +1,10 @@
 'use strict';
 
+// Constants
+const {
+  FIXTURE_SEED
+} = require('../constants');
+
 // Dependencies
 const fs = require('fs');
 const merge = require('lodash.merge');
@@ -27,13 +32,15 @@ class Environment extends Entity {
       variables: process.env
     };
 
-    this.loadWallet();
-
     return this;
   }
 
   get SEED_FILE () {
     return '.FABRIC_SEED';
+  }
+
+  get WALLET_FILE () {
+    return this.settings.path;
   }
 
   get XPRV_FILE () {
@@ -144,6 +151,27 @@ class Environment extends Entity {
     });;
   }
 
+  setWallet (wallet) {
+    const object = wallet.export();
+
+    this.wallet = wallet;
+
+    try {
+      const encrypted = Object.assign({
+        type: 'FabricWallet',
+        version: object.version
+      }, object);
+
+      const content = JSON.stringify(encrypted, null, '  ') + '\n';
+      fs.writeFileSync(this.WALLET_FILE, content);
+    } catch (exception) {
+      console.error('[FABRIC:ENV]', 'Could not write wallet file:', exception);
+      process.exit(1);
+    }
+
+    return this;
+  }
+
   readSeedFile () {
     const path = `${process.cwd()}/${this.SEED_FILE}`;
     if (fs.existsSync(path)) return fs.readFileSync(path, { encoding: 'utf8' });
@@ -155,7 +183,8 @@ class Environment extends Entity {
     this.local = this.readSeedFile();
 
     this.loadWallet();
-    this.wallet.start();
+
+    if (this.wallet) this.wallet.start();
 
     this._state.status = 'STARTED';
     return this;

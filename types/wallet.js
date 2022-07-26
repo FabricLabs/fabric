@@ -219,7 +219,14 @@ class Wallet extends Service {
     };
   }
 
-  loadKey (keypair) {
+  /**
+   * Import a key to the wallet.
+   * @param {Object} keypair Keypair.
+   * @param {Buffer} keypair.public Public key.
+   * @param {Buffer} [keypair.private] Private key.
+   * @returns {Wallet} Instance of the Wallet.
+   */
+  loadKey (keypair, labels = []) {
     console.log('loading keypair:', keypair);
     const id = { public: keypair.public.toString('hex') };
 
@@ -245,6 +252,7 @@ class Wallet extends Service {
         p2pkh: p2pkh.address,
         p2wpkh: p2wpkh.address
       },
+      labels: labels,
       private: keypair.private.toString('hex'),
       public: keypair.public.toString('hex')
     };

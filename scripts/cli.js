@@ -13,7 +13,6 @@ const path = process.env.HOME + '/.fabric';
 const file = path + '/wallet.json';
 
 // Dependencies
-const fs = require('fs');
 const { Command } = require('commander');
 
 // Fabric Types

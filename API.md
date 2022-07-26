@@ -3415,6 +3415,7 @@ Manage keys and track their balances.
 * [Wallet](#Wallet) : <code>Object</code>
     * [new Wallet([settings])](#new_Wallet_new)
     * _instance_
+        * [.loadKey(keypair)](#Wallet+loadKey) ⇒ [<code>Wallet</code>](#Wallet)
         * [.start()](#Wallet+start)
         * [._load(settings)](#Wallet+_load)
         * [.getAddressForScript(script)](#Wallet+getAddressForScript)
@@ -3442,6 +3443,20 @@ Create an instance of a [Wallet](#Wallet).
 | [settings.verbosity] | <code>Number</code> | <code>2</code> | One of: 0 (none), 1 (error), 2 (warning), 3 (notice), 4 (debug), 5 (audit) |
 | [settings.key] | <code>Object</code> |  | Key to restore from. |
 | [settings.key.seed] | <code>String</code> |  | Mnemonic seed for a restored wallet. |
+
+<a name="Wallet+loadKey"></a>
+
+### wallet.loadKey(keypair) ⇒ [<code>Wallet</code>](#Wallet)
+Import a key to the wallet.
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+**Returns**: [<code>Wallet</code>](#Wallet) - Instance of the Wallet.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| keypair | <code>Object</code> | Keypair. |
+| keypair.public | <code>Buffer</code> | Public key. |
+| [keypair.private] | <code>Buffer</code> | Private key. |
 
 <a name="Wallet+start"></a>
 
