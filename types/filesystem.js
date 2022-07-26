@@ -78,7 +78,7 @@ class Filesystem extends Actor {
   }
 
   touchDir (path) {
-    if (!fs.existsSync(path)) mkdirp(path);
+    if (!fs.existsSync(path)) mkdirp.sync(path);
     return true;
   }
 

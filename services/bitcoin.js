@@ -22,7 +22,7 @@ const ECPair = ECPairFactory(ecc);
 const bitcoin = require('bitcoinjs-lib');
 
 // Services
-const ZMQ = require('@fabric/zmq');
+const ZMQ = require('../services/zmq');
 
 // Types
 const Actor = require('../types/actor');

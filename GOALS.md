@@ -29,5 +29,6 @@ all of the products we produce, including updates to existing applications.  Fee
 your name in any pull request you submit!
 
 ### Contributors
-- Eric Martindale (primary author)
-
+- @martindale — Eric Martindale
+- @chrisinajar - Christopher Vickery
+- @melnx — Alexey Melnichenko
