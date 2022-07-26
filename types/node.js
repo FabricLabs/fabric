@@ -6,7 +6,7 @@ const merge = require('lodash.merge');
 // Fabric Types
 const Peer = require('../types/peer');
 const Service = require('../types/service');
-const Bitcoin = require('../services/bitcoin');
+// const Bitcoin = require('../services/bitcoin');
 
 // Environment
 // TODO: re-evaluate, remove
@@ -38,7 +38,7 @@ class Node extends Service {
 
     // Local Services
     this.node = new Peer(this.settings);
-    this.bitcoin = new Bitcoin(this.settings.bitcoin);
+    // this.bitcoin = new Bitcoin(this.settings.bitcoin);
     this.program = null;
 
     return this;
@@ -107,11 +107,11 @@ class Node extends Service {
     // Attach Listeners
     this.trust(this.node, 'PEER:LOCAL');
     this.trust(this.program, 'PROGRAM'); // TODO: debug why 'ready' events come twice?
-    this.trust(this.bitcoin, 'BITCOIN');
+    // this.trust(this.bitcoin, 'BITCOIN');
 
     // Start Services
     if (this.settings.autorun) await this.program.start();
-    if (this.settings.bitcoin) await this.bitcoin.start();
+    // if (this.settings.bitcoin) await this.bitcoin.start();
     if (this.settings.peering) await this.node.start();
 
     // Notify Listeners

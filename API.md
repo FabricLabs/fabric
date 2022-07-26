@@ -48,6 +48,11 @@ the Fabric network using a terminal emulator.</p>
 <dt><a href="#Fabric">Fabric</a></dt>
 <dd><p>Reliable decentralized infrastructure.</p>
 </dd>
+<dt><a href="#Federation">Federation</a></dt>
+<dd><p>Create and manage sets of signers with the Federation class.</p>
+</dd>
+<dt><a href="#Filesystem">Filesystem</a></dt>
+<dd></dd>
 <dt><a href="#Hash256">Hash256</a></dt>
 <dd><p>Simple interaction with 256-bit spaces.</p>
 </dd>
@@ -61,11 +66,14 @@ RFC 5869.  Defaults to 32 byte output, matching Bitcoin&#39;s implementaton.</p>
 <dt><a href="#Key">Key</a></dt>
 <dd><p>Represents a cryptographic key.</p>
 </dd>
-<dt><a href="#KeyStore">KeyStore</a></dt>
+<dt><a href="#Keystore">Keystore</a></dt>
 <dd><p>Provides an encrypted datastore for generic object storage.</p>
 </dd>
 <dt><a href="#Ledger">Ledger</a> ⇐ <code><a href="#Scribe">Scribe</a></code></dt>
 <dd><p>An ordered stack of pages.</p>
+</dd>
+<dt><a href="#Logger">Logger</a> ⇐ <code><a href="#Actor">Actor</a></code></dt>
+<dd><p>A basic logger that writes logs to the local file system</p>
 </dd>
 <dt><a href="#Machine">Machine</a></dt>
 <dd><p>General-purpose state machine with <a href="#Vector">Vector</a>-based instructions.</p>
@@ -174,9 +182,6 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 </dd>
 <dt><a href="#Redis">Redis</a></dt>
 <dd><p>Connect and subscribe to ZeroMQ servers.</p>
-</dd>
-<dt><a href="#ZMQ">ZMQ</a></dt>
-<dd><p>Connect and subscribe to ZeroMQ publishers.</p>
 </dd>
 <dt><del><a href="#HTTPServer">HTTPServer</a></del></dt>
 <dd><p>Deprecated 2021-10-16.</p>
@@ -1203,6 +1208,38 @@ Process the current stack.
 
 **Kind**: instance method of [<code>Fabric</code>](#Fabric)  
 **Returns**: [<code>Fabric</code>](#Fabric) - Resulting instance of the stack.  
+<a name="Federation"></a>
+
+## Federation
+Create and manage sets of signers with the Federation class.
+
+**Kind**: global class  
+
+* [Federation](#Federation)
+    * [new Federation([settings])](#new_Federation_new)
+    * [.start()](#Federation+start) ⇒ [<code>Federation</code>](#Federation)
+
+<a name="new_Federation_new"></a>
+
+### new Federation([settings])
+Create an instance of a federation.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Settings. |
+
+<a name="Federation+start"></a>
+
+### federation.start() ⇒ [<code>Federation</code>](#Federation)
+Start tracking state (i.e., ready to receive events).
+
+**Kind**: instance method of [<code>Federation</code>](#Federation)  
+**Returns**: [<code>Federation</code>](#Federation) - Instance of the Federation.  
+<a name="Filesystem"></a>
+
+## Filesystem
+**Kind**: global class  
 <a name="Hash256"></a>
 
 ## Hash256
@@ -1371,28 +1408,29 @@ to create a fresh keypair, or `new Key({ public: 'deadbeef...' })` to
 create it from a known public key.
 
 
-| Param | Type | Description |
-| --- | --- | --- |
-| [settings] | <code>Object</code> | Initialization for the key. |
-| [settings.network] | <code>String</code> | Network string. |
-| [settings.seed] | <code>String</code> | Mnemonic seed for initializing the key. |
-| [settings.public] | <code>String</code> | Public key in hex. |
-| [settings.private] | <code>String</code> | Private key in hex. |
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [settings] | <code>Object</code> |  | Initialization for the key. |
+| [settings.network] | <code>String</code> |  | Network string. |
+| [settings.seed] | <code>String</code> |  | Mnemonic seed for initializing the key. |
+| [settings.public] | <code>String</code> |  | Public key in hex. |
+| [settings.private] | <code>String</code> |  | Private key in hex. |
+| [settings.purpose] | <code>String</code> | <code>44</code> | Constrains derivations to this space. |
 
-<a name="KeyStore"></a>
+<a name="Keystore"></a>
 
-## KeyStore
+## Keystore
 Provides an encrypted datastore for generic object storage.
 
 **Kind**: global class  
 
-* [KeyStore](#KeyStore)
-    * [new KeyStore([configuration])](#new_KeyStore_new)
-    * [._setState(state)](#KeyStore+_setState) ⇒ [<code>Actor</code>](#Actor)
+* [Keystore](#Keystore)
+    * [new Keystore([configuration])](#new_Keystore_new)
+    * [._setState(state)](#Keystore+_setState) ⇒ [<code>Actor</code>](#Actor)
 
-<a name="new_KeyStore_new"></a>
+<a name="new_Keystore_new"></a>
 
-### new KeyStore([configuration])
+### new Keystore([configuration])
 Create an instance of the Store.
 
 
@@ -1401,12 +1439,12 @@ Create an instance of the Store.
 | [configuration] | <code>FabricStoreConfiguration</code> |  | Settings to use. |
 | [configuration.name] | <code>String</code> | <code>&quot;DefaultStore&quot;</code> | Name of the Store. |
 
-<a name="KeyStore+_setState"></a>
+<a name="Keystore+_setState"></a>
 
-### keyStore.\_setState(state) ⇒ [<code>Actor</code>](#Actor)
+### keystore.\_setState(state) ⇒ [<code>Actor</code>](#Actor)
 Saves an Object to the store.
 
-**Kind**: instance method of [<code>KeyStore</code>](#KeyStore)  
+**Kind**: instance method of [<code>Keystore</code>](#Keystore)  
 **Returns**: [<code>Actor</code>](#Actor) - The local instance of the provided State's [Actor](#Actor).  
 
 | Param | Type | Description |
@@ -1568,6 +1606,113 @@ Compose a JSON string for network consumption.
 **Kind**: instance method of [<code>Ledger</code>](#Ledger)  
 **Overrides**: [<code>render</code>](#State+render)  
 **Returns**: <code>String</code> - JSON-encoded [String](String).  
+<a name="Logger"></a>
+
+## Logger ⇐ [<code>Actor</code>](#Actor)
+A basic logger that writes logs to the local file system
+
+**Kind**: global class  
+**Extends**: [<code>Actor</code>](#Actor)  
+
+* [Logger](#Logger) ⇐ [<code>Actor</code>](#Actor)
+    * [.path](#Logger+path) ⇒ <code>String</code>
+    * [.log(msg)](#Logger+log) ⇒ <code>Boolean</code>
+    * [.start()](#Logger+start) ⇒ <code>Promise</code>
+    * [.stop()](#Logger+stop) ⇒ <code>Promise</code>
+    * [.commit()](#Actor+commit) ⇒ <code>String</code>
+    * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
+    * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
+    * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
+    * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
+    * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
+    * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
+
+<a name="Logger+path"></a>
+
+### logger.path ⇒ <code>String</code>
+Returns the path to the log file
+
+**Kind**: instance property of [<code>Logger</code>](#Logger)  
+<a name="Logger+log"></a>
+
+### logger.log(msg) ⇒ <code>Boolean</code>
+Writes the specified log to the log file
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+**Returns**: <code>Boolean</code> - true, if msg was successfully written; false otherwise  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | <code>String</code> \| <code>Object</code> | The message to log |
+
+<a name="Logger+start"></a>
+
+### logger.start() ⇒ <code>Promise</code>
+Starts the logger
+
+This method creates the required directories for writing the log file.
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+<a name="Logger+stop"></a>
+
+### logger.stop() ⇒ <code>Promise</code>
+Stops the logger
+
+This method closes the log file and returns after it has been closed. Any
+errors on close would cause the return promise to be rejected.
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+<a name="Actor+commit"></a>
+
+### logger.commit() ⇒ <code>String</code>
+Resolve the current state to a commitment.
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+**Returns**: <code>String</code> - 32-byte ID  
+**Emits**: <code>event:Actor Current malleable state.</code>  
+<a name="Actor+toBuffer"></a>
+
+### logger.toBuffer() ⇒ <code>Buffer</code>
+Casts the Actor to a normalized Buffer.
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+<a name="Actor+toObject"></a>
+
+### logger.toObject() ⇒ <code>Object</code>
+Returns the Actor's current state as an [Object](Object).
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+<a name="Actor+serialize"></a>
+
+### logger.serialize() ⇒ <code>String</code>
+Serialize the Actor's current state into a JSON-formatted string.
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+<a name="Actor+sign"></a>
+
+### logger.sign() ⇒ [<code>Actor</code>](#Actor)
+Signs the Actor.
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+<a name="Actor+unpause"></a>
+
+### logger.unpause() ⇒ [<code>Actor</code>](#Actor)
+Toggles `status` property to unpaused.
+@
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+<a name="Actor+_readObject"></a>
+
+### logger.\_readObject(input) ⇒ <code>Object</code>
+Parse an Object into a corresponding Fabric state.
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+**Returns**: <code>Object</code> - Fabric state.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>Object</code> | Object to read as input. |
+
 <a name="Machine"></a>
 
 ## Machine
@@ -3191,16 +3336,20 @@ Manage keys and track their balances.
 
 * [Wallet](#Wallet) : <code>Object</code>
     * [new Wallet([settings])](#new_Wallet_new)
-    * [.getAddressForScript(script)](#Wallet+getAddressForScript)
-    * [.getAddressFromRedeemScript(redeemScript)](#Wallet+getAddressFromRedeemScript)
-    * [.createPricedOrder(order)](#Wallet+createPricedOrder)
-    * [._sign(tx)](#Wallet+_sign)
-    * [._createCrowdfund(fund)](#Wallet+_createCrowdfund)
-    * [._getSwapInputScript(redeemScript, secret)](#Wallet+_getSwapInputScript)
-    * [._getRefundInputScript(redeemScript)](#Wallet+_getRefundInputScript)
-    * [.publicKeyFromString(input)](#Wallet+publicKeyFromString)
-    * [._load(settings)](#Wallet+_load)
-    * [.start()](#Wallet+start)
+    * _instance_
+        * [.start()](#Wallet+start)
+        * [._load(settings)](#Wallet+_load)
+        * [.getAddressForScript(script)](#Wallet+getAddressForScript)
+        * [.getAddressFromRedeemScript(redeemScript)](#Wallet+getAddressFromRedeemScript)
+        * [.createPricedOrder(order)](#Wallet+createPricedOrder)
+        * [._sign(tx)](#Wallet+_sign)
+        * [._createCrowdfund(fund)](#Wallet+_createCrowdfund)
+        * [._getSwapInputScript(redeemScript, secret)](#Wallet+_getSwapInputScript)
+        * [._getRefundInputScript(redeemScript)](#Wallet+_getRefundInputScript)
+        * [.publicKeyFromString(input)](#Wallet+publicKeyFromString)
+    * _static_
+        * [.createSeed(passphrase)](#Wallet.createSeed) ⇒ <code>FabricSeed</code>
+        * [.fromSeed(seed)](#Wallet.fromSeed) ⇒ [<code>Wallet</code>](#Wallet)
 
 <a name="new_Wallet_new"></a>
 
@@ -3214,6 +3363,23 @@ Create an instance of a [Wallet](#Wallet).
 | [settings.verbosity] | <code>Number</code> | <code>2</code> | One of: 0 (none), 1 (error), 2 (warning), 3 (notice), 4 (debug), 5 (audit) |
 | [settings.key] | <code>Object</code> |  | Key to restore from. |
 | [settings.key.seed] | <code>String</code> |  | Mnemonic seed for a restored wallet. |
+
+<a name="Wallet+start"></a>
+
+### wallet.start()
+Start the wallet, including listening for transactions.
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+<a name="Wallet+_load"></a>
+
+### wallet.\_load(settings)
+Initialize the wallet, including keys and addresses.
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| settings | <code>Object</code> | Settings to load. |
 
 <a name="Wallet+getAddressForScript"></a>
 
@@ -3306,23 +3472,30 @@ Create a public key from a string.
 | --- | --- | --- |
 | input | <code>String</code> | Hex-encoded string to create key from. |
 
-<a name="Wallet+_load"></a>
+<a name="Wallet.createSeed"></a>
 
-### wallet.\_load(settings)
-Initialize the wallet, including keys and addresses.
+### Wallet.createSeed(passphrase) ⇒ <code>FabricSeed</code>
+Create a new seed phrase.
 
-**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+**Kind**: static method of [<code>Wallet</code>](#Wallet)  
+**Returns**: <code>FabricSeed</code> - The seed object.  
 
 | Param | Type | Description |
 | --- | --- | --- |
-| settings | <code>Object</code> | Settings to load. |
+| passphrase | <code>String</code> | BIP 39 passphrase for key derivation. |
 
-<a name="Wallet+start"></a>
+<a name="Wallet.fromSeed"></a>
 
-### wallet.start()
-Start the wallet, including listening for transactions.
+### Wallet.fromSeed(seed) ⇒ [<code>Wallet</code>](#Wallet)
+Create a new [Wallet](#Wallet) from a seed object.
 
-**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+**Kind**: static method of [<code>Wallet</code>](#Wallet)  
+**Returns**: [<code>Wallet</code>](#Wallet) - Instance of the wallet.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| seed | <code>FabricSeed</code> | Fabric seed. |
+
 <a name="Worker"></a>
 
 ## Worker
@@ -3371,6 +3544,7 @@ Manages interaction with the Bitcoin network.
         * [.tip](#Bitcoin+tip)
         * [.height](#Bitcoin+height)
         * [.broadcast(tx)](#Bitcoin+broadcast)
+        * [._processSpendMessage(message)](#Bitcoin+_processSpendMessage) ⇒ <code>BitcoinTransactionID</code>
         * [._prepareTransaction(obj)](#Bitcoin+_prepareTransaction)
         * [._handleCommittedBlock(block)](#Bitcoin+_handleCommittedBlock)
         * [._handlePeerPacket(msg)](#Bitcoin+_handlePeerPacket)
@@ -3443,6 +3617,20 @@ Broadcast a transaction to the Bitcoin network.
 | Param | Type | Description |
 | --- | --- | --- |
 | tx | <code>TX</code> | Bitcoin transaction |
+
+<a name="Bitcoin+_processSpendMessage"></a>
+
+### bitcoin.\_processSpendMessage(message) ⇒ <code>BitcoinTransactionID</code>
+Process a spend message.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>BitcoinTransactionID</code> - Hex-encoded representation of the transaction ID.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| message | <code>SpendMessage</code> | Generic-level message for spending. |
+| message.amount | <code>String</code> | Amount (in BTC) to spend. |
+| message.destination | <code>String</code> | Destination for funds. |
 
 <a name="Bitcoin+_prepareTransaction"></a>
 
@@ -3786,44 +3974,6 @@ Closes the connection to the Redis server.
 
 **Kind**: instance method of [<code>Redis</code>](#Redis)  
 **Returns**: [<code>Redis</code>](#Redis) - Instance of the service.  
-<a name="ZMQ"></a>
-
-## ZMQ
-Connect and subscribe to ZeroMQ publishers.
-
-**Kind**: global class  
-
-* [ZMQ](#ZMQ)
-    * [new ZMQ([settings])](#new_ZMQ_new)
-    * [.start()](#ZMQ+start) ⇒ [<code>ZMQ</code>](#ZMQ)
-    * [.stop()](#ZMQ+stop) ⇒ [<code>ZMQ</code>](#ZMQ)
-
-<a name="new_ZMQ_new"></a>
-
-### new ZMQ([settings])
-Creates an instance of a ZeroMQ subscriber.
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [settings] | <code>Object</code> | Settings for the ZMQ connection. |
-| [settings.host] | <code>String</code> | Host for the ZMQ publisher. |
-| [settings.port] | <code>Number</code> | Remote ZeroMQ service port. |
-
-<a name="ZMQ+start"></a>
-
-### zmQ.start() ⇒ [<code>ZMQ</code>](#ZMQ)
-Opens the connection and subscribes to the requested channels.
-
-**Kind**: instance method of [<code>ZMQ</code>](#ZMQ)  
-**Returns**: [<code>ZMQ</code>](#ZMQ) - Instance of the service.  
-<a name="ZMQ+stop"></a>
-
-### zmQ.stop() ⇒ [<code>ZMQ</code>](#ZMQ)
-Closes the connection to the ZMQ publisher.
-
-**Kind**: instance method of [<code>ZMQ</code>](#ZMQ)  
-**Returns**: [<code>ZMQ</code>](#ZMQ) - Instance of the service.  
 <a name="HTTPServer"></a>
 
 ## ~~HTTPServer~~

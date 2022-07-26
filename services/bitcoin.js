@@ -391,6 +391,13 @@ class Bitcoin extends Service {
     console.log('rawBlock:', block);
   }
 
+  /**
+   * Process a spend message.
+   * @param {SpendMessage} message Generic-level message for spending.
+   * @param {String} message.amount Amount (in BTC) to spend.
+   * @param {String} message.destination Destination for funds.
+   * @returns {BitcoinTransactionID} Hex-encoded representation of the transaction ID.
+   */
   async _processSpendMessage (message) {
     if (!message) throw new Error('Message is required.');
     if (!message.amount) throw new Error('Message must provide an amount.');

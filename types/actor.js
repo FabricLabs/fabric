@@ -45,6 +45,8 @@ class Actor extends EventEmitter {
       content: this.value || {}
     };
 
+    // TODO: evaluate disabling by default
+    // and/or resolving performance issues at scale
     this.observer = monitor.observe(this._state.content, this._handleMonitorChanges.bind(this));
 
     // Chainable
@@ -92,10 +94,7 @@ class Actor extends EventEmitter {
   }
 
   get preimage () {
-    const input = {
-      'type': 'FabricActorState',
-      'object': this.toObject()
-    };
+    const input = this.toGenericMessage();
 
     const string = JSON.stringify(input, null, '  ');
     const buffer = Buffer.from(string, 'utf8');
@@ -130,7 +129,11 @@ class Actor extends EventEmitter {
    */
   commit () {
     const state = new Actor(this.state);
+    const changes = monitor.generate(this.observer);
+    const parent = this.history[this.history.length - 1].state;
     const commit = new Actor({
+      changes: changes,
+      parent: parent,
       state: state.id
     });
 
@@ -177,6 +180,13 @@ class Actor extends EventEmitter {
    */
   toBuffer () {
     return Buffer.from(this.serialize(), 'utf8');
+  }
+
+  toGenericMessage () {
+    return {
+      'type': 'FabricActorState',
+      'object': this.toObject()
+    };
   }
 
   /**

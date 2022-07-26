@@ -7,6 +7,7 @@ const merge = require('lodash.merge');
 // Fabric Types
 const Entity = require('./entity');
 const EncryptedPromise = require('./promise');
+const Wallet = require('./wallet');
 
 class Environment extends Entity {
   constructor (settings = {}) {
@@ -18,10 +19,15 @@ class Environment extends Entity {
       store: process.env.HOME + '/.fabric'
     }, this.settings, settings);
 
+    this.local = null;
+    this.wallet = null;
+
     this._state = {
       status: 'INITIALIZED',
       variables: process.env
     };
+
+    this.loadWallet();
 
     return this;
   }
@@ -36,6 +42,21 @@ class Environment extends Entity {
 
   get XPUB_FILE () {
     return '.FABRIC_XPUB';
+  }
+
+  get passphrase () {
+    return this.readVariable('PASSPHRASE');
+  }
+
+  get seed () {
+    const any = (candidate => (candidate && typeof candidate !== 'undefined'));
+    const seed = [
+      this.settings.seed,
+      this['FABRIC_SEED'],
+      this.readVariable('FABRIC_SEED')
+    ].find(any);
+
+    return seed;
   }
 
   storeExists () {
@@ -65,6 +86,39 @@ class Environment extends Entity {
     }
   }
 
+  loadWallet () {
+    if (this.seed) {
+      this.wallet = new Wallet({
+        key: {
+          seed: this.seed,
+          passphrase: this.passphrase
+        }
+      });
+    } else if (this.walletExists()) {
+      const data = this.readWallet();
+
+      try {
+        const input = JSON.parse(data);
+
+        if (!input.object || !input.object.xprv) {
+          throw new Error(`Corrupt or out-of-date wallet: ${this.settings.path}`);
+        }
+
+        this.wallet = new Wallet({
+          key: {
+            xprv: input.object.xprv
+          }
+        });
+      } catch (exception) {
+        console.error('[FABRIC:KEYGEN]', 'Could not load wallet data:', exception);
+      }
+    } else {
+      this.wallet = false;
+    }
+
+    return this;
+  }
+
   readContracts () {
     const prefix = `${__dirname}/..`;
     return fs.readdirSync(`${prefix}/contracts`).filter((x) => {
@@ -84,54 +138,26 @@ class Environment extends Entity {
     return process.env[name] || '';
   }
 
-  readWallet (password) {
-    if (!this.walletExists()) return false;
-    const data = fs.readFileSync(this.settings.path, {
+  readWallet () {
+    return fs.readFileSync(this.settings.path, {
       encoding: 'utf8'
-    });
-
-    let wallet = null;
-    let secret = null;
-
-    try {
-      wallet = JSON.parse(data);
-      secret = new EncryptedPromise({
-        password: password,
-        ciphertext: wallet['@data']
-      });
-    } catch (exception) {
-      console.error('[FABRIC:KEYGEN]', 'Could not load wallet data:', exception);
-    }
-
-    return wallet;
+    });;
   }
 
   readSeedFile () {
     const path = `${process.cwd()}/${this.SEED_FILE}`;
-    if (!fs.existsSync(path)) return false;
-    return fs.readFileSync(path, {
-      encoding: 'utf8'
-    });
+    if (fs.existsSync(path)) return fs.readFileSync(path, { encoding: 'utf8' });
+    return false;
   }
 
   start () {
     this._state.status = 'STARTING';
-
-    this.seed = null;
     this.local = this.readSeedFile();
-    this.wallet = this.readWallet();
 
-    if (this.local) {
-      this.seed = this.local;
-    } else if (this.wallet) {
-      this.seed = this.wallet['@data'].seed;
-    } else {
-      this.seed = this.readVariable('FABRIC_SEED');
-    }
+    this.loadWallet();
+    this.wallet.start();
 
-    this._state.seed = this.seed;
     this._state.status = 'STARTED';
-
     return this;
   }
 }

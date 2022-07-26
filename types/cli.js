@@ -19,6 +19,7 @@ const App = require('./app');
 const Peer = require('./peer');
 const Message = require('./message');
 const Hash256 = require('./hash256');
+const Wallet = require('./wallet');
 
 // Services
 const Bitcoin = require('../services/bitcoin');
@@ -59,25 +60,7 @@ class CLI extends App {
       interval: 1000
     }, this.settings, settings);
 
-    // Internal Components
-    this.node = new Peer(this.settings);
-    this.bitcoin = new Bitcoin({
-      authority: this.settings.authority,
-      mode: 'rpc',
-      fullnode: false,
-      network: this.settings.network,
-      key: {
-        seed: (this.settings.wallet) ? this.settings.wallet.seed : this.settings.seed
-      },
-      peers: [
-        // '25.14.120.36:18444',
-        // '127.0.0.1:18444'
-      ],
-      services: [],
-      verbosity: 0
-    });
-
-    // Other Properties
+    // Properties
     this.screen = null;
     this.history = [];
     this.commands = {};
@@ -100,8 +83,48 @@ class CLI extends App {
       clock: 0
     };
 
+    this.attachWallet();
+
     // Chainable
     return this;
+  }
+
+  attachWallet (wallet) {
+    if (!wallet) wallet = new Wallet(this.settings);
+
+    this.wallet = wallet;
+
+    this._loadPeer();
+    this._loadBitcoin();
+
+    return this;
+  }
+
+  _loadPeer () {
+    const origin =  this.wallet.key.master.privateKey.toString('hex');
+    this.node = new Peer({
+      key: {
+        private: origin
+      }
+    });
+  }
+
+  _loadBitcoin () {
+    this.bitcoin = new Bitcoin({
+      authority: this.settings.authority,
+      mode: 'rpc',
+      fullnode: false,
+      network: this.settings.network,
+      key: {
+        seed: (this.settings.wallet) ? this.settings.wallet.seed : this.settings.seed,
+        xprv: (this.settings.wallet) ? this.settings.wallet.xprv : this.settings.xprv
+      },
+      peers: [
+        // '127.0.0.1:18444'
+      ],
+      services: [],
+      verbosity: 0
+    });
   }
 
   async bootstrap () {
@@ -481,6 +504,10 @@ class CLI extends App {
       this.connections[connection.id] = connection;
       this.emit('connection', connection);
     }
+
+    /* if (!this.channels[channel.id]) {
+      this.channels[channel.id] = channel;
+    } */
 
     this._syncConnectionList();
     this.screen.render();

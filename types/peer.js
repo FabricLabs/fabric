@@ -57,7 +57,8 @@ class Peer extends Actor {
       listen: false,
       peers: [],
       port: 7777,
-      upnp: false
+      upnp: false,
+      key: {}
     }, config);
 
     // Network Internals
@@ -70,17 +71,8 @@ class Peer extends Actor {
       }
     });
 
-    this.key = new Key({
-      network: this.settings.network,
-      seed: (this.settings.wallet && this.settings.wallet.seed) ? this.settings.wallet.seed : this.settings.seed
-    });
-
-    // TODO: document wallet settings
-    this.wallet = new Wallet({
-      key: {
-        seed: (this.settings.wallet && this.settings.wallet.seed) ? this.settings.wallet.seed : this.settings.seed
-      }
-    });
+    this.key = new Key(this.settings.key);
+    this.wallet = new Wallet(this.settings.key);
 
     // this.hex = this.key.public.encodeCompressed('hex');
     // this.pkh = crypto.createHash('sha256').update(this.hex).digest('hex');
@@ -135,6 +127,10 @@ class Peer extends Actor {
   }
 
   get address () {
+    return this.settings.interface || this.settings.address;
+  }
+
+  get interface () {
     return this.settings.interface || this.settings.address;
   }
 
