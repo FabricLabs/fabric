@@ -4,8 +4,8 @@
 const zeromq = require('zeromq');
 
 // Fabric Types
-const Service = require('@fabric/core/types/service');
-const Message = require('@fabric/core/types/message');
+const Service = require('../types/service');
+const Message = require('../types/message');
 
 /**
  * Connect and subscribe to ZeroMQ publishers.
