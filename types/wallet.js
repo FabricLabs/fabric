@@ -35,7 +35,7 @@ class Wallet extends Service {
    * @param  {Number} [settings.verbosity=2] One of: 0 (none), 1 (error), 2 (warning), 3 (notice), 4 (debug), 5 (audit)
    * @param  {Object} [settings.key] Key to restore from.
    * @param  {String} [settings.key.seed] Mnemonic seed for a restored wallet.
-   * @return {Wallet}               Instance of the wallet.
+   * @return {Wallet} Instance of the wallet.
    */
   constructor (settings = {}) {
     super(settings);
@@ -115,8 +115,9 @@ class Wallet extends Service {
         balances: {
           spendable: 0
         },
-        keys: {}
+        keys: {},
       },
+      labels: [],
       space: {}, // tracks addresses in shard
       keys: {},
       services: {},
@@ -227,8 +228,12 @@ class Wallet extends Service {
    * @returns {Wallet} Instance of the Wallet.
    */
   loadKey (keypair, labels = []) {
-    console.log('loading keypair:', keypair);
+    if (!keypair) throw new Error('You must provide a keypair.');
+    if (!keypair.public) throw new Error('The keypair must have a "public" property.');
+    if (!(keypair.public instanceof Buffer)) throw new Error('The "public" property must be of type Buffer.');
+
     const id = { public: keypair.public.toString('hex') };
+    const actor = new Actor(id);
 
     // Addresses
     // P2PKH: Pay to Public Key Hash
@@ -242,24 +247,21 @@ class Wallet extends Service {
     });
 
     // P2TR: Pay to Tap Root
-    // const p2t2 = 
-    /*
+    // const p2t2 = ...
 
-    */
-
+    // TODO: new Key() here, then use key.export()
     const key = {
       addresses: {
         p2pkh: p2pkh.address,
         p2wpkh: p2wpkh.address
       },
       labels: labels,
-      private: keypair.private.toString('hex'),
+      private: (keypair.private) ? keypair.private.toString('hex') : undefined,
       public: keypair.public.toString('hex')
     };
 
-    const actor = new Actor(id);
-
     this._state.content.keys[actor.id] = key;
+    this._state.labels = this._state.labels.concat(key.labels);
 
     this.commit();
 
