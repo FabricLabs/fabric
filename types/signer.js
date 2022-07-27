@@ -37,7 +37,9 @@ class Signer extends Actor {
     this.key = new Key({
       seed: actor.seed,
       public: actor.public || actor.pubkey,
-      private: actor.private
+      private: actor.private,
+      xprv: actor.xprv,
+      xpub: actor.xpub
     });
 
     // Indicate Risk

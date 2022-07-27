@@ -116,6 +116,8 @@ class Wallet extends Service {
           spendable: 0
         },
         keys: {},
+        transactions: {},
+        utxos: []
       },
       labels: [],
       space: {}, // tracks addresses in shard
@@ -255,13 +257,35 @@ class Wallet extends Service {
         p2pkh: p2pkh.address,
         p2wpkh: p2wpkh.address
       },
-      labels: labels,
+      labels: labels.concat(['p2pkh', 'p2wpkh']),
       private: (keypair.private) ? keypair.private.toString('hex') : undefined,
       public: keypair.public.toString('hex')
     };
 
     this._state.content.keys[actor.id] = key;
     this._state.labels = this._state.labels.concat(key.labels);
+
+    this.commit();
+
+    return this;
+  }
+
+  loadTransaction (transaction, labels = []) {
+    if (!transaction) throw new Error('You must provide a transaction.');
+    if (!transaction.id) throw new Error('The transaction must have a "id" property.');
+
+    const actor = new Actor(transaction);
+
+    this._state.content.transactions[transaction.id] = actor.toObject();
+
+    if (transaction.spendable) {
+      this._state.content.utxos.push({
+        type: 'UnspentTransactionOutput',
+        object: {
+          id: transaction.id
+        }
+      });
+    }
 
     this.commit();
 

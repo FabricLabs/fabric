@@ -20,6 +20,9 @@ const ec = new EC('secp256k1');
 const ecc = require('tiny-secp256k1');
 const payments = require('bitcoinjs-lib/src/payments');
 
+// Fabric Dependencies
+const Hash256 = require('./hash256');
+
 // Simple Key Management
 const BIP32 = require('bip32').default;
 const bip32 = new BIP32(ecc);
@@ -74,12 +77,6 @@ class Key {
     this.master = null;
     this.private = null;
     this.public = null;
-
-    // Configure Deterministic Random
-    // WARNING: this will currently loop after 2^32 bits
-    // TODO: evaluate compression when treating seed phrase as ascii
-    // TODO: consider using sha256(masterprivkey) or sha256(sha256(...))?
-    this._starseed = this.settings.seed || crypto.randomBytes(4).readUInt32BE();
 
     // TODO: design state machine for input (configuration)
     if (this.settings.seed) {
@@ -156,7 +153,19 @@ class Key {
     // DO NOT USE IN PRODUCTION
     // this.pubkeyhash = this.keyring.getKeyHash('hex');
     this.pubkeyhash = '';
-    this.generator = new Generator(parseInt(this._starseed, 10));
+
+    // Configure Deterministic Random
+    // WARNING: this will currently loop after 2^32 bits
+    // TODO: evaluate compression when treating seed phrase as ascii
+    // TODO: consider using sha256(masterprivkey) or sha256(sha256(...))?
+    this._starseed = Hash256.digest((
+      this.settings.seed ||
+      this.settings.xprv ||
+      this.settings.private
+    ) + '');
+
+    this.q = parseInt(this._starseed.substring(0, 4), 16);
+    this.generator = new Generator(this.q);
 
     this['@data'] = {
       type: 'Key',

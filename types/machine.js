@@ -6,14 +6,13 @@ const {
 } = require('../constants');
 
 // Dependencies
-const arbitrary = require('arbitrary');
 const monitor = require('fast-json-patch');
 const BN = require('bn.js');
 
 // Fabric Types
-const Hash256 = require('./hash256');
 const Actor = require('./actor');
 const State = require('./state');
+const Key = require('./key');
 
 /**
  * General-purpose state machine with {@link Vector}-based instructions.
@@ -31,21 +30,23 @@ class Machine extends Actor {
       clock: 0,
       debug: false,
       deterministic: true,
-      frequency: 1, // Hz
+      interval: 60, // seconds
+      precision: 8,
       script: [],
       seed: 1, // TODO: select seed for production
       type: 'fabric'
     }, settings);
 
+    this.key = new Key({
+      seed: this.settings.seed + '', // casts to string
+      xprv: this.settings.xprv,
+      private: this.settings.private,
+    });
+
     // internal clock
     this.clock = this.settings.clock;
 
-    // define integer field
-    this.seed = Hash256.digest(this.settings.seed + '');
-    this.q = parseInt(this.seed.substring(0, 4), 16);
-
     // deterministic entropy and RNG
-    this.generator = new arbitrary.default.Generator(this.q);
     this.entropy = this.sip();
 
     this.known = {}; // definitions
@@ -71,12 +72,20 @@ class Machine extends Actor {
     return this;
   }
 
+  get interval () {
+    return this.settings.interval;
+  }
+
+  get frequency () {
+    return (1 / this.interval).toFixed(this.settings.precision);
+  }
+
   get script () {
     return this.settings.script;
   }
 
   bit () {
-    return this.generator.next.bits(1);
+    return this.key.generator.next.bits(1);
   }
 
   /**

@@ -16,7 +16,7 @@
     "node": "^16.15.0"
   },
   "scripts": {
-    "audit": "npx yarn audit --json --level critical > reports/AUDIT.log",
+    "audit": "npm audit --json --level critical > reports/AUDIT.json",
     "book": "npm run dev",
     "build": "npm run make:all",
     "build:book": "npm run make:book && npm run tidy",
@@ -57,7 +57,8 @@
     "test:bitcoin": "mocha tests/bitcoin.core.js",
     "test:ethereum": "mocha tests/ethereum.core.js",
     "test": "NODE_ENV=test mocha tests",
-    "tidy": "glob-run js-beautify --indent-size 2 -r _book/**.html"
+    "tidy": "glob-run js-beautify --indent-size 2 -r _book/**.html",
+    "watch:book": "honkit serve --port 8000 # NOTE: /docs and /examples may not be available."
   },
   "repository": {
     "type": "git",

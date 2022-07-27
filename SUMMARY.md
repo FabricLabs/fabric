@@ -4,7 +4,8 @@ Welcome to Fabric!
 ## Overview
 * [🤔 Introduction][readme]
 * [👀 Quick Start][quickstart]
-* [🏦 Services Overview][services]
+* [🔭 Roadmap][roadmap]
+* [看板 kanban][meta]
 
 ## Documentation
 * [🤯 Developer Introduction][developers]
@@ -14,7 +15,9 @@ Welcome to Fabric!
 
 ## Guides
 * [⚙️ Settings][settings]
+* [🏦 Services Overview][services]
 * [💁 Contributing][contributing]
+* [✅ TODO List][todo]
 
 ## Archive
 * [📄 Whitepaper (latest)][whitepaper]
@@ -34,3 +37,6 @@ Welcome to Fabric!
 [services]: SERVICES.md
 [settings]: SETTINGS.md
 [contributing]: CONTRIBUTING.md
+[todo]: TODO.md
+[roadmap]: https://github.com/FabricLabs/fabric/projects/1
+[meta]: https://github.com/orgs/FabricLabs/projects/1
