@@ -3,7 +3,9 @@
 // Dependencies
 const crypto = require('crypto');
 const { EventEmitter } = require('events');
+
 const monitor = require('fast-json-patch');
+const pointer = require('json-pointer');
 
 // Fabric Types
 const Hash256 = require('./hash256');
@@ -35,14 +37,13 @@ class Actor extends EventEmitter {
 
     this.history = [];
     // this.signature = Buffer.alloc(64);
-    this.value = this._readObject(actor); // TODO: use Buffer?
+    this.object = this._readObject(actor); // TODO: use Buffer?
 
     // Internal State
     this._state = {
       type: 'Actor',
-      data: this.value, // deprecated
       status: 'PAUSED',
-      content: this.value || {}
+      content: this.object || {}
     };
 
     // TODO: evaluate disabling by default
@@ -128,7 +129,7 @@ class Actor extends EventEmitter {
   commit () {
     const state = new Actor(this.state);
     const changes = monitor.generate(this.observer);
-    const parent = this.history[this.history.length - 1].state;
+    const parent = (this.history.length) ? this.history[this.history.length - 1].state : null;
     const commit = new Actor({
       changes: changes,
       parent: parent,
@@ -259,6 +260,20 @@ class Actor extends EventEmitter {
     this.commit();
     this.status = 'UNPAUSED';
     return this;
+  }
+
+  value (format = 'object') {
+    switch (format) {
+      default:
+        return this.state;
+      case 'buffer':
+        return Buffer.from(this.value('string'), 'utf8');
+      case 'hex':
+        return this.value('buffer').toString('hex');
+      case 'json':
+      case 'string':
+        return JSON.stringify(this.state);
+    }
   }
 
   _getField (name) {

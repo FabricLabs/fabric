@@ -110,8 +110,6 @@ async function main (input = {}) {
       await OP_SETUP.apply({ environment, program });
     }
 
-    // prevent further execution
-    // TODO: pause and continue (prompt for any key)
     process.exit();
   } else if (program.test) {
     console.log('[FABRIC:CLI]', 'Not yet implemented.');
@@ -122,6 +120,8 @@ async function main (input = {}) {
     console.log('[FABRIC:CLI]', '$BTC', 'Receive Address:', address.toString());
     process.exit();
   }
+
+  return this;
 }
 
 // Run Program
