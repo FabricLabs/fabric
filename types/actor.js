@@ -95,10 +95,8 @@ class Actor extends EventEmitter {
 
   get preimage () {
     const input = this.toGenericMessage();
-
     const string = JSON.stringify(input, null, '  ');
     const buffer = Buffer.from(string, 'utf8');
-
     return Hash256.digest(buffer);
   }
 
