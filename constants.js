@@ -22,7 +22,7 @@ const FIXTURE_SEED = 'abandon abandon abandon abandon abandon abandon abandon ab
 
 // Message Constants
 const MAGIC_BYTES = 0xC0D3F33D;
-const VERSION_NUMBER = 0x00; // 0 for development, pre-alpha, 1 for production
+const VERSION_NUMBER = 0x01; // 0 for development, pre-alpha, 1 for production
 const HEADER_SIZE = 144; // [4], [4], [32], [4], [4], [32], [64] bytes
 const LARGE_COLLECTION_SIZE = 10; // TODO: test with 1,000,000
 const MAX_MESSAGE_SIZE = 4096 - HEADER_SIZE;

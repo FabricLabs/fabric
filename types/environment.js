@@ -14,6 +14,9 @@ const Entity = require('./entity');
 const EncryptedPromise = require('./promise');
 const Wallet = require('./wallet');
 
+// Filters
+const any = (candidate => (candidate && typeof candidate !== 'undefined'));
+
 class Environment extends Entity {
   constructor (settings = {}) {
     super(settings);
@@ -56,14 +59,19 @@ class Environment extends Entity {
   }
 
   get seed () {
-    const any = (candidate => (candidate && typeof candidate !== 'undefined'));
-    const seed = [
+    return [
       this.settings.seed,
       this['FABRIC_SEED'],
       this.readVariable('FABRIC_SEED')
     ].find(any);
+  }
 
-    return seed;
+  get xprv () {
+    return [
+      this.settings.xprv,
+      this['FABRIC_XPRV'],
+      this.readVariable('FABRIC_XPRV')
+    ].find(any);
   }
 
   storeExists () {
@@ -99,6 +107,18 @@ class Environment extends Entity {
         key: {
           seed: this.seed,
           passphrase: this.passphrase
+        }
+      });
+    } else if (this.xprv) {
+      this.wallet = new Wallet({
+        key: {
+          xprv: this.xprv
+        }
+      });
+    } else if (this.xpub) {
+      this.wallet = new Wallet({
+        key: {
+          xpub: this.xpub
         }
       });
     } else if (this.walletExists()) {
@@ -151,14 +171,21 @@ class Environment extends Entity {
     });;
   }
 
-  setWallet (wallet) {
-    const object = wallet.export();
-
+  setWallet (wallet, force = false) {
+    // Attach before saving
     this.wallet = wallet;
 
+    // Filter user error
+    if (this.walletExists() && !force) throw new Error('Wallet file already exists.');
+
     try {
+      // Get standard object
+      const object = wallet.export();
+      // TODO: encrypt inner store with password (`object` property)
       const encrypted = Object.assign({
-        type: 'FabricWallet',
+        // Defaults
+        type: /*/ 'Encrypted' + /**/'FabricWallet',
+        format: 'aes-256-cbc',
         version: object.version
       }, object);
 

@@ -17,6 +17,7 @@ const monitor = require('fast-json-patch'); // TODO: move uses to App
 // Fabric Types
 const App = require('./app');
 const Peer = require('./peer');
+const Actor = require('./actor');
 const Message = require('./message');
 const Hash256 = require('./hash256');
 const Wallet = require('./wallet');
@@ -35,7 +36,6 @@ const Bitcoin = require('../services/bitcoin');
 //   fabric-input
 // ```
 const blessed = require('blessed');
-const Actor = require('./actor');
 
 /**
  * Provides a Command Line Interface (CLI) for interacting with

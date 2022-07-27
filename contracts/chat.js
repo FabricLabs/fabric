@@ -27,9 +27,15 @@ const CLI = require('../types/cli');
 // Program Definition
 async function OP_CHAT () {
   // Fabric CLI
-  const chat = new CLI(settings);
+  const chat = new CLI(settings); // TODO: this.settings
 
-  if (this.wallet) chat.attachWallet(this.wallet);
+  if (!this.environment.wallet) {
+    console.error('No wallet found!  Set up your Fabric wallet by running:');
+    console.error('\tfabric setup');
+    process.exit(1);
+  }
+
+  chat.attachWallet(this.environment.wallet);
 
   // ## Services
   // TODO: reconcile API wth @fabric/doorman as appears at: https://github.com/FabricLabs/doorman
@@ -37,6 +43,11 @@ async function OP_CHAT () {
   // chat._registerService('rpg', RPG);
 
   await chat.start();
+
+  return JSON.stringify({
+    id: chat.id,
+    wallet: this.environment.wallet.id
+  });
 }
 
 // Module
