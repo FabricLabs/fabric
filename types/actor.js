@@ -35,17 +35,20 @@ class Actor extends EventEmitter {
   constructor (actor = {}) {
     super(actor);
 
-    this.history = [];
-    // this.signature = Buffer.alloc(64);
-    this.object = this._readObject(actor); // TODO: use Buffer?
+    this.settings = {
+      type: 'Actor',
+      status: 'PAUSED'
+    };
 
     // Internal State
     this._state = {
-      type: 'Actor',
-      status: 'PAUSED',
-      content: this.object || {}
+      type: this.settings.type,
+      status: this.settings.status,
+      content: this._readObject(actor)
     };
 
+    // TODO: evaluate disabling by default
+    this.history = [];
     // TODO: evaluate disabling by default
     // and/or resolving performance issues at scale
     this.observer = monitor.observe(this._state.content, this._handleMonitorChanges.bind(this));
@@ -54,6 +57,11 @@ class Actor extends EventEmitter {
     return this;
   }
 
+  /**
+   * Create an {@link Actor} from a variety of formats.
+   * @param {Object} input Target {@link Object} to create.
+   * @returns {Actor} Instance of the {@link Actor}.
+   */
   static fromAny (input = {}) {
     let state = null;
 
@@ -133,7 +141,7 @@ class Actor extends EventEmitter {
     const commit = new Actor({
       changes: changes,
       parent: parent,
-      state: state.id
+      state: state.id // TODO: include whole state?
     });
 
     this.history.push(commit);
@@ -206,9 +214,14 @@ class Actor extends EventEmitter {
     }
   }
 
+  /**
+   * Toggles `status` property to paused.
+   * @returns {Actor} Instance of the Actor.
+   */
   pause () {
     this.status = 'PAUSING';
     this.commit();
+    this.status = 'PAUSED';
     return this;
   }
 
@@ -252,8 +265,7 @@ class Actor extends EventEmitter {
 
   /**
    * Toggles `status` property to unpaused.
-   * @
-   * @returns {Actor}
+   * @returns {Actor} Instance of the Actor.
    */
   unpause () {
     this.status = 'UNPAUSING';
@@ -262,6 +274,11 @@ class Actor extends EventEmitter {
     return this;
   }
 
+  /**
+   * Get the inner value of the Actor with an optional cast type.
+   * @param {String} [format] Cast the value to one of: `buffer, hex, json, string`
+   * @returns {Object} Inner value of the Actor as an {@link Object}, or cast to the requested `format`.
+   */
   value (format = 'object') {
     switch (format) {
       default:

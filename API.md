@@ -221,6 +221,7 @@ Generic Fabric Actor.
     * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
     * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
     * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
+    * [.value([format])](#Actor+value) ⇒ <code>Object</code>
     * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
 
 <a name="new_Actor_new"></a>
@@ -279,6 +280,18 @@ Toggles `status` property to unpaused.
 @
 
 **Kind**: instance method of [<code>Actor</code>](#Actor)  
+<a name="Actor+value"></a>
+
+### actor.value([format]) ⇒ <code>Object</code>
+Get the inner value of the Actor with an optional cast type.
+
+**Kind**: instance method of [<code>Actor</code>](#Actor)  
+**Returns**: <code>Object</code> - Inner value of the Actor as an [Object](Object), or cast to the requested `format`.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [format] | <code>String</code> | <code>object</code> | Cast the value to one of: `buffer, hex, json, string` |
+
 <a name="Actor+_readObject"></a>
 
 ### actor.\_readObject(input) ⇒ <code>Object</code>
@@ -1662,6 +1675,7 @@ A basic logger that writes logs to the local file system
     * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
     * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
     * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
+    * [.value([format])](#Actor+value) ⇒ <code>Object</code>
     * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
 
 <a name="Logger+path"></a>
@@ -1744,6 +1758,19 @@ Toggles `status` property to unpaused.
 
 **Kind**: instance method of [<code>Logger</code>](#Logger)  
 **Overrides**: [<code>unpause</code>](#Actor+unpause)  
+<a name="Actor+value"></a>
+
+### logger.value([format]) ⇒ <code>Object</code>
+Get the inner value of the Actor with an optional cast type.
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+**Overrides**: [<code>value</code>](#Actor+value)  
+**Returns**: <code>Object</code> - Inner value of the Actor as an [Object](Object), or cast to the requested `format`.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [format] | <code>String</code> | <code>object</code> | Cast the value to one of: `buffer, hex, json, string` |
+
 <a name="Actor+_readObject"></a>
 
 ### logger.\_readObject(input) ⇒ <code>Object</code>
@@ -1768,7 +1795,7 @@ General-purpose state machine with [Vector](#Vector)-based instructions.
     * [new Machine(settings)](#new_Machine_new)
     * [.sip([n])](#Machine+sip) ⇒ <code>Number</code>
     * [.slurp([n])](#Machine+slurp) ⇒ <code>Number</code>
-    * [.compute(input)](#Machine+compute) ⇒ <code>Promise</code>
+    * [.compute(input)](#Machine+compute) ⇒ [<code>Machine</code>](#Machine)
 
 <a name="new_Machine_new"></a>
 
@@ -1806,16 +1833,17 @@ Get `n` bytes of deterministic random data.
 
 <a name="Machine+compute"></a>
 
-### machine.compute(input) ⇒ <code>Promise</code>
+### machine.compute(input) ⇒ [<code>Machine</code>](#Machine)
 Computes the next "step" for our current Vector.  Analagous to `sum`.
 The top item on the stack is always the memory held at current position,
 so counts should always begin with 0.
 
 **Kind**: instance method of [<code>Machine</code>](#Machine)  
+**Returns**: [<code>Machine</code>](#Machine) - Instance of the resulting machine.  
 
 | Param | Type | Description |
 | --- | --- | --- |
-| input | [<code>Vector</code>](#Vector) | Input state, undefined if desired. |
+| input | <code>Object</code> | Value to pass as input. |
 
 <a name="Mempool"></a>
 
