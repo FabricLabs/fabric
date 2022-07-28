@@ -37,6 +37,9 @@ class Chain extends Actor {
       blocks: {},
       genesis: null,
       consensus: null,
+      content: {
+        blocks: []
+      },
       transactions: {},
       mempool: [],
       ledger: []
@@ -80,6 +83,24 @@ class Chain extends Actor {
   get _tree () {
     const stack = new Stack(this.leaves);
     return stack.asMerkleTree();
+  }
+
+  createSignedBlock (proposal = {}) {
+    return {
+      actor: proposal.actor || Actor.randomBytes(32).toString('hex'),
+      changes: proposal.changes,
+      mode: proposal.mode || 'NAIVE_SIGHASH_SINGLE',
+      object: Buffer.concat(
+        Buffer.alloc(32), // pubkey
+        Buffer.alloc(32), // parent
+        Buffer.alloc(32), // changes
+        Buffer.alloc(64), // signature
+      ),
+      parent: this.id,
+      signature: Buffer.alloc(64),
+      state: this.state,
+      type: 'FabricBlock'
+    };
   }
 
   trust (source) {

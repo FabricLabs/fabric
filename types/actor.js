@@ -41,6 +41,8 @@ class Actor extends EventEmitter {
     };
 
     // Internal State
+    // TODO: encourage use of `state` over `_state`
+    // TODO: use `const state` here
     this._state = {
       type: this.settings.type,
       status: this.settings.status,
@@ -93,6 +95,11 @@ class Actor extends EventEmitter {
     return result;
   }
 
+  /**
+   * Get a number of random bytes from the runtime environment.
+   * @param {Number} [count=32] Number of random bytes to retrieve.
+   * @returns {Buffer} The random bytes.
+   */
   static randomBytes (count = 32) {
     return crypto.randomBytes(count);
   }
@@ -130,8 +137,23 @@ class Actor extends EventEmitter {
   }
 
   /**
+   * Explicitly adopt a set of {@link JSONPatch}-encoded changes.
+   * @param {Array} changes List of {@link JSONPatch} operations to apply.
+   * @returns {Actor} Instance of the Actor.
+   */
+  adopt (changes) {
+    try {
+      monitor.applyPatch(this._state.content, changes);
+      this.commit();
+    } catch (exception) {
+      this.emit('error', exception);
+    }
+
+    return this;
+  }
+
+  /**
    * Resolve the current state to a commitment.
-   * @emits Actor Current malleable state.
    * @returns {String} 32-byte ID
    */
   commit () {
@@ -153,6 +175,11 @@ class Actor extends EventEmitter {
     this.emit('debug', params);
   }
 
+  /**
+   * Retrieve a value from the Actor's state by {@link JSONPointer} path.
+   * @param {String} path Path to retrieve using {@link JSONPointer}.
+   * @returns {Object} Value of the path in the Actor's state.
+   */
   get (path) {
     return pointer.get(this._state.content, path);
   }
@@ -175,6 +202,12 @@ class Actor extends EventEmitter {
     return this;
   }
 
+  /**
+   * Set a value in the Actor's state by {@link JSONPointer} path.
+   * @param {String} path Path to set using {@link JSONPointer}.
+   * @param {Object} value Value to set.
+   * @returns {Object} Value of the path in the Actor's state.
+   */
   set (path, value) {
     pointer.set(this._state.content, path, value);
     this.commit();

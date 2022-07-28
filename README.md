@@ -100,7 +100,6 @@ Fabric is an extensible framework, supporting a variety of plugins.
 ## Running on Fabric
 Several successful projects are built with or are running on Fabric, including:
 
-- [soundtrack.io][soundtrack.io], Internet jukebox
 - [Doorman][doorman], an artificially intelligent assistant
 - [IdleRPG][idlerpg], a simple RPG game which rewards you for remaining idle
 - [Verse][verse], a virtual universe simulator

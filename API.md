@@ -215,14 +215,22 @@ Generic Fabric Actor.
 
 * [Actor](#Actor)
     * [new Actor([actor])](#new_Actor_new)
-    * [.commit()](#Actor+commit) ⇒ <code>String</code>
-    * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
-    * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
-    * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
-    * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
-    * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
-    * [.value([format])](#Actor+value) ⇒ <code>Object</code>
-    * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
+    * _instance_
+        * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
+        * [.commit()](#Actor+commit) ⇒ <code>String</code>
+        * [.get(path)](#Actor+get) ⇒ <code>Object</code>
+        * [.set(path, value)](#Actor+set) ⇒ <code>Object</code>
+        * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
+        * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
+        * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
+        * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
+        * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
+        * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
+        * [.value([format])](#Actor+value) ⇒ <code>Object</code>
+        * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
+    * _static_
+        * [.fromAny(input)](#Actor.fromAny) ⇒ [<code>Actor</code>](#Actor)
+        * [.randomBytes([count])](#Actor.randomBytes) ⇒ <code>Buffer</code>
 
 <a name="new_Actor_new"></a>
 
@@ -241,6 +249,18 @@ what you share with others!
 | [actor.public] | <code>Buffer</code> | Public key. |
 | [actor.private] | <code>Buffer</code> | Private key. |
 
+<a name="Actor+adopt"></a>
+
+### actor.adopt(changes) ⇒ [<code>Actor</code>](#Actor)
+Explicitly adopt a set of [JSONPatch](JSONPatch)-encoded changes.
+
+**Kind**: instance method of [<code>Actor</code>](#Actor)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| changes | <code>Array</code> | List of [JSONPatch](JSONPatch) operations to apply. |
+
 <a name="Actor+commit"></a>
 
 ### actor.commit() ⇒ <code>String</code>
@@ -248,7 +268,31 @@ Resolve the current state to a commitment.
 
 **Kind**: instance method of [<code>Actor</code>](#Actor)  
 **Returns**: <code>String</code> - 32-byte ID  
-**Emits**: <code>event:Actor Current malleable state.</code>  
+<a name="Actor+get"></a>
+
+### actor.get(path) ⇒ <code>Object</code>
+Retrieve a value from the Actor's state by [JSONPointer](JSONPointer) path.
+
+**Kind**: instance method of [<code>Actor</code>](#Actor)  
+**Returns**: <code>Object</code> - Value of the path in the Actor's state.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | Path to retrieve using [JSONPointer](JSONPointer). |
+
+<a name="Actor+set"></a>
+
+### actor.set(path, value) ⇒ <code>Object</code>
+Set a value in the Actor's state by [JSONPointer](JSONPointer) path.
+
+**Kind**: instance method of [<code>Actor</code>](#Actor)  
+**Returns**: <code>Object</code> - Value of the path in the Actor's state.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | Path to set using [JSONPointer](JSONPointer). |
+| value | <code>Object</code> | Value to set. |
+
 <a name="Actor+toBuffer"></a>
 
 ### actor.toBuffer() ⇒ <code>Buffer</code>
@@ -261,6 +305,13 @@ Casts the Actor to a normalized Buffer.
 Returns the Actor's current state as an [Object](Object).
 
 **Kind**: instance method of [<code>Actor</code>](#Actor)  
+<a name="Actor+pause"></a>
+
+### actor.pause() ⇒ [<code>Actor</code>](#Actor)
+Toggles `status` property to paused.
+
+**Kind**: instance method of [<code>Actor</code>](#Actor)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
 <a name="Actor+serialize"></a>
 
 ### actor.serialize() ⇒ <code>String</code>
@@ -277,9 +328,9 @@ Signs the Actor.
 
 ### actor.unpause() ⇒ [<code>Actor</code>](#Actor)
 Toggles `status` property to unpaused.
-@
 
 **Kind**: instance method of [<code>Actor</code>](#Actor)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
 <a name="Actor+value"></a>
 
 ### actor.value([format]) ⇒ <code>Object</code>
@@ -303,6 +354,30 @@ Parse an Object into a corresponding Fabric state.
 | Param | Type | Description |
 | --- | --- | --- |
 | input | <code>Object</code> | Object to read as input. |
+
+<a name="Actor.fromAny"></a>
+
+### Actor.fromAny(input) ⇒ [<code>Actor</code>](#Actor)
+Create an [Actor](#Actor) from a variety of formats.
+
+**Kind**: static method of [<code>Actor</code>](#Actor)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the [Actor](#Actor).  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>Object</code> | Target [Object](Object) to create. |
+
+<a name="Actor.randomBytes"></a>
+
+### Actor.randomBytes([count]) ⇒ <code>Buffer</code>
+Get a number of random bytes from the runtime environment.
+
+**Kind**: static method of [<code>Actor</code>](#Actor)  
+**Returns**: <code>Buffer</code> - The random bytes.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [count] | <code>Number</code> | <code>32</code> | Number of random bytes to retrieve. |
 
 <a name="Aggregator"></a>
 
@@ -1669,9 +1744,13 @@ A basic logger that writes logs to the local file system
     * [.log(msg)](#Logger+log) ⇒ <code>Boolean</code>
     * [.start()](#Logger+start) ⇒ <code>Promise</code>
     * [.stop()](#Logger+stop) ⇒ <code>Promise</code>
+    * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
     * [.commit()](#Actor+commit) ⇒ <code>String</code>
+    * [.get(path)](#Actor+get) ⇒ <code>Object</code>
+    * [.set(path, value)](#Actor+set) ⇒ <code>Object</code>
     * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
     * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
+    * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
     * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
     * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
     * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
@@ -1713,6 +1792,19 @@ This method closes the log file and returns after it has been closed. Any
 errors on close would cause the return promise to be rejected.
 
 **Kind**: instance method of [<code>Logger</code>](#Logger)  
+<a name="Actor+adopt"></a>
+
+### logger.adopt(changes) ⇒ [<code>Actor</code>](#Actor)
+Explicitly adopt a set of [JSONPatch](JSONPatch)-encoded changes.
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+**Overrides**: [<code>adopt</code>](#Actor+adopt)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| changes | <code>Array</code> | List of [JSONPatch](JSONPatch) operations to apply. |
+
 <a name="Actor+commit"></a>
 
 ### logger.commit() ⇒ <code>String</code>
@@ -1721,7 +1813,33 @@ Resolve the current state to a commitment.
 **Kind**: instance method of [<code>Logger</code>](#Logger)  
 **Overrides**: [<code>commit</code>](#Actor+commit)  
 **Returns**: <code>String</code> - 32-byte ID  
-**Emits**: <code>event:Actor Current malleable state.</code>  
+<a name="Actor+get"></a>
+
+### logger.get(path) ⇒ <code>Object</code>
+Retrieve a value from the Actor's state by [JSONPointer](JSONPointer) path.
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+**Overrides**: [<code>get</code>](#Actor+get)  
+**Returns**: <code>Object</code> - Value of the path in the Actor's state.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | Path to retrieve using [JSONPointer](JSONPointer). |
+
+<a name="Actor+set"></a>
+
+### logger.set(path, value) ⇒ <code>Object</code>
+Set a value in the Actor's state by [JSONPointer](JSONPointer) path.
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+**Overrides**: [<code>set</code>](#Actor+set)  
+**Returns**: <code>Object</code> - Value of the path in the Actor's state.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | Path to set using [JSONPointer](JSONPointer). |
+| value | <code>Object</code> | Value to set. |
+
 <a name="Actor+toBuffer"></a>
 
 ### logger.toBuffer() ⇒ <code>Buffer</code>
@@ -1736,6 +1854,14 @@ Returns the Actor's current state as an [Object](Object).
 
 **Kind**: instance method of [<code>Logger</code>](#Logger)  
 **Overrides**: [<code>toObject</code>](#Actor+toObject)  
+<a name="Actor+pause"></a>
+
+### logger.pause() ⇒ [<code>Actor</code>](#Actor)
+Toggles `status` property to paused.
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+**Overrides**: [<code>pause</code>](#Actor+pause)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
 <a name="Actor+serialize"></a>
 
 ### logger.serialize() ⇒ <code>String</code>
@@ -1754,10 +1880,10 @@ Signs the Actor.
 
 ### logger.unpause() ⇒ [<code>Actor</code>](#Actor)
 Toggles `status` property to unpaused.
-@
 
 **Kind**: instance method of [<code>Logger</code>](#Logger)  
 **Overrides**: [<code>unpause</code>](#Actor+unpause)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
 <a name="Actor+value"></a>
 
 ### logger.value([format]) ⇒ <code>Object</code>
