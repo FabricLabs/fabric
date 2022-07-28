@@ -1,2 +1,7 @@
 dist: focal
 language: node_js
+before_install:
+  - npm install -g codecov
+after_success:
+  - npm run report:coverage
+  - codecov
