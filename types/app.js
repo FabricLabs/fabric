@@ -36,6 +36,7 @@ class App extends Service {
 
     this.settings = Object.assign({
       seed: null,
+      listen: false,
       path: './stores/fabric-application',
       prefix: '/',
       services: [],
