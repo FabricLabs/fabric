@@ -5,6 +5,7 @@
   "network": "regtest",
   "mode": "full",
   "persistent": false,
+  "port": 9898,
   "key": {
     "seed": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
   },
