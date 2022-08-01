@@ -481,7 +481,7 @@ class CLI extends App {
       this._appendMessage(`Checking: ${JSON.stringify(connections)}`);
       if (connections.address === msg.address) {
         this._appendMessage(`Address matches.`);
-        delete this.connectionss[id];
+        delete this.connections[id];
       }
     }
 
