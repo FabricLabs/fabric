@@ -54,7 +54,7 @@ class Peer extends Actor {
       address: '0.0.0.0',
       network: 'regtest',
       networking: true,
-      listen: false,
+      listen: true,
       peers: [],
       port: 7777,
       upnp: false,
@@ -148,19 +148,29 @@ class Peer extends Actor {
   async start () {
     let address = null;
 
-    if (this.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Peer starting...');
+    this.emit('log', 'Peer starting...');
+
     if (this.settings.upnp) {
       this.upnp = upnp.createClient();
     }
 
+    this.emit('log', 'Wallet starting...');
+
     try {
       await this.wallet.start();
-    } catch (E) {
-      console.error('[FABRIC:PEER]', 'Could not start wallet:', E);
+    } catch (exception) {
+      this.emit('error', `Could not start wallet: ${exception}`);
     }
 
     if (this.settings.listen) {
-      address = await this.listen();
+      this.emit('log', 'Listener starting...');
+
+      try {
+        address = await this.listen();
+        this.emit('log', 'Listener started!');
+      } catch (exception) {
+        this.emit('error', 'Could not listen:', exception);
+      }
     }
 
     if (this.settings.networking) {
@@ -357,7 +367,7 @@ class Peer extends Actor {
 
     const authority = `${target.address}:${target.port}`;
 
-    if (this.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Connecting to address:', authority);
+    this.emit('log', `Connecting to address: ${authority}`);
 
     if (parts.length !== 2) return console.debug('Invalid address:', address);
     if (known.includes(authority)) return self.connections[authority];
@@ -457,7 +467,8 @@ class Peer extends Actor {
   async _handleConnection (socket) {
     const self = this;
     const address = [socket.remoteAddress, socket.remotePort].join(':');
-    if (this.settings.verbosity >= 4) self.emit('log', `[FABRIC:PEER] [0x${self.id}] Incoming connection from address: ${address}`);
+
+    self.emit('log', `[FABRIC:PEER] [0x${self.id}] Incoming connection from address: ${address}`);
 
     self.emit('connections:open', {
       address: address,
@@ -584,7 +595,7 @@ class Peer extends Actor {
 
     this._updateLiveness(origin);
 
-    if (!message) return console.error('Hard failure:', packet);
+    if (!message) return this.emit('error', `Hard failure: ${packet}`);
     if (this.messages.has(message.id)) {
       // this.emit('debug', `Received duplicate message ${message.id} from [${origin}] in packet: ${JSON.stringify(packet, null, '  ')}`);
       return false;
@@ -965,37 +976,9 @@ class Peer extends Actor {
 
         const details = self.server.address();
         const address = `tcp://${details.address}:${details.port}`;
-        const complete = function () {
-          self.emit('log', `Now listening on ${address} [!!!]`);
-          return resolve(address);
-        }
 
-        if (!self.settings.upnp) {
-          return complete();
-        }
-
-        // UPNP
-        self.upnp.portMapping({
-          public: 7777,
-          private: 7777,
-          ttl: 10
-        }, function (err) {
-          if (err) {
-            self.emit('log', `error configuring upnp: ${err}`);
-            return complete();
-          }
-
-          self.upnp.externalIp(function (err, ip) {
-            if (err) {
-              self.emit('log', `Could not retrieve public IP: ${err}`);
-            } else {
-              self.public.ip = ip;
-              self.emit('log', `UPNP configured!  External IP: ${ip}`);
-            }
-
-            return complete();
-          });
-        });
+        self.emit('log', `Now listening on ${address} [!!!]`);
+        return resolve(address);
       });
     });
 

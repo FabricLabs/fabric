@@ -1,6 +1,6 @@
-import * as Block from '../types/block';
+const Block = require('../types/block');
 
-export default function OP_ADVANCE_BLOCK (input) {
+module.exports = function OP_ADVANCE_BLOCK (input) {
   console.log('advancing block:', this.state);
 
   const parent = this.state.chain[this.state.chain.length - 1];

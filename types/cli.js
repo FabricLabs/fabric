@@ -85,6 +85,9 @@ class CLI extends App {
 
     this.attachWallet();
 
+    this._loadPeer();
+    this._loadBitcoin();
+
     // Chainable
     return this;
   }
@@ -94,18 +97,16 @@ class CLI extends App {
 
     this.wallet = wallet;
 
-    this._loadPeer();
-    this._loadBitcoin();
-
     return this;
   }
 
   _loadPeer () {
-    const origin =  this.wallet.key.master.privateKey.toString('hex');
     this.node = new Peer({
-      key: {
-        private: origin
-      }
+      network: this.settings.network,
+      interface: this.settings.interface,
+      port: this.settings.port,
+      peers: this.settings.peers,
+      key: this.wallet.key.settings
     });
   }
 
@@ -154,6 +155,7 @@ class CLI extends App {
     this._registerCommand('peers', this._handlePeerListRequest);
     this._registerCommand('connect', this._handleConnectRequest);
     this._registerCommand('disconnect', this._handleDisconnectRequest);
+    this._registerCommand('settings', this._handleSettingsRequest);
     this._registerCommand('inventory', this._handleInventoryRequest);
     this._registerCommand('channels', this._handleChannelRequest);
     this._registerCommand('identity', this._handleIdentityRequest);
@@ -456,7 +458,8 @@ class CLI extends App {
   }
 
   async _handleConnectionOpen (msg) {
-    // this._appendMessage(`Node emitted "connections:open" event: ${JSON.stringify(msg)}`);
+    this._appendMessage(`Node emitted "connections:open" event: ${JSON.stringify(msg)}`);
+    await this._handleConnection(msg);
     this._syncConnectionList();
     this._syncPeerList();
   }
@@ -563,15 +566,15 @@ class CLI extends App {
   }
 
   async _handlePeerDebug (message) {
-    this._appendDebug(message);
+    this._appendDebug(`[NODE] ${message}`);
   }
 
   async _handlePeerError (message) {
-    this._appendError(`Local "error" event: ${JSON.stringify(message)} <${message.type}> ${message.data}`);
+    this._appendError(`[NODE] ${message}`);
   }
 
   async _handlePeerWarning (message) {
-    this._appendWarning(`Local "warning" event: ${JSON.stringify(message)}`);
+    this._appendWarning(`[NODE] ${message}`);
   }
 
   async _handlePeerLog (message) {
@@ -792,6 +795,10 @@ class CLI extends App {
       id: this.node.id,
       address: this.node.server.address()
     }, null, '  ')}`);
+  }
+
+  _handleSettingsRequest () {
+    this._appendMessage(`Local Settings: ${JSON.stringify(this.settings, null, '  ')}`);
   }
 
   _handleHelpRequest (data) {

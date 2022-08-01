@@ -10,9 +10,9 @@ const settings = {
   xpub: environment.readVariable('FABRIC_XPUB'),
   public: '0223cffd5e94da3c8915c6b868f06d15183c1aeffad8ddf58fcb35a428e3158e71',
   authority: 'http://ahp7iuGhae8mooBahFaYieyaixei6too:naiRe9wo5vieFayohje5aegheenoh4ee@localhost:20444',
-  network: 'regtest',
+  network: 'playnet',
   fullnode: false,
-  listen: false,
+  listen: true,
   render: false,
   verbosity: 3
 };

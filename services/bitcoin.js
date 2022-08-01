@@ -14,11 +14,7 @@ const ECPairFactory = require('ecpair').default;
 const ecc = require('tiny-secp256k1');
 const bip65 = require('bip65');
 const bip68 = require('bip68');
-
 const ECPair = ECPairFactory(ecc);
-
-// TODO: remove bcoin
-// const bcoin = require('bcoin');
 const bitcoin = require('bitcoinjs-lib');
 
 // Services
@@ -28,24 +24,13 @@ const ZMQ = require('../services/zmq');
 const Actor = require('../types/actor');
 const Collection = require('../types/collection');
 const Entity = require('../types/entity');
-const Message = require('../types/message');
 const Service = require('../types/service');
 const State = require('../types/state');
-const Chain = require('../types/chain');
 const Wallet = require('../types/wallet');
-// const Consensus = require('../types/consensus');
 
 // Special Types (internal to Bitcoin)
 const BitcoinBlock = require('../types/bitcoin/block');
 const BitcoinTransaction = require('../types/bitcoin/transaction');
-
-// Convenience Labels
-// const Amount = bcoin.Amount;
-// const Coin = bcoin.Coin;
-// const FullNode = bcoin.FullNode;
-// const MTX = bcoin.MTX;
-// const NetAddress = bcoin.net.NetAddress;
-// const Script = bcoin.Script;
 
 /**
  * Manages interaction with the Bitcoin network.

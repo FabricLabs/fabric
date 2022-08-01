@@ -8,7 +8,6 @@ const {
 
 // Dependencies
 const BN = require('bn.js');
-const event = require('p-event');
 const struct = require('struct');
 const crypto = require('crypto');
 
