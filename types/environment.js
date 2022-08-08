@@ -87,7 +87,16 @@ class Environment extends Entity {
   }
 
   makeStore () {
-    fs.mkdirSync(this.settings.store);
+    if (this.storeExists()) return true;
+
+    try {
+      fs.mkdirSync(this.settings.store);
+    } catch (exception) {
+      console.error('Could not make store:', exception);
+      return false;
+    }
+
+    return this;
   }
 
   touchWallet () {
@@ -177,6 +186,7 @@ class Environment extends Entity {
 
     // Filter user error
     if (this.walletExists() && !force) throw new Error('Wallet file already exists.');
+    if (!this.touchWallet()) throw new Error('Could not touch wallet.  Check permissions, disk space.');
 
     try {
       // Get standard object
@@ -214,6 +224,12 @@ class Environment extends Entity {
     if (this.wallet) this.wallet.start();
 
     this._state.status = 'STARTED';
+    return this;
+  }
+
+  stop () {
+    this._state.status = 'STOPPING';
+    this._state.status = 'STOPPED';
     return this;
   }
 }
