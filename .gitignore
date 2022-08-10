@@ -42,3 +42,6 @@ assets/fabric.min.js # Minified fabric.js bundle
 
 # Hide bitcoin node blocks
 stores
+
+# Nix
+result*
