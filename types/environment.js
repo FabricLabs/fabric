@@ -17,7 +17,15 @@ const Wallet = require('./wallet');
 // Filters
 const any = (candidate => (candidate && typeof candidate !== 'undefined'));
 
+/**
+ * Interact with the user's Environment.
+ */
 class Environment extends Entity {
+  /**
+   * Create an instance of {@link Environment}.
+   * @param {Object} [settings] Settings for the Fabric environment.
+   * @returns {Environment} Instance of the Environment.
+   */
   constructor (settings = {}) {
     super(settings);
 
@@ -32,6 +40,7 @@ class Environment extends Entity {
 
     this._state = {
       status: 'INITIALIZED',
+      content: {},
       variables: process.env
     };
 
@@ -108,6 +117,8 @@ class Environment extends Entity {
     } catch (err) {
       fs.closeSync(fs.openSync(this.settings.path, 'w'));
     }
+
+    return true;
   }
 
   loadWallet () {
