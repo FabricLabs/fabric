@@ -45,7 +45,6 @@
     "make:nix": "node2nix --lock package-lock.json --nodejs-16 --node-env .nix/node-env.nix --output .nix/node-packages.nix",
     "make:service": "### ERROR: Not yet implemented.  Debug: ` examples/service.js` to `aassets/service.js`",
     "make:viewer": "### ERROR: Not yet implemented.  Debug: `components/circuit-viewer.js` to `aassets/viewer.min.js`",
-    "postinstall": "npm run make:nix",
     "report:credits": "node_modules/.bin/license-checker --json > reports/credits.json",
     "report:coverage": "npm run make:coverage && c8 report --reporter=text-lcov > reports/coverage.lcov",
     "report:legal": "node_modules/.bin/license-checker --json > reports/licenses.json",
