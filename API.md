@@ -60,6 +60,9 @@ the Fabric network using a terminal emulator.</p>
 <dd><p>Provides an HMAC-based Extract-and-Expand Key Derivation Function (HKDF), compatible with
 RFC 5869.  Defaults to 32 byte output, matching Bitcoin&#39;s implementaton.</p>
 </dd>
+<dt><a href="#Identity">Identity</a></dt>
+<dd><p>Manage a network identity.</p>
+</dd>
 <dt><a href="#Interface">Interface</a> ⇐ <code>EventEmitter</code></dt>
 <dd><p>Interfaces compile abstract contract code into <a href="#Chain">Chain</a>-executable transactions, or &quot;chaincode&quot;. For example, the &quot;Bitcoin&quot; interface might compile a Swap contract into Script, preparing a valid Bitcoin transaction for broadcast which executes the swap contract.</p>
 </dd>
@@ -1434,6 +1437,40 @@ Derive a new output.
 | [info] | <code>Buffer</code> |  | Context and application specific information. |
 | [size] | <code>Number</code> | <code>32</code> | Length of output. |
 
+<a name="Identity"></a>
+
+## Identity
+Manage a network identity.
+
+**Kind**: global class  
+
+* [Identity](#Identity)
+    * [new Identity([settings])](#new_Identity_new)
+    * [.toString()](#Identity+toString) ⇒ <code>String</code>
+
+<a name="new_Identity_new"></a>
+
+### new Identity([settings])
+Create an instance of an Identity.
+
+**Returns**: [<code>Identity</code>](#Identity) - Instance of the identity.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [settings] | <code>Object</code> |  | Settings for the Identity. |
+| [settings.seed] | <code>String</code> |  | BIP 39 seed phrase. |
+| [settings.xprv] | <code>String</code> |  | Serialized BIP 32 master private key. |
+| [settings.xpub] | <code>String</code> |  | Serialized BIP 32 master public key. |
+| [settings.account] | <code>Number</code> | <code>0</code> | BIP 44 account index. |
+| [settings.index] | <code>Number</code> | <code>0</code> | BIP 44 key index. |
+
+<a name="Identity+toString"></a>
+
+### identity.toString() ⇒ <code>String</code>
+Retrieve the bech32m-encoded identity.
+
+**Kind**: instance method of [<code>Identity</code>](#Identity)  
+**Returns**: <code>String</code> - Public identity.  
 <a name="Interface"></a>
 
 ## Interface ⇐ <code>EventEmitter</code>
