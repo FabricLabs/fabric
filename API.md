@@ -45,6 +45,9 @@ the Fabric network using a terminal emulator.</p>
 <dt><a href="#Entity">Entity</a> : <code>Object</code></dt>
 <dd><p>Live instance of an ARC in Fabric.</p>
 </dd>
+<dt><a href="#Environment">Environment</a></dt>
+<dd><p>Interact with the user&#39;s Environment.</p>
+</dd>
 <dt><a href="#Fabric">Fabric</a></dt>
 <dd><p>Reliable decentralized infrastructure.</p>
 </dd>
@@ -1244,6 +1247,23 @@ Return a [Fabric](#Fabric)-labeled [Object](Object) for this [Entity](#Entity).
 | Param | Type | Description |
 | --- | --- | --- |
 | [input] | <code>Mixed</code> | Input to downsample.  If not provided, current Entity will be used. |
+
+<a name="Environment"></a>
+
+## Environment
+Interact with the user's Environment.
+
+**Kind**: global class  
+<a name="new_Environment_new"></a>
+
+### new Environment([settings])
+Create an instance of [Environment](#Environment).
+
+**Returns**: [<code>Environment</code>](#Environment) - Instance of the Environment.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Settings for the Fabric environment. |
 
 <a name="Fabric"></a>
 
