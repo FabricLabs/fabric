@@ -13,7 +13,9 @@ const Node = require('../types/node');
 async function OP_START (input = {}) {
   const node = new Node({
     // TODO: configure with input?
-    settings: this.environment.settings
+    settings: (this && this.environment) ? this.environment.settings : {
+      name: 'LOCALNODE'
+    }
   });
 
   return node.start();

@@ -100,7 +100,7 @@
     "fd-chunk-store": "2.0.0",
     "glob-run": "0.1.7",
     "javascript-state-machine": "3.1.0",
-    "jayson": "3.4.4",
+    "jayson": "4.0.0",
     "json-pointer": "0.6.2",
     "level": "7.0.1",
     "lodash.merge": "4.6.2",
