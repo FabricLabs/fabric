@@ -4,6 +4,7 @@ Welcome to Fabric!
 ## Overview
 * [🤔 Introduction][readme]
 * [👀 Quick Start][quickstart]
+* [🎯 Goals][goals]
 * [🔭 Roadmap][roadmap]
 * [看板 kanban][meta]
 
@@ -37,6 +38,7 @@ Welcome to Fabric!
 [services]: SERVICES.md
 [settings]: SETTINGS.md
 [contributing]: CONTRIBUTING.md
+[goals]: GOALS.md
 [todo]: TODO.md
 [roadmap]: https://github.com/FabricLabs/fabric/projects/1
 [meta]: https://github.com/orgs/FabricLabs/projects/1

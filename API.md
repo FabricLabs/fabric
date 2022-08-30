@@ -224,6 +224,7 @@ Generic Fabric Actor.
     * _instance_
         * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
         * [.commit()](#Actor+commit) ⇒ <code>String</code>
+        * [.export()](#Actor+export) ⇒ <code>Object</code>
         * [.get(path)](#Actor+get) ⇒ <code>Object</code>
         * [.set(path, value)](#Actor+set) ⇒ <code>Object</code>
         * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
@@ -274,6 +275,13 @@ Resolve the current state to a commitment.
 
 **Kind**: instance method of [<code>Actor</code>](#Actor)  
 **Returns**: <code>String</code> - 32-byte ID  
+<a name="Actor+export"></a>
+
+### actor.export() ⇒ <code>Object</code>
+Export the Actor's state to a standard [Object](Object).
+
+**Kind**: instance method of [<code>Actor</code>](#Actor)  
+**Returns**: <code>Object</code> - Standard object.  
 <a name="Actor+get"></a>
 
 ### actor.get(path) ⇒ <code>Object</code>
@@ -1254,6 +1262,13 @@ Return a [Fabric](#Fabric)-labeled [Object](Object) for this [Entity](#Entity).
 Interact with the user's Environment.
 
 **Kind**: global class  
+
+* [Environment](#Environment)
+    * [new Environment([settings])](#new_Environment_new)
+    * [.readVariable(name)](#Environment+readVariable) ⇒ <code>String</code>
+    * [.setWallet(wallet, force)](#Environment+setWallet) ⇒ [<code>Environment</code>](#Environment)
+    * [.start()](#Environment+start) ⇒ [<code>Environment</code>](#Environment)
+
 <a name="new_Environment_new"></a>
 
 ### new Environment([settings])
@@ -1265,6 +1280,38 @@ Create an instance of [Environment](#Environment).
 | --- | --- | --- |
 | [settings] | <code>Object</code> | Settings for the Fabric environment. |
 
+<a name="Environment+readVariable"></a>
+
+### environment.readVariable(name) ⇒ <code>String</code>
+Read a variable from the environment.
+
+**Kind**: instance method of [<code>Environment</code>](#Environment)  
+**Returns**: <code>String</code> - Value of the variable (or an empty string).  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>String</code> | Variable name to read. |
+
+<a name="Environment+setWallet"></a>
+
+### environment.setWallet(wallet, force) ⇒ [<code>Environment</code>](#Environment)
+Configure the Environment to use a Fabric [Wallet](#Wallet).
+
+**Kind**: instance method of [<code>Environment</code>](#Environment)  
+**Returns**: [<code>Environment</code>](#Environment) - The Fabric Environment.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| wallet | [<code>Wallet</code>](#Wallet) |  | Wallet to attach. |
+| force | <code>Boolean</code> | <code>false</code> | Force existing wallets to be destroyed. |
+
+<a name="Environment+start"></a>
+
+### environment.start() ⇒ [<code>Environment</code>](#Environment)
+Start the Environment.
+
+**Kind**: instance method of [<code>Environment</code>](#Environment)  
+**Returns**: [<code>Environment</code>](#Environment) - The Fabric Environment.  
 <a name="Fabric"></a>
 
 ## Fabric
@@ -1803,6 +1850,7 @@ A basic logger that writes logs to the local file system
     * [.stop()](#Logger+stop) ⇒ <code>Promise</code>
     * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
     * [.commit()](#Actor+commit) ⇒ <code>String</code>
+    * [.export()](#Actor+export) ⇒ <code>Object</code>
     * [.get(path)](#Actor+get) ⇒ <code>Object</code>
     * [.set(path, value)](#Actor+set) ⇒ <code>Object</code>
     * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
@@ -1870,6 +1918,14 @@ Resolve the current state to a commitment.
 **Kind**: instance method of [<code>Logger</code>](#Logger)  
 **Overrides**: [<code>commit</code>](#Actor+commit)  
 **Returns**: <code>String</code> - 32-byte ID  
+<a name="Actor+export"></a>
+
+### logger.export() ⇒ <code>Object</code>
+Export the Actor's state to a standard [Object](Object).
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+**Overrides**: [<code>export</code>](#Actor+export)  
+**Returns**: <code>Object</code> - Standard object.  
 <a name="Actor+get"></a>
 
 ### logger.get(path) ⇒ <code>Object</code>

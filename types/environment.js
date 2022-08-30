@@ -166,6 +166,16 @@ class Environment extends Entity {
     return this;
   }
 
+  destroyWallet () {
+    try {
+      fs.unlinkSync(this.WALLET_FILE);
+      return true;
+    } catch (exception) {
+      console.error('[FABRIC:ENVIRONMENT]', 'Wallet destroyed.');
+      return false;
+    }
+  }
+
   readContracts () {
     const prefix = `${__dirname}/..`;
     return fs.readdirSync(`${prefix}/contracts`).filter((x) => {
@@ -181,16 +191,27 @@ class Environment extends Entity {
     });
   }
 
+  /**
+   * Read a variable from the environment.
+   * @param {String} name Variable name to read.
+   * @returns {String} Value of the variable (or an empty string).
+   */
   readVariable (name) {
     return process.env[name] || '';
   }
 
   readWallet () {
-    return fs.readFileSync(this.settings.path, {
+    return fs.readFileSync(this.WALLET_FILE, {
       encoding: 'utf8'
-    });;
+    });
   }
 
+  /**
+   * Configure the Environment to use a Fabric {@link Wallet}.
+   * @param {Wallet} wallet Wallet to attach.
+   * @param {Boolean} force Force existing wallets to be destroyed.
+   * @returns {Environment} The Fabric Environment.
+   */
   setWallet (wallet, force = false) {
     // Attach before saving
     this.wallet = wallet;
@@ -226,6 +247,10 @@ class Environment extends Entity {
     return false;
   }
 
+  /**
+   * Start the Environment.
+   * @returns {Environment} The Fabric Environment.
+   */
   start () {
     this._state.status = 'STARTING';
     this.local = this.readSeedFile();

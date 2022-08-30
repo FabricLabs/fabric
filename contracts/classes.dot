@@ -1,0 +1,19 @@
+digraph FabricClasses {
+  "Actor" -> {
+    "Message"
+    "Peer"
+    "Service"
+  }
+
+  "EventEmitter" -> {
+    "Entity" -> {
+      "Environment"
+    }
+
+    "Reader"
+  }
+
+  "Service" -> {
+    "Wallet"
+  }
+}

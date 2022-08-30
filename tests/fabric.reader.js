@@ -13,7 +13,7 @@ describe('@fabric/core/types/reader', function () {
       assert.strictEqual(Reader instanceof Function, true);
     });
 
-    xit('can parse a well-formatted message', function (done) {
+    it('can parse a well-formatted message', function (done) {
       const reader = new Reader();
       const message = Message.fromVector(['Generic', 'Hello, world!']);
       const raw = message.toRaw();

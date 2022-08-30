@@ -176,6 +176,19 @@ class Actor extends EventEmitter {
   }
 
   /**
+   * Export the Actor's state to a standard {@link Object}.
+   * @returns {Object} Standard object.
+   */
+  export () {
+    return {
+      id: this.id,
+      type: 'FabricActor',
+      object: this.state,
+      version: 1
+    };
+  }
+
+  /**
    * Retrieve a value from the Actor's state by {@link JSONPointer} path.
    * @param {String} path Path to retrieve using {@link JSONPointer}.
    * @returns {Object} Value of the path in the Actor's state.
@@ -212,6 +225,11 @@ class Actor extends EventEmitter {
     pointer.set(this._state.content, path, value);
     this.commit();
     return this;
+  }
+
+  setStatus (value) {
+    if (!value) throw new Error('Cannot remove status.');
+    this.status = value;
   }
 
   /**

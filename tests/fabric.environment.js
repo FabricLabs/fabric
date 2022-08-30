@@ -1,8 +1,11 @@
 'use strict';
 
 // Dependencies
-const Environment = require('../types/environment');
 const assert = require('assert');
+
+// Fabric Types
+const Environment = require('../types/environment');
+const Wallet = require('../types/wallet');
 
 describe('@fabric/core/types/environment', function () {
   describe('Environment', function () {
@@ -25,16 +28,20 @@ describe('@fabric/core/types/environment', function () {
 
     it('can save a valid wallet', async function () {
       const environment = new Environment({
-        path: `./stores/fabric-tests`
+        path: `./stores/test-wallet.json`
       });
 
-      environment.setWallet({
+      const wallet = new Wallet({
         type: 'FabricWallet',
         format: 'aes-256-cbc',
         version: 1
       });
 
-      assert.ok(home);
+      environment.setWallet(wallet);
+
+      assert.ok(environment);
+
+      environment.destroyWallet();
     });
 
     it('can check for store', async function () {

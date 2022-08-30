@@ -7,7 +7,6 @@ See also [GOALS.md][goals].
 ## Short List
 - [x] `npm audit --production`
 - [ ] `npm audit --dev`
-- [ ] Test with Node 14
 - [x] Test with Node 16
 - [ ] Clean up outstanding warnings
 - [ ] Tests passing on Travis
