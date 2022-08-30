@@ -167,6 +167,7 @@
 ./types/cli.js:    // TODO: ZMQ
 ./types/cli.js:    // TODO: enable
 ./types/cli.js:    // TODO: create payment channel (@fabric/core/types/channel)
+./types/cli.js:      // TODO: exit function here
 ./types/cli.js:    // TODO: use @fabric/core/types/channel
 ./types/cli.js:    // TODO: use @fabric/core/types/channel
 ./types/cli.js:    // TODO: test this on testnet / mainnet
@@ -189,6 +190,7 @@
 ./types/peer.js:    // TODO: re-evaluate use of IdentityRequest
 ./types/peer.js:    // TODO: actually decrypt packet
 ./types/peer.js:    // TODO: refactor to use local functions + specific unbindings
+./types/peer.js:      // TODO: consolidate with this._handleConnection
 ./types/peer.js:        // TODO: consider using `process.nextTick` to only clean up after event?
 ./types/peer.js:      // TODO: unify as _dataHandler
 ./types/peer.js:      // TODO: replace with handshake
@@ -238,7 +240,9 @@
 ./API.md:TODO: move to @fabric/http/types/spa
 ./SUMMARY.md:* [✅ TODO List][todo]
 ./SUMMARY.md:[todo]: TODO.md
+./fabric-whitepaper.md:### TODO: include content hashes of links as they appear at document compilation time.
 ./contracts/exchange.js:  // TODO: reconcile API wth @fabric/doorman as appears at: https://github.com/FabricLabs/doorman
+./contracts/node.js:    // TODO: configure with input?
 ./contracts/setup.js.bak:  // TODO: discuss w/ @ChronicSmoke
 ./contracts/setup.js.bak:  // TODO: use in walletExists
 ./contracts/federation.js:    // TODO: get signatures
@@ -291,7 +295,6 @@
 ./functions/_handleFabricMessage.js:  const message = Message.fromVector([...data]); // TODO: redefine...
 ./GOALS.md:- [ ] Find all TODO items (run script, check diff)
 ./services/bitcoin.js:// TODO: replace with  `secp256k1`
-./services/bitcoin.js:// TODO: remove bcoin
 ./services/bitcoin.js:      // httpPort: 48449, // TODO: disable HTTP entirely!
 ./services/bitcoin.js:    // TODO: import ZMQ settings
 ./services/bitcoin.js:      message.amount = message.amount.fixed().toPrecision(8); // TODO: evaluate precision behavior
