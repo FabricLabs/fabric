@@ -462,8 +462,10 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
   render () {
     this['@id'] = this.id;
     this['@encoding'] = 'json';
-    this['@output'] = this.serialize(this['@entity']['@data'], 'json');
+    this['@output'] = this.serialize(this.state, 'json');
     this['@commit'] = this.commit();
+
+    return this['@output'].toString('utf8');
 
     switch (this['@type']) {
       default:

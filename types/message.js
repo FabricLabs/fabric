@@ -335,6 +335,7 @@ class Message extends Actor {
     const parts = [
       Buffer.from(this.raw.magic, 'hex'),
       Buffer.from(this.raw.version, 'hex'),
+      Buffer.from(this.raw.parent, 'hex'),
       Buffer.from(this.raw.type, 'hex'),
       Buffer.from(this.raw.size, 'hex'),
       Buffer.from(this.raw.signature, 'hex'),

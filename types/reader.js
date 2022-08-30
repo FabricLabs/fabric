@@ -99,8 +99,11 @@ class Reader extends EventEmitter {
     // Segment the header bytes
     parts.push(header.slice(0, 4)); // magic
     parts.push(header.slice(4, 8)); // version
-    parts.push(header.slice(8, 12)); // type
-    parts.push(header.slice(12, 16)); // payload size
+    parts.push(header.slice(8, 40)); // parent
+    parts.push(header.slice(40, 44)); // type
+    parts.push(header.slice(44, 48)); // payload size
+    parts.push(header.slice(48, 80)); // hash
+    parts.push(header.slice(80, 144)); // signature
 
     const map = parts.map((x) => Buffer.from(x, 'hex'));
     const elements = map.map((x) => parseInt(x.toString('hex'), 16));
@@ -108,8 +111,11 @@ class Reader extends EventEmitter {
     // Read header
     const magic = elements[0];
     const version = elements[1];
-    const type = elements[2];
-    const size = elements[3];
+    const parent = elements[2];
+    const type = elements[3];
+    const size = elements[4];
+    const signature = elements[5];
+    const hash = elements[6];
 
     if (magic !== MAGIC_BYTES) {
       throw new Error(`Header not magic: ${magic} !== ${MAGIC_BYTES}`);

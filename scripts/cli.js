@@ -16,7 +16,6 @@ const file = path + '/wallet.json';
 const { Command } = require('commander');
 
 // Fabric Types
-const Wallet = require('../types/wallet');
 const Machine = require('../types/machine');
 const Environment = require('../types/environment');
 

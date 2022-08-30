@@ -6,13 +6,26 @@ const Hash256 = require('./hash256');
 const Key = require('./key');
 const Signer = require('./signer');
 
+/**
+ * Manage a network identity.
+ */
 class Identity extends Actor {
+  /**
+   * Create an instance of an Identity.
+   * @param {Object} [settings] Settings for the Identity.
+   * @param {String} [settings.seed] BIP 39 seed phrase.
+   * @param {String} [settings.xprv] Serialized BIP 32 master private key.
+   * @param {String} [settings.xpub] Serialized BIP 32 master public key.
+   * @param {Number} [settings.account=0] BIP 44 account index.
+   * @param {Number} [settings.index=0] BIP 44 key index.
+   * @returns {Identity} Instance of the identity.
+   */
   constructor (settings = {}) {
     super(settings);
 
     this.settings = Object.assign({
       seed: null,
-      accountID: 0,
+      account: 0,
       index: 0
     }, this.settings, settings);
 
@@ -21,7 +34,7 @@ class Identity extends Actor {
 
     this._state = {
       content: {
-        accountID: this.settings.accountID,
+        account: this.settings.account,
         index: this.settings.index
       }
     };
@@ -30,7 +43,7 @@ class Identity extends Actor {
   }
 
   get accountID () {
-    return this._state.content.accountID;
+    return this._state.content.account;
   }
 
   get derivation () {
@@ -76,6 +89,10 @@ class Identity extends Actor {
     return this;
   }
 
+  /**
+   * Retrieve the bech32m-encoded identity.
+   * @returns {String} Public identity.
+   */
   toString () {
     if (this.settings.debug) console.log('master key:', this.key.master.publicKey);
     if (this.settings.debug) console.log('pubkey for id:', this.pubkey);

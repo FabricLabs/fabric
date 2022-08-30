@@ -23,6 +23,20 @@ describe('@fabric/core/types/environment', function () {
       assert.ok(home);
     });
 
+    it('can save a valid wallet', async function () {
+      const environment = new Environment({
+        path: `./stores/fabric-tests`
+      });
+
+      environment.setWallet({
+        type: 'FabricWallet',
+        format: 'aes-256-cbc',
+        version: 1
+      });
+
+      assert.ok(home);
+    });
+
     it('can check for store', async function () {
       const environment = new Environment();
       const exists = environment.storeExists();

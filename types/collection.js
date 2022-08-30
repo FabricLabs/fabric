@@ -314,16 +314,16 @@ class Collection extends Stack {
    * type, supplied in the constructor.
    */
   toTypedArray () {
-    let map = this.map();
-    let ids = Object.keys(map);
+    const map = this.map();
+    const ids = Object.keys(map);
     return ids.map((x) => this._wrapResult(map[ids[x]]));
   }
 
   typedMap () {
-    let map = this.map();
-    let ids = Object.keys(map);
+    const map = this.map();
+    const ids = Object.keys(map);
     // TODO: `list()` should return an Array
-    let result = {};
+    const result = {};
 
     for (let i = 0; i < ids.length; i++) {
       result[ids[i]] = this._wrapResult(map[ids[i]]);
@@ -338,6 +338,10 @@ class Collection extends Stack {
    */
   map () {
     return Collection.pointer.get(this.value, `${this.path}`);
+  }
+
+  render () {
+    return this.serialize(this.state);
   }
 
   /**
