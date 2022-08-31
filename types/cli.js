@@ -6,6 +6,8 @@ const {
   BITCOIN_GENESIS
 } = require('../constants');
 
+const INPUT_HINT = 'Press the "i" key to begin typing.';
+
 // Internal Dependencies
 const fs = require('fs');
 
@@ -24,6 +26,7 @@ const Wallet = require('./wallet');
 
 // Services
 const Bitcoin = require('../services/bitcoin');
+const Lightning = require('../services/lightning');
 
 // UI dependencies
 // TODO: use Jade to render pre-registered components
@@ -174,12 +177,21 @@ class CLI extends App {
     this._registerCommand('set', this._handleSetRequest);
     this._registerCommand('get', this._handleGetRequest);
 
+    // Services
+    this._registerService('bitcoin', Bitcoin);
+    this._registerService('lightning', Lightning);
+
     await this.bootstrap();
 
     if (this.settings.render) {
       // Render UI
       this.render();
     }
+
+    this.on('log', this._handleSourceLog.bind(this));
+    this.on('debug', this._handleSourceDebug.bind(this));
+    this.on('error', this._handleSourceError.bind(this));
+    this.on('warning', this._handleSourceWarning.bind(this));
 
     // Attach P2P message handlers
     this.node.on('log', this._handlePeerLog.bind(this));
@@ -218,10 +230,14 @@ class CLI extends App {
 
     // Start all services
     for (const [name, service] of Object.entries(this.services)) {
-      this._appendWarning(`Checking for Service: ${name}`);
+      this._appendWarning(`Checking if Service enabled: ${name}`);
       if (this.settings.services.includes(name)) {
-        this._appendWarning(`Starting service: ${name}`);
+        this._appendWarning(`Service "${name}" is enabled.  Starting...`);
+
+        this.trust(this.services[name]);
+
         await this.services[name].start();
+        this._appendWarning(`The service named "${name}" has started!`);
       }
     }
 
@@ -317,7 +333,7 @@ class CLI extends App {
   }
 
   async _appendMessage (msg) {
-    this.elements['messages'].log(`[${(new Date()).toISOString()}]: ${msg}`);
+    this.elements['messages'].log(`[${(new Date()).toISOString()}] ${msg}`);
     this.screen.render();
   }
 
@@ -331,6 +347,22 @@ class CLI extends App {
 
   async _appendError (msg) {
     this._appendMessage(`{red-fg}${msg}{/red-fg}`);
+  }
+
+  async _handleSourceLog (msg) {
+    this._appendMessage(msg);
+  }
+
+  async _handleSourceDebug (msg) {
+    this._appendDebug(msg);
+  }
+
+  async _handleSourceError (msg) {
+    this._appendError(msg);
+  }
+
+  async _handleSourceWarning (msg) {
+    this._appendWarning(msg);
   }
 
   async _handleChanges (changes) {
@@ -459,7 +491,9 @@ class CLI extends App {
 
   async _handleConnectionOpen (msg) {
     this._appendMessage(`Node emitted "connections:open" event: ${JSON.stringify(msg)}`);
+
     await this._handleConnection(msg);
+
     this._syncConnectionList();
     this._syncPeerList();
   }
@@ -494,6 +528,7 @@ class CLI extends App {
 
   async _handleConnection (connection) {
     if (!connection.id) {
+      // TODO: exit function here
       this._appendMessage('Peer did not send an ID.  Event received: ' + JSON.stringify(connection));
     }
 
@@ -651,10 +686,17 @@ class CLI extends App {
 
   _bindKeys () {
     const self = this;
-    self.screen.key(['escape', 'q', 'C-c'], self.stop.bind(self));
+
+    // Exit
+    self.screen.key(['C-c'], self.stop.bind(self));
+
+    // Text Input
+    self.screen.key(['i'], self.focusInput.bind(self));
     self.elements['prompt'].key(['enter'], self._handlePromptEnterKey.bind(self));
     self.elements['prompt'].key(['up'], self._handlePromptUpKey.bind(self));
     self.elements['prompt'].key(['down'], self._handlePromptDownKey.bind(self));
+
+    return true;
   }
 
   _sendToAllServices (message) {
@@ -782,10 +824,12 @@ class CLI extends App {
   }
 
   _handleServiceCommand (params) {
+    const list = Object.keys(this.services);
+
     switch (params[1]) {
       case 'list':
       default:
-        this._appendMessage(`{bold}Available Services{/bold}: ${JSON.stringify(Object.keys(this.services), null, '  ')}`);
+        this._appendMessage(`{bold}Available Services{/bold}: ${JSON.stringify(list, null, '  ')}`);
         break;
     }
   }
@@ -870,9 +914,20 @@ class CLI extends App {
 
     for (const id in this.connections) {
       const connection = this.connections[id];
+
+      let icon = '?';
+      switch (connection.status) {
+        default:
+          icon = '…';
+          break;
+        case 'ready':
+          icon = '✓';
+          break;
+      }
+
       const element = blessed.element({
         name: connection.id,
-        content: `[✓] ${connection.id}@${connection.address}`
+        content: `[${icon}] ${connection.id}@${connection.address}`
       });
 
       // TODO: use peer ID for managed list
@@ -939,6 +994,36 @@ class CLI extends App {
     });
   }
 
+  focusInput () {
+    this.elements['prompt'].clearValue();
+    this.elements['prompt'].focus();
+    this.screen.render();
+  }
+
+  setPane (name) {
+    this.elements['home'].detach();
+    // this.elements['logBox'].detach();
+    this.elements['network'].detach();
+    this.elements['walletBox'].detach();
+
+    switch (name) {
+      default:
+        break;
+      case 'home':
+        this.screen.append(this.elements['home'])
+        break;
+      case 'messages':
+        // this.screen.append(this.elements['logBox'])
+        break;
+      case 'network':
+        this.screen.append(this.elements['network'])
+        break;
+      case 'wallet':
+        this.screen.append(this.elements['walletBox'])
+        break;
+    }
+  }
+
   render () {
     const self = this;
 
@@ -948,6 +1033,85 @@ class CLI extends App {
       output: this.settings.output,
       terminal: this.settings.terminal,
       fullUnicode: this.settings.fullUnicode
+    });
+
+    self.elements['home'] = blessed.box({
+      parent: self.screen,
+      content: 'Fabric Command Line Interface\nVersion 0.0.1-dev (@martindale)',
+      top: 7,
+      bottom: 0,
+      width: '100%',
+      border: {
+        type: 'line'
+      },
+    });
+
+    self.elements['network'] = blessed.list({
+      parent: self.screen,
+      label: '[ Network ]',
+      border: {
+        type: 'line'
+      },
+      top: 6,
+      bottom: 4,
+      width: '100%'
+    });
+
+    self.elements['connections'] = blessed.list({
+      parent: this.elements['network'],
+      top: 0,
+      bottom: 0
+    });
+
+    self.elements['logBox'] = blessed.box({
+      parent: self.screen,
+      top: 6,
+      bottom: 4,
+      width: '100%'
+    });
+
+    self.elements['walletBox'] = blessed.box({
+      parent: self.screen,
+      label: '[ Wallet ]',
+      border: {
+        type: 'line'
+      },
+      top: 6,
+      bottom: 4,
+      width: '100%'
+    });
+
+    self.elements['menu'] = blessed.listbar({
+      parent: self.screen,
+      top: '100%-1',
+      left: 0,
+      style: {
+        selected: {
+          background: 'white',
+          border: '1'
+        }
+      },
+      commands: {
+        'Messages': {
+          keys: ['f1'],
+          callback: function () {
+            this.setPane('messages');
+            return true;
+          }.bind(this)
+        },
+        'Wallet': {
+          keys: ['f2'],
+          callback: function () {
+            this.setPane('wallet');
+          }.bind(this)
+        },
+        'Network': {
+          keys: ['f3'],
+          callback: function () {
+            this.setPane('network');
+          }.bind(this)
+        }
+      }
     });
 
     self.elements['status'] = blessed.box({
@@ -1088,13 +1252,15 @@ class CLI extends App {
     self.elements['chainTip'] = blessed.text({
       parent: self.elements['chain'],
       content: 'loading...',
-      left: 11
+      left: 11,
+      width: 50
     });
 
     self.elements['height'] = blessed.box({
       parent: self.elements['status'],
       top: 2,
       left: 1,
+      width: 100
     });
 
     self.elements['heightLabel'] = blessed.text({
@@ -1131,14 +1297,14 @@ class CLI extends App {
 
     // MAIN LOG OUTPUT
     self.elements['messages'] = blessed.log({
-      parent: self.screen,
+      parent: this.screen,
       label: '[ Messages ]',
       border: {
         type: 'line'
       },
       top: 6,
-      width: '60%',
-      bottom: 3,
+      width: '80%',
+      bottom: 4,
       mouse: true,
       tags: true
     });
@@ -1150,25 +1316,13 @@ class CLI extends App {
         type: 'line'
       },
       top: 6,
-      left: '60%+1',
-      bottom: 3,
-      width: '20%'
-    });
-
-    self.elements['connections'] = blessed.list({
-      parent: self.screen,
-      label: '[ Connections ]',
-      border: {
-        type: 'line'
-      },
-      top: 6,
       left: '80%+1',
-      bottom: 3
+      bottom: 4
     });
 
     self.elements['controls'] = blessed.box({
-      parent: self.screen,
-      bottom: 0,
+      parent: this.screen,
+      bottom: 1,
       height: 3,
       border: {
         type: 'line'
@@ -1187,7 +1341,11 @@ class CLI extends App {
       name: 'input',
       input: true,
       keys: true,
-      inputOnFocus: true
+      inputOnFocus: true,
+      value: INPUT_HINT,
+      style: {
+        fg: 'grey'
+      }
     });
 
     // Set Index for Command History
@@ -1223,7 +1381,9 @@ class CLI extends App {
     });
 
     self.elements['form'].on('submit', self._handleFormSubmit.bind(self));
-    self.elements['prompt'].focus();
+    // this.focusInput();
+
+    this.setPane('messages');
 
     setInterval(function () {
       // self._appendMessage('10 seconds have passed.');

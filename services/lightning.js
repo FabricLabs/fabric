@@ -1,7 +1,7 @@
 'use strict';
 
 // Dependencies
-const Remote = require('@fabric/http/types/remote');
+const net = require('net');
 
 // Fabric Types
 const Service = require('../types/service');
@@ -34,6 +34,9 @@ class Lightning extends Service {
         confirmed: 0,
         unconfirmed: 0
       },
+      content: {
+        ...super.state
+      },
       channels: {},
       invoices: {},
       peers: {},
@@ -59,17 +62,24 @@ class Lightning extends Service {
     this.status = 'starting';
     await this.machine.start();
 
-    if (this.settings.mode === 'rest') {
-      const provider = new URL(this.settings.authority);
-      this.rest = new Remote({
-        authority: provider.hostname,
-        username: provider.username,
-        password: provider.password
-      });
-      await this._syncOracleInfo();
+    switch (this.settings.mode) {
+      default:
+        throw new Error(`Unknown mode: ${this.settings.mode}`);
+        break;
+      case 'rest':
+        const provider = new URL(this.settings.authority);
+        this.rest = new Remote({
+          authority: provider.hostname,
+          username: provider.username,
+          password: provider.password
+        });
+        await this._syncOracleInfo();
+        break;
+      case 'rpc':
+        break;
     }
 
-    this.heartbeat = setInterval(this._heartbeat.bind(this), this.settings.interval);
+    this._heart = setInterval(this._heartbeat.bind(this), this.settings.interval);
     this.status = 'started';
 
     return this;

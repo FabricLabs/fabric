@@ -1,4 +1,7 @@
 digraph FabricClasses {
+  label = "Fabric Class Inheritances"
+  rankdir = "LR"
+
   "Actor" -> {
     "Message"
     "Peer"
@@ -14,6 +17,10 @@ digraph FabricClasses {
   }
 
   "Service" -> {
+    "App" -> {
+      "CLI"
+    }
+
     "Wallet"
   }
 }

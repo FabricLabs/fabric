@@ -11,6 +11,8 @@ const settings = {
   peers: [].concat(playnet.peers),
   port: process.env.FABRIC_PORT || 7777,
   services: [
+    'bitcoin',
+    'lightning',
     // 'matrix'
   ],
   key: {

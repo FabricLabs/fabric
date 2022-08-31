@@ -73,6 +73,7 @@ class Bitcoin extends Service {
       nodes: ['127.0.0.1'],
       seeds: ['127.0.0.1'],
       servers: [],
+      targets: [],
       peers: [],
       port: 18444,
       interval: 10 * 60 * 1000, // every 10 minutes, write a checkpoint
@@ -167,6 +168,7 @@ class Bitcoin extends Service {
         confirmed: 0,
         unconfirmed: 0
       },
+      content: {},
       chain: [],
       blocks: {},
       headers: [],
@@ -1005,10 +1007,6 @@ class Bitcoin extends Service {
     }
   }
 
-  async _registerActor (actor) {
-    this.emit('log', `Bitcoin Actor to Register: ${JSON.stringify(actor, null, '  ')}`);
-  }
-
   async _listAddresses () {
     return this._makeRPCRequest('listreceivedbyaddress', [1, true]);
   }
@@ -1786,9 +1784,7 @@ class Bitcoin extends Service {
       tip: this.tip
     });
 
-    if (this.settings.verbosity >= 4) {
-      this.emit('log', '[SERVICES:BITCOIN] Service started!');
-    }
+    this.emit('log', '[SERVICES:BITCOIN] Service started!');
 
     return this;
   }

@@ -54,9 +54,11 @@ class Service extends Actor {
       networking: true,
       persistent: false,
       state: {
+        ...super.state,
         actors: {}, // TODO: schema
         channels: {}, // TODO: schema
-        messages: {} // TODO: schema
+        messages: {}, // TODO: schema
+        services: {}
       },
       interval: 60000, // Mandatory Checkpoint Interval
       verbosity: 2, // 0 none, 1 error, 2 warning, 3 notice, 4 debug
@@ -109,9 +111,6 @@ class Service extends Actor {
       epochs: {}, // snapshots of history (by ID)
       history: [], // list of ...
       services: {}, // stores sub-service state
-      content: {
-        type: 'FabricService'
-      },
       status: 'PAUSED',
       content: this.settings.state,
       version: 0 // TODO: change to 1 for 0.1.0
@@ -338,38 +337,41 @@ class Service extends Actor {
 
     return {
       _handleActor: source.on('actor', async function (actor) {
-        console.log(`[FABRIC:SERVICE] Source "${name}" emitted actor:`, actor);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted actor: ${JSON.stringify(actor, null, '  ')}`);
       }),
       _handleAlert: source.on('alert', async function (alert) {
         self.alert(`[FABRIC:SERVICE] [ALERT] [!!!] ${name} alerted: ${alert}`);
       }),
       _handleBeat: source.on('beat', async function (beat) {
         self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted beat: ${JSON.stringify(beat, null, '  ')}`);
+
         const ops = [
+          { op: 'add', path: `/actors`, value: {} },
+          { op: 'add', path: `/services`, value: {} },
           { op: 'replace', path: `/services/${name}`, value: beat.state }
         ];
 
         try {
-          manager.applyPatch(self._state, ops);
+          manager.applyPatch(self._state.content, ops);
           await self.commit();
         } catch (exception) {
-          self.emit('error', `Could not process beat: ${exception}`);
+          self.emit('warning', `Could not process beat: ${exception}`);
         }
       }),
       _handleChanges: source.on('changes', async function (changes) {
-        console.log(`[FABRIC:SERVICE] Source "${name}" emitted changes:`, changes);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted changes: ${changes}`);
       }),
       _handleChannel: source.on('channel', async function (channel) {
-        console.log(`[FABRIC:SERVICE] Source "${name}" emitted channel:`, channel);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted channel: ${JSON.stringify(channel, null, '  ')}`);
       }),
       _handleCommit: source.on('commit', async function (commit) {
-        console.log(`[FABRIC:SERVICE] Source "${name}" committed:`, commit);
+        self.emit('log', `[FABRIC:SERVICE] Source "${name}" committed: ${JSON.stringify(commit, null, '  ')}`);
       }),
       _handleError: source.on('error', async function _handleTrustedError (error) {
-        console.error(`[FABRIC:SERVICE] Source "${name}" emitted error:`, error);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted error: ${error}`);
       }),
       _handleLog: source.on('log', async function _handleTrustedLog (log) {
-        console.log(`[FABRIC:SERVICE] Source "${name}" emitted log:`, log);
+        self.emit('log', `[FABRIC:SERVICE] Source "${name}" emitted log: ${log}`);
       }),
       _handleMessage: source.on('message', async function (message) {
         self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted message: ${JSON.stringify(message.toObject ? message.toObject() : message, null, '  ')}`);
@@ -380,13 +382,13 @@ class Service extends Actor {
         // TODO: apply changes to parent (self)
       }),
       _handleReady: source.on('ready', async function _handleTrustedReady (info) {
-        console.log(`[FABRIC:SERVICE] Source "${name}" emitted ready:`, info);
+        self.emit('log', `[FABRIC:SERVICE] Source "${name}" emitted ready: ${JSON.stringify(info)}`);
       }),
       _handleTip: source.on('tip', async function (hash) {
         self.alert(`[FABRIC:SERVICE] New ${name} chaintip: ${hash}`);
       }),
       _handleWarning: source.on('warning', async function _handleTrustedWarning (warning) {
-        console.warn(`[FABRIC:SERVICE] Source "${name}" emitted warning:`, warning);
+        self.emit('warning', `[FABRIC:SERVICE] Source "${name}" emitted warning: ${warning}`);
       })
     };
   }
@@ -655,8 +657,8 @@ class Service extends Actor {
 
     try {
       result = pointer.get(this.state, path);
-    } catch (E) {
-      console.error(`Could not _GET() ${path}:`, E);
+    } catch (exception) {
+      this.emit('debug', `Could not _GET() ${path}:\n${exception}`);
     }
 
     return result;
