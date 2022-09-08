@@ -168,7 +168,12 @@ class Bitcoin extends Service {
         confirmed: 0,
         unconfirmed: 0
       },
-      content: {},
+      content: {
+        actors: {},
+        blocks: [],
+        height: 0,
+        tip: this.settings.genesis
+      },
       chain: [],
       blocks: {},
       headers: [],
@@ -201,7 +206,7 @@ class Bitcoin extends Service {
   }
 
   get best () {
-    return this._state.tip;
+    return this._state.content.tip;
   }
 
   /**
@@ -226,7 +231,7 @@ class Bitcoin extends Service {
    * Chain height (`=== length - 1`)
    */
   get height () {
-    return this._state.height;
+    return this._state.content.height;
   }
 
   get headers () {
@@ -252,7 +257,7 @@ class Bitcoin extends Service {
   set best (best) {
     if (best === this.best) return this.best;
     if (best !== this.best) {
-      this._state.tip = best;
+      this._state.content.tip = best;
       this.emit('tip', best);
     }
   }
@@ -343,7 +348,7 @@ class Bitcoin extends Service {
       const beat = {
         clock: self._clock,
         created: now,
-        state: self._state
+        state: self.state
       };
 
       self.emit('beat', beat);
@@ -1048,7 +1053,9 @@ class Bitcoin extends Service {
   }
 
   async _requestBestBlockHash () {
-    return this._makeRPCRequest('getbestblockhash', []);
+    const hash = await this._makeRPCRequest('getbestblockhash', []);
+    this.emit('debug', `Got best block hash: ${hash}`);
+    return hash;
   }
 
   async _requestBlockHeader (hash) {
@@ -1088,6 +1095,11 @@ class Bitcoin extends Service {
     return this._makeRPCRequest('getblock', [hash, 0]);
   }
 
+  /**
+   * Retrieve the equivalent to `getblockhash` from Bitcoin Core.
+   * @param {Number} height Height of block to retrieve.
+   * @returns {Object} The block hash.
+   */
   async _requestBlockAtHeight (height) {
     return this._makeRPCRequest('getblockhash', [height]);
   }
@@ -1104,6 +1116,12 @@ class Bitcoin extends Service {
 
   async _requestChainHeight () {
     return this._makeRPCRequest('getblockcount', []);
+  }
+
+  async _syncChainHeight () {
+    this.height = await this._makeRPCRequest('getblockcount', []);
+    this.emit('debug', `Got height:`, this.height);
+    return this.height;
   }
 
   async _listUnspent () {
@@ -1549,10 +1567,15 @@ class Bitcoin extends Service {
   }
 
   async _syncBestBlock () {
+    return this._syncBestBlockHash();
+  }
+
+  async _syncBestBlockHash () {
     const best = await this._requestBestBlockHash();
     if (best.error) return this.emit('error', `[${this.settings.name}] Could not make request to RPC host: ${best.error}`);
     this.best = best;
     await this.commit();
+    return this.best;
   }
 
   async _syncHeaders () {
@@ -1595,8 +1618,8 @@ class Bitcoin extends Service {
     }
 
     // Get the best block hash (and height)
-    const best = await this._requestBestBlockHash();
-    const height = await this._requestChainHeight();
+    const best = await this._syncBestBlockHash();
+    const height = await this._syncChainHeight();
 
     this.best = best;
     this.height = height;
@@ -1609,13 +1632,15 @@ class Bitcoin extends Service {
     if (header.error) return this.emit('error', header.error);
     const raw =  Buffer.from(header, 'hex');
     this.headers.push(raw);
+    this.emit('debug', `raw headers[${hash}] = ${JSON.stringify(header)}`);
     return this;
   }
 
   async _syncHeadersForBlock (hash) {
     const header = await this._requestBlockHeader(hash);
-    // this.headers[hash] = header;
-    this.emit('log', `headers[${hash}] = ${JSON.stringify(header)}`);
+    this.headers[hash] = header;
+    this.emit('debug', `headers[${hash}] = ${JSON.stringify(header)}`);
+    this.commit();
     return this;
   }
 
@@ -1627,12 +1652,15 @@ class Bitcoin extends Service {
     let before = 0;
 
     for (let i = 0; i <= this.height; i++) {
+      this.emit('debug', `Getting block headers: ${i}`);
+
       const now = Date.now();
       const progress = now - start;
       const hash = await this._requestBlockAtHeight(i);
       await this._syncRawHeadersForBlock(hash);
 
       const epoch = Math.floor((progress / 1000) % 1000);
+      // this.emit('debug', `timing: epochs[${epoch}] ${now} ${progress} ${i} ${epoch} ${rate}/sec`);
 
       if (epoch > last) {
         rate = `${i - before}`;
@@ -1678,7 +1706,7 @@ class Bitcoin extends Service {
   }
 
   async _syncWithRPC () {
-    await this._syncChainInfoOverRPC();
+    // await this._syncChainInfoOverRPC();
     await this._syncChainOverRPC();
     await this.commit();
 
@@ -1720,6 +1748,10 @@ class Bitcoin extends Service {
       self.emit('log', `wallet msg: ${msg}`);
     });
 
+    this.wallet.on('log', function (msg) {
+      self.emit('log', `wallet log: ${msg}`);
+    });
+
     this.wallet.on('warning', function (msg) {
       self.emit('warning', `wallet warning: ${msg}`);
     });
@@ -1734,7 +1766,7 @@ class Bitcoin extends Service {
       });
     }
 
-    this.observer = monitor.observe(this._state);
+    this.observer = monitor.observe(this._state.content);
 
     // Start services
     await this.wallet.start();

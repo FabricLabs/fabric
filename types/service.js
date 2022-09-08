@@ -1,6 +1,7 @@
 'use strict';
 
-const PATCHES_ENABLED = false;
+const PATCHES_ENABLED = true;
+const OP_TRACE = require('../contracts/trace');
 
 // Dependencies
 const crypto = require('crypto');
@@ -378,8 +379,9 @@ class Service extends Actor {
         await self._handleTrustedMessage(message);
       }),
       _handlePatches: source.on('patches', async function (patches) {
-        self.emit('debug', `[FABRIC:SERVICE] [${name}] Service State:`, source._state);
-        // TODO: apply changes to parent (self)
+        self.emit('debug', `[FABRIC:SERVICE] [${name}] Service State: ${JSON.stringify(source.state, null, '  ')}`);
+        self.emit('debug', `[FABRIC:SERVICE] [${name}] Patches: ${JSON.stringify(patches)}`);
+        self.emit('patches', patches);
       }),
       _handleReady: source.on('ready', async function _handleTrustedReady (info) {
         self.emit('log', `[FABRIC:SERVICE] Source "${name}" emitted ready: ${JSON.stringify(info)}`);
@@ -600,7 +602,7 @@ class Service extends Actor {
 
     // TODO: re-re-evaluate a better approach... oh how I long for Object.observe!
     // this.observer = manager.observe(this.state, this._handleStateChange.bind(this));
-    this.observer = manager.observe(this._state);
+    this.observer = manager.observe(this._state.content);
 
     // Set a heartbeat
     await this._startHeart();
@@ -658,7 +660,7 @@ class Service extends Actor {
     try {
       result = pointer.get(this.state, path);
     } catch (exception) {
-      this.emit('debug', `Could not _GET() ${path}:\n${exception}`);
+      this.emit('debug', `Could not _GET() ${path}:\n${exception}\n\tState: ${JSON.stringify(this.state, null, '  ')}`);
     }
 
     return result;
@@ -856,7 +858,7 @@ class Service extends Actor {
   }
 
   commit () {
-    if (this.settings.verbosity >= 4) this.emit('log', '[FABRIC:SERVICE] Committing...');
+    this.emit('debug', `[FABRIC:SERVICE] Committing ${OP_TRACE()}`);
 
     const self = this;
     const ops = [];
@@ -864,11 +866,12 @@ class Service extends Actor {
     // assemble all necessary info, emit Snapshot regardless of storage status
     try {
       ops.push({ type: 'put', key: 'snapshot', value: self.state });
-      this.emit('debug', JSON.stringify({
+
+      this.emit('debug', `Commit Template: ${JSON.stringify({
         '@data': self.state,
         '@from': 'COMMIT',
         '@type': 'Snapshot'
-      }));
+      }, null, '  ')}`);
     } catch (E) {
       console.error('Error saving state:', self.state);
       console.error('Could not commit to state:', E);
