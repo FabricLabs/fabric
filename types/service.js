@@ -54,6 +54,12 @@ class Service extends Actor {
       path: './stores/service',
       networking: true,
       persistent: false,
+      constraints: {
+        tolerance: 100,
+        memory: {
+          max: 67108864
+        }
+      },
       state: {
         ...super.state,
         actors: {}, // TODO: schema

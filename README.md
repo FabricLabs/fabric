@@ -91,11 +91,11 @@ Fabric is an extensible framework, supporting a variety of plugins.
 | Package                            | Description                                | Status                                                                                                                                       |
 |------------------------------------|--------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------|
 | [`@fabric/http`][http-plugin]      | serve Fabric apps to the legacy web (HTTP) | [![Build Status][badge-http-status]][http-test-status] [![Coverage Status][badge-http-coverage]][badge-http-coverage]                        |
+| [`@fabric/github`][github-plugin]  | interact with GitHub through Fabric        | [![Build Status][badge-github-status]][github-test-status] [![Coverage Status][badge-github-coverage]][github-coverage-home]                 |
 | [`@fabric/matrix`][matrix-plugin]  | connect to Matrix servers                  | [![Build Status][badge-matrix-status]][matrix-test-status] [![Coverage Status][badge-matrix-coverage]][badge-matrix-coverage]                |
 | [`@fabric/twilio`][twilio-plugin]  | send (and receive) SMS and phone calls     | [![Build Status][badge-twilio-status]][twilio-test-status] [![Coverage Status][badge-twilio-coverage]][badge-twilio-coverage]                |
 | [`@fabric/zapier`][zapier-plugin]  | interact with arbitrary zapier triggers    | [![Build Status][badge-zapier-status]][zapier-test-status] [![Coverage Status][badge-zapier-coverage]][badge-zapier-coverage]                |
 | [`@fabric/doorman`][doorman]       | an artificially intelligent assistant      | [![Build Status][badge-doorman-status]][doorman-test-status] [![Coverage Status][badge-doorman-coverage]][doorman-coverage-home]             |
-| [`@fabric/soundtrack`][soundtrack] | collaborative jukebox                      | [![Build Status][badge-soundtrack-status]][soundtrack-test-status] [![Coverage Status][badge-soundtrack-coverage]][soundtrack-coverage-home] |
 
 ## Running on Fabric
 Several successful projects are built with or are running on Fabric, including:
@@ -119,6 +119,7 @@ Fabric on Twitter: [@FabricProtocol][twitter]
 [matrix-plugin]: https://github.com/FabricLabs/fabric-matrix
 [twilio-plugin]: https://github.com/FabricLabs/fabric-twilio
 [zapier-plugin]: https://github.com/FabricLabs/fabric-zapier
+[github-plugin]: https://github.com/FabricLabs/fabric-github
 [api-docs]: https://dev.fabric.pub
 [chat]: https://chat.fabric.pub
 [edit-readme]: https://github.com/FabricLabs/fabric/edit/master/README.md
@@ -147,6 +148,8 @@ Fabric on Twitter: [@FabricProtocol][twitter]
 [badge-zapier-coverage]: https://img.shields.io/codecov/c/github/FabricLabs/fabric-zapier.svg?style=flat-square
 [badge-soundtrack-status]: https://img.shields.io/travis/FabricLabs/soundtrack.svg?branch=master&style=flat-square
 [badge-soundtrack-coverage]: https://img.shields.io/codecov/c/github/FabricLabs/soundtrack.svg?style=flat-square
+[badge-github-status]: https://img.shields.io/travis/FabricLabs/fabric-github.svg?branch=master&style=flat-square
+[badge-github-coverage]: https://img.shields.io/codecov/c/github/FabricLabs/fabric-github.svg?style=flat-square
 
 [doorman-test-status]: https://app.travis-ci.com/github/FabricLabs/doorman
 [http-test-status]: https://app.travis-ci.com/github/FabricLabs/fabric-http
@@ -154,10 +157,12 @@ Fabric on Twitter: [@FabricProtocol][twitter]
 [twilio-test-status]: https://app.travis-ci.com/github/FabricLabs/fabric-twilio
 [zapier-test-status]: https://app.travis-ci.com/github/FabricLabs/fabric-zapier
 [soundtrack-test-status]: https://app.travis-ci.com/github/FabricLabs/soundtrack
+[github-test-status]: https://app.travis-ci.com/github/FabricLabs/fabric-github
 
 [doorman-coverage-home]: https://codecov.io/gh/FabricLabs/doorman
 [http-coverage-home]: https://codecov.io/gh/FabricLabs/fabric-http
 [soundtrack-coverage-home]: https://codecov.io/gh/FabricLabs/soundtrack
+[github-coverage-home]: https://codecov.io/gh/FabricLabs/fabric-github
 
 [soundtrack.io]: https://soundtrack.io
 [soundtrack]: https://github.com/FabricLabs/soundtrack

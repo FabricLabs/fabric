@@ -20,6 +20,7 @@ const {
 const net = require('net');
 const crypto = require('crypto');
 const stream = require('stream');
+const noise = require('noise-protocol-stream');
 
 // Dependencies
 const merge = require('lodash.merge');
@@ -304,6 +305,8 @@ class Peer extends Actor {
     // TODO: actually decrypt packet
     const decrypted = socket.session.decrypt(data);
 
+    this.emit('debug', `Handling data packet:`, data);
+
     // Variables
     let message = null;
 
@@ -332,8 +335,7 @@ class Peer extends Actor {
   }
 
   async _handleSocketData (socket, address, data) {
-    const self = this;
-    if (self.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Received data from peer:', data);
+    this.emit('debug', `Received data from peer: ${data}`);
 
     if (!socket.session) {
       this.emit('error', `Received data on socket without a session!  Violator: ${address}`);
@@ -341,6 +343,8 @@ class Peer extends Actor {
     }
 
     socket._reader._addData(data);
+
+    return true;
   }
 
   _connect (address) {

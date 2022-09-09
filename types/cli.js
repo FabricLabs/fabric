@@ -234,7 +234,7 @@ class CLI extends App {
       if (this.settings.services.includes(name)) {
         this._appendWarning(`Service "${name}" is enabled.  Starting...`);
 
-        this.trust(this.services[name]);
+        this.trust(this.services[name], name);
 
         await this.services[name].start();
         this._appendWarning(`The service named "${name}" has started!`);
@@ -831,6 +831,11 @@ class CLI extends App {
       default:
         this._appendMessage(`{bold}Available Services{/bold}: ${JSON.stringify(list, null, '  ')}`);
         break;
+      case 'state':
+        const state = this.services[params[2]].state;
+        this._appendMessage(`{bold}${params[2]}{/bold}: ${JSON.stringify(state, null, '  ')}`);
+
+        break;
     }
   }
 
@@ -1240,7 +1245,7 @@ class CLI extends App {
       parent: self.elements['status'],
       top: 1,
       left: 1,
-      width: 100
+      width: 50
     });
 
     self.elements['chainLabel'] = blessed.text({
@@ -1260,7 +1265,7 @@ class CLI extends App {
       parent: self.elements['status'],
       top: 2,
       left: 1,
-      width: 100
+      width: 62
     });
 
     self.elements['heightLabel'] = blessed.text({
@@ -1301,6 +1306,12 @@ class CLI extends App {
       label: '[ Messages ]',
       border: {
         type: 'line'
+      },
+      scrollbar: {
+        style: {
+          bg: 'white',
+          fg: 'blue'
+        }
       },
       top: 6,
       width: '80%',

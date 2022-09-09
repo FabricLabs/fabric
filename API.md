@@ -2338,6 +2338,7 @@ An in-memory representation of a node in our network.
 
 * [Peer](#Peer)
     * [new Peer([config])](#new_Peer_new)
+    * ~~[.address](#Peer+address)~~
     * [.start()](#Peer+start)
     * [.stop()](#Peer+stop)
     * [.listen()](#Peer+listen) ⇒ [<code>Peer</code>](#Peer)
@@ -2356,6 +2357,12 @@ Create an instance of [Peer](#Peer).
 | [config.port] | <code>Number</code> | <code>7777</code> | Port to use for P2P connections. |
 | [config.peers] | <code>Array</code> | <code>[]</code> | List of initial peers. |
 
+<a name="Peer+address"></a>
+
+### ~~peer.address~~
+***Deprecated***
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+start"></a>
 
 ### peer.start()
@@ -3914,6 +3921,7 @@ Manages interaction with the Bitcoin network.
         * [._subscribeToShard(shard)](#Bitcoin+_subscribeToShard)
         * [._connectSPV()](#Bitcoin+_connectSPV)
         * [.connect(addr)](#Bitcoin+connect)
+        * [._requestBlockAtHeight(height)](#Bitcoin+_requestBlockAtHeight) ⇒ <code>Object</code>
         * [._createContractProposal(options)](#Bitcoin+_createContractProposal) ⇒ <code>ContractProposal</code>
         * [._buildPSBT(options)](#Bitcoin+_buildPSBT) ⇒ <code>PSBT</code>
         * [.start()](#Bitcoin+start)
@@ -4077,6 +4085,18 @@ Connect to a Fabric [Peer](#Peer).
 | Param | Type | Description |
 | --- | --- | --- |
 | addr | <code>String</code> | Address to connect to. |
+
+<a name="Bitcoin+_requestBlockAtHeight"></a>
+
+### bitcoin.\_requestBlockAtHeight(height) ⇒ <code>Object</code>
+Retrieve the equivalent to `getblockhash` from Bitcoin Core.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>Object</code> - The block hash.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| height | <code>Number</code> | Height of block to retrieve. |
 
 <a name="Bitcoin+_createContractProposal"></a>
 
