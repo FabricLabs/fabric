@@ -44,6 +44,10 @@ class Node extends Service {
     return this;
   }
 
+  get service () {
+    return this.program;
+  }
+
   /**
    * Explicitly trusts an {@link EventEmitter}.
    * @param {EventEmitter} source Actor to listen to.
@@ -112,6 +116,8 @@ class Node extends Service {
     // Start Services
     if (this.settings.autorun) await this.program.start();
     // if (this.settings.bitcoin) await this.bitcoin.start();
+
+    // Start Fabric Node
     if (this.settings.peering) await this.node.start();
 
     // Notify Listeners

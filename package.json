@@ -13,7 +13,7 @@
     "test": "tests"
   },
   "engines": {
-    "node": "^16.15.0"
+    "node": "16.15.0"
   },
   "scripts": {
     "audit": "npm audit --json --level critical > reports/AUDIT.json",

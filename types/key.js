@@ -99,6 +99,9 @@ class Key {
       case 'FROM_SEED':
         const seed = bip39.mnemonicToSeedSync(this.settings.seed, this.settings.passphrase);
         const root = bip32.fromSeed(seed);
+
+        this.seed = this.settings.seed;
+
         this.xprv = root.toBase58();
         this.xpub = root.neutered().toBase58();
         this.master = root;
@@ -158,6 +161,7 @@ class Key {
     // WARNING: this will currently loop after 2^32 bits
     // TODO: evaluate compression when treating seed phrase as ascii
     // TODO: consider using sha256(masterprivkey) or sha256(sha256(...))?
+
     this._starseed = Hash256.digest((
       this.settings.seed ||
       this.settings.xprv ||
