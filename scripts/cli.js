@@ -55,8 +55,10 @@ async function main (input = {}) {
   program.name('fabric');
 
   // Declare Commands
+  // FABRIC MOUNT
+  // Mount a Fabric filesytem.
   program.command('mount')
-    .description('Mount a local directory to a Fabric Filesystem.')
+    .description('Mount a Fabric filesytem.')
     .action(COMMANDS['MOUNT'].bind({ environment, program }));
 
   // FABRIC SETUP

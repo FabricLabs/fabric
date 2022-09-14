@@ -15,7 +15,7 @@ const Tree = require('./tree');
  */
 class Filesystem extends Actor {
   /**
-   * Syncronize an {@link Actor} with a local filesystem.
+   * Synchronize an {@link Actor} with a local filesystem.
    * @param {Object} [settings] Configuration for the Fabric filesystem.
    * @param {Object} [settings.path] Path of the local filesystem.
    * @returns {Filesystem} Instance of the Fabric filesystem.
@@ -69,6 +69,22 @@ class Filesystem extends Actor {
 
   get documents () {
     return this._state.documents;
+  }
+
+  async _loadFromDisk () {
+    const self = this;
+    return new Promise((resolve, reject) => {
+      try {
+        const files = fs.readdirSync(self.path);
+        self._state.content = { files };
+        self.commit();
+
+        resolve(self);
+      } catch (exception) {
+        self.emit('error', exception);
+        reject(exception);
+      }
+    });
   }
 
   /**
@@ -127,7 +143,7 @@ class Filesystem extends Actor {
     }
   }
 
-  async ingest (document) {
+  async ingest (document, name = null) {
     if (typeof document !== 'string') {
       document = JSON.stringify(document);
     }
@@ -165,9 +181,7 @@ class Filesystem extends Actor {
 
   async start () {
     this.touchDir(this.path); // ensure exists
-
     await this.sync();
-
     return this;
   }
 
@@ -176,8 +190,7 @@ class Filesystem extends Actor {
    * @returns {Filesystem} Instance of the Fabric filesystem.
    */
   async sync () {
-    const files = fs.readdirSync(this.path);
-    this._state.content = { files };
+    await this._loadFromDisk();
     this.commit();
     return this;
   }

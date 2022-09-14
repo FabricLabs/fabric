@@ -608,7 +608,11 @@ class Service extends Actor {
 
     // TODO: re-re-evaluate a better approach... oh how I long for Object.observe!
     // this.observer = manager.observe(this.state, this._handleStateChange.bind(this));
-    this.observer = manager.observe(this._state.content);
+    try {
+      this.observer = manager.observe(this._state.content);
+    } catch (exception) {
+      console.warn('Could not observe state:', this._state.content, exception);
+    }
 
     // Set a heartbeat
     await this._startHeart();

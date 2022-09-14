@@ -1,7 +1,9 @@
 'use strict';
 
-const Actor = require('./actor');
 const merge = require('lodash.merge');
+
+const Actor = require('./actor');
+const Tree = require('./tree');
 
 class Block extends Actor {
   constructor (input = {}) {
@@ -11,7 +13,9 @@ class Block extends Actor {
       parent: null,
       transactions: {},
       signatures: [],
-      content: {}
+      content: {
+        ...super.state
+      }
     }, input);
 
     Object.defineProperty(this, '_events', { enumerable: false });
@@ -19,6 +23,12 @@ class Block extends Actor {
     Object.defineProperty(this, 'observer', { enumerable: false });
 
     return this;
+  }
+
+  get tree () {
+    return new Tree({
+      leaves: Object.keys(this.transactions)
+    });
   }
 
   get transactions () {
