@@ -868,7 +868,7 @@ class Service extends Actor {
   }
 
   commit () {
-    this.emit('debug', `[FABRIC:SERVICE] Committing ${OP_TRACE()}`);
+    // this.emit('debug', `[FABRIC:SERVICE] Committing ${OP_TRACE()}`);
 
     const self = this;
     const ops = [];

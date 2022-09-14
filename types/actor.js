@@ -55,6 +55,12 @@ class Actor extends EventEmitter {
     // and/or resolving performance issues at scale
     this.observer = monitor.observe(this._state.content, this._handleMonitorChanges.bind(this));
 
+    Object.defineProperty(this, '_events', { enumerable: false });
+    Object.defineProperty(this, '_eventsCount', { enumerable: false });
+    Object.defineProperty(this, '_maxListeners', { enumerable: false });
+    Object.defineProperty(this, '_state', { enumerable: false });
+    Object.defineProperty(this, 'observer', { enumerable: false });
+
     // Chainable
     return this;
   }
@@ -109,11 +115,15 @@ class Actor extends EventEmitter {
     return Hash256.digest(buffer);
   }
 
+  get generic () {
+    return this.toGenericMessage();
+  }
+
   get preimage () {
-    const input = this.toGenericMessage();
-    const string = JSON.stringify(input, null, '  ');
-    const buffer = Buffer.from(string, 'utf8');
-    return Hash256.digest(buffer);
+    const string = JSON.stringify(this.generic, null, '  ');
+    const secret = Buffer.from(string, 'utf8');
+    const preimage = Hash256.digest(secret);
+    return preimage;
   }
 
   get state () {
@@ -240,6 +250,10 @@ class Actor extends EventEmitter {
     return Buffer.from(this.serialize(), 'utf8');
   }
 
+  /**
+   * Casts the Actor to a generic message.
+   * @returns {Object} Generic message object.
+   */
   toGenericMessage () {
     return {
       'type': 'FabricActorState',
@@ -358,7 +372,6 @@ class Actor extends EventEmitter {
   }
 
   _handleMonitorChanges (changes) {
-    console.log('got monitor changes from actor:', changes);
     // TODO: emit global state event here
     // after verify, commit
   }
