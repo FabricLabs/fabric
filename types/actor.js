@@ -51,6 +51,7 @@ class Actor extends EventEmitter {
 
     // TODO: evaluate disabling by default
     this.history = [];
+
     // TODO: evaluate disabling by default
     // and/or resolving performance issues at scale
     this.observer = monitor.observe(this._state.content, this._handleMonitorChanges.bind(this));

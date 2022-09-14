@@ -31,7 +31,7 @@ const MAX_MESSAGE_SIZE = 4096 - HEADER_SIZE;
 const MAX_STACK_HEIGHT = 32; // max height of stack (number of elements)
 const MAX_FRAME_SIZE = 32; // max size of a stack frame in bytes
 const MAX_MEMORY_ALLOC = MAX_STACK_HEIGHT * MAX_FRAME_SIZE;
-const MAX_TX_PER_BLOCK = 100;
+const MAX_TX_PER_BLOCK = 4;
 const MAX_CHANNEL_VALUE = 100000000;
 
 // Machine Constraints

@@ -1,12 +1,7 @@
 'use strict';
 
 const Block = require('../types/block');
-const Transaction = require('../types/transaction');
 const assert = require('assert');
-
-const tx = new Transaction({ input: 'Hello, world.' });
-console.log('tx:', tx);
-console.log('\tid:', tx.id);
 
 describe('@fabric/core/types/block', function () {
   describe('Block', function () {
