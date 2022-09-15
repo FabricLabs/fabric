@@ -4,8 +4,9 @@ const parser = require('dotparser');
 const Actor = require('./actor');
 const Hash256 = require('./hash256');
 const Key = require('./key');
+const Service = require('./service');
 
-class Contract extends Actor {
+class Contract extends Service {
   constructor (settings = {}) {
     super(settings);
 

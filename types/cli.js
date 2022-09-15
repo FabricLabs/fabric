@@ -81,7 +81,9 @@ class CLI extends App {
       anchor: null,
       balances: {
         confirmed: 0,
-        unconfirmed: 0
+        immature: 0,
+        trusted: 0,
+        unconfirmed: 0,
       },
       content: {
         actors: {}
@@ -191,6 +193,10 @@ class CLI extends App {
     this._registerCommand('state', this._handleStateRequest);
     this._registerCommand('set', this._handleSetRequest);
     this._registerCommand('get', this._handleGetRequest);
+
+    // Service Commands
+    this._registerCommand('bitcoin', this._handleBitcoinRequest);
+    this._registerCommand('lightning', this._handleLightningRequest);
 
     // Services
     this._registerService('bitcoin', Bitcoin);
@@ -872,6 +878,26 @@ class CLI extends App {
     return tx;
   }
 
+  async _handleBitcoinRequest (params) {
+    if (!params[1]) return this._appendError('You must specify a method.');
+    try {
+      const result = await this.bitcoin._makeRPCRequest(params[1], params.slice(2));
+      this._appendMessage(`[BITCOIN] ${params[1]}(${params.slice(2)}) ${JSON.stringify(result)}`);
+    } catch (exception) {
+      this._appendError(`[BITCOIN] Could not handle request: ${JSON.stringify(exception)}`);
+    }
+  }
+
+  async _handleLightningRequest (params) {
+    if (!params[1]) return this._appendError('You must specify a method.');
+    try {
+      const result = await this.lightning._makeRPCRequest(params[1], params.slice(2));
+      this._appendMessage(`[LIGHTNING] ${params[1]}(${params.slice(2)}) ${JSON.stringify(result)}`);
+    } catch (exception) {
+      this._appendError(`[LIGHTNING] Could not handle request: ${JSON.stringify(exception)}`);
+    }
+  }
+
   async _handleSendRequest (params) {
     if (!params[1]) return this._appendError('You must specify an address to send to.');
     if (!params[2]) return this._appendError('You must specify an amount to send.');
@@ -982,14 +1008,19 @@ class CLI extends App {
   async _syncBalance () {
     try {
       const balance = await this._getBalance();
+      const balances = await this.bitcoin._syncBalances();
 
       this._state.balances.confirmed = balance;
+      this._state.balances.trusted = balances.mine.trusted;
+      this._state.balances.immature = balances.mine.immature;
+      this._state.balances.pending = balances.mine.untrusted_pending;
+
       this.elements['balance'].setContent(balance.toFixed(8));
 
       this.elements.wallethelp.setContent(
         `  {bold}SPENDABLE{/bold}: ${balance.toFixed(8)} BTC\n` +
-        `{bold}UNCONFIRMED{/bold}: unknown\n` +
-        `   {bold}IMMATURE{/bold}: unknown\n`
+        `{bold}UNCONFIRMED{/bold}: ${this._state.balances.pending.toFixed(8)} BTC\n` +
+        `   {bold}IMMATURE{/bold}: ${this._state.balances.immature.toFixed(8)} BTC\n`
       );
 
       this.screen.render();
@@ -1018,6 +1049,7 @@ class CLI extends App {
       ].concat(list);
 
       this.elements.outputlist.setData(data);
+
       this.commit();
 
       this.screen.render();
@@ -1028,8 +1060,8 @@ class CLI extends App {
 
   async _syncLightningChannels () {
     this.elements.contracthelp.setContent(
-      `{bold}STATUS:{/bold} unknown
-{bold}LIGHTNING:{/bold} unknown`);
+      `   {bold}STATUS:{/bold} ${this.status}\n` +
+      `{bold}LIGHTNING:{/bold} ${this.lightning.status}`);
     return this;
   }
 
@@ -1241,15 +1273,15 @@ class CLI extends App {
     self.elements['contractlist'] = blessed.table({
       parent: self.elements.contractbook,
       data: [
-        ['foo', 'bar'],
-        ['baz', 'boz']
+        ['ID', 'Status', 'Type', 'Bond', 'Confirmations', 'Last Modified', 'Link']
       ],
       width: '100%-2'
     });
 
     self.elements['network'] = blessed.list({
       parent: self.screen,
-      label: '[ Network ]',
+      label: '{bold}[ Network ]{/bold}',
+      tags: true,
       border: {
         type: 'line'
       },
@@ -1273,7 +1305,8 @@ class CLI extends App {
 
     self.elements['walletBox'] = blessed.box({
       parent: self.screen,
-      label: '[ Wallet ]',
+      label: '{bold}[ Wallet ]{/bold}',
+      tags: true,
       border: {
         type: 'line'
       },
@@ -1357,7 +1390,8 @@ class CLI extends App {
 
     self.elements['status'] = blessed.box({
       parent: self.screen,
-      label: '[ Status ]',
+      label: '{bold}[ Status ]{/bold}',
+      tags: true,
       border: {
         type: 'line'
       },
@@ -1539,7 +1573,8 @@ class CLI extends App {
     // MAIN LOG OUTPUT
     self.elements['messages'] = blessed.log({
       parent: this.screen,
-      label: '[ Console ]',
+      label: '{bold}[ Console ]{/bold}',
+      tags: true,
       border: {
         type: 'line'
       },
@@ -1558,7 +1593,8 @@ class CLI extends App {
 
     self.elements['peers'] = blessed.list({
       parent: self.screen,
-      label: '[ Peers ]',
+      label: '{bold}[ Peers ]{/bold}',
+      tags: true,
       border: {
         type: 'line'
       },
@@ -1569,6 +1605,8 @@ class CLI extends App {
 
     self.elements['controls'] = blessed.box({
       parent: this.screen,
+      label: '{bold}[ INPUT ]{/bold}',
+      tags: true,
       bottom: 1,
       height: 3,
       border: {

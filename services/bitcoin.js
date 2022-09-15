@@ -167,8 +167,17 @@ class Bitcoin extends Service {
     this._state = {
       status: 'PAUSED',
       balances: { // safe up to 2^53-1 (all satoshis can be represented in 52 bits!)
-        confirmed: 0,
-        unconfirmed: 0
+        mine: {
+          trusted: 0,
+          untrusted_pending: 0,
+          immature: 0,
+          used: 0
+        },
+        watchonly: {
+          trusted: 0,
+          untrusted_pending: 0,
+          immature: 0
+        }
       },
       content: {
         actors: {},
@@ -204,7 +213,7 @@ class Bitcoin extends Service {
   }
 
   get balance () {
-    return this._state.balances.confirmed;
+    return this._state.balances.mine.trusted;
   }
 
   get best () {
@@ -1611,8 +1620,15 @@ class Bitcoin extends Service {
       data: {
         content: balance
       },
-      signature: actor.sign().signature
+      // signature: actor.sign().signature
     };
+  }
+
+  async _syncBalances () {
+    const balances = await this._makeRPCRequest('getbalances');
+    this._state.balances = balances;
+    this.commit();
+    return balances;
   }
 
   async _syncChainInfoOverRPC () {
