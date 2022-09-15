@@ -10,6 +10,7 @@ const INPUT_HINT = 'Press the "i" key to begin typing.';
 
 // Internal Dependencies
 const fs = require('fs');
+const EventEmitter = require('events').EventEmitter;
 
 // External Dependencies
 const merge = require('lodash.merge');
@@ -93,6 +94,7 @@ class CLI extends App {
 
     this._loadPeer();
     this._loadBitcoin();
+    this._loadLightning();
 
     // Chainable
     return this;
@@ -131,6 +133,13 @@ class CLI extends App {
       ],
       services: [],
       verbosity: 0
+    });
+  }
+
+  _loadLightning () {
+    this.lightning = new Lightning({
+      mode: 'socket',
+      path: this.settings.lightning.path
     });
   }
 
@@ -191,12 +200,13 @@ class CLI extends App {
       this.render();
     }
 
+    // ## Bindings
     this.on('log', this._handleSourceLog.bind(this));
     this.on('debug', this._handleSourceDebug.bind(this));
     this.on('error', this._handleSourceError.bind(this));
     this.on('warning', this._handleSourceWarning.bind(this));
 
-    // Attach P2P message handlers
+    // ## P2P message handlers
     this.node.on('log', this._handlePeerLog.bind(this));
     this.node.on('ready', this._handleNodeReady.bind(this));
     this.node.on('debug', this._handlePeerDebug.bind(this));
@@ -204,23 +214,23 @@ class CLI extends App {
     this.node.on('warning', this._handlePeerWarning.bind(this));
     this.node.on('message', this._handlePeerMessage.bind(this));
 
-    // Attach P2P event handlers
-    // Raw Connections
+    // ## Raw Connections
     this.node.on('connection', this._handleConnection.bind(this));
     this.node.on('connections:open', this._handleConnectionOpen.bind(this));
     this.node.on('connections:close', this._handleConnectionClose.bind(this));
     this.node.on('connection:error', this._handleConnectionError.bind(this));
 
-    // Peer Events
+    // ## Peer Events
     this.node.on('peer', this._handlePeer.bind(this));
     this.node.on('peer:candidate', this._handlePeerCandidate.bind(this));
     this.node.on('session:update', this._handleSessionUpdate.bind(this));
 
-    // Document Exchange
+    // ## Document Exchange
     this.node.on('DocumentPublish', this._handlePeerDocumentPublish.bind(this));
     this.node.on('DocumentRequest', this._handlePeerDocumentRequest.bind(this));
 
-    // Attach Anchor handlers
+    // ## Anchor handlers
+    // ### Bitcoin
     this.bitcoin.on('ready', this._handleBitcoinReady.bind(this));
     this.bitcoin.on('error', this._handleBitcoinError.bind(this));
     this.bitcoin.on('warning', this._handleBitcoinWarning.bind(this));
@@ -231,36 +241,48 @@ class CLI extends App {
     this.bitcoin.on('block', this._handleBitcoinBlock.bind(this));
     this.bitcoin.on('transaction', this._handleBitcoinTransaction.bind(this));
 
-    // Start all services
+    // #### Lightning
+    this.lightning.on('ready', this._handleLightningReady.bind(this));
+    this.lightning.on('error', this._handleLightningError.bind(this));
+    this.lightning.on('warning', this._handleLightningWarning.bind(this));
+    this.lightning.on('message', this._handleLightningMessage.bind(this));
+    this.lightning.on('log', this._handleLightningLog.bind(this));
+    this.lightning.on('commit', this._handleLightningCommit.bind(this));
+    this.lightning.on('sync', this._handleLightningSync.bind(this));
+
+    // ## Start all services
     for (const [name, service] of Object.entries(this.services)) {
       this._appendWarning(`Checking if Service enabled: ${name}`);
       if (this.settings.services.includes(name)) {
         this._appendWarning(`Service "${name}" is enabled.  Starting...`);
-
         this.trust(this.services[name], name);
-
         await this.services[name].start();
         this._appendWarning(`The service named "${name}" has started!`);
       }
     }
 
-    // Track state changes
+    // ## Track state changes
     this.observer = monitor.observe(this._state.content);
 
     // Bind remaining internals
     // TODO: enable
     // this.on('changes', this._handleChanges.bind(this));
 
+
+    // ## Start Anchor Services
     // Start Bitcoin service
     this.bitcoin.start();
 
-    // Start P2P node
+    // Start Lightning service
+    this.lightning.start();
+
+    // ## Start P2P node
     this.node.start();
 
-    // Attach Heartbeat
+    // ## Attach Heartbeat
     this._heart = setInterval(this.tick.bind(this), this.settings.interval);
 
-    // Emit Ready
+    // ## Emit Ready
     this.status = 'READY';
     this.emit('ready');
 
@@ -336,8 +358,13 @@ class CLI extends App {
   }
 
   async _appendMessage (msg) {
-    this.elements['messages'].log(`[${(new Date()).toISOString()}] ${msg}`);
-    this.screen.render();
+    const message = `[${(new Date()).toISOString()}] ${msg}`;
+    if (this.settings.render) {
+      this.elements['messages'].log(message);
+      this.screen.render();
+    } else {
+      console.log(`[FABRIC:CLI] ${message}`);
+    }
   }
 
   async _appendDebug (msg) {
@@ -554,6 +581,34 @@ class CLI extends App {
     this.screen.render();
   }
 
+  async _handleLightningCommit (commit) {
+    this._appendMessage(`Lightning service emitted commit: ${JSON.stringify(commit)}`);
+  }
+
+  async _handleLightningError (...msg) {
+    this._appendError(`[SERVICES:LIGHTNING] error: ${msg}`);
+  }
+
+  async _handleLightningWarning (...msg) {
+    this._appendWarning(`[SERVICES:LIGHTNING] warning: ${msg}`);
+  }
+
+  async _handleLightningLog (...msg) {
+    this._appendMessage(`[SERVICES:LIGHTNING] log: ${msg}`);
+  }
+
+  async _handleLightningMessage (...msg) {
+    this._appendMessage(`[SERVICES:LIGHTNING] message: ${msg}`);
+  }
+
+  async _handleLightningReady (lightning) {
+    this._appendMessage(`[SERVICES:LIGHTNING] ready: ${JSON.stringify(lightning, null, '  ')}`);
+  }
+
+  async _handleLightningSync (sync) {
+    this._appendDebug(`[SERVICES:LIGHTNING] sync: ${JSON.stringify(sync, null, '  ')}`);
+  }
+
   async _handlePeer (peer) {
     const self = this;
     // console.log('[SCRIPTS:CHAT]', 'Peer emitted by node:', peer);
@@ -596,7 +651,10 @@ class CLI extends App {
   }
 
   async _handleNodeReady (node) {
-    this.elements['identityString'].setContent(node.id);
+    if (this.settings.render) {
+      this.elements['identityString'].setContent(node.id);
+    }
+
     this.emit('identity', {
       id: node.id,
       pubkey: node.pubkey
@@ -882,6 +940,8 @@ class CLI extends App {
   }
 
   async _syncChainDisplay () {
+    if (!this.settings.render) return this;
+
     try {
       const height = await this.bitcoin._makeRPCRequest('getblockcount');
       const stats = await this.bitcoin._makeRPCRequest('getblockchaininfo');
@@ -1011,6 +1071,7 @@ class CLI extends App {
   setPane (name) {
     this.elements['home'].detach();
     // this.elements['logBox'].detach();
+    this.elements['help'].detach();
     this.elements['network'].detach();
     this.elements['walletBox'].detach();
 
@@ -1019,6 +1080,9 @@ class CLI extends App {
         break;
       case 'home':
         this.screen.append(this.elements['home'])
+        break;
+      case 'help':
+        this.screen.append(this.elements['help'])
         break;
       case 'messages':
         // this.screen.append(this.elements['logBox'])
@@ -1033,6 +1097,8 @@ class CLI extends App {
   }
 
   render () {
+    if (!this.settings.render) return this;
+
     const self = this;
 
     self.screen = blessed.screen({
@@ -1046,12 +1112,24 @@ class CLI extends App {
     self.elements['home'] = blessed.box({
       parent: self.screen,
       content: 'Fabric Command Line Interface\nVersion 0.0.1-dev (@martindale)',
-      top: 7,
-      bottom: 0,
+      top: 6,
+      bottom: 4,
       width: '100%',
       border: {
         type: 'line'
       },
+    });
+
+    self.elements['help'] = blessed.box({
+      parent: self.screen,
+      label: '[ Help ]',
+      content: 'Fabric Command Line Interface\nVersion 0.0.1-dev (@martindale)',
+      border: {
+        type: 'line'
+      },
+      top: 6,
+      bottom: 4,
+      width: '100%'
     });
 
     self.elements['network'] = blessed.list({
@@ -1100,17 +1178,17 @@ class CLI extends App {
         }
       },
       commands: {
-        'Messages': {
+        'Console': {
           keys: ['f1'],
           callback: function () {
             this.setPane('messages');
             return true;
           }.bind(this)
         },
-        'Wallet': {
+        'Help': {
           keys: ['f2'],
           callback: function () {
-            this.setPane('wallet');
+            this.setPane('help');
           }.bind(this)
         },
         'Network': {
@@ -1118,7 +1196,19 @@ class CLI extends App {
           callback: function () {
             this.setPane('network');
           }.bind(this)
-        }
+        },
+        'Wallet': {
+          keys: ['f4'],
+          callback: function () {
+            this.setPane('wallet');
+          }.bind(this)
+        },
+        'Contracts': {
+          keys: ['f5'],
+          callback: function () {
+            this.setPane('contracts');
+          }.bind(this)
+        },
       }
     });
 
