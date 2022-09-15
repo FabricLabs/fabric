@@ -31,6 +31,7 @@ const Actor = require('./actor');
 const Key = require('./key');
 const Machine = require('./machine');
 const Message = require('./message');
+const Service = require('./service');
 const Session = require('./session');
 const Reader = require('./reader');
 const Wallet = require('./wallet');
@@ -38,7 +39,7 @@ const Wallet = require('./wallet');
 /**
  * An in-memory representation of a node in our network.
  */
-class Peer extends Actor {
+class Peer extends Service {
   /**
    * Create an instance of {@link Peer}.
    * @param {Object} [config] Initialization Vector for this peer.

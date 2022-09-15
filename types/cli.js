@@ -151,7 +151,9 @@ class CLI extends App {
     // Poll for new information
     // TODO: ZMQ
     await this._syncChainDisplay();
-    // await this._syncBalance();
+    await this._syncContracts();
+    await this._syncBalance();
+    await this._syncUnspent();
 
     // Increment clock and commit
     this._state.clock++;
@@ -175,6 +177,7 @@ class CLI extends App {
     this._registerCommand('channels', this._handleChannelRequest);
     this._registerCommand('identity', this._handleIdentityRequest);
     this._registerCommand('generate', this._handleGenerateRequest);
+    this._registerCommand('unspent', this._handleUnspentRequest);
     this._registerCommand('receive', this._handleReceiveAddressRequest);
     this._registerCommand('balance', this._handleBalanceRequest);
     this._registerCommand('service', this._handleServiceCommand);
@@ -739,10 +742,15 @@ class CLI extends App {
   async _handleGenerateRequest (params) {
     if (!params[1]) params[1] = 1;
     const count = params[1];
-    const address = await this.node.wallet.getUnusedAddress();
+    const address = await this.bitcoin.getUnusedAddress();
     this._appendMessage(`Generating ${count} blocks to address: ${address}`);
     this.bitcoin.generateBlocks(count, address);
     return false;
+  }
+
+  async _handleUnspentRequest (params) {
+    await this._syncUnspent();
+    this._appendMessage(`{bold}Unspent:{/bold} ${JSON.stringify(this._state.unspent, null, '  ')}`);
   }
 
   _bindKeys () {
@@ -753,6 +761,10 @@ class CLI extends App {
 
     // Text Input
     self.screen.key(['i'], self.focusInput.bind(self));
+
+    // TODO: debug with @melnx
+    // self.elements['prompt'].on('blur', self.defocusInput.bind(self));
+
     self.elements['prompt'].key(['enter'], self._handlePromptEnterKey.bind(self));
     self.elements['prompt'].key(['up'], self._handlePromptUpKey.bind(self));
     self.elements['prompt'].key(['down'], self._handlePromptDownKey.bind(self));
@@ -792,6 +804,7 @@ class CLI extends App {
 
       const message = Message.fromVector(['ChatMessage', JSON.stringify(msg)]);
       this._appendDebug(`Chat Message created (${message.data.length} bytes): ${message.data}`);
+      self.setPane('messages');
 
       self.node.relayFrom(self.node.id, message);
       self._sendToAllServices(msg);
@@ -961,15 +974,63 @@ class CLI extends App {
     }
   }
 
+  async _syncContracts () {
+    await this._syncLightningChannels();
+    return this;
+  }
+
   async _syncBalance () {
     try {
       const balance = await this._getBalance();
+
       this._state.balances.confirmed = balance;
       this.elements['balance'].setContent(balance.toFixed(8));
+
+      this.elements.wallethelp.setContent(
+        `  {bold}SPENDABLE{/bold}: ${balance.toFixed(8)} BTC\n` +
+        `{bold}UNCONFIRMED{/bold}: unknown\n` +
+        `   {bold}IMMATURE{/bold}: unknown\n`
+      );
+
       this.screen.render();
     } catch (exception) {
       // if (this.settings.debug) this._appendError(`Could not sync balance: ${JSON.stringify(exception)}`);
     }
+  }
+
+  async _syncUnspent () {
+    try {
+      const unspent = await this.bitcoin._listUnspent();
+      const list = unspent.map((x) => {
+        const map = {};
+
+        for (const [key, value] of Object.entries(x)) {
+          map[key] = value.toString();
+        }
+
+        return Object.values(map);
+      });
+
+      this._state.unspent = unspent;
+
+      const data = [
+        Object.keys(unspent[0])
+      ].concat(list);
+
+      this.elements.outputlist.setData(data);
+      this.commit();
+
+      this.screen.render();
+    } catch (exception) {
+      // if (this.settings.debug) this._appendError(`Could not sync balance: ${JSON.stringify(exception)}`);
+    }
+  }
+
+  async _syncLightningChannels () {
+    this.elements.contracthelp.setContent(
+      `{bold}STATUS:{/bold} unknown
+{bold}LIGHTNING:{/bold} unknown`);
+    return this;
   }
 
   async _getBalance () {
@@ -1053,7 +1114,7 @@ class CLI extends App {
         self._appendMessage(`Registering actor on service "${name}": ${JSON.stringify(identity)}`);
 
         try {
-          let registration = await this.services[name]._registerActor(identity);
+          const registration = await this.services[name]._registerActor(identity);
           self._appendMessage(`Registered Actor: ${JSON.stringify(registration, null, '  ')}`);
         } catch (exception) {
           self._appendError(`Error from service "${name}" during _registerActor: ${exception}`);
@@ -1068,10 +1129,16 @@ class CLI extends App {
     this.screen.render();
   }
 
+  defocusInput () {
+    this.elements['prompt'].blur();
+    this.screen.render();
+  }
+
   setPane (name) {
     this.elements['home'].detach();
     // this.elements['logBox'].detach();
     this.elements['help'].detach();
+    this.elements['contracts'].detach();
     this.elements['network'].detach();
     this.elements['walletBox'].detach();
 
@@ -1083,6 +1150,9 @@ class CLI extends App {
         break;
       case 'help':
         this.screen.append(this.elements['help'])
+        break;
+      case 'contracts':
+        this.screen.append(this.elements['contracts'])
         break;
       case 'messages':
         // this.screen.append(this.elements['logBox'])
@@ -1114,7 +1184,6 @@ class CLI extends App {
       content: 'Fabric Command Line Interface\nVersion 0.0.1-dev (@martindale)',
       top: 6,
       bottom: 4,
-      width: '100%',
       border: {
         type: 'line'
       },
@@ -1130,6 +1199,52 @@ class CLI extends App {
       top: 6,
       bottom: 4,
       width: '100%'
+    });
+
+    self.elements['contracts'] = blessed.box({
+      parent: self.screen,
+      label: '[ Contracts ]',
+      border: {
+        type: 'line'
+      },
+      top: 6,
+      bottom: 4
+    });
+
+    self.elements['contracthelp'] = blessed.text({
+      parent: self.elements.contracts,
+      tags: true,
+      top: 1,
+      left: 2,
+      right: 2
+    });
+
+    self.elements['lightningbook'] = blessed.box({
+      parent: self.elements.contracts,
+      label: '[ Lightning ]',
+      border: {
+        type: 'line'
+      },
+      top: 6,
+      height: 10
+    });
+
+    self.elements['contractbook'] = blessed.box({
+      parent: self.elements.contracts,
+      label: '[ Fabric ]',
+      border: {
+        type: 'line'
+      },
+      top: 16
+    });
+
+    self.elements['contractlist'] = blessed.table({
+      parent: self.elements.contractbook,
+      data: [
+        ['foo', 'bar'],
+        ['baz', 'boz']
+      ],
+      width: '100%-2'
     });
 
     self.elements['network'] = blessed.list({
@@ -1167,10 +1282,38 @@ class CLI extends App {
       width: '100%'
     });
 
+    self.elements['wallethelp'] = blessed.text({
+      parent: self.elements.walletBox,
+      tags: true,
+      top: 1,
+      left: 2,
+      right: 2
+    });
+
+    self.elements['outputbook'] = blessed.box({
+      parent: self.elements.walletBox,
+      label: '[ Unspent Outputs ]',
+      border: {
+        type: 'line'
+      },
+      top: 16
+    });
+
+    self.elements['outputlist'] = blessed.table({
+      parent: self.elements.outputbook,
+      data: [
+        ['syncing...']
+      ],
+      width: '100%-2',
+      top: 0,
+      bottom: 0
+    });
+
     self.elements['menu'] = blessed.listbar({
       parent: self.screen,
       top: '100%-1',
       left: 0,
+      right: 8,
       style: {
         selected: {
           background: 'white',
@@ -1178,17 +1321,17 @@ class CLI extends App {
         }
       },
       commands: {
-        'Console': {
+        'Help': {
           keys: ['f1'],
+          callback: function () {
+            this.setPane('help');
+          }.bind(this)
+        },
+        'Console': {
+          keys: ['f2'],
           callback: function () {
             this.setPane('messages');
             return true;
-          }.bind(this)
-        },
-        'Help': {
-          keys: ['f2'],
-          callback: function () {
-            this.setPane('help');
           }.bind(this)
         },
         'Network': {
@@ -1396,7 +1539,7 @@ class CLI extends App {
     // MAIN LOG OUTPUT
     self.elements['messages'] = blessed.log({
       parent: this.screen,
-      label: '[ Messages ]',
+      label: '[ Console ]',
       border: {
         type: 'line'
       },

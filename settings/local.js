@@ -13,13 +13,16 @@ const settings = {
   network: 'playnet',
   fullnode: false,
   listen: true,
-  render: false,
+  render: true,
   peers: [
     '0223cffd5e94da3c8915c6b868f06d15183c1aeffad8ddf58fcb35a428e3158e71@hub.fabric.pub:7777'
   ],
+  lightning: {
+    path: './stores/lightning-playnet/regtest/lightning-rpc'
+  },
   services: [
-    'bitcoin',
-    // 'lightning',
+    // 'bitcoin',
+    'lightning',
     // 'matrix'
   ],
   verbosity: 3

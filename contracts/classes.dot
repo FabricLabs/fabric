@@ -12,10 +12,13 @@ digraph FabricClasses {
     label = "Public API"
     "Actor"
     "Block"
+    "Bitcoin"
     "Chain"
+    "Channel"
     "Contract"
     "Environment"
     "Key"
+    "Lightning"
     "Message"
     "Peer"
     "Reader"
@@ -40,9 +43,7 @@ digraph FabricClasses {
   "Actor" -> {
     "Block"
     "Chain"
-    "Contract"
     "Message"
-    "Peer"
     "Service"
     "Signer"
     "Transaction"
@@ -65,6 +66,11 @@ digraph FabricClasses {
 
   "Service" -> {
     "App"
+    "Bitcoin"
+    "Channel"
+    "Contract"
+    "Lightning"
+    "Peer"
     "Wallet"
   }
 }

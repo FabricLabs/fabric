@@ -4,6 +4,8 @@ const {
   BITCOIN_GENESIS
 } = require('../constants');
 
+const OP_TRACE = require('../contracts/trace');
+
 // External Dependencies
 const jayson = require('jayson/lib/client');
 const monitor = require('fast-json-patch');
@@ -1019,7 +1021,11 @@ class Bitcoin extends Service {
   async _makeRPCRequest (method, params = []) {
     const self = this;
     return new Promise((resolve, reject) => {
-      if (!self.rpc) return reject(new Error('RPC manager does not exist.'));
+      if (!self.rpc) {
+        self.emit('error', `No local RPC: ${self} \n${OP_TRACE({ name: 'foo' })}`);
+        return reject(new Error('RPC manager does not exist.'));
+      }
+
       try {
         self.rpc.request(method, params, function responseHandler (err, response) {
           if (err) {
