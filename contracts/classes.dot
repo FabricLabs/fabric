@@ -1,26 +1,70 @@
 digraph FabricClasses {
   label = "Fabric Class Inheritances"
-  rankdir = "LR"
+  rankdir = "TB"
+
+  subgraph cluster_generics {
+    label = "Generics"
+    "Object"
+    "EventEmitter"
+  }
+
+  subgraph cluster_core {
+    label = "Public API"
+    "Actor"
+    "Block"
+    "Chain"
+    "Contract"
+    "Environment"
+    "Key"
+    "Message"
+    "Peer"
+    "Reader"
+    "Service"
+    "Signer"
+    "Transaction"
+    "Tree"
+    "Wallet"
+  }
+
+  subgraph cluster_candidates {
+    label = "Candidates"
+    "App"
+    "CLI"
+  }
+
+  subgraph cluster_legacy {
+    label = "Legacy"
+    "Entity"
+  }
 
   "Actor" -> {
+    "Block"
+    "Chain"
+    "Contract"
     "Message"
     "Peer"
     "Service"
+    "Signer"
+    "Transaction"
+    "Tree"
   }
 
-  "EventEmitter" -> {
-    "Entity" -> {
-      "Environment"
-    }
+  "App" -> {
+    "CLI"
+  }
 
+  "Entity" -> "Environment"
+  "EventEmitter" -> {
+    "Actor"
+    "Entity"
     "Reader"
   }
 
-  "Service" -> {
-    "App" -> {
-      "CLI"
-    }
+  "Object" -> "EventEmitter"
+  "Object" -> "Key"
 
+  "Service" -> {
+    "App"
     "Wallet"
   }
 }

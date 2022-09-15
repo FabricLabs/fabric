@@ -1021,7 +1021,7 @@ class Bitcoin extends Service {
     return new Promise((resolve, reject) => {
       if (!self.rpc) return reject(new Error('RPC manager does not exist.'));
       try {
-        self.rpc.request(method, params, function (err, response) {
+        self.rpc.request(method, params, function responseHandler (err, response) {
           if (err) {
             // TODO: replace with reject()
             return resolve({

@@ -82,6 +82,9 @@ class CLI extends App {
         confirmed: 0,
         unconfirmed: 0
       },
+      content: {
+        actors: {}
+      },
       contracts: {},
       clock: 0
     };
@@ -138,7 +141,7 @@ class CLI extends App {
   async tick () {
     // Poll for new information
     // TODO: ZMQ
-    // await this._syncChainDisplay();
+    await this._syncChainDisplay();
     // await this._syncBalance();
 
     // Increment clock and commit
@@ -242,14 +245,14 @@ class CLI extends App {
     }
 
     // Track state changes
-    this.observer = monitor.observe(this._state);
+    this.observer = monitor.observe(this._state.content);
 
     // Bind remaining internals
     // TODO: enable
     // this.on('changes', this._handleChanges.bind(this));
 
     // Start Bitcoin service
-    // this.bitcoin.start();
+    this.bitcoin.start();
 
     // Start P2P node
     this.node.start();
@@ -894,7 +897,7 @@ class CLI extends App {
 
       this.screen.render();
     } catch (exception) {
-      if (this.settings.debug) this._appendError(`Could not sync chain: ${JSON.stringify(exception)}`);
+      if (this.settings.debug) this._appendError(`Could not sync chain: ${exception}`);
     }
   }
 
