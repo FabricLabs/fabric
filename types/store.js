@@ -578,6 +578,11 @@ class Store extends Actor {
    * 
    */
 
+
+  /**
+   * Create new leveldb store
+   * @param  {String}  dbName Name to use for database.
+   */
   async createDB (dbName) {
     this.exdb = new Level(dbName);
     console.log(dbName);
@@ -595,11 +600,6 @@ class Store extends Actor {
   };
 
   async setSeedPhrase (phrase) {
-    var keys = await importKey();
-
-    /*for(let i = 0; i < phrase.length; i ++)
-        phrase[i] = await encryptToString(textEnc.encode(phrase[i]), keys, iv);*/
-
     this.settingTB.put('phrase', phrase);
   };
 
@@ -610,20 +610,16 @@ class Store extends Actor {
         accountCount++;
     }
 
-    var keys = await importKey();
-
     this.accountTB.put(accountCount, account);
   }
 
-  async insertIdentity (identity, accountId0) {
+  async insertIdentity (identity, accountId) {
     const account = await this.accountTB.get(accountId);
     // @ts-ignore
 
-    var keys = await importKey();
-
     var length = account.identity.length;
 
-    account.identity[length] = [];
+    account.identity[length] = identity;
     // @ts-ignore
     this.accountTB.put(accountId, account);
   }
@@ -665,33 +661,26 @@ class Store extends Actor {
 
 
   async getAccount (accountId) {
-    var keys = await importKey();
     const account = await this.accountTB.get(accountId, { valueEncoding: this.exdb.valueEncoding('json') });
     return account;
   }
 
-  async checkPassword (accountId, password) {
+  async checkPassword (accountId, passHash) {
     const res = await this.accountTB.get(accountId);
-    const passHash = createHash('sha256').update(password).digest('base64');
     // @ts-ignore
     return (res.password === passHash);
   }
 
   async changePassword (accountId, password) {
     const account = await this.accountTB.get(accountId);
-
-    account.password = createHash('sha256').update(password).digest('base64');
+    account.password = password;
     this.accountTB.put(accountId, account);
   }
 
+
   async retrievePrivateKey (accountId) {
     const res = await this.accountTB.get(accountId);
-    // @ts-ignore
-
-    var keys = await importKey();
-
-    var decryptedData = await decryptFromString(res.privateKey, keys, iv);
-    return textDec.decode(decryptedData);
+    return res.privateKey;
   };
 
   async getIdentityCount (accountId) {
