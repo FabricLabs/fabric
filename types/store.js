@@ -569,6 +569,157 @@ class Store extends Actor {
 
     return this;
   }
+
+
+
+/**
+ *
+ *  Functions for leveldb store
+ * 
+ */
+
+  async createDB (dbName) {
+    db = new Level('db');
+    accountTB = db.sublevel('account', { valueEncoding: 'json' });
+    settingTB = db.sublevel('setting', { valueEncoding: 'json' });
+  }
+
+  async initDB () {
+    //Initialize Chains Toggle
+    settingTB.put('chains', [true, true, true, true, true]);
+  }
+
+  clearDatabase () {
+      accountTB.clear();
+  };
+
+  async setSeedPhrase (phrase) {
+    var keys = await importKey();
+
+    for(let i = 0; i < phrase.length; i ++)
+        phrase[i] = await encryptToString(textEnc.encode(phrase[i]), keys, iv);
+
+    settingTB.put('phrase', phrase);
+  };
+
+  async insertAccount (account) {
+    let accountCount = 0;
+
+    for await (const [key, value] of accountTB.iterator()) {
+        accountCount++;
+    }
+
+    var keys = await importKey();
+
+    account.privateKey = await encryptToString(textEnc.encode(account.privateKey), keys, iv);
+    account.privateExtendedKey = await encryptToString(textEnc.encode(account.privateExtendedKey), keys, iv);
+
+    for (let i = 0; i < account.identity.length; i++) {
+        for (let j = 0; j < account.identity[i].length; j++) {
+            var data = textEnc.encode(account.identity[i][j].address);
+            account.identity[i][j].address = await encryptToString(data, keys, iv);
+        }
+    }
+
+    accountTB.put(accountCount, account);
+  }
+
+  async insertIdentity (identity, accountId0) {
+    const account = await accountTB.get(accountId);
+    // @ts-ignore
+
+    var keys = await importKey();
+
+    var length = account.identity.length;
+
+    account.identity[length] = [];
+
+    for (let i = 0; i < chains.length; i++) {
+        account.identity[length][i] = {
+            address: await encryptToString(textEnc.encode(identity[i].address), keys, iv)
+        };
+    }
+
+    // @ts-ignore
+    accountTB.put(accountId, account);
+  }
+
+  async setDBIdentityCheckState (accountId, identity, chain, state) {
+    const account = await accountTB.get(accountId);
+
+    account.identity[identity][chain].allowed = state;
+
+    accountTB.put(accountId, account);
+  }
+
+  async setGlobalChainState (settings) {
+    settingTB.put('chains', settings);
+  };
+
+  async getAccountValid () {
+    let accountCount = 0;
+
+    for await (const [key, value] of accountTB.iterator()) {
+        accountCount++;
+    }
+
+    return accountCount !== 0;
+  }
+
+  async getGlobalChainState () {
+    const settings = settingTB.get('chains', { valueEncoding: db.valueEncoding('json') });
+    return settings;
+  }
+
+
+  async getAccount (accountId) {
+    var keys = await importKey();
+
+    const account = await accountTB.get(accountId, { valueEncoding: db.valueEncoding('json') });
+
+    account.privateKey = textDec.decode(await decryptFromString(account.privateKey, keys, iv));
+    account.privateExtendedKey = textDec.decode(await decryptFromString(account.privateExtendedKey, keys, iv));
+
+    for (let i = 0; i < account.identity.length; i++) {
+        for (let j = 0; j < account.identity[i].length; j++) {
+            var decryptedData = await decryptFromString(account.identity[i][j].address, keys, iv);
+            account.identity[i][j].address = textDec.decode(decryptedData);
+        }
+    }
+
+    return account;
+  }
+
+  async checkPassword (accountId, password) {
+    const res = await accountTB.get(accountId);
+    const passHash = createHash('sha256').update(password).digest('base64');
+    // @ts-ignore
+    return (res.password === passHash);
+  }
+
+  async changePassword (accountId, password) {
+    const account = await accountTB.get(accountId);
+
+    account.password = createHash('sha256').update(password).digest('base64');
+    accountTB.put(accountId, account);
+  }
+
+  async retrievePrivateKey (accountId) {
+    const res = await accountTB.get(accountId);
+    // @ts-ignore
+
+    var keys = await importKey();
+
+    var decryptedData = await decryptFromString(res.privateKey, keys, iv);
+    return textDec.decode(decryptedData);
+  };
+
+  async getIdentityCount (accountId) {
+    const res = await accountTB.get(accountId);
+    // @ts-ignore
+    return res.identity.length;
+  }
+
 }
 
 module.exports = Store;
