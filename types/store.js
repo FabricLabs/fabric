@@ -572,11 +572,11 @@ class Store extends Actor {
 
 
 
-/**
- *
- *  Functions for leveldb store
- * 
- */
+  /**
+   *
+   * Functions for leveldb store
+   * 
+   */
 
   async createDB (dbName) {
     db = new Level('db');
@@ -590,7 +590,7 @@ class Store extends Actor {
   }
 
   clearDatabase () {
-      accountTB.clear();
+    accountTB.clear();
   };
 
   async setSeedPhrase (phrase) {
@@ -644,6 +644,14 @@ class Store extends Actor {
     accountTB.put(accountId, account);
   }
 
+
+  /**
+   * Enable/disable chain operability for specified idenity
+   * @param {number} accountId Account index.
+   * @param {number} identity identity index.
+   * @param {number} chain chain's id listed in browser extension.
+   * @param {boolean} state boolean to enable or disable chain.
+   */
   async setDBIdentityCheckState (accountId, identity, chain, state) {
     const account = await accountTB.get(accountId);
 
