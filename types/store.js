@@ -1,7 +1,7 @@
 'use strict';
 
 // Dependencies
-const level = require('level');
+const { Level } = require('level');
 const crypto = require('crypto');
 const pointer = require('json-pointer');
 
@@ -390,7 +390,7 @@ class Store extends Actor {
     // if (this.db) return this;
 
     try {
-      this.db = level(this.settings.path);
+      this.db = new Level(this.settings.path);
       this.trust(this.db);
       this.status = 'opened';
       await this.commit();
@@ -579,53 +579,44 @@ class Store extends Actor {
    */
 
   async createDB (dbName) {
-    db = new Level('db');
-    accountTB = db.sublevel('account', { valueEncoding: 'json' });
-    settingTB = db.sublevel('setting', { valueEncoding: 'json' });
+    this.exdb = new Level(dbName);
+    console.log(dbName);
+    this.accountTB = this.exdb.sublevel('account', { valueEncoding: 'json' });
+    this.settingTB = this.exdb.sublevel('setting', { valueEncoding: 'json' });
   }
 
   async initDB () {
     //Initialize Chains Toggle
-    settingTB.put('chains', [true, true, true, true, true]);
+    this.settingTB.put('chains', [true, true, true, true, true]);
   }
 
   clearDatabase () {
-    accountTB.clear();
+      this.accountTB.clear();
   };
 
   async setSeedPhrase (phrase) {
     var keys = await importKey();
 
-    for(let i = 0; i < phrase.length; i ++)
-        phrase[i] = await encryptToString(textEnc.encode(phrase[i]), keys, iv);
+    /*for(let i = 0; i < phrase.length; i ++)
+        phrase[i] = await encryptToString(textEnc.encode(phrase[i]), keys, iv);*/
 
-    settingTB.put('phrase', phrase);
+    this.settingTB.put('phrase', phrase);
   };
 
   async insertAccount (account) {
     let accountCount = 0;
 
-    for await (const [key, value] of accountTB.iterator()) {
+    for await (const [key, value] of this.accountTB.iterator()) {
         accountCount++;
     }
 
     var keys = await importKey();
 
-    account.privateKey = await encryptToString(textEnc.encode(account.privateKey), keys, iv);
-    account.privateExtendedKey = await encryptToString(textEnc.encode(account.privateExtendedKey), keys, iv);
-
-    for (let i = 0; i < account.identity.length; i++) {
-        for (let j = 0; j < account.identity[i].length; j++) {
-            var data = textEnc.encode(account.identity[i][j].address);
-            account.identity[i][j].address = await encryptToString(data, keys, iv);
-        }
-    }
-
-    accountTB.put(accountCount, account);
+    this.accountTB.put(accountCount, account);
   }
 
   async insertIdentity (identity, accountId0) {
-    const account = await accountTB.get(accountId);
+    const account = await this.accountTB.get(accountId);
     // @ts-ignore
 
     var keys = await importKey();
@@ -633,15 +624,8 @@ class Store extends Actor {
     var length = account.identity.length;
 
     account.identity[length] = [];
-
-    for (let i = 0; i < chains.length; i++) {
-        account.identity[length][i] = {
-            address: await encryptToString(textEnc.encode(identity[i].address), keys, iv)
-        };
-    }
-
     // @ts-ignore
-    accountTB.put(accountId, account);
+    this.accountTB.put(accountId, account);
   }
 
 
@@ -653,21 +637,21 @@ class Store extends Actor {
    * @param {boolean} state boolean to enable or disable chain.
    */
   async setDBIdentityCheckState (accountId, identity, chain, state) {
-    const account = await accountTB.get(accountId);
+    const account = await this.accountTB.get(accountId);
 
     account.identity[identity][chain].allowed = state;
 
-    accountTB.put(accountId, account);
+    this.accountTB.put(accountId, account);
   }
 
   async setGlobalChainState (settings) {
-    settingTB.put('chains', settings);
+    this.settingTB.put('chains', settings);
   };
 
   async getAccountValid () {
     let accountCount = 0;
 
-    for await (const [key, value] of accountTB.iterator()) {
+    for await (const [key, value] of this.accountTB.iterator()) {
         accountCount++;
     }
 
@@ -675,45 +659,33 @@ class Store extends Actor {
   }
 
   async getGlobalChainState () {
-    const settings = settingTB.get('chains', { valueEncoding: db.valueEncoding('json') });
+    const settings = await this.settingTB.get('chains', { valueEncoding: this.exdb.valueEncoding('json') });
     return settings;
   }
 
 
   async getAccount (accountId) {
     var keys = await importKey();
-
-    const account = await accountTB.get(accountId, { valueEncoding: db.valueEncoding('json') });
-
-    account.privateKey = textDec.decode(await decryptFromString(account.privateKey, keys, iv));
-    account.privateExtendedKey = textDec.decode(await decryptFromString(account.privateExtendedKey, keys, iv));
-
-    for (let i = 0; i < account.identity.length; i++) {
-        for (let j = 0; j < account.identity[i].length; j++) {
-            var decryptedData = await decryptFromString(account.identity[i][j].address, keys, iv);
-            account.identity[i][j].address = textDec.decode(decryptedData);
-        }
-    }
-
+    const account = await this.accountTB.get(accountId, { valueEncoding: this.exdb.valueEncoding('json') });
     return account;
   }
 
   async checkPassword (accountId, password) {
-    const res = await accountTB.get(accountId);
+    const res = await this.accountTB.get(accountId);
     const passHash = createHash('sha256').update(password).digest('base64');
     // @ts-ignore
     return (res.password === passHash);
   }
 
   async changePassword (accountId, password) {
-    const account = await accountTB.get(accountId);
+    const account = await this.accountTB.get(accountId);
 
     account.password = createHash('sha256').update(password).digest('base64');
-    accountTB.put(accountId, account);
+    this.accountTB.put(accountId, account);
   }
 
   async retrievePrivateKey (accountId) {
-    const res = await accountTB.get(accountId);
+    const res = await this.accountTB.get(accountId);
     // @ts-ignore
 
     var keys = await importKey();
@@ -723,7 +695,7 @@ class Store extends Actor {
   };
 
   async getIdentityCount (accountId) {
-    const res = await accountTB.get(accountId);
+    const res = await this.accountTB.get(accountId);
     // @ts-ignore
     return res.identity.length;
   }
