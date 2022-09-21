@@ -589,20 +589,25 @@ class Store extends Actor {
     this.accountTB = this.exdb.sublevel('account', { valueEncoding: 'json' });
     this.settingTB = this.exdb.sublevel('setting', { valueEncoding: 'json' });
   }
-
+  
+  /**
+   * Initialize leveldb with chain flags set to true
+   */
   async initDB () {
     //Initialize Chains Toggle
     this.settingTB.put('chains', [true, true, true, true, true]);
   }
 
+  /**
+   * Clear database in the store
+   */
   clearDatabase () {
       this.accountTB.clear();
   };
 
-
   /**
-   * Set seedphrase into database.
-   * @param  {Array<string>}  phrase Array of seed phrase words.
+   * Set seed phrase to setting
+   * @param {Array<string>} phrase 12 seed phrases
    */
   async setSeedPhrase (phrase) {
     this.settingTB.put('phrase', phrase);
@@ -656,10 +661,17 @@ class Store extends Actor {
     this.accountTB.put(accountId, account);
   }
 
+  /**
+   * Enable/disable chain operability for wallet
+   * @param {Array} settings Chain Settings
+   */
   async setGlobalChainState (settings) {
     this.settingTB.put('chains', settings);
   };
 
+  /**
+   * Check if there is an account in the store
+   */
   async getAccountValid () {
     let accountCount = 0;
 
@@ -670,39 +682,58 @@ class Store extends Actor {
     return accountCount !== 0;
   }
 
+  /**
+   * Get global chain state
+   */
   async getGlobalChainState () {
     const settings = await this.settingTB.get('chains', { valueEncoding: this.exdb.valueEncoding('json') });
     return settings;
   }
 
-
   /**
-   * Get account from specified account index
-   * @param  {number}  accountId index of account generated from seed.
+   * Get specific account from the store
+   * @param {number} accountId Account Index
    */
   async getAccount (accountId) {
     const account = await this.accountTB.get(accountId, { valueEncoding: this.exdb.valueEncoding('json') });
     return account;
   }
-
+  
+  /**
+   * Check if the password inputed is same as saved in the store
+   * @param {number} accountId Account Index
+   * @param {string} passHash Hashed Password
+   */
   async checkPassword (accountId, passHash) {
     const res = await this.accountTB.get(accountId);
     // @ts-ignore
     return (res.password === passHash);
   }
 
+  /**
+   * Change the password in the store
+   * @param {number} accountId Account Index
+   * @param {string} password Hashed Password
+   */
   async changePassword (accountId, password) {
     const account = await this.accountTB.get(accountId);
     account.password = password;
     this.accountTB.put(accountId, account);
   }
 
-
+  /**
+   * Retrieves private key of account in the store
+   * @param {number} accountId Account Index
+   */
   async retrievePrivateKey (accountId) {
     const res = await this.accountTB.get(accountId);
     return res.privateKey;
   };
 
+  /**
+   * Get Count of identities of an account
+   * @param {number} accountId Account Index
+   */
   async getIdentityCount (accountId) {
     const res = await this.accountTB.get(accountId);
     // @ts-ignore
