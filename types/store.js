@@ -599,10 +599,20 @@ class Store extends Actor {
       this.accountTB.clear();
   };
 
+
+  /**
+   * Set seedphrase into database.
+   * @param  {Array<string>}  phrase Array of seed phrase words.
+   */
   async setSeedPhrase (phrase) {
     this.settingTB.put('phrase', phrase);
   };
 
+
+  /**
+   * Insert account into store.
+   * @param  {IAccount}  account IAccount type for setting.
+   */
   async insertAccount (account) {
     let accountCount = 0;
 
@@ -613,6 +623,12 @@ class Store extends Actor {
     this.accountTB.put(accountCount, account);
   }
 
+
+  /**
+   * Insert identity into store of specified account index.
+   * @param  {IIdentity}  identity array of identities generated from account.
+   * @param  {number}  accountId account index generated from seed.
+   */
   async insertIdentity (identity, accountId) {
     const account = await this.accountTB.get(accountId);
     // @ts-ignore
@@ -660,6 +676,10 @@ class Store extends Actor {
   }
 
 
+  /**
+   * Get account from specified account index
+   * @param  {number}  accountId index of account generated from seed.
+   */
   async getAccount (accountId) {
     const account = await this.accountTB.get(accountId, { valueEncoding: this.exdb.valueEncoding('json') });
     return account;
