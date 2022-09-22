@@ -18,6 +18,7 @@ const manager = require('fast-json-patch');
 // Fabric Types
 const Actor = require('./actor');
 const Collection = require('./collection');
+const Identity = require('./identity');
 const Resource = require('./resource');
 const Entity = require('./entity');
 const Hash256 = require('./hash256');
@@ -100,6 +101,7 @@ class Service extends Actor {
     //        can draw a canvas:
     //          Error: Not implemented yet
     this.key = new Key(this.settings.key);
+    this.identity = new Identity(this.settings.key);
 
     if (this.settings.persistent) {
       try {

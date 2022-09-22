@@ -23,6 +23,7 @@ const Peer = require('./peer');
 const Actor = require('./actor');
 const Message = require('./message');
 const Hash256 = require('./hash256');
+const Identity = require('./identity');
 const Wallet = require('./wallet');
 
 // Services
@@ -98,6 +99,8 @@ class CLI extends App {
     this._loadBitcoin();
     this._loadLightning();
 
+    this.identity = new Identity(this.settings);
+
     // Chainable
     return this;
   }
@@ -172,6 +175,7 @@ class CLI extends App {
     this._registerCommand('exit', this._handleQuitRequest);
     this._registerCommand('clear', this._handleClearRequest);
     this._registerCommand('peers', this._handlePeerListRequest);
+    this._registerCommand('rotate', this._handleRotateRequest);
     this._registerCommand('connect', this._handleConnectRequest);
     this._registerCommand('disconnect', this._handleDisconnectRequest);
     this._registerCommand('settings', this._handleSettingsRequest);
@@ -896,6 +900,12 @@ class CLI extends App {
     } catch (exception) {
       this._appendError(`[LIGHTNING] Could not handle request: ${JSON.stringify(exception)}`);
     }
+  }
+
+  async _handleRotateRequest () {
+    const account = await this.identity._nextAccount();
+    this._appendMessage('Rotated to Account: ' + JSON.stringify(account, null, ' '));
+    return false;
   }
 
   async _handleSendRequest (params) {
