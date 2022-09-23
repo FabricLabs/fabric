@@ -102,7 +102,7 @@
     "javascript-state-machine": "3.1.0",
     "jayson": "4.0.0",
     "json-pointer": "0.6.2",
-    "level": "7.0.1",
+    "level": "^8.0.0",
     "lodash.merge": "4.6.2",
     "merkletreejs": "0.1.6",
     "minsc": "0.2.0",
