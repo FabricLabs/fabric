@@ -141,17 +141,27 @@ class Lightning extends Service {
     return result;
   }
 
+  /**
+   * Make an RPC request through the Lightning UNIX socket.
+   * @param {String} method Name of method to call.
+   * @param {Array} [params] Array of parameters.
+   * @returns {Object|String} Respond from the Lightning node.
+   */
   async _makeRPCRequest (method, params = []) {
     return new Promise((resolve, reject) => {
       try {
         const client = net.createConnection({ path: this.settings.path });
 
         client.on('data', (data) => {
-          const response = JSON.parse(data.toString('utf8'));
-          if (response.result) {
-            return resolve(response.result);
-          } else if (response.error) {
-            return reject(response.error);
+          try {
+            const response = JSON.parse(data.toString('utf8'));
+            if (response.result) {
+              return resolve(response.result);
+            } else if (response.error) {
+              return reject(response.error);
+            }
+          } catch (exception) {
+            this.emit('error', `Could not make RPC request: ${exception}\n${data.toString('utf8')}`);
           }
         });
 
