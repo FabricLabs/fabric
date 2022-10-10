@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="utf-8">
-  <title>Source: types/signer.js &middot; Docs</title>
+  <title>Source: types/filesystem.js &middot; Docs</title>
   <script src="scripts/prettify/prettify.js"> </script>
   <script src="scripts/prettify/lang-css.js"> </script>
   <!--[if lt IE 9]>
@@ -24,7 +24,7 @@
 
 <body>
   <div id="main">
-    <h1 class="page-title">Source: types/signer.js</h1>
+    <h1 class="page-title">Source: types/filesystem.js</h1>
 
 
 
@@ -34,115 +34,202 @@
         <pre class="prettyprint source linenums"><code>'use strict';
 
 // Dependencies
-const schnorr = require('bip-schnorr');
+const fs = require('fs');
+const path = require('path');
+const mkdirp = require('mkdirp');
 
 // Fabric Types
 const Actor = require('./actor');
 const Hash256 = require('./hash256');
-const Key = require('./key');
+const Tree = require('./tree');
 
 /**
- * Generic Fabric Signer.
- * @access protected
- * @emits message Fabric {@link Message} objects.
- * @property {String} id Unique identifier for this Signer (id === SHA256(preimage)).
- * @property {String} preimage Input hash for the `id` property (preimage === SHA256(SignerState)).
+ * Interact with a local filesystem.
  */
-class Signer extends Actor {
+class Filesystem extends Actor {
   /**
-   * Creates an {@link Signer}, which emits messages for other
-   * Signers to subscribe to.  You can supply certain parameters
-   * for the actor, including key material [!!!] — be mindful of
-   * what you share with others!
-   * @param {Object} [actor] Object to use as the actor.
-   * @param {String} [actor.seed] BIP24 Mnemonic to use as a seed phrase.
-   * @param {Buffer} [actor.public] Public key.
-   * @param {Buffer} [actor.private] Private key.
-   * @returns {Signer} Instance of the Signer.  Call {@link Signer#sign} to emit a {@link Signature}.
+   * Synchronize an {@link Actor} with a local filesystem.
+   * @param {Object} [settings] Configuration for the Fabric filesystem.
+   * @param {Object} [settings.path] Path of the local filesystem.
+   * @returns {Filesystem} Instance of the Fabric filesystem.
    */
-  constructor (actor = {}) {
-    super(actor);
+  constructor (settings = {}) {
+    super(settings);
 
-    this.log = [];
-    this.signature = null;
+    this.settings = Object.assign({
+      encoding: 'utf8',
+      path: './'
+    }, this.settings, settings);
 
-    // TODO: fix bcoin in React / WebPack
-    this.key = new Key({
-      seed: actor.seed,
-      public: actor.public || actor.pubkey,
-      private: actor.private,
-      xprv: actor.xprv,
-      xpub: actor.xpub
+    this.tree = new Tree({
+      leaves: []
     });
 
-    // Indicate Risk
-    this.private = !!(this.key.seed || this.key.private);
-    this.value = this._readObject(actor); // TODO: use Buffer?
-
-    // Internal State
     this._state = {
-      '@type': 'Signer',
-      '@data': this.value,
-      status: 'PAUSED',
-      content: this.value || {}
+      actors: {},
+      content: {
+        files: []
+      },
+      documents: {}
     };
 
-    // Chainable
     return this;
   }
 
-  get pubkey () {
-    // TODO: encode pubkey correctly for verification
-    const x = this.key.keypair.getPublic().getX();
-    return schnorr.convert.intToBuffer(x).toString('hex');
+  get path () {
+    return this.settings.path;
+  }
+
+  get hashes () {
+    const self = this;
+    return self.files.map(f => {
+      return Hash256.digest(self.readFile(f));
+    });
+  }
+
+  get files () {
+    return this.ls();
+  }
+
+  get leaves () {
+    const self = this;
+    return self.files.map(f => {
+      const hash = Hash256.digest(self.readFile(f));
+      const key = [f, hash].join(':');
+      return Hash256.digest(key);
+    });
+  }
+
+  get documents () {
+    return this._state.documents;
+  }
+
+  async _loadFromDisk () {
+    const self = this;
+    return new Promise((resolve, reject) => {
+      try {
+        const files = fs.readdirSync(self.path);
+        self._state.content = { files };
+        self.commit();
+
+        resolve(self);
+      } catch (exception) {
+        self.emit('error', exception);
+        reject(exception);
+      }
+    });
   }
 
   /**
-   * Signs some data.
-   * @returns {Signer}
+   * Get the list of files.
+   * @returns {Array} List of files.
    */
-  sign (data = this.toBuffer()) {
-    if (!(data instanceof Buffer)) {
-      switch (data.constructor.name) {
-        default:
-          this.emit('warning', `unhandled data to sign: ${data.constructor.name} ${JSON.stringify(data)}`);
-          break;
+  ls () {
+    return this._state.content.files;
+  }
+
+  touch (path) {
+    if (!fs.existsSync(path)) {
+      const time = new Date();
+
+      try {
+        fs.utimesSync(path, time, time);
+      } catch (err) {
+        fs.closeSync(fs.openSync(path, 'w'));
       }
     }
 
-    this._lastSignature = new Actor({ message: data, signature: this.signature });
-
-    // Hash &amp; sign
-    // TODO: check with bip-schnorr on behavior of signing > 32 byte messages
-    this._preimage = Buffer.from(Hash256.digest(data), 'hex');
-    this.signature = schnorr.sign(this.key.keypair.getPrivate('hex'), this._preimage);
-
-    this.emit('signature', {
-      content: data,
-      preimage: this._preimage,
-      pubkey: this._pubkey,
-      signature: this.signature.toString('hex')
-    });
-
-    return this.signature.toString('hex');
+    return true;
   }
 
-  verify (pubkey, message, signature) {
-    if (!(pubkey instanceof Buffer)) pubkey = Buffer.from(pubkey, 'hex');
-    if (!(message instanceof Buffer)) message = Buffer.from(message, 'hex');
-    if (!(signature instanceof Buffer)) signature = Buffer.from(signature, 'hex');
+  touchDir (path) {
+    if (!fs.existsSync(path)) mkdirp.sync(path);
+    return true;
+  }
+
+  /**
+   * Read a file by name.
+   * @param {String} name Name of the file to read.
+   * @returns {Buffer} Contents of the file.
+   */
+  readFile (name) {
+    const file = path.join(this.path, name);
+    if (!fs.existsSync(file)) return null;
+    return fs.readFileSync(file);
+  }
+
+  /**
+   * Write a file by name.
+   * @param {String} name Name of the file to write.
+   * @param {Buffer} content Content of the file.
+   * @returns {Boolean} `true` if the write succeeded, `false` if it did not.
+   */
+  writeFile (name, content) {
+    const file = path.join(this.path, name);
 
     try {
-      schnorr.verify(pubkey, message, signature);
+      fs.writeFileSync(file, content);
       return true;
     } catch (exception) {
-      console.error(exception);
+      this.emit('error', `Could not write file: ${content}`);
       return false;
     }
   }
+
+  async ingest (document, name = null) {
+    if (typeof document !== 'string') {
+      document = JSON.stringify(document);
+    }
+
+    const actor = new Actor(document);
+    const hash = Hash256.digest(document);
+
+    this._state.documents[hash] = document;
+
+    return {
+      id: actor.id
+    };
+  }
+
+  async publish (name, document) {
+    if (typeof document !== 'string') {
+      document = JSON.stringify(document, null, '  ');
+    }
+
+    const actor = new Actor(document);
+    const hash = Hash256.digest(document);
+
+    this._state.actors[actor.id] = actor;
+    this._state.documents[hash] = document;
+
+    this.writeFile(name, document);
+
+    await this.sync();
+
+    return {
+      id: actor.id,
+      document: hash
+    };
+  }
+
+  async start () {
+    this.touchDir(this.path); // ensure exists
+    await this.sync();
+    return this;
+  }
+
+  /**
+   * Syncronize state from the local filesystem.
+   * @returns {Filesystem} Instance of the Fabric filesystem.
+   */
+  async sync () {
+    await this._loadFromDisk();
+    this.commit();
+    return this;
+  }
 }
 
-module.exports = Signer;
+module.exports = Filesystem;
 </code></pre>
       </article>
     </section>

@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="utf-8">
-  <title>Source: types/hash256.js &middot; Docs</title>
+  <title>Source: types/federation.js &middot; Docs</title>
   <script src="scripts/prettify/prettify.js"> </script>
   <script src="scripts/prettify/lang-css.js"> </script>
   <!--[if lt IE 9]>
@@ -24,7 +24,7 @@
 
 <body>
   <div id="main">
-    <h1 class="page-title">Source: types/hash256.js</h1>
+    <h1 class="page-title">Source: types/federation.js</h1>
 
 
 
@@ -33,61 +33,119 @@
       <article>
         <pre class="prettyprint source linenums"><code>'use strict';
 
-const crypto = require('crypto');
+// Dependencies
+const merge = require('lodash.merge');
+const { run } = require('minsc');
+
+// Fabric Types
+const Actor = require('./actor');
+const Key = require('./key');
+const Wallet = require('./wallet');
 
 /**
- * Simple interaction with 256-bit spaces.
+ * Create and manage sets of signers with the Federation class.
  */
-class Hash256 {
+class Federation extends Actor {
   /**
-   * Create an instance of a `Hash256` object by calling `new Hash256()`,
-   * where `settings` can be provided to supply a particular input object.
-   * 
-   * If the `settings` is not a string, `input` must be provided.
-   * @param {Object} settings 
-   * @param {String} settings.input Input string to map as 256-bit hash.
+   * Create an instance of a federation.
+   * @param {Object} [settings] Settings.
+   * @returns {Federation} Instance of the federation.
    */
   constructor (settings = {}) {
-    if (typeof settings === 'string') settings = { input: settings };
-    if (!settings.input) settings.input = crypto.randomBytes(32).toString('hex');
+    super(settings);
 
-    this.settings = Object.assign({
-      hash: Hash256.digest(settings.input)
+    // Settings
+    this.settings = merge({
+      clock: 0,
+      consensus: {
+        validators: []
+      },
+      identity: {
+        password: '', // derivation password
+        seed: null, // seed phrase (!!!)
+        xprv: null, // avoid using seed phrase
+        xpub: null  // verify signatures only
+      }
     }, settings);
+
+    // Internal Key
+    this.key = new Key(this.settings.identity);
+    this.wallet = new Wallet(this.settings.identity);
+
+    // Internal State
+    this._state = {
+      consensus: this.settings.consensus,
+      content: {
+        clock: this.settings.clock,
+        validators: this.settings.consensus.validators
+      },
+      status: 'PAUSED'
+    };
+
+    return this;
   }
 
-  /**
-   * Produce a SHA256 digest of some input data.
-   * @param {String|Buffer} input Content to digest.
-   * @returns {String} `SHA256(input)` as a hexadecimal string.
-   */
-  static digest (input) {
-    if (typeof input !== 'string' &amp;&amp; !(input instanceof Buffer)) {
-      throw new Error(`Input to process must be of type "String" or "Buffer" to digest.`);
+  addMember (member) {
+    const key = new Key(member);
+    this._state.content.validators.push(key.pubkey);
+    console.log('consensus validators:', this._state.content.validators);
+    console.log('contract for step 0:', this.contractForStep(0));
+  }
+
+  contractForStep (number) {
+    const index = this.validatorNumberForStep(number);
+
+    try {
+      const policy = run(`
+        $A = ${this._state.content.validators[index]};
+        pk($A)
+      `);
+
+      const miniscript = run(`miniscript(${policy})`);
+      const descriptor = run(`wsh(${miniscript})`);
+      const address = run(`address(${miniscript})`);
+
+      return {
+        policy,
+        miniscript,
+        descriptor,
+        address
+      };
+    } catch (exception) {
+      console.error('could not run fed:', exception);
     }
 
-    // consume and output as string
-    return crypto.createHash('sha256').update(input).digest('hex');
+    return null;
   }
 
-  // TODO: document `hash256.value`
-  get value () {
-    return Hash256.digest(this.settings.input);
+  tick (input = {}) {
+    this._state.content.clock++;
+  }
+
+  validatorNumberForStep (step) {
+    return step % this._state.content.validators.length;
+  }
+
+  validatorForStep (step) {
+    return this._state.content.validators[ this.validatorNumberForStep(step) ];
   }
 
   /**
-   * Reverses the bytes of the digest.
+   * Start tracking state (i.e., ready to receive events).
+   * @returns {Federation} Instance of the Federation.
    */
-  static reverse (input = '') {
-    return Buffer.from(input, 'hex').reverse().toString('hex');
-  }
+  start () {
+    this.setStatus('STARTING');
+    this.wallet.start();
+    this.setStatus('STARTED');
 
-  reverse (input = this.value) {
-    return Hash256.reverse(input);
+    // this.commit();
+    return this;
   }
 }
 
-module.exports = Hash256;</code></pre>
+module.exports = Federation;
+</code></pre>
       </article>
     </section>
 

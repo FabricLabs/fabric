@@ -82,6 +82,10 @@ class Aggregator extends Service {
     return Object.assign({}, this._state.balances);
   }
 
+  get tree () {
+    return new Tree({ leaves: this.settings.inputs.map(x => x.hash) });
+  }
+
   /**
    * Import a list of {@link AnchorBalance} instances.
    * @param {Array} list List of inputs to add.
@@ -177,14 +181,18 @@ module.exports = Aggregator;
       <li><a href="Compiler.html">Compiler</a></li>
       <li><a href="Consensus.html">Consensus</a></li>
       <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Environment.html">Environment</a></li>
       <li><a href="Exchange.html">Exchange</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Federation.html">Federation</a></li>
+      <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
-      <li><a href="KeyStore.html">KeyStore</a></li>
+      <li><a href="Keystore.html">Keystore</a></li>
       <li><a href="Machine.html">Machine</a></li>
       <li><a href="Mempool.html">Mempool</a></li>
       <li><a href="Message.html">Message</a></li>

@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="utf-8">
-  <title>Source: types/hash256.js &middot; Docs</title>
+  <title>Class: Federation &middot; Docs</title>
   <script src="scripts/prettify/prettify.js"> </script>
   <script src="scripts/prettify/lang-css.js"> </script>
   <!--[if lt IE 9]>
@@ -24,71 +24,343 @@
 
 <body>
   <div id="main">
-    <h1 class="page-title">Source: types/hash256.js</h1>
+    <h1 class="page-title">Class: Federation</h1>
 
 
 
 
     <section>
+
+      <header>
+
+        <h2><span class="attribs"><span class="type-signature"></span></span>Federation<span class="signature">(settings<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {<a href="Federation.html">Federation</a>}</span></h2>
+
+        <div class="class-description">Create and manage sets of signers with the Federation class.</div>
+
+
+      </header>
+
       <article>
-        <pre class="prettyprint source linenums"><code>'use strict';
+        <div class="container-overview">
 
-const crypto = require('crypto');
 
-/**
- * Simple interaction with 256-bit spaces.
- */
-class Hash256 {
-  /**
-   * Create an instance of a `Hash256` object by calling `new Hash256()`,
-   * where `settings` can be provided to supply a particular input object.
-   * 
-   * If the `settings` is not a string, `input` must be provided.
-   * @param {Object} settings 
-   * @param {String} settings.input Input string to map as 256-bit hash.
-   */
-  constructor (settings = {}) {
-    if (typeof settings === 'string') settings = { input: settings };
-    if (!settings.input) settings.input = crypto.randomBytes(32).toString('hex');
 
-    this.settings = Object.assign({
-      hash: Hash256.digest(settings.input)
-    }, settings);
-  }
 
-  /**
-   * Produce a SHA256 digest of some input data.
-   * @param {String|Buffer} input Content to digest.
-   * @returns {String} `SHA256(input)` as a hexadecimal string.
-   */
-  static digest (input) {
-    if (typeof input !== 'string' &amp;&amp; !(input instanceof Buffer)) {
-      throw new Error(`Input to process must be of type "String" or "Buffer" to digest.`);
-    }
+          <h2>Constructor</h2>
 
-    // consume and output as string
-    return crypto.createHash('sha256').update(input).digest('hex');
-  }
 
-  // TODO: document `hash256.value`
-  get value () {
-    return Hash256.digest(this.settings.input);
-  }
 
-  /**
-   * Reverses the bytes of the digest.
-   */
-  static reverse (input = '') {
-    return Buffer.from(input, 'hex').reverse().toString('hex');
-  }
+          <h4 class="name" id="Federation"><span class="type-signature"></span>new Federation<span class="signature">(settings<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {<a href="Federation.html">Federation</a>}</span></h4>
 
-  reverse (input = this.value) {
-    return Hash256.reverse(input);
-  }
-}
 
-module.exports = Hash256;</code></pre>
+
+
+
+
+          <div class="description">
+            Create an instance of a federation.
+          </div>
+
+
+
+
+
+
+
+
+
+          <h5>Parameters:</h5>
+
+
+          <table class="params">
+            <thead>
+              <tr>
+
+                <th>Name</th>
+
+
+                <th>Type</th>
+
+
+                <th>Attributes</th>
+
+
+
+
+                <th class="last">Description</th>
+              </tr>
+            </thead>
+
+            <tbody>
+
+
+              <tr>
+
+                <td class="name"><code>settings</code></td>
+
+
+                <td class="type">
+
+
+                  <span class="param-type">Object</span>
+
+
+
+                </td>
+
+
+                <td class="attributes">
+
+                  &lt;optional><br>
+
+
+
+
+
+                </td>
+
+
+
+
+                <td class="description last">Settings.</td>
+              </tr>
+
+
+            </tbody>
+          </table>
+
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line21">line 21</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <h5>Returns:</h5>
+
+
+          <div class="param-desc">
+            Instance of the federation.
+          </div>
+
+
+
+          <dl>
+            <dt>
+              Type
+            </dt>
+            <dd>
+
+              <span class="param-type"><a href="Federation.html">Federation</a></span>
+
+
+            </dd>
+          </dl>
+
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h3 class="subsection-title">Methods</h3>
+
+
+
+
+
+
+
+        <h4 class="name" id="start"><span class="type-signature"></span>start<span class="signature">()</span><span class="type-signature"> &rarr; {<a href="Federation.html">Federation</a>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Start tracking state (i.e., ready to receive events).
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_federation.js.html">types/federation.js</a>, <a href="types_federation.js.html#line104">line 104</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Instance of the Federation.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="Federation.html">Federation</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
       </article>
+
     </section>
 
 

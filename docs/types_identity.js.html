@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="utf-8">
-  <title>Source: types/hash256.js &middot; Docs</title>
+  <title>Source: types/identity.js &middot; Docs</title>
   <script src="scripts/prettify/prettify.js"> </script>
   <script src="scripts/prettify/lang-css.js"> </script>
   <!--[if lt IE 9]>
@@ -24,7 +24,7 @@
 
 <body>
   <div id="main">
-    <h1 class="page-title">Source: types/hash256.js</h1>
+    <h1 class="page-title">Source: types/identity.js</h1>
 
 
 
@@ -33,61 +33,121 @@
       <article>
         <pre class="prettyprint source linenums"><code>'use strict';
 
-const crypto = require('crypto');
+const Actor = require('./actor');
+const Bech32 = require('./bech32');
+const Hash256 = require('./hash256');
+const Key = require('./key');
+const Signer = require('./signer');
 
 /**
- * Simple interaction with 256-bit spaces.
+ * Manage a network identity.
  */
-class Hash256 {
+class Identity extends Actor {
   /**
-   * Create an instance of a `Hash256` object by calling `new Hash256()`,
-   * where `settings` can be provided to supply a particular input object.
-   * 
-   * If the `settings` is not a string, `input` must be provided.
-   * @param {Object} settings 
-   * @param {String} settings.input Input string to map as 256-bit hash.
+   * Create an instance of an Identity.
+   * @param {Object} [settings] Settings for the Identity.
+   * @param {String} [settings.seed] BIP 39 seed phrase.
+   * @param {String} [settings.xprv] Serialized BIP 32 master private key.
+   * @param {String} [settings.xpub] Serialized BIP 32 master public key.
+   * @param {Number} [settings.account=0] BIP 44 account index.
+   * @param {Number} [settings.index=0] BIP 44 key index.
+   * @returns {Identity} Instance of the identity.
    */
   constructor (settings = {}) {
-    if (typeof settings === 'string') settings = { input: settings };
-    if (!settings.input) settings.input = crypto.randomBytes(32).toString('hex');
+    super(settings);
 
     this.settings = Object.assign({
-      hash: Hash256.digest(settings.input)
-    }, settings);
+      seed: null,
+      account: 0,
+      index: 0
+    }, this.settings, settings);
+
+    this.key = new Key(this.settings);
+    this.signer = new Signer(this.settings);
+
+    this._state = {
+      content: {
+        account: this.settings.account,
+        index: this.settings.index
+      }
+    };
+
+    return this;
+  }
+
+  get accountID () {
+    return this._state.content.account;
+  }
+
+  get derivation () {
+    // m / purpose' / coin_type' / account' / change / address_index
+    // NOTE:
+    // Always using Coin Type 0 (Bitcoin) and Change 0 (Public Flag)!
+    // We will use Change 1 ("Internal Chain" as designated by BIP0044)
+    // for any kind of revoke mechanic; i.e., the key derived by the change
+    // address may be used to auto-encode a "revocation" contract.
+    return `m/44'/0'/${this.accountID}'/0/${this.index}`;
+  }
+
+  get id () {
+    return this.toString();
+  }
+
+  get index () {
+    return this._state.content.index;
+  }
+
+  get master () {
+    return this.key;
+  }
+
+  get pubkey () {
+    return this.key.public.x.toString('hex');
+  }
+
+  get pubkeyhash () {
+    const input = Buffer.from(this.pubkey, 'hex');
+    return Hash256.digest(input);
+  }
+
+  static fromString (input = '') {
+    const parsed = Bech32.decode(input);
+    return {
+      content: parsed.content.toString('hex')
+    };
+  }
+
+  loadAccountByID (id = 0) {
+    this._state.content.accountID = id;
+    return this;
   }
 
   /**
-   * Produce a SHA256 digest of some input data.
-   * @param {String|Buffer} input Content to digest.
-   * @returns {String} `SHA256(input)` as a hexadecimal string.
+   * Retrieve the bech32m-encoded identity.
+   * @returns {String} Public identity.
    */
-  static digest (input) {
-    if (typeof input !== 'string' &amp;&amp; !(input instanceof Buffer)) {
-      throw new Error(`Input to process must be of type "String" or "Buffer" to digest.`);
-    }
+  toString () {
+    if (this.settings.debug) console.log('master key:', this.key.master.publicKey);
+    if (this.settings.debug) console.log('pubkey for id:', this.pubkey);
 
-    // consume and output as string
-    return crypto.createHash('sha256').update(input).digest('hex');
+    const bech32 = new Bech32({
+      hrp: 'id',
+      content: this.pubkeyhash
+    });
+
+    if (this.settings.debug) console.log('bech32:', bech32);
+
+    return bech32.toString();
   }
 
-  // TODO: document `hash256.value`
-  get value () {
-    return Hash256.digest(this.settings.input);
-  }
-
-  /**
-   * Reverses the bytes of the digest.
-   */
-  static reverse (input = '') {
-    return Buffer.from(input, 'hex').reverse().toString('hex');
-  }
-
-  reverse (input = this.value) {
-    return Hash256.reverse(input);
+  _signAsSchnorr (input) {
+    if (!input) input = this.pubkeyhash;
+    const signature = this.signer.sign(input)
   }
 }
 
-module.exports = Hash256;</code></pre>
+module.exports = Identity;
+</code></pre>
       </article>
     </section>
 

@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="utf-8">
-  <title>Class: Walker &middot; Docs</title>
+  <title>Class: Environment &middot; Docs</title>
   <script src="scripts/prettify/prettify.js"> </script>
   <script src="scripts/prettify/lang-css.js"> </script>
   <!--[if lt IE 9]>
@@ -24,7 +24,7 @@
 
 <body>
   <div id="main">
-    <h1 class="page-title">Class: Walker</h1>
+    <h1 class="page-title">Class: Environment</h1>
 
 
 
@@ -33,7 +33,9 @@
 
       <header>
 
-        <h2><span class="attribs"><span class="type-signature"></span></span>Walker<span class="signature">(init)</span><span class="type-signature"></span></h2>
+        <h2><span class="attribs"><span class="type-signature"></span></span>Environment<span class="signature">(settings<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {<a href="Environment.html">Environment</a>}</span></h2>
+
+        <div class="class-description">Interact with the user's Environment.</div>
 
 
       </header>
@@ -44,9 +46,11 @@
 
 
 
+          <h2>Constructor</h2>
 
 
-          <h4 class="name" id="Walker"><span class="type-signature"></span>new Walker<span class="signature">(init)</span><span class="type-signature"></span></h4>
+
+          <h4 class="name" id="Environment"><span class="type-signature"></span>new Environment<span class="signature">(settings<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {<a href="Environment.html">Environment</a>}</span></h4>
 
 
 
@@ -54,7 +58,7 @@
 
 
           <div class="description">
-            The Walker explores a directory tree and maps it to memory.
+            Create an instance of <a href="Environment.html">Environment</a>.
           </div>
 
 
@@ -78,6 +82,8 @@
                 <th>Type</th>
 
 
+                <th>Attributes</th>
+
 
 
 
@@ -90,13 +96,24 @@
 
               <tr>
 
-                <td class="name"><code>init</code></td>
+                <td class="name"><code>settings</code></td>
 
 
                 <td class="type">
 
 
-                  <span class="param-type"><a href="Vector.html">Vector</a></span>
+                  <span class="param-type">Object</span>
+
+
+
+                </td>
+
+
+                <td class="attributes">
+
+                  &lt;optional><br>
+
+
 
 
 
@@ -105,8 +122,7 @@
 
 
 
-
-                <td class="description last">Initial state tree.</td>
+                <td class="description last">Settings for the Fabric environment.</td>
               </tr>
 
 
@@ -149,7 +165,7 @@
             <dd class="tag-source">
               <ul class="dummy">
                 <li>
-                  <a href="types_walker.js.html">types/walker.js</a>, <a href="types_walker.js.html#line12">line 12</a>
+                  <a href="types_environment.js.html">types/environment.js</a>, <a href="types_environment.js.html#line29">line 29</a>
                 </li>
               </ul>
             </dd>
@@ -174,6 +190,28 @@
 
 
 
+
+
+          <h5>Returns:</h5>
+
+
+          <div class="param-desc">
+            Instance of the Environment.
+          </div>
+
+
+
+          <dl>
+            <dt>
+              Type
+            </dt>
+            <dd>
+
+              <span class="param-type"><a href="Environment.html">Environment</a></span>
+
+
+            </dd>
+          </dl>
 
 
 
@@ -207,7 +245,7 @@
 
 
 
-        <h4 class="name" id="_define"><span class="type-signature"></span>_define<span class="signature">(dir, map<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+        <h4 class="name" id="readVariable"><span class="type-signature"></span>readVariable<span class="signature">(name)</span><span class="type-signature"> &rarr; {String}</span></h4>
 
 
 
@@ -215,7 +253,7 @@
 
 
         <div class="description">
-          Explores a directory tree on the local system's disk.
+          Read a variable from the environment.
         </div>
 
 
@@ -239,11 +277,7 @@
               <th>Type</th>
 
 
-              <th>Attributes</th>
 
-
-
-              <th>Default</th>
 
 
               <th class="last">Description</th>
@@ -255,7 +289,7 @@
 
             <tr>
 
-              <td class="name"><code>dir</code></td>
+              <td class="name"><code>name</code></td>
 
 
               <td class="type">
@@ -268,61 +302,10 @@
               </td>
 
 
-              <td class="attributes">
 
 
 
-
-
-              </td>
-
-
-
-              <td class="default">
-
-              </td>
-
-
-              <td class="description last">Path to crawl on local disk.</td>
-            </tr>
-
-
-
-            <tr>
-
-              <td class="name"><code>map</code></td>
-
-
-              <td class="type">
-
-
-                <span class="param-type">Object</span>
-
-
-
-              </td>
-
-
-              <td class="attributes">
-
-                &lt;optional><br>
-
-
-
-
-
-              </td>
-
-
-
-              <td class="default">
-
-                {}
-
-              </td>
-
-
-              <td class="description last">Pointer to previous step in stack.</td>
+              <td class="description last">Variable name to read.</td>
             </tr>
 
 
@@ -365,7 +348,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_walker.js.html">types/walker.js</a>, <a href="types_walker.js.html#line51">line 51</a>
+                <a href="types_environment.js.html">types/environment.js</a>, <a href="types_environment.js.html#line199">line 199</a>
               </li>
             </ul>
           </dd>
@@ -396,7 +379,7 @@
 
 
         <div class="param-desc">
-          A hashmap of directory contents.
+          Value of the variable (or an empty string).
         </div>
 
 
@@ -407,7 +390,7 @@
           </dt>
           <dd>
 
-            <span class="param-type">Object</span>
+            <span class="param-type">String</span>
 
 
           </dd>
@@ -425,7 +408,7 @@
 
 
 
-        <h4 class="name" id="_explore"><span class="type-signature"></span>_explore<span class="signature">(path, map<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+        <h4 class="name" id="setWallet"><span class="type-signature"></span>setWallet<span class="signature">(wallet, force)</span><span class="type-signature"> &rarr; {<a href="Environment.html">Environment</a>}</span></h4>
 
 
 
@@ -433,7 +416,7 @@
 
 
         <div class="description">
-          Explores a directory tree on the local system's disk.
+          Configure the Environment to use a Fabric <a href="Wallet.html">Wallet</a>.
         </div>
 
 
@@ -457,8 +440,6 @@
               <th>Type</th>
 
 
-              <th>Attributes</th>
-
 
 
               <th>Default</th>
@@ -473,26 +454,18 @@
 
             <tr>
 
-              <td class="name"><code>path</code></td>
+              <td class="name"><code>wallet</code></td>
 
 
               <td class="type">
 
 
-                <span class="param-type">String</span>
+                <span class="param-type"><a href="Wallet.html">Wallet</a></span>
 
 
 
               </td>
 
-
-              <td class="attributes">
-
-
-
-
-
-              </td>
 
 
 
@@ -501,46 +474,36 @@
               </td>
 
 
-              <td class="description last">[description]</td>
+              <td class="description last">Wallet to attach.</td>
             </tr>
 
 
 
             <tr>
 
-              <td class="name"><code>map</code></td>
+              <td class="name"><code>force</code></td>
 
 
               <td class="type">
 
 
-                <span class="param-type">Object</span>
+                <span class="param-type">Boolean</span>
 
 
 
               </td>
 
-
-              <td class="attributes">
-
-                &lt;optional><br>
-
-
-
-
-
-              </td>
 
 
 
               <td class="default">
 
-                {}
+                false
 
               </td>
 
 
-              <td class="description last">[description]</td>
+              <td class="description last">Force existing wallets to be destroyed.</td>
             </tr>
 
 
@@ -583,7 +546,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_walker.js.html">types/walker.js</a>, <a href="types_walker.js.html#line31">line 31</a>
+                <a href="types_environment.js.html">types/environment.js</a>, <a href="types_environment.js.html#line215">line 215</a>
               </li>
             </ul>
           </dd>
@@ -614,7 +577,7 @@
 
 
         <div class="param-desc">
-          [description]
+          The Fabric Environment.
         </div>
 
 
@@ -625,7 +588,121 @@
           </dt>
           <dd>
 
-            <span class="param-type">Object</span>
+            <span class="param-type"><a href="Environment.html">Environment</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="start"><span class="type-signature"></span>start<span class="signature">()</span><span class="type-signature"> &rarr; {<a href="Environment.html">Environment</a>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Start the Environment.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_environment.js.html">types/environment.js</a>, <a href="types_environment.js.html#line254">line 254</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          The Fabric Environment.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="Environment.html">Environment</a></span>
 
 
           </dd>

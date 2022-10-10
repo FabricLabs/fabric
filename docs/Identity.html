@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="utf-8">
-  <title>Class: Consensus &middot; Docs</title>
+  <title>Class: Identity &middot; Docs</title>
   <script src="scripts/prettify/prettify.js"> </script>
   <script src="scripts/prettify/lang-css.js"> </script>
   <!--[if lt IE 9]>
@@ -24,7 +24,7 @@
 
 <body>
   <div id="main">
-    <h1 class="page-title">Class: Consensus</h1>
+    <h1 class="page-title">Class: Identity</h1>
 
 
 
@@ -33,9 +33,9 @@
 
       <header>
 
-        <h2><span class="attribs"><span class="type-signature"></span></span>Consensus<span class="signature">(settings<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h2>
+        <h2><span class="attribs"><span class="type-signature"></span></span>Identity<span class="signature">(settings<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {<a href="Identity.html">Identity</a>}</span></h2>
 
-        <div class="class-description">Provides various network-specific rules.</div>
+        <div class="class-description">Manage a network identity.</div>
 
 
       </header>
@@ -50,7 +50,7 @@
 
 
 
-          <h4 class="name" id="Consensus"><span class="type-signature"></span>new Consensus<span class="signature">(settings<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h4>
+          <h4 class="name" id="Identity"><span class="type-signature"></span>new Identity<span class="signature">(settings<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {<a href="Identity.html">Identity</a>}</span></h4>
 
 
 
@@ -58,7 +58,7 @@
 
 
           <div class="description">
-            Create an instance of a <a href="Consensus.html">Consensus</a> verifier.
+            Create an instance of an Identity.
           </div>
 
 
@@ -122,7 +122,7 @@
 
 
 
-                <td class="description last">Configuration for the network.
+                <td class="description last">Settings for the Identity.
                   <h6>Properties</h6>
 
 
@@ -140,6 +140,8 @@
 
 
 
+                        <th>Default</th>
+
 
                         <th class="last">Description</th>
                       </tr>
@@ -150,7 +152,7 @@
 
                       <tr>
 
-                        <td class="name"><code>network</code></td>
+                        <td class="name"><code>seed</code></td>
 
 
                         <td class="type">
@@ -175,15 +177,19 @@
 
 
 
+                        <td class="default">
 
-                        <td class="description last">Name of the network.</td>
+                        </td>
+
+
+                        <td class="description last">BIP 39 seed phrase.</td>
                       </tr>
 
 
 
                       <tr>
 
-                        <td class="name"><code>provider</code></td>
+                        <td class="name"><code>xprv</code></td>
 
 
                         <td class="type">
@@ -208,8 +214,127 @@
 
 
 
+                        <td class="default">
 
-                        <td class="description last">Name of the source provider.</td>
+                        </td>
+
+
+                        <td class="description last">Serialized BIP 32 master private key.</td>
+                      </tr>
+
+
+
+                      <tr>
+
+                        <td class="name"><code>xpub</code></td>
+
+
+                        <td class="type">
+
+
+                          <span class="param-type">String</span>
+
+
+
+                        </td>
+
+
+                        <td class="attributes">
+
+                          &lt;optional><br>
+
+
+
+
+
+                        </td>
+
+
+
+                        <td class="default">
+
+                        </td>
+
+
+                        <td class="description last">Serialized BIP 32 master public key.</td>
+                      </tr>
+
+
+
+                      <tr>
+
+                        <td class="name"><code>account</code></td>
+
+
+                        <td class="type">
+
+
+                          <span class="param-type">Number</span>
+
+
+
+                        </td>
+
+
+                        <td class="attributes">
+
+                          &lt;optional><br>
+
+
+
+
+
+                        </td>
+
+
+
+                        <td class="default">
+
+                          0
+
+                        </td>
+
+
+                        <td class="description last">BIP 44 account index.</td>
+                      </tr>
+
+
+
+                      <tr>
+
+                        <td class="name"><code>index</code></td>
+
+
+                        <td class="type">
+
+
+                          <span class="param-type">Number</span>
+
+
+
+                        </td>
+
+
+                        <td class="attributes">
+
+                          &lt;optional><br>
+
+
+
+
+
+                        </td>
+
+
+
+                        <td class="default">
+
+                          0
+
+                        </td>
+
+
+                        <td class="description last">BIP 44 key index.</td>
                       </tr>
 
 
@@ -259,7 +384,7 @@
             <dd class="tag-source">
               <ul class="dummy">
                 <li>
-                  <a href="types_consensus.js.html">types/consensus.js</a>, <a href="types_consensus.js.html#line20">line 20</a>
+                  <a href="types_identity.js.html">types/identity.js</a>, <a href="types_identity.js.html#line23">line 23</a>
                 </li>
               </ul>
             </dd>
@@ -286,6 +411,28 @@
 
 
 
+          <h5>Returns:</h5>
+
+
+          <div class="param-desc">
+            Instance of the identity.
+          </div>
+
+
+
+          <dl>
+            <dt>
+              Type
+            </dt>
+            <dd>
+
+              <span class="param-type"><a href="Identity.html">Identity</a></span>
+
+
+            </dd>
+          </dl>
+
+
 
 
 
@@ -300,6 +447,124 @@
 
 
 
+
+
+
+
+
+
+
+
+
+        <h3 class="subsection-title">Methods</h3>
+
+
+
+
+
+
+
+        <h4 class="name" id="toString"><span class="type-signature"></span>toString<span class="signature">()</span><span class="type-signature"> &rarr; {String}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Retrieve the bech32m-encoded identity.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_identity.js.html">types/identity.js</a>, <a href="types_identity.js.html#line96">line 96</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Public identity.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">String</span>
+
+
+          </dd>
+        </dl>
 
 
 
