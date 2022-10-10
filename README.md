@@ -35,6 +35,14 @@ you're ready to integrate Fabric into your application.
 - `npm run examples` creates a local HTTP server for interacting with examples.
 - `npm start` creates a local Fabric node.
 
+## Native Dependencies
+Installing Fabric from npm (`npm i @fabric/core`) will generally compile the 
+following dependencies from the local system:
+
+- `secp256k1`
+- `level`
+- `zeromq`
+
 ## API
 The Fabric reference implementation exposes a simple message-passing interface
 using [the actor model][actor-model], enabling your downstream applications to
