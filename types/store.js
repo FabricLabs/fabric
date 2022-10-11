@@ -585,7 +585,6 @@ class Store extends Actor {
    */
   async createDB (dbName) {
     this.exdb = new Level(dbName);
-    console.log(dbName);
     this.accountTB = this.exdb.sublevel('account', { valueEncoding: 'json' });
     this.settingTB = this.exdb.sublevel('setting', { valueEncoding: 'json' });
   }

@@ -2,8 +2,11 @@ var iv = new Uint8Array([188, 185, 57, 146, 246, 194, 116, 34, 12, 80, 198, 76])
 var textEnc = new TextEncoder();
 var textDec = new TextDecoder("utf-8");
 
+/**
+ * Encryption functionality using SubtleCrypto algorithm
+ */
 
-export function importKey() {
+export const importKey = () => {
     return window.crypto.subtle.importKey(
         "jwk", //can be "jwk" or "raw"
         {   //this is an example jwk key, "raw" would be an ArrayBuffer
@@ -20,7 +23,7 @@ export function importKey() {
     )
 }
 
-export function generateKey() {
+export const generateKey = () => {
     return window.crypto.subtle.generateKey(
         {
             name: "AES-GCM",
@@ -31,7 +34,7 @@ export function generateKey() {
     )
 }
 
-export function encrypt(data, key, iv) {
+export const encrypt = (data, key, iv) => {
     return window.crypto.subtle.encrypt(
         {
             name: "AES-GCM",
@@ -52,7 +55,7 @@ export function encrypt(data, key, iv) {
     );
 }
 
-export function decrypt(data, key, iv) {
+export const decrypt = (data, key, iv) => {
     return window.crypto.subtle.decrypt(
         {
             name: "AES-GCM",
@@ -65,7 +68,7 @@ export function decrypt(data, key, iv) {
     )
 }
 
-export async function encryptToString(data) {
+export const encryptToString = async (data) => {
     data = textEnc.encode(data);
     let key = await importKey();
     let result = new Uint8Array(await encrypt(data, key, iv));
@@ -76,7 +79,7 @@ export async function encryptToString(data) {
     return res;
 }
 
-export async function decryptFromString(data) {
+export const decryptFromString = async (data) => {
     let key = await importKey();
     let buffer = new Uint8Array(data.length);
     for (let i = 0; i < data.length; i++) {
