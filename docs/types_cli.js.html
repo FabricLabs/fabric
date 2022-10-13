@@ -56,6 +56,7 @@ const Peer = require('./peer');
 const Actor = require('./actor');
 const Message = require('./message');
 const Hash256 = require('./hash256');
+const Identity = require('./identity');
 const Wallet = require('./wallet');
 
 // Services
@@ -131,6 +132,8 @@ class CLI extends App {
     this._loadBitcoin();
     this._loadLightning();
 
+    this.identity = new Identity(this.settings);
+
     // Chainable
     return this;
   }
@@ -205,6 +208,7 @@ class CLI extends App {
     this._registerCommand('exit', this._handleQuitRequest);
     this._registerCommand('clear', this._handleClearRequest);
     this._registerCommand('peers', this._handlePeerListRequest);
+    this._registerCommand('rotate', this._handleRotateRequest);
     this._registerCommand('connect', this._handleConnectRequest);
     this._registerCommand('disconnect', this._handleDisconnectRequest);
     this._registerCommand('settings', this._handleSettingsRequest);
@@ -929,6 +933,12 @@ class CLI extends App {
     } catch (exception) {
       this._appendError(`[LIGHTNING] Could not handle request: ${JSON.stringify(exception)}`);
     }
+  }
+
+  async _handleRotateRequest () {
+    const account = await this.identity._nextAccount();
+    this._appendMessage('Rotated to Account: ' + JSON.stringify(account, null, ' '));
+    return false;
   }
 
   async _handleSendRequest (params) {
@@ -1728,6 +1738,7 @@ module.exports = CLI;
       <li><a href="Bitcoin.html">Bitcoin</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
+      <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Compiler.html">Compiler</a></li>
@@ -1745,6 +1756,8 @@ module.exports = CLI;
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
       <li><a href="Keystore.html">Keystore</a></li>
+      <li><a href="Ledger.html">Ledger</a></li>
+      <li><a href="Logger.html">Logger</a></li>
       <li><a href="Machine.html">Machine</a></li>
       <li><a href="Mempool.html">Mempool</a></li>
       <li><a href="Message.html">Message</a></li>
@@ -1754,6 +1767,7 @@ module.exports = CLI;
       <li><a href="Peer.html">Peer</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
+      <li><a href="Resource.html">Resource</a></li>
       <li><a href="Router.html">Router</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
@@ -1773,6 +1787,7 @@ module.exports = CLI;
       <li><a href="Vector.html">Vector</a></li>
       <li><a href="Walker.html">Walker</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
     <h3>Events</h3>

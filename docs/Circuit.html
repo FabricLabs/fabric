@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="utf-8">
-  <title>Source: types/vector.js &middot; Docs</title>
+  <title>Class: Circuit &middot; Docs</title>
   <script src="scripts/prettify/prettify.js"> </script>
   <script src="scripts/prettify/lang-css.js"> </script>
   <!--[if lt IE 9]>
@@ -24,112 +24,143 @@
 
 <body>
   <div id="main">
-    <h1 class="page-title">Source: types/vector.js</h1>
+    <h1 class="page-title">Class: Circuit</h1>
 
 
 
 
     <section>
+
+      <header>
+
+        <h2><span class="attribs"><span class="type-signature"></span></span>Circuit<span class="signature">()</span><span class="type-signature"></span></h2>
+
+        <div class="class-description">The <a href="Circuit.html">Circuit</a> is the mechanism through which <a href="Fabric.html">Fabric</a>
+          operates, a computable directed graph describing a network of
+          <a href="Peer.html">Peer</a> components and their interactions (side effects).
+          See also <a href="Swarm.html">Swarm</a> for deeper *inspection of <a href="Machine.html">Machine</a>
+          mechanics.
+        </div>
+
+
+      </header>
+
       <article>
-        <pre class="prettyprint source linenums"><code>'use strict';
+        <div class="container-overview">
 
-const Scribe = require('./scribe');
-const Stack = require('./stack');
 
-class Vector extends Scribe {
-  /**
-   * An "Initialization" Vector.
-   * @param       {Object} - Input state (will map to `@data`.)
-   * @constructor
-   */
-  constructor (origin) {
-    super(origin);
 
-    this.settings = Object.assign({}, origin);
 
-    this.known = {};
-    this.registry = {};
+          <h2>Constructor</h2>
 
-    this.stack = new Stack();
-    this.script = [];
 
-    this.status = 'initialized';
 
-    return this;
-  }
+          <h4 class="name" id="Circuit"><span class="type-signature"></span>new Circuit<span class="signature">()</span><span class="type-signature"></span></h4>
 
-  static fromObjectString (input = '') {
-    if (!input) throw new Error('Must provide input.');
-    if (typeof input !== 'string') input = JSON.stringify(input);
-    let result = [];
-    let object = JSON.parse(input);
 
-    for (let i in object) {
-      let element = object[i];
 
-      if (element instanceof Array) {
-        element = Buffer.from(element);
-      } else {
-        element = Buffer.from(element.data);
-      }
 
-      result.push(element);
-    }
 
-    return result;
-  }
 
-  /**
-   * _serialize is a placeholder, should be discussed.
-   * @param {String} input - What to serialize.  Defaults to `this.state`.
-   * @return {String} - resulting string [JSON-encoded version of the local `@data` value.]
-   */
-  _serialize (input) {
-    return this.toString(input);
-  }
 
-  _deserialize (input) {
-    return this.fromString(input);
-  }
 
-  // TODO: standardize on a serialization format
-  fromString (input) {
-    return JSON.parse(input);
-  }
 
-  toObject () {
-    let object = {};
-    for (let property in this['@data']) {
-      if (property.charAt(0) !== '@') {
-        object[property] = this['@data'][property];
-      }
-    }
-    return object;
-  }
 
-  /**
-   * Render the output to a {@link String}.
-   * @param  {Mixed} input Arbitrary input.
-   * @return {String}
-   */
-  toString (input) {
-    if (!input) input = this.state;
-    // TODO: standardize on a serialization format
-    return JSON.stringify(input);
-  }
 
-  validate (input) {
-    return true;
-  }
 
-  async step () {
-    return super.compute((this.clock | 0));
-  }
-}
 
-module.exports = Vector;
-</code></pre>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_circuit.js.html">types/circuit.js</a>, <a href="types_circuit.js.html#line20">line 20</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
       </article>
+
     </section>
 
 
