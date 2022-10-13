@@ -1,12 +1,16 @@
 'use strict';
 
 const TEST_SEED = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
+const EMPTY_STRING = '';
+const HELLO_WORLD = 'Hello World';
 
 module.exports = {
+  EMPTY_STRING: EMPTY_STRING,
   FABRIC_SEED: TEST_SEED,
   FABRIC_XPRV: TEST_SEED,
   FABRIC_XPUB: TEST_SEED,
   FIXTURE_SEED: TEST_SEED,
+  HELLO_WORLD: HELLO_WORLD,
   PLAYNET_SEED: TEST_SEED,
   TEST_SEED: TEST_SEED,
   seed: TEST_SEED,

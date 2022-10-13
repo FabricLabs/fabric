@@ -1,6 +1,8 @@
 'use strict';
 
 // Dependencies
+const crypto = require('crypto');
+const stream = require('stream');
 const schnorr = require('bip-schnorr');
 
 // Fabric Types
@@ -33,6 +35,11 @@ class Signer extends Actor {
     this.log = [];
     this.signature = null;
 
+    // Settings
+    this.settings = {
+      state: {}
+    };
+
     // TODO: fix bcoin in React / WebPack
     this.key = new Key({
       seed: actor.seed,
@@ -44,6 +51,7 @@ class Signer extends Actor {
 
     // Indicate Risk
     this.private = !!(this.key.seed || this.key.private);
+    this.stream = new stream.Transform(this._transformer.bind(this));
     this.value = this._readObject(actor); // TODO: use Buffer?
 
     // Internal State
@@ -94,6 +102,21 @@ class Signer extends Actor {
     return this.signature.toString('hex');
   }
 
+  start () {
+    this._state.content.status = 'STARTING';
+    // TODO: unpause input stream here
+    this._state.status = 'STARTED';
+    this.commit();
+    return this;
+  }
+
+  stop () {
+    this._state.status = 'STOPPING';
+    this._state.status = 'STOPPED';
+    this.commit();
+    return this;
+  }
+
   verify (pubkey, message, signature) {
     if (!(pubkey instanceof Buffer)) pubkey = Buffer.from(pubkey, 'hex');
     if (!(message instanceof Buffer)) message = Buffer.from(message, 'hex');
@@ -106,6 +129,10 @@ class Signer extends Actor {
       console.error(exception);
       return false;
     }
+  }
+
+  async _transformer (chunk, controller) {
+
   }
 }
 
