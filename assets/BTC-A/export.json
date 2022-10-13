@@ -3,7 +3,7 @@
     "id": 4,
     "name": "BTC-A",
     "status": 3,
-    "path": "/Users/eric/.polar/networks/4",
+    "path": "/BTC-A/.polar/networks/4",
     "nodes": {
       "bitcoin": [
         {
@@ -38,10 +38,10 @@
           "status": 4,
           "backendName": "bitcoind",
           "paths": {
-            "macaroon": "/Users/eric/.polar/networks/4/volumes/c-lightning/lightning/rest-api/access.macaroon",
-            "tlsCert": "/Users/eric/.polar/networks/4/volumes/c-lightning/lightning/lightningd/regtest/ca.pem",
-            "tlsClientCert": "/Users/eric/.polar/networks/4/volumes/c-lightning/lightning/lightningd/regtest/client.pem",
-            "tlsClientKey": "/Users/eric/.polar/networks/4/volumes/c-lightning/lightning/lightningd/regtest/client-key.pem"
+            "macaroon": "/BTC-A/.polar/networks/4/volumes/c-lightning/lightning/rest-api/access.macaroon",
+            "tlsCert": "/BTC-A/.polar/networks/4/volumes/c-lightning/lightning/lightningd/regtest/ca.pem",
+            "tlsClientCert": "/BTC-A/.polar/networks/4/volumes/c-lightning/lightning/lightningd/regtest/client.pem",
+            "tlsClientKey": "/BTC-A/.polar/networks/4/volumes/c-lightning/lightning/lightningd/regtest/client-key.pem"
           },
           "ports": {
             "rest": 8181,
