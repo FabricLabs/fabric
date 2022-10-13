@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Source: types/circuit.js &middot; Docs</title>
+  <script src="scripts/prettify/prettify.js"> </script>
+  <script src="scripts/prettify/lang-css.js"> </script>
+  <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+  <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+  <script>
+    window.dataLayer = window.dataLayer || [];
+
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag('js', new Date());
+    gtag('config', 'G-09Y57FL980');
+  </script>
+</head>
+
+<body>
+  <div id="main">
+    <h1 class="page-title">Source: types/circuit.js</h1>
+
+
+
+
+    <section>
+      <article>
+        <pre class="prettyprint source linenums"><code>'use strict';
+
+// External dependencies
+const crypto = require('crypto');
+const parser = require('dotparser');
+const visualize = require('javascript-state-machine/lib/visualize');
+const StateMachine = require('javascript-state-machine');
+
+// Fabric Types
+const Machine = require('./machine');
+const Actor = require('./actor');
+
+/**
+ * The {@link Circuit} is the mechanism through which {@link Fabric}
+ * operates, a computable directed graph describing a network of
+ * {@link Peer} components and their interactions (side effects).
+ * See also {@link Swarm} for deeper *inspection of {@link Machine}
+ * mechanics.
+ */
+class Circuit extends Actor {
+  constructor (config = {}) {
+    super(config);
+
+    this.settings = Object.assign({
+      edges: [],
+      gates: [],
+      loops: [],
+      nodes: [],
+      wires: [],
+      methods: {}
+    }, config);
+
+    this['@data'] = this.settings;
+
+    this.gates = [];
+    this.transitions = [];
+    this.methods = {};
+
+    // External State
+    this.state = {
+      edges: [],
+      nodes: []
+    };
+
+    for (let i in this.settings.gates) {
+      this.transitions.push({
+        name: `step`,
+        from: 'cycle()',
+        to: `${this.settings.gates[i]}`
+      });
+    }
+
+    for (let i in this.settings.wires) {
+      let wire = this.settings.wires[i];
+      this.transitions.push({ name: wire.name, from: wire.from, to: wire.to });
+    }
+
+    this.graph = new StateMachine({
+      init: 'start()',
+      data: this.state,
+      transitions: this.transitions,
+      methods: this.methods
+    });
+
+    // Internal State
+    this._state = {
+      steps: [
+        'load', // load from storage
+        'bootstrap', // configure memory
+        'step', // single cycle before start
+        'start', // create services
+        'listen' // listen for input
+      ]
+    };
+
+    return this;
+  }
+
+  get hash () {
+    return crypto.createHash('sha256').update(this.dot).digest('hex');
+  }
+
+  get dot () {
+    // TODO: generate polynomial for circuit
+    return visualize(this.graph, {
+      orientation: 'horizontal'
+    });
+  }
+
+  _registerMethod (name, method) {
+    this.methods[name] = method;
+  }
+
+  toObject () {
+    return parser(this.dot);
+  }
+
+  parse (input) {
+    return parser(input);
+  }
+
+  compute (input) {
+    let output = input;
+
+    // empty resolves to Identity function f(x) = x
+
+    return output;
+  }
+
+  scramble () {
+    let key = crypto.randomBytes(32);
+    let machine = new Machine({ seed: key });
+    let seed = machine.sip();
+    let gates = [];
+
+    for (let i = 0; i &lt; this._state.steps.length; i++) {
+      gates.push({
+        name: this._state.steps[i],
+        seed: machine.sip()
+      });
+    }
+
+    gates.sort((a, b) => {
+      return a.seed - b.seed;
+    });
+
+    return gates;
+  }
+
+  render () {
+    let hash = crypto.createHash('sha256').update(this.dot).digest('base64');
+    return `&lt;fabric-circuit>
+  &lt;fabric-code-snippet data-bind="${this.hash}" data-integrity="sha256-${hash}">${this.dot}&lt;/fabric-code-snippet>
+  &lt;fabric-canvas>
+    &lt;fabric-grid>
+      &lt;fabric-grid-row>
+        &lt;textarea data-bind="${this.hash}" placeholder="Purity contract here...">${this.dot}&lt;/textarea>
+      &lt;/fabric-grid-row>
+      &lt;fabric-grid-row>
+        &lt;button data-action="_step">step&lt;/button>
+      &lt;/fabric-grid-row>
+      &lt;fabric-grid-row>
+        &lt;fabric-svg id="svg">&lt;/fabric-svg>
+      &lt;/fabric-grid-row>
+      &lt;fabric-grid-row>
+        &lt;canvas id="output" data-bind="output">&lt;/canvas>
+        &lt;canvas id="canvas" data-bind="${this.hash}">&lt;/canvas>
+      &lt;/fabric-grid-row>
+  &lt;/fabric-canvas>
+&lt;/fabric-circuit>`;
+  }
+
+  _draw () {
+    return this;
+  }
+
+  async _step () {
+    let circuit = this;
+    let origin = circuit.hash + '';
+
+    console.log('[CIRCUIT:STEP]', this.graph);
+    console.log('[CIRCUIT:STEP]', 'woo:', this.toObject());
+    console.log('[CIRCUIT:STEP]', 'zkc:', this.toObject().map((x) => {
+      return x.children.filter(x => {
+        return x.type === 'edge_stmt';
+      }).map((y) => {
+        return y.edge_list.map(z => {
+          return z.id;
+        });
+      });
+    })[0]);
+
+    console.log('[CIRCUIT:STEP]', 'fsm:', this.graph._fsm);
+    console.log('[CIRCUIT:STEP]', 'origin:', origin);
+    console.log('[CIRCUIT:STEP]', 'origin hash:', this.hash);
+    console.log('[CIRCUIT:STEP]', 'origin data:', this.dot);
+    console.log('[CIRCUIT:STEP]', 'current:', this.graph.state);
+
+    switch (this.graph.state) {
+      default:
+        console.error('unhandled state:', this.graph.state);
+        break;
+      case 'init':
+        this.graph.ready();
+        break;
+      case 'ready':
+        this.graph.step1();
+        break;
+      case '1':
+        this.graph.step2();
+        break;
+      case '2':
+        this.graph.step3();
+        break;
+      case '3':
+        this.graph.done();
+        break;
+      case 'complete':
+        console.log('#winning');
+        this.emit('complete');
+        break;
+    }
+
+    console.log('[CIRCUIT:STEP]', 'after:', this.graph.state);
+
+    this.emit(origin, this.dot);
+
+    await this._PUT(`/output`, Buffer.alloc((256 ** 3) / 8), false);
+    await this._PUT(`/source`, this.dot, false);
+    await this._PUT(`/status`, this.graph.state, false);
+
+    let commit = await this.commit();
+
+    console.log('commit:', commit);
+
+    return commit;
+  }
+
+  async start () {
+    return this;
+  }
+}
+
+module.exports = Circuit;
+</code></pre>
+      </article>
+    </section>
+
+
+
+  </div>
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="Actor.html">Actor</a></li>
+      <li><a href="Aggregator.html">Aggregator</a></li>
+      <li><a href="App.html">App</a></li>
+      <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="Channel.html">Channel</a></li>
+      <li><a href="Circuit.html">Circuit</a></li>
+      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Compiler.html">Compiler</a></li>
+      <li><a href="Consensus.html">Consensus</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Environment.html">Environment</a></li>
+      <li><a href="Exchange.html">Exchange</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Federation.html">Federation</a></li>
+      <li><a href="Filesystem.html">Filesystem</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
+      <li><a href="HKDF.html">HKDF</a></li>
+      <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Identity.html">Identity</a></li>
+      <li><a href="Interface.html">Interface</a></li>
+      <li><a href="Key.html">Key</a></li>
+      <li><a href="Keystore.html">Keystore</a></li>
+      <li><a href="Ledger.html">Ledger</a></li>
+      <li><a href="Logger.html">Logger</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Mempool.html">Mempool</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="Node.html">Node</a></li>
+      <li><a href="Oracle.html">Oracle</a></li>
+      <li><a href="Path.html">Path</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="Reader.html">Reader</a></li>
+      <li><a href="Redis.html">Redis</a></li>
+      <li><a href="Resource.html">Resource</a></li>
+      <li><a href="Router.html">Router</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Session.html">Session</a></li>
+      <li><a href="Signer.html">Signer</a></li>
+      <li><a href="Snapshot.html">Snapshot</a></li>
+      <li><a href="Stack.html">Stack</a></li>
+      <li><a href="Stash.html">Stash</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="Swap.html">Swap</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
+      <li><a href="Transition.html">Transition</a></li>
+      <li><a href="Tree.html">Tree</a></li>
+      <li><a href="Value.html">Value</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
+      <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="Worker.html">Worker</a></li>
+      <li><a href="ZMQ.html">ZMQ</a></li>
+    </ul>
+    <h3>Events</h3>
+    <ul>
+      <li><a href="Aggregator.html#event:commit">commit</a></li>
+    </ul>
+  </nav>
+  <br class="clear" />
+  <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>
+  <script type="text/javascript">
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"></script>
+</body>
+
+</html>

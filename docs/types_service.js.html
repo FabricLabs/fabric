@@ -33,12 +33,14 @@
       <article>
         <pre class="prettyprint source linenums"><code>'use strict';
 
-const PATCHES_ENABLED = false;
+const PATCHES_ENABLED = true;
+const OP_TRACE = require('../contracts/trace');
 
 // Dependencies
 const crypto = require('crypto');
 const stream = require('stream');
 const path = require('path');
+const EventEmitter = require('events').EventEmitter;
 
 // Public modules
 // TODO: remove
@@ -49,6 +51,7 @@ const manager = require('fast-json-patch');
 // Fabric Types
 const Actor = require('./actor');
 const Collection = require('./collection');
+const Identity = require('./identity');
 const Resource = require('./resource');
 const Entity = require('./entity');
 const Hash256 = require('./hash256');
@@ -81,10 +84,23 @@ class Service extends Actor {
 
     // Configure (with defaults)
     this.settings = merge({
-      name: 'service',
+      name: 'Service',
       path: './stores/service',
       networking: true,
       persistent: false,
+      constraints: {
+        tolerance: 100,
+        memory: {
+          max: 67108864
+        }
+      },
+      state: {
+        ...super.state,
+        actors: {}, // TODO: schema
+        channels: {}, // TODO: schema
+        messages: {}, // TODO: schema
+        services: {}
+      },
       interval: 60000, // Mandatory Checkpoint Interval
       verbosity: 2, // 0 none, 1 error, 2 warning, 3 notice, 4 debug
       // TODO: export this as the default data in `inputs/fabric.json`
@@ -118,6 +134,7 @@ class Service extends Actor {
     //        can draw a canvas:
     //          Error: Not implemented yet
     this.key = new Key(this.settings.key);
+    this.identity = new Identity(this.settings.key);
 
     if (this.settings.persistent) {
       try {
@@ -137,7 +154,7 @@ class Service extends Actor {
       history: [], // list of ...
       services: {}, // stores sub-service state
       status: 'PAUSED',
-      content: {},
+      content: this.settings.state,
       version: 0 // TODO: change to 1 for 0.1.0
     };
 
@@ -187,7 +204,7 @@ class Service extends Actor {
   }
 
   get state () {
-    return this._state;
+    return Object.assign({}, this._state.content);
   }
 
   set clock (value) {
@@ -276,7 +293,7 @@ class Service extends Actor {
     const beat = Message.fromVector(['Generic', {
       clock: this._clock,
       created: now,
-      state: this._state
+      state: this._state.content
     }]);
 
     if (!beat) {
@@ -337,6 +354,8 @@ class Service extends Actor {
    * @return {Service} Instance of Service after binding events.
    */
   trust (source, name = source.constructor.name) {
+    if (!(source instanceof EventEmitter)) throw new Error('Source is not an EventEmitter.')
+
     // Constants
     const self = this;
 
@@ -360,55 +379,59 @@ class Service extends Actor {
 
     return {
       _handleActor: source.on('actor', async function (actor) {
-        console.log(`[FABRIC:SERVICE] Source "${name}" emitted actor:`, actor);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted actor: ${JSON.stringify(actor, null, '  ')}`);
       }),
       _handleAlert: source.on('alert', async function (alert) {
         self.alert(`[FABRIC:SERVICE] [ALERT] [!!!] ${name} alerted: ${alert}`);
       }),
       _handleBeat: source.on('beat', async function (beat) {
         self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted beat: ${JSON.stringify(beat, null, '  ')}`);
+
         const ops = [
+          { op: 'add', path: `/actors`, value: {} },
+          { op: 'add', path: `/services`, value: {} },
           { op: 'replace', path: `/services/${name}`, value: beat.state }
         ];
 
         try {
-          manager.applyPatch(self._state, ops);
+          manager.applyPatch(self._state.content, ops);
           await self.commit();
         } catch (exception) {
-          self.emit('error', `Could not process beat: ${exception}`);
+          self.emit('warning', `Could not process beat: ${exception}`);
         }
       }),
       _handleChanges: source.on('changes', async function (changes) {
-        console.log(`[FABRIC:SERVICE] Source "${name}" emitted changes:`, changes);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted changes: ${changes}`);
       }),
       _handleChannel: source.on('channel', async function (channel) {
-        console.log(`[FABRIC:SERVICE] Source "${name}" emitted channel:`, channel);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted channel: ${JSON.stringify(channel, null, '  ')}`);
       }),
       _handleCommit: source.on('commit', async function (commit) {
-        console.log(`[FABRIC:SERVICE] Source "${name}" committed:`, commit);
+        self.emit('log', `[FABRIC:SERVICE] Source "${name}" committed: ${JSON.stringify(commit, null, '  ')}`);
       }),
       _handleError: source.on('error', async function _handleTrustedError (error) {
-        console.error(`[FABRIC:SERVICE] Source "${name}" emitted error:`, error);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted error: ${error}`);
       }),
       _handleLog: source.on('log', async function _handleTrustedLog (log) {
-        console.log(`[FABRIC:SERVICE] Source "${name}" emitted log:`, log);
+        self.emit('log', `[FABRIC:SERVICE] Source "${name}" emitted log: ${log}`);
       }),
       _handleMessage: source.on('message', async function (message) {
         self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted message: ${JSON.stringify(message.toObject ? message.toObject() : message, null, '  ')}`);
         await self._handleTrustedMessage(message);
       }),
       _handlePatches: source.on('patches', async function (patches) {
-        self.emit('debug', `[FABRIC:SERVICE] [${name}] Service State:`, source._state);
-        // TODO: apply changes to parent (self)
+        self.emit('debug', `[FABRIC:SERVICE] [${name}] Service State: ${JSON.stringify(source.state, null, '  ')}`);
+        self.emit('debug', `[FABRIC:SERVICE] [${name}] Patches: ${JSON.stringify(patches)}`);
+        self.emit('patches', patches);
       }),
       _handleReady: source.on('ready', async function _handleTrustedReady (info) {
-        console.log(`[FABRIC:SERVICE] Source "${name}" emitted ready:`, info);
+        self.emit('log', `[FABRIC:SERVICE] Source "${name}" emitted ready: ${JSON.stringify(info)}`);
       }),
       _handleTip: source.on('tip', async function (hash) {
         self.alert(`[FABRIC:SERVICE] New ${name} chaintip: ${hash}`);
       }),
       _handleWarning: source.on('warning', async function _handleTrustedWarning (warning) {
-        console.warn(`[FABRIC:SERVICE] Source "${name}" emitted warning:`, warning);
+        self.emit('warning', `[FABRIC:SERVICE] Source "${name}" emitted warning: ${warning}`);
       })
     };
   }
@@ -620,7 +643,11 @@ class Service extends Actor {
 
     // TODO: re-re-evaluate a better approach... oh how I long for Object.observe!
     // this.observer = manager.observe(this.state, this._handleStateChange.bind(this));
-    this.observer = manager.observe(this._state);
+    try {
+      this.observer = manager.observe(this._state.content);
+    } catch (exception) {
+      console.warn('Could not observe state:', this._state.content, exception);
+    }
 
     // Set a heartbeat
     await this._startHeart();
@@ -677,8 +704,8 @@ class Service extends Actor {
 
     try {
       result = pointer.get(this.state, path);
-    } catch (E) {
-      console.error(`Could not _GET() ${path}:`, E);
+    } catch (exception) {
+      this.emit('debug', `Could not _GET() ${path}:\n${exception}\n\tState: ${JSON.stringify(this.state, null, '  ')}`);
     }
 
     return result;
@@ -876,19 +903,20 @@ class Service extends Actor {
   }
 
   commit () {
-    if (this.settings.verbosity >= 4) this.emit('log', '[FABRIC:SERVICE] Committing...');
+    // this.emit('debug', `[FABRIC:SERVICE] Committing ${OP_TRACE()}`);
 
     const self = this;
     const ops = [];
 
     // assemble all necessary info, emit Snapshot regardless of storage status
     try {
-      ops.push({ type: 'put', key: 'snapshot', value: self._state });
-      this.emit('debug', JSON.stringify({
+      ops.push({ type: 'put', key: 'snapshot', value: self.state });
+
+      this.emit('debug', `Commit Template: ${JSON.stringify({
         '@data': self.state,
         '@from': 'COMMIT',
         '@type': 'Snapshot'
-      }));
+      }, null, '  ')}`);
     } catch (E) {
       console.error('Error saving state:', self.state);
       console.error('Could not commit to state:', E);
@@ -917,8 +945,13 @@ class Service extends Actor {
       }
     }
 
-    const commit = new Actor(self._state);
-    this.emit('commit', commit);
+    const commit = new Actor({
+      type: 'Commit',
+      state: self.state
+    });
+
+    this.emit('commit', { ...commit.toObject(), id: commit.id });
+
     return commit.id;
   }
 
@@ -966,9 +999,7 @@ class Service extends Actor {
   async _registerActor (actor = {}) {
     if (!actor.id) {
       const entity = new Actor(actor);
-      actor = merge({
-        id: entity.id
-      }, actor);
+      actor = { ...entity.toObject(), id: entity.id };
     }
 
     const id = pointer.escape(actor.id);
@@ -1158,7 +1189,12 @@ class Service extends Actor {
         // TODO: isomorphic @fabric/core/types/store
         // await this.services[name]._bindStore(this.store);
         this.trust(this.services[name], name);
-        await this.services[name].start();
+
+        try {
+          await this.services[name].start();
+        } catch (exception) {
+          this.emit('warning', `Could not start the "${name}" service due to exception: ${JSON.stringify(exception, null, '  ')}`);
+        }
       }
     }
 
@@ -1188,19 +1224,26 @@ module.exports = Service;
       <li><a href="Bitcoin.html">Bitcoin</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
+      <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Compiler.html">Compiler</a></li>
       <li><a href="Consensus.html">Consensus</a></li>
       <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Environment.html">Environment</a></li>
       <li><a href="Exchange.html">Exchange</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Federation.html">Federation</a></li>
+      <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
-      <li><a href="KeyStore.html">KeyStore</a></li>
+      <li><a href="Keystore.html">Keystore</a></li>
+      <li><a href="Ledger.html">Ledger</a></li>
+      <li><a href="Logger.html">Logger</a></li>
       <li><a href="Machine.html">Machine</a></li>
       <li><a href="Mempool.html">Mempool</a></li>
       <li><a href="Message.html">Message</a></li>
@@ -1210,6 +1253,7 @@ module.exports = Service;
       <li><a href="Peer.html">Peer</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
+      <li><a href="Resource.html">Resource</a></li>
       <li><a href="Router.html">Router</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
@@ -1229,6 +1273,7 @@ module.exports = Service;
       <li><a href="Vector.html">Vector</a></li>
       <li><a href="Walker.html">Walker</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
     <h3>Events</h3>
