@@ -81,6 +81,7 @@
   },
   "homepage": "https://github.com/FabricLabs/fabric#readme",
   "dependencies": {
+    "@grpc/grpc-js": "1.7.1",
     "arbitrary": "1.4.10",
     "base58check": "2.0.0",
     "bech32-buffer": "0.2.0",
