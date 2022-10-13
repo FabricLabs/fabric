@@ -11,9 +11,9 @@ const Relationship = require('../resources/relationship');
 window.app = new App({
   scripts: ['app.js'],
   resources: {
-    'Person': Person,
-    'Post': Post,
-    'Relationship': Relationship,
+    'People': Person,
+    'Posts': Post,
+    'Relationships': Relationship,
   },
   authorities: {
     
