@@ -3,6 +3,7 @@
 const TEST_SEED = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
 const EMPTY_STRING = '';
 const HELLO_WORLD = 'Hello World';
+const GITHUB_ISSUE_PATH = 'FabricLabs/fabric/issues/1';
 
 module.exports = {
   EMPTY_STRING: EMPTY_STRING,
@@ -10,6 +11,7 @@ module.exports = {
   FABRIC_XPRV: TEST_SEED,
   FABRIC_XPUB: TEST_SEED,
   FIXTURE_SEED: TEST_SEED,
+  GITHUB_ISSUE_PATH: GITHUB_ISSUE_PATH,
   HELLO_WORLD: HELLO_WORLD,
   PLAYNET_SEED: TEST_SEED,
   TEST_SEED: TEST_SEED,
