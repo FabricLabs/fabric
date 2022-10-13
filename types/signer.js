@@ -14,6 +14,7 @@ const Key = require('./key');
  * Generic Fabric Signer.
  * @access protected
  * @emits message Fabric {@link Message} objects.
+ * @extends {Actor}
  * @property {String} id Unique identifier for this Signer (id === SHA256(preimage)).
  * @property {String} preimage Input hash for the `id` property (preimage === SHA256(SignerState)).
  */
@@ -66,6 +67,16 @@ class Signer extends Actor {
     return this;
   }
 
+  static chunksForBuffer (input = Buffer.alloc(32), size = 32) {
+    const chunks = [];
+    for (let i = 0; i < input.length; i += size) {
+      const chunk = input.slice(i, i + size);
+      chunks.push(chunk);
+    }
+
+    return chunks;
+  }
+
   get pubkey () {
     // TODO: encode pubkey correctly for verification
     const x = this.key.keypair.getPublic().getX();
@@ -115,6 +126,14 @@ class Signer extends Actor {
     this._state.status = 'STOPPED';
     this.commit();
     return this;
+  }
+
+  toSpend () {
+
+  }
+
+  toSign () {
+
   }
 
   verify (pubkey, message, signature) {

@@ -54,6 +54,12 @@ digraph FabricClasses {
     "CLI"
   }
 
+  "Contract" -> {
+    "Crowdfund"
+    "Distribution"
+    "Federation"
+  }
+
   "Entity" -> "Environment"
   "EventEmitter" -> {
     "Actor"
