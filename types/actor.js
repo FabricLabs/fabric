@@ -56,6 +56,7 @@ class Actor extends EventEmitter {
     // and/or resolving performance issues at scale
     this.observer = monitor.observe(this._state.content, this._handleMonitorChanges.bind(this));
 
+    // TODO: use elegant method to strip these properties
     Object.defineProperty(this, '_events', { enumerable: false });
     Object.defineProperty(this, '_eventsCount', { enumerable: false });
     Object.defineProperty(this, '_maxListeners', { enumerable: false });

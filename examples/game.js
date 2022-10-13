@@ -1,14 +1,14 @@
-var _ = require('../lib/functions');
+const _ = require('../contracts/functions');
 
-var Fabric = require('../lib/fabric');
-var game = new Fabric({
+const Fabric = require('../types/fabric');
+const game = new Fabric({
   spawns: []
 });
 
-var template = require('../data/mob');
+const template = require('../data/mob');
 
 game.use('tick', function (input) {
-  var self = this;
+  const self = this;
   console.log('tick!', self.clock);
   return input;
 });
