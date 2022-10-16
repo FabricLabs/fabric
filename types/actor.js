@@ -258,8 +258,8 @@ class Actor extends EventEmitter {
    */
   toGenericMessage () {
     return {
-      'type': 'FabricActorState',
-      'object': this.toObject()
+      type: 'FabricActorState',
+      object: this.toObject()
     };
   }
 

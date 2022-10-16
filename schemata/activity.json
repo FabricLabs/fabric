@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hub.fabric.pub/schemata/activity.schema.json",
+  "title": "Activity",
+  "description": "Activity in a Stream.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "description": "The unique identifier for an activity.",
+      "type": "string"
+    },
+    "actor": {
+      "description": "The activity's creator.",
+      "type": "Actor|String"
+    },
+    "created": {
+      "description": "ISO 8601 creation time.",
+      "type": "string"
+    },
+    "object": {
+      "description": "The unique identifier for an activity.",
+      "type": "object"
+    },
+    "target": {
+      "description": "Path to write.",
+      "type": "object"
+    }
+  },
+  "required": [
+    "id",
+    "object",
+    "target"
+  ],
+  "version": "0.1.0-RC1"
+}

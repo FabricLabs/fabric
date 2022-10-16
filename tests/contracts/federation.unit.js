@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('assert');
-const settings = require('../fixtures')
+const settings = require('../../fixtures')
 const Federation = require('../../contracts/federation');
 
 describe('@fabric/core/types/federation', function () {
@@ -18,6 +18,19 @@ describe('@fabric/core/types/federation', function () {
 
       assert.ok(federation);
       assert.ok(federation.id);
+    });
+
+    describe('start', function () {
+      it('can start the test federation', async function () {
+        const federation = new Federation(settings);
+        await federation.start();
+
+        assert.ok(federation);
+        assert.ok(federation.id);
+        assert.strictEqual(federation.status, 'STARTED');
+
+        await federation.stop();
+      });
     });
   });
 });
