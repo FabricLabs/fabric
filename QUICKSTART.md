@@ -2,13 +2,15 @@
 
 ## Prerequisites
 0. (optional) Install NVM: `https://nvm.sh`
-1. Install Node 12.20.2 (use `nvm install 12.20.2` if using `nvm`)
+1. Install Node 16.17.1 (use `nvm install 16.17.1` if using `nvm`)
 
 ## Instructions
 0. Meet the prerequisites (above)
-1. Install Fabric Core: `npm i --save @fabric/core`
+1. Install Fabric Core: `npm i -g @fabric/core`
+2. Run `fabric setup`
+3. Run `fabric chat`
 
-_**Note:** for development releases, use `npm i --save FabricLabs/fabric#develop` instead._
+_**Note:** for development releases, use `npm i -g FabricLabs/fabric#develop` instead._
 
 ## Sample Program
 Create the file `scripts/quickstart.js` using the following code:

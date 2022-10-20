@@ -10,9 +10,9 @@ const settings = {
   // sideload playnet
   peers: [].concat(playnet.peers),
   port: process.env.FABRIC_PORT || 7777,
-  services: [
-    // 'matrix'
-  ],
+  lightning: local.lightning,
+  render: local.render,
+  services: local.services,
   key: {
     seed: playnet.seed
   }

@@ -3,11 +3,11 @@ const Block = require('../types/block');
 module.exports = function OP_ADVANCE_BLOCK (input) {
   console.log('advancing block:', this.state);
 
-  const parent = this.state.chain[this.state.chain.length - 1];
-  console.log('parent:', parent);
+  // const parent = this.state.chain[this.state.chain.length - 1];
+  // console.log('parent:', parent);
 
   const block = new Block({
-    parent: this.state.chain[this.state.chain.length - 1],
+    // parent: this.state.chain[this.state.chain.length - 1],
     transactions: input
   });
 
@@ -18,7 +18,7 @@ module.exports = function OP_ADVANCE_BLOCK (input) {
   }
 
   this.state.blocks[block.id] = block;
-  this.state.chain.push(block.id);
+  // this.state.chain.push(block.id);
 
   this.commit();
 

@@ -51,9 +51,21 @@ class Actor extends EventEmitter {
 
     // TODO: evaluate disabling by default
     this.history = [];
+
     // TODO: evaluate disabling by default
     // and/or resolving performance issues at scale
-    this.observer = monitor.observe(this._state.content, this._handleMonitorChanges.bind(this));
+    try {
+      this.observer = monitor.observe(this._state.content, this._handleMonitorChanges.bind(this));
+    } catch (exception) {
+      console.error('UNABLE TO WATCH:', exception);
+    }
+
+    // TODO: use elegant method to strip these properties
+    Object.defineProperty(this, '_events', { enumerable: false });
+    Object.defineProperty(this, '_eventsCount', { enumerable: false });
+    Object.defineProperty(this, '_maxListeners', { enumerable: false });
+    Object.defineProperty(this, '_state', { enumerable: false });
+    Object.defineProperty(this, 'observer', { enumerable: false });
 
     // Chainable
     return this;
@@ -109,11 +121,15 @@ class Actor extends EventEmitter {
     return Hash256.digest(buffer);
   }
 
+  get generic () {
+    return this.toGenericMessage();
+  }
+
   get preimage () {
-    const input = this.toGenericMessage();
-    const string = JSON.stringify(input, null, '  ');
-    const buffer = Buffer.from(string, 'utf8');
-    return Hash256.digest(buffer);
+    const string = JSON.stringify(this.generic, null, '  ');
+    const secret = Buffer.from(string, 'utf8');
+    const preimage = Hash256.digest(secret);
+    return preimage;
   }
 
   get state () {
@@ -240,10 +256,14 @@ class Actor extends EventEmitter {
     return Buffer.from(this.serialize(), 'utf8');
   }
 
+  /**
+   * Casts the Actor to a generic message.
+   * @returns {Object} Generic message object.
+   */
   toGenericMessage () {
     return {
-      'type': 'FabricActorState',
-      'object': this.toObject()
+      type: 'FabricActorState',
+      object: this.toObject()
     };
   }
 
@@ -358,7 +378,6 @@ class Actor extends EventEmitter {
   }
 
   _handleMonitorChanges (changes) {
-    console.log('got monitor changes from actor:', changes);
     // TODO: emit global state event here
     // after verify, commit
   }

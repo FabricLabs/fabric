@@ -32,7 +32,8 @@ class Federation extends Actor {
         seed: null, // seed phrase (!!!)
         xprv: null, // avoid using seed phrase
         xpub: null  // verify signatures only
-      }
+      },
+      type: 'FabricFederation'
     }, settings);
 
     // Internal Key
@@ -52,11 +53,34 @@ class Federation extends Actor {
     return this;
   }
 
+  get contract () {
+    const contract = `
+      $A = ${this._state.content.validators[0]};
+      $B = ${this._state.content.validators[1]};
+      $C = ${this._state.content.validators[2]};
+      $D = ${this._state.content.validators[3]};
+      $E = ${this._state.content.validators[4]};
+      $F = ${this._state.content.validators[0]};
+      $G = ${this._state.content.validators[0]};
+      $H = ${this._state.content.validators[0]};
+
+      $federation = 4 of [ pk(A), pk(B), pk(C), pk(D), pk(E) ];
+      $recovery = 2 of [ pk(F), pk(G), pk(I) ];
+      $timeout = older(3 months);
+
+      likely@$federation || ($timeout && $recovery)
+    `;
+
+    console.log('contract:', contract);
+    return contract.trim();
+  }
+
   addMember (member) {
     const key = new Key(member);
     this._state.content.validators.push(key.pubkey);
     console.log('consensus validators:', this._state.content.validators);
     console.log('contract for step 0:', this.contractForStep(0));
+    this.commit();
   }
 
   contractForStep (number) {

@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Source: types/logger.js &middot; Docs</title>
+  <script src="scripts/prettify/prettify.js"> </script>
+  <script src="scripts/prettify/lang-css.js"> </script>
+  <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+  <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+  <script>
+    window.dataLayer = window.dataLayer || [];
+
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag('js', new Date());
+    gtag('config', 'G-09Y57FL980');
+  </script>
+</head>
+
+<body>
+  <div id="main">
+    <h1 class="page-title">Source: types/logger.js</h1>
+
+
+
+
+    <section>
+      <article>
+        <pre class="prettyprint source linenums"><code>'use strict';
+
+// Dependencies
+const fs = require('fs');
+const mkdirp = require('mkdirp');
+
+// Fabric Types
+const Actor = require('./actor');
+
+/**
+ * A basic logger that writes logs to the local file system
+ *
+ * @extends Actor
+ */
+class Logger extends Actor {
+  constructor (settings = {}) {
+    super(settings);
+
+    this.settings = Object.assign({
+      name: this.id,
+      path: './logs'
+    }, settings);
+
+    this._state = {
+      status: 'STOPPED'
+    };
+
+    return this;
+  }
+
+  /**
+   * Returns the path to the log file
+   *
+   * @returns {String}
+   */
+  get path () {
+    return `${this.settings.path}/${this.settings.name}.log`;
+  }
+
+  /**
+   * Writes the specified log to the log file
+   *
+   * @param {String|Object} msg The message to log
+   * @returns {Boolean} true, if msg was successfully written; false otherwise
+   */
+  log (msg) {
+    if (typeof msg !== 'string') {
+      try {
+        msg = JSON.stringify(msg);
+      } catch (exception) {
+        console.warn('Unable to parse message to string:', `&lt;${msg.constructor.name}>`, msg);
+        return false;
+      }
+    }
+
+    this.stream.write(msg + '\n');
+    return true;
+  }
+
+  /**
+   * Starts the logger
+   *
+   * This method creates the required directories for writing the log file.
+   *
+   * @returns {Promise}
+   */
+  async start () {
+    this._state.status = 'STARTING';
+    await mkdirp(this.settings.path);
+    this.stream = fs.createWriteStream(this.path, { flags: 'a+' })
+      .on('error', err => console.warn(err.message, err.stack))
+      .once('close', () => { this._state.status = 'STOPPED'; });
+    this._state.status = 'STARTED';
+    return this;
+  }
+
+  /**
+   * Stops the logger
+   *
+   * This method closes the log file and returns after it has been closed. Any
+   * errors on close would cause the return promise to be rejected.
+   *
+   * @returns {Promise}
+   */
+  stop () {
+    if (!this.stream) {
+      this._state.status = 'STOPPED';
+      return Promise.resolve(this);
+    }
+
+    return new Promise((resolve, reject) => {
+      this._state.status = 'STOPPING';
+      this.stream
+        .once('error', err => reject(err))
+        .once('close', () => resolve(this))
+        .close();
+    });
+  }
+
+  async _getLastLine () {
+    if (!fs.existsSync(this.path)) await this.log({ status: 'EMPTY' });
+    return fs.readFileSync(this.path).toString('utf8').split('\n');
+  }
+}
+
+module.exports = Logger;
+</code></pre>
+      </article>
+    </section>
+
+
+
+  </div>
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="Actor.html">Actor</a></li>
+      <li><a href="Aggregator.html">Aggregator</a></li>
+      <li><a href="App.html">App</a></li>
+      <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="Channel.html">Channel</a></li>
+      <li><a href="Circuit.html">Circuit</a></li>
+      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Compiler.html">Compiler</a></li>
+      <li><a href="Consensus.html">Consensus</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Environment.html">Environment</a></li>
+      <li><a href="Exchange.html">Exchange</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Federation.html">Federation</a></li>
+      <li><a href="Filesystem.html">Filesystem</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
+      <li><a href="HKDF.html">HKDF</a></li>
+      <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Identity.html">Identity</a></li>
+      <li><a href="Interface.html">Interface</a></li>
+      <li><a href="Key.html">Key</a></li>
+      <li><a href="Keystore.html">Keystore</a></li>
+      <li><a href="Ledger.html">Ledger</a></li>
+      <li><a href="Logger.html">Logger</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Mempool.html">Mempool</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="Node.html">Node</a></li>
+      <li><a href="Oracle.html">Oracle</a></li>
+      <li><a href="Path.html">Path</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="Reader.html">Reader</a></li>
+      <li><a href="Redis.html">Redis</a></li>
+      <li><a href="Resource.html">Resource</a></li>
+      <li><a href="Router.html">Router</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Session.html">Session</a></li>
+      <li><a href="Signer.html">Signer</a></li>
+      <li><a href="Snapshot.html">Snapshot</a></li>
+      <li><a href="Stack.html">Stack</a></li>
+      <li><a href="Stash.html">Stash</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="Swap.html">Swap</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
+      <li><a href="Transition.html">Transition</a></li>
+      <li><a href="Tree.html">Tree</a></li>
+      <li><a href="Value.html">Value</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
+      <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="Worker.html">Worker</a></li>
+      <li><a href="ZMQ.html">ZMQ</a></li>
+    </ul>
+    <h3>Events</h3>
+    <ul>
+      <li><a href="Aggregator.html#event:commit">commit</a></li>
+    </ul>
+  </nav>
+  <br class="clear" />
+  <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>
+  <script type="text/javascript">
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"></script>
+</body>
+
+</html>

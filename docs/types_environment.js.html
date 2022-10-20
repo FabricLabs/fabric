@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Source: types/environment.js &middot; Docs</title>
+  <script src="scripts/prettify/prettify.js"> </script>
+  <script src="scripts/prettify/lang-css.js"> </script>
+  <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+  <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+  <script>
+    window.dataLayer = window.dataLayer || [];
+
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag('js', new Date());
+    gtag('config', 'G-09Y57FL980');
+  </script>
+</head>
+
+<body>
+  <div id="main">
+    <h1 class="page-title">Source: types/environment.js</h1>
+
+
+
+
+    <section>
+      <article>
+        <pre class="prettyprint source linenums"><code>'use strict';
+
+// Constants
+const {
+  FIXTURE_SEED
+} = require('../constants');
+
+// Dependencies
+const fs = require('fs');
+const merge = require('lodash.merge');
+
+// Fabric Types
+const Entity = require('./entity');
+const EncryptedPromise = require('./promise');
+const Wallet = require('./wallet');
+
+// Filters
+const any = (candidate => (candidate &amp;&amp; typeof candidate !== 'undefined'));
+
+/**
+ * Interact with the user's Environment.
+ */
+class Environment extends Entity {
+  /**
+   * Create an instance of {@link Environment}.
+   * @param {Object} [settings] Settings for the Fabric environment.
+   * @returns {Environment} Instance of the Environment.
+   */
+  constructor (settings = {}) {
+    super(settings);
+
+    this.settings = merge({
+      home: process.env.HOME,
+      path: process.env.HOME + '/.fabric/wallet.json',
+      store: process.env.HOME + '/.fabric'
+    }, this.settings, settings);
+
+    this.local = null;
+    this.wallet = null;
+
+    this._state = {
+      status: 'INITIALIZED',
+      content: {},
+      variables: process.env
+    };
+
+    return this;
+  }
+
+  get SEED_FILE () {
+    return '.FABRIC_SEED';
+  }
+
+  get WALLET_FILE () {
+    return this.settings.path;
+  }
+
+  get XPRV_FILE () {
+    return '.FABRIC_XPRV';
+  }
+
+  get XPUB_FILE () {
+    return '.FABRIC_XPUB';
+  }
+
+  get passphrase () {
+    return this.readVariable('PASSPHRASE');
+  }
+
+  get seed () {
+    return [
+      this.settings.seed,
+      this['FABRIC_SEED'],
+      this.readVariable('FABRIC_SEED')
+    ].find(any);
+  }
+
+  get xprv () {
+    return [
+      this.settings.xprv,
+      this['FABRIC_XPRV'],
+      this.readVariable('FABRIC_XPRV')
+    ].find(any);
+  }
+
+  storeExists () {
+    return fs.existsSync(this.settings.store);
+  }
+
+  walletExists () {
+    return fs.existsSync(this.settings.path);
+  }
+
+  makeContractStore () {
+    fs.mkdirSync(this.settings.store);
+  }
+
+  makeStore () {
+    if (this.storeExists()) return true;
+
+    try {
+      fs.mkdirSync(this.settings.store);
+    } catch (exception) {
+      console.error('Could not make store:', exception);
+      return false;
+    }
+
+    return this;
+  }
+
+  touchWallet () {
+    const time = new Date();
+    this.makeStore();
+
+    try {
+      fs.utimesSync(this.settings.path, time, time);
+    } catch (err) {
+      fs.closeSync(fs.openSync(this.settings.path, 'w'));
+    }
+
+    return true;
+  }
+
+  loadWallet () {
+    if (this.seed) {
+      this.wallet = new Wallet({
+        key: {
+          seed: this.seed,
+          passphrase: this.passphrase
+        }
+      });
+    } else if (this.xprv) {
+      this.wallet = new Wallet({
+        key: {
+          xprv: this.xprv
+        }
+      });
+    } else if (this.xpub) {
+      this.wallet = new Wallet({
+        key: {
+          xpub: this.xpub
+        }
+      });
+    } else if (this.walletExists()) {
+      const data = this.readWallet();
+
+      try {
+        const input = JSON.parse(data);
+
+        if (!input.object || !input.object.xprv) {
+          throw new Error(`Corrupt or out-of-date wallet: ${this.settings.path}`);
+        }
+
+        this.wallet = new Wallet({
+          key: {
+            xprv: input.object.xprv
+          }
+        });
+      } catch (exception) {
+        console.error('[FABRIC:KEYGEN]', 'Could not load wallet data:', exception);
+      }
+    } else {
+      this.wallet = false;
+    }
+
+    return this;
+  }
+
+  destroyWallet () {
+    try {
+      fs.unlinkSync(this.WALLET_FILE);
+      return true;
+    } catch (exception) {
+      console.error('[FABRIC:ENVIRONMENT]', 'Wallet destroyed.');
+      return false;
+    }
+  }
+
+  readContracts () {
+    const prefix = `${__dirname}/..`;
+    return fs.readdirSync(`${prefix}/contracts`).filter((x) => {
+      const parts = x.split('.');
+      return (parts[parts.length - 1] === 'js');
+    }).map((x) => {
+      const contract = fs.readFileSync(`${prefix}/contracts/${x}`);
+      const entity = new Entity(contract);
+      return {
+        '@id': entity.id,
+        '@data': entity.data
+      };
+    });
+  }
+
+  /**
+   * Read a variable from the environment.
+   * @param {String} name Variable name to read.
+   * @returns {String} Value of the variable (or an empty string).
+   */
+  readVariable (name) {
+    return process.env[name] || '';
+  }
+
+  readWallet () {
+    return fs.readFileSync(this.WALLET_FILE, {
+      encoding: 'utf8'
+    });
+  }
+
+  /**
+   * Configure the Environment to use a Fabric {@link Wallet}.
+   * @param {Wallet} wallet Wallet to attach.
+   * @param {Boolean} force Force existing wallets to be destroyed.
+   * @returns {Environment} The Fabric Environment.
+   */
+  setWallet (wallet, force = false) {
+    // Attach before saving
+    this.wallet = wallet;
+
+    // Filter user error
+    if (this.walletExists() &amp;&amp; !force) throw new Error('Wallet file already exists.');
+    if (!this.touchWallet()) throw new Error('Could not touch wallet.  Check permissions, disk space.');
+
+    try {
+      // Get standard object
+      const object = wallet.export();
+      // TODO: encrypt inner store with password (`object` property)
+      const encrypted = Object.assign({
+        // Defaults
+        type: /*/ 'Encrypted' + /**/'FabricWallet',
+        format: 'aes-256-cbc',
+        version: object.version
+      }, object);
+
+      const content = JSON.stringify(encrypted, null, '  ') + '\n';
+      fs.writeFileSync(this.WALLET_FILE, content);
+    } catch (exception) {
+      console.error('[FABRIC:ENV]', 'Could not write wallet file:', exception);
+      process.exit(1);
+    }
+
+    return this;
+  }
+
+  readSeedFile () {
+    const path = `${process.cwd()}/${this.SEED_FILE}`;
+    if (fs.existsSync(path)) return fs.readFileSync(path, { encoding: 'utf8' });
+    return false;
+  }
+
+  /**
+   * Start the Environment.
+   * @returns {Environment} The Fabric Environment.
+   */
+  start () {
+    this._state.status = 'STARTING';
+    this.local = this.readSeedFile();
+
+    this.loadWallet();
+
+    if (this.wallet) this.wallet.start();
+
+    this._state.status = 'STARTED';
+    return this;
+  }
+
+  stop () {
+    this._state.status = 'STOPPING';
+    this._state.status = 'STOPPED';
+    return this;
+  }
+}
+
+module.exports = Environment;
+</code></pre>
+      </article>
+    </section>
+
+
+
+  </div>
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="Actor.html">Actor</a></li>
+      <li><a href="Aggregator.html">Aggregator</a></li>
+      <li><a href="App.html">App</a></li>
+      <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="Channel.html">Channel</a></li>
+      <li><a href="Circuit.html">Circuit</a></li>
+      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Compiler.html">Compiler</a></li>
+      <li><a href="Consensus.html">Consensus</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Environment.html">Environment</a></li>
+      <li><a href="Exchange.html">Exchange</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Federation.html">Federation</a></li>
+      <li><a href="Filesystem.html">Filesystem</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
+      <li><a href="HKDF.html">HKDF</a></li>
+      <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Identity.html">Identity</a></li>
+      <li><a href="Interface.html">Interface</a></li>
+      <li><a href="Key.html">Key</a></li>
+      <li><a href="Keystore.html">Keystore</a></li>
+      <li><a href="Ledger.html">Ledger</a></li>
+      <li><a href="Logger.html">Logger</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Mempool.html">Mempool</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="Node.html">Node</a></li>
+      <li><a href="Oracle.html">Oracle</a></li>
+      <li><a href="Path.html">Path</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="Reader.html">Reader</a></li>
+      <li><a href="Redis.html">Redis</a></li>
+      <li><a href="Resource.html">Resource</a></li>
+      <li><a href="Router.html">Router</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Session.html">Session</a></li>
+      <li><a href="Signer.html">Signer</a></li>
+      <li><a href="Snapshot.html">Snapshot</a></li>
+      <li><a href="Stack.html">Stack</a></li>
+      <li><a href="Stash.html">Stash</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="Swap.html">Swap</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
+      <li><a href="Transition.html">Transition</a></li>
+      <li><a href="Tree.html">Tree</a></li>
+      <li><a href="Value.html">Value</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
+      <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="Worker.html">Worker</a></li>
+      <li><a href="ZMQ.html">ZMQ</a></li>
+    </ul>
+    <h3>Events</h3>
+    <ul>
+      <li><a href="Aggregator.html#event:commit">commit</a></li>
+    </ul>
+  </nav>
+  <br class="clear" />
+  <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>
+  <script type="text/javascript">
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"></script>
+</body>
+
+</html>

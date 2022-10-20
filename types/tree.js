@@ -1,9 +1,12 @@
 'use strict';
 
-const Actor = require('./actor');
-const Hash256 = require('./hash256');
+// Dependencies
 const merge = require('lodash.merge');
 const { MerkleTree } = require('merkletreejs');
+
+// Fabric Types
+const Actor = require('./actor');
+const Hash256 = require('./hash256');
 
 /**
  * Class implementing a Merkle Tree.
@@ -12,7 +15,7 @@ class Tree extends Actor {
   /**
    * Create an instance of a Tree.
    * @param {Object} [settings] Configuration.
-   * @returns {Tree}
+   * @returns {Tree} Instance of the tree.
    */
   constructor (settings = {}) {
     super(settings);
@@ -41,7 +44,7 @@ class Tree extends Actor {
   /**
    * Add a leaf to the tree.
    * @param {String} leaf Leaf to add to the tree.
-   * @returns {Tree}
+   * @returns {Tree} Instance of the tree.
    */
   addLeaf (leaf = '') {
     this._tree = new MerkleTree(this.settings.leaves.concat([

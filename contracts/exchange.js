@@ -1,7 +1,7 @@
 'use strict';
 
 // Settings
-const defaults = require('../settings/default');
+// const defaults = require('../settings/default');
 const playnet = require('../settings/playnet');
 
 const settings = {

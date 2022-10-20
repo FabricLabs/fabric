@@ -55,7 +55,8 @@ the Fabric network using a terminal emulator.</p>
 <dd><p>Create and manage sets of signers with the Federation class.</p>
 </dd>
 <dt><a href="#Filesystem">Filesystem</a></dt>
-<dd></dd>
+<dd><p>Interact with a local filesystem.</p>
+</dd>
 <dt><a href="#Hash256">Hash256</a></dt>
 <dd><p>Simple interaction with 256-bit spaces.</p>
 </dd>
@@ -133,7 +134,7 @@ familiar semantics.</p>
 <dd><p>The <a href="#Session">Session</a> type describes a connection between <a href="#Peer">Peer</a>
 objects, and includes its own lifecycle.</p>
 </dd>
-<dt><a href="#Signer">Signer</a></dt>
+<dt><a href="#Signer">Signer</a> ⇐ <code><a href="#Actor">Actor</a></code></dt>
 <dd><p>Generic Fabric Signer.</p>
 </dd>
 <dt><a href="#Snapshot">Snapshot</a></dt>
@@ -228,6 +229,7 @@ Generic Fabric Actor.
         * [.get(path)](#Actor+get) ⇒ <code>Object</code>
         * [.set(path, value)](#Actor+set) ⇒ <code>Object</code>
         * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
+        * [.toGenericMessage()](#Actor+toGenericMessage) ⇒ <code>Object</code>
         * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
         * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
         * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
@@ -313,6 +315,13 @@ Set a value in the Actor's state by [JSONPointer](JSONPointer) path.
 Casts the Actor to a normalized Buffer.
 
 **Kind**: instance method of [<code>Actor</code>](#Actor)  
+<a name="Actor+toGenericMessage"></a>
+
+### actor.toGenericMessage() ⇒ <code>Object</code>
+Casts the Actor to a generic message.
+
+**Kind**: instance method of [<code>Actor</code>](#Actor)  
+**Returns**: <code>Object</code> - Generic message object.  
 <a name="Actor+toObject"></a>
 
 ### actor.toObject() ⇒ <code>Object</code>
@@ -1319,12 +1328,6 @@ Reliable decentralized infrastructure.
 
 **Kind**: global class  
 **Emits**: <code>Fabric#event:thread</code>, <code>Fabric#event:step Emitted on a &#x60;compute&#x60; step.</code>  
-**Properties**
-
-| Name | Type |
-| --- | --- |
-| Block | <code>Class</code> | 
-
 
 * [Fabric](#Fabric)
     * [new Fabric(config)](#new_Fabric_new)
@@ -1422,7 +1425,76 @@ Start tracking state (i.e., ready to receive events).
 <a name="Filesystem"></a>
 
 ## Filesystem
+Interact with a local filesystem.
+
 **Kind**: global class  
+
+* [Filesystem](#Filesystem)
+    * [new Filesystem([settings])](#new_Filesystem_new)
+    * [._loadFromDisk()](#Filesystem+_loadFromDisk) ⇒ <code>Promise</code>
+    * [.ls()](#Filesystem+ls) ⇒ <code>Array</code>
+    * [.readFile(name)](#Filesystem+readFile) ⇒ <code>Buffer</code>
+    * [.writeFile(name, content)](#Filesystem+writeFile) ⇒ <code>Boolean</code>
+    * [.sync()](#Filesystem+sync) ⇒ [<code>Filesystem</code>](#Filesystem)
+
+<a name="new_Filesystem_new"></a>
+
+### new Filesystem([settings])
+Synchronize an [Actor](#Actor) with a local filesystem.
+
+**Returns**: [<code>Filesystem</code>](#Filesystem) - Instance of the Fabric filesystem.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Configuration for the Fabric filesystem. |
+| [settings.path] | <code>Object</code> | Path of the local filesystem. |
+
+<a name="Filesystem+_loadFromDisk"></a>
+
+### filesystem.\_loadFromDisk() ⇒ <code>Promise</code>
+Load Filesystem state from disk.
+
+**Kind**: instance method of [<code>Filesystem</code>](#Filesystem)  
+**Returns**: <code>Promise</code> - Resolves with Filesystem instance.  
+<a name="Filesystem+ls"></a>
+
+### filesystem.ls() ⇒ <code>Array</code>
+Get the list of files.
+
+**Kind**: instance method of [<code>Filesystem</code>](#Filesystem)  
+**Returns**: <code>Array</code> - List of files.  
+<a name="Filesystem+readFile"></a>
+
+### filesystem.readFile(name) ⇒ <code>Buffer</code>
+Read a file by name.
+
+**Kind**: instance method of [<code>Filesystem</code>](#Filesystem)  
+**Returns**: <code>Buffer</code> - Contents of the file.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>String</code> | Name of the file to read. |
+
+<a name="Filesystem+writeFile"></a>
+
+### filesystem.writeFile(name, content) ⇒ <code>Boolean</code>
+Write a file by name.
+
+**Kind**: instance method of [<code>Filesystem</code>](#Filesystem)  
+**Returns**: <code>Boolean</code> - `true` if the write succeeded, `false` if it did not.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>String</code> | Name of the file to write. |
+| content | <code>Buffer</code> | Content of the file. |
+
+<a name="Filesystem+sync"></a>
+
+### filesystem.sync() ⇒ [<code>Filesystem</code>](#Filesystem)
+Syncronize state from the local filesystem.
+
+**Kind**: instance method of [<code>Filesystem</code>](#Filesystem)  
+**Returns**: [<code>Filesystem</code>](#Filesystem) - Instance of the Fabric filesystem.  
 <a name="Hash256"></a>
 
 ## Hash256
@@ -1513,6 +1585,7 @@ Manage a network identity.
 
 * [Identity](#Identity)
     * [new Identity([settings])](#new_Identity_new)
+    * [.sign(data)](#Identity+sign) ⇒ <code>Signature</code>
     * [.toString()](#Identity+toString) ⇒ <code>String</code>
 
 <a name="new_Identity_new"></a>
@@ -1530,6 +1603,18 @@ Create an instance of an Identity.
 | [settings.xpub] | <code>String</code> |  | Serialized BIP 32 master public key. |
 | [settings.account] | <code>Number</code> | <code>0</code> | BIP 44 account index. |
 | [settings.index] | <code>Number</code> | <code>0</code> | BIP 44 key index. |
+
+<a name="Identity+sign"></a>
+
+### identity.sign(data) ⇒ <code>Signature</code>
+Sign a buffer of data using BIP 340: https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki
+
+**Kind**: instance method of [<code>Identity</code>](#Identity)  
+**Returns**: <code>Signature</code> - Resulting signature (64 bytes).  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| data | <code>Buffer</code> | Buffer of data to sign. |
 
 <a name="Identity+toString"></a>
 
@@ -1854,6 +1939,7 @@ A basic logger that writes logs to the local file system
     * [.get(path)](#Actor+get) ⇒ <code>Object</code>
     * [.set(path, value)](#Actor+set) ⇒ <code>Object</code>
     * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
+    * [.toGenericMessage()](#Actor+toGenericMessage) ⇒ <code>Object</code>
     * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
     * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
     * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
@@ -1960,6 +2046,14 @@ Casts the Actor to a normalized Buffer.
 
 **Kind**: instance method of [<code>Logger</code>](#Logger)  
 **Overrides**: [<code>toBuffer</code>](#Actor+toBuffer)  
+<a name="Actor+toGenericMessage"></a>
+
+### logger.toGenericMessage() ⇒ <code>Object</code>
+Casts the Actor to a generic message.
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+**Overrides**: [<code>toGenericMessage</code>](#Actor+toGenericMessage)  
+**Returns**: <code>Object</code> - Generic message object.  
 <a name="Actor+toObject"></a>
 
 ### logger.toObject() ⇒ <code>Object</code>
@@ -2338,6 +2432,7 @@ An in-memory representation of a node in our network.
 
 * [Peer](#Peer)
     * [new Peer([config])](#new_Peer_new)
+    * ~~[.address](#Peer+address)~~
     * [.start()](#Peer+start)
     * [.stop()](#Peer+stop)
     * [.listen()](#Peer+listen) ⇒ [<code>Peer</code>](#Peer)
@@ -2356,6 +2451,12 @@ Create an instance of [Peer](#Peer).
 | [config.port] | <code>Number</code> | <code>7777</code> | Port to use for P2P connections. |
 | [config.peers] | <code>Array</code> | <code>[]</code> | List of initial peers. |
 
+<a name="Peer+address"></a>
+
+### ~~peer.address~~
+***Deprecated***
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+start"></a>
 
 ### peer.start()
@@ -3047,10 +3148,11 @@ Closes the [Session](#Session), preventing further interaction.
 **Kind**: instance method of [<code>Session</code>](#Session)  
 <a name="Signer"></a>
 
-## Signer
+## Signer ⇐ [<code>Actor</code>](#Actor)
 Generic Fabric Signer.
 
 **Kind**: global class  
+**Extends**: [<code>Actor</code>](#Actor)  
 **Emits**: <code>event:message Fabric {@link Message} objects.</code>  
 **Access**: protected  
 **Properties**
@@ -3061,9 +3163,22 @@ Generic Fabric Signer.
 | preimage | <code>String</code> | Input hash for the `id` property (preimage === SHA256(SignerState)). |
 
 
-* [Signer](#Signer)
+* [Signer](#Signer) ⇐ [<code>Actor</code>](#Actor)
     * [new Signer([actor])](#new_Signer_new)
     * [.sign()](#Signer+sign) ⇒ [<code>Signer</code>](#Signer)
+    * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
+    * [.commit()](#Actor+commit) ⇒ <code>String</code>
+    * [.export()](#Actor+export) ⇒ <code>Object</code>
+    * [.get(path)](#Actor+get) ⇒ <code>Object</code>
+    * [.set(path, value)](#Actor+set) ⇒ <code>Object</code>
+    * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
+    * [.toGenericMessage()](#Actor+toGenericMessage) ⇒ <code>Object</code>
+    * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
+    * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
+    * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
+    * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
+    * [.value([format])](#Actor+value) ⇒ <code>Object</code>
+    * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
 
 <a name="new_Signer_new"></a>
 
@@ -3088,6 +3203,134 @@ what you share with others!
 Signs some data.
 
 **Kind**: instance method of [<code>Signer</code>](#Signer)  
+**Overrides**: [<code>sign</code>](#Actor+sign)  
+<a name="Actor+adopt"></a>
+
+### signer.adopt(changes) ⇒ [<code>Actor</code>](#Actor)
+Explicitly adopt a set of [JSONPatch](JSONPatch)-encoded changes.
+
+**Kind**: instance method of [<code>Signer</code>](#Signer)  
+**Overrides**: [<code>adopt</code>](#Actor+adopt)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| changes | <code>Array</code> | List of [JSONPatch](JSONPatch) operations to apply. |
+
+<a name="Actor+commit"></a>
+
+### signer.commit() ⇒ <code>String</code>
+Resolve the current state to a commitment.
+
+**Kind**: instance method of [<code>Signer</code>](#Signer)  
+**Overrides**: [<code>commit</code>](#Actor+commit)  
+**Returns**: <code>String</code> - 32-byte ID  
+<a name="Actor+export"></a>
+
+### signer.export() ⇒ <code>Object</code>
+Export the Actor's state to a standard [Object](Object).
+
+**Kind**: instance method of [<code>Signer</code>](#Signer)  
+**Overrides**: [<code>export</code>](#Actor+export)  
+**Returns**: <code>Object</code> - Standard object.  
+<a name="Actor+get"></a>
+
+### signer.get(path) ⇒ <code>Object</code>
+Retrieve a value from the Actor's state by [JSONPointer](JSONPointer) path.
+
+**Kind**: instance method of [<code>Signer</code>](#Signer)  
+**Overrides**: [<code>get</code>](#Actor+get)  
+**Returns**: <code>Object</code> - Value of the path in the Actor's state.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | Path to retrieve using [JSONPointer](JSONPointer). |
+
+<a name="Actor+set"></a>
+
+### signer.set(path, value) ⇒ <code>Object</code>
+Set a value in the Actor's state by [JSONPointer](JSONPointer) path.
+
+**Kind**: instance method of [<code>Signer</code>](#Signer)  
+**Overrides**: [<code>set</code>](#Actor+set)  
+**Returns**: <code>Object</code> - Value of the path in the Actor's state.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | Path to set using [JSONPointer](JSONPointer). |
+| value | <code>Object</code> | Value to set. |
+
+<a name="Actor+toBuffer"></a>
+
+### signer.toBuffer() ⇒ <code>Buffer</code>
+Casts the Actor to a normalized Buffer.
+
+**Kind**: instance method of [<code>Signer</code>](#Signer)  
+**Overrides**: [<code>toBuffer</code>](#Actor+toBuffer)  
+<a name="Actor+toGenericMessage"></a>
+
+### signer.toGenericMessage() ⇒ <code>Object</code>
+Casts the Actor to a generic message.
+
+**Kind**: instance method of [<code>Signer</code>](#Signer)  
+**Overrides**: [<code>toGenericMessage</code>](#Actor+toGenericMessage)  
+**Returns**: <code>Object</code> - Generic message object.  
+<a name="Actor+toObject"></a>
+
+### signer.toObject() ⇒ <code>Object</code>
+Returns the Actor's current state as an [Object](Object).
+
+**Kind**: instance method of [<code>Signer</code>](#Signer)  
+**Overrides**: [<code>toObject</code>](#Actor+toObject)  
+<a name="Actor+pause"></a>
+
+### signer.pause() ⇒ [<code>Actor</code>](#Actor)
+Toggles `status` property to paused.
+
+**Kind**: instance method of [<code>Signer</code>](#Signer)  
+**Overrides**: [<code>pause</code>](#Actor+pause)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+<a name="Actor+serialize"></a>
+
+### signer.serialize() ⇒ <code>String</code>
+Serialize the Actor's current state into a JSON-formatted string.
+
+**Kind**: instance method of [<code>Signer</code>](#Signer)  
+**Overrides**: [<code>serialize</code>](#Actor+serialize)  
+<a name="Actor+unpause"></a>
+
+### signer.unpause() ⇒ [<code>Actor</code>](#Actor)
+Toggles `status` property to unpaused.
+
+**Kind**: instance method of [<code>Signer</code>](#Signer)  
+**Overrides**: [<code>unpause</code>](#Actor+unpause)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+<a name="Actor+value"></a>
+
+### signer.value([format]) ⇒ <code>Object</code>
+Get the inner value of the Actor with an optional cast type.
+
+**Kind**: instance method of [<code>Signer</code>](#Signer)  
+**Overrides**: [<code>value</code>](#Actor+value)  
+**Returns**: <code>Object</code> - Inner value of the Actor as an [Object](Object), or cast to the requested `format`.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [format] | <code>String</code> | <code>object</code> | Cast the value to one of: `buffer, hex, json, string` |
+
+<a name="Actor+_readObject"></a>
+
+### signer.\_readObject(input) ⇒ <code>Object</code>
+Parse an Object into a corresponding Fabric state.
+
+**Kind**: instance method of [<code>Signer</code>](#Signer)  
+**Overrides**: [<code>\_readObject</code>](#Actor+_readObject)  
+**Returns**: <code>Object</code> - Fabric state.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>Object</code> | Object to read as input. |
+
 <a name="Snapshot"></a>
 
 ## Snapshot
@@ -3522,6 +3765,7 @@ Class implementing a Merkle Tree.
 ### new Tree([settings])
 Create an instance of a Tree.
 
+**Returns**: [<code>Tree</code>](#Tree) - Instance of the tree.  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -3533,6 +3777,7 @@ Create an instance of a Tree.
 Add a leaf to the tree.
 
 **Kind**: instance method of [<code>Tree</code>](#Tree)  
+**Returns**: [<code>Tree</code>](#Tree) - Instance of the tree.  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -3914,6 +4159,7 @@ Manages interaction with the Bitcoin network.
         * [._subscribeToShard(shard)](#Bitcoin+_subscribeToShard)
         * [._connectSPV()](#Bitcoin+_connectSPV)
         * [.connect(addr)](#Bitcoin+connect)
+        * [._requestBlockAtHeight(height)](#Bitcoin+_requestBlockAtHeight) ⇒ <code>Object</code>
         * [._createContractProposal(options)](#Bitcoin+_createContractProposal) ⇒ <code>ContractProposal</code>
         * [._buildPSBT(options)](#Bitcoin+_buildPSBT) ⇒ <code>PSBT</code>
         * [.start()](#Bitcoin+start)
@@ -4077,6 +4323,18 @@ Connect to a Fabric [Peer](#Peer).
 | Param | Type | Description |
 | --- | --- | --- |
 | addr | <code>String</code> | Address to connect to. |
+
+<a name="Bitcoin+_requestBlockAtHeight"></a>
+
+### bitcoin.\_requestBlockAtHeight(height) ⇒ <code>Object</code>
+Retrieve the equivalent to `getblockhash` from Bitcoin Core.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>Object</code> - The block hash.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| height | <code>Number</code> | Height of block to retrieve. |
 
 <a name="Bitcoin+_createContractProposal"></a>
 

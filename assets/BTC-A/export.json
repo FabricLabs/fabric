@@ -1,0 +1,171 @@
+{
+  "network": {
+    "id": 0,
+    "name": "BTC-A",
+    "status": 3,
+    "path": "./assets/BTC-A/.polar/networks/0",
+    "nodes": {
+      "bitcoin": [
+        {
+          "id": 0,
+          "networkId": 0,
+          "name": "bitcoind",
+          "type": "bitcoin",
+          "implementation": "bitcoind",
+          "version": "0.21.1",
+          "peers": [],
+          "status": 3,
+          "ports": {
+            "rpc": 18443,
+            "p2p": 19444,
+            "zmqBlock": 28334,
+            "zmqTx": 29335
+          },
+          "docker": {
+            "image": "",
+            "command": ""
+          }
+        }
+      ],
+      "lightning": [
+        {
+          "id": 0,
+          "networkId": 0,
+          "name": "lightning",
+          "type": "lightning",
+          "implementation": "c-lightning",
+          "version": "0.12.0",
+          "status": 4,
+          "backendName": "bitcoind",
+          "paths": {
+            "macaroon": "./assets/BTC-A/.polar/networks/4/volumes/c-lightning/lightning/rest-api/access.macaroon",
+            "tlsCert": "./assets/BTC-A/.polar/networks/4/volumes/c-lightning/lightning/lightningd/regtest/ca.pem",
+            "tlsClientCert": "./assets/BTC-A/.polar/networks/4/volumes/c-lightning/lightning/lightningd/regtest/client.pem",
+            "tlsClientKey": "./assets/BTC-A/.polar/networks/4/volumes/c-lightning/lightning/lightningd/regtest/client-key.pem"
+          },
+          "ports": {
+            "rest": 8181,
+            "grpc": 11001,
+            "p2p": 9835
+          },
+          "docker": {
+            "image": "",
+            "command": ""
+          },
+          "errorMsg": "connect ECONNREFUSED 127.0.0.1:8181"
+        }
+      ]
+    }
+  },
+  "chart": {
+    "offset": {
+      "x": 0,
+      "y": 0
+    },
+    "nodes": {
+      "bitcoind": {
+        "id": "bitcoind",
+        "type": "bitcoin",
+        "position": {
+          "x": 200,
+          "y": 400
+        },
+        "ports": {
+          "backend": {
+            "id": "backend",
+            "type": "top",
+            "position": {
+              "x": 100,
+              "y": 0
+            }
+          },
+          "peer-left": {
+            "id": "peer-left",
+            "type": "left",
+            "position": {
+              "x": 0,
+              "y": 21
+            }
+          },
+          "peer-right": {
+            "id": "peer-right",
+            "type": "right",
+            "position": {
+              "x": 200,
+              "y": 21
+            }
+          }
+        },
+        "size": {
+          "width": 200,
+          "height": 42
+        },
+        "properties": {
+          "status": 3,
+          "icon": "./static/media/bitcoin.c9f33461.svg"
+        }
+      },
+      "lightningd": {
+        "id": "lightningd",
+        "type": "lightning",
+        "position": {
+          "x": 200,
+          "y": 280
+        },
+        "ports": {
+          "empty-left": {
+            "id": "empty-left",
+            "type": "left",
+            "position": {
+              "x": 0,
+              "y": 21
+            }
+          },
+          "empty-right": {
+            "id": "empty-right",
+            "type": "right",
+            "position": {
+              "x": 200,
+              "y": 21
+            }
+          },
+          "backend": {
+            "id": "backend",
+            "type": "bottom",
+            "position": {
+              "x": 100,
+              "y": 42
+            }
+          }
+        },
+        "size": {
+          "width": 200,
+          "height": 42
+        },
+        "properties": {
+          "status": 4,
+          "icon": "./static/media/clightning.fb8d2dc7.png"
+        }
+      }
+    },
+    "links": {
+      "lightning-bitcoind": {
+        "id": "lightning-bitcoind",
+        "from": {
+          "nodeId": "lightning",
+          "portId": "backend"
+        },
+        "to": {
+          "nodeId": "bitcoind",
+          "portId": "backend"
+        },
+        "properties": {
+          "type": "backend"
+        }
+      }
+    },
+    "selected": {},
+    "hovered": {},
+    "scale": 1
+  }
+}

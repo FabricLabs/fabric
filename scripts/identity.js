@@ -21,12 +21,15 @@ async function main (input = {}) {
   const identity = new Identity(input);
   const frompub = new Identity({ public: X_PUBKEY });
 
+  const decoded = Bech32.decode(frompub.id);
+
   return {
     id: identity.toString(),
     identity: {
       pubkey: identity.pubkey
     },
-    derivation: identity.derivation
+    derivation: identity.derivation,
+    decoded: decoded
   };
 }
 

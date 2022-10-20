@@ -27,7 +27,13 @@ class Circuit extends Actor {
       loops: [],
       nodes: [],
       wires: [],
-      methods: {}
+      methods: {},
+      state: {
+        graph: {
+          edges: [],
+          nodes: []
+        }
+      }
     }, config);
 
     this['@data'] = this.settings;
@@ -35,12 +41,6 @@ class Circuit extends Actor {
     this.gates = [];
     this.transitions = [];
     this.methods = {};
-
-    // External State
-    this.state = {
-      edges: [],
-      nodes: []
-    };
 
     for (let i in this.settings.gates) {
       this.transitions.push({
@@ -55,13 +55,6 @@ class Circuit extends Actor {
       this.transitions.push({ name: wire.name, from: wire.from, to: wire.to });
     }
 
-    this.graph = new StateMachine({
-      init: 'start()',
-      data: this.state,
-      transitions: this.transitions,
-      methods: this.methods
-    });
-
     // Internal State
     this._state = {
       steps: [
@@ -70,8 +63,16 @@ class Circuit extends Actor {
         'step', // single cycle before start
         'start', // create services
         'listen' // listen for input
-      ]
+      ],
+      content: this.settings.state
     };
+
+    this.graph = new StateMachine({
+      init: 'start()',
+      data: this.state,
+      transitions: this.transitions,
+      methods: this.methods
+    });
 
     return this;
   }

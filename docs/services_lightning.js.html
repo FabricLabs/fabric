@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Source: services/lightning.js &middot; Docs</title>
+  <script src="scripts/prettify/prettify.js"> </script>
+  <script src="scripts/prettify/lang-css.js"> </script>
+  <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+  <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+  <script>
+    window.dataLayer = window.dataLayer || [];
+
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag('js', new Date());
+    gtag('config', 'G-09Y57FL980');
+  </script>
+</head>
+
+<body>
+  <div id="main">
+    <h1 class="page-title">Source: services/lightning.js</h1>
+
+
+
+
+    <section>
+      <article>
+        <pre class="prettyprint source linenums"><code>'use strict';
+
+// Dependencies
+const net = require('net');
+
+// Fabric Types
+const Service = require('../types/service');
+const Machine = require('../types/machine');
+
+const OP_TEST = require('../contracts/test');
+const Actor = require('../types/actor');
+const Key = require('../types/key');
+
+class Lightning extends Service {
+  constructor (settings = {}) {
+    super(settings);
+
+    this.settings = Object.assign({
+      authority: 'http://localhost:8555',
+      path: './stores/lightning',
+      mode: 'rpc',
+      interval: 1000
+    }, this.settings, settings);
+
+    this.machine = new Machine(this.settings);
+    this.rpc = null;
+    this.rest = null;
+    this.status = 'disconnected';
+    this.plugin = null;
+
+    this._state = {
+      balances: {
+        total: 0,
+        confirmed: 0,
+        unconfirmed: 0
+      },
+      content: {
+        ...super.state,
+        blockheight: null,
+        node: {
+          id: null,
+          alias: null,
+          color: null
+        }
+      },
+      channels: {},
+      invoices: {},
+      peers: {},
+      nodes: {}
+    };
+
+    return this;
+  }
+
+  static plugin (state) {
+    const lightning = new Lightning(state);
+    const plugin = new LightningPlugin(state);
+    plugin.addMethod('test', OP_TEST.bind(lightning));
+    // plugin.addMethod('init');
+    return plugin;
+  }
+
+  get balances () {
+    return this._state.balances;
+  }
+
+  async start () {
+    this.status = 'starting';
+    await this.machine.start();
+
+    switch (this.settings.mode) {
+      default:
+        throw new Error(`Unknown mode: ${this.settings.mode}`);
+        break;
+      case 'rest':
+        const provider = new URL(this.settings.authority);
+        this.rest = new Remote({
+          authority: provider.hostname,
+          username: provider.username,
+          password: provider.password
+        });
+        await this._syncOracleInfo();
+        break;
+      case 'rpc':
+        break;
+      case 'socket':
+        this.emit('debug', 'Beginning work on Lightning socket compatibility...')
+        await this._sync();
+        break;
+    }
+
+    this._heart = setInterval(this._heartbeat.bind(this), this.settings.interval);
+    this.status = 'started';
+
+    this.emit('ready', this.export());
+
+    return this;
+  }
+
+  async listFunds () {
+    return this._makeRPCRequest('listfunds');
+  }
+
+  async _heartbeat () {
+    await this._syncOracleInfo();
+    return this;
+  }
+
+  async _generateSmallestInvoice () {
+    return await this._generateInvoice(1);
+  }
+
+  async _generateInvoice (amount, expiry = 120, description = 'nothing relevant') {
+    let result = null;
+
+    if (this.settings.mode === 'rest') {
+      const key = new Key();
+      const actor = new Actor({
+        id: key.id,
+        type: 'LightningInvoice',
+        data: { amount, expiry }
+      });
+
+      const invoice = await this.rest._POST('/invoice/genInvoice', {
+        label: actor.id,
+        amount: amount,
+        expiry: expiry,
+        description: description
+      });
+
+      result = Object.assign({}, actor.state, {
+        encoded: invoice.bolt11,
+        expiry: invoice.expires_at,
+        data: invoice
+      });
+
+      this._state.invoices[key.id] = result;
+      await this.commit();
+    }
+
+    return result;
+  }
+
+  /**
+   * Make an RPC request through the Lightning UNIX socket.
+   * @param {String} method Name of method to call.
+   * @param {Array} [params] Array of parameters.
+   * @returns {Object|String} Respond from the Lightning node.
+   */
+  async _makeRPCRequest (method, params = []) {
+    return new Promise((resolve, reject) => {
+      try {
+        const client = net.createConnection({ path: this.settings.path });
+
+        client.on('data', (data) => {
+          try {
+            const response = JSON.parse(data.toString('utf8'));
+            if (response.result) {
+              return resolve(response.result);
+            } else if (response.error) {
+              return reject(response.error);
+            }
+          } catch (exception) {
+            this.emit('error', `Could not make RPC request: ${exception}\n${data.toString('utf8')}`);
+          }
+        });
+
+        client.write(JSON.stringify({
+          method: method,
+          params: params,
+          id: 0
+        }), null, '  ');
+      } catch (exception) {
+        reject(exception);
+      }
+    });
+  }
+
+  async _syncOracleInfo () {
+    if (this.settings.mode === 'rest') {
+      const result = await this.rest._GET('/getInfo');
+
+      if (result &amp;&amp; result.id) {
+        this._state.id = result.id;
+        this._state.name = result.alias;
+        this._state.network = result.network;
+      }
+
+      await this._syncOracleBalance();
+      await this._syncOracleChannels();
+    }
+
+    return this._state;
+  }
+
+  async _syncOracleBalance () {
+    if (this.settings.mode === 'rest') {
+      const result = await this.rest._GET('/getBalance');
+      if (result) {
+        this._state.balances.total = result.totalBalance;
+        this._state.balances.confirmed = result.confBalance;
+        this._state.balances.unconfirmed = result.unconfBalance;
+        await this.commit();
+      }
+    }
+    return this._state;
+  }
+
+  async _syncOracleChannels () {
+    if (this.settings.mode === 'rest') {
+      const result = await this.rest._GET('/channel/listChannels');
+      const channels = result.map(x => new Actor(x));
+      this._state.channels = channels.reduce((obj, me) => {
+        obj[me.id] = me.data;
+        return obj;
+      }, {});
+      await this.commit();
+    }
+
+    return this._state;
+  }
+
+  async _syncChannels () {
+    const result = await this._makeRPCRequest('listfunds');
+
+    this._state.channels = result.channels;
+    this.commit();
+
+    return this;
+  }
+
+  async _syncInfo () {
+    const result = await this._makeRPCRequest('getinfo');
+
+    this.emit('log', `Lighting Info: ${JSON.stringify(result, null, '  ')}`);
+
+    this._state.content.node.id = result.id;
+    this._state.content.node.alias = result.alias;
+    this._state.content.node.color = result.color;
+    this._state.content.blockheight = result.blockheight;
+    this.commit();
+
+    return this;
+  }
+
+  async _sync () {
+    await this._syncChannels();
+    await this._syncInfo();
+    this.emit('sync', this.state);
+    return this;
+  }
+}
+
+module.exports = Lightning;
+</code></pre>
+      </article>
+    </section>
+
+
+
+  </div>
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="Actor.html">Actor</a></li>
+      <li><a href="Aggregator.html">Aggregator</a></li>
+      <li><a href="App.html">App</a></li>
+      <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="Channel.html">Channel</a></li>
+      <li><a href="Circuit.html">Circuit</a></li>
+      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Compiler.html">Compiler</a></li>
+      <li><a href="Consensus.html">Consensus</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Environment.html">Environment</a></li>
+      <li><a href="Exchange.html">Exchange</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Federation.html">Federation</a></li>
+      <li><a href="Filesystem.html">Filesystem</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
+      <li><a href="HKDF.html">HKDF</a></li>
+      <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Identity.html">Identity</a></li>
+      <li><a href="Interface.html">Interface</a></li>
+      <li><a href="Key.html">Key</a></li>
+      <li><a href="Keystore.html">Keystore</a></li>
+      <li><a href="Ledger.html">Ledger</a></li>
+      <li><a href="Logger.html">Logger</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Mempool.html">Mempool</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="Node.html">Node</a></li>
+      <li><a href="Oracle.html">Oracle</a></li>
+      <li><a href="Path.html">Path</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="Reader.html">Reader</a></li>
+      <li><a href="Redis.html">Redis</a></li>
+      <li><a href="Resource.html">Resource</a></li>
+      <li><a href="Router.html">Router</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Session.html">Session</a></li>
+      <li><a href="Signer.html">Signer</a></li>
+      <li><a href="Snapshot.html">Snapshot</a></li>
+      <li><a href="Stack.html">Stack</a></li>
+      <li><a href="Stash.html">Stash</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="Swap.html">Swap</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
+      <li><a href="Transition.html">Transition</a></li>
+      <li><a href="Tree.html">Tree</a></li>
+      <li><a href="Value.html">Value</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
+      <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="Worker.html">Worker</a></li>
+      <li><a href="ZMQ.html">ZMQ</a></li>
+    </ul>
+    <h3>Events</h3>
+    <ul>
+      <li><a href="Aggregator.html#event:commit">commit</a></li>
+    </ul>
+  </nav>
+  <br class="clear" />
+  <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>
+  <script type="text/javascript">
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"></script>
+</body>
+
+</html>

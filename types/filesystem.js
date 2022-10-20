@@ -10,8 +10,16 @@ const Actor = require('./actor');
 const Hash256 = require('./hash256');
 const Tree = require('./tree');
 
-// 
+/**
+ * Interact with a local filesystem.
+ */
 class Filesystem extends Actor {
+  /**
+   * Synchronize an {@link Actor} with a local filesystem.
+   * @param {Object} [settings] Configuration for the Fabric filesystem.
+   * @param {Object} [settings.path] Path of the local filesystem.
+   * @returns {Filesystem} Instance of the Fabric filesystem.
+   */
   constructor (settings = {}) {
     super(settings);
 
@@ -19,6 +27,10 @@ class Filesystem extends Actor {
       encoding: 'utf8',
       path: './'
     }, this.settings, settings);
+
+    this.tree = new Tree({
+      leaves: []
+    });
 
     this._state = {
       actors: {},
@@ -59,6 +71,30 @@ class Filesystem extends Actor {
     return this._state.documents;
   }
 
+  /**
+   * Load Filesystem state from disk.
+   * @returns {Promise} Resolves with Filesystem instance.
+   */
+  async _loadFromDisk () {
+    const self = this;
+    return new Promise((resolve, reject) => {
+      try {
+        const files = fs.readdirSync(self.path);
+        self._state.content = { files };
+        self.commit();
+
+        resolve(self);
+      } catch (exception) {
+        self.emit('error', exception);
+        reject(exception);
+      }
+    });
+  }
+
+  /**
+   * Get the list of files.
+   * @returns {Array} List of files.
+   */
   ls () {
     return this._state.content.files;
   }
@@ -82,18 +118,36 @@ class Filesystem extends Actor {
     return true;
   }
 
+  /**
+   * Read a file by name.
+   * @param {String} name Name of the file to read.
+   * @returns {Buffer} Contents of the file.
+   */
   readFile (name) {
     const file = path.join(this.path, name);
     if (!fs.existsSync(file)) return null;
     return fs.readFileSync(file);
   }
 
+  /**
+   * Write a file by name.
+   * @param {String} name Name of the file to write.
+   * @param {Buffer} content Content of the file.
+   * @returns {Boolean} `true` if the write succeeded, `false` if it did not.
+   */
   writeFile (name, content) {
     const file = path.join(this.path, name);
-    return fs.writeFileSync(file, content);
+
+    try {
+      fs.writeFileSync(file, content);
+      return true;
+    } catch (exception) {
+      this.emit('error', `Could not write file: ${content}`);
+      return false;
+    }
   }
 
-  async ingest (document) {
+  async ingest (document, name = null) {
     if (typeof document !== 'string') {
       document = JSON.stringify(document);
     }
@@ -124,21 +178,25 @@ class Filesystem extends Actor {
     await this.sync();
 
     return {
-      id: actor.id
+      id: actor.id,
+      document: hash
     };
   }
 
   async start () {
     this.touchDir(this.path); // ensure exists
-
     await this.sync();
-
     return this;
   }
 
+  /**
+   * Syncronize state from the local filesystem.
+   * @returns {Filesystem} Instance of the Fabric filesystem.
+   */
   async sync () {
-    const files = fs.readdirSync(this.path);
-    this._state.content = { files };
+    await this._loadFromDisk();
+    this.commit();
+    return this;
   }
 }
 
