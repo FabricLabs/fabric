@@ -90,6 +90,16 @@ class Identity extends Actor {
   }
 
   /**
+   * Sign a buffer of data using BIP 340: https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki
+   * @param {Buffer} data Buffer of data to sign.
+   * @returns {Signature} Resulting signature (64 bytes).
+   */
+  sign (data = Buffer.from('', 'hex')) {
+    this._signAsSchnorr(data.toString('hex'));
+    return this._signature;
+  }
+
+  /**
    * Retrieve the bech32m-encoded identity.
    * @returns {String} Public identity.
    */
@@ -107,9 +117,16 @@ class Identity extends Actor {
     return bech32.toString();
   }
 
+  _nextAccount () {
+    ++this._state.content.account;
+    this.commit();
+    return this;
+  }
+
   _signAsSchnorr (input) {
     if (!input) input = this.pubkeyhash;
-    const signature = this.signer.sign(input)
+    this._signature = this.signer.sign(input)
+    return this;
   }
 }
 

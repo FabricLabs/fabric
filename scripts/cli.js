@@ -23,6 +23,7 @@ const Environment = require('../types/environment');
 const OP_START = require('../contracts/node');
 const OP_CHAT = require('../contracts/chat');
 const OP_EXCHANGE = require('../contracts/exchange');
+const OP_MOUNT = require('../contracts/mount');
 const OP_SETUP = require('../contracts/setup');
 const OP_TEST = require('../contracts/test');
 
@@ -30,6 +31,7 @@ const COMMANDS = {
   'START': OP_START,
   'CHAT': OP_CHAT,
   'EXCHANGE': OP_EXCHANGE,
+  'MOUNT': OP_MOUNT,
   'SETUP': OP_SETUP,
   'TEST': OP_TEST
 };
@@ -53,26 +55,37 @@ async function main (input = {}) {
   program.name('fabric');
 
   // Declare Commands
+  // FABRIC MOUNT
+  // Mount a Fabric filesytem.
+  program.command('mount')
+    .description('Mount a Fabric filesytem.')
+    .action(COMMANDS['MOUNT'].bind({ environment, program }));
+
+  // FABRIC SETUP
   // Configure the environment.
   program.command('setup')
     .description('Ensures your environment configuration.')
     .action(COMMANDS['SETUP'].bind({ environment, program }));
 
+  // FABRIC START
   // Run the basic node.
   program.command('start')
     .description('Initiate peer bootstrapping.')
     .action(COMMANDS['START'].bind({ environment }));
 
+  // FABRIC CHAT
   // Loads the terminal-based UI.
   program.command('chat', { isDefault: true })
     .description('Open P2P chat.')
     .action(COMMANDS['CHAT'].bind({ environment }));
 
+  // FABRIC EXCHANGE
   // Load the file exchange.
   program.command('exchange')
     .description('Runs a local exchange node.')
     .action(COMMANDS['EXCHANGE'].bind({ environment }));
 
+  // FABRIC TEST
   // Run the test chain.
   program.command('test')
     .description('Run the test chain.')

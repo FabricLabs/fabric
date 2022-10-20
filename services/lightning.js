@@ -1,7 +1,7 @@
 'use strict';
 
 // Dependencies
-const Remote = require('@fabric/http/types/remote');
+const net = require('net');
 
 // Fabric Types
 const Service = require('../types/service');
@@ -34,6 +34,15 @@ class Lightning extends Service {
         confirmed: 0,
         unconfirmed: 0
       },
+      content: {
+        ...super.state,
+        blockheight: null,
+        node: {
+          id: null,
+          alias: null,
+          color: null
+        }
+      },
       channels: {},
       invoices: {},
       peers: {},
@@ -59,18 +68,31 @@ class Lightning extends Service {
     this.status = 'starting';
     await this.machine.start();
 
-    if (this.settings.mode === 'rest') {
-      const provider = new URL(this.settings.authority);
-      this.rest = new Remote({
-        authority: provider.hostname,
-        username: provider.username,
-        password: provider.password
-      });
-      await this._syncOracleInfo();
+    switch (this.settings.mode) {
+      default:
+        throw new Error(`Unknown mode: ${this.settings.mode}`);
+        break;
+      case 'rest':
+        const provider = new URL(this.settings.authority);
+        this.rest = new Remote({
+          authority: provider.hostname,
+          username: provider.username,
+          password: provider.password
+        });
+        await this._syncOracleInfo();
+        break;
+      case 'rpc':
+        break;
+      case 'socket':
+        this.emit('debug', 'Beginning work on Lightning socket compatibility...')
+        await this._sync();
+        break;
     }
 
-    this.heartbeat = setInterval(this._heartbeat.bind(this), this.settings.interval);
+    this._heart = setInterval(this._heartbeat.bind(this), this.settings.interval);
     this.status = 'started';
+
+    this.emit('ready', this.export());
 
     return this;
   }
@@ -119,6 +141,41 @@ class Lightning extends Service {
     return result;
   }
 
+  /**
+   * Make an RPC request through the Lightning UNIX socket.
+   * @param {String} method Name of method to call.
+   * @param {Array} [params] Array of parameters.
+   * @returns {Object|String} Respond from the Lightning node.
+   */
+  async _makeRPCRequest (method, params = []) {
+    return new Promise((resolve, reject) => {
+      try {
+        const client = net.createConnection({ path: this.settings.path });
+
+        client.on('data', (data) => {
+          try {
+            const response = JSON.parse(data.toString('utf8'));
+            if (response.result) {
+              return resolve(response.result);
+            } else if (response.error) {
+              return reject(response.error);
+            }
+          } catch (exception) {
+            this.emit('error', `Could not make RPC request: ${exception}\n${data.toString('utf8')}`);
+          }
+        });
+
+        client.write(JSON.stringify({
+          method: method,
+          params: params,
+          id: 0
+        }), null, '  ');
+      } catch (exception) {
+        reject(exception);
+      }
+    });
+  }
+
   async _syncOracleInfo () {
     if (this.settings.mode === 'rest') {
       const result = await this.rest._GET('/getInfo');
@@ -161,6 +218,36 @@ class Lightning extends Service {
     }
 
     return this._state;
+  }
+
+  async _syncChannels () {
+    const result = await this._makeRPCRequest('listfunds');
+
+    this._state.channels = result.channels;
+    this.commit();
+
+    return this;
+  }
+
+  async _syncInfo () {
+    const result = await this._makeRPCRequest('getinfo');
+
+    this.emit('log', `Lighting Info: ${JSON.stringify(result, null, '  ')}`);
+
+    this._state.content.node.id = result.id;
+    this._state.content.node.alias = result.alias;
+    this._state.content.node.color = result.color;
+    this._state.content.blockheight = result.blockheight;
+    this.commit();
+
+    return this;
+  }
+
+  async _sync () {
+    await this._syncChannels();
+    await this._syncInfo();
+    this.emit('sync', this.state);
+    return this;
   }
 }
 

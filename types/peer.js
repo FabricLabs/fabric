@@ -20,6 +20,7 @@ const {
 const net = require('net');
 const crypto = require('crypto');
 const stream = require('stream');
+const noise = require('noise-protocol-stream');
 
 // Dependencies
 const merge = require('lodash.merge');
@@ -30,6 +31,7 @@ const Actor = require('./actor');
 const Key = require('./key');
 const Machine = require('./machine');
 const Message = require('./message');
+const Service = require('./service');
 const Session = require('./session');
 const Reader = require('./reader');
 const Wallet = require('./wallet');
@@ -37,7 +39,7 @@ const Wallet = require('./wallet');
 /**
  * An in-memory representation of a node in our network.
  */
-class Peer extends Actor {
+class Peer extends Service {
   /**
    * Create an instance of {@link Peer}.
    * @param {Object} [config] Initialization Vector for this peer.
@@ -295,7 +297,7 @@ class Peer extends Actor {
       initiator: true
     });
 
-    if (self.settings.verbosity >= 4) console.log('[FABRIC:PEER]', `Connection to ${address} established!`);
+    this.emit('log', `Connection to ${address} established!`);
   }
 
   async _processCompleteDataPacket (socket, address, data) {
@@ -303,6 +305,8 @@ class Peer extends Actor {
     const self = this;
     // TODO: actually decrypt packet
     const decrypted = socket.session.decrypt(data);
+
+    this.emit('debug', `Handling data packet:`, data);
 
     // Variables
     let message = null;
@@ -332,23 +336,24 @@ class Peer extends Actor {
   }
 
   async _handleSocketData (socket, address, data) {
-    const self = this;
-    if (self.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Received data from peer:', data);
+    this.emit('debug', `Received data from peer: ${data}`);
 
     if (!socket.session) {
-      self.emit('error', `Received data on socket without a session!  Violator: ${address}`);
+      this.emit('error', `Received data on socket without a session!  Violator: ${address}`);
       return false;
     }
 
     socket._reader._addData(data);
+
+    return true;
   }
 
   _connect (address) {
-    let self = this;
-    let parts = address.split(':');
-    let known = Object.keys(self.connections);
-    let keyparts = parts[0].split('@');
-    let target = {
+    const self = this;
+    const parts = address.split(':');
+    const known = Object.keys(self.connections);
+    const keyparts = parts[0].split('@');
+    const target = {
       pubkey: null,
       address: null,
       port: null
@@ -363,7 +368,7 @@ class Peer extends Actor {
       target.port = parts[1];
     }
 
-    if (target.pubkey === self.id) return this.emit('error', 'Cannot connect to self.');
+    if (target.pubkey === self.key.public) return this.emit('error', 'Cannot connect to self.');
 
     const authority = `${target.address}:${target.port}`;
 
@@ -374,8 +379,10 @@ class Peer extends Actor {
 
     // TODO: refactor to use local functions + specific unbindings
     try {
+      // TODO: consolidate with this._handleConnection
       self.connections[authority] = new net.Socket();
       self.connections[authority]._reader = new Reader();
+
       self.connections[authority]._reader.on('debug', function (msg) {
         self.emit('debug', msg);
       });
@@ -478,7 +485,18 @@ class Peer extends Actor {
 
     // TODO: use known key
     socket.session = new Session();
+    socket._reader = new Reader();
 
+    // Bind Reader events (Fabric)
+    socket._reader.on('debug', function (msg) {
+      self.emit('debug', msg);
+    });
+
+    socket._reader.on('message', function (msg) {
+      self._processCompleteDataPacket.apply(self, [ socket, address, msg ]);
+    });
+
+    // Bind Socket events (Peer)
     socket.on('close', function terminate () {
       self.emit('log', `connection closed: ${address}`);
       self.emit('connections:close', { address: address });
@@ -495,14 +513,6 @@ class Peer extends Actor {
 
     // add this socket to the list of known connections
     this.connections[address] = socket;
-    this.connections[address]._reader = new Reader();
-    self.connections[address]._reader.on('debug', function (msg) {
-      self.emit('debug', msg);
-    });
-
-    this.connections[address]._reader.on('message', function (msg) {
-      self._processCompleteDataPacket.apply(self, [ self.connections[address], address, msg ]);
-    });
 
     self._maintainConnection(address);
   }
@@ -638,7 +648,7 @@ class Peer extends Actor {
       case 'StartChain':
         break;
       case 'GenericMessage':
-        console.warn('[FABRIC:PEER]', 'Received Generic Message:', message.data);
+        // console.warn('[FABRIC:PEER]', 'Received Generic Message:', message.data);
         relay = true;
         break;
       case 'IdentityRequest':
@@ -870,7 +880,7 @@ class Peer extends Actor {
         case 'PeerCandidate':
           break;
         default:
-          this.emit('debug', `Unhandled type: ${message.type}`);
+          this.emit('debug', `Unhandled type for relay: ${message.type}`);
           break;
       }
     } else {

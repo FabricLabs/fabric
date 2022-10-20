@@ -3,9 +3,10 @@ There's a lot of information to cover with regards to building decentralized
 applications, so grab a coffee ☕ and settle in.
 
 ## Quick Start
-0. `nvm use 12.22` (you can get `nvm` from [nvm.sh][nvm-official])
-1. `npm install -g @fabric/core` to install `fabric` to your global node environment
-2. `fabric start` should be enough to get you up and running!  Try the `/help` command for more options.
+0. `nvm use 16.17.1` (you can get `nvm` from [nvm.sh][nvm-official])
+1. `npm install -g @fabric/core` to add `fabric` to your path
+2. (optional) `fabric setup` to set up your environment (generates a new master key)
+3. `fabric` should now be enough to get you up and running!
 
 That's it!  Let's take a look at overall Fabric system and how you, as a developer, might interact with it.
 

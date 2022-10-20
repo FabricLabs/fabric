@@ -49,6 +49,10 @@ class Aggregator extends Service {
     return Object.assign({}, this._state.balances);
   }
 
+  get tree () {
+    return new Tree({ leaves: this.settings.inputs.map(x => x.hash) });
+  }
+
   /**
    * Import a list of {@link AnchorBalance} instances.
    * @param {Array} list List of inputs to add.

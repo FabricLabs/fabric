@@ -31,12 +31,16 @@ const MAX_MESSAGE_SIZE = 4096 - HEADER_SIZE;
 const MAX_STACK_HEIGHT = 32; // max height of stack (number of elements)
 const MAX_FRAME_SIZE = 32; // max size of a stack frame in bytes
 const MAX_MEMORY_ALLOC = MAX_STACK_HEIGHT * MAX_FRAME_SIZE;
-const MAX_TX_PER_BLOCK = 100;
+const MAX_TX_PER_BLOCK = 4;
 const MAX_CHANNEL_VALUE = 100000000;
 
 // Machine Constraints
 const MACHINE_MAX_MEMORY = MAX_MEMORY_ALLOC * MAX_MESSAGE_SIZE;
 const MAX_CHAT_MESSAGE_LENGTH = 2048;
+
+// Playnet
+const FABRIC_PLAYNET_ADDRESS = ''; // deposit address (P2TR)
+const FABRIC_PLAYNET_ORIGIN = ''; // block hash of first deploy
 
 // FABRIC ONLY
 const GENERIC_MESSAGE_TYPE = MAGIC_BYTES + parseInt(crypto.createHash('sha256').update('@types/GenericMessage').digest('hex').slice(0, 4), 16);
@@ -123,6 +127,8 @@ module.exports = {
   BLOCK_CANDIDATE,
   CHAT_MESSAGE,
   ZERO_LENGTH_PLAINTEXT,
+  FABRIC_PLAYNET_ADDRESS,
+  FABRIC_PLAYNET_ORIGIN,
   LIGHTNING_TEST_HEADER,
   LIGHTNING_PROTOCOL_H_INIT,
   LIGHTNING_PROTOCOL_PROLOGUE,

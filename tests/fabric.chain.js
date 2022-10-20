@@ -37,7 +37,7 @@ describe('@fabric/core/types/chain', function () {
       const chain = new Chain();
       const block = new Block({ debug: true, input: 'Hello, world.' });
 
-      assert.strictEqual(block.id, 'a5b08f19adfd2918e354af8c11e1b4efd963b5f5a525900d63a01cd2fd28176f');
+      assert.strictEqual(block.id, '915b0d50a7bda25ccee15aa2bd6c51a1e7bba3d3ffa599897127c01a72e58104');
 
       await chain.start();
       await chain.append(block);
@@ -50,12 +50,12 @@ describe('@fabric/core/types/chain', function () {
       const chain = new Chain();
       const block = new Block({ debug: true, input: 'Hello, world.' });
 
-      assert.strictEqual(block.id, 'a5b08f19adfd2918e354af8c11e1b4efd963b5f5a525900d63a01cd2fd28176f');
+      assert.strictEqual(block.id, '915b0d50a7bda25ccee15aa2bd6c51a1e7bba3d3ffa599897127c01a72e58104');
 
       await chain.start();
       await chain.append(block);
       const second = await chain.generateBlock();
-      assert.strictEqual(second.id, 'a5b08f19adfd2918e354af8c11e1b4efd963b5f5a525900d63a01cd2fd28176f');
+      assert.strictEqual(second.id, '0f9e784f61b4f71ac6ae8f0a50073951e5ae93e4228eef121c5c674b2bf5a2a8');
       await chain.stop();
 
       assert.ok(chain);
@@ -63,16 +63,28 @@ describe('@fabric/core/types/chain', function () {
 
     it('can mine a second block with transactions', async function () {
       const chain = new Chain();
-      const block = new Block({ debug: true, input: 'Hello, world.' });
+      const block = new Block({
+        debug: true,
+        transactions: {
+          'dcfe2ae42b3dd7538f1bada55374beff198e446537b8d001bb0a0bc68cf0d2b9': {
+            type: 'Transaction',
+            input: 'Hello, world.'
+          }
+        }
+      });
 
-      assert.strictEqual(block.id, 'a5b08f19adfd2918e354af8c11e1b4efd963b5f5a525900d63a01cd2fd28176f');
+      assert.strictEqual(block.id, 'fe83ca7e172b82201f255a3ff34bf73b6721a95078685fe1d184bf4a6c7a20fb');
 
       await chain.start();
       await chain.append(block);
 
-      const tx = await chain.proposeTransaction({ input: 'Hello again, world!' });
+      const tx = await chain.proposeTransaction({
+        type: 'Transaction',
+        input: 'Hello, world.'
+      });
+
       const second = await chain.generateBlock();
-      assert.strictEqual(second.id, 'a5b08f19adfd2918e354af8c11e1b4efd963b5f5a525900d63a01cd2fd28176f');
+      assert.strictEqual(second.id, '2714e0577b4fdb7cf5e3fec86043f9b4827342e01fc42797da49798518d33b5c');
       await chain.stop();
 
       assert.ok(chain);
@@ -82,20 +94,28 @@ describe('@fabric/core/types/chain', function () {
       const chain = new Chain();
       const block = new Block({ debug: true, input: 'Hello, world.' });
 
-      assert.strictEqual(block.id, 'a5b08f19adfd2918e354af8c11e1b4efd963b5f5a525900d63a01cd2fd28176f');
+      assert.strictEqual(block.id, '915b0d50a7bda25ccee15aa2bd6c51a1e7bba3d3ffa599897127c01a72e58104');
 
       await chain.start();
       await chain.append(block);
 
+      // generate n transactions, where n = 1 + MAX_TX_PER_BLOCK
       for (let i = 0; i < MAX_TX_PER_BLOCK + 1; i++) {
-        await chain.proposeTransaction({ input: 'Hello again, world!' });
+        chain.proposeTransaction({
+          index: i,
+          input: 'Hello, world.',
+        });
       }
 
+      assert.equal(chain.mempool.length, MAX_TX_PER_BLOCK + 1);
+
       const second = await chain.generateBlock();
-      assert.strictEqual(second.id, 'a5b08f19adfd2918e354af8c11e1b4efd963b5f5a525900d63a01cd2fd28176f');
+
+      assert.equal(chain.mempool.length, 1);
+      // assert.strictEqual(second.id, '0fd4ecf2186fea71fedf7d839f2e6df511661ada426a86f654ab45636e0eabed');
       await chain.stop();
 
-      assert.strictEqual(chain._state.blocks[chain.tip].transactions.length, 100);
+      assert.strictEqual(chain.length, 2);
       assert.strictEqual(chain.mempool.length, 1);
 
       assert.ok(chain);
