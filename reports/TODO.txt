@@ -25,6 +25,7 @@
 ./types/key.js:    // TODO: determine if this makes sense / needs to be private
 ./types/key.js:    // TODO: evaluate compression when treating seed phrase as ascii
 ./types/key.js:    // TODO: consider using sha256(masterprivkey) or sha256(sha256(...))?
+./types/chain.js:    // TODO: reject duplicate transactions
 ./types/chain.js:    source.on('message', function TODO (message) {
 ./types/chain.js:    // TODO: _sortFees
 ./types/renderer.js:    // TODO: move this to dynamic event handler
@@ -42,7 +43,7 @@
 ./types/service.js:// TODO: remove
 ./types/service.js:        actors: {}, // TODO: schema
 ./types/service.js:        channels: {}, // TODO: schema
-./types/service.js:        messages: {} // TODO: schema
+./types/service.js:        messages: {}, // TODO: schema
 ./types/service.js:      // TODO: export this as the default data in `inputs/fabric.json`
 ./types/service.js:    // TODO: fix this
 ./types/service.js:      version: 0 // TODO: change to 1 for 0.1.0
@@ -51,7 +52,6 @@
 ./types/service.js:    // TODO: remove async, use local state instead
 ./types/service.js:    // TODO: parse JSON types in @fabric/core/types/message
 ./types/service.js:        // TODO: transaction log
-./types/service.js:        // TODO: apply changes to parent (self)
 ./types/service.js:    // TODO: re-re-evaluate a better approach... oh how I long for Object.observe!
 ./types/service.js:    // TODO: use Resource definition to de-deuplicate by fields.id
 ./types/service.js:    // TODO: reduce storage to references
@@ -92,8 +92,10 @@
 ./types/circuit.js:    // TODO: generate polynomial for circuit
 ./types/signer.js:    // TODO: fix bcoin in React / WebPack
 ./types/signer.js:    this.value = this._readObject(actor); // TODO: use Buffer?
+./types/signer.js:    // TODO: use pubkey
 ./types/signer.js:    // TODO: encode pubkey correctly for verification
 ./types/signer.js:    // TODO: check with bip-schnorr on behavior of signing > 32 byte messages
+./types/signer.js:    // TODO: unpause input stream here
 ./types/bitcoin/block.js:    // TODO: validation
 ./types/hash256.js:  // TODO: document `hash256.value`
 ./types/bond.js:      content: Buffer.alloc(4) // TODO: Bitcoin encoded values?
@@ -101,6 +103,7 @@
 ./types/actor.js:    // TODO: use `const state` here
 ./types/actor.js:    // TODO: evaluate disabling by default
 ./types/actor.js:    // TODO: evaluate disabling by default
+./types/actor.js:    // TODO: use elegant method to strip these properties
 ./types/actor.js:      state: state.id // TODO: include whole state?
 ./types/actor.js:    // TODO: emit global state event here
 ./types/oracle.js:    // TODO: define all resources
@@ -170,6 +173,7 @@
 ./types/cli.js:      // TODO: exit function here
 ./types/cli.js:    // TODO: use @fabric/core/types/channel
 ./types/cli.js:    // TODO: use @fabric/core/types/channel
+./types/cli.js:    // TODO: debug with @melnx
 ./types/cli.js:    // TODO: test this on testnet / mainnet
 ./types/cli.js:      // TODO: use peer ID for managed list
 ./types/cli.js:      // TODO: use peer ID for managed list

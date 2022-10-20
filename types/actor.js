@@ -54,7 +54,11 @@ class Actor extends EventEmitter {
 
     // TODO: evaluate disabling by default
     // and/or resolving performance issues at scale
-    this.observer = monitor.observe(this._state.content, this._handleMonitorChanges.bind(this));
+    try {
+      this.observer = monitor.observe(this._state.content, this._handleMonitorChanges.bind(this));
+    } catch (exception) {
+      console.error('UNABLE TO WATCH:', exception);
+    }
 
     // TODO: use elegant method to strip these properties
     Object.defineProperty(this, '_events', { enumerable: false });

@@ -133,6 +133,21 @@ class Contract extends Service {
     return { signature };
   }
 
+  _handleActivity (activity) {
+    return new Promise((resolve, reject) => {
+      try {
+        const actor = new Actor(activity);
+        return resolve({
+          id: actor.id,
+          type: 'Activity',
+          object: actor.toGenericMessage()
+        });
+      } catch (exception) {
+        return reject(exception);
+      }
+    });
+  }
+
   _toUnsignedTransaction () {
     return {
       script: this.contract

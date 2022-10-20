@@ -3,7 +3,7 @@ There's a lot of information to cover with regards to building decentralized
 applications, so grab a coffee ☕ and settle in.
 
 ## Quick Start
-0. `nvm use 16.15` (you can get `nvm` from [nvm.sh][nvm-official])
+0. `nvm use 16.17.1` (you can get `nvm` from [nvm.sh][nvm-official])
 1. `npm install -g @fabric/core` to add `fabric` to your path
 2. (optional) `fabric setup` to set up your environment (generates a new master key)
 3. `fabric` should now be enough to get you up and running!

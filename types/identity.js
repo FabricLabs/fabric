@@ -86,6 +86,7 @@ class Identity extends Actor {
 
   loadAccountByID (id = 0) {
     this._state.content.accountID = id;
+    this.commit();
     return this;
   }
 
