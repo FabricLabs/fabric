@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="utf-8">
-  <title>Source: types/identity.js &middot; Docs</title>
+  <title>Source: types/contract.js &middot; Docs</title>
   <script src="scripts/prettify/prettify.js"> </script>
   <script src="scripts/prettify/lang-css.js"> </script>
   <!--[if lt IE 9]>
@@ -24,7 +24,7 @@
 
 <body>
   <div id="main">
-    <h1 class="page-title">Source: types/identity.js</h1>
+    <h1 class="page-title">Source: types/contract.js</h1>
 
 
 
@@ -33,138 +33,162 @@
       <article>
         <pre class="prettyprint source linenums"><code>'use strict';
 
+const parser = require('dotparser');
 const Actor = require('./actor');
-const Bech32 = require('./bech32');
 const Hash256 = require('./hash256');
 const Key = require('./key');
+const Service = require('./service');
 const Signer = require('./signer');
 
-/**
- * Manage a network identity.
- */
-class Identity extends Actor {
-  /**
-   * Create an instance of an Identity.
-   * @param {Object} [settings] Settings for the Identity.
-   * @param {String} [settings.seed] BIP 39 seed phrase.
-   * @param {String} [settings.xprv] Serialized BIP 32 master private key.
-   * @param {String} [settings.xpub] Serialized BIP 32 master public key.
-   * @param {Number} [settings.account=0] BIP 44 account index.
-   * @param {Number} [settings.index=0] BIP 44 key index.
-   * @returns {Identity} Instance of the identity.
-   */
+class Contract extends Service {
   constructor (settings = {}) {
     super(settings);
 
     this.settings = Object.assign({
-      seed: null,
-      account: 0,
-      index: 0
-    }, this.settings, settings);
+      name: 'TemplateContract',
+      balances: {},
+      circuit: {},
+      constraints: {},
+      graphs: {},
+      state: {
+        name: 'TemplateContract',
+        status: 'PAUSED',
+        actors: [],
+        balances: {},
+        constraints: {},
+        signatures: []
+      },
+      witnesses: []
+    }, settings);
 
-    this.key = new Key(this.settings);
-    this.signer = new Signer(this.settings);
+    // compatibility
+    // this['@data'] = settings;
 
+    // tweaked pubkey
+    this.key = new Key(this.settings.key);
+    this._inner = null;
     this._state = {
-      content: {
-        account: this.settings.account,
-        index: this.settings.index
-      }
+      status: 'PAUSED',
+      chain: [], // list of block hashes
+      events: [], // list of state changes
+      value: this.settings.state,
+      content: this.settings.state
     };
 
     return this;
   }
 
-  get accountID () {
-    return this._state.content.account;
-  }
-
-  get derivation () {
-    // m / purpose' / coin_type' / account' / change / address_index
-    // NOTE:
-    // Always using Coin Type 0 (Bitcoin) and Change 0 (Public Flag)!
-    // We will use Change 1 ("Internal Chain" as designated by BIP0044)
-    // for any kind of revoke mechanic; i.e., the key derived by the change
-    // address may be used to auto-encode a "revocation" contract.
-    return `m/44'/0'/${this.accountID}'/0/${this.index}`;
-  }
-
-  get id () {
-    return this.toString();
-  }
-
-  get index () {
-    return this._state.content.index;
-  }
-
-  get master () {
-    return this.key;
-  }
-
-  get pubkey () {
-    return this.key.public.x.toString('hex');
-  }
-
-  get pubkeyhash () {
-    const input = Buffer.from(this.pubkey, 'hex');
-    return Hash256.digest(input);
-  }
-
-  static fromString (input = '') {
-    const parsed = Bech32.decode(input);
-    return {
-      content: parsed.content.toString('hex')
-    };
-  }
-
-  loadAccountByID (id = 0) {
-    this._state.content.accountID = id;
-    this.commit();
-    return this;
-  }
-
-  /**
-   * Sign a buffer of data using BIP 340: https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki
-   * @param {Buffer} data Buffer of data to sign.
-   * @returns {Signature} Resulting signature (64 bytes).
-   */
-  sign (data = Buffer.from('', 'hex')) {
-    this._signAsSchnorr(data.toString('hex'));
-    return this._signature;
-  }
-
-  /**
-   * Retrieve the bech32m-encoded identity.
-   * @returns {String} Public identity.
-   */
-  toString () {
-    if (this.settings.debug) console.log('master key:', this.key.master.publicKey);
-    if (this.settings.debug) console.log('pubkey for id:', this.pubkey);
-
-    const bech32 = new Bech32({
-      hrp: 'id',
-      content: this.pubkeyhash
+  static fromDot (input) {
+    const graphs = parser(input);
+    const circuit = Contract.fromGraph(graphs);
+    const contract = new Contract({
+      graphs: graphs,
+      circuit: circuit
     });
 
-    if (this.settings.debug) console.log('bech32:', bech32);
+    // monkey
+    contract.graphs = graphs;
 
-    return bech32.toString();
+    return contract;
+  };
+
+  static fromGraph (graphs) {
+    const circuit = {
+      stack: [],
+      nodes: []
+    };
+
+    return circuit;
   }
 
-  _nextAccount () {
-    ++this._state.content.account;
+  get contract () {
+    const contract = `
+      $A = ${this._state.content.signers[0]};
+      likely@$A
+    `;
+    return contract.trim();
+  }
+
+  parse (input) {
+    return this.parseDot(input);
+  }
+
+
+  /**
+   * Start the Contract.
+   * @returns {Contract} State "STARTED" iteration of the Contract.
+   */
+  start () {
+    this.state.status = 'STARTING';
+    this.state.status = 'STARTED';
     this.commit();
     return this;
   }
 
-  _signAsSchnorr (input) {
-    if (!input) input = this.pubkeyhash;
-    this._signature = this.signer.sign(input)
+  abort () {
+    // broadcast L1 transaction
+  }
+
+  commit () {
+    super.commit();
+
+    const template = {
+      state: this.state
+    };
+
+    const actor = new Actor(template);
+
+    this.emit('contract:commit', actor.toGenericMessage());
+
+    return {};
+  }
+
+  execute () {
+    return this.run();
+  }
+
+  run () {
+    this.signWith(this.settings.identity);
+    this.state.status = 'COMPLETED';
+    this.commit();
+    this.emit('contract', this.toGenericMessage());
     return this;
+  }
+
+  signWith (identity) {
+    const baseline = this.toGenericMessage();
+    const json = JSON.stringify(baseline); // native JSON.stringify
+    const buffer = Buffer.from(json, 'utf8');
+
+    const signer = new Signer(identity);
+    const signature = signer.sign(buffer);
+
+    return { signature };
+  }
+
+  _handleActivity (activity) {
+    return new Promise((resolve, reject) => {
+      try {
+        const actor = new Actor(activity);
+        return resolve({
+          id: actor.id,
+          type: 'Activity',
+          object: actor.toGenericMessage()
+        });
+      } catch (exception) {
+        return reject(exception);
+      }
+    });
+  }
+
+  _toUnsignedTransaction () {
+    return {
+      script: this.contract
+    };
   }
 }
 
-module.exports = Identity;
+module.exports = Contract;
 </code></pre>
       </article>
     </section>

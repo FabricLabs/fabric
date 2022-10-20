@@ -2432,7 +2432,6 @@ An in-memory representation of a node in our network.
 
 * [Peer](#Peer)
     * [new Peer([config])](#new_Peer_new)
-    * ~~[.address](#Peer+address)~~
     * [.start()](#Peer+start)
     * [.stop()](#Peer+stop)
     * [.listen()](#Peer+listen) ⇒ [<code>Peer</code>](#Peer)
@@ -2451,12 +2450,6 @@ Create an instance of [Peer](#Peer).
 | [config.port] | <code>Number</code> | <code>7777</code> | Port to use for P2P connections. |
 | [config.peers] | <code>Array</code> | <code>[]</code> | List of initial peers. |
 
-<a name="Peer+address"></a>
-
-### ~~peer.address~~
-***Deprecated***
-
-**Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+start"></a>
 
 ### peer.start()

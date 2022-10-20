@@ -87,8 +87,13 @@ class Actor extends EventEmitter {
 
     // TODO: evaluate disabling by default
     // and/or resolving performance issues at scale
-    this.observer = monitor.observe(this._state.content, this._handleMonitorChanges.bind(this));
+    try {
+      this.observer = monitor.observe(this._state.content, this._handleMonitorChanges.bind(this));
+    } catch (exception) {
+      console.error('UNABLE TO WATCH:', exception);
+    }
 
+    // TODO: use elegant method to strip these properties
     Object.defineProperty(this, '_events', { enumerable: false });
     Object.defineProperty(this, '_eventsCount', { enumerable: false });
     Object.defineProperty(this, '_maxListeners', { enumerable: false });
@@ -290,8 +295,8 @@ class Actor extends EventEmitter {
    */
   toGenericMessage () {
     return {
-      'type': 'FabricActorState',
-      'object': this.toObject()
+      type: 'FabricActorState',
+      object: this.toObject()
     };
   }
 

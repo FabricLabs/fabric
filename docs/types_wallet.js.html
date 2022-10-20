@@ -1086,14 +1086,13 @@ class Wallet extends Service {
     data.pushData(Buffer.from(config.hash));
     data.pushSym('OP_EQUALVERIFY');
     data.pushData(Buffer.from(config.payee));
-    data.pushSym('OP_CHECKSIG');
     data.pushSym('OP_ELSE');
     data.pushInt(config.locktime);
     data.pushSym('OP_CHECKSEQUENCEVERIFY');
     data.pushSym('OP_DROP');
     data.pushData(Buffer.from(clean.public));
-    data.pushSym('OP_CHECKSIG');
     data.pushSym('OP_ENDIF');
+    data.pushSym('OP_CHECKSIG');
     data.compile();
 
     console.log('address data:', data);

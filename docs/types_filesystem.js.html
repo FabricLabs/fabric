@@ -104,6 +104,10 @@ class Filesystem extends Actor {
     return this._state.documents;
   }
 
+  /**
+   * Load Filesystem state from disk.
+   * @returns {Promise} Resolves with Filesystem instance.
+   */
   async _loadFromDisk () {
     const self = this;
     return new Promise((resolve, reject) => {
