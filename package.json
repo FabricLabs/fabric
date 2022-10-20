@@ -46,6 +46,7 @@
     "make:service": "### ERROR: Not yet implemented.  Debug: ` examples/service.js` to `aassets/service.js`",
     "make:viewer": "### ERROR: Not yet implemented.  Debug: `components/circuit-viewer.js` to `aassets/viewer.min.js`",
     "report:credits": "node_modules/.bin/license-checker --json > reports/credits.json",
+    "reports": "npm run report:install && npm run make:coverage && npm run report:todo",
     "report:coverage": "npm run make:coverage && c8 report --reporter=text-lcov > reports/coverage.lcov",
     "report:install": "rm -rf node_modules && rm package-lock.json && echo \"$ npm i\n\" > reports/install.log && npm i >> reports/install.log",
     "report:legal": "node_modules/.bin/license-checker --json > reports/licenses.json",
@@ -81,7 +82,6 @@
   },
   "homepage": "https://github.com/FabricLabs/fabric#readme",
   "dependencies": {
-    "@grpc/grpc-js": "1.7.1",
     "arbitrary": "1.4.10",
     "base58check": "2.0.0",
     "bech32-buffer": "0.2.0",

@@ -255,6 +255,7 @@ class CLI extends App {
     this.bitcoin.on('transaction', this._handleBitcoinTransaction.bind(this));
 
     // #### Lightning
+    this.lightning.on('debug', this._handleLightningDebug.bind(this));
     this.lightning.on('ready', this._handleLightningReady.bind(this));
     this.lightning.on('error', this._handleLightningError.bind(this));
     this.lightning.on('warning', this._handleLightningWarning.bind(this));
@@ -280,7 +281,6 @@ class CLI extends App {
     // Bind remaining internals
     // TODO: enable
     // this.on('changes', this._handleChanges.bind(this));
-
 
     // ## Start Anchor Services
     // Start Bitcoin service
@@ -440,7 +440,8 @@ class CLI extends App {
   }
 
   async _handleChannelRequest (params) {
-    this._appendMessage(`{bold}Channels:{/bold} ${JSON.stringify(this.channels, null, '  ')}`);
+    const state = await this.lightning._syncOracleChannels();
+    this._appendMessage(`{bold}Channels:{/bold} ${JSON.stringify(state.channels, null, '  ')}`);
   }
 
   async _fundChannel (id, amount) {
@@ -595,7 +596,11 @@ class CLI extends App {
   }
 
   async _handleLightningCommit (commit) {
-    this._appendMessage(`Lightning service emitted commit: ${JSON.stringify(commit)}`);
+    this._appendDebug(`Lightning service emitted commit: ${JSON.stringify(commit)}`);
+  }
+
+  async _handleLightningDebug (...msg) {
+    this._appendDebug(`[SERVICES:LIGHTNING] debug: ${msg}`);
   }
 
   async _handleLightningError (...msg) {
@@ -904,7 +909,7 @@ class CLI extends App {
 
   async _handleRotateRequest () {
     const account = await this.identity._nextAccount();
-    this._appendMessage('Rotated to Account: ' + JSON.stringify(account, null, ' '));
+    this._appendMessage('Rotated to Account: ' + account.id);
     return false;
   }
 
@@ -1269,6 +1274,14 @@ class CLI extends App {
       },
       top: 6,
       height: 10
+    });
+
+    self.elements['channellist'] = blessed.table({
+      parent: self.elements.lightningbook,
+      data: [
+        ['ID']
+      ],
+      width: '100%-2'
     });
 
     self.elements['contractbook'] = blessed.box({
