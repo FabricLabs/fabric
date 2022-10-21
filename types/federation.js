@@ -133,6 +133,14 @@ class Federation extends Actor {
     // this.commit();
     return this;
   }
+
+  stop () {
+    this.setStatus('STOPPING');
+    this.wallet.stop();
+    this.setStatus('STOPPED');
+    this.commit();
+    return this;
+  }
 }
 
 module.exports = Federation;
