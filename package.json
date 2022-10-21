@@ -48,7 +48,7 @@
     "playnet": "node scripts/playnet.js",
     "report:coverage": "npm run make:coverage && c8 report --reporter=text-lcov > reports/coverage.lcov",
     "report:credits": "node_modules/.bin/license-checker --json > reports/credits.json",
-    "report:install": "rm -rf node_modules && rm package-lock.json && echo \"$ npm i\n\" > reports/install.log && npm i >> reports/install.log",
+    "report:install": "rm -rf node_modules && rm package-lock.json && echo \"$ npm i\" > reports/install.log && npm i >> reports/install.log",
     "report:legal": "node_modules/.bin/license-checker --json > reports/licenses.json",
     "report:todo": "grep --exclude-dir=.git --exclude-dir=_book --exclude-dir=assets --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs -rEI \"TODO|FIXME\" . > reports/TODO.txt",
     "reports": "npm run report:install && npm run make:coverage && npm run report:todo",
