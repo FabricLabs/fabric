@@ -189,6 +189,11 @@ class Filesystem extends Actor {
     return this;
   }
 
+  async stop () {
+    this.commit();
+    return this;
+  }
+
   /**
    * Syncronize state from the local filesystem.
    * @returns {Filesystem} Instance of the Fabric filesystem.
