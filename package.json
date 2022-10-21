@@ -1,7 +1,7 @@
 {
   "name": "@fabric/core",
-  "version": "0.1.0-dev",
-  "description": "experimental p2p framework",
+  "version": "0.1.0-RC1",
+  "description": "Experimental peer-to-peer framework.",
   "main": "types/fabric.js",
   "module": "index.js",
   "bin": {
@@ -25,6 +25,7 @@
     "clean": "rm -rf node_modules",
     "cli": "npm run chat",
     "coverage": "c8 npm test",
+    "deploy": "npm run build && rm -rf stores/wiki && git clone git@github.com:FabricLabs/wiki.git stores/wiki && rm -rf stores/wiki/.git && cp -rf stores/wiki/assets assets/wiki && fabric-http",
     "dev": "npm run make:dev && fabric-http -p 8000 _book",
     "docs": "npm run make:api && npm run make:docs && fabric-http -p 8000 docs",
     "examples": "npm run make:examples && fabric-http -p 8000 examples",
