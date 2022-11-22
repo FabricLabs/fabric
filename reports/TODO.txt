@@ -288,6 +288,7 @@
 ./examples/oracle.js:// TODO: use bottom panel for inline execution (_a la_ "Run this Code &raquo;")
 ./examples/service.html:          <p>TODO: revert to OPTIONS (this was a temporary fix for an NGINX bug)</p>
 ./examples/game.html:          <p>TODO: use fabric call
+./scripts/lightning-demo.js:    // TODO: import configs from Polar
 ./scripts/example.js:// TODO: generate signature, hash of function definition (the "type")
 ./scripts/schemas.js:    // TODO: here for Eric's review.
 ./scripts/cli.js:  // TODO: read & test contracts

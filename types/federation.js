@@ -5,14 +5,14 @@ const merge = require('lodash.merge');
 const { run } = require('minsc');
 
 // Fabric Types
-const Actor = require('./actor');
+const Contract = require('./contract');
 const Key = require('./key');
 const Wallet = require('./wallet');
 
 /**
  * Create and manage sets of signers with the Federation class.
  */
-class Federation extends Actor {
+class Federation extends Contract {
   /**
    * Create an instance of a federation.
    * @param {Object} [settings] Settings.

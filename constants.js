@@ -43,7 +43,7 @@ const FABRIC_PLAYNET_ADDRESS = ''; // deposit address (P2TR)
 const FABRIC_PLAYNET_ORIGIN = ''; // block hash of first deploy
 
 // FABRIC ONLY
-const GENERIC_MESSAGE_TYPE = MAGIC_BYTES + parseInt(crypto.createHash('sha256').update('@types/GenericMessage').digest('hex').slice(0, 4), 16);
+const GENERIC_MESSAGE_TYPE = parseInt(crypto.createHash('sha256').update('@types/GenericMessage').digest('hex').slice(0, 4), 16);
 const LOG_MESSAGE_TYPE = MAGIC_BYTES + parseInt(crypto.createHash('sha256').update('@types/GenericLogMessage').digest('hex').slice(0, 4), 16);
 const GENERIC_LIST_TYPE = MAGIC_BYTES + parseInt(crypto.createHash('sha256').update('@types/GenericList').digest('hex').slice(0, 4), 16);
 const DOCUMENT_PUBLISH_TYPE = 998;

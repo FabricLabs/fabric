@@ -4,24 +4,32 @@
 const net = require('net');
 
 // Fabric Types
+const Actor = require('../types/actor');
+const Key = require('../types/key');
 const Service = require('../types/service');
 const Machine = require('../types/machine');
 
-// Fabric Edge
-const Remote = require('@fabric/http/types/remote');
-
+// Contracts
 const OP_TEST = require('../contracts/test');
-const Actor = require('../types/actor');
-const Key = require('../types/key');
 
+/**
+ * Manage a Lightning node.
+ */
 class Lightning extends Service {
+  /**
+   * Create an instance of the Lightning {@link Service}.
+   * @param {Object} [settings] Settings.
+   * @returns {Lightning}
+   */
   constructor (settings = {}) {
     super(settings);
 
     this.settings = Object.assign({
-      authority: 'http://127.0.0.1:8182',
+      authority: 'http://127.0.0.1:8181',
+      host: '127.0.0.1',
+      port: 8181,
       path: './stores/lightning',
-      mode: 'rpc',
+      mode: 'socket',
       interval: 1000
     }, this.settings, settings);
 
@@ -64,6 +72,24 @@ class Lightning extends Service {
     return this.state.balances;
   }
 
+  commit () {
+    this.emit('debug', `Committing...`);
+
+    const commit = new Actor({
+      type: 'Commit',
+      state: this.state
+    });
+
+    this.emit('debug', `Committing Actor: ${commit}`);
+
+    this.emit('commit', {
+      id: commit.id,
+      object: commit.toObject()
+    });
+
+    return commit;
+  }
+
   async start () {
     this.status = 'starting';
     await this.machine.start();
@@ -71,11 +97,12 @@ class Lightning extends Service {
     switch (this.settings.mode) {
       default:
         throw new Error(`Unknown mode: ${this.settings.mode}`);
-        break;
       case 'grpc':
         throw new Error('Disabled.');
-        break;
       case 'rest':
+        throw new Error('Disabled.');
+        /*
+        // TODO: re-work Polar integration
         const provider = new URL(this.settings.authority);
         this.rest = new Remote({
           host: this.settings.host,
@@ -86,11 +113,11 @@ class Lightning extends Service {
           secure: this.settings.secure
         });
         await this._syncOracleInfo();
-        break;
+        */
       case 'rpc':
-        break;
+        throw new Error('Disabled.');
       case 'socket':
-        this.emit('debug', 'Beginning work on Lightning socket compatibility...')
+        this.emit('debug', 'Opening Lightning socket...');
         await this._sync();
         break;
     }

@@ -72,26 +72,6 @@ class Filesystem extends Actor {
   }
 
   /**
-   * Load Filesystem state from disk.
-   * @returns {Promise} Resolves with Filesystem instance.
-   */
-  async _loadFromDisk () {
-    const self = this;
-    return new Promise((resolve, reject) => {
-      try {
-        const files = fs.readdirSync(self.path);
-        self._state.content = { files };
-        self.commit();
-
-        resolve(self);
-      } catch (exception) {
-        self.emit('error', exception);
-        reject(exception);
-      }
-    });
-  }
-
-  /**
    * Get the list of files.
    * @returns {Array} List of files.
    */
@@ -145,6 +125,26 @@ class Filesystem extends Actor {
       this.emit('error', `Could not write file: ${content}`);
       return false;
     }
+  }
+
+  /**
+   * Load Filesystem state from disk.
+   * @returns {Promise} Resolves with Filesystem instance.
+   */
+  _loadFromDisk () {
+    const self = this;
+    return new Promise((resolve, reject) => {
+      try {
+        const files = fs.readdirSync(self.path);
+        self._state.content = { files };
+        self.commit();
+
+        resolve(self);
+      } catch (exception) {
+        self.emit('error', exception);
+        reject(exception);
+      }
+    });
   }
 
   async ingest (document, name = null) {

@@ -8,5 +8,5 @@ do
   NAME=swarm${i}
   PORT=$(($ORACLE_LISTEN_PORT + $i))
   PEER=$(($PEER_LISTEN_PORT + $i))
-  PORT=$port PEER_PORT=$peer NAME=$name babel-node examples/cli.js &
+  PORT=$port PEER_PORT=$peer NAME=$name node scripts/cli.js &
 done
