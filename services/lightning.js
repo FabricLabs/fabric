@@ -6,6 +6,7 @@ const net = require('net');
 // Fabric Types
 const Actor = require('../types/actor');
 const Key = require('../types/key');
+const Remote = require('../types/remote');
 const Service = require('../types/service');
 const Machine = require('../types/machine');
 
@@ -73,14 +74,14 @@ class Lightning extends Service {
   }
 
   commit () {
-    this.emit('debug', `Committing...`);
+    // this.emit('debug', `Committing...`);
 
     const commit = new Actor({
       type: 'Commit',
       state: this.state
     });
 
-    this.emit('debug', `Committing Actor: ${commit}`);
+    // this.emit('debug', `Committing Actor: ${commit}`);
 
     this.emit('commit', {
       id: commit.id,
@@ -90,8 +91,13 @@ class Lightning extends Service {
     return commit;
   }
 
+  restErrorHandler (error) {
+    this.emit('error', `Got REST error: ${error}`);
+  }
+
   async start () {
     this.status = 'starting';
+
     await this.machine.start();
 
     switch (this.settings.mode) {
@@ -100,10 +106,10 @@ class Lightning extends Service {
       case 'grpc':
         throw new Error('Disabled.');
       case 'rest':
-        throw new Error('Disabled.');
-        /*
         // TODO: re-work Polar integration
         const provider = new URL(this.settings.authority);
+
+        // Fabric Remote for target REST interface
         this.rest = new Remote({
           host: this.settings.host,
           macaroon: this.settings.macaroon,
@@ -112,8 +118,14 @@ class Lightning extends Service {
           port: this.settings.port,
           secure: this.settings.secure
         });
+
+        // Error Handler
+        this.rest.on('error', this.restErrorHandler.bind(this));
+
+        // Sync data from the target
         await this._syncOracleInfo();
-        */
+
+        break;
       case 'rpc':
         throw new Error('Disabled.');
       case 'socket':

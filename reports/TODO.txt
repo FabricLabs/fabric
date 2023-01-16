@@ -28,6 +28,10 @@
 ./types/chain.js:    // TODO: reject duplicate transactions
 ./types/chain.js:    source.on('message', function TODO (message) {
 ./types/chain.js:    // TODO: _sortFees
+./types/remote.js:    // TODO: use onion address for secure mode
+./types/remote.js:        // TODO: warn about unexpected values
+./types/remote.js:        // TODO: should settings override protocol inclusion?
+./types/remote.js:    // TODO: break out into independent auth module
 ./types/renderer.js:    // TODO: move this to dynamic event handler
 ./types/swap.js:// TODO: revert to 1.0.2 to enable
 ./types/stash.js:// TODO: note that generally, requirements are loosely ordered by
@@ -322,5 +326,6 @@
 ./services/bitcoin.js:    // END TODO
 ./services/turntable.js:    // TODO: await REST or GraphQL API?
 ./services/exchange.js:    // TODO: finalize Collection API in #docs-update
+./services/lightning.js:        // TODO: re-work Polar integration
 ./whitepaper.md:TODO
 ./whitepaper.md:TODO: include content hashes of links as they appear at

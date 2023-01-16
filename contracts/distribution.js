@@ -15,7 +15,7 @@ class Distribution extends Contract {
 
     this._state = {
       content: this.settings.state
-    }
+    };
 
     return this;
   }
