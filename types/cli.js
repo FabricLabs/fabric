@@ -62,7 +62,12 @@ class CLI extends App {
       render: true,
       services: [],
       network: 'regtest',
-      interval: 1000
+      interval: 1000,
+      bitcoin: {},
+      lightning: {
+        mode: 'socket',
+        path: './stores/lightning-playnet/regtest/lightning-rpc'
+      },
     }, this.settings, settings);
 
     // Properties
@@ -124,7 +129,7 @@ class CLI extends App {
   }
 
   _loadBitcoin () {
-    this.bitcoin = new Bitcoin({
+    const settings = merge({
       authority: this.settings.authority,
       mode: 'rpc',
       fullnode: false,
@@ -138,14 +143,16 @@ class CLI extends App {
       ],
       services: [],
       verbosity: 0
-    });
+    }, this.settings.bitcoin);
+
+    this.bitcoin = new Bitcoin(settings);
+
+    return this;
   }
 
   _loadLightning () {
-    this.lightning = new Lightning({
-      mode: 'socket',
-      path: this.settings.lightning.path
-    });
+    this.lightning = new Lightning(this.settings.lightning);
+    return this;
   }
 
   async bootstrap () {
@@ -263,15 +270,32 @@ class CLI extends App {
     this.lightning.on('log', this._handleLightningLog.bind(this));
     this.lightning.on('commit', this._handleLightningCommit.bind(this));
     this.lightning.on('sync', this._handleLightningSync.bind(this));
+    // this.lightning.on('transaction', this._handleLightningTransaction.bind(this));
+
+    /* this.on('log', function (log) {
+      console.log('local log:', log);
+    }); */
+
+    // this.on('debug', this._appendDebug.bind(this));
+
+    // const events = this.trust(this.lightning);
 
     // ## Start all services
     for (const [name, service] of Object.entries(this.services)) {
       this._appendWarning(`Checking if Service enabled: ${name}`);
-      if (this.settings.services.includes(name)) {
-        this._appendWarning(`Service "${name}" is enabled.  Starting...`);
-        this.trust(this.services[name], name);
+
+      // Skip when service name not found in settings
+      if (!this.settings.services.includes(name)) continue;
+
+      this._appendDebug(`Service "${name}" is enabled.  Starting...`);
+
+      this.trust(this.services[name], name);
+
+      try {
         await this.services[name].start();
-        this._appendWarning(`The service named "${name}" has started!`);
+        this._appendDebug(`The service named "${name}" has started!`);
+      } catch (exception) {
+        this._appendError(`The service named "${name}" could not start:\n${exception}`);
       }
     }
 
@@ -368,6 +392,26 @@ class CLI extends App {
     }
 
     return this;
+  }
+
+  trust (source, name = this.constructor.name) {
+    if (!(source instanceof EventEmitter)) throw new Error('Source is not an EventEmitter.')
+    const self = this;
+
+    return {
+      _handleTrustedError: source.on('error', async function handleTrustedError (error) {
+        self._appendMessage(`[SOURCE:${name.toUpperCase()}] ${error}`);
+      }),
+      _handleTrustedLog: source.on('log', async function handleTrustedLog (log) {
+        self._appendMessage(`[SOURCE:${name.toUpperCase()}] ${log}`);
+      }),
+      _handleTrustedDebug: source.on('debug', async function handleTrustedDebug (log) {
+        self._appendDebug(`[SOURCE:${name.toUpperCase()}] ${log}`);
+      }),
+      _handleTrustedReady: source.on('ready', async function handleTrustedReady (ready) {
+        self._appendMessage(`[SOURCE:${name.toUpperCase()}] Ready! ${ready}`);
+      })
+    }
   }
 
   async _appendMessage (msg) {
@@ -596,11 +640,18 @@ class CLI extends App {
   }
 
   async _handleLightningCommit (commit) {
-    this._appendDebug(`Lightning service emitted commit: ${JSON.stringify(commit)}`);
+    // this._appendDebug(`Lightning service emitted commit: ${JSON.stringify(commit)}`);
+    const data = this.tableDataFor(Object.values(commit.object.state.channels), [
+      'id',
+      'channel_id',
+      'funding_txid'
+    ]);
+
+    this.elements['channellist'].setData(data);
   }
 
   async _handleLightningDebug (...msg) {
-    this._appendDebug(`[SERVICES:LIGHTNING] debug: ${msg}`);
+    this._appendError(`[SERVICES:LIGHTNING] debug: ${msg}`);
   }
 
   async _handleLightningError (...msg) {
@@ -1024,6 +1075,7 @@ class CLI extends App {
     try {
       const balance = await this._getBalance();
       const balances = await this.bitcoin._syncBalances();
+      const lightning = await this.lightning._syncBalances();
 
       this._state.balances.confirmed = balance;
       this._state.balances.trusted = balances.mine.trusted;
@@ -1082,7 +1134,13 @@ class CLI extends App {
 
   async _getBalance () {
     const result = await this.bitcoin._syncBalanceFromOracle();
-    return result.data.content;
+    await this.lightning.sync();
+
+    this._appendDebug(`Lightning balances: ${JSON.stringify(this.lightning.balances)}`);
+
+    const balance = result.data.content + this.lightning.balances.spendable;
+
+    return balance;
   }
 
   _syncConnectionList () {
@@ -1273,7 +1331,7 @@ class CLI extends App {
         type: 'line'
       },
       top: 6,
-      height: 10
+      // height: 10
     });
 
     self.elements['channellist'] = blessed.table({
@@ -1284,6 +1342,7 @@ class CLI extends App {
       width: '100%-2'
     });
 
+    /*
     self.elements['contractbook'] = blessed.box({
       parent: self.elements.contracts,
       label: '[ Fabric ]',
@@ -1300,6 +1359,7 @@ class CLI extends App {
       ],
       width: '100%-2'
     });
+    */
 
     self.elements['network'] = blessed.list({
       parent: self.screen,
@@ -1697,6 +1757,23 @@ class CLI extends App {
       // self._appendMessage('10 seconds have passed.');
       // self.bitcoin.generateBlock();
     }, 10000);
+  }
+
+  tableDataFor (input = [], exclusions = []) {
+    const keys = [];
+    const entries = input.map((x) => {
+      const map = {};
+
+      for (const [key, value] of Object.entries(x)) {
+        if (exclusions.includes(key)) continue;
+        if (!keys.includes(key)) keys.push(key);
+        map[key] = value.toString();
+      }
+
+      return Object.values(map);
+    });
+
+    return [ keys ].concat(entries);
   }
 }
 

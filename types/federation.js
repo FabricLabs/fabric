@@ -130,7 +130,7 @@ class Federation extends Contract {
     this.wallet.start();
     this.setStatus('STARTED');
 
-    // this.commit();
+    this.commit();
     return this;
   }
 
@@ -138,6 +138,7 @@ class Federation extends Contract {
     this.setStatus('STOPPING');
     this.wallet.stop();
     this.setStatus('STOPPED');
+
     this.commit();
     return this;
   }
