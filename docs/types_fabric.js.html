@@ -71,6 +71,7 @@ const Worker = require('../types/worker');
 
 /**
  * Reliable decentralized infrastructure.
+ * @property {Class} Block
  */
 class Fabric extends Service {
   /**
@@ -86,21 +87,18 @@ class Fabric extends Service {
    * @emits Fabric#thread
    * @emits Fabric#step Emitted on a `compute` step.
    */
-  constructor (settings = {}) {
-    super(settings);
+  constructor (vector = {}) {
+    super(vector);
 
     // local settings
     this.settings = Object.assign({
       path: './stores/fabric',
-      persistent: false,
-      state: {
-        ...super.state,
-        ...settings.state
-      }
-    }, settings);
+      persistent: false
+    }, vector);
 
     // start with reference to object
-    this.ident = new Actor(this.settings);
+    this.ident = new Actor(this.config);
+    this.state = new Actor(vector); // State
 
     // build maps
     this.agent = {}; // Identity
@@ -111,14 +109,14 @@ class Fabric extends Service {
     this.services = {}; // Map&lt;id>
 
     // initialize components
-    this.chain = new Chain(this.settings);
-    this.machine = new Machine(this.settings);
-    this.store = new Store(this.settings);
+    this.chain = new Chain(this.config);
+    this.machine = new Machine(this.config);
+    this.store = new Store(this.config);
     // this.script = new Script(this.config);
 
     this._state = {
       status: 'PAUSED',
-      content: this.settings.state
+      content: this.state.data
     };
 
     // provide instance
@@ -203,7 +201,7 @@ class Fabric extends Service {
     if (!service) return new Error('Service must be provided.');
 
     try {
-      const name = service.name || service.constructor.name;
+      let name = service.name || service.constructor.name;
       this.modules[name.toLowerCase()] = service;
       this.emit('message', {
         '@type': 'ServiceRegistration',
@@ -217,7 +215,7 @@ class Fabric extends Service {
   }
 
   async enable (name) {
-    const self = this;
+    let self = this;
     let Module = null;
     let config = Object.assign({
       name: name,
@@ -459,26 +457,19 @@ module.exports = Fabric;
       <li><a href="Bitcoin.html">Bitcoin</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
-      <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Compiler.html">Compiler</a></li>
       <li><a href="Consensus.html">Consensus</a></li>
       <li><a href="Entity.html">Entity</a></li>
-      <li><a href="Environment.html">Environment</a></li>
       <li><a href="Exchange.html">Exchange</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
-      <li><a href="Federation.html">Federation</a></li>
-      <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="HTTPServer.html">HTTPServer</a></li>
-      <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
-      <li><a href="Keystore.html">Keystore</a></li>
-      <li><a href="Ledger.html">Ledger</a></li>
-      <li><a href="Logger.html">Logger</a></li>
+      <li><a href="KeyStore.html">KeyStore</a></li>
       <li><a href="Machine.html">Machine</a></li>
       <li><a href="Mempool.html">Mempool</a></li>
       <li><a href="Message.html">Message</a></li>
@@ -488,7 +479,6 @@ module.exports = Fabric;
       <li><a href="Peer.html">Peer</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
-      <li><a href="Resource.html">Resource</a></li>
       <li><a href="Router.html">Router</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
@@ -508,7 +498,6 @@ module.exports = Fabric;
       <li><a href="Vector.html">Vector</a></li>
       <li><a href="Walker.html">Walker</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
-      <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
     <h3>Events</h3>

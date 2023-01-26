@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Source: types/contract.js &middot; Docs</title>
+  <script src="scripts/prettify/prettify.js"> </script>
+  <script src="scripts/prettify/lang-css.js"> </script>
+  <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+  <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+  <script>
+    window.dataLayer = window.dataLayer || [];
+
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag('js', new Date());
+    gtag('config', 'G-09Y57FL980');
+  </script>
+</head>
+
+<body>
+  <div id="main">
+    <h1 class="page-title">Source: types/contract.js</h1>
+
+
+
+
+    <section>
+      <article>
+        <pre class="prettyprint source linenums"><code>'use strict';
+
+const parser = require('dotparser');
+const Actor = require('./actor');
+const Hash256 = require('./hash256');
+const Key = require('./key');
+const Service = require('./service');
+const Signer = require('./signer');
+
+class Contract extends Service {
+  constructor (settings = {}) {
+    super(settings);
+
+    this.settings = Object.assign({
+      name: 'TemplateContract',
+      balances: {},
+      circuit: {},
+      constraints: {
+        supply: function () {
+          return this.state.clock + 1;
+        }
+      },
+      graphs: {},
+      state: {
+        name: 'TemplateContract',
+        status: 'PAUSED',
+        actors: [],
+        balances: {},
+        constraints: {},
+        signatures: []
+      },
+      witnesses: []
+    }, settings);
+
+    // compatibility
+    // this['@data'] = settings;
+
+    // tweaked pubkey
+    this.key = new Key(this.settings.key);
+    this._inner = null;
+    this._state = {
+      status: 'PAUSED',
+      chain: [], // list of block hashes
+      events: [], // list of state changes
+      value: this.settings.state,
+      content: this.settings.state
+    };
+
+    return this;
+  }
+
+  static fromDot (input) {
+    const graphs = parser(input);
+    const circuit = Contract.fromGraph(graphs);
+    const contract = new Contract({
+      graphs: graphs,
+      circuit: circuit
+    });
+
+    // monkey
+    contract.graphs = graphs;
+
+    return contract;
+  };
+
+  static fromJavaScript (js) {
+
+  }
+
+  static fromGraph (graphs) {
+    const circuit = {
+      stack: [],
+      nodes: []
+    };
+
+    for (let i = 0; i &lt; graphs.length; i++) {
+      const graph = graphs[i];
+      const node = {
+        name: graph.id
+      };
+
+      circuit.nodes.push(node);
+
+      if (!graph.children.length) continue;
+      for (let j = 0; j &lt; graph.children.length; j++) {
+        const child = graph.children[j];
+        console.log('child:', child);
+
+        switch (child.type) {
+          default:
+            console.warn(`Unhandled type: "${child.type}'" on child:`, child);
+            break;
+          case 'node_stmt':
+            circuit.nodes.push({
+              name: child.node_id.id
+            });
+            break;
+        }
+      }
+    }
+
+    return circuit;
+  }
+
+  get contract () {
+    const contract = `
+      $A = ${this._state.content.signers[0]};
+      likely@$A
+    `;
+    return contract.trim();
+  }
+
+  toDot () {
+    const tokens = [];
+  }
+
+  parse (input) {
+    return this.parseDot(input);
+  }
+
+
+  /**
+   * Start the Contract.
+   * @returns {Contract} State "STARTED" iteration of the Contract.
+   */
+  start () {
+    this.state.status = 'STARTING';
+    this.state.status = 'STARTED';
+    this.commit();
+    return this;
+  }
+
+  abort () {
+    // broadcast L1 transaction
+  }
+
+  commit () {
+    super.commit();
+
+    const template = {
+      // created: (new Date()).toISOString(),
+      state: this.state
+    };
+
+    const actor = new Actor(template);
+
+    this.emit('contract:commit', actor.toGenericMessage());
+
+    return {};
+  }
+
+  execute () {
+    return this.run();
+  }
+
+  run () {
+    this.signWith(this.settings.identity);
+    this.state.status = 'COMPLETED';
+    this.commit();
+    this.emit('contract', this.toGenericMessage());
+    return this;
+  }
+
+  signWith (identity) {
+    const baseline = this.toGenericMessage();
+    const json = JSON.stringify(baseline); // native JSON.stringify
+    const buffer = Buffer.from(json, 'utf8');
+
+    const signer = new Signer(identity);
+    const signature = signer.sign(buffer);
+
+    return { signature };
+  }
+
+  _handleActivity (activity) {
+    return new Promise((resolve, reject) => {
+      try {
+        const actor = new Actor(activity);
+        return resolve({
+          id: actor.id,
+          type: 'Activity',
+          object: actor.toGenericMessage()
+        });
+      } catch (exception) {
+        return reject(exception);
+      }
+    });
+  }
+
+  _toUnsignedTransaction () {
+    return {
+      script: this.contract
+    };
+  }
+}
+
+module.exports = Contract;
+</code></pre>
+      </article>
+    </section>
+
+
+
+  </div>
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="Actor.html">Actor</a></li>
+      <li><a href="Aggregator.html">Aggregator</a></li>
+      <li><a href="App.html">App</a></li>
+      <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="Channel.html">Channel</a></li>
+      <li><a href="Circuit.html">Circuit</a></li>
+      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Compiler.html">Compiler</a></li>
+      <li><a href="Consensus.html">Consensus</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Environment.html">Environment</a></li>
+      <li><a href="Exchange.html">Exchange</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Federation.html">Federation</a></li>
+      <li><a href="Filesystem.html">Filesystem</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
+      <li><a href="HKDF.html">HKDF</a></li>
+      <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Identity.html">Identity</a></li>
+      <li><a href="Interface.html">Interface</a></li>
+      <li><a href="Key.html">Key</a></li>
+      <li><a href="Keystore.html">Keystore</a></li>
+      <li><a href="Ledger.html">Ledger</a></li>
+      <li><a href="Logger.html">Logger</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Mempool.html">Mempool</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="Node.html">Node</a></li>
+      <li><a href="Oracle.html">Oracle</a></li>
+      <li><a href="Path.html">Path</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="Reader.html">Reader</a></li>
+      <li><a href="Redis.html">Redis</a></li>
+      <li><a href="Resource.html">Resource</a></li>
+      <li><a href="Router.html">Router</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Session.html">Session</a></li>
+      <li><a href="Signer.html">Signer</a></li>
+      <li><a href="Snapshot.html">Snapshot</a></li>
+      <li><a href="Stack.html">Stack</a></li>
+      <li><a href="Stash.html">Stash</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="Swap.html">Swap</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
+      <li><a href="Transition.html">Transition</a></li>
+      <li><a href="Tree.html">Tree</a></li>
+      <li><a href="Value.html">Value</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
+      <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="Worker.html">Worker</a></li>
+      <li><a href="ZMQ.html">ZMQ</a></li>
+    </ul>
+    <h3>Events</h3>
+    <ul>
+      <li><a href="Aggregator.html#event:commit">commit</a></li>
+    </ul>
+  </nav>
+  <br class="clear" />
+  <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>
+  <script type="text/javascript">
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"></script>
+</body>
+
+</html>

@@ -53,18 +53,16 @@ const {
 const net = require('net');
 const crypto = require('crypto');
 const stream = require('stream');
-const noise = require('noise-protocol-stream');
 
 // Dependencies
 const merge = require('lodash.merge');
-// const upnp = require('nat-upnp');
+const upnp = require('nat-upnp');
 
 // Fabric Types
 const Actor = require('./actor');
 const Key = require('./key');
 const Machine = require('./machine');
 const Message = require('./message');
-const Service = require('./service');
 const Session = require('./session');
 const Reader = require('./reader');
 const Wallet = require('./wallet');
@@ -72,7 +70,7 @@ const Wallet = require('./wallet');
 /**
  * An in-memory representation of a node in our network.
  */
-class Peer extends Service {
+class Peer extends Actor {
   /**
    * Create an instance of {@link Peer}.
    * @param {Object} [config] Initialization Vector for this peer.
@@ -89,11 +87,10 @@ class Peer extends Service {
       address: '0.0.0.0',
       network: 'regtest',
       networking: true,
-      listen: true,
+      listen: false,
       peers: [],
       port: 7777,
-      upnp: false,
-      key: {}
+      upnp: false
     }, config);
 
     // Network Internals
@@ -106,8 +103,17 @@ class Peer extends Service {
       }
     });
 
-    this.key = new Key(this.settings.key);
-    this.wallet = new Wallet(this.settings.key);
+    this.key = new Key({
+      network: this.settings.network,
+      seed: (this.settings.wallet &amp;&amp; this.settings.wallet.seed) ? this.settings.wallet.seed : this.settings.seed
+    });
+
+    // TODO: document wallet settings
+    this.wallet = new Wallet({
+      key: {
+        seed: (this.settings.wallet &amp;&amp; this.settings.wallet.seed) ? this.settings.wallet.seed : this.settings.seed
+      }
+    });
 
     // this.hex = this.key.public.encodeCompressed('hex');
     // this.pkh = crypto.createHash('sha256').update(this.hex).digest('hex');
@@ -151,9 +157,7 @@ class Peer extends Service {
   }
 
   get pubkeyhash () {
-    // TODO: switch to child pubkey
-    // path: m/7777'/0'/0/0
-    return this.key.pubkeyhash;
+    return this.wallet.ring.getKeyHash('hex');
   }
 
   get state () {
@@ -162,10 +166,6 @@ class Peer extends Service {
   }
 
   get address () {
-    return this.settings.interface || this.settings.address;
-  }
-
-  get interface () {
     return this.settings.interface || this.settings.address;
   }
 
@@ -183,33 +183,22 @@ class Peer extends Service {
   async start () {
     let address = null;
 
-    this.emit('log', 'Peer starting...');
-
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Peer starting...');
     if (this.settings.upnp) {
       this.upnp = upnp.createClient();
     }
 
-    this.emit('log', 'Wallet starting...');
-
     try {
       await this.wallet.start();
-    } catch (exception) {
-      this.emit('error', `Could not start wallet: ${exception}`);
+    } catch (E) {
+      console.error('[FABRIC:PEER]', 'Could not start wallet:', E);
     }
 
     if (this.settings.listen) {
-      this.emit('log', 'Listener starting...');
-
-      try {
-        address = await this.listen();
-        this.emit('log', 'Listener started!');
-      } catch (exception) {
-        this.emit('error', 'Could not listen:', exception);
-      }
+      address = await this.listen();
     }
 
     if (this.settings.networking) {
-      this.emit('warning', `Networking enabled.  Connecting to peers: ${JSON.stringify(this.settings.peers)}`);
       for (const candidate of this.settings.peers) {
         this._connect(candidate);
       }
@@ -244,7 +233,7 @@ class Peer extends Service {
         return new Promise((resolve, reject) => {
           // Give socket a timeout to close cleanly, destroy if failed
           let deadline = setTimeout(function () {
-            peer.emit('warning', `[FABRIC:PEER] end() timed out for peer "${id}" so calling destroy...`);
+            console.warn('[FABRIC:PEER]', 'end() timed out for peer:', id, 'Calling destroy...');
             connection.destroy();
             resolve();
           }, 5000);
@@ -286,15 +275,11 @@ class Peer extends Service {
   async _sessionStart (socket, target) {
     const self = this;
     const address = `${target.address}:${target.port}`;
-
-    self.emit('debug', `Starting session with address: ${target.pubkey}@${address}`);
+    self.emit('log', `Starting session with address: ${target.pubkey}@${address}`);
     self.connections[address].session = new Session({ recipient: target.pubkey });
     await self.connections[address].session.start();
+    self.emit('log', `Session created: ${JSON.stringify(self.connections[address].session)}`);
 
-    self.emit('debug', `Session created: ${JSON.stringify(self.connections[address].session)}`);
-
-    // First time seeing our local address, use it
-    // TODO: evaluate trust model
     if (!self.public.ip) {
       self.public.ip = socket.localAddress;
       self.emit('log', `Local socket was null, changed to: ${self.public.ip}`);
@@ -313,7 +298,6 @@ class Peer extends Service {
       advertise: `${self.key.pubkey}@${self.public.ip}:${self.public.port}`,
       signature: self.connections[address].session.key._sign(self.id)
     })];
-
     const message = Message.fromVector(vector);
 
     if (!socket.writable) {
@@ -330,7 +314,7 @@ class Peer extends Service {
       initiator: true
     });
 
-    this.emit('log', `Connection to ${address} established!`);
+    if (self.settings.verbosity >= 4) console.log('[FABRIC:PEER]', `Connection to ${address} established!`);
   }
 
   async _processCompleteDataPacket (socket, address, data) {
@@ -338,8 +322,6 @@ class Peer extends Service {
     const self = this;
     // TODO: actually decrypt packet
     const decrypted = socket.session.decrypt(data);
-
-    this.emit('debug', `Handling data packet:`, data);
 
     // Variables
     let message = null;
@@ -369,24 +351,23 @@ class Peer extends Service {
   }
 
   async _handleSocketData (socket, address, data) {
-    this.emit('debug', `Received data from peer: ${data}`);
+    const self = this;
+    if (self.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Received data from peer:', data);
 
     if (!socket.session) {
-      this.emit('error', `Received data on socket without a session!  Violator: ${address}`);
+      self.emit('error', `Received data on socket without a session!  Violator: ${address}`);
       return false;
     }
 
     socket._reader._addData(data);
-
-    return true;
   }
 
   _connect (address) {
-    const self = this;
-    const parts = address.split(':');
-    const known = Object.keys(self.connections);
-    const keyparts = parts[0].split('@');
-    const target = {
+    let self = this;
+    let parts = address.split(':');
+    let known = Object.keys(self.connections);
+    let keyparts = parts[0].split('@');
+    let target = {
       pubkey: null,
       address: null,
       port: null
@@ -401,21 +382,19 @@ class Peer extends Service {
       target.port = parts[1];
     }
 
-    if (target.pubkey === self.key.public) return this.emit('error', 'Cannot connect to self.');
+    if (target.pubkey === self.id) return this.emit('error', 'Cannot connect to self.');
 
     const authority = `${target.address}:${target.port}`;
 
-    this.emit('log', `Connecting to address: ${authority}`);
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Connecting to address:', authority);
 
     if (parts.length !== 2) return console.debug('Invalid address:', address);
     if (known.includes(authority)) return self.connections[authority];
 
     // TODO: refactor to use local functions + specific unbindings
     try {
-      // TODO: consolidate with this._handleConnection
       self.connections[authority] = new net.Socket();
       self.connections[authority]._reader = new Reader();
-
       self.connections[authority]._reader.on('debug', function (msg) {
         self.emit('debug', msg);
       });
@@ -450,10 +429,6 @@ class Peer extends Service {
       // TODO: unify as _dataHandler
       self.connections[authority].on('data', async function peerDataHandler (data) {
         self._handleSocketData.apply(self, [ this, authority, data ]);
-      });
-
-      self.emit('connection', {
-        id: authority
       });
 
       self.emit('log', `Starting connection to address: ${authority}`);
@@ -507,8 +482,7 @@ class Peer extends Service {
   async _handleConnection (socket) {
     const self = this;
     const address = [socket.remoteAddress, socket.remotePort].join(':');
-
-    self.emit('log', `[FABRIC:PEER] [0x${self.id}] Incoming connection from address: ${address}`);
+    if (this.settings.verbosity >= 4) self.emit('log', `[FABRIC:PEER] [0x${self.id}] Incoming connection from address: ${address}`);
 
     self.emit('connections:open', {
       address: address,
@@ -518,18 +492,7 @@ class Peer extends Service {
 
     // TODO: use known key
     socket.session = new Session();
-    socket._reader = new Reader();
 
-    // Bind Reader events (Fabric)
-    socket._reader.on('debug', function (msg) {
-      self.emit('debug', msg);
-    });
-
-    socket._reader.on('message', function (msg) {
-      self._processCompleteDataPacket.apply(self, [ socket, address, msg ]);
-    });
-
-    // Bind Socket events (Peer)
     socket.on('close', function terminate () {
       self.emit('log', `connection closed: ${address}`);
       self.emit('connections:close', { address: address });
@@ -546,6 +509,14 @@ class Peer extends Service {
 
     // add this socket to the list of known connections
     this.connections[address] = socket;
+    this.connections[address]._reader = new Reader();
+    self.connections[address]._reader.on('debug', function (msg) {
+      self.emit('debug', msg);
+    });
+
+    this.connections[address]._reader.on('message', function (msg) {
+      self._processCompleteDataPacket.apply(self, [ self.connections[address], address, msg ]);
+    });
 
     self._maintainConnection(address);
   }
@@ -638,7 +609,7 @@ class Peer extends Service {
 
     this._updateLiveness(origin);
 
-    if (!message) return this.emit('error', `Hard failure: ${packet}`);
+    if (!message) return console.error('Hard failure:', packet);
     if (this.messages.has(message.id)) {
       // this.emit('debug', `Received duplicate message ${message.id} from [${origin}] in packet: ${JSON.stringify(packet, null, '  ')}`);
       return false;
@@ -681,7 +652,7 @@ class Peer extends Service {
       case 'StartChain':
         break;
       case 'GenericMessage':
-        // console.warn('[FABRIC:PEER]', 'Received Generic Message:', message.data);
+        console.warn('[FABRIC:PEER]', 'Received Generic Message:', message.data);
         relay = true;
         break;
       case 'IdentityRequest':
@@ -913,7 +884,7 @@ class Peer extends Service {
         case 'PeerCandidate':
           break;
         default:
-          this.emit('debug', `Unhandled type for relay: ${message.type}`);
+          this.emit('debug', `Unhandled type: ${message.type}`);
           break;
       }
     } else {
@@ -1019,9 +990,37 @@ class Peer extends Service {
 
         const details = self.server.address();
         const address = `tcp://${details.address}:${details.port}`;
+        const complete = function () {
+          self.emit('log', `Now listening on ${address} [!!!]`);
+          return resolve(address);
+        }
 
-        self.emit('log', `Now listening on ${address} [!!!]`);
-        return resolve(address);
+        if (!self.settings.upnp) {
+          return complete();
+        }
+
+        // UPNP
+        self.upnp.portMapping({
+          public: 7777,
+          private: 7777,
+          ttl: 10
+        }, function (err) {
+          if (err) {
+            self.emit('log', `error configuring upnp: ${err}`);
+            return complete();
+          }
+
+          self.upnp.externalIp(function (err, ip) {
+            if (err) {
+              self.emit('log', `Could not retrieve public IP: ${err}`);
+            } else {
+              self.public.ip = ip;
+              self.emit('log', `UPNP configured!  External IP: ${ip}`);
+            }
+
+            return complete();
+          });
+        });
       });
     });
 
@@ -1047,26 +1046,19 @@ module.exports = Peer;
       <li><a href="Bitcoin.html">Bitcoin</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
-      <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Compiler.html">Compiler</a></li>
       <li><a href="Consensus.html">Consensus</a></li>
       <li><a href="Entity.html">Entity</a></li>
-      <li><a href="Environment.html">Environment</a></li>
       <li><a href="Exchange.html">Exchange</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
-      <li><a href="Federation.html">Federation</a></li>
-      <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="HTTPServer.html">HTTPServer</a></li>
-      <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
-      <li><a href="Keystore.html">Keystore</a></li>
-      <li><a href="Ledger.html">Ledger</a></li>
-      <li><a href="Logger.html">Logger</a></li>
+      <li><a href="KeyStore.html">KeyStore</a></li>
       <li><a href="Machine.html">Machine</a></li>
       <li><a href="Mempool.html">Mempool</a></li>
       <li><a href="Message.html">Message</a></li>
@@ -1076,7 +1068,6 @@ module.exports = Peer;
       <li><a href="Peer.html">Peer</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
-      <li><a href="Resource.html">Resource</a></li>
       <li><a href="Router.html">Router</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
@@ -1096,7 +1087,6 @@ module.exports = Peer;
       <li><a href="Vector.html">Vector</a></li>
       <li><a href="Walker.html">Walker</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
-      <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
     <h3>Events</h3>
