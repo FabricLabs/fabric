@@ -18,7 +18,8 @@ Fabric Messages are hex-encoded bytestreams with a fixed-length header and an op
 - `GENERIC` — decimal `128` (`0000080`)
 - `ANNOUNCE` — decimal `256` (`0000100`)
 - `STATE` — decimal `192` (`00000C0`)
-- `CHANGE` — decimal `193` (`00000C1`)
+- `DELTA` — decimal `193` (`00000C1`)
+- `LOCK` — decimal `232` (`00000E8`)
 - `ACK` — decimal `200` (`00000C8`)
 - `ASK` — decimal `402` (`0000192`)
 - `BID` — decimal `300` (`0000012C`)
@@ -33,8 +34,11 @@ Used for Peer announcements.
 #### The `STATE` Message Type
 Pure State snapshots.
 
-#### The `CHANGE` Message Type
+#### The `DELTA` Message Type
 State delta in JSON-PATCH format.
+
+#### The `LOCK` Message Type
+Halt forward movement.
 
 #### The `ACK` Message Type
 Confirm receipt of a message.
