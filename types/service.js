@@ -249,14 +249,18 @@ class Service extends Actor {
     return this.beat();
   }
 
+  /**
+   * Compute latest state.
+   * @emits Message#beat
+   * @returns {Service}
+   */
   beat () {
     const now = (new Date()).toISOString();
 
     // Increment clock
     ++this._clock;
 
-    // TODO: remove async, use local state instead
-    // i.e., queue worker job
+    // Create Generic Message
     const beat = Message.fromVector(['Generic', {
       clock: this._clock,
       created: now,
@@ -269,6 +273,7 @@ class Service extends Actor {
       process.exit();
     }
 
+    // TODO: remove JSON parser here — only needed for verification
     // TODO: parse JSON types in @fabric/core/types/message
     let data = beat.data;
 
@@ -360,12 +365,14 @@ class Service extends Actor {
           { op: 'replace', path: `/services/${name}`, value: beat.state }
         ];
 
+        /*
         try {
           manager.applyPatch(self._state.content, ops);
           await self.commit();
         } catch (exception) {
           self.emit('warning', `Could not process beat: ${exception}`);
         }
+        */
       }),
       _handleChanges: source.on('changes', async function (changes) {
         self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted changes: ${changes}`);
@@ -627,6 +634,8 @@ class Service extends Actor {
   }
 
   async stop () {
+    this.emit('debug', 'Stopping...');
+
     if (this.settings.networking) {
       await this.disconnect();
     }
@@ -879,11 +888,11 @@ class Service extends Actor {
     try {
       ops.push({ type: 'put', key: 'snapshot', value: self.state });
 
-      this.emit('debug', `Commit Template: ${JSON.stringify({
+      /* this.emit('debug', `Commit Template: ${JSON.stringify({
         '@data': self.state,
         '@from': 'COMMIT',
         '@type': 'Snapshot'
-      }, null, '  ')}`);
+      }, null, '  ')}`); */
     } catch (E) {
       console.error('Error saving state:', self.state);
       console.error('Could not commit to state:', E);

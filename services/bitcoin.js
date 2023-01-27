@@ -122,6 +122,7 @@ class Bitcoin extends Service {
       }
     });
 
+    // Runs fullnode from bcoin
     if (this.settings.fullnode) {
       this.fullnode = new FullNode({
         network: this.settings.network
@@ -199,6 +200,7 @@ class Bitcoin extends Service {
   /**
    * Provides bcoin's implementation of `TX` internally.  This static may be
    * removed in the future.
+   * @deprecated
    */
   static get Transaction () {
     return bcoin.TX;
@@ -207,6 +209,7 @@ class Bitcoin extends Service {
   /**
    * Provides bcoin's implementation of `MTX` internally.  This static may be
    * removed in the future.
+   * @deprecated
    */
   static get MutableTransaction () {
     return bcoin.TX;
@@ -224,7 +227,7 @@ class Bitcoin extends Service {
    * User Agent string for the Bitcoin P2P network.
    */
   get UAString () {
-    return 'Portal/Bridge 0.1.0-dev (@fabric/core#0.1.0-dev)';
+    return 'Fabric/Bitcoin 0.1.0-dev (@fabric/core#v0.1.0-RC1)';
   }
 
   /**
