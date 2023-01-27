@@ -85,6 +85,10 @@ class Chain extends Actor {
     return this._state.ledger;
   }
 
+  get height () {
+
+  }
+
   get leaves () {
     return this.blocks.map(x => Buffer.from(x, 'hex'));
   }

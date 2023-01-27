@@ -128,6 +128,9 @@ class Peer extends Service {
     return Object.assign({}, this._state);
   }
 
+  /**
+   * @deprecated
+   */
   get address () {
     return this.settings.interface || this.settings.address;
   }
@@ -377,6 +380,24 @@ class Peer extends Service {
     if (parts.length !== 2) return console.debug('Invalid address:', address);
     if (known.includes(authority)) return self.connections[authority];
 
+    /* const c = new net.Socket();
+    const client = noise({
+      initiator: true,
+      privateKey: self.key.private,
+      prologue: 'fabric:playnet',
+      verify: function () {}
+    });
+
+    client.decrypt.on('data', function (data) {
+      console.log('decrypted:', data);
+    });
+
+    client.encrypt.pipe(c).pipe(client.decrypt);
+
+    c.connect(target.port, target.address, async function connectionAttemptComplete (error) {
+      if (error) return new Error(`Could not establish connection: ${error}`);
+    }); */
+
     // TODO: refactor to use local functions + specific unbindings
     try {
       // TODO: consolidate with this._handleConnection
@@ -474,6 +495,17 @@ class Peer extends Service {
   async _handleConnection (socket) {
     const self = this;
     const address = [socket.remoteAddress, socket.remotePort].join(':');
+    // const server = noise({
+      /* verify: function (localPrivateKey, localPublicKey, remotePublicKey, finish) {
+        // Calling finish with an error as first argument will also emit an error event on the stream pair.
+        // The callback must be called explicitly with true to accept.
+        if (true || TRUSTED_PUBLIC_KEY.equals(remotePublicKey)) {
+          finish(null, true);
+        } else {
+          finish(null, false);
+        }
+      } */
+    // });
 
     self.emit('log', `[FABRIC:PEER] [0x${self.id}] Incoming connection from address: ${address}`);
 
@@ -482,6 +514,19 @@ class Peer extends Service {
       status: 'connected',
       initiator: false
     });
+
+    /*
+    server.encrypt.pipe(socket).pipe(server.decrypt);
+
+    // Emitted after the connection is accepted in the verify function
+    server.encrypt.on('handshake', function (localPrivateKey, localPublicKey, remotePublicKey) {
+      console.log('server encrypt handshake:', remotePublicKey);
+    });
+
+    // Reading and writing will only work after the connection is accepted
+    server.decrypt.on('data', function (data) {
+      console.log('incoming connection decrypted data:', data);
+    }); */
 
     // TODO: use known key
     socket.session = new Session();

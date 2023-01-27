@@ -17,6 +17,14 @@ const settings = {
   peers: [
     '0223cffd5e94da3c8915c6b868f06d15183c1aeffad8ddf58fcb35a428e3158e71@hub.fabric.pub:7777'
   ],
+  bitcoin: {
+    authority: 'http://polaruser:polarpass@localhost:18443',
+    host: 'localhost',
+    port: 18443,
+    username: 'polaruser',
+    password: 'polarpass',
+    secure: false
+  },
   lightning: {
     host: 'localhost',
     macaroon: 'GET FROM CREST',

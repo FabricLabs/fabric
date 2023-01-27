@@ -59,11 +59,17 @@ class CLI extends App {
     this.settings = merge({
       debug: true,
       listen: false,
+      peering: false, // set to true to start Peer
       render: true,
       services: [],
       network: 'regtest',
       interval: 1000,
-      bitcoin: {},
+      bitcoin: {
+        authority: 'http://localhost:8443',
+        mode: 'rpc', // TODO: change name of mode to `rest`?
+        host: 'localhost',
+        port: 8443
+      },
       lightning: {
         mode: 'socket',
         path: './stores/lightning-playnet/regtest/lightning-rpc'
@@ -129,24 +135,7 @@ class CLI extends App {
   }
 
   _loadBitcoin () {
-    const settings = merge({
-      authority: this.settings.authority,
-      mode: 'rpc',
-      fullnode: false,
-      network: this.settings.network,
-      key: {
-        seed: (this.settings.wallet) ? this.settings.wallet.seed : this.settings.seed,
-        xprv: (this.settings.wallet) ? this.settings.wallet.xprv : this.settings.xprv
-      },
-      peers: [
-        // '127.0.0.1:18444'
-      ],
-      services: [],
-      verbosity: 0
-    }, this.settings.bitcoin);
-
-    this.bitcoin = new Bitcoin(settings);
-
+    this.bitcoin = new Bitcoin(this.settings.bitcoin);
     return this;
   }
 
@@ -251,6 +240,7 @@ class CLI extends App {
 
     // ## Anchor handlers
     // ### Bitcoin
+    this.bitcoin.on('debug', this._handleBitcoinDebug.bind(this));
     this.bitcoin.on('ready', this._handleBitcoinReady.bind(this));
     this.bitcoin.on('error', this._handleBitcoinError.bind(this));
     this.bitcoin.on('warning', this._handleBitcoinWarning.bind(this));
@@ -282,13 +272,9 @@ class CLI extends App {
 
     // ## Start all services
     for (const [name, service] of Object.entries(this.services)) {
-      this._appendWarning(`Checking if Service enabled: ${name}`);
-
       // Skip when service name not found in settings
       if (!this.settings.services.includes(name)) continue;
-
       this._appendDebug(`Service "${name}" is enabled.  Starting...`);
-
       this.trust(this.services[name], name);
 
       try {
@@ -314,7 +300,7 @@ class CLI extends App {
     this.lightning.start();
 
     // ## Start P2P node
-    this.node.start();
+    if (this.settings.peering) this.node.start();
 
     // ## Attach Heartbeat
     this._heart = setInterval(this.tick.bind(this), this.settings.interval);
@@ -563,6 +549,10 @@ class CLI extends App {
 
   async _handleBitcoinTransaction (transaction) {
     this._appendMessage(`Bitcoin service emitted transaction: ${JSON.stringify(transaction)}`);
+  }
+
+  async _handleBitcoinDebug (...msg) {
+    this._appendDebug(msg);
   }
 
   async _handleBitcoinError (...msg) {
@@ -1135,9 +1125,7 @@ class CLI extends App {
   async _getBalance () {
     const result = await this.bitcoin._syncBalanceFromOracle();
     await this.lightning.sync();
-
-    this._appendDebug(`Lightning balances: ${JSON.stringify(this.lightning.balances)}`);
-
+    // this._appendDebug(`Lightning balances: ${JSON.stringify(this.lightning.balances)}`);
     const balance = result.data.content + this.lightning.balances.spendable;
 
     return balance;

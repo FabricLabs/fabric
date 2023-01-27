@@ -93,8 +93,6 @@ class Key {
       this._mode = 'FROM_RANDOM';
     }
 
-    if (this.settings.debug) console.debug('mode:', this._mode);
-
     switch (this._mode) {
       case 'FROM_SEED':
         const seed = bip39.mnemonicToSeedSync(this.settings.seed, this.settings.passphrase);
@@ -215,6 +213,17 @@ class Key {
   bit () {
     return this.generator.next.bits(1);
   }
+
+  /* export () {
+    return {
+      addresses: {
+        p2wkh: null,
+        p2tr: null
+      },
+      private: this.keypair.private,
+      public: this.keypair.public
+    };
+  } */
 
   deriveAccountReceive (index) {
     return this.deriveAddress(index);
