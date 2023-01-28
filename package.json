@@ -135,8 +135,7 @@
     "jsdoc-to-markdown": "7.1.1",
     "json-to-dot": "1.1.0",
     "license-checker": "25.0.1",
-    "mocha": "10.0.0",
-    "node2nix": "1.11.0"
+    "mocha": "10.0.0"
   },
   "c8": {
     "exclude": [
