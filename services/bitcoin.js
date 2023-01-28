@@ -358,7 +358,8 @@ class Bitcoin extends Service {
     ]).catch((exception) => {
       self.emit('error', `Unable to synchronize: ${exception}`);
     }).then((output) => {
-      self.emit('log', `Tick output: ${JSON.stringify(output, null, '  ')}`);
+      // self.emit('log', `Tick output: ${JSON.stringify(output, null, '  ')}`);
+
       const beat = {
         clock: self._clock,
         created: now,
@@ -1800,9 +1801,21 @@ class Bitcoin extends Service {
     // Start nodes
     if (this.settings.fullnode) await this._startLocalNode();
     if (this.settings.zmq) await this._startZMQ();
+
+    // Handle RPC mode
     if (this.settings.mode === 'rpc') {
-      if (!this.settings.authority) return this.emit('error', 'Error: No authority specified.  To use an RPC anchor, provide the "authority" parameter.');
-      const provider = new URL(this.settings.authority);
+      // If deprecated setting `authority` is provided, compose settings
+      if (this.settings.authority) {
+        const url = new URL(this.settings.authority);
+
+        // Assign all parameters
+        this.settings.username = url.username;
+        this.settings.password = url.password;
+        this.settings.host = url.host;
+        this.settings.port = url.port;
+      }
+
+      const provider = new URL(`https://${this.settings.username}:${this.settings.password}@${this.settings.host}:${this.settings.port}`);
       const config = {
         host: provider.hostname,
         port: provider.port
