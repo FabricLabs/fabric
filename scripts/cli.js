@@ -23,6 +23,7 @@ const Environment = require('../types/environment');
 const OP_START = require('../contracts/node');
 const OP_CHAT = require('../contracts/chat');
 const OP_EXCHANGE = require('../contracts/exchange');
+const OP_GAME = require('../contracts/game');
 const OP_MOUNT = require('../contracts/mount');
 const OP_SETUP = require('../contracts/setup');
 const OP_TEST = require('../contracts/test');
@@ -31,6 +32,7 @@ const COMMANDS = {
   'START': OP_START,
   'CHAT': OP_CHAT,
   'EXCHANGE': OP_EXCHANGE,
+  'GAME': OP_GAME,
   'MOUNT': OP_MOUNT,
   'SETUP': OP_SETUP,
   'TEST': OP_TEST
@@ -84,6 +86,12 @@ async function main (input = {}) {
   program.command('exchange')
     .description('Runs a local exchange node.')
     .action(COMMANDS['EXCHANGE'].bind({ environment }));
+
+  // FABRIC GAME
+  // Load the game.
+  program.command('game')
+    .description('Launches the Fabric ARG.')
+    .action(COMMANDS['GAME'].bind({ environment }));
 
   // FABRIC TEST
   // Run the test chain.
