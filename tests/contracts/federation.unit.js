@@ -20,17 +20,15 @@ describe('@fabric/core/types/federation', function () {
       assert.ok(federation.id);
     });
 
-    describe('start', function () {
-      it('can start the test federation', async function () {
-        const federation = new Federation(settings);
-        await federation.start();
+    it('can start the test federation', async function () {
+      const federation = new Federation(settings);
+      await federation.start();
 
-        assert.ok(federation);
-        assert.ok(federation.id);
-        assert.strictEqual(federation.status, 'STARTED');
+      assert.ok(federation);
+      assert.ok(federation.id);
+      assert.strictEqual(federation.status, 'STARTED');
 
-        await federation.stop();
-      });
+      await federation.stop();
     });
   });
 });
