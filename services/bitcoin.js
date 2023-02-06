@@ -277,7 +277,7 @@ class Bitcoin extends Service {
   }
 
   set height (value) {
-    this._state.height = parseInt(value);
+    this._state.content.height = parseInt(value);
     this.commit();
   }
 
@@ -1073,7 +1073,7 @@ class Bitcoin extends Service {
 
   async _requestBestBlockHash () {
     const hash = await this._makeRPCRequest('getbestblockhash', []);
-    this.emit('debug', `Got best block hash: ${hash}`);
+    // this.emit('debug', `Got best block hash: ${hash}`);
     return hash;
   }
 
@@ -1139,7 +1139,7 @@ class Bitcoin extends Service {
 
   async _syncChainHeight () {
     this.height = await this._makeRPCRequest('getblockcount', []);
-    this.emit('debug', `Got height:`, this.height);
+    // this.emit('debug', `Got height:`, this.height);
     return this.height;
   }
 
@@ -1678,7 +1678,7 @@ class Bitcoin extends Service {
     let before = 0;
 
     for (let i = 0; i <= this.height; i++) {
-      this.emit('debug', `Getting block headers: ${i}`);
+      this.emit('debug', `Getting block headers: ${i} of ${this.height}`);
 
       const now = Date.now();
       const progress = now - start;
@@ -1813,9 +1813,11 @@ class Bitcoin extends Service {
         this.settings.password = url.password;
         this.settings.host = url.host;
         this.settings.port = url.port;
+        this.settings.secure = (url.protocol === 'https:') ? true : false;
       }
 
-      const provider = new URL(`https://${this.settings.username}:${this.settings.password}@${this.settings.host}:${this.settings.port}`);
+      const authority = `http${(this.settings.secure == true) ? 's': ''}://${this.settings.username}:${this.settings.password}@${this.settings.host}:${this.settings.port}`;
+      const provider = new URL(authority);
       const config = {
         host: provider.hostname,
         port: provider.port

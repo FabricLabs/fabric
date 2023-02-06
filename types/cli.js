@@ -59,16 +59,16 @@ class CLI extends App {
     this.settings = merge({
       debug: true,
       listen: false,
-      peering: false, // set to true to start Peer
+      peering: true, // set to true to start Peer
       render: true,
       services: [],
       network: 'regtest',
       interval: 1000,
       bitcoin: {
-        authority: 'http://localhost:8443',
         mode: 'rpc', // TODO: change name of mode to `rest`?
         host: 'localhost',
-        port: 8443
+        port: 8443,
+        secure: false
       },
       lightning: {
         mode: 'socket',

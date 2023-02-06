@@ -104,6 +104,7 @@ class Peer extends Service {
     };
 
     this._state = {
+      content: {},
       peers: {},
       chains: {},
       connections: {},

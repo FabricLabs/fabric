@@ -5,11 +5,11 @@ const playnet = require('../settings/playnet');
 const local = require('../settings/local');
 
 const settings = {
-  authority: local.authority,
   listen: local.listen,
   // sideload playnet
   peers: [].concat(playnet.peers),
   port: process.env.FABRIC_PORT || 7777,
+  bitcoin: local.bitcoin,
   lightning: local.lightning,
   render: local.render,
   services: local.services,
