@@ -9,6 +9,11 @@
 ./constants.js:const P2P_TRANSACTION = 0x00000039; // TODO: select w/ no overlap
 ./constants.js:// TODO: should be 0x02 for Bitcoin P2P
 ./snippets/specification.md:// TODO: migrate script
+./settings/local.js:// TODO: test env variables with OP_TEST
+./settings/local.js:  // TODO: replace with `key` Object({ seed, xprv, xpub })
+./settings/local.js:  // TODO: derive from `key` property
+./settings/local.js:  // TODO: regtest, playnet, signet, testnet, mainnet (in order)
+./settings/local.js:  // TODO: test `true`
 ./settings/default.json:      "@comment": "// TODO: remove routes, add by default",
 ./SETTINGS.md:### WARNING: TODO
 ./types/witness.js:      // TODO: assign R coordinate
@@ -53,7 +58,7 @@
 ./types/service.js:      version: 0 // TODO: change to 1 for 0.1.0
 ./types/service.js:    // TODO: promise
 ./types/service.js:   * TODO: move to @fabric/http/types/spa
-./types/service.js:    // TODO: remove async, use local state instead
+./types/service.js:    // TODO: remove JSON parser here — only needed for verification
 ./types/service.js:    // TODO: parse JSON types in @fabric/core/types/message
 ./types/service.js:        // TODO: transaction log
 ./types/service.js:    // TODO: re-re-evaluate a better approach... oh how I long for Object.observe!
@@ -171,6 +176,7 @@
 ./types/cli.js:const pointer = require('json-pointer'); // TODO: move uses to App
 ./types/cli.js:const monitor = require('fast-json-patch'); // TODO: move uses to App
 ./types/cli.js:// TODO: use Jade to render pre-registered components
+./types/cli.js:        mode: 'rpc', // TODO: change name of mode to `rest`?
 ./types/cli.js:    // TODO: ZMQ
 ./types/cli.js:    // TODO: enable
 ./types/cli.js:    // TODO: create payment channel (@fabric/core/types/channel)
@@ -290,8 +296,17 @@
 ./examples/swarm.js:  // TODO: create entities on swarm instance
 ./examples/oracle.html:          <p>TODO: use bottom panel for inline execution (<em>a la</em> “Run this Code &raquo;”)</p>
 ./examples/oracle.js:// TODO: use bottom panel for inline execution (_a la_ "Run this Code &raquo;")
+./examples/examples/swarm.html:              <p>TODO: create entities on seed node
+./examples/examples/swarm.html:TODO: receive entities from seed node
+./examples/examples/swarm.html:TODO: create entities on swarm instance</p>
+./examples/examples/bitcoin.html:              <p>TODO: import these into core process logic
+./examples/examples/oracle.html:              <p>TODO: use bottom panel for inline execution (<em>a la</em> “Run this Code &raquo;”)</p>
+./examples/examples/service.html:              <p>TODO: revert to OPTIONS (this was a temporary fix for an NGINX bug)</p>
+./examples/examples/game.html:              <p>TODO: use fabric call
+./examples/examples/app.html:              <p>TODO: document defer as trust(authority) with Remote class</p>
 ./examples/service.html:          <p>TODO: revert to OPTIONS (this was a temporary fix for an NGINX bug)</p>
 ./examples/game.html:          <p>TODO: use fabric call
+./examples/app.js:  // TODO: document defer as trust(authority) with Remote class
 ./scripts/lightning-demo.js:    // TODO: import configs from Polar
 ./scripts/example.js:// TODO: generate signature, hash of function definition (the "type")
 ./scripts/schemas.js:    // TODO: here for Eric's review.

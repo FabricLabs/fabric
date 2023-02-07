@@ -23,13 +23,13 @@ The **Fabric Message Format** consists of two (2) components; the message header
 The base list of Fabric Message Types is as follows:
 
 - `GENERIC` — decimal `128` (`0000080`)
-- `ANNOUNCE` — decimal `256` (`0000100`)
 - `STATE` — decimal `192` (`00000C0`)
 - `DELTA` — decimal `193` (`00000C1`)
+- `ACK` — decimal `200` (`00000C8`) (may change)
 - `LOCK` — decimal `232` (`00000E8`)
-- `ACK` — decimal `200` (`00000C8`)
-- `ASK` — decimal `402` (`0000192`)
+- `ANNOUNCE` — decimal `256` (`0000100`)
 - `BID` — decimal `300` (`0000012C`)
+- `ASK` — decimal `402` (`0000192`)
 - `CLOSE` — decimal `512` (`0000200`)
 
 #### The `GENERIC` Message Type

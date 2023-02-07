@@ -134,7 +134,7 @@ like transaction data and requests for computation (RFCs).  Services offer up
 one or more "Resources" as described above, emitting events for any listening consumer,
 or sometimes, for connectivity with external networks (like the World Wide Web).
 
-The `Service` class can be extended to add Fabric support to your favorite project.  
+The `Service` class can be extended to add Fabric support to your favorite project.
 
 ##### An Example Fabric Service
 ```js
