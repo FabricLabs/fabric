@@ -3,6 +3,8 @@ There's a lot of information to cover with regards to building decentralized
 applications, so grab a coffee ☕ and settle in.
 
 ## Quick Start
+See also [`QUICKSTART.md`][quickstart-guide] for up-to-date instructions.
+
 0. `nvm use 16.17.1` (you can get `nvm` from [nvm.sh][nvm-official])
 1. `npm install -g @fabric/core` to add `fabric` to your path
 2. (optional) `fabric setup` to set up your environment (generates a new master key)
@@ -228,3 +230,5 @@ console.log('Purported Signature:', message);
 - [ ] Write Markdown CMS
 - [ ] Remove TODOs
 - [ ] Commit and Publish
+
+[quickstart-guide]: QUICKSTART.md

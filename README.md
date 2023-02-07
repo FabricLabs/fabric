@@ -28,6 +28,17 @@ Fork and clone [the Fabric GitHub repository][fabric-github] and launch a local
 web server with `npm run examples` to view the examples, or `npm run docs` once
 you're ready to integrate Fabric into your application.
 
+### Compiling from Source
+See also [`BUILD.md`][build-guide] for a full guide, including Bitcoin and Lightning.
+
+```
+git clone git@github.com:FabricLabs/fabric.git
+cd fabric
+git checkout feature/v0.1.0-RC1
+npm install -g
+npm run build
+```
+
 ## Available Commands
 - `npm run cli` provides a direct command-line interface to the Fabric network.
 - `npm run dev` serves a developer interface over localhost HTTP.
