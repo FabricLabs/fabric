@@ -58,6 +58,12 @@ class Peer extends Service {
 
     this.name = 'Peer';
     this.settings = merge({
+      constraints: {
+        peers: {
+          max: 32,
+          shuffle: 8
+        }
+      },
       interface: '0.0.0.0',
       network: 'regtest',
       networking: true,
@@ -93,6 +99,7 @@ class Peer extends Service {
 
     // Internal properties
     this.chains = {};
+    this.candidates = [];
     this.connections = {};
     this.peers = {};
     this.memory = {};
@@ -248,6 +255,17 @@ class Peer extends Service {
     });
   }
 
+  _fillPeerSlots () {
+    if (this.connections.length >= this.settings.constraints.peers.max) return;
+    const openCount = this.settings.constraints.peers.max - Object.keys(this.connections).length;
+    for (let i = 0; i < openCount; i++) {
+      if (!this.candidates.length) continue;
+      const candidate = this.candidates.shift();
+      // this.emit('debug', `Filling peer slot ${i} of ${openCount} (max ${this.settings.constraints.peers.max}) with candidate: ${JSON.stringify(candidate, null, '  ')}`);
+      this._connect(`${candidate.object.host}:${candidate.object.port}`);
+    }
+  }
+
   _handleFabricMessage (buffer, origin = null, socket = null) {
     // this.emit('debug', `Peer handler decrypted data: ${buffer.toString('hex')}`);
     const hash = crypto.createHash('sha256').update(buffer).digest('hex');
@@ -319,11 +337,35 @@ class Peer extends Service {
         this.emit('debug', `Handling session open: ${JSON.stringify(message.object)}`);
         this.peers[origin.name] = { id: message.object.counterparty, name: origin.name, address: origin };
         this.emit('peer', this.peers[origin.name]);
+
+        const PACKET_PEER_ANNOUNCE = Message.fromVector(['P2P_PEER_ANNOUNCE', JSON.stringify({
+          type: 'P2P_PEER_ANNOUNCE',
+          object: {
+            host: this._externalIP,
+            port: this.settings.port
+          }
+        })]);
+        const announcement = PACKET_PEER_ANNOUNCE.toBuffer();
+        // this.emit('debug', `Announcing peer: ${announcement.toString('utf8')}`);
+        this.connections[origin.name]._writeFabric(announcement, socket);
         break;
       case 'P2P_CHAT_MESSAGE':
         this.emit('chat', message);
         const msg = Message.fromVector(['ChatMessage', JSON.stringify(message)]);
         this.relayFrom(origin.name, msg);
+        break;
+      case 'P2P_STATE_ANNOUNCE':
+        const state = new Actor(message.object.state);
+        this.emit('debug', `state_announce <Generic>${JSON.stringify(message.object || '')} ${state.toGenericMessage()}`);
+        break;
+      case 'P2P_PEER_ANNOUNCE':
+        this.emit('debug', `peer_announce <Generic>${JSON.stringify(message.object || '')}`);
+        const candidate = new Actor(message.object);
+        this.candidates.push(candidate.toGenericMessage());
+        this._fillPeerSlots();
+
+        const announce = Message.fromVector(['PeerAnnounce', JSON.stringify(message)]);
+        this.relayFrom(origin.name, announce);
         break;
     }
   }
