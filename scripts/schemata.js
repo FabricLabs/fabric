@@ -2,15 +2,25 @@
 
 const fs = require('fs');
 
-fs.readdirSync(__dirname + '/../schemata').forEach(function (file) {
-  if (file.match(/\.json$/) !== null && file !== 'index.js') {
-    const name = file
-      .replace('.json', '')
-      .replace('.js', '');
+async function main () {
+  const schemata = {};
 
-    console.log('schema name:', name);
-    // ... do stuff with the schemas?
-    // or whatever else.
-    // TODO: here for Eric's review.
-  }
+  fs.readdirSync(__dirname + '/../schemata').forEach(function (file) {
+    if (file.match(/\.json$/) !== null && file !== 'index.js') {
+      const name = file
+        .replace('.json', '')
+        .replace('.js', '');
+
+      schemata[name] = null;
+      // ... do stuff with the schemas?
+      // or whatever else.
+      // TODO: here for Eric's review.
+    }
+  });
+
+  return { schemata };
+}
+
+main().then((output) => {
+  console.log('Schemata:', output);
 });

@@ -57,7 +57,7 @@ class Peer extends Service {
 
     this.name = 'Peer';
     this.settings = merge({
-      address: '0.0.0.0',
+      interface: '0.0.0.0',
       network: 'regtest',
       networking: true,
       listen: true,
@@ -1204,7 +1204,7 @@ class Peer extends Service {
   async listen () {
     const self = this;
     const promise = new Promise((resolve, reject) => {
-      self.server.listen(self.port, self.address, function listenComplete (error) {
+      self.server.listen(self.port, self.interface, function listenComplete (error) {
         if (error) return reject(error);
 
         const details = self.server.address();
