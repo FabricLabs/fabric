@@ -20,11 +20,12 @@ const {
 const net = require('net');
 const crypto = require('crypto');
 const stream = require('stream');
+const manager = require('fast-json-patch');
 const noise = require('noise-protocol-stream');
 
 // Dependencies
 const merge = require('lodash.merge');
-// const upnp = require('nat-upnp');
+const upnp = require('nat-upnp');
 
 // Fabric Types
 const Actor = require('./actor');
@@ -100,6 +101,7 @@ class Peer extends Service {
 
     // Internal Stack Machine
     this.machine = new Machine();
+    this.observer = null;
 
     this.meta = {
       messages: {
@@ -109,7 +111,9 @@ class Peer extends Service {
     };
 
     this._state = {
-      content: {},
+      content: {
+        messages: {}
+      },
       peers: {},
       chains: {},
       connections: {},
@@ -153,13 +157,39 @@ class Peer extends Service {
     this._state.content = value;
   }
 
-  relayFrom (origin, message) {
+  commit () {
+    const state = new Actor(this.state);
+
+    if (this.observer) {
+      try {
+        const patches = manager.generate(this.observer);
+
+        if (patches.length) {
+          this.history.push(patches);
+          this.emit('changes', patches);
+          // @deprecated
+          this.emit('patches', patches);
+          this.emit('commit', {
+            type: 'FabricCommit',
+            object: {
+              delta: patches,
+              snapshot: state.toGenericMessage().object
+            }
+          });
+        }
+      } catch (E) {
+        console.error('Could not generate patches:', E);
+      }
+    }
+  }
+
+  relayFrom (origin, message, socket = null) {
     // this.emit('debug', `Relaying message from ${origin}: ${message}`);
     for (const id in this.peers) {
       if (id === origin) continue;
       // this.emit('debug', `Relaying message: ${message}`);
       // this.emit('debug', `Relaying to peer: ${id}`);
-      this.connections[id]._writeFabric(message.toBuffer());
+      this.connections[id]._writeFabric(message.toBuffer(), socket);
     }
   }
 
@@ -179,9 +209,12 @@ class Peer extends Service {
 
     // Start stream
     client.encrypt.pipe(socket).pipe(client.decrypt);
+    // TODO: output stream
+    // client.decrypt.pipe(this.stream);
 
+    // Handle trusted Fabric messages
     client.decrypt.on('data', (data) => {
-      this._handleFabricMessage(data, { name: target });
+      this._handleFabricMessage(data, { name: target }, client);
     });
 
     // Start handshake
@@ -195,6 +228,7 @@ class Peer extends Service {
       }
     })];
 
+    // Create offer message
     const P2P_SESSION_OFFER = Message.fromVector(vector);
     const message = P2P_SESSION_OFFER.toBuffer();
     this.emit('debug', `session_offer ${P2P_SESSION_OFFER} ${message.toString('hex')}`);
@@ -204,7 +238,7 @@ class Peer extends Service {
 
     // Map write function
     socket._writeFabric = (msg) => {
-      client.encrypt.write(msg);
+      this._writeFabric(msg, client);
     };
 
     this.connections[target] = socket;
@@ -214,10 +248,20 @@ class Peer extends Service {
     });
   }
 
-  _handleFabricMessage (buffer, origin = null) {
+  _handleFabricMessage (buffer, origin = null, socket = null) {
     // this.emit('debug', `Peer handler decrypted data: ${buffer.toString('hex')}`);
+    const hash = crypto.createHash('sha256').update(buffer).digest('hex');
     const message = Message.fromBuffer(buffer);
     // this.emit('debug', `Got Fabric message: ${message}`);
+
+    // Have we seen this message before?
+    if (this._state.content.messages[hash]) {
+      // this.emit('debug', `Duplicate message: ${hash}`);
+      return;
+    }
+
+    this._state.content.messages[hash] = buffer.toString('hex');
+    // this.emit('debug', `Stored message: [${hash}] <${buffer.byteLength} bytes> ${buffer.toString('hex')}`);
 
     switch (message.type) {
       default:
@@ -229,16 +273,18 @@ class Peer extends Service {
         // Parse JSON body
         try {
           content = JSON.parse(message.data);
-          this._handleGenericMessage(content, origin);
+          this._handleGenericMessage(content, origin, socket);
         } catch (exception) {
           this.emit('error', `Broken content body: ${exception}`);
         }
 
         break;
     }
+
+    this.commit();
   }
 
-  _handleGenericMessage (message, origin = null) {
+  _handleGenericMessage (message, origin = null, socket = null) {
     // this.emit('debug', `Generic Message: ${JSON.stringify(message)}`);
     switch (message.type) {
       default:
@@ -267,7 +313,7 @@ class Peer extends Service {
         const PACKET_SESSION_START = Message.fromVector(vector);
         const reply = PACKET_SESSION_START.toBuffer();
         this.emit('debug', `session_start ${PACKET_SESSION_START} ${reply.toString('hex')}`);
-        this.connections[origin.name]._writeFabric(reply);
+        this.connections[origin.name]._writeFabric(reply, socket);
         break;
       case 'P2P_SESSION_OPEN':
         this.emit('debug', `Handling session open: ${JSON.stringify(message.object)}`);
@@ -301,13 +347,16 @@ class Peer extends Service {
       // this.emit('debug', `Peer encrypt handshake with remote identity: ${counterparty.id}`);
     });
 
-    // Reading and writing will only work after the connection is accepted
+    handler.decrypt.on('close', (data) => {
+      this.emit('debug', `Peer decrypt close: ${data}`);
+    });
+
     handler.decrypt.on('data', (data) => {
       this._handleFabricMessage(data, { name: target });
     });
 
     socket._writeFabric = (msg) => {
-      handler.encrypt.write(msg);
+      this._writeFabric(msg, handler);
     };
 
     this.connections[target] = socket;
@@ -326,6 +375,13 @@ class Peer extends Service {
     }
   }
 
+  _writeFabric (msg, stream) {
+    const hash = crypto.createHash('sha256').update(msg).digest('hex');
+    this._state.content.messages[hash] = msg.toString('hex');
+    this.commit();
+    if (stream) stream.encrypt.write(msg);
+  }
+
   /**
    * Start the Peer.
    */
@@ -335,7 +391,38 @@ class Peer extends Service {
     this.emit('log', 'Peer starting...');
 
     if (this.settings.upnp) {
+      // TODO: convert callbacks to promises
+      this.emit('log', 'UPNP starting...');
       this.upnp = upnp.createClient();
+      this.upnp.portMapping({
+        description: '@fabric/core#playnet',
+        public: this.settings.port,
+        private: this.settings.port,
+        ttl: 10
+      }, (error) => {
+        if (error) {
+          this.emit('warning', 'Could not create UPNP mapping.  Other nodes may fail when connecting to this node.');
+        } else {
+          this.upnp.getMappings((error, results) => {
+            const mapping = results.find((x) => x.private.port === this.settings.port );
+            // this.emit('debug', `UPNP mappings: ${JSON.stringify(results, null, '  ')}`);
+            // this.emit('debug', `Our rule: ${JSON.stringify(mapping, null, '  ')}`);
+
+            this.upnp.externalIp((error, ip) => {
+              if (error) {
+                this.emit('warning', `Could not get external IP: ${error}`);
+              } else {
+                // this.emit('debug', `UPNP external: ${JSON.stringify(ip, null, '  ')}`);
+                this._externalIP = ip;
+                this.emit('upnp', {
+                  host: ip,
+                  port: this.settings.port
+                });
+              }
+            });
+          });
+        }
+      });
     }
 
     this.emit('log', 'Wallet starting...');
@@ -362,6 +449,12 @@ class Peer extends Service {
       for (const candidate of this.settings.peers) {
         this._connect(candidate);
       }
+    }
+
+    try {
+      this.observer = manager.observe(this._state.content);
+    } catch (exception) {
+      this.emit('error', `Could not observe state: ${exception}`);
     }
 
     this.emit('ready', {
@@ -1142,7 +1235,7 @@ class Peer extends Service {
     }
   }
 
-  broadcast (message) {
+  broadcastOld (message) {
     // Coerce to Object
     if (message instanceof Message) {
       message = message.toObject();

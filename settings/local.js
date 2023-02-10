@@ -53,6 +53,7 @@ module.exports = {
     // 'lightning',
     // 'matrix'
   ],
+  upnp: true,
   // Log Level
   verbosity: 3 // STDOUT
 };

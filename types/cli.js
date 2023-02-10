@@ -98,7 +98,12 @@ class CLI extends App {
         unconfirmed: 0,
       },
       content: {
-        actors: {}
+        actors: {},
+        bitcoin: {
+          best: null
+        },
+        documents: {},
+        messages: {}
       },
       contracts: {},
       clock: 0
@@ -134,6 +139,7 @@ class CLI extends App {
       interface: this.settings.interface,
       port: this.settings.port,
       peers: this.settings.peers,
+      upnp: this.settings.upnp,
       key: this.identity.settings
     });
     return this;
@@ -227,7 +233,10 @@ class CLI extends App {
     this.node.on('error', this._handlePeerError.bind(this));
     this.node.on('warning', this._handlePeerWarning.bind(this));
     this.node.on('message', this._handlePeerMessage.bind(this));
+    this.node.on('changes', this._handlePeerChanges.bind(this));
+    this.node.on('commit', this._handlePeerCommit.bind(this));
     this.node.on('chat', this._handlePeerChat.bind(this));
+    this.node.on('upnp', this._handlePeerUPNP.bind(this));
 
     // ## Raw Connections
     this.node.on('connection', this._handleConnection.bind(this));
@@ -331,7 +340,7 @@ class CLI extends App {
     let result = null;
 
     try {
-      result = pointer.get(this._state, path);
+      result = pointer.get(this._state.content, path);
     } catch (exception) {
       this._appendError(`Could not retrieve path "${path}": ${exception}`);
     }
@@ -500,6 +509,7 @@ class CLI extends App {
     const actor = new Actor(content);
     this._appendMessage(`File contents (${content.length} bytes):\n---${content}\n---\nDocument ID: ${actor.id}`);
     this.documents[actor.id] = content;
+    this._state.content.documents[actor.id] = content.toString('hex');
   }
 
   async _handlePublishCommand (params) {
@@ -543,6 +553,8 @@ class CLI extends App {
 
   async _handleBitcoinSync (sync) {
     this._appendMessage(`Bitcoin service emitted sync: ${JSON.stringify(sync)}`);
+    this._state.content.bitcoin.best = sync.best;
+    this.commit();
   }
 
   async _handleBitcoinBlock (block) {
@@ -742,8 +754,22 @@ class CLI extends App {
     this._appendMessage(`[NODE] ${message}`);
   }
 
+  async _handlePeerChanges (changes) {
+    // this._appendDebug(`[NODE] [CHANGES] ${JSON.stringify(changes)}`);
+    this._applyChanges(changes);
+    this.commit();
+  }
+
+  async _handlePeerCommit (commit) {
+    // this._appendDebug(`[NODE] [COMMIT] ${JSON.stringify(commit)}`);
+  }
+
   async _handlePeerChat (chat) {
     this._appendMessage(`[@${chat.actor.id}]: ${chat.object.content}`);
+  }
+
+  async _handlePeerUPNP (upnp) {
+    this._appendDebug(`[UPNP] ${JSON.stringify(upnp)}`);
   }
 
   async _handlePeerMessage (message) {
@@ -1069,7 +1095,7 @@ class CLI extends App {
       this.elements['chainTip'].setContent(`${stats.bestblockhash}`);
       this.elements['unconfirmedValue'].setContent(`${bonded}`);
       this.elements['bondedValue'].setContent(`${bonded}`);
-      this.elements['progressStatus'].setContent(`${progress} of ${height} (${((progress / height) * 100).toPrecision(2)} %)`);
+      this.elements['progressStatus'].setContent(`${progress - 1} of ${height} (${(((progress - 1) / height) * 100)} %)`);
 
       this.screen.render();
     } catch (exception) {
