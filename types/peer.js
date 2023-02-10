@@ -177,6 +177,7 @@ class Peer extends Service {
       this.emit('error', `Socket error: ${error}`);
     });
 
+    // Start stream
     client.encrypt.pipe(socket).pipe(client.decrypt);
 
     client.decrypt.on('data', (data) => {
@@ -270,7 +271,7 @@ class Peer extends Service {
         break;
       case 'P2P_SESSION_OPEN':
         this.emit('debug', `Handling session open: ${JSON.stringify(message.object)}`);
-        this.peers[origin.name] = { id: message.object.counterparty, address: origin };
+        this.peers[origin.name] = { id: message.object.counterparty, name: origin.name, address: origin };
         this.emit('peer', this.peers[origin.name]);
         break;
       case 'P2P_CHAT_MESSAGE':

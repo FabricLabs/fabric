@@ -74,27 +74,27 @@ class Node extends Service {
     });
 
     source.on('info', function (info) {
-      console.log(`[FABRIC:INFO] ${extra}`, info);
+      self.emit('info', `${extra}${info}`);
     });
 
     source.on('log', function (log) {
-      self.emit('log', `[FABRIC:LOG] ${extra}${log}`);
+      self.emit('log', `${extra}${log}`);
     });
 
     source.on('warning', function (warn) {
-      console.warn(`[FABRIC:WARNING] ${extra}`, warn);
+      self.emit('warning', `[FABRIC:WARNING] ${extra}${warn}`);
     });
 
     source.on('error', function (error) {
-      console.error(`[FABRIC:ERROR] ${extra}`, error);
+      self.emit('error', `[FABRIC:ERROR] ${extra}${error}`);
     });
 
     source.on('exception', function (error) {
-      console.error(`[FABRIC:EXCEPTION] ${extra}`, error);
+      self.emit('error', `[FABRIC:EXCEPTION] ${extra}${error}`);
     });
 
     source.on('message', function (msg) {
-      console.log(`[FABRIC:MESSAGE] ${extra}`, msg);
+      self.emit('message', `[FABRIC:MESSAGE] ${extra}${msg}`);
     });
 
     source.on('commit', function (msg) {
@@ -102,7 +102,7 @@ class Node extends Service {
     });
 
     source.on('ready', function () {
-      console.log(`[FABRIC] ${extra}`, `<${source.constructor.name}>`, 'Claimed ready!');
+      self.emit('log', `[FABRIC] ${extra} <${source.constructor.name}> Claimed ready!`);
     });
   }
 
