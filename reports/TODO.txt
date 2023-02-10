@@ -10,8 +10,6 @@
 ./constants.js:// TODO: should be 0x02 for Bitcoin P2P
 ./snippets/specification.md:// TODO: migrate script
 ./settings/local.js:// TODO: test env variables with OP_TEST
-./settings/local.js:  // TODO: replace with `key` Object({ seed, xprv, xpub })
-./settings/local.js:  // TODO: derive from `key` property
 ./settings/local.js:  // TODO: regtest, playnet, signet, testnet, mainnet (in order)
 ./settings/local.js:  // TODO: test `true`
 ./settings/default.json:      "@comment": "// TODO: remove routes, add by default",
@@ -195,6 +193,9 @@
 ./types/peer.js:        // TODO: parse as encrypted data
 ./types/peer.js:    // TODO: switch to child pubkey
 ./types/peer.js:    // TODO: use Proxy
+./types/peer.js:    // TODO: output stream
+./types/peer.js:        // TODO: remove this assumption (validate above)
+./types/peer.js:      // TODO: convert callbacks to promises
 ./types/peer.js:          // TODO: notify remote peer of closure
 ./types/peer.js:  // TODO: use in _connect
 ./types/peer.js:    // TODO: evaluate trust model
@@ -203,11 +204,6 @@
 ./types/peer.js:    // TODO re-enable (disabled to reduce spammy messaging)
 ./types/peer.js:    // TODO: re-evaluate use of IdentityRequest
 ./types/peer.js:    // TODO: actually decrypt packet
-./types/peer.js:    // TODO: refactor to use local functions + specific unbindings
-./types/peer.js:      // TODO: consolidate with this._handleConnection
-./types/peer.js:        // TODO: consider using `process.nextTick` to only clean up after event?
-./types/peer.js:      // TODO: unify as _dataHandler
-./types/peer.js:      // TODO: replace with handshake
 ./types/peer.js:    // TODO: use known key
 ./types/peer.js:    // TODO: document peer announcement
 ./types/peer.js:    // TODO: eliminate use of JSON in messaging
@@ -220,10 +216,6 @@
 ./types/peer.js:          // TODO: use message type for next phase of session (i.e., NOISE)
 ./types/peer.js:        // TODO: test protocol flow (i.e., understand StateRoot)
 ./types/peer.js:        // TODO: use Fabric.Script / Fabric.Machine
-./types/peer.js:      // TODO: select type byte for state updates
-./types/peer.js:      // TODO: require `Message` type before broadcast (or, preferrably, cast as necessary)
-./types/peer.js:      // TODO: select type byte for state updates
-./types/peer.js:      // TODO: require `Message` type before broadcast (or, preferrably, cast as necessary)
 ./types/peer.js:      // TODO: select type byte for state updates
 ./types/entity.js:    // TODO: use getters/setters to restrict access to these elements
 ./types/entity.js:        // TODO: write up longer-form explanation as to why we use an Array here
@@ -263,6 +255,7 @@
 ./contracts/setup.js:  // TODO: replicate this program in C / ASM
 ./contracts/setup.js:    // TODO: remove from log output...
 ./contracts/chat.js:  const chat = new CLI(settings); // TODO: this.settings
+./contracts/chat.js:  // TODO: remove, re-work Peer and Wallet key import in CLI
 ./contracts/chat.js:  // TODO: reconcile API wth @fabric/doorman as appears at: https://github.com/FabricLabs/doorman
 ./tests/fabric.interface.js:      // TODO: remove this case / rework messages
 ./tests/fabric.tree.js:      assert.strictEqual(tree.root.toString('hex'), ''); // TODO: wat?
