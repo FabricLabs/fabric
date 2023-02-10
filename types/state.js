@@ -466,11 +466,6 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
     this['@commit'] = this.commit();
 
     return this['@output'].toString('utf8');
-
-    switch (this['@type']) {
-      default:
-        return this['@output'].toString('utf8');
-    }
   }
 }
 

@@ -1156,11 +1156,13 @@ class Service extends Actor {
 
   async _startAllServices () {
     if (!this.services) return this.emit('warning', 'Tried to start subservices, but none existed.');
+    this.emit('debug', `Service entries: ${Object.keys(this.services)}`);
+
     // Start all Services
     for (const [name, service] of Object.entries(this.services)) {
       // TODO: re-evaluate inclusion on Service itself
       if (this.settings.services && this.settings.services.includes(name)) {
-        this.emit('debug', `Starting service "${name}" (with trust)`);
+        this.emit('debug', `Starting service "${name}" (with trust)...`);
         // TODO: evaluate @fabric/core/types/store
         // TODO: isomorphic @fabric/core/types/store
         // await this.services[name]._bindStore(this.store);
