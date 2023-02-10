@@ -717,7 +717,7 @@ class CLI extends App {
 
   async _handleNodeReady (node) {
     if (this.settings.render) {
-      this.elements['identityString'].setContent(node.id);
+      // this.elements['identityString'].setContent(node.id);
     }
 
     this.emit('identity', {

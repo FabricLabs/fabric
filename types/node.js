@@ -62,15 +62,15 @@ class Node extends Service {
     });
 
     source.on('connections:open', function (data) {
-      console.log('[FABRIC:NETWORK]', 'connection open:', data);
+      self.emit('log', `connection open: ${JSON.stringify(data)}`);
     });
 
     source.on('connections:close', function (data) {
-      console.log('[FABRIC:NETWORK]', 'connection close:', data);
+      self.emit('log', `connection close: ${JSON.stringify(data)}`);
     });
 
     source.on('chat', function (chat) {
-      self.emit('chat', `[FABRIC:CHAT] ${chat}`);
+      self.emit('chat', chat);
     });
 
     source.on('info', function (info) {
