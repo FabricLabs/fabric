@@ -1,29 +1,21 @@
 'use strict';
 
-// Environment
-const Environment = require('../types/environment');
-const environment = new Environment({ namespace: 'fabric' });
-
 // Contracts
 // TODO: test env variables with OP_TEST
 const OP_TEST = require('../contracts/test');
 
 // Settings
 module.exports = {
-  name: environment.readVariable('NAME'),
-  namespace: environment.readVariable('NAMESPACE'),
-  // TODO: replace with `key` Object({ seed, xprv, xpub })
-  seed: environment.readVariable('FABRIC_SEED'),
-  xprv: environment.readVariable('FABRIC_XPRV'),
-  xpub: environment.readVariable('FABRIC_XPUB'),
+  name: process.env['NAME'],
+  namespace: process.env['NAMESPACE'],
+  seed: process.env['FABRIC_SEED'],
+  xprv: process.env['FABRIC_XPRV'],
+  xpub: process.env['FABRIC_XPUB'],
+  port: process.env['FABRIC_PORT'],
   // Strict Functions
   functions: {
     OP_TEST: JSON.stringify(OP_TEST)
   },
-  // TODO: derive from `key` property
-  public: '0375f7cfc3fa3bc9ed621019018fca678da404a29c8dfec4350855b5ad2f0a42d7',
-  // @deprecated
-  authority: 'http://ahp7iuGhae8mooBahFaYieyaixei6too:naiRe9wo5vieFayohje5aegheenoh4ee@localhost:20444',
   // TODO: regtest, playnet, signet, testnet, mainnet (in order)
   network: 'playnet',
   // TODO: test `true`

@@ -28,6 +28,7 @@ const merge = require('lodash.merge');
 
 // Fabric Types
 const Actor = require('./actor');
+const Identity = require('./identity');
 const Key = require('./key');
 const Machine = require('./machine');
 const Message = require('./message');
@@ -35,6 +36,9 @@ const Service = require('./service');
 const Session = require('./session');
 const Reader = require('./reader');
 const Wallet = require('./wallet');
+
+// Constants
+const PROLOGUE = 'FABRIC';
 
 /**
  * An in-memory representation of a node in our network.
@@ -65,7 +69,7 @@ class Peer extends Service {
 
     // Network Internals
     this.upnp = null;
-    this.server = net.createServer(this._handleConnection.bind(this));
+    this.server = net.createServer(this._NOISESocketHandler.bind(this));
     this.stream = new stream.Transform({
       transform (chunk, encoding, callback) {
         // TODO: parse as encrypted data
@@ -73,6 +77,7 @@ class Peer extends Service {
       }
     });
 
+    this.identity = new Identity(this.settings.key);
     this.key = new Key(this.settings.key);
     this.wallet = new Wallet(this.settings.key);
 
@@ -145,7 +150,179 @@ class Peer extends Service {
   }
 
   set state (value) {
-    this._state = value;
+    this._state.content = value;
+  }
+
+  relayFrom (origin, message) {
+    // this.emit('debug', `Relaying message from ${origin}: ${message}`);
+    for (const id in this.peers) {
+      if (id === origin) continue;
+      // this.emit('debug', `Relaying message: ${message}`);
+      // this.emit('debug', `Relaying to peer: ${id}`);
+      this.connections[id]._writeFabric(message.toBuffer());
+    }
+  }
+
+  _connect (target) {
+    const url = new URL(`tcp://${target}`);
+    const socket = net.createConnection(url.port, url.hostname);
+    const client = noise({
+      initiator: true,
+      prologue: Buffer.from(PROLOGUE),
+      // privateKey: this.identity.key.private,
+      verify: this._verifyNOISE.bind(this)
+    });
+
+    socket.on('error', (error) => {
+      this.emit('error', `Socket error: ${error}`);
+    });
+
+    client.encrypt.pipe(socket).pipe(client.decrypt);
+
+    client.decrypt.on('data', (data) => {
+      this._handleFabricMessage(data, { name: target });
+    });
+
+    // Start handshake
+    const vector = ['P2P_SESSION_OFFER', JSON.stringify({
+      type: 'P2P_SESSION_OFFER',
+      actor: {
+        id: this.identity.id
+      },
+      object: {
+        challenge: crypto.randomBytes(8).toString('hex'),
+      }
+    })];
+
+    const P2P_SESSION_OFFER = Message.fromVector(vector);
+    const message = P2P_SESSION_OFFER.toBuffer();
+    this.emit('debug', `session_offer ${P2P_SESSION_OFFER} ${message.toString('hex')}`);
+
+    // Send handshake
+    client.encrypt.write(message);
+
+    // Map write function
+    socket._writeFabric = (msg) => {
+      client.encrypt.write(msg);
+    };
+
+    this.connections[target] = socket;
+    this.emit('connections:open', {
+      id: target,
+      url: url
+    });
+  }
+
+  _handleFabricMessage (buffer, origin = null) {
+    // this.emit('debug', `Peer handler decrypted data: ${buffer.toString('hex')}`);
+    const message = Message.fromBuffer(buffer);
+    // this.emit('debug', `Got Fabric message: ${message}`);
+
+    switch (message.type) {
+      default:
+        this.emit('debug', `Unhandled message type: ${message.type}`);
+        break;
+      case 'GenericMessage':
+        let content = null;
+
+        // Parse JSON body
+        try {
+          content = JSON.parse(message.data);
+          this._handleGenericMessage(content, origin);
+        } catch (exception) {
+          this.emit('error', `Broken content body: ${exception}`);
+        }
+
+        break;
+    }
+  }
+
+  _handleGenericMessage (message, origin = null) {
+    // this.emit('debug', `Generic Message: ${JSON.stringify(message)}`);
+    switch (message.type) {
+      default:
+        this.emit('debug', `Unhandled Generic Message: ${message.type}`);
+        break;
+      case 'P2P_SESSION_OFFER':
+        this.emit('debug', `Handling session offer: ${JSON.stringify(message.object)}`);
+        this.emit('debug', `Session offer origin: ${JSON.stringify(origin)}`);
+        this.emit('debug', `connections: ${JSON.stringify(Object.keys(this.connections))}`);
+
+        // Peer is valid
+        // TODO: remove this assumption (validate above)
+        this.peers[origin.name] = { id: message.actor.id, name: origin.name, address: origin.name };
+        this.emit('peer', this.peers[origin.name]);
+
+        // Send session open event
+        const vector = ['P2P_SESSION_OPEN', JSON.stringify({
+          type: 'P2P_SESSION_OPEN',
+          object: {
+            initiator: message.actor.id,
+            counterparty: this.identity.id,
+            solution: message.object.challenge
+          }
+        })];
+
+        const PACKET_SESSION_START = Message.fromVector(vector);
+        const reply = PACKET_SESSION_START.toBuffer();
+        this.emit('debug', `session_start ${PACKET_SESSION_START} ${reply.toString('hex')}`);
+        this.connections[origin.name]._writeFabric(reply);
+        break;
+      case 'P2P_SESSION_OPEN':
+        this.emit('debug', `Handling session open: ${JSON.stringify(message.object)}`);
+        this.peers[origin.name] = { id: message.object.counterparty, address: origin };
+        this.emit('peer', this.peers[origin.name]);
+        break;
+      case 'P2P_CHAT_MESSAGE':
+        this.emit('chat', message);
+        const msg = Message.fromVector(['ChatMessage', JSON.stringify(message)]);
+        this.relayFrom(origin.name, msg);
+        break;
+    }
+  }
+
+  _NOISESocketHandler (socket) {
+    const target = `${socket.remoteAddress}:${socket.remotePort}`;
+    const url = `tcp://${target}`;
+    const handler = noise({
+      prologue: Buffer.from(PROLOGUE),
+      // privateKey: this.identity.key.private,
+      verify: this._verifyNOISE.bind(this)
+    });
+
+    handler.encrypt.pipe(socket).pipe(handler.decrypt);
+
+    // Emitted after the connection is accepted in the verify function
+    handler.encrypt.on('handshake', (localPrivateKey, localPublicKey, remotePublicKey) => {
+      // const counterparty = new Identity({ public: remotePublicKey.toString('hex') });
+      this.emit('debug', `Peer encrypt handshake local key: ${localPublicKey.toString('hex')}`);
+      this.emit('debug', `Peer encrypt handshake with remote key: ${remotePublicKey.toString('hex')}`);
+      // this.emit('debug', `Peer encrypt handshake with remote identity: ${counterparty.id}`);
+    });
+
+    // Reading and writing will only work after the connection is accepted
+    handler.decrypt.on('data', (data) => {
+      this._handleFabricMessage(data, { name: target });
+    });
+
+    socket._writeFabric = (msg) => {
+      handler.encrypt.write(msg);
+    };
+
+    this.connections[target] = socket;
+    this.emit('connections:open', {
+      id: target,
+      url: url
+    });
+  }
+
+  _verifyNOISE (localPrivateKey, localPublicKey, remotePublicKey, done) {
+    // Is the message valid?
+    if (1 === 1) {
+      done(null, true);
+    } else {
+      done(null, false);
+    }
   }
 
   /**
@@ -352,7 +529,7 @@ class Peer extends Service {
     return true;
   }
 
-  _connect (address) {
+  _connectOld (address) {
     const self = this;
     const parts = address.split(':');
     const known = Object.keys(self.connections);
@@ -898,7 +1075,7 @@ class Peer extends Service {
     }
   }
 
-  relayFrom (origin, message) {
+  relayFromOld (origin, message) {
     if (!origin) {
       this.emit('error', 'Must provide an origin.');
       return false;

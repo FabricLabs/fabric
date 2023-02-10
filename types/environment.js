@@ -153,7 +153,9 @@ class Environment extends Entity {
 
         this.wallet = new Wallet({
           key: {
-            xprv: input.object.xprv
+            seed: input.object.seed,
+            xprv: input.object.xprv,
+            xpub: input.object.xpub
           }
         });
       } catch (exception) {

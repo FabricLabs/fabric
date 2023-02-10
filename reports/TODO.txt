@@ -309,8 +309,8 @@
 ./examples/app.js:  // TODO: document defer as trust(authority) with Remote class
 ./scripts/lightning-demo.js:    // TODO: import configs from Polar
 ./scripts/example.js:// TODO: generate signature, hash of function definition (the "type")
-./scripts/schemas.js:    // TODO: here for Eric's review.
 ./scripts/cli.js:  // TODO: read & test contracts
+./scripts/schemata.js:      // TODO: here for Eric's review.
 ./scripts/chat.js:  // TODO: remove Wallet-specfic configuration
 ./scripts/chat.js:      // TODO: reconcile API wth @fabric/doorman as appears at: https://github.com/FabricLabs/doorman
 ./scripts/chat.js:      // TODO: remove from log output...

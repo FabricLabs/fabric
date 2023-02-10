@@ -76,3 +76,16 @@ An `ActorSet` is a hashmap of `Actor` instances, address by their ID.
 
 #### Collection
 A `Collection` is a list of `Actor` instances.
+
+## Peering
+Peers are identified in the Fabric network by their [**Fabric Identity**][fabric-identity], a `bech32m` encoding of the prefix `id` and public key body.
+
+Connecting to other peers in Fabric requires knowledge of the peer's **public key**.
+
+```
+$ fabric
+C^i
+/connect 0375f7cfc3fa3bc9ed621019018fca678da404a29c8dfec4350855b5ad2f0a42d7@hub.fabric.pub:7777
+```
+
+[fabric-identity]: IDENTITY.md

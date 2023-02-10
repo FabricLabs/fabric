@@ -116,6 +116,10 @@ class CLI extends App {
     return this;
   }
 
+  assumeIdentity (key) {
+    this.identity = new Identity(key);
+  }
+
   attachWallet (wallet) {
     if (!wallet) wallet = new Wallet(this.settings);
 
@@ -130,8 +134,9 @@ class CLI extends App {
       interface: this.settings.interface,
       port: this.settings.port,
       peers: this.settings.peers,
-      key: this.wallet.key.settings
+      key: this.identity.settings
     });
+    return this;
   }
 
   _loadBitcoin () {
@@ -222,6 +227,7 @@ class CLI extends App {
     this.node.on('error', this._handlePeerError.bind(this));
     this.node.on('warning', this._handlePeerWarning.bind(this));
     this.node.on('message', this._handlePeerMessage.bind(this));
+    this.node.on('chat', this._handlePeerChat.bind(this));
 
     // ## Raw Connections
     this.node.on('connection', this._handleConnection.bind(this));
@@ -736,6 +742,10 @@ class CLI extends App {
     this._appendMessage(`[NODE] ${message}`);
   }
 
+  async _handlePeerChat (chat) {
+    this._appendMessage(`[@${chat.actor.id}]: ${chat.object.content}`);
+  }
+
   async _handlePeerMessage (message) {
     switch (message.type) {
       case 'ChatMessage':
@@ -850,7 +860,10 @@ class CLI extends App {
     if (!self._processInput(data.input)) {
       // Describe the activity for use in P2P message
       const msg = {
-        actor: self.node.id,
+        type: 'P2P_CHAT_MESSAGE',
+        actor: {
+          id: self.node.id
+        },
         object: {
           created: Date.now(),
           content: content
@@ -859,10 +872,16 @@ class CLI extends App {
       };
 
       const message = Message.fromVector(['ChatMessage', JSON.stringify(msg)]);
-      this._appendDebug(`Chat Message created (${message.data.length} bytes): ${message.data}`);
+      // this._appendDebug(`Chat Message created (${message.data.length} bytes): ${message.data}`);
       self.setPane('messages');
 
+      // Log own message
+      self._handlePeerChat(msg);
+
+      // Relay to peers
       self.node.relayFrom(self.node.id, message);
+
+      // Notify services
       self._sendToAllServices(msg);
     }
 
@@ -997,8 +1016,10 @@ class CLI extends App {
 
   _handleIdentityRequest () {
     this._appendMessage(`Local Identity: ${JSON.stringify({
-      id: this.node.id,
-      address: this.node.server.address()
+      id: this.identity.id,
+      pubkey: this.identity.pubkey,
+      address: this.node.server.address(),
+      endpoint: `${this.identity.id}@${this.settings.host}:${this.settings.port}`
     }, null, '  ')}`);
   }
 
@@ -1739,6 +1760,7 @@ class CLI extends App {
     self.elements['form'].on('submit', self._handleFormSubmit.bind(self));
     // this.focusInput();
 
+    this.elements['identityString'].setContent(this.identity.id);
     this.setPane('messages');
 
     setInterval(function () {

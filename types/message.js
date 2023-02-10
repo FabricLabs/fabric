@@ -232,8 +232,8 @@ class Message extends Actor {
       parent: input.slice(8, 40),
       type: input.slice(40, 44),
       size: input.slice(40, 48),
-      hash: input.slice(40, 80),
-      signature: input.slice(0, 144)
+      hash: input.slice(48, 80),
+      signature: input.slice(80, 144)
     };
 
     message.data = input.slice(HEADER_SIZE);
