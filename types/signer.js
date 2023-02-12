@@ -98,7 +98,7 @@ class Signer extends Actor {
   get pubkey () {
     // TODO: encode pubkey correctly for verification
     const x = this.key.keypair.getPublic().getX();
-    return schnorr.convert.intToBuffer(x).toString('hex');
+    return schnorr.convert.intToBuffer(x);
   }
 
   /**
@@ -119,7 +119,8 @@ class Signer extends Actor {
     // Hash & sign
     // TODO: check with bip-schnorr on behavior of signing > 32 byte messages
     this._preimage = Buffer.from(Hash256.digest(data), 'hex');
-    this.signature = schnorr.sign(this.key.keypair.getPrivate('hex'), this._preimage);
+    this.signature = schnorr.sign(this.key.keypair.getPrivate('hex'), data);
+    // this.signature = schnorr.sign(this.key.keypair.getPrivate('hex'), this._preimage);
 
     this.emit('signature', {
       content: data,
@@ -128,7 +129,7 @@ class Signer extends Actor {
       signature: this.signature.toString('hex')
     });
 
-    return this.signature.toString('hex');
+    return this.signature;
   }
 
   start () {
@@ -163,7 +164,6 @@ class Signer extends Actor {
       schnorr.verify(pubkey, message, signature);
       return true;
     } catch (exception) {
-      console.error(exception);
       return false;
     }
   }

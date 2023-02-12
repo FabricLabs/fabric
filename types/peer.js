@@ -30,6 +30,7 @@ const upnp = require('nat-upnp');
 // Fabric Types
 const Actor = require('./actor');
 const Identity = require('./identity');
+const Signer = require('./signer');
 const Key = require('./key');
 const Machine = require('./machine');
 const Message = require('./message');
@@ -85,6 +86,7 @@ class Peer extends Service {
     });
 
     this.identity = new Identity(this.settings.key);
+    this.signer = new Signer(this.settings.key);
     this.key = new Key(this.settings.key);
     this.wallet = new Wallet(this.settings.key);
 
@@ -164,28 +166,33 @@ class Peer extends Service {
     this._state.content = value;
   }
 
+  broadcast (message, origin = null) {
+    for (const id in this.peers) {
+      if (id === origin) continue;
+      this.connections[id]._writeFabric(message);
+    }
+  }
+
   commit () {
     const state = new Actor(this.state);
 
     if (this.observer) {
       try {
         const patches = manager.generate(this.observer);
-
-        if (patches.length) {
-          this.history.push(patches);
-          this.emit('changes', patches);
-          // @deprecated
-          this.emit('patches', patches);
-          this.emit('commit', {
-            type: 'FabricCommit',
-            object: {
-              delta: patches,
-              snapshot: state.toGenericMessage().object
-            }
-          });
-        }
-      } catch (E) {
-        console.error('Could not generate patches:', E);
+        if (!patches.length) return;
+        this.history.push(patches);
+        this.emit('changes', patches);
+        // @deprecated
+        this.emit('patches', patches);
+        this.emit('commit', {
+          type: 'FabricCommit',
+          object: {
+            delta: patches,
+            snapshot: state.toGenericMessage().object
+          }
+        });
+      } catch (exception) {
+        this.emit('error', `Could not commit: ${exception}`);
       }
     }
   }
@@ -236,7 +243,7 @@ class Peer extends Service {
     })];
 
     // Create offer message
-    const P2P_SESSION_OFFER = Message.fromVector(vector);
+    const P2P_SESSION_OFFER = Message.fromVector(vector)._setSigner(this.signer).sign();
     const message = P2P_SESSION_OFFER.toBuffer();
     this.emit('debug', `session_offer ${P2P_SESSION_OFFER} ${message.toString('hex')}`);
 
@@ -286,11 +293,11 @@ class Peer extends Service {
         this.emit('debug', `Unhandled message type: ${message.type}`);
         break;
       case 'GenericMessage':
-        let content = null;
-
+      case 'PeerMessage':
+      case 'ChatMessage':
         // Parse JSON body
         try {
-          content = JSON.parse(message.data);
+          const content = JSON.parse(message.data);
           this._handleGenericMessage(content, origin, socket);
         } catch (exception) {
           this.emit('error', `Broken content body: ${exception}`);
@@ -328,7 +335,7 @@ class Peer extends Service {
           }
         })];
 
-        const PACKET_SESSION_START = Message.fromVector(vector);
+        const PACKET_SESSION_START = Message.fromVector(vector)._setSigner(this.signer).sign();
         const reply = PACKET_SESSION_START.toBuffer();
         this.emit('debug', `session_start ${PACKET_SESSION_START} ${reply.toString('hex')}`);
         this.connections[origin.name]._writeFabric(reply, socket);
@@ -344,15 +351,16 @@ class Peer extends Service {
             host: this._externalIP,
             port: this.settings.port
           }
-        })]);
+        })])._setSigner(this.signer).sign();
+
         const announcement = PACKET_PEER_ANNOUNCE.toBuffer();
         // this.emit('debug', `Announcing peer: ${announcement.toString('utf8')}`);
         this.connections[origin.name]._writeFabric(announcement, socket);
         break;
       case 'P2P_CHAT_MESSAGE':
         this.emit('chat', message);
-        const msg = Message.fromVector(['ChatMessage', JSON.stringify(message)]);
-        this.relayFrom(origin.name, msg);
+        const relay = Message.fromVector(['ChatMessage', JSON.stringify(message)])._setSigner(this.signer);
+        this.relayFrom(origin.name, relay);
         break;
       case 'P2P_STATE_ANNOUNCE':
         const state = new Actor(message.object.state);
@@ -446,6 +454,7 @@ class Peer extends Service {
           this.emit('warning', 'Could not create UPNP mapping.  Other nodes may fail when connecting to this node.');
         } else {
           this.upnp.getMappings((error, results) => {
+            if (!results || !results.length) return;
             const mapping = results.find((x) => x.private.port === this.settings.port );
             // this.emit('debug', `UPNP mappings: ${JSON.stringify(results, null, '  ')}`);
             // this.emit('debug', `Our rule: ${JSON.stringify(mapping, null, '  ')}`);
