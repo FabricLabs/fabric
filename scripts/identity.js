@@ -1,9 +1,8 @@
 'use strict';
 
-const SAMPLE = {
-  debug: true,
-  seed: 'cricket grocery kingdom wool double wood happy predict worth pave build pepper bullet farm churn exhibit grit isolate short theory help vehicle denial slide'
-}
+const {
+  FIXTURE_SEED
+} = require('../constants');
 
 const DERIVATION = `m/44'/0'/0'/0/0`;
 const PREFIX = 'id'; // <Buffer 69, 64>
@@ -33,7 +32,10 @@ async function main (input = {}) {
   };
 }
 
-main(SAMPLE).catch((exception) => {
+main({
+  derivation: DERIVATION,
+  seed: process.env['FABRIC_SEED'] || FIXTURE_SEED
+}).catch((exception) => {
   console.error('[FABRIC:IDENTITY]', 'Main Process Exception:', exception);
 }).then((output) => {
   console.log('[FABRIC:IDENTITY]', 'Current Identity:', output);

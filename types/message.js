@@ -103,6 +103,7 @@ class Message extends Actor {
       '_state',
       'config',
       'settings',
+      'signer',
       'stack',
       'observer'
     ]) Object.defineProperty(this, name, { enumerable: false });
@@ -189,6 +190,10 @@ class Message extends Actor {
     return new Message(input);
   }
 
+  /**
+   * Signs the message using the associated signer.
+   * @returns {Message} Signed message.
+   */
   sign () {
     if (!this.header) throw new Error('No header property.');
     if (!this.raw) throw new Error('No raw property.');
@@ -199,9 +204,15 @@ class Message extends Actor {
     this.raw.author.write(this.signer.pubkey.toString('hex'), 'hex');
     this.raw.signature.write(signature.toString('hex'), 'hex');
 
+    Object.freeze(this);
+
     return this;
   }
 
+  /**
+   * Verify a message's signature.
+   * @returns {Boolean} `true` if the signature is valid, `false` if not.
+   */
   verify () {
     if (!this.header) throw new Error('No header property.');
     if (!this.raw) throw new Error('No raw property.');
@@ -224,7 +235,13 @@ class Message extends Actor {
     return true;
   }
 
+  /**
+   * Sets the signer for the message.
+   * @param {Signer} signer Signer instance.
+   * @returns {Message} Instance of the Message with associated signer.
+   */
   _setSigner (signer) {
+    // if (this.signer) throw new Error('Cannot override signer.');
     this.signer = signer;
     return this;
   }

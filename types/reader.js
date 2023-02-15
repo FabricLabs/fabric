@@ -90,6 +90,7 @@ class Reader extends EventEmitter {
   }
 
   _readFabricFrame () {
+    // Ensure we have at least a full message header
     if (this._bufferedBytes < HEADER_SIZE) return;
 
     // Read up to HEADER_SIZE bytes
@@ -134,8 +135,12 @@ class Reader extends EventEmitter {
     const proposal = {
       magic,
       version,
+      parent,
+      author,
       type,
       size,
+      hash,
+      signature,
       data
     };
 

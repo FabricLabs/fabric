@@ -1180,7 +1180,9 @@ class Service extends Actor {
   }
 
   async _startHeart () {
+    if (this._heart) clearInterval(this._heart);
     this._heart = setInterval(this.beat.bind(this), this.settings.interval);
+    return this;
   }
 }
 

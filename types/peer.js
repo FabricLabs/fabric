@@ -375,7 +375,15 @@ class Peer extends Service {
         const announce = Message.fromVector(['PeerAnnounce', JSON.stringify(message)]);
         this.relayFrom(origin.name, announce);
         break;
+      case 'P2P_DOCUMENT_PUBLISH':
+        break;
     }
+  }
+
+  _handleNOISEHandshake (localPrivateKey, localPublicKey, remotePublicKey) {
+    this.emit('debug', `Peer encrypt handshake using local key: ${localPrivateKey.toString('hex')}`);
+    this.emit('debug', `Peer encrypt handshake using local public key: ${localPublicKey.toString('hex')}`);
+    this.emit('debug', `Peer encrypt handshake with remote public key: ${remotePublicKey.toString('hex')}`);
   }
 
   _NOISESocketHandler (socket) {
@@ -388,13 +396,13 @@ class Peer extends Service {
     });
 
     handler.encrypt.pipe(socket).pipe(handler.decrypt);
+    handler.encrypt.on('handshake', this._handleNOISEHandshake.bind(this));
+    handler.encrypt.on('error', (error) => {
+      this.emit('error', `NOISE encrypt error: ${error}`);
+    });
 
-    // Emitted after the connection is accepted in the verify function
-    handler.encrypt.on('handshake', (localPrivateKey, localPublicKey, remotePublicKey) => {
-      // const counterparty = new Identity({ public: remotePublicKey.toString('hex') });
-      this.emit('debug', `Peer encrypt handshake local key: ${localPublicKey.toString('hex')}`);
-      this.emit('debug', `Peer encrypt handshake with remote key: ${remotePublicKey.toString('hex')}`);
-      // this.emit('debug', `Peer encrypt handshake with remote identity: ${counterparty.id}`);
+    handler.decrypt.on('error', (error) => {
+      this.emit('error', `NOISE decrypt error: ${error}`);
     });
 
     handler.decrypt.on('close', (data) => {
@@ -521,43 +529,23 @@ class Peer extends Service {
    * Stop the peer.
    */
   async stop () {
-    const peer = this;
-
     // Alert listeners
-    peer.emit('log', 'Peer stopping...');
+    this.emit('log', 'Peer stopping...');
 
-    if (peer.settings.upnp && peer.upnp) {
-      peer.upnp.close();
+    this._state.status = 'STOPPING';
+
+    if (this.settings.upnp && this.upnp) {
+      this.upnp.close();
     }
 
-    for (const id in peer.connections) {
-      peer.emit('log', `Closing connection: ${id}`);
-      const connection = peer.connections[id];
-      const closer = async function () {
-        return new Promise((resolve, reject) => {
-          // Give socket a timeout to close cleanly, destroy if failed
-          let deadline = setTimeout(function () {
-            peer.emit('warning', `[FABRIC:PEER] end() timed out for peer "${id}" so calling destroy...`);
-            connection.destroy();
-            resolve();
-          }, 5000);
-
-          // TODO: notify remote peer of closure
-          // Use end(SOME_CLOSE_MESSAGE, ...)
-          return connection.end(function socketClosed (error) {
-            if (error) return reject(error);
-            clearTimeout(deadline);
-            resolve();
-          });
-        });
-      }
-      await closer();
+    for (const id in this.connections) {
+      this.connections[id].destroy();
     }
 
-    const terminator = async function () {
+    const terminator = async () => {
       return new Promise((resolve, reject) => {
-        if (!peer.server.address()) return resolve();
-        return peer.server.close(function serverClosed (error) {
+        if (!this.server.address()) return resolve();
+        return this.server.close(function serverClosed (error) {
           if (error) return reject(error);
           resolve();
         });
@@ -566,112 +554,16 @@ class Peer extends Service {
 
     await terminator();
 
+    this._state.status = 'STOPPED';
+    this.commit();
+
     return this;
   }
 
   async _setState (value) {
     if (!value) return new Error('You must provide a State to set the value to.');
-    this.state.state = value;
+    this._state.content = value;
     return this.state.state;
-  }
-
-  // TODO: use in _connect
-  async _sessionStart (socket, target) {
-    const self = this;
-    const address = `${target.address}:${target.port}`;
-
-    self.emit('debug', `Starting session with address: ${target.pubkey}@${address}`);
-    self.connections[address].session = new Session({ recipient: target.pubkey });
-    await self.connections[address].session.start();
-
-    self.emit('debug', `Session created: ${JSON.stringify(self.connections[address].session)}`);
-
-    // First time seeing our local address, use it
-    // TODO: evaluate trust model
-    if (!self.public.ip) {
-      self.public.ip = socket.localAddress;
-      self.emit('log', `Local socket was null, changed to: ${self.public.ip}`);
-    }
-
-    // TODO: consolidate with similar _handleConnection segment
-    // TODO: check peer ID, eject if self or known
-
-    // TODO re-enable (disabled to reduce spammy messaging)
-    // /*
-    // TODO: re-evaluate use of IdentityRequest
-    // const vector = ['IdentityRequest', self.id];
-    const vector = ['StartSession', JSON.stringify({
-      id: self.connections[address].session.id,
-      identity: self.id,
-      advertise: `${self.key.pubkey}@${self.public.ip}:${self.public.port}`,
-      signature: self.connections[address].session.key._sign(self.id)
-    })];
-
-    const message = Message.fromVector(vector);
-
-    if (!socket.writable) {
-      self.emit('error', `Socket is not writable.`);
-      return false;
-    }
-
-    self.sendToSocket(address, message);
-
-    // Emit notification of a newly opened connection
-    self.emit('connections:open', {
-      address: address,
-      status: 'unauthenticated',
-      initiator: true
-    });
-
-    this.emit('log', `Connection to ${address} established!`);
-  }
-
-  async _processCompleteDataPacket (socket, address, data) {
-    // Constants
-    const self = this;
-    // TODO: actually decrypt packet
-    const decrypted = socket.session.decrypt(data);
-
-    this.emit('debug', `Handling data packet:`, data);
-
-    // Variables
-    let message = null;
-
-    try {
-      message = self._parseMessage(decrypted);
-    } catch (exception) {
-      console.error('[FABRIC:PEER]', 'Could not parse inbound messsage:', exception);
-    }
-
-    // disconnect from any peer sending invalid messages
-    if (!message) return socket.destroy();
-
-    const response = await self._handleMessage({
-      message: message,
-      origin: address,
-      peer: {
-        address: address,
-        id: socket.id
-      }
-    });
-
-    if (response) {
-      self.meta.messages.outbound++;
-      self.sendToSocket(address, response);
-    }
-  }
-
-  async _handleSocketData (socket, address, data) {
-    this.emit('debug', `Received data from peer: ${data}`);
-
-    if (!socket.session) {
-      this.emit('error', `Received data on socket without a session!  Violator: ${address}`);
-      return false;
-    }
-
-    socket._reader._addData(data);
-
-    return true;
   }
 
   _disconnect (address) {
@@ -687,93 +579,6 @@ class Peer extends Service {
 
     // Remove connection from map
     delete this.connections[address];
-  }
-
-  _parseMessage (data) {
-    if (!data) return false;
-    if (this.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Parsing message:', data);
-
-    // Variables
-    let message = null;
-
-    try {
-      message = Message.fromRaw(data);
-    } catch (exception) {
-      this.emit('debug', `[FABRIC:PEER] error parsing message: ${exception}`);
-    }
-
-    if (this.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Parsed message into:', message.type, message.data);
-    return message;
-  }
-
-  async _handleConnection (socket) {
-    const self = this;
-    const address = [socket.remoteAddress, socket.remotePort].join(':');
-    // const server = noise({
-      /* verify: function (localPrivateKey, localPublicKey, remotePublicKey, finish) {
-        // Calling finish with an error as first argument will also emit an error event on the stream pair.
-        // The callback must be called explicitly with true to accept.
-        if (true || TRUSTED_PUBLIC_KEY.equals(remotePublicKey)) {
-          finish(null, true);
-        } else {
-          finish(null, false);
-        }
-      } */
-    // });
-
-    self.emit('log', `[FABRIC:PEER] [0x${self.id}] Incoming connection from address: ${address}`);
-
-    self.emit('connections:open', {
-      address: address,
-      status: 'connected',
-      initiator: false
-    });
-
-    /*
-    server.encrypt.pipe(socket).pipe(server.decrypt);
-
-    // Emitted after the connection is accepted in the verify function
-    server.encrypt.on('handshake', function (localPrivateKey, localPublicKey, remotePublicKey) {
-      console.log('server encrypt handshake:', remotePublicKey);
-    });
-
-    // Reading and writing will only work after the connection is accepted
-    server.decrypt.on('data', function (data) {
-      console.log('incoming connection decrypted data:', data);
-    }); */
-
-    // TODO: use known key
-    socket.session = new Session();
-    socket._reader = new Reader();
-
-    // Bind Reader events (Fabric)
-    socket._reader.on('debug', function (msg) {
-      self.emit('debug', msg);
-    });
-
-    socket._reader.on('message', function (msg) {
-      self._processCompleteDataPacket.apply(self, [ socket, address, msg ]);
-    });
-
-    // Bind Socket events (Peer)
-    socket.on('close', function terminate () {
-      self.emit('log', `connection closed: ${address}`);
-      self.emit('connections:close', { address: address });
-      self._disconnect(address);
-    });
-
-    socket.on('data', function inboundPeerHandler (data) {
-      try {
-        self._handleSocketData.apply(self, [ socket, address, data ]);
-      } catch (exception) {
-        self.emit('error', `Could not handle socket data: ${exception}`);
-      }
-    });
-
-    // add this socket to the list of known connections
-    this.connections[address] = socket;
-
-    self._maintainConnection(address);
   }
 
   _maintainConnection (address) {
@@ -813,36 +618,6 @@ class Peer extends Service {
     if (this.handlers[type]) return new Error(`Handler for method "${type}" is already registered.`);
     this.handlers[type] = method.bind(this);
     return this.handlers[type];
-  }
-
-  _registerPeer (peer) {
-    if (this.settings.verbosity >= 6) console.warn('[AUDIT]', 'Registering peer:', peer);
-    let self = this;
-
-    if (!peer) return false;
-    if (!peer.id) {
-      self.log(`Peer attribute 'id' is required.`);
-      return false;
-    }
-
-    self.peers[peer.id] = peer;
-
-    // console.log('[FABRIC:PEER]', `[@ID:$${self.id}]`, 'Peer registered:', peer);
-    // console.log('[FABRIC:PEER]', `[@ID:$${self.id}]`, 'Peer list:', self.peers);
-
-    self.emit('peer', peer);
-
-    // TODO: document peer announcement
-    // TODO: eliminate use of JSON in messaging
-    const announcement = Message.fromVector(['PeerCandidate', JSON.stringify(peer)]);
-
-    try {
-      self.relayFrom(peer.id, announcement);
-    } catch (exception) {
-      self.emit('error', `Could not relay peer registration: ${exception}`);
-    }
-
-    return true;
   }
 
   async _requestStateFromAllPeers () {
@@ -1058,101 +833,26 @@ class Peer extends Service {
     return response;
   }
 
-  _handleBasePacket (packet) {
-    let message = null;
-
-    try {
-      message = JSON.parse(packet.message.data);
-    } catch (E) {
-      return this.log('Error parsing message:', E);
-    }
-
-    switch (message.type) {
-      case 'collections:post':
-        this.emit('collections:post', message.data);
-        break;
-      default:
-        console.log('unhandled base packet type:', message.type);
-        break;
-    }
-  }
-
-  async sendToSocket (address, raw) {
-    if (raw instanceof Message) {
-      raw = raw.asRaw();
-    }
-
-    if (!this.connections[address]) {
-      this.emit('error', `Could not deliver message to unconnected address: ${address}`);
-      return false;
-    }
-
-    if (!this.connections[address].session) {
-      this.emit('error', `Connection does not have a Session: ${address}`);
-      return false;
-    }
-
-    if (!this.connections[address].writable) {
-      this.emit('error', `Connection is not writable: ${address}`);
-      return false;
-    }
-
-    this.emit('debug', `Writing ${raw.length} bytes to socket: \n\t${raw.toString('hex')}`);
-    // const signature = await this.connections[address].session._appendMessage(raw);
-    // self.emit('debug', `Signature: ${signature}`);
-
-    try {
-      const result = this.connections[address].write(raw);
-      if (!result) {
-        this.emit('warning', 'Stream result false.');
-      }
-    } catch (exception) {
-      this.emit('error', `Exception writing to $[${address}]: ${exception}`);
-    }
-  }
-
-  _broadcastTypedMessage (type, message) {
-    if (!message) message = '';
-    if (typeof message !== 'string') message = JSON.stringify(message);
-
-    let id = crypto.createHash('sha256').update(message).digest('hex');
-
-    if (this.messages.has(id)) {
-      this.log('attempted to broadcast duplicate message');
-      return false;
-    } else {
-      this.memory[id] = message;
-      this.messages.add(id);
-    }
-
-    for (let id in this.peers) {
-      let peer = this.peers[id];
-      // TODO: select type byte for state updates
-      let msg = Message.fromVector([type, message]);
-      this.sendToSocket(peer.address, msg);
-    }
-  }
-
   /**
    * Start listening for connections.
-   * @fires Peer#ready
    * @return {Peer} Chainable method.
    */
   async listen () {
-    const self = this;
-    const promise = new Promise((resolve, reject) => {
-      self.server.listen(self.port, self.interface, function listenComplete (error) {
+    return new Promise((resolve, reject) => {
+      this.server.listen(this.port, this.interface, (error) => {
         if (error) return reject(error);
 
-        const details = self.server.address();
+        const details = this.server.address();
         const address = `tcp://${details.address}:${details.port}`;
 
-        self.emit('log', `Now listening on ${address} [!!!]`);
+        this.emit('log', `Now listening on ${address} [!!!]`);
         return resolve(address);
       });
-    });
 
-    return promise;
+      this.server.on('error', (error) => {
+        this.emit('error', `Server socket error: ${error}`);
+      });
+    });
   }
 }
 
