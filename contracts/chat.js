@@ -20,6 +20,10 @@ async function OP_CHAT () {
   // Fabric CLI
   const chat = new CLI(settings); // TODO: this.settings
 
+  chat.on('error', (error) => {
+    console.error('[FABRIC:CHAT]', '[ERROR]', error);
+  });
+
   // Use local wallet
   chat.attachWallet(this.environment.wallet);
 

@@ -118,7 +118,7 @@ class Signer extends Actor {
 
     // Hash & sign
     // TODO: check with bip-schnorr on behavior of signing > 32 byte messages
-    this._preimage = Buffer.from(Hash256.digest(data), 'hex');
+    // this._preimage = Buffer.from(Hash256.digest(data), 'hex');
     this.signature = schnorr.sign(this.key.keypair.getPrivate('hex'), data);
     // this.signature = schnorr.sign(this.key.keypair.getPrivate('hex'), this._preimage);
 

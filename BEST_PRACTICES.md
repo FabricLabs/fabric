@@ -26,7 +26,9 @@ goal being to build Fabric from source and generate a deterministic build.
     3. (If Upstream Project Exists) `git push upstream`
   5. Click the link in the output of `git push upstream` to acquire SUBMIT_PROPOSAL_HTTP
   6. [Submit a Pull Request][submit-a-pull-request]!
+3. Use [Nix][nix].
 
 [contributing]: /CONTRIBUTING.md
 [environment-setup]: https://dev.fabric.pub/documents/environment-setup [404]
+[nix]: https://nixos.org
 [submit-a-pull-request]: https://dev.fabric.pub/documents/submit-a-pull-request [404]
