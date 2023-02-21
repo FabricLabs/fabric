@@ -104,6 +104,8 @@ class Node extends Service {
     source.on('ready', function () {
       self.emit('log', `[FABRIC] ${extra}<${source.constructor.name}> Claimed ready!`);
     });
+
+    return this;
   }
 
   async start () {

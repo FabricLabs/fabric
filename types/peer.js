@@ -248,7 +248,36 @@ class Peer extends Service {
     this.emit('debug', `session_offer ${P2P_SESSION_OFFER} ${message.toString('hex')}`);
 
     // Send handshake
-    client.encrypt.write(message);
+    try {
+      client.encrypt.write(message);
+    } catch (exception) {
+      this.emit('error', `Cannot write to socket: ${exception}`);
+    }
+
+    socket._destroyFabric = () => {
+      if (socket._keepalive) clearInterval(socket._keepalive);
+      socket.end();
+    };
+
+    socket._keepalive = setInterval(() => {
+      const now = (new Date()).toISOString();
+      const P2P_PING = Message.fromVector(['GENERIC', JSON.stringify({
+        actor: {
+          id: this.identity.id
+        },
+        created: now,
+        type: 'P2P_PING',
+        object: {
+          created: now
+        }
+      })]);
+
+      try {
+        client.encrypt.write(P2P_PING.toBuffer());
+      } catch (exception) {
+        this.emit('debug', `Cannot write ping: ${exception}`)
+      }
+    }, 60000);
 
     // Map write function
     socket._writeFabric = (msg) => {
@@ -269,7 +298,12 @@ class Peer extends Service {
       if (!this.candidates.length) continue;
       const candidate = this.candidates.shift();
       // this.emit('debug', `Filling peer slot ${i} of ${openCount} (max ${this.settings.constraints.peers.max}) with candidate: ${JSON.stringify(candidate, null, '  ')}`);
-      this._connect(`${candidate.object.host}:${candidate.object.port}`);
+      
+      try {
+        this._connect(`${candidate.object.host}:${candidate.object.port}`);
+      } catch (exception) {
+        this.emit('error', `Unable to fill open peer slot ${i}: ${exception}`);
+      }
     }
   }
 
@@ -360,11 +394,29 @@ class Peer extends Service {
       case 'P2P_CHAT_MESSAGE':
         this.emit('chat', message);
         const relay = Message.fromVector(['ChatMessage', JSON.stringify(message)])._setSigner(this.signer);
+        // this.emit('debug', `Relayed chat message: ${JSON.stringify(relay.toGenericMessage())}`);
         this.relayFrom(origin.name, relay);
         break;
       case 'P2P_STATE_ANNOUNCE':
         const state = new Actor(message.object.state);
         this.emit('debug', `state_announce <Generic>${JSON.stringify(message.object || '')} ${state.toGenericMessage()}`);
+        break;
+      case 'P2P_PING':
+        const now = (new Date()).toISOString();
+        const P2P_PONG = Message.fromVector(['GENERIC', JSON.stringify({
+          actor: {
+            id: this.identity.id
+          },
+          created: now,
+          type: 'P2P_PONG',
+          object: {
+            created: now
+          }
+        })]);
+        this.connections[origin.name]._writeFabric(P2P_PONG.toBuffer());
+        break;
+      case 'P2P_PONG':
+        // TODO: update liveness
         break;
       case 'P2P_PEER_ANNOUNCE':
         this.emit('debug', `peer_announce <Generic>${JSON.stringify(message.object || '')}`);
@@ -401,6 +453,10 @@ class Peer extends Service {
       this.emit('error', `NOISE encrypt error: ${error}`);
     });
 
+    handler.encrypt.on('end', (data) => {
+      this.emit('debug', `Peer encrypt end: ${data}`);
+    });
+
     handler.decrypt.on('error', (error) => {
       this.emit('error', `NOISE decrypt error: ${error}`);
     });
@@ -409,15 +465,26 @@ class Peer extends Service {
       this.emit('debug', `Peer decrypt close: ${data}`);
     });
 
+    handler.decrypt.on('end', (data) => {
+      this.emit('debug', `Peer decrypt end: ${data}`);
+    });
+
     handler.decrypt.on('data', (data) => {
       this._handleFabricMessage(data, { name: target });
     });
+
+    socket._destroyFabric = () => {
+      if (socket._keepalive) clearInterval(socket._keepalive);
+      socket.end();
+    };
 
     socket._writeFabric = (msg) => {
       this._writeFabric(msg, handler);
     };
 
+    // Store socket in collection
     this.connections[target] = socket;
+
     this.emit('connections:open', {
       id: target,
       url: url

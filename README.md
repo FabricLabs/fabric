@@ -139,6 +139,7 @@ Fabric on Twitter: [@FabricProtocol][twitter]
 [twilio-plugin]: https://github.com/FabricLabs/fabric-twilio
 [zapier-plugin]: https://github.com/FabricLabs/fabric-zapier
 [github-plugin]: https://github.com/FabricLabs/fabric-github
+[build-guide]: BUILD.md
 [api-docs]: https://dev.fabric.pub
 [chat]: https://chat.fabric.pub
 [edit-readme]: https://github.com/FabricLabs/fabric/edit/master/README.md
