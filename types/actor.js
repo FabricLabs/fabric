@@ -275,6 +275,13 @@ class Actor extends EventEmitter {
     };
   }
 
+  toJSON () {
+    return {
+      '@id': this.id,
+      ...this.state
+    };
+  }
+
   /**
    * Returns the Actor's current state as an {@link Object}.
    * @returns {Object}

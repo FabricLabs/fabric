@@ -166,6 +166,20 @@ class Peer extends Service {
     this._state.content = value;
   }
 
+  beat () {
+    const initial = new Actor(this.state);
+    const now = (new Date()).toISOString();
+
+    this.commit();
+    this.emit('beat', {
+      created: now,
+      initial: initial.toGenericMessage(),
+      state: this.state
+    });
+
+    return this;
+  }
+
   broadcast (message, origin = null) {
     for (const id in this.peers) {
       if (id === origin) continue;
@@ -221,6 +235,14 @@ class Peer extends Service {
       this.emit('error', `Socket error: ${error}`);
     });
 
+    socket.on('close', (info) => {
+      this.emit('debug', `Outbound socket closed: (${target}) ${info}`);
+    });
+
+    socket.on('end', (info) => {
+      this.emit('debug', `Socket end: (${target}) ${info}`);
+    });
+
     // Start stream
     client.encrypt.pipe(socket).pipe(client.decrypt);
     // TODO: output stream
@@ -256,7 +278,7 @@ class Peer extends Service {
 
     socket._destroyFabric = () => {
       if (socket._keepalive) clearInterval(socket._keepalive);
-      socket.end();
+      // socket.end();
     };
 
     socket._keepalive = setInterval(() => {
@@ -289,6 +311,18 @@ class Peer extends Service {
       id: target,
       url: url
     });
+  }
+
+  _announceAlias (alias, origin = null, socket = null) {
+    const PACKET_PEER_ALIAS = Message.fromVector(['P2P_PEER_ALIAS', JSON.stringify({
+      type: 'P2P_PEER_ALIAS',
+      object: {
+        name: alias
+      }
+    })]);
+
+    const announcement = PACKET_PEER_ALIAS.toBuffer();
+    this.broadcast(announcement, origin);
   }
 
   _fillPeerSlots () {
@@ -378,18 +412,6 @@ class Peer extends Service {
         this.emit('debug', `Handling session open: ${JSON.stringify(message.object)}`);
         this.peers[origin.name] = { id: message.object.counterparty, name: origin.name, address: origin };
         this.emit('peer', this.peers[origin.name]);
-
-        const PACKET_PEER_ANNOUNCE = Message.fromVector(['P2P_PEER_ANNOUNCE', JSON.stringify({
-          type: 'P2P_PEER_ANNOUNCE',
-          object: {
-            host: this._externalIP,
-            port: this.settings.port
-          }
-        })])._setSigner(this.signer).sign();
-
-        const announcement = PACKET_PEER_ANNOUNCE.toBuffer();
-        // this.emit('debug', `Announcing peer: ${announcement.toString('utf8')}`);
-        this.connections[origin.name]._writeFabric(announcement, socket);
         break;
       case 'P2P_CHAT_MESSAGE':
         this.emit('chat', message);
@@ -418,14 +440,18 @@ class Peer extends Service {
       case 'P2P_PONG':
         // TODO: update liveness
         break;
+      case 'P2P_PEER_ALIAS':
+        this.emit('debug', `peer_alias ${origin.name} <Generic>${JSON.stringify(message.object || '')}`);
+        this.connections[origin.name]._alias = message.object.name;
+        break;
       case 'P2P_PEER_ANNOUNCE':
         this.emit('debug', `peer_announce <Generic>${JSON.stringify(message.object || '')}`);
         const candidate = new Actor(message.object);
         this.candidates.push(candidate.toGenericMessage());
-        this._fillPeerSlots();
+        // this._fillPeerSlots();
 
-        const announce = Message.fromVector(['PeerAnnounce', JSON.stringify(message)]);
-        this.relayFrom(origin.name, announce);
+        // const announce = Message.fromVector(['PeerAnnounce', JSON.stringify(message)]);
+        // this.relayFrom(origin.name, announce);
         break;
       case 'P2P_DOCUMENT_PUBLISH':
         break;
@@ -606,7 +632,8 @@ class Peer extends Service {
     }
 
     for (const id in this.connections) {
-      this.connections[id].destroy();
+      this.connections[id]._destroyFabric();
+      delete this.connections[id];
     }
 
     const terminator = async () => {
@@ -642,7 +669,7 @@ class Peer extends Service {
     }
 
     // Destroy the connection
-    this.connections[address].destroy();
+    // this.connections[address].destroy();
 
     // Remove connection from map
     delete this.connections[address];

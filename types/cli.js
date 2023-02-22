@@ -79,13 +79,16 @@ class CLI extends App {
     // Properties
     this.screen = null;
     this.history = [];
-    this.commands = {};
-    this.services = {};
-    this.documents = {};
-    this.requests = {};
-    this.elements = {};
+
+    this.aliases = {};
     this.channels = {};
+    this.commands = {};
+    this.contracts = {};
+    this.documents = {};
+    this.elements = {};
     this.peers = {};
+    this.requests = {};
+    this.services = {};
     this.connections = {};
 
     // State
@@ -181,6 +184,7 @@ class CLI extends App {
     this._registerCommand('quit', this._handleQuitRequest);
     this._registerCommand('exit', this._handleQuitRequest);
     this._registerCommand('clear', this._handleClearRequest);
+    this._registerCommand('alias', this._handleAliasRequest);
     this._registerCommand('peers', this._handlePeerListRequest);
     this._registerCommand('rotate', this._handleRotateRequest);
     this._registerCommand('connect', this._handleConnectRequest);
@@ -309,7 +313,7 @@ class CLI extends App {
 
     // ## Start Anchor Services
     // Start Bitcoin service
-    this.bitcoin.start();
+    await this.bitcoin.start();
 
     // Start Lightning service
     this.lightning.start();
@@ -921,6 +925,18 @@ class CLI extends App {
     return false;
   }
 
+  _handleAliasRequest (params) {
+    if (!params) return false;
+    if (!params[1]) {
+      this._appendError('No alias provided.');
+      return false;
+    }
+
+    this.node._announceAlias(params[1]);
+
+    return false;
+  }
+
   _handleClearRequest () {
     this.elements['messages'].setContent('');
     return false;
@@ -1196,7 +1212,7 @@ class CLI extends App {
 
       const element = blessed.element({
         name: connection.id,
-        content: `[${icon}] ${connection.id}@${connection.address}`
+        content: `[${icon}] ${id}`
       });
 
       // TODO: use peer ID for managed list
