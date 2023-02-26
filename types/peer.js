@@ -215,6 +215,10 @@ class Peer extends Service {
     // this.emit('debug', `Relaying message from ${origin}: ${message}`);
     for (const id in this.peers) {
       if (id === origin) continue;
+      if (!this.connections[id]) {
+        this.emit('error', `Tried writing to non-existent connection: ${id}`);
+      }
+
       // this.emit('debug', `Relaying message: ${message}`);
       // this.emit('debug', `Relaying to peer: ${id}`);
       this.connections[id]._writeFabric(message.toBuffer(), socket);
@@ -227,7 +231,7 @@ class Peer extends Service {
     const client = noise({
       initiator: true,
       prologue: Buffer.from(PROLOGUE),
-      // privateKey: this.identity.key.private,
+      // privateKey: derived.privkey,
       verify: this._verifyNOISE.bind(this)
     });
 
@@ -390,7 +394,15 @@ class Peer extends Service {
 
         // Peer is valid
         // TODO: remove this assumption (validate above)
-        this.peers[origin.name] = { id: message.actor.id, name: origin.name, address: origin.name };
+        // TODO: check for existing peer, update instead of replace
+        this.peers[origin.name] = {
+          id: message.actor.id,
+          name: origin.name,
+          address: origin.name,
+          connections: [ origin.name ]
+        };
+
+        // Emit peer event
         this.emit('peer', this.peers[origin.name]);
 
         // Send session open event
@@ -719,6 +731,7 @@ class Peer extends Service {
     this.broadcast(message);
   }
 
+  // TODO: delete this function
   async _handleMessage (packet) {
     if (!packet) return false;
 
@@ -734,6 +747,7 @@ class Peer extends Service {
     this._updateLiveness(origin);
 
     if (!message) return this.emit('error', `Hard failure: ${packet}`);
+    // TODO: replicate Collection logic to new Peer handlers
     if (this.messages.has(message.id)) {
       // this.emit('debug', `Received duplicate message ${message.id} from [${origin}] in packet: ${JSON.stringify(packet, null, '  ')}`);
       return false;
@@ -746,24 +760,6 @@ class Peer extends Service {
 
     // Build a response to various message types
     switch (message.type) {
-      case 'ChatMessage':
-        relay = true;
-        this.emit('debug', `Message: ${JSON.stringify({
-          type: message.type,
-          data: message.data,
-          size: message.data.length
-        }, null, '  ')}`);
-        this.emit('debug', `Data (${typeof message.data}): \n\t${message.data}`);
-
-        try {
-          const data = JSON.parse(message.data);
-          this.emit('debug', `Parsed (${typeof data}): ${JSON.stringify(data, null, '  ')}`);
-          this.emit('log', `[${data.object.created}] @${data.actor}: ${data.object.content}`);
-          this.emit('message', message.data);
-        } catch (exception) {
-          this.emit('error', `Could not process ChatMessage: ${exception}`);
-        }
-        break;
       case 'Generic':
         relay = true;
         break;

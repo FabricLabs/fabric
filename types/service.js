@@ -107,7 +107,7 @@ class Service extends Actor {
       try {
         this.store = new Store(this.settings);
       } catch (E) {
-        console.error('Error:', E);
+        console.error('Store Error:', E);
       }
     }
 
@@ -620,7 +620,7 @@ class Service extends Actor {
     try {
       this.observer = manager.observe(this._state.content);
     } catch (exception) {
-      console.warn('Could not observe state:', this._state.content, exception);
+      console.trace('Could not observe state:', this._state.content, exception);
     }
 
     // Set a heartbeat
