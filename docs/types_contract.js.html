@@ -33,7 +33,10 @@
       <article>
         <pre class="prettyprint source linenums"><code>'use strict';
 
+// Dependencies
 const parser = require('dotparser');
+
+// Fabric Types
 const Actor = require('./actor');
 const Hash256 = require('./hash256');
 const Key = require('./key');
@@ -48,11 +51,7 @@ class Contract extends Service {
       name: 'TemplateContract',
       balances: {},
       circuit: {},
-      constraints: {
-        supply: function () {
-          return this.state.clock + 1;
-        }
-      },
+      constraints: {},
       graphs: {},
       state: {
         name: 'TemplateContract',
@@ -96,41 +95,11 @@ class Contract extends Service {
     return contract;
   };
 
-  static fromJavaScript (js) {
-
-  }
-
   static fromGraph (graphs) {
     const circuit = {
       stack: [],
       nodes: []
     };
-
-    for (let i = 0; i &lt; graphs.length; i++) {
-      const graph = graphs[i];
-      const node = {
-        name: graph.id
-      };
-
-      circuit.nodes.push(node);
-
-      if (!graph.children.length) continue;
-      for (let j = 0; j &lt; graph.children.length; j++) {
-        const child = graph.children[j];
-        console.log('child:', child);
-
-        switch (child.type) {
-          default:
-            console.warn(`Unhandled type: "${child.type}'" on child:`, child);
-            break;
-          case 'node_stmt':
-            circuit.nodes.push({
-              name: child.node_id.id
-            });
-            break;
-        }
-      }
-    }
 
     return circuit;
   }
@@ -143,14 +112,9 @@ class Contract extends Service {
     return contract.trim();
   }
 
-  toDot () {
-    const tokens = [];
-  }
-
   parse (input) {
     return this.parseDot(input);
   }
-
 
   /**
    * Start the Contract.
@@ -264,6 +228,7 @@ module.exports = Contract;
       <li><a href="Key.html">Key</a></li>
       <li><a href="Keystore.html">Keystore</a></li>
       <li><a href="Ledger.html">Ledger</a></li>
+      <li><a href="Lightning.html">Lightning</a></li>
       <li><a href="Logger.html">Logger</a></li>
       <li><a href="Machine.html">Machine</a></li>
       <li><a href="Mempool.html">Mempool</a></li>
@@ -274,6 +239,7 @@ module.exports = Contract;
       <li><a href="Peer.html">Peer</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
+      <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
       <li><a href="Router.html">Router</a></li>
       <li><a href="Scribe.html">Scribe</a></li>

@@ -2224,6 +2224,9 @@ selectively disclosing new routes to peers which may have open circuits.
 * [Message](#Message) : <code>Object</code>
     * [new Message(message)](#new_Message_new)
     * [.asRaw()](#Message+asRaw) ⇒ <code>Buffer</code>
+    * [.sign()](#Message+sign) ⇒ [<code>Message</code>](#Message)
+    * [.verify()](#Message+verify) ⇒ <code>Boolean</code>
+    * [._setSigner(signer)](#Message+_setSigner) ⇒ [<code>Message</code>](#Message)
 
 <a name="new_Message_new"></a>
 
@@ -2243,6 +2246,32 @@ Returns a [Buffer](Buffer) of the complete message.
 
 **Kind**: instance method of [<code>Message</code>](#Message)  
 **Returns**: <code>Buffer</code> - Buffer of the encoded [Message](#Message).  
+<a name="Message+sign"></a>
+
+### message.sign() ⇒ [<code>Message</code>](#Message)
+Signs the message using the associated signer.
+
+**Kind**: instance method of [<code>Message</code>](#Message)  
+**Returns**: [<code>Message</code>](#Message) - Signed message.  
+<a name="Message+verify"></a>
+
+### message.verify() ⇒ <code>Boolean</code>
+Verify a message's signature.
+
+**Kind**: instance method of [<code>Message</code>](#Message)  
+**Returns**: <code>Boolean</code> - `true` if the signature is valid, `false` if not.  
+<a name="Message+_setSigner"></a>
+
+### message.\_setSigner(signer) ⇒ [<code>Message</code>](#Message)
+Sets the signer for the message.
+
+**Kind**: instance method of [<code>Message</code>](#Message)  
+**Returns**: [<code>Message</code>](#Message) - Instance of the Message with associated signer.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| signer | [<code>Signer</code>](#Signer) | Signer instance. |
+
 <a name="Node"></a>
 
 ## Node
@@ -2449,6 +2478,7 @@ An in-memory representation of a node in our network.
 
 * [Peer](#Peer)
     * [new Peer([config])](#new_Peer_new)
+    * ~~[.address](#Peer+address)~~
     * [.start()](#Peer+start)
     * [.stop()](#Peer+stop)
     * [.listen()](#Peer+listen) ⇒ [<code>Peer</code>](#Peer)
@@ -2467,6 +2497,12 @@ Create an instance of [Peer](#Peer).
 | [config.port] | <code>Number</code> | <code>7777</code> | Port to use for P2P connections. |
 | [config.peers] | <code>Array</code> | <code>[]</code> | List of initial peers. |
 
+<a name="Peer+address"></a>
+
+### ~~peer.address~~
+***Deprecated***
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+start"></a>
 
 ### peer.start()
@@ -2486,7 +2522,6 @@ Start listening for connections.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: [<code>Peer</code>](#Peer) - Chainable method.  
-**Emits**: <code>Peer#event:ready</code>  
 <a name="Reader"></a>
 
 ## Reader

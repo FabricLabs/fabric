@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="utf-8">
-  <title>Class: Mempool &middot; Docs</title>
+  <title>Class: Lightning &middot; Docs</title>
   <script src="scripts/prettify/prettify.js"> </script>
   <script src="scripts/prettify/lang-css.js"> </script>
   <!--[if lt IE 9]>
@@ -24,7 +24,7 @@
 
 <body>
   <div id="main">
-    <h1 class="page-title">Class: Mempool</h1>
+    <h1 class="page-title">Class: Lightning</h1>
 
 
 
@@ -33,9 +33,9 @@
 
       <header>
 
-        <h2><span class="attribs"><span class="type-signature"></span></span>Mempool<span class="signature">(settings)</span><span class="type-signature"></span></h2>
+        <h2><span class="attribs"><span class="type-signature"></span></span>Lightning<span class="signature">(settings<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {<a href="Lightning.html">Lightning</a>}</span></h2>
 
-        <div class="class-description">Stores a list of Transaction elements.</div>
+        <div class="class-description">Manage a Lightning node.</div>
 
 
       </header>
@@ -50,7 +50,7 @@
 
 
 
-          <h4 class="name" id="Mempool"><span class="type-signature"></span>new Mempool<span class="signature">(settings)</span><span class="type-signature"></span></h4>
+          <h4 class="name" id="Lightning"><span class="type-signature"></span>new Lightning<span class="signature">(settings<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {<a href="Lightning.html">Lightning</a>}</span></h4>
 
 
 
@@ -58,7 +58,7 @@
 
 
           <div class="description">
-            Creates an instance of a <a href="Mempool.html">Mempool</a> <a href="Service.html">Service</a>.
+            Create an instance of the Lightning <a href="Service.html">Service</a>.
           </div>
 
 
@@ -81,6 +81,8 @@
 
                 <th>Type</th>
 
+
+                <th>Attributes</th>
 
 
 
@@ -107,10 +109,20 @@
                 </td>
 
 
+                <td class="attributes">
+
+                  &lt;optional><br>
 
 
 
-                <td class="description last">Map of settings to utilize.</td>
+
+
+                </td>
+
+
+
+
+                <td class="description last">Settings.</td>
               </tr>
 
 
@@ -153,7 +165,7 @@
             <dd class="tag-source">
               <ul class="dummy">
                 <li>
-                  <a href="types_mempool.js.html">types/mempool.js</a>, <a href="types_mempool.js.html#line12">line 12</a>
+                  <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line19">line 19</a>
                 </li>
               </ul>
             </dd>
@@ -170,10 +182,6 @@
 
 
 
-          <h5>Fires:</h5>
-          <ul>
-            <li>event:{Message} confirmed Emitted when the Mempool has dropped a transaction.</li>
-          </ul>
 
 
 
@@ -183,6 +191,23 @@
 
 
 
+
+          <h5>Returns:</h5>
+
+
+
+
+          <dl>
+            <dt>
+              Type
+            </dt>
+            <dd>
+
+              <span class="param-type"><a href="Lightning.html">Lightning</a></span>
+
+
+            </dd>
+          </dl>
 
 
 
@@ -199,6 +224,219 @@
 
 
 
+
+
+
+
+
+
+
+
+
+        <h3 class="subsection-title">Methods</h3>
+
+
+
+
+
+
+
+        <h4 class="name" id="_makeRPCRequest"><span class="type-signature">(async) </span>_makeRPCRequest<span class="signature">(method, params<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Object|String}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Make an RPC request through the Lightning UNIX socket.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>method</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">Name of method to call.</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>params</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Array</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">Array of parameters.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line222">line 222</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Respond from the Lightning node.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+            |
+
+            <span class="param-type">String</span>
+
+
+          </dd>
+        </dl>
 
 
 
