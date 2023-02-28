@@ -132,7 +132,7 @@
     "http-server": "14.1.1",
     "is-my-json-valid": "2.20.6",
     "js-beautify": "1.14.3",
-    "jsdoc": "3.6.11",
+    "jsdoc": "4.0.2",
     "jsdoc-to-markdown": "7.1.1",
     "json-to-dot": "1.1.0",
     "license-checker": "25.0.1",
