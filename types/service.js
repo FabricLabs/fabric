@@ -107,7 +107,7 @@ class Service extends Actor {
       try {
         this.store = new Store(this.settings);
       } catch (E) {
-        console.error('Error:', E);
+        console.error('Store Error:', E);
       }
     }
 
@@ -249,14 +249,18 @@ class Service extends Actor {
     return this.beat();
   }
 
+  /**
+   * Compute latest state.
+   * @emits Message#beat
+   * @returns {Service}
+   */
   beat () {
     const now = (new Date()).toISOString();
 
     // Increment clock
     ++this._clock;
 
-    // TODO: remove async, use local state instead
-    // i.e., queue worker job
+    // Create Generic Message
     const beat = Message.fromVector(['Generic', {
       clock: this._clock,
       created: now,
@@ -269,6 +273,7 @@ class Service extends Actor {
       process.exit();
     }
 
+    // TODO: remove JSON parser here — only needed for verification
     // TODO: parse JSON types in @fabric/core/types/message
     let data = beat.data;
 
@@ -360,12 +365,14 @@ class Service extends Actor {
           { op: 'replace', path: `/services/${name}`, value: beat.state }
         ];
 
+        /*
         try {
           manager.applyPatch(self._state.content, ops);
           await self.commit();
         } catch (exception) {
           self.emit('warning', `Could not process beat: ${exception}`);
         }
+        */
       }),
       _handleChanges: source.on('changes', async function (changes) {
         self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted changes: ${changes}`);
@@ -613,7 +620,7 @@ class Service extends Actor {
     try {
       this.observer = manager.observe(this._state.content);
     } catch (exception) {
-      console.warn('Could not observe state:', this._state.content, exception);
+      console.trace('Could not observe state:', this._state.content, exception);
     }
 
     // Set a heartbeat
@@ -627,6 +634,8 @@ class Service extends Actor {
   }
 
   async stop () {
+    this.emit('debug', 'Stopping...');
+
     if (this.settings.networking) {
       await this.disconnect();
     }
@@ -879,11 +888,11 @@ class Service extends Actor {
     try {
       ops.push({ type: 'put', key: 'snapshot', value: self.state });
 
-      this.emit('debug', `Commit Template: ${JSON.stringify({
+      /* this.emit('debug', `Commit Template: ${JSON.stringify({
         '@data': self.state,
         '@from': 'COMMIT',
         '@type': 'Snapshot'
-      }, null, '  ')}`);
+      }, null, '  ')}`); */
     } catch (E) {
       console.error('Error saving state:', self.state);
       console.error('Could not commit to state:', E);
@@ -1147,11 +1156,13 @@ class Service extends Actor {
 
   async _startAllServices () {
     if (!this.services) return this.emit('warning', 'Tried to start subservices, but none existed.');
+    this.emit('debug', `Service entries: ${Object.keys(this.services)}`);
+
     // Start all Services
     for (const [name, service] of Object.entries(this.services)) {
       // TODO: re-evaluate inclusion on Service itself
       if (this.settings.services && this.settings.services.includes(name)) {
-        this.emit('debug', `Starting service "${name}" (with trust)`);
+        this.emit('debug', `Starting service "${name}" (with trust)...`);
         // TODO: evaluate @fabric/core/types/store
         // TODO: isomorphic @fabric/core/types/store
         // await this.services[name]._bindStore(this.store);
@@ -1169,7 +1180,9 @@ class Service extends Actor {
   }
 
   async _startHeart () {
+    if (this._heart) clearInterval(this._heart);
     this._heart = setInterval(this.beat.bind(this), this.settings.interval);
+    return this;
   }
 }
 

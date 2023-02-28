@@ -122,6 +122,7 @@ class Bitcoin extends Service {
       }
     });
 
+    // Runs fullnode from bcoin
     if (this.settings.fullnode) {
       this.fullnode = new FullNode({
         network: this.settings.network
@@ -199,6 +200,7 @@ class Bitcoin extends Service {
   /**
    * Provides bcoin's implementation of `TX` internally.  This static may be
    * removed in the future.
+   * @deprecated
    */
   static get Transaction () {
     return bcoin.TX;
@@ -207,6 +209,7 @@ class Bitcoin extends Service {
   /**
    * Provides bcoin's implementation of `MTX` internally.  This static may be
    * removed in the future.
+   * @deprecated
    */
   static get MutableTransaction () {
     return bcoin.TX;
@@ -224,7 +227,7 @@ class Bitcoin extends Service {
    * User Agent string for the Bitcoin P2P network.
    */
   get UAString () {
-    return 'Portal/Bridge 0.1.0-dev (@fabric/core#0.1.0-dev)';
+    return 'Fabric/Bitcoin 0.1.0-dev (@fabric/core#v0.1.0-RC1)';
   }
 
   /**
@@ -274,7 +277,7 @@ class Bitcoin extends Service {
   }
 
   set height (value) {
-    this._state.height = parseInt(value);
+    this._state.content.height = parseInt(value);
     this.commit();
   }
 
@@ -355,7 +358,8 @@ class Bitcoin extends Service {
     ]).catch((exception) => {
       self.emit('error', `Unable to synchronize: ${exception}`);
     }).then((output) => {
-      self.emit('log', `Tick output: ${JSON.stringify(output, null, '  ')}`);
+      // self.emit('log', `Tick output: ${JSON.stringify(output, null, '  ')}`);
+
       const beat = {
         clock: self._clock,
         created: now,
@@ -1069,7 +1073,7 @@ class Bitcoin extends Service {
 
   async _requestBestBlockHash () {
     const hash = await this._makeRPCRequest('getbestblockhash', []);
-    this.emit('debug', `Got best block hash: ${hash}`);
+    // this.emit('debug', `Got best block hash: ${hash}`);
     return hash;
   }
 
@@ -1135,7 +1139,7 @@ class Bitcoin extends Service {
 
   async _syncChainHeight () {
     this.height = await this._makeRPCRequest('getblockcount', []);
-    this.emit('debug', `Got height:`, this.height);
+    // this.emit('debug', `Got height:`, this.height);
     return this.height;
   }
 
@@ -1674,7 +1678,7 @@ class Bitcoin extends Service {
     let before = 0;
 
     for (let i = 0; i <= this.height; i++) {
-      this.emit('debug', `Getting block headers: ${i}`);
+      this.emit('debug', `Getting block headers: ${i} of ${this.height}`);
 
       const now = Date.now();
       const progress = now - start;
@@ -1797,9 +1801,23 @@ class Bitcoin extends Service {
     // Start nodes
     if (this.settings.fullnode) await this._startLocalNode();
     if (this.settings.zmq) await this._startZMQ();
+
+    // Handle RPC mode
     if (this.settings.mode === 'rpc') {
-      if (!this.settings.authority) return this.emit('error', 'Error: No authority specified.  To use an RPC anchor, provide the "authority" parameter.');
-      const provider = new URL(this.settings.authority);
+      // If deprecated setting `authority` is provided, compose settings
+      if (this.settings.authority) {
+        const url = new URL(this.settings.authority);
+
+        // Assign all parameters
+        this.settings.username = url.username;
+        this.settings.password = url.password;
+        this.settings.host = url.host;
+        this.settings.port = url.port;
+        this.settings.secure = (url.protocol === 'https:') ? true : false;
+      }
+
+      const authority = `http${(this.settings.secure == true) ? 's': ''}://${this.settings.username}:${this.settings.password}@${this.settings.host}:${this.settings.port}`;
+      const provider = new URL(authority);
       const config = {
         host: provider.hostname,
         port: provider.port

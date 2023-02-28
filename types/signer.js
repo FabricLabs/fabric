@@ -77,10 +77,28 @@ class Signer extends Actor {
     return chunks;
   }
 
+  static signableForBuffer (input = Buffer.alloc(32)) {
+    // TODO: use pubkey
+    const challenge = crypto.randomBytes(32);
+    const message_hash = Hash256.digest(input.toString('hex'));
+    const message = [
+      `--- BEGIN META ---`,
+      `message_challenge: ${challenge.toString('hex')}`,
+      `message_hash: ${message_hash}`,
+      `message_scriptsig: 00${message_hash}`,
+      `--- END META ---`,
+      `--- BEGIN FABRIC MESSAGE ---`,
+      Signer.chunksForBuffer(input.toString('hex'), 80).join('\n'),
+      `--- END FABRIC MESSAGE ---`
+    ].join('\n');
+
+    return message;
+  }
+
   get pubkey () {
     // TODO: encode pubkey correctly for verification
     const x = this.key.keypair.getPublic().getX();
-    return schnorr.convert.intToBuffer(x).toString('hex');
+    return schnorr.convert.intToBuffer(x);
   }
 
   /**
@@ -100,8 +118,9 @@ class Signer extends Actor {
 
     // Hash & sign
     // TODO: check with bip-schnorr on behavior of signing > 32 byte messages
-    this._preimage = Buffer.from(Hash256.digest(data), 'hex');
-    this.signature = schnorr.sign(this.key.keypair.getPrivate('hex'), this._preimage);
+    // this._preimage = Buffer.from(Hash256.digest(data), 'hex');
+    this.signature = schnorr.sign(this.key.keypair.getPrivate('hex'), data);
+    // this.signature = schnorr.sign(this.key.keypair.getPrivate('hex'), this._preimage);
 
     this.emit('signature', {
       content: data,
@@ -110,7 +129,7 @@ class Signer extends Actor {
       signature: this.signature.toString('hex')
     });
 
-    return this.signature.toString('hex');
+    return this.signature;
   }
 
   start () {
@@ -145,7 +164,6 @@ class Signer extends Actor {
       schnorr.verify(pubkey, message, signature);
       return true;
     } catch (exception) {
-      console.error(exception);
       return false;
     }
   }

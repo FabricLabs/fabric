@@ -1,0 +1,6 @@
+---
+name: test.txt
+title: Fabric Test Document
+encoding: utf8
+---
+Hello, world!

@@ -1,6 +1,9 @@
 'use strict';
 
+// Dependencies
 const parser = require('dotparser');
+
+// Fabric Types
 const Actor = require('./actor');
 const Hash256 = require('./hash256');
 const Key = require('./key');
@@ -80,7 +83,6 @@ class Contract extends Service {
     return this.parseDot(input);
   }
 
-
   /**
    * Start the Contract.
    * @returns {Contract} State "STARTED" iteration of the Contract.
@@ -100,6 +102,7 @@ class Contract extends Service {
     super.commit();
 
     const template = {
+      // created: (new Date()).toISOString(),
       state: this.state
     };
 

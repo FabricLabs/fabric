@@ -93,20 +93,18 @@ class Key {
       this._mode = 'FROM_RANDOM';
     }
 
-    if (this.settings.debug) console.debug('mode:', this._mode);
-
     switch (this._mode) {
       case 'FROM_SEED':
         const seed = bip39.mnemonicToSeedSync(this.settings.seed, this.settings.passphrase);
         const root = bip32.fromSeed(seed);
 
+        // TODO: delete seed before constructor completes (or remove this line)
         this.seed = this.settings.seed;
 
         this.xprv = root.toBase58();
         this.xpub = root.neutered().toBase58();
         this.master = root;
         this.keypair = ec.keyFromPrivate(root.privateKey);
-        // this.address = this.keyring.getAddress().toString();
         this.status = 'seeded';
         break;
       case 'FROM_XPRV':
@@ -216,6 +214,17 @@ class Key {
     return this.generator.next.bits(1);
   }
 
+  /* export () {
+    return {
+      addresses: {
+        p2wkh: null,
+        p2tr: null
+      },
+      private: this.keypair.private,
+      public: this.keypair.public
+    };
+  } */
+
   deriveAccountReceive (index) {
     return this.deriveAddress(index);
   }
@@ -287,8 +296,8 @@ class Key {
     if (!this.master) throw new Error('You cannot derive without a master key.  Provide a seed phrase or an xprv.');
     const derived = this.master.derivePath(path);
     const options = {
-      private: derived.privateKey.encodeCompressed('hex'),
-      public: derived.publicKey.encodeCompressed('hex')
+      private: derived.privateKey.toString('hex'),
+      public: derived.publicKey.toString('hex')
     };
 
     return new Key(options);

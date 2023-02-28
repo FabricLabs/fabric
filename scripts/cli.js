@@ -25,6 +25,7 @@ const OP_CHAT = require('../contracts/chat');
 const OP_EXCHANGE = require('../contracts/exchange');
 const OP_MOUNT = require('../contracts/mount');
 const OP_SETUP = require('../contracts/setup');
+// const OP_VERIFY = require('../contracts/verify');
 const OP_TEST = require('../contracts/test');
 
 const COMMANDS = {
@@ -33,6 +34,7 @@ const COMMANDS = {
   'EXCHANGE': OP_EXCHANGE,
   'MOUNT': OP_MOUNT,
   'SETUP': OP_SETUP,
+  // 'VERIFY': OP_VERIFY,
   'TEST': OP_TEST
 };
 

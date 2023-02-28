@@ -59,22 +59,36 @@ class CLI extends App {
     this.settings = merge({
       debug: true,
       listen: false,
+      peering: true, // set to true to start Peer
       render: true,
       services: [],
       network: 'regtest',
-      interval: 1000
+      interval: 1000,
+      bitcoin: {
+        mode: 'rpc', // TODO: change name of mode to `rest`?
+        host: 'localhost',
+        port: 8443,
+        secure: false
+      },
+      lightning: {
+        mode: 'socket',
+        path: './stores/lightning-playnet/regtest/lightning-rpc'
+      },
     }, this.settings, settings);
 
     // Properties
     this.screen = null;
     this.history = [];
-    this.commands = {};
-    this.services = {};
-    this.documents = {};
-    this.requests = {};
-    this.elements = {};
+
+    this.aliases = {};
     this.channels = {};
+    this.commands = {};
+    this.contracts = {};
+    this.documents = {};
+    this.elements = {};
     this.peers = {};
+    this.requests = {};
+    this.services = {};
     this.connections = {};
 
     // State
@@ -87,7 +101,12 @@ class CLI extends App {
         unconfirmed: 0,
       },
       content: {
-        actors: {}
+        actors: {},
+        bitcoin: {
+          best: null
+        },
+        documents: {},
+        messages: {}
       },
       contracts: {},
       clock: 0
@@ -105,6 +124,10 @@ class CLI extends App {
     return this;
   }
 
+  assumeIdentity (key) {
+    this.identity = new Identity(key);
+  }
+
   attachWallet (wallet) {
     if (!wallet) wallet = new Wallet(this.settings);
 
@@ -119,33 +142,20 @@ class CLI extends App {
       interface: this.settings.interface,
       port: this.settings.port,
       peers: this.settings.peers,
-      key: this.wallet.key.settings
+      upnp: this.settings.upnp,
+      key: this.identity.settings
     });
+    return this;
   }
 
   _loadBitcoin () {
-    this.bitcoin = new Bitcoin({
-      authority: this.settings.authority,
-      mode: 'rpc',
-      fullnode: false,
-      network: this.settings.network,
-      key: {
-        seed: (this.settings.wallet) ? this.settings.wallet.seed : this.settings.seed,
-        xprv: (this.settings.wallet) ? this.settings.wallet.xprv : this.settings.xprv
-      },
-      peers: [
-        // '127.0.0.1:18444'
-      ],
-      services: [],
-      verbosity: 0
-    });
+    this.bitcoin = new Bitcoin(this.settings.bitcoin);
+    return this;
   }
 
   _loadLightning () {
-    this.lightning = new Lightning({
-      mode: 'socket',
-      path: this.settings.lightning.path
-    });
+    this.lightning = new Lightning(this.settings.lightning);
+    return this;
   }
 
   async bootstrap () {
@@ -174,6 +184,7 @@ class CLI extends App {
     this._registerCommand('quit', this._handleQuitRequest);
     this._registerCommand('exit', this._handleQuitRequest);
     this._registerCommand('clear', this._handleClearRequest);
+    this._registerCommand('alias', this._handleAliasRequest);
     this._registerCommand('peers', this._handlePeerListRequest);
     this._registerCommand('rotate', this._handleRotateRequest);
     this._registerCommand('connect', this._handleConnectRequest);
@@ -226,6 +237,10 @@ class CLI extends App {
     this.node.on('error', this._handlePeerError.bind(this));
     this.node.on('warning', this._handlePeerWarning.bind(this));
     this.node.on('message', this._handlePeerMessage.bind(this));
+    this.node.on('changes', this._handlePeerChanges.bind(this));
+    this.node.on('commit', this._handlePeerCommit.bind(this));
+    this.node.on('chat', this._handlePeerChat.bind(this));
+    this.node.on('upnp', this._handlePeerUPNP.bind(this));
 
     // ## Raw Connections
     this.node.on('connection', this._handleConnection.bind(this));
@@ -244,6 +259,7 @@ class CLI extends App {
 
     // ## Anchor handlers
     // ### Bitcoin
+    this.bitcoin.on('debug', this._handleBitcoinDebug.bind(this));
     this.bitcoin.on('ready', this._handleBitcoinReady.bind(this));
     this.bitcoin.on('error', this._handleBitcoinError.bind(this));
     this.bitcoin.on('warning', this._handleBitcoinWarning.bind(this));
@@ -263,15 +279,28 @@ class CLI extends App {
     this.lightning.on('log', this._handleLightningLog.bind(this));
     this.lightning.on('commit', this._handleLightningCommit.bind(this));
     this.lightning.on('sync', this._handleLightningSync.bind(this));
+    // this.lightning.on('transaction', this._handleLightningTransaction.bind(this));
+
+    /* this.on('log', function (log) {
+      console.log('local log:', log);
+    }); */
+
+    // this.on('debug', this._appendDebug.bind(this));
+
+    // const events = this.trust(this.lightning);
 
     // ## Start all services
     for (const [name, service] of Object.entries(this.services)) {
-      this._appendWarning(`Checking if Service enabled: ${name}`);
-      if (this.settings.services.includes(name)) {
-        this._appendWarning(`Service "${name}" is enabled.  Starting...`);
-        this.trust(this.services[name], name);
+      // Skip when service name not found in settings
+      if (!this.settings.services.includes(name)) continue;
+      this._appendDebug(`Service "${name}" is enabled.  Starting...`);
+      this.trust(this.services[name], name);
+
+      try {
         await this.services[name].start();
-        this._appendWarning(`The service named "${name}" has started!`);
+        this._appendDebug(`The service named "${name}" has started!`);
+      } catch (exception) {
+        this._appendError(`The service named "${name}" could not start:\n${exception}`);
       }
     }
 
@@ -284,13 +313,13 @@ class CLI extends App {
 
     // ## Start Anchor Services
     // Start Bitcoin service
-    this.bitcoin.start();
+    await this.bitcoin.start();
 
     // Start Lightning service
     this.lightning.start();
 
     // ## Start P2P node
-    this.node.start();
+    if (this.settings.peering) this.node.start();
 
     // ## Attach Heartbeat
     this._heart = setInterval(this.tick.bind(this), this.settings.interval);
@@ -315,7 +344,7 @@ class CLI extends App {
     let result = null;
 
     try {
-      result = pointer.get(this._state, path);
+      result = pointer.get(this._state.content, path);
     } catch (exception) {
       this._appendError(`Could not retrieve path "${path}": ${exception}`);
     }
@@ -368,6 +397,26 @@ class CLI extends App {
     }
 
     return this;
+  }
+
+  trust (source, name = this.constructor.name) {
+    if (!(source instanceof EventEmitter)) throw new Error('Source is not an EventEmitter.')
+    const self = this;
+
+    return {
+      _handleTrustedError: source.on('error', async function handleTrustedError (error) {
+        self._appendMessage(`[SOURCE:${name.toUpperCase()}] ${error}`);
+      }),
+      _handleTrustedLog: source.on('log', async function handleTrustedLog (log) {
+        self._appendMessage(`[SOURCE:${name.toUpperCase()}] ${log}`);
+      }),
+      _handleTrustedDebug: source.on('debug', async function handleTrustedDebug (log) {
+        self._appendDebug(`[SOURCE:${name.toUpperCase()}] ${log}`);
+      }),
+      _handleTrustedReady: source.on('ready', async function handleTrustedReady (ready) {
+        self._appendMessage(`[SOURCE:${name.toUpperCase()}] Ready! ${ready}`);
+      })
+    }
   }
 
   async _appendMessage (msg) {
@@ -464,6 +513,7 @@ class CLI extends App {
     const actor = new Actor(content);
     this._appendMessage(`File contents (${content.length} bytes):\n---${content}\n---\nDocument ID: ${actor.id}`);
     this.documents[actor.id] = content;
+    this._state.content.documents[actor.id] = content.toString('hex');
   }
 
   async _handlePublishCommand (params) {
@@ -507,6 +557,8 @@ class CLI extends App {
 
   async _handleBitcoinSync (sync) {
     this._appendMessage(`Bitcoin service emitted sync: ${JSON.stringify(sync)}`);
+    this._state.content.bitcoin.best = sync.best;
+    this.commit();
   }
 
   async _handleBitcoinBlock (block) {
@@ -519,6 +571,10 @@ class CLI extends App {
 
   async _handleBitcoinTransaction (transaction) {
     this._appendMessage(`Bitcoin service emitted transaction: ${JSON.stringify(transaction)}`);
+  }
+
+  async _handleBitcoinDebug (...msg) {
+    this._appendDebug(msg);
   }
 
   async _handleBitcoinError (...msg) {
@@ -596,11 +652,18 @@ class CLI extends App {
   }
 
   async _handleLightningCommit (commit) {
-    this._appendDebug(`Lightning service emitted commit: ${JSON.stringify(commit)}`);
+    // this._appendDebug(`Lightning service emitted commit: ${JSON.stringify(commit)}`);
+    const data = this.tableDataFor(Object.values(commit.object.state.channels), [
+      'id',
+      'channel_id',
+      'funding_txid'
+    ]);
+
+    this.elements['channellist'].setData(data);
   }
 
   async _handleLightningDebug (...msg) {
-    this._appendDebug(`[SERVICES:LIGHTNING] debug: ${msg}`);
+    this._appendError(`[SERVICES:LIGHTNING] debug: ${msg}`);
   }
 
   async _handleLightningError (...msg) {
@@ -670,7 +733,7 @@ class CLI extends App {
 
   async _handleNodeReady (node) {
     if (this.settings.render) {
-      this.elements['identityString'].setContent(node.id);
+      // this.elements['identityString'].setContent(node.id);
     }
 
     this.emit('identity', {
@@ -693,6 +756,24 @@ class CLI extends App {
 
   async _handlePeerLog (message) {
     this._appendMessage(`[NODE] ${message}`);
+  }
+
+  async _handlePeerChanges (changes) {
+    // this._appendDebug(`[NODE] [CHANGES] ${JSON.stringify(changes)}`);
+    this._applyChanges(changes);
+    this.commit();
+  }
+
+  async _handlePeerCommit (commit) {
+    // this._appendDebug(`[NODE] [COMMIT] ${JSON.stringify(commit)}`);
+  }
+
+  async _handlePeerChat (chat) {
+    this._appendMessage(`[@${chat.actor.id}]: ${chat.object.content}`);
+  }
+
+  async _handlePeerUPNP (upnp) {
+    this._appendDebug(`[UPNP] ${JSON.stringify(upnp)}`);
   }
 
   async _handlePeerMessage (message) {
@@ -809,7 +890,10 @@ class CLI extends App {
     if (!self._processInput(data.input)) {
       // Describe the activity for use in P2P message
       const msg = {
-        actor: self.node.id,
+        type: 'P2P_CHAT_MESSAGE',
+        actor: {
+          id: self.node.id
+        },
         object: {
           created: Date.now(),
           content: content
@@ -818,10 +902,16 @@ class CLI extends App {
       };
 
       const message = Message.fromVector(['ChatMessage', JSON.stringify(msg)]);
-      this._appendDebug(`Chat Message created (${message.data.length} bytes): ${message.data}`);
+      // this._appendDebug(`Chat Message created (${message.data.length} bytes): ${message.data}`);
       self.setPane('messages');
 
+      // Log own message
+      self._handlePeerChat(msg);
+
+      // Relay to peers
       self.node.relayFrom(self.node.id, message);
+
+      // Notify services
       self._sendToAllServices(msg);
     }
 
@@ -832,6 +922,18 @@ class CLI extends App {
   _handleQuitRequest () {
     this._appendMessage('Exiting...');
     this.stop();
+    return false;
+  }
+
+  _handleAliasRequest (params) {
+    if (!params) return false;
+    if (!params[1]) {
+      this._appendError('No alias provided.');
+      return false;
+    }
+
+    this.node._announceAlias(params[1]);
+
     return false;
   }
 
@@ -956,8 +1058,10 @@ class CLI extends App {
 
   _handleIdentityRequest () {
     this._appendMessage(`Local Identity: ${JSON.stringify({
-      id: this.node.id,
-      address: this.node.server.address()
+      id: this.identity.id,
+      pubkey: this.identity.pubkey,
+      address: this.node.server.address(),
+      endpoint: `${this.identity.id}@${this.settings.host}:${this.settings.port}`
     }, null, '  ')}`);
   }
 
@@ -1007,7 +1111,7 @@ class CLI extends App {
       this.elements['chainTip'].setContent(`${stats.bestblockhash}`);
       this.elements['unconfirmedValue'].setContent(`${bonded}`);
       this.elements['bondedValue'].setContent(`${bonded}`);
-      this.elements['progressStatus'].setContent(`${progress} of ${height} (${((progress / height) * 100).toPrecision(2)} %)`);
+      this.elements['progressStatus'].setContent(`${progress - 1} of ${height} (${(((progress - 1) / height) * 100)} %)`);
 
       this.screen.render();
     } catch (exception) {
@@ -1024,6 +1128,7 @@ class CLI extends App {
     try {
       const balance = await this._getBalance();
       const balances = await this.bitcoin._syncBalances();
+      const lightning = await this.lightning._syncBalances();
 
       this._state.balances.confirmed = balance;
       this._state.balances.trusted = balances.mine.trusted;
@@ -1082,7 +1187,11 @@ class CLI extends App {
 
   async _getBalance () {
     const result = await this.bitcoin._syncBalanceFromOracle();
-    return result.data.content;
+    await this.lightning.sync();
+    // this._appendDebug(`Lightning balances: ${JSON.stringify(this.lightning.balances)}`);
+    const balance = result.data.content + this.lightning.balances.spendable;
+
+    return balance;
   }
 
   _syncConnectionList () {
@@ -1103,7 +1212,7 @@ class CLI extends App {
 
       const element = blessed.element({
         name: connection.id,
-        content: `[${icon}] ${connection.id}@${connection.address}`
+        content: `[${icon}] ${id}`
       });
 
       // TODO: use peer ID for managed list
@@ -1273,7 +1382,7 @@ class CLI extends App {
         type: 'line'
       },
       top: 6,
-      height: 10
+      // height: 10
     });
 
     self.elements['channellist'] = blessed.table({
@@ -1284,6 +1393,7 @@ class CLI extends App {
       width: '100%-2'
     });
 
+    /*
     self.elements['contractbook'] = blessed.box({
       parent: self.elements.contracts,
       label: '[ Fabric ]',
@@ -1300,6 +1410,7 @@ class CLI extends App {
       ],
       width: '100%-2'
     });
+    */
 
     self.elements['network'] = blessed.list({
       parent: self.screen,
@@ -1691,12 +1802,30 @@ class CLI extends App {
     self.elements['form'].on('submit', self._handleFormSubmit.bind(self));
     // this.focusInput();
 
+    this.elements['identityString'].setContent(this.identity.id);
     this.setPane('messages');
 
     setInterval(function () {
       // self._appendMessage('10 seconds have passed.');
       // self.bitcoin.generateBlock();
     }, 10000);
+  }
+
+  tableDataFor (input = [], exclusions = []) {
+    const keys = [];
+    const entries = input.map((x) => {
+      const map = {};
+
+      for (const [key, value] of Object.entries(x)) {
+        if (exclusions.includes(key)) continue;
+        if (!keys.includes(key)) keys.push(key);
+        map[key] = value.toString();
+      }
+
+      return Object.values(map);
+    });
+
+    return [ keys ].concat(entries);
   }
 }
 

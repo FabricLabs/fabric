@@ -167,14 +167,14 @@ class App extends Service {
     try {
       const resource = new Resource(structure);
 
-      resource._sign();
+      // resource._sign();
       resource.trust(self.stash);
 
       // self.use(name, structure);
       // TODO: decide on resource['@data'] vs. resource (new)
       self.resources[name] = resource;
 
-      self._sign();
+      // self._sign();
     } catch (E) {
       console.error(E);
     }

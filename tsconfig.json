@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "strictNullChecks": true,
+    "moduleResolution": "node",
+    "noUnusedParameters": true,
+    "noUnusedLocals": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "es5",
+    "module": "ES2015",
+    "declaration": true,
+    "outDir": "./assets/types",
+    "noImplicitAny": true,
+    "importHelpers": true
+  },
+  "include": [
+    "types/**/*",
+    "index.d.ts", "contracts/deposit.js", // declaration file path
+  ],
+  "compileOnSave": false
+}

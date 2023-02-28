@@ -48,7 +48,11 @@ class Contract extends Service {
       name: 'TemplateContract',
       balances: {},
       circuit: {},
-      constraints: {},
+      constraints: {
+        supply: function () {
+          return this.state.clock + 1;
+        }
+      },
       graphs: {},
       state: {
         name: 'TemplateContract',
@@ -92,11 +96,41 @@ class Contract extends Service {
     return contract;
   };
 
+  static fromJavaScript (js) {
+
+  }
+
   static fromGraph (graphs) {
     const circuit = {
       stack: [],
       nodes: []
     };
+
+    for (let i = 0; i &lt; graphs.length; i++) {
+      const graph = graphs[i];
+      const node = {
+        name: graph.id
+      };
+
+      circuit.nodes.push(node);
+
+      if (!graph.children.length) continue;
+      for (let j = 0; j &lt; graph.children.length; j++) {
+        const child = graph.children[j];
+        console.log('child:', child);
+
+        switch (child.type) {
+          default:
+            console.warn(`Unhandled type: "${child.type}'" on child:`, child);
+            break;
+          case 'node_stmt':
+            circuit.nodes.push({
+              name: child.node_id.id
+            });
+            break;
+        }
+      }
+    }
 
     return circuit;
   }
@@ -107,6 +141,10 @@ class Contract extends Service {
       likely@$A
     `;
     return contract.trim();
+  }
+
+  toDot () {
+    const tokens = [];
   }
 
   parse (input) {
@@ -133,6 +171,7 @@ class Contract extends Service {
     super.commit();
 
     const template = {
+      // created: (new Date()).toISOString(),
       state: this.state
     };
 

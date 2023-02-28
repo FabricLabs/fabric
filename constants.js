@@ -23,7 +23,7 @@ const FIXTURE_SEED = 'abandon abandon abandon abandon abandon abandon abandon ab
 // Message Constants
 const MAGIC_BYTES = 0xC0D3F33D;
 const VERSION_NUMBER = 0x01; // 0 for development, pre-alpha, 1 for production
-const HEADER_SIZE = 144; // [4], [4], [32], [4], [4], [32], [64] bytes
+const HEADER_SIZE = 176; // [4], [4], [32], [32], [4], [4], [32], [64] bytes
 const LARGE_COLLECTION_SIZE = 10; // TODO: test with 1,000,000
 const MAX_MESSAGE_SIZE = 4096 - HEADER_SIZE;
 
@@ -43,7 +43,7 @@ const FABRIC_PLAYNET_ADDRESS = ''; // deposit address (P2TR)
 const FABRIC_PLAYNET_ORIGIN = ''; // block hash of first deploy
 
 // FABRIC ONLY
-const GENERIC_MESSAGE_TYPE = MAGIC_BYTES + parseInt(crypto.createHash('sha256').update('@types/GenericMessage').digest('hex').slice(0, 4), 16);
+const GENERIC_MESSAGE_TYPE = parseInt(crypto.createHash('sha256').update('@types/GenericMessage').digest('hex').slice(0, 4), 16);
 const LOG_MESSAGE_TYPE = MAGIC_BYTES + parseInt(crypto.createHash('sha256').update('@types/GenericLogMessage').digest('hex').slice(0, 4), 16);
 const GENERIC_LIST_TYPE = MAGIC_BYTES + parseInt(crypto.createHash('sha256').update('@types/GenericList').digest('hex').slice(0, 4), 16);
 const DOCUMENT_PUBLISH_TYPE = 998;
@@ -111,6 +111,10 @@ const LIGHTNING_PARENT_SIDEBLOCK_HASH = 0x00000000000000000000000000000000000000
 
 const ZERO_LENGTH_PLAINTEXT = '';
 
+// HTTP
+const HTTP_HEADER_CONTENT_TYPE = 'application/json';
+
+// CommonJS Support
 module.exports = {
   PEER_PORT,
   MAX_PEERS,
@@ -136,6 +140,7 @@ module.exports = {
   LIGHTNING_SIDECHAIN_NUM,
   LIGHTNING_SIDEBLOCK_HASH,
   LIGHTNING_PARENT_SIDEBLOCK_HASH,
+  HTTP_HEADER_CONTENT_TYPE,
   MAGIC_BYTES,
   MAX_FRAME_SIZE,
   MAX_MEMORY_ALLOC,

@@ -1,6 +1,15 @@
 # Things to Do
 ## Current Goals
 - [ ] Release `@fabric/core#v0.1.0-RC1`
+  - [ ] Document development process
+    - [ ] `reports/`
+    - [ ] `scripts/`
+  - [x] Encryption by default
+- [ ] Document configuration
+  - [ ] Document use of environment variables
+  - [ ] Document use of `settings/local.js`
+  - [ ] Document use of `~/.fabric`
+- [x] Enable Lightning support
 
 See also [GOALS.md][goals].
 

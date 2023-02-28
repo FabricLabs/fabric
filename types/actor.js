@@ -71,6 +71,14 @@ class Actor extends EventEmitter {
     return this;
   }
 
+  static chunk (array, size = 32) {
+    const chunkedArray = [];
+    for (var i = 0; i < array.length; i += size) {
+      chunkedArray.push(array.slice(i, i + size));
+    }
+    return chunkedArray;
+  }
+
   /**
    * Create an {@link Actor} from a variety of formats.
    * @param {Object} input Target {@link Object} to create.
@@ -264,6 +272,13 @@ class Actor extends EventEmitter {
     return {
       type: 'FabricActorState',
       object: this.toObject()
+    };
+  }
+
+  toJSON () {
+    return {
+      '@id': this.id,
+      ...this.state
     };
   }
 

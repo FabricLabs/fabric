@@ -110,6 +110,11 @@ within the network.</p>
 <dt><a href="#Reader">Reader</a></dt>
 <dd><p>Read from a byte stream, seeking valid Fabric messages.</p>
 </dd>
+<dt><a href="#Remote">Remote</a> : <code><a href="#Remote">Remote</a></code></dt>
+<dd><p>Interact with a remote <a href="#Resource">Resource</a>.  This is currently the only
+HTTP-related code that should remain in @fabric/core — all else must
+be moved to @fabric/http before final release!</p>
+</dd>
 <dt><a href="#Resource">Resource</a></dt>
 <dd><p>Generic interface for collections of digital objects.</p>
 </dd>
@@ -186,6 +191,9 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 </dd>
 <dt><a href="#Exchange">Exchange</a></dt>
 <dd><p>Implements a basic Exchange.</p>
+</dd>
+<dt><a href="#Lightning">Lightning</a></dt>
+<dd><p>Manage a Lightning node.</p>
 </dd>
 <dt><a href="#Redis">Redis</a></dt>
 <dd><p>Connect and subscribe to ZeroMQ servers.</p>
@@ -498,6 +506,7 @@ Fabric-based networking and storage.
     * [._registerService(name, Service)](#App+_registerService) ⇒ [<code>Service</code>](#Service)
     * [.init()](#Service+init)
     * [.tick()](#Service+tick) ⇒ <code>Number</code>
+    * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
     * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
     * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
     * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
@@ -648,6 +657,14 @@ Move forward one clock cycle.
 
 **Kind**: instance method of [<code>App</code>](#App)  
 **Overrides**: [<code>tick</code>](#Service+tick)  
+<a name="Service+beat"></a>
+
+### app.beat() ⇒ [<code>Service</code>](#Service)
+Compute latest state.
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Overrides**: [<code>beat</code>](#Service+beat)  
+**Emits**: <code>Message#event:beat</code>  
 <a name="Service+get"></a>
 
 ### app.get(path) ⇒ <code>Mixed</code>
@@ -1431,10 +1448,10 @@ Interact with a local filesystem.
 
 * [Filesystem](#Filesystem)
     * [new Filesystem([settings])](#new_Filesystem_new)
-    * [._loadFromDisk()](#Filesystem+_loadFromDisk) ⇒ <code>Promise</code>
     * [.ls()](#Filesystem+ls) ⇒ <code>Array</code>
     * [.readFile(name)](#Filesystem+readFile) ⇒ <code>Buffer</code>
     * [.writeFile(name, content)](#Filesystem+writeFile) ⇒ <code>Boolean</code>
+    * [._loadFromDisk()](#Filesystem+_loadFromDisk) ⇒ <code>Promise</code>
     * [.sync()](#Filesystem+sync) ⇒ [<code>Filesystem</code>](#Filesystem)
 
 <a name="new_Filesystem_new"></a>
@@ -1449,13 +1466,6 @@ Synchronize an [Actor](#Actor) with a local filesystem.
 | [settings] | <code>Object</code> | Configuration for the Fabric filesystem. |
 | [settings.path] | <code>Object</code> | Path of the local filesystem. |
 
-<a name="Filesystem+_loadFromDisk"></a>
-
-### filesystem.\_loadFromDisk() ⇒ <code>Promise</code>
-Load Filesystem state from disk.
-
-**Kind**: instance method of [<code>Filesystem</code>](#Filesystem)  
-**Returns**: <code>Promise</code> - Resolves with Filesystem instance.  
 <a name="Filesystem+ls"></a>
 
 ### filesystem.ls() ⇒ <code>Array</code>
@@ -1488,6 +1498,13 @@ Write a file by name.
 | name | <code>String</code> | Name of the file to write. |
 | content | <code>Buffer</code> | Content of the file. |
 
+<a name="Filesystem+_loadFromDisk"></a>
+
+### filesystem.\_loadFromDisk() ⇒ <code>Promise</code>
+Load Filesystem state from disk.
+
+**Kind**: instance method of [<code>Filesystem</code>](#Filesystem)  
+**Returns**: <code>Promise</code> - Resolves with Filesystem instance.  
 <a name="Filesystem+sync"></a>
 
 ### filesystem.sync() ⇒ [<code>Filesystem</code>](#Filesystem)
@@ -2487,6 +2504,143 @@ for valid Fabric messages.
 | --- | --- | --- |
 | settings | <code>Object</code> | Settings for the stream. |
 
+<a name="Remote"></a>
+
+## Remote : [<code>Remote</code>](#Remote)
+Interact with a remote [Resource](#Resource).  This is currently the only
+HTTP-related code that should remain in @fabric/core — all else must
+be moved to @fabric/http before final release!
+
+**Kind**: global class  
+**Properties**
+
+| Name | Type |
+| --- | --- |
+| config | <code>Object</code> | 
+| secure | <code>Boolean</code> | 
+
+
+* [Remote](#Remote) : [<code>Remote</code>](#Remote)
+    * [new Remote(target)](#new_Remote_new)
+    * [.enumerate()](#Remote+enumerate) ⇒ <code>Configuration</code>
+    * [.request(type, path, [params])](#Remote+request) ⇒ <code>FabricHTTPResult</code>
+    * [._PUT(path, body)](#Remote+_PUT) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
+    * [._GET(path, params)](#Remote+_GET) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
+    * [._POST(path, params)](#Remote+_POST) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
+    * [._OPTIONS(path, params)](#Remote+_OPTIONS) ⇒ <code>Object</code>
+    * [._PATCH(path, body)](#Remote+_PATCH) ⇒ <code>Object</code>
+    * [._DELETE(path, params)](#Remote+_DELETE) ⇒ <code>Object</code>
+
+<a name="new_Remote_new"></a>
+
+### new Remote(target)
+An in-memory representation of a node in our network.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| target | <code>Object</code> | Target object. |
+| target.host | <code>String</code> | Named host, e.g. "localhost". |
+| target.secure | <code>String</code> | Require TLS session. |
+
+<a name="Remote+enumerate"></a>
+
+### remote.enumerate() ⇒ <code>Configuration</code>
+Enumerate the available Resources on the remote host.
+
+**Kind**: instance method of [<code>Remote</code>](#Remote)  
+**Returns**: <code>Configuration</code> - An object with enumerable key/value pairs for the Application Resource Contract.  
+<a name="Remote+request"></a>
+
+### remote.request(type, path, [params]) ⇒ <code>FabricHTTPResult</code>
+Make an HTTP request to the configured authority.
+
+**Kind**: instance method of [<code>Remote</code>](#Remote)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| type | <code>String</code> | One of `GET`, `PUT`, `POST`, `DELETE`, or `OPTIONS`. |
+| path | <code>String</code> | The path to request from the authority. |
+| [params] | <code>Object</code> | Options. |
+
+<a name="Remote+_PUT"></a>
+
+### remote.\_PUT(path, body) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
+HTTP PUT against the configured Authority.
+
+**Kind**: instance method of [<code>Remote</code>](#Remote)  
+**Returns**: <code>FabricHTTPResult</code> \| <code>String</code> - Result of request.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | HTTP Path to request. |
+| body | <code>Object</code> | Map of parameters to supply. |
+
+<a name="Remote+_GET"></a>
+
+### remote.\_GET(path, params) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
+HTTP GET against the configured Authority.
+
+**Kind**: instance method of [<code>Remote</code>](#Remote)  
+**Returns**: <code>FabricHTTPResult</code> \| <code>String</code> - Result of request.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | HTTP Path to request. |
+| params | <code>Object</code> | Map of parameters to supply. |
+
+<a name="Remote+_POST"></a>
+
+### remote.\_POST(path, params) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
+HTTP POST against the configured Authority.
+
+**Kind**: instance method of [<code>Remote</code>](#Remote)  
+**Returns**: <code>FabricHTTPResult</code> \| <code>String</code> - Result of request.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | HTTP Path to request. |
+| params | <code>Object</code> | Map of parameters to supply. |
+
+<a name="Remote+_OPTIONS"></a>
+
+### remote.\_OPTIONS(path, params) ⇒ <code>Object</code>
+HTTP OPTIONS on the configured Authority.
+
+**Kind**: instance method of [<code>Remote</code>](#Remote)  
+**Returns**: <code>Object</code> - - Full description of remote resource.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | HTTP Path to request. |
+| params | <code>Object</code> | Map of parameters to supply. |
+
+<a name="Remote+_PATCH"></a>
+
+### remote.\_PATCH(path, body) ⇒ <code>Object</code>
+HTTP PATCH on the configured Authority.
+
+**Kind**: instance method of [<code>Remote</code>](#Remote)  
+**Returns**: <code>Object</code> - - Full description of remote resource.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | HTTP Path to request. |
+| body | <code>Object</code> | Map of parameters to supply. |
+
+<a name="Remote+_DELETE"></a>
+
+### remote.\_DELETE(path, params) ⇒ <code>Object</code>
+HTTP DELETE on the configured Authority.
+
+**Kind**: instance method of [<code>Remote</code>](#Remote)  
+**Returns**: <code>Object</code> - - Full description of remote resource.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | HTTP Path to request. |
+| params | <code>Object</code> | Map of parameters to supply. |
+
 <a name="Resource"></a>
 
 ## Resource
@@ -2913,6 +3067,7 @@ familiar semantics.
     * [new Service(settings)](#new_Service_new)
     * [.init()](#Service+init)
     * [.tick()](#Service+tick) ⇒ <code>Number</code>
+    * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
     * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
     * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
     * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
@@ -2952,6 +3107,13 @@ TODO: move to @fabric/http/types/spa
 Move forward one clock cycle.
 
 **Kind**: instance method of [<code>Service</code>](#Service)  
+<a name="Service+beat"></a>
+
+### service.beat() ⇒ [<code>Service</code>](#Service)
+Compute latest state.
+
+**Kind**: instance method of [<code>Service</code>](#Service)  
+**Emits**: <code>Message#event:beat</code>  
 <a name="Service+get"></a>
 
 ### service.get(path) ⇒ <code>Mixed</code>
@@ -4159,6 +4321,7 @@ Manages interaction with the Bitcoin network.
         * [.stop()](#Bitcoin+stop)
         * [.init()](#Service+init)
         * [.tick()](#Service+tick) ⇒ <code>Number</code>
+        * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
         * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
         * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
         * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
@@ -4171,8 +4334,8 @@ Manages interaction with the Bitcoin network.
         * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
         * [._send(message)](#Service+_send)
     * _static_
-        * [.Transaction](#Bitcoin.Transaction)
-        * [.MutableTransaction](#Bitcoin.MutableTransaction)
+        * ~~[.Transaction](#Bitcoin.Transaction)~~
+        * ~~[.MutableTransaction](#Bitcoin.MutableTransaction)~~
 
 <a name="new_Bitcoin_new"></a>
 
@@ -4381,6 +4544,14 @@ Move forward one clock cycle.
 
 **Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
 **Overrides**: [<code>tick</code>](#Service+tick)  
+<a name="Service+beat"></a>
+
+### bitcoin.beat() ⇒ [<code>Service</code>](#Service)
+Compute latest state.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>beat</code>](#Service+beat)  
+**Emits**: <code>Message#event:beat</code>  
 <a name="Service+get"></a>
 
 ### bitcoin.get(path) ⇒ <code>Mixed</code>
@@ -4527,14 +4698,18 @@ Sends a message.
 
 <a name="Bitcoin.Transaction"></a>
 
-### Bitcoin.Transaction
+### ~~Bitcoin.Transaction~~
+***Deprecated***
+
 Provides bcoin's implementation of `TX` internally.  This static may be
 removed in the future.
 
 **Kind**: static property of [<code>Bitcoin</code>](#Bitcoin)  
 <a name="Bitcoin.MutableTransaction"></a>
 
-### Bitcoin.MutableTransaction
+### ~~Bitcoin.MutableTransaction~~
+***Deprecated***
+
 Provides bcoin's implementation of `MTX` internally.  This static may be
 removed in the future.
 
@@ -4559,6 +4734,40 @@ find and trade with real peers.
 | settings | <code>Object</code> | Map of settings to values. |
 | settings.fees | <code>Object</code> | Map of fee settings (all values in BTC). |
 | settings.fees.minimum | <code>Object</code> | Minimum fee (satoshis). |
+
+<a name="Lightning"></a>
+
+## Lightning
+Manage a Lightning node.
+
+**Kind**: global class  
+
+* [Lightning](#Lightning)
+    * [new Lightning([settings])](#new_Lightning_new)
+    * [._makeRPCRequest(method, [params])](#Lightning+_makeRPCRequest) ⇒ <code>Object</code> \| <code>String</code>
+
+<a name="new_Lightning_new"></a>
+
+### new Lightning([settings])
+Create an instance of the Lightning [Service](#Service).
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Settings. |
+
+<a name="Lightning+_makeRPCRequest"></a>
+
+### lightning.\_makeRPCRequest(method, [params]) ⇒ <code>Object</code> \| <code>String</code>
+Make an RPC request through the Lightning UNIX socket.
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+**Returns**: <code>Object</code> \| <code>String</code> - Respond from the Lightning node.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| method | <code>String</code> | Name of method to call. |
+| [params] | <code>Array</code> | Array of parameters. |
 
 <a name="Redis"></a>
 

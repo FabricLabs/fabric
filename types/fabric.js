@@ -20,9 +20,9 @@ const Message = require('../types/message');
 const Observer = require('../types/observer');
 const Opcode = require('../types/opcode');
 const Oracle = require('../types/oracle');
-// const Peer = require('./peer');
+const Peer = require('./peer');
 const Program = require('../types/program');
-// const Remote = require('../types/remote');
+const Remote = require('../types/remote');
 const Resource = require('../types/resource');
 const Service = require('../types/service');
 const Scribe = require('../types/scribe');
@@ -112,7 +112,7 @@ class Fabric extends Service {
   static get Message () { return Message; }
   static get Observer () { return Observer; }
   static get Oracle () { return Oracle; }
-  // static get Peer () { return Peer; }
+  static get Peer () { return Peer; }
   static get Program () { return Program; }
   static get Remote () { return Remote; }
   static get Resource () { return Resource; }

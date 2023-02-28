@@ -36,9 +36,7 @@
 // Dependencies
 const crypto = require('crypto');
 const { EventEmitter } = require('events');
-
 const monitor = require('fast-json-patch');
-const pointer = require('json-pointer');
 
 // Fabric Types
 const Hash256 = require('./hash256');
@@ -68,47 +66,24 @@ class Actor extends EventEmitter {
   constructor (actor = {}) {
     super(actor);
 
-    this.settings = {
-      type: 'Actor',
-      status: 'PAUSED'
-    };
+    this.commits = [];
+    // this.signature = Buffer.alloc(64);
+    this.value = this._readObject(actor); // TODO: use Buffer?
 
     // Internal State
-    // TODO: encourage use of `state` over `_state`
-    // TODO: use `const state` here
     this._state = {
-      type: this.settings.type,
-      status: this.settings.status,
-      content: this._readObject(actor)
+      type: 'Actor',
+      data: this.value,
+      status: 'PAUSED',
+      content: this.value || {}
     };
 
-    // TODO: evaluate disabling by default
-    this.history = [];
-
-    // TODO: evaluate disabling by default
-    // and/or resolving performance issues at scale
-    try {
-      this.observer = monitor.observe(this._state.content, this._handleMonitorChanges.bind(this));
-    } catch (exception) {
-      console.error('UNABLE TO WATCH:', exception);
-    }
-
-    // TODO: use elegant method to strip these properties
-    Object.defineProperty(this, '_events', { enumerable: false });
-    Object.defineProperty(this, '_eventsCount', { enumerable: false });
-    Object.defineProperty(this, '_maxListeners', { enumerable: false });
-    Object.defineProperty(this, '_state', { enumerable: false });
-    Object.defineProperty(this, 'observer', { enumerable: false });
+    this.monitor = monitor.observe(this._state.content, this._handleMonitorChanges.bind(this));
 
     // Chainable
     return this;
   }
 
-  /**
-   * Create an {@link Actor} from a variety of formats.
-   * @param {Object} input Target {@link Object} to create.
-   * @returns {Actor} Instance of the {@link Actor}.
-   */
   static fromAny (input = {}) {
     let state = null;
 
@@ -140,11 +115,6 @@ class Actor extends EventEmitter {
     return result;
   }
 
-  /**
-   * Get a number of random bytes from the runtime environment.
-   * @param {Number} [count=32] Number of random bytes to retrieve.
-   * @returns {Buffer} The random bytes.
-   */
   static randomBytes (count = 32) {
     return crypto.randomBytes(count);
   }
@@ -154,19 +124,20 @@ class Actor extends EventEmitter {
     return Hash256.digest(buffer);
   }
 
-  get generic () {
-    return this.toGenericMessage();
-  }
-
   get preimage () {
-    const string = JSON.stringify(this.generic, null, '  ');
-    const secret = Buffer.from(string, 'utf8');
-    const preimage = Hash256.digest(secret);
-    return preimage;
+    const input = {
+      'type': 'FabricActorState',
+      'object': this.toObject()
+    };
+
+    const string = JSON.stringify(input, null, '  ');
+    const buffer = Buffer.from(string, 'utf8');
+
+    return Hash256.digest(buffer);
   }
 
   get state () {
-    return JSON.parse(JSON.stringify(this._state.content || {}));
+    return Object.assign({}, this._state.content);
   }
 
   get status () {
@@ -186,33 +157,14 @@ class Actor extends EventEmitter {
   }
 
   /**
-   * Explicitly adopt a set of {@link JSONPatch}-encoded changes.
-   * @param {Array} changes List of {@link JSONPatch} operations to apply.
-   * @returns {Actor} Instance of the Actor.
-   */
-  adopt (changes) {
-    try {
-      monitor.applyPatch(this._state.content, changes);
-      this.commit();
-    } catch (exception) {
-      this.emit('error', exception);
-    }
-
-    return this;
-  }
-
-  /**
    * Resolve the current state to a commitment.
+   * @emits Actor Current malleable state.
    * @returns {String} 32-byte ID
    */
   commit () {
-    const state = new Actor(this.state);
-    const changes = monitor.generate(this.observer);
-    const parent = (this.history.length) ? this.history[this.history.length - 1].state : null;
+    const state = new Actor(this._state.content);
     const commit = new Actor({
-      changes: changes,
-      parent: parent,
-      state: state.id // TODO: include whole state?
+      state: state.id
     });
 
     this.history.push(commit);
@@ -222,28 +174,6 @@ class Actor extends EventEmitter {
 
   debug (...params) {
     this.emit('debug', params);
-  }
-
-  /**
-   * Export the Actor's state to a standard {@link Object}.
-   * @returns {Object} Standard object.
-   */
-  export () {
-    return {
-      id: this.id,
-      type: 'FabricActor',
-      object: this.state,
-      version: 1
-    };
-  }
-
-  /**
-   * Retrieve a value from the Actor's state by {@link JSONPointer} path.
-   * @param {String} path Path to retrieve using {@link JSONPointer}.
-   * @returns {Object} Value of the path in the Actor's state.
-   */
-  get (path) {
-    return pointer.get(this._state.content, path);
   }
 
   log (...params) {
@@ -258,27 +188,9 @@ class Actor extends EventEmitter {
     ];
 
     monitor.applyPatch(this._state.content, patches);
-    console.log('new state:', this._state.content);
     this.commit();
 
     return this;
-  }
-
-  /**
-   * Set a value in the Actor's state by {@link JSONPointer} path.
-   * @param {String} path Path to set using {@link JSONPointer}.
-   * @param {Object} value Value to set.
-   * @returns {Object} Value of the path in the Actor's state.
-   */
-  set (path, value) {
-    pointer.set(this._state.content, path, value);
-    this.commit();
-    return this;
-  }
-
-  setStatus (value) {
-    if (!value) throw new Error('Cannot remove status.');
-    this.status = value;
   }
 
   /**
@@ -287,17 +199,6 @@ class Actor extends EventEmitter {
    */
   toBuffer () {
     return Buffer.from(this.serialize(), 'utf8');
-  }
-
-  /**
-   * Casts the Actor to a generic message.
-   * @returns {Object} Generic message object.
-   */
-  toGenericMessage () {
-    return {
-      type: 'FabricActorState',
-      object: this.toObject()
-    };
   }
 
   /**
@@ -318,14 +219,9 @@ class Actor extends EventEmitter {
     }
   }
 
-  /**
-   * Toggles `status` property to paused.
-   * @returns {Actor} Instance of the Actor.
-   */
   pause () {
     this.status = 'PAUSING';
     this.commit();
-    this.status = 'PAUSED';
     return this;
   }
 
@@ -369,36 +265,14 @@ class Actor extends EventEmitter {
 
   /**
    * Toggles `status` property to unpaused.
-   * @returns {Actor} Instance of the Actor.
+   * @
+   * @returns {Actor}
    */
   unpause () {
     this.status = 'UNPAUSING';
     this.commit();
     this.status = 'UNPAUSED';
     return this;
-  }
-
-  /**
-   * Get the inner value of the Actor with an optional cast type.
-   * @param {String} [format] Cast the value to one of: `buffer, hex, json, string`
-   * @returns {Object} Inner value of the Actor as an {@link Object}, or cast to the requested `format`.
-   */
-  value (format = 'object') {
-    switch (format) {
-      default:
-        return this.state;
-      case 'buffer':
-        return Buffer.from(this.value('string'), 'utf8');
-      case 'hex':
-        return this.value('buffer').toString('hex');
-      case 'json':
-      case 'string':
-        return JSON.stringify(this.state);
-    }
-  }
-
-  _getField (name) {
-    return this._state.content[name];
   }
 
   /**
@@ -411,6 +285,7 @@ class Actor extends EventEmitter {
   }
 
   _handleMonitorChanges (changes) {
+    console.log('got monitor changes from actor:', changes);
     // TODO: emit global state event here
     // after verify, commit
   }
@@ -463,26 +338,19 @@ module.exports = Actor;
       <li><a href="Bitcoin.html">Bitcoin</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
-      <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Compiler.html">Compiler</a></li>
       <li><a href="Consensus.html">Consensus</a></li>
       <li><a href="Entity.html">Entity</a></li>
-      <li><a href="Environment.html">Environment</a></li>
       <li><a href="Exchange.html">Exchange</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
-      <li><a href="Federation.html">Federation</a></li>
-      <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="HTTPServer.html">HTTPServer</a></li>
-      <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
-      <li><a href="Keystore.html">Keystore</a></li>
-      <li><a href="Ledger.html">Ledger</a></li>
-      <li><a href="Logger.html">Logger</a></li>
+      <li><a href="KeyStore.html">KeyStore</a></li>
       <li><a href="Machine.html">Machine</a></li>
       <li><a href="Mempool.html">Mempool</a></li>
       <li><a href="Message.html">Message</a></li>
@@ -492,7 +360,6 @@ module.exports = Actor;
       <li><a href="Peer.html">Peer</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
-      <li><a href="Resource.html">Resource</a></li>
       <li><a href="Router.html">Router</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
@@ -512,7 +379,6 @@ module.exports = Actor;
       <li><a href="Vector.html">Vector</a></li>
       <li><a href="Walker.html">Walker</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
-      <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
     <h3>Events</h3>
