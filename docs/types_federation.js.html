@@ -38,14 +38,14 @@ const merge = require('lodash.merge');
 const { run } = require('minsc');
 
 // Fabric Types
-const Actor = require('./actor');
+const Contract = require('./contract');
 const Key = require('./key');
 const Wallet = require('./wallet');
 
 /**
  * Create and manage sets of signers with the Federation class.
  */
-class Federation extends Actor {
+class Federation extends Contract {
   /**
    * Create an instance of a federation.
    * @param {Object} [settings] Settings.
@@ -65,7 +65,8 @@ class Federation extends Actor {
         seed: null, // seed phrase (!!!)
         xprv: null, // avoid using seed phrase
         xpub: null  // verify signatures only
-      }
+      },
+      type: 'FabricFederation'
     }, settings);
 
     // Internal Key
@@ -85,11 +86,34 @@ class Federation extends Actor {
     return this;
   }
 
+  get contract () {
+    const contract = `
+      $A = ${this._state.content.validators[0]};
+      $B = ${this._state.content.validators[1]};
+      $C = ${this._state.content.validators[2]};
+      $D = ${this._state.content.validators[3]};
+      $E = ${this._state.content.validators[4]};
+      $F = ${this._state.content.validators[0]};
+      $G = ${this._state.content.validators[0]};
+      $H = ${this._state.content.validators[0]};
+
+      $federation = 4 of [ pk(A), pk(B), pk(C), pk(D), pk(E) ];
+      $recovery = 2 of [ pk(F), pk(G), pk(I) ];
+      $timeout = older(3 months);
+
+      likely@$federation || ($timeout &amp;&amp; $recovery)
+    `;
+
+    console.log('contract:', contract);
+    return contract.trim();
+  }
+
   addMember (member) {
     const key = new Key(member);
     this._state.content.validators.push(key.pubkey);
     console.log('consensus validators:', this._state.content.validators);
     console.log('contract for step 0:', this.contractForStep(0));
+    this.commit();
   }
 
   contractForStep (number) {
@@ -139,7 +163,16 @@ class Federation extends Actor {
     this.wallet.start();
     this.setStatus('STARTED');
 
-    // this.commit();
+    this.commit();
+    return this;
+  }
+
+  stop () {
+    this.setStatus('STOPPING');
+    this.wallet.stop();
+    this.setStatus('STOPPED');
+
+    this.commit();
     return this;
   }
 }
@@ -181,6 +214,7 @@ module.exports = Federation;
       <li><a href="Key.html">Key</a></li>
       <li><a href="Keystore.html">Keystore</a></li>
       <li><a href="Ledger.html">Ledger</a></li>
+      <li><a href="Lightning.html">Lightning</a></li>
       <li><a href="Logger.html">Logger</a></li>
       <li><a href="Machine.html">Machine</a></li>
       <li><a href="Mempool.html">Mempool</a></li>
@@ -191,6 +225,7 @@ module.exports = Federation;
       <li><a href="Peer.html">Peer</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
+      <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
       <li><a href="Router.html">Router</a></li>
       <li><a href="Scribe.html">Scribe</a></li>

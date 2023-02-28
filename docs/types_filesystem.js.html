@@ -104,22 +104,6 @@ class Filesystem extends Actor {
     return this._state.documents;
   }
 
-  async _loadFromDisk () {
-    const self = this;
-    return new Promise((resolve, reject) => {
-      try {
-        const files = fs.readdirSync(self.path);
-        self._state.content = { files };
-        self.commit();
-
-        resolve(self);
-      } catch (exception) {
-        self.emit('error', exception);
-        reject(exception);
-      }
-    });
-  }
-
   /**
    * Get the list of files.
    * @returns {Array} List of files.
@@ -176,6 +160,26 @@ class Filesystem extends Actor {
     }
   }
 
+  /**
+   * Load Filesystem state from disk.
+   * @returns {Promise} Resolves with Filesystem instance.
+   */
+  _loadFromDisk () {
+    const self = this;
+    return new Promise((resolve, reject) => {
+      try {
+        const files = fs.readdirSync(self.path);
+        self._state.content = { files };
+        self.commit();
+
+        resolve(self);
+      } catch (exception) {
+        self.emit('error', exception);
+        reject(exception);
+      }
+    });
+  }
+
   async ingest (document, name = null) {
     if (typeof document !== 'string') {
       document = JSON.stringify(document);
@@ -215,6 +219,11 @@ class Filesystem extends Actor {
   async start () {
     this.touchDir(this.path); // ensure exists
     await this.sync();
+    return this;
+  }
+
+  async stop () {
+    this.commit();
     return this;
   }
 
@@ -266,6 +275,7 @@ module.exports = Filesystem;
       <li><a href="Key.html">Key</a></li>
       <li><a href="Keystore.html">Keystore</a></li>
       <li><a href="Ledger.html">Ledger</a></li>
+      <li><a href="Lightning.html">Lightning</a></li>
       <li><a href="Logger.html">Logger</a></li>
       <li><a href="Machine.html">Machine</a></li>
       <li><a href="Mempool.html">Mempool</a></li>
@@ -276,6 +286,7 @@ module.exports = Filesystem;
       <li><a href="Peer.html">Peer</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
+      <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
       <li><a href="Router.html">Router</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
