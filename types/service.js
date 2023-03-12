@@ -297,7 +297,7 @@ class Service extends Actor {
   /**
    * Retrieve a key from the {@link State}.
    * @param {Path} path Key to retrieve.
-   * @returns {Mixed}
+   * @returns {Mixed} Returns the target value if found, otherwise null.
    */
   get (path = '') {
     let result = null;
