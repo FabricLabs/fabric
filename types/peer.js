@@ -598,6 +598,19 @@ class Peer extends Service {
     return this;
   }
 
+  _registerPeer (data) {
+    const peer = new Actor({
+      type: 'Peer',
+      data: data
+    });
+
+    if (this.peers[peer.id]) return this;
+
+    this.peers[peer.id] = peer;
+
+    return this;
+  }
+
   _scheduleReconnect (target) {
     this.emit('debug', `Candidates: ${this.candidates}`);
   }
