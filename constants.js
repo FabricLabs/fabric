@@ -17,7 +17,7 @@ const PRECISION = 100;
 // Fabric Core
 const BITCOIN_GENESIS = '000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f';
 const BITCOIN_GENESIS_ROOT = '4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b';
-const FABRIC_KEY_DERIVATION_PATH = "m/44'/0'/0'/0/0";
+const FABRIC_KEY_DERIVATION_PATH = "m/44'/7777'/0'/0/0";
 const FIXTURE_SEED = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
 
 // Message Constants
@@ -66,6 +66,8 @@ const OP_RETURN = '6a';
 const OP_EQUALVERIFY = '88';
 const OP_SEPARATOR = 'ab';
 
+// Peering
+const P2P_PORT = 7777;
 const P2P_GENERIC = 0x80; // 128 in decimal
 const P2P_IDENT_REQUEST = 0x01; // 1, or the identity
 const P2P_IDENT_RESPONSE = 0x11;
@@ -170,6 +172,7 @@ module.exports = {
   P2P_ROOT,
   P2P_PING,
   P2P_PONG,
+  P2P_PORT,
   P2P_START_CHAIN,
   P2P_INSTRUCTION,
   P2P_BASE_MESSAGE,

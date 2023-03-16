@@ -24,6 +24,7 @@ const Actor = require('./actor');
 const Message = require('./message');
 const Hash256 = require('./hash256');
 const Identity = require('./identity');
+const Filesystem = require('./filesystem');
 const Wallet = require('./wallet');
 
 // Services
@@ -74,6 +75,9 @@ class CLI extends App {
         mode: 'socket',
         path: './stores/lightning-playnet/regtest/lightning-rpc'
       },
+      storage: {
+        path: './stores/fabric-console'
+      }
     }, this.settings, settings);
 
     // Properties
@@ -90,6 +94,8 @@ class CLI extends App {
     this.requests = {};
     this.services = {};
     this.connections = {};
+
+    this.fs = new Filesystem(this.settings.storage);
 
     // State
     this._state = {
@@ -137,14 +143,20 @@ class CLI extends App {
   }
 
   _loadPeer () {
+    const file = this.fs.readFile('STATE');
+    const state = (file) ? JSON.parse(file) : {};
+
+    // Create and assign Peer instance as the `node` property
     this.node = new Peer({
       network: this.settings.network,
       interface: this.settings.interface,
       port: this.settings.port,
       peers: this.settings.peers,
+      state: state,
       upnp: this.settings.upnp,
       key: this.identity.settings
     });
+
     return this;
   }
 
@@ -159,7 +171,13 @@ class CLI extends App {
   }
 
   async bootstrap () {
-    return true;
+    try {
+      await this.fs.start();
+      return true;
+    } catch (exception) {
+      this._appendError(`Could not bootstrap: ${exception}`)
+      return false;
+    }
   }
 
   async tick () {
@@ -239,6 +257,7 @@ class CLI extends App {
     this.node.on('message', this._handlePeerMessage.bind(this));
     this.node.on('changes', this._handlePeerChanges.bind(this));
     this.node.on('commit', this._handlePeerCommit.bind(this));
+    this.node.on('state', this._handleActorState.bind(this));
     this.node.on('chat', this._handlePeerChat.bind(this));
     this.node.on('upnp', this._handlePeerUPNP.bind(this));
 
@@ -439,6 +458,11 @@ class CLI extends App {
 
   async _appendError (msg) {
     this._appendMessage(`{red-fg}${msg}{/red-fg}`);
+  }
+
+  async _handleActorState (state) {
+    // this._appendDebug(`[STATE] ${JSON.stringify(state, null, '  ')}`);
+    this.fs.publish('STATE', JSON.stringify(state, null, '  '));
   }
 
   async _handleSourceLog (msg) {
@@ -901,7 +925,7 @@ class CLI extends App {
         target: '/messages'
       };
 
-      const message = Message.fromVector(['ChatMessage', JSON.stringify(msg)]);
+      const message = Message.fromVector(['ChatMessage', JSON.stringify(msg)]).sign();
       // this._appendDebug(`Chat Message created (${message.data.length} bytes): ${message.data}`);
       self.setPane('messages');
 
@@ -1069,11 +1093,16 @@ class CLI extends App {
     this._appendMessage(`Local Settings: ${JSON.stringify(this.settings, null, '  ')}`);
   }
 
-  _handleHelpRequest (data) {
-    const self = this;
-    const help = `Available Commands:\n${Object.keys(self.commands).map(x => `\t${x}`).join('\n')}`;
+  _handleHelpRequest (params) {
+    let text = '';
 
-    self._appendMessage(help);
+    switch (params[1]) {
+      default:
+        text = `{bold}Fabric CLI Help{/bold}\nThe Fabric CLI offers a simple command-based interface to a Fabric-speaking Network.  You can use \`/connect <address>\` to establish a connection to a known peer, or any of the available commands.\n\n{bold}Available Commands{/bold}:\n\n${Object.keys(self.commands).map(x => `\t${x}`).join('\n')}\n`
+        break;
+    }
+
+    this._appendMessage(text);
   }
 
   _handleServiceMessage (msg) {

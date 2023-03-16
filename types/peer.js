@@ -2,11 +2,13 @@
 
 // Constants
 const {
+  FABRIC_KEY_DERIVATION_PATH,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
   P2P_ROOT,
   P2P_PING,
   P2P_PONG,
+  P2P_PORT,
   P2P_START_CHAIN,
   P2P_INSTRUCTION,
   P2P_BASE_MESSAGE,
@@ -97,6 +99,7 @@ class Peer extends Service {
     };
 
     // Internal properties
+    this.actors = {};
     this.chains = {};
     this.candidates = [];
     this.connections = {};
@@ -117,9 +120,7 @@ class Peer extends Service {
     };
 
     this._state = {
-      content: {
-        messages: {}
-      },
+      content: this.settings.state,
       peers: {},
       chains: {},
       connections: {},
@@ -139,11 +140,6 @@ class Peer extends Service {
     return this.key.pubkeyhash;
   }
 
-  get state () {
-    // TODO: use Proxy
-    return Object.assign({}, this._state);
-  }
-
   /**
    * @deprecated
    */
@@ -157,10 +153,6 @@ class Peer extends Service {
 
   get port () {
     return this.settings.port || 7777;
-  }
-
-  set state (value) {
-    this._state.content = value;
   }
 
   beat () {
@@ -238,8 +230,13 @@ class Peer extends Service {
     const url = new URL(`tcp://${target}`);
     const id = url.username;
 
+    if (!url.port) target += `:${P2P_PORT}`;
+
+    this._registerActor({ name: target });
+    this._registerPeer({ identity: id });
+
     // Set up the NOISE socket
-    const socket = net.createConnection(url.port, url.hostname);
+    const socket = net.createConnection(url.port || P2P_PORT, url.hostname);
     const client = noise({
       initiator: true,
       prologue: Buffer.from(PROLOGUE),
@@ -377,6 +374,9 @@ class Peer extends Service {
 
   _handleGenericMessage (message, origin = null, socket = null) {
     // this.emit('debug', `Generic Message: ${JSON.stringify(message)}`);
+    // Lookup the appropriate Actor for the message's origin
+    const actor = new Actor(origin);
+
     switch (message.type) {
       default:
         this.emit('debug', `Unhandled Generic Message: ${message.type} ${JSON.stringify(message, null, '  ')}`);
@@ -441,10 +441,21 @@ class Peer extends Service {
             created: now
           }
         })]);
+
         this.connections[origin.name]._writeFabric(P2P_PONG.toBuffer());
         break;
       case 'P2P_PONG':
-        // TODO: update liveness
+        // Update the peer's score for succesfully responding to a ping
+        // TODO: ensure no pong is handled when a ping was not previously sent
+        // TODO: minimize lookups
+        this.actors[actor.id].adopt([
+          { op: 'replace', path: '/score', value: (this.state.actors[actor.id].score || 0) + 1 }
+        ]);
+
+        this._state.content.actors[actor.id] = this.actors[actor.id].state;
+        this.commit();
+
+        this.emit('state', this.state);
         break;
       case 'P2P_PEER_ALIAS':
         this.emit('debug', `peer_alias ${origin.name} <Generic>${JSON.stringify(message.object || '')}`);
@@ -465,21 +476,26 @@ class Peer extends Service {
   }
 
   _handleNOISEHandshake (localPrivateKey, localPublicKey, remotePublicKey) {
-    this.emit('debug', `Peer encrypt handshake using local key: ${localPrivateKey.toString('hex')}`);
-    this.emit('debug', `Peer encrypt handshake using local public key: ${localPublicKey.toString('hex')}`);
-    this.emit('debug', `Peer encrypt handshake with remote public key: ${remotePublicKey.toString('hex')}`);
+    this.emit('debug', `Peer transport handshake using local key: ${localPrivateKey.toString('hex')}`);
+    this.emit('debug', `Peer transport handshake using local public key: ${localPublicKey.toString('hex')}`);
+    this.emit('debug', `Peer transport handshake with remote public key: ${remotePublicKey.toString('hex')}`);
   }
 
   _NOISESocketHandler (socket) {
     const target = `${socket.remoteAddress}:${socket.remotePort}`;
     const url = `tcp://${target}`;
+
+    // Store a unique actor for this inbound connection
+    this._registerActor({ name: target });
+
+    // Create NOISE handler
     const handler = noise({
       prologue: Buffer.from(PROLOGUE),
       // privateKey: this.identity.key.private,
       verify: this._verifyNOISE.bind(this)
     });
 
-    handler.encrypt.pipe(socket).pipe(handler.decrypt);
+    // Set up NOISE event handlers
     handler.encrypt.on('handshake', this._handleNOISEHandshake.bind(this));
     handler.encrypt.on('error', (error) => {
       this.emit('error', `NOISE encrypt error: ${error}`);
@@ -516,10 +532,26 @@ class Peer extends Service {
     // Store socket in collection
     this.connections[target] = socket;
 
+    // Begin NOISE stream
+    handler.encrypt.pipe(socket).pipe(handler.decrypt);
+
     this.emit('connections:open', {
       id: target,
       url: url
     });
+  }
+
+  _registerActor (object) {
+    this.emit('debug', `Registering actor: ${JSON.stringify(object, null, '  ')}`);
+    const actor = new Actor(object);
+
+    if (this.actors[actor.id]) return this;
+
+    this.actors[actor.id] = actor;
+    this.commit();
+    this.emit('actorset', this.actors);
+
+    return this;
   }
 
   _registerNOISEClient (name, socket, client) {
@@ -567,7 +599,6 @@ class Peer extends Service {
   }
 
   _scheduleReconnect (target) {
-    if (this.connections[target]) return true;
     this.emit('debug', `Candidates: ${this.candidates}`);
   }
 
@@ -594,6 +625,35 @@ class Peer extends Service {
     let address = null;
 
     this.emit('log', 'Peer starting...');
+
+    // Register self
+    this._registerActor({ name: `${this.interface}:${this.port}` });
+
+    this.emit('log', 'Wallet starting...');
+
+    try {
+      await this.wallet.start();
+    } catch (exception) {
+      this.emit('error', `Could not start wallet: ${exception}`);
+    }
+
+    if (this.settings.listen) {
+      this.emit('log', 'Listener starting...');
+
+      try {
+        address = await this.listen();
+        this.emit('log', 'Listener started!');
+      } catch (exception) {
+        this.emit('error', 'Could not listen:', exception);
+      }
+    }
+
+    if (this.settings.networking) {
+      this.emit('warning', `Networking enabled.  Connecting to peers: ${JSON.stringify(this.settings.peers)}`);
+      for (const candidate of this.settings.peers) {
+        this._connect(candidate);
+      }
+    }
 
     if (this.settings.upnp) {
       // TODO: convert callbacks to promises
@@ -629,32 +689,6 @@ class Peer extends Service {
           });
         }
       });
-    }
-
-    this.emit('log', 'Wallet starting...');
-
-    try {
-      await this.wallet.start();
-    } catch (exception) {
-      this.emit('error', `Could not start wallet: ${exception}`);
-    }
-
-    if (this.settings.listen) {
-      this.emit('log', 'Listener starting...');
-
-      try {
-        address = await this.listen();
-        this.emit('log', 'Listener started!');
-      } catch (exception) {
-        this.emit('error', 'Could not listen:', exception);
-      }
-    }
-
-    if (this.settings.networking) {
-      this.emit('warning', `Networking enabled.  Connecting to peers: ${JSON.stringify(this.settings.peers)}`);
-      for (const candidate of this.settings.peers) {
-        this._connect(candidate);
-      }
     }
 
     try {
@@ -720,7 +754,7 @@ class Peer extends Service {
   async _setState (value) {
     if (!value) return new Error('You must provide a State to set the value to.');
     this._state.content = value;
-    return this.state.state;
+    return this.state;
   }
 
   _disconnect (address) {

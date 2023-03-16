@@ -893,9 +893,9 @@ class Service extends Actor {
         '@from': 'COMMIT',
         '@type': 'Snapshot'
       }, null, '  ')}`); */
-    } catch (E) {
+    } catch (exception) {
       console.error('Error saving state:', self.state);
-      console.error('Could not commit to state:', E);
+      console.error('Could not commit to state:', exception);
     }
 
     if (this.settings.persistent) {
@@ -1069,14 +1069,15 @@ class Service extends Actor {
 
     try {
       // TODO: allow configurable validators
-      result = manager.applyPatch(this.state, changes, function isValid () {
+      this._state.content = manager.applyPatch(this.state, changes, function isValid () {
+        // TODO: invalidate changes without appropriate capability token
         return true;
       }, true /* mutate doc (1st param) */);
     } catch (exception) {
       console.error('Could not apply changes:', changes, exception);
     }
 
-    await this.commit();
+    this.commit();
 
     return result;
   }
