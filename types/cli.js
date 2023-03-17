@@ -59,6 +59,7 @@ class CLI extends App {
     // Assign Settings
     this.settings = merge({
       debug: true,
+      ephemeral: false,
       listen: false,
       peering: true, // set to true to start Peer
       render: true,
@@ -142,12 +143,18 @@ class CLI extends App {
     return this;
   }
 
+  flush () {
+    this.fs.delete('STATE');
+    return this;
+  }
+
   _loadPeer () {
     const file = this.fs.readFile('STATE');
     const state = (file) ? JSON.parse(file) : {};
 
     // Create and assign Peer instance as the `node` property
     this.node = new Peer({
+      debug: this.settings.debug,
       network: this.settings.network,
       interface: this.settings.interface,
       port: this.settings.port,
@@ -202,6 +209,7 @@ class CLI extends App {
     this._registerCommand('quit', this._handleQuitRequest);
     this._registerCommand('exit', this._handleQuitRequest);
     this._registerCommand('clear', this._handleClearRequest);
+    this._registerCommand('flush', this._handleFlushRequest);
     this._registerCommand('alias', this._handleAliasRequest);
     this._registerCommand('peers', this._handlePeerListRequest);
     this._registerCommand('rotate', this._handleRotateRequest);
@@ -257,7 +265,7 @@ class CLI extends App {
     this.node.on('message', this._handlePeerMessage.bind(this));
     this.node.on('changes', this._handlePeerChanges.bind(this));
     this.node.on('commit', this._handlePeerCommit.bind(this));
-    this.node.on('state', this._handleActorState.bind(this));
+    this.node.on('state', this._handlePeerState.bind(this));
     this.node.on('chat', this._handlePeerChat.bind(this));
     this.node.on('upnp', this._handlePeerUPNP.bind(this));
 
@@ -460,8 +468,8 @@ class CLI extends App {
     this._appendMessage(`{red-fg}${msg}{/red-fg}`);
   }
 
-  async _handleActorState (state) {
-    // this._appendDebug(`[STATE] ${JSON.stringify(state, null, '  ')}`);
+  async _handlePeerState (state) {
+    this._appendDebug(`[STATE] ${JSON.stringify(state, null, '  ')}`);
     this.fs.publish('STATE', JSON.stringify(state, null, '  '));
   }
 
@@ -623,12 +631,11 @@ class CLI extends App {
   }
 
   async _handleConnectionClose (msg) {
-    this._appendMessage(`Node emitted "connections:close" event: ${JSON.stringify(msg)}`);
+    this._appendMessage(`Node emitted "connections:close" event: ${JSON.stringify(msg, null, '  ')}`);
 
     for (const id in this.peers) {
       const peer = this.peers[id];
-      this._appendMessage(`Checking: ${JSON.stringify(peer)}`);
-      if (peer.address === msg.address) {
+      if (peer.address === msg.name) {
         this._appendMessage(`Address matches.`);
         delete this.peers[id];
       }
@@ -636,9 +643,7 @@ class CLI extends App {
 
     for (const id in this.connections) {
       const connections = this.connections[id];
-      this._appendMessage(`Checking: ${JSON.stringify(connections)}`);
       if (connections.address === msg.address) {
-        this._appendMessage(`Address matches.`);
         delete this.connections[id];
       }
     }
@@ -653,7 +658,7 @@ class CLI extends App {
   async _handleConnection (connection) {
     if (!connection.id) {
       // TODO: exit function here
-      this._appendMessage('Peer did not send an ID.  Event received: ' + JSON.stringify(connection));
+      this._appendWarning('Peer did not send an ID.  Event received: ' + JSON.stringify(connection));
     }
 
     // TODO: use @fabric/core/types/channel
@@ -963,6 +968,12 @@ class CLI extends App {
 
   _handleClearRequest () {
     this.elements['messages'].setContent('');
+    return false;
+  }
+
+  _handleFlushRequest () {
+    this.flush();
+    this.stop();
     return false;
   }
 
