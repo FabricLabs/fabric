@@ -73,6 +73,7 @@ class Peer extends Service {
       state: Object.assign({
         actors: {},
         channels: {},
+        contracts: {},
         messages: {}
       }, config.state),
       upnp: false,
@@ -104,6 +105,7 @@ class Peer extends Service {
 
     // Internal properties
     this.actors = {};
+    this.contracts = {};
     this.chains = {};
     this.candidates = [];
     this.connections = {};
@@ -345,6 +347,15 @@ class Peer extends Service {
     // Store message for later
     this.messages[hash] = buffer.toString('hex');
 
+    const checksum = crypto.createHash('sha256').update(message.body, 'utf8').digest('hex');
+    if (checksum !== message.raw.hash.toString('hex')) throw new Error('Message received with incorrect hash.');
+
+    // TODO: verify signatures
+    // const signer = new Signer({ public: message.raw.author });
+    // this.emit('debug', `Message signer: ${signer}`);
+    if (this.settings.debug) this.emit('debug', `Message author: ${message.raw.signature.toString('hex')}`);
+    if (this.settings.debug) this.emit('debug', `Message signature: ${message.raw.signature.toString('hex')}`);
+
     switch (message.type) {
       default:
         this.emit('debug', `Unhandled message type: ${message.type}`);
@@ -369,7 +380,8 @@ class Peer extends Service {
   }
 
   _handleGenericMessage (message, origin = null, socket = null) {
-    // this.emit('debug', `Generic Message: ${JSON.stringify(message)}`);
+    if (this.settings.debug) this.emit('debug', `Generic message:\n\tFrom: ${JSON.stringify(origin)}\n\tType: ${message.type}\n\tBody:\n\`\`\`\n${JSON.stringify(message.object, null, '  ')}\n\`\`\``);
+
     // Lookup the appropriate Actor for the message's origin
     const actor = new Actor(origin);
 
@@ -469,6 +481,18 @@ class Peer extends Service {
         break;
       case 'P2P_DOCUMENT_PUBLISH':
         break;
+      case 'CONTRACT_PUBLISH':
+        // TODO: reject and punish mis-behaving peers
+        this.emit('debug', `Handling peer contract publish: ${JSON.stringify(message.object)}`);
+        this._registerContract(message.object);
+        break;
+      case 'CONTRACT_MESSAGE':
+        // TODO: reject and punish mis-behaving peers
+        if (this.settings.debug) this.emit('debug', `Handling contract message: ${JSON.stringify(message.object)}`);
+        if (this.settings.debug) this.emit('debug', `Contract state: ${JSON.stringify(this.state.contracts[message.object.contract])}`);
+        manager.applyPatch(this._state.content.contracts[message.object.contract], message.object.ops);
+        this.commit();
+        break;
     }
   }
 
@@ -565,6 +589,21 @@ class Peer extends Service {
     this.actors[actor.id] = actor;
     this.commit();
     this.emit('actorset', this.actors);
+
+    return this;
+  }
+
+  _registerContract (object) {
+    this.emit('debug', `Registering contract: ${JSON.stringify(object, null, '  ')}`);
+    const actor = new Actor(object);
+
+    if (this.contracts[actor.id]) return this;
+
+    this.contracts[actor.id] = actor;
+    this._state.content.contracts[actor.id] = object.state;
+
+    this.commit();
+    this.emit('contractset', this.contracts);
 
     return this;
   }

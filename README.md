@@ -1,4 +1,4 @@
-# Fabric
+# `@fabric/core` — the Fabric Reference Client
 ![Project Status][badge-status]
 [![Build Status][badge-build]][build-status]
 [![Coverage Status][badge-coverage]][coverage]
@@ -133,6 +133,8 @@ collection of empassioned educators eager to help you.
 
 Fabric on Twitter: [@FabricProtocol][twitter]
 
+[protocol]: PROTOCOL.md
+
 [fabric-github]: https://github.com/FabricLabs/fabric
 [http-plugin]: https://github.com/FabricLabs/fabric-http
 [matrix-plugin]: https://github.com/FabricLabs/fabric-matrix
@@ -188,7 +190,7 @@ Fabric on Twitter: [@FabricProtocol][twitter]
 [soundtrack]: https://github.com/FabricLabs/soundtrack
 [doorman]: https://github.com/FabricLabs/doorman
 [idlerpg]: https://to.fabric.pub/#idlerpg:verse.im
-[verse]: https://verse.im
+[verse]: https://github.com/FabricLabs/verse
 
 [everything-is-broken]: https://medium.com/message/everything-is-broken-81e5f33a24e1
 [coordination]: https://i.imgur.com/Ki3fbTh.gif

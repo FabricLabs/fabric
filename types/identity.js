@@ -53,7 +53,7 @@ class Identity extends Actor {
     // We will use Change 1 ("Internal Chain" as designated by BIP0044)
     // for any kind of revoke mechanic; i.e., the key derived by the change
     // address may be used to auto-encode a "revocation" contract.
-    return `m/44'/0'/${this.accountID}'/0/${this.index}`;
+    return `m/44'/7778'/${this.accountID}'/0/${this.index}`;
   }
 
   get id () {
@@ -69,6 +69,7 @@ class Identity extends Actor {
   }
 
   get pubkey () {
+    // x-only pubkey
     return this.key.public.x.toString('hex');
   }
 

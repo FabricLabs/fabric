@@ -18,7 +18,7 @@ module.exports = {
   },
   // TODO: regtest, playnet, signet, testnet, mainnet (in order)
   network: 'playnet',
-  debug: true,
+  debug: false,
   // TODO: test `true`
   fullnode: false,
   // Open listener?

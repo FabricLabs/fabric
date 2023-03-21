@@ -18,12 +18,12 @@ const manager = require('fast-json-patch');
 // Fabric Types
 const Actor = require('./actor');
 const Collection = require('./collection');
-const Identity = require('./identity');
-const Resource = require('./resource');
 const Entity = require('./entity');
 const Hash256 = require('./hash256');
+const Identity = require('./identity');
 const Key = require('./key');
 const Message = require('./message');
+const Resource = require('./resource');
 const Store = require('./store');
 
 /**

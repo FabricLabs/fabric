@@ -5,8 +5,8 @@ const parser = require('dotparser');
 
 // Fabric Types
 const Actor = require('./actor');
-const Hash256 = require('./hash256');
 const Key = require('./key');
+const Message = require('/./message');
 const Service = require('./service');
 const Signer = require('./signer');
 
@@ -79,6 +79,61 @@ class Contract extends Service {
     return contract.trim();
   }
 
+
+  /**
+   * Deploys the contract.
+   * @returns {String} Message ID.
+   */
+  deploy () {
+    // Attest to local time
+    const now = (new Date()).toISOString();
+    const input = {
+      clock: 0,
+      validators: []
+    };
+
+    // First message (genesis)
+    const PACKET_CONTRACT_GENESIS = Message.fromVector(['CONTRACT_GENESIS', JSON.stringify({
+      type: 'CONTRACT_GENESIS',
+      object: {
+        input: input
+      }
+    })])._setSigner(this.signer).sign().toBuffer();
+
+    // Get hash of message
+    const hash = crypto.createHash('sha256').update(PACKET_CONTRACT_GENESIS).digest('hex');
+
+    // Store locally
+    this.messages[hash] = PACKET_CONTRACT_GENESIS.toString('hex');
+
+    // Contract template
+    const template = {
+      bond: null, // BTC transaction which is spent
+      checksum: '',
+      created: now,
+      genesis: hash,
+      history: [ hash ], // most recent first
+      messages: this.messages,
+      name: this.settings.name,
+      signature: '',
+      state: input,
+      version: 1
+    };
+
+    // Track our contract by Actor ID
+    this.actor = new Actor(template);
+    this.emit('log', `Deploying Contract [0x${this.actor.id}] (${PACKET_CONTRACT_GENESIS.byteLength} bytes): ${this.messages[hash]}`);
+
+    // Network publish message (contract)
+    const PACKET_CONTRACT_PUBLISH = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify({
+      type: 'CONTRACT_PUBLISH',
+      object: template
+    })]);
+
+    // Return contract ID
+    return this.actor.id;
+  }
+
   parse (input) {
     return this.parseDot(input);
   }
@@ -99,18 +154,28 @@ class Contract extends Service {
   }
 
   commit () {
-    super.commit();
+    const now = new Date();
+    const changes = monitor.generate(this.observer);
 
-    const template = {
-      // created: (new Date()).toISOString(),
+    if (changes.length) {
+      const message = Message.fromVector(['CONTRACT_MESSAGE', {
+        type: 'CONTRACT_MESSAGE',
+        object: {
+          contract: this.id,
+          ops: changes
+        }
+      }]);
+
+      this.emit('changes', changes);
+      this.emit('message', message);
+    }
+
+    this.emit('commit', {
+      created: now.toISOString(),
       state: this.state
-    };
+    });
 
-    const actor = new Actor(template);
-
-    this.emit('contract:commit', actor.toGenericMessage());
-
-    return {};
+    return this;
   }
 
   execute () {

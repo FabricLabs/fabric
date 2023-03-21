@@ -77,7 +77,7 @@ class CLI extends App {
         path: './stores/lightning-playnet/regtest/lightning-rpc'
       },
       storage: {
-        path: './stores/fabric-console'
+        path: `${process.env.HOME}/.fabric/console`
       }
     }, this.settings, settings);
 
@@ -110,7 +110,8 @@ class CLI extends App {
       content: {
         actors: {},
         bitcoin: {
-          best: null
+          best: null,
+          genesis: BITCOIN_GENESIS
         },
         documents: {},
         messages: {}
@@ -235,6 +236,9 @@ class CLI extends App {
     this._registerCommand('set', this._handleSetRequest);
     this._registerCommand('get', this._handleGetRequest);
 
+    // Contracts
+    this._registerCommand('contracts', this._handleContractsRequest);
+
     // Service Commands
     this._registerCommand('bitcoin', this._handleBitcoinRequest);
     this._registerCommand('lightning', this._handleLightningRequest);
@@ -268,6 +272,7 @@ class CLI extends App {
     this.node.on('state', this._handlePeerState.bind(this));
     this.node.on('chat', this._handlePeerChat.bind(this));
     this.node.on('upnp', this._handlePeerUPNP.bind(this));
+    this.node.on('contractset', this._handleContractSet.bind(this));
 
     // ## Raw Connections
     this.node.on('connection', this._handleConnection.bind(this));
@@ -468,8 +473,14 @@ class CLI extends App {
     this._appendMessage(`{red-fg}${msg}{/red-fg}`);
   }
 
+  async _handleContractSet (contractset) {
+    this._appendDebug(`[CONTRACTSET] ${JSON.stringify(contractset, null, '  ')}`);
+    this.contracts = contractset;
+    this.commit();
+  }
+
   async _handlePeerState (state) {
-    this._appendDebug(`[STATE] ${JSON.stringify(state, null, '  ')}`);
+    // this._appendDebug(`[STATE] ${JSON.stringify(state, null, '  ')}`);
     this.fs.publish('STATE', JSON.stringify(state, null, '  '));
   }
 
@@ -491,6 +502,11 @@ class CLI extends App {
 
   async _handleChanges (changes) {
     this._appendMessage(`New Changes: ${JSON.stringify(changes, null, '  ')}`);
+  }
+
+  async _handleContractsRequest (params) {
+    this._appendMessage('{bold}Current Contracts{/bold}: ' + JSON.stringify(this.contracts, null, '  '));
+    return false;
   }
 
   async _handleStateRequest (params) {
@@ -1109,7 +1125,7 @@ class CLI extends App {
 
     switch (params[1]) {
       default:
-        text = `{bold}Fabric CLI Help{/bold}\nThe Fabric CLI offers a simple command-based interface to a Fabric-speaking Network.  You can use \`/connect <address>\` to establish a connection to a known peer, or any of the available commands.\n\n{bold}Available Commands{/bold}:\n\n${Object.keys(self.commands).map(x => `\t${x}`).join('\n')}\n`
+        text = `{bold}Fabric CLI Help{/bold}\nThe Fabric CLI offers a simple command-based interface to a Fabric-speaking Network.  You can use \`/connect <address>\` to establish a connection to a known peer, or any of the available commands.\n\n{bold}Available Commands{/bold}:\n\n${Object.keys(this.commands).map(x => `\t${x}`).join('\n')}\n`
         break;
     }
 
