@@ -97,8 +97,6 @@ class Contract extends Service {
       if (!graph.children.length) continue;
       for (let j = 0; j < graph.children.length; j++) {
         const child = graph.children[j];
-        console.log('child:', child);
-
         switch (child.type) {
           default:
             console.warn(`Unhandled type: "${child.type}'" on child:`, child);
