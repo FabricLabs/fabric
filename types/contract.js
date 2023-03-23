@@ -4,7 +4,11 @@
 const crypto = require('crypto');
 
 // Dependencies
+// const Template = require('@babel/template');
+// const Generate = require('@babel/generator');
+// const t = require('@babel/types');
 const parser = require('dotparser');
+const monitor = require('fast-json-patch');
 
 // Fabric Types
 const Actor = require('./actor');
@@ -51,6 +55,8 @@ class Contract extends Service {
       content: this.settings.state
     };
 
+    this.observer = monitor.observe(this._state.content);
+
     return this;
   }
 
@@ -68,11 +74,46 @@ class Contract extends Service {
     return contract;
   };
 
+  static fromJavaScript (js) {
+    const buildAST = Template.template(js);
+    const ast = buildAST({});
+
+    console.log('ast:', ast);
+
+    return new Contract({ ast });
+  }
+
   static fromGraph (graphs) {
     const circuit = {
       stack: [],
       nodes: []
     };
+
+    for (let i = 0; i < graphs.length; i++) {
+      const graph = graphs[i];
+      const node = {
+        name: graph.id
+      };
+
+      circuit.nodes.push(node);
+
+      if (!graph.children.length) continue;
+      for (let j = 0; j < graph.children.length; j++) {
+        const child = graph.children[j];
+        console.log('child:', child);
+
+        switch (child.type) {
+          default:
+            console.warn(`Unhandled type: "${child.type}'" on child:`, child);
+            break;
+          case 'node_stmt':
+            circuit.nodes.push({
+              name: child.node_id.id
+            });
+            break;
+        }
+      }
+    }
 
     return circuit;
   }
