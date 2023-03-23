@@ -252,6 +252,7 @@ class Peer extends Service {
 
     socket.on('close', (info) => {
       this.emit('debug', `Outbound socket closed: (${target}) ${info}`);
+      socket._destroyFabric();
     });
 
     socket.on('end', (info) => {
