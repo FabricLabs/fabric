@@ -77,9 +77,6 @@ class Contract extends Service {
   static fromJavaScript (js) {
     const buildAST = Template.template(js);
     const ast = buildAST({});
-
-    console.log('ast:', ast);
-
     return new Contract({ ast });
   }
 
