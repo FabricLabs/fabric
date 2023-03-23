@@ -6,7 +6,7 @@ const parser = require('dotparser');
 // Fabric Types
 const Actor = require('./actor');
 const Key = require('./key');
-const Message = require('/./message');
+const Message = require('./message');
 const Service = require('./service');
 const Signer = require('./signer');
 
@@ -36,6 +36,7 @@ class Contract extends Service {
 
     // tweaked pubkey
     this.key = new Key(this.settings.key);
+    this.signer = new Signer(this.settings.key);
     this._inner = null;
     this._state = {
       status: 'PAUSED',
@@ -108,6 +109,7 @@ class Contract extends Service {
 
     // Contract template
     const template = {
+      author: this.signer.pubkey,
       bond: null, // BTC transaction which is spent
       checksum: '',
       created: now,
@@ -130,8 +132,14 @@ class Contract extends Service {
       object: template
     })]);
 
-    // Return contract ID
-    return this.actor.id;
+    const pubhash = crypto.createHash('sha256').update(PACKET_CONTRACT_PUBLISH).digest('hex');
+    this.messages[pubhash] = PACKET_CONTRACT_PUBLISH.toString('hex');
+
+    return this;
+  }
+
+  toDot () {
+    const tokens = [];
   }
 
   parse (input) {

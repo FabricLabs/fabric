@@ -672,6 +672,7 @@ Retrieve a key from the [State](#State).
 
 **Kind**: instance method of [<code>App</code>](#App)  
 **Overrides**: [<code>get</code>](#Service+get)  
+**Returns**: <code>Mixed</code> - Returns the target value if found, otherwise null.  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -2479,6 +2480,10 @@ An in-memory representation of a node in our network.
 * [Peer](#Peer)
     * [new Peer([config])](#new_Peer_new)
     * ~~[.address](#Peer+address)~~
+    * [.broadcast(message)](#Peer+broadcast)
+    * [._connect(target)](#Peer+_connect)
+    * [._fillPeerSlots()](#Peer+_fillPeerSlots) ⇒ [<code>Peer</code>](#Peer)
+    * [._handleFabricMessage(buffer)](#Peer+_handleFabricMessage) ⇒ [<code>Peer</code>](#Peer)
     * [.start()](#Peer+start)
     * [.stop()](#Peer+stop)
     * [.listen()](#Peer+listen) ⇒ [<code>Peer</code>](#Peer)
@@ -2503,6 +2508,47 @@ Create an instance of [Peer](#Peer).
 ***Deprecated***
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+broadcast"></a>
+
+### peer.broadcast(message)
+Write a [Buffer](Buffer) to all connected peers.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| message | <code>Buffer</code> | Message buffer to send. |
+
+<a name="Peer+_connect"></a>
+
+### peer.\_connect(target)
+Open a Fabric connection to the target address and initiate the Fabric Protocol.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| target | <code>String</code> | Target address. |
+
+<a name="Peer+_fillPeerSlots"></a>
+
+### peer.\_fillPeerSlots() ⇒ [<code>Peer</code>](#Peer)
+Attempt to fill available connection slots with new peers.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: [<code>Peer</code>](#Peer) - Instance of the peer.  
+<a name="Peer+_handleFabricMessage"></a>
+
+### peer.\_handleFabricMessage(buffer) ⇒ [<code>Peer</code>](#Peer)
+Handle a Fabric [Message](#Message) buffer.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: [<code>Peer</code>](#Peer) - Instance of the Peer.  
+
+| Param | Type |
+| --- | --- |
+| buffer | <code>Buffer</code> | 
+
 <a name="Peer+start"></a>
 
 ### peer.start()
@@ -3155,6 +3201,7 @@ Compute latest state.
 Retrieve a key from the [State](#State).
 
 **Kind**: instance method of [<code>Service</code>](#Service)  
+**Returns**: <code>Mixed</code> - Returns the target value if found, otherwise null.  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -4594,6 +4641,7 @@ Retrieve a key from the [State](#State).
 
 **Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
 **Overrides**: [<code>get</code>](#Service+get)  
+**Returns**: <code>Mixed</code> - Returns the target value if found, otherwise null.  
 
 | Param | Type | Description |
 | --- | --- | --- |
