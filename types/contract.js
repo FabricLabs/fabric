@@ -1,5 +1,8 @@
 'use strict';
 
+// Generics
+const crypto = require('crypto');
+
 // Dependencies
 const parser = require('dotparser');
 
@@ -37,6 +40,8 @@ class Contract extends Service {
     // tweaked pubkey
     this.key = new Key(this.settings.key);
     this.signer = new Signer(this.settings.key);
+    this.messages = {};
+
     this._inner = null;
     this._state = {
       status: 'PAUSED',
@@ -132,7 +137,8 @@ class Contract extends Service {
       object: template
     })]);
 
-    const pubhash = crypto.createHash('sha256').update(PACKET_CONTRACT_PUBLISH).digest('hex');
+    const signed = PACKET_CONTRACT_PUBLISH._setSigner(this.signer).sign().toBuffer();
+    const pubhash = crypto.createHash('sha256').update(signed).digest('hex');
     this.messages[pubhash] = PACKET_CONTRACT_PUBLISH.toString('hex');
 
     return this;
