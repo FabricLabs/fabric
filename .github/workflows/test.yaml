@@ -3,8 +3,7 @@ name: Test
 on:
   pull_request:
     branches:
-    #- master         # To be enabled once swaps-develop is merged
-    - feature/node-16 # To be removed once it is ready and merged
+    - master
 
 jobs:
   test:
@@ -31,5 +30,6 @@ jobs:
     - name: install dependencies
       run: npm ci
 
-    - name: run tests with coverage
-      run: npm run coverage
+    - name: Codecov
+      uses: codecov/codecov-action@v3.1.1
+
