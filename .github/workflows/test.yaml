@@ -30,6 +30,9 @@ jobs:
     - name: install dependencies
       run: npm ci
 
+    - name: generate coverage report
+      run: npm run report:coverage
+
     - name: Codecov
       uses: codecov/codecov-action@v3.1.1
 
