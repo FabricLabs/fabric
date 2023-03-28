@@ -787,6 +787,9 @@ class Peer extends Service {
     this.emit('log', 'Peer stopping...');
     this._state.status = 'STOPPING';
 
+    // Stop the heart
+    if (this._heart) clearInterval(this._heart);
+
     if (this.settings.upnp && this.upnp) {
       this.emit('debug', 'Closing UPNP...');
       try {

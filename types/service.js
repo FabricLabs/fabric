@@ -976,6 +976,7 @@ class Service extends Actor {
         id: entity.id,
         members: []
       }, channel);
+      return channel;
     }
 
     const target = pointer.escape(channel.id);
