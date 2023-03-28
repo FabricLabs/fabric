@@ -122,12 +122,12 @@ class Bitcoin extends Service {
       }
     });
 
-    // Runs fullnode from bcoin
-    if (this.settings.fullnode) {
+    // Runs fullnode from bcoin (disabled for now)
+    /* if (this.settings.fullnode) {
       this.fullnode = new FullNode({
         network: this.settings.network
       });
-    }
+    } */
 
     // Local Bitcoin Node
     this.peer = null; /* bcoin.Peer.fromOptions({
@@ -234,11 +234,7 @@ class Bitcoin extends Service {
    * Chain tip (block hash of the chain with the most Proof of Work)
    */
   get tip () {
-    if (this.settings.fullnode) {
-      return this.fullnode.chain.tip.hash.toString('hex');
-    } else {
-      return (this.chain && this.chain.tip) ? this.chain.tip.toString('hex') : null;
-    }
+    return (this.chain && this.chain.tip) ? this.chain.tip.toString('hex') : null;
   }
 
   /**

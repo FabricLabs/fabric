@@ -144,6 +144,7 @@ Fabric on Twitter: [@FabricProtocol][twitter]
 [build-guide]: BUILD.md
 [api-docs]: https://dev.fabric.pub
 [chat]: https://chat.fabric.pub
+[chat-support]: https://grove.chat/#/room/#help:fabric.pub
 [edit-readme]: https://github.com/FabricLabs/fabric/edit/master/README.md
 [contributors]: https://github.com/FabricLabs/fabric/graphs/contributors
 [build-status]: https://app.travis-ci.com/github/FabricLabs/fabric
