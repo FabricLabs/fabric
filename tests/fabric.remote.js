@@ -39,6 +39,23 @@ describe('@fabric/core/types/remote', function () {
       test();
     });
 
+    it('can call enumerate', function (done) {
+      async function test () {
+        try {
+          const remote = new Remote(sample);
+          const response = await remote.enumerate('/');
+
+          assert.ok(remote);
+          assert.ok(response);
+        } catch (exception) {
+          
+        }
+        done();
+      }
+
+      test();
+    });
+
     it('can call OPTIONS', function (done) {
       async function test () {
         try {
@@ -107,6 +124,25 @@ describe('@fabric/core/types/remote', function () {
       test();
     });
 
+    it('can call POST using querystring', function (done) {
+      async function test () {
+        try {
+          const remote = new Remote(sample);
+          const response = await remote._POST('/examples', 'FOO', {
+            mode: 'query'
+          });
+
+          assert.ok(remote);
+          assert.ok(response);
+        } catch (exception) {
+          
+        }
+        done();
+      }
+
+      test();
+    });
+
     it('can call PATCH', function (done) {
       async function test () {
         try {
@@ -129,6 +165,23 @@ describe('@fabric/core/types/remote', function () {
         try {
           const remote = new Remote(sample);
           const response = await remote._DELETE('/assets/foo');
+
+          assert.ok(remote);
+          assert.ok(response);
+        } catch (exception) {
+          
+        }
+        done();
+      }
+
+      test();
+    });
+
+    it('can call SEARCH', function (done) {
+      async function test () {
+        try {
+          const remote = new Remote(sample);
+          const response = await remote._SEARCH('/');
 
           assert.ok(remote);
           assert.ok(response);
