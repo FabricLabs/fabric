@@ -5,7 +5,7 @@ on:
     - master
 jobs:
   test:
-    name: Run Tests
+    name: Run tests
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -13,7 +13,7 @@ jobs:
         - macos-latest
         - ubuntu-latest
     steps:
-    - name: Checkout Branch
+    - name: Checkout branch
       uses: actions/checkout@v3
     - name: Setup Node.js on ${{ matrix.os }}
       uses: actions/setup-node@v2
@@ -23,10 +23,9 @@ jobs:
         cache-dependency-path: package-lock.json
     - name: Install dependencies
       run: npm ci
-    - name: Generate Coverage Report
+    - name: Generate coverage report
       run: npm run report:coverage
-
-    - name: Codecov
+    - name: Send coverage report
       uses: codecov/codecov-action@v3.1.1
       with:
         directory: ./reports/

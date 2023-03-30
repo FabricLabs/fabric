@@ -40,6 +40,19 @@ describe('@fabric/core/services/bitcoin', function () {
       await test();
     });
 
+    it('can generate an address', async function () {
+      async function test () {
+        const bitcoin = new Bitcoin(options);
+        const address = await bitcoin.getUnusedAddress();
+
+        assert.ok(bitcoin);
+        assert.ok(address);
+        assert.strictEqual(address, '1LqBGSKuX5yYUonjxT5qGfpUsXKYYWeabA');
+      }
+
+      await test();
+    });
+
     xit('can handle a spend request', async function () {
       async function test () {
         const bitcoin = new Bitcoin(options);
@@ -102,6 +115,18 @@ describe('@fabric/core/services/bitcoin', function () {
       } catch (exception) {
         console.error('Exception in test:', exception);
       }
+    });
+
+    it('can create a psbt', async function () {
+      async function test () {
+        const bitcoin = new Bitcoin(options);
+        const psbt = await bitcoin._buildPSBT();
+
+        assert.ok(bitcoin);
+        assert.ok(psbt);
+      }
+
+      await test();
     });
   });
 });

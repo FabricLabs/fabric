@@ -982,8 +982,13 @@ class Bitcoin extends Service {
   }
 
   async getUnusedAddress () {
-    const address = await this._makeRPCRequest('getnewaddress');
-    return address;
+    if (this.rpc) {
+      const address = await this._makeRPCRequest('getnewaddress');
+      return address;
+    } else {
+      const target = this.key.deriveAddress(this.state.index);
+      return target.address;
+    }
   }
 
   async append (raw) {
@@ -1419,6 +1424,9 @@ class Bitcoin extends Service {
    * @returns {PSBT} Instance of the PSBT.
    */
   async _buildPSBT (options = {}) {
+    if (!options.inputs) options.inputs = [];
+    if (!options.outputs) options.outputs = [];
+
     const psbt = new bitcoin.Psbt({
       network: this.networks[this.settings.network]
     });
