@@ -1,6 +1,5 @@
 # `@fabric/core` — the Fabric Reference Client
 ![Project Status][badge-status]
-[![Build Status][badge-build]][build-status]
 [![Coverage Status][badge-coverage]][coverage]
 [![GitHub contributors][badge-contributors]][contributors]
 [![Community][badge-chat]][chat]

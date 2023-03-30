@@ -5,7 +5,7 @@
 ## Quick Start
 You can install Fabric by running:
 ```
-npm i -g FabricLabs/fabric
+npm i -g FabricLabs/fabric#feature/cleanup
 ```
 
 This will make the `fabric` binary available on your system, after which you should run:
