@@ -227,6 +227,7 @@ class CLI extends App {
     this._registerCommand('service', this._handleServiceCommand);
     this._registerCommand('publish', this._handlePublishCommand);
     this._registerCommand('request', this._handleRequestCommand);
+    this._registerCommand('grant', this._handleGrantCommand);
     this._registerCommand('import', this._handleImportCommand);
     this._registerCommand('join', this._handleJoinRequest);
     this._registerCommand('sync', this._handleChainSyncRequest);
@@ -544,6 +545,18 @@ class CLI extends App {
   async _fundChannel (id, amount) {
     this._appendMessage(`Funding channel ${id} with ${amount} BTC...`);
     // TODO: create payment channel (@fabric/core/types/channel)
+  }
+
+  /**
+   * Creates a token for the target signer with a provided role and some optional data.
+   * @param {Array} params Parameters array.
+   */
+  async _handleGrantCommand (params) {
+    const target = params[1];
+    const role = params[2];
+    const extra = params[3];
+
+    this._appendMessage(`Creating token with role "${role}" for target: ${target}${(extra) ? ' (extra: ' + extra + ')' : ''}`);
   }
 
   async _handleJoinRequest (params) {

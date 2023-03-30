@@ -1,7 +1,8 @@
 'use strict';
 
 const {
-  BITCOIN_GENESIS
+  BITCOIN_GENESIS,
+  FABRIC_USER_AGENT
 } = require('../constants');
 
 const OP_TRACE = require('../contracts/trace');
@@ -197,24 +198,6 @@ class Bitcoin extends Service {
     return this;
   }
 
-  /**
-   * Provides bcoin's implementation of `TX` internally.  This static may be
-   * removed in the future.
-   * @deprecated
-   */
-  static get Transaction () {
-    return bcoin.TX;
-  }
-
-  /**
-   * Provides bcoin's implementation of `MTX` internally.  This static may be
-   * removed in the future.
-   * @deprecated
-   */
-  static get MutableTransaction () {
-    return bcoin.TX;
-  }
-
   get balance () {
     return this._state.balances.mine.trusted;
   }
@@ -227,7 +210,7 @@ class Bitcoin extends Service {
    * User Agent string for the Bitcoin P2P network.
    */
   get UAString () {
-    return 'Fabric/Bitcoin 0.1.0-dev (@fabric/core#v0.1.0-RC1)';
+    return FABRIC_USER_AGENT;
   }
 
   /**
@@ -933,7 +916,7 @@ class Bitcoin extends Service {
 
     if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', `Starting fullnode for network "${this.settings.network}"...`);
 
-    for (const candidate of this.settings.seeds) {
+    /* for (const candidate of this.settings.seeds) {
       let parts = candidate.split(':');
       let addr = new NetAddress({
         host: parts[0],
@@ -942,7 +925,7 @@ class Bitcoin extends Service {
 
       let peer = this.fullnode.pool.createOutbound(addr);
       this.fullnode.pool.peers.add(peer);
-    }
+    } */
 
     await this.fullnode.open();
     await this.fullnode.connect();
@@ -1753,7 +1736,7 @@ class Bitcoin extends Service {
     });
 
     if (this.store) await this.store.open();
-    if (this.settings.fullnode) {
+    /* if (this.settings.fullnode) {
       this.fullnode.on('peer connect', function peerConnectHandler (peer) {
         self.emit('warning', `[SERVICES:BITCOIN]', 'Peer connected to Full Node: ${peer}`);
       });
@@ -1764,7 +1747,7 @@ class Bitcoin extends Service {
       this.fullnode.on('tx', async function fullnodeTxHandler (tx) {
         self.emit('log', `tx event: ${JSON.stringify(tx)}`);
       });
-    }
+    } */
 
     this.wallet.on('message', function (msg) {
       self.emit('log', `wallet msg: ${msg}`);
@@ -1795,7 +1778,7 @@ class Bitcoin extends Service {
     // await this.chain.start();
 
     // Start nodes
-    if (this.settings.fullnode) await this._startLocalNode();
+    // if (this.settings.fullnode) await this._startLocalNode();
     if (this.settings.zmq) await this._startZMQ();
 
     // Handle RPC mode

@@ -133,7 +133,17 @@ collection of empassioned educators eager to help you.
 
 Fabric on Twitter: [@FabricProtocol][twitter]
 
+[bitcoin]: https://bitcoin.org
+[build-guide]: BUILD.md
+[chat]: https://grove.chat
+[chat-support]: https://grove.chat/#/room/#help:fabric.pub
+[coverage]: https://codecov.io/gh/FabricLabs/fabric
+[development]: https://grove.chat/#/room/#development:fabric.pub
+[fabric-github]: https://github.com/FabricLabs/fabric
 [protocol]: PROTOCOL.md
+[learning]: https://grove.chat/#/room/#learning:fabric.pub
+
+[api-docs]: https://dev.fabric.pub
 
 [fabric-github]: https://github.com/FabricLabs/fabric
 [http-plugin]: https://github.com/FabricLabs/fabric-http
@@ -141,17 +151,10 @@ Fabric on Twitter: [@FabricProtocol][twitter]
 [twilio-plugin]: https://github.com/FabricLabs/fabric-twilio
 [zapier-plugin]: https://github.com/FabricLabs/fabric-zapier
 [github-plugin]: https://github.com/FabricLabs/fabric-github
-[build-guide]: BUILD.md
-[api-docs]: https://dev.fabric.pub
-[chat]: https://chat.fabric.pub
-[chat-support]: https://grove.chat/#/room/#help:fabric.pub
+
 [edit-readme]: https://github.com/FabricLabs/fabric/edit/master/README.md
 [contributors]: https://github.com/FabricLabs/fabric/graphs/contributors
 [build-status]: https://app.travis-ci.com/github/FabricLabs/fabric
-[coverage]: https://codecov.io/gh/FabricLabs/fabric
-
-[learning]: https://to.fabric.pub/#learning:fabric.pub
-[development]: https://to.fabric.pub/#development:fabric.pub
 
 [badge-status]: https://img.shields.io/badge/status-experimental-rainbow.svg?style=flat-square
 [badge-build]: https://img.shields.io/travis/FabricLabs/fabric.svg?branch=master&style=flat-square
