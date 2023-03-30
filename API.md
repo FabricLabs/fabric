@@ -45,8 +45,17 @@ the Fabric network using a terminal emulator.</p>
 <dt><a href="#Entity">Entity</a> : <code>Object</code></dt>
 <dd><p>Live instance of an ARC in Fabric.</p>
 </dd>
+<dt><a href="#Environment">Environment</a></dt>
+<dd><p>Interact with the user&#39;s Environment.</p>
+</dd>
 <dt><a href="#Fabric">Fabric</a></dt>
 <dd><p>Reliable decentralized infrastructure.</p>
+</dd>
+<dt><a href="#Federation">Federation</a></dt>
+<dd><p>Create and manage sets of signers with the Federation class.</p>
+</dd>
+<dt><a href="#Filesystem">Filesystem</a></dt>
+<dd><p>Interact with a local filesystem.</p>
 </dd>
 <dt><a href="#Hash256">Hash256</a></dt>
 <dd><p>Simple interaction with 256-bit spaces.</p>
@@ -55,17 +64,23 @@ the Fabric network using a terminal emulator.</p>
 <dd><p>Provides an HMAC-based Extract-and-Expand Key Derivation Function (HKDF), compatible with
 RFC 5869.  Defaults to 32 byte output, matching Bitcoin&#39;s implementaton.</p>
 </dd>
+<dt><a href="#Identity">Identity</a></dt>
+<dd><p>Manage a network identity.</p>
+</dd>
 <dt><a href="#Interface">Interface</a> ⇐ <code>EventEmitter</code></dt>
 <dd><p>Interfaces compile abstract contract code into <a href="#Chain">Chain</a>-executable transactions, or &quot;chaincode&quot;. For example, the &quot;Bitcoin&quot; interface might compile a Swap contract into Script, preparing a valid Bitcoin transaction for broadcast which executes the swap contract.</p>
 </dd>
 <dt><a href="#Key">Key</a></dt>
 <dd><p>Represents a cryptographic key.</p>
 </dd>
-<dt><a href="#KeyStore">KeyStore</a></dt>
+<dt><a href="#Keystore">Keystore</a></dt>
 <dd><p>Provides an encrypted datastore for generic object storage.</p>
 </dd>
 <dt><a href="#Ledger">Ledger</a> ⇐ <code><a href="#Scribe">Scribe</a></code></dt>
 <dd><p>An ordered stack of pages.</p>
+</dd>
+<dt><a href="#Logger">Logger</a> ⇐ <code><a href="#Actor">Actor</a></code></dt>
+<dd><p>A basic logger that writes logs to the local file system</p>
 </dd>
 <dt><a href="#Machine">Machine</a></dt>
 <dd><p>General-purpose state machine with <a href="#Vector">Vector</a>-based instructions.</p>
@@ -95,6 +110,11 @@ within the network.</p>
 <dt><a href="#Reader">Reader</a></dt>
 <dd><p>Read from a byte stream, seeking valid Fabric messages.</p>
 </dd>
+<dt><a href="#Remote">Remote</a> : <code><a href="#Remote">Remote</a></code></dt>
+<dd><p>Interact with a remote <a href="#Resource">Resource</a>.  This is currently the only
+HTTP-related code that should remain in @fabric/core — all else must
+be moved to @fabric/http before final release!</p>
+</dd>
 <dt><a href="#Resource">Resource</a></dt>
 <dd><p>Generic interface for collections of digital objects.</p>
 </dd>
@@ -119,7 +139,7 @@ familiar semantics.</p>
 <dd><p>The <a href="#Session">Session</a> type describes a connection between <a href="#Peer">Peer</a>
 objects, and includes its own lifecycle.</p>
 </dd>
-<dt><a href="#Signer">Signer</a></dt>
+<dt><a href="#Signer">Signer</a> ⇐ <code><a href="#Actor">Actor</a></code></dt>
 <dd><p>Generic Fabric Signer.</p>
 </dd>
 <dt><a href="#Snapshot">Snapshot</a></dt>
@@ -172,6 +192,9 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 <dt><a href="#Exchange">Exchange</a></dt>
 <dd><p>Implements a basic Exchange.</p>
 </dd>
+<dt><a href="#Lightning">Lightning</a></dt>
+<dd><p>Manage a Lightning node.</p>
+</dd>
 <dt><a href="#Redis">Redis</a></dt>
 <dd><p>Connect and subscribe to ZeroMQ servers.</p>
 </dd>
@@ -207,13 +230,24 @@ Generic Fabric Actor.
 
 * [Actor](#Actor)
     * [new Actor([actor])](#new_Actor_new)
-    * [.commit()](#Actor+commit) ⇒ <code>String</code>
-    * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
-    * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
-    * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
-    * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
-    * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
-    * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
+    * _instance_
+        * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
+        * [.commit()](#Actor+commit) ⇒ <code>String</code>
+        * [.export()](#Actor+export) ⇒ <code>Object</code>
+        * [.get(path)](#Actor+get) ⇒ <code>Object</code>
+        * [.set(path, value)](#Actor+set) ⇒ <code>Object</code>
+        * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
+        * [.toGenericMessage()](#Actor+toGenericMessage) ⇒ <code>Object</code>
+        * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
+        * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
+        * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
+        * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
+        * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
+        * [.value([format])](#Actor+value) ⇒ <code>Object</code>
+        * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
+    * _static_
+        * [.fromAny(input)](#Actor.fromAny) ⇒ [<code>Actor</code>](#Actor)
+        * [.randomBytes([count])](#Actor.randomBytes) ⇒ <code>Buffer</code>
 
 <a name="new_Actor_new"></a>
 
@@ -223,6 +257,7 @@ Actors to subscribe to.  You can supply certain parameters
 for the actor, including key material [!!!] — be mindful of
 what you share with others!
 
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  Call [sign](#Actor+sign) to emit a [Signature](Signature).  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -231,6 +266,18 @@ what you share with others!
 | [actor.public] | <code>Buffer</code> | Public key. |
 | [actor.private] | <code>Buffer</code> | Private key. |
 
+<a name="Actor+adopt"></a>
+
+### actor.adopt(changes) ⇒ [<code>Actor</code>](#Actor)
+Explicitly adopt a set of [JSONPatch](JSONPatch)-encoded changes.
+
+**Kind**: instance method of [<code>Actor</code>](#Actor)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| changes | <code>Array</code> | List of [JSONPatch](JSONPatch) operations to apply. |
+
 <a name="Actor+commit"></a>
 
 ### actor.commit() ⇒ <code>String</code>
@@ -238,19 +285,64 @@ Resolve the current state to a commitment.
 
 **Kind**: instance method of [<code>Actor</code>](#Actor)  
 **Returns**: <code>String</code> - 32-byte ID  
-**Emits**: <code>event:Actor Current malleable state.</code>  
+<a name="Actor+export"></a>
+
+### actor.export() ⇒ <code>Object</code>
+Export the Actor's state to a standard [Object](Object).
+
+**Kind**: instance method of [<code>Actor</code>](#Actor)  
+**Returns**: <code>Object</code> - Standard object.  
+<a name="Actor+get"></a>
+
+### actor.get(path) ⇒ <code>Object</code>
+Retrieve a value from the Actor's state by [JSONPointer](JSONPointer) path.
+
+**Kind**: instance method of [<code>Actor</code>](#Actor)  
+**Returns**: <code>Object</code> - Value of the path in the Actor's state.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | Path to retrieve using [JSONPointer](JSONPointer). |
+
+<a name="Actor+set"></a>
+
+### actor.set(path, value) ⇒ <code>Object</code>
+Set a value in the Actor's state by [JSONPointer](JSONPointer) path.
+
+**Kind**: instance method of [<code>Actor</code>](#Actor)  
+**Returns**: <code>Object</code> - Value of the path in the Actor's state.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | Path to set using [JSONPointer](JSONPointer). |
+| value | <code>Object</code> | Value to set. |
+
 <a name="Actor+toBuffer"></a>
 
 ### actor.toBuffer() ⇒ <code>Buffer</code>
 Casts the Actor to a normalized Buffer.
 
 **Kind**: instance method of [<code>Actor</code>](#Actor)  
+<a name="Actor+toGenericMessage"></a>
+
+### actor.toGenericMessage() ⇒ <code>Object</code>
+Casts the Actor to a generic message.
+
+**Kind**: instance method of [<code>Actor</code>](#Actor)  
+**Returns**: <code>Object</code> - Generic message object.  
 <a name="Actor+toObject"></a>
 
 ### actor.toObject() ⇒ <code>Object</code>
 Returns the Actor's current state as an [Object](Object).
 
 **Kind**: instance method of [<code>Actor</code>](#Actor)  
+<a name="Actor+pause"></a>
+
+### actor.pause() ⇒ [<code>Actor</code>](#Actor)
+Toggles `status` property to paused.
+
+**Kind**: instance method of [<code>Actor</code>](#Actor)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
 <a name="Actor+serialize"></a>
 
 ### actor.serialize() ⇒ <code>String</code>
@@ -267,9 +359,21 @@ Signs the Actor.
 
 ### actor.unpause() ⇒ [<code>Actor</code>](#Actor)
 Toggles `status` property to unpaused.
-@
 
 **Kind**: instance method of [<code>Actor</code>](#Actor)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+<a name="Actor+value"></a>
+
+### actor.value([format]) ⇒ <code>Object</code>
+Get the inner value of the Actor with an optional cast type.
+
+**Kind**: instance method of [<code>Actor</code>](#Actor)  
+**Returns**: <code>Object</code> - Inner value of the Actor as an [Object](Object), or cast to the requested `format`.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [format] | <code>String</code> | <code>object</code> | Cast the value to one of: `buffer, hex, json, string` |
+
 <a name="Actor+_readObject"></a>
 
 ### actor.\_readObject(input) ⇒ <code>Object</code>
@@ -281,6 +385,30 @@ Parse an Object into a corresponding Fabric state.
 | Param | Type | Description |
 | --- | --- | --- |
 | input | <code>Object</code> | Object to read as input. |
+
+<a name="Actor.fromAny"></a>
+
+### Actor.fromAny(input) ⇒ [<code>Actor</code>](#Actor)
+Create an [Actor](#Actor) from a variety of formats.
+
+**Kind**: static method of [<code>Actor</code>](#Actor)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the [Actor](#Actor).  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>Object</code> | Target [Object](Object) to create. |
+
+<a name="Actor.randomBytes"></a>
+
+### Actor.randomBytes([count]) ⇒ <code>Buffer</code>
+Get a number of random bytes from the runtime environment.
+
+**Kind**: static method of [<code>Actor</code>](#Actor)  
+**Returns**: <code>Buffer</code> - The random bytes.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [count] | <code>Number</code> | <code>32</code> | Number of random bytes to retrieve. |
 
 <a name="Aggregator"></a>
 
@@ -301,6 +429,7 @@ Aggregates a set of balances (inputs).
 ### new Aggregator([settings])
 Create a new Aggregator.
 
+**Returns**: [<code>Aggregator</code>](#Aggregator) - Instance of the [Aggregator](#Aggregator).  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -377,6 +506,7 @@ Fabric-based networking and storage.
     * [._registerService(name, Service)](#App+_registerService) ⇒ [<code>Service</code>](#Service)
     * [.init()](#Service+init)
     * [.tick()](#Service+tick) ⇒ <code>Number</code>
+    * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
     * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
     * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
     * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
@@ -395,6 +525,7 @@ Fabric-based networking and storage.
 ### new App(definition)
 Generic bundle for building Fabric applications.
 
+**Returns**: [<code>App</code>](#App) - Returns an instance of `App`.  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -518,18 +649,30 @@ Called by Web Components.
 TODO: move to @fabric/http/types/spa
 
 **Kind**: instance method of [<code>App</code>](#App)  
+**Overrides**: [<code>init</code>](#Service+init)  
 <a name="Service+tick"></a>
 
 ### app.tick() ⇒ <code>Number</code>
 Move forward one clock cycle.
 
 **Kind**: instance method of [<code>App</code>](#App)  
+**Overrides**: [<code>tick</code>](#Service+tick)  
+<a name="Service+beat"></a>
+
+### app.beat() ⇒ [<code>Service</code>](#Service)
+Compute latest state.
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Overrides**: [<code>beat</code>](#Service+beat)  
+**Emits**: <code>Message#event:beat</code>  
 <a name="Service+get"></a>
 
 ### app.get(path) ⇒ <code>Mixed</code>
 Retrieve a key from the [State](#State).
 
 **Kind**: instance method of [<code>App</code>](#App)  
+**Overrides**: [<code>get</code>](#Service+get)  
+**Returns**: <code>Mixed</code> - Returns the target value if found, otherwise null.  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -541,6 +684,7 @@ Retrieve a key from the [State](#State).
 Set a key in the [State](#State) to a particular value.
 
 **Kind**: instance method of [<code>App</code>](#App)  
+**Overrides**: [<code>set</code>](#Service+set)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -552,6 +696,7 @@ Set a key in the [State](#State) to a particular value.
 Explicitly trust all events from a known source.
 
 **Kind**: instance method of [<code>App</code>](#App)  
+**Overrides**: [<code>trust</code>](#Service+trust)  
 **Returns**: [<code>Service</code>](#Service) - Instance of Service after binding events.  
 
 | Param | Type | Description |
@@ -565,6 +710,7 @@ Default route handler for an incoming message.  Follows the Activity
 Streams 2.0 spec: https://www.w3.org/TR/activitystreams-core/
 
 **Kind**: instance method of [<code>App</code>](#App)  
+**Overrides**: [<code>handler</code>](#Service+handler)  
 **Returns**: [<code>Service</code>](#Service) - Chainable method.  
 
 | Param | Type | Description |
@@ -577,6 +723,7 @@ Streams 2.0 spec: https://www.w3.org/TR/activitystreams-core/
 Attempt to acquire a lock for `duration` seconds.
 
 **Kind**: instance method of [<code>App</code>](#App)  
+**Overrides**: [<code>lock</code>](#Service+lock)  
 **Returns**: <code>Boolean</code> - true if locked, false if unable to lock.  
 
 | Param | Type | Default | Description |
@@ -589,6 +736,7 @@ Attempt to acquire a lock for `duration` seconds.
 Resolve a [State](#State) from a particular [Message](#Message) object.
 
 **Kind**: instance method of [<code>App</code>](#App)  
+**Overrides**: [<code>route</code>](#Service+route)  
 **Returns**: <code>Promise</code> - Resolves with resulting [State](#State).  
 
 | Param | Type | Description |
@@ -601,6 +749,7 @@ Resolve a [State](#State) from a particular [Message](#Message) object.
 Retrieve a value from the Service's state.
 
 **Kind**: instance method of [<code>App</code>](#App)  
+**Overrides**: [<code>\_GET</code>](#Service+_GET)  
 **Returns**: <code>Promise</code> - Resolves with the result.  
 
 | Param | Type | Description |
@@ -613,6 +762,7 @@ Retrieve a value from the Service's state.
 Store a value in the Service's state.
 
 **Kind**: instance method of [<code>App</code>](#App)  
+**Overrides**: [<code>\_PUT</code>](#Service+_PUT)  
 **Returns**: <code>Promise</code> - Resolves with with stored document.  
 
 | Param | Type | Default | Description |
@@ -627,6 +777,7 @@ Store a value in the Service's state.
 Attach to network.
 
 **Kind**: instance method of [<code>App</code>](#App)  
+**Overrides**: [<code>connect</code>](#Service+connect)  
 **Returns**: <code>Promise</code> - Resolves to [Fabric](#Fabric).  
 
 | Param | Type | Default | Description |
@@ -639,6 +790,7 @@ Attach to network.
 Send a message to a channel.
 
 **Kind**: instance method of [<code>App</code>](#App)  
+**Overrides**: [<code>send</code>](#Service+send)  
 **Returns**: [<code>Service</code>](#Service) - Chainable method.  
 
 | Param | Type | Description |
@@ -652,6 +804,7 @@ Send a message to a channel.
 Register an [Actor](#Actor) with the [Service](#Service).
 
 **Kind**: instance method of [<code>App</code>](#App)  
+**Overrides**: [<code>\_registerActor</code>](#Service+_registerActor)  
 **Returns**: <code>Promise</code> - Resolves upon successful registration.  
 
 | Param | Type | Description |
@@ -664,6 +817,7 @@ Register an [Actor](#Actor) with the [Service](#Service).
 Sends a message.
 
 **Kind**: instance method of [<code>App</code>](#App)  
+**Overrides**: [<code>\_send</code>](#Service+_send)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -839,6 +993,7 @@ The [Collection](#Collection) type maintains an ordered list of [State](#State) 
 ### new Collection([configuration])
 Create a list of [Entity](#Entity)-like objects for later retrieval.
 
+**Returns**: [<code>Collection</code>](#Collection) - Configured instance of the the [Collection](#Collection).  
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -1031,6 +1186,7 @@ Compilers build interfaces for users of Fabric applications.
 ### new Compiler(settings)
 Create a new Compiler.
 
+**Returns**: [<code>Compiler</code>](#Compiler) - Instance of the compiler.  
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -1096,6 +1252,7 @@ Live instance of an ARC in Fabric.
 ### new Entity([data])
 Generic template for virtual objects.
 
+**Returns**: [<code>Entity</code>](#Entity) - Instance of the [Entity](#Entity).  
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -1126,18 +1283,69 @@ Return a [Fabric](#Fabric)-labeled [Object](Object) for this [Entity](#Entity).
 | --- | --- | --- |
 | [input] | <code>Mixed</code> | Input to downsample.  If not provided, current Entity will be used. |
 
+<a name="Environment"></a>
+
+## Environment
+Interact with the user's Environment.
+
+**Kind**: global class  
+
+* [Environment](#Environment)
+    * [new Environment([settings])](#new_Environment_new)
+    * [.readVariable(name)](#Environment+readVariable) ⇒ <code>String</code>
+    * [.setWallet(wallet, force)](#Environment+setWallet) ⇒ [<code>Environment</code>](#Environment)
+    * [.start()](#Environment+start) ⇒ [<code>Environment</code>](#Environment)
+
+<a name="new_Environment_new"></a>
+
+### new Environment([settings])
+Create an instance of [Environment](#Environment).
+
+**Returns**: [<code>Environment</code>](#Environment) - Instance of the Environment.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Settings for the Fabric environment. |
+
+<a name="Environment+readVariable"></a>
+
+### environment.readVariable(name) ⇒ <code>String</code>
+Read a variable from the environment.
+
+**Kind**: instance method of [<code>Environment</code>](#Environment)  
+**Returns**: <code>String</code> - Value of the variable (or an empty string).  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>String</code> | Variable name to read. |
+
+<a name="Environment+setWallet"></a>
+
+### environment.setWallet(wallet, force) ⇒ [<code>Environment</code>](#Environment)
+Configure the Environment to use a Fabric [Wallet](#Wallet).
+
+**Kind**: instance method of [<code>Environment</code>](#Environment)  
+**Returns**: [<code>Environment</code>](#Environment) - The Fabric Environment.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| wallet | [<code>Wallet</code>](#Wallet) |  | Wallet to attach. |
+| force | <code>Boolean</code> | <code>false</code> | Force existing wallets to be destroyed. |
+
+<a name="Environment+start"></a>
+
+### environment.start() ⇒ [<code>Environment</code>](#Environment)
+Start the Environment.
+
+**Kind**: instance method of [<code>Environment</code>](#Environment)  
+**Returns**: [<code>Environment</code>](#Environment) - The Fabric Environment.  
 <a name="Fabric"></a>
 
 ## Fabric
 Reliable decentralized infrastructure.
 
 **Kind**: global class  
-**Properties**
-
-| Name | Type |
-| --- | --- |
-| Block | <code>Class</code> | 
-
+**Emits**: <code>Fabric#event:thread</code>, <code>Fabric#event:step Emitted on a &#x60;compute&#x60; step.</code>  
 
 * [Fabric](#Fabric)
     * [new Fabric(config)](#new_Fabric_new)
@@ -1203,6 +1411,108 @@ Process the current stack.
 
 **Kind**: instance method of [<code>Fabric</code>](#Fabric)  
 **Returns**: [<code>Fabric</code>](#Fabric) - Resulting instance of the stack.  
+<a name="Federation"></a>
+
+## Federation
+Create and manage sets of signers with the Federation class.
+
+**Kind**: global class  
+
+* [Federation](#Federation)
+    * [new Federation([settings])](#new_Federation_new)
+    * [.start()](#Federation+start) ⇒ [<code>Federation</code>](#Federation)
+
+<a name="new_Federation_new"></a>
+
+### new Federation([settings])
+Create an instance of a federation.
+
+**Returns**: [<code>Federation</code>](#Federation) - Instance of the federation.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Settings. |
+
+<a name="Federation+start"></a>
+
+### federation.start() ⇒ [<code>Federation</code>](#Federation)
+Start tracking state (i.e., ready to receive events).
+
+**Kind**: instance method of [<code>Federation</code>](#Federation)  
+**Returns**: [<code>Federation</code>](#Federation) - Instance of the Federation.  
+<a name="Filesystem"></a>
+
+## Filesystem
+Interact with a local filesystem.
+
+**Kind**: global class  
+
+* [Filesystem](#Filesystem)
+    * [new Filesystem([settings])](#new_Filesystem_new)
+    * [.ls()](#Filesystem+ls) ⇒ <code>Array</code>
+    * [.readFile(name)](#Filesystem+readFile) ⇒ <code>Buffer</code>
+    * [.writeFile(name, content)](#Filesystem+writeFile) ⇒ <code>Boolean</code>
+    * [._loadFromDisk()](#Filesystem+_loadFromDisk) ⇒ <code>Promise</code>
+    * [.sync()](#Filesystem+sync) ⇒ [<code>Filesystem</code>](#Filesystem)
+
+<a name="new_Filesystem_new"></a>
+
+### new Filesystem([settings])
+Synchronize an [Actor](#Actor) with a local filesystem.
+
+**Returns**: [<code>Filesystem</code>](#Filesystem) - Instance of the Fabric filesystem.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Configuration for the Fabric filesystem. |
+| [settings.path] | <code>Object</code> | Path of the local filesystem. |
+
+<a name="Filesystem+ls"></a>
+
+### filesystem.ls() ⇒ <code>Array</code>
+Get the list of files.
+
+**Kind**: instance method of [<code>Filesystem</code>](#Filesystem)  
+**Returns**: <code>Array</code> - List of files.  
+<a name="Filesystem+readFile"></a>
+
+### filesystem.readFile(name) ⇒ <code>Buffer</code>
+Read a file by name.
+
+**Kind**: instance method of [<code>Filesystem</code>](#Filesystem)  
+**Returns**: <code>Buffer</code> - Contents of the file.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>String</code> | Name of the file to read. |
+
+<a name="Filesystem+writeFile"></a>
+
+### filesystem.writeFile(name, content) ⇒ <code>Boolean</code>
+Write a file by name.
+
+**Kind**: instance method of [<code>Filesystem</code>](#Filesystem)  
+**Returns**: <code>Boolean</code> - `true` if the write succeeded, `false` if it did not.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>String</code> | Name of the file to write. |
+| content | <code>Buffer</code> | Content of the file. |
+
+<a name="Filesystem+_loadFromDisk"></a>
+
+### filesystem.\_loadFromDisk() ⇒ <code>Promise</code>
+Load Filesystem state from disk.
+
+**Kind**: instance method of [<code>Filesystem</code>](#Filesystem)  
+**Returns**: <code>Promise</code> - Resolves with Filesystem instance.  
+<a name="Filesystem+sync"></a>
+
+### filesystem.sync() ⇒ [<code>Filesystem</code>](#Filesystem)
+Syncronize state from the local filesystem.
+
+**Kind**: instance method of [<code>Filesystem</code>](#Filesystem)  
+**Returns**: [<code>Filesystem</code>](#Filesystem) - Instance of the Fabric filesystem.  
 <a name="Hash256"></a>
 
 ## Hash256
@@ -1284,6 +1594,53 @@ Derive a new output.
 | [info] | <code>Buffer</code> |  | Context and application specific information. |
 | [size] | <code>Number</code> | <code>32</code> | Length of output. |
 
+<a name="Identity"></a>
+
+## Identity
+Manage a network identity.
+
+**Kind**: global class  
+
+* [Identity](#Identity)
+    * [new Identity([settings])](#new_Identity_new)
+    * [.sign(data)](#Identity+sign) ⇒ <code>Signature</code>
+    * [.toString()](#Identity+toString) ⇒ <code>String</code>
+
+<a name="new_Identity_new"></a>
+
+### new Identity([settings])
+Create an instance of an Identity.
+
+**Returns**: [<code>Identity</code>](#Identity) - Instance of the identity.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [settings] | <code>Object</code> |  | Settings for the Identity. |
+| [settings.seed] | <code>String</code> |  | BIP 39 seed phrase. |
+| [settings.xprv] | <code>String</code> |  | Serialized BIP 32 master private key. |
+| [settings.xpub] | <code>String</code> |  | Serialized BIP 32 master public key. |
+| [settings.account] | <code>Number</code> | <code>0</code> | BIP 44 account index. |
+| [settings.index] | <code>Number</code> | <code>0</code> | BIP 44 key index. |
+
+<a name="Identity+sign"></a>
+
+### identity.sign(data) ⇒ <code>Signature</code>
+Sign a buffer of data using BIP 340: https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki
+
+**Kind**: instance method of [<code>Identity</code>](#Identity)  
+**Returns**: <code>Signature</code> - Resulting signature (64 bytes).  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| data | <code>Buffer</code> | Buffer of data to sign. |
+
+<a name="Identity+toString"></a>
+
+### identity.toString() ⇒ <code>String</code>
+Retrieve the bech32m-encoded identity.
+
+**Kind**: instance method of [<code>Identity</code>](#Identity)  
+**Returns**: <code>String</code> - Public identity.  
 <a name="Interface"></a>
 
 ## Interface ⇐ <code>EventEmitter</code>
@@ -1311,6 +1668,7 @@ Interfaces compile abstract contract code into [Chain](#Chain)-executable transa
 ### new Interface(settings)
 Define an [Interface](#Interface) by creating an instance of this class.
 
+**Returns**: [<code>Interface</code>](#Interface) - Instance of the [Interface](#Interface).  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -1371,42 +1729,44 @@ to create a fresh keypair, or `new Key({ public: 'deadbeef...' })` to
 create it from a known public key.
 
 
-| Param | Type | Description |
-| --- | --- | --- |
-| [settings] | <code>Object</code> | Initialization for the key. |
-| [settings.network] | <code>String</code> | Network string. |
-| [settings.seed] | <code>String</code> | Mnemonic seed for initializing the key. |
-| [settings.public] | <code>String</code> | Public key in hex. |
-| [settings.private] | <code>String</code> | Private key in hex. |
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [settings] | <code>Object</code> |  | Initialization for the key. |
+| [settings.network] | <code>String</code> |  | Network string. |
+| [settings.seed] | <code>String</code> |  | Mnemonic seed for initializing the key. |
+| [settings.public] | <code>String</code> |  | Public key in hex. |
+| [settings.private] | <code>String</code> |  | Private key in hex. |
+| [settings.purpose] | <code>String</code> | <code>44</code> | Constrains derivations to this space. |
 
-<a name="KeyStore"></a>
+<a name="Keystore"></a>
 
-## KeyStore
+## Keystore
 Provides an encrypted datastore for generic object storage.
 
 **Kind**: global class  
 
-* [KeyStore](#KeyStore)
-    * [new KeyStore([configuration])](#new_KeyStore_new)
-    * [._setState(state)](#KeyStore+_setState) ⇒ [<code>Actor</code>](#Actor)
+* [Keystore](#Keystore)
+    * [new Keystore([configuration])](#new_Keystore_new)
+    * [._setState(state)](#Keystore+_setState) ⇒ [<code>Actor</code>](#Actor)
 
-<a name="new_KeyStore_new"></a>
+<a name="new_Keystore_new"></a>
 
-### new KeyStore([configuration])
+### new Keystore([configuration])
 Create an instance of the Store.
 
+**Returns**: [<code>Keystore</code>](#Keystore) - Instance of the store.  
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
 | [configuration] | <code>FabricStoreConfiguration</code> |  | Settings to use. |
 | [configuration.name] | <code>String</code> | <code>&quot;DefaultStore&quot;</code> | Name of the Store. |
 
-<a name="KeyStore+_setState"></a>
+<a name="Keystore+_setState"></a>
 
-### keyStore.\_setState(state) ⇒ [<code>Actor</code>](#Actor)
+### keystore.\_setState(state) ⇒ [<code>Actor</code>](#Actor)
 Saves an Object to the store.
 
-**Kind**: instance method of [<code>KeyStore</code>](#KeyStore)  
+**Kind**: instance method of [<code>Keystore</code>](#Keystore)  
 **Returns**: [<code>Actor</code>](#Actor) - The local instance of the provided State's [Actor](#Actor).  
 
 | Param | Type | Description |
@@ -1462,6 +1822,7 @@ Attempts to append a [Page](Page) to the ledger.
 Retrives the current timestamp, in milliseconds.
 
 **Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+**Overrides**: [<code>now</code>](#Scribe+now)  
 **Returns**: <code>Number</code> - [Number](Number) representation of the millisecond [Integer](Integer) value.  
 <a name="Scribe+trust"></a>
 
@@ -1469,6 +1830,7 @@ Retrives the current timestamp, in milliseconds.
 Blindly bind event handlers to the [Source](Source).
 
 **Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+**Overrides**: [<code>trust</code>](#Scribe+trust)  
 **Returns**: [<code>Scribe</code>](#Scribe) - Instance of the [Scribe](#Scribe).  
 
 | Param | Type | Description |
@@ -1481,6 +1843,7 @@ Blindly bind event handlers to the [Source](Source).
 Use an existing Scribe instance as a parent.
 
 **Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+**Overrides**: [<code>inherits</code>](#Scribe+inherits)  
 **Returns**: [<code>Scribe</code>](#Scribe) - The configured instance of the Scribe.  
 
 | Param | Type | Description |
@@ -1493,12 +1856,14 @@ Use an existing Scribe instance as a parent.
 Converts the State to an HTML document.
 
 **Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+**Overrides**: [<code>toHTML</code>](#State+toHTML)  
 <a name="State+toString"></a>
 
 ### ledger.toString() ⇒ <code>String</code>
 Unmarshall an existing state to an instance of a [Blob](Blob).
 
 **Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+**Overrides**: [<code>toString</code>](#State+toString)  
 **Returns**: <code>String</code> - Serialized [Blob](Blob).  
 <a name="State+serialize"></a>
 
@@ -1506,6 +1871,7 @@ Unmarshall an existing state to an instance of a [Blob](Blob).
 Convert to [Buffer](Buffer).
 
 **Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+**Overrides**: [<code>serialize</code>](#State+serialize)  
 **Returns**: <code>Buffer</code> - [Store](#Store)-able blob.  
 
 | Param | Type | Description |
@@ -1518,6 +1884,7 @@ Convert to [Buffer](Buffer).
 Take a hex-encoded input and convert to a [State](#State) object.
 
 **Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+**Overrides**: [<code>deserialize</code>](#State+deserialize)  
 **Returns**: [<code>State</code>](#State) - [description]  
 
 | Param | Type | Description |
@@ -1531,12 +1898,14 @@ Creates a new child [State](#State), with `@parent` set to
 the current [State](#State) by immutable identifier.
 
 **Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+**Overrides**: [<code>fork</code>](#State+fork)  
 <a name="State+get"></a>
 
 ### ledger.get(path) ⇒ <code>Mixed</code>
 Retrieve a key from the [State](#State).
 
 **Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+**Overrides**: [<code>get</code>](#State+get)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -1548,6 +1917,7 @@ Retrieve a key from the [State](#State).
 Set a key in the [State](#State) to a particular value.
 
 **Kind**: instance method of [<code>Ledger</code>](#Ledger)  
+**Overrides**: [<code>set</code>](#State+set)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -1568,6 +1938,203 @@ Compose a JSON string for network consumption.
 **Kind**: instance method of [<code>Ledger</code>](#Ledger)  
 **Overrides**: [<code>render</code>](#State+render)  
 **Returns**: <code>String</code> - JSON-encoded [String](String).  
+<a name="Logger"></a>
+
+## Logger ⇐ [<code>Actor</code>](#Actor)
+A basic logger that writes logs to the local file system
+
+**Kind**: global class  
+**Extends**: [<code>Actor</code>](#Actor)  
+
+* [Logger](#Logger) ⇐ [<code>Actor</code>](#Actor)
+    * [.path](#Logger+path) ⇒ <code>String</code>
+    * [.log(msg)](#Logger+log) ⇒ <code>Boolean</code>
+    * [.start()](#Logger+start) ⇒ <code>Promise</code>
+    * [.stop()](#Logger+stop) ⇒ <code>Promise</code>
+    * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
+    * [.commit()](#Actor+commit) ⇒ <code>String</code>
+    * [.export()](#Actor+export) ⇒ <code>Object</code>
+    * [.get(path)](#Actor+get) ⇒ <code>Object</code>
+    * [.set(path, value)](#Actor+set) ⇒ <code>Object</code>
+    * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
+    * [.toGenericMessage()](#Actor+toGenericMessage) ⇒ <code>Object</code>
+    * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
+    * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
+    * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
+    * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
+    * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
+    * [.value([format])](#Actor+value) ⇒ <code>Object</code>
+    * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
+
+<a name="Logger+path"></a>
+
+### logger.path ⇒ <code>String</code>
+Returns the path to the log file
+
+**Kind**: instance property of [<code>Logger</code>](#Logger)  
+<a name="Logger+log"></a>
+
+### logger.log(msg) ⇒ <code>Boolean</code>
+Writes the specified log to the log file
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+**Returns**: <code>Boolean</code> - true, if msg was successfully written; false otherwise  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | <code>String</code> \| <code>Object</code> | The message to log |
+
+<a name="Logger+start"></a>
+
+### logger.start() ⇒ <code>Promise</code>
+Starts the logger
+
+This method creates the required directories for writing the log file.
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+<a name="Logger+stop"></a>
+
+### logger.stop() ⇒ <code>Promise</code>
+Stops the logger
+
+This method closes the log file and returns after it has been closed. Any
+errors on close would cause the return promise to be rejected.
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+<a name="Actor+adopt"></a>
+
+### logger.adopt(changes) ⇒ [<code>Actor</code>](#Actor)
+Explicitly adopt a set of [JSONPatch](JSONPatch)-encoded changes.
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+**Overrides**: [<code>adopt</code>](#Actor+adopt)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| changes | <code>Array</code> | List of [JSONPatch](JSONPatch) operations to apply. |
+
+<a name="Actor+commit"></a>
+
+### logger.commit() ⇒ <code>String</code>
+Resolve the current state to a commitment.
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+**Overrides**: [<code>commit</code>](#Actor+commit)  
+**Returns**: <code>String</code> - 32-byte ID  
+<a name="Actor+export"></a>
+
+### logger.export() ⇒ <code>Object</code>
+Export the Actor's state to a standard [Object](Object).
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+**Overrides**: [<code>export</code>](#Actor+export)  
+**Returns**: <code>Object</code> - Standard object.  
+<a name="Actor+get"></a>
+
+### logger.get(path) ⇒ <code>Object</code>
+Retrieve a value from the Actor's state by [JSONPointer](JSONPointer) path.
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+**Overrides**: [<code>get</code>](#Actor+get)  
+**Returns**: <code>Object</code> - Value of the path in the Actor's state.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | Path to retrieve using [JSONPointer](JSONPointer). |
+
+<a name="Actor+set"></a>
+
+### logger.set(path, value) ⇒ <code>Object</code>
+Set a value in the Actor's state by [JSONPointer](JSONPointer) path.
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+**Overrides**: [<code>set</code>](#Actor+set)  
+**Returns**: <code>Object</code> - Value of the path in the Actor's state.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | Path to set using [JSONPointer](JSONPointer). |
+| value | <code>Object</code> | Value to set. |
+
+<a name="Actor+toBuffer"></a>
+
+### logger.toBuffer() ⇒ <code>Buffer</code>
+Casts the Actor to a normalized Buffer.
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+**Overrides**: [<code>toBuffer</code>](#Actor+toBuffer)  
+<a name="Actor+toGenericMessage"></a>
+
+### logger.toGenericMessage() ⇒ <code>Object</code>
+Casts the Actor to a generic message.
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+**Overrides**: [<code>toGenericMessage</code>](#Actor+toGenericMessage)  
+**Returns**: <code>Object</code> - Generic message object.  
+<a name="Actor+toObject"></a>
+
+### logger.toObject() ⇒ <code>Object</code>
+Returns the Actor's current state as an [Object](Object).
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+**Overrides**: [<code>toObject</code>](#Actor+toObject)  
+<a name="Actor+pause"></a>
+
+### logger.pause() ⇒ [<code>Actor</code>](#Actor)
+Toggles `status` property to paused.
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+**Overrides**: [<code>pause</code>](#Actor+pause)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+<a name="Actor+serialize"></a>
+
+### logger.serialize() ⇒ <code>String</code>
+Serialize the Actor's current state into a JSON-formatted string.
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+**Overrides**: [<code>serialize</code>](#Actor+serialize)  
+<a name="Actor+sign"></a>
+
+### logger.sign() ⇒ [<code>Actor</code>](#Actor)
+Signs the Actor.
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+**Overrides**: [<code>sign</code>](#Actor+sign)  
+<a name="Actor+unpause"></a>
+
+### logger.unpause() ⇒ [<code>Actor</code>](#Actor)
+Toggles `status` property to unpaused.
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+**Overrides**: [<code>unpause</code>](#Actor+unpause)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+<a name="Actor+value"></a>
+
+### logger.value([format]) ⇒ <code>Object</code>
+Get the inner value of the Actor with an optional cast type.
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+**Overrides**: [<code>value</code>](#Actor+value)  
+**Returns**: <code>Object</code> - Inner value of the Actor as an [Object](Object), or cast to the requested `format`.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [format] | <code>String</code> | <code>object</code> | Cast the value to one of: `buffer, hex, json, string` |
+
+<a name="Actor+_readObject"></a>
+
+### logger.\_readObject(input) ⇒ <code>Object</code>
+Parse an Object into a corresponding Fabric state.
+
+**Kind**: instance method of [<code>Logger</code>](#Logger)  
+**Overrides**: [<code>\_readObject</code>](#Actor+_readObject)  
+**Returns**: <code>Object</code> - Fabric state.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>Object</code> | Object to read as input. |
+
 <a name="Machine"></a>
 
 ## Machine
@@ -1579,7 +2146,7 @@ General-purpose state machine with [Vector](#Vector)-based instructions.
     * [new Machine(settings)](#new_Machine_new)
     * [.sip([n])](#Machine+sip) ⇒ <code>Number</code>
     * [.slurp([n])](#Machine+slurp) ⇒ <code>Number</code>
-    * [.compute(input)](#Machine+compute) ⇒ <code>Promise</code>
+    * [.compute(input)](#Machine+compute) ⇒ [<code>Machine</code>](#Machine)
 
 <a name="new_Machine_new"></a>
 
@@ -1617,16 +2184,17 @@ Get `n` bytes of deterministic random data.
 
 <a name="Machine+compute"></a>
 
-### machine.compute(input) ⇒ <code>Promise</code>
+### machine.compute(input) ⇒ [<code>Machine</code>](#Machine)
 Computes the next "step" for our current Vector.  Analagous to `sum`.
 The top item on the stack is always the memory held at current position,
 so counts should always begin with 0.
 
 **Kind**: instance method of [<code>Machine</code>](#Machine)  
+**Returns**: [<code>Machine</code>](#Machine) - Instance of the resulting machine.  
 
 | Param | Type | Description |
 | --- | --- | --- |
-| input | [<code>Vector</code>](#Vector) | Input state, undefined if desired. |
+| input | <code>Object</code> | Value to pass as input. |
 
 <a name="Mempool"></a>
 
@@ -1657,12 +2225,16 @@ selectively disclosing new routes to peers which may have open circuits.
 * [Message](#Message) : <code>Object</code>
     * [new Message(message)](#new_Message_new)
     * [.asRaw()](#Message+asRaw) ⇒ <code>Buffer</code>
+    * [.sign()](#Message+sign) ⇒ [<code>Message</code>](#Message)
+    * [.verify()](#Message+verify) ⇒ <code>Boolean</code>
+    * [._setSigner(signer)](#Message+_setSigner) ⇒ [<code>Message</code>](#Message)
 
 <a name="new_Message_new"></a>
 
 ### new Message(message)
 The `Message` type is standardized in [Fabric](#Fabric) as a [Array](Array), which can be added to any other vector to compute a resulting state.
 
+**Returns**: [<code>Message</code>](#Message) - Instance of the message.  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -1675,6 +2247,32 @@ Returns a [Buffer](Buffer) of the complete message.
 
 **Kind**: instance method of [<code>Message</code>](#Message)  
 **Returns**: <code>Buffer</code> - Buffer of the encoded [Message](#Message).  
+<a name="Message+sign"></a>
+
+### message.sign() ⇒ [<code>Message</code>](#Message)
+Signs the message using the associated signer.
+
+**Kind**: instance method of [<code>Message</code>](#Message)  
+**Returns**: [<code>Message</code>](#Message) - Signed message.  
+<a name="Message+verify"></a>
+
+### message.verify() ⇒ <code>Boolean</code>
+Verify a message's signature.
+
+**Kind**: instance method of [<code>Message</code>](#Message)  
+**Returns**: <code>Boolean</code> - `true` if the signature is valid, `false` if not.  
+<a name="Message+_setSigner"></a>
+
+### message.\_setSigner(signer) ⇒ [<code>Message</code>](#Message)
+Sets the signer for the message.
+
+**Kind**: instance method of [<code>Message</code>](#Message)  
+**Returns**: [<code>Message</code>](#Message) - Instance of the Message with associated signer.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| signer | [<code>Signer</code>](#Signer) | Signer instance. |
+
 <a name="Node"></a>
 
 ## Node
@@ -1691,6 +2289,7 @@ Full definition of a Fabric node.
 ### new Node(settings)
 Manage a Fabric service.
 
+**Returns**: [<code>Node</code>](#Node) - Instance of the managed service.  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -1757,6 +2356,7 @@ Core messaging function for interacting with this object in system-time.
 Registers an [Actor](#Actor).  Necessary to store in a collection.
 
 **Kind**: instance method of [<code>Oracle</code>](#Oracle)  
+**Overrides**: [<code>\_REGISTER</code>](#Store+_REGISTER)  
 **Returns**: [<code>Vector</code>](#Vector) - Returned from `storage.set`  
 
 | Param | Type | Description |
@@ -1769,6 +2369,7 @@ Registers an [Actor](#Actor).  Necessary to store in a collection.
 Insert something into a collection.
 
 **Kind**: instance method of [<code>Oracle</code>](#Oracle)  
+**Overrides**: [<code>\_POST</code>](#Store+_POST)  
 **Returns**: <code>Promise</code> - Resolves on success with a String pointer.  
 
 | Param | Type | Description |
@@ -1782,6 +2383,7 @@ Insert something into a collection.
 Barebones getter.
 
 **Kind**: instance method of [<code>Oracle</code>](#Oracle)  
+**Overrides**: [<code>get</code>](#Store+get)  
 **Returns**: <code>Promise</code> - Resolves on complete.  `null` if not found.  
 
 | Param | Type | Description |
@@ -1794,6 +2396,7 @@ Barebones getter.
 Set a `key` to a specific `value`.
 
 **Kind**: instance method of [<code>Oracle</code>](#Oracle)  
+**Overrides**: [<code>set</code>](#Store+set)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -1806,6 +2409,7 @@ Set a `key` to a specific `value`.
 Implicitly trust an [Event](Event) source.
 
 **Kind**: instance method of [<code>Oracle</code>](#Oracle)  
+**Overrides**: [<code>trust</code>](#Store+trust)  
 **Returns**: [<code>Store</code>](#Store) - Resulting instance of [Store](#Store) with new trust.  
 
 | Param | Type | Description |
@@ -1818,6 +2422,7 @@ Implicitly trust an [Event](Event) source.
 Remove a [Value](#Value) by [Path](#Path).
 
 **Kind**: instance method of [<code>Oracle</code>](#Oracle)  
+**Overrides**: [<code>del</code>](#Store+del)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -1874,6 +2479,11 @@ An in-memory representation of a node in our network.
 
 * [Peer](#Peer)
     * [new Peer([config])](#new_Peer_new)
+    * ~~[.address](#Peer+address)~~
+    * [.broadcast(message)](#Peer+broadcast)
+    * [._connect(target)](#Peer+_connect)
+    * [._fillPeerSlots()](#Peer+_fillPeerSlots) ⇒ [<code>Peer</code>](#Peer)
+    * [._handleFabricMessage(buffer)](#Peer+_handleFabricMessage) ⇒ [<code>Peer</code>](#Peer)
     * [.start()](#Peer+start)
     * [.stop()](#Peer+stop)
     * [.listen()](#Peer+listen) ⇒ [<code>Peer</code>](#Peer)
@@ -1891,6 +2501,53 @@ Create an instance of [Peer](#Peer).
 | [config.upnp] | <code>Boolean</code> |  | Whether or not to use UPNP for automatic configuration. |
 | [config.port] | <code>Number</code> | <code>7777</code> | Port to use for P2P connections. |
 | [config.peers] | <code>Array</code> | <code>[]</code> | List of initial peers. |
+
+<a name="Peer+address"></a>
+
+### ~~peer.address~~
+***Deprecated***
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+broadcast"></a>
+
+### peer.broadcast(message)
+Write a [Buffer](Buffer) to all connected peers.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| message | <code>Buffer</code> | Message buffer to send. |
+
+<a name="Peer+_connect"></a>
+
+### peer.\_connect(target)
+Open a Fabric connection to the target address and initiate the Fabric Protocol.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| target | <code>String</code> | Target address. |
+
+<a name="Peer+_fillPeerSlots"></a>
+
+### peer.\_fillPeerSlots() ⇒ [<code>Peer</code>](#Peer)
+Attempt to fill available connection slots with new peers.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: [<code>Peer</code>](#Peer) - Instance of the peer.  
+<a name="Peer+_handleFabricMessage"></a>
+
+### peer.\_handleFabricMessage(buffer) ⇒ [<code>Peer</code>](#Peer)
+Handle a Fabric [Message](#Message) buffer.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: [<code>Peer</code>](#Peer) - Instance of the Peer.  
+
+| Param | Type |
+| --- | --- |
+| buffer | <code>Buffer</code> | 
 
 <a name="Peer+start"></a>
 
@@ -1911,7 +2568,6 @@ Start listening for connections.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: [<code>Peer</code>](#Peer) - Chainable method.  
-**Emits**: <code>Peer#event:ready</code>  
 <a name="Reader"></a>
 
 ## Reader
@@ -1928,6 +2584,143 @@ for valid Fabric messages.
 | Param | Type | Description |
 | --- | --- | --- |
 | settings | <code>Object</code> | Settings for the stream. |
+
+<a name="Remote"></a>
+
+## Remote : [<code>Remote</code>](#Remote)
+Interact with a remote [Resource](#Resource).  This is currently the only
+HTTP-related code that should remain in @fabric/core — all else must
+be moved to @fabric/http before final release!
+
+**Kind**: global class  
+**Properties**
+
+| Name | Type |
+| --- | --- |
+| config | <code>Object</code> | 
+| secure | <code>Boolean</code> | 
+
+
+* [Remote](#Remote) : [<code>Remote</code>](#Remote)
+    * [new Remote(target)](#new_Remote_new)
+    * [.enumerate()](#Remote+enumerate) ⇒ <code>Configuration</code>
+    * [.request(type, path, [params])](#Remote+request) ⇒ <code>FabricHTTPResult</code>
+    * [._PUT(path, body)](#Remote+_PUT) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
+    * [._GET(path, params)](#Remote+_GET) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
+    * [._POST(path, params)](#Remote+_POST) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
+    * [._OPTIONS(path, params)](#Remote+_OPTIONS) ⇒ <code>Object</code>
+    * [._PATCH(path, body)](#Remote+_PATCH) ⇒ <code>Object</code>
+    * [._DELETE(path, params)](#Remote+_DELETE) ⇒ <code>Object</code>
+
+<a name="new_Remote_new"></a>
+
+### new Remote(target)
+An in-memory representation of a node in our network.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| target | <code>Object</code> | Target object. |
+| target.host | <code>String</code> | Named host, e.g. "localhost". |
+| target.secure | <code>String</code> | Require TLS session. |
+
+<a name="Remote+enumerate"></a>
+
+### remote.enumerate() ⇒ <code>Configuration</code>
+Enumerate the available Resources on the remote host.
+
+**Kind**: instance method of [<code>Remote</code>](#Remote)  
+**Returns**: <code>Configuration</code> - An object with enumerable key/value pairs for the Application Resource Contract.  
+<a name="Remote+request"></a>
+
+### remote.request(type, path, [params]) ⇒ <code>FabricHTTPResult</code>
+Make an HTTP request to the configured authority.
+
+**Kind**: instance method of [<code>Remote</code>](#Remote)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| type | <code>String</code> | One of `GET`, `PUT`, `POST`, `DELETE`, or `OPTIONS`. |
+| path | <code>String</code> | The path to request from the authority. |
+| [params] | <code>Object</code> | Options. |
+
+<a name="Remote+_PUT"></a>
+
+### remote.\_PUT(path, body) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
+HTTP PUT against the configured Authority.
+
+**Kind**: instance method of [<code>Remote</code>](#Remote)  
+**Returns**: <code>FabricHTTPResult</code> \| <code>String</code> - Result of request.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | HTTP Path to request. |
+| body | <code>Object</code> | Map of parameters to supply. |
+
+<a name="Remote+_GET"></a>
+
+### remote.\_GET(path, params) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
+HTTP GET against the configured Authority.
+
+**Kind**: instance method of [<code>Remote</code>](#Remote)  
+**Returns**: <code>FabricHTTPResult</code> \| <code>String</code> - Result of request.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | HTTP Path to request. |
+| params | <code>Object</code> | Map of parameters to supply. |
+
+<a name="Remote+_POST"></a>
+
+### remote.\_POST(path, params) ⇒ <code>FabricHTTPResult</code> \| <code>String</code>
+HTTP POST against the configured Authority.
+
+**Kind**: instance method of [<code>Remote</code>](#Remote)  
+**Returns**: <code>FabricHTTPResult</code> \| <code>String</code> - Result of request.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | HTTP Path to request. |
+| params | <code>Object</code> | Map of parameters to supply. |
+
+<a name="Remote+_OPTIONS"></a>
+
+### remote.\_OPTIONS(path, params) ⇒ <code>Object</code>
+HTTP OPTIONS on the configured Authority.
+
+**Kind**: instance method of [<code>Remote</code>](#Remote)  
+**Returns**: <code>Object</code> - - Full description of remote resource.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | HTTP Path to request. |
+| params | <code>Object</code> | Map of parameters to supply. |
+
+<a name="Remote+_PATCH"></a>
+
+### remote.\_PATCH(path, body) ⇒ <code>Object</code>
+HTTP PATCH on the configured Authority.
+
+**Kind**: instance method of [<code>Remote</code>](#Remote)  
+**Returns**: <code>Object</code> - - Full description of remote resource.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | HTTP Path to request. |
+| body | <code>Object</code> | Map of parameters to supply. |
+
+<a name="Remote+_DELETE"></a>
+
+### remote.\_DELETE(path, params) ⇒ <code>Object</code>
+HTTP DELETE on the configured Authority.
+
+**Kind**: instance method of [<code>Remote</code>](#Remote)  
+**Returns**: <code>Object</code> - - Full description of remote resource.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | HTTP Path to request. |
+| params | <code>Object</code> | Map of parameters to supply. |
 
 <a name="Resource"></a>
 
@@ -2040,6 +2833,7 @@ Attaches a new handler to the router.
 Retrives the current timestamp, in milliseconds.
 
 **Kind**: instance method of [<code>Router</code>](#Router)  
+**Overrides**: [<code>now</code>](#Scribe+now)  
 **Returns**: <code>Number</code> - [Number](Number) representation of the millisecond [Integer](Integer) value.  
 <a name="Scribe+trust"></a>
 
@@ -2047,6 +2841,7 @@ Retrives the current timestamp, in milliseconds.
 Blindly bind event handlers to the [Source](Source).
 
 **Kind**: instance method of [<code>Router</code>](#Router)  
+**Overrides**: [<code>trust</code>](#Scribe+trust)  
 **Returns**: [<code>Scribe</code>](#Scribe) - Instance of the [Scribe](#Scribe).  
 
 | Param | Type | Description |
@@ -2059,6 +2854,7 @@ Blindly bind event handlers to the [Source](Source).
 Use an existing Scribe instance as a parent.
 
 **Kind**: instance method of [<code>Router</code>](#Router)  
+**Overrides**: [<code>inherits</code>](#Scribe+inherits)  
 **Returns**: [<code>Scribe</code>](#Scribe) - The configured instance of the Scribe.  
 
 | Param | Type | Description |
@@ -2071,12 +2867,14 @@ Use an existing Scribe instance as a parent.
 Converts the State to an HTML document.
 
 **Kind**: instance method of [<code>Router</code>](#Router)  
+**Overrides**: [<code>toHTML</code>](#State+toHTML)  
 <a name="State+toString"></a>
 
 ### router.toString() ⇒ <code>String</code>
 Unmarshall an existing state to an instance of a [Blob](Blob).
 
 **Kind**: instance method of [<code>Router</code>](#Router)  
+**Overrides**: [<code>toString</code>](#State+toString)  
 **Returns**: <code>String</code> - Serialized [Blob](Blob).  
 <a name="State+serialize"></a>
 
@@ -2084,6 +2882,7 @@ Unmarshall an existing state to an instance of a [Blob](Blob).
 Convert to [Buffer](Buffer).
 
 **Kind**: instance method of [<code>Router</code>](#Router)  
+**Overrides**: [<code>serialize</code>](#State+serialize)  
 **Returns**: <code>Buffer</code> - [Store](#Store)-able blob.  
 
 | Param | Type | Description |
@@ -2096,6 +2895,7 @@ Convert to [Buffer](Buffer).
 Take a hex-encoded input and convert to a [State](#State) object.
 
 **Kind**: instance method of [<code>Router</code>](#Router)  
+**Overrides**: [<code>deserialize</code>](#State+deserialize)  
 **Returns**: [<code>State</code>](#State) - [description]  
 
 | Param | Type | Description |
@@ -2109,12 +2909,14 @@ Creates a new child [State](#State), with `@parent` set to
 the current [State](#State) by immutable identifier.
 
 **Kind**: instance method of [<code>Router</code>](#Router)  
+**Overrides**: [<code>fork</code>](#State+fork)  
 <a name="State+get"></a>
 
 ### router.get(path) ⇒ <code>Mixed</code>
 Retrieve a key from the [State](#State).
 
 **Kind**: instance method of [<code>Router</code>](#Router)  
+**Overrides**: [<code>get</code>](#State+get)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -2126,6 +2928,7 @@ Retrieve a key from the [State](#State).
 Set a key in the [State](#State) to a particular value.
 
 **Kind**: instance method of [<code>Router</code>](#Router)  
+**Overrides**: [<code>set</code>](#State+set)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -2137,12 +2940,14 @@ Set a key in the [State](#State) to a particular value.
 Increment the vector clock, broadcast all changes as a transaction.
 
 **Kind**: instance method of [<code>Router</code>](#Router)  
+**Overrides**: [<code>commit</code>](#State+commit)  
 <a name="State+render"></a>
 
 ### router.render() ⇒ <code>String</code>
 Compose a JSON string for network consumption.
 
 **Kind**: instance method of [<code>Router</code>](#Router)  
+**Overrides**: [<code>render</code>](#State+render)  
 **Returns**: <code>String</code> - JSON-encoded [String](String).  
 <a name="Scribe"></a>
 
@@ -2221,12 +3026,14 @@ Use an existing Scribe instance as a parent.
 Converts the State to an HTML document.
 
 **Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Overrides**: [<code>toHTML</code>](#State+toHTML)  
 <a name="State+toString"></a>
 
 ### scribe.toString() ⇒ <code>String</code>
 Unmarshall an existing state to an instance of a [Blob](Blob).
 
 **Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Overrides**: [<code>toString</code>](#State+toString)  
 **Returns**: <code>String</code> - Serialized [Blob](Blob).  
 <a name="State+serialize"></a>
 
@@ -2234,6 +3041,7 @@ Unmarshall an existing state to an instance of a [Blob](Blob).
 Convert to [Buffer](Buffer).
 
 **Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Overrides**: [<code>serialize</code>](#State+serialize)  
 **Returns**: <code>Buffer</code> - [Store](#Store)-able blob.  
 
 | Param | Type | Description |
@@ -2246,6 +3054,7 @@ Convert to [Buffer](Buffer).
 Take a hex-encoded input and convert to a [State](#State) object.
 
 **Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Overrides**: [<code>deserialize</code>](#State+deserialize)  
 **Returns**: [<code>State</code>](#State) - [description]  
 
 | Param | Type | Description |
@@ -2259,12 +3068,14 @@ Creates a new child [State](#State), with `@parent` set to
 the current [State](#State) by immutable identifier.
 
 **Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Overrides**: [<code>fork</code>](#State+fork)  
 <a name="State+get"></a>
 
 ### scribe.get(path) ⇒ <code>Mixed</code>
 Retrieve a key from the [State](#State).
 
 **Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Overrides**: [<code>get</code>](#State+get)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -2276,6 +3087,7 @@ Retrieve a key from the [State](#State).
 Set a key in the [State](#State) to a particular value.
 
 **Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Overrides**: [<code>set</code>](#State+set)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -2287,12 +3099,14 @@ Set a key in the [State](#State) to a particular value.
 Increment the vector clock, broadcast all changes as a transaction.
 
 **Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Overrides**: [<code>commit</code>](#State+commit)  
 <a name="State+render"></a>
 
 ### scribe.render() ⇒ <code>String</code>
 Compose a JSON string for network consumption.
 
 **Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Overrides**: [<code>render</code>](#State+render)  
 **Returns**: <code>String</code> - JSON-encoded [String](String).  
 <a name="Script"></a>
 
@@ -2334,6 +3148,7 @@ familiar semantics.
     * [new Service(settings)](#new_Service_new)
     * [.init()](#Service+init)
     * [.tick()](#Service+tick) ⇒ <code>Number</code>
+    * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
     * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
     * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
     * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
@@ -2373,12 +3188,20 @@ TODO: move to @fabric/http/types/spa
 Move forward one clock cycle.
 
 **Kind**: instance method of [<code>Service</code>](#Service)  
+<a name="Service+beat"></a>
+
+### service.beat() ⇒ [<code>Service</code>](#Service)
+Compute latest state.
+
+**Kind**: instance method of [<code>Service</code>](#Service)  
+**Emits**: <code>Message#event:beat</code>  
 <a name="Service+get"></a>
 
 ### service.get(path) ⇒ <code>Mixed</code>
 Retrieve a key from the [State](#State).
 
 **Kind**: instance method of [<code>Service</code>](#Service)  
+**Returns**: <code>Mixed</code> - Returns the target value if found, otherwise null.  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -2562,10 +3385,11 @@ Closes the [Session](#Session), preventing further interaction.
 **Kind**: instance method of [<code>Session</code>](#Session)  
 <a name="Signer"></a>
 
-## Signer
+## Signer ⇐ [<code>Actor</code>](#Actor)
 Generic Fabric Signer.
 
 **Kind**: global class  
+**Extends**: [<code>Actor</code>](#Actor)  
 **Emits**: <code>event:message Fabric {@link Message} objects.</code>  
 **Access**: protected  
 **Properties**
@@ -2576,9 +3400,22 @@ Generic Fabric Signer.
 | preimage | <code>String</code> | Input hash for the `id` property (preimage === SHA256(SignerState)). |
 
 
-* [Signer](#Signer)
+* [Signer](#Signer) ⇐ [<code>Actor</code>](#Actor)
     * [new Signer([actor])](#new_Signer_new)
     * [.sign()](#Signer+sign) ⇒ [<code>Signer</code>](#Signer)
+    * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
+    * [.commit()](#Actor+commit) ⇒ <code>String</code>
+    * [.export()](#Actor+export) ⇒ <code>Object</code>
+    * [.get(path)](#Actor+get) ⇒ <code>Object</code>
+    * [.set(path, value)](#Actor+set) ⇒ <code>Object</code>
+    * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
+    * [.toGenericMessage()](#Actor+toGenericMessage) ⇒ <code>Object</code>
+    * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
+    * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
+    * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
+    * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
+    * [.value([format])](#Actor+value) ⇒ <code>Object</code>
+    * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
 
 <a name="new_Signer_new"></a>
 
@@ -2588,6 +3425,7 @@ Signers to subscribe to.  You can supply certain parameters
 for the actor, including key material [!!!] — be mindful of
 what you share with others!
 
+**Returns**: [<code>Signer</code>](#Signer) - Instance of the Signer.  Call [sign](#Signer+sign) to emit a [Signature](Signature).  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -2602,6 +3440,134 @@ what you share with others!
 Signs some data.
 
 **Kind**: instance method of [<code>Signer</code>](#Signer)  
+**Overrides**: [<code>sign</code>](#Actor+sign)  
+<a name="Actor+adopt"></a>
+
+### signer.adopt(changes) ⇒ [<code>Actor</code>](#Actor)
+Explicitly adopt a set of [JSONPatch](JSONPatch)-encoded changes.
+
+**Kind**: instance method of [<code>Signer</code>](#Signer)  
+**Overrides**: [<code>adopt</code>](#Actor+adopt)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| changes | <code>Array</code> | List of [JSONPatch](JSONPatch) operations to apply. |
+
+<a name="Actor+commit"></a>
+
+### signer.commit() ⇒ <code>String</code>
+Resolve the current state to a commitment.
+
+**Kind**: instance method of [<code>Signer</code>](#Signer)  
+**Overrides**: [<code>commit</code>](#Actor+commit)  
+**Returns**: <code>String</code> - 32-byte ID  
+<a name="Actor+export"></a>
+
+### signer.export() ⇒ <code>Object</code>
+Export the Actor's state to a standard [Object](Object).
+
+**Kind**: instance method of [<code>Signer</code>](#Signer)  
+**Overrides**: [<code>export</code>](#Actor+export)  
+**Returns**: <code>Object</code> - Standard object.  
+<a name="Actor+get"></a>
+
+### signer.get(path) ⇒ <code>Object</code>
+Retrieve a value from the Actor's state by [JSONPointer](JSONPointer) path.
+
+**Kind**: instance method of [<code>Signer</code>](#Signer)  
+**Overrides**: [<code>get</code>](#Actor+get)  
+**Returns**: <code>Object</code> - Value of the path in the Actor's state.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | Path to retrieve using [JSONPointer](JSONPointer). |
+
+<a name="Actor+set"></a>
+
+### signer.set(path, value) ⇒ <code>Object</code>
+Set a value in the Actor's state by [JSONPointer](JSONPointer) path.
+
+**Kind**: instance method of [<code>Signer</code>](#Signer)  
+**Overrides**: [<code>set</code>](#Actor+set)  
+**Returns**: <code>Object</code> - Value of the path in the Actor's state.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | Path to set using [JSONPointer](JSONPointer). |
+| value | <code>Object</code> | Value to set. |
+
+<a name="Actor+toBuffer"></a>
+
+### signer.toBuffer() ⇒ <code>Buffer</code>
+Casts the Actor to a normalized Buffer.
+
+**Kind**: instance method of [<code>Signer</code>](#Signer)  
+**Overrides**: [<code>toBuffer</code>](#Actor+toBuffer)  
+<a name="Actor+toGenericMessage"></a>
+
+### signer.toGenericMessage() ⇒ <code>Object</code>
+Casts the Actor to a generic message.
+
+**Kind**: instance method of [<code>Signer</code>](#Signer)  
+**Overrides**: [<code>toGenericMessage</code>](#Actor+toGenericMessage)  
+**Returns**: <code>Object</code> - Generic message object.  
+<a name="Actor+toObject"></a>
+
+### signer.toObject() ⇒ <code>Object</code>
+Returns the Actor's current state as an [Object](Object).
+
+**Kind**: instance method of [<code>Signer</code>](#Signer)  
+**Overrides**: [<code>toObject</code>](#Actor+toObject)  
+<a name="Actor+pause"></a>
+
+### signer.pause() ⇒ [<code>Actor</code>](#Actor)
+Toggles `status` property to paused.
+
+**Kind**: instance method of [<code>Signer</code>](#Signer)  
+**Overrides**: [<code>pause</code>](#Actor+pause)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+<a name="Actor+serialize"></a>
+
+### signer.serialize() ⇒ <code>String</code>
+Serialize the Actor's current state into a JSON-formatted string.
+
+**Kind**: instance method of [<code>Signer</code>](#Signer)  
+**Overrides**: [<code>serialize</code>](#Actor+serialize)  
+<a name="Actor+unpause"></a>
+
+### signer.unpause() ⇒ [<code>Actor</code>](#Actor)
+Toggles `status` property to unpaused.
+
+**Kind**: instance method of [<code>Signer</code>](#Signer)  
+**Overrides**: [<code>unpause</code>](#Actor+unpause)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+<a name="Actor+value"></a>
+
+### signer.value([format]) ⇒ <code>Object</code>
+Get the inner value of the Actor with an optional cast type.
+
+**Kind**: instance method of [<code>Signer</code>](#Signer)  
+**Overrides**: [<code>value</code>](#Actor+value)  
+**Returns**: <code>Object</code> - Inner value of the Actor as an [Object](Object), or cast to the requested `format`.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [format] | <code>String</code> | <code>object</code> | Cast the value to one of: `buffer, hex, json, string` |
+
+<a name="Actor+_readObject"></a>
+
+### signer.\_readObject(input) ⇒ <code>Object</code>
+Parse an Object into a corresponding Fabric state.
+
+**Kind**: instance method of [<code>Signer</code>](#Signer)  
+**Overrides**: [<code>\_readObject</code>](#Actor+_readObject)  
+**Returns**: <code>Object</code> - Fabric state.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>Object</code> | Object to read as input. |
+
 <a name="Snapshot"></a>
 
 ## Snapshot
@@ -2645,6 +3611,7 @@ Manage stacks of data.
 ### new Stack([list])
 Create a [Stack](#Stack) instance.
 
+**Returns**: [<code>Stack</code>](#Stack) - Instance of the [Stack](#Stack).  
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -2704,6 +3671,7 @@ committing to the outcome.  This workflow keeps app design quite simple!
 ### new State(data)
 Creates a snapshot of some information.
 
+**Returns**: [<code>State</code>](#State) - Resulting state.  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -2831,6 +3799,7 @@ Long-term storage.
 Create an instance of a [Store](#Store) to manage long-term storage, which is
 particularly useful when building a user-facing [Product](Product).
 
+**Returns**: [<code>Store</code>](#Store) - Instance of the Store, ready to start.  
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -2975,6 +3944,7 @@ Orchestrates a network of peers.
 ### new Swarm(config)
 Create an instance of a [Swarm](#Swarm).
 
+**Returns**: [<code>Swarm</code>](#Swarm) - Instance of the Swarm.  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -3032,6 +4002,7 @@ Class implementing a Merkle Tree.
 ### new Tree([settings])
 Create an instance of a Tree.
 
+**Returns**: [<code>Tree</code>](#Tree) - Instance of the tree.  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -3043,6 +4014,7 @@ Create an instance of a Tree.
 Add a leaf to the tree.
 
 **Kind**: instance method of [<code>Tree</code>](#Tree)  
+**Returns**: [<code>Tree</code>](#Tree) - Instance of the tree.  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -3191,22 +4163,28 @@ Manage keys and track their balances.
 
 * [Wallet](#Wallet) : <code>Object</code>
     * [new Wallet([settings])](#new_Wallet_new)
-    * [.getAddressForScript(script)](#Wallet+getAddressForScript)
-    * [.getAddressFromRedeemScript(redeemScript)](#Wallet+getAddressFromRedeemScript)
-    * [.createPricedOrder(order)](#Wallet+createPricedOrder)
-    * [._sign(tx)](#Wallet+_sign)
-    * [._createCrowdfund(fund)](#Wallet+_createCrowdfund)
-    * [._getSwapInputScript(redeemScript, secret)](#Wallet+_getSwapInputScript)
-    * [._getRefundInputScript(redeemScript)](#Wallet+_getRefundInputScript)
-    * [.publicKeyFromString(input)](#Wallet+publicKeyFromString)
-    * [._load(settings)](#Wallet+_load)
-    * [.start()](#Wallet+start)
+    * _instance_
+        * [.loadKey(keypair)](#Wallet+loadKey) ⇒ [<code>Wallet</code>](#Wallet)
+        * [.start()](#Wallet+start)
+        * [._load(settings)](#Wallet+_load)
+        * [.getAddressForScript(script)](#Wallet+getAddressForScript)
+        * [.getAddressFromRedeemScript(redeemScript)](#Wallet+getAddressFromRedeemScript)
+        * [.createPricedOrder(order)](#Wallet+createPricedOrder)
+        * [._sign(tx)](#Wallet+_sign)
+        * [._createCrowdfund(fund)](#Wallet+_createCrowdfund)
+        * [._getSwapInputScript(redeemScript, secret)](#Wallet+_getSwapInputScript)
+        * [._getRefundInputScript(redeemScript)](#Wallet+_getRefundInputScript)
+        * [.publicKeyFromString(input)](#Wallet+publicKeyFromString)
+    * _static_
+        * [.createSeed(passphrase)](#Wallet.createSeed) ⇒ <code>FabricSeed</code>
+        * [.fromSeed(seed)](#Wallet.fromSeed) ⇒ [<code>Wallet</code>](#Wallet)
 
 <a name="new_Wallet_new"></a>
 
 ### new Wallet([settings])
 Create an instance of a [Wallet](#Wallet).
 
+**Returns**: [<code>Wallet</code>](#Wallet) - Instance of the wallet.  
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -3214,6 +4192,37 @@ Create an instance of a [Wallet](#Wallet).
 | [settings.verbosity] | <code>Number</code> | <code>2</code> | One of: 0 (none), 1 (error), 2 (warning), 3 (notice), 4 (debug), 5 (audit) |
 | [settings.key] | <code>Object</code> |  | Key to restore from. |
 | [settings.key.seed] | <code>String</code> |  | Mnemonic seed for a restored wallet. |
+
+<a name="Wallet+loadKey"></a>
+
+### wallet.loadKey(keypair) ⇒ [<code>Wallet</code>](#Wallet)
+Import a key to the wallet.
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+**Returns**: [<code>Wallet</code>](#Wallet) - Instance of the Wallet.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| keypair | <code>Object</code> | Keypair. |
+| keypair.public | <code>Buffer</code> | Public key. |
+| [keypair.private] | <code>Buffer</code> | Private key. |
+
+<a name="Wallet+start"></a>
+
+### wallet.start()
+Start the wallet, including listening for transactions.
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+<a name="Wallet+_load"></a>
+
+### wallet.\_load(settings)
+Initialize the wallet, including keys and addresses.
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| settings | <code>Object</code> | Settings to load. |
 
 <a name="Wallet+getAddressForScript"></a>
 
@@ -3306,23 +4315,30 @@ Create a public key from a string.
 | --- | --- | --- |
 | input | <code>String</code> | Hex-encoded string to create key from. |
 
-<a name="Wallet+_load"></a>
+<a name="Wallet.createSeed"></a>
 
-### wallet.\_load(settings)
-Initialize the wallet, including keys and addresses.
+### Wallet.createSeed(passphrase) ⇒ <code>FabricSeed</code>
+Create a new seed phrase.
 
-**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+**Kind**: static method of [<code>Wallet</code>](#Wallet)  
+**Returns**: <code>FabricSeed</code> - The seed object.  
 
 | Param | Type | Description |
 | --- | --- | --- |
-| settings | <code>Object</code> | Settings to load. |
+| passphrase | <code>String</code> | BIP 39 passphrase for key derivation. |
 
-<a name="Wallet+start"></a>
+<a name="Wallet.fromSeed"></a>
 
-### wallet.start()
-Start the wallet, including listening for transactions.
+### Wallet.fromSeed(seed) ⇒ [<code>Wallet</code>](#Wallet)
+Create a new [Wallet](#Wallet) from a seed object.
 
-**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+**Kind**: static method of [<code>Wallet</code>](#Wallet)  
+**Returns**: [<code>Wallet</code>](#Wallet) - Instance of the wallet.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| seed | <code>FabricSeed</code> | Fabric seed. |
+
 <a name="Worker"></a>
 
 ## Worker
@@ -3371,6 +4387,7 @@ Manages interaction with the Bitcoin network.
         * [.tip](#Bitcoin+tip)
         * [.height](#Bitcoin+height)
         * [.broadcast(tx)](#Bitcoin+broadcast)
+        * [._processSpendMessage(message)](#Bitcoin+_processSpendMessage) ⇒ <code>BitcoinTransactionID</code>
         * [._prepareTransaction(obj)](#Bitcoin+_prepareTransaction)
         * [._handleCommittedBlock(block)](#Bitcoin+_handleCommittedBlock)
         * [._handlePeerPacket(msg)](#Bitcoin+_handlePeerPacket)
@@ -3379,12 +4396,14 @@ Manages interaction with the Bitcoin network.
         * [._subscribeToShard(shard)](#Bitcoin+_subscribeToShard)
         * [._connectSPV()](#Bitcoin+_connectSPV)
         * [.connect(addr)](#Bitcoin+connect)
+        * [._requestBlockAtHeight(height)](#Bitcoin+_requestBlockAtHeight) ⇒ <code>Object</code>
         * [._createContractProposal(options)](#Bitcoin+_createContractProposal) ⇒ <code>ContractProposal</code>
         * [._buildPSBT(options)](#Bitcoin+_buildPSBT) ⇒ <code>PSBT</code>
         * [.start()](#Bitcoin+start)
         * [.stop()](#Bitcoin+stop)
         * [.init()](#Service+init)
         * [.tick()](#Service+tick) ⇒ <code>Number</code>
+        * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
         * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
         * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
         * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
@@ -3397,8 +4416,8 @@ Manages interaction with the Bitcoin network.
         * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
         * [._send(message)](#Service+_send)
     * _static_
-        * [.Transaction](#Bitcoin.Transaction)
-        * [.MutableTransaction](#Bitcoin.MutableTransaction)
+        * ~~[.Transaction](#Bitcoin.Transaction)~~
+        * ~~[.MutableTransaction](#Bitcoin.MutableTransaction)~~
 
 <a name="new_Bitcoin_new"></a>
 
@@ -3443,6 +4462,20 @@ Broadcast a transaction to the Bitcoin network.
 | Param | Type | Description |
 | --- | --- | --- |
 | tx | <code>TX</code> | Bitcoin transaction |
+
+<a name="Bitcoin+_processSpendMessage"></a>
+
+### bitcoin.\_processSpendMessage(message) ⇒ <code>BitcoinTransactionID</code>
+Process a spend message.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>BitcoinTransactionID</code> - Hex-encoded representation of the transaction ID.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| message | <code>SpendMessage</code> | Generic-level message for spending. |
+| message.amount | <code>String</code> | Amount (in BTC) to spend. |
+| message.destination | <code>String</code> | Destination for funds. |
 
 <a name="Bitcoin+_prepareTransaction"></a>
 
@@ -3529,6 +4562,18 @@ Connect to a Fabric [Peer](#Peer).
 | --- | --- | --- |
 | addr | <code>String</code> | Address to connect to. |
 
+<a name="Bitcoin+_requestBlockAtHeight"></a>
+
+### bitcoin.\_requestBlockAtHeight(height) ⇒ <code>Object</code>
+Retrieve the equivalent to `getblockhash` from Bitcoin Core.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>Object</code> - The block hash.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| height | <code>Number</code> | Height of block to retrieve. |
+
 <a name="Bitcoin+_createContractProposal"></a>
 
 ### bitcoin.\_createContractProposal(options) ⇒ <code>ContractProposal</code>
@@ -3573,6 +4618,7 @@ Called by Web Components.
 TODO: move to @fabric/http/types/spa
 
 **Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>init</code>](#Service+init)  
 <a name="Service+tick"></a>
 
 ### bitcoin.tick() ⇒ <code>Number</code>
@@ -3580,12 +4626,22 @@ Move forward one clock cycle.
 
 **Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
 **Overrides**: [<code>tick</code>](#Service+tick)  
+<a name="Service+beat"></a>
+
+### bitcoin.beat() ⇒ [<code>Service</code>](#Service)
+Compute latest state.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>beat</code>](#Service+beat)  
+**Emits**: <code>Message#event:beat</code>  
 <a name="Service+get"></a>
 
 ### bitcoin.get(path) ⇒ <code>Mixed</code>
 Retrieve a key from the [State](#State).
 
 **Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>get</code>](#Service+get)  
+**Returns**: <code>Mixed</code> - Returns the target value if found, otherwise null.  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -3597,6 +4653,7 @@ Retrieve a key from the [State](#State).
 Set a key in the [State](#State) to a particular value.
 
 **Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>set</code>](#Service+set)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -3608,6 +4665,7 @@ Set a key in the [State](#State) to a particular value.
 Explicitly trust all events from a known source.
 
 **Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>trust</code>](#Service+trust)  
 **Returns**: [<code>Service</code>](#Service) - Instance of Service after binding events.  
 
 | Param | Type | Description |
@@ -3621,6 +4679,7 @@ Default route handler for an incoming message.  Follows the Activity
 Streams 2.0 spec: https://www.w3.org/TR/activitystreams-core/
 
 **Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>handler</code>](#Service+handler)  
 **Returns**: [<code>Service</code>](#Service) - Chainable method.  
 
 | Param | Type | Description |
@@ -3633,6 +4692,7 @@ Streams 2.0 spec: https://www.w3.org/TR/activitystreams-core/
 Attempt to acquire a lock for `duration` seconds.
 
 **Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>lock</code>](#Service+lock)  
 **Returns**: <code>Boolean</code> - true if locked, false if unable to lock.  
 
 | Param | Type | Default | Description |
@@ -3645,6 +4705,7 @@ Attempt to acquire a lock for `duration` seconds.
 Resolve a [State](#State) from a particular [Message](#Message) object.
 
 **Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>route</code>](#Service+route)  
 **Returns**: <code>Promise</code> - Resolves with resulting [State](#State).  
 
 | Param | Type | Description |
@@ -3657,6 +4718,7 @@ Resolve a [State](#State) from a particular [Message](#Message) object.
 Retrieve a value from the Service's state.
 
 **Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>\_GET</code>](#Service+_GET)  
 **Returns**: <code>Promise</code> - Resolves with the result.  
 
 | Param | Type | Description |
@@ -3669,6 +4731,7 @@ Retrieve a value from the Service's state.
 Store a value in the Service's state.
 
 **Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>\_PUT</code>](#Service+_PUT)  
 **Returns**: <code>Promise</code> - Resolves with with stored document.  
 
 | Param | Type | Default | Description |
@@ -3683,6 +4746,7 @@ Store a value in the Service's state.
 Send a message to a channel.
 
 **Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>send</code>](#Service+send)  
 **Returns**: [<code>Service</code>](#Service) - Chainable method.  
 
 | Param | Type | Description |
@@ -3709,6 +4773,7 @@ Register an [Actor](#Actor) with the [Service](#Service).
 Sends a message.
 
 **Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>\_send</code>](#Service+_send)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -3716,14 +4781,18 @@ Sends a message.
 
 <a name="Bitcoin.Transaction"></a>
 
-### Bitcoin.Transaction
+### ~~Bitcoin.Transaction~~
+***Deprecated***
+
 Provides bcoin's implementation of `TX` internally.  This static may be
 removed in the future.
 
 **Kind**: static property of [<code>Bitcoin</code>](#Bitcoin)  
 <a name="Bitcoin.MutableTransaction"></a>
 
-### Bitcoin.MutableTransaction
+### ~~Bitcoin.MutableTransaction~~
+***Deprecated***
+
 Provides bcoin's implementation of `MTX` internally.  This static may be
 removed in the future.
 
@@ -3741,12 +4810,47 @@ Create an instance of the Exchange.  You may run two instances at
 once to simulate two-party contracts, or use the Fabric Market to
 find and trade with real peers.
 
+**Returns**: Exchnge  
 
 | Param | Type | Description |
 | --- | --- | --- |
 | settings | <code>Object</code> | Map of settings to values. |
 | settings.fees | <code>Object</code> | Map of fee settings (all values in BTC). |
 | settings.fees.minimum | <code>Object</code> | Minimum fee (satoshis). |
+
+<a name="Lightning"></a>
+
+## Lightning
+Manage a Lightning node.
+
+**Kind**: global class  
+
+* [Lightning](#Lightning)
+    * [new Lightning([settings])](#new_Lightning_new)
+    * [._makeRPCRequest(method, [params])](#Lightning+_makeRPCRequest) ⇒ <code>Object</code> \| <code>String</code>
+
+<a name="new_Lightning_new"></a>
+
+### new Lightning([settings])
+Create an instance of the Lightning [Service](#Service).
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Settings. |
+
+<a name="Lightning+_makeRPCRequest"></a>
+
+### lightning.\_makeRPCRequest(method, [params]) ⇒ <code>Object</code> \| <code>String</code>
+Make an RPC request through the Lightning UNIX socket.
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+**Returns**: <code>Object</code> \| <code>String</code> - Respond from the Lightning node.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| method | <code>String</code> | Name of method to call. |
+| [params] | <code>Array</code> | Array of parameters. |
 
 <a name="Redis"></a>
 
@@ -3765,6 +4869,7 @@ Connect and subscribe to ZeroMQ servers.
 ### new Redis([settings])
 Creates an instance of a ZeroMQ subscriber.
 
+**Returns**: [<code>Redis</code>](#Redis) - Instance of the Redis service, ready to run `start()`  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -3803,6 +4908,7 @@ Connect and subscribe to ZeroMQ publishers.
 ### new ZMQ([settings])
 Creates an instance of a ZeroMQ subscriber.
 
+**Returns**: [<code>ZMQ</code>](#ZMQ) - Instance of the ZMQ service, ready to run `start()`  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -3904,12 +5010,14 @@ Use an existing Scribe instance as a parent.
 Converts the State to an HTML document.
 
 **Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Overrides**: [<code>toHTML</code>](#State+toHTML)  
 <a name="State+toString"></a>
 
 ### scribe.toString() ⇒ <code>String</code>
 Unmarshall an existing state to an instance of a [Blob](Blob).
 
 **Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Overrides**: [<code>toString</code>](#State+toString)  
 **Returns**: <code>String</code> - Serialized [Blob](Blob).  
 <a name="State+serialize"></a>
 
@@ -3917,6 +5025,7 @@ Unmarshall an existing state to an instance of a [Blob](Blob).
 Convert to [Buffer](Buffer).
 
 **Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Overrides**: [<code>serialize</code>](#State+serialize)  
 **Returns**: <code>Buffer</code> - [Store](#Store)-able blob.  
 
 | Param | Type | Description |
@@ -3929,6 +5038,7 @@ Convert to [Buffer](Buffer).
 Take a hex-encoded input and convert to a [State](#State) object.
 
 **Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Overrides**: [<code>deserialize</code>](#State+deserialize)  
 **Returns**: [<code>State</code>](#State) - [description]  
 
 | Param | Type | Description |
@@ -3942,12 +5052,14 @@ Creates a new child [State](#State), with `@parent` set to
 the current [State](#State) by immutable identifier.
 
 **Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Overrides**: [<code>fork</code>](#State+fork)  
 <a name="State+get"></a>
 
 ### scribe.get(path) ⇒ <code>Mixed</code>
 Retrieve a key from the [State](#State).
 
 **Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Overrides**: [<code>get</code>](#State+get)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -3959,6 +5071,7 @@ Retrieve a key from the [State](#State).
 Set a key in the [State](#State) to a particular value.
 
 **Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Overrides**: [<code>set</code>](#State+set)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -3970,12 +5083,14 @@ Set a key in the [State](#State) to a particular value.
 Increment the vector clock, broadcast all changes as a transaction.
 
 **Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Overrides**: [<code>commit</code>](#State+commit)  
 <a name="State+render"></a>
 
 ### scribe.render() ⇒ <code>String</code>
 Compose a JSON string for network consumption.
 
 **Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Overrides**: [<code>render</code>](#State+render)  
 **Returns**: <code>String</code> - JSON-encoded [String](String).  
 <a name="Stash"></a>
 

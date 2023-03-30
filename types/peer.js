@@ -2,42 +2,49 @@
 
 // Constants
 const {
+  FABRIC_KEY_DERIVATION_PATH,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
   P2P_ROOT,
   P2P_PING,
   P2P_PONG,
+  P2P_PORT,
   P2P_START_CHAIN,
   P2P_INSTRUCTION,
   P2P_BASE_MESSAGE,
   P2P_STATE_COMMITTMENT,
   P2P_STATE_CHANGE,
-  P2P_STATE_ROOT,
-  ZERO_LENGTH_PLAINTEXT
+  P2P_STATE_ROOT
 } = require('../constants');
 
 // Internals
 const net = require('net');
 const crypto = require('crypto');
 const stream = require('stream');
+const manager = require('fast-json-patch');
+const noise = require('noise-protocol-stream');
 
 // Dependencies
 const merge = require('lodash.merge');
-// const upnp = require('nat-upnp');
+const upnp = require('nat-upnp');
 
 // Fabric Types
 const Actor = require('./actor');
+const Identity = require('./identity');
+const Signer = require('./signer');
 const Key = require('./key');
 const Machine = require('./machine');
 const Message = require('./message');
-const Session = require('./session');
-const Reader = require('./reader');
+const Service = require('./service');
 const Wallet = require('./wallet');
+
+// Constants
+const PROLOGUE = 'FABRIC';
 
 /**
  * An in-memory representation of a node in our network.
  */
-class Peer extends Actor {
+class Peer extends Service {
   /**
    * Create an instance of {@link Peer}.
    * @param {Object} [config] Initialization Vector for this peer.
@@ -51,36 +58,41 @@ class Peer extends Actor {
 
     this.name = 'Peer';
     this.settings = merge({
-      address: '0.0.0.0',
+      constraints: {
+        peers: {
+          max: 32,
+          shuffle: 8
+        }
+      },
+      interface: '0.0.0.0',
       network: 'regtest',
       networking: true,
-      listen: false,
+      listen: true,
       peers: [],
       port: 7777,
-      upnp: false
+      state: Object.assign({
+        actors: {},
+        channels: {},
+        contracts: {},
+        messages: {}
+      }, config.state),
+      upnp: false,
+      key: {}
     }, config);
 
     // Network Internals
     this.upnp = null;
-    this.server = net.createServer(this._handleConnection.bind(this));
+    this.server = net.createServer(this._NOISESocketHandler.bind(this));
     this.stream = new stream.Transform({
-      transform (chunk, encoding, callback) {
-        // TODO: parse as encrypted data
-        callback(null, chunk);
+      transform (chunk, encoding, done) {
+        done(null, chunk);
       }
     });
 
-    this.key = new Key({
-      network: this.settings.network,
-      seed: (this.settings.wallet && this.settings.wallet.seed) ? this.settings.wallet.seed : this.settings.seed
-    });
-
-    // TODO: document wallet settings
-    this.wallet = new Wallet({
-      key: {
-        seed: (this.settings.wallet && this.settings.wallet.seed) ? this.settings.wallet.seed : this.settings.seed
-      }
-    });
+    this.identity = new Identity(this.settings.key);
+    this.signer = new Signer(this.settings.key);
+    this.key = new Key(this.settings.key);
+    this.wallet = new Wallet(this.settings.key);
 
     // this.hex = this.key.public.encodeCompressed('hex');
     // this.pkh = crypto.createHash('sha256').update(this.hex).digest('hex');
@@ -92,7 +104,10 @@ class Peer extends Actor {
     };
 
     // Internal properties
+    this.actors = {};
+    this.contracts = {};
     this.chains = {};
+    this.candidates = [];
     this.connections = {};
     this.peers = {};
     this.memory = {};
@@ -101,6 +116,7 @@ class Peer extends Actor {
 
     // Internal Stack Machine
     this.machine = new Machine();
+    this.observer = null;
 
     this.meta = {
       messages: {
@@ -110,6 +126,7 @@ class Peer extends Actor {
     };
 
     this._state = {
+      content: this.settings.state,
       peers: {},
       chains: {},
       connections: {},
@@ -129,12 +146,14 @@ class Peer extends Actor {
     return this.key.pubkeyhash;
   }
 
-  get state () {
-    // TODO: use Proxy
-    return Object.assign({}, this._state);
+  /**
+   * @deprecated
+   */
+  get address () {
+    return this.settings.interface || this.settings.address;
   }
 
-  get address () {
+  get interface () {
     return this.settings.interface || this.settings.address;
   }
 
@@ -142,8 +161,532 @@ class Peer extends Actor {
     return this.settings.port || 7777;
   }
 
-  set state (value) {
-    this._state = value;
+  beat () {
+    const initial = new Actor(this.state);
+    const now = (new Date()).toISOString();
+
+    this.commit();
+    this.emit('beat', {
+      created: now,
+      initial: initial.toGenericMessage(),
+      state: this.state
+    });
+
+    return this;
+  }
+
+  /**
+   * Write a {@link Buffer} to all connected peers.
+   * @param {Buffer} message Message buffer to send.
+   */
+  broadcast (message, origin = null) {
+    for (const id in this.connections) {
+      if (id === origin) continue;
+      this.connections[id]._writeFabric(message);
+    }
+  }
+
+  relayFrom (origin, message, socket = null) {
+    for (const id in this.connections) {
+      if (id === origin) continue;
+      this.connections[id]._writeFabric(message.toBuffer(), socket);
+    }
+  }
+
+  _beginFabricHandshake (client) {
+    // Start handshake
+    const vector = ['P2P_SESSION_OFFER', JSON.stringify({
+      type: 'P2P_SESSION_OFFER',
+      actor: {
+        id: this.identity.id
+      },
+      object: {
+        challenge: crypto.randomBytes(8).toString('hex'),
+      }
+    })];
+
+    // Create offer message
+    const P2P_SESSION_OFFER = Message.fromVector(vector)._setSigner(this.signer).sign();
+    const message = P2P_SESSION_OFFER.toBuffer();
+    if (this.settings.debug) this.emit('debug', `session_offer ${P2P_SESSION_OFFER} ${message.toString('hex')}`);
+
+    // Send handshake
+    try {
+      client.encrypt.write(message);
+    } catch (exception) {
+      this.emit('error', `Cannot write to socket: ${exception}`);
+    }
+
+    return this;
+  }
+
+  /**
+   * Open a Fabric connection to the target address and initiate the Fabric Protocol.
+   * @param {String} target Target address.
+   */
+  _connect (target) {
+    const url = new URL(`tcp://${target}`);
+    const id = url.username;
+
+    if (!url.port) target += `:${P2P_PORT}`;
+
+    this._registerActor({ name: target });
+    this._registerPeer({ identity: id });
+
+    // Set up the NOISE socket
+    const socket = net.createConnection(url.port || P2P_PORT, url.hostname);
+    const client = noise({
+      initiator: true,
+      prologue: Buffer.from(PROLOGUE),
+      // privateKey: derived.privkey,
+      verify: this._verifyNOISE.bind(this)
+    });
+
+    socket.on('error', (error) => {
+      this.emit('error', `Socket error: ${error}`);
+    });
+
+    socket.on('open', (info) => {
+      this.emit('debug', `Socket open: ${info}`);
+    });
+
+    socket.on('close', (info) => {
+      this.emit('debug', `Outbound socket closed: (${target}) ${info}`);
+      socket._destroyFabric();
+    });
+
+    socket.on('end', (info) => {
+      this.emit('debug', `Socket end: (${target}) ${info}`);
+    });
+
+    // Handle trusted Fabric messages
+    client.decrypt.on('data', (data) => {
+      this._handleFabricMessage(data, { name: target }, client);
+    });
+
+    // Start stream
+    client.encrypt.pipe(socket).pipe(client.decrypt);
+
+    // TODO: output stream
+    // client.decrypt.pipe(this.stream);
+
+    this._registerNOISEClient(target, socket, client);
+    this._beginFabricHandshake(client);
+
+    this.emit('connections:open', {
+      address: target,
+      id: target,
+      url: url
+    });
+  }
+
+  _announceAlias (alias, origin = null, socket = null) {
+    const PACKET_PEER_ALIAS = Message.fromVector(['P2P_PEER_ALIAS', JSON.stringify({
+      type: 'P2P_PEER_ALIAS',
+      object: {
+        name: alias
+      }
+    })]);
+
+    const announcement = PACKET_PEER_ALIAS.toBuffer();
+    this.broadcast(announcement, origin.name);
+  }
+
+  _destroyFabric (socket, target) {
+    if (socket._keepalive) clearInterval(socket._keepalive);
+
+    delete this.connections[target];
+    delete this.peers[target];
+
+    this.emit('connections:close', {
+      address: target,
+      name: target
+    });
+  }
+
+  /**
+   * Attempt to fill available connection slots with new peers.
+   * @returns {Peer} Instance of the peer.
+   */
+  _fillPeerSlots () {
+    if (this.connections.length >= this.settings.constraints.peers.max) return;
+    const openCount = this.settings.constraints.peers.max - Object.keys(this.connections).length;
+    for (let i = 0; i < openCount; i++) {
+      if (!this.candidates.length) continue;
+      const candidate = this.candidates.shift();
+      // this.emit('debug', `Filling peer slot ${i} of ${openCount} (max ${this.settings.constraints.peers.max}) with candidate: ${JSON.stringify(candidate, null, '  ')}`);
+      
+      try {
+        this._connect(`${candidate.object.host}:${candidate.object.port}`);
+      } catch (exception) {
+        this.emit('error', `Unable to fill open peer slot ${i}: ${exception}`);
+      }
+
+      // Place the candidate back in the list
+      this.candidates.push(candidate);
+    }
+
+    return this;
+  }
+
+  /**
+   * Handle a Fabric {@link Message} buffer.
+   * @param {Buffer} buffer
+   * @returns {Peer} Instance of the Peer.
+   */
+  _handleFabricMessage (buffer, origin = null, socket = null) {
+    const hash = crypto.createHash('sha256').update(buffer).digest('hex');
+    const message = Message.fromBuffer(buffer);
+    if (this.settings.debug) this.emit('debug', `Got Fabric message: ${message}`);
+
+    // Have we seen this message before?
+    if (this.messages[hash]) {
+      // this.emit('debug', `Duplicate message: ${hash}`);
+      return;
+    }
+
+    // Store message for later
+    this.messages[hash] = buffer.toString('hex');
+
+    const checksum = crypto.createHash('sha256').update(message.body, 'utf8').digest('hex');
+    if (checksum !== message.raw.hash.toString('hex')) throw new Error('Message received with incorrect hash.');
+
+    // TODO: verify signatures
+    // const signer = new Signer({ public: message.raw.author });
+    // this.emit('debug', `Message signer: ${signer}`);
+    if (this.settings.debug) this.emit('debug', `Message author: ${message.raw.signature.toString('hex')}`);
+    if (this.settings.debug) this.emit('debug', `Message signature: ${message.raw.signature.toString('hex')}`);
+
+    switch (message.type) {
+      default:
+        this.emit('debug', `Unhandled message type: ${message.type}`);
+        break;
+      case 'GenericMessage':
+      case 'PeerMessage':
+      case 'ChatMessage':
+        // Parse JSON body
+        try {
+          const content = JSON.parse(message.data);
+          this._handleGenericMessage(content, origin, socket);
+        } catch (exception) {
+          this.emit('error', `Broken content body: ${exception}`);
+        }
+
+        break;
+    }
+
+    this.commit();
+
+    return this;
+  }
+
+  _handleGenericMessage (message, origin = null, socket = null) {
+    if (this.settings.debug) this.emit('debug', `Generic message:\n\tFrom: ${JSON.stringify(origin)}\n\tType: ${message.type}\n\tBody:\n\`\`\`\n${JSON.stringify(message.object, null, '  ')}\n\`\`\``);
+
+    // Lookup the appropriate Actor for the message's origin
+    const actor = new Actor(origin);
+
+    switch (message.type) {
+      default:
+        this.emit('debug', `Unhandled Generic Message: ${message.type} ${JSON.stringify(message, null, '  ')}`);
+        break;
+      case 'P2P_SESSION_OFFER':
+        if (this.settings.debug) this.emit('debug', `Handling session offer: ${JSON.stringify(message.object)}`);
+        if (this.settings.debug) this.emit('debug', `Session offer origin: ${JSON.stringify(origin)}`);
+        if (this.settings.debug) this.emit('debug', `connections: ${JSON.stringify(Object.keys(this.connections))}`);
+
+        // Peer is valid
+        // TODO: remove this assumption (validate above)
+        // TODO: check for existing peer, update instead of replace
+        this.peers[origin.name] = {
+          id: message.actor.id,
+          name: origin.name,
+          address: origin.name,
+          connections: [ origin.name ]
+        };
+
+        // Emit peer event
+        this.emit('peer', this.peers[origin.name]);
+
+        // Send session open event
+        const vector = ['P2P_SESSION_OPEN', JSON.stringify({
+          type: 'P2P_SESSION_OPEN',
+          object: {
+            initiator: message.actor.id,
+            counterparty: this.identity.id,
+            solution: message.object.challenge
+          }
+        })];
+
+        const PACKET_SESSION_START = Message.fromVector(vector)._setSigner(this.signer).sign();
+        const reply = PACKET_SESSION_START.toBuffer();
+        if (this.settings.debug) this.emit('debug', `session_start ${PACKET_SESSION_START} ${reply.toString('hex')}`);
+        this.connections[origin.name]._writeFabric(reply, socket);
+        break;
+      case 'P2P_SESSION_OPEN':
+        if (this.settings.debug) this.emit('debug', `Handling session open: ${JSON.stringify(message.object)}`);
+        this.peers[origin.name] = { id: message.object.counterparty, name: origin.name, address: origin };
+        this.emit('peer', this.peers[origin.name]);
+        break;
+      case 'P2P_CHAT_MESSAGE':
+        this.emit('chat', message);
+        const relay = Message.fromVector(['ChatMessage', JSON.stringify(message)])._setSigner(this.signer);
+        // this.emit('debug', `Relayed chat message: ${JSON.stringify(relay.toGenericMessage())}`);
+        this.relayFrom(origin.name, relay);
+        break;
+      case 'P2P_STATE_ANNOUNCE':
+        const state = new Actor(message.object.state);
+        this.emit('debug', `state_announce <Generic>${JSON.stringify(message.object || '')} ${state.toGenericMessage()}`);
+        break;
+      case 'P2P_PING':
+        const now = (new Date()).toISOString();
+        const P2P_PONG = Message.fromVector(['GENERIC', JSON.stringify({
+          actor: {
+            id: this.identity.id
+          },
+          created: now,
+          type: 'P2P_PONG',
+          object: {
+            created: now
+          }
+        })]);
+
+        this.connections[origin.name]._writeFabric(P2P_PONG.toBuffer());
+        break;
+      case 'P2P_PONG':
+        // Update the peer's score for succesfully responding to a ping
+        // TODO: ensure no pong is handled when a ping was not previously sent
+        const instance = this.state.actors[actor.id] ? this.state.actors[actor.id] : {};
+
+        this.actors[actor.id].adopt([
+          { op: 'replace', path: '/score', value: (instance.score || 0) + 1 }
+        ]);
+
+        this._state.content.actors[actor.id] = this.actors[actor.id].state;
+        this.commit();
+
+        this.emit('state', this.state);
+        break;
+      case 'P2P_PEER_ALIAS':
+        this.emit('debug', `peer_alias ${origin.name} <Generic>${JSON.stringify(message.object || '')}`);
+        this.connections[origin.name]._alias = message.object.name;
+        break;
+      case 'P2P_PEER_ANNOUNCE':
+        this.emit('debug', `peer_announce <Generic>${JSON.stringify(message.object || '')}`);
+        const candidate = new Actor(message.object);
+        this.candidates.push(candidate.toGenericMessage());
+        // this._fillPeerSlots();
+
+        // const announce = Message.fromVector(['PeerAnnounce', JSON.stringify(message)]);
+        // this.relayFrom(origin.name, announce);
+        break;
+      case 'P2P_DOCUMENT_PUBLISH':
+        break;
+      case 'CONTRACT_PUBLISH':
+        // TODO: reject and punish mis-behaving peers
+        this.emit('debug', `Handling peer contract publish: ${JSON.stringify(message.object)}`);
+        this._registerContract(message.object);
+        break;
+      case 'CONTRACT_MESSAGE':
+        // TODO: reject and punish mis-behaving peers
+        if (this.settings.debug) this.emit('debug', `Handling contract message: ${JSON.stringify(message.object)}`);
+        if (this.settings.debug) this.emit('debug', `Contract state: ${JSON.stringify(this.state.contracts[message.object.contract])}`);
+        manager.applyPatch(this._state.content.contracts[message.object.contract], message.object.ops);
+        this.commit();
+        break;
+    }
+  }
+
+  _handleNOISEHandshake (localPrivateKey, localPublicKey, remotePublicKey) {
+    this.emit('debug', `Peer transport handshake using local key: ${localPrivateKey.toString('hex')}`);
+    this.emit('debug', `Peer transport handshake using local public key: ${localPublicKey.toString('hex')}`);
+    this.emit('debug', `Peer transport handshake with remote public key: ${remotePublicKey.toString('hex')}`);
+  }
+
+  _NOISESocketHandler (socket) {
+    const target = `${socket.remoteAddress}:${socket.remotePort}`;
+    const url = `tcp://${target}`;
+
+    // Store a unique actor for this inbound connection
+    this._registerActor({ name: target });
+
+    // Create NOISE handler
+    const handler = noise({
+      prologue: Buffer.from(PROLOGUE),
+      // privateKey: this.identity.key.private,
+      verify: this._verifyNOISE.bind(this)
+    });
+
+    // Set up NOISE event handlers
+    handler.encrypt.on('handshake', this._handleNOISEHandshake.bind(this));
+    handler.encrypt.on('error', (error) => {
+      this.emit('error', `NOISE encrypt error: ${error}`);
+    });
+
+    handler.encrypt.on('end', (data) => {
+      this.emit('debug', `Peer encrypt end: ${data}`);
+    });
+
+    handler.decrypt.on('error', (error) => {
+      this.emit('error', `NOISE decrypt error: ${error}`);
+    });
+
+    handler.decrypt.on('close', (data) => {
+      this.emit('debug', `Peer decrypt close: ${data}`);
+    });
+
+    handler.decrypt.on('end', (data) => {
+      this.emit('debug', `Peer decrypt end: ${data}`);
+    });
+
+    handler.decrypt.on('data', (data) => {
+      this._handleFabricMessage(data, { name: target });
+    });
+
+    socket._destroyFabric = () => {
+      this._destroyFabric(socket, target);
+    };
+
+    socket._writeFabric = (msg) => {
+      this._writeFabric(msg, handler);
+    };
+
+    // Store socket in collection
+    this.connections[target] = socket;
+
+    // Begin NOISE stream
+    handler.encrypt.pipe(socket).pipe(handler.decrypt);
+
+    this.emit('connections:open', {
+      id: target,
+      url: url
+    });
+  }
+
+  _publishDocument (hash, rate = 0) {
+    this._state.content.documents[hash] = document;
+
+    this.commit();
+
+    const PACKET_DOCUMENT_PUBLISH = Message.fromVector(['P2P_DOCUMENT_PUBLISH', JSON.stringify({
+      type: 'P2P_DOCUMENT_PUBLISH',
+      object: {
+        hash: hash,
+        rate: rate
+      }
+    })]);
+
+    const message = PACKET_DOCUMENT_PUBLISH.toBuffer();
+    if (this.settings.debug) this.emit('debug', `Broadcasting document publish: ${message.toString('utf8')}`);
+    this.broadcast(message);
+  }
+
+  _registerActor (object) {
+    this.emit('debug', `Registering actor: ${JSON.stringify(object, null, '  ')}`);
+    const actor = new Actor(object);
+
+    if (this.actors[actor.id]) return this;
+
+    this.actors[actor.id] = actor;
+    this.commit();
+    this.emit('actorset', this.actors);
+
+    return this;
+  }
+
+  _registerContract (object) {
+    this.emit('debug', `Registering contract: ${JSON.stringify(object, null, '  ')}`);
+    const actor = new Actor(object);
+
+    if (this.contracts[actor.id]) return this;
+
+    this.contracts[actor.id] = actor;
+    this._state.content.contracts[actor.id] = object.state;
+
+    this.commit();
+    this.emit('contractset', this.contracts);
+
+    return this;
+  }
+
+  _registerNOISEClient (name, socket, client) {
+    // Assign socket properties
+    // Failure counter
+    socket._failureCount = 0;
+    socket._lastMessage = null;
+    socket._messageLog = [];
+
+    // Enable keepalive
+    socket._keepalive = setInterval(() => {
+      const now = (new Date()).toISOString();
+      const P2P_PING = Message.fromVector(['GENERIC', JSON.stringify({
+        actor: {
+          id: this.identity.id
+        },
+        created: now,
+        type: 'P2P_PING',
+        object: {
+          created: now
+        }
+      })]);
+
+      try {
+        client.encrypt.write(P2P_PING.toBuffer());
+      } catch (exception) {
+        this.emit('debug', `Cannot write ping: ${exception}`)
+      }
+    }, 60000);
+
+    // TODO: reconcile APIs for these methods
+    // Map destroy function
+    socket._destroyFabric = () => {
+      this._destroyFabric(socket, name);
+    };
+
+    // Map write function
+    socket._writeFabric = (msg) => {
+      this._writeFabric(msg, client);
+    };
+
+    this.connections[name] = socket;
+
+    return this;
+  }
+
+  _registerPeer (data) {
+    const peer = new Actor({
+      type: 'Peer',
+      data: data
+    });
+
+    if (this.peers[peer.id]) return this;
+
+    this.peers[peer.id] = peer;
+
+    return this;
+  }
+
+  _scheduleReconnect (target, when = 250) {
+    this.emit('debug', `Scheduled reconnect to ${target} in ${when} milliseconds...`);
+    const reconnect = setTimeout(() => {
+      this._connect(target);
+    }, when);
+  }
+
+  _verifyNOISE (localPrivateKey, localPublicKey, remotePublicKey, done) {
+    // Is the message valid?
+    if (1 === 1) {
+      done(null, true);
+    } else {
+      done(null, false);
+    }
+  }
+
+  _writeFabric (msg, stream) {
+    const hash = crypto.createHash('sha256').update(msg).digest('hex');
+    this.messages[hash] = msg.toString('hex');
+    this.commit();
+    if (stream) stream.encrypt.write(msg);
   }
 
   /**
@@ -152,19 +695,28 @@ class Peer extends Actor {
   async start () {
     let address = null;
 
-    if (this.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Peer starting...');
-    if (this.settings.upnp) {
-      this.upnp = upnp.createClient();
-    }
+    this.emit('log', 'Peer starting...');
+
+    // Register self
+    this._registerActor({ name: `${this.interface}:${this.port}` });
+
+    this.emit('log', 'Wallet starting...');
 
     try {
       await this.wallet.start();
-    } catch (E) {
-      console.error('[FABRIC:PEER]', 'Could not start wallet:', E);
+    } catch (exception) {
+      this.emit('error', `Could not start wallet: ${exception}`);
     }
 
     if (this.settings.listen) {
-      address = await this.listen();
+      this.emit('log', 'Listener starting...');
+
+      try {
+        address = await this.listen();
+        this.emit('log', 'Listener started!');
+      } catch (exception) {
+        this.emit('error', 'Could not listen:', exception);
+      }
     }
 
     if (this.settings.networking) {
@@ -173,6 +725,50 @@ class Peer extends Actor {
         this._connect(candidate);
       }
     }
+
+    if (this.settings.upnp) {
+      // TODO: convert callbacks to promises
+      this.emit('log', 'UPNP starting...');
+      this.upnp = upnp.createClient();
+      this.upnp.portMapping({
+        description: '@fabric/core#playnet',
+        public: this.settings.port,
+        private: this.settings.port,
+        ttl: 10
+      }, (error) => {
+        if (error) {
+          this.emit('warning', 'Could not create UPNP mapping.  Other nodes may fail when connecting to this node.');
+        } else {
+          this.upnp.getMappings((error, results) => {
+            if (!results || !results.length) return;
+            const mapping = results.find((x) => x.private.port === this.settings.port );
+            // this.emit('debug', `UPNP mappings: ${JSON.stringify(results, null, '  ')}`);
+            // this.emit('debug', `Our rule: ${JSON.stringify(mapping, null, '  ')}`);
+
+            this.upnp.externalIp((error, ip) => {
+              if (error) {
+                this.emit('warning', `Could not get external IP: ${error}`);
+              } else {
+                // this.emit('debug', `UPNP external: ${JSON.stringify(ip, null, '  ')}`);
+                this._externalIP = ip;
+                this.emit('upnp', {
+                  host: ip,
+                  port: this.settings.port
+                });
+              }
+            });
+          });
+        }
+      });
+    }
+
+    try {
+      this.observer = manager.observe(this._state.content);
+    } catch (exception) {
+      this.emit('error', `Could not observe state: ${exception}`);
+    }
+
+    await this._startHeart();
 
     this.emit('ready', {
       id: this.id,
@@ -187,243 +783,52 @@ class Peer extends Actor {
    * Stop the peer.
    */
   async stop () {
-    const peer = this;
-
     // Alert listeners
-    peer.emit('log', 'Peer stopping...');
+    this.emit('log', 'Peer stopping...');
+    this._state.status = 'STOPPING';
 
-    if (peer.settings.upnp && peer.upnp) {
-      peer.upnp.close();
+    // Stop the heart
+    if (this._heart) clearInterval(this._heart);
+
+    if (this.settings.upnp && this.upnp) {
+      this.emit('debug', 'Closing UPNP...');
+      try {
+        this.upnp.close()
+      } catch (exception) {
+        this.emit('debug', `Could not stop UPNP: ${exception}`);
+      };
     }
 
-    for (const id in peer.connections) {
-      peer.emit('log', `Closing connection: ${id}`);
-      const connection = peer.connections[id];
-      const closer = async function () {
-        return new Promise((resolve, reject) => {
-          // Give socket a timeout to close cleanly, destroy if failed
-          let deadline = setTimeout(function () {
-            peer.emit('warning', `[FABRIC:PEER] end() timed out for peer "${id}" so calling destroy...`);
-            connection.destroy();
-            resolve();
-          }, 5000);
-
-          // TODO: notify remote peer of closure
-          // Use end(SOME_CLOSE_MESSAGE, ...)
-          return connection.end(function socketClosed (error) {
-            if (error) return reject(error);
-            clearTimeout(deadline);
-            resolve();
-          });
-        });
-      }
-      await closer();
+    this.emit('debug', 'Closing all connections...');
+    for (const id in this.connections) {
+      this.connections[id].destroy();
     }
 
-    const terminator = async function () {
+    const terminator = async () => {
       return new Promise((resolve, reject) => {
-        if (!peer.server.address()) return resolve();
-        return peer.server.close(function serverClosed (error) {
+        if (!this.server.address()) return resolve();
+        return this.server.close(function serverClosed (error) {
           if (error) return reject(error);
           resolve();
         });
       });
     }
 
+    this.emit('debug', 'Closing network...');
     await terminator();
+
+    this._state.status = 'STOPPED';
+    this.commit();
+
+    this.emit('log', 'Peer stopped!');
 
     return this;
   }
 
   async _setState (value) {
     if (!value) return new Error('You must provide a State to set the value to.');
-    this.state.state = value;
-    return this.state.state;
-  }
-
-  // TODO: use in _connect
-  async _sessionStart (socket, target) {
-    const self = this;
-    const address = `${target.address}:${target.port}`;
-
-    self.emit('debug', `Starting session with address: ${target.pubkey}@${address}`);
-    self.connections[address].session = new Session({ recipient: target.pubkey });
-    await self.connections[address].session.start();
-
-    self.emit('debug', `Session created: ${JSON.stringify(self.connections[address].session)}`);
-
-    // First time seeing our local address, use it
-    // TODO: evaluate trust model
-    if (!self.public.ip) {
-      self.public.ip = socket.localAddress;
-      self.emit('log', `Local socket was null, changed to: ${self.public.ip}`);
-    }
-
-    // TODO: consolidate with similar _handleConnection segment
-    // TODO: check peer ID, eject if self or known
-
-    // TODO re-enable (disabled to reduce spammy messaging)
-    // /*
-    // TODO: re-evaluate use of IdentityRequest
-    // const vector = ['IdentityRequest', self.id];
-    const vector = ['StartSession', JSON.stringify({
-      id: self.connections[address].session.id,
-      identity: self.id,
-      advertise: `${self.key.pubkey}@${self.public.ip}:${self.public.port}`,
-      signature: self.connections[address].session.key._sign(self.id)
-    })];
-
-    const message = Message.fromVector(vector);
-
-    if (!socket.writable) {
-      self.emit('error', `Socket is not writable.`);
-      return false;
-    }
-
-    self.sendToSocket(address, message);
-
-    // Emit notification of a newly opened connection
-    self.emit('connections:open', {
-      address: address,
-      status: 'unauthenticated',
-      initiator: true
-    });
-
-    if (self.settings.verbosity >= 4) console.log('[FABRIC:PEER]', `Connection to ${address} established!`);
-  }
-
-  async _processCompleteDataPacket (socket, address, data) {
-    // Constants
-    const self = this;
-    // TODO: actually decrypt packet
-    const decrypted = socket.session.decrypt(data);
-
-    // Variables
-    let message = null;
-
-    try {
-      message = self._parseMessage(decrypted);
-    } catch (exception) {
-      console.error('[FABRIC:PEER]', 'Could not parse inbound messsage:', exception);
-    }
-
-    // disconnect from any peer sending invalid messages
-    if (!message) return socket.destroy();
-
-    const response = await self._handleMessage({
-      message: message,
-      origin: address,
-      peer: {
-        address: address,
-        id: socket.id
-      }
-    });
-
-    if (response) {
-      self.meta.messages.outbound++;
-      self.sendToSocket(address, response);
-    }
-  }
-
-  async _handleSocketData (socket, address, data) {
-    const self = this;
-    if (self.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Received data from peer:', data);
-
-    if (!socket.session) {
-      self.emit('error', `Received data on socket without a session!  Violator: ${address}`);
-      return false;
-    }
-
-    socket._reader._addData(data);
-  }
-
-  _connect (address) {
-    let self = this;
-    let parts = address.split(':');
-    let known = Object.keys(self.connections);
-    let keyparts = parts[0].split('@');
-    let target = {
-      pubkey: null,
-      address: null,
-      port: null
-    };
-
-    if (keyparts.length === 2) {
-      target.pubkey = keyparts[0];
-      target.address = keyparts[1];
-      target.port = parts[1];
-    } else {
-      target.address = parts[0];
-      target.port = parts[1];
-    }
-
-    if (target.pubkey === self.id) return this.emit('error', 'Cannot connect to self.');
-
-    const authority = `${target.address}:${target.port}`;
-
-    if (this.settings.verbosity >= 4) console.log('[FABRIC:PEER]', 'Connecting to address:', authority);
-
-    if (parts.length !== 2) return console.debug('Invalid address:', address);
-    if (known.includes(authority)) return self.connections[authority];
-
-    // TODO: refactor to use local functions + specific unbindings
-    try {
-      self.connections[authority] = new net.Socket();
-      self.connections[authority]._reader = new Reader();
-      self.connections[authority]._reader.on('debug', function (msg) {
-        self.emit('debug', msg);
-      });
-
-      self.connections[authority]._reader.on('message', function (msg) {
-        self._processCompleteDataPacket.apply(self, [ self.connections[authority], authority, msg ]);
-      });
-
-      self.connections[authority].on('error', function (err) {
-        const text = `could not connect to peer ${authority} — Reason: ${err}`;
-        self.emit('connection:error', {
-          message: text
-        });
-        // console.debug('[PEER]', `could not connect to peer ${authority} — Reason:`, err);
-      });
-
-      self.connections[authority].on('close', function _handleSocketClose (err) {
-        if (err) self.debug('socket closed on error:', err);
-        if (err) self.emit('log', `socket closed on error: ${err}`);
-
-        self.emit('warning', `Connection closed: ${authority}`);
-
-        self.connections[authority].removeAllListeners();
-
-        // TODO: consider using `process.nextTick` to only clean up after event?
-        delete self.connections[authority];
-        self.emit('connections:close', {
-          address: authority
-        });
-      });
-
-      // TODO: unify as _dataHandler
-      self.connections[authority].on('data', async function peerDataHandler (data) {
-        self._handleSocketData.apply(self, [ this, authority, data ]);
-      });
-
-      self.emit('connection', {
-        id: authority
-      });
-
-      self.emit('log', `Starting connection to address: ${authority}`);
-
-      // TODO: replace with handshake
-      // NOTE: the handler is only called once per connection!
-      self.connections[authority].connect(target.port, target.address, async function connectionAttemptComplete (error) {
-        if (error) return new Error(`Could not establish connection: ${error}`);
-        await self._sessionStart.apply(self, [ this, target ]);
-        self._maintainConnection(authority);
-      });
-    } catch (E) {
-      self.log('[PEER]', 'failed to connect:', E);
-    }
-
-    return self.connections[authority];
+    this._state.content = value;
+    return this.state;
   }
 
   _disconnect (address) {
@@ -435,69 +840,10 @@ class Peer extends Actor {
     }
 
     // Destroy the connection
-    this.connections[address].destroy();
+    // this.connections[address].destroy();
 
     // Remove connection from map
     delete this.connections[address];
-  }
-
-  _parseMessage (data) {
-    if (!data) return false;
-    if (this.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Parsing message:', data);
-
-    // Variables
-    let message = null;
-
-    try {
-      message = Message.fromRaw(data);
-    } catch (exception) {
-      this.emit('debug', `[FABRIC:PEER] error parsing message: ${exception}`);
-    }
-
-    if (this.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Parsed message into:', message.type, message.data);
-    return message;
-  }
-
-  async _handleConnection (socket) {
-    const self = this;
-    const address = [socket.remoteAddress, socket.remotePort].join(':');
-    if (this.settings.verbosity >= 4) self.emit('log', `[FABRIC:PEER] [0x${self.id}] Incoming connection from address: ${address}`);
-
-    self.emit('connections:open', {
-      address: address,
-      status: 'connected',
-      initiator: false
-    });
-
-    // TODO: use known key
-    socket.session = new Session();
-
-    socket.on('close', function terminate () {
-      self.emit('log', `connection closed: ${address}`);
-      self.emit('connections:close', { address: address });
-      self._disconnect(address);
-    });
-
-    socket.on('data', function inboundPeerHandler (data) {
-      try {
-        self._handleSocketData.apply(self, [ socket, address, data ]);
-      } catch (exception) {
-        self.emit('error', `Could not handle socket data: ${exception}`);
-      }
-    });
-
-    // add this socket to the list of known connections
-    this.connections[address] = socket;
-    this.connections[address]._reader = new Reader();
-    self.connections[address]._reader.on('debug', function (msg) {
-      self.emit('debug', msg);
-    });
-
-    this.connections[address]._reader.on('message', function (msg) {
-      self._processCompleteDataPacket.apply(self, [ self.connections[address], address, msg ]);
-    });
-
-    self._maintainConnection(address);
   }
 
   _maintainConnection (address) {
@@ -539,471 +885,31 @@ class Peer extends Actor {
     return this.handlers[type];
   }
 
-  _registerPeer (peer) {
-    if (this.settings.verbosity >= 6) console.warn('[AUDIT]', 'Registering peer:', peer);
-    let self = this;
-
-    if (!peer) return false;
-    if (!peer.id) {
-      self.log(`Peer attribute 'id' is required.`);
-      return false;
-    }
-
-    self.peers[peer.id] = peer;
-
-    // console.log('[FABRIC:PEER]', `[@ID:$${self.id}]`, 'Peer registered:', peer);
-    // console.log('[FABRIC:PEER]', `[@ID:$${self.id}]`, 'Peer list:', self.peers);
-
-    self.emit('peer', peer);
-
-    // TODO: document peer announcement
-    // TODO: eliminate use of JSON in messaging
-    const announcement = Message.fromVector(['PeerCandidate', JSON.stringify(peer)]);
-
-    try {
-      self.relayFrom(peer.id, announcement);
-    } catch (exception) {
-      self.emit('error', `Could not relay peer registration: ${exception}`);
-    }
-
-    return true;
-  }
-
   async _requestStateFromAllPeers () {
     const message = Message.fromVector(['StateRequest']);
     this.broadcast(message);
   }
 
-  async _handleMessage (packet) {
-    if (!packet) return false;
-
-    // Constants
-    const self = this;
-    const message = packet.message;
-    const origin = packet.origin;
-
-    // Variables
-    let relay = false;
-    let response = null;
-
-    this._updateLiveness(origin);
-
-    if (!message) return console.error('Hard failure:', packet);
-    if (this.messages.has(message.id)) {
-      // this.emit('debug', `Received duplicate message ${message.id} from [${origin}] in packet: ${JSON.stringify(packet, null, '  ')}`);
-      return false;
-    } else {
-      this.memory[message.id] = message;
-      this.messages.add(message.id);
-    }
-
-    this.emit('log', `Evaluting message with purported type "${message.type}":`);
-
-    // Build a response to various message types
-    switch (message.type) {
-      case 'ChatMessage':
-        relay = true;
-        this.emit('debug', `Message: ${JSON.stringify({
-          type: message.type,
-          data: message.data,
-          size: message.data.length
-        }, null, '  ')}`);
-        this.emit('debug', `Data (${typeof message.data}): \n\t${message.data}`);
-
-        try {
-          const data = JSON.parse(message.data);
-          this.emit('debug', `Parsed (${typeof data}): ${JSON.stringify(data, null, '  ')}`);
-          this.emit('log', `[${data.object.created}] @${data.actor}: ${data.object.content}`);
-          this.emit('message', message.data);
-        } catch (exception) {
-          this.emit('error', `Could not process ChatMessage: ${exception}`);
-        }
-        break;
-      case 'Generic':
-        relay = true;
-        break;
-      case 'Ping':
-        response = Message.fromVector(['Pong', message.id]);
-        break;
-      case 'Pong':
-        // self.emit('message', `Received Pong: ${message}`);
-        break;
-      case 'StartChain':
-        break;
-      case 'GenericMessage':
-        console.warn('[FABRIC:PEER]', 'Received Generic Message:', message.data);
-        relay = true;
-        break;
-      case 'IdentityRequest':
-        console.log('[FABRIC:PEER]', 'Peer sent IdentityRequest.  Responding with IdentityResponse (node id)...', self.id);
-        response = Message.fromVector(['IdentityResponse', self.id]);
-        break;
-      case 'IdentityResponse':
-        if (!self.peers[message.data]) {
-          let peer = {
-            id: message.data,
-            address: packet.origin
-          };
-
-          // TODO: remove in favor of StartSession
-          // Why?  Duplicate "peer" event is sent within _registerPeer
-          // Try to register peer...
-          /* try {
-            self._registerPeer(peer);
-          } catch (exception) {
-            self.emit('error', `Could not register peer ${message.data} because: ${exception}`);
-          } */
-        }
-
-        response = Message.fromVector(['StateRoot', JSON.stringify(self.state)]);
-        break;
-      case 'DocumentPublish':
-        this.emit('log', `Document published from peer: ${message.data}`);
-        this.emit('DocumentPublish', message.data);
-        break;
-      case 'DocumentRequest':
-        this.emit('DocumentRequest', message.data);
-        break;
-      case 'BlockCandidate':
-        break;
-      case 'PeerCandidate':
-        let candidate = null;
-
-        try {
-          candidate = JSON.parse(message.data);
-        } catch (exception) {
-          console.error('[FABRIC:PEER]', `[@ID:$${self.id}]`, 'Could not parse PeerCandidate message:', message.data, exception);
-        }
-
-        self.emit('peer:candidate', candidate);
-        break;
-      case 'PeerMessage':
-        // console.error('[FABRIC:PEER]', `[@ID:$${self.id}]`, `Received "PeerMessage" from ${packet.origin} on socket:`, message.raw);
-        // console.error('[FABRIC:PEER]', `[@ID:$${self.id}]`, `Packet origin:`, packet.origin);
-        // TODO: use packet's peer ID, not socket address
-        // Likely need to track connection?
-        self.relayFrom(packet.origin, message);
-        break;
-      case 'StartSession':
-        if (self.settings.verbosity >= 6) console.warn('[AUDIT]', '[FABRIC:PEER]', `[0x${self.id}]`, 'Received "StartSession" message on socket:', message.raw);
-        let session = null;
-
-        try {
-          session = JSON.parse(message.data.toString('utf8'));
-        } catch (exception) {
-          console.error('[FABRIC:PEER]', 'Session body could not be parsed:', exception);
-        }
-
-        if (self.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Proposed session:', session);
-
-        // TODO: avoid using JSON in overall protocol
-        // TODO: validate signature
-        let valid = true;
-        // TODO: restore session identity
-        if (valid && session/* && session.identity */) {
-          if (self.settings.verbosity >= 6) console.log('[AUDIT]', 'Session is valid...');
-
-          let peer = {
-            id: session.identity,
-            address: packet.origin,
-            advertise: `${self.pubkeyhash}@${self.public.ip}:${self.public.port}`,
-            status: 'unfunded'
-          };
-
-          if (self.settings.verbosity >= 5) console.log('[FABRIC:PEER]', 'Peer to register:', peer);
-
-          // TODO: document peer registration process
-          self._registerPeer(peer);
-
-          // TODO: use message type for next phase of session (i.e., NOISE)
-          response = Message.fromVector(['StartSession', { identity: self.id }]);
-          if (self.settings.verbosity >= 6) console.log('[AUDIT]', 'Will send response:', response);
-        }
-
-        break;
-      case 'StateRoot':
-        if (self.settings.verbosity >= 5) console.log('[AUDIT]', 'Message was a state root:', message.data);
-
-        // TODO: test protocol flow (i.e., understand StateRoot)
-        console.log('[AUDIT]', 'Message was a state root:', message.raw, message.data);
-
-        try {
-          const state = JSON.parse(message.data);
-          self.emit('state', state);
-          response = {
-            'type': 'Receipt',
-            'data': state
-          };
-        } catch (E) {
-          console.error('[FABRIC:PEER]', 'Could not parse StateRoot:', E);
-        }
-        break;
-      case 'StateChange':
-        console.log('message was a state change:', message.data);
-        break;
-      case P2P_BASE_MESSAGE:
-        self._handleBasePacket(packet);
-        break;
-      case P2P_ROOT:
-        response = Message.fromVector([P2P_STATE_COMMITTMENT, self.state]);
-        self.log('type was ROOT, sending state root:', response);
-        self.log('type was ROOT, state was:', self.state);
-        break;
-      case P2P_INSTRUCTION:
-        // TODO: use Fabric.Script / Fabric.Machine
-        let stack = message.data.split(' ');
-        switch (stack[1]) {
-          case 'SIGN':
-            let signature = self.key._sign(stack[0]);
-            let buffer = Buffer.from(signature);
-            let script = [buffer.toString('hex'), 'CHECKSIG'].join(' ');
-
-            response = Message.fromVector([P2P_INSTRUCTION, script]);
-            break;
-          default:
-            console.log('[PEER]', `unhandled peer instruction "${stack[1]}"`);
-            break;
-        }
-
-        break;
-      default:
-        console.error('[PEER]', `unhandled message type "${message.type}"`);
-        self.emit('error', `Unhandled message type "${message.type}"`);
-        break;
-    }
-
-    // Emit for listeners
-    // self.emit('message', message);
-
-    if (relay) {
-      self.relayFrom(origin, message);
-    }
-
-    return response;
-  }
-
-  _handleBasePacket (packet) {
-    let message = null;
-
-    try {
-      message = JSON.parse(packet.message.data);
-    } catch (E) {
-      return this.log('Error parsing message:', E);
-    }
-
-    switch (message.type) {
-      case 'collections:post':
-        this.emit('collections:post', message.data);
-        break;
-      default:
-        console.log('unhandled base packet type:', message.type);
-        break;
-    }
-  }
-
-  async sendToSocket (address, raw) {
-    if (raw instanceof Message) {
-      raw = raw.asRaw();
-    }
-
-    if (!this.connections[address]) {
-      this.emit('error', `Could not deliver message to unconnected address: ${address}`);
-      return false;
-    }
-
-    if (!this.connections[address].session) {
-      this.emit('error', `Connection does not have a Session: ${address}`);
-      return false;
-    }
-
-    if (!this.connections[address].writable) {
-      this.emit('error', `Connection is not writable: ${address}`);
-      return false;
-    }
-
-    this.emit('debug', `Writing ${raw.length} bytes to socket: \n\t${raw.toString('hex')}`);
-    // const signature = await this.connections[address].session._appendMessage(raw);
-    // self.emit('debug', `Signature: ${signature}`);
-
-    try {
-      const result = this.connections[address].write(raw);
-      if (!result) {
-        this.emit('warning', 'Stream result false.');
-      }
-    } catch (exception) {
-      this.emit('error', `Exception writing to $[${address}]: ${exception}`);
-    }
-  }
-
-  relayFrom (origin, message) {
-    if (!origin) {
-      this.emit('error', 'Must provide an origin.');
-      return false;
-    }
-
-    if (!message) {
-      this.emit('error', 'Must provide a message.');
-      return false;
-    }
-
-    if (!(message instanceof Message)) {
-      this.emit('error', 'Must provide a valid Fabric message.');
-      return false;
-    }
-
-    this.emit('log', `Relaying ${message.type} from ${origin}: <${typeof message.data}> ${message.data}}`);
-
-    let authorized = false;
-
-    if (message.type) {
-      switch (message.type) {
-        case 'ChatMessage':
-          authorized = true;
-          break;
-        case 'PeerCandidate':
-          break;
-        default:
-          this.emit('debug', `Unhandled type: ${message.type}`);
-          break;
-      }
-    } else {
-      this.emit('warning', `Unknown message structure: <${message.constructor.name} ${JSON.stringify(message, null, '  ')} />`);
-    }
-
-    // For each known peer, send to the corresponding socket
-    for (const id in this.peers) {
-      this.emit('debug', `Is ${id} === ${origin}?`);
-      if (id === origin) continue;
-      const peer = this.peers[id];
-
-      // TODO: select type byte for state updates
-      // TODO: require `Message` type before broadcast (or, preferrably, cast as necessary)
-      // let msg = Message.fromVector([P2P_BASE_MESSAGE, message]);
-      const msg = Message.fromVector([
-        message.type,
-        message.data
-      ]);
-
-      const raw = msg.asRaw();
-      this.emit('debug', `Preparing write (${raw.length} bytes): <${raw.constructor.name}> \n\t${raw.toString('hex')}`);
-
-      if (authorized) {
-        try {
-          this.emit('debug', `Sending ${raw.length} bytes to address $[${peer.address}]: \n\t${raw.toString('hex')}`);
-          this.sendToSocket(peer.address, raw);
-        } catch (exception) {
-          this.emit('error', `Could not write message to connection "${peer.address}":`, exception);
-        }
-      } else {
-        this.emit('debug', 'Would have sent to socket:');
-        this.emit('debug', `sendToSocket (${raw.length} bytes): from ${origin} to ${peer.address}: ${raw.toString('hex')})`);
-      }
-    }
-  }
-
-  broadcast (message) {
-    // Coerce to Object
-    if (message instanceof Message) {
-      message = message.toObject();
-    }
-
-    if (typeof message !== 'string') message = JSON.stringify(message);
-    let hash = crypto.createHash('sha256').update(message).digest('hex');
-
-    // Do not relay duplicate messages
-    if (this.messages.has(hash)) {
-      if (this.settings.verbosity >= 3) console.warn('[FABRIC:PEER]', `Attempted to broadcast duplicate message ${hash} with content:`, message);
-      return false;
-    } else {
-      this.memory[hash] = message;
-      this.messages.add(hash);
-    }
-
-    for (let id in this.peers) {
-      let peer = this.peers[id];
-      // TODO: select type byte for state updates
-      // TODO: require `Message` type before broadcast (or, preferrably, cast as necessary)
-      // let msg = Message.fromVector([P2P_BASE_MESSAGE, message]);
-      let msg = Message.fromVector(['PeerMessage', message]);
-
-      try {
-        this.sendToSocket(peer.address, msg);
-      } catch (exception) {
-        console.error('[FABRIC:PEER]', `Could not write message to connection "${peer.address}":`, exception);
-      }
-    }
-  }
-
-  _broadcastTypedMessage (type, message) {
-    if (!message) message = '';
-    if (typeof message !== 'string') message = JSON.stringify(message);
-
-    let id = crypto.createHash('sha256').update(message).digest('hex');
-
-    if (this.messages.has(id)) {
-      this.log('attempted to broadcast duplicate message');
-      return false;
-    } else {
-      this.memory[id] = message;
-      this.messages.add(id);
-    }
-
-    for (let id in this.peers) {
-      let peer = this.peers[id];
-      // TODO: select type byte for state updates
-      let msg = Message.fromVector([type, message]);
-      this.sendToSocket(peer.address, msg);
-    }
-  }
-
   /**
    * Start listening for connections.
-   * @fires Peer#ready
    * @return {Peer} Chainable method.
    */
   async listen () {
-    const self = this;
-    const promise = new Promise((resolve, reject) => {
-      self.server.listen(self.port, self.address, function listenComplete (error) {
+    return new Promise((resolve, reject) => {
+      this.server.listen(this.port, this.interface, (error) => {
         if (error) return reject(error);
 
-        const details = self.server.address();
-        const address = `tcp://${details.address}:${details.port}`;
-        const complete = function () {
-          self.emit('log', `Now listening on ${address} [!!!]`);
-          return resolve(address);
-        }
+        const details = this.server.address();
+        const address = `${details.address}:${details.port}`;
 
-        if (!self.settings.upnp) {
-          return complete();
-        }
+        this.emit('log', `Now listening on tcp://${address} [!!!]`);
+        return resolve(address);
+      });
 
-        // UPNP
-        self.upnp.portMapping({
-          public: 7777,
-          private: 7777,
-          ttl: 10
-        }, function (err) {
-          if (err) {
-            self.emit('log', `error configuring upnp: ${err}`);
-            return complete();
-          }
-
-          self.upnp.externalIp(function (err, ip) {
-            if (err) {
-              self.emit('log', `Could not retrieve public IP: ${err}`);
-            } else {
-              self.public.ip = ip;
-              self.emit('log', `UPNP configured!  External IP: ${ip}`);
-            }
-
-            return complete();
-          });
-        });
+      this.server.on('error', (error) => {
+        this.emit('error', `Server socket error: ${error}`);
       });
     });
-
-    return promise;
   }
 }
 

@@ -16,6 +16,25 @@ describe('@fabric/core/types/actor', function () {
       assert.ok(actor.id);
     });
 
+    it('provides random bytes', function () {
+      const actor = new Actor();
+      const random = actor.randomBytes();
+      assert.ok(actor);
+      assert.ok(random);
+    });
+
+    it('can adopt changes', function () {
+      const actor = new Actor({ activity: 'SLEEPING' });
+
+      actor.adopt([
+        { op: 'replace', path: '/activity', value: 'WAKING' }
+      ]);
+
+      assert.ok(actor);
+      assert.ok(actor.id);
+      assert.strictEqual(actor.state.activity, 'WAKING');
+    });
+
     xit('provides a risk indicator when seed is provided', function () {
       const actor = new Actor({
         content: 'Hello again, world!',

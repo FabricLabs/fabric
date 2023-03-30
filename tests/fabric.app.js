@@ -16,22 +16,36 @@ describe('@fabric/core/types/app', function () {
     });
 
     it('has a normal lifecycle', async function () {
-      let app = new App();
+      const app = new App();
+      await app.start();
+      await app.stop();
+      assert.ok(app);
+    });
+
+    it('allow a Resource to be defined', async function () {
+      const app = new App();
+      app.define('Example', {
+        components: {
+          list: 'fabric-example-list',
+          view: 'fabric-example-view'
+        }
+      });
+
       await app.start();
       await app.stop();
       assert.ok(app);
     });
 
     xit('should create an application smoothly', async function () {
-      let app = new App();
+      const app = new App();
       await app.start();
       await app.stop();
       assert.ok(app);
     });
 
     xit('should load data from an oracle', async function () {
-      let app = new App();
-      let oracle = new Oracle({
+      const app = new App();
+      const oracle = new Oracle({
         path: './data/oracle'
       });
 

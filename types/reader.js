@@ -90,6 +90,7 @@ class Reader extends EventEmitter {
   }
 
   _readFabricFrame () {
+    // Ensure we have at least a full message header
     if (this._bufferedBytes < HEADER_SIZE) return;
 
     // Read up to HEADER_SIZE bytes
@@ -99,8 +100,12 @@ class Reader extends EventEmitter {
     // Segment the header bytes
     parts.push(header.slice(0, 4)); // magic
     parts.push(header.slice(4, 8)); // version
-    parts.push(header.slice(8, 12)); // type
-    parts.push(header.slice(12, 16)); // payload size
+    parts.push(header.slice(8, 40)); // parent
+    parts.push(header.slice(40, 72)); // author
+    parts.push(header.slice(72, 76)); // type
+    parts.push(header.slice(76, 80)); // payload size
+    parts.push(header.slice(80, 112)); // hash
+    parts.push(header.slice(112, HEADER_SIZE)); // signature
 
     const map = parts.map((x) => Buffer.from(x, 'hex'));
     const elements = map.map((x) => parseInt(x.toString('hex'), 16));
@@ -108,8 +113,12 @@ class Reader extends EventEmitter {
     // Read header
     const magic = elements[0];
     const version = elements[1];
-    const type = elements[2];
-    const size = elements[3];
+    const parent = elements[2];
+    const author = elements[3];
+    const type = elements[4];
+    const size = elements[5];
+    const signature = elements[6];
+    const hash = elements[7];
 
     if (magic !== MAGIC_BYTES) {
       throw new Error(`Header not magic: ${magic} !== ${MAGIC_BYTES}`);
@@ -126,8 +135,12 @@ class Reader extends EventEmitter {
     const proposal = {
       magic,
       version,
+      parent,
+      author,
       type,
       size,
+      hash,
+      signature,
       data
     };
 

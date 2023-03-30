@@ -6,7 +6,7 @@ const merge = require('lodash.merge');
 // Fabric Types
 const Peer = require('../types/peer');
 const Service = require('../types/service');
-const Bitcoin = require('../services/bitcoin');
+// const Bitcoin = require('../services/bitcoin');
 
 // Environment
 // TODO: re-evaluate, remove
@@ -38,10 +38,14 @@ class Node extends Service {
 
     // Local Services
     this.node = new Peer(this.settings);
-    this.bitcoin = new Bitcoin(this.settings.bitcoin);
+    // this.bitcoin = new Bitcoin(this.settings.bitcoin);
     this.program = null;
 
     return this;
+  }
+
+  get service () {
+    return this.program;
   }
 
   /**
@@ -57,28 +61,40 @@ class Node extends Service {
       self.emit('debug', `[FABRIC:DEBUG] ${extra}${debug}`);
     });
 
+    source.on('connections:open', function (data) {
+      self.emit('log', `connection open: ${JSON.stringify(data)}`);
+    });
+
+    source.on('connections:close', function (data) {
+      self.emit('log', `connection close: ${JSON.stringify(data)}`);
+    });
+
+    source.on('chat', function (chat) {
+      self.emit('chat', chat);
+    });
+
     source.on('info', function (info) {
-      console.log(`[FABRIC:INFO] ${extra}`, info);
+      self.emit('info', `${extra}${info}`);
     });
 
     source.on('log', function (log) {
-      self.emit('log', `[FABRIC:LOG] ${extra}${log}`);
+      self.emit('log', `${extra}${log}`);
     });
 
     source.on('warning', function (warn) {
-      console.warn(`[FABRIC:WARNING] ${extra}`, warn);
+      self.emit('warning', `[FABRIC:WARNING] ${extra}${warn}`);
     });
 
     source.on('error', function (error) {
-      console.error(`[FABRIC:ERROR] ${extra}`, error);
+      self.emit('error', `[FABRIC:ERROR] ${extra}${error}`);
     });
 
     source.on('exception', function (error) {
-      console.error(`[FABRIC:EXCEPTION] ${extra}`, error);
+      self.emit('error', `[FABRIC:EXCEPTION] ${extra}${error}`);
     });
 
     source.on('message', function (msg) {
-      console.log(`[FABRIC:MESSAGE] ${extra}`, msg);
+      self.emit('message', `[FABRIC:MESSAGE] ${extra}${msg}`);
     });
 
     source.on('commit', function (msg) {
@@ -86,8 +102,10 @@ class Node extends Service {
     });
 
     source.on('ready', function () {
-      console.log(`[FABRIC] ${extra}`, `<${source.constructor.name}>`, 'Claimed ready!');
+      self.emit('log', `[FABRIC] ${extra}<${source.constructor.name}> Claimed ready!`);
     });
+
+    return this;
   }
 
   async start () {
@@ -107,11 +125,13 @@ class Node extends Service {
     // Attach Listeners
     this.trust(this.node, 'PEER:LOCAL');
     this.trust(this.program, 'PROGRAM'); // TODO: debug why 'ready' events come twice?
-    this.trust(this.bitcoin, 'BITCOIN');
+    // this.trust(this.bitcoin, 'BITCOIN');
 
     // Start Services
     if (this.settings.autorun) await this.program.start();
-    if (this.settings.bitcoin) await this.bitcoin.start();
+    // if (this.settings.bitcoin) await this.bitcoin.start();
+
+    // Start Fabric Node
     if (this.settings.peering) await this.node.start();
 
     // Notify Listeners

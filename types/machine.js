@@ -6,14 +6,13 @@ const {
 } = require('../constants');
 
 // Dependencies
-const arbitrary = require('arbitrary');
 const monitor = require('fast-json-patch');
 const BN = require('bn.js');
 
 // Fabric Types
-const Hash256 = require('./hash256');
 const Actor = require('./actor');
 const State = require('./state');
+const Key = require('./key');
 
 /**
  * General-purpose state machine with {@link Vector}-based instructions.
@@ -21,32 +20,37 @@ const State = require('./state');
 class Machine extends Actor {
   /**
    * Create a Machine.
-   * @param       {Object} settings Run-time configuration.
+   * @param {Object} settings Run-time configuration.
    */
   constructor (settings) {
     super(settings);
 
+    // settings
     this.settings = Object.assign({
       path: './stores/machine',
       clock: 0,
       debug: false,
       deterministic: true,
-      frequency: 1, // Hz
+      interval: 60, // seconds
+      precision: 8,
       script: [],
       seed: 1, // TODO: select seed for production
       type: 'fabric'
     }, settings);
 
+    // machine key
+    this.key = new Key({
+      seed: this.settings.seed + '', // casts to string
+      xprv: this.settings.xprv,
+      private: this.settings.private,
+    });
+
     // internal clock
     this.clock = this.settings.clock;
 
-    // define integer field
-    this.seed = Hash256.digest(this.settings.seed + '');
-    this.q = parseInt(this.seed.substring(0, 4), 16);
-
     // deterministic entropy and RNG
-    this.generator = new arbitrary.default.Generator(this.q);
     this.entropy = this.sip();
+    this.memory = Buffer.alloc(MACHINE_MAX_MEMORY);
 
     this.known = {}; // definitions
     this.stack = []; // output
@@ -59,24 +63,33 @@ class Machine extends Actor {
       status: 'PAUSED'
     };
 
+    // watch for changes
     this.observer = monitor.observe(this._state.content);
 
-    // Tip
-    Object.defineProperty(this, 'tip', function (val) {
-      this.log(`tip requested: ${val}`);
-      this.log(`tip requested, history: ${JSON.stringify(this.history)}`);
-      return this.history[this.history.length - 1] || null;
-    });
-
+    // ensure chainability
     return this;
+  }
+
+  get interval () {
+    return this.settings.interval;
+  }
+
+  get frequency () {
+    return (1 / this.interval).toFixed(this.settings.precision);
   }
 
   get script () {
     return this.settings.script;
   }
 
+  get tip () {
+    this.log(`tip requested: ${val}`);
+    this.log(`tip requested, history: ${JSON.stringify(this.history)}`);
+    return this.history[this.history.length - 1] || null;
+  }
+
   bit () {
-    return this.generator.next.bits(1);
+    return this.key.generator.next.bits(1);
   }
 
   /**
@@ -111,54 +124,44 @@ class Machine extends Actor {
    * Computes the next "step" for our current Vector.  Analagous to `sum`.
    * The top item on the stack is always the memory held at current position,
    * so counts should always begin with 0.
-   * @param  {Vector} input - Input state, undefined if desired.
-   * @return {Promise}
+   * @param  {Object} input Value to pass as input.
+   * @return {Machine} Instance of the resulting machine.
    */
   async compute (input) {
-    this._state.content.clock = ++this.clock;
+    ++this.clock;
 
     this.emit('tick', this.clock);
 
     for (const i in this.script) {
       const instruction = this.script[i];
+      const method = this.known[instruction];
 
-      if (this.known[instruction]) {
-        const op = new State({
-          '@type': 'Cycle',
-          parent: this.id,
-          state: this.state,
-          known: this.known,
-          input: input
-        });
-        const data = this.known[instruction].call(op, input);
+      if (method) {
+        const data = method.call(this.state, input);
         this.stack.push(data);
       } else {
         this.stack.push(instruction | 0);
       }
     }
 
-    if (this.stack.length > 1) {
-      // this.warn('Stack is dirty:', this.stack);
-    }
+    this._state.content = (this.stack.length)
+      ? this.stack[this.stack.length - 1]
+      : this._state.content;
 
-    // this.state['@data'] = this.stack;
-    // this.state['@id'] = this.id;
-
-    this._state.content = this.stack[this.stack.length - 1];
-
+    this._result = this.state;
     this.commit();
 
-    return this.state;
+    return this;
   }
 
   asBuffer () {
-    const data = this.serialize(this.state['@data']);
+    const data = this.serialize(this.state);
     return Buffer.from(data);
   }
 
   // register a local function
   define (name, op) {
-    this.known[name] = op.bind(this);
+    this.known[name] = op.bind(this.state);
   }
 
   applyOperation (op) {
@@ -166,25 +169,24 @@ class Machine extends Actor {
   }
 
   commit () {
-    const self = this;
-    if (!self.observer) return false;
+    if (!this.history) this.history = [];
+    if (!this.observer) return false;
 
-    const changes = monitor.generate(self.observer);
+    const changes = monitor.generate(this.observer);
 
     if (changes && changes.length) {
       let vector = new State({
         '@type': 'Change',
         '@data': changes,
         method: 'patch',
-        parent: self.id,
+        parent: this.id,
         params: changes
       });
 
-      if (!self.history) self.history = [];
-      self.history.push(vector);
+      this.history.push(vector);
 
-      self.emit('transaction', vector);
-      self.emit('changes', changes);
+      this.emit('transaction', vector);
+      this.emit('changes', changes);
     }
 
     return changes;

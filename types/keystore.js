@@ -25,7 +25,7 @@ class Keystore extends Actor {
    */
   constructor (settings = {}) {
     super(settings);
-    if (!settings.seed) settings.seed = process.env.FABRIC_SEED || null;
+    if (!settings.seed) settings.seed = (process) ? process.env.FABRIC_SEED || null : null;
 
     this.settings = merge({
       name: 'DefaultStore',
@@ -50,10 +50,10 @@ class Keystore extends Actor {
       status: 'initialized',
       version: this.settings.version,
       keys: [],
-      value: {}
+      content: {}
     };
 
-    this.observer = monitor.observe(this._state.value, this._handleStateChange.bind(this));
+    this.observer = monitor.observe(this._state.content, this._handleStateChange.bind(this));
 
     return this;
   }
@@ -87,7 +87,7 @@ class Keystore extends Actor {
   }
 
   get state () {
-    return Object.assign({}, this._state.value);
+    return Object.assign({}, this._state.content);
   }
 
   async commit () {
@@ -162,7 +162,7 @@ class Keystore extends Actor {
   async wipe () {
     if (this.status !== 'open') return this.emit('error', `Status not open: ${this.status}`);
     this.status = 'deleting';
-    this._state.value = null;
+    this._state.content = null;
     await this.db.clear();
     this.status = 'deleted';
     return this;
@@ -177,7 +177,7 @@ class Keystore extends Actor {
   }
 
   async _applyChanges (changes) {
-    monitor.applyPatch(this._state.value, changes);
+    monitor.applyPatch(this._state.content, changes);
     await this.commit();
     return this._get();
   }
@@ -195,7 +195,7 @@ class Keystore extends Actor {
   async _set (key, value) {
     if (!['open', 'deleting'].includes(this.status)) throw new Error(`Cannot write while status === ${this.status}`);
     this.status = 'writing';
-    this._state.value[key] = value;
+    this._state.content[key] = value;
     await this.db.put(key, value);
     this.status = 'open';
     return this._get(key);
@@ -238,7 +238,7 @@ class Keystore extends Actor {
       for (const key in state) {
         if (Object.prototype.hasOwnProperty.call(state, key)) {
           keystore._state.keys.push(key);
-          keystore._state.value[key] = state[key];
+          keystore._state.content[key] = state[key];
         }
       }
 

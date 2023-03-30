@@ -1,17 +1,23 @@
 #!/usr/bin/env node
 'use strict';
 
+// Fixtures
+const {
+  FIXTURE_SEED
+} = require('../constants');
+
 // Settings
 const settings = require('../settings/local');
-const master = Buffer.from('7e1b8e405919c1c8dcb07a677a2881b62517ecb7d136681851f514f22a806685', 'hex')
 
+// Dependencies
 const merge = require('lodash.merge');
 
 // Fabric Types
-const Block = require('../types/block');
-const Chain = require('../types/chain');
+// const Block = require('../types/block');
+// const Chain = require('../types/chain');
 const Environment = require('../types/environment');
-const Key = require('../types/key');
+const Federation = require('../types/federation');
+// const Key = require('../types/key');
 const Machine = require('../types/machine');
 const Signer = require('../types/signer');
 
@@ -29,18 +35,19 @@ const FABRIC_XPUB = environment.readVariable('FABRIC_XPUB');
 console.log('seed:', FABRIC_SEED);
 
 const signer = new Signer({
-  private: master
+  private: FIXTURE_SEED
 });
 
 console.log('signer:', signer);
 
-const bond = Buffer.from([
+/* const bond = Buffer.from([
     0x51, // witness v1
     0x20, // PUSH_DATA 32
     pubkey.key.public // x-only pub
-]);
+]); */
 
-const { OP_ADVANCE_BLOCK } = require('../contracts/federation');
+const OP_ADVANCE_BLOCK = require('../contracts/federation');
+// const Actor = require('../types/actor');
 
 async function main (input = {}) {
   const config = merge({
@@ -49,17 +56,20 @@ async function main (input = {}) {
     },
     blocks: {},
     chain: [],
-    frequency: 1, // Hz
-    script: [
-      'OP_ADVANCE_BLOCK',
-    ],
-    validators: [
-
-    ]
+    frequency: 60, // seconds
+    script: [],
+    validators: []
   }, input);
 
-  const chain = new Chain();
+  // const chain = new Chain();
+  const federation = new Federation(config);
   const machine = new Machine(config);
+
+  /* // example use of trigger-based cycles
+  const source = new Actor();
+  source.on('changes', (changes) => {
+    machine.trigger('OP_HANDLE_CHANGES', [changes]);
+  }); */
 
   // Define Opcodes
   machine.define('OP_ADVANCE_BLOCK', OP_ADVANCE_BLOCK);
@@ -78,9 +88,24 @@ async function main (input = {}) {
 
   // Anchor Chain
   const bitcoin = new Bitcoin();
+  const fixture = new Signer({ seed: FIXTURE_SEED });
+
+  console.log('public:', fixture.key.public.encodeCompressed('hex'));
+
+  federation.addMember({
+    public: fixture.key.public.encodeCompressed('hex')
+  });
+
+  federation.start();
+
   await machine.start();
 
-  return machine; // { id: machine.id }
+  return JSON.stringify({
+    content: machine.state,
+    frequency: machine.frequency,
+    interval: machine.interval,
+    machine: machine.id
+  });
 }
 
 main(settings).catch((exception) => {

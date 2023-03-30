@@ -12,7 +12,7 @@ describe('@fabric/core/types/collection', function () {
     });
 
     xit('starts as empty', async function () {
-      let set = new Fabric.Collection();
+      const set = new Fabric.Collection();
       assert.equal(set.render(), '[]');
     });
 

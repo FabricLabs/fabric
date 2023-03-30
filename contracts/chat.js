@@ -1,22 +1,7 @@
 'use strict';
 
 // Settings
-const playnet = require('../settings/playnet');
-const local = require('../settings/local');
-
-const settings = {
-  authority: local.authority,
-  listen: local.listen,
-  // sideload playnet
-  peers: [].concat(playnet.peers),
-  port: process.env.FABRIC_PORT || 7777,
-  services: [
-    // 'matrix'
-  ],
-  key: {
-    seed: playnet.seed
-  }
-};
+const settings = require('../settings/local');
 
 // Fabric Types
 const CLI = require('../types/cli');
@@ -26,19 +11,25 @@ const CLI = require('../types/cli');
 
 // Program Definition
 async function OP_CHAT () {
-  // Configure Earning
-  if (this.earn) {
-    console.log('learning enabled');
-  }
-
-  if (this.seed) {
-    settings.key.seed = this.seed;
-  } else if (process.env.FABRIC_SEED) {
-    settings.key.seed = this.seed;
+  if (!this.environment.wallet) {
+    console.error('No wallet found!  Set up your Fabric wallet by running:');
+    console.error('\tfabric setup');
+    process.exit(1);
   }
 
   // Fabric CLI
-  const chat = new CLI(settings);
+  const chat = new CLI(settings); // TODO: this.settings
+
+  chat.on('error', (error) => {
+    console.error('[FABRIC:CHAT]', '[ERROR]', error);
+  });
+
+  // Use local wallet
+  chat.attachWallet(this.environment.wallet);
+
+  // Assume identity
+  // TODO: remove, re-work Peer and Wallet key import in CLI
+  chat.assumeIdentity(this.environment.wallet.settings.key);
 
   // ## Services
   // TODO: reconcile API wth @fabric/doorman as appears at: https://github.com/FabricLabs/doorman
@@ -46,6 +37,11 @@ async function OP_CHAT () {
   // chat._registerService('rpg', RPG);
 
   await chat.start();
+
+  return JSON.stringify({
+    id: chat.id,
+    wallet: this.environment.wallet.id
+  });
 }
 
 // Module

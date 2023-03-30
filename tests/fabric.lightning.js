@@ -41,7 +41,7 @@ const Message = require('../types/message');
 
 const config = require('../settings/test');
 const handler = require('../functions/handleException');
-// const Lightning = require('../services/lightning');
+const Lightning = {} || require('../services/lightning');
 const LightningMessage = require('../types/lightning/message');
 
 describe('@fabric/core/services/lightning', function () {

@@ -34,11 +34,27 @@ build/Release
 node_modules
 
 ### Service Output
-.nyc-output # GDP of NYC? (@lel)
-_book # Gitbook Output
-assets/app.js # Barebones App
-assets/service.js # Service Files; Minified service file that, if included, runs
-assets/fabric.min.js # Minified fabric.js bundle
+# GDP of NYC? (@lel)
+.nyc-output
+# Gitbook Output
+_book
+# Barebones App
+assets/app.js
+# Service Files; Minified service file that, if included, runs
+assets/service.js
+# Minified fabric.js bundle
+assets/fabric.min.js
 
 # Hide bitcoin node blocks
 stores
+
+# Nix
+result*
+
+# IntelliJ
+.idea
+
+_book
+
+# Pesky Mac Stuff
+.DS_Store

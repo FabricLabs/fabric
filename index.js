@@ -13,15 +13,15 @@ const Fabric = require('./types/fabric');
  * @property {Configuration} config Initial {@link Vector}.
  * @property {Map} config.components Transformation function of `Σ ⇒ Δ`.
  */
-class App extends Fabric {
+class FabricApplication extends Fabric {
   /**
-   * Create a new instance of the Fabric App.
+   * Create a new instance of the Fabric Application.
    * @param  {Object} [config] Configuration object.
    * @param  {Object} [config.store] Path to local storage.
    * @param  {Object} [config.components] Map of components.
    * @param  {Object} [config.components.list] Name of "list" component.
    * @param  {Object} [config.components.view] Name of "view" component.
-   * @return {App}
+   * @return {FabricApplication}
    */
   constructor (config) {
     super(config);
@@ -43,4 +43,4 @@ class App extends Fabric {
   }
 }
 
-module.exports = App;
+module.exports = FabricApplication;

@@ -3,7 +3,7 @@
   "title": "Fabric Developer's Handbook",
   "description": "Build & Run P2P Applications with Fabric",
   "language": "en",
-  "plugins": ["edit-link"],
+  "plugins": [],
   "pluginsConfig": {
     "theme-api": {
       "theme": "dark"
@@ -15,6 +15,5 @@
     "scripts": {
       "files": ["./assets/fabric.min.js"]
     }
-  },
-  "root": "_book"
+  }
 }

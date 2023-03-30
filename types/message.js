@@ -40,6 +40,7 @@ const struct = require('struct');
 // Fabric Types
 const Actor = require('./actor');
 const Label = require('./label');
+const Signer = require('./signer');
 
 // Function Definitions
 const padDigits = require('../functions/padDigits');
@@ -67,6 +68,7 @@ class Message extends Actor {
       magic: Buffer.alloc(4),
       version: Buffer.alloc(4),
       parent: Buffer.alloc(32),
+      author: Buffer.alloc(32),
       type: Buffer.alloc(4), // TODO: 8, 32
       size: Buffer.alloc(4), // TODO: 8, 32
       hash: Buffer.alloc(32),
@@ -76,6 +78,13 @@ class Message extends Actor {
 
     this.raw.magic.write(MAGIC_BYTES.toString(16), 'hex');
     this.raw.version.write(padDigits(VERSION_NUMBER.toString(16), 8), 'hex');
+
+    // Use provided signer
+    if (input.signer) {
+      this.signer = input.signer;
+    } else {
+      this.signer = new Signer();
+    }
 
     if (input.data && input.type) {
       this.type = input.type;
@@ -94,6 +103,7 @@ class Message extends Actor {
       '_state',
       'config',
       'settings',
+      'signer',
       'stack',
       'observer'
     ]) Object.defineProperty(this, name, { enumerable: false });
@@ -165,10 +175,11 @@ class Message extends Actor {
         magic: parseInt(`${this.raw.magic.toString('hex')}`, 16),
         version: parseInt(`${this.raw.version.toString('hex')}`, 16),
         parent: this.raw.parent.toString('hex'),
+        author: this.raw.author.toString('hex'),
         type: parseInt(`${this.raw.type.toString('hex')}`, 16),
         size: parseInt(`${this.raw.size.toString('hex')}`, 16),
+        hash: this.raw.hash.toString('hex'),
         signature: this.raw.signature.toString('hex'),
-        hash: this.raw.hash.toString('hex')
       },
       type: this.type,
       data: this.data
@@ -177,6 +188,62 @@ class Message extends Actor {
 
   fromObject (input) {
     return new Message(input);
+  }
+
+  /**
+   * Signs the message using the associated signer.
+   * @returns {Message} Signed message.
+   */
+  sign () {
+    if (!this.header) throw new Error('No header property.');
+    if (!this.raw) throw new Error('No raw property.');
+
+    const hash = crypto.createHash('sha256').update(this.raw.data).digest();
+    const signature = this.signer.sign(hash);
+
+    this.raw.author.write(this.signer.pubkey.toString('hex'), 'hex');
+    this.raw.signature.write(signature.toString('hex'), 'hex');
+
+    Object.freeze(this);
+
+    return this;
+  }
+
+  /**
+   * Verify a message's signature.
+   * @returns {Boolean} `true` if the signature is valid, `false` if not.
+   */
+  verify () {
+    if (!this.header) throw new Error('No header property.');
+    if (!this.raw) throw new Error('No raw property.');
+
+    // Compute sha256 hash of message body
+    const hash = crypto.createHash('sha256').update(this.raw.data).digest();
+
+    // If the raw header doesn't match the computed values, reject
+    if (this.raw.hash.toString('hex') !== hash.toString('hex')) {
+      return false;
+    }
+
+    const signature = this.raw.signature;
+    const verified = this.signer.verify(this.raw.author, hash, signature);
+
+    if (!verified) {
+      throw new Error('Did not verify.');
+    }
+
+    return true;
+  }
+
+  /**
+   * Sets the signer for the message.
+   * @param {Signer} signer Signer instance.
+   * @returns {Message} Instance of the Message with associated signer.
+   */
+  _setSigner (signer) {
+    // if (this.signer) throw new Error('Cannot override signer.');
+    this.signer = signer;
+    return this;
   }
 
   static parseBuffer (buffer) {
@@ -201,14 +268,15 @@ class Message extends Actor {
       magic: buffer.slice(0, 4),
       version: buffer.slice(4, 8),
       parent: buffer.slice(8, 40),
-      type: buffer.slice(40, 44),
-      size: buffer.slice(44, 48),
-      hash: buffer.slice(48, 80),
-      signature: buffer.slice(80, 144)
+      author: buffer.slice(40, 72),
+      type: buffer.slice(72, 76),
+      size: buffer.slice(76, 80),
+      hash: buffer.slice(80, 112),
+      signature: buffer.slice(112, HEADER_SIZE)
     };
 
-    if (buffer.length >= 144) {
-      message.data = buffer.slice(144, buffer.length);
+    if (buffer.length >= HEADER_SIZE) {
+      message.data = buffer.slice(HEADER_SIZE, buffer.length);
     }
 
     return message;
@@ -230,10 +298,11 @@ class Message extends Actor {
       magic: input.slice(0, 4),
       version: input.slice(4, 8),
       parent: input.slice(8, 40),
-      type: input.slice(40, 44),
-      size: input.slice(40, 48),
-      hash: input.slice(40, 80),
-      signature: input.slice(0, 144)
+      author: input.slice(40, 72),
+      type: input.slice(72, 76),
+      size: input.slice(76, 80),
+      hash: input.slice(80, 112),
+      signature: input.slice(112, HEADER_SIZE)
     };
 
     message.data = input.slice(HEADER_SIZE);
@@ -335,10 +404,12 @@ class Message extends Actor {
     const parts = [
       Buffer.from(this.raw.magic, 'hex'),
       Buffer.from(this.raw.version, 'hex'),
+      Buffer.from(this.raw.parent, 'hex'),
+      Buffer.from(this.raw.author, 'hex'),
       Buffer.from(this.raw.type, 'hex'),
       Buffer.from(this.raw.size, 'hex'),
-      Buffer.from(this.raw.signature, 'hex'),
-      Buffer.from(this.raw.hash, 'hex')
+      Buffer.from(this.raw.hash, 'hex'),
+      Buffer.from(this.raw.signature, 'hex')
     ];
 
     return Buffer.concat(parts);

@@ -77,6 +77,7 @@ describe('@fabric/core/types/message', function () {
         magic: Buffer.from('c0def33d', 'hex'),
         version: Buffer.from('00000001', 'hex'),
         parent: Buffer.alloc(32),
+        author: Buffer.alloc(32),
         type: Buffer.from('00000067', 'hex'),
         size: Buffer.from('00000015', 'hex'),
         hash: Buffer.alloc(32),
@@ -88,6 +89,7 @@ describe('@fabric/core/types/message', function () {
         format.magic,
         format.version,
         format.parent,
+        format.author,
         format.type,
         format.size,
         format.hash,
@@ -100,11 +102,32 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(format.magic.toString('hex'), parsed.magic.toString('hex'));
       assert.strictEqual(format.version.toString('hex'), parsed.version.toString('hex'));
       assert.strictEqual(format.parent.toString('hex'), parsed.parent.toString('hex'));
+      assert.strictEqual(format.author.toString('hex'), parsed.author.toString('hex'));
       assert.strictEqual(format.type.toString('hex'), parsed.type.toString('hex'));
       assert.strictEqual(format.size.toString('hex'), parsed.size.toString('hex'));
       assert.strictEqual(format.hash.toString('hex'), parsed.hash.toString('hex'));
       assert.strictEqual(format.signature.toString('hex'), parsed.signature.toString('hex'));
       assert.strictEqual(format.data.toString('hex'), parsed.data.toString('hex'));
+    });
+  });
+
+  describe('sign()', function () {
+    it('can sign a message', async function prove () {
+      const message = Message.fromVector(['Call', JSON.stringify(example.data)]);
+      const literal = message.toObject();
+      const signed = message.sign();
+
+      assert.ok(signed);
+      assert.ok(message);
+      assert.ok(literal);
+      assert.ok(literal.headers);
+
+      assert.strictEqual(literal.headers.magic, MAGIC_BYTES);
+      assert.strictEqual(literal.headers.version, VERSION_NUMBER);
+      assert.strictEqual(literal.headers.type, P2P_CALL);
+      assert.strictEqual(literal.headers.size, 29);
+      assert.strictEqual(literal.headers.hash, '29ef07455d1e3ab5f0b5ad485d4bb85a00a4dd4003dabd43cab0f43199fc316e');
+      assert.strictEqual(message.type, 'Call');
     });
   });
 
@@ -125,6 +148,27 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(restored.data, '{"content":"Hello, world!"},"target":"/messages"}');
       assert.ok(message);
       assert.strictEqual(message.id, '9df866854b4e8bf23c7e9e3db0121e35ecb75ff001489c8a839545c98c67f722');
+    });
+  });
+
+  describe('verify()', function () {
+    it('can verify authorship', async function prove () {
+      const message = Message.fromVector(['Generic', JSON.stringify(example.data)]);
+      const literal = message.toObject();
+      const signed = message.sign();
+      const verified = signed.verify();
+
+      assert.ok(message);
+      assert.ok(literal);
+      assert.ok(literal.headers);
+      assert.ok(verified);
+
+      assert.strictEqual(literal.headers.magic, MAGIC_BYTES);
+      assert.strictEqual(literal.headers.version, VERSION_NUMBER);
+      // assert.strictEqual(literal.headers.type, P2P_CALL);
+      assert.strictEqual(literal.headers.size, 29);
+      assert.strictEqual(literal.headers.hash, '29ef07455d1e3ab5f0b5ad485d4bb85a00a4dd4003dabd43cab0f43199fc316e');
+      assert.strictEqual(message.type, 'Generic');
     });
   });
 });

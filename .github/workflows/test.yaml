@@ -2,33 +2,30 @@ name: npm test
 on:
   pull_request:
     branches:
-    #- master         # To be enabled once swaps-develop is merged
-    - feature/node-16 # To be removed once it is ready and merged
-
+    - master
 jobs:
   test:
-    name: Test
+    name: Run tests
     runs-on: ${{ matrix.os }}
-
     strategy:
       matrix:
         os:
         - macos-latest
         - ubuntu-latest
-
     steps:
-    - name: checkout branch
+    - name: Checkout branch
       uses: actions/checkout@v3
-
-    - name: setup node.js on ${{ matrix.os }}
+    - name: Install Node.js on ${{ matrix.os }}
       uses: actions/setup-node@v2
       with:
         node-version-file: '.nvmrc'
         cache: 'npm'
         cache-dependency-path: package-lock.json
-
-    - name: install dependencies
+    - name: Install dependencies
       run: npm ci
-
-    - name: run tests with coverage
-      run: npm run coverage
+    - name: Generate coverage report
+      run: npm run report:coverage
+    - name: Send coverage report
+      uses: codecov/codecov-action@v3.1.1
+      with:
+        directory: ./reports/

@@ -20,6 +20,9 @@ const ec = new EC('secp256k1');
 const ecc = require('tiny-secp256k1');
 const payments = require('bitcoinjs-lib/src/payments');
 
+// Fabric Dependencies
+const Hash256 = require('./hash256');
+
 // Simple Key Management
 const BIP32 = require('bip32').default;
 const bip32 = new BIP32(ecc);
@@ -59,6 +62,7 @@ class Key {
       bits: 256,
       hd: true,
       seed: null,
+      passphrase: '',
       password: null,
       index: 0,
       cipher: {
@@ -73,12 +77,6 @@ class Key {
     this.master = null;
     this.private = null;
     this.public = null;
-
-    // Configure Deterministic Random
-    // WARNING: this will currently loop after 2^32 bits
-    // TODO: evaluate compression when treating seed phrase as ascii
-    // TODO: consider using sha256(masterprivkey) or sha256(sha256(...))?
-    this._starseed = this.settings.seed || crypto.randomBytes(4).readUInt32BE();
 
     // TODO: design state machine for input (configuration)
     if (this.settings.seed) {
@@ -95,17 +93,18 @@ class Key {
       this._mode = 'FROM_RANDOM';
     }
 
-    if (this.settings.debug) console.debug('mode:', this._mode);
-
     switch (this._mode) {
       case 'FROM_SEED':
-        const seed = bip39.mnemonicToSeedSync(this.settings.seed);
+        const seed = bip39.mnemonicToSeedSync(this.settings.seed, this.settings.passphrase);
         const root = bip32.fromSeed(seed);
+
+        // TODO: delete seed before constructor completes (or remove this line)
+        this.seed = this.settings.seed;
+
         this.xprv = root.toBase58();
         this.xpub = root.neutered().toBase58();
         this.master = root;
         this.keypair = ec.keyFromPrivate(root.privateKey);
-        // this.address = this.keyring.getAddress().toString();
         this.status = 'seeded';
         break;
       case 'FROM_XPRV':
@@ -121,7 +120,7 @@ class Key {
       case 'FROM_PRIVATE_KEY':
         // Key is private
         const provision = (this.settings.private instanceof Buffer) ? this.settings.private : Buffer.from(this.settings.private, 'hex');
-        this.keypair = ec.keyFromPrivate(this.settings.private);
+        this.keypair = ec.keyFromPrivate(provision);
         break;
       case 'FROM_PUBLIC_KEY':
         const pubkey = this.settings.pubkey || this.settings.public;
@@ -155,7 +154,20 @@ class Key {
     // DO NOT USE IN PRODUCTION
     // this.pubkeyhash = this.keyring.getKeyHash('hex');
     this.pubkeyhash = '';
-    this.generator = new Generator(parseInt(this._starseed, 10));
+
+    // Configure Deterministic Random
+    // WARNING: this will currently loop after 2^32 bits
+    // TODO: evaluate compression when treating seed phrase as ascii
+    // TODO: consider using sha256(masterprivkey) or sha256(sha256(...))?
+
+    this._starseed = Hash256.digest((
+      this.settings.seed ||
+      this.settings.xprv ||
+      this.settings.private
+    ) + '');
+
+    this.q = parseInt(this._starseed.substring(0, 4), 16);
+    this.generator = new Generator(this.q);
 
     this['@data'] = {
       type: 'Key',
@@ -202,15 +214,34 @@ class Key {
     return this.generator.next.bits(1);
   }
 
+  /* export () {
+    return {
+      addresses: {
+        p2wkh: null,
+        p2tr: null
+      },
+      private: this.keypair.private,
+      public: this.keypair.public
+    };
+  } */
+
   deriveAccountReceive (index) {
     return this.deriveAddress(index);
   }
 
-  deriveAddress (index = 0, change = 0) {
+  deriveAddress (index = 0, change = 0, type = 'p2pkh') {
     const pair = this.deriveKeyPair(this.account, index, change);
-    return payments.p2pkh({
-      pubkey: Buffer.from(pair.public, 'hex')
-    });
+    switch (type) {
+      default:
+      case 'p2pkh':
+        return payments.p2pkh({
+          pubkey: Buffer.from(pair.public, 'hex')
+        });
+      case 'p2wpkh':
+        return payments.p2wpkh({
+          pubkey: Buffer.from(pair.public, 'hex')
+        });
+    }
   }
 
   deriveKeyPair (addressID = 0, change = 0) {
@@ -273,8 +304,8 @@ class Key {
     if (!this.master) throw new Error('You cannot derive without a master key.  Provide a seed phrase or an xprv.');
     const derived = this.master.derivePath(path);
     const options = {
-      private: derived.privateKey.encodeCompressed('hex'),
-      public: derived.publicKey.encodeCompressed('hex')
+      private: derived.privateKey.toString('hex'),
+      public: derived.publicKey.toString('hex')
     };
 
     return new Key(options);

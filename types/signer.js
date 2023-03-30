@@ -1,6 +1,8 @@
 'use strict';
 
 // Dependencies
+const crypto = require('crypto');
+const stream = require('stream');
 const schnorr = require('bip-schnorr');
 
 // Fabric Types
@@ -12,6 +14,7 @@ const Key = require('./key');
  * Generic Fabric Signer.
  * @access protected
  * @emits message Fabric {@link Message} objects.
+ * @extends {Actor}
  * @property {String} id Unique identifier for this Signer (id === SHA256(preimage)).
  * @property {String} preimage Input hash for the `id` property (preimage === SHA256(SignerState)).
  */
@@ -33,15 +36,23 @@ class Signer extends Actor {
     this.log = [];
     this.signature = null;
 
+    // Settings
+    this.settings = {
+      state: {}
+    };
+
     // TODO: fix bcoin in React / WebPack
     this.key = new Key({
       seed: actor.seed,
       public: actor.public || actor.pubkey,
-      private: actor.private
+      private: actor.private,
+      xprv: actor.xprv,
+      xpub: actor.xpub
     });
 
     // Indicate Risk
     this.private = !!(this.key.seed || this.key.private);
+    this.stream = new stream.Transform(this._transformer.bind(this));
     this.value = this._readObject(actor); // TODO: use Buffer?
 
     // Internal State
@@ -56,10 +67,38 @@ class Signer extends Actor {
     return this;
   }
 
+  static chunksForBuffer (input = Buffer.alloc(32), size = 32) {
+    const chunks = [];
+    for (let i = 0; i < input.length; i += size) {
+      const chunk = input.slice(i, i + size);
+      chunks.push(chunk);
+    }
+
+    return chunks;
+  }
+
+  static signableForBuffer (input = Buffer.alloc(32)) {
+    // TODO: use pubkey
+    const challenge = crypto.randomBytes(32);
+    const message_hash = Hash256.digest(input.toString('hex'));
+    const message = [
+      `--- BEGIN META ---`,
+      `message_challenge: ${challenge.toString('hex')}`,
+      `message_hash: ${message_hash}`,
+      `message_scriptsig: 00${message_hash}`,
+      `--- END META ---`,
+      `--- BEGIN FABRIC MESSAGE ---`,
+      Signer.chunksForBuffer(input.toString('hex'), 80).join('\n'),
+      `--- END FABRIC MESSAGE ---`
+    ].join('\n');
+
+    return message;
+  }
+
   get pubkey () {
     // TODO: encode pubkey correctly for verification
     const x = this.key.keypair.getPublic().getX();
-    return schnorr.convert.intToBuffer(x).toString('hex');
+    return schnorr.convert.intToBuffer(x);
   }
 
   /**
@@ -79,8 +118,9 @@ class Signer extends Actor {
 
     // Hash & sign
     // TODO: check with bip-schnorr on behavior of signing > 32 byte messages
-    this._preimage = Buffer.from(Hash256.digest(data), 'hex');
-    this.signature = schnorr.sign(this.key.keypair.getPrivate('hex'), this._preimage);
+    // this._preimage = Buffer.from(Hash256.digest(data), 'hex');
+    this.signature = schnorr.sign(this.key.keypair.getPrivate('hex'), data);
+    // this.signature = schnorr.sign(this.key.keypair.getPrivate('hex'), this._preimage);
 
     this.emit('signature', {
       content: data,
@@ -89,7 +129,30 @@ class Signer extends Actor {
       signature: this.signature.toString('hex')
     });
 
-    return this.signature.toString('hex');
+    return this.signature;
+  }
+
+  start () {
+    this._state.content.status = 'STARTING';
+    // TODO: unpause input stream here
+    this._state.status = 'STARTED';
+    this.commit();
+    return this;
+  }
+
+  stop () {
+    this._state.status = 'STOPPING';
+    this._state.status = 'STOPPED';
+    this.commit();
+    return this;
+  }
+
+  toSpend () {
+
+  }
+
+  toSign () {
+
   }
 
   verify (pubkey, message, signature) {
@@ -101,9 +164,12 @@ class Signer extends Actor {
       schnorr.verify(pubkey, message, signature);
       return true;
     } catch (exception) {
-      console.error(exception);
       return false;
     }
+  }
+
+  async _transformer (chunk, controller) {
+
   }
 }
 

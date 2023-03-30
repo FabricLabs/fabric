@@ -1,6 +1,5 @@
-# Fabric
+# `@fabric/core` — the Fabric Reference Client
 ![Project Status][badge-status]
-[![Build Status][badge-build]][build-status]
 [![Coverage Status][badge-coverage]][coverage]
 [![GitHub contributors][badge-contributors]][contributors]
 [![Community][badge-chat]][chat]
@@ -28,12 +27,31 @@ Fork and clone [the Fabric GitHub repository][fabric-github] and launch a local
 web server with `npm run examples` to view the examples, or `npm run docs` once
 you're ready to integrate Fabric into your application.
 
+### Compiling from Source
+See also [`BUILD.md`][build-guide] for a full guide, including Bitcoin and Lightning.
+
+```
+git clone git@github.com:FabricLabs/fabric.git
+cd fabric
+git checkout feature/v0.1.0-RC1
+npm install -g
+npm run build
+```
+
 ## Available Commands
 - `npm run cli` provides a direct command-line interface to the Fabric network.
 - `npm run dev` serves a developer interface over localhost HTTP.
 - `npm run docs` creates a local HTTP server for browsing documentation.
 - `npm run examples` creates a local HTTP server for interacting with examples.
 - `npm start` creates a local Fabric node.
+
+## Native Dependencies
+Installing Fabric from npm (`npm i @fabric/core`) will generally compile the 
+following dependencies from the local system:
+
+- `secp256k1`
+- `level`
+- `zeromq`
 
 ## API
 The Fabric reference implementation exposes a simple message-passing interface
@@ -91,16 +109,15 @@ Fabric is an extensible framework, supporting a variety of plugins.
 | Package                            | Description                                | Status                                                                                                                                       |
 |------------------------------------|--------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------|
 | [`@fabric/http`][http-plugin]      | serve Fabric apps to the legacy web (HTTP) | [![Build Status][badge-http-status]][http-test-status] [![Coverage Status][badge-http-coverage]][badge-http-coverage]                        |
+| [`@fabric/github`][github-plugin]  | interact with GitHub through Fabric        | [![Build Status][badge-github-status]][github-test-status] [![Coverage Status][badge-github-coverage]][github-coverage-home]                 |
 | [`@fabric/matrix`][matrix-plugin]  | connect to Matrix servers                  | [![Build Status][badge-matrix-status]][matrix-test-status] [![Coverage Status][badge-matrix-coverage]][badge-matrix-coverage]                |
 | [`@fabric/twilio`][twilio-plugin]  | send (and receive) SMS and phone calls     | [![Build Status][badge-twilio-status]][twilio-test-status] [![Coverage Status][badge-twilio-coverage]][badge-twilio-coverage]                |
 | [`@fabric/zapier`][zapier-plugin]  | interact with arbitrary zapier triggers    | [![Build Status][badge-zapier-status]][zapier-test-status] [![Coverage Status][badge-zapier-coverage]][badge-zapier-coverage]                |
 | [`@fabric/doorman`][doorman]       | an artificially intelligent assistant      | [![Build Status][badge-doorman-status]][doorman-test-status] [![Coverage Status][badge-doorman-coverage]][doorman-coverage-home]             |
-| [`@fabric/soundtrack`][soundtrack] | collaborative jukebox                      | [![Build Status][badge-soundtrack-status]][soundtrack-test-status] [![Coverage Status][badge-soundtrack-coverage]][soundtrack-coverage-home] |
 
 ## Running on Fabric
 Several successful projects are built with or are running on Fabric, including:
 
-- [soundtrack.io][soundtrack.io], Internet jukebox
 - [Doorman][doorman], an artificially intelligent assistant
 - [IdleRPG][idlerpg], a simple RPG game which rewards you for remaining idle
 - [Verse][verse], a virtual universe simulator
@@ -115,20 +132,28 @@ collection of empassioned educators eager to help you.
 
 Fabric on Twitter: [@FabricProtocol][twitter]
 
+[bitcoin]: https://bitcoin.org
+[build-guide]: BUILD.md
+[chat]: https://grove.chat
+[chat-support]: https://grove.chat/#/room/#help:fabric.pub
+[coverage]: https://codecov.io/gh/FabricLabs/fabric
+[development]: https://grove.chat/#/room/#development:fabric.pub
+[fabric-github]: https://github.com/FabricLabs/fabric
+[protocol]: PROTOCOL.md
+[learning]: https://grove.chat/#/room/#learning:fabric.pub
+
+[api-docs]: https://dev.fabric.pub
+
 [fabric-github]: https://github.com/FabricLabs/fabric
 [http-plugin]: https://github.com/FabricLabs/fabric-http
 [matrix-plugin]: https://github.com/FabricLabs/fabric-matrix
 [twilio-plugin]: https://github.com/FabricLabs/fabric-twilio
 [zapier-plugin]: https://github.com/FabricLabs/fabric-zapier
-[api-docs]: https://dev.fabric.pub
-[chat]: https://chat.fabric.pub
+[github-plugin]: https://github.com/FabricLabs/fabric-github
+
 [edit-readme]: https://github.com/FabricLabs/fabric/edit/master/README.md
 [contributors]: https://github.com/FabricLabs/fabric/graphs/contributors
 [build-status]: https://app.travis-ci.com/github/FabricLabs/fabric
-[coverage]: https://codecov.io/gh/FabricLabs/fabric
-
-[learning]: https://to.fabric.pub/#learning:fabric.pub
-[development]: https://to.fabric.pub/#development:fabric.pub
 
 [badge-status]: https://img.shields.io/badge/status-experimental-rainbow.svg?style=flat-square
 [badge-build]: https://img.shields.io/travis/FabricLabs/fabric.svg?branch=master&style=flat-square
@@ -148,6 +173,8 @@ Fabric on Twitter: [@FabricProtocol][twitter]
 [badge-zapier-coverage]: https://img.shields.io/codecov/c/github/FabricLabs/fabric-zapier.svg?style=flat-square
 [badge-soundtrack-status]: https://img.shields.io/travis/FabricLabs/soundtrack.svg?branch=master&style=flat-square
 [badge-soundtrack-coverage]: https://img.shields.io/codecov/c/github/FabricLabs/soundtrack.svg?style=flat-square
+[badge-github-status]: https://img.shields.io/travis/FabricLabs/fabric-github.svg?branch=master&style=flat-square
+[badge-github-coverage]: https://img.shields.io/codecov/c/github/FabricLabs/fabric-github.svg?style=flat-square
 
 [doorman-test-status]: https://app.travis-ci.com/github/FabricLabs/doorman
 [http-test-status]: https://app.travis-ci.com/github/FabricLabs/fabric-http
@@ -155,16 +182,18 @@ Fabric on Twitter: [@FabricProtocol][twitter]
 [twilio-test-status]: https://app.travis-ci.com/github/FabricLabs/fabric-twilio
 [zapier-test-status]: https://app.travis-ci.com/github/FabricLabs/fabric-zapier
 [soundtrack-test-status]: https://app.travis-ci.com/github/FabricLabs/soundtrack
+[github-test-status]: https://app.travis-ci.com/github/FabricLabs/fabric-github
 
 [doorman-coverage-home]: https://codecov.io/gh/FabricLabs/doorman
 [http-coverage-home]: https://codecov.io/gh/FabricLabs/fabric-http
 [soundtrack-coverage-home]: https://codecov.io/gh/FabricLabs/soundtrack
+[github-coverage-home]: https://codecov.io/gh/FabricLabs/fabric-github
 
 [soundtrack.io]: https://soundtrack.io
 [soundtrack]: https://github.com/FabricLabs/soundtrack
 [doorman]: https://github.com/FabricLabs/doorman
 [idlerpg]: https://to.fabric.pub/#idlerpg:verse.im
-[verse]: https://verse.im
+[verse]: https://github.com/FabricLabs/verse
 
 [everything-is-broken]: https://medium.com/message/everything-is-broken-81e5f33a24e1
 [coordination]: https://i.imgur.com/Ki3fbTh.gif

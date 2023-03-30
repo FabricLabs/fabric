@@ -15,7 +15,7 @@ especially surrounding R&D related activities (Fabric Labs).  Striving for excel
 and no mission succeeds without a clearly-defined set of goals.
 
 ## Current Goals
-These are our immediate (2021) goals:
+These are our immediate goals:
 
 - [ ] Find all TODO items (run script, check diff)
 - [ ] Audit all documentation
@@ -24,10 +24,11 @@ These are our immediate (2021) goals:
 - [ ] Completion of 1 or more of our #projects: https://chat.fabric.pub/#/room/#projects:fabric.pub
 
 ## Credits
-Helping out in 2021 grants you a named credit, as listed below.  We aggregate these credits in
+Helping out grants you a named credit, as listed below.  We aggregate these credits in
 all of the products we produce, including updates to existing applications.  Feel free to add
 your name in any pull request you submit!
 
 ### Contributors
-- Eric Martindale (primary author)
-
+- @martindale — Eric Martindale
+- @chrisinajar - Christopher Vickery
+- @melnx — Alexey Melnichenko

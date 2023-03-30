@@ -38,23 +38,31 @@ const {
   FABRIC_KEY_DERIVATION_PATH
 } = require('../constants');
 
-// Dependencies
-const Generator = require('arbitrary').default.Generator;
+// Node Modules
 const crypto = require('crypto');
+
+// Deterministic Random
+// TODO: remove
+const Generator = require('arbitrary').default.Generator;
+
+// Dependencies
+// TODO: remove all external dependencies
 const BN = require('bn.js');
 const EC = require('elliptic').ec;
 const ec = new EC('secp256k1');
+const ecc = require('tiny-secp256k1');
+const payments = require('bitcoinjs-lib/src/payments');
 
-// External Dependencies
-// TODO: remove all external dependencies
-const bcoin = require('bcoin/lib/bcoin-browser');
-const HD = bcoin.hd;
-const KeyRing = bcoin.KeyRing;
-const Mnemonic = bcoin.hd.Mnemonic;
+// Fabric Dependencies
+const Hash256 = require('./hash256');
 
-// Fabric Types
-// const Entity = require('./entity');
-// const Machine = require('./machine');
+// Simple Key Management
+const BIP32 = require('bip32').default;
+const bip32 = new BIP32(ecc);
+const bip39 = require('bip39');
+
+// NOTE: see also @fabric/passport
+// expect a bech32m identifier using prefix "id"
 
 /**
  * Represents a cryptographic key.
@@ -70,9 +78,11 @@ class Key {
    * @param {String} [settings.seed] Mnemonic seed for initializing the key.
    * @param {String} [settings.public] Public key in hex.
    * @param {String} [settings.private] Private key in hex.
+   * @param {String} [settings.purpose=44] Constrains derivations to this space.
    */
   constructor (input = {}) {
     this.settings = Object.assign({
+      debug: false,
       network: 'main',
       curve: 'secp256k1',
       derivation: FABRIC_KEY_DERIVATION_PATH,
@@ -80,9 +90,12 @@ class Key {
       prefix: '00',
       public: null,
       private: null,
+      purpose: 44,
+      account: 0,
       bits: 256,
       hd: true,
       seed: null,
+      passphrase: '',
       password: null,
       index: 0,
       cipher: {
@@ -98,54 +111,70 @@ class Key {
     this.private = null;
     this.public = null;
 
-    // Configure Deterministic Random
-    // WARNING: this will currently loop after 2^32 bits
-    // TODO: evaluate compression when treating seed phrase as ascii
-    // TODO: consider using sha256(masterprivkey) or sha256(sha256(...))?
-    this._starseed = this.settings.seed || crypto.randomBytes(4).readUInt32BE();
-
-    const radix = 10;
-    const parsed = parseInt(this._starseed, radix);
-
-    this.generator = new Generator(parsed);
-
     // TODO: design state machine for input (configuration)
     if (this.settings.seed) {
-      // Seed provided, compute keys
-      const mnemonic = new Mnemonic(this.settings.seed);
-      const master = HD.fromMnemonic(mnemonic);
-
-      // Assign keys
-      this.master = master;
-      this.keyring = new KeyRing(master, this.settings.network);
-      this.keyring.witness = this.settings.witness;
-      this.keypair = ec.keyFromPrivate(this.keyring.getPrivateKey('hex'));
-      this.address = this.keyring.getAddress().toString();
-      this.status = 'seeded';
+      this._mode = 'FROM_SEED';
     } else if (this.settings.private) {
-      const input = this.settings.private;
-      const provision = (input instanceof Buffer) ? input : Buffer.from(input, 'hex');
-      // Key is private
-      this.keyring = KeyRing.fromPrivate(provision, true);
-      this.keyring.witness = this.settings.witness;
-      this.keypair = ec.keyFromPrivate(this.settings.private);
-      this.address = this.keyring.getAddress();
+      this._mode = 'FROM_PRIVATE_KEY';
+    } else if (this.settings.xprv) {
+      this._mode = 'FROM_XPRV';
+    } else if (this.settings.xpub) {
+      this._mode = 'FROM_XPUB';
     } else if (this.settings.pubkey || this.settings.public) {
-      const input = this.settings.pubkey || this.settings.public;
-      // Key is only public
-      this.keyring = KeyRing.fromKey((input instanceof Buffer) ? input : Buffer.from(input, 'hex'), true);
-      this.keypair = ec.keyFromPublic(this.keyring.getPublicKey(true, 'hex'));
-      this.address = this.keyring.getAddress();
+      this._mode = 'FROM_PUBLIC_KEY';
     } else {
-      // Generate new keys
-      this.keypair = ec.genKeyPair();
-      const input = this.keypair.getPrivate().toBuffer(null, 32);
-      this.keyring = KeyRing.fromPrivate(input, true);
-      this.keyring.witness = this.settings.witness;
-      this.address = this.keyring.getAddress();
+      this._mode = 'FROM_RANDOM';
     }
 
-    this.private = this.keypair.getPrivate();
+    switch (this._mode) {
+      case 'FROM_SEED':
+        const seed = bip39.mnemonicToSeedSync(this.settings.seed, this.settings.passphrase);
+        const root = bip32.fromSeed(seed);
+
+        // TODO: delete seed before constructor completes (or remove this line)
+        this.seed = this.settings.seed;
+
+        this.xprv = root.toBase58();
+        this.xpub = root.neutered().toBase58();
+        this.master = root;
+        this.keypair = ec.keyFromPrivate(root.privateKey);
+        this.status = 'seeded';
+        break;
+      case 'FROM_XPRV':
+        this.master = bip32.fromBase58(this.settings.xprv);
+        this.xprv = this.master.toBase58();
+        this.xpub = this.master.neutered().toBase58();
+        this.keypair = ec.keyFromPrivate(this.master.privateKey);
+        break;
+      case 'FROM_XPUB':
+        const xpub = bip32.fromBase58(this.settings.xpub);
+        this.keypair = ec.keyFromPublic(xpub.publicKey);
+        break;
+      case 'FROM_PRIVATE_KEY':
+        // Key is private
+        const provision = (this.settings.private instanceof Buffer) ? this.settings.private : Buffer.from(this.settings.private, 'hex');
+        this.keypair = ec.keyFromPrivate(provision);
+        break;
+      case 'FROM_PUBLIC_KEY':
+        const pubkey = this.settings.pubkey || this.settings.public;
+        // Key is only public
+        this.keypair = ec.keyFromPublic((pubkey instanceof Buffer) ? pubkey : Buffer.from(pubkey, 'hex'));
+        break;
+      case 'FROM_RANDOM':
+        const mnemonic = bip39.generateMnemonic();
+        const interim = bip39.mnemonicToSeedSync(mnemonic);
+        this.master = bip32.fromSeed(interim);
+        this.keypair = ec.keyFromPrivate(this.master.privateKey);
+        break;
+    }
+
+    // Read the pair
+    this.private = (
+      !this.settings.seed &amp;&amp;
+      !this.settings.private &amp;&amp;
+      !this.settings.xprv
+    ) ? false : this.keypair.getPrivate();
+
     this.public = this.keypair.getPublic(true);
 
     // TODO: determine if this makes sense / needs to be private
@@ -156,8 +185,22 @@ class Key {
 
     // BELOW THIS NON-STANDARD
     // DO NOT USE IN PRODUCTION
-    this.pubkeyhash = this.keyring.getKeyHash('hex');
+    // this.pubkeyhash = this.keyring.getKeyHash('hex');
+    this.pubkeyhash = '';
 
+    // Configure Deterministic Random
+    // WARNING: this will currently loop after 2^32 bits
+    // TODO: evaluate compression when treating seed phrase as ascii
+    // TODO: consider using sha256(masterprivkey) or sha256(sha256(...))?
+
+    this._starseed = Hash256.digest((
+      this.settings.seed ||
+      this.settings.xprv ||
+      this.settings.private
+    ) + '');
+
+    this.q = parseInt(this._starseed.substring(0, 4), 16);
+    this.generator = new Generator(this.q);
 
     this['@data'] = {
       type: 'Key',
@@ -169,23 +212,19 @@ class Key {
       pubkey: this.pubkey
     };
 
-    Object.defineProperty(this, 'keyring', {
-      enumerable: false
-    });
-
-    Object.defineProperty(this, 'keypair', {
-      enumerable: false
-    });
-
-    Object.defineProperty(this, 'private', {
-      enumerable: false
-    });
+    // Object.defineProperty(this, 'keyring', { enumerable: false });
+    Object.defineProperty(this, 'keypair', { enumerable: false });
+    Object.defineProperty(this, 'private', { enumerable: false });
 
     return this;
   }
 
   static Mnemonic (seed) {
-    return new Mnemonic(seed);
+    return new Key({ seed });
+  }
+
+  get account () {
+    return this.settings.account;
   }
 
   get id () {
@@ -200,8 +239,44 @@ class Key {
     return Buffer.from(bits.toString(16), 'hex');
   }
 
+  get purpose () {
+    return this.settings.purpose;
+  }
+
   bit () {
     return this.generator.next.bits(1);
+  }
+
+  /* export () {
+    return {
+      addresses: {
+        p2wkh: null,
+        p2tr: null
+      },
+      private: this.keypair.private,
+      public: this.keypair.public
+    };
+  } */
+
+  deriveAccountReceive (index) {
+    return this.deriveAddress(index);
+  }
+
+  deriveAddress (index = 0, change = 0) {
+    const pair = this.deriveKeyPair(this.account, index, change);
+    return payments.p2pkh({
+      pubkey: Buffer.from(pair.public, 'hex')
+    });
+  }
+
+  deriveKeyPair (addressID = 0, change = 0) {
+    const path = `m/${this.purpose}'/0'/${this.account}'/${change}/${addressID}`;
+    const derived = this.master.derivePath(path);
+    const pair = ec.keyFromPrivate(derived.privateKey);
+    return {
+      private: pair.getPrivate('hex'),
+      public: pair.getPublic(true, 'hex')
+    };
   }
 
   encrypt (value) {
@@ -251,8 +326,14 @@ class Key {
   }
 
   derive (path = this.settings.derivation) {
-    if (!this.master) throw new Error('You cannot derive without a master key.  Provide a seed phrase.');
-    return this.master.derivePath(path);
+    if (!this.master) throw new Error('You cannot derive without a master key.  Provide a seed phrase or an xprv.');
+    const derived = this.master.derivePath(path);
+    const options = {
+      private: derived.privateKey.toString('hex'),
+      public: derived.publicKey.toString('hex')
+    };
+
+    return new Key(options);
   }
 }
 
@@ -274,19 +355,27 @@ module.exports = Key;
       <li><a href="Bitcoin.html">Bitcoin</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
+      <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Compiler.html">Compiler</a></li>
       <li><a href="Consensus.html">Consensus</a></li>
       <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Environment.html">Environment</a></li>
       <li><a href="Exchange.html">Exchange</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Federation.html">Federation</a></li>
+      <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
-      <li><a href="KeyStore.html">KeyStore</a></li>
+      <li><a href="Keystore.html">Keystore</a></li>
+      <li><a href="Ledger.html">Ledger</a></li>
+      <li><a href="Lightning.html">Lightning</a></li>
+      <li><a href="Logger.html">Logger</a></li>
       <li><a href="Machine.html">Machine</a></li>
       <li><a href="Mempool.html">Mempool</a></li>
       <li><a href="Message.html">Message</a></li>
@@ -296,6 +385,8 @@ module.exports = Key;
       <li><a href="Peer.html">Peer</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
+      <li><a href="Remote.html">Remote</a></li>
+      <li><a href="Resource.html">Resource</a></li>
       <li><a href="Router.html">Router</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
@@ -315,6 +406,7 @@ module.exports = Key;
       <li><a href="Vector.html">Vector</a></li>
       <li><a href="Walker.html">Walker</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
     <h3>Events</h3>

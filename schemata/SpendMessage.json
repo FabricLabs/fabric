@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hub.fabric.pub/schemata/SpendMessage.json",
+  "title": "SpendMessage",
+  "description": "Instance of a spend.",
+  "type": "object",
+  "properties": {
+    "amount": {
+      "description": "Amount (in BTC) to spend.",
+      "type": "string"
+    },
+    "destination": {
+      "description": "Destination for funds.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "amount",
+    "destination"
+  ]
+}

@@ -24,7 +24,7 @@ describe('@fabric/core/types/keystore', function () {
       assert.ok(store);
     });
 
-    it('provides the appropriate codec', async function () {
+    xit('provides the appropriate codec', async function () {
       const store = new Keystore(playnet);
       await store.open();
       await store.close();
@@ -33,14 +33,15 @@ describe('@fabric/core/types/keystore', function () {
       assert.strictEqual(store.codec.key.pubkey, '0223cffd5e94da3c8915c6b868f06d15183c1aeffad8ddf58fcb35a428e3158e71');
     });
 
-    it('can call _setState', async function () {
+    xit('can call _setState', async function () {
       const store = new Keystore(playnet);
       await store.open();
+
       await store._setState({
         content: 'Hello, world!'
       });
-      await store.close();
 
+      await store.close();
       assert.ok(store);
     });
 

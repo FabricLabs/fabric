@@ -6,13 +6,26 @@ const Hash256 = require('./hash256');
 const Key = require('./key');
 const Signer = require('./signer');
 
+/**
+ * Manage a network identity.
+ */
 class Identity extends Actor {
+  /**
+   * Create an instance of an Identity.
+   * @param {Object} [settings] Settings for the Identity.
+   * @param {String} [settings.seed] BIP 39 seed phrase.
+   * @param {String} [settings.xprv] Serialized BIP 32 master private key.
+   * @param {String} [settings.xpub] Serialized BIP 32 master public key.
+   * @param {Number} [settings.account=0] BIP 44 account index.
+   * @param {Number} [settings.index=0] BIP 44 key index.
+   * @returns {Identity} Instance of the identity.
+   */
   constructor (settings = {}) {
     super(settings);
 
     this.settings = Object.assign({
       seed: null,
-      accountID: 0,
+      account: 0,
       index: 0
     }, this.settings, settings);
 
@@ -21,7 +34,7 @@ class Identity extends Actor {
 
     this._state = {
       content: {
-        accountID: this.settings.accountID,
+        account: this.settings.account,
         index: this.settings.index
       }
     };
@@ -30,7 +43,7 @@ class Identity extends Actor {
   }
 
   get accountID () {
-    return this._state.content.accountID;
+    return this._state.content.account;
   }
 
   get derivation () {
@@ -40,7 +53,7 @@ class Identity extends Actor {
     // We will use Change 1 ("Internal Chain" as designated by BIP0044)
     // for any kind of revoke mechanic; i.e., the key derived by the change
     // address may be used to auto-encode a "revocation" contract.
-    return `m/44'/0'/${this.accountID}'/0/${this.index}`;
+    return `m/44'/7778'/${this.accountID}'/0/${this.index}`;
   }
 
   get id () {
@@ -56,6 +69,7 @@ class Identity extends Actor {
   }
 
   get pubkey () {
+    // x-only pubkey
     return this.key.public.x.toString('hex');
   }
 
@@ -73,9 +87,24 @@ class Identity extends Actor {
 
   loadAccountByID (id = 0) {
     this._state.content.accountID = id;
+    this.commit();
     return this;
   }
 
+  /**
+   * Sign a buffer of data using BIP 340: https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki
+   * @param {Buffer} data Buffer of data to sign.
+   * @returns {Signature} Resulting signature (64 bytes).
+   */
+  sign (data = Buffer.from('', 'hex')) {
+    this._signAsSchnorr(data.toString('hex'));
+    return this._signature;
+  }
+
+  /**
+   * Retrieve the bech32m-encoded identity.
+   * @returns {String} Public identity.
+   */
   toString () {
     if (this.settings.debug) console.log('master key:', this.key.master.publicKey);
     if (this.settings.debug) console.log('pubkey for id:', this.pubkey);
@@ -90,9 +119,16 @@ class Identity extends Actor {
     return bech32.toString();
   }
 
+  _nextAccount () {
+    ++this._state.content.account;
+    this.commit();
+    return this;
+  }
+
   _signAsSchnorr (input) {
     if (!input) input = this.pubkeyhash;
-    const signature = this.signer.sign(input)
+    this._signature = this.signer.sign(input)
+    return this;
   }
 }
 

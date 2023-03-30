@@ -1,52 +1,54 @@
+/**
+ * OP_SETUP () : Configures the environment for Fabric.
+ */
+
+// Dependencies
+const Wallet = require('../types/wallet');
+
 // Program Definition
 async function OP_SETUP (command = {}) {
-  // TODO: discuss w/ @ChronicSmoke
-  const environment = this;
-  const walletExists = environment.walletExists(); // Generic / Global
-  const any = (candidate => (candidate && typeof candidate !== 'undefined'));
-  const name = 'wallet.json';
+  // TODO: replicate this program in C / ASM
+  if (this.environment.wallet && !this.program.force) {
+    console.warn('[FABRIC:CLI]', 'Wallet file exists, no data will be written.  Use --force to override.');
+    console.warn('[FABRIC:CLI]', '[WARNING]', '--force DESTROYS ALL DATA: DOUBLE-CHECK YOUR BACKUPS!');
+    console.warn('[FABRIC:CLI]', 'EXISTING_XPUB_PUBLIC', '=', this.environment.wallet.key.xpub);
+  } else {
+    console.log('[FABRIC:CLI]', 'No wallet found!  Generating new seed...');
 
-  // TODO: use in walletExists
-  const destination = [
-    environment.readVariable('FABRIC_WALLET')
-  ].find(any) || `${environment.readVariable('HOME')}/.fabric/${name}`;
+    const seed = Wallet.createSeed(this.program.passphrase);
+    const wallet = Wallet.fromSeed(seed);
 
-  const seed = [
-    command.seed,
-    environment.seed,
-    environment['FABRIC_SEED'],
-    environment.readVariable('FABRIC_SEED')
-  ].find(any);
+    console.warn('[FABRIC:CLI]', '---');
+    console.warn('[FABRIC:CLI]', '[!!!]', 'WARNING!', 'TOXIC WASTE BELOW', '[!!!]');
+    console.warn('[FABRIC:CLI]', '[!!!]', 'The below is PRIVATE KEY MATERIAL, which can be used to');
+    console.warn('[FABRIC:CLI]', '[!!!]', 'spend funds from this wallet & deanonymize historical transactions.');
+    console.warn('[FABRIC:CLI]', '[!!!]', 'DO NOT DISTRIBUTE', '[!!!]');
+    console.warn('[FABRIC:CLI]', '---');
 
-  try {
-    wallet = environment.readWallet();
-  } catch (exception) {
-    console.error(exception);
+    // ### [!!!] Toxic Waste [!!!]
+    // TODO: remove from log output...
+    console.warn('[FABRIC:CLI]', `Your seed phrase:\n\n${seed.phrase}\n`);
+    console.warn('[FABRIC:CLI]', `Your master key: ${seed.master}`);
+    console.warn('[FABRIC:CLI]', `Your master xprv: ${seed.xprv}`);
+
+    // Save file
+    this.environment.setWallet(wallet, true);
+
+    console.warn('[FABRIC:CLI]', `The private key for your seed phrase has been saved to your wallet: ${wallet.WALLET_FILE}`);
+    console.warn('[FABRIC:CLI]', 'All done!  You can now run the `fabric` command to launch your node.');
+
+    // Report to console
+    // Load Keys, etc.
+    wallet.start();
+
+    // Debug output
+    console.debug(`Wallet: [${(wallet) ? wallet.id : 'unknown' }]:`, wallet.export());
+    console.debug(`Wallet State:`, wallet.state);
+    console.debug(`Wallet Keys:`, wallet.state.keys);
   }
-
-  if (!walletExists) {
-    const file = JSON.stringify({
-      '@type': 'WalletStore',
-      '@data': {
-        seed: null,
-        master: null,
-        key: {
-          private: null
-        }
-      }
-    }, null, '  ') + '\n';
-
-    const buffer = Buffer.from(file, 'utf8');
-    const hash = crypto.createHash('sha256').update(buffer).digest('hex');
-
-    console.log('Wallet Exists!');
-  }
-
-  // Report to console
-  console.log(`Wallet: [${(wallet) ? wallet.id : 'unknown' }]:`, wallet);
 
   // Success!
-  return 1;
+  return JSON.stringify({ wallet: this.environment.wallet.id });
 }
 
 // Module

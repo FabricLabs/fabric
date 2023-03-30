@@ -2,11 +2,7 @@
   "name": "@network/playnet",
   "network": "testnet",
   "anchor": "BTC",
-  "peers": [
-    "02de546951cee477c90c36d38615a338123a7e1fe190f3c117b028f60359b5bc7e@hub.fabric.pub:7777",
-    "02512b88b368b43c93eeb725439df33fa6e30a2b40e22bba7844bc22f675afc76a@54.193.117.227:7777",
-    "02a1933ff21f2d588285f4dc759402e02ae2ad15840243ce79fbb213eaca2b3724@95.217.115.29:7777"
-  ],
+  "peers": [],
   "mode": "rpc",
   "servers": [
     "http://YOUR_USERNAME:YOUR_PASSWORD@localhost:18443"
@@ -44,5 +40,6 @@
     "public": "0223cffd5e94da3c8915c6b868f06d15183c1aeffad8ddf58fcb35a428e3158e71",
     "xprv": "xprv9s21ZrQH143K2jKS8iCu5QQg34zf7k5h1nfJZbuWQxDDSRmyLxt6BmJARp1SwfGtMAwPNEeQmUJpD5DosB4f3YxaJZiUS2wq6TzsNzFiEjJ",
     "xpub": "xpub661MyMwAqRbcFDPuEjjuSYMQb6q9XCoYP1auMzK7yHkCKE77tWCLjZceH4xFT1ZCc3FKpeMnii9JMLHp7n9dvDvz8MJ1CYge2digpGRjk7D"
-  }
+  },
+  "validators": []
 }

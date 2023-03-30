@@ -10,6 +10,7 @@ const Actor = require('./actor');
 const Block = require('./block');
 const Stack = require('./stack');
 const State = require('./state');
+const Transaction = require('./transaction');
 
 /**
  * Chain.
@@ -29,18 +30,37 @@ class Chain extends Actor {
     this.settings = Object.assign({
       name: this.name,
       type: 'sha256',
+      genesis: null,
+      mempool: [],
+      transactions: {},
       validator: this.validate.bind(this)
     }, origin);
 
     // Internal State
     this._state = {
+      best: null,
       blocks: {},
-      genesis: null,
+      genesis: this.settings.genesis,
       consensus: null,
-      transactions: {},
-      mempool: [],
+      content: {
+        actors: {},
+        blocks: [],
+        mempool: [],
+        tip: null
+      },
+      transactions: this.settings.transactions,
+      mempool: this.settings.mempool,
       ledger: []
     };
+
+    for (let [key, value] of Object.entries(this._state.transactions)) {
+      const tx = new Transaction(value);
+      this._state.transactions[tx.id] = tx;
+    }
+
+    for (let [key, value] of Object.entries(this._state.mempool)) {
+      this.proposeTransaction(value);
+    }
 
     return this;
   }
@@ -65,8 +85,16 @@ class Chain extends Actor {
     return this._state.ledger;
   }
 
+  get height () {
+
+  }
+
   get leaves () {
     return this.blocks.map(x => Buffer.from(x, 'hex'));
+  }
+
+  get length () {
+    return this.blocks.length;
   }
 
   get subsidy () {
@@ -77,13 +105,52 @@ class Chain extends Actor {
     return this._state.mempool;
   }
 
+  get transactions () {
+    return this.state.transactions;
+  }
+
   get _tree () {
     const stack = new Stack(this.leaves);
     return stack.asMerkleTree();
   }
 
+  createSignedBlock (proposal = {}) {
+    return {
+      actor: proposal.actor || Actor.randomBytes(32).toString('hex'),
+      changes: proposal.changes,
+      mode: proposal.mode || 'NAIVE_SIGHASH_SINGLE',
+      object: Buffer.concat(
+        Buffer.alloc(32), // pubkey
+        Buffer.alloc(32), // parent
+        Buffer.alloc(32), // changes
+        Buffer.alloc(64), // signature
+      ),
+      parent: this.id,
+      signature: Buffer.alloc(64),
+      state: this.state,
+      type: 'FabricBlock'
+    };
+  }
+
+  proposeTransaction (transaction) {
+    const actor = new Transaction(transaction);
+
+    // TODO: reject duplicate transactions
+    this._state.transactions[actor.id] = actor;
+    this._state.mempool.push(actor.id);
+
+    this._state.content.actors[actor.id] = actor.generic.object;
+    this._state.content.mempool.push(actor.id);
+
+    this.commit();
+
+    return actor;
+  }
+
   trust (source) {
     const self = this;
+
+    super.trust(source, 'TIMECHAIN');
 
     source.on('message', function TODO (message) {
       self.emit('debug', `Message from trusted source: ${message}`);
@@ -96,7 +163,7 @@ class Chain extends Actor {
     const chain = this;
 
     // Monitor changes
-    this.observer = monitor.observe(this._state);
+    this.observer = monitor.observe(this._state.content);
 
     // before returning, ensure a commit
     await chain.commit();
@@ -154,7 +221,10 @@ class Chain extends Actor {
     this._state.ledger.push(block.id);
     this._state.consensus = block.id;
 
-    await this.commit();
+    this._state.content.actors[block.id] = block.generic.object;
+    this._state.content.blocks.push(block.id);
+
+    this.commit();
 
     this.emit('block', block);
 
@@ -165,27 +235,28 @@ class Chain extends Actor {
     return this.blocks;
   }
 
-  async proposeTransaction (transaction) {
-    const actor = new Actor(transaction);
-
-    this._state.transactions[actor.id] = actor;
-    this._state.mempool.push(actor.id);
-
-    return actor;
-  }
-
   async generateBlock () {
     const proposal = {
       parent: this.consensus,
-      transactions: []
+      transactions: {}
     };
 
     // TODO: _sortFees
     if (this.mempool.length) {
       for (let i = 0; i < MAX_TX_PER_BLOCK; i++) {
-        const candidate = this.mempool.shift();
-        if (candidate) {
-          proposal.transactions.push(candidate);
+        try {
+          // Retrieve a transaction from the mempool
+          const txid = this.mempool.shift();
+          const candidate = this._state.transactions[txid];
+
+          // Create a local transaction instance
+          const tx = new Transaction(candidate);
+
+          // Update the proposal
+          proposal.transactions[tx.id] = candidate;
+        } catch (exception) {
+          console.error('Could not create block:', exception);
+          return null;
         }
       }
     }

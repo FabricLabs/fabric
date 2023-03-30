@@ -20,9 +20,9 @@ const Message = require('../types/message');
 const Observer = require('../types/observer');
 const Opcode = require('../types/opcode');
 const Oracle = require('../types/oracle');
-// const Peer = require('./peer');
+const Peer = require('./peer');
 const Program = require('../types/program');
-// const Remote = require('../types/remote');
+const Remote = require('../types/remote');
 const Resource = require('../types/resource');
 const Service = require('../types/service');
 const Scribe = require('../types/scribe');
@@ -38,7 +38,6 @@ const Worker = require('../types/worker');
 
 /**
  * Reliable decentralized infrastructure.
- * @property {Class} Block
  */
 class Fabric extends Service {
   /**
@@ -54,18 +53,21 @@ class Fabric extends Service {
    * @emits Fabric#thread
    * @emits Fabric#step Emitted on a `compute` step.
    */
-  constructor (vector = {}) {
-    super(vector);
+  constructor (settings = {}) {
+    super(settings);
 
     // local settings
     this.settings = Object.assign({
       path: './stores/fabric',
-      persistent: false
-    }, vector);
+      persistent: false,
+      state: {
+        ...super.state,
+        ...settings.state
+      }
+    }, settings);
 
     // start with reference to object
-    this.ident = new Actor(this.config);
-    this.state = new Actor(vector); // State
+    this.ident = new Actor(this.settings);
 
     // build maps
     this.agent = {}; // Identity
@@ -76,14 +78,14 @@ class Fabric extends Service {
     this.services = {}; // Map<id>
 
     // initialize components
-    this.chain = new Chain(this.config);
-    this.machine = new Machine(this.config);
-    this.store = new Store(this.config);
+    this.chain = new Chain(this.settings);
+    this.machine = new Machine(this.settings);
+    this.store = new Store(this.settings);
     // this.script = new Script(this.config);
 
     this._state = {
       status: 'PAUSED',
-      content: this.state.data
+      content: this.settings.state
     };
 
     // provide instance
@@ -110,7 +112,7 @@ class Fabric extends Service {
   static get Message () { return Message; }
   static get Observer () { return Observer; }
   static get Oracle () { return Oracle; }
-  // static get Peer () { return Peer; }
+  static get Peer () { return Peer; }
   static get Program () { return Program; }
   static get Remote () { return Remote; }
   static get Resource () { return Resource; }
@@ -168,7 +170,7 @@ class Fabric extends Service {
     if (!service) return new Error('Service must be provided.');
 
     try {
-      let name = service.name || service.constructor.name;
+      const name = service.name || service.constructor.name;
       this.modules[name.toLowerCase()] = service;
       this.emit('message', {
         '@type': 'ServiceRegistration',
@@ -182,7 +184,7 @@ class Fabric extends Service {
   }
 
   async enable (name) {
-    let self = this;
+    const self = this;
     let Module = null;
     let config = Object.assign({
       name: name,

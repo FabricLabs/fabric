@@ -1,8 +1,11 @@
 'use strict';
 
 const {
-  BITCOIN_GENESIS
+  BITCOIN_GENESIS,
+  FABRIC_USER_AGENT
 } = require('../constants');
+
+const OP_TRACE = require('../contracts/trace');
 
 // External Dependencies
 const jayson = require('jayson/lib/client');
@@ -14,38 +17,23 @@ const ECPairFactory = require('ecpair').default;
 const ecc = require('tiny-secp256k1');
 const bip65 = require('bip65');
 const bip68 = require('bip68');
-
 const ECPair = ECPairFactory(ecc);
-
-// TODO: remove bcoin
-const bcoin = require('bcoin');
 const bitcoin = require('bitcoinjs-lib');
 
 // Services
-const ZMQ = require('@fabric/zmq');
+const ZMQ = require('../services/zmq');
 
 // Types
 const Actor = require('../types/actor');
 const Collection = require('../types/collection');
 const Entity = require('../types/entity');
-const Message = require('../types/message');
 const Service = require('../types/service');
 const State = require('../types/state');
-const Chain = require('../types/chain');
 const Wallet = require('../types/wallet');
-const Consensus = require('../types/consensus');
 
 // Special Types (internal to Bitcoin)
 const BitcoinBlock = require('../types/bitcoin/block');
 const BitcoinTransaction = require('../types/bitcoin/transaction');
-
-// Convenience Labels
-const Amount = bcoin.Amount;
-const Coin = bcoin.Coin;
-const FullNode = bcoin.FullNode;
-const MTX = bcoin.MTX;
-const NetAddress = bcoin.net.NetAddress;
-const Script = bcoin.Script;
 
 /**
  * Manages interaction with the Bitcoin network.
@@ -78,6 +66,9 @@ class Bitcoin extends Service {
       mining: false,
       listen: false,
       fullnode: false,
+      spv: {
+        port: 18332
+      },
       zmq: {
         host: 'localhost',
         port: 29000
@@ -85,6 +76,7 @@ class Bitcoin extends Service {
       nodes: ['127.0.0.1'],
       seeds: ['127.0.0.1'],
       servers: [],
+      targets: [],
       peers: [],
       port: 18444,
       interval: 10 * 60 * 1000, // every 10 minutes, write a checkpoint
@@ -94,12 +86,12 @@ class Bitcoin extends Service {
     if (this.settings.verbosity >= 4) console.log('[DEBUG]', 'Instance of Bitcoin service created, settings:', this.settings);
 
     // Bcoin for JS full node
-    bcoin.set(this.settings.network);
-    this.network = bcoin.Network.get(this.settings.network);
+    // bcoin.set(this.settings.network);
+    // this.network = bcoin.Network.get(this.settings.network);
 
     // Internal Services
     this.observer = null;
-    this.provider = new Consensus({ provider: 'bcoin' });
+    // this.provider = new Consensus({ provider: 'bcoin' });
     this.wallet = new Wallet(this.settings);
     // this.chain = new Chain(this.settings);
 
@@ -131,26 +123,27 @@ class Bitcoin extends Service {
       }
     });
 
-    if (this.settings.fullnode) {
+    // Runs fullnode from bcoin (disabled for now)
+    /* if (this.settings.fullnode) {
       this.fullnode = new FullNode({
         network: this.settings.network
       });
-    }
+    } */
 
     // Local Bitcoin Node
-    this.peer = bcoin.Peer.fromOptions({
+    this.peer = null; /* bcoin.Peer.fromOptions({
       agent: this.UAString,
       network: this.settings.network,
       hasWitness: () => {
         return false;
       }
-    });
+    }); */
 
     // Attach to the network
-    this.spv = new bcoin.SPVNode({
+    this.spv = null; /* new bcoin.SPVNode({
       agent: this.UAString + ' (SPV)',
       network: this.settings.network,
-      port: this.provider.port,
+      port: this.settings.spv.port,
       http: false,
       listen: false,
       // httpPort: 48449, // TODO: disable HTTP entirely!
@@ -158,7 +151,7 @@ class Bitcoin extends Service {
       logLevel: (this.settings.verbosity >= 4) ? 'spam' : 'error',
       maxOutbound: 1,
       workers: true
-    });
+    }); */
 
     // TODO: import ZMQ settings
     this.zmq = new ZMQ();
@@ -176,8 +169,23 @@ class Bitcoin extends Service {
     this._state = {
       status: 'PAUSED',
       balances: { // safe up to 2^53-1 (all satoshis can be represented in 52 bits!)
-        confirmed: 0,
-        unconfirmed: 0
+        mine: {
+          trusted: 0,
+          untrusted_pending: 0,
+          immature: 0,
+          used: 0
+        },
+        watchonly: {
+          trusted: 0,
+          untrusted_pending: 0,
+          immature: 0
+        }
+      },
+      content: {
+        actors: {},
+        blocks: [],
+        height: 0,
+        tip: this.settings.genesis
       },
       chain: [],
       blocks: {},
@@ -190,53 +198,33 @@ class Bitcoin extends Service {
     return this;
   }
 
-  /**
-   * Provides bcoin's implementation of `TX` internally.  This static may be
-   * removed in the future.
-   */
-  static get Transaction () {
-    return bcoin.TX;
-  }
-
-  /**
-   * Provides bcoin's implementation of `MTX` internally.  This static may be
-   * removed in the future.
-   */
-  static get MutableTransaction () {
-    return bcoin.TX;
-  }
-
   get balance () {
-    return this._state.balances.confirmed;
+    return this._state.balances.mine.trusted;
   }
 
   get best () {
-    return this._state.tip;
+    return this._state.content.tip;
   }
 
   /**
    * User Agent string for the Bitcoin P2P network.
    */
   get UAString () {
-    return 'Portal/Bridge 0.1.0-dev (@fabric/core#0.1.0-dev)';
+    return FABRIC_USER_AGENT;
   }
 
   /**
    * Chain tip (block hash of the chain with the most Proof of Work)
    */
   get tip () {
-    if (this.settings.fullnode) {
-      return this.fullnode.chain.tip.hash.toString('hex');
-    } else {
-      return (this.chain && this.chain.tip) ? this.chain.tip.toString('hex') : null;
-    }
+    return (this.chain && this.chain.tip) ? this.chain.tip.toString('hex') : null;
   }
 
   /**
    * Chain height (`=== length - 1`)
    */
   get height () {
-    return this._state.height;
+    return this._state.content.height;
   }
 
   get headers () {
@@ -262,14 +250,71 @@ class Bitcoin extends Service {
   set best (best) {
     if (best === this.best) return this.best;
     if (best !== this.best) {
-      this._state.tip = best;
+      this._state.content.tip = best;
       this.emit('tip', best);
     }
   }
 
   set height (value) {
-    this._state.height = parseInt(value);
+    this._state.content.height = parseInt(value);
     this.commit();
+  }
+
+  createKeySpendOutput (publicKey) {
+    // x-only pubkey (remove 1 byte y parity)
+    const myXOnlyPubkey = publicKey.slice(1, 33);
+    const commitHash = bitcoin.crypto.taggedHash('TapTweak', myXOnlyPubkey);
+    const tweakResult = ecc.xOnlyPointAddTweak(myXOnlyPubkey, commitHash);
+    if (tweakResult === null) throw new Error('Invalid Tweak');
+
+    const { xOnlyPubkey: tweaked } = tweakResult;
+
+    // scriptPubkey
+    return Buffer.concat([
+      // witness v1, PUSH_DATA 32 bytes
+      Buffer.from([0x51, 0x20]),
+      // x-only tweaked pubkey
+      tweaked,
+    ]);
+  }
+
+  createSigned (key, txid, vout, amountToSend, scriptPubkeys, values) {
+    const tx = new bitcoin.Transaction();
+
+    tx.version = 2;
+
+    // Add input
+    tx.addInput(Buffer.from(txid, 'hex').reverse(), vout);
+
+    // Add output
+    tx.addOutput(scriptPubkeys[0], amountToSend);
+
+    const sighash = tx.hashForWitnessV1(
+      0, // which input
+      scriptPubkeys, // All previous outputs of all inputs
+      values, // All previous values of all inputs
+      bitcoin.Transaction.SIGHASH_DEFAULT // sighash flag, DEFAULT is schnorr-only (DEFAULT == ALL)
+    );
+
+    const signature = Buffer.from(signTweaked(sighash, key));
+
+    // witness stack for keypath spend is just the signature.
+    // If sighash is not SIGHASH_DEFAULT (ALL) then you must add 1 byte with sighash value
+    tx.ins[0].witness = [signature];
+
+    return tx;
+  }
+
+  signTweaked (messageHash, key) {
+    // Order of the curve (N) - 1
+    const N_LESS_1 = Buffer.from('fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140', 'hex');
+    // 1 represented as 32 bytes BE
+    const ONE = Buffer.from('0000000000000000000000000000000000000000000000000000000000000001', 'hex');
+    const privateKey = (key.publicKey[0] === 2) ? key.privateKey : ecc.privateAdd(ecc.privateSub(N_LESS_1, key.privateKey), ONE);
+    const tweakHash = bitcoin.crypto.taggedHash('TapTweak', key.publicKey.slice(1, 33));
+    const newPrivateKey = ecc.privateAdd(privateKey, tweakHash);
+    if (newPrivateKey === null) throw new Error('Invalid Tweak');
+    return ecc.signSchnorr(messageHash, newPrivateKey, Buffer.alloc(32));
   }
 
   validateAddress (address) {
@@ -292,11 +337,12 @@ class Bitcoin extends Service {
     ]).catch((exception) => {
       self.emit('error', `Unable to synchronize: ${exception}`);
     }).then((output) => {
-      self.emit('log', `Tick output: ${JSON.stringify(output, null, '  ')}`);
+      // self.emit('log', `Tick output: ${JSON.stringify(output, null, '  ')}`);
+
       const beat = {
         clock: self._clock,
         created: now,
-        state: self._state
+        state: self.state
       };
 
       self.emit('beat', beat);
@@ -331,6 +377,13 @@ class Bitcoin extends Service {
     console.log('rawBlock:', block);
   }
 
+  /**
+   * Process a spend message.
+   * @param {SpendMessage} message Generic-level message for spending.
+   * @param {String} message.amount Amount (in BTC) to spend.
+   * @param {String} message.destination Destination for funds.
+   * @returns {BitcoinTransactionID} Hex-encoded representation of the transaction ID.
+   */
   async _processSpendMessage (message) {
     if (!message) throw new Error('Message is required.');
     if (!message.amount) throw new Error('Message must provide an amount.');
@@ -863,7 +916,7 @@ class Bitcoin extends Service {
 
     if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', `Starting fullnode for network "${this.settings.network}"...`);
 
-    for (const candidate of this.settings.seeds) {
+    /* for (const candidate of this.settings.seeds) {
       let parts = candidate.split(':');
       let addr = new NetAddress({
         host: parts[0],
@@ -872,7 +925,7 @@ class Bitcoin extends Service {
 
       let peer = this.fullnode.pool.createOutbound(addr);
       this.fullnode.pool.peers.add(peer);
-    }
+    } */
 
     await this.fullnode.open();
     await this.fullnode.connect();
@@ -929,8 +982,13 @@ class Bitcoin extends Service {
   }
 
   async getUnusedAddress () {
-    const address = await this._makeRPCRequest('getnewaddress');
-    return address;
+    if (this.rpc) {
+      const address = await this._makeRPCRequest('getnewaddress');
+      return address;
+    } else {
+      const target = this.key.deriveAddress(this.state.index);
+      return target.address;
+    }
   }
 
   async append (raw) {
@@ -953,10 +1011,6 @@ class Bitcoin extends Service {
     }
   }
 
-  async _registerActor (actor) {
-    this.emit('log', `Bitcoin Actor to Register: ${JSON.stringify(actor, null, '  ')}`);
-  }
-
   async _listAddresses () {
     return this._makeRPCRequest('listreceivedbyaddress', [1, true]);
   }
@@ -964,9 +1018,13 @@ class Bitcoin extends Service {
   async _makeRPCRequest (method, params = []) {
     const self = this;
     return new Promise((resolve, reject) => {
-      if (!self.rpc) return reject(new Error('RPC manager does not exist.'));
+      if (!self.rpc) {
+        self.emit('error', `No local RPC: ${self} \n${OP_TRACE({ name: 'foo' })}`);
+        return reject(new Error('RPC manager does not exist.'));
+      }
+
       try {
-        self.rpc.request(method, params, function (err, response) {
+        self.rpc.request(method, params, function responseHandler (err, response) {
           if (err) {
             // TODO: replace with reject()
             return resolve({
@@ -998,7 +1056,9 @@ class Bitcoin extends Service {
   }
 
   async _requestBestBlockHash () {
-    return this._makeRPCRequest('getbestblockhash', []);
+    const hash = await this._makeRPCRequest('getbestblockhash', []);
+    // this.emit('debug', `Got best block hash: ${hash}`);
+    return hash;
   }
 
   async _requestBlockHeader (hash) {
@@ -1038,8 +1098,18 @@ class Bitcoin extends Service {
     return this._makeRPCRequest('getblock', [hash, 0]);
   }
 
+  /**
+   * Retrieve the equivalent to `getblockhash` from Bitcoin Core.
+   * @param {Number} height Height of block to retrieve.
+   * @returns {Object} The block hash.
+   */
   async _requestBlockAtHeight (height) {
     return this._makeRPCRequest('getblockhash', [height]);
+  }
+
+  async _syncHeaderAtHeight (height) {
+    const hash = await this._requestBlockAtHeight(height);
+    return this._makeRPCRequest('getblockheader', [hash]);
   }
 
   async _getHeaderAtHeight (height) {
@@ -1049,6 +1119,12 @@ class Bitcoin extends Service {
 
   async _requestChainHeight () {
     return this._makeRPCRequest('getblockcount', []);
+  }
+
+  async _syncChainHeight () {
+    this.height = await this._makeRPCRequest('getblockcount', []);
+    // this.emit('debug', `Got height:`, this.height);
+    return this.height;
   }
 
   async _listUnspent () {
@@ -1348,6 +1424,9 @@ class Bitcoin extends Service {
    * @returns {PSBT} Instance of the PSBT.
    */
   async _buildPSBT (options = {}) {
+    if (!options.inputs) options.inputs = [];
+    if (!options.outputs) options.outputs = [];
+
     const psbt = new bitcoin.Psbt({
       network: this.networks[this.settings.network]
     });
@@ -1494,10 +1573,15 @@ class Bitcoin extends Service {
   }
 
   async _syncBestBlock () {
+    return this._syncBestBlockHash();
+  }
+
+  async _syncBestBlockHash () {
     const best = await this._requestBestBlockHash();
     if (best.error) return this.emit('error', `[${this.settings.name}] Could not make request to RPC host: ${best.error}`);
     this.best = best;
     await this.commit();
+    return this.best;
   }
 
   async _syncHeaders () {
@@ -1527,8 +1611,15 @@ class Bitcoin extends Service {
       data: {
         content: balance
       },
-      signature: actor.sign().signature
+      // signature: actor.sign().signature
     };
+  }
+
+  async _syncBalances () {
+    const balances = await this._makeRPCRequest('getbalances');
+    this._state.balances = balances;
+    this.commit();
+    return balances;
   }
 
   async _syncChainInfoOverRPC () {
@@ -1540,8 +1631,8 @@ class Bitcoin extends Service {
     }
 
     // Get the best block hash (and height)
-    const best = await this._requestBestBlockHash();
-    const height = await this._requestChainHeight();
+    const best = await this._syncBestBlockHash();
+    const height = await this._syncChainHeight();
 
     this.best = best;
     this.height = height;
@@ -1554,6 +1645,15 @@ class Bitcoin extends Service {
     if (header.error) return this.emit('error', header.error);
     const raw =  Buffer.from(header, 'hex');
     this.headers.push(raw);
+    this.emit('debug', `raw headers[${hash}] = ${JSON.stringify(header)}`);
+    return this;
+  }
+
+  async _syncHeadersForBlock (hash) {
+    const header = await this._requestBlockHeader(hash);
+    this.headers[hash] = header;
+    this.emit('debug', `headers[${hash}] = ${JSON.stringify(header)}`);
+    this.commit();
     return this;
   }
 
@@ -1565,12 +1665,15 @@ class Bitcoin extends Service {
     let before = 0;
 
     for (let i = 0; i <= this.height; i++) {
+      this.emit('debug', `Getting block headers: ${i} of ${this.height}`);
+
       const now = Date.now();
       const progress = now - start;
       const hash = await this._requestBlockAtHeight(i);
       await this._syncRawHeadersForBlock(hash);
 
       const epoch = Math.floor((progress / 1000) % 1000);
+      // this.emit('debug', `timing: epochs[${epoch}] ${now} ${progress} ${i} ${epoch} ${rate}/sec`);
 
       if (epoch > last) {
         rate = `${i - before}`;
@@ -1616,7 +1719,7 @@ class Bitcoin extends Service {
   }
 
   async _syncWithRPC () {
-    await this._syncChainInfoOverRPC();
+    // await this._syncChainInfoOverRPC();
     await this._syncChainOverRPC();
     await this.commit();
 
@@ -1633,15 +1736,15 @@ class Bitcoin extends Service {
     self.status = 'starting';
 
     // Bitcoin events
-    this.peer.on('error', this._handlePeerError.bind(this));
-    this.peer.on('packet', this._handlePeerPacket.bind(this));
+    if (this.peer) this.peer.on('error', this._handlePeerError.bind(this));
+    if (this.peer) this.peer.on('packet', this._handlePeerPacket.bind(this));
     // NOTE: we always ask for genesis block on peer open
-    this.peer.on('open', () => {
+    if (this.peer) this.peer.on('open', () => {
       let block = self.peer.getBlock([this.network.genesis.hash]);
     });
 
     if (this.store) await this.store.open();
-    if (this.settings.fullnode) {
+    /* if (this.settings.fullnode) {
       this.fullnode.on('peer connect', function peerConnectHandler (peer) {
         self.emit('warning', `[SERVICES:BITCOIN]', 'Peer connected to Full Node: ${peer}`);
       });
@@ -1652,10 +1755,14 @@ class Bitcoin extends Service {
       this.fullnode.on('tx', async function fullnodeTxHandler (tx) {
         self.emit('log', `tx event: ${JSON.stringify(tx)}`);
       });
-    }
+    } */
 
     this.wallet.on('message', function (msg) {
       self.emit('log', `wallet msg: ${msg}`);
+    });
+
+    this.wallet.on('log', function (msg) {
+      self.emit('log', `wallet log: ${msg}`);
     });
 
     this.wallet.on('warning', function (msg) {
@@ -1672,18 +1779,32 @@ class Bitcoin extends Service {
       });
     }
 
-    this.observer = monitor.observe(this._state);
+    this.observer = monitor.observe(this._state.content);
 
     // Start services
     await this.wallet.start();
     // await this.chain.start();
 
     // Start nodes
-    if (this.settings.fullnode) await this._startLocalNode();
+    // if (this.settings.fullnode) await this._startLocalNode();
     if (this.settings.zmq) await this._startZMQ();
+
+    // Handle RPC mode
     if (this.settings.mode === 'rpc') {
-      if (!this.settings.authority) return this.emit('error', 'Error: No authority specified.  To use an RPC anchor, provide the "authority" parameter.');
-      const provider = new URL(this.settings.authority);
+      // If deprecated setting `authority` is provided, compose settings
+      if (this.settings.authority) {
+        const url = new URL(this.settings.authority);
+
+        // Assign all parameters
+        this.settings.username = url.username;
+        this.settings.password = url.password;
+        this.settings.host = url.host;
+        this.settings.port = url.port;
+        this.settings.secure = (url.protocol === 'https:') ? true : false;
+      }
+
+      const authority = `http${(this.settings.secure == true) ? 's': ''}://${this.settings.username}:${this.settings.password}@${this.settings.host}:${this.settings.port}`;
+      const provider = new URL(authority);
       const config = {
         host: provider.hostname,
         port: provider.port
@@ -1722,9 +1843,7 @@ class Bitcoin extends Service {
       tip: this.tip
     });
 
-    if (this.settings.verbosity >= 4) {
-      this.emit('log', '[SERVICES:BITCOIN] Service started!');
-    }
+    this.emit('log', '[SERVICES:BITCOIN] Service started!');
 
     return this;
   }

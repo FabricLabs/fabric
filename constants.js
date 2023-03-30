@@ -10,19 +10,21 @@
 const crypto = require('crypto');
 
 // Networking and Environment
-const PEER_PORT = 9999;
+const PEER_PORT = 7777;
 const MAX_PEERS = 32;
 const PRECISION = 100;
 
 // Fabric Core
+const FABRIC_USER_AGENT = 'Fabric/Bitcoin 0.1.0-dev (@fabric/core#v0.1.0-RC1)';
 const BITCOIN_GENESIS = '000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f';
 const BITCOIN_GENESIS_ROOT = '4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b';
-const FABRIC_KEY_DERIVATION_PATH = "m/44'/0'/0'/0/0";
+const FABRIC_KEY_DERIVATION_PATH = "m/44'/7777'/0'/0/0";
+const FIXTURE_SEED = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
 
 // Message Constants
 const MAGIC_BYTES = 0xC0D3F33D;
-const VERSION_NUMBER = 0x00; // 0 for development, pre-alpha, 1 for production
-const HEADER_SIZE = 144; // [4], [4], [32], [4], [4], [32], [64] bytes
+const VERSION_NUMBER = 0x01; // 0 for development, pre-alpha, 1 for production
+const HEADER_SIZE = 176; // [4], [4], [32], [32], [4], [4], [32], [64] bytes
 const LARGE_COLLECTION_SIZE = 10; // TODO: test with 1,000,000
 const MAX_MESSAGE_SIZE = 4096 - HEADER_SIZE;
 
@@ -30,15 +32,19 @@ const MAX_MESSAGE_SIZE = 4096 - HEADER_SIZE;
 const MAX_STACK_HEIGHT = 32; // max height of stack (number of elements)
 const MAX_FRAME_SIZE = 32; // max size of a stack frame in bytes
 const MAX_MEMORY_ALLOC = MAX_STACK_HEIGHT * MAX_FRAME_SIZE;
-const MAX_TX_PER_BLOCK = 100;
+const MAX_TX_PER_BLOCK = 4;
 const MAX_CHANNEL_VALUE = 100000000;
 
 // Machine Constraints
 const MACHINE_MAX_MEMORY = MAX_MEMORY_ALLOC * MAX_MESSAGE_SIZE;
 const MAX_CHAT_MESSAGE_LENGTH = 2048;
 
+// Playnet
+const FABRIC_PLAYNET_ADDRESS = ''; // deposit address (P2TR)
+const FABRIC_PLAYNET_ORIGIN = ''; // block hash of first deploy
+
 // FABRIC ONLY
-const GENERIC_MESSAGE_TYPE = MAGIC_BYTES + parseInt(crypto.createHash('sha256').update('@types/GenericMessage').digest('hex').slice(0, 4), 16);
+const GENERIC_MESSAGE_TYPE = parseInt(crypto.createHash('sha256').update('@types/GenericMessage').digest('hex').slice(0, 4), 16);
 const LOG_MESSAGE_TYPE = MAGIC_BYTES + parseInt(crypto.createHash('sha256').update('@types/GenericLogMessage').digest('hex').slice(0, 4), 16);
 const GENERIC_LIST_TYPE = MAGIC_BYTES + parseInt(crypto.createHash('sha256').update('@types/GenericList').digest('hex').slice(0, 4), 16);
 const DOCUMENT_PUBLISH_TYPE = 998;
@@ -61,6 +67,8 @@ const OP_RETURN = '6a';
 const OP_EQUALVERIFY = '88';
 const OP_SEPARATOR = 'ab';
 
+// Peering
+const P2P_PORT = 7777;
 const P2P_GENERIC = 0x80; // 128 in decimal
 const P2P_IDENT_REQUEST = 0x01; // 1, or the identity
 const P2P_IDENT_RESPONSE = 0x11;
@@ -106,6 +114,10 @@ const LIGHTNING_PARENT_SIDEBLOCK_HASH = 0x00000000000000000000000000000000000000
 
 const ZERO_LENGTH_PLAINTEXT = '';
 
+// HTTP
+const HTTP_HEADER_CONTENT_TYPE = 'application/json';
+
+// CommonJS Support
 module.exports = {
   PEER_PORT,
   MAX_PEERS,
@@ -113,6 +125,8 @@ module.exports = {
   BITCOIN_GENESIS,
   BITCOIN_GENESIS_ROOT,
   FABRIC_KEY_DERIVATION_PATH,
+  FABRIC_USER_AGENT,
+  FIXTURE_SEED,
   HEADER_SIZE,
   GENERIC_MESSAGE_TYPE,
   LOG_MESSAGE_TYPE,
@@ -121,6 +135,8 @@ module.exports = {
   BLOCK_CANDIDATE,
   CHAT_MESSAGE,
   ZERO_LENGTH_PLAINTEXT,
+  FABRIC_PLAYNET_ADDRESS,
+  FABRIC_PLAYNET_ORIGIN,
   LIGHTNING_TEST_HEADER,
   LIGHTNING_PROTOCOL_H_INIT,
   LIGHTNING_PROTOCOL_PROLOGUE,
@@ -128,6 +144,7 @@ module.exports = {
   LIGHTNING_SIDECHAIN_NUM,
   LIGHTNING_SIDEBLOCK_HASH,
   LIGHTNING_PARENT_SIDEBLOCK_HASH,
+  HTTP_HEADER_CONTENT_TYPE,
   MAGIC_BYTES,
   MAX_FRAME_SIZE,
   MAX_MEMORY_ALLOC,
@@ -157,6 +174,7 @@ module.exports = {
   P2P_ROOT,
   P2P_PING,
   P2P_PONG,
+  P2P_PORT,
   P2P_START_CHAIN,
   P2P_INSTRUCTION,
   P2P_BASE_MESSAGE,

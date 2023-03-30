@@ -1,28 +1,25 @@
 'use strict';
 
-const Consensus = require('../consensus');
+const Actor = require('../actor');
+// const Consensus = require('../consensus');
 const Transaction = require('./transaction');
 
-class BitcoinBlock {
+class BitcoinBlock extends Actor {
   constructor (settings = {}) {
+    super(settings);
+
     this.settings = Object.assign({
       provider: 'bcoin',
       network: 'regtest'
     }, settings);
 
-    this.consensus = new Consensus(this.settings);
+    // this.consensus = new Consensus(this.settings);
     this._state = {
+      content: {},
       transactions: []
     };
-  }
 
-  set state (value) {
-    // TODO: validation
-    this._state = value;
-  }
-
-  get state () {
-    return this._state;
+    return this;
   }
 
   get data () {
