@@ -1,9 +1,10 @@
 'use strict';
 
+const Actor = require('./actor');
 // const Consensus = require('../consensus');
 const Transaction = require('./transaction');
 
-class BitcoinBlock {
+class BitcoinBlock extends Actor {
   constructor (settings = {}) {
     this.settings = Object.assign({
       provider: 'bcoin',
@@ -12,17 +13,9 @@ class BitcoinBlock {
 
     // this.consensus = new Consensus(this.settings);
     this._state = {
+      content: {},
       transactions: []
     };
-  }
-
-  set state (value) {
-    // TODO: validation
-    this._state = value;
-  }
-
-  get state () {
-    return this._state;
   }
 
   get data () {

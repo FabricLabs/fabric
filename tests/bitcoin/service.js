@@ -1,6 +1,5 @@
 'use strict';
 
-
 const assert = require('assert');
 const Bitcoin = require('../../services/bitcoin');
 
