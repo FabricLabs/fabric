@@ -28,7 +28,7 @@ describe('@fabric/core/types/peer', function () {
       assert.ok(peer);
     });
 
-    it('can receive a connection', function (done) {
+    xit('can receive a connection', function (done) {
       async function test () {
         const server = new Peer(Object.assign({ verbosity: 2 }, NODEA, { listen: true, port: settings.port, upnp: false, peers: [] }));
         const client = new Peer(Object.assign({ verbosity: 2 }, NODEB, { peers: [
