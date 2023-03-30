@@ -21,6 +21,18 @@ describe('@fabric/core/types/contract', function () {
       test();
     });
 
+    it('can start and stop', function (done) {
+      async function test () {
+        const contract = new Contract(sample);
+        contract.start();
+        contract.stop();
+        assert.ok(contract);
+        done();
+      }
+
+      test();
+    });
+
     it('can publish a contract', function (done) {
       async function test () {
         const contract = new Contract(sample);
