@@ -121,7 +121,6 @@ class Contract extends Service {
     return contract.trim();
   }
 
-
   /**
    * Deploys the contract.
    * @returns {String} Message ID.
@@ -173,9 +172,11 @@ class Contract extends Service {
       object: template
     })]);
 
-    const signed = PACKET_CONTRACT_PUBLISH._setSigner(this.signer).sign().toBuffer();
-    const pubhash = crypto.createHash('sha256').update(signed).digest('hex');
+    const signed = PACKET_CONTRACT_PUBLISH._setSigner(this.signer).sign();
+    const pubhash = crypto.createHash('sha256').update(signed.toBuffer()).digest('hex');
+
     this.messages[pubhash] = PACKET_CONTRACT_PUBLISH.toString('hex');
+    this.emit('message', signed);
 
     return this;
   }
@@ -264,6 +265,11 @@ class Contract extends Service {
         return reject(exception);
       }
     });
+  }
+
+  _handleBitcoinTransaction () {
+    // TODO: parse on-chain transaction for update to contract balance
+    // Does this transaction pay to this contract?
   }
 
   _toUnsignedTransaction () {

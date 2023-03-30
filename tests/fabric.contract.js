@@ -20,5 +20,24 @@ describe('@fabric/core/types/contract', function () {
 
       test();
     });
+
+    it('can publish a contract', function (done) {
+      async function test () {
+        const contract = new Contract(sample);
+        contract.on('message', (msg) => {
+          switch (msg['@type']) {
+            default:
+            case 'CONTRACT_PUBLISH':
+              assert.ok(contract);
+              assert.ok(msg);
+              done();
+              break;
+          }
+        });
+        contract.deploy();
+      }
+
+      test();
+    });
   });
 });
