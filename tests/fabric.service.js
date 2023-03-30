@@ -151,7 +151,7 @@ describe('@fabric/core/types/service', function () {
   });
 
   describe('_registerChannel()', function () {
-    xit('can register a channel successfully', async function () {
+    it('can register a channel successfully', async function () {
       const service = new Service();
       await service.start();
       const registration = await service._registerChannel({ name: 'Chat of Chad' });
