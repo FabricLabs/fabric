@@ -5,24 +5,37 @@
 [![Community][badge-chat]][chat]
 
 Fabric is an experimental approach to the secure establishment and execution of
-peer-to-peer agreements, up to and including financial transactions.  With a
-robust library of common components, `npm i @fabric/core` provides all the tools
-one might `require` during the development of a well-researched application of
-decentralization technology.
+peer-to-peer agreements ("contracts") using Bitcoin as a bonding mechanism. The
+`@fabric/core` project provides a robust set of implementations as JavaScript
+classes, enabling the rapid prototyping and testing of Bitcoin-based
+applications for downstream developers.
 
-| 🚨 Heads up! |
+## Quick Start
+`npm i -g FabricLabs/fabric#master`
+
+Install Fabric CLI to your system using the above command, then run:
+```
+fabric setup
+```
+
+| 🚨 Stop here! |
 |--------------|
-| Use of Fabric in production is **not recommended** in its current state.  Please wait for [an official release][releases] before deploying to production environments, or proceed at your own risk. |
+| The output of the above command will include your SEED, which should never be shared. |
 
-## Getting Started
-If you're already familiar with `node` and have a project already started, try
-`npm install --save @fabric/core` to install [Fabric Core](https://fabric.pub),
-the primary library used for most Fabric-based applications.
+Once complete, you'll have a fully configured Fabric client available by running:
+```
+fabric
+```
+
+For help, try entering "insert mode" by pressing the "i" key then typing `/help` and pressing enter — you'll get a short help prompt followed by a list of available commands.  Feel free to explore!
+
+If you run into any trouble, read on for clues, then [join the chat][chat-help] with any remaining questions.
 
 You'll also want `bitcoind` installed, and fully synchronized with your
 preferred network.  You can use `scripts/playnet.sh` to run a local playnet
 node, for which you can use the faucet: https://faucet.playnet.fabric.pub
 
+## Contributing
 Fork and clone [the Fabric GitHub repository][fabric-github] and launch a local
 web server with `npm run examples` to view the examples, or `npm run docs` once
 you're ready to integrate Fabric into your application.
@@ -46,9 +59,9 @@ npm run build
 - `npm start` creates a local Fabric node.
 
 ## Native Dependencies
-Installing Fabric from npm (`npm i @fabric/core`) will generally compile the 
-following dependencies from the local system:
-
+Installing Fabric from npm (`npm i @fabric/core` or
+`npm i FabricLabs/fabric#develop`) will generally compile the following
+dependencies from the local system:
 - `secp256k1`
 - `level`
 - `zeromq`
@@ -64,44 +77,51 @@ it as an event source.
 
 #### Simple Example
 ```js
-const Fabric = require('@fabric/core');
-const fabric = new Fabric();
+const Peer = require('@fabric/core/types/peer');
 
-fabric.on('message', function (message) {
-  console.log('Received message from Fabric:', message);
+async function main () {
+  const peer = new Peer({
+    alias: 'Example',
+    peers: ['hub.fabric.pub:7777']
+  });
+
+  peer.on('message', (message) => {
+    console.log('Received message from Fabric:', message);
+  });
+
+  peer.start();
+  return { peer };
+}
+
+main().catch((exception) => {
+  console.error('Example error:', exception);
+}).then((output) => {
+  console.log('Example output:', output);
 });
-
-fabric.start();
 ```
 
-`service` now contains a full instance of Fabric, including `SET` and `GET`
-methods for publishing and retrieving documents.  Use `npm run examples` to see
-more.
-
-### Message Types
-Message types are as follows:
-
-#### `message`
-The generic message event.
-
-**Properties:**
-- `@type` name of the event type.
-- `@data` the content of the event, if any.
-
 ### Using Fabric in the Browser
-Fabric generates a `fabric.min.js` bundle, which can be included with any HTML
+[`@fabric/http`][fabric-http] generates a `fabric.min.js` bundle, which can be included with any HTML
 document to expose the API in a browser.
 
-## Other Fabrics
-Several other projects have used the name Fabric, as it's a great way to
-describe a network of things, conjuring feelings of _nets_ and _webs_.  Here are
-some links to them, as they offer some interesting things completely unrelated
-to our goals.
+```html
+<html>
+  <body>
+    <div>
+      <h1>Example</h1>
+    </div>
+    <script src="/bundles/fabric.min.js"></script>
+    <script type="text/javascript">
+      window.fabric.addEventListener('', (event) => {
+        console.log('Fabric Event:', event);
+      });
 
-- Fabric python project (#fabric on Freenode)
-- Fabric application framework by Twitter
-- HyperLedger Fabric, by IBM
-
+      window.fabric.start();
+      console.log('Fabric started!');
+    </script>
+  </body>
+</html>
+```
 
 ## Plugins
 Fabric is an extensible framework, supporting a variety of plugins.
@@ -139,6 +159,7 @@ Fabric on Twitter: [@FabricProtocol][twitter]
 [coverage]: https://codecov.io/gh/FabricLabs/fabric
 [development]: https://grove.chat/#/room/#development:fabric.pub
 [fabric-github]: https://github.com/FabricLabs/fabric
+[fabric-http]: https://github.com/FabricLabs/fabric-http
 [protocol]: PROTOCOL.md
 [learning]: https://grove.chat/#/room/#learning:fabric.pub
 
