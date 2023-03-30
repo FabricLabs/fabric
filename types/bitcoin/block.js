@@ -1,6 +1,6 @@
 'use strict';
 
-const Actor = require('./actor');
+const Actor = require('../actor');
 // const Consensus = require('../consensus');
 const Transaction = require('./transaction');
 

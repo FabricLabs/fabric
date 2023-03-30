@@ -2,7 +2,7 @@
 
 const crypto = require('crypto');
 
-const Actor = require('./actor');
+const Actor = require('../actor');
 const Signer = require('../signer');
 const Transaction = require('../transaction');
 // TODO: PSBTs
