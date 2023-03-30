@@ -56,6 +56,15 @@ describe('@fabric/core/types/service', function () {
 
       test();
     });
+
+    it('can run in persistent mode', async function provenance () {
+      const service = new Service({
+        name: 'Test',
+        persistent: true
+      });
+
+      assert.ok(service);
+    });
   });
 
   describe('_registerActor()', function () {
