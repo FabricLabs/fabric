@@ -91,4 +91,18 @@ C^i
 ### Peer Protocol
 Initiator sends a `P2P_SESSION_OFFER` message, counterparty responds with `P2P_SESSION_OPEN` message.
 
+#### Negotiation
+incorrect state            correct state
+  |                                    |
+  v                                    |
+  prior state                          |
+  |                                    |
+  v                                    |
+  timeout                              |
+  |                                    |
+  |                                    |
+  |                                    v
+   \---------------------------------> sign -> broadcast
+
+
 [fabric-identity]: IDENTITY.md
