@@ -229,11 +229,19 @@ class Key {
     return this.deriveAddress(index);
   }
 
-  deriveAddress (index = 0, change = 0) {
+  deriveAddress (index = 0, change = 0, type = 'p2pkh') {
     const pair = this.deriveKeyPair(this.account, index, change);
-    return payments.p2pkh({
-      pubkey: Buffer.from(pair.public, 'hex')
-    });
+    switch (type) {
+      default:
+      case 'p2pkh':
+        return payments.p2pkh({
+          pubkey: Buffer.from(pair.public, 'hex')
+        });
+      case 'p2wpkh':
+        return payments.p2wpkh({
+          pubkey: Buffer.from(pair.public, 'hex')
+        });
+    }
   }
 
   deriveKeyPair (addressID = 0, change = 0) {

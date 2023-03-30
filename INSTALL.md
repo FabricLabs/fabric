@@ -1,6 +1,6 @@
 # Installing Fabric
 ## Prerequisites
-- Node.js 16.15.x
+- Node.js 16.17.1
 
 ## Quick Start
 You can install Fabric by running:

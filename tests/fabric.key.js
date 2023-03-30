@@ -88,5 +88,26 @@ describe('@fabric/core/types/key', function () {
         // TODO: test against BIP_84_TEST_VECTOR_ZPRV
       assert.equal(key.public.encodeCompressed('hex'), '03d902f35f560e0470c63313c7369168d9d7df2d49bf295fd9fb7cb109ccee0494');
     });
+
+    it('can generate p2pkh addresses', function () {
+      const key = new Key({ seed: playnet.key.seed });
+      const target = key.deriveAddress(0, 0, 'p2pkh');
+      assert.equal(key.public.encodeCompressed('hex'), '0223cffd5e94da3c8915c6b868f06d15183c1aeffad8ddf58fcb35a428e3158e71');
+      assert.equal(target.address, '1LDmxemmiVgiGbCAZ2zPKWsDRfM2shy7f9');
+    });
+
+    it('can generate p2wpkh addresses', function () {
+      const key = new Key({ seed: playnet.key.seed });
+      const target = key.deriveAddress(0, 0, 'p2wpkh');
+      assert.equal(key.public.encodeCompressed('hex'), '0223cffd5e94da3c8915c6b868f06d15183c1aeffad8ddf58fcb35a428e3158e71');
+      assert.equal(target.address, 'bc1q6t2wjeuavrd08fd8pu5ktf2sced5wf5chnd5qc');
+    });
+
+    xit('can generate p2tr addresses', function () {
+      const key = new Key({ seed: playnet.key.seed });
+      const target = key.deriveAddress(0, 0, 'p2tr');
+      assert.equal(key.public.encodeCompressed('hex'), '0223cffd5e94da3c8915c6b868f06d15183c1aeffad8ddf58fcb35a428e3158e71');
+      assert.equal(target.address, '1LDmxemmiVgiGbCAZ2zPKWsDRfM2shy7f9');
+    });
   });
 });
