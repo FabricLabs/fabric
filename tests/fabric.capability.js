@@ -2,8 +2,12 @@
 
 const assert = require('assert');
 const Capability = require('../types/capability');
+const Identity = require('../types/identity');
+const Signer = require('../types/signer');
 
-const sample = {};
+const sample = {
+  type: 'CREATE_BLOCK'
+};
 
 describe('@fabric/core/types/capability', function () {
   describe('Capability', function () {
@@ -15,6 +19,24 @@ describe('@fabric/core/types/capability', function () {
       async function test () {
         const capability = new Capability(sample);
         assert.ok(capability);
+        done();
+      }
+
+      test();
+    });
+
+    it('can generate a token for an identity', function (done) {
+      async function test () {
+        const identity = new Identity(sample);
+        const capability = new Capability(sample);
+        const token = await capability._generateToken();
+
+        assert.ok(identity);
+        assert.ok(capability);
+        assert.ok(token);
+
+        assert.strictEqual(token.macaroon.s64, '2RbOb5ti3EoIDOXUpmCVZHHxm4YNpCQrCFJyczHBAz0');
+
         done();
       }
 
