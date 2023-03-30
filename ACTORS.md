@@ -15,8 +15,36 @@ Some Actor types (such as `Service`) also provide `beat`, `tick`, or `state` eve
 
 ## Behavior
 The `Actor` is a standard ECMAScript object with the following properties:
-
 ```
 id: String
 state: Object
+```
+
+## Example
+Interacting with a Fabric Actor:
+```js
+// Use `npm i @fabric/core` first
+const Actor = require('@fabric/core/types/actor');
+const actor = new Actor({ foo: 'bar' });
+
+// Listen for events
+actor.on('message', (message) => {
+  console.log('Message from Actor:', message);
+});
+
+// Adopt a set of changes
+actor.adopt([
+  { op: 'replace', path: '/baz', value: 'plop' }
+]);
+
+console.log('My Actor:', JSON.stringify(actor, null, '  '));
+```
+
+Output:
+
+```
+My Actor: {
+  "foo": "bar",
+  "baz": "bop"
+}
 ```

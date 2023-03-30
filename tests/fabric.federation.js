@@ -15,5 +15,13 @@ describe('@fabric/core/types/federation', function () {
       assert.ok(federation);
       assert.ok(federation.id);
     });
+
+    it('can start and stop', async function () {
+      const federation = new Federation();
+      federation.start();
+      federation.stop();
+      assert.ok(federation);
+      assert.ok(federation.id);
+    });
   });
 });

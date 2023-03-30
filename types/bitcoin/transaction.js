@@ -2,11 +2,12 @@
 
 const crypto = require('crypto');
 
+const Actor = require('../actor');
 const Signer = require('../signer');
 const Transaction = require('../transaction');
 // TODO: PSBTs
 
-class BitcoinTransaction extends Transaction {
+class BitcoinTransaction extends Actor {
   constructor (settings = {}) {
     super(settings);
 

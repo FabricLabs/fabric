@@ -71,6 +71,12 @@ class Filesystem extends Actor {
     return this._state.documents;
   }
 
+  delete (name) {
+    const file = path.join(this.path, name);
+    if (fs.existsSync(file)) fs.rmSync(file);
+    return true;
+  }
+
   /**
    * Get the list of files.
    * @returns {Array} List of files.

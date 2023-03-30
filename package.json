@@ -60,7 +60,7 @@
     "test:app": "npm run make:service && npm run make:app && NODE_ENV=test mocha tests/fabric.app.js",
     "test:bitcoin": "mocha tests/bitcoin.core.js",
     "test:wasm": "emcc contracts/test.c -o assets/wasm.html",
-    "test": "NODE_ENV=test mocha tests",
+    "test": "NODE_ENV=test mocha --recursive tests",
     "tidy": "glob-run js-beautify --indent-size 2 -r _book/**.html",
     "watch:book": "honkit serve --port 8000 # NOTE: /docs and /examples may not be available."
   },
@@ -105,6 +105,7 @@
     "json-pointer": "0.6.2",
     "level": "7.0.1",
     "lodash.merge": "4.6.2",
+    "macaroon": "3.0.4",
     "merkletreejs": "0.1.6",
     "minsc": "0.2.0",
     "mkdirp": "1.0.4",
@@ -136,7 +137,7 @@
     "jsdoc-to-markdown": "7.1.1",
     "json-to-dot": "1.1.0",
     "license-checker": "25.0.1",
-    "mocha": "10.0.0"
+    "mocha": "10.2.0"
   },
   "c8": {
     "exclude": [

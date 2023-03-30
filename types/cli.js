@@ -24,6 +24,7 @@ const Actor = require('./actor');
 const Message = require('./message');
 const Hash256 = require('./hash256');
 const Identity = require('./identity');
+const Filesystem = require('./filesystem');
 const Wallet = require('./wallet');
 
 // Services
@@ -58,6 +59,7 @@ class CLI extends App {
     // Assign Settings
     this.settings = merge({
       debug: true,
+      ephemeral: false,
       listen: false,
       peering: true, // set to true to start Peer
       render: true,
@@ -74,6 +76,9 @@ class CLI extends App {
         mode: 'socket',
         path: './stores/lightning-playnet/regtest/lightning-rpc'
       },
+      storage: {
+        path: `${process.env.HOME}/.fabric/console`
+      }
     }, this.settings, settings);
 
     // Properties
@@ -91,6 +96,8 @@ class CLI extends App {
     this.services = {};
     this.connections = {};
 
+    this.fs = new Filesystem(this.settings.storage);
+
     // State
     this._state = {
       anchor: null,
@@ -103,7 +110,8 @@ class CLI extends App {
       content: {
         actors: {},
         bitcoin: {
-          best: null
+          best: null,
+          genesis: BITCOIN_GENESIS
         },
         documents: {},
         messages: {}
@@ -136,15 +144,27 @@ class CLI extends App {
     return this;
   }
 
+  flush () {
+    this.fs.delete('STATE');
+    return this;
+  }
+
   _loadPeer () {
+    const file = this.fs.readFile('STATE');
+    const state = (file) ? JSON.parse(file) : {};
+
+    // Create and assign Peer instance as the `node` property
     this.node = new Peer({
+      debug: this.settings.debug,
       network: this.settings.network,
       interface: this.settings.interface,
       port: this.settings.port,
       peers: this.settings.peers,
+      state: state,
       upnp: this.settings.upnp,
       key: this.identity.settings
     });
+
     return this;
   }
 
@@ -159,7 +179,13 @@ class CLI extends App {
   }
 
   async bootstrap () {
-    return true;
+    try {
+      await this.fs.start();
+      return true;
+    } catch (exception) {
+      this._appendError(`Could not bootstrap: ${exception}`)
+      return false;
+    }
   }
 
   async tick () {
@@ -184,6 +210,7 @@ class CLI extends App {
     this._registerCommand('quit', this._handleQuitRequest);
     this._registerCommand('exit', this._handleQuitRequest);
     this._registerCommand('clear', this._handleClearRequest);
+    this._registerCommand('flush', this._handleFlushRequest);
     this._registerCommand('alias', this._handleAliasRequest);
     this._registerCommand('peers', this._handlePeerListRequest);
     this._registerCommand('rotate', this._handleRotateRequest);
@@ -200,6 +227,7 @@ class CLI extends App {
     this._registerCommand('service', this._handleServiceCommand);
     this._registerCommand('publish', this._handlePublishCommand);
     this._registerCommand('request', this._handleRequestCommand);
+    this._registerCommand('grant', this._handleGrantCommand);
     this._registerCommand('import', this._handleImportCommand);
     this._registerCommand('join', this._handleJoinRequest);
     this._registerCommand('sync', this._handleChainSyncRequest);
@@ -208,6 +236,9 @@ class CLI extends App {
     this._registerCommand('state', this._handleStateRequest);
     this._registerCommand('set', this._handleSetRequest);
     this._registerCommand('get', this._handleGetRequest);
+
+    // Contracts
+    this._registerCommand('contracts', this._handleContractsRequest);
 
     // Service Commands
     this._registerCommand('bitcoin', this._handleBitcoinRequest);
@@ -239,8 +270,10 @@ class CLI extends App {
     this.node.on('message', this._handlePeerMessage.bind(this));
     this.node.on('changes', this._handlePeerChanges.bind(this));
     this.node.on('commit', this._handlePeerCommit.bind(this));
+    this.node.on('state', this._handlePeerState.bind(this));
     this.node.on('chat', this._handlePeerChat.bind(this));
     this.node.on('upnp', this._handlePeerUPNP.bind(this));
+    this.node.on('contractset', this._handleContractSet.bind(this));
 
     // ## Raw Connections
     this.node.on('connection', this._handleConnection.bind(this));
@@ -441,6 +474,17 @@ class CLI extends App {
     this._appendMessage(`{red-fg}${msg}{/red-fg}`);
   }
 
+  async _handleContractSet (contractset) {
+    this._appendDebug(`[CONTRACTSET] ${JSON.stringify(contractset, null, '  ')}`);
+    this.contracts = contractset;
+    this.commit();
+  }
+
+  async _handlePeerState (state) {
+    // this._appendDebug(`[STATE] ${JSON.stringify(state, null, '  ')}`);
+    this.fs.publish('STATE', JSON.stringify(state, null, '  '));
+  }
+
   async _handleSourceLog (msg) {
     this._appendMessage(msg);
   }
@@ -459,6 +503,11 @@ class CLI extends App {
 
   async _handleChanges (changes) {
     this._appendMessage(`New Changes: ${JSON.stringify(changes, null, '  ')}`);
+  }
+
+  async _handleContractsRequest (params) {
+    this._appendMessage('{bold}Current Contracts{/bold}: ' + JSON.stringify(this.contracts, null, '  '));
+    return false;
   }
 
   async _handleStateRequest (params) {
@@ -496,6 +545,18 @@ class CLI extends App {
   async _fundChannel (id, amount) {
     this._appendMessage(`Funding channel ${id} with ${amount} BTC...`);
     // TODO: create payment channel (@fabric/core/types/channel)
+  }
+
+  /**
+   * Creates a token for the target signer with a provided role and some optional data.
+   * @param {Array} params Parameters array.
+   */
+  async _handleGrantCommand (params) {
+    const target = params[1];
+    const role = params[2];
+    const extra = params[3];
+
+    this._appendMessage(`Creating token with role "${role}" for target: ${target}${(extra) ? ' (extra: ' + extra + ')' : ''}`);
   }
 
   async _handleJoinRequest (params) {
@@ -599,12 +660,11 @@ class CLI extends App {
   }
 
   async _handleConnectionClose (msg) {
-    this._appendMessage(`Node emitted "connections:close" event: ${JSON.stringify(msg)}`);
+    this._appendMessage(`Node emitted "connections:close" event: ${JSON.stringify(msg, null, '  ')}`);
 
     for (const id in this.peers) {
       const peer = this.peers[id];
-      this._appendMessage(`Checking: ${JSON.stringify(peer)}`);
-      if (peer.address === msg.address) {
+      if (peer.address === msg.name) {
         this._appendMessage(`Address matches.`);
         delete this.peers[id];
       }
@@ -612,9 +672,7 @@ class CLI extends App {
 
     for (const id in this.connections) {
       const connections = this.connections[id];
-      this._appendMessage(`Checking: ${JSON.stringify(connections)}`);
       if (connections.address === msg.address) {
-        this._appendMessage(`Address matches.`);
         delete this.connections[id];
       }
     }
@@ -629,7 +687,7 @@ class CLI extends App {
   async _handleConnection (connection) {
     if (!connection.id) {
       // TODO: exit function here
-      this._appendMessage('Peer did not send an ID.  Event received: ' + JSON.stringify(connection));
+      this._appendWarning('Peer did not send an ID.  Event received: ' + JSON.stringify(connection));
     }
 
     // TODO: use @fabric/core/types/channel
@@ -901,7 +959,7 @@ class CLI extends App {
         target: '/messages'
       };
 
-      const message = Message.fromVector(['ChatMessage', JSON.stringify(msg)]);
+      const message = Message.fromVector(['ChatMessage', JSON.stringify(msg)]).sign();
       // this._appendDebug(`Chat Message created (${message.data.length} bytes): ${message.data}`);
       self.setPane('messages');
 
@@ -939,6 +997,12 @@ class CLI extends App {
 
   _handleClearRequest () {
     this.elements['messages'].setContent('');
+    return false;
+  }
+
+  _handleFlushRequest () {
+    this.flush();
+    this.stop();
     return false;
   }
 
@@ -1069,11 +1133,16 @@ class CLI extends App {
     this._appendMessage(`Local Settings: ${JSON.stringify(this.settings, null, '  ')}`);
   }
 
-  _handleHelpRequest (data) {
-    const self = this;
-    const help = `Available Commands:\n${Object.keys(self.commands).map(x => `\t${x}`).join('\n')}`;
+  _handleHelpRequest (params) {
+    let text = '';
 
-    self._appendMessage(help);
+    switch (params[1]) {
+      default:
+        text = `{bold}Fabric CLI Help{/bold}\nThe Fabric CLI offers a simple command-based interface to a Fabric-speaking Network.  You can use \`/connect <address>\` to establish a connection to a known peer, or any of the available commands.\n\n{bold}Available Commands{/bold}:\n\n${Object.keys(this.commands).map(x => `\t${x}`).join('\n')}\n`
+        break;
+    }
+
+    this._appendMessage(text);
   }
 
   _handleServiceMessage (msg) {

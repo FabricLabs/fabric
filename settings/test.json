@@ -1,6 +1,7 @@
 {
   "name": "@fabric/core",
   "description": "Application Resource Contract for the Fabric Execution Environment.",
+  "fullnode": false,
   "language": "english",
   "network": "regtest",
   "mode": "full",
@@ -10,5 +11,6 @@
     "seed": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
   },
   "stack": [],
-  "state": {}
+  "state": {},
+  "zmq": false
 }

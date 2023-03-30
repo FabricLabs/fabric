@@ -18,12 +18,12 @@ const manager = require('fast-json-patch');
 // Fabric Types
 const Actor = require('./actor');
 const Collection = require('./collection');
-const Identity = require('./identity');
-const Resource = require('./resource');
 const Entity = require('./entity');
 const Hash256 = require('./hash256');
+const Identity = require('./identity');
 const Key = require('./key');
 const Message = require('./message');
+const Resource = require('./resource');
 const Store = require('./store');
 
 /**
@@ -111,6 +111,8 @@ class Service extends Actor {
       }
     }
 
+    this._clock = 0;
+
     // set local state to whatever configuration supplies...
     /* this.state = Object.assign({
       messages: {} // always define a list of messages for Fabric services
@@ -151,7 +153,7 @@ class Service extends Actor {
   }
 
   get clock () {
-    return parseInt(this._state.clock);
+    return parseInt(this._clock);
   }
 
   get heartbeat () {
@@ -297,7 +299,7 @@ class Service extends Actor {
   /**
    * Retrieve a key from the {@link State}.
    * @param {Path} path Key to retrieve.
-   * @returns {Mixed}
+   * @returns {Mixed} Returns the target value if found, otherwise null.
    */
   get (path = '') {
     let result = null;
@@ -880,41 +882,12 @@ class Service extends Actor {
 
   commit () {
     // this.emit('debug', `[FABRIC:SERVICE] Committing ${OP_TRACE()}`);
-
-    const self = this;
-    const ops = [];
-
-    // assemble all necessary info, emit Snapshot regardless of storage status
-    try {
-      ops.push({ type: 'put', key: 'snapshot', value: self.state });
-
-      /* this.emit('debug', `Commit Template: ${JSON.stringify({
-        '@data': self.state,
-        '@from': 'COMMIT',
-        '@type': 'Snapshot'
-      }, null, '  ')}`); */
-    } catch (E) {
-      console.error('Error saving state:', self.state);
-      console.error('Could not commit to state:', E);
-    }
-
-    if (this.settings.persistent) {
-      // TODO: add robust + convenient database opener
-      this.store.batch(ops, function shareChanges () {
-        // TODO: notify status?
-      }).catch((exception) => {
-        self.emit('error', `Could not write to store: ${exception}`);
-      }).then((output) => {
-        self.emit('commit', { output });
-      });
-    }
-
-    if (PATCHES_ENABLED && self.observer) {
+    if (PATCHES_ENABLED && this.observer) {
       try {
-        const patches = manager.generate(self.observer);
+        const patches = manager.generate(this.observer);
         if (patches.length) {
           this.history.push(patches);
-          self.emit('patches', patches);
+          this.emit('patches', patches);
         }
       } catch (E) {
         console.error('Could not generate patches:', E);
@@ -923,7 +896,7 @@ class Service extends Actor {
 
     const commit = new Actor({
       type: 'Commit',
-      state: self.state
+      state: this.state
     });
 
     this.emit('commit', { ...commit.toObject(), id: commit.id });
@@ -1005,6 +978,7 @@ class Service extends Actor {
         id: entity.id,
         members: []
       }, channel);
+      return channel;
     }
 
     const target = pointer.escape(channel.id);
@@ -1069,14 +1043,15 @@ class Service extends Actor {
 
     try {
       // TODO: allow configurable validators
-      result = manager.applyPatch(this.state, changes, function isValid () {
+      this._state.content = manager.applyPatch(this.state, changes, function isValid () {
+        // TODO: invalidate changes without appropriate capability token
         return true;
       }, true /* mutate doc (1st param) */);
     } catch (exception) {
       console.error('Could not apply changes:', changes, exception);
     }
 
-    await this.commit();
+    this.commit();
 
     return result;
   }

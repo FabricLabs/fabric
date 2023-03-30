@@ -26,6 +26,12 @@ describe('@fabric/core/types/environment', function () {
       assert.ok(home);
     });
 
+    it('can verify', async function () {
+      const environment = new Environment();
+      const verified = environment.verify();
+      assert.ok(verified);
+    });
+
     it('can save a valid wallet', async function () {
       const environment = new Environment({
         path: `./stores/test-wallet.json`

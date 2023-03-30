@@ -1,7 +1,0 @@
-{
-  "name": "Asset",
-  "routes": {
-    "list": "/assets",
-    "view": "/assets/:id"
-  }
-}

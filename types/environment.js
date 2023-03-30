@@ -10,6 +10,7 @@ const fs = require('fs');
 const merge = require('lodash.merge');
 
 // Fabric Types
+const Actor = require('./actor');
 const Entity = require('./entity');
 const EncryptedPromise = require('./promise');
 const Wallet = require('./wallet');
@@ -32,6 +33,9 @@ class Environment extends Entity {
     this.settings = merge({
       home: process.env.HOME,
       path: process.env.HOME + '/.fabric/wallet.json',
+      state: {
+        status: 'INITIALIZED'
+      },
       store: process.env.HOME + '/.fabric'
     }, this.settings, settings);
 
@@ -39,12 +43,20 @@ class Environment extends Entity {
     this.wallet = null;
 
     this._state = {
-      status: 'INITIALIZED',
-      content: {},
+      status: this.settings.state.status,
+      content: this.settings.state,
       variables: process.env
     };
 
     return this;
+  }
+
+  get state () {
+    return JSON.parse(JSON.stringify(this._state.content));
+  }
+
+  get status () {
+    return this._state.status;
   }
 
   get SEED_FILE () {
@@ -269,6 +281,21 @@ class Environment extends Entity {
     this._state.status = 'STOPPING';
     this._state.status = 'STOPPED';
     return this;
+  }
+
+  verify () {
+    const state = new Actor(this.state);
+    if (state.id !== '3c141a17b967d9d50770ebcc3beac9f3bd695f728e8f4fb8988d913794998078') throw new Error(`Incorrect state: ${state.id}`);
+
+    if (![
+      'INITIALIZED',
+      'STARTED',
+      'STARTING',
+      'STOPPED',
+      'STOPPING'
+    ].includes(this.status)) throw new Error(`Invalid status: ${this.status}`);
+
+    return true;
   }
 }
 

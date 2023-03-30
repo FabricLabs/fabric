@@ -88,4 +88,21 @@ C^i
 /connect 0375f7cfc3fa3bc9ed621019018fca678da404a29c8dfec4350855b5ad2f0a42d7@hub.fabric.pub:7777
 ```
 
+### Peer Protocol
+Initiator sends a `P2P_SESSION_OFFER` message, counterparty responds with `P2P_SESSION_OPEN` message.
+
+#### Negotiation
+incorrect state            correct state
+  |                                    |
+  v                                    |
+  prior state                          |
+  |                                    |
+  v                                    |
+  timeout                              |
+  |                                    |
+  |                                    |
+  |                                    v
+   \---------------------------------> sign -> broadcast
+
+
 [fabric-identity]: IDENTITY.md

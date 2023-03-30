@@ -84,7 +84,7 @@ describe('@fabric/core/types/chain', function () {
       });
 
       const second = await chain.generateBlock();
-      assert.strictEqual(second.id, '2714e0577b4fdb7cf5e3fec86043f9b4827342e01fc42797da49798518d33b5c');
+      assert.strictEqual(second.id, '0df315e21035f10935116619aa5b1233195aa0f627dcbd7e81f895936d8e0141');
       await chain.stop();
 
       assert.ok(chain);
