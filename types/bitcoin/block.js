@@ -6,6 +6,8 @@ const Transaction = require('./transaction');
 
 class BitcoinBlock extends Actor {
   constructor (settings = {}) {
+    super(settings);
+
     this.settings = Object.assign({
       provider: 'bcoin',
       network: 'regtest'
@@ -16,6 +18,8 @@ class BitcoinBlock extends Actor {
       content: {},
       transactions: []
     };
+
+    return this;
   }
 
   get data () {
