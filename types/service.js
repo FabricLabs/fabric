@@ -111,6 +111,8 @@ class Service extends Actor {
       }
     }
 
+    this._clock = 0;
+
     // set local state to whatever configuration supplies...
     /* this.state = Object.assign({
       messages: {} // always define a list of messages for Fabric services
@@ -151,7 +153,7 @@ class Service extends Actor {
   }
 
   get clock () {
-    return parseInt(this._state.clock);
+    return parseInt(this._clock);
   }
 
   get heartbeat () {

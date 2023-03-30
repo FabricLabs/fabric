@@ -37,6 +37,25 @@ describe('@fabric/core/types/service', function () {
 
       assert.ok(service);
     });
+
+    it('can run for 10 beats', function (done) {
+      async function test () {
+        const service = new Service({
+          name: 'fun',
+          interval: 0
+        });
+
+        for (let i = 0; i < 10; i++) {
+          service.beat();
+        }
+
+        assert.ok(service);
+        assert.strictEqual(service.clock, 10);
+        done();
+      }
+
+      test();
+    });
   });
 
   describe('_registerActor()', function () {
