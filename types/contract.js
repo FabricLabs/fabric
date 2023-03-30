@@ -1,12 +1,19 @@
 'use strict';
 
+// Generics
+const crypto = require('crypto');
+
 // Dependencies
+// const Template = require('@babel/template');
+// const Generate = require('@babel/generator');
+// const t = require('@babel/types');
 const parser = require('dotparser');
+const monitor = require('fast-json-patch');
 
 // Fabric Types
 const Actor = require('./actor');
-const Hash256 = require('./hash256');
 const Key = require('./key');
+const Message = require('./message');
 const Service = require('./service');
 const Signer = require('./signer');
 
@@ -36,6 +43,9 @@ class Contract extends Service {
 
     // tweaked pubkey
     this.key = new Key(this.settings.key);
+    this.signer = new Signer(this.settings.key);
+    this.messages = {};
+
     this._inner = null;
     this._state = {
       status: 'PAUSED',
@@ -44,6 +54,8 @@ class Contract extends Service {
       value: this.settings.state,
       content: this.settings.state
     };
+
+    this.observer = monitor.observe(this._state.content);
 
     return this;
   }
@@ -62,11 +74,41 @@ class Contract extends Service {
     return contract;
   };
 
+  static fromJavaScript (js) {
+    const buildAST = Template.template(js);
+    const ast = buildAST({});
+    return new Contract({ ast });
+  }
+
   static fromGraph (graphs) {
     const circuit = {
       stack: [],
       nodes: []
     };
+
+    for (let i = 0; i < graphs.length; i++) {
+      const graph = graphs[i];
+      const node = {
+        name: graph.id
+      };
+
+      circuit.nodes.push(node);
+
+      if (!graph.children.length) continue;
+      for (let j = 0; j < graph.children.length; j++) {
+        const child = graph.children[j];
+        switch (child.type) {
+          default:
+            console.warn(`Unhandled type: "${child.type}'" on child:`, child);
+            break;
+          case 'node_stmt':
+            circuit.nodes.push({
+              name: child.node_id.id
+            });
+            break;
+        }
+      }
+    }
 
     return circuit;
   }
@@ -77,6 +119,70 @@ class Contract extends Service {
       likely@$A
     `;
     return contract.trim();
+  }
+
+  /**
+   * Deploys the contract.
+   * @returns {String} Message ID.
+   */
+  deploy () {
+    // Attest to local time
+    const now = (new Date()).toISOString();
+    const input = {
+      clock: 0,
+      validators: []
+    };
+
+    // First message (genesis)
+    const PACKET_CONTRACT_GENESIS = Message.fromVector(['CONTRACT_GENESIS', JSON.stringify({
+      type: 'CONTRACT_GENESIS',
+      object: {
+        input: input
+      }
+    })])._setSigner(this.signer).sign().toBuffer();
+
+    // Get hash of message
+    const hash = crypto.createHash('sha256').update(PACKET_CONTRACT_GENESIS).digest('hex');
+
+    // Store locally
+    this.messages[hash] = PACKET_CONTRACT_GENESIS.toString('hex');
+
+    // Contract template
+    const template = {
+      author: this.signer.pubkey,
+      bond: null, // BTC transaction which is spent
+      checksum: '',
+      created: now,
+      genesis: hash,
+      history: [ hash ], // most recent first
+      messages: this.messages,
+      name: this.settings.name,
+      signature: '',
+      state: input,
+      version: 1
+    };
+
+    // Track our contract by Actor ID
+    this.actor = new Actor(template);
+    this.emit('log', `Deploying Contract [0x${this.actor.id}] (${PACKET_CONTRACT_GENESIS.byteLength} bytes): ${this.messages[hash]}`);
+
+    // Network publish message (contract)
+    const PACKET_CONTRACT_PUBLISH = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify({
+      type: 'CONTRACT_PUBLISH',
+      object: template
+    })]);
+
+    const signed = PACKET_CONTRACT_PUBLISH._setSigner(this.signer).sign();
+    const pubhash = crypto.createHash('sha256').update(signed.toBuffer()).digest('hex');
+
+    this.messages[pubhash] = PACKET_CONTRACT_PUBLISH.toString('hex');
+    this.emit('message', signed);
+
+    return this;
+  }
+
+  toDot () {
+    const tokens = [];
   }
 
   parse (input) {
@@ -99,18 +205,28 @@ class Contract extends Service {
   }
 
   commit () {
-    super.commit();
+    const now = new Date();
+    const changes = monitor.generate(this.observer);
 
-    const template = {
-      // created: (new Date()).toISOString(),
+    if (changes.length) {
+      const message = Message.fromVector(['CONTRACT_MESSAGE', {
+        type: 'CONTRACT_MESSAGE',
+        object: {
+          contract: this.id,
+          ops: changes
+        }
+      }]);
+
+      this.emit('changes', changes);
+      this.emit('message', message);
+    }
+
+    this.emit('commit', {
+      created: now.toISOString(),
       state: this.state
-    };
+    });
 
-    const actor = new Actor(template);
-
-    this.emit('contract:commit', actor.toGenericMessage());
-
-    return {};
+    return this;
   }
 
   execute () {
@@ -149,6 +265,11 @@ class Contract extends Service {
         return reject(exception);
       }
     });
+  }
+
+  _handleBitcoinTransaction () {
+    // TODO: parse on-chain transaction for update to contract balance
+    // Does this transaction pay to this contract?
   }
 
   _toUnsignedTransaction () {

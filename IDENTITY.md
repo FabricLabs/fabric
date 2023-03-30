@@ -5,9 +5,23 @@ This document is intended to be utilized as the specification for the Fabric Ide
 The Fabric Identity Protocol is a decentralized identifier for Fabric-speaking networks.
 
 1. Load a BIP44 HD tree
-2. Designate First Identity as Derivation Path: `m/44'/7777'/0'/0/0`
+2. Designate First Identity as Derivation Path: `m/44'/7778'/0'/0/0`
 3. `m = sha256(derived_pubkey)`
 4. `id = bech32m("id", m) // "id" taken as ASCII bytes`
+
+Additional identities may be loaded by modifying the account index in the derivation path:
+
+```
+Identity #1 [0]: m/44'/7778'/0'/0/0
+Identity #2 [1]: m/44'/7778'/1'/0/0
+...
+```
+
+Fabric will encode each transaction using the address index field, as specified in BIP 44:
+
+```
+Transaction #1 [1]: m/44'/7778'/0'/1/0
+```
 
 ### Full Specification
 `id = bech32m("id", sha256(bip44(derivation_path, hd_tree).public))`

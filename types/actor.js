@@ -1,9 +1,9 @@
 'use strict';
 
-// Dependencies
-const crypto = require('crypto');
+// Generics
 const { EventEmitter } = require('events');
 
+// Dependencies
 const monitor = require('fast-json-patch');
 const pointer = require('json-pointer');
 
@@ -121,7 +121,13 @@ class Actor extends EventEmitter {
    * @returns {Buffer} The random bytes.
    */
   static randomBytes (count = 32) {
-    return crypto.randomBytes(count);
+    if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+      const array = new Uint8Array(length);
+      window.crypto.getRandomValues(array);
+      return Buffer.from(array);
+    } else {
+      return require('crypto').randomBytes(count);
+    }
   }
 
   get id () {
@@ -312,7 +318,7 @@ class Actor extends EventEmitter {
   }
 
   randomBytes (count = 32) {
-    return crypto.randomBytes(count);
+    return Actor.randomBytes(count);
   }
 
   /**

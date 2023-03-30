@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('assert');
+const fs = require('fs');
 const settings = require('../settings/test');
 
 const Actor = require('../types/actor');
@@ -75,6 +76,25 @@ describe('@fabric/core/types/filesystem', function () {
         '0fd41456625d26d13683a73cb4e69d38ac502a43c42191ea4ba2fe342233b683',
         'cbe1ebec919cbcb3ee28bf4fed8a8166c2a4aaa594204ac182dec1b1344a95b3'
       ]);
+    });
+
+    it('can delete from a local filesystem', async function () {
+      const actor = new Actor({ name: 'Satoshi Nakamoto' });
+      const filesystem = new Filesystem({
+        path: './stores/filesystem'
+      });
+
+      await filesystem.start();
+
+      await filesystem.publish('accident.txt', actor.state.name);
+      const created = fs.existsSync('./stores/filesystem/accident.txt');
+      filesystem.delete('accident.txt');
+      const deleted = !fs.existsSync('./stores/filesystem/accident.txt');
+
+      assert.ok(filesystem);
+      assert.ok(filesystem.id);
+      assert.ok(created);
+      assert.ok(deleted);
     });
   });
 });
