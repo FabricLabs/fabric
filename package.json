@@ -60,7 +60,7 @@
     "test:app": "npm run make:service && npm run make:app && NODE_ENV=test mocha tests/fabric.app.js",
     "test:bitcoin": "mocha tests/bitcoin.core.js",
     "test:wasm": "emcc contracts/test.c -o assets/wasm.html",
-    "test": "NODE_ENV=test mocha tests",
+    "test": "NODE_ENV=test mocha --recursive tests",
     "tidy": "glob-run js-beautify --indent-size 2 -r _book/**.html",
     "watch:book": "honkit serve --port 8000 # NOTE: /docs and /examples may not be available."
   },

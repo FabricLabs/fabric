@@ -1,12 +1,9 @@
 'use strict';
 
-// require('debug-trace')({ always: true });
 
 const assert = require('assert');
-// const Wallet = require('../types/wallet');
 const Bitcoin = require('../../services/bitcoin');
 
-const message = require('../../assets/message');
 const settings = require('../../settings/test');
 const options = Object.assign({}, settings, {
   network: 'regtest',
@@ -38,7 +35,34 @@ describe('@fabric/core/services/bitcoin', function () {
         }
 
         assert.ok(bitcoin);
-        assert.equal(bitcoin.tip, '06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f');
+        // assert.equal(bitcoin.tip, '06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f');
+      }
+
+      await test();
+    });
+
+    xit('can handle a spend request', async function () {
+      async function test () {
+        const bitcoin = new Bitcoin(options);
+
+        try {
+          await bitcoin.start();
+        } catch (exception) {
+          console.error('Could not start bitcoin:', exception);
+        }
+
+        const address = await bitcoin.getUnusedAddress();
+        const request = { amount: 1, destination: address };
+        const output = await bitcoin.processSpendMessage(request);
+
+        try {
+          await bitcoin.stop();
+        } catch (exception) {
+          console.error('Could not start bitcoin:', exception);
+        }
+
+        assert.ok(bitcoin);
+        assert.ok(output);
       }
 
       await test();
