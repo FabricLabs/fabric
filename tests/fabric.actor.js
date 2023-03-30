@@ -16,6 +16,13 @@ describe('@fabric/core/types/actor', function () {
       assert.ok(actor.id);
     });
 
+    it('provides random bytes', function () {
+      const actor = new Actor();
+      const random = actor.randomBytes();
+      assert.ok(actor);
+      assert.ok(random);
+    });
+
     it('can adopt changes', function () {
       const actor = new Actor({ activity: 'SLEEPING' });
 

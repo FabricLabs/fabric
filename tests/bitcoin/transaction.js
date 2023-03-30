@@ -14,4 +14,22 @@ describe('@fabric/core/types/bitcoin/transaction', function () {
     const tx = new Transaction();
     assert.ok(tx);
   });
+
+  it('provides a hash', function () {
+    const tx = new Transaction();
+    assert.ok(tx);
+    assert.ok(tx.hash);
+  });
+
+  it('provides a txid', function () {
+    const tx = new Transaction();
+    assert.ok(tx);
+    assert.ok(tx.txid);
+  });
+
+  it('provides an id', function () {
+    const tx = new Transaction();
+    assert.ok(tx);
+    assert.ok(tx.id);
+  });
 });
