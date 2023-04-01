@@ -3,6 +3,8 @@
 const Actor = require('./actor');
 
 module.exports = {
-  Actor: Actor,
+  definitions: {
+    Actor: Actor
+  },
   version: 'v0.1.0-RC1'
 };

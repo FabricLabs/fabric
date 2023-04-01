@@ -18,9 +18,8 @@ const Ledger = require('../types/ledger');
 const Machine = require('../types/machine');
 const Message = require('../types/message');
 const Observer = require('../types/observer');
-const Opcode = require('../types/opcode');
 const Oracle = require('../types/oracle');
-const Peer = require('./peer');
+const Peer = require('../types/peer');
 const Program = require('../types/program');
 const Remote = require('../types/remote');
 const Resource = require('../types/resource');
@@ -122,7 +121,7 @@ class Fabric extends Service {
   static get Stack () { return Stack; }
   static get State () { return State; }
   static get Store () { return Store; }
-  static get Swarm () { return Swarm; }
+  // static get Swarm () { return Swarm; }
   // static get Transaction () { return Transaction; }
   static get Vector () { return Vector; }
   static get Wallet () { return Wallet; }
@@ -245,7 +244,7 @@ class Fabric extends Service {
 
   use (name, description) {
     this.log('[FABRIC]', `defining <code>${name}</code> as:`, description);
-    this.opcodes[name] = new Opcode(description);
+    this.opcodes[name] = description.bind(this);
     return this.define(name, description);
   }
 

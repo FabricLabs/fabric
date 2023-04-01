@@ -1,0 +1,19 @@
+digraph LightningPlaynet {
+  "alice"
+    -> "bob"
+    -> "carol"
+
+  "bob" -> {
+    "alice"
+    "carol"
+  }
+
+  subgraph cluster_externals {
+    label = "Alice's Domain"
+    "alice"
+    "Alice's Public Web Service"
+
+    "Alice's Public Web Service" -> "alice"
+    "alice" -> "Alice's Public Web Service"
+  }
+}
