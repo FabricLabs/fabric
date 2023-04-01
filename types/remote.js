@@ -41,11 +41,13 @@ class Remote extends Actor {
       entropy: Math.random(),
       macaroon: null,
       secure: true,
+      state: {
+        status: 'PAUSED'
+      },
       host: 'hub.fabric.pub',
       port: 443
     }, config);
 
-    this.host = this.settings.host || this.settings.authority;
     this.secure = this.settings.secure;
     this.socket = null;
 
@@ -64,6 +66,22 @@ class Remote extends Actor {
     };
 
     return this;
+  }
+
+  set host (value) {
+    if (!(value instanceof String)) throw new Error('Host must be a string.');
+    this.settings.host = value;
+    return this.settings.host;
+  }
+
+  get host () {
+    return this.settings.host;
+  }
+
+  set port (value) {
+    if (!(value instanceof Number)) throw new Error('Port must be a number.');
+    this.settings.port = value;
+    return this.settings.port;
   }
 
   get port () {
