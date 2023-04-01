@@ -69,7 +69,7 @@ class Remote extends Actor {
   }
 
   set host (value) {
-    if (!(value instanceof String)) throw new Error('Host must be a string.');
+    if (typeof value !== 'string') throw new Error('Host must be a string.');
     this.settings.host = value;
     return this.settings.host;
   }
@@ -79,7 +79,7 @@ class Remote extends Actor {
   }
 
   set port (value) {
-    if (!(value instanceof Number)) throw new Error('Port must be a number.');
+    if (!Number.isInteger(value)) throw new Error('Port must be an integer.');
     this.settings.port = value;
     return this.settings.port;
   }
