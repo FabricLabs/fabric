@@ -1,7 +1,7 @@
 'use strict';
 
 // Generics
-const { EventEmitter } = require('events');
+const EventEmitter = require('events');
 
 // Dependencies
 const monitor = require('fast-json-patch');
@@ -366,6 +366,12 @@ class Actor extends EventEmitter {
     return this;
   }
 
+  validate () {
+    if (!this.state) return false;
+    if (!this.id) return false;
+    return true;
+  }
+
   /**
    * Get the inner value of the Actor with an optional cast type.
    * @param {String} [format] Cast the value to one of: `buffer, hex, json, string`
@@ -409,27 +415,23 @@ class Actor extends EventEmitter {
    * @returns {Object} Fabric state.
    */
   _readObject (input = {}) {
-    let state = {};
-
     if (typeof input === 'string') {
-      state = Object.assign(state, {
+      return Object.assign({}, {
         type: 'String',
         size: input.length,
         content: input,
         encoding: 'utf8'
       });
     } else if (input instanceof Buffer) {
-      state = Object.assign(state, {
+      return Object.assign({}, {
         type: 'Buffer',
         size: input.length,
         content: input.toString('hex'),
         encoding: 'hex'
       });
     } else {
-      state = Object.assign(state, input);
+      return Object.assign({}, input);
     }
-
-    return state;
   }
 }
 
