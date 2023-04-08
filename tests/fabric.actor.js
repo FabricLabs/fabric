@@ -35,6 +35,21 @@ describe('@fabric/core/types/actor', function () {
       assert.strictEqual(actor.state.activity, 'WAKING');
     });
 
+    it('can validate', function () {
+      const actor = new Actor({ activity: 'SLEEPING' });
+
+      actor.adopt([
+        { op: 'replace', path: '/activity', value: 'WAKING' }
+      ]);
+
+      const valid = actor.validate();
+
+      assert.ok(actor);
+      assert.ok(actor.id);
+      assert.ok(valid);
+      assert.strictEqual(actor.state.activity, 'WAKING');
+    });
+
     xit('provides a risk indicator when seed is provided', function () {
       const actor = new Actor({
         content: 'Hello again, world!',
