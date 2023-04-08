@@ -3,6 +3,8 @@ on:
   pull_request:
     branches:
     - master
+    - feature/v0.1.0-RC1
+    - feature/validation
   push:
     branches:
     - master
