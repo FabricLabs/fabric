@@ -122,7 +122,7 @@ class Actor extends EventEmitter {
    */
   static randomBytes (count = 32) {
     if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
-      const array = new Uint8Array(length);
+      const array = new Uint8Array(count);
       window.crypto.getRandomValues(array);
       return Buffer.from(array);
     } else {
@@ -187,6 +187,7 @@ class Actor extends EventEmitter {
    * @returns {String} 32-byte ID
    */
   commit () {
+    const now = new Date();
     const state = new Actor(this.state);
     const changes = monitor.generate(this.observer);
     const parent = (this.history.length) ? this.history[this.history.length - 1].state : null;
@@ -197,7 +198,18 @@ class Actor extends EventEmitter {
     });
 
     this.history.push(commit);
+
     this.emit('commit', commit);
+    this.emit('message', {
+      type: 'ActorMessage',
+      data: {
+        actor: { id: this.id },
+        created: now.toISOString(),
+        object: changes,
+        type: 'Changes'
+      }
+    });
+
     return commit.id;
   }
 

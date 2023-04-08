@@ -40,7 +40,7 @@ const struct = require('struct');
 // Fabric Types
 const Actor = require('./actor');
 const Label = require('./label');
-const Signer = require('./signer');
+// const Signer = require('./signer');
 
 // Function Definitions
 const padDigits = require('../functions/padDigits');
@@ -83,7 +83,8 @@ class Message extends Actor {
     if (input.signer) {
       this.signer = input.signer;
     } else {
-      this.signer = new Signer();
+      this.signer = null;
+      // this.signer = new Signer();
     }
 
     if (input.data && input.type) {
