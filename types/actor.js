@@ -135,11 +135,17 @@ class Actor extends EventEmitter {
     return Hash256.digest(buffer);
   }
 
+  get spendable () {
+    if (!this.signer) return false;
+    return false;
+  }
+
   get generic () {
     return this.toGenericMessage();
   }
 
   get preimage () {
+    if (!this.generic) throw new Error('Could not get generic');
     const string = JSON.stringify(this.generic, null, '  ');
     const secret = Buffer.from(string, 'utf8');
     const preimage = Hash256.digest(secret);
