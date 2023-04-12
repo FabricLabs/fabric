@@ -136,7 +136,7 @@ class Message extends Actor {
 
   get Uint256 () {
     // 256 bits
-    return Buffer.from((this.raw && this.raw.hash) ? `0x${padDigits(this.raw.hash, 8)}` : crypto.randomBytes(32));
+    return Buffer.from((this.raw && this.raw.hash) ? `0x${padDigits(this.raw.hash, 8)}` : Actor.randomBytes(32));
   }
 
   set signature (value) {
