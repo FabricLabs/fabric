@@ -483,6 +483,7 @@ class Service extends Actor {
     const resource = Object.assign({ name }, definition);
     this.resources[name] = new Resource(resource);
     this.emit('resource', this.resources[name]);
+    return this.resources[name];
   }
 
   _handleTrustedDebug (message) {
