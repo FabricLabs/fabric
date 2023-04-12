@@ -94,6 +94,17 @@ C^i
 ### Peer Protocol
 Initiator sends a `P2P_SESSION_OFFER` message, counterparty responds with `P2P_SESSION_OPEN` message.
 
+```
+INITATIOR                     COUNTERPARTY
+00: CONNECT
+01: SESSION_OFFER ->
+02:                               VALIDATE
+03:                        <- SESSION_OPEN
+04: READY
+```
+
+The `Session` is now open.
+
 #### Negotiation
 ```
 incorrect state            correct state

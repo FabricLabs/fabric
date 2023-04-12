@@ -139,7 +139,6 @@
     "jsdoc": "4.0.2",
     "jsdoc-to-markdown": "7.1.1",
     "json-to-dot": "1.1.0",
-    "license-checker": "25.0.1",
     "mocha": "10.2.0"
   },
   "c8": {
