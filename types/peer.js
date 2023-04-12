@@ -26,7 +26,7 @@ const noise = require('noise-protocol-stream');
 
 // Dependencies
 const merge = require('lodash.merge');
-const upnp = require('nat-upnp');
+const upnp = require('nat-upnp-2');
 
 // Fabric Types
 const Actor = require('./actor');
@@ -65,6 +65,7 @@ class Peer extends Service {
         }
       },
       interface: '0.0.0.0',
+      interval: 60000, // 1 minute
       network: 'regtest',
       networking: true,
       listen: true,
