@@ -150,6 +150,18 @@ describe('@fabric/core/types/service', function () {
     });
   });
 
+  describe('_defineResource()', function () {
+    it('can define a resoure successfully', async function () {
+      const service = new Service();
+      await service.start();
+      const resource = await service._defineResource('Test', {});
+      await service.stop();
+      assert.ok(service);
+      assert.ok(resource);
+      assert.strictEqual(resource.name, 'Test');
+    });
+  });
+
   describe('_registerChannel()', function () {
     it('can register a channel successfully', async function () {
       const service = new Service();
