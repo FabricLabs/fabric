@@ -322,6 +322,12 @@ class Service extends Actor {
     return result;
   }
 
+  // Synchronize with any external sources
+  sync () {
+    if (!this._sources) this._sources = [];
+    return this;
+  }
+
   /**
    * Explicitly trust all events from a known source.
    * @param  {EventEmitter} source Emitter of events.
@@ -483,6 +489,7 @@ class Service extends Actor {
     const resource = Object.assign({ name }, definition);
     this.resources[name] = new Resource(resource);
     this.emit('resource', this.resources[name]);
+    return this.resources[name];
   }
 
   _handleTrustedDebug (message) {

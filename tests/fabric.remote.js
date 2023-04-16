@@ -29,6 +29,18 @@ describe('@fabric/core/types/remote', function () {
       assert.equal(Remote instanceof Function, true);
     });
 
+    it('allows the "host" property to be updated', function () {
+      const remote = new Remote();
+      remote.host = 'localhost.localdomain';
+      assert.ok(remote);
+    });
+
+    it('allows the "port" property to be updated', function () {
+      const remote = new Remote();
+      remote.port = 19999;
+      assert.ok(remote);
+    });
+
     it('can instantiate from sample data', function (done) {
       async function test () {
         const remote = new Remote(sample);
@@ -39,11 +51,31 @@ describe('@fabric/core/types/remote', function () {
       test();
     });
 
-    it('can call enumerate', function (done) {
+    it('handles usernames and passwords', function (done) {
       async function test () {
         try {
           const remote = new Remote(sample);
           const response = await remote.enumerate('/');
+
+          assert.ok(remote);
+          assert.ok(response);
+        } catch (exception) {
+          
+        }
+        done();
+      }
+
+      test();
+    });
+
+    it('can call enumerate', function (done) {
+      async function test () {
+        try {
+          const remote = new Remote(Object.assign({}, sample, {
+            username: 'foo',
+            password: 'bar'
+          }));
+          const response = await remote._GET('/examples/restricted');
 
           assert.ok(remote);
           assert.ok(response);

@@ -34,7 +34,7 @@ class Node extends Service {
       peering: true,
       service: Service,
       settings: {}
-    }, this.settings, settings);
+    }, settings);
 
     // Local Services
     this.node = new Peer(this.settings);

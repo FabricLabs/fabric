@@ -25,7 +25,6 @@ const Hash256 = require('./hash256');
 
 // Simple Key Management
 const BIP32 = require('bip32').default;
-const bip32 = new BIP32(ecc);
 const bip39 = require('bip39');
 
 // NOTE: see also @fabric/passport
@@ -73,6 +72,8 @@ class Key {
       witness: true
     }, input);
 
+    this.bip32 = new BIP32(ecc);
+
     this.clock = 0;
     this.master = null;
     this.private = null;
@@ -96,7 +97,7 @@ class Key {
     switch (this._mode) {
       case 'FROM_SEED':
         const seed = bip39.mnemonicToSeedSync(this.settings.seed, this.settings.passphrase);
-        const root = bip32.fromSeed(seed);
+        const root = this.bip32.fromSeed(seed);
 
         // TODO: delete seed before constructor completes (or remove this line)
         this.seed = this.settings.seed;
@@ -108,13 +109,13 @@ class Key {
         this.status = 'seeded';
         break;
       case 'FROM_XPRV':
-        this.master = bip32.fromBase58(this.settings.xprv);
+        this.master = this.bip32.fromBase58(this.settings.xprv);
         this.xprv = this.master.toBase58();
         this.xpub = this.master.neutered().toBase58();
         this.keypair = ec.keyFromPrivate(this.master.privateKey);
         break;
       case 'FROM_XPUB':
-        const xpub = bip32.fromBase58(this.settings.xpub);
+        const xpub = this.bip32.fromBase58(this.settings.xpub);
         this.keypair = ec.keyFromPublic(xpub.publicKey);
         break;
       case 'FROM_PRIVATE_KEY':
@@ -130,7 +131,7 @@ class Key {
       case 'FROM_RANDOM':
         const mnemonic = bip39.generateMnemonic();
         const interim = bip39.mnemonicToSeedSync(mnemonic);
-        this.master = bip32.fromSeed(interim);
+        this.master = this.bip32.fromSeed(interim);
         this.keypair = ec.keyFromPrivate(this.master.privateKey);
         break;
     }

@@ -77,6 +77,9 @@ An `ActorSet` is a hashmap of `Actor` instances, address by their ID.
 #### Collection
 A `Collection` is a list of `Actor` instances.
 
+#### Contract
+The `Contract` class provides a simple method for creating agreements between a known set of peers.
+
 ## Peering
 Peers are identified in the Fabric network by their [**Fabric Identity**][fabric-identity], a `bech32m` encoding of the prefix `id` and public key body.
 
@@ -91,7 +94,19 @@ C^i
 ### Peer Protocol
 Initiator sends a `P2P_SESSION_OFFER` message, counterparty responds with `P2P_SESSION_OPEN` message.
 
+```
+INITATIOR                     COUNTERPARTY
+00: CONNECT
+01: SESSION_OFFER ->
+02:                               VALIDATE
+03:                        <- SESSION_OPEN
+04: READY
+```
+
+The `Session` is now open.
+
 #### Negotiation
+```
 incorrect state            correct state
   |                                    |
   v                                    |
@@ -103,6 +118,14 @@ incorrect state            correct state
   |                                    |
   |                                    v
    \---------------------------------> sign -> broadcast
+```
+
+### Layers
+```
+sha256(input) -> sha256(hash) -> (100% signing set signature)
+```
+
+
 
 
 [fabric-identity]: IDENTITY.md

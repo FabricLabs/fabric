@@ -1,7 +1,7 @@
 'use strict';
 
 // Generics
-const { EventEmitter } = require('events');
+const EventEmitter = require('events');
 
 // Dependencies
 const monitor = require('fast-json-patch');
@@ -122,7 +122,7 @@ class Actor extends EventEmitter {
    */
   static randomBytes (count = 32) {
     if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
-      const array = new Uint8Array(length);
+      const array = new Uint8Array(count);
       window.crypto.getRandomValues(array);
       return Buffer.from(array);
     } else {
@@ -135,11 +135,17 @@ class Actor extends EventEmitter {
     return Hash256.digest(buffer);
   }
 
+  get spendable () {
+    if (!this.signer) return false;
+    return false;
+  }
+
   get generic () {
     return this.toGenericMessage();
   }
 
   get preimage () {
+    if (!this.generic) throw new Error('Could not get generic');
     const string = JSON.stringify(this.generic, null, '  ');
     const secret = Buffer.from(string, 'utf8');
     const preimage = Hash256.digest(secret);
@@ -187,6 +193,7 @@ class Actor extends EventEmitter {
    * @returns {String} 32-byte ID
    */
   commit () {
+    const now = new Date();
     const state = new Actor(this.state);
     const changes = monitor.generate(this.observer);
     const parent = (this.history.length) ? this.history[this.history.length - 1].state : null;
@@ -197,7 +204,18 @@ class Actor extends EventEmitter {
     });
 
     this.history.push(commit);
+
     this.emit('commit', commit);
+    this.emit('message', {
+      type: 'ActorMessage',
+      data: {
+        actor: { id: this.id },
+        created: now.toISOString(),
+        object: changes,
+        type: 'Changes'
+      }
+    });
+
     return commit.id;
   }
 
@@ -366,6 +384,12 @@ class Actor extends EventEmitter {
     return this;
   }
 
+  validate () {
+    if (!this.state) return false;
+    if (!this.id) return false;
+    return true;
+  }
+
   /**
    * Get the inner value of the Actor with an optional cast type.
    * @param {String} [format] Cast the value to one of: `buffer, hex, json, string`
@@ -409,27 +433,23 @@ class Actor extends EventEmitter {
    * @returns {Object} Fabric state.
    */
   _readObject (input = {}) {
-    let state = {};
-
     if (typeof input === 'string') {
-      state = Object.assign(state, {
+      return Object.assign({}, {
         type: 'String',
         size: input.length,
         content: input,
         encoding: 'utf8'
       });
     } else if (input instanceof Buffer) {
-      state = Object.assign(state, {
+      return Object.assign({}, {
         type: 'Buffer',
         size: input.length,
         content: input.toString('hex'),
         encoding: 'hex'
       });
     } else {
-      state = Object.assign(state, input);
+      return Object.assign({}, input);
     }
-
-    return state;
   }
 }
 

@@ -1,7 +1,5 @@
 'use strict';
 
-const crypto = require('crypto');
-
 /**
  * Simple interaction with 256-bit spaces.
  */
@@ -16,7 +14,7 @@ class Hash256 {
    */
   constructor (settings = {}) {
     if (typeof settings === 'string') settings = { input: settings };
-    if (!settings.input) settings.input = crypto.randomBytes(32).toString('hex');
+    if (!settings.input) settings.input = require('crypto').randomBytes(32).toString('hex');
 
     this.settings = Object.assign({
       hash: Hash256.digest(settings.input)
@@ -33,8 +31,17 @@ class Hash256 {
       throw new Error(`Input to process must be of type "String" or "Buffer" to digest.`);
     }
 
-    // consume and output as string
-    return crypto.createHash('sha256').update(input).digest('hex');
+    if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(input);
+      return crypto.subtle.digest('SHA-256', data).then(buffer => {
+        const hashArray = Array.from(new Uint8Array(buffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        return hashHex;
+      });
+    } else {
+      return require('crypto').createHash('sha256').update(input).digest('hex');
+    }
   }
 
   // TODO: document `hash256.value`
