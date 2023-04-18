@@ -40,7 +40,7 @@ const struct = require('struct');
 // Fabric Types
 const Actor = require('./actor');
 const Label = require('./label');
-const Signer = require('./signer');
+// const Signer = require('./signer');
 
 // Function Definitions
 const padDigits = require('../functions/padDigits');
@@ -83,7 +83,8 @@ class Message extends Actor {
     if (input.signer) {
       this.signer = input.signer;
     } else {
-      this.signer = new Signer();
+      this.signer = null;
+      // this.signer = new Signer();
     }
 
     if (input.data && input.type) {
@@ -135,7 +136,7 @@ class Message extends Actor {
 
   get Uint256 () {
     // 256 bits
-    return Buffer.from((this.raw && this.raw.hash) ? `0x${padDigits(this.raw.hash, 8)}` : crypto.randomBytes(32));
+    return Buffer.from((this.raw && this.raw.hash) ? `0x${padDigits(this.raw.hash, 8)}` : Actor.randomBytes(32));
   }
 
   set signature (value) {

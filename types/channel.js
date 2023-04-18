@@ -11,7 +11,7 @@ const Scribe = require('./scribe');
 const Secret = require('./secret');
 
 // const Consensus = require('./consensus');
-const Layer = require('./layer');
+// const Layer = require('./layer');
 
 /**
  * The {@link Channel} is a encrypted connection with a member of your
@@ -100,10 +100,10 @@ class Channel extends Scribe {
    */
   add (amount) {
     const value = new BN(amount + '');
-    const layer = new Layer({
+    /* const layer = new Layer({
       parents: [this._parent],
       uint256: value
-    });
+    }); */
 
     this._state.value.outgoing += amount;
     this.commit();
@@ -121,7 +121,7 @@ class Channel extends Scribe {
    * @param {Mixed} input Instance of a {@link Transaction}.
    */
   async fund (input) {
-    this._layer = new Layer({ inputs: [input] });
+    // this._layer = new Layer({ inputs: [input] });
     this._state.inputs.push(input);
     this.commit();
   }

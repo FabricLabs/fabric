@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <meta name="viewport" content="initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>@fabric/http</title>
+  <!-- <link rel="manifest" href="/manifest.json"> -->
+  <link rel="stylesheet" type="text/css" href="/styles/semantic.css" />
+  <link rel="stylesheet" type="text/css" href="/styles/screen.css" />
+  <script src="/scripts/jquery-3.4.1.js"></script>
+  <script src="/scripts/semantic.js"></script>
+  <script src="/bundles/browser.js"></script>
+</head>
+<body data-bind="3e459605a1e07a8de8443f073cc35dc8992f9bd3f7f29877855593d5658765c4" data-hash="3e459605a1e07a8de8443f073cc35dc8992f9bd3f7f29877855593d5658765c4">
+  <fabric-site class="ui container" id="site">
+    <fabric-bridge host="localhost" port="9999" secure="false"></fabric-bridge>
+    <fabric-console id="console" style="display: none;">
+      <fabric-card class="ui fluid card">
+        <fabric-card-content class="content">
+          <p>Console...</p>
+        </fabric-card-content>
+      </fabric-card>
+    </fabric-console>
+    <fabric-menu id="tray">
+      <i id="tray-settings" class="ui large inverted cog icon"></i>
+    </fabric-menu>
+    <fabric-menu>
+      <fabric-card id="settings" class="ui fluid card" style="display: none;">
+        <fabric-card-header class="ui header">Settings</fabric-card-header>
+        <fabric-card-content class="ui content">
+          <p>Foo</p>
+        </fabric-card-content>
+      </fabric-card>
+    </fabric-menu>
+    <fabric-grid class="ui centered grid">
+      <fabric-column class="twelve wide column">
+        <fabric-card class="ui fluid card" id="overlay">
+          <fabric-card-content class="content" style="text-align: center;">
+            <h1 class="ui huge header" data-bind="/title"><code>Default Site</code></h1>
+            <p>file browser</p>
+          </fabric-card-content>
+          <fabric-card-content class="extra hidden" style="display: none;">
+            <h2>Debug</h2>
+          </fabric-card-content>
+          <fabric-card-content class="bottom attached" style="display: none;">
+            <fabric-button-group class="ui small bottom attached left aligned buttons">
+              <fabric-button class="ui labeled icon button"><i class="ui linkify icon"></i> <code>d8d37169e8c752ee66ac06de89778bc74b9280bc84019df0a7874a689156f8e4</code></fabric-button>
+            </fabric-button-group>
+          </fabric-card-content>
+        </fabric-card>
+      </fabric-column>
+    </fabric-grid>
+  </fabric-site>
+</body>
+</html>

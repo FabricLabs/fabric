@@ -21,8 +21,10 @@ const {
 } = require('../constants');
 
 const Message = require('../types/message');
+const Signer = require('../types/signer');
 const assert = require('assert');
 
+const signer = new Signer();
 const example = {
   type: 'Call',
   data: {
@@ -115,7 +117,7 @@ describe('@fabric/core/types/message', function () {
     it('can sign a message', async function prove () {
       const message = Message.fromVector(['Call', JSON.stringify(example.data)]);
       const literal = message.toObject();
-      const signed = message.sign();
+      const signed = message._setSigner(signer).sign();
 
       assert.ok(signed);
       assert.ok(message);
@@ -155,7 +157,7 @@ describe('@fabric/core/types/message', function () {
     it('can verify authorship', async function prove () {
       const message = Message.fromVector(['Generic', JSON.stringify(example.data)]);
       const literal = message.toObject();
-      const signed = message.sign();
+      const signed = message._setSigner(signer).sign();
       const verified = signed.verify();
 
       assert.ok(message);

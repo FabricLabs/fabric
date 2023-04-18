@@ -2,6 +2,9 @@ name: npm test
 on:
   pull_request:
     branches:
+    - '**'
+  push:
+    branches:
     - master
 jobs:
   test:

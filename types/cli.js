@@ -25,6 +25,7 @@ const Message = require('./message');
 const Hash256 = require('./hash256');
 const Identity = require('./identity');
 const Filesystem = require('./filesystem');
+const Signer = require('./signer');
 const Wallet = require('./wallet');
 
 // Services
@@ -97,6 +98,7 @@ class CLI extends App {
     this.connections = {};
 
     this.fs = new Filesystem(this.settings.storage);
+    this.signer = null;
 
     // State
     this._state = {
@@ -134,6 +136,8 @@ class CLI extends App {
 
   assumeIdentity (key) {
     this.identity = new Identity(key);
+    this.signer = new Signer(key);
+    return this;
   }
 
   attachWallet (wallet) {
@@ -959,7 +963,7 @@ class CLI extends App {
         target: '/messages'
       };
 
-      const message = Message.fromVector(['ChatMessage', JSON.stringify(msg)]).sign();
+      const message = Message.fromVector(['ChatMessage', JSON.stringify(msg)])._setSigner(this.signer).sign();
       // this._appendDebug(`Chat Message created (${message.data.length} bytes): ${message.data}`);
       self.setPane('messages');
 
