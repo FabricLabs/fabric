@@ -35,6 +35,8 @@ The base list of Fabric Message Types is as follows:
 #### The `GENERIC` Message Type
 UTF8-encoded JSON payload.
 
+If the `version` field is `1` the payload MUST be valid JSON.
+
 #### The `ANNOUNCE` Message Type
 Used for Peer announcements.
 

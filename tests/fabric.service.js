@@ -150,6 +150,16 @@ describe('@fabric/core/types/service', function () {
     });
   });
 
+  describe('sync()', function () {
+    it('can run sync successfully', async function () {
+      const service = new Service();
+      await service.start();
+      service.sync();
+      await service.stop();
+      assert.ok(service);
+    });
+  });
+
   describe('_defineResource()', function () {
     it('can define a resoure successfully', async function () {
       const service = new Service();

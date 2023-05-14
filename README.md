@@ -4,6 +4,8 @@
 [![GitHub contributors][badge-contributors]][contributors]
 [![Community][badge-chat]][chat]
 
+[The `@fabric/core` project][fabric-github] provides an API for building peer-to-peer applications on [Bitcoin][bitcoin].
+
 Fabric is an experimental approach to the secure establishment and execution of
 peer-to-peer agreements ("contracts") using Bitcoin as a bonding mechanism. The
 `@fabric/core` project provides a robust set of implementations as JavaScript
