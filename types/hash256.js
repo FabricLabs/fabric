@@ -21,6 +21,34 @@ class Hash256 {
     }, settings);
   }
 
+  static compute (input) {
+    if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
+      let hash = '';
+      let error = null;
+
+      Hash256.hash(input).then(result => {
+        hash = result;
+      }).catch(exception => {
+        error = exception;
+      });
+
+      const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+      while (!hash) {
+        sleep(1);
+      }
+
+      if (error) {
+        console.error('error:', error);
+        return null;
+      }
+
+      return hash;
+    } else {
+      return require('crypto').createHash('sha256').update(input).digest('hex');
+    }
+  }
+
   /**
    * Produce a SHA256 digest of some input data.
    * @param {String|Buffer} input Content to digest.
@@ -32,13 +60,7 @@ class Hash256 {
     }
 
     if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
-      const encoder = new TextEncoder();
-      const data = encoder.encode(input);
-      return crypto.subtle.digest('SHA-256', data).then(buffer => {
-        const hashArray = Array.from(new Uint8Array(buffer));
-        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-        return hashHex;
-      });
+      return Hash256.compute(input);
     } else {
       return require('crypto').createHash('sha256').update(input).digest('hex');
     }
@@ -54,6 +76,15 @@ class Hash256 {
    */
   static reverse (input = '') {
     return Buffer.from(input, 'hex').reverse().toString('hex');
+  }
+
+  static async hash (input) {
+    const encoder = new TextEncoder();
+    const dataBuffer = encoder.encode(input);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return hashHex;
   }
 
   reverse (input = this.value) {

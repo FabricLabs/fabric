@@ -27,6 +27,13 @@ describe('@fabric/core/types/hash256', function () {
       assert.strictEqual(hash256.value, fixture);
     });
 
+    it('provides a static compute() method', function () {
+      const digest = Hash256.compute(sample);
+      assert.ok(digest);
+      assert.strictEqual(digest.length, 64);
+      assert.strictEqual(digest, fixture);
+    });
+
     it('provides a static digest() method', function () {
       const digest = Hash256.digest(sample);
       assert.ok(digest);

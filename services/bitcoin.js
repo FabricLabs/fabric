@@ -1853,7 +1853,7 @@ class Bitcoin extends Service {
    */
   async stop () {
     if (this.peer && this.peer.connected) await this.peer.destroy();
-    if (this.fullnode) await this.fullnode.close();
+    // if (this.fullnode) await this.fullnode.close();
     await this.wallet.stop();
     // await this.chain.stop();
 
