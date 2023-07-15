@@ -1704,7 +1704,7 @@ class Bitcoin extends Service {
     this.emit('log', `Beginning chain sync for height ${this.height} with best block: ${this.best}`);
 
     await this._syncBestBlock();
-    await this._syncChainHeadersOverRPC(this.best);
+    // await this._syncChainHeadersOverRPC(this.best);
     // await this._syncRawChainOverRPC();
 
     this.state.status = 'READY';

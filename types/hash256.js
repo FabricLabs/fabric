@@ -1,5 +1,7 @@
 'use strict';
 
+const { crypto } = require('bitcoinjs-lib');
+
 /**
  * Simple interaction with 256-bit spaces.
  */
@@ -14,39 +16,24 @@ class Hash256 {
    */
   constructor (settings = {}) {
     if (typeof settings === 'string') settings = { input: settings };
-    if (!settings.input) settings.input = require('crypto').randomBytes(32).toString('hex');
+    if (!settings.input) {
+      if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+        settings.input = window.crypto.getRandomValues(new Uint8Array(32)).join('');
+      } else {
+        settings.input = require('crypto').randomBytes(32).toString('hex');
+      }
+    }
 
     this.settings = Object.assign({
       hash: Hash256.digest(settings.input)
     }, settings);
+
+    return this;
   }
 
   static compute (input) {
-    if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
-      let hash = '';
-      let error = null;
-
-      Hash256.hash(input).then(result => {
-        hash = result;
-      }).catch(exception => {
-        error = exception;
-      });
-
-      const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-
-      while (!hash) {
-        sleep(1);
-      }
-
-      if (error) {
-        console.error('error:', error);
-        return null;
-      }
-
-      return hash;
-    } else {
-      return require('crypto').createHash('sha256').update(input).digest('hex');
-    }
+    if (typeof input === 'string') input = Buffer.from(input, 'utf8');
+    return crypto.hash256(input).toString('hex');
   }
 
   /**
@@ -59,11 +46,7 @@ class Hash256 {
       throw new Error(`Input to process must be of type "String" or "Buffer" to digest.`);
     }
 
-    if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
-      return Hash256.compute(input);
-    } else {
-      return require('crypto').createHash('sha256').update(input).digest('hex');
-    }
+    return Hash256.compute(input);
   }
 
   // TODO: document `hash256.value`
