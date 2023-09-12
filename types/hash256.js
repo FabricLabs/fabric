@@ -1,6 +1,6 @@
 'use strict';
 
-const { crypto } = require('bitcoinjs-lib');
+const { sha256 } = require('@noble/hashes/sha256');
 
 /**
  * Simple interaction with 256-bit spaces.
@@ -24,8 +24,12 @@ class Hash256 {
       }
     }
 
+    // Ensure the input can be cast to a buffer
+    const buffer = Buffer.from(settings.input, 'utf8');
+
+    // Settings
     this.settings = Object.assign({
-      hash: Hash256.digest(settings.input)
+      hash: Hash256.digest(buffer)
     }, settings);
 
     return this;
@@ -33,7 +37,8 @@ class Hash256 {
 
   static compute (input) {
     if (typeof input === 'string') input = Buffer.from(input, 'utf8');
-    return crypto.hash256(input).toString('hex');
+    const buffer = sha256(input);
+    return Buffer.from(buffer).toString('hex');
   }
 
   /**
@@ -47,6 +52,10 @@ class Hash256 {
     }
 
     return Hash256.compute(input);
+  }
+
+  get hash () {
+    return this.value;
   }
 
   // TODO: document `hash256.value`

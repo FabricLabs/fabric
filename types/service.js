@@ -78,7 +78,7 @@ class Service extends Actor {
         messages: {},
         members: {}
       } */
-    }, this.settings, settings);
+    }, settings);
 
     // Reserve a place for ourselves
     this.agent = null;
