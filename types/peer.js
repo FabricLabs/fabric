@@ -75,7 +75,9 @@ class Peer extends Service {
         actors: {},
         channels: {},
         contracts: {},
-        messages: {}
+        documents: {},
+        messages: {},
+        services: {}
       }, config.state),
       upnp: false,
       key: {}
@@ -110,10 +112,13 @@ class Peer extends Service {
     this.chains = {};
     this.candidates = [];
     this.connections = {};
+    this.history = [];
     this.peers = {};
+    this.mailboxes = {};
     this.memory = {};
     this.handlers = {};
     this.messages = new Set();
+    this.sessions = {};
 
     // Internal Stack Machine
     this.machine = new Machine();

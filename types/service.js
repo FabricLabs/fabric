@@ -49,6 +49,8 @@ class Service extends Actor {
     // Initialize Scribe, our logging tool
     super(settings);
 
+    this.name = this.constructor.name;
+
     // Configure (with defaults)
     this.settings = merge({
       name: 'Service',
@@ -60,6 +62,9 @@ class Service extends Actor {
         memory: {
           max: 67108864
         }
+      },
+      fs: {
+        path: `./stores/fabric-service-${this.name}`
       },
       state: {
         ...super.state,

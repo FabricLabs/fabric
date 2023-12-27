@@ -22,7 +22,10 @@ class Token {
     this.settings = Object.assign({
       capability: 'OP_0',
       issuer: null,
-      subject: null
+      subject: null,
+      state: {
+        status: 'READY'
+      }
     }, settings);
 
     // Capability
@@ -36,7 +39,16 @@ class Token {
     // ECDSA Signature
     this.signature = null;
 
+    // State
+    this._state = {
+      content: this.settings.state
+    };
+
     return this;
+  }
+
+  get state () {
+    return JSON.parse(JSON.stringify(this._state.content));
   }
 
   static base64UrlEncode (input) {
@@ -58,16 +70,8 @@ class Token {
     const parts = input.split('.');
     const headers = parts[0];
     const payload = parts[1];
-    const signature = parts[2];
-
-    console.log('stuff:', [
-      headers,
-      payload,
-      signature
-    ]);
-
-    const inner = Token.base64UrlDecode(payload);
-    console.log('inner:', inner);
+    // const signature = parts[2];
+    // const inner = Token.base64UrlDecode(payload);
 
     return new Token({
 
@@ -88,7 +92,8 @@ class Token {
       cap: this.capability,
       iat: utime,
       iss: issuer,
-      sub: this.subject
+      sub: this.subject,
+      state: this.state
     };
 
     // TODO: reconcile with JWT spec
@@ -103,11 +108,6 @@ class Token {
     const signature = bitcoin.crypto.sha256(
       Buffer.from(`${encodedHeader}.${encodedPayload}.${secret}`)
     );
-
-    console.log('token:', [
-      header,
-      payload
-    ]);
 
     return [
       encodedHeader,
