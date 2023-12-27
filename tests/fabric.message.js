@@ -157,7 +157,7 @@ describe('@fabric/core/types/message', function () {
     it('can verify authorship', async function prove () {
       const message = Message.fromVector(['Generic', JSON.stringify(example.data)]);
       const literal = message.toObject();
-      const signed = message._setSigner(signer).sign();
+      const signed = message._setSigner(signer).sign(Buffer.from('hello, world!', 'utf8'));
       const verified = signed.verify();
 
       assert.ok(message);

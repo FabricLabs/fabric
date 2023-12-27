@@ -90,7 +90,7 @@ class Federation extends Contract {
       const policy = run(`
         $A = ${this._state.content.validators[index]};
         pk($A)
-      `);
+      ` || this.contract);
 
       const miniscript = run(`miniscript(${policy})`);
       const descriptor = run(`wsh(${miniscript})`);

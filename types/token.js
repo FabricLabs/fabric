@@ -70,11 +70,15 @@ class Token {
     const parts = input.split('.');
     const headers = parts[0];
     const payload = parts[1];
-    // const signature = parts[2];
-    // const inner = Token.base64UrlDecode(payload);
+    const signature = parts[2];
+    const inner = Token.base64UrlDecode(payload);
 
     return new Token({
-
+      capability: inner.cap,
+      issuer: inner.iss,
+      subject: inner.sub,
+      state: inner.state,
+      signature: signature
     });
   }
 

@@ -198,7 +198,7 @@ class Message extends Actor {
     if (!this.raw) throw new Error('No raw property.');
 
     const hash = Hash256.digest(this.raw.data);
-    const signature = this.signer.sign(hash);
+    const signature = this.signer.sign(Buffer.from(hash, 'hex'));
 
     this.raw.author.write(this.signer.pubkey.toString('hex'), 'hex');
     this.raw.signature.write(signature.toString('hex'), 'hex');
@@ -263,8 +263,6 @@ class Message extends Actor {
   }
 
   static parseRawMessage (buffer) {
-    console.log('parsing raw message:', buffer);
-
     const message = {
       magic: buffer.slice(0, 4),
       version: buffer.slice(4, 8),

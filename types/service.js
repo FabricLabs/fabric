@@ -912,6 +912,7 @@ class Service extends Actor {
     });
 
     this.emit('commit', { ...commit.toObject(), id: commit.id });
+    // this.emit('state', this.state);
 
     return commit.id;
   }
