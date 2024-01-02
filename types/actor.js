@@ -132,7 +132,7 @@ class Actor extends EventEmitter {
 
   get id () {
     const buffer = Buffer.from(this.preimage, 'hex');
-    return Hash256.digest(buffer);
+    return Hash256.compute(buffer);
   }
 
   get spendable () {
@@ -148,7 +148,7 @@ class Actor extends EventEmitter {
     if (!this.generic) throw new Error('Could not get generic');
     const string = JSON.stringify(this.generic, null, '  ');
     const secret = Buffer.from(string, 'utf8');
-    const preimage = Hash256.digest(secret);
+    const preimage = Hash256.compute(secret);
     return preimage;
   }
 

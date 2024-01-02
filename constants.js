@@ -12,7 +12,8 @@ const MAX_PEERS = 32;
 const PRECISION = 100;
 
 // Fabric Core
-const FABRIC_USER_AGENT = 'Fabric/Bitcoin 0.1.0-dev (@fabric/core#v0.1.0-RC1)';
+const FABRIC_USER_AGENT = 'Fabric Core 0.1.0 (@fabric/core#v0.1.0-RC1)';
+const BITCOIN_NETWORK = 'mainnet';
 const BITCOIN_GENESIS = '000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f';
 const BITCOIN_GENESIS_ROOT = '4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b';
 const FABRIC_KEY_DERIVATION_PATH = "m/44'/7777'/0'/0/0";
@@ -119,6 +120,7 @@ module.exports = {
   PEER_PORT,
   MAX_PEERS,
   PRECISION,
+  BITCOIN_NETWORK,
   BITCOIN_GENESIS,
   BITCOIN_GENESIS_ROOT,
   FABRIC_KEY_DERIVATION_PATH,

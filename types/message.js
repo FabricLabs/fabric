@@ -33,21 +33,19 @@ const {
   SESSION_START
 } = require('../constants');
 
+const HEADER_SIG_SIZE = 64;
+
 // Dependencies
-const crypto = require('crypto');
+// const crypto = require('crypto');
 const struct = require('struct');
 
 // Fabric Types
 const Actor = require('./actor');
-const Label = require('./label');
+const Hash256 = require('./hash256');
 // const Signer = require('./signer');
 
 // Function Definitions
 const padDigits = require('../functions/padDigits');
-
-// Type Labels
-const TYPE_ETHEREUM_BLOCK        = parseInt((new Label('types/EthereumBlock'))._id, 16);
-const TYPE_ETHEREUM_BLOCK_NUMBER = parseInt((new Label('types/EthereumBlockNumber'))._id, 16);
 
 /**
  * The {@link Message} type defines the Application Messaging Protocol, or AMP.
@@ -199,8 +197,8 @@ class Message extends Actor {
     if (!this.header) throw new Error('No header property.');
     if (!this.raw) throw new Error('No raw property.');
 
-    const hash = crypto.createHash('sha256').update(this.raw.data).digest();
-    const signature = this.signer.sign(hash);
+    const hash = Hash256.digest(this.raw.data);
+    const signature = this.signer.sign(Buffer.from(hash, 'hex'));
 
     this.raw.author.write(this.signer.pubkey.toString('hex'), 'hex');
     this.raw.signature.write(signature.toString('hex'), 'hex');
@@ -219,7 +217,7 @@ class Message extends Actor {
     if (!this.raw) throw new Error('No raw property.');
 
     // Compute sha256 hash of message body
-    const hash = crypto.createHash('sha256').update(this.raw.data).digest();
+    const hash = Hash256.digest(this.raw.data);
 
     // If the raw header doesn't match the computed values, reject
     if (this.raw.hash.toString('hex') !== hash.toString('hex')) {
@@ -331,7 +329,7 @@ class Message extends Actor {
   } */
 
   get id () {
-    return crypto.createHash('sha256').update(this.asRaw()).digest('hex');
+    return Hash256.digest(this.asRaw());
   }
 
   get types () {
@@ -371,9 +369,7 @@ class Message extends Actor {
       'StateRequest': P2P_STATE_REQUEST,
       'Transaction': P2P_TRANSACTION,
       'Call': P2P_CALL,
-      'LogMessage': LOG_MESSAGE_TYPE,
-      'EthereumBlock': TYPE_ETHEREUM_BLOCK,
-      'EthereumBlockNumber': TYPE_ETHEREUM_BLOCK_NUMBER
+      'LogMessage': LOG_MESSAGE_TYPE
     };
   }
 
@@ -467,10 +463,6 @@ Object.defineProperty(Message.prototype, 'type', {
         return 'ChatMessage';
       case P2P_START_CHAIN:
         return 'StartChain';
-      case TYPE_ETHEREUM_BLOCK:
-        return 'EthereumBlock';
-      case TYPE_ETHEREUM_BLOCK_NUMBER:
-        return 'EthereumBlockNumber';
       default:
         return 'GenericMessage';
     }
@@ -496,8 +488,7 @@ Object.defineProperty(Message.prototype, 'data', {
   },
   set (value) {
     if (!value) value = '';
-    const hash = crypto.createHash('sha256').update(value.toString('utf8'));
-    this.raw.hash = hash.digest();
+    this.raw.hash = Hash256.digest(value.toString('utf8'));
     this.raw.data = Buffer.from(value);
     this.raw.size.write(padDigits(this.raw.data.byteLength.toString(16), 8), 'hex');
   }

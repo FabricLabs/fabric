@@ -75,7 +75,9 @@ class Peer extends Service {
         actors: {},
         channels: {},
         contracts: {},
-        messages: {}
+        documents: {},
+        messages: {},
+        services: {}
       }, config.state),
       upnp: false,
       key: {}
@@ -93,7 +95,7 @@ class Peer extends Service {
     this.identity = new Identity(this.settings.key);
     this.signer = new Signer(this.settings.key);
     this.key = new Key(this.settings.key);
-    this.wallet = new Wallet(this.settings.key);
+    // this.wallet = new Wallet(this.settings.key);
 
     // this.hex = this.key.public.encodeCompressed('hex');
     // this.pkh = crypto.createHash('sha256').update(this.hex).digest('hex');
@@ -110,10 +112,13 @@ class Peer extends Service {
     this.chains = {};
     this.candidates = [];
     this.connections = {};
+    this.history = [];
     this.peers = {};
+    this.mailboxes = {};
     this.memory = {};
     this.handlers = {};
     this.messages = new Set();
+    this.sessions = {};
 
     // Internal Stack Machine
     this.machine = new Machine();
@@ -704,7 +709,7 @@ class Peer extends Service {
     this.emit('log', 'Wallet starting...');
 
     try {
-      await this.wallet.start();
+      // await this.wallet.start();
     } catch (exception) {
       this.emit('error', `Could not start wallet: ${exception}`);
     }
@@ -727,7 +732,7 @@ class Peer extends Service {
       }
     }
 
-    if (this.settings.upnp) {
+    if (this.settings.upnp && this.settings.listen) {
       // TODO: convert callbacks to promises
       this.emit('log', 'UPNP starting...');
       this.upnp = upnp.createClient();

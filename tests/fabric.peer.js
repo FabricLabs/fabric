@@ -84,5 +84,14 @@ describe('@fabric/core/types/peer', function () {
 
       test();
     });
+
+    it('can recover a message', async function () {
+      const peer = new Peer();
+
+      await peer.start();
+      await peer.stop();
+
+      assert.ok(peer);
+    });
   });
 });

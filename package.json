@@ -13,7 +13,7 @@
     "test": "tests"
   },
   "engines": {
-    "node": "16.17.1"
+    "node": "18.19.0"
   },
   "scripts": {
     "audit": "npm audit --json --level critical > reports/AUDIT.json",
@@ -111,7 +111,7 @@
     "level": "7.0.1",
     "lodash.merge": "4.6.2",
     "macaroon": "3.0.4",
-    "merkletreejs": "0.1.6",
+    "merkletreejs": "0.3.11",
     "minsc": "0.2.0",
     "mkdirp": "1.0.4",
     "nat-upnp-2": "3.0.3",

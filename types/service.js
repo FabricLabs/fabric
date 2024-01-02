@@ -49,6 +49,8 @@ class Service extends Actor {
     // Initialize Scribe, our logging tool
     super(settings);
 
+    this.name = this.constructor.name;
+
     // Configure (with defaults)
     this.settings = merge({
       name: 'Service',
@@ -60,6 +62,9 @@ class Service extends Actor {
         memory: {
           max: 67108864
         }
+      },
+      fs: {
+        path: `./stores/fabric-service-${this.name}`
       },
       state: {
         ...super.state,
@@ -78,7 +83,7 @@ class Service extends Actor {
         messages: {},
         members: {}
       } */
-    }, this.settings, settings);
+    }, settings);
 
     // Reserve a place for ourselves
     this.agent = null;
@@ -907,6 +912,7 @@ class Service extends Actor {
     });
 
     this.emit('commit', { ...commit.toObject(), id: commit.id });
+    // this.emit('state', this.state);
 
     return commit.id;
   }
