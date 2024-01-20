@@ -159,6 +159,55 @@ class Peer extends Service {
     return this.settings.interface || this.settings.address;
   }
 
+  get documentation () {
+    return {
+      name: 'Fabric',
+      description: 'Manages connections to the Fabric Network.',
+      methods: {
+        ack: {
+          description: 'Acknowledge a message.',
+          parameters: {
+            message: {
+              // TODO: consider making this a FabricMessageID
+              type: 'FabricMessage',
+              description: 'The message to acknowledge.'
+            }
+          },
+          returns: {
+            type: 'Promise',
+            description: 'A Promise which resolves to the completed FabricState.'
+          }
+        },
+        send: {
+          description: 'Send a message to a connected peer.',
+          parameters: {
+            message: {
+              type: 'FabricMessage',
+              description: 'The message to send to the peer.'
+            }
+          },
+          returns: {
+            type: 'Promise',
+            description: 'A Promise which resolves to the response (if any).'
+          }
+        },
+        broadcast: {
+          description: 'Broadcast a message to all connected nodes.',
+          parameters: {
+            message: {
+              type: 'FabricMessage',
+              description: 'The message to send to the node.'
+            }
+          },
+          returns: {
+            type: 'Promise',
+            description: 'A Promise which resolves to the responses (if any).'
+          }
+        }
+      }
+    }
+  }
+
   get interface () {
     return this.settings.interface || this.settings.address;
   }

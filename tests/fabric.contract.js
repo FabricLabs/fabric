@@ -36,6 +36,7 @@ describe('@fabric/core/types/contract', function () {
     it('can publish a contract', function (done) {
       async function test () {
         const contract = new Contract(sample);
+
         contract.on('message', (msg) => {
           switch (msg['@type']) {
             default:
@@ -46,6 +47,7 @@ describe('@fabric/core/types/contract', function () {
               break;
           }
         });
+
         contract.deploy();
       }
 

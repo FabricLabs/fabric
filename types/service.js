@@ -41,9 +41,11 @@ const Store = require('./store');
 class Service extends Actor {
   /**
    * Create an instance of a Service.
-   * @param       {Object} settings Configuration for this service.
-   * @param       {Boolean} [settings.networking=true] Whether or not to connect to the network.
-   * @param       {Object} [settings.@data] Internal data to assign.
+   * @param {Object} [settings] Configuration for this service.
+   * @param {Boolean} [settings.networking=true] Whether or not to connect to the network.
+   * @param {Object} [settings.frequency] Interval frequency in hertz.
+   * @param {Object} [settings.state] Initial state to assign.
+   * @param {Object} [settings.@data] Internal data to assign.
    */
   constructor (settings = {}) {
     // Initialize Scribe, our logging tool
@@ -55,6 +57,7 @@ class Service extends Actor {
     this.settings = merge({
       name: 'Service',
       path: './stores/service',
+      frequency: 0.0133333334, // Hz
       networking: true,
       persistent: false,
       constraints: {
@@ -163,6 +166,10 @@ class Service extends Actor {
 
   get heartbeat () {
     return this._heart;
+  }
+
+  get interval () {
+    return 1000 / this.settings.frequency;
   }
 
   get status () {
