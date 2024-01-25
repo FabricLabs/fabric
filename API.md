@@ -164,6 +164,9 @@ execute either the full set or none.</p>
 <dt><a href="#Swarm">Swarm</a> : <code>String</code></dt>
 <dd><p>Orchestrates a network of peers.</p>
 </dd>
+<dt><a href="#Token">Token</a></dt>
+<dd><p>Implements a capability-based security token.</p>
+</dd>
 <dt><a href="#Transition">Transition</a></dt>
 <dd><p>The <a href="#Transition">Transition</a> type reflects a change from one finite
 <a href="#State">State</a> to another.</p>
@@ -326,10 +329,22 @@ Casts the Actor to a normalized Buffer.
 <a name="Actor+toGenericMessage"></a>
 
 ### actor.toGenericMessage() ⇒ <code>Object</code>
-Casts the Actor to a generic message.
+Casts the Actor to a generic message, used to uniquely identify the Actor's state.
+Fields:
+- `preimage`: JSON.stringify(state)
+- `hash`: SHA256(preimage)
+- `type`: 'FabricActorState'
+- `version`: 1 (for now)
+- `object`: state
+- `parent`: null (for now)
 
 **Kind**: instance method of [<code>Actor</code>](#Actor)  
 **Returns**: <code>Object</code> - Generic message object.  
+**See**
+
+- [https://en.wikipedia.org/wiki/Merkle_tree](https://en.wikipedia.org/wiki/Merkle_tree)
+- [https://dev.fabric.pub/messages](https://dev.fabric.pub/messages)
+
 <a name="Actor+toObject"></a>
 
 ### actor.toObject() ⇒ <code>Object</code>
@@ -932,6 +947,7 @@ the Fabric network using a terminal emulator.
     * [new CLI([settings])](#new_CLI_new)
     * [.start()](#CLI+start)
     * [.stop()](#CLI+stop)
+    * [._handleGrantCommand(params)](#CLI+_handleGrantCommand)
 
 <a name="new_CLI_new"></a>
 
@@ -956,6 +972,17 @@ Starts (and renders) the CLI.
 Disconnect all interfaces and exit the process.
 
 **Kind**: instance method of [<code>CLI</code>](#CLI)  
+<a name="CLI+_handleGrantCommand"></a>
+
+### clI.\_handleGrantCommand(params)
+Creates a token for the target signer with a provided role and some optional data.
+
+**Kind**: instance method of [<code>CLI</code>](#CLI)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| params | <code>Array</code> | Parameters array. |
+
 <a name="Collection"></a>
 
 ## Collection
@@ -2067,11 +2094,23 @@ Casts the Actor to a normalized Buffer.
 <a name="Actor+toGenericMessage"></a>
 
 ### logger.toGenericMessage() ⇒ <code>Object</code>
-Casts the Actor to a generic message.
+Casts the Actor to a generic message, used to uniquely identify the Actor's state.
+Fields:
+- `preimage`: JSON.stringify(state)
+- `hash`: SHA256(preimage)
+- `type`: 'FabricActorState'
+- `version`: 1 (for now)
+- `object`: state
+- `parent`: null (for now)
 
 **Kind**: instance method of [<code>Logger</code>](#Logger)  
 **Overrides**: [<code>toGenericMessage</code>](#Actor+toGenericMessage)  
 **Returns**: <code>Object</code> - Generic message object.  
+**See**
+
+- [https://en.wikipedia.org/wiki/Merkle_tree](https://en.wikipedia.org/wiki/Merkle_tree)
+- [https://dev.fabric.pub/messages](https://dev.fabric.pub/messages)
+
 <a name="Actor+toObject"></a>
 
 ### logger.toObject() ⇒ <code>Object</code>
@@ -3174,6 +3213,8 @@ Create an instance of a Service.
 | settings | <code>Object</code> |  | Configuration for this service. |
 | [settings.networking] | <code>Boolean</code> | <code>true</code> | Whether or not to connect to the network. |
 | [settings.@data] | <code>Object</code> |  | Internal data to assign. |
+| [settings.frequency] | <code>Object</code> |  | Interval frequency in hertz. |
+| [settings.state] | <code>Object</code> |  | Initial state to assign. |
 
 <a name="Service+init"></a>
 
@@ -3507,11 +3548,23 @@ Casts the Actor to a normalized Buffer.
 <a name="Actor+toGenericMessage"></a>
 
 ### signer.toGenericMessage() ⇒ <code>Object</code>
-Casts the Actor to a generic message.
+Casts the Actor to a generic message, used to uniquely identify the Actor's state.
+Fields:
+- `preimage`: JSON.stringify(state)
+- `hash`: SHA256(preimage)
+- `type`: 'FabricActorState'
+- `version`: 1 (for now)
+- `object`: state
+- `parent`: null (for now)
 
 **Kind**: instance method of [<code>Signer</code>](#Signer)  
 **Overrides**: [<code>toGenericMessage</code>](#Actor+toGenericMessage)  
 **Returns**: <code>Object</code> - Generic message object.  
+**See**
+
+- [https://en.wikipedia.org/wiki/Merkle_tree](https://en.wikipedia.org/wiki/Merkle_tree)
+- [https://dev.fabric.pub/messages](https://dev.fabric.pub/messages)
+
 <a name="Actor+toObject"></a>
 
 ### signer.toObject() ⇒ <code>Object</code>
@@ -3970,6 +4023,23 @@ Begin computing.
 
 **Kind**: instance method of [<code>Swarm</code>](#Swarm)  
 **Returns**: <code>Promise</code> - Resolves to instance of [Swarm](#Swarm).  
+<a name="Token"></a>
+
+## Token
+Implements a capability-based security token.
+
+**Kind**: global class  
+<a name="new_Token_new"></a>
+
+### new Token([settings])
+Create a new Fabric Token.
+
+**Returns**: [<code>Token</code>](#Token) - The token instance.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Configuration. |
+
 <a name="Transition"></a>
 
 ## Transition
@@ -4382,42 +4452,38 @@ Manages interaction with the Bitcoin network.
 
 * [Bitcoin](#Bitcoin) ⇐ [<code>Service</code>](#Service)
     * [new Bitcoin([settings])](#new_Bitcoin_new)
-    * _instance_
-        * [.UAString](#Bitcoin+UAString)
-        * [.tip](#Bitcoin+tip)
-        * [.height](#Bitcoin+height)
-        * [.broadcast(tx)](#Bitcoin+broadcast)
-        * [._processSpendMessage(message)](#Bitcoin+_processSpendMessage) ⇒ <code>BitcoinTransactionID</code>
-        * [._prepareTransaction(obj)](#Bitcoin+_prepareTransaction)
-        * [._handleCommittedBlock(block)](#Bitcoin+_handleCommittedBlock)
-        * [._handlePeerPacket(msg)](#Bitcoin+_handlePeerPacket)
-        * [._handleBlockFromSPV(msg)](#Bitcoin+_handleBlockFromSPV)
-        * [._handleTransactionFromSPV(tx)](#Bitcoin+_handleTransactionFromSPV)
-        * [._subscribeToShard(shard)](#Bitcoin+_subscribeToShard)
-        * [._connectSPV()](#Bitcoin+_connectSPV)
-        * [.connect(addr)](#Bitcoin+connect)
-        * [._requestBlockAtHeight(height)](#Bitcoin+_requestBlockAtHeight) ⇒ <code>Object</code>
-        * [._createContractProposal(options)](#Bitcoin+_createContractProposal) ⇒ <code>ContractProposal</code>
-        * [._buildPSBT(options)](#Bitcoin+_buildPSBT) ⇒ <code>PSBT</code>
-        * [.start()](#Bitcoin+start)
-        * [.stop()](#Bitcoin+stop)
-        * [.init()](#Service+init)
-        * [.tick()](#Service+tick) ⇒ <code>Number</code>
-        * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
-        * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
-        * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
-        * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
-        * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
-        * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
-        * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
-        * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
-        * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
-        * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
-        * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
-        * [._send(message)](#Service+_send)
-    * _static_
-        * ~~[.Transaction](#Bitcoin.Transaction)~~
-        * ~~[.MutableTransaction](#Bitcoin.MutableTransaction)~~
+    * [.UAString](#Bitcoin+UAString)
+    * [.tip](#Bitcoin+tip)
+    * [.height](#Bitcoin+height)
+    * [.broadcast(tx)](#Bitcoin+broadcast)
+    * [._processSpendMessage(message)](#Bitcoin+_processSpendMessage) ⇒ <code>BitcoinTransactionID</code>
+    * [._prepareTransaction(obj)](#Bitcoin+_prepareTransaction)
+    * [._handleCommittedBlock(block)](#Bitcoin+_handleCommittedBlock)
+    * [._handlePeerPacket(msg)](#Bitcoin+_handlePeerPacket)
+    * [._handleBlockFromSPV(msg)](#Bitcoin+_handleBlockFromSPV)
+    * [._handleTransactionFromSPV(tx)](#Bitcoin+_handleTransactionFromSPV)
+    * [._subscribeToShard(shard)](#Bitcoin+_subscribeToShard)
+    * [._connectSPV()](#Bitcoin+_connectSPV)
+    * [.connect(addr)](#Bitcoin+connect)
+    * [._requestBlockAtHeight(height)](#Bitcoin+_requestBlockAtHeight) ⇒ <code>Object</code>
+    * [._createContractProposal(options)](#Bitcoin+_createContractProposal) ⇒ <code>ContractProposal</code>
+    * [._buildPSBT(options)](#Bitcoin+_buildPSBT) ⇒ <code>PSBT</code>
+    * [.start()](#Bitcoin+start)
+    * [.stop()](#Bitcoin+stop)
+    * [.init()](#Service+init)
+    * [.tick()](#Service+tick) ⇒ <code>Number</code>
+    * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
+    * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
+    * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
+    * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
+    * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
+    * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
+    * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
+    * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
+    * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
+    * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
+    * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
+    * [._send(message)](#Service+_send)
 
 <a name="new_Bitcoin_new"></a>
 
@@ -4779,24 +4845,6 @@ Sends a message.
 | --- | --- | --- |
 | message | <code>Mixed</code> | Message to send. |
 
-<a name="Bitcoin.Transaction"></a>
-
-### ~~Bitcoin.Transaction~~
-***Deprecated***
-
-Provides bcoin's implementation of `TX` internally.  This static may be
-removed in the future.
-
-**Kind**: static property of [<code>Bitcoin</code>](#Bitcoin)  
-<a name="Bitcoin.MutableTransaction"></a>
-
-### ~~Bitcoin.MutableTransaction~~
-***Deprecated***
-
-Provides bcoin's implementation of `MTX` internally.  This static may be
-removed in the future.
-
-**Kind**: static property of [<code>Bitcoin</code>](#Bitcoin)  
 <a name="Exchange"></a>
 
 ## Exchange
