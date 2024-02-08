@@ -81,7 +81,7 @@ class Environment extends Entity {
 
   get seed () {
     return [
-      // FIXTURE_SEED,
+      FIXTURE_SEED,
       this.settings.seed,
       this['FABRIC_SEED'],
       this.readVariable('FABRIC_SEED')
