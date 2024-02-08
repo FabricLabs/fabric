@@ -1,5 +1,12 @@
 'use strict';
 
+// Constants
+const {
+  FIXTURE_SEED,
+  FIXTURE_XPUB,
+  FIXTURE_XPRV
+} = require('../constants');
+
 // Dependencies
 const assert = require('assert');
 
@@ -15,6 +22,27 @@ describe('@fabric/core/types/environment', function () {
 
     it('can start and stop smoothly', async function () {
       const environment = new Environment();
+      await environment.start();
+      await environment.stop()
+      assert.ok(environment);
+    });
+
+    it('can instantiate from a seed', async function () {
+      const environment = new Environment({ xpub: FIXTURE_SEED });
+      await environment.start();
+      await environment.stop()
+      assert.ok(environment);
+    });
+
+    it('can instantiate from an xpub', async function () {
+      const environment = new Environment({ xpub: FIXTURE_XPUB });
+      await environment.start();
+      await environment.stop()
+      assert.ok(environment);
+    });
+
+    it('can instantiate from an xprv', async function () {
+      const environment = new Environment({ xprv: FIXTURE_XPRV });
       await environment.start();
       await environment.stop()
       assert.ok(environment);
@@ -44,16 +72,13 @@ describe('@fabric/core/types/environment', function () {
       });
 
       environment.setWallet(wallet);
-
       assert.ok(environment);
-
       environment.destroyWallet();
     });
 
     it('can check for store', async function () {
       const environment = new Environment();
       const exists = environment.storeExists();
-
       assert.ok(environment);
       assert.equal(typeof exists, 'boolean');
     });
@@ -68,9 +93,13 @@ describe('@fabric/core/types/environment', function () {
 
     it('can touch the wallet', async function () {
       const environment = new Environment();
-
       environment.touchWallet();
+      assert.ok(environment);
+    });
 
+    it('can load the wallet', async function () {
+      const environment = new Environment();
+      environment.loadWallet();
       assert.ok(environment);
     });
   });
