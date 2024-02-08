@@ -32,6 +32,8 @@ describe('@fabric/core/types/environment', function () {
       await environment.start();
       await environment.stop()
       assert.ok(environment);
+      // assert.strictEqual(environment.xprv, FIXTURE_XPRV);
+      // assert.strictEqual(environment.xpub, FIXTURE_XPUB);
     });
 
     it('can instantiate from an xpub', async function () {
@@ -39,6 +41,8 @@ describe('@fabric/core/types/environment', function () {
       await environment.start();
       await environment.stop()
       assert.ok(environment);
+      // assert.strictEqual(environment.xprv, undefined);
+      // assert.strictEqual(environment.xpub, FIXTURE_XPUB);
     });
 
     it('can instantiate from an xprv', async function () {
@@ -46,6 +50,8 @@ describe('@fabric/core/types/environment', function () {
       await environment.start();
       await environment.stop()
       assert.ok(environment);
+      assert.strictEqual(environment.xprv, FIXTURE_XPRV);
+      // assert.strictEqual(environment.xub, FIXTURE_XPUB);
     });
 
     it('can read an environment variable', async function () {
@@ -100,6 +106,18 @@ describe('@fabric/core/types/environment', function () {
     it('can load the wallet', async function () {
       const environment = new Environment();
       environment.loadWallet();
+      assert.ok(environment);
+    });
+
+    it('can read the wallet', async function () {
+      const environment = new Environment();
+      environment.readWallet();
+      assert.ok(environment);
+    });
+
+    it('can read contracts', async function () {
+      const environment = new Environment();
+      environment.readContracts();
       assert.ok(environment);
     });
   });
