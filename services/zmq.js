@@ -1,7 +1,7 @@
 'use strict';
 
 // Dependencies
-const zeromq = require('zeromq');
+const zeromq = require('zeromq/v5-compat');
 
 // Fabric Types
 const Service = require('../types/service');

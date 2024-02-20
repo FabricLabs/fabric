@@ -45,7 +45,6 @@ class Service extends Actor {
    * @param {Boolean} [settings.networking=true] Whether or not to connect to the network.
    * @param {Object} [settings.frequency] Interval frequency in hertz.
    * @param {Object} [settings.state] Initial state to assign.
-   * @param {Object} [settings.@data] Internal data to assign.
    */
   constructor (settings = {}) {
     // Initialize Scribe, our logging tool

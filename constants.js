@@ -18,6 +18,8 @@ const BITCOIN_GENESIS = '000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b
 const BITCOIN_GENESIS_ROOT = '4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b';
 const FABRIC_KEY_DERIVATION_PATH = "m/44'/7777'/0'/0/0";
 const FIXTURE_SEED = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
+const FIXTURE_XPUB = 'xpub661MyMwAqRbcF6GygV6Q6XAg8dqhPvDuhYHGniequi6HMbYhNNH5XC13Np3qRANHVD2mmnNGtMGBfDT69s2ovpHLr7q8syoAuyWqtRGEsYQ';
+const FIXTURE_XPRV = 'xprv9s21ZrQH143K2cCWaTZPjPDwac1CzTW4LKMfzLFEMNZJUoDYppxpyPgZXY7CZkjefGJTrTyqKnMrM4RG6nGn7Q9cwjHggCtn3CdFGJahaWY';
 
 // Message Constants
 const MAGIC_BYTES = 0xC0D3F33D;
@@ -126,6 +128,8 @@ module.exports = {
   FABRIC_KEY_DERIVATION_PATH,
   FABRIC_USER_AGENT,
   FIXTURE_SEED,
+  FIXTURE_XPUB,
+  FIXTURE_XPRV,
   HEADER_SIZE,
   GENERIC_MESSAGE_TYPE,
   LOG_MESSAGE_TYPE,

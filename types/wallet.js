@@ -153,6 +153,14 @@ class Wallet extends Service {
     return this.get('/orders');
   }
 
+  get xprv () {
+    return this.key.xprv;
+  }
+
+  get xpub () {
+    return this.key.xpub;
+  }
+
   get version () {
     return this.settings.version;
   }

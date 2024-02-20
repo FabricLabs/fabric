@@ -123,7 +123,7 @@
     "simple-aes": "0.1.1",
     "struct": "0.0.12",
     "tiny-secp256k1": "2.2.1",
-    "zeromq": "5.2.8"
+    "zeromq": "v6.0.0-beta.19"
   },
   "devDependencies": {
     "c8": "7.11.3",
