@@ -37,6 +37,9 @@ You'll also want `bitcoind` installed, and fully synchronized with your
 preferred network.  You can use `scripts/playnet.sh` to run a local playnet
 node, for which you can use the faucet: https://faucet.playnet.fabric.pub
 
+## What is Fabric?
+`@fabric/core` provides the reference implementation for [the Fabric Protocol][protocol], a "language" for exchanging information through peer-to-peer networks.  Written in JavaScript, it is meant to be well-documented and easy to understand — but not the final implementation.
+
 ## Contributing
 Fork and clone [the Fabric GitHub repository][fabric-github] and launch a local
 web server with `npm run examples` to view the examples, or `npm run docs` once
@@ -102,29 +105,6 @@ main().catch((exception) => {
 });
 ```
 
-### Using Fabric in the Browser
-[`@fabric/http`][fabric-http] generates a `fabric.min.js` bundle, which can be included with any HTML
-document to expose the API in a browser.
-
-```html
-<html>
-  <body>
-    <div>
-      <h1>Example</h1>
-    </div>
-    <script src="/bundles/fabric.min.js"></script>
-    <script type="text/javascript">
-      window.fabric.addEventListener('', (event) => {
-        console.log('Fabric Event:', event);
-      });
-
-      window.fabric.start();
-      console.log('Fabric started!');
-    </script>
-  </body>
-</html>
-```
-
 ## Plugins
 Fabric is an extensible framework, supporting a variety of plugins.
 
@@ -148,6 +128,25 @@ To add your project to the list, [read the API docs][api-docs], create a public
 repository for the source code, then [edit this file][edit-readme] to include a
 link to your work.
 
+### Edge Nodes
+Full Fabric nodes connected to the World Wide Web (WWW).  Only SSL (port 443) is supported.
+
+| Host | Status |
+| ---- | ------ |
+| `hub.fabric.pub` | `ONLINE`
+| `labs.fabric.pub` | `OFFLINE`
+
+### Fabric Projects
+Either Fabric libraries or projects running Fabric, this list encompasses the most interesting work in the ecosystem.
+
+| Name | Description | Status | v0.1.0-RC1 ready
+| ---- | ----------- | ------ | ----------
+| [`@fabric/core`][fabric-github] | Core Library
+| [`@fabric/http`][http-plugin] | Edge Nodes
+| [`hub.fabric.pub`](https://hub.fabric.pub) |
+| [`labs.fabric.pub`](https://labs.fabric.pub) |
+| [`grove.chat`][chat] |
+
 ## Learning More
 The best place to get started is in [the #learning channel][learning], a
 collection of empassioned educators eager to help you.
@@ -169,6 +168,7 @@ Fabric on Twitter: [@FabricProtocol][twitter]
 
 [fabric-github]: https://github.com/FabricLabs/fabric
 [http-plugin]: https://github.com/FabricLabs/fabric-http
+[hub-plugin]: https://github.com/FabricLabs/hub.fabric.pub
 [matrix-plugin]: https://github.com/FabricLabs/fabric-matrix
 [twilio-plugin]: https://github.com/FabricLabs/fabric-twilio
 [zapier-plugin]: https://github.com/FabricLabs/fabric-zapier
@@ -187,7 +187,9 @@ Fabric on Twitter: [@FabricProtocol][twitter]
 [badge-doorman-status]: https://img.shields.io/travis/FabricLabs/doorman.svg?branch=master&style=flat-square
 [badge-doorman-coverage]: https://img.shields.io/codecov/c/github/FabricLabs/doorman.svg?style=flat-square
 [badge-http-status]: https://img.shields.io/travis/FabricLabs/fabric-http.svg?branch=master&style=flat-square
+[badge-hub-status]: https://img.shields.io/travis/FabricLabs/fabric-hub.svg?branch=master&style=flat-square
 [badge-http-coverage]: https://img.shields.io/codecov/c/github/FabricLabs/fabric-http.svg?style=flat-square
+[badge-hub-coverage]: https://img.shields.io/codecov/c/github/FabricLabs/fabric-hub.svg?style=flat-square
 [badge-matrix-status]: https://img.shields.io/travis/FabricLabs/fabric-matrix.svg?branch=master&style=flat-square
 [badge-matrix-coverage]: https://img.shields.io/codecov/c/github/FabricLabs/fabric-matrix.svg?style=flat-square
 [badge-twilio-status]: https://img.shields.io/travis/FabricLabs/fabric-twilio.svg?branch=master&style=flat-square

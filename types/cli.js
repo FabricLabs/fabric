@@ -126,7 +126,7 @@ class CLI extends App {
 
     this._loadPeer();
     this._loadBitcoin();
-    this._loadLightning();
+    if (this.settings.lightning.enable) this._loadLightning();
 
     this.identity = new Identity(this.settings);
 
@@ -243,6 +243,10 @@ class CLI extends App {
 
     // Contracts
     this._registerCommand('contracts', this._handleContractsRequest);
+    this._registerCommand('subscribe', this._handleSubscribeRequest);
+    this._registerCommand('create', this._handleCreateRequest);
+    this._registerCommand('deploy', this._handleDeployRequest);
+    this._registerCommand('accept', this._handleAcceptRequest);
 
     // Service Commands
     this._registerCommand('bitcoin', this._handleBitcoinRequest);
@@ -308,15 +312,17 @@ class CLI extends App {
     this.bitcoin.on('transaction', this._handleBitcoinTransaction.bind(this));
 
     // #### Lightning
-    this.lightning.on('debug', this._handleLightningDebug.bind(this));
-    this.lightning.on('ready', this._handleLightningReady.bind(this));
-    this.lightning.on('error', this._handleLightningError.bind(this));
-    this.lightning.on('warning', this._handleLightningWarning.bind(this));
-    this.lightning.on('message', this._handleLightningMessage.bind(this));
-    this.lightning.on('log', this._handleLightningLog.bind(this));
-    this.lightning.on('commit', this._handleLightningCommit.bind(this));
-    this.lightning.on('sync', this._handleLightningSync.bind(this));
-    // this.lightning.on('transaction', this._handleLightningTransaction.bind(this));
+    if (this.settings.lightning.enable) {
+      this.lightning.on('debug', this._handleLightningDebug.bind(this));
+      this.lightning.on('ready', this._handleLightningReady.bind(this));
+      this.lightning.on('error', this._handleLightningError.bind(this));
+      this.lightning.on('warning', this._handleLightningWarning.bind(this));
+      this.lightning.on('message', this._handleLightningMessage.bind(this));
+      this.lightning.on('log', this._handleLightningLog.bind(this));
+      this.lightning.on('commit', this._handleLightningCommit.bind(this));
+      this.lightning.on('sync', this._handleLightningSync.bind(this));
+      // this.lightning.on('transaction', this._handleLightningTransaction.bind(this));
+    }
 
     /* this.on('log', function (log) {
       console.log('local log:', log);
@@ -353,7 +359,7 @@ class CLI extends App {
     await this.bitcoin.start();
 
     // Start Lightning service
-    this.lightning.start();
+    if (this.settings.lightning.enable) await this.lightning.start();
 
     // ## Start P2P node
     if (this.settings.peering) this.node.start();
@@ -509,8 +515,47 @@ class CLI extends App {
     this._appendMessage(`New Changes: ${JSON.stringify(changes, null, '  ')}`);
   }
 
+  async _handleAcceptRequest (params) {
+    if (!params || !params[1]) {
+      this._appendMessage(`You must provide a contract parameter.`);
+      return false;
+    }
+
+    const contract = this.contracts[params[1]];
+    this._appendMessage(`{bold}Accepting{/bold}: ${params[1]} ${JSON.stringify(contract)}`);
+    // TODO: sign
+    return false;
+  }
+
+  async _handleCreateRequest (params) {
+    this._appendMessage(`{bold}Creating{/bold}: ${params[1]}`);
+    const now = (new Date()).toISOString();
+    const template = {
+      created: now,
+      main: JSON.stringify(async function main () { return {}; })
+    };
+
+    const entity = new Actor(template);
+    this.contracts[entity.id] = entity;
+
+    if (params[1]) this.aliases[params[1]] = entity.id;
+
+    this._appendDebug(`Created: ${entity.id}`);
+    return false;
+  }
+
   async _handleContractsRequest (params) {
     this._appendMessage('{bold}Current Contracts{/bold}: ' + JSON.stringify(this.contracts, null, '  '));
+    return false;
+  }
+
+  async _handleSubscribeRequest (params) {
+    this._appendMessage('{bold}Subscribing{/bold}: ' + JSON.stringify(params[1], null, '  '));
+    return false;
+  }
+
+  async _handleDeployRequest (params) {
+    this._appendMessage(`{bold}Deploying{/bold}: ${params[1]}`);
     return false;
   }
 
@@ -1193,7 +1238,7 @@ class CLI extends App {
   }
 
   async _syncContracts () {
-    await this._syncLightningChannels();
+    if (this.settings.lightning.enable) await this._syncLightningChannels();
     return this;
   }
 

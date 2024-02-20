@@ -289,10 +289,15 @@ class Actor extends EventEmitter {
   }
 
   /**
-   * Casts the Actor to a generic message.
+   * Casts the Actor to a generic message, used to uniquely identify the Actor's state.
+   * Fields:
+   * - `type`: 'FabricActorState'
+   * - `object`: state
+   * @see {@link https://en.wikipedia.org/wiki/Merkle_tree}
+   * @see {@link https://dev.fabric.pub/messages}
    * @returns {Object} Generic message object.
    */
-  toGenericMessage () {
+  toGenericMessage (type = 'FabricActorState') {
     return {
       type: 'FabricActorState',
       object: this.toObject()

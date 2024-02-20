@@ -159,6 +159,55 @@ class Peer extends Service {
     return this.settings.interface || this.settings.address;
   }
 
+  get documentation () {
+    return {
+      name: 'Fabric',
+      description: 'Manages connections to the Fabric Network.',
+      methods: {
+        ack: {
+          description: 'Acknowledge a message.',
+          parameters: {
+            message: {
+              // TODO: consider making this a FabricMessageID
+              type: 'FabricMessage',
+              description: 'The message to acknowledge.'
+            }
+          },
+          returns: {
+            type: 'Promise',
+            description: 'A Promise which resolves to the completed FabricState.'
+          }
+        },
+        send: {
+          description: 'Send a message to a connected peer.',
+          parameters: {
+            message: {
+              type: 'FabricMessage',
+              description: 'The message to send to the peer.'
+            }
+          },
+          returns: {
+            type: 'Promise',
+            description: 'A Promise which resolves to the response (if any).'
+          }
+        },
+        broadcast: {
+          description: 'Broadcast a message to all connected nodes.',
+          parameters: {
+            message: {
+              type: 'FabricMessage',
+              description: 'The message to send to the node.'
+            }
+          },
+          returns: {
+            type: 'Promise',
+            description: 'A Promise which resolves to the responses (if any).'
+          }
+        }
+      }
+    }
+  }
+
   get interface () {
     return this.settings.interface || this.settings.address;
   }
@@ -733,40 +782,49 @@ class Peer extends Service {
     }
 
     if (this.settings.upnp && this.settings.listen) {
-      // TODO: convert callbacks to promises
       this.emit('log', 'UPNP starting...');
-      this.upnp = upnp.createClient();
+      this.upnp = new upnp.Client();
       this.upnp.portMapping({
         description: '@fabric/core#playnet',
         public: this.settings.port,
         private: this.settings.port,
         ttl: 10
-      }, (error) => {
-        if (error) {
-          this.emit('warning', 'Could not create UPNP mapping.  Other nodes may fail when connecting to this node.');
-        } else {
-          this.upnp.getMappings((error, results) => {
-            if (!results || !results.length) return;
-            const mapping = results.find((x) => x.private.port === this.settings.port );
-            // this.emit('debug', `UPNP mappings: ${JSON.stringify(results, null, '  ')}`);
-            // this.emit('debug', `Our rule: ${JSON.stringify(mapping, null, '  ')}`);
+      }).catch((exception) => {
+        this.emit('warning', 'Could not create UPNP mapping.  Inbound connections may fail.');
+      }).then(() => {
+        this.upnp.getMappings().then((results) => {
+          if (!results || !results.length) return;
+          const mapping = results.find((x) => x.private.port === this.settings.port );
+          // this.emit('debug', `UPNP mappings: ${JSON.stringify(results, null, '  ')}`);
+          this.emit('debug', `Our rule: ${JSON.stringify(mapping, null, '  ')}`);
 
-            this.upnp.externalIp((error, ip) => {
-              if (error) {
-                this.emit('warning', `Could not get external IP: ${error}`);
-              } else {
-                // this.emit('debug', `UPNP external: ${JSON.stringify(ip, null, '  ')}`);
-                this._externalIP = ip;
-                this.emit('upnp', {
-                  host: ip,
-                  port: this.settings.port
-                });
-              }
+          this.upnp.externalIp().then((ip) => {
+            this.emit('debug', `UPNP external: ${JSON.stringify(ip, null, '  ')}`);
+            this._externalIP = ip;
+            this.emit('upnp', {
+              host: ip,
+              port: this.settings.port
             });
+
+            /*
+            const PACKET_PEER_ANNOUNCE = Message.fromVector(['P2P_PEER_ANNOUNCE', JSON.stringify({
+              type: 'P2P_PEER_ANNOUNCE',
+              object: {
+                host: this._externalIP,
+                port: this.settings.port
+              }
+            })])._setSigner(this.signer).sign();
+
+            const announcement = PACKET_PEER_ANNOUNCE.toBuffer();
+            // this.emit('debug', `Announcing peer: ${announcement.toString('utf8')}`);
+            this.connections[origin.name]._writeFabric(announcement, socket);
+            */
           });
-        }
+        });
       });
     }
+
+    this.emit('debug', `Observing state...`);
 
     try {
       this.observer = manager.observe(this._state.content);
