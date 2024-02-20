@@ -21,6 +21,7 @@
 ./types/interface.js:    // TODO: use Layer
 ./types/interface.js:      // TODO: document why @input is removed
 ./types/interface.js:    // TODO: apply `transaction.operations` to Interface state
+./types/filesystem.js:    // TODO: only sync changed files
 ./types/scribe.js:    // TODO: enable
 ./types/key.js:// TODO: remove
 ./types/key.js:// TODO: remove all external dependencies
@@ -199,6 +200,7 @@
 ./types/consensus.js:      // TODO: compute from chain height
 ./types/machine.js:      seed: 1, // TODO: select seed for production
 ./types/peer.js:    // TODO: switch to child pubkey
+./types/peer.js:              // TODO: consider making this a FabricMessageID
 ./types/peer.js:    // TODO: output stream
 ./types/peer.js:    // TODO: verify signatures
 ./types/peer.js:        // TODO: remove this assumption (validate above)
@@ -207,7 +209,6 @@
 ./types/peer.js:        // TODO: reject and punish mis-behaving peers
 ./types/peer.js:        // TODO: reject and punish mis-behaving peers
 ./types/peer.js:    // TODO: reconcile APIs for these methods
-./types/peer.js:      // TODO: convert callbacks to promises
 ./types/entity.js:    // TODO: use getters/setters to restrict access to these elements
 ./types/entity.js:        // TODO: write up longer-form explanation as to why we use an Array here
 ./types/collection.js:    // TODO: document `listeners` handler (currently only `create`)
@@ -238,6 +239,7 @@
 ./contracts/node.js:    // TODO: configure with input?
 ./contracts/setup.js.bak:  // TODO: discuss w/ @ChronicSmoke
 ./contracts/setup.js.bak:  // TODO: use in walletExists
+./contracts/fabric.c:  // TODO: emit the message object
 ./contracts/setup.js:  // TODO: replicate this program in C / ASM
 ./contracts/setup.js:    // TODO: remove from log output...
 ./contracts/chat.js:  const chat = new CLI(settings); // TODO: this.settings
