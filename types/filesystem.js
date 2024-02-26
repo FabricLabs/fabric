@@ -35,7 +35,8 @@ class Filesystem extends Actor {
     this._state = {
       actors: {},
       content: {
-        files: []
+        files: [],
+        status: 'INITIALIZED'
       },
       documents: {}
     };
@@ -128,9 +129,21 @@ class Filesystem extends Actor {
       fs.writeFileSync(file, content);
       return true;
     } catch (exception) {
-      this.emit('error', `Could not write file: ${content}`);
+      this.emit('error', `Could not write file: ${content} ${exception}`);
       return false;
     }
+  }
+
+  _handleDiskChange (type, filename) {
+    this.emit('file:update', {
+      name: filename,
+      type: type
+    });
+
+    // TODO: only sync changed files
+    // this._loadFromDisk();
+
+    return this;
   }
 
   /**
@@ -190,8 +203,9 @@ class Filesystem extends Actor {
   }
 
   async start () {
+    this._state.content.status = 'STARTING';
     this.touchDir(this.path); // ensure exists
-    await this.sync();
+    this.sync();
     return this;
   }
 
