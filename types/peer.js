@@ -17,16 +17,13 @@ const {
   P2P_STATE_ROOT
 } = require('../constants');
 
-// Internals
+// Dependencies
 const net = require('net');
 const crypto = require('crypto');
 const stream = require('stream');
 const manager = require('fast-json-patch');
 const noise = require('noise-protocol-stream');
-
-// Dependencies
 const merge = require('lodash.merge');
-const upnp = require('nat-upnp-2');
 
 // Fabric Types
 const Actor = require('./actor');
@@ -749,19 +746,10 @@ class Peer extends Service {
    */
   async start () {
     let address = null;
-
     this.emit('log', 'Peer starting...');
 
     // Register self
     this._registerActor({ name: `${this.interface}:${this.port}` });
-
-    this.emit('log', 'Wallet starting...');
-
-    try {
-      // await this.wallet.start();
-    } catch (exception) {
-      this.emit('error', `Could not start wallet: ${exception}`);
-    }
 
     if (this.settings.listen) {
       this.emit('log', 'Listener starting...');
@@ -781,50 +769,7 @@ class Peer extends Service {
       }
     }
 
-    if (this.settings.upnp && this.settings.listen) {
-      this.emit('log', 'UPNP starting...');
-      this.upnp = new upnp.Client();
-      this.upnp.portMapping({
-        description: '@fabric/core#playnet',
-        public: this.settings.port,
-        private: this.settings.port,
-        ttl: 10
-      }).catch((exception) => {
-        this.emit('warning', 'Could not create UPNP mapping.  Inbound connections may fail.');
-      }).then(() => {
-        this.upnp.getMappings().then((results) => {
-          if (!results || !results.length) return;
-          const mapping = results.find((x) => x.private.port === this.settings.port );
-          // this.emit('debug', `UPNP mappings: ${JSON.stringify(results, null, '  ')}`);
-          this.emit('debug', `Our rule: ${JSON.stringify(mapping, null, '  ')}`);
-
-          this.upnp.externalIp().then((ip) => {
-            this.emit('debug', `UPNP external: ${JSON.stringify(ip, null, '  ')}`);
-            this._externalIP = ip;
-            this.emit('upnp', {
-              host: ip,
-              port: this.settings.port
-            });
-
-            /*
-            const PACKET_PEER_ANNOUNCE = Message.fromVector(['P2P_PEER_ANNOUNCE', JSON.stringify({
-              type: 'P2P_PEER_ANNOUNCE',
-              object: {
-                host: this._externalIP,
-                port: this.settings.port
-              }
-            })])._setSigner(this.signer).sign();
-
-            const announcement = PACKET_PEER_ANNOUNCE.toBuffer();
-            // this.emit('debug', `Announcing peer: ${announcement.toString('utf8')}`);
-            this.connections[origin.name]._writeFabric(announcement, socket);
-            */
-          });
-        });
-      });
-    }
-
-    this.emit('debug', `Observing state...`);
+    if (this.settings.debug) this.emit('debug', `Observing state...`);
 
     try {
       this.observer = manager.observe(this._state.content);
@@ -834,11 +779,28 @@ class Peer extends Service {
 
     await this._startHeart();
 
+    if (this.settings.debug) this.emit('debug', `Peer ready!  State: ${JSON.stringify(this.state, null, '  ')}`);
+
     this.emit('ready', {
       id: this.id,
       address: address,
       pubkey: this.key.pubkey
     });
+
+    if (this.settings.debug) this.emit('debug', `Peer started!`);
+
+    /*
+    const PACKET_PEER_ANNOUNCE = Message.fromVector(['P2P_PEER_ANNOUNCE', JSON.stringify({
+      type: 'P2P_PEER_ANNOUNCE',
+      object: {
+        host: this._externalIP,
+        port: this.settings.port
+      }
+    })])._setSigner(this.signer).sign();
+    const announcement = PACKET_PEER_ANNOUNCE.toBuffer();
+    // this.emit('debug', `Announcing peer: ${announcement.toString('utf8')}`);
+    this.connections[origin.name]._writeFabric(announcement, socket);
+    */
 
     return this;
   }
@@ -853,15 +815,6 @@ class Peer extends Service {
 
     // Stop the heart
     if (this._heart) clearInterval(this._heart);
-
-    if (this.settings.upnp && this.upnp) {
-      this.emit('debug', 'Closing UPNP...');
-      try {
-        this.upnp.close()
-      } catch (exception) {
-        this.emit('debug', `Could not stop UPNP: ${exception}`);
-      };
-    }
 
     this.emit('debug', 'Closing all connections...');
     for (const id in this.connections) {

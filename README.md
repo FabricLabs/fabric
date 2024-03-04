@@ -108,14 +108,12 @@ main().catch((exception) => {
 ## Plugins
 Fabric is an extensible framework, supporting a variety of plugins.
 
-| Package                            | Description                                | Status                                                                                                                                       |
-|------------------------------------|--------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------|
-| [`@fabric/http`][http-plugin]      | serve Fabric apps to the legacy web (HTTP) | [![Build Status][badge-http-status]][http-test-status] [![Coverage Status][badge-http-coverage]][badge-http-coverage]                        |
-| [`@fabric/github`][github-plugin]  | interact with GitHub through Fabric        | [![Build Status][badge-github-status]][github-test-status] [![Coverage Status][badge-github-coverage]][github-coverage-home]                 |
-| [`@fabric/matrix`][matrix-plugin]  | connect to Matrix servers                  | [![Build Status][badge-matrix-status]][matrix-test-status] [![Coverage Status][badge-matrix-coverage]][badge-matrix-coverage]                |
-| [`@fabric/twilio`][twilio-plugin]  | send (and receive) SMS and phone calls     | [![Build Status][badge-twilio-status]][twilio-test-status] [![Coverage Status][badge-twilio-coverage]][badge-twilio-coverage]                |
-| [`@fabric/zapier`][zapier-plugin]  | interact with arbitrary zapier triggers    | [![Build Status][badge-zapier-status]][zapier-test-status] [![Coverage Status][badge-zapier-coverage]][badge-zapier-coverage]                |
-| [`@fabric/doorman`][doorman]       | an artificially intelligent assistant      | [![Build Status][badge-doorman-status]][doorman-test-status] [![Coverage Status][badge-doorman-coverage]][doorman-coverage-home]             |
+| Package                            | Description                                | Status                                                               |
+|------------------------------------|--------------------------------------------|----------------------------------------------------------------------|
+| [`@fabric/http`][http-plugin]      | serve Fabric apps to the legacy web (HTTP) | [![Coverage Status][badge-http-coverage]][badge-http-coverage]       |
+| [`@fabric/hub`][hub-plugin]        | run your own Fabric Hub                    | [![Coverage Status][badge-hub-coverage]][badge-hub-coverage]         |
+| [`@fabric/matrix`][matrix-plugin]  | connect to Matrix servers                  | [![Coverage Status][badge-matrix-coverage]][badge-matrix-coverage]   |
+| [`@fabric/doorman`][doorman]       | an artificially intelligent assistant      | [![Coverage Status][badge-doorman-coverage]][doorman-coverage-home]  |
 
 ## Running on Fabric
 Several successful projects are built with or are running on Fabric, including:
@@ -146,6 +144,9 @@ Either Fabric libraries or projects running Fabric, this list encompasses the mo
 | [`hub.fabric.pub`](https://hub.fabric.pub) |
 | [`labs.fabric.pub`](https://labs.fabric.pub) |
 | [`grove.chat`][chat] |
+| `sensemaker.io` | | | `FALSE`
+| `verse.pub`
+| `trynovo.com` | | | `FALSE`
 
 ## Learning More
 The best place to get started is in [the #learning channel][learning], a
