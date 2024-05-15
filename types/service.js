@@ -406,7 +406,7 @@ class Service extends Actor {
         self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted error: ${error}`);
       }),
       _handleLog: source.on('log', async function _handleTrustedLog (log) {
-        self.emit('log', `[FABRIC:SERVICE] Source "${name}" emitted log: ${log}`);
+        if (self.settings.debug) self.emit('log', `[FABRIC:SERVICE] Source "${name}" emitted log: ${log}`);
       }),
       _handleMessage: source.on('message', async function (message) {
         self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted message: ${JSON.stringify(message.toObject ? message.toObject() : message, null, '  ')}`);
@@ -424,7 +424,7 @@ class Service extends Actor {
         self.alert(`[FABRIC:SERVICE] New ${name} chaintip: ${hash}`);
       }),
       _handleWarning: source.on('warning', async function _handleTrustedWarning (warning) {
-        self.emit('warning', `[FABRIC:SERVICE] Source "${name}" emitted warning: ${warning}`);
+        if (self.settings?.verbosity >= 2) self.emit('warning', `[FABRIC:SERVICE] Source "${name}" emitted warning: ${warning}`);
       })
     };
   }
