@@ -3,10 +3,9 @@
 // Constants
 const {
   MAX_CHAT_MESSAGE_LENGTH,
+  INPUT_HINT,
   BITCOIN_GENESIS
 } = require('../constants');
-
-const INPUT_HINT = 'Press the "i" key to begin typing.';
 
 // Internal Dependencies
 const fs = require('fs');
@@ -80,7 +79,7 @@ class CLI extends App {
       storage: {
         path: `${process.env.HOME}/.fabric/console`
       }
-    }, this.settings, settings);
+    }, settings);
 
     // Properties
     this.screen = null;
@@ -312,7 +311,7 @@ class CLI extends App {
     this.bitcoin.on('transaction', this._handleBitcoinTransaction.bind(this));
 
     // #### Lightning
-    if (this.settings.lightning.enable) {
+    if (this.settings.lightning && this.settings.lightning.enable) {
       this.lightning.on('debug', this._handleLightningDebug.bind(this));
       this.lightning.on('ready', this._handleLightningReady.bind(this));
       this.lightning.on('error', this._handleLightningError.bind(this));

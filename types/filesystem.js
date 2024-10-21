@@ -206,6 +206,15 @@ class Filesystem extends Actor {
     this._state.content.status = 'STARTING';
     this.touchDir(this.path); // ensure exists
     this.sync();
+
+    fs.watch(this.path, {
+      persistent: false,
+      recursive: true
+    }, this._handleDiskChange.bind(this));
+
+    this._state.content.status = 'STARTED';
+    this.commit();
+
     return this;
   }
 

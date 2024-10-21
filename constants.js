@@ -93,6 +93,7 @@ const P2P_MUSIG_SEND_PROPOSAL = 0x4223;
 const P2P_MUSIG_REPLY_TO_PROPOSAL = 0x4224;
 const P2P_MUSIG_ACCEPT_PROPOSAL = 0x4225;
 
+// Message Types
 const PEER_CANDIDATE = 0x09;
 // TODO: should be 0x02 for Bitcoin P2P
 const BLOCK_CANDIDATE = 0x03;
@@ -117,6 +118,9 @@ const ZERO_LENGTH_PLAINTEXT = '';
 // HTTP
 const HTTP_HEADER_CONTENT_TYPE = 'application/json';
 
+// UI
+const INPUT_HINT = 'Press the "i" key to begin typing.';
+
 // CommonJS Support
 module.exports = {
   PEER_PORT,
@@ -137,6 +141,7 @@ module.exports = {
   LARGE_COLLECTION_SIZE,
   BLOCK_CANDIDATE,
   CHAT_MESSAGE,
+  INPUT_HINT,
   ZERO_LENGTH_PLAINTEXT,
   FABRIC_PLAYNET_ADDRESS,
   FABRIC_PLAYNET_ORIGIN,

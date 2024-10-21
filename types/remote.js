@@ -454,6 +454,7 @@ class Remote extends Actor {
   }
 
   async _SEARCH (key, params) {
+    if (this.settings.debug) console.debug('[FABRIC:CORE]', '_SEARCH:', key, params);
     return this.request('search', key, params);
   }
 }

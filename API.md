@@ -527,6 +527,7 @@ Fabric-based networking and storage.
     * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
     * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
     * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
+    * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
     * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
     * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
     * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
@@ -744,6 +745,20 @@ Attempt to acquire a lock for `duration` seconds.
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
 | [duration] | <code>Number</code> | <code>1000</code> | Number of milliseconds to hold lock. |
+
+<a name="Service+when"></a>
+
+### app.when(event, method) ⇒ <code>EventEmitter</code>
+Bind a method to an event, with current state as the immutable context.
+
+**Kind**: instance method of [<code>App</code>](#App)  
+**Overrides**: [<code>when</code>](#Service+when)  
+**Returns**: <code>EventEmitter</code> - Instance of EventEmitter.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| event | <code>String</code> | Name of the event upon which to execute `method` as a function. |
+| method | <code>function</code> | Function to execute when named [Event](Event) `event` is encountered. |
 
 <a name="Service+route"></a>
 
@@ -3184,7 +3199,7 @@ familiar semantics.
 
 
 * [Service](#Service)
-    * [new Service(settings)](#new_Service_new)
+    * [new Service([settings])](#new_Service_new)
     * [.init()](#Service+init)
     * [.tick()](#Service+tick) ⇒ <code>Number</code>
     * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
@@ -3193,6 +3208,7 @@ familiar semantics.
     * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
     * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
     * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
+    * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
     * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
     * [.start()](#Service+start)
     * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
@@ -3204,15 +3220,14 @@ familiar semantics.
 
 <a name="new_Service_new"></a>
 
-### new Service(settings)
+### new Service([settings])
 Create an instance of a Service.
 
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
-| settings | <code>Object</code> |  | Configuration for this service. |
+| [settings] | <code>Object</code> |  | Configuration for this service. |
 | [settings.networking] | <code>Boolean</code> | <code>true</code> | Whether or not to connect to the network. |
-| [settings.@data] | <code>Object</code> |  | Internal data to assign. |
 | [settings.frequency] | <code>Object</code> |  | Interval frequency in hertz. |
 | [settings.state] | <code>Object</code> |  | Initial state to assign. |
 
@@ -3295,6 +3310,19 @@ Attempt to acquire a lock for `duration` seconds.
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
 | [duration] | <code>Number</code> | <code>1000</code> | Number of milliseconds to hold lock. |
+
+<a name="Service+when"></a>
+
+### service.when(event, method) ⇒ <code>EventEmitter</code>
+Bind a method to an event, with current state as the immutable context.
+
+**Kind**: instance method of [<code>Service</code>](#Service)  
+**Returns**: <code>EventEmitter</code> - Instance of EventEmitter.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| event | <code>String</code> | Name of the event upon which to execute `method` as a function. |
+| method | <code>function</code> | Function to execute when named [Event](Event) `event` is encountered. |
 
 <a name="Service+route"></a>
 
@@ -4478,6 +4506,7 @@ Manages interaction with the Bitcoin network.
     * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
     * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
     * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
+    * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
     * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
     * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
     * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
@@ -4764,6 +4793,20 @@ Attempt to acquire a lock for `duration` seconds.
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
 | [duration] | <code>Number</code> | <code>1000</code> | Number of milliseconds to hold lock. |
+
+<a name="Service+when"></a>
+
+### bitcoin.when(event, method) ⇒ <code>EventEmitter</code>
+Bind a method to an event, with current state as the immutable context.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>when</code>](#Service+when)  
+**Returns**: <code>EventEmitter</code> - Instance of EventEmitter.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| event | <code>String</code> | Name of the event upon which to execute `method` as a function. |
+| method | <code>function</code> | Function to execute when named [Event](Event) `event` is encountered. |
 
 <a name="Service+route"></a>
 

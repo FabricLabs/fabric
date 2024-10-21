@@ -8,6 +8,7 @@ class Queue extends Actor {
     super(settings);
 
     this.settings = merge({
+      redis: null,
       workers: 1
     }, settings);
 
@@ -25,6 +26,10 @@ class Queue extends Actor {
     await this._registerMethod('verify', async function (...params) {
 
     });
+
+    if (this.settings.redis) {
+      this._state.redis = this.settings.redis;
+    }
   }
 
   async _registerMethod (name, contract) {
