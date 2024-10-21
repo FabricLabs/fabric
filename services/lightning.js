@@ -43,7 +43,12 @@ class Lightning extends Service {
     this._state = {
       content: {
         actors: {},
-        balances: {},
+        balances: {
+          spendable: 0,
+          total: 0,
+          confirmed: 0,
+          unconfirmed: 0
+        },
         channels: {},
         blockheight: null,
         node: {

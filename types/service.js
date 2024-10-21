@@ -496,6 +496,16 @@ class Service extends Actor {
     return true;
   }
 
+  /**
+   * Bind a method to an event, with current state as the immutable context.
+   * @param {String} event Name of the event upon which to execute `method` as a function.
+   * @param {Function} method Function to execute when named {@link Event} `event` is encountered.
+   * @returns {EventEmitter} Instance of EventEmitter.
+   */
+  when (event, method) {
+    return this.on(event, method.call(this.state));
+  }
+
   _defineResource (name, definition) {
     const resource = Object.assign({ name }, definition);
     this.resources[name] = new Resource(resource);

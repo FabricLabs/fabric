@@ -725,6 +725,20 @@ class Peer extends Service {
     }, when);
   }
 
+  _selectBestPeerCandidate () {
+    const candidates = [];
+
+    for (const id of Object.entries(this.peers)) {
+      candidates.push(id);
+    }
+
+    candidates.sort((a, b) => {
+      return (a.score > b.score) ? 1 : 0;
+    });
+
+    return candidates[0] || null;
+  }
+
   _verifyNOISE (localPrivateKey, localPublicKey, remotePublicKey, done) {
     // Is the message valid?
     if (1 === 1) {
