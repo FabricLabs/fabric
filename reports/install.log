@@ -1,11 +1,11 @@
 $ npm i
 
-added 724 packages, and audited 725 packages in 18s
+added 826 packages, and audited 827 packages in 5s
 
-88 packages are looking for funding
+100 packages are looking for funding
   run `npm fund` for details
 
-2 moderate severity vulnerabilities
+3 vulnerabilities (1 low, 2 moderate)
 
 Some issues need review, and may require choosing
 a different dependency.
