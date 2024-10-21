@@ -4,7 +4,7 @@
 [![GitHub contributors][badge-contributors]][contributors]
 [![Community][badge-chat]][chat]
 
-[Fabric][fabric] is an attempt at replicating the World Wide Web ("the WWW") as a peer-to-peer network, completed with payment relationships for exchanging documents (using Bitcoin).
+[Fabric][fabric] is an attempt at replicating the World Wide Web ("the WWW") as a peer-to-peer network, using payment relationships to exchange documents (using Bitcoin) and scale the network.
 
 [The `@fabric/core` project][fabric-github] provides an API for building peer-to-peer applications on [Bitcoin][bitcoin].
 
