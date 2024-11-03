@@ -105,7 +105,7 @@
     "fast-json-patch": "3.1.1",
     "is-my-json-valid": "2.20.6",
     "javascript-state-machine": "3.1.0",
-    "jayson": "4.0.0",
+    "jayson": "4.1.2",
     "json-pointer": "0.6.2",
     "jsonpointer": "5.0.1",
     "level": "7.0.1",
@@ -122,7 +122,7 @@
     "simple-aes": "0.1.1",
     "struct": "0.0.12",
     "tiny-secp256k1": "2.2.1",
-    "zeromq": "6.0.4"
+    "zeromq": "6.1.1"
   },
   "devDependencies": {
     "c8": "7.11.3",
