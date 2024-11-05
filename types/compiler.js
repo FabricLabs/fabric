@@ -45,19 +45,7 @@ const Machine = require('./machine');
 // ```
 // This will auto-configure validation base from chain of greatest work.
 
-/**
- * Compilers build interfaces for users of Fabric applications.
- * @type {Actor}
- * @property {AST} ast Compiler's current AST.
- * @property {Entity} entity Compiler's current {@link Entity}.
- */
 class Compiler {
-  /**
-   * Create a new Compiler.
-   * @param  {Object} settings={} Configuration.
-   * @param  {Buffer} settings.body Body of the input program to compile.
-   * @return {Compiler}             Instance of the compiler.
-   */
   constructor (settings = {}) {
     this.settings = Object.assign({
       ast: null,

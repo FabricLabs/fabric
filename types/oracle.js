@@ -4,16 +4,7 @@ const Machine = require('./machine');
 const Resource = require('./resource');
 const Store = require('./store');
 
-/**
- * An Oracle manages one or more collections, using a <code>mempool</code> for
- * transitive state.
- * @extends Store
- */
 class Oracle extends Store {
-  /**
-   * Trusted point-of-reference for external services.
-   * @param       {Object} initial - Initialization vector.
-   */
   constructor (init) {
     super(init);
 
