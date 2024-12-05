@@ -17,7 +17,7 @@ and no mission succeeds without a clearly-defined set of goals.
 ## Current Goals
 These are our immediate goals:
 
-- [ ] Find all TODO items (run script, check diff)
+- [x] Find all TODO items (run script, check diff)
 - [ ] Audit all documentation
 - [ ] Check all hyperlinks on `npm run dev`
 - [ ] 100% test coverage

@@ -5,7 +5,7 @@
 // This example is intended for downstream consumers — those seeking to implement client-facing applications using Fabric.
 //
 // ## Quickstart
-// Ensure that you are using NodeJS `18.19.0` — execute in your clone of the Fabric Core repository.
+// Ensure that you are using NodeJS `18.19.1` — execute in your clone of the Fabric Core repository.
 //
 // ### Cloning Fabric
 // Run the following commands:
