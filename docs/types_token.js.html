@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Source: types/token.js &middot; Docs</title>
+  <script src="scripts/prettify/prettify.js"> </script>
+  <script src="scripts/prettify/lang-css.js"> </script>
+  <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+  <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+  <script>
+    window.dataLayer = window.dataLayer || [];
+
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag('js', new Date());
+    gtag('config', 'G-09Y57FL980');
+  </script>
+</head>
+
+<body>
+  <div id="main">
+    <h1 class="page-title">Source: types/token.js</h1>
+
+
+
+
+    <section>
+      <article>
+        <pre class="prettyprint source linenums"><code>'use strict';
+
+// Dependencies
+const bitcoin = require('bitcoinjs-lib');
+const schnorr = require('bip-schnorr');
+
+// Fabric Types
+const Key = require('./key');
+
+/**
+ * Implements a capability-based security token.
+ */
+class Token {
+  /**
+   * Create a new Fabric Token.
+   * @param {Object} [settings] Configuration.
+   * @returns {Token} The token instance.
+   */
+  constructor (settings = {}) {
+    // TODO: determine rounding preference (secwise)
+    this.created = Date.now();
+    this.settings = Object.assign({
+      capability: 'OP_0',
+      issuer: null,
+      subject: null,
+      state: {
+        status: 'READY'
+      }
+    }, settings);
+
+    // Capability
+    this.capability = this.settings.capability;
+    this.ephemera = new Key();
+
+    // Trust Chain
+    this.issuer = this.settings.issuer ? this.settings.issuer : this.ephemera;
+    this.subject = this.settings.subject ? this.settings.subject : this.ephemera.keypair.getPublic(true).encodeCompressed('hex');
+
+    // ECDSA Signature
+    this.signature = null;
+
+    // State
+    this._state = {
+      content: this.settings.state
+    };
+
+    return this;
+  }
+
+  get state () {
+    return JSON.parse(JSON.stringify(this._state.content));
+  }
+
+  static base64UrlEncode (input) {
+    const base64 = Buffer.from(input, 'utf8').toString('base64');
+    return base64.replace('+', '-').replace('/', '_').replace(/=+$/, '');
+  }
+
+  static base64UrlDecode (input) {
+    input = input.replace(/-/g, '+').replace(/_/g, '/');
+
+    while (input.length % 4) {
+      input += '=';
+    }
+
+    return Buffer.from(input, 'base64').toString();
+  }
+
+  static fromString (input) {
+    const parts = input.split('.');
+    const headers = parts[0];
+    const payload = parts[1];
+    const signature = parts[2];
+    const inner = Token.base64UrlDecode(payload);
+
+    return new Token({
+      capability: inner.cap,
+      issuer: inner.iss,
+      subject: inner.sub,
+      state: inner.state,
+      signature: signature
+    });
+  }
+
+  toString () {
+    // TODO: determine rounding preference (secwise)
+    const utime = Math.floor(this.created / 1000);
+    const issuer = this.issuer.keypair.getPublic(true).encodeCompressed('hex');
+    const header = {
+      alg: 'ES256K',
+      iss: issuer,
+      typ: 'JWT'
+    };
+
+    const payload = {
+      cap: this.capability,
+      iat: utime,
+      iss: issuer,
+      sub: this.subject,
+      state: this.state
+    };
+
+    // TODO: reconcile with JWT spec
+    // alternatively, since we're already breaking spec,
+    // we can diverge again here.
+    // Secret: HS256
+    const secret = 'ffff';
+
+    // Encodings
+    const encodedHeader = Token.base64UrlEncode(JSON.stringify(header));
+    const encodedPayload = Token.base64UrlEncode(JSON.stringify(payload));
+    const signature = bitcoin.crypto.sha256(
+      Buffer.from(`${encodedHeader}.${encodedPayload}.${secret}`)
+    );
+
+    return [
+      encodedHeader,
+      encodedPayload,
+      Token.base64UrlEncode(signature.toString('hex'))
+    ].join('.');
+  }
+
+  sign () {
+    // Sign the capability using the private key
+    const hash = bitcoin.crypto.sha256(this.capability);
+    this.signature = schnorr.sign(this.issuer.privateKey, hash);
+  }
+
+  verify () {
+    // Verify the signature using the public key
+    const hash = bitcoin.crypto.sha256(this.capability);
+    return schnorr.verify(this.issuer.publicKey, hash, this.signature);
+  }
+
+  add (other) {
+    const combinedCapability = [this.capability, other.capability].join(' ');
+    const combinedToken = new Token({
+      capability: combinedCapability,
+      issuer: this.issuer.publicKey
+    });
+
+    /* combinedToken.signature = schnorr.combine([
+      this.signature,
+      other.signature
+    ]); */
+
+    return combinedToken;
+  }
+}
+
+module.exports = Token;
+</code></pre>
+      </article>
+    </section>
+
+
+
+  </div>
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="Actor.html">Actor</a></li>
+      <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="Channel.html">Channel</a></li>
+      <li><a href="Circuit.html">Circuit</a></li>
+      <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Environment.html">Environment</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Federation.html">Federation</a></li>
+      <li><a href="Filesystem.html">Filesystem</a></li>
+      <li><a href="HKDF.html">HKDF</a></li>
+      <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
+      <li><a href="Identity.html">Identity</a></li>
+      <li><a href="Interface.html">Interface</a></li>
+      <li><a href="Key.html">Key</a></li>
+      <li><a href="Ledger.html">Ledger</a></li>
+      <li><a href="Lightning.html">Lightning</a></li>
+      <li><a href="Logger.html">Logger</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="Reader.html">Reader</a></li>
+      <li><a href="Redis.html">Redis</a></li>
+      <li><a href="Remote.html">Remote</a></li>
+      <li><a href="Resource.html">Resource</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Session.html">Session</a></li>
+      <li><a href="Signer.html">Signer</a></li>
+      <li><a href="Snapshot.html">Snapshot</a></li>
+      <li><a href="Stack.html">Stack</a></li>
+      <li><a href="Stash.html">Stash</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
+      <li><a href="Token.html">Token</a></li>
+      <li><a href="Tree.html">Tree</a></li>
+      <li><a href="Value.html">Value</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
+      <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="Worker.html">Worker</a></li>
+      <li><a href="ZMQ.html">ZMQ</a></li>
+    </ul>
+    <h3>Events</h3>
+    <ul>
+      <li><a href="Aggregator.html#event:commit">commit</a></li>
+    </ul>
+  </nav>
+  <br class="clear" />
+  <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>
+  <script type="text/javascript">
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"></script>
+</body>
+
+</html>

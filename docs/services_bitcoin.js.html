@@ -34,7 +34,8 @@
         <pre class="prettyprint source linenums"><code>'use strict';
 
 const {
-  BITCOIN_GENESIS
+  BITCOIN_GENESIS,
+  FABRIC_USER_AGENT
 } = require('../constants');
 
 const OP_TRACE = require('../contracts/trace');
@@ -155,12 +156,12 @@ class Bitcoin extends Service {
       }
     });
 
-    // Runs fullnode from bcoin
-    if (this.settings.fullnode) {
+    // Runs fullnode from bcoin (disabled for now)
+    /* if (this.settings.fullnode) {
       this.fullnode = new FullNode({
         network: this.settings.network
       });
-    }
+    } */
 
     // Local Bitcoin Node
     this.peer = null; /* bcoin.Peer.fromOptions({
@@ -230,24 +231,6 @@ class Bitcoin extends Service {
     return this;
   }
 
-  /**
-   * Provides bcoin's implementation of `TX` internally.  This static may be
-   * removed in the future.
-   * @deprecated
-   */
-  static get Transaction () {
-    return bcoin.TX;
-  }
-
-  /**
-   * Provides bcoin's implementation of `MTX` internally.  This static may be
-   * removed in the future.
-   * @deprecated
-   */
-  static get MutableTransaction () {
-    return bcoin.TX;
-  }
-
   get balance () {
     return this._state.balances.mine.trusted;
   }
@@ -260,18 +243,14 @@ class Bitcoin extends Service {
    * User Agent string for the Bitcoin P2P network.
    */
   get UAString () {
-    return 'Fabric/Bitcoin 0.1.0-dev (@fabric/core#v0.1.0-RC1)';
+    return FABRIC_USER_AGENT;
   }
 
   /**
    * Chain tip (block hash of the chain with the most Proof of Work)
    */
   get tip () {
-    if (this.settings.fullnode) {
-      return this.fullnode.chain.tip.hash.toString('hex');
-    } else {
-      return (this.chain &amp;&amp; this.chain.tip) ? this.chain.tip.toString('hex') : null;
-    }
+    return (this.chain &amp;&amp; this.chain.tip) ? this.chain.tip.toString('hex') : null;
   }
 
   /**
@@ -399,8 +378,8 @@ class Bitcoin extends Service {
         state: self.state
       };
 
-      self.emit('beat', beat);
-      self.commit();
+      // self.emit('beat', beat);
+      // self.commit();
     });
 
     return this;
@@ -970,7 +949,7 @@ class Bitcoin extends Service {
 
     if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', `Starting fullnode for network "${this.settings.network}"...`);
 
-    for (const candidate of this.settings.seeds) {
+    /* for (const candidate of this.settings.seeds) {
       let parts = candidate.split(':');
       let addr = new NetAddress({
         host: parts[0],
@@ -979,7 +958,7 @@ class Bitcoin extends Service {
 
       let peer = this.fullnode.pool.createOutbound(addr);
       this.fullnode.pool.peers.add(peer);
-    }
+    } */
 
     await this.fullnode.open();
     await this.fullnode.connect();
@@ -1036,8 +1015,13 @@ class Bitcoin extends Service {
   }
 
   async getUnusedAddress () {
-    const address = await this._makeRPCRequest('getnewaddress');
-    return address;
+    if (this.rpc) {
+      const address = await this._makeRPCRequest('getnewaddress');
+      return address;
+    } else {
+      const target = this.key.deriveAddress(this.state.index);
+      return target.address;
+    }
   }
 
   async append (raw) {
@@ -1473,6 +1457,9 @@ class Bitcoin extends Service {
    * @returns {PSBT} Instance of the PSBT.
    */
   async _buildPSBT (options = {}) {
+    if (!options.inputs) options.inputs = [];
+    if (!options.outputs) options.outputs = [];
+
     const psbt = new bitcoin.Psbt({
       network: this.networks[this.settings.network]
     });
@@ -1750,7 +1737,7 @@ class Bitcoin extends Service {
     this.emit('log', `Beginning chain sync for height ${this.height} with best block: ${this.best}`);
 
     await this._syncBestBlock();
-    await this._syncChainHeadersOverRPC(this.best);
+    // await this._syncChainHeadersOverRPC(this.best);
     // await this._syncRawChainOverRPC();
 
     this.state.status = 'READY';
@@ -1790,7 +1777,7 @@ class Bitcoin extends Service {
     });
 
     if (this.store) await this.store.open();
-    if (this.settings.fullnode) {
+    /* if (this.settings.fullnode) {
       this.fullnode.on('peer connect', function peerConnectHandler (peer) {
         self.emit('warning', `[SERVICES:BITCOIN]', 'Peer connected to Full Node: ${peer}`);
       });
@@ -1801,7 +1788,7 @@ class Bitcoin extends Service {
       this.fullnode.on('tx', async function fullnodeTxHandler (tx) {
         self.emit('log', `tx event: ${JSON.stringify(tx)}`);
       });
-    }
+    } */
 
     this.wallet.on('message', function (msg) {
       self.emit('log', `wallet msg: ${msg}`);
@@ -1832,7 +1819,7 @@ class Bitcoin extends Service {
     // await this.chain.start();
 
     // Start nodes
-    if (this.settings.fullnode) await this._startLocalNode();
+    // if (this.settings.fullnode) await this._startLocalNode();
     if (this.settings.zmq) await this._startZMQ();
 
     // Handle RPC mode
@@ -1868,7 +1855,7 @@ class Bitcoin extends Service {
       const wallet = await this._loadWallet();
 
       // Heartbeat
-      self._heart = setInterval(self.tick.bind(self), self.settings.interval);
+      // self._heart = setInterval(self.tick.bind(self), self.settings.interval);
 
       // Sync!
       await self._syncWithRPC();
@@ -1899,7 +1886,7 @@ class Bitcoin extends Service {
    */
   async stop () {
     if (this.peer &amp;&amp; this.peer.connected) await this.peer.destroy();
-    if (this.fullnode) await this.fullnode.close();
+    // if (this.fullnode) await this.fullnode.close();
     await this.wallet.stop();
     // await this.chain.stop();
 
@@ -1925,44 +1912,32 @@ module.exports = Bitcoin;
     <h3>Classes</h3>
     <ul>
       <li><a href="Actor.html">Actor</a></li>
-      <li><a href="Aggregator.html">Aggregator</a></li>
-      <li><a href="App.html">App</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
-      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
-      <li><a href="Compiler.html">Compiler</a></li>
-      <li><a href="Consensus.html">Consensus</a></li>
-      <li><a href="Entity.html">Entity</a></li>
       <li><a href="Environment.html">Environment</a></li>
-      <li><a href="Exchange.html">Exchange</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
-      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
-      <li><a href="Keystore.html">Keystore</a></li>
       <li><a href="Ledger.html">Ledger</a></li>
       <li><a href="Lightning.html">Lightning</a></li>
       <li><a href="Logger.html">Logger</a></li>
       <li><a href="Machine.html">Machine</a></li>
-      <li><a href="Mempool.html">Mempool</a></li>
       <li><a href="Message.html">Message</a></li>
-      <li><a href="Node.html">Node</a></li>
-      <li><a href="Oracle.html">Oracle</a></li>
-      <li><a href="Path.html">Path</a></li>
       <li><a href="Peer.html">Peer</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
-      <li><a href="Router.html">Router</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
@@ -1973,9 +1948,8 @@ module.exports = Bitcoin;
       <li><a href="Stash.html">Stash</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
-      <li><a href="Swap.html">Swap</a></li>
       <li><a href="Swarm.html">Swarm</a></li>
-      <li><a href="Transition.html">Transition</a></li>
+      <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Value.html">Value</a></li>
       <li><a href="Vector.html">Vector</a></li>

@@ -1,7 +1,7 @@
 'use strict';
 
 // Dependencies
-const level = require('level');
+const { Level } = require('level');
 const crypto = require('crypto');
 const pointer = require('json-pointer');
 
@@ -390,7 +390,7 @@ class Store extends Actor {
     // if (this.db) return this;
 
     try {
-      this.db = level(this.settings.path);
+      this.db = new Level(this.settings.path);
       this.trust(this.db);
       this.status = 'opened';
       await this.commit();

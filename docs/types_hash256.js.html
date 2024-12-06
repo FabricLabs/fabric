@@ -33,7 +33,7 @@
       <article>
         <pre class="prettyprint source linenums"><code>'use strict';
 
-const crypto = require('crypto');
+const { sha256 } = require('@noble/hashes/sha256');
 
 /**
  * Simple interaction with 256-bit spaces.
@@ -49,11 +49,29 @@ class Hash256 {
    */
   constructor (settings = {}) {
     if (typeof settings === 'string') settings = { input: settings };
-    if (!settings.input) settings.input = crypto.randomBytes(32).toString('hex');
+    if (!settings.input) {
+      if (typeof window !== 'undefined' &amp;&amp; window.crypto &amp;&amp; window.crypto.getRandomValues) {
+        settings.input = window.crypto.getRandomValues(new Uint8Array(32)).join('');
+      } else {
+        settings.input = require('crypto').randomBytes(32).toString('hex');
+      }
+    }
 
+    // Ensure the input can be cast to a buffer
+    const buffer = Buffer.from(settings.input, 'utf8');
+
+    // Settings
     this.settings = Object.assign({
-      hash: Hash256.digest(settings.input)
+      hash: Hash256.digest(buffer)
     }, settings);
+
+    return this;
+  }
+
+  static compute (input) {
+    if (typeof input === 'string') input = Buffer.from(input, 'utf8');
+    const buffer = sha256(input);
+    return Buffer.from(buffer).toString('hex');
   }
 
   /**
@@ -66,8 +84,11 @@ class Hash256 {
       throw new Error(`Input to process must be of type "String" or "Buffer" to digest.`);
     }
 
-    // consume and output as string
-    return crypto.createHash('sha256').update(input).digest('hex');
+    return Hash256.compute(input);
+  }
+
+  get hash () {
+    return this.value;
   }
 
   // TODO: document `hash256.value`
@@ -82,12 +103,22 @@ class Hash256 {
     return Buffer.from(input, 'hex').reverse().toString('hex');
   }
 
+  static async hash (input) {
+    const encoder = new TextEncoder();
+    const dataBuffer = encoder.encode(input);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return hashHex;
+  }
+
   reverse (input = this.value) {
     return Hash256.reverse(input);
   }
 }
 
-module.exports = Hash256;</code></pre>
+module.exports = Hash256;
+</code></pre>
       </article>
     </section>
 
@@ -99,44 +130,32 @@ module.exports = Hash256;</code></pre>
     <h3>Classes</h3>
     <ul>
       <li><a href="Actor.html">Actor</a></li>
-      <li><a href="Aggregator.html">Aggregator</a></li>
-      <li><a href="App.html">App</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
-      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
-      <li><a href="Compiler.html">Compiler</a></li>
-      <li><a href="Consensus.html">Consensus</a></li>
-      <li><a href="Entity.html">Entity</a></li>
       <li><a href="Environment.html">Environment</a></li>
-      <li><a href="Exchange.html">Exchange</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
-      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
-      <li><a href="Keystore.html">Keystore</a></li>
       <li><a href="Ledger.html">Ledger</a></li>
       <li><a href="Lightning.html">Lightning</a></li>
       <li><a href="Logger.html">Logger</a></li>
       <li><a href="Machine.html">Machine</a></li>
-      <li><a href="Mempool.html">Mempool</a></li>
       <li><a href="Message.html">Message</a></li>
-      <li><a href="Node.html">Node</a></li>
-      <li><a href="Oracle.html">Oracle</a></li>
-      <li><a href="Path.html">Path</a></li>
       <li><a href="Peer.html">Peer</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
-      <li><a href="Router.html">Router</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
@@ -147,9 +166,8 @@ module.exports = Hash256;</code></pre>
       <li><a href="Stash.html">Stash</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
-      <li><a href="Swap.html">Swap</a></li>
       <li><a href="Swarm.html">Swarm</a></li>
-      <li><a href="Transition.html">Transition</a></li>
+      <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Value.html">Value</a></li>
       <li><a href="Vector.html">Vector</a></li>

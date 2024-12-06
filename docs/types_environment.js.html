@@ -43,6 +43,7 @@ const fs = require('fs');
 const merge = require('lodash.merge');
 
 // Fabric Types
+const Actor = require('./actor');
 const Entity = require('./entity');
 const EncryptedPromise = require('./promise');
 const Wallet = require('./wallet');
@@ -65,6 +66,9 @@ class Environment extends Entity {
     this.settings = merge({
       home: process.env.HOME,
       path: process.env.HOME + '/.fabric/wallet.json',
+      state: {
+        status: 'INITIALIZED'
+      },
       store: process.env.HOME + '/.fabric'
     }, this.settings, settings);
 
@@ -72,12 +76,20 @@ class Environment extends Entity {
     this.wallet = null;
 
     this._state = {
-      status: 'INITIALIZED',
-      content: {},
+      status: this.settings.state.status,
+      content: this.settings.state,
       variables: process.env
     };
 
     return this;
+  }
+
+  get state () {
+    return JSON.parse(JSON.stringify(this._state.content));
+  }
+
+  get status () {
+    return this._state.status;
   }
 
   get SEED_FILE () {
@@ -102,6 +114,7 @@ class Environment extends Entity {
 
   get seed () {
     return [
+      FIXTURE_SEED,
       this.settings.seed,
       this['FABRIC_SEED'],
       this.readVariable('FABRIC_SEED')
@@ -110,9 +123,21 @@ class Environment extends Entity {
 
   get xprv () {
     return [
+      // FIXTURE_XPRV,
       this.settings.xprv,
       this['FABRIC_XPRV'],
-      this.readVariable('FABRIC_XPRV')
+      this.readVariable('FABRIC_XPRV'),
+      this.wallet.xprv
+    ].find(any);
+  }
+
+  get xpub () {
+    return [
+      // FIXTURE_XPUB,
+      this.settings.xpub,
+      this['FABRIC_XPUB'],
+      this.readVariable('FABRIC_XPUB'),
+      this.wallet.xpub
     ].find(any);
   }
 
@@ -156,6 +181,8 @@ class Environment extends Entity {
 
   loadWallet () {
     if (this.seed) {
+      // console.log('Seed was provided:', this.seed);
+
       this.wallet = new Wallet({
         key: {
           seed: this.seed,
@@ -163,12 +190,16 @@ class Environment extends Entity {
         }
       });
     } else if (this.xprv) {
+      // console.log('xprv was provided:', this.xprv);
+
       this.wallet = new Wallet({
         key: {
           xprv: this.xprv
         }
       });
     } else if (this.xpub) {
+      // console.log('xpub was provided:', this.xpub);
+
       this.wallet = new Wallet({
         key: {
           xpub: this.xpub
@@ -292,6 +323,7 @@ class Environment extends Entity {
 
     this.loadWallet();
 
+    // if (this.local) this.wallet = new Wallet(this.local);
     if (this.wallet) this.wallet.start();
 
     this._state.status = 'STARTED';
@@ -302,6 +334,21 @@ class Environment extends Entity {
     this._state.status = 'STOPPING';
     this._state.status = 'STOPPED';
     return this;
+  }
+
+  verify () {
+    const state = new Actor(this.state);
+    if (state.id !== '3c141a17b967d9d50770ebcc3beac9f3bd695f728e8f4fb8988d913794998078') throw new Error(`Incorrect state: ${state.id}`);
+
+    if (![
+      'INITIALIZED',
+      'STARTED',
+      'STARTING',
+      'STOPPED',
+      'STOPPING'
+    ].includes(this.status)) throw new Error(`Invalid status: ${this.status}`);
+
+    return true;
   }
 }
 
@@ -318,44 +365,32 @@ module.exports = Environment;
     <h3>Classes</h3>
     <ul>
       <li><a href="Actor.html">Actor</a></li>
-      <li><a href="Aggregator.html">Aggregator</a></li>
-      <li><a href="App.html">App</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
-      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
-      <li><a href="Compiler.html">Compiler</a></li>
-      <li><a href="Consensus.html">Consensus</a></li>
-      <li><a href="Entity.html">Entity</a></li>
       <li><a href="Environment.html">Environment</a></li>
-      <li><a href="Exchange.html">Exchange</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
-      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
-      <li><a href="Keystore.html">Keystore</a></li>
       <li><a href="Ledger.html">Ledger</a></li>
       <li><a href="Lightning.html">Lightning</a></li>
       <li><a href="Logger.html">Logger</a></li>
       <li><a href="Machine.html">Machine</a></li>
-      <li><a href="Mempool.html">Mempool</a></li>
       <li><a href="Message.html">Message</a></li>
-      <li><a href="Node.html">Node</a></li>
-      <li><a href="Oracle.html">Oracle</a></li>
-      <li><a href="Path.html">Path</a></li>
       <li><a href="Peer.html">Peer</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
-      <li><a href="Router.html">Router</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
@@ -366,9 +401,8 @@ module.exports = Environment;
       <li><a href="Stash.html">Stash</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
-      <li><a href="Swap.html">Swap</a></li>
       <li><a href="Swarm.html">Swarm</a></li>
-      <li><a href="Transition.html">Transition</a></li>
+      <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Value.html">Value</a></li>
       <li><a href="Vector.html">Vector</a></li>

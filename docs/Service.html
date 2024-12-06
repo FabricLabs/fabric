@@ -33,7 +33,7 @@
 
       <header>
 
-        <h2><span class="attribs"><span class="type-signature">(protected) </span></span>Service<span class="signature">(settings)</span><span class="type-signature"></span></h2>
+        <h2><span class="attribs"><span class="type-signature">(protected) </span></span>Service<span class="signature">(settings<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h2>
 
         <div class="class-description">The "Service" is a simple model for processing messages in a distributed
           system. <a href="Service.html">Service</a> instances are public interfaces for outside systems,
@@ -57,7 +57,7 @@
 
 
 
-          <h4 class="name" id="Service"><span class="type-signature">(protected) </span>new Service<span class="signature">(settings)</span><span class="type-signature"></span></h4>
+          <h4 class="name" id="Service"><span class="type-signature">(protected) </span>new Service<span class="signature">(settings<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h4>
 
 
 
@@ -89,6 +89,8 @@
                 <th>Type</th>
 
 
+                <th>Attributes</th>
+
 
 
 
@@ -113,6 +115,16 @@
 
                 </td>
 
+
+                <td class="attributes">
+
+                  &lt;optional><br>
+
+
+
+
+
+                </td>
 
 
 
@@ -186,7 +198,7 @@
 
                       <tr>
 
-                        <td class="name"><code>@data</code></td>
+                        <td class="name"><code>frequency</code></td>
 
 
                         <td class="type">
@@ -216,7 +228,44 @@
                         </td>
 
 
-                        <td class="description last">Internal data to assign.</td>
+                        <td class="description last">Interval frequency in hertz.</td>
+                      </tr>
+
+
+
+                      <tr>
+
+                        <td class="name"><code>state</code></td>
+
+
+                        <td class="type">
+
+
+                          <span class="param-type">Object</span>
+
+
+
+                        </td>
+
+
+                        <td class="attributes">
+
+                          &lt;optional><br>
+
+
+
+
+
+                        </td>
+
+
+
+                        <td class="default">
+
+                        </td>
+
+
+                        <td class="description last">Initial state to assign.</td>
                       </tr>
 
 
@@ -313,7 +362,7 @@
             <dd class="tag-source">
               <ul class="dummy">
                 <li>
-                  <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line41">line 41</a>
+                  <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line42">line 42</a>
                 </li>
               </ul>
             </dd>
@@ -474,7 +523,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line663">line 663</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line695">line 695</a>
               </li>
             </ul>
           </dd>
@@ -727,7 +776,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line697">line 697</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line729">line 729</a>
               </li>
             </ul>
           </dd>
@@ -890,7 +939,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line975">line 975</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line979">line 979</a>
               </li>
             </ul>
           </dd>
@@ -1053,7 +1102,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line1104">line 1104</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line1110">line 1110</a>
               </li>
             </ul>
           </dd>
@@ -1145,7 +1194,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line257">line 257</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line272">line 272</a>
               </li>
             </ul>
           </dd>
@@ -1317,7 +1366,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line769">line 769</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line801">line 801</a>
               </li>
             </ul>
           </dd>
@@ -1480,7 +1529,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line302">line 302</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line317">line 317</a>
               </li>
             </ul>
           </dd>
@@ -1509,6 +1558,10 @@
 
         <h5>Returns:</h5>
 
+
+        <div class="param-desc">
+          Returns the target value if found, otherwise null.
+        </div>
 
 
 
@@ -1640,7 +1693,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line447">line 447</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line468">line 468</a>
               </li>
             </ul>
           </dd>
@@ -1755,7 +1808,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line240">line 240</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line255">line 255</a>
               </li>
             </ul>
           </dd>
@@ -1916,7 +1969,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line466">line 466</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line487">line 487</a>
               </li>
             </ul>
           </dd>
@@ -2079,7 +2132,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line515">line 515</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line547">line 547</a>
               </li>
             </ul>
           </dd>
@@ -2265,7 +2318,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line852">line 852</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line884">line 884</a>
               </li>
             </ul>
           </dd>
@@ -2428,7 +2481,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line317">line 317</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line332">line 332</a>
               </li>
             </ul>
           </dd>
@@ -2539,7 +2592,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line544">line 544</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line576">line 576</a>
               </li>
             </ul>
           </dd>
@@ -2631,7 +2684,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line248">line 248</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line263">line 263</a>
               </li>
             </ul>
           </dd>
@@ -2790,7 +2843,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line328">line 328</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line349">line 349</a>
               </li>
             </ul>
           </dd>
@@ -2850,6 +2903,192 @@
 
 
 
+        <h4 class="name" id="when"><span class="type-signature"></span>when<span class="signature">(event, method)</span><span class="type-signature"> &rarr; {EventEmitter}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Bind a method to an event, with current state as the immutable context.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>event</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Name of the event upon which to execute `method` as a function.</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>method</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">function</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Function to execute when named Event `event` is encountered.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line507">line 507</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Instance of EventEmitter.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">EventEmitter</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
       </article>
 
     </section>
@@ -2862,44 +3101,32 @@
     <h3>Classes</h3>
     <ul>
       <li><a href="Actor.html">Actor</a></li>
-      <li><a href="Aggregator.html">Aggregator</a></li>
-      <li><a href="App.html">App</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
-      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
-      <li><a href="Compiler.html">Compiler</a></li>
-      <li><a href="Consensus.html">Consensus</a></li>
-      <li><a href="Entity.html">Entity</a></li>
       <li><a href="Environment.html">Environment</a></li>
-      <li><a href="Exchange.html">Exchange</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
-      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
-      <li><a href="Keystore.html">Keystore</a></li>
       <li><a href="Ledger.html">Ledger</a></li>
       <li><a href="Lightning.html">Lightning</a></li>
       <li><a href="Logger.html">Logger</a></li>
       <li><a href="Machine.html">Machine</a></li>
-      <li><a href="Mempool.html">Mempool</a></li>
       <li><a href="Message.html">Message</a></li>
-      <li><a href="Node.html">Node</a></li>
-      <li><a href="Oracle.html">Oracle</a></li>
-      <li><a href="Path.html">Path</a></li>
       <li><a href="Peer.html">Peer</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
-      <li><a href="Router.html">Router</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
@@ -2910,9 +3137,8 @@
       <li><a href="Stash.html">Stash</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
-      <li><a href="Swap.html">Swap</a></li>
       <li><a href="Swarm.html">Swarm</a></li>
-      <li><a href="Transition.html">Transition</a></li>
+      <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Value.html">Value</a></li>
       <li><a href="Vector.html">Vector</a></li>
