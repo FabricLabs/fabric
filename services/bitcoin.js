@@ -325,7 +325,11 @@ class Bitcoin extends Service {
     const password = settings.password || crypto.randomBytes(32).toString('hex');
     const salt = crypto.randomBytes(16).toString('hex');
     const salted = crypto.createHmac('sha256', salt).update(password).digest('hex');
-    return `${username}:${salt}$${salted}`;
+    return {
+      content: `${username}:${salt}$${salted}`,
+      password: password,
+      username: username
+    };
   }
 
   signTweaked (messageHash, key) {
@@ -1752,20 +1756,31 @@ class Bitcoin extends Service {
   async createLocalNode (settings = {}) {
     if (this.settings.debug) console.log('[FABRIC:BITCOIN]', 'Creating local node...');
     let datadir = './stores/bitcoin';
+    const port = 20444;
 
     // TODO: use RPC auth
     const params = [
       `-port=${settings.port || this.settings.port || 18444}`,
       '-rpcbind=127.0.0.1',
-      '-rpcpassword=naiRe9wo5vieFayohje5aegheenoh4ee',
-      '-rpcport=20444',
-      '-rpcuser=ahp7iuGhae8mooBahFaYieyaixei6too',
+      `-rpcport=${port}`,
       '-server',
       '-zmqpubrawblock=tcp://127.0.0.1:29500',
       '-zmqpubrawtx=tcp://127.0.0.1:29500',
       '-zmqpubhashtx=tcp://127.0.0.1:29500',
       '-zmqpubhashblock=tcp://127.0.0.1:29500'
     ];
+
+    if (this.settings.username && this.settings.password) {
+      params.push(`-rpcuser=${this.settings.username}`);
+      params.push(`-rpcpassword=${this.settings.password}`);
+    } else {
+      const username = crypto.randomBytes(16).toString('hex');
+      const auth = this.createRPCAuth({ username });
+      this.settings.username = auth.username;
+      this.settings.password = auth.password;
+      this.settings.authority = `http://${this.settings.username}:${this.settings.password}@127.0.0.1:${port}`;
+      params.push(`-rpcauth=${auth.content}`);
+    }
 
     // Configure network
     switch (this.settings.network) {
@@ -1829,7 +1844,8 @@ class Bitcoin extends Service {
   async start () {
     this.emit('debug', `[SERVICES:BITCOIN] Starting for network "${this.settings.network}"...`);
     this.status = 'STARTING';
-    const node = await this.createLocalNode();
+
+    await this.createLocalNode();
 
     // Bitcoin events
     if (this.peer) this.peer.on('error', this._handlePeerError.bind(this));
