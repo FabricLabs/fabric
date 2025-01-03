@@ -7,9 +7,14 @@ const {
 
 const OP_TRACE = require('../contracts/trace');
 
+// Dependencies
+const crypto = require('crypto');
+const children = require('child_process');
+
 // External Dependencies
 const jayson = require('jayson/lib/client');
 const monitor = require('fast-json-patch');
+const mkdirp = require('mkdirp');
 
 // crypto support libraries
 // TODO: replace with  `secp256k1`
@@ -66,6 +71,11 @@ class Bitcoin extends Service {
       mining: false,
       listen: false,
       fullnode: false,
+      constraints: {
+        storage: {
+          size: 550 // size in MB
+        }
+      },
       spv: {
         port: 18332
       },
@@ -260,6 +270,10 @@ class Bitcoin extends Service {
     this.commit();
   }
 
+  get supply () {
+    return this._state.content.supply;
+  }
+
   createKeySpendOutput (publicKey) {
     // x-only pubkey (remove 1 byte y parity)
     const myXOnlyPubkey = publicKey.slice(1, 33);
@@ -303,6 +317,15 @@ class Bitcoin extends Service {
     tx.ins[0].witness = [signature];
 
     return tx;
+  }
+
+  createRPCAuth (settings = {}) {
+    if (!settings.username) throw new Error('Username is required.');
+    const username = settings.username;
+    const password = settings.password || crypto.randomBytes(32).toString('hex');
+    const salt = crypto.randomBytes(16).toString('hex');
+    const salted = crypto.createHmac('sha256', salt).update(password).digest('hex');
+    return `${username}:${salt}$${salted}`;
   }
 
   signTweaked (messageHash, key) {
@@ -1726,21 +1749,94 @@ class Bitcoin extends Service {
     return this;
   }
 
+  async createLocalNode (settings = {}) {
+    if (this.settings.debug) console.log('[FABRIC:BITCOIN]', 'Creating local node...');
+    let datadir = './stores/bitcoin';
+
+    // TODO: use RPC auth
+    const params = [
+      `-port=${settings.port || this.settings.port || 18444}`,
+      '-rpcbind=127.0.0.1',
+      '-rpcpassword=naiRe9wo5vieFayohje5aegheenoh4ee',
+      '-rpcport=20444',
+      '-rpcuser=ahp7iuGhae8mooBahFaYieyaixei6too',
+      '-server',
+      '-zmqpubrawblock=tcp://127.0.0.1:29500',
+      '-zmqpubrawtx=tcp://127.0.0.1:29500',
+      '-zmqpubhashtx=tcp://127.0.0.1:29500',
+      '-zmqpubhashblock=tcp://127.0.0.1:29500'
+    ];
+
+    // Configure network
+    switch (this.settings.network) {
+      default:
+      case 'mainnet':
+        datadir = (this.settings.constraints.storage.size) ? './stores/bitcoin-pruned' : './stores/bitcoin';
+        break;
+      case 'testnet':
+        datadir = './stores/bitcoin-testnet';
+        params.push('-testnet');
+        break;
+      case 'testnet4':
+        datadir = './stores/bitcoin-testnet4';
+        params.push('-testnet4');
+        break;
+      case 'regtest':
+        datadir = './stores/bitcoin-regtest';
+        params.push('-regtest');
+        break;
+      case 'playnet':
+        datadir = './stores/bitcoin-playnet';
+        break;
+    }
+
+    // If storage constraints are set, prune the blockchain
+    if (this.settings.constraints.storage.size) {
+      params.push(`-prune=${this.settings.constraints.storage.size}`);
+    } else {
+      params.push(`-txindex`);
+    }
+
+    // Set data directory
+    params.push(`-datadir=${datadir}`);
+
+    // Start bitcoind
+    // Ensure storage directory exists
+    await mkdirp(datadir);
+    const child = children.spawn('bitcoind', params);
+
+    child.stdout.on('data', (data) => {
+      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', data.toString('utf8').trim());
+      this.emit('debug', `[FABRIC:BITCOIN] ${data.toString('utf8').trim()}`);
+    });
+
+    child.stderr.on('data', function (data) {
+      console.error('[FABRIC:BITCOIN]', '[ERROR]', data.toString('utf8').trim());
+      this.emit('error', `[FABRIC:BITCOIN] ${data.toString('utf8').trim()}`);
+    });
+
+    child.on('close', function (code) {
+      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Bitcoin Core exited with code ' + code);
+      this.emit('debug', `[FABRIC:BITCOIN] Bitcoin Core exited with code ${code}`);
+    });
+
+    return child;
+  }
+
   /**
    * Start the Bitcoin service, including the initiation of outbound requests.
    */
   async start () {
     this.emit('debug', `[SERVICES:BITCOIN] Starting for network "${this.settings.network}"...`);
-
-    const self = this;
-    self.status = 'starting';
+    this.status = 'STARTING';
+    const node = await this.createLocalNode();
 
     // Bitcoin events
     if (this.peer) this.peer.on('error', this._handlePeerError.bind(this));
     if (this.peer) this.peer.on('packet', this._handlePeerPacket.bind(this));
     // NOTE: we always ask for genesis block on peer open
     if (this.peer) this.peer.on('open', () => {
-      let block = self.peer.getBlock([this.network.genesis.hash]);
+      let block = this.peer.getBlock([this.network.genesis.hash]);
     });
 
     if (this.store) await this.store.open();
@@ -1757,25 +1853,25 @@ class Bitcoin extends Service {
       });
     } */
 
-    this.wallet.on('message', function (msg) {
-      self.emit('log', `wallet msg: ${msg}`);
+    this.wallet.on('message', (msg) => {
+      this.emit('log', `wallet msg: ${msg}`);
     });
 
-    this.wallet.on('log', function (msg) {
-      self.emit('log', `wallet log: ${msg}`);
+    this.wallet.on('log', (msg) => {
+      this.emit('log', `wallet log: ${msg}`);
     });
 
-    this.wallet.on('warning', function (msg) {
-      self.emit('warning', `wallet warning: ${msg}`);
+    this.wallet.on('warning', (msg) => {
+      this.emit('warning', `wallet warning: ${msg}`);
     });
 
-    this.wallet.on('error', function (msg) {
-      self.emit('error', `wallet error: ${msg}`);
+    this.wallet.on('error', (msg) => {
+      this.emit('error', `wallet error: ${msg}`);
     });
 
     if (this.wallet.database) {
-      this.wallet.database.on('tx', function (tx) {
-        self.emit('debug', `wallet tx!!!!!! ${JSON.stringify(tx, null, '  ')}`);
+      this.wallet.database.on('tx', (tx) => {
+        this.emit('debug', `wallet tx!!!!!! ${JSON.stringify(tx, null, '  ')}`);
       });
     }
 
@@ -1798,7 +1894,7 @@ class Bitcoin extends Service {
         // Assign all parameters
         this.settings.username = url.username;
         this.settings.password = url.password;
-        this.settings.host = url.host;
+        this.settings.host = url.hostname;
         this.settings.port = url.port;
         this.settings.secure = (url.protocol === 'https:') ? true : false;
       }
@@ -1814,18 +1910,18 @@ class Bitcoin extends Service {
       config.headers = { Authorization: `Basic ${Buffer.from(auth, 'utf8').toString('base64')}` };
 
       if (provider.protocol === 'https:') {
-        self.rpc = jayson.https(config);
+        this.rpc = jayson.https(config);
       } else {
-        self.rpc = jayson.http(config);
+        this.rpc = jayson.http(config);
       }
 
       const wallet = await this._loadWallet();
 
       // Heartbeat
-      self._heart = setInterval(self.tick.bind(self), self.settings.interval);
+      this._heart = setInterval(this.tick.bind(this), this.settings.interval);
 
       // Sync!
-      await self._syncWithRPC();
+      await this._syncWithRPC();
     }
 
     // TODO: re-enable these
