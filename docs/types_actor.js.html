@@ -74,9 +74,8 @@ class Actor extends EventEmitter {
     };
 
     // Internal State
-    // TODO: encourage use of `state` over `_state`
     // TODO: use `const state` here
-    this._state = {
+    this.state = {
       type: this.settings.type,
       status: this.settings.status,
       content: this._readObject(actor)
@@ -88,7 +87,7 @@ class Actor extends EventEmitter {
     // TODO: evaluate disabling by default
     // and/or resolving performance issues at scale
     try {
-      this.observer = monitor.observe(this._state.content, this._handleMonitorChanges.bind(this));
+      this.observer = monitor.observe(this.state.content, this._handleMonitorChanges.bind(this));
     } catch (exception) {
       console.error('UNABLE TO WATCH:', exception);
     }
@@ -97,7 +96,6 @@ class Actor extends EventEmitter {
     Object.defineProperty(this, '_events', { enumerable: false });
     Object.defineProperty(this, '_eventsCount', { enumerable: false });
     Object.defineProperty(this, '_maxListeners', { enumerable: false });
-    Object.defineProperty(this, '_state', { enumerable: false });
     Object.defineProperty(this, 'observer', { enumerable: false });
 
     // Chainable
@@ -174,23 +172,23 @@ class Actor extends EventEmitter {
   }
 
   get state () {
-    return JSON.parse(JSON.stringify(this._state.content || {}));
+    return JSON.parse(JSON.stringify(this.state.content || {}));
   }
 
   get status () {
-    return this._state.status;
+    return this.state.status;
   }
 
   get type () {
-    return this._state['@type'];
+    return this.state['@type'];
   }
 
   set state (value) {
-    this._state.content = value;
+    this.state.content = value;
   }
 
   set status (value) {
-    this._state.status = value;
+    this.state.status = value;
   }
 
   /**
@@ -200,7 +198,7 @@ class Actor extends EventEmitter {
    */
   adopt (changes) {
     try {
-      monitor.applyPatch(this._state.content, changes);
+      monitor.applyPatch(this.state.content, changes);
       this.commit();
     } catch (exception) {
       this.emit('error', exception);
@@ -251,7 +249,7 @@ class Actor extends EventEmitter {
    * @returns {Object} Value of the path in the Actor's state.
    */
   get (path) {
-    return pointer.get(this._state.content, path);
+    return pointer.get(this.state.content, path);
   }
 
   log (...params) {
@@ -265,8 +263,8 @@ class Actor extends EventEmitter {
       { op: 'replace', path: '/seed', value: seed }
     ];
 
-    monitor.applyPatch(this._state.content, patches);
-    console.log('new state:', this._state.content);
+    monitor.applyPatch(this.state.content, patches);
+    console.log('new state:', this.state.content);
     this.commit();
 
     return this;
@@ -279,7 +277,7 @@ class Actor extends EventEmitter {
    * @returns {Object} Value of the path in the Actor's state.
    */
   set (path, value) {
-    pointer.set(this._state.content, path, value);
+    pointer.set(this.state.content, path, value);
     this.commit();
     return this;
   }
@@ -413,7 +411,7 @@ class Actor extends EventEmitter {
   }
 
   _getField (name) {
-    return this._state.content[name];
+    return this.state.content[name];
   }
 
   /**
