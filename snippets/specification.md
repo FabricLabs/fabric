@@ -13,7 +13,7 @@ A storage protocol is provided for sparse local node retention (SLNR) which can
 be used to share a sparse or complete representation of a globally distributed
 state.  Each operation within the Fabric network has a complete state chain,
 which comprises a network of "potential states" we describe as a "state bubble."
-By storing a history, nodes can make local decisions whether to retain or prune
+By storing a history, nodes can make local decisions on whether to retain or prune
 portions of their state chain based on their own economic evaluation of
 available resources.
 
