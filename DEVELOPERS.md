@@ -61,7 +61,7 @@ All agreements in Fabric are represented as well-formed descriptions of **Resour
 To create an
 
 ##### 1.2a: Convergence
-You'll read in the Components section about our thoughts on User Interface Design, especially Software Development Inteface Design.  Maybe someday we'll have a blog to share this on, but my personal goal is to design my software one time, and have it adapt to each platform while still retaining complete, functionality — even if, for example, mobile and desktop users might have different access profiles (usage patterns).
+You'll read in the Components section about our thoughts on User Interface Design, especially Software Development Interface Design.  Maybe someday we'll have a blog to share this on, but my personal goal is to design my software one time, and have it adapt to each platform while still retaining complete, functionality — even if, for example, mobile and desktop users might have different access profiles (usage patterns).
 
 This raises the question: **how should peer-to-peer contracts be written?**
 
