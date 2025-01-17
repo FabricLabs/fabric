@@ -37,7 +37,7 @@ distributed ledger by way of economic incentives. In this environment, fraud is 
 for the accumulation of trust over time without requiring a central coordinator.
 
 ### 1.1. Bitcoin
-Bitcoin was introduced by Satoshi Nakamoto in 2008 as an alternative fiat currency, and has
+Bitcoin was introduced by Satoshi Nakamoto in 2008 as an alternative to fiat currency, and has
 since garnered international attention as a catalyst for significant economic change. By replacing
 the role of a central bank in the issuance of money, it sets the foundation for a new market
 structure, one backed by thermodynamic assurances and cryptographic guarantees. These newly
