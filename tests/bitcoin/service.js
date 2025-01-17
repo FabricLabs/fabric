@@ -53,6 +53,23 @@ describe('@fabric/core/services/bitcoin', function () {
       await test();
     });
 
+    xit('can validate an address', async function () {
+      async function test () {
+        const bitcoin = new Bitcoin(options);
+        const address = await bitcoin.getUnusedAddress();
+        const valid = bitcoin.validateAddress(address);
+
+        assert.ok(bitcoin);
+        assert.ok(address);
+
+        console.log('address:', address);
+        assert.strictEqual(address, '1LqBGSKuX5yYUonjxT5qGfpUsXKYYWeabA');
+        assert.ok(valid);
+      }
+
+      await test();
+    });
+
     xit('can handle a spend request', async function () {
       async function test () {
         const bitcoin = new Bitcoin(options);

@@ -30,6 +30,8 @@ jobs:
         python-version: '3.8'
     - name: Install dependencies
       run: npm ci
+    - name: Install bitcoind
+      run: sudo apt-get update && sudo apt-get install -y bitcoind
     - name: Generate coverage report
       run: npm run report:coverage
     - name: Send coverage report
