@@ -36,7 +36,7 @@ describe('@fabric/core/types/app', function () {
       assert.ok(app);
     });
 
-    xit('should create an application smoothly', async function () {
+    it('should create an application smoothly', async function () {
       const app = new App();
       await app.start();
       await app.stop();

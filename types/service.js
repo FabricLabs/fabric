@@ -400,7 +400,7 @@ class Service extends Actor {
         self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted channel: ${JSON.stringify(channel, null, '  ')}`);
       }),
       _handleCommit: source.on('commit', async function (commit) {
-        self.emit('log', `[FABRIC:SERVICE] Source "${name}" committed: ${JSON.stringify(commit, null, '  ')}`);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" committed: ${JSON.stringify(commit, null, '  ')}`);
       }),
       _handleError: source.on('error', async function _handleTrustedError (error) {
         self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted error: ${error}`);
@@ -494,6 +494,16 @@ class Service extends Actor {
     });
 
     return true;
+  }
+
+  /**
+   * Bind a method to an event, with current state as the immutable context.
+   * @param {String} event Name of the event upon which to execute `method` as a function.
+   * @param {Function} method Function to execute when named {@link Event} `event` is encountered.
+   * @returns {EventEmitter} Instance of EventEmitter.
+   */
+  when (event, method) {
+    return this.on(event, method.call(this.state));
   }
 
   _defineResource (name, definition) {

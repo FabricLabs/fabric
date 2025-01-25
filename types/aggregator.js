@@ -8,16 +8,7 @@ const Service = require('./service');
 const Actor = require('./actor');
 const Tree = require('./tree');
 
-/**
- * Aggregates a set of balances (inputs).
- */
 class Aggregator extends Service {
-  /**
-   * Create a new Aggregator.
-   * @param {Object} [settings] Map of configuration values.
-   * @param {Array} [settings.inputs] Array of {@link AnchorBalance} instances.
-   * @returns {Aggregator} Instance of the {@link Aggregator}.
-   */
   constructor (settings = {}) {
     super(settings);
 

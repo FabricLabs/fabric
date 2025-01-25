@@ -5,8 +5,8 @@ const Bitcoin = require('../../services/bitcoin');
 
 const settings = require('../../settings/test');
 const options = Object.assign({}, settings, {
-  network: 'regtest',
-  fullnode: true,
+  network: 'testnet',
+  fullnode: false,
   mode: 'full',
   verbosity: 2
 });
@@ -48,6 +48,23 @@ describe('@fabric/core/services/bitcoin', function () {
         assert.ok(bitcoin);
         assert.ok(address);
         assert.strictEqual(address, '1LqBGSKuX5yYUonjxT5qGfpUsXKYYWeabA');
+      }
+
+      await test();
+    });
+
+    xit('can validate an address', async function () {
+      async function test () {
+        const bitcoin = new Bitcoin(options);
+        const address = await bitcoin.getUnusedAddress();
+        const valid = bitcoin.validateAddress(address);
+
+        assert.ok(bitcoin);
+        assert.ok(address);
+
+        console.log('address:', address);
+        assert.strictEqual(address, '1LqBGSKuX5yYUonjxT5qGfpUsXKYYWeabA');
+        assert.ok(valid);
       }
 
       await test();

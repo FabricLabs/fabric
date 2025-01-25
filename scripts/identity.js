@@ -4,6 +4,7 @@ const {
   FIXTURE_SEED
 } = require('../constants');
 
+// const DERIVATION = `m/44'/7777'/0'/0/0`;
 const DERIVATION = `m/44'/0'/0'/0/0`;
 const PREFIX = 'id'; // <Buffer 69, 64>
 const X_PUBKEY = '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798';

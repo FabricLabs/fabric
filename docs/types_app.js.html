@@ -48,20 +48,7 @@ const Service = require('./service');
 const Storage = require('./store');
 // const Swarm = require('./swarm');
 
-/**
- * Web-friendly application framework for building single-page applications with
- * Fabric-based networking and storage.
- * @extends Service
- * @property {Collection} components Interface elements.
- * @property {Store} stash Routable {@link Datastore}.
- */
-// class App extends Scribe {
 class App extends Service {
-  /**
-   * Generic bundle for building Fabric applications.
-   * @param  {Object} definition Application definition.  See `config` for examples.
-   * @return {App}            Returns an instance of `App`.
-   */
   constructor (definition = {}) {
     super(definition);
 
@@ -428,44 +415,32 @@ module.exports = App;
     <h3>Classes</h3>
     <ul>
       <li><a href="Actor.html">Actor</a></li>
-      <li><a href="Aggregator.html">Aggregator</a></li>
-      <li><a href="App.html">App</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
-      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
-      <li><a href="Compiler.html">Compiler</a></li>
-      <li><a href="Consensus.html">Consensus</a></li>
-      <li><a href="Entity.html">Entity</a></li>
       <li><a href="Environment.html">Environment</a></li>
-      <li><a href="Exchange.html">Exchange</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
-      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
-      <li><a href="Keystore.html">Keystore</a></li>
       <li><a href="Ledger.html">Ledger</a></li>
       <li><a href="Lightning.html">Lightning</a></li>
       <li><a href="Logger.html">Logger</a></li>
       <li><a href="Machine.html">Machine</a></li>
-      <li><a href="Mempool.html">Mempool</a></li>
       <li><a href="Message.html">Message</a></li>
-      <li><a href="Node.html">Node</a></li>
-      <li><a href="Oracle.html">Oracle</a></li>
-      <li><a href="Path.html">Path</a></li>
       <li><a href="Peer.html">Peer</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
-      <li><a href="Router.html">Router</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
@@ -476,9 +451,8 @@ module.exports = App;
       <li><a href="Stash.html">Stash</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
-      <li><a href="Swap.html">Swap</a></li>
       <li><a href="Swarm.html">Swarm</a></li>
-      <li><a href="Transition.html">Transition</a></li>
+      <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Value.html">Value</a></li>
       <li><a href="Vector.html">Vector</a></li>

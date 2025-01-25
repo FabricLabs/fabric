@@ -66,21 +66,19 @@ const {
   SESSION_START
 } = require('../constants');
 
+const HEADER_SIG_SIZE = 64;
+
 // Dependencies
-const crypto = require('crypto');
+// const crypto = require('crypto');
 const struct = require('struct');
 
 // Fabric Types
 const Actor = require('./actor');
-const Label = require('./label');
-const Signer = require('./signer');
+const Hash256 = require('./hash256');
+// const Signer = require('./signer');
 
 // Function Definitions
 const padDigits = require('../functions/padDigits');
-
-// Type Labels
-const TYPE_ETHEREUM_BLOCK        = parseInt((new Label('types/EthereumBlock'))._id, 16);
-const TYPE_ETHEREUM_BLOCK_NUMBER = parseInt((new Label('types/EthereumBlockNumber'))._id, 16);
 
 /**
  * The {@link Message} type defines the Application Messaging Protocol, or AMP.
@@ -116,7 +114,8 @@ class Message extends Actor {
     if (input.signer) {
       this.signer = input.signer;
     } else {
-      this.signer = new Signer();
+      this.signer = null;
+      // this.signer = new Signer();
     }
 
     if (input.data &amp;&amp; input.type) {
@@ -168,7 +167,7 @@ class Message extends Actor {
 
   get Uint256 () {
     // 256 bits
-    return Buffer.from((this.raw &amp;&amp; this.raw.hash) ? `0x${padDigits(this.raw.hash, 8)}` : crypto.randomBytes(32));
+    return Buffer.from((this.raw &amp;&amp; this.raw.hash) ? `0x${padDigits(this.raw.hash, 8)}` : Actor.randomBytes(32));
   }
 
   set signature (value) {
@@ -219,6 +218,10 @@ class Message extends Actor {
     };
   }
 
+  fromBlob (blob) {
+
+  }
+
   fromObject (input) {
     return new Message(input);
   }
@@ -231,8 +234,8 @@ class Message extends Actor {
     if (!this.header) throw new Error('No header property.');
     if (!this.raw) throw new Error('No raw property.');
 
-    const hash = crypto.createHash('sha256').update(this.raw.data).digest();
-    const signature = this.signer.sign(hash);
+    const hash = Hash256.digest(this.raw.data);
+    const signature = this.signer.sign(Buffer.from(hash, 'hex'));
 
     this.raw.author.write(this.signer.pubkey.toString('hex'), 'hex');
     this.raw.signature.write(signature.toString('hex'), 'hex');
@@ -251,7 +254,7 @@ class Message extends Actor {
     if (!this.raw) throw new Error('No raw property.');
 
     // Compute sha256 hash of message body
-    const hash = crypto.createHash('sha256').update(this.raw.data).digest();
+    const hash = Hash256.digest(this.raw.data);
 
     // If the raw header doesn't match the computed values, reject
     if (this.raw.hash.toString('hex') !== hash.toString('hex')) {
@@ -363,7 +366,7 @@ class Message extends Actor {
   } */
 
   get id () {
-    return crypto.createHash('sha256').update(this.asRaw()).digest('hex');
+    return Hash256.digest(this.asRaw());
   }
 
   get types () {
@@ -403,9 +406,7 @@ class Message extends Actor {
       'StateRequest': P2P_STATE_REQUEST,
       'Transaction': P2P_TRANSACTION,
       'Call': P2P_CALL,
-      'LogMessage': LOG_MESSAGE_TYPE,
-      'EthereumBlock': TYPE_ETHEREUM_BLOCK,
-      'EthereumBlockNumber': TYPE_ETHEREUM_BLOCK_NUMBER
+      'LogMessage': LOG_MESSAGE_TYPE
     };
   }
 
@@ -499,10 +500,6 @@ Object.defineProperty(Message.prototype, 'type', {
         return 'ChatMessage';
       case P2P_START_CHAIN:
         return 'StartChain';
-      case TYPE_ETHEREUM_BLOCK:
-        return 'EthereumBlock';
-      case TYPE_ETHEREUM_BLOCK_NUMBER:
-        return 'EthereumBlockNumber';
       default:
         return 'GenericMessage';
     }
@@ -528,8 +525,7 @@ Object.defineProperty(Message.prototype, 'data', {
   },
   set (value) {
     if (!value) value = '';
-    const hash = crypto.createHash('sha256').update(value.toString('utf8'));
-    this.raw.hash = hash.digest();
+    this.raw.hash = Hash256.digest(value.toString('utf8'));
     this.raw.data = Buffer.from(value);
     this.raw.size.write(padDigits(this.raw.data.byteLength.toString(16), 8), 'hex');
   }
@@ -548,44 +544,32 @@ module.exports = Message;
     <h3>Classes</h3>
     <ul>
       <li><a href="Actor.html">Actor</a></li>
-      <li><a href="Aggregator.html">Aggregator</a></li>
-      <li><a href="App.html">App</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
-      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
-      <li><a href="Compiler.html">Compiler</a></li>
-      <li><a href="Consensus.html">Consensus</a></li>
-      <li><a href="Entity.html">Entity</a></li>
       <li><a href="Environment.html">Environment</a></li>
-      <li><a href="Exchange.html">Exchange</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
-      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
-      <li><a href="Keystore.html">Keystore</a></li>
       <li><a href="Ledger.html">Ledger</a></li>
       <li><a href="Lightning.html">Lightning</a></li>
       <li><a href="Logger.html">Logger</a></li>
       <li><a href="Machine.html">Machine</a></li>
-      <li><a href="Mempool.html">Mempool</a></li>
       <li><a href="Message.html">Message</a></li>
-      <li><a href="Node.html">Node</a></li>
-      <li><a href="Oracle.html">Oracle</a></li>
-      <li><a href="Path.html">Path</a></li>
       <li><a href="Peer.html">Peer</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
-      <li><a href="Router.html">Router</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
@@ -596,9 +580,8 @@ module.exports = Message;
       <li><a href="Stash.html">Stash</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
-      <li><a href="Swap.html">Swap</a></li>
       <li><a href="Swarm.html">Swarm</a></li>
-      <li><a href="Transition.html">Transition</a></li>
+      <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Value.html">Value</a></li>
       <li><a href="Vector.html">Vector</a></li>

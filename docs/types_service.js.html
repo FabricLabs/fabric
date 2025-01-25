@@ -51,12 +51,13 @@ const manager = require('fast-json-patch');
 // Fabric Types
 const Actor = require('./actor');
 const Collection = require('./collection');
-const Identity = require('./identity');
-const Resource = require('./resource');
 const Entity = require('./entity');
+const Filesystem = require('./filesystem');
 const Hash256 = require('./hash256');
+const Identity = require('./identity');
 const Key = require('./key');
 const Message = require('./message');
+const Resource = require('./resource');
 const Store = require('./store');
 
 /**
@@ -74,18 +75,22 @@ const Store = require('./store');
 class Service extends Actor {
   /**
    * Create an instance of a Service.
-   * @param       {Object} settings Configuration for this service.
-   * @param       {Boolean} [settings.networking=true] Whether or not to connect to the network.
-   * @param       {Object} [settings.@data] Internal data to assign.
+   * @param {Object} [settings] Configuration for this service.
+   * @param {Boolean} [settings.networking=true] Whether or not to connect to the network.
+   * @param {Object} [settings.frequency] Interval frequency in hertz.
+   * @param {Object} [settings.state] Initial state to assign.
    */
   constructor (settings = {}) {
     // Initialize Scribe, our logging tool
     super(settings);
 
+    this.name = this.constructor.name;
+
     // Configure (with defaults)
     this.settings = merge({
       name: 'Service',
       path: './stores/service',
+      frequency: 0.0133333334, // Hz
       networking: true,
       persistent: false,
       constraints: {
@@ -93,6 +98,9 @@ class Service extends Actor {
         memory: {
           max: 67108864
         }
+      },
+      fs: {
+        path: `./stores/fabric-service-${this.name}`
       },
       state: {
         ...super.state,
@@ -111,7 +119,7 @@ class Service extends Actor {
         messages: {},
         members: {}
       } */
-    }, this.settings, settings);
+    }, settings);
 
     // Reserve a place for ourselves
     this.agent = null;
@@ -135,6 +143,7 @@ class Service extends Actor {
     //          Error: Not implemented yet
     this.key = new Key(this.settings.key);
     this.identity = new Identity(this.settings.key);
+    this.fs = new Filesystem(this.settings.fs);
 
     if (this.settings.persistent) {
       try {
@@ -143,6 +152,8 @@ class Service extends Actor {
         console.error('Store Error:', E);
       }
     }
+
+    this._clock = 0;
 
     // set local state to whatever configuration supplies...
     /* this.state = Object.assign({
@@ -184,11 +195,15 @@ class Service extends Actor {
   }
 
   get clock () {
-    return parseInt(this._state.clock);
+    return parseInt(this._clock);
   }
 
   get heartbeat () {
     return this._heart;
+  }
+
+  get interval () {
+    return 1000 / this.settings.frequency;
   }
 
   get status () {
@@ -330,7 +345,7 @@ class Service extends Actor {
   /**
    * Retrieve a key from the {@link State}.
    * @param {Path} path Key to retrieve.
-   * @returns {Mixed}
+   * @returns {Mixed} Returns the target value if found, otherwise null.
    */
   get (path = '') {
     let result = null;
@@ -351,6 +366,12 @@ class Service extends Actor {
     const result = pointer.set(this._state.content, path, value);
     this.commit();
     return result;
+  }
+
+  // Synchronize with any external sources
+  sync () {
+    if (!this._sources) this._sources = [];
+    return this;
   }
 
   /**
@@ -414,13 +435,13 @@ class Service extends Actor {
         self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted channel: ${JSON.stringify(channel, null, '  ')}`);
       }),
       _handleCommit: source.on('commit', async function (commit) {
-        self.emit('log', `[FABRIC:SERVICE] Source "${name}" committed: ${JSON.stringify(commit, null, '  ')}`);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" committed: ${JSON.stringify(commit, null, '  ')}`);
       }),
       _handleError: source.on('error', async function _handleTrustedError (error) {
         self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted error: ${error}`);
       }),
       _handleLog: source.on('log', async function _handleTrustedLog (log) {
-        self.emit('log', `[FABRIC:SERVICE] Source "${name}" emitted log: ${log}`);
+        if (self.settings.debug) self.emit('log', `[FABRIC:SERVICE] Source "${name}" emitted log: ${log}`);
       }),
       _handleMessage: source.on('message', async function (message) {
         self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted message: ${JSON.stringify(message.toObject ? message.toObject() : message, null, '  ')}`);
@@ -438,7 +459,7 @@ class Service extends Actor {
         self.alert(`[FABRIC:SERVICE] New ${name} chaintip: ${hash}`);
       }),
       _handleWarning: source.on('warning', async function _handleTrustedWarning (warning) {
-        self.emit('warning', `[FABRIC:SERVICE] Source "${name}" emitted warning: ${warning}`);
+        if (self.settings?.verbosity >= 2) self.emit('warning', `[FABRIC:SERVICE] Source "${name}" emitted warning: ${warning}`);
       })
     };
   }
@@ -510,10 +531,21 @@ class Service extends Actor {
     return true;
   }
 
+  /**
+   * Bind a method to an event, with current state as the immutable context.
+   * @param {String} event Name of the event upon which to execute `method` as a function.
+   * @param {Function} method Function to execute when named {@link Event} `event` is encountered.
+   * @returns {EventEmitter} Instance of EventEmitter.
+   */
+  when (event, method) {
+    return this.on(event, method.call(this.state));
+  }
+
   _defineResource (name, definition) {
     const resource = Object.assign({ name }, definition);
     this.resources[name] = new Resource(resource);
     this.emit('resource', this.resources[name]);
+    return this.resources[name];
   }
 
   _handleTrustedDebug (message) {
@@ -913,41 +945,12 @@ class Service extends Actor {
 
   commit () {
     // this.emit('debug', `[FABRIC:SERVICE] Committing ${OP_TRACE()}`);
-
-    const self = this;
-    const ops = [];
-
-    // assemble all necessary info, emit Snapshot regardless of storage status
-    try {
-      ops.push({ type: 'put', key: 'snapshot', value: self.state });
-
-      /* this.emit('debug', `Commit Template: ${JSON.stringify({
-        '@data': self.state,
-        '@from': 'COMMIT',
-        '@type': 'Snapshot'
-      }, null, '  ')}`); */
-    } catch (E) {
-      console.error('Error saving state:', self.state);
-      console.error('Could not commit to state:', E);
-    }
-
-    if (this.settings.persistent) {
-      // TODO: add robust + convenient database opener
-      this.store.batch(ops, function shareChanges () {
-        // TODO: notify status?
-      }).catch((exception) => {
-        self.emit('error', `Could not write to store: ${exception}`);
-      }).then((output) => {
-        self.emit('commit', { output });
-      });
-    }
-
-    if (PATCHES_ENABLED &amp;&amp; self.observer) {
+    if (PATCHES_ENABLED &amp;&amp; this.observer) {
       try {
-        const patches = manager.generate(self.observer);
+        const patches = manager.generate(this.observer);
         if (patches.length) {
           this.history.push(patches);
-          self.emit('patches', patches);
+          this.emit('patches', patches);
         }
       } catch (E) {
         console.error('Could not generate patches:', E);
@@ -956,10 +959,11 @@ class Service extends Actor {
 
     const commit = new Actor({
       type: 'Commit',
-      state: self.state
+      state: this.state
     });
 
     this.emit('commit', { ...commit.toObject(), id: commit.id });
+    // this.emit('state', this.state);
 
     return commit.id;
   }
@@ -1038,6 +1042,7 @@ class Service extends Actor {
         id: entity.id,
         members: []
       }, channel);
+      return channel;
     }
 
     const target = pointer.escape(channel.id);
@@ -1102,14 +1107,15 @@ class Service extends Actor {
 
     try {
       // TODO: allow configurable validators
-      result = manager.applyPatch(this.state, changes, function isValid () {
+      this._state.content = manager.applyPatch(this.state, changes, function isValid () {
+        // TODO: invalidate changes without appropriate capability token
         return true;
       }, true /* mutate doc (1st param) */);
     } catch (exception) {
       console.error('Could not apply changes:', changes, exception);
     }
 
-    await this.commit();
+    this.commit();
 
     return result;
   }
@@ -1232,44 +1238,32 @@ module.exports = Service;
     <h3>Classes</h3>
     <ul>
       <li><a href="Actor.html">Actor</a></li>
-      <li><a href="Aggregator.html">Aggregator</a></li>
-      <li><a href="App.html">App</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
-      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
-      <li><a href="Compiler.html">Compiler</a></li>
-      <li><a href="Consensus.html">Consensus</a></li>
-      <li><a href="Entity.html">Entity</a></li>
       <li><a href="Environment.html">Environment</a></li>
-      <li><a href="Exchange.html">Exchange</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
-      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
-      <li><a href="Keystore.html">Keystore</a></li>
       <li><a href="Ledger.html">Ledger</a></li>
       <li><a href="Lightning.html">Lightning</a></li>
       <li><a href="Logger.html">Logger</a></li>
       <li><a href="Machine.html">Machine</a></li>
-      <li><a href="Mempool.html">Mempool</a></li>
       <li><a href="Message.html">Message</a></li>
-      <li><a href="Node.html">Node</a></li>
-      <li><a href="Oracle.html">Oracle</a></li>
-      <li><a href="Path.html">Path</a></li>
       <li><a href="Peer.html">Peer</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
-      <li><a href="Router.html">Router</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
@@ -1280,9 +1274,8 @@ module.exports = Service;
       <li><a href="Stash.html">Stash</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
-      <li><a href="Swap.html">Swap</a></li>
       <li><a href="Swarm.html">Swarm</a></li>
-      <li><a href="Transition.html">Transition</a></li>
+      <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Value.html">Value</a></li>
       <li><a href="Vector.html">Vector</a></li>

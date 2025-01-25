@@ -13,15 +13,7 @@ const Service = require('../types/service');
 const Environment = require('../types/environment');
 const environment = new Environment();
 
-/**
- * Full definition of a Fabric node.
- */
 class Node extends Service {
-  /**
-   * Manage a Fabric service.
-   * @param {Object} settings Configuration for the node.
-   * @returns {Node} Instance of the managed service.
-   */
   constructor (settings = {}) {
     super(settings);
 

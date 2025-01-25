@@ -14,7 +14,7 @@ const Actor = require('./actor');
  * The {@link Circuit} is the mechanism through which {@link Fabric}
  * operates, a computable directed graph describing a network of
  * {@link Peer} components and their interactions (side effects).
- * See also {@link Swarm} for deeper *inspection of {@link Machine}
+ * See also {@link Swarm} for deeper inspection of {@link Machine}
  * mechanics.
  */
 class Circuit extends Actor {

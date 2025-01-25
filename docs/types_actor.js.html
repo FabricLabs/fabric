@@ -33,10 +33,10 @@
       <article>
         <pre class="prettyprint source linenums"><code>'use strict';
 
-// Dependencies
-const crypto = require('crypto');
-const { EventEmitter } = require('events');
+// Generics
+const EventEmitter = require('events');
 
+// Dependencies
 const monitor = require('fast-json-patch');
 const pointer = require('json-pointer');
 
@@ -154,12 +154,23 @@ class Actor extends EventEmitter {
    * @returns {Buffer} The random bytes.
    */
   static randomBytes (count = 32) {
-    return crypto.randomBytes(count);
+    if (typeof window !== 'undefined' &amp;&amp; window.crypto &amp;&amp; window.crypto.getRandomValues) {
+      const array = new Uint8Array(count);
+      window.crypto.getRandomValues(array);
+      return Buffer.from(array);
+    } else {
+      return require('crypto').randomBytes(count);
+    }
   }
 
   get id () {
     const buffer = Buffer.from(this.preimage, 'hex');
-    return Hash256.digest(buffer);
+    return Hash256.compute(buffer);
+  }
+
+  get spendable () {
+    if (!this.signer) return false;
+    return false;
   }
 
   get generic () {
@@ -167,9 +178,10 @@ class Actor extends EventEmitter {
   }
 
   get preimage () {
+    if (!this.generic) throw new Error('Could not get generic');
     const string = JSON.stringify(this.generic, null, '  ');
     const secret = Buffer.from(string, 'utf8');
-    const preimage = Hash256.digest(secret);
+    const preimage = Hash256.compute(secret);
     return preimage;
   }
 
@@ -214,6 +226,7 @@ class Actor extends EventEmitter {
    * @returns {String} 32-byte ID
    */
   commit () {
+    const now = new Date();
     const state = new Actor(this.state);
     const changes = monitor.generate(this.observer);
     const parent = (this.history.length) ? this.history[this.history.length - 1].state : null;
@@ -224,7 +237,18 @@ class Actor extends EventEmitter {
     });
 
     this.history.push(commit);
+
     this.emit('commit', commit);
+    this.emit('message', {
+      type: 'ActorMessage',
+      data: {
+        actor: { id: this.id },
+        created: now.toISOString(),
+        object: changes,
+        type: 'Changes'
+      }
+    });
+
     return commit.id;
   }
 
@@ -298,10 +322,25 @@ class Actor extends EventEmitter {
   }
 
   /**
-   * Casts the Actor to a generic message.
+   * Casts the Actor to a generic message, used to uniquely identify the Actor's state.
+   * Fields:
+   * - `preimage`: JSON.stringify(state)
+   * - `hash`: SHA256(preimage)
+   * - `type`: 'FabricActorState'
+   * - `version`: 1 (for now)
+   * - `object`: state
+   * - `parent`: null (for now)
+   * @see {@link https://en.wikipedia.org/wiki/Merkle_tree}
+   * @see {@link https://dev.fabric.pub/messages}
    * @returns {Object} Generic message object.
    */
-  toGenericMessage () {
+  toGenericMessage (type = 'FabricActorState') {
+    const object = this.toObject(); // Fabric Object Representation (FOR)
+    const input = JSON.stringify(object); // uses clean, default JSON stringify
+    const buffer = Buffer.from(input, 'utf8');
+    // const hash = Hash256.digest(buffer).toString('hex');
+    // const version = 1;
+
     return {
       type: 'FabricActorState',
       object: this.toObject()
@@ -345,7 +384,7 @@ class Actor extends EventEmitter {
   }
 
   randomBytes (count = 32) {
-    return crypto.randomBytes(count);
+    return Actor.randomBytes(count);
   }
 
   /**
@@ -393,6 +432,12 @@ class Actor extends EventEmitter {
     return this;
   }
 
+  validate () {
+    if (!this.state) return false;
+    if (!this.id) return false;
+    return true;
+  }
+
   /**
    * Get the inner value of the Actor with an optional cast type.
    * @param {String} [format] Cast the value to one of: `buffer, hex, json, string`
@@ -436,27 +481,23 @@ class Actor extends EventEmitter {
    * @returns {Object} Fabric state.
    */
   _readObject (input = {}) {
-    let state = {};
-
     if (typeof input === 'string') {
-      state = Object.assign(state, {
+      return Object.assign({}, {
         type: 'String',
         size: input.length,
         content: input,
         encoding: 'utf8'
       });
     } else if (input instanceof Buffer) {
-      state = Object.assign(state, {
+      return Object.assign({}, {
         type: 'Buffer',
         size: input.length,
         content: input.toString('hex'),
         encoding: 'hex'
       });
     } else {
-      state = Object.assign(state, input);
+      return Object.assign({}, input);
     }
-
-    return state;
   }
 }
 
@@ -473,44 +514,32 @@ module.exports = Actor;
     <h3>Classes</h3>
     <ul>
       <li><a href="Actor.html">Actor</a></li>
-      <li><a href="Aggregator.html">Aggregator</a></li>
-      <li><a href="App.html">App</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
-      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
-      <li><a href="Compiler.html">Compiler</a></li>
-      <li><a href="Consensus.html">Consensus</a></li>
-      <li><a href="Entity.html">Entity</a></li>
       <li><a href="Environment.html">Environment</a></li>
-      <li><a href="Exchange.html">Exchange</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
-      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
-      <li><a href="Keystore.html">Keystore</a></li>
       <li><a href="Ledger.html">Ledger</a></li>
       <li><a href="Lightning.html">Lightning</a></li>
       <li><a href="Logger.html">Logger</a></li>
       <li><a href="Machine.html">Machine</a></li>
-      <li><a href="Mempool.html">Mempool</a></li>
       <li><a href="Message.html">Message</a></li>
-      <li><a href="Node.html">Node</a></li>
-      <li><a href="Oracle.html">Oracle</a></li>
-      <li><a href="Path.html">Path</a></li>
       <li><a href="Peer.html">Peer</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
-      <li><a href="Router.html">Router</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
@@ -521,9 +550,8 @@ module.exports = Actor;
       <li><a href="Stash.html">Stash</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
-      <li><a href="Swap.html">Swap</a></li>
       <li><a href="Swarm.html">Swarm</a></li>
-      <li><a href="Transition.html">Transition</a></li>
+      <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Value.html">Value</a></li>
       <li><a href="Vector.html">Vector</a></li>

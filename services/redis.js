@@ -5,14 +5,14 @@ const Service = require('../types/service');
 const Message = require('../types/message');
 
 /**
- * Connect and subscribe to ZeroMQ servers.
+ * Connect and subscribe to Redis servers.
  */
 class Redis extends Service {
   /**
-   * Creates an instance of a ZeroMQ subscriber.
+   * Creates an instance of a Redis subscriber.
    * @param {Object} [settings] Settings for the Redis connection.
    * @param {String} [settings.host] Host for the Redis server.
-   * @param {Number} [settings.port] Remote ZeroMQ service port.
+   * @param {Number} [settings.port] Remote Redis service port.
    * @returns {Redis} Instance of the Redis service, ready to run `start()`
    */
   constructor (settings = {}) {

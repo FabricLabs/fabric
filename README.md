@@ -145,8 +145,7 @@ Either Fabric libraries or projects running Fabric, this list encompasses the mo
 | [`labs.fabric.pub`](https://labs.fabric.pub) |
 | [`grove.chat`][chat] |
 | `sensemaker.io` | | | `FALSE`
-| `verse.pub`
-| `trynovo.com` | | | `FALSE`
+| `verse.pub` | | |
 
 ## Learning More
 The best place to get started is in [the #learning channel][learning], a
@@ -154,12 +153,17 @@ collection of empassioned educators eager to help you.
 
 Fabric on Twitter: [@FabricProtocol][twitter]
 
+[fabric]: fabric:
+
 [bitcoin]: https://bitcoin.org
 [build-guide]: BUILD.md
 [chat]: https://grove.chat
+[chat-help]: https://grove.chat/#/room/#help:fabric.pub
 [chat-support]: https://grove.chat/#/room/#help:fabric.pub
 [coverage]: https://codecov.io/gh/FabricLabs/fabric
 [development]: https://grove.chat/#/room/#development:fabric.pub
+[fabric-fm]: https://fabric.fm
+[fabric-pub]: https://fabric.pub
 [fabric-github]: https://github.com/FabricLabs/fabric
 [fabric-http]: https://github.com/FabricLabs/fabric-http
 [protocol]: PROTOCOL.md

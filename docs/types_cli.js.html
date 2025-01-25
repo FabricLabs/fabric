@@ -36,10 +36,9 @@
 // Constants
 const {
   MAX_CHAT_MESSAGE_LENGTH,
+  INPUT_HINT,
   BITCOIN_GENESIS
 } = require('../constants');
-
-const INPUT_HINT = 'Press the "i" key to begin typing.';
 
 // Internal Dependencies
 const fs = require('fs');
@@ -57,11 +56,14 @@ const Actor = require('./actor');
 const Message = require('./message');
 const Hash256 = require('./hash256');
 const Identity = require('./identity');
+const Filesystem = require('./filesystem');
+const Signer = require('./signer');
 const Wallet = require('./wallet');
 
 // Services
 const Bitcoin = require('../services/bitcoin');
 const Lightning = require('../services/lightning');
+// const POC = require('@fabric/poc');
 
 // UI dependencies
 // TODO: use Jade to render pre-registered components
@@ -91,6 +93,7 @@ class CLI extends App {
     // Assign Settings
     this.settings = merge({
       debug: true,
+      ephemeral: false,
       listen: false,
       peering: true, // set to true to start Peer
       render: true,
@@ -107,7 +110,10 @@ class CLI extends App {
         mode: 'socket',
         path: './stores/lightning-playnet/regtest/lightning-rpc'
       },
-    }, this.settings, settings);
+      storage: {
+        path: `${process.env.HOME}/.fabric/console`
+      }
+    }, settings);
 
     // Properties
     this.screen = null;
@@ -124,6 +130,9 @@ class CLI extends App {
     this.services = {};
     this.connections = {};
 
+    this.fs = new Filesystem(this.settings.storage);
+    this.signer = null;
+
     // State
     this._state = {
       anchor: null,
@@ -136,7 +145,8 @@ class CLI extends App {
       content: {
         actors: {},
         bitcoin: {
-          best: null
+          best: null,
+          genesis: BITCOIN_GENESIS
         },
         documents: {},
         messages: {}
@@ -149,7 +159,8 @@ class CLI extends App {
 
     this._loadPeer();
     this._loadBitcoin();
-    this._loadLightning();
+    if (this.settings.lightning.enable) this._loadLightning();
+    // this.poc = new POC();
 
     this.identity = new Identity(this.settings);
 
@@ -159,6 +170,8 @@ class CLI extends App {
 
   assumeIdentity (key) {
     this.identity = new Identity(key);
+    this.signer = new Signer(key);
+    return this;
   }
 
   attachWallet (wallet) {
@@ -169,15 +182,27 @@ class CLI extends App {
     return this;
   }
 
+  flush () {
+    this.fs.delete('STATE');
+    return this;
+  }
+
   _loadPeer () {
+    const file = this.fs.readFile('STATE');
+    const state = (file) ? JSON.parse(file) : {};
+
+    // Create and assign Peer instance as the `node` property
     this.node = new Peer({
+      debug: this.settings.debug,
       network: this.settings.network,
       interface: this.settings.interface,
       port: this.settings.port,
       peers: this.settings.peers,
+      state: state,
       upnp: this.settings.upnp,
       key: this.identity.settings
     });
+
     return this;
   }
 
@@ -192,7 +217,13 @@ class CLI extends App {
   }
 
   async bootstrap () {
-    return true;
+    try {
+      await this.fs.start();
+      return true;
+    } catch (exception) {
+      this._appendError(`Could not bootstrap: ${exception}`)
+      return false;
+    }
   }
 
   async tick () {
@@ -217,6 +248,7 @@ class CLI extends App {
     this._registerCommand('quit', this._handleQuitRequest);
     this._registerCommand('exit', this._handleQuitRequest);
     this._registerCommand('clear', this._handleClearRequest);
+    this._registerCommand('flush', this._handleFlushRequest);
     this._registerCommand('alias', this._handleAliasRequest);
     this._registerCommand('peers', this._handlePeerListRequest);
     this._registerCommand('rotate', this._handleRotateRequest);
@@ -233,6 +265,7 @@ class CLI extends App {
     this._registerCommand('service', this._handleServiceCommand);
     this._registerCommand('publish', this._handlePublishCommand);
     this._registerCommand('request', this._handleRequestCommand);
+    this._registerCommand('grant', this._handleGrantCommand);
     this._registerCommand('import', this._handleImportCommand);
     this._registerCommand('join', this._handleJoinRequest);
     this._registerCommand('sync', this._handleChainSyncRequest);
@@ -241,6 +274,13 @@ class CLI extends App {
     this._registerCommand('state', this._handleStateRequest);
     this._registerCommand('set', this._handleSetRequest);
     this._registerCommand('get', this._handleGetRequest);
+
+    // Contracts
+    this._registerCommand('contracts', this._handleContractsRequest);
+    this._registerCommand('subscribe', this._handleSubscribeRequest);
+    this._registerCommand('create', this._handleCreateRequest);
+    this._registerCommand('deploy', this._handleDeployRequest);
+    this._registerCommand('accept', this._handleAcceptRequest);
 
     // Service Commands
     this._registerCommand('bitcoin', this._handleBitcoinRequest);
@@ -272,8 +312,12 @@ class CLI extends App {
     this.node.on('message', this._handlePeerMessage.bind(this));
     this.node.on('changes', this._handlePeerChanges.bind(this));
     this.node.on('commit', this._handlePeerCommit.bind(this));
+    this.node.on('state', this._handlePeerState.bind(this));
     this.node.on('chat', this._handlePeerChat.bind(this));
     this.node.on('upnp', this._handlePeerUPNP.bind(this));
+    this.node.on('actorset', this._handleActorSet.bind(this));
+    this.node.on('contractset', this._handleContractSet.bind(this));
+    // this.node.on('peerset', this._handlePeerSet.bind(this));
 
     // ## Raw Connections
     this.node.on('connection', this._handleConnection.bind(this));
@@ -304,15 +348,20 @@ class CLI extends App {
     this.bitcoin.on('transaction', this._handleBitcoinTransaction.bind(this));
 
     // #### Lightning
-    this.lightning.on('debug', this._handleLightningDebug.bind(this));
-    this.lightning.on('ready', this._handleLightningReady.bind(this));
-    this.lightning.on('error', this._handleLightningError.bind(this));
-    this.lightning.on('warning', this._handleLightningWarning.bind(this));
-    this.lightning.on('message', this._handleLightningMessage.bind(this));
-    this.lightning.on('log', this._handleLightningLog.bind(this));
-    this.lightning.on('commit', this._handleLightningCommit.bind(this));
-    this.lightning.on('sync', this._handleLightningSync.bind(this));
-    // this.lightning.on('transaction', this._handleLightningTransaction.bind(this));
+    if (this.settings.lightning &amp;&amp; this.settings.lightning.enable) {
+      this.lightning.on('debug', this._handleLightningDebug.bind(this));
+      this.lightning.on('ready', this._handleLightningReady.bind(this));
+      this.lightning.on('error', this._handleLightningError.bind(this));
+      this.lightning.on('warning', this._handleLightningWarning.bind(this));
+      this.lightning.on('message', this._handleLightningMessage.bind(this));
+      this.lightning.on('log', this._handleLightningLog.bind(this));
+      this.lightning.on('commit', this._handleLightningCommit.bind(this));
+      this.lightning.on('sync', this._handleLightningSync.bind(this));
+      // this.lightning.on('transaction', this._handleLightningTransaction.bind(this));
+    }
+
+    // this.poc.on('message', this._handlePeerMessage.bind(this));
+    // await this.poc.start();
 
     /* this.on('log', function (log) {
       console.log('local log:', log);
@@ -326,6 +375,7 @@ class CLI extends App {
     for (const [name, service] of Object.entries(this.services)) {
       // Skip when service name not found in settings
       if (!this.settings.services.includes(name)) continue;
+
       this._appendDebug(`Service "${name}" is enabled.  Starting...`);
       this.trust(this.services[name], name);
 
@@ -349,7 +399,7 @@ class CLI extends App {
     await this.bitcoin.start();
 
     // Start Lightning service
-    this.lightning.start();
+    if (this.settings.lightning.enable) await this.lightning.start();
 
     // ## Start P2P node
     if (this.settings.peering) this.node.start();
@@ -419,7 +469,7 @@ class CLI extends App {
       // this._appendMessage(`Changes: ${JSON.stringify(changes, null, '  ')}`);
 
       this.emit('changes', changes);
-      this.emit('state', this['@state']);
+      // this.emit('state', this['@state']);
       this.emit('message', {
         '@type': 'Transaction',
         '@data': {
@@ -474,6 +524,21 @@ class CLI extends App {
     this._appendMessage(`{red-fg}${msg}{/red-fg}`);
   }
 
+  async _handleActorSet (actorset) {
+    this._appendDebug(`[ACTORSET] ${JSON.stringify(actorset, null, '  ')}`);
+  }
+
+  async _handleContractSet (contractset) {
+    this._appendDebug(`[CONTRACTSET] ${JSON.stringify(contractset, null, '  ')}`);
+    this.contracts = contractset;
+    this.commit();
+  }
+
+  async _handlePeerState (state) {
+    // this._appendDebug(`[STATE] ${JSON.stringify(state, null, '  ')}`);
+    this.fs.publish('STATE', JSON.stringify(state, null, '  '));
+  }
+
   async _handleSourceLog (msg) {
     this._appendMessage(msg);
   }
@@ -492,6 +557,50 @@ class CLI extends App {
 
   async _handleChanges (changes) {
     this._appendMessage(`New Changes: ${JSON.stringify(changes, null, '  ')}`);
+  }
+
+  async _handleAcceptRequest (params) {
+    if (!params || !params[1]) {
+      this._appendMessage(`You must provide a contract parameter.`);
+      return false;
+    }
+
+    const contract = this.contracts[params[1]];
+    this._appendMessage(`{bold}Accepting{/bold}: ${params[1]} ${JSON.stringify(contract)}`);
+    // TODO: sign
+    return false;
+  }
+
+  async _handleCreateRequest (params) {
+    this._appendMessage(`{bold}Creating{/bold}: ${params[1]}`);
+    const now = (new Date()).toISOString();
+    const template = {
+      created: now,
+      main: JSON.stringify(async function main () { return {}; })
+    };
+
+    const entity = new Actor(template);
+    this.contracts[entity.id] = entity;
+
+    if (params[1]) this.aliases[params[1]] = entity.id;
+
+    this._appendDebug(`Created: ${entity.id}`);
+    return false;
+  }
+
+  async _handleContractsRequest (params) {
+    this._appendMessage('{bold}Current Contracts{/bold}: ' + JSON.stringify(this.contracts, null, '  '));
+    return false;
+  }
+
+  async _handleSubscribeRequest (params) {
+    this._appendMessage('{bold}Subscribing{/bold}: ' + JSON.stringify(params[1], null, '  '));
+    return false;
+  }
+
+  async _handleDeployRequest (params) {
+    this._appendMessage(`{bold}Deploying{/bold}: ${params[1]}`);
+    return false;
   }
 
   async _handleStateRequest (params) {
@@ -531,6 +640,18 @@ class CLI extends App {
     // TODO: create payment channel (@fabric/core/types/channel)
   }
 
+  /**
+   * Creates a token for the target signer with a provided role and some optional data.
+   * @param {Array} params Parameters array.
+   */
+  async _handleGrantCommand (params) {
+    const target = params[1];
+    const role = params[2];
+    const extra = params[3];
+
+    this._appendMessage(`Creating token with role "${role}" for target: ${target}${(extra) ? ' (extra: ' + extra + ')' : ''}`);
+  }
+
   async _handleJoinRequest (params) {
     if (!params[1]) return this._appendError(`You must specify a sidechain.`);
   }
@@ -553,12 +674,10 @@ class CLI extends App {
     if (!params[1]) return this._appendError(`You must specify the file to publish.`);
     if (!params[2]) return this._appendError(`You must specify the rate to pay.`);
     if (!this.documents[params[1]]) return this._appendError(`This file does not exist in the local library.`);
-    const message = Message.fromVector(['DocumentPublish', {
-      id: params[1],
-      content: this.documents[params[1]],
-      reward: params[2]
-    }]);
-    this.node.broadcast(message);
+
+    this.fs.touchDir(`documents`);
+    this.fs.publish(`${params[1]}`, this.documents[params[1]]);
+    this.node._publishDocument(params[1], this.documents[params[1]].toString('utf8'));
   }
 
   async _handleRequestCommand (params) {
@@ -619,6 +738,7 @@ class CLI extends App {
   }
 
   async _handleBitcoinReady (bitcoin) {
+    this._appendMessage(`Bitcoin ready: ${JSON.stringify(bitcoin)}`);
     this._syncChainDisplay();
   }
 
@@ -632,12 +752,11 @@ class CLI extends App {
   }
 
   async _handleConnectionClose (msg) {
-    this._appendMessage(`Node emitted "connections:close" event: ${JSON.stringify(msg)}`);
+    this._appendMessage(`Node emitted "connections:close" event: ${JSON.stringify(msg, null, '  ')}`);
 
     for (const id in this.peers) {
       const peer = this.peers[id];
-      this._appendMessage(`Checking: ${JSON.stringify(peer)}`);
-      if (peer.address === msg.address) {
+      if (peer.address === msg.name) {
         this._appendMessage(`Address matches.`);
         delete this.peers[id];
       }
@@ -645,14 +764,13 @@ class CLI extends App {
 
     for (const id in this.connections) {
       const connections = this.connections[id];
-      this._appendMessage(`Checking: ${JSON.stringify(connections)}`);
       if (connections.address === msg.address) {
-        this._appendMessage(`Address matches.`);
         delete this.connections[id];
       }
     }
 
     this._syncPeerList();
+    this._syncConnectionList();
   }
 
   async _handleConnectionError (msg) {
@@ -662,7 +780,7 @@ class CLI extends App {
   async _handleConnection (connection) {
     if (!connection.id) {
       // TODO: exit function here
-      this._appendMessage('Peer did not send an ID.  Event received: ' + JSON.stringify(connection));
+      this._appendWarning('Peer did not send an ID.  Event received: ' + JSON.stringify(connection));
     }
 
     // TODO: use @fabric/core/types/channel
@@ -809,6 +927,10 @@ class CLI extends App {
     this._appendDebug(`[UPNP] ${JSON.stringify(upnp)}`);
   }
 
+  async _handlePeerSet (peerset) {
+    this._appendDebug(`[PEERSET] ${JSON.stringify(peerset, null, '  ')}`);
+  }
+
   async _handlePeerMessage (message) {
     switch (message.type) {
       case 'ChatMessage':
@@ -934,8 +1056,10 @@ class CLI extends App {
         target: '/messages'
       };
 
-      const message = Message.fromVector(['ChatMessage', JSON.stringify(msg)]);
+      const message = Message.fromVector(['ChatMessage', JSON.stringify(msg)])._setSigner(this.signer).sign();
       // this._appendDebug(`Chat Message created (${message.data.length} bytes): ${message.data}`);
+      // this.poc._sendChatMessage(msg);
+
       self.setPane('messages');
 
       // Log own message
@@ -972,6 +1096,13 @@ class CLI extends App {
 
   _handleClearRequest () {
     this.elements['messages'].setContent('');
+    return false;
+  }
+
+  _handleFlushRequest () {
+    this.flush();
+    console.log('Fabric store flushed!');
+    this.stop();
     return false;
   }
 
@@ -1102,11 +1233,16 @@ class CLI extends App {
     this._appendMessage(`Local Settings: ${JSON.stringify(this.settings, null, '  ')}`);
   }
 
-  _handleHelpRequest (data) {
-    const self = this;
-    const help = `Available Commands:\n${Object.keys(self.commands).map(x => `\t${x}`).join('\n')}`;
+  _handleHelpRequest (params) {
+    let text = '';
 
-    self._appendMessage(help);
+    switch (params[1]) {
+      default:
+        text = `{bold}Fabric CLI Help{/bold}\nThe Fabric CLI offers a simple command-based interface to a Fabric-speaking Network.  You can use \`/connect &lt;address>\` to establish a connection to a known peer, or any of the available commands.\n\n{bold}Available Commands{/bold}:\n\n${Object.keys(this.commands).map(x => `\t${x}`).join('\n')}\n`
+        break;
+    }
+
+    this._appendMessage(text);
   }
 
   _handleServiceMessage (msg) {
@@ -1153,7 +1289,7 @@ class CLI extends App {
   }
 
   async _syncContracts () {
-    await this._syncLightningChannels();
+    if (this.settings.lightning.enable) await this._syncLightningChannels();
     return this;
   }
 
@@ -1189,6 +1325,10 @@ class CLI extends App {
         const map = {};
 
         for (const [key, value] of Object.entries(x)) {
+          if ([
+
+          ].includes(key)) continue;
+
           map[key] = value.toString();
         }
 
@@ -1225,6 +1365,25 @@ class CLI extends App {
     const balance = result.data.content + this.lightning.balances.spendable;
 
     return balance;
+  }
+
+  _allConfigured () {
+    if (
+      this._isBitcoinConfigured() &amp;&amp;
+      this._isLightningConfigured()
+    ) {
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  _isBitcoinConfigured () {
+    return (this.settings.bitcoin) ? true : false;
+  }
+
+  _isLightningConfigured () {
+    return (this.settings.lightning) ? true : false;
   }
 
   _syncConnectionList () {
@@ -1315,11 +1474,13 @@ class CLI extends App {
   focusInput () {
     this.elements['prompt'].clearValue();
     this.elements['prompt'].focus();
+    this.elements.modeline.setContent(' INSERT ');
     this.screen.render();
   }
 
   defocusInput () {
     this.elements['prompt'].blur();
+    this.elements.modeline.setContent('  META ');
     this.screen.render();
   }
 
@@ -1366,6 +1527,18 @@ class CLI extends App {
       output: this.settings.output,
       terminal: this.settings.terminal,
       fullUnicode: this.settings.fullUnicode
+    });
+
+    self.elements.modeline = blessed.text({
+      parent: self.screen,
+      content: '  META ',
+      bottom: 0,
+      right: 0,
+      width: 8,
+      style: {
+        bg: 'white',
+        fg: 'black'
+      }
     });
 
     self.elements['home'] = blessed.box({
@@ -1875,44 +2048,32 @@ module.exports = CLI;
     <h3>Classes</h3>
     <ul>
       <li><a href="Actor.html">Actor</a></li>
-      <li><a href="Aggregator.html">Aggregator</a></li>
-      <li><a href="App.html">App</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
-      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
-      <li><a href="Compiler.html">Compiler</a></li>
-      <li><a href="Consensus.html">Consensus</a></li>
-      <li><a href="Entity.html">Entity</a></li>
       <li><a href="Environment.html">Environment</a></li>
-      <li><a href="Exchange.html">Exchange</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
-      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
-      <li><a href="Keystore.html">Keystore</a></li>
       <li><a href="Ledger.html">Ledger</a></li>
       <li><a href="Lightning.html">Lightning</a></li>
       <li><a href="Logger.html">Logger</a></li>
       <li><a href="Machine.html">Machine</a></li>
-      <li><a href="Mempool.html">Mempool</a></li>
       <li><a href="Message.html">Message</a></li>
-      <li><a href="Node.html">Node</a></li>
-      <li><a href="Oracle.html">Oracle</a></li>
-      <li><a href="Path.html">Path</a></li>
       <li><a href="Peer.html">Peer</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
-      <li><a href="Router.html">Router</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
@@ -1923,9 +2084,8 @@ module.exports = CLI;
       <li><a href="Stash.html">Stash</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
-      <li><a href="Swap.html">Swap</a></li>
       <li><a href="Swarm.html">Swarm</a></li>
-      <li><a href="Transition.html">Transition</a></li>
+      <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Value.html">Value</a></li>
       <li><a href="Vector.html">Vector</a></li>

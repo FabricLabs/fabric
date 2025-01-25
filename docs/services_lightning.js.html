@@ -76,7 +76,12 @@ class Lightning extends Service {
     this._state = {
       content: {
         actors: {},
-        balances: {},
+        balances: {
+          spendable: 0,
+          total: 0,
+          confirmed: 0,
+          unconfirmed: 0
+        },
         channels: {},
         blockheight: null,
         node: {
@@ -129,6 +134,8 @@ class Lightning extends Service {
   }
 
   async start () {
+    const self = this;
+
     this.status = 'starting';
 
     await this.machine.start();
@@ -176,7 +183,12 @@ class Lightning extends Service {
   }
 
   async listFunds () {
-    return this._makeRPCRequest('listfunds');
+    try {
+      const result = this._makeRPCRequest('listfunds');
+      return result;
+    } catch (exception) {
+      
+    }
   }
 
   async _heartbeat () {
@@ -285,6 +297,8 @@ class Lightning extends Service {
     if (this.settings.mode === 'rest') {
       const result = await this.rest._GET('/v1/channel/getInfo');
 
+      // this.emit('debug', `syncing oracle info: ${JSON.stringify(result)}`);
+
       if (result &amp;&amp; result.id) {
         this._state.id = result.id;
         this._state.name = result.alias;
@@ -302,6 +316,7 @@ class Lightning extends Service {
     if (this.settings.mode === 'rest') {
       const result = await this.rest._GET('/v1/channel/localRemoteBal');
       if (result) {
+        this.emit('debug', `Oracle Balance Result: ${JSON.stringify(result, null, '')}`);
         this._state.content.balances.spendable = result.totalBalance;
         this._state.content.balances.confirmed = result.confBalance;
         this._state.content.balances.unconfirmed = result.unconfBalance;
@@ -315,6 +330,9 @@ class Lightning extends Service {
   async _syncOracleChannels () {
     if (this.settings.mode === 'rest') {
       const result = await this.rest._GET('/v1/channel/listChannels');
+
+      // this.emit('debug', `Oracle Channel Result: ${JSON.stringify(result, null, '')}`);
+
       if (!result || !result.map) return this.state;
       this._state.content.channels = result.map((x) => {
         return new Actor(x);
@@ -322,6 +340,8 @@ class Lightning extends Service {
         obj[item.id] = item.state;
         return obj;
       }, {});
+
+      // this.emit('debug', `State: ${JSON.stringify(this.state, null, '')}`);
 
       this.commit();
     }
@@ -357,6 +377,7 @@ class Lightning extends Service {
   async _syncInfo () {
     try {
       const result = await this._makeRPCRequest('getinfo');
+      this.emit('log', `Lighting Info: ${JSON.stringify(result, null, '  ')}`);
       this._state.content.node.id = result.id;
       this._state.content.node.alias = result.alias;
       this._state.content.node.color = result.color;
@@ -370,10 +391,19 @@ class Lightning extends Service {
   }
 
   async _sync () {
-    await this._syncChannels();
-    await this._syncInfo();
+    try {
+      // await this._syncChannels();
+      // await this._syncInfo();
+    } catch (exception) {
+
+    }
+
     this.emit('sync', this.state);
     return this;
+  }
+
+  async sync () {
+
   }
 }
 
@@ -390,44 +420,32 @@ module.exports = Lightning;
     <h3>Classes</h3>
     <ul>
       <li><a href="Actor.html">Actor</a></li>
-      <li><a href="Aggregator.html">Aggregator</a></li>
-      <li><a href="App.html">App</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
-      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
-      <li><a href="Compiler.html">Compiler</a></li>
-      <li><a href="Consensus.html">Consensus</a></li>
-      <li><a href="Entity.html">Entity</a></li>
       <li><a href="Environment.html">Environment</a></li>
-      <li><a href="Exchange.html">Exchange</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
-      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
-      <li><a href="Keystore.html">Keystore</a></li>
       <li><a href="Ledger.html">Ledger</a></li>
       <li><a href="Lightning.html">Lightning</a></li>
       <li><a href="Logger.html">Logger</a></li>
       <li><a href="Machine.html">Machine</a></li>
-      <li><a href="Mempool.html">Mempool</a></li>
       <li><a href="Message.html">Message</a></li>
-      <li><a href="Node.html">Node</a></li>
-      <li><a href="Oracle.html">Oracle</a></li>
-      <li><a href="Path.html">Path</a></li>
       <li><a href="Peer.html">Peer</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
-      <li><a href="Router.html">Router</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
@@ -438,9 +456,8 @@ module.exports = Lightning;
       <li><a href="Stash.html">Stash</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
-      <li><a href="Swap.html">Swap</a></li>
       <li><a href="Swarm.html">Swarm</a></li>
-      <li><a href="Transition.html">Transition</a></li>
+      <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Value.html">Value</a></li>
       <li><a href="Vector.html">Vector</a></li>

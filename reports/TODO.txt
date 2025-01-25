@@ -231,7 +231,6 @@
 ./types/stack.js:    // TODO: return Transaction
 ./API.md:TODO: move to @fabric/http/types/spa
 ./API.md:TODO: move to @fabric/http/types/spa
-./API.md:TODO: move to @fabric/http/types/spa
 ./SUMMARY.md:* [✅ TODO List][todo]
 ./SUMMARY.md:[todo]: TODO.md
 ./fabric-whitepaper.md:### TODO: include content hashes of links as they appear at document compilation time.
@@ -299,7 +298,7 @@
 ./scripts/chat.js:      // TODO: replicate this program in C / ASM
 ./scripts/transfer.js:  // TODO: add support for segwit, taproot
 ./functions/_handleFabricMessage.js:  const message = Message.fromVector([...data]); // TODO: redefine...
-./GOALS.md:- [ ] Find all TODO items (run script, check diff)
+./GOALS.md:- [x] Find all TODO items (run script, check diff)
 ./services/bitcoin.js:// TODO: replace with  `secp256k1`
 ./services/bitcoin.js:      // httpPort: 48449, // TODO: disable HTTP entirely!
 ./services/bitcoin.js:    // TODO: import ZMQ settings

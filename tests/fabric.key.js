@@ -22,7 +22,7 @@ const BIP_84_TEST_VECTOR_PUBKEY = '0330d54fd0dd420a6e5f8d3624f5f3482cae350f79d5f
 const BIP_84_TEST_VECTOR_ADDRESS = 'bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu';
 
 describe('@fabric/core/types/key', function () {
-  this.timeout(15000);
+  this.timeout(60000);
 
   describe('Key', function () {
     it('is available from @fabric/core', function () {

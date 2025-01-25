@@ -167,6 +167,8 @@ class Key {
       this.settings.private
     ) + '');
 
+    if (!this._starseed) this._starseed = '0000000000000000000000000000000000000000000000000000000000000000';
+
     this.q = parseInt(this._starseed.substring(0, 4), 16);
     this.generator = new Generator(this.q);
 
