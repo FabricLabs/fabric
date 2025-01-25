@@ -896,12 +896,12 @@ class Bitcoin extends Service {
     const self = this;
 
     this.zmq.on('log', async function _handleZMQLogEvent (event) {
-      self.emit('debug', `[BITCOIN:ZMQ] Log: ${event}`);
+      if (this.settings.debug) self.emit('debug', `[BITCOIN:ZMQ] Log: ${event}`);
       self.emit('log', `[BITCOIN:ZMQ] Log: ${event}`);
     });
 
     this.zmq.on('message', async function _handleZMQMessage (event) {
-      self.emit('debug', `[BITCOIN:ZMQ] Message: ${JSON.stringify(event)}`);
+      if (this.settings.debug) self.emit('debug', `[BITCOIN:ZMQ] Message: ${JSON.stringify(event)}`);
 
       let data = null;
 
@@ -1020,7 +1020,7 @@ class Bitcoin extends Service {
 
   async append (raw) {
     const block = bcoin.Block.fromRaw(raw, 'hex');
-    this.emit('debug', `Parsed block: ${JSON.stringify(block)}`);
+    if (this.settings.debug) this.emit('debug', `Parsed block: ${JSON.stringify(block)}`);
     const added = await this.fullnode.chain.add(block);
     if (!added) this.emit('warning', 'Block not added to chain.');
     return added;
@@ -1672,14 +1672,14 @@ class Bitcoin extends Service {
     if (header.error) return this.emit('error', header.error);
     const raw =  Buffer.from(header, 'hex');
     this.headers.push(raw);
-    this.emit('debug', `raw headers[${hash}] = ${JSON.stringify(header)}`);
+    if (this.settings.debug) this.emit('debug', `raw headers[${hash}] = ${JSON.stringify(header)}`);
     return this;
   }
 
   async _syncHeadersForBlock (hash) {
     const header = await this._requestBlockHeader(hash);
     this.headers[hash] = header;
-    this.emit('debug', `headers[${hash}] = ${JSON.stringify(header)}`);
+    if (this.settings.debug) this.emit('debug', `headers[${hash}] = ${JSON.stringify(header)}`);
     this.commit();
     return this;
   }
@@ -1692,7 +1692,7 @@ class Bitcoin extends Service {
     let before = 0;
 
     for (let i = 0; i <= this.height; i++) {
-      this.emit('debug', `Getting block headers: ${i} of ${this.height}`);
+      if (this.settings.debug) this.emit('debug', `Getting block headers: ${i} of ${this.height}`);
 
       const now = Date.now();
       const progress = now - start;
@@ -1707,7 +1707,7 @@ class Bitcoin extends Service {
         before = i;
         last = epoch;
 
-        this.emit('debug', `timing: epochs[${epoch}] ${now} ${i} processed @ ${rate}/sec (${progress/1000}s elapsed)`);
+        if (this.settings.debug) this.emit('debug', `timing: epochs[${epoch}] ${now} ${i} processed @ ${rate}/sec (${progress/1000}s elapsed)`);
       }
     }
 
@@ -1822,17 +1822,17 @@ class Bitcoin extends Service {
 
     child.stdout.on('data', (data) => {
       if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', data.toString('utf8').trim());
-      this.emit('debug', `[FABRIC:BITCOIN] ${data.toString('utf8').trim()}`);
+      if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] ${data.toString('utf8').trim()}`);
     });
 
-    child.stderr.on('data', function (data) {
+    child.stderr.on('data', (data) => {
       console.error('[FABRIC:BITCOIN]', '[ERROR]', data.toString('utf8').trim());
       this.emit('error', `[FABRIC:BITCOIN] ${data.toString('utf8').trim()}`);
     });
 
-    child.on('close', function (code) {
+    child.on('close', (code) => {
       if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Bitcoin Core exited with code ' + code);
-      this.emit('debug', `[FABRIC:BITCOIN] Bitcoin Core exited with code ${code}`);
+      this.emit('log', `[FABRIC:BITCOIN] Bitcoin Core exited with code ${code}`);
     });
 
     return child;
