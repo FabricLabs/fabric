@@ -14,7 +14,7 @@ const children = require('child_process');
 // External Dependencies
 const jayson = require('jayson/lib/client');
 const monitor = require('fast-json-patch');
-const mkdirp = require('mkdirp');
+const { mkdirp } = require('mkdirp');
 
 // crypto support libraries
 // TODO: replace with  `secp256k1`
@@ -322,9 +322,9 @@ class Bitcoin extends Service {
   createRPCAuth (settings = {}) {
     if (!settings.username) throw new Error('Username is required.');
     const username = settings.username;
-    const password = settings.password || crypto.randomBytes(32).toString('hex');
+    const password = settings.password || crypto.randomBytes(32).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
     const salt = crypto.randomBytes(16).toString('hex');
-    const salted = crypto.createHmac('sha256', salt).update(password).digest('hex');
+    const salted = crypto.createHmac('sha256', salt, { encoding: 'utf8' }).update(password, 'utf8').digest('hex');
     return {
       content: `${username}:${salt}$${salted}`,
       password: password,
@@ -1816,26 +1816,30 @@ class Bitcoin extends Service {
     params.push(`-datadir=${datadir}`);
 
     // Start bitcoind
-    // Ensure storage directory exists
-    await mkdirp(datadir);
-    const child = children.spawn('bitcoind', params);
+    if (this.settings.fullnode) {
+      // Ensure storage directory exists
+      await mkdirp(datadir);
+      const child = children.spawn('bitcoind', params);
 
-    child.stdout.on('data', (data) => {
-      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', data.toString('utf8').trim());
-      if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] ${data.toString('utf8').trim()}`);
-    });
+      child.stdout.on('data', (data) => {
+        if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', data.toString('utf8').trim());
+        if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] ${data.toString('utf8').trim()}`);
+      });
 
-    child.stderr.on('data', (data) => {
-      console.error('[FABRIC:BITCOIN]', '[ERROR]', data.toString('utf8').trim());
-      this.emit('error', `[FABRIC:BITCOIN] ${data.toString('utf8').trim()}`);
-    });
+      child.stderr.on('data', (data) => {
+        console.error('[FABRIC:BITCOIN]', '[ERROR]', data.toString('utf8').trim());
+        this.emit('error', `[FABRIC:BITCOIN] ${data.toString('utf8').trim()}`);
+      });
 
-    child.on('close', (code) => {
-      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Bitcoin Core exited with code ' + code);
-      this.emit('log', `[FABRIC:BITCOIN] Bitcoin Core exited with code ${code}`);
-    });
+      child.on('close', (code) => {
+        if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Bitcoin Core exited with code ' + code);
+        this.emit('log', `[FABRIC:BITCOIN] Bitcoin Core exited with code ${code}`);
+      });
 
-    return child;
+      return child;
+    } else {
+      return null;
+    }
   }
 
   /**

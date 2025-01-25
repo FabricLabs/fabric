@@ -123,8 +123,8 @@ class Keystore extends Actor {
 
       try {
         keystore.db = new Level(keystore.settings.path, {
-          keyEncoding: keystore.codec,
-          valueEncoding: keystore.codec
+          encode: keystore.codec,
+          decode: keystore.codec
         }, _handleDiskOpen.bind(keystore));
 
         keystore.status = 'open';

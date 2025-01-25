@@ -34,7 +34,7 @@ jobs:
       run: |
         wget https://bitcoin.org/bin/bitcoin-core-27.0/bitcoin-27.0-x86_64-linux-gnu.tar.gz
         tar -xzf bitcoin-27.0-x86_64-linux-gnu.tar.gz
-        sudo install -m 0755 -o root -g root -t /usr/local/bin bitcoin-27.0/bin/*
+        sudo mv bitcoin-27.0/bin/bitcoind /usr/local/bin/
     - name: Generate coverage report
       run: npm run report:coverage
     - name: Send coverage report

@@ -2,7 +2,7 @@
 
 // Dependencies
 const fs = require('fs');
-const mkdirp = require('mkdirp');
+const { mkdirp } = require('mkdirp');
 
 // Fabric Types
 const Actor = require('./actor');
@@ -18,7 +18,8 @@ class Logger extends Actor {
 
     this.settings = Object.assign({
       name: this.id,
-      path: './logs'
+      path: './logs',
+      silent: true
     }, settings);
 
     this._state = {

@@ -5,8 +5,8 @@ const Bitcoin = require('../../services/bitcoin');
 
 const settings = require('../../settings/test');
 const options = Object.assign({}, settings, {
-  network: 'regtest',
-  fullnode: true,
+  network: 'testnet',
+  fullnode: false,
   mode: 'full',
   verbosity: 2
 });
