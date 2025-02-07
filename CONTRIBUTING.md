@@ -18,7 +18,7 @@ Progress can be tracked in [`#meta:fabric.pub`][chat-meta].
 ## Bitcoin
 Do not send Bitcoin to any of our previously published addresses.  We'll enable Lightning donations soon, which have far superior privacy.
 
-**Remember:** don't re-use Bitcoin addresses!
+**Remember:** don't reuse Bitcoin addresses!
 
 ## Artwork
 We're borne of a swarm of storytellers, eager to tell a tale.  [Join `#lobby:roleplaygateway.com`][chat-rpg-lobby] to start your journey, or [jump to the end][rpg] to list your work.

@@ -46,7 +46,7 @@ the Fabric network using a terminal emulator.</p>
 </dd>
 <dt><a href="#HKDF">HKDF</a></dt>
 <dd><p>Provides an HMAC-based Extract-and-Expand Key Derivation Function (HKDF), compatible with
-RFC 5869.  Defaults to 32 byte output, matching Bitcoin&#39;s implementaton.</p>
+RFC 5869.  Defaults to 32 byte output, matching Bitcoin&#39;s implementation.</p>
 </dd>
 <dt><a href="#Identity">Identity</a></dt>
 <dd><p>Manage a network identity.</p>
@@ -688,7 +688,7 @@ Generate a list of elements in the collection.
 
 ### collection.toTypedArray()
 Provides the [Collection](#Collection) as an [Array](Array) of typed
-elements.  The type of these elments are defined by the collection's
+elements.  The type of these elements are defined by the collection's
 type, supplied in the constructor.
 
 **Kind**: instance method of [<code>Collection</code>](#Collection)  
@@ -949,7 +949,7 @@ Load Filesystem state from disk.
 <a name="Filesystem+sync"></a>
 
 ### filesystem.sync() ⇒ [<code>Filesystem</code>](#Filesystem)
-Syncronize state from the local filesystem.
+Synchronize state from the local filesystem.
 
 **Kind**: instance method of [<code>Filesystem</code>](#Filesystem)  
 **Returns**: [<code>Filesystem</code>](#Filesystem) - Instance of the Fabric filesystem.  
@@ -1001,7 +1001,7 @@ Reverses the bytes of the digest.
 
 ## HKDF
 Provides an HMAC-based Extract-and-Expand Key Derivation Function (HKDF), compatible with
-RFC 5869.  Defaults to 32 byte output, matching Bitcoin's implementaton.
+RFC 5869.  Defaults to 32 byte output, matching Bitcoin's implementation.
 
 **Kind**: global class  
 
@@ -1215,7 +1215,7 @@ Attempts to append a [Page](Page) to the ledger.
 <a name="Scribe+now"></a>
 
 ### ledger.now() ⇒ <code>Number</code>
-Retrives the current timestamp, in milliseconds.
+Retrieves the current timestamp, in milliseconds.
 
 **Kind**: instance method of [<code>Ledger</code>](#Ledger)  
 **Overrides**: [<code>now</code>](#Scribe+now)  
@@ -1505,7 +1505,7 @@ Get `n` bytes of deterministic random data.
 <a name="Machine+compute"></a>
 
 ### machine.compute(input) ⇒ [<code>Machine</code>](#Machine)
-Computes the next "step" for our current Vector.  Analagous to `sum`.
+Computes the next "step" for our current Vector.  Analogous to `sum`.
 The top item on the stack is always the memory held at current position,
 so counts should always begin with 0.
 
@@ -3053,7 +3053,7 @@ Generate [Script](#Script) for claiming a [Swap](Swap).
 <a name="Wallet+_getRefundInputScript"></a>
 
 ### wallet.\_getRefundInputScript(redeemScript)
-Generate [Script](#Script) for reclaiming funds commited to a [Swap](Swap).
+Generate [Script](#Script) for reclaiming funds committed to a [Swap](Swap).
 
 **Kind**: instance method of [<code>Wallet</code>](#Wallet)  
 
@@ -3684,7 +3684,7 @@ Deprecated 2021-11-06.
 <a name="Scribe+now"></a>
 
 ### scribe.now() ⇒ <code>Number</code>
-Retrives the current timestamp, in milliseconds.
+Retrieves the current timestamp, in milliseconds.
 
 **Kind**: instance method of [<code>Scribe</code>](#Scribe)  
 **Returns**: <code>Number</code> - [Number](Number) representation of the millisecond [Integer](Integer) value.  
