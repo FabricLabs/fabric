@@ -19,7 +19,7 @@ Multi-Party Computations, or SMPC.
 In 2008, Satoshi Nakamoto crystallized a solution to the Byzantine General's
 Problem in the form of Nakamoto Consensus, which is most famously utilized as
 part of Bitcoin's consensus mechanism.  Launching publicly in 2009, Bitcoin has
-gone on to become the world's most reknown distributed system.
+gone on to become the world's most renown distributed system.
 
 ### Smart Contracts
 Bitcoin leverages the concept of a self-executing agreement known as a Smart
