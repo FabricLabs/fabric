@@ -363,7 +363,6 @@ class Remote extends Actor {
                 result = await response.json();
               } catch (E) {
                 console.error('[REMOTE]', 'Could not parse JSON:', E);
-                result = await response.text();
               }
               break;
             default:
@@ -375,9 +374,9 @@ class Remote extends Actor {
           if (this.settings.verbosity >= 4) console.warn('[FABRIC:REMOTE]', 'Unmanaged HTTP status code:', response.status);
 
           try {
-            result = await response.json();
+            result = response.json();
           } catch (exception) {
-            result = await response.text();
+            result = response.text();
           }
         }
         break;
@@ -488,7 +487,7 @@ class Remote extends Actor {
   }
 
   async _SEARCH (key, params) {
-    console.debug('[FABRIC:CORE]', '_SEARCH:', key, params);
+    if (this.settings.debug) console.debug('[FABRIC:CORE]', '_SEARCH:', key, params);
     return this.request('search', key, params);
   }
 }
@@ -507,18 +506,18 @@ module.exports = Remote;
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="HTTPServer.html">HTTPServer</a></li>
-      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>

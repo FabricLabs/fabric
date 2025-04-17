@@ -90,7 +90,7 @@ class Peer extends Service {
     this.settings = merge({
       constraints: {
         peers: {
-          max: 0,
+          max: 32,
           shuffle: 8
         }
       },
@@ -265,9 +265,7 @@ class Peer extends Service {
    * @param {Buffer} message Message buffer to send.
    */
   broadcast (message, origin = null) {
-    console.debug('broadcasting:', message);
     for (const id in this.connections) {
-      this.emit('debug', `Broadcast [!!!] — evaluating connection: ${id}`);
       if (id === origin) continue;
       this.connections[id]._writeFabric(message);
     }
@@ -278,10 +276,6 @@ class Peer extends Service {
       if (id === origin) continue;
       this.connections[id]._writeFabric(message.toBuffer(), socket);
     }
-  }
-
-  subscribe (path) {
-
   }
 
   _beginFabricHandshake (client) {
@@ -316,14 +310,10 @@ class Peer extends Service {
    * @param {String} target Target address.
    */
   _connect (target) {
-    this.emit('debug', `Connecting to target: ${target}`);
     const url = new URL(`tcp://${target}`);
     const id = url.username;
 
     if (!url.port) target += `:${P2P_PORT}`;
-
-    const derived = this.identity.key.derive(FABRIC_KEY_DERIVATION_PATH);
-    this.emit('debug', `Local derived ID: ${JSON.stringify(derived)}`);
 
     this._registerActor({ name: target });
     this._registerPeer({ identity: id });
@@ -338,7 +328,6 @@ class Peer extends Service {
     });
 
     socket.on('error', (error) => {
-      this.emit('debug', `--- debug error from _connect() ---`);
       this.emit('error', `Socket error: ${error}`);
     });
 
@@ -349,12 +338,10 @@ class Peer extends Service {
     socket.on('close', (info) => {
       this.emit('debug', `Outbound socket closed: (${target}) ${info}`);
       socket._destroyFabric();
-      // this._scheduleReconnect(target);
     });
 
     socket.on('end', (info) => {
       this.emit('debug', `Socket end: (${target}) ${info}`);
-      // delete this.connections[target];
     });
 
     // Handle trusted Fabric messages
@@ -387,7 +374,6 @@ class Peer extends Service {
     })]);
 
     const announcement = PACKET_PEER_ALIAS.toBuffer();
-    // this.emit('debug', `Announcing alias: ${announcement.toString('utf8')}`);
     this.broadcast(announcement, origin.name);
   }
 
@@ -413,8 +399,8 @@ class Peer extends Service {
     for (let i = 0; i &lt; openCount; i++) {
       if (!this.candidates.length) continue;
       const candidate = this.candidates.shift();
-      this.emit('debug', `Filling peer slot ${i} of ${openCount} (max ${this.settings.constraints.peers.max}) with candidate: ${JSON.stringify(candidate, null, '  ')}`);
-
+      // this.emit('debug', `Filling peer slot ${i} of ${openCount} (max ${this.settings.constraints.peers.max}) with candidate: ${JSON.stringify(candidate, null, '  ')}`);
+      
       try {
         this._connect(`${candidate.object.host}:${candidate.object.port}`);
       } catch (exception) {
@@ -463,8 +449,6 @@ class Peer extends Service {
       case 'GenericMessage':
       case 'PeerMessage':
       case 'ChatMessage':
-        // this.emit('debug', `message ${message}`);
-        // this.emit('debug', `message data: ${message.data}`);
         // Parse JSON body
         try {
           const content = JSON.parse(message.data);
@@ -499,12 +483,12 @@ class Peer extends Service {
         // Peer is valid
         // TODO: remove this assumption (validate above)
         // TODO: check for existing peer, update instead of replace
-        this.peers[origin.name] = new Actor({
+        this.peers[origin.name] = {
           id: message.actor.id,
           name: origin.name,
           address: origin.name,
           connections: [ origin.name ]
-        });
+        };
 
         // Emit peer event
         this.emit('peer', this.peers[origin.name]);
@@ -566,15 +550,11 @@ class Peer extends Service {
         this._state.content.actors[actor.id] = this.actors[actor.id].state;
         this.commit();
 
-        if (this.settings.debug) this.emit('debug', `Received pong: ${JSON.stringify(message, null, '  ')}`);
         this.emit('state', this.state);
-
         break;
       case 'P2P_PEER_ALIAS':
         this.emit('debug', `peer_alias ${origin.name} &lt;Generic>${JSON.stringify(message.object || '')}`);
         this.connections[origin.name]._alias = message.object.name;
-        // const alias = Message.fromVector(['PeerAlias', JSON.stringify(message)]);
-        // this.relayFrom(origin.name, alias);
         break;
       case 'P2P_PEER_ANNOUNCE':
         this.emit('debug', `peer_announce &lt;Generic>${JSON.stringify(message.object || '')}`);
@@ -603,11 +583,9 @@ class Peer extends Service {
   }
 
   _handleNOISEHandshake (localPrivateKey, localPublicKey, remotePublicKey) {
-    // const counterparty = new Identity({ public: remotePublicKey.toString('hex') });
     this.emit('debug', `Peer transport handshake using local key: ${localPrivateKey.toString('hex')}`);
     this.emit('debug', `Peer transport handshake using local public key: ${localPublicKey.toString('hex')}`);
     this.emit('debug', `Peer transport handshake with remote public key: ${remotePublicKey.toString('hex')}`);
-    // this.emit('debug', `Peer transport handshake with remote identity: ${counterparty.id}`);
   }
 
   _NOISESocketHandler (socket) {
@@ -617,14 +595,10 @@ class Peer extends Service {
     // Store a unique actor for this inbound connection
     this._registerActor({ name: target });
 
-    // this.emit('debug', `Local NOISE key: ${JSON.stringify(this.identity.key, null, '  ')}`);
-    const derived = this.identity.key.derive(FABRIC_KEY_DERIVATION_PATH);
-    this.emit('debug', `Derived NOISE key: ${derived.private.toString('hex')}`);
-
     // Create NOISE handler
     const handler = noise({
       prologue: Buffer.from(PROLOGUE),
-      // privateKey: derived.private.toString('hex'),
+      // privateKey: this.identity.key.private,
       verify: this._verifyNOISE.bind(this)
     });
 
@@ -636,9 +610,6 @@ class Peer extends Service {
 
     handler.encrypt.on('end', (data) => {
       this.emit('debug', `Peer encrypt end: ${data}`);
-      // socket.destroy();
-      delete this.connections[target];
-      this.peers[target].status = 'disconnected';
     });
 
     handler.decrypt.on('error', (error) => {
@@ -650,9 +621,7 @@ class Peer extends Service {
     });
 
     handler.decrypt.on('end', (data) => {
-      this.emit('debug', `Peer decrypt end: (${target}) ${data}`);
-      this.emit('debug', `Connections: ${Object.keys(this.connections)}`);
-      socket._destroyFabric();
+      this.emit('debug', `Peer decrypt end: ${data}`);
     });
 
     handler.decrypt.on('data', (data) => {
@@ -700,10 +669,6 @@ class Peer extends Service {
   _registerActor (object) {
     this.emit('debug', `Registering actor: ${JSON.stringify(object, null, '  ')}`);
     const actor = new Actor(object);
-
-    /* actor.adopt([
-      { op: 'replace', path: '/status', value: 'REGISTERED' }
-    ]); */
 
     if (this.actors[actor.id]) return this;
 
@@ -789,10 +754,8 @@ class Peer extends Service {
   _scheduleReconnect (target, when = 250) {
     this.emit('debug', `Scheduled reconnect to ${target} in ${when} milliseconds...`);
     const reconnect = setTimeout(() => {
-      this._connect(target)
+      this._connect(target);
     }, when);
-
-    this.emit('debug', `Scheduled: ${reconnect}`);
   }
 
   _selectBestPeerCandidate () {
@@ -933,7 +896,6 @@ class Peer extends Service {
   }
 
   _disconnect (address) {
-    this.emit('debug', `Disconnect request for address: ${address}`);
     if (!this.connections[address]) return false;
 
     // Halt any heartbeat
@@ -1029,18 +991,18 @@ module.exports = Peer;
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="HTTPServer.html">HTTPServer</a></li>
-      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>

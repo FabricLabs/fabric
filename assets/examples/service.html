@@ -1,225 +1,272 @@
 <!DOCTYPE html>
 
 <html>
+
 <head>
   <title>service.js</title>
   <meta http-equiv="content-type" content="text/html; charset=UTF-8">
   <meta name="viewport" content="width=device-width, target-densitydpi=160dpi, initial-scale=1.0; maximum-scale=1.0; user-scalable=0;">
-  <link rel="stylesheet" media="all" href="docco.css" />
+  <link rel="stylesheet" media="all" href="../docco.css" />
 </head>
+
 <body>
   <div id="container">
     <div id="background"></div>
-    
-      <ul id="jump_to">
-        <li>
-          <a class="large" href="javascript:void(0);">Jump To &hellip;</a>
-          <a class="small" href="javascript:void(0);">+</a>
-          <div id="jump_wrapper">
+
+    <ul id="jump_to">
+      <li>
+        <a class="large" href="javascript:void(0);">Jump To &hellip;</a>
+        <a class="small" href="javascript:void(0);">+</a>
+        <div id="jump_wrapper">
           <div id="jump_page_wrapper">
             <div id="jump_page">
-              
-                
-                <a class="source" href="app.html">
-                  app.js
-                </a>
-              
-                
-                <a class="source" href="bitcoin.html">
-                  bitcoin.js
-                </a>
-              
-                
-                <a class="source" href="blockchain.html">
-                  blockchain.js
-                </a>
-              
-                
-                <a class="source" href="chain.html">
-                  chain.js
-                </a>
-              
-                
-                <a class="source" href="cli.html">
-                  cli.js
-                </a>
-              
-                
-                <a class="source" href="collection.html">
-                  collection.js
-                </a>
-              
-                
-                <a class="source" href="fabric.html">
-                  fabric.js
-                </a>
-              
-                
-                <a class="source" href="game.html">
-                  game.js
-                </a>
-              
-                
-                <a class="source" href="http.html">
-                  http.js
-                </a>
-              
-                
-                <a class="source" href="index.html">
-                  index.js
-                </a>
-              
-                
-                <a class="source" href="network.html">
-                  network.js
-                </a>
-              
-                
-                <a class="source" href="oracle.html">
-                  oracle.js
-                </a>
-              
-                
-                <a class="source" href="p2pkh.html">
-                  p2pkh.js
-                </a>
-              
-                
-                <a class="source" href="service.html">
-                  service.js
-                </a>
-              
-                
-                <a class="source" href="store.html">
-                  store.js
-                </a>
-              
-                
-                <a class="source" href="witness.html">
-                  witness.js
-                </a>
-              
+
+
+              <a class="source" href="app.html">
+                examples/app.js
+              </a>
+
+
+              <a class="source" href="bitcoin.html">
+                examples/bitcoin.js
+              </a>
+
+
+              <a class="source" href="blockchain.html">
+                examples/blockchain.js
+              </a>
+
+
+              <a class="source" href="chain.html">
+                examples/chain.js
+              </a>
+
+
+              <a class="source" href="cli.html">
+                examples/cli.js
+              </a>
+
+
+              <a class="source" href="collection.html">
+                examples/collection.js
+              </a>
+
+
+              <a class="source" href="environment.html">
+                examples/environment.js
+              </a>
+
+
+              <a class="source" href="fabric.html">
+                examples/fabric.js
+              </a>
+
+
+              <a class="source" href="game.html">
+                examples/game.js
+              </a>
+
+
+              <a class="source" href="heartbeat.html">
+                examples/heartbeat.js
+              </a>
+
+
+              <a class="source" href="http.html">
+                examples/http.js
+              </a>
+
+
+              <a class="source" href="index.html">
+                examples/index.js
+              </a>
+
+
+              <a class="source" href="lightning.html">
+                examples/lightning.js
+              </a>
+
+
+              <a class="source" href="message.html">
+                examples/message.js
+              </a>
+
+
+              <a class="source" href="network.html">
+                examples/network.js
+              </a>
+
+
+              <a class="source" href="oracle.html">
+                examples/oracle.js
+              </a>
+
+
+              <a class="source" href="p2pkh.html">
+                examples/p2pkh.js
+              </a>
+
+
+              <a class="source" href="relay.html">
+                examples/relay.js
+              </a>
+
+
+              <a class="source" href="service.html">
+                examples/service.js
+              </a>
+
+
+              <a class="source" href="store.html">
+                examples/store.js
+              </a>
+
+
+              <a class="source" href="swarm.html">
+                examples/swarm.js
+              </a>
+
+
+              <a class="source" href="witness.html">
+                examples/witness.js
+              </a>
+
             </div>
           </div>
-        </li>
-      </ul>
-    
+      </li>
+    </ul>
+
     <ul class="sections">
-        
-          <li id="title">
-              <div class="annotation">
-                  <h1>service.js</h1>
-              </div>
-          </li>
-        
-        
-        
-        <li id="section-1">
-            <div class="annotation">
-              
-              <div class="pilwrap ">
-                <a class="pilcrow" href="#section-1">&#182;</a>
-              </div>
-              <p>importScripts(‘/app.min.js’);</p>
 
-            </div>
-            
-            <div class="content"><div class='highlight'><pre>
-<span class="hljs-keyword">var</span> url = <span class="hljs-built_in">require</span>(<span class="hljs-string">'url'</span>);
-<span class="hljs-keyword">var</span> Stash = <span class="hljs-built_in">require</span>(<span class="hljs-string">'../types/stash'</span>);
+      <li id="title">
+        <div class="annotation">
+          <h1>service.js</h1>
+        </div>
+      </li>
 
-self.addEventListener(<span class="hljs-string">'message'</span>, <span class="hljs-function"><span class="hljs-keyword">function</span> (<span class="hljs-params">e</span>) </span>{
-  e.source.postMessage(<span class="hljs-string">'[GUARDIAN]'</span>, <span class="hljs-string">'Hello! Your message was: '</span> + e.data);
+
+
+      <li id="section-1">
+        <div class="annotation">
+
+          <div class="sswrap ">
+            <a class="ss" href="#section-1">&#x00a7;</a>
+          </div>
+          <p>importScripts(‘/app.min.js’);</p>
+
+        </div>
+
+        <div class="content">
+          <div class='highlight'>
+            <pre>
+<span class="hljs-keyword">const</span> url = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;url&#x27;</span>);
+<span class="hljs-keyword">const</span> <span class="hljs-title class_">Stash</span> = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;../types/stash&#x27;</span>);
+
+self.<span class="hljs-title function_">addEventListener</span>(<span class="hljs-string">&#x27;message&#x27;</span>, <span class="hljs-keyword">function</span> (<span class="hljs-params">e</span>) {
+  e.<span class="hljs-property">source</span>.<span class="hljs-title function_">postMessage</span>(<span class="hljs-string">&#x27;[GUARDIAN]&#x27;</span>, <span class="hljs-string">&#x27;Hello! Your message was: &#x27;</span> + e.<span class="hljs-property">data</span>);
 });
 
-self.addEventListener(<span class="hljs-string">'fetch'</span>, <span class="hljs-keyword">async</span> <span class="hljs-function"><span class="hljs-keyword">function</span> (<span class="hljs-params">event</span>) </span>{
-  <span class="hljs-keyword">var</span> self = <span class="hljs-keyword">this</span>;
-  
-  <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;
-  <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'[GUARDIAN]'</span>, <span class="hljs-string">'request:'</span>, event);
+self.<span class="hljs-title function_">addEventListener</span>(<span class="hljs-string">&#x27;fetch&#x27;</span>, <span class="hljs-keyword">async</span> <span class="hljs-keyword">function</span> (<span class="hljs-params">event</span>) {
+  <span class="hljs-keyword">const</span> self = <span class="hljs-variable language_">this</span>;
+  <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;[GUARDIAN]&#x27;</span>, <span class="hljs-string">&#x27;request:&#x27;</span>, event);
 
-  <span class="hljs-keyword">var</span> path = event.request.url;
-  <span class="hljs-keyword">var</span> target = url.parse(path);
-  <span class="hljs-keyword">var</span> uri = target.pathname;
+  <span class="hljs-keyword">const</span> path = event.<span class="hljs-property">request</span>.<span class="hljs-property">url</span>;
+  <span class="hljs-keyword">const</span> target = url.<span class="hljs-title function_">parse</span>(path);
+  <span class="hljs-keyword">const</span> uri = target.<span class="hljs-property">pathname</span>;
 
-  <span class="hljs-keyword">var</span> stash = <span class="hljs-keyword">new</span> Stash();
-  <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'stash:'</span>, stash);
-  <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'target:'</span>, target);</pre></div></div>
-            
-        </li>
-        
-        
-        <li id="section-2">
-            <div class="annotation">
-              
-              <div class="pilwrap ">
-                <a class="pilcrow" href="#section-2">&#182;</a>
-              </div>
-              <p>await stash.set(‘/messages’, [{ foo: ‘bar’ }]);</p>
+  <span class="hljs-keyword">const</span> stash = <span class="hljs-keyword">new</span> <span class="hljs-title class_">Stash</span>();
+  <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;stash:&#x27;</span>, stash);
+  <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;target:&#x27;</span>, target);</pre>
+          </div>
+        </div>
 
-            </div>
-            
-            <div class="content"><div class='highlight'><pre>  <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'recovery:'</span>, <span class="hljs-keyword">await</span> stash.get(<span class="hljs-string">'/messages'</span>));
+      </li>
 
-  <span class="hljs-keyword">var</span> value = <span class="hljs-keyword">await</span> stash.get(uri);
+
+      <li id="section-2">
+        <div class="annotation">
+
+          <div class="sswrap ">
+            <a class="ss" href="#section-2">&#x00a7;</a>
+          </div>
+          <p>await stash.set(‘/messages’, [{ foo: ‘bar’ }]);</p>
+
+        </div>
+
+        <div class="content">
+          <div class='highlight'>
+            <pre>  <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;recovery:&#x27;</span>, <span class="hljs-keyword">await</span> stash.<span class="hljs-title function_">get</span>(<span class="hljs-string">&#x27;/messages&#x27;</span>));
+
+  <span class="hljs-keyword">const</span> value = <span class="hljs-keyword">await</span> stash.<span class="hljs-title function_">get</span>(uri);
   <span class="hljs-keyword">if</span> (value) {
-    <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'was cached:'</span>, uri, value.length, <span class="hljs-string">'bytes'</span>);
-    <span class="hljs-keyword">var</span> request = <span class="hljs-keyword">new</span> Request(uri, {</pre></div></div>
-            
-        </li>
-        
-        
-        <li id="section-3">
-            <div class="annotation">
-              
-              <div class="pilwrap ">
-                <a class="pilcrow" href="#section-3">&#182;</a>
-              </div>
-              <p>TODO: revert to OPTIONS (this was a temporary fix for an NGINX bug)</p>
+    <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;was cached:&#x27;</span>, uri, value.<span class="hljs-property">length</span>, <span class="hljs-string">&#x27;bytes&#x27;</span>);
+    <span class="hljs-keyword">const</span> request = <span class="hljs-keyword">new</span> <span class="hljs-title class_">Request</span>(uri, {</pre>
+          </div>
+        </div>
 
-            </div>
-            
-            <div class="content"><div class='highlight'><pre>      method: <span class="hljs-string">'HEAD'</span>
+      </li>
+
+
+      <li id="section-3">
+        <div class="annotation">
+
+          <div class="sswrap ">
+            <a class="ss" href="#section-3">&#x00a7;</a>
+          </div>
+          <p>TODO: revert to OPTIONS (this was a temporary fix for an NGINX bug)</p>
+
+        </div>
+
+        <div class="content">
+          <div class='highlight'>
+            <pre>      <span class="hljs-attr">method</span>: <span class="hljs-string">&#x27;HEAD&#x27;</span>
     });
 
-    <span class="hljs-keyword">var</span> response = <span class="hljs-keyword">await</span> fetch(request);</pre></div></div>
-            
-        </li>
-        
-        
-        <li id="section-4">
-            <div class="annotation">
-              
-              <div class="pilwrap ">
-                <a class="pilcrow" href="#section-4">&#182;</a>
-              </div>
-              <p>var content = await response.text();</p>
+    <span class="hljs-keyword">const</span> response = <span class="hljs-keyword">await</span> <span class="hljs-title function_">fetch</span>(request);</pre>
+          </div>
+        </div>
 
-            </div>
-            
-            <div class="content"><div class='highlight'><pre>    <span class="hljs-keyword">return</span> value;
+      </li>
+
+
+      <li id="section-4">
+        <div class="annotation">
+
+          <div class="sswrap ">
+            <a class="ss" href="#section-4">&#x00a7;</a>
+          </div>
+          <p>const content = await response.text();</p>
+
+        </div>
+
+        <div class="content">
+          <div class='highlight'>
+            <pre>    <span class="hljs-keyword">return</span> value;
   } <span class="hljs-keyword">else</span> {
-    <span class="hljs-keyword">var</span> request = <span class="hljs-keyword">new</span> Request(uri, {
+    <span class="hljs-keyword">const</span> request = <span class="hljs-keyword">new</span> <span class="hljs-title class_">Request</span>(uri, {
       <span class="hljs-attr">headers</span>: {
-        <span class="hljs-string">'X-Identity'</span>: <span class="hljs-string">'foo'</span>
+        <span class="hljs-string">&#x27;X-Identity&#x27;</span>: <span class="hljs-string">&#x27;foo&#x27;</span>
       }
     });
 
-    <span class="hljs-keyword">var</span> response = <span class="hljs-keyword">await</span> fetch(request);
-    <span class="hljs-keyword">var</span> content = <span class="hljs-keyword">await</span> response.text();
-    <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'response:'</span>, uri, content.length);
+    <span class="hljs-keyword">const</span> response = <span class="hljs-keyword">await</span> <span class="hljs-title function_">fetch</span>(request);
+    <span class="hljs-keyword">const</span> content = <span class="hljs-keyword">await</span> response.<span class="hljs-title function_">text</span>();
+    <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;response:&#x27;</span>, uri, content.<span class="hljs-property">length</span>);
 
     <span class="hljs-keyword">if</span> (content) {
-      stash.set(uri, content);
+      stash.<span class="hljs-title function_">set</span>(uri, content);
     }
 
     <span class="hljs-keyword">return</span> request;
   }
-});</pre></div></div>
-            
-        </li>
-        
+});</pre>
+          </div>
+        </div>
+
+      </li>
+
     </ul>
   </div>
 </body>
+
 </html>

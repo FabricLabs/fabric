@@ -1,27 +1,6 @@
 ## Classes
 
 <dl>
-<dt><a href="#Bitcoin">Bitcoin</a> ⇐ <code><a href="#Service">Service</a></code></dt>
-<dd><p>Manages interaction with the Bitcoin network.</p>
-</dd>
-<dt><a href="#Lightning">Lightning</a></dt>
-<dd><p>Manage a Lightning node.</p>
-</dd>
-<dt><a href="#Redis">Redis</a></dt>
-<dd><p>Connect and subscribe to Redis servers.</p>
-</dd>
-<dt><a href="#ZMQ">ZMQ</a></dt>
-<dd><p>Connect and subscribe to ZeroMQ publishers.</p>
-</dd>
-<dt><del><a href="#HTTPServer">HTTPServer</a></del></dt>
-<dd><p>Deprecated 2021-10-16.</p>
-</dd>
-<dt><del><a href="#Scribe">Scribe</a></del></dt>
-<dd><p>Deprecated 2021-11-06.</p>
-</dd>
-<dt><del><a href="#Stash">Stash</a></del></dt>
-<dd><p>Deprecated 2021-11-06.</p>
-</dd>
 <dt><a href="#Actor">Actor</a></dt>
 <dd><p>Generic Fabric Actor.</p>
 </dd>
@@ -162,599 +141,29 @@ committing to the outcome.  This workflow keeps app design quite simple!</p>
 almost like &quot;threads&quot;, as they run asynchronously over the duration of a
 contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</p>
 </dd>
+<dt><a href="#Bitcoin">Bitcoin</a> ⇐ <code><a href="#Service">Service</a></code></dt>
+<dd><p>Manages interaction with the Bitcoin network.</p>
+</dd>
+<dt><a href="#Lightning">Lightning</a></dt>
+<dd><p>Manage a Lightning node.</p>
+</dd>
+<dt><a href="#Redis">Redis</a></dt>
+<dd><p>Connect and subscribe to Redis servers.</p>
+</dd>
+<dt><a href="#ZMQ">ZMQ</a></dt>
+<dd><p>Connect and subscribe to ZeroMQ publishers.</p>
+</dd>
+<dt><del><a href="#HTTPServer">HTTPServer</a></del></dt>
+<dd><p>Deprecated 2021-10-16.</p>
+</dd>
+<dt><del><a href="#Scribe">Scribe</a></del></dt>
+<dd><p>Deprecated 2021-11-06.</p>
+</dd>
+<dt><del><a href="#Stash">Stash</a></del></dt>
+<dd><p>Deprecated 2021-11-06.</p>
+</dd>
 </dl>
 
-<a name="Bitcoin"></a>
-
-## Bitcoin ⇐ [<code>Service</code>](#Service)
-Manages interaction with the Bitcoin network.
-
-**Kind**: global class  
-**Extends**: [<code>Service</code>](#Service)  
-
-* [Bitcoin](#Bitcoin) ⇐ [<code>Service</code>](#Service)
-    * [new Bitcoin([settings])](#new_Bitcoin_new)
-    * [.UAString](#Bitcoin+UAString)
-    * [.tip](#Bitcoin+tip)
-    * [.height](#Bitcoin+height)
-    * [.broadcast(tx)](#Bitcoin+broadcast)
-    * [._processSpendMessage(message)](#Bitcoin+_processSpendMessage) ⇒ <code>BitcoinTransactionID</code>
-    * [._prepareTransaction(obj)](#Bitcoin+_prepareTransaction)
-    * [._handleCommittedBlock(block)](#Bitcoin+_handleCommittedBlock)
-    * [._handlePeerPacket(msg)](#Bitcoin+_handlePeerPacket)
-    * [._handleBlockFromSPV(msg)](#Bitcoin+_handleBlockFromSPV)
-    * [._handleTransactionFromSPV(tx)](#Bitcoin+_handleTransactionFromSPV)
-    * [._subscribeToShard(shard)](#Bitcoin+_subscribeToShard)
-    * [._connectSPV()](#Bitcoin+_connectSPV)
-    * [.connect(addr)](#Bitcoin+connect)
-    * [._requestBlockAtHeight(height)](#Bitcoin+_requestBlockAtHeight) ⇒ <code>Object</code>
-    * [._createContractProposal(options)](#Bitcoin+_createContractProposal) ⇒ <code>ContractProposal</code>
-    * [._buildPSBT(options)](#Bitcoin+_buildPSBT) ⇒ <code>PSBT</code>
-    * [.start()](#Bitcoin+start)
-    * [.stop()](#Bitcoin+stop)
-    * [.init()](#Service+init)
-    * [.tick()](#Service+tick) ⇒ <code>Number</code>
-    * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
-    * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
-    * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
-    * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
-    * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
-    * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
-    * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
-    * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
-    * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
-    * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
-    * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
-    * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
-    * [._send(message)](#Service+_send)
-
-<a name="new_Bitcoin_new"></a>
-
-### new Bitcoin([settings])
-Creates an instance of the Bitcoin service.
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [settings] | <code>Object</code> | Map of configuration options for the Bitcoin service. |
-| [settings.network] | <code>String</code> | One of `regtest`, `testnet`, or `mainnet`. |
-| [settings.nodes] | <code>Array</code> | List of address:port pairs to trust. |
-| [settings.seeds] | <code>Array</code> | Bitcoin peers to request chain from (address:port). |
-| [settings.fullnode] | <code>Boolean</code> | Run a full node. |
-
-<a name="Bitcoin+UAString"></a>
-
-### bitcoin.UAString
-User Agent string for the Bitcoin P2P network.
-
-**Kind**: instance property of [<code>Bitcoin</code>](#Bitcoin)  
-<a name="Bitcoin+tip"></a>
-
-### bitcoin.tip
-Chain tip (block hash of the chain with the most Proof of Work)
-
-**Kind**: instance property of [<code>Bitcoin</code>](#Bitcoin)  
-<a name="Bitcoin+height"></a>
-
-### bitcoin.height
-Chain height (`=== length - 1`)
-
-**Kind**: instance property of [<code>Bitcoin</code>](#Bitcoin)  
-<a name="Bitcoin+broadcast"></a>
-
-### bitcoin.broadcast(tx)
-Broadcast a transaction to the Bitcoin network.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Unstable**:   
-
-| Param | Type | Description |
-| --- | --- | --- |
-| tx | <code>TX</code> | Bitcoin transaction |
-
-<a name="Bitcoin+_processSpendMessage"></a>
-
-### bitcoin.\_processSpendMessage(message) ⇒ <code>BitcoinTransactionID</code>
-Process a spend message.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Returns**: <code>BitcoinTransactionID</code> - Hex-encoded representation of the transaction ID.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| message | <code>SpendMessage</code> | Generic-level message for spending. |
-| message.amount | <code>String</code> | Amount (in BTC) to spend. |
-| message.destination | <code>String</code> | Destination for funds. |
-
-<a name="Bitcoin+_prepareTransaction"></a>
-
-### bitcoin.\_prepareTransaction(obj)
-Prepares a [Transaction](Transaction) for storage.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| obj | <code>Transaction</code> | Transaction to prepare. |
-
-<a name="Bitcoin+_handleCommittedBlock"></a>
-
-### bitcoin.\_handleCommittedBlock(block)
-Receive a committed block.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| block | <code>Block</code> | Block to handle. |
-
-<a name="Bitcoin+_handlePeerPacket"></a>
-
-### bitcoin.\_handlePeerPacket(msg)
-Process a message from a peer in the Bitcoin network.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| msg | <code>PeerPacket</code> | Message from peer. |
-
-<a name="Bitcoin+_handleBlockFromSPV"></a>
-
-### bitcoin.\_handleBlockFromSPV(msg)
-Hand a [Block](Block) message as supplied by an [SPV](SPV) client.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| msg | <code>BlockMessage</code> | A [Message](#Message) as passed by the [SPV](SPV) source. |
-
-<a name="Bitcoin+_handleTransactionFromSPV"></a>
-
-### bitcoin.\_handleTransactionFromSPV(tx)
-Verify and interpret a [BitcoinTransaction](BitcoinTransaction), as received from an
-[SPVSource](SPVSource).
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| tx | <code>BitcoinTransaction</code> | Incoming transaction from the SPV source. |
-
-<a name="Bitcoin+_subscribeToShard"></a>
-
-### bitcoin.\_subscribeToShard(shard)
-Attach event handlers for a supplied list of addresses.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| shard | <code>Shard</code> | List of addresses to monitor. |
-
-<a name="Bitcoin+_connectSPV"></a>
-
-### bitcoin.\_connectSPV()
-Initiate outbound connections to configured SPV nodes.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-<a name="Bitcoin+connect"></a>
-
-### bitcoin.connect(addr)
-Connect to a Fabric [Peer](#Peer).
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>connect</code>](#Service+connect)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| addr | <code>String</code> | Address to connect to. |
-
-<a name="Bitcoin+_requestBlockAtHeight"></a>
-
-### bitcoin.\_requestBlockAtHeight(height) ⇒ <code>Object</code>
-Retrieve the equivalent to `getblockhash` from Bitcoin Core.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Returns**: <code>Object</code> - The block hash.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| height | <code>Number</code> | Height of block to retrieve. |
-
-<a name="Bitcoin+_createContractProposal"></a>
-
-### bitcoin.\_createContractProposal(options) ⇒ <code>ContractProposal</code>
-Creates an unsigned Bitcoin transaction.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Returns**: <code>ContractProposal</code> - Instance of the proposal.  
-
-| Param | Type |
-| --- | --- |
-| options | <code>Object</code> | 
-
-<a name="Bitcoin+_buildPSBT"></a>
-
-### bitcoin.\_buildPSBT(options) ⇒ <code>PSBT</code>
-Create a Partially-Signed Bitcoin Transaction (PSBT).
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Returns**: <code>PSBT</code> - Instance of the PSBT.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| options | <code>Object</code> | Parameters for the PSBT. |
-
-<a name="Bitcoin+start"></a>
-
-### bitcoin.start()
-Start the Bitcoin service, including the initiation of outbound requests.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>start</code>](#Service+start)  
-<a name="Bitcoin+stop"></a>
-
-### bitcoin.stop()
-Stop the Bitcoin service.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-<a name="Service+init"></a>
-
-### bitcoin.init()
-Called by Web Components.
-TODO: move to @fabric/http/types/spa
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>init</code>](#Service+init)  
-<a name="Service+tick"></a>
-
-### bitcoin.tick() ⇒ <code>Number</code>
-Move forward one clock cycle.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>tick</code>](#Service+tick)  
-<a name="Service+beat"></a>
-
-### bitcoin.beat() ⇒ [<code>Service</code>](#Service)
-Compute latest state.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>beat</code>](#Service+beat)  
-**Emits**: <code>Message#event:beat</code>  
-<a name="Service+get"></a>
-
-### bitcoin.get(path) ⇒ <code>Mixed</code>
-Retrieve a key from the [State](#State).
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>get</code>](#Service+get)  
-**Returns**: <code>Mixed</code> - Returns the target value if found, otherwise null.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | <code>Path</code> | Key to retrieve. |
-
-<a name="Service+set"></a>
-
-### bitcoin.set(path) ⇒ <code>Mixed</code>
-Set a key in the [State](#State) to a particular value.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>set</code>](#Service+set)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | <code>Path</code> | Key to retrieve. |
-
-<a name="Service+trust"></a>
-
-### bitcoin.trust(source) ⇒ [<code>Service</code>](#Service)
-Explicitly trust all events from a known source.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>trust</code>](#Service+trust)  
-**Returns**: [<code>Service</code>](#Service) - Instance of Service after binding events.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| source | <code>EventEmitter</code> | Emitter of events. |
-
-<a name="Service+handler"></a>
-
-### bitcoin.handler(message) ⇒ [<code>Service</code>](#Service)
-Default route handler for an incoming message.  Follows the Activity
-Streams 2.0 spec: https://www.w3.org/TR/activitystreams-core/
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>handler</code>](#Service+handler)  
-**Returns**: [<code>Service</code>](#Service) - Chainable method.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| message | <code>Activity</code> | Message object. |
-
-<a name="Service+lock"></a>
-
-### bitcoin.lock([duration]) ⇒ <code>Boolean</code>
-Attempt to acquire a lock for `duration` seconds.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>lock</code>](#Service+lock)  
-**Returns**: <code>Boolean</code> - true if locked, false if unable to lock.  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| [duration] | <code>Number</code> | <code>1000</code> | Number of milliseconds to hold lock. |
-
-<a name="Service+when"></a>
-
-### bitcoin.when(event, method) ⇒ <code>EventEmitter</code>
-Bind a method to an event, with current state as the immutable context.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>when</code>](#Service+when)  
-**Returns**: <code>EventEmitter</code> - Instance of EventEmitter.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| event | <code>String</code> | Name of the event upon which to execute `method` as a function. |
-| method | <code>function</code> | Function to execute when named [Event](Event) `event` is encountered. |
-
-<a name="Service+route"></a>
-
-### bitcoin.route(msg) ⇒ <code>Promise</code>
-Resolve a [State](#State) from a particular [Message](#Message) object.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>route</code>](#Service+route)  
-**Returns**: <code>Promise</code> - Resolves with resulting [State](#State).  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| msg | [<code>Message</code>](#Message) | Explicit Fabric [Message](#Message). |
-
-<a name="Service+_GET"></a>
-
-### bitcoin.\_GET(path) ⇒ <code>Promise</code>
-Retrieve a value from the Service's state.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>\_GET</code>](#Service+_GET)  
-**Returns**: <code>Promise</code> - Resolves with the result.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | <code>String</code> | Path of the value to retrieve. |
-
-<a name="Service+_PUT"></a>
-
-### bitcoin.\_PUT(path, value, [commit]) ⇒ <code>Promise</code>
-Store a value in the Service's state.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>\_PUT</code>](#Service+_PUT)  
-**Returns**: <code>Promise</code> - Resolves with with stored document.  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| path | <code>String</code> |  | Path to store the value at. |
-| value | <code>Object</code> |  | Document to store. |
-| [commit] | <code>Boolean</code> | <code>false</code> | Sign the resulting state. |
-
-<a name="Service+send"></a>
-
-### bitcoin.send(channel, message) ⇒ [<code>Service</code>](#Service)
-Send a message to a channel.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>send</code>](#Service+send)  
-**Returns**: [<code>Service</code>](#Service) - Chainable method.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| channel | <code>String</code> | Channel name to which the message will be sent. |
-| message | <code>String</code> | Content of the message to send. |
-
-<a name="Service+_registerActor"></a>
-
-### bitcoin.\_registerActor(actor) ⇒ <code>Promise</code>
-Register an [Actor](#Actor) with the [Service](#Service).
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>\_registerActor</code>](#Service+_registerActor)  
-**Returns**: <code>Promise</code> - Resolves upon successful registration.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| actor | <code>Object</code> | Instance of the [Actor](#Actor). |
-
-<a name="Service+_send"></a>
-
-### bitcoin.\_send(message)
-Sends a message.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>\_send</code>](#Service+_send)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| message | <code>Mixed</code> | Message to send. |
-
-<a name="Lightning"></a>
-
-## Lightning
-Manage a Lightning node.
-
-**Kind**: global class  
-
-* [Lightning](#Lightning)
-    * [new Lightning([settings])](#new_Lightning_new)
-    * [._makeRPCRequest(method, [params])](#Lightning+_makeRPCRequest) ⇒ <code>Object</code> \| <code>String</code>
-
-<a name="new_Lightning_new"></a>
-
-### new Lightning([settings])
-Create an instance of the Lightning [Service](#Service).
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [settings] | <code>Object</code> | Settings. |
-
-<a name="Lightning+_makeRPCRequest"></a>
-
-### lightning.\_makeRPCRequest(method, [params]) ⇒ <code>Object</code> \| <code>String</code>
-Make an RPC request through the Lightning UNIX socket.
-
-**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
-**Returns**: <code>Object</code> \| <code>String</code> - Respond from the Lightning node.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| method | <code>String</code> | Name of method to call. |
-| [params] | <code>Array</code> | Array of parameters. |
-
-<a name="Redis"></a>
-
-## Redis
-Connect and subscribe to Redis servers.
-
-**Kind**: global class  
-
-* [Redis](#Redis)
-    * [new Redis([settings])](#new_Redis_new)
-    * [.start()](#Redis+start) ⇒ [<code>Redis</code>](#Redis)
-    * [.stop()](#Redis+stop) ⇒ [<code>Redis</code>](#Redis)
-
-<a name="new_Redis_new"></a>
-
-### new Redis([settings])
-Creates an instance of a Redis subscriber.
-
-**Returns**: [<code>Redis</code>](#Redis) - Instance of the Redis service, ready to run `start()`  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [settings] | <code>Object</code> | Settings for the Redis connection. |
-| [settings.host] | <code>String</code> | Host for the Redis server. |
-| [settings.port] | <code>Number</code> | Remote Redis service port. |
-
-<a name="Redis+start"></a>
-
-### redis.start() ⇒ [<code>Redis</code>](#Redis)
-Opens the connection and subscribes to the requested channels.
-
-**Kind**: instance method of [<code>Redis</code>](#Redis)  
-**Returns**: [<code>Redis</code>](#Redis) - Instance of the service.  
-<a name="Redis+stop"></a>
-
-### redis.stop() ⇒ [<code>Redis</code>](#Redis)
-Closes the connection to the Redis server.
-
-**Kind**: instance method of [<code>Redis</code>](#Redis)  
-**Returns**: [<code>Redis</code>](#Redis) - Instance of the service.  
-<a name="ZMQ"></a>
-
-## ZMQ
-Connect and subscribe to ZeroMQ publishers.
-
-**Kind**: global class  
-
-* [ZMQ](#ZMQ)
-    * [new ZMQ([settings])](#new_ZMQ_new)
-    * [.start()](#ZMQ+start) ⇒ [<code>ZMQ</code>](#ZMQ)
-    * [.stop()](#ZMQ+stop) ⇒ [<code>ZMQ</code>](#ZMQ)
-
-<a name="new_ZMQ_new"></a>
-
-### new ZMQ([settings])
-Creates an instance of a ZeroMQ subscriber.
-
-**Returns**: [<code>ZMQ</code>](#ZMQ) - Instance of the ZMQ service, ready to run `start()`  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [settings] | <code>Object</code> | Settings for the ZMQ connection. |
-| [settings.host] | <code>String</code> | Host for the ZMQ publisher. |
-| [settings.port] | <code>Number</code> | Remote ZeroMQ service port. |
-
-<a name="ZMQ+start"></a>
-
-### zmQ.start() ⇒ [<code>ZMQ</code>](#ZMQ)
-Opens the connection and subscribes to the requested channels.
-
-**Kind**: instance method of [<code>ZMQ</code>](#ZMQ)  
-**Returns**: [<code>ZMQ</code>](#ZMQ) - Instance of the service.  
-<a name="ZMQ+stop"></a>
-
-### zmQ.stop() ⇒ [<code>ZMQ</code>](#ZMQ)
-Closes the connection to the ZMQ publisher.
-
-**Kind**: instance method of [<code>ZMQ</code>](#ZMQ)  
-**Returns**: [<code>ZMQ</code>](#ZMQ) - Instance of the service.  
-<a name="HTTPServer"></a>
-
-## ~~HTTPServer~~
-***Deprecated***
-
-Deprecated 2021-10-16.
-
-**Kind**: global class  
-<a name="Scribe"></a>
-
-## ~~Scribe~~
-***Deprecated***
-
-Deprecated 2021-11-06.
-
-**Kind**: global class  
-
-* ~~[Scribe](#Scribe)~~
-    * [.now()](#Scribe+now) ⇒ <code>Number</code>
-    * [.trust(source)](#Scribe+trust) ⇒ [<code>Scribe</code>](#Scribe)
-    * [.inherits(scribe)](#Scribe+inherits) ⇒ [<code>Scribe</code>](#Scribe)
-
-<a name="Scribe+now"></a>
-
-### scribe.now() ⇒ <code>Number</code>
-Retrives the current timestamp, in milliseconds.
-
-**Kind**: instance method of [<code>Scribe</code>](#Scribe)  
-**Returns**: <code>Number</code> - [Number](Number) representation of the millisecond [Integer](Integer) value.  
-<a name="Scribe+trust"></a>
-
-### scribe.trust(source) ⇒ [<code>Scribe</code>](#Scribe)
-Blindly bind event handlers to the [Source](Source).
-
-**Kind**: instance method of [<code>Scribe</code>](#Scribe)  
-**Returns**: [<code>Scribe</code>](#Scribe) - Instance of the [Scribe](#Scribe).  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| source | <code>Source</code> | Event stream. |
-
-<a name="Scribe+inherits"></a>
-
-### scribe.inherits(scribe) ⇒ [<code>Scribe</code>](#Scribe)
-Use an existing Scribe instance as a parent.
-
-**Kind**: instance method of [<code>Scribe</code>](#Scribe)  
-**Returns**: [<code>Scribe</code>](#Scribe) - The configured instance of the Scribe.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| scribe | [<code>Scribe</code>](#Scribe) | Instance of Scribe to use as parent. |
-
-<a name="Stash"></a>
-
-## ~~Stash~~
-***Deprecated***
-
-Deprecated 2021-11-06.
-
-**Kind**: global class  
 <a name="Actor"></a>
 
 ## Actor
@@ -871,12 +280,8 @@ Casts the Actor to a normalized Buffer.
 ### actor.toGenericMessage() ⇒ <code>Object</code>
 Casts the Actor to a generic message, used to uniquely identify the Actor's state.
 Fields:
-- `preimage`: JSON.stringify(state)
-- `hash`: SHA256(preimage)
 - `type`: 'FabricActorState'
-- `version`: 1 (for now)
 - `object`: state
-- `parent`: null (for now)
 
 **Kind**: instance method of [<code>Actor</code>](#Actor)  
 **Returns**: <code>Object</code> - Generic message object.  
@@ -1968,12 +1373,8 @@ Casts the Actor to a normalized Buffer.
 ### logger.toGenericMessage() ⇒ <code>Object</code>
 Casts the Actor to a generic message, used to uniquely identify the Actor's state.
 Fields:
-- `preimage`: JSON.stringify(state)
-- `hash`: SHA256(preimage)
 - `type`: 'FabricActorState'
-- `version`: 1 (for now)
 - `object`: state
-- `parent`: null (for now)
 
 **Kind**: instance method of [<code>Logger</code>](#Logger)  
 **Overrides**: [<code>toGenericMessage</code>](#Actor+toGenericMessage)  
@@ -2880,12 +2281,8 @@ Casts the Actor to a normalized Buffer.
 ### signer.toGenericMessage() ⇒ <code>Object</code>
 Casts the Actor to a generic message, used to uniquely identify the Actor's state.
 Fields:
-- `preimage`: JSON.stringify(state)
-- `hash`: SHA256(preimage)
 - `type`: 'FabricActorState'
-- `version`: 1 (for now)
 - `object`: state
-- `parent`: null (for now)
 
 **Kind**: instance method of [<code>Signer</code>](#Signer)  
 **Overrides**: [<code>toGenericMessage</code>](#Actor+toGenericMessage)  
@@ -3720,3 +3117,594 @@ Handle a task.
 | --- | --- | --- |
 | input | [<code>Vector</code>](#Vector) | Input vector. |
 
+<a name="Bitcoin"></a>
+
+## Bitcoin ⇐ [<code>Service</code>](#Service)
+Manages interaction with the Bitcoin network.
+
+**Kind**: global class  
+**Extends**: [<code>Service</code>](#Service)  
+
+* [Bitcoin](#Bitcoin) ⇐ [<code>Service</code>](#Service)
+    * [new Bitcoin([settings])](#new_Bitcoin_new)
+    * [.UAString](#Bitcoin+UAString)
+    * [.tip](#Bitcoin+tip)
+    * [.height](#Bitcoin+height)
+    * [.broadcast(tx)](#Bitcoin+broadcast)
+    * [._processSpendMessage(message)](#Bitcoin+_processSpendMessage) ⇒ <code>BitcoinTransactionID</code>
+    * [._prepareTransaction(obj)](#Bitcoin+_prepareTransaction)
+    * [._handleCommittedBlock(block)](#Bitcoin+_handleCommittedBlock)
+    * [._handlePeerPacket(msg)](#Bitcoin+_handlePeerPacket)
+    * [._handleBlockFromSPV(msg)](#Bitcoin+_handleBlockFromSPV)
+    * [._handleTransactionFromSPV(tx)](#Bitcoin+_handleTransactionFromSPV)
+    * [._subscribeToShard(shard)](#Bitcoin+_subscribeToShard)
+    * [._connectSPV()](#Bitcoin+_connectSPV)
+    * [.connect(addr)](#Bitcoin+connect)
+    * [._requestBlockAtHeight(height)](#Bitcoin+_requestBlockAtHeight) ⇒ <code>Object</code>
+    * [._createContractProposal(options)](#Bitcoin+_createContractProposal) ⇒ <code>ContractProposal</code>
+    * [._buildPSBT(options)](#Bitcoin+_buildPSBT) ⇒ <code>PSBT</code>
+    * [.start()](#Bitcoin+start)
+    * [.stop()](#Bitcoin+stop)
+    * [.init()](#Service+init)
+    * [.tick()](#Service+tick) ⇒ <code>Number</code>
+    * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
+    * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
+    * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
+    * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
+    * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
+    * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
+    * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
+    * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
+    * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
+    * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
+    * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
+    * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
+    * [._send(message)](#Service+_send)
+
+<a name="new_Bitcoin_new"></a>
+
+### new Bitcoin([settings])
+Creates an instance of the Bitcoin service.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Map of configuration options for the Bitcoin service. |
+| [settings.network] | <code>String</code> | One of `regtest`, `testnet`, or `mainnet`. |
+| [settings.nodes] | <code>Array</code> | List of address:port pairs to trust. |
+| [settings.seeds] | <code>Array</code> | Bitcoin peers to request chain from (address:port). |
+| [settings.fullnode] | <code>Boolean</code> | Run a full node. |
+
+<a name="Bitcoin+UAString"></a>
+
+### bitcoin.UAString
+User Agent string for the Bitcoin P2P network.
+
+**Kind**: instance property of [<code>Bitcoin</code>](#Bitcoin)  
+<a name="Bitcoin+tip"></a>
+
+### bitcoin.tip
+Chain tip (block hash of the chain with the most Proof of Work)
+
+**Kind**: instance property of [<code>Bitcoin</code>](#Bitcoin)  
+<a name="Bitcoin+height"></a>
+
+### bitcoin.height
+Chain height (`=== length - 1`)
+
+**Kind**: instance property of [<code>Bitcoin</code>](#Bitcoin)  
+<a name="Bitcoin+broadcast"></a>
+
+### bitcoin.broadcast(tx)
+Broadcast a transaction to the Bitcoin network.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Unstable**:   
+
+| Param | Type | Description |
+| --- | --- | --- |
+| tx | <code>TX</code> | Bitcoin transaction |
+
+<a name="Bitcoin+_processSpendMessage"></a>
+
+### bitcoin.\_processSpendMessage(message) ⇒ <code>BitcoinTransactionID</code>
+Process a spend message.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>BitcoinTransactionID</code> - Hex-encoded representation of the transaction ID.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| message | <code>SpendMessage</code> | Generic-level message for spending. |
+| message.amount | <code>String</code> | Amount (in BTC) to spend. |
+| message.destination | <code>String</code> | Destination for funds. |
+
+<a name="Bitcoin+_prepareTransaction"></a>
+
+### bitcoin.\_prepareTransaction(obj)
+Prepares a [Transaction](Transaction) for storage.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| obj | <code>Transaction</code> | Transaction to prepare. |
+
+<a name="Bitcoin+_handleCommittedBlock"></a>
+
+### bitcoin.\_handleCommittedBlock(block)
+Receive a committed block.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| block | <code>Block</code> | Block to handle. |
+
+<a name="Bitcoin+_handlePeerPacket"></a>
+
+### bitcoin.\_handlePeerPacket(msg)
+Process a message from a peer in the Bitcoin network.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | <code>PeerPacket</code> | Message from peer. |
+
+<a name="Bitcoin+_handleBlockFromSPV"></a>
+
+### bitcoin.\_handleBlockFromSPV(msg)
+Hand a [Block](Block) message as supplied by an [SPV](SPV) client.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | <code>BlockMessage</code> | A [Message](#Message) as passed by the [SPV](SPV) source. |
+
+<a name="Bitcoin+_handleTransactionFromSPV"></a>
+
+### bitcoin.\_handleTransactionFromSPV(tx)
+Verify and interpret a [BitcoinTransaction](BitcoinTransaction), as received from an
+[SPVSource](SPVSource).
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| tx | <code>BitcoinTransaction</code> | Incoming transaction from the SPV source. |
+
+<a name="Bitcoin+_subscribeToShard"></a>
+
+### bitcoin.\_subscribeToShard(shard)
+Attach event handlers for a supplied list of addresses.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| shard | <code>Shard</code> | List of addresses to monitor. |
+
+<a name="Bitcoin+_connectSPV"></a>
+
+### bitcoin.\_connectSPV()
+Initiate outbound connections to configured SPV nodes.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+<a name="Bitcoin+connect"></a>
+
+### bitcoin.connect(addr)
+Connect to a Fabric [Peer](#Peer).
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>connect</code>](#Service+connect)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| addr | <code>String</code> | Address to connect to. |
+
+<a name="Bitcoin+_requestBlockAtHeight"></a>
+
+### bitcoin.\_requestBlockAtHeight(height) ⇒ <code>Object</code>
+Retrieve the equivalent to `getblockhash` from Bitcoin Core.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>Object</code> - The block hash.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| height | <code>Number</code> | Height of block to retrieve. |
+
+<a name="Bitcoin+_createContractProposal"></a>
+
+### bitcoin.\_createContractProposal(options) ⇒ <code>ContractProposal</code>
+Creates an unsigned Bitcoin transaction.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>ContractProposal</code> - Instance of the proposal.  
+
+| Param | Type |
+| --- | --- |
+| options | <code>Object</code> | 
+
+<a name="Bitcoin+_buildPSBT"></a>
+
+### bitcoin.\_buildPSBT(options) ⇒ <code>PSBT</code>
+Create a Partially-Signed Bitcoin Transaction (PSBT).
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>PSBT</code> - Instance of the PSBT.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| options | <code>Object</code> | Parameters for the PSBT. |
+
+<a name="Bitcoin+start"></a>
+
+### bitcoin.start()
+Start the Bitcoin service, including the initiation of outbound requests.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>start</code>](#Service+start)  
+<a name="Bitcoin+stop"></a>
+
+### bitcoin.stop()
+Stop the Bitcoin service.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+<a name="Service+init"></a>
+
+### bitcoin.init()
+Called by Web Components.
+TODO: move to @fabric/http/types/spa
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>init</code>](#Service+init)  
+<a name="Service+tick"></a>
+
+### bitcoin.tick() ⇒ <code>Number</code>
+Move forward one clock cycle.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>tick</code>](#Service+tick)  
+<a name="Service+beat"></a>
+
+### bitcoin.beat() ⇒ [<code>Service</code>](#Service)
+Compute latest state.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>beat</code>](#Service+beat)  
+**Emits**: <code>Message#event:beat</code>  
+<a name="Service+get"></a>
+
+### bitcoin.get(path) ⇒ <code>Mixed</code>
+Retrieve a key from the [State](#State).
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>get</code>](#Service+get)  
+**Returns**: <code>Mixed</code> - Returns the target value if found, otherwise null.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>Path</code> | Key to retrieve. |
+
+<a name="Service+set"></a>
+
+### bitcoin.set(path) ⇒ <code>Mixed</code>
+Set a key in the [State](#State) to a particular value.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>set</code>](#Service+set)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>Path</code> | Key to retrieve. |
+
+<a name="Service+trust"></a>
+
+### bitcoin.trust(source) ⇒ [<code>Service</code>](#Service)
+Explicitly trust all events from a known source.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>trust</code>](#Service+trust)  
+**Returns**: [<code>Service</code>](#Service) - Instance of Service after binding events.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| source | <code>EventEmitter</code> | Emitter of events. |
+
+<a name="Service+handler"></a>
+
+### bitcoin.handler(message) ⇒ [<code>Service</code>](#Service)
+Default route handler for an incoming message.  Follows the Activity
+Streams 2.0 spec: https://www.w3.org/TR/activitystreams-core/
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>handler</code>](#Service+handler)  
+**Returns**: [<code>Service</code>](#Service) - Chainable method.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| message | <code>Activity</code> | Message object. |
+
+<a name="Service+lock"></a>
+
+### bitcoin.lock([duration]) ⇒ <code>Boolean</code>
+Attempt to acquire a lock for `duration` seconds.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>lock</code>](#Service+lock)  
+**Returns**: <code>Boolean</code> - true if locked, false if unable to lock.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [duration] | <code>Number</code> | <code>1000</code> | Number of milliseconds to hold lock. |
+
+<a name="Service+when"></a>
+
+### bitcoin.when(event, method) ⇒ <code>EventEmitter</code>
+Bind a method to an event, with current state as the immutable context.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>when</code>](#Service+when)  
+**Returns**: <code>EventEmitter</code> - Instance of EventEmitter.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| event | <code>String</code> | Name of the event upon which to execute `method` as a function. |
+| method | <code>function</code> | Function to execute when named [Event](Event) `event` is encountered. |
+
+<a name="Service+route"></a>
+
+### bitcoin.route(msg) ⇒ <code>Promise</code>
+Resolve a [State](#State) from a particular [Message](#Message) object.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>route</code>](#Service+route)  
+**Returns**: <code>Promise</code> - Resolves with resulting [State](#State).  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | [<code>Message</code>](#Message) | Explicit Fabric [Message](#Message). |
+
+<a name="Service+_GET"></a>
+
+### bitcoin.\_GET(path) ⇒ <code>Promise</code>
+Retrieve a value from the Service's state.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>\_GET</code>](#Service+_GET)  
+**Returns**: <code>Promise</code> - Resolves with the result.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | Path of the value to retrieve. |
+
+<a name="Service+_PUT"></a>
+
+### bitcoin.\_PUT(path, value, [commit]) ⇒ <code>Promise</code>
+Store a value in the Service's state.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>\_PUT</code>](#Service+_PUT)  
+**Returns**: <code>Promise</code> - Resolves with with stored document.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| path | <code>String</code> |  | Path to store the value at. |
+| value | <code>Object</code> |  | Document to store. |
+| [commit] | <code>Boolean</code> | <code>false</code> | Sign the resulting state. |
+
+<a name="Service+send"></a>
+
+### bitcoin.send(channel, message) ⇒ [<code>Service</code>](#Service)
+Send a message to a channel.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>send</code>](#Service+send)  
+**Returns**: [<code>Service</code>](#Service) - Chainable method.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| channel | <code>String</code> | Channel name to which the message will be sent. |
+| message | <code>String</code> | Content of the message to send. |
+
+<a name="Service+_registerActor"></a>
+
+### bitcoin.\_registerActor(actor) ⇒ <code>Promise</code>
+Register an [Actor](#Actor) with the [Service](#Service).
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>\_registerActor</code>](#Service+_registerActor)  
+**Returns**: <code>Promise</code> - Resolves upon successful registration.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| actor | <code>Object</code> | Instance of the [Actor](#Actor). |
+
+<a name="Service+_send"></a>
+
+### bitcoin.\_send(message)
+Sends a message.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>\_send</code>](#Service+_send)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| message | <code>Mixed</code> | Message to send. |
+
+<a name="Lightning"></a>
+
+## Lightning
+Manage a Lightning node.
+
+**Kind**: global class  
+
+* [Lightning](#Lightning)
+    * [new Lightning([settings])](#new_Lightning_new)
+    * [._makeRPCRequest(method, [params])](#Lightning+_makeRPCRequest) ⇒ <code>Object</code> \| <code>String</code>
+
+<a name="new_Lightning_new"></a>
+
+### new Lightning([settings])
+Create an instance of the Lightning [Service](#Service).
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Settings. |
+
+<a name="Lightning+_makeRPCRequest"></a>
+
+### lightning.\_makeRPCRequest(method, [params]) ⇒ <code>Object</code> \| <code>String</code>
+Make an RPC request through the Lightning UNIX socket.
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+**Returns**: <code>Object</code> \| <code>String</code> - Respond from the Lightning node.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| method | <code>String</code> | Name of method to call. |
+| [params] | <code>Array</code> | Array of parameters. |
+
+<a name="Redis"></a>
+
+## Redis
+Connect and subscribe to Redis servers.
+
+**Kind**: global class  
+
+* [Redis](#Redis)
+    * [new Redis([settings])](#new_Redis_new)
+    * [.start()](#Redis+start) ⇒ [<code>Redis</code>](#Redis)
+    * [.stop()](#Redis+stop) ⇒ [<code>Redis</code>](#Redis)
+
+<a name="new_Redis_new"></a>
+
+### new Redis([settings])
+Creates an instance of a Redis subscriber.
+
+**Returns**: [<code>Redis</code>](#Redis) - Instance of the Redis service, ready to run `start()`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Settings for the Redis connection. |
+| [settings.host] | <code>String</code> | Host for the Redis server. |
+| [settings.port] | <code>Number</code> | Remote Redis service port. |
+
+<a name="Redis+start"></a>
+
+### redis.start() ⇒ [<code>Redis</code>](#Redis)
+Opens the connection and subscribes to the requested channels.
+
+**Kind**: instance method of [<code>Redis</code>](#Redis)  
+**Returns**: [<code>Redis</code>](#Redis) - Instance of the service.  
+<a name="Redis+stop"></a>
+
+### redis.stop() ⇒ [<code>Redis</code>](#Redis)
+Closes the connection to the Redis server.
+
+**Kind**: instance method of [<code>Redis</code>](#Redis)  
+**Returns**: [<code>Redis</code>](#Redis) - Instance of the service.  
+<a name="ZMQ"></a>
+
+## ZMQ
+Connect and subscribe to ZeroMQ publishers.
+
+**Kind**: global class  
+
+* [ZMQ](#ZMQ)
+    * [new ZMQ([settings])](#new_ZMQ_new)
+    * [.start()](#ZMQ+start) ⇒ [<code>ZMQ</code>](#ZMQ)
+    * [.stop()](#ZMQ+stop) ⇒ [<code>ZMQ</code>](#ZMQ)
+
+<a name="new_ZMQ_new"></a>
+
+### new ZMQ([settings])
+Creates an instance of a ZeroMQ subscriber.
+
+**Returns**: [<code>ZMQ</code>](#ZMQ) - Instance of the ZMQ service, ready to run `start()`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Settings for the ZMQ connection. |
+| [settings.host] | <code>String</code> | Host for the ZMQ publisher. |
+| [settings.port] | <code>Number</code> | Remote ZeroMQ service port. |
+
+<a name="ZMQ+start"></a>
+
+### zmQ.start() ⇒ [<code>ZMQ</code>](#ZMQ)
+Opens the connection and subscribes to the requested channels.
+
+**Kind**: instance method of [<code>ZMQ</code>](#ZMQ)  
+**Returns**: [<code>ZMQ</code>](#ZMQ) - Instance of the service.  
+<a name="ZMQ+stop"></a>
+
+### zmQ.stop() ⇒ [<code>ZMQ</code>](#ZMQ)
+Closes the connection to the ZMQ publisher.
+
+**Kind**: instance method of [<code>ZMQ</code>](#ZMQ)  
+**Returns**: [<code>ZMQ</code>](#ZMQ) - Instance of the service.  
+<a name="HTTPServer"></a>
+
+## ~~HTTPServer~~
+***Deprecated***
+
+Deprecated 2021-10-16.
+
+**Kind**: global class  
+<a name="Scribe"></a>
+
+## ~~Scribe~~
+***Deprecated***
+
+Deprecated 2021-11-06.
+
+**Kind**: global class  
+
+* ~~[Scribe](#Scribe)~~
+    * [.now()](#Scribe+now) ⇒ <code>Number</code>
+    * [.trust(source)](#Scribe+trust) ⇒ [<code>Scribe</code>](#Scribe)
+    * [.inherits(scribe)](#Scribe+inherits) ⇒ [<code>Scribe</code>](#Scribe)
+
+<a name="Scribe+now"></a>
+
+### scribe.now() ⇒ <code>Number</code>
+Retrives the current timestamp, in milliseconds.
+
+**Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Returns**: <code>Number</code> - [Number](Number) representation of the millisecond [Integer](Integer) value.  
+<a name="Scribe+trust"></a>
+
+### scribe.trust(source) ⇒ [<code>Scribe</code>](#Scribe)
+Blindly bind event handlers to the [Source](Source).
+
+**Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Returns**: [<code>Scribe</code>](#Scribe) - Instance of the [Scribe](#Scribe).  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| source | <code>Source</code> | Event stream. |
+
+<a name="Scribe+inherits"></a>
+
+### scribe.inherits(scribe) ⇒ [<code>Scribe</code>](#Scribe)
+Use an existing Scribe instance as a parent.
+
+**Kind**: instance method of [<code>Scribe</code>](#Scribe)  
+**Returns**: [<code>Scribe</code>](#Scribe) - The configured instance of the Scribe.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| scribe | [<code>Scribe</code>](#Scribe) | Instance of Scribe to use as parent. |
+
+<a name="Stash"></a>
+
+## ~~Stash~~
+***Deprecated***
+
+Deprecated 2021-11-06.
+
+**Kind**: global class  

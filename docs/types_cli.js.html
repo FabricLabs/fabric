@@ -63,7 +63,6 @@ const Wallet = require('./wallet');
 // Services
 const Bitcoin = require('../services/bitcoin');
 const Lightning = require('../services/lightning');
-// const POC = require('@fabric/poc');
 
 // UI dependencies
 // TODO: use Jade to render pre-registered components
@@ -160,7 +159,6 @@ class CLI extends App {
     this._loadPeer();
     this._loadBitcoin();
     if (this.settings.lightning.enable) this._loadLightning();
-    // this.poc = new POC();
 
     this.identity = new Identity(this.settings);
 
@@ -315,9 +313,7 @@ class CLI extends App {
     this.node.on('state', this._handlePeerState.bind(this));
     this.node.on('chat', this._handlePeerChat.bind(this));
     this.node.on('upnp', this._handlePeerUPNP.bind(this));
-    this.node.on('actorset', this._handleActorSet.bind(this));
     this.node.on('contractset', this._handleContractSet.bind(this));
-    // this.node.on('peerset', this._handlePeerSet.bind(this));
 
     // ## Raw Connections
     this.node.on('connection', this._handleConnection.bind(this));
@@ -360,9 +356,6 @@ class CLI extends App {
       // this.lightning.on('transaction', this._handleLightningTransaction.bind(this));
     }
 
-    // this.poc.on('message', this._handlePeerMessage.bind(this));
-    // await this.poc.start();
-
     /* this.on('log', function (log) {
       console.log('local log:', log);
     }); */
@@ -375,7 +368,6 @@ class CLI extends App {
     for (const [name, service] of Object.entries(this.services)) {
       // Skip when service name not found in settings
       if (!this.settings.services.includes(name)) continue;
-
       this._appendDebug(`Service "${name}" is enabled.  Starting...`);
       this.trust(this.services[name], name);
 
@@ -469,7 +461,7 @@ class CLI extends App {
       // this._appendMessage(`Changes: ${JSON.stringify(changes, null, '  ')}`);
 
       this.emit('changes', changes);
-      // this.emit('state', this['@state']);
+      this.emit('state', this['@state']);
       this.emit('message', {
         '@type': 'Transaction',
         '@data': {
@@ -522,10 +514,6 @@ class CLI extends App {
 
   async _appendError (msg) {
     this._appendMessage(`{red-fg}${msg}{/red-fg}`);
-  }
-
-  async _handleActorSet (actorset) {
-    this._appendDebug(`[ACTORSET] ${JSON.stringify(actorset, null, '  ')}`);
   }
 
   async _handleContractSet (contractset) {
@@ -674,10 +662,12 @@ class CLI extends App {
     if (!params[1]) return this._appendError(`You must specify the file to publish.`);
     if (!params[2]) return this._appendError(`You must specify the rate to pay.`);
     if (!this.documents[params[1]]) return this._appendError(`This file does not exist in the local library.`);
-
-    this.fs.touchDir(`documents`);
-    this.fs.publish(`${params[1]}`, this.documents[params[1]]);
-    this.node._publishDocument(params[1], this.documents[params[1]].toString('utf8'));
+    const message = Message.fromVector(['DocumentPublish', {
+      id: params[1],
+      content: this.documents[params[1]],
+      reward: params[2]
+    }]);
+    this.node.broadcast(message);
   }
 
   async _handleRequestCommand (params) {
@@ -738,7 +728,6 @@ class CLI extends App {
   }
 
   async _handleBitcoinReady (bitcoin) {
-    this._appendMessage(`Bitcoin ready: ${JSON.stringify(bitcoin)}`);
     this._syncChainDisplay();
   }
 
@@ -770,7 +759,6 @@ class CLI extends App {
     }
 
     this._syncPeerList();
-    this._syncConnectionList();
   }
 
   async _handleConnectionError (msg) {
@@ -927,10 +915,6 @@ class CLI extends App {
     this._appendDebug(`[UPNP] ${JSON.stringify(upnp)}`);
   }
 
-  async _handlePeerSet (peerset) {
-    this._appendDebug(`[PEERSET] ${JSON.stringify(peerset, null, '  ')}`);
-  }
-
   async _handlePeerMessage (message) {
     switch (message.type) {
       case 'ChatMessage':
@@ -1058,8 +1042,6 @@ class CLI extends App {
 
       const message = Message.fromVector(['ChatMessage', JSON.stringify(msg)])._setSigner(this.signer).sign();
       // this._appendDebug(`Chat Message created (${message.data.length} bytes): ${message.data}`);
-      // this.poc._sendChatMessage(msg);
-
       self.setPane('messages');
 
       // Log own message
@@ -1101,7 +1083,6 @@ class CLI extends App {
 
   _handleFlushRequest () {
     this.flush();
-    console.log('Fabric store flushed!');
     this.stop();
     return false;
   }
@@ -1325,10 +1306,6 @@ class CLI extends App {
         const map = {};
 
         for (const [key, value] of Object.entries(x)) {
-          if ([
-
-          ].includes(key)) continue;
-
           map[key] = value.toString();
         }
 
@@ -1365,25 +1342,6 @@ class CLI extends App {
     const balance = result.data.content + this.lightning.balances.spendable;
 
     return balance;
-  }
-
-  _allConfigured () {
-    if (
-      this._isBitcoinConfigured() &amp;&amp;
-      this._isLightningConfigured()
-    ) {
-      return true;
-    } else {
-      return false;
-    }
-  }
-
-  _isBitcoinConfigured () {
-    return (this.settings.bitcoin) ? true : false;
-  }
-
-  _isLightningConfigured () {
-    return (this.settings.lightning) ? true : false;
   }
 
   _syncConnectionList () {
@@ -1474,13 +1432,11 @@ class CLI extends App {
   focusInput () {
     this.elements['prompt'].clearValue();
     this.elements['prompt'].focus();
-    this.elements.modeline.setContent(' INSERT ');
     this.screen.render();
   }
 
   defocusInput () {
     this.elements['prompt'].blur();
-    this.elements.modeline.setContent('  META ');
     this.screen.render();
   }
 
@@ -1527,18 +1483,6 @@ class CLI extends App {
       output: this.settings.output,
       terminal: this.settings.terminal,
       fullUnicode: this.settings.fullUnicode
-    });
-
-    self.elements.modeline = blessed.text({
-      parent: self.screen,
-      content: '  META ',
-      bottom: 0,
-      right: 0,
-      width: 8,
-      style: {
-        bg: 'white',
-        fg: 'black'
-      }
     });
 
     self.elements['home'] = blessed.box({
@@ -2049,18 +1993,18 @@ module.exports = CLI;
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="HTTPServer.html">HTTPServer</a></li>
-      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>

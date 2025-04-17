@@ -324,23 +324,13 @@ class Actor extends EventEmitter {
   /**
    * Casts the Actor to a generic message, used to uniquely identify the Actor's state.
    * Fields:
-   * - `preimage`: JSON.stringify(state)
-   * - `hash`: SHA256(preimage)
    * - `type`: 'FabricActorState'
-   * - `version`: 1 (for now)
    * - `object`: state
-   * - `parent`: null (for now)
    * @see {@link https://en.wikipedia.org/wiki/Merkle_tree}
    * @see {@link https://dev.fabric.pub/messages}
    * @returns {Object} Generic message object.
    */
   toGenericMessage (type = 'FabricActorState') {
-    const object = this.toObject(); // Fabric Object Representation (FOR)
-    const input = JSON.stringify(object); // uses clean, default JSON stringify
-    const buffer = Buffer.from(input, 'utf8');
-    // const hash = Hash256.digest(buffer).toString('hex');
-    // const version = 1;
-
     return {
       type: 'FabricActorState',
       object: this.toObject()
@@ -515,18 +505,18 @@ module.exports = Actor;
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="HTTPServer.html">HTTPServer</a></li>
-      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>

@@ -1,119 +1,123 @@
 <!DOCTYPE html>
 
 <html>
+
 <head>
   <title>cli_jade.js</title>
   <meta http-equiv="content-type" content="text/html; charset=UTF-8">
   <meta name="viewport" content="width=device-width, target-densitydpi=160dpi, initial-scale=1.0; maximum-scale=1.0; user-scalable=0;">
   <link rel="stylesheet" media="all" href="docco.css" />
 </head>
+
 <body>
   <div id="container">
     <div id="background"></div>
-    
-      <ul id="jump_to">
-        <li>
-          <a class="large" href="javascript:void(0);">Jump To &hellip;</a>
-          <a class="small" href="javascript:void(0);">+</a>
-          <div id="jump_wrapper">
+
+    <ul id="jump_to">
+      <li>
+        <a class="large" href="javascript:void(0);">Jump To &hellip;</a>
+        <a class="small" href="javascript:void(0);">+</a>
+        <div id="jump_wrapper">
           <div id="jump_page_wrapper">
             <div id="jump_page">
-              
-                
-                <a class="source" href="app.html">
-                  app.js
-                </a>
-              
-                
-                <a class="source" href="blockchain.html">
-                  blockchain.js
-                </a>
-              
-                
-                <a class="source" href="chain.html">
-                  chain.js
-                </a>
-              
-                
-                <a class="source" href="cli.html">
-                  cli.js
-                </a>
-              
-                
-                <a class="source" href="cli_jade.html">
-                  cli_jade.js
-                </a>
-              
-                
-                <a class="source" href="collection.html">
-                  collection.js
-                </a>
-              
-                
-                <a class="source" href="game.html">
-                  game.js
-                </a>
-              
-                
-                <a class="source" href="http.html">
-                  http.js
-                </a>
-              
-                
-                <a class="source" href="index.html">
-                  index.js
-                </a>
-              
-                
-                <a class="source" href="network.html">
-                  network.js
-                </a>
-              
-                
-                <a class="source" href="oracle.html">
-                  oracle.js
-                </a>
-              
-                
-                <a class="source" href="p2pkh.html">
-                  p2pkh.js
-                </a>
-              
-                
-                <a class="source" href="service.html">
-                  service.js
-                </a>
-              
-                
-                <a class="source" href="store.html">
-                  store.js
-                </a>
-              
+
+
+              <a class="source" href="app.html">
+                app.js
+              </a>
+
+
+              <a class="source" href="blockchain.html">
+                blockchain.js
+              </a>
+
+
+              <a class="source" href="chain.html">
+                chain.js
+              </a>
+
+
+              <a class="source" href="cli.html">
+                cli.js
+              </a>
+
+
+              <a class="source" href="cli_jade.html">
+                cli_jade.js
+              </a>
+
+
+              <a class="source" href="collection.html">
+                collection.js
+              </a>
+
+
+              <a class="source" href="game.html">
+                game.js
+              </a>
+
+
+              <a class="source" href="http.html">
+                http.js
+              </a>
+
+
+              <a class="source" href="index.html">
+                index.js
+              </a>
+
+
+              <a class="source" href="network.html">
+                network.js
+              </a>
+
+
+              <a class="source" href="oracle.html">
+                oracle.js
+              </a>
+
+
+              <a class="source" href="p2pkh.html">
+                p2pkh.js
+              </a>
+
+
+              <a class="source" href="service.html">
+                service.js
+              </a>
+
+
+              <a class="source" href="store.html">
+                store.js
+              </a>
+
             </div>
           </div>
-        </li>
-      </ul>
-    
+      </li>
+    </ul>
+
     <ul class="sections">
-        
-          <li id="title">
-              <div class="annotation">
-                  <h1>cli_jade.js</h1>
-              </div>
-          </li>
-        
-        
-        
-        <li id="section-1">
-            <div class="annotation">
-              
-              <div class="pilwrap ">
-                <a class="pilcrow" href="#section-1">&#182;</a>
-              </div>
-              
-            </div>
-            
-            <div class="content"><div class='highlight'><pre><span class="hljs-meta">'use strict'</span>;
+
+      <li id="title">
+        <div class="annotation">
+          <h1>cli_jade.js</h1>
+        </div>
+      </li>
+
+
+
+      <li id="section-1">
+        <div class="annotation">
+
+          <div class="pilwrap ">
+            <a class="pilcrow" href="#section-1">&#182;</a>
+          </div>
+
+        </div>
+
+        <div class="content">
+          <div class='highlight'>
+            <pre><span class="hljs-meta">'use strict'</span>;
 
 <span class="hljs-keyword">import</span> Fabric <span class="hljs-keyword">from</span> <span class="hljs-string">'../'</span>;
 
@@ -130,22 +134,26 @@
     <span class="hljs-attr">log</span>: <span class="hljs-built_in">console</span>.log,
     <span class="hljs-attr">inform</span>: <span class="hljs-built_in">console</span>.log,
     <span class="hljs-attr">name</span>: <span class="hljs-string">"CLI"</span>
-};</pre></div></div>
-            
-        </li>
-        
-        
-        <li id="section-2">
-            <div class="annotation">
-              
-              <div class="pilwrap ">
-                <a class="pilcrow" href="#section-2">&#182;</a>
-              </div>
-              <p>TODO: use deep assign</p>
+};</pre>
+          </div>
+        </div>
 
-            </div>
-            
-            <div class="content"><div class='highlight'><pre>self.config = <span class="hljs-built_in">Object</span>.assign({
+      </li>
+
+
+      <li id="section-2">
+        <div class="annotation">
+
+          <div class="pilwrap ">
+            <a class="pilcrow" href="#section-2">&#182;</a>
+          </div>
+          <p>TODO: use deep assign</p>
+
+        </div>
+
+        <div class="content">
+          <div class='highlight'>
+            <pre>self.config = <span class="hljs-built_in">Object</span>.assign({
     <span class="hljs-attr">ui</span>: <span class="hljs-string">'./assets/cli.jade'</span>,
     <span class="hljs-attr">oracle</span>: <span class="hljs-literal">true</span>,
     <span class="hljs-attr">swarm</span>: {
@@ -160,37 +168,45 @@
     self.oracle = <span class="hljs-keyword">new</span> Fabric.HTTP(<span class="hljs-built_in">Object</span>.assign({
         <span class="hljs-attr">name</span>: <span class="hljs-string">'fabric'</span>,
         <span class="hljs-attr">port</span>: <span class="hljs-number">3007</span>
-    }, self.config.oracle));</pre></div></div>
-            
-        </li>
-        
-        
-        <li id="section-3">
-            <div class="annotation">
-              
-              <div class="pilwrap ">
-                <a class="pilcrow" href="#section-3">&#182;</a>
-              </div>
-              <p>this.oracle.on(‘changes’, this._handleChanges.bind(this));</p>
+    }, self.config.oracle));</pre>
+          </div>
+        </div>
 
-            </div>
-            
-            <div class="content"><div class='highlight'><pre>    self.oracle.on(<span class="hljs-string">'info'</span>, self.inform.bind(self));</pre></div></div>
-            
-        </li>
-        
-        
-        <li id="section-4">
-            <div class="annotation">
-              
-              <div class="pilwrap ">
-                <a class="pilcrow" href="#section-4">&#182;</a>
-              </div>
-              <p>TODO: move to lib/chat.js</p>
+      </li>
 
-            </div>
-            
-            <div class="content"><div class='highlight'><pre>    self.oracle.define(<span class="hljs-string">'Message'</span>, {
+
+      <li id="section-3">
+        <div class="annotation">
+
+          <div class="pilwrap ">
+            <a class="pilcrow" href="#section-3">&#182;</a>
+          </div>
+          <p>this.oracle.on(‘changes’, this._handleChanges.bind(this));</p>
+
+        </div>
+
+        <div class="content">
+          <div class='highlight'>
+            <pre>    self.oracle.on(<span class="hljs-string">'info'</span>, self.inform.bind(self));</pre>
+          </div>
+        </div>
+
+      </li>
+
+
+      <li id="section-4">
+        <div class="annotation">
+
+          <div class="pilwrap ">
+            <a class="pilcrow" href="#section-4">&#182;</a>
+          </div>
+          <p>TODO: move to lib/chat.js</p>
+
+        </div>
+
+        <div class="content">
+          <div class='highlight'>
+            <pre>    self.oracle.define(<span class="hljs-string">'Message'</span>, {
         <span class="hljs-attr">routes</span>: {
             <span class="hljs-attr">list</span>: <span class="hljs-string">'/messages'</span>,
             <span class="hljs-attr">get</span>: <span class="hljs-string">'/messages/:id'</span>
@@ -243,22 +259,26 @@
                     self.log(<span class="hljs-string">'peers:'</span>, self.swarm.peers);
                     <span class="hljs-keyword">break</span>;
                 <span class="hljs-keyword">case</span> <span class="hljs-string">'ping'</span>:
-                    self.log(<span class="hljs-string">'pinging peers...'</span>);</pre></div></div>
-            
-        </li>
-        
-        
-        <li id="section-5">
-            <div class="annotation">
-              
-              <div class="pilwrap ">
-                <a class="pilcrow" href="#section-5">&#182;</a>
-              </div>
-              <p>select a random number, broadcast with ping</p>
+                    self.log(<span class="hljs-string">'pinging peers...'</span>);</pre>
+          </div>
+        </div>
 
-            </div>
-            
-            <div class="content"><div class='highlight'><pre>                    self.swarm._broadcastTypedMessage(<span class="hljs-number">0x12</span>, <span class="hljs-built_in">Math</span>.random());
+      </li>
+
+
+      <li id="section-5">
+        <div class="annotation">
+
+          <div class="pilwrap ">
+            <a class="pilcrow" href="#section-5">&#182;</a>
+          </div>
+          <p>select a random number, broadcast with ping</p>
+
+        </div>
+
+        <div class="content">
+          <div class='highlight'>
+            <pre>                    self.swarm._broadcastTypedMessage(<span class="hljs-number">0x12</span>, <span class="hljs-built_in">Math</span>.random());
                     <span class="hljs-keyword">break</span>;
                 <span class="hljs-keyword">case</span> <span class="hljs-string">'state'</span>:
                     self.log(<span class="hljs-string">'state (self):'</span>, self.state);
@@ -282,22 +302,26 @@
         } <span class="hljs-keyword">else</span> {
             <span class="hljs-keyword">if</span> (!data.input) {
                 <span class="hljs-keyword">return</span> self.log(<span class="hljs-string">`Message is required.`</span>);
-            }</pre></div></div>
-            
-        </li>
-        
-        
-        <li id="section-6">
-            <div class="annotation">
-              
-              <div class="pilwrap ">
-                <a class="pilcrow" href="#section-6">&#182;</a>
-              </div>
-              <p>TODO: visual indicator of “sending…” status</p>
+            }</pre>
+          </div>
+        </div>
 
-            </div>
-            
-            <div class="content"><div class='highlight'><pre>            <span class="hljs-keyword">let</span> result = <span class="hljs-keyword">await</span> self.oracle._POST(<span class="hljs-string">'/messages'</span>, {
+      </li>
+
+
+      <li id="section-6">
+        <div class="annotation">
+
+          <div class="pilwrap ">
+            <a class="pilcrow" href="#section-6">&#182;</a>
+          </div>
+          <p>TODO: visual indicator of “sending…” status</p>
+
+        </div>
+
+        <div class="content">
+          <div class='highlight'>
+            <pre>            <span class="hljs-keyword">let</span> result = <span class="hljs-keyword">await</span> self.oracle._POST(<span class="hljs-string">'/messages'</span>, {
                 <span class="hljs-attr">created</span>: now.toISOString(),
                 <span class="hljs-attr">input</span>: data.input
             });
@@ -323,33 +347,40 @@
         self.textbox.readInput();
     },
     <span class="hljs-attr">on_screen_key_esc</span>:  <span class="hljs-function"><span class="hljs-keyword">function</span> (<span class="hljs-params">ch, key</span>) </span>{
-        self.screen.destroy();</pre></div></div>
-            
-        </li>
-        
-        
-        <li id="section-7">
-            <div class="annotation">
-              
-              <div class="pilwrap ">
-                <a class="pilcrow" href="#section-7">&#182;</a>
-              </div>
-              <p>console.log(‘the machine:’, self.oracle.machine);
-console.log(‘the mempool:’, self.oracle.mempool);</p>
+        self.screen.destroy();</pre>
+          </div>
+        </div>
 
-            </div>
-            
-            <div class="content"><div class='highlight'><pre>        process.exit();
+      </li>
+
+
+      <li id="section-7">
+        <div class="annotation">
+
+          <div class="pilwrap ">
+            <a class="pilcrow" href="#section-7">&#182;</a>
+          </div>
+          <p>console.log(‘the machine:’, self.oracle.machine);
+            console.log(‘the mempool:’, self.oracle.mempool);</p>
+
+        </div>
+
+        <div class="content">
+          <div class='highlight'>
+            <pre>        process.exit();
     },
 }
 
 jade2cli.renderJadeFile(<span class="hljs-string">'./assets/cli2.jade'</span>, self, event_handlers);
 
-<span class="hljs-built_in">console</span>.log(<span class="hljs-built_in">Object</span>.keys(self))</pre></div></div>
-            
-        </li>
-        
+<span class="hljs-built_in">console</span>.log(<span class="hljs-built_in">Object</span>.keys(self))</pre>
+          </div>
+        </div>
+
+      </li>
+
     </ul>
   </div>
 </body>
+
 </html>

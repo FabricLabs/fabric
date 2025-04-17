@@ -134,8 +134,6 @@ class Lightning extends Service {
   }
 
   async start () {
-    const self = this;
-
     this.status = 'starting';
 
     await this.machine.start();
@@ -183,12 +181,7 @@ class Lightning extends Service {
   }
 
   async listFunds () {
-    try {
-      const result = this._makeRPCRequest('listfunds');
-      return result;
-    } catch (exception) {
-      
-    }
+    return this._makeRPCRequest('listfunds');
   }
 
   async _heartbeat () {
@@ -297,8 +290,6 @@ class Lightning extends Service {
     if (this.settings.mode === 'rest') {
       const result = await this.rest._GET('/v1/channel/getInfo');
 
-      // this.emit('debug', `syncing oracle info: ${JSON.stringify(result)}`);
-
       if (result &amp;&amp; result.id) {
         this._state.id = result.id;
         this._state.name = result.alias;
@@ -316,7 +307,6 @@ class Lightning extends Service {
     if (this.settings.mode === 'rest') {
       const result = await this.rest._GET('/v1/channel/localRemoteBal');
       if (result) {
-        this.emit('debug', `Oracle Balance Result: ${JSON.stringify(result, null, '')}`);
         this._state.content.balances.spendable = result.totalBalance;
         this._state.content.balances.confirmed = result.confBalance;
         this._state.content.balances.unconfirmed = result.unconfBalance;
@@ -330,9 +320,6 @@ class Lightning extends Service {
   async _syncOracleChannels () {
     if (this.settings.mode === 'rest') {
       const result = await this.rest._GET('/v1/channel/listChannels');
-
-      // this.emit('debug', `Oracle Channel Result: ${JSON.stringify(result, null, '')}`);
-
       if (!result || !result.map) return this.state;
       this._state.content.channels = result.map((x) => {
         return new Actor(x);
@@ -340,8 +327,6 @@ class Lightning extends Service {
         obj[item.id] = item.state;
         return obj;
       }, {});
-
-      // this.emit('debug', `State: ${JSON.stringify(this.state, null, '')}`);
 
       this.commit();
     }
@@ -377,7 +362,6 @@ class Lightning extends Service {
   async _syncInfo () {
     try {
       const result = await this._makeRPCRequest('getinfo');
-      this.emit('log', `Lighting Info: ${JSON.stringify(result, null, '  ')}`);
       this._state.content.node.id = result.id;
       this._state.content.node.alias = result.alias;
       this._state.content.node.color = result.color;
@@ -391,19 +375,10 @@ class Lightning extends Service {
   }
 
   async _sync () {
-    try {
-      // await this._syncChannels();
-      // await this._syncInfo();
-    } catch (exception) {
-
-    }
-
+    await this._syncChannels();
+    await this._syncInfo();
     this.emit('sync', this.state);
     return this;
-  }
-
-  async sync () {
-
   }
 }
 
@@ -421,18 +396,18 @@ module.exports = Lightning;
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="HTTPServer.html">HTTPServer</a></li>
-      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
