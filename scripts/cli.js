@@ -25,7 +25,7 @@ const OP_CHAT = require('../contracts/chat');
 const OP_EXCHANGE = require('../contracts/exchange');
 const OP_MOUNT = require('../contracts/mount');
 const OP_SETUP = require('../contracts/setup');
-// const OP_VERIFY = require('../contracts/verify');
+const OP_VERIFY = require('../contracts/verify');
 const OP_TEST = require('../contracts/test');
 
 const COMMANDS = {
@@ -34,7 +34,7 @@ const COMMANDS = {
   'EXCHANGE': OP_EXCHANGE,
   'MOUNT': OP_MOUNT,
   'SETUP': OP_SETUP,
-  // 'VERIFY': OP_VERIFY,
+  'VERIFY': OP_VERIFY,
   'TEST': OP_TEST
 };
 
@@ -68,6 +68,12 @@ async function main (input = {}) {
   program.command('setup')
     .description('Ensures your environment configuration.')
     .action(COMMANDS['SETUP'].bind({ environment, program }));
+
+  // FABRIC VERIFY
+  // Verify ownership of the Fabric Identity.
+  program.command('verify')
+    .description('Enables verification of key ownership.')
+    .action(COMMANDS['VERIFY'].bind({ environment, program }));
 
   // FABRIC START
   // Run the basic node.
