@@ -1,6 +1,6 @@
 # Installing Fabric
 ## Prerequisites
-- Node.js 18.19.1
+- Node.js 22.14.0
 
 ## Quick Start
 You can install Fabric by running:
@@ -24,8 +24,8 @@ By default, the Fabric CLI connects to `playnet` for an initial set of peers.  Y
 ## Notes
 If you don't have Node.js, or an incorrect version, we recommend [installing NVM][installing-nvm].  Once complete, you can install and set the default node version:
 ```
-nvm install 18.19.1
-nvm alias default 18.19.1 # optional
+nvm install 22.14.0
+nvm alias default 22.14.0 # optional
 ```
 
 [installing-nvm]: https://nvm.sh

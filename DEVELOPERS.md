@@ -5,7 +5,7 @@ applications, so grab a coffee ☕ and settle in.
 ## Quick Start
 See also [`QUICKSTART.md`][quickstart-guide] for up-to-date instructions.
 
-0. `nvm use 18.19.1` (you can get `nvm` from [nvm.sh][nvm-official])
+0. `nvm use 22.14.0` (you can get `nvm` from [nvm.sh][nvm-official])
 1. `npm install -g @fabric/core` to add `fabric` to your path
 2. (optional) `fabric setup` to set up your environment (generates a new master key)
 3. `fabric` should now be enough to get you up and running!

@@ -1,6 +1,7 @@
 'use strict';
 
 const webpack = require('webpack');
+const BundleAnalyzerPlugin = require('webpack-bundle-analyzer').BundleAnalyzerPlugin;
 
 module.exports = {
   entry: './index.js',
@@ -19,6 +20,10 @@ module.exports = {
         NODE_ENV: JSON.stringify('production'),
         APP_ENV: JSON.stringify('browser')
       }
+    }),
+    new BundleAnalyzerPlugin({
+      analyzerMode: process.env.ANALYZE ? 'server' : 'disabled',
+      openAnalyzer: true
     })
   ]
 };
