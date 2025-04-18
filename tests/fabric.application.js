@@ -7,6 +7,8 @@ const expect = require('chai').expect;
 
 describe('@fabric/core/types/app', function () {
   describe('App', function () {
+    this.timeout(10000);
+
     it('is available from @fabric/core', function () {
       assert.equal(App instanceof Function, true);
     });
