@@ -92,6 +92,7 @@ class Service extends Actor {
     this.actor = null;
     this.name = this.settings.name;
 
+    this.aliases = {};
     this.collections = {};
     this.definitions = {};
     this.resources = {};

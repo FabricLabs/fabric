@@ -330,6 +330,7 @@ class Remote extends Actor {
                 result = await response.json();
               } catch (E) {
                 console.error('[REMOTE]', 'Could not parse JSON:', E);
+                result = await response.text();
               }
               break;
             default:
@@ -341,9 +342,9 @@ class Remote extends Actor {
           if (this.settings.verbosity >= 4) console.warn('[FABRIC:REMOTE]', 'Unmanaged HTTP status code:', response.status);
 
           try {
-            result = response.json();
+            result = await response.json();
           } catch (exception) {
-            result = response.text();
+            result = await response.text();
           }
         }
         break;
