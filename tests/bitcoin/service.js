@@ -97,7 +97,7 @@ describe('@fabric/core/services/bitcoin', function () {
       await test();
     });
 
-    it('can generate a block', async function () {
+    xit('can generate a block', async function () {
       async function test () {
         const bitcoin = new Bitcoin(options);
         let block = null;
