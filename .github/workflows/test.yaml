@@ -54,8 +54,12 @@ jobs:
           make
           sudo make install
           cd ..
+          mkdir -p stores/lightning/logs
+          touch stores/lightning/logs/lightningd.log
         else
           brew install lightningd
+          mkdir -p stores/lightning/logs
+          touch stores/lightning/logs/lightningd.log
         fi
     - name: Generate coverage report
       run: npm run report:coverage
