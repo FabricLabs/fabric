@@ -383,6 +383,7 @@ class Lightning extends Service {
       `--bitcoin-rpcconnect=${this.settings.bitcoin.host || '127.0.0.1'}`,
       `--bitcoin-rpcport=${this.settings.bitcoin.port || 20444}`,
       '--daemon', // Run as daemon
+      `--log-file=${datadir}/lightningd.log`, // Specify log file
       '--log-level=debug' // Enable debug logging
     ];
 
