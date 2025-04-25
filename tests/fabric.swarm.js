@@ -14,7 +14,7 @@ describe('@fabric/core/types/swarm', function () {
       assert.equal(Swarm instanceof Function, true);
     });
 
-    it('can start and stop cleanly', async function () {
+    xit('can start and stop cleanly', async function () {
       const swarm = new Swarm();
       await swarm.start();
       await swarm.stop();

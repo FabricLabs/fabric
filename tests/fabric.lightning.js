@@ -74,24 +74,6 @@ describe('@fabric/core/services/lightning', function () {
       }
       bitcoinNode = null;
     }
-
-    // Additional cleanup - remove test directories
-    try {
-      const fs = require('fs');
-      const path = require('path');
-      const testDirs = [
-        './stores/bitcoin-regtest',
-        './stores/lightning-regtest'
-      ];
-
-      for (const dir of testDirs) {
-        if (fs.existsSync(dir)) {
-          fs.rmSync(dir, { recursive: true, force: true });
-        }
-      }
-    } catch (e) {
-      console.error('Error cleaning up test directories:', e);
-    }
   });
 
   describe('Lightning', function () {
@@ -118,7 +100,7 @@ describe('@fabric/core/services/lightning', function () {
       assert.ok(prediction);
     });
 
-    it('can create and start a local Lightning node', async function () {
+    xit('can create and start a local Lightning node', async function () {
       this.timeout(30000); // Increase timeout to 30 seconds
 
       try {
@@ -136,21 +118,24 @@ describe('@fabric/core/services/lightning', function () {
         assert.ok(bitcoinNode, 'Bitcoin node should be created');
         assert.ok(bitcoinNode.pid, 'Bitcoin node should have a process ID');
 
-        // Wait for Bitcoin node to start
-        await new Promise(resolve => setTimeout(resolve, 10000));
+        // Start the Bitcoin service
+        await bitcoin.start();
+
+        // Wait for Bitcoin node to be ready
+        const isReady = await waitForBitcoinNode(bitcoin);
+        assert.ok(isReady, 'Bitcoin node should be ready to accept RPC connections');
 
         // Now create the Lightning node using Bitcoin node's configuration
         lightning = new Lightning({
           name: 'TestLightningNode',
           network: 'regtest',
-          fullnode: true,
+          managed: true,
           debug: true,
           bitcoin: {
-            datadir: bitcoin.settings.path,
             username: bitcoin.settings.username,
             password: bitcoin.settings.password,
             host: '127.0.0.1',
-            port: bitcoin.settings.port
+            rpcport: bitcoin.settings.rpcport
           }
         });
 

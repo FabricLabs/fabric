@@ -4,6 +4,8 @@
 const net = require('net');
 const { mkdirp } = require('mkdirp');
 const children = require('child_process');
+const path = require('path');
+const fs = require('fs');
 
 // Fabric Types
 const Actor = require('../types/actor');
@@ -351,44 +353,52 @@ class Lightning extends Service {
     return this;
   }
 
-  async createLocalNode (settings = {}) {
+  async createLocalNode () {
     if (this.settings.debug) console.log('[FABRIC:LIGHTNING]', 'Creating local Lightning node...');
-    let datadir = './stores/lightning';
     const port = 9735; // Default Lightning port
+    let datadir = path.resolve('./stores/lightning');
 
     // Configure based on network
     switch (this.settings.network) {
       default:
       case 'mainnet':
-        datadir = './stores/lightning';
+        datadir = path.resolve('./stores/lightning');
         break;
       case 'testnet':
-        datadir = './stores/lightning-testnet';
+        datadir = path.resolve('./stores/lightning-testnet');
         break;
       case 'regtest':
-        datadir = './stores/lightning-regtest';
+        datadir = path.resolve('./stores/lightning-regtest');
         break;
     }
 
     // Ensure storage directory exists
     await mkdirp(datadir);
 
+    // Create log file
+    const logFile = path.join(datadir, 'lightningd.log');
+    try {
+      fs.writeFileSync(logFile, '', { flag: 'w' });
+    } catch (error) {
+      throw new Error(`Failed to create log file ${logFile}: ${error.message}`);
+    }
+
     // Configure Lightning node parameters
     const params = [
       `--network=${this.settings.network}`,
       `--lightning-dir=${datadir}`,
-      `--bitcoin-datadir=${this.settings.bitcoin.datadir || './stores/bitcoin'}`, // Connect to Bitcoin node
-      `--bitcoin-rpcuser=${this.settings.bitcoin.username || this.settings.username}`,
-      `--bitcoin-rpcpassword=${this.settings.bitcoin.password || this.settings.password}`,
-      `--bitcoin-rpcconnect=${this.settings.bitcoin.host || '127.0.0.1'}`,
-      `--bitcoin-rpcport=${this.settings.bitcoin.port || 20444}`,
+      `--bitcoin-datadir=${this.settings.bitcoin.datadir}`, // Connect to Bitcoin node
+      `--bitcoin-rpcuser=${this.settings.bitcoin.username}`,
+      `--bitcoin-rpcpassword=${this.settings.bitcoin.password}`,
+      `--bitcoin-rpcconnect=${this.settings.bitcoin.host}`,
+      `--bitcoin-rpcport=${this.settings.bitcoin.rpcport}`, // Use different port range while maintaining last digits
       '--daemon', // Run as daemon
-      `--log-file=${datadir}/lightningd.log`, // Specify log file
+      `--log-file=${logFile}`, // Specify log file
       '--log-level=debug' // Enable debug logging
     ];
 
     // Start lightningd
-    if (this.settings.fullnode) {
+    if (this.settings.managed) {
       const child = children.spawn('lightningd', params);
 
       child.stdout.on('data', (data) => {
@@ -410,6 +420,10 @@ class Lightning extends Service {
     } else {
       return null;
     }
+  }
+
+  async sync () {
+    // TODO: sync local data with node
   }
 }
 

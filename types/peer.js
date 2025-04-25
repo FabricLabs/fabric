@@ -277,6 +277,7 @@ class Peer extends Service {
    * @param {String} target Target address.
    */
   _connect (target) {
+    this.emit('debug', `Connecting to target: ${target}`);
     const url = new URL(`tcp://${target}`);
     const id = url.username;
 

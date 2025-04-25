@@ -88,12 +88,13 @@ class Bitcoin extends Service {
       servers: [],
       targets: [],
       peers: [],
-      port: 18444,
+      port: 18333, // P2P port
+      rpcport: 18332, // RPC port
       interval: 10 * 60 * 1000, // every 10 minutes, write a checkpoint
       verbosity: 2
     }, settings);
 
-    if (this.settings.verbosity >= 4) console.log('[DEBUG]', 'Instance of Bitcoin service created, settings:', this.settings);
+    if (this.settings.verbosity >= 4) console.debug('[DEBUG]', 'Instance of Bitcoin service created, settings:', this.settings);
 
     // Bcoin for JS full node
     // bcoin.set(this.settings.network);
@@ -385,14 +386,14 @@ class Bitcoin extends Service {
    * @param {TX} tx Bitcoin transaction
    */
   async broadcast (msg) {
-    console.log('[SERVICES:BITCOIN]', 'Broadcasting:', msg);
+    console.debug('[SERVICES:BITCOIN]', 'Broadcasting:', msg);
     const verify = await msg.verify();
-    console.log('[SERVICES:BITCOIN]', 'Verified TX:', verify);
+    console.debug('[SERVICES:BITCOIN]', 'Verified TX:', verify);
 
     await this.spv.sendTX(msg);
     // await this.spv.broadcast(msg);
     await this.spv.relay(msg);
-    console.log('[SERVICES:BITCOIN]', 'Broadcasted!');
+    console.debug('[SERVICES:BITCOIN]', 'Broadcasted!');
   }
 
   async processSpendMessage (message) {
@@ -506,8 +507,7 @@ class Bitcoin extends Service {
     let hash = require('crypto').createHash('sha256').update(obj.data).digest('hex');
 
     // TODO: verify local hash (see below)
-    console.log('local hash from node:', hash);
-    console.log('WARNING [!!!]: double check that:', `${obj.headers.hash('hex')} === ${hash}`);
+    console.debug('WARNING [!!!]: double check that:', `${obj.headers.hash('hex')} === ${hash}`);
 
     try {
       // TODO: verify block hash!!!
@@ -941,7 +941,7 @@ class Bitcoin extends Service {
   async _startLocalNode () {
     const self = this;
 
-    if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', `Starting fullnode for network "${this.settings.network}"...`);
+    if (this.settings.verbosity >= 4) console.debug('[SERVICES:BITCOIN]', `Starting fullnode for network "${this.settings.network}"...`);
 
     /* for (const candidate of this.settings.seeds) {
       let parts = candidate.split(':');
@@ -960,7 +960,7 @@ class Bitcoin extends Service {
     // TODO: listen for sync finalization
     this.fullnode.startSync();
 
-    if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', `Full Node for network "${this.settings.network}" started!`);
+    if (this.settings.verbosity >= 4) console.debug('[SERVICES:BITCOIN]', `Full Node for network "${this.settings.network}" started!`);
   }
 
   async generateBlock (address) {
@@ -1046,24 +1046,18 @@ class Bitcoin extends Service {
     const self = this;
     return new Promise((resolve, reject) => {
       if (!self.rpc) {
-        self.emit('error', `No local RPC: ${self} \n${OP_TRACE({ name: 'foo' })}`);
-        return reject(new Error('RPC manager does not exist.'));
+        return reject(new Error('RPC manager does not exist'));
       }
 
       try {
         self.rpc.request(method, params, function responseHandler (err, response) {
           if (err) {
-            // TODO: replace with reject()
-            return resolve({
-              error: (err.error) ? JSON.parse(JSON.parse(err.error)) : err,
-              response: response
-            });
+            return reject(new Error(err.error ? JSON.parse(JSON.parse(err.error)) : err));
           }
-
           return resolve(response.result);
         });
       } catch (exception) {
-        return reject(exception);
+        return reject(new Error(`RPC request failed: ${exception.message}`));
       }
     });
   }
@@ -1746,23 +1740,25 @@ class Bitcoin extends Service {
   }
 
   async _syncWithRPC () {
-    // await this._syncChainInfoOverRPC();
-    await this._syncChainOverRPC();
-    await this.commit();
-
+    try {
+      await this._syncChainOverRPC();
+      await this.commit();
+    } catch (error) {
+      console.error('[FABRIC:BITCOIN]', 'Sync failed:', error.message);
+      throw error;
+    }
     return this;
   }
 
-  async createLocalNode (settings = {}) {
-    if (this.settings.debug) console.log('[FABRIC:BITCOIN]', 'Creating local node...');
+  async createLocalNode () {
+    if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Creating local node...');
     let datadir = './stores/bitcoin';
-    const port = 20444;
 
     // TODO: use RPC auth
     const params = [
-      `-port=${settings.port || this.settings.port || 18444}`,
+      `-port=${this.settings.port}`,
       '-rpcbind=127.0.0.1',
-      `-rpcport=${port}`,
+      `-rpcport=${this.settings.rpcport}`,
       '-server',
       '-zmqpubrawblock=tcp://127.0.0.1:29500',
       '-zmqpubrawtx=tcp://127.0.0.1:29500',
@@ -1778,7 +1774,7 @@ class Bitcoin extends Service {
       const auth = this.createRPCAuth({ username });
       this.settings.username = auth.username;
       this.settings.password = auth.password;
-      this.settings.authority = `http://${this.settings.username}:${this.settings.password}@127.0.0.1:${port}`;
+      this.settings.authority = `http://${this.settings.username}:${this.settings.password}@127.0.0.1:${this.settings.rpcport}`;
       params.push(`-rpcauth=${auth.content}`);
     }
 
@@ -1845,7 +1841,7 @@ class Bitcoin extends Service {
       const cleanup = async () => {
         if (this._nodeProcess) {
           try {
-            console.log('[FABRIC:BITCOIN]', 'Cleaning up Bitcoin node...');
+            console.debug('[FABRIC:BITCOIN]', 'Cleaning up Bitcoin node...');
             this._nodeProcess.kill();
             await new Promise(resolve => {
               this._nodeProcess.on('close', () => resolve());
@@ -1865,15 +1861,26 @@ class Bitcoin extends Service {
       process.on('uncaughtException', async (err) => {
         console.error('[FABRIC:BITCOIN]', 'Uncaught exception:', err);
         await cleanup();
-        process.exit(1);
+        this.emit('error', err);
       });
 
       // Handle unhandled promise rejections
       process.on('unhandledRejection', async (reason, promise) => {
         console.error('[FABRIC:BITCOIN]', 'Unhandled rejection at:', promise, 'reason:', reason);
         await cleanup();
-        process.exit(1);
+        this.emit('error', reason);
       });
+
+      // Initialize RPC client
+      const config = {
+        host: '127.0.0.1',
+        port: this.settings.rpcport
+      };
+
+      const auth = `${this.settings.username}:${this.settings.password}`;
+      config.headers = { Authorization: `Basic ${Buffer.from(auth, 'utf8').toString('base64')}` };
+
+      this.rpc = jayson.http(config);
 
       return child;
     } else {
@@ -2007,16 +2014,42 @@ class Bitcoin extends Service {
    * Stop the Bitcoin service.
    */
   async stop () {
-    if (this.peer && this.peer.connected) await this.peer.destroy();
-    // if (this.fullnode) await this.fullnode.close();
-    await this.wallet.stop();
-    // await this.chain.stop();
+    console.debug('[FABRIC:BITCOIN]', 'Stopping Bitcoin service...');
 
+    // Remove all event listeners
+    this.removeAllListeners();
+
+    // Stop the heartbeat interval if it exists
     if (this._heart) {
       clearInterval(this._heart);
       delete this._heart;
     }
 
+    // Stop the wallet
+    if (this.wallet) {
+      console.debug('[FABRIC:BITCOIN]', 'Stopping wallet...');
+      await this.wallet.stop();
+    }
+
+    // Stop the ZMQ service
+    if (this.zmq) {
+      console.debug('[FABRIC:BITCOIN]', 'Stopping ZMQ...');
+      await this.zmq.stop();
+    }
+
+    // Kill the Bitcoin node process if it exists
+    if (this._nodeProcess) {
+      console.debug('[FABRIC:BITCOIN]', 'Killing Bitcoin node process...');
+      try {
+        this._nodeProcess.kill('SIGKILL');
+        console.debug('[FABRIC:BITCOIN]', 'Process killed');
+      } catch (error) {
+        console.error('[FABRIC:BITCOIN]', 'Error killing process:', error);
+      }
+      this._nodeProcess = null;
+    }
+
+    console.log('[FABRIC:BITCOIN]', 'Service stopped');
     return this;
   }
 }
