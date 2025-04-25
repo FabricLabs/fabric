@@ -2,6 +2,8 @@
 
 // Dependencies
 const net = require('net');
+const { mkdirp } = require('mkdirp');
+const children = require('child_process');
 
 // Fabric Types
 const Actor = require('../types/actor');
@@ -31,7 +33,8 @@ class Lightning extends Service {
       port: 8181,
       path: './stores/lightning',
       mode: 'socket',
-      interval: 1000
+      interval: 1000,
+      managed: false
     }, this.settings, settings);
 
     this.machine = new Machine(this.settings);
@@ -346,6 +349,66 @@ class Lightning extends Service {
     await this._syncInfo();
     this.emit('sync', this.state);
     return this;
+  }
+
+  async createLocalNode (settings = {}) {
+    if (this.settings.debug) console.log('[FABRIC:LIGHTNING]', 'Creating local Lightning node...');
+    let datadir = './stores/lightning';
+    const port = 9735; // Default Lightning port
+
+    // Configure based on network
+    switch (this.settings.network) {
+      default:
+      case 'mainnet':
+        datadir = './stores/lightning';
+        break;
+      case 'testnet':
+        datadir = './stores/lightning-testnet';
+        break;
+      case 'regtest':
+        datadir = './stores/lightning-regtest';
+        break;
+    }
+
+    // Ensure storage directory exists
+    await mkdirp(datadir);
+
+    // Configure Lightning node parameters
+    const params = [
+      `--network=${this.settings.network}`,
+      `--lightning-dir=${datadir}`,
+      `--bitcoin-datadir=${this.settings.bitcoin.datadir || './stores/bitcoin'}`, // Connect to Bitcoin node
+      `--bitcoin-rpcuser=${this.settings.bitcoin.username || this.settings.username}`,
+      `--bitcoin-rpcpassword=${this.settings.bitcoin.password || this.settings.password}`,
+      `--bitcoin-rpcconnect=${this.settings.bitcoin.host || '127.0.0.1'}`,
+      `--bitcoin-rpcport=${this.settings.bitcoin.port || 20444}`,
+      '--daemon', // Run as daemon
+      '--log-level=debug' // Enable debug logging
+    ];
+
+    // Start lightningd
+    if (this.settings.fullnode) {
+      const child = children.spawn('lightningd', params);
+
+      child.stdout.on('data', (data) => {
+        if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', data.toString('utf8').trim());
+        if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] ${data.toString('utf8').trim()}`);
+      });
+
+      child.stderr.on('data', (data) => {
+        console.error('[FABRIC:LIGHTNING]', '[ERROR]', data.toString('utf8').trim());
+        this.emit('error', `[FABRIC:LIGHTNING] ${data.toString('utf8').trim()}`);
+      });
+
+      child.on('close', (code) => {
+        if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Lightning node exited with code ' + code);
+        this.emit('log', `[FABRIC:LIGHTNING] Lightning node exited with code ${code}`);
+      });
+
+      return child;
+    } else {
+      return null;
+    }
   }
 }
 

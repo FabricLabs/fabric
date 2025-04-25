@@ -2,7 +2,7 @@
 
 ## Prerequisites
 0. (optional) Install NVM: `https://nvm.sh`
-1. Install Node 18.19.1 (use `nvm install 18.19.1` if using `nvm`)
+1. Install Node 22.14.0 (use `nvm install 22.14.0` if using `nvm`)
 
 ## Instructions
 0. Meet the prerequisites (above)

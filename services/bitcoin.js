@@ -1821,6 +1821,10 @@ class Bitcoin extends Service {
       await mkdirp(datadir);
       const child = children.spawn('bitcoind', params);
 
+      // Store the child process reference
+      this._nodeProcess = child;
+
+      // Handle process events
       child.stdout.on('data', (data) => {
         if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', data.toString('utf8').trim());
         if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] ${data.toString('utf8').trim()}`);
@@ -1834,6 +1838,41 @@ class Bitcoin extends Service {
       child.on('close', (code) => {
         if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Bitcoin Core exited with code ' + code);
         this.emit('log', `[FABRIC:BITCOIN] Bitcoin Core exited with code ${code}`);
+        this._nodeProcess = null;
+      });
+
+      // Add cleanup handlers
+      const cleanup = async () => {
+        if (this._nodeProcess) {
+          try {
+            console.log('[FABRIC:BITCOIN]', 'Cleaning up Bitcoin node...');
+            this._nodeProcess.kill();
+            await new Promise(resolve => {
+              this._nodeProcess.on('close', () => resolve());
+            });
+          } catch (e) {
+            console.error('[FABRIC:BITCOIN]', 'Error during cleanup:', e);
+          }
+        }
+      };
+
+      // Handle process termination signals
+      process.on('SIGINT', cleanup);
+      process.on('SIGTERM', cleanup);
+      process.on('exit', cleanup);
+
+      // Handle uncaught exceptions
+      process.on('uncaughtException', async (err) => {
+        console.error('[FABRIC:BITCOIN]', 'Uncaught exception:', err);
+        await cleanup();
+        process.exit(1);
+      });
+
+      // Handle unhandled promise rejections
+      process.on('unhandledRejection', async (reason, promise) => {
+        console.error('[FABRIC:BITCOIN]', 'Unhandled rejection at:', promise, 'reason:', reason);
+        await cleanup();
+        process.exit(1);
       });
 
       return child;

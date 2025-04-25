@@ -34,17 +34,66 @@ const {
 
 // Testing
 const assert = require('assert');
-const crypto = require('crypto');
 
-const Fabric = require('../');
 const Message = require('../types/message');
+const Bitcoin = require('../services/bitcoin');
+const Lightning = require('../services/lightning');
 
 const config = require('../settings/test');
 const handler = require('../functions/handleException');
-const Lightning = {} || require('../services/lightning');
-const LightningMessage = require('../types/lightning/message');
 
 describe('@fabric/core/services/lightning', function () {
+  // Store node references for cleanup
+  let bitcoinNode = null;
+  let lightningNode = null;
+  let bitcoin = null;
+  let lightning = null;
+
+  // Cleanup hook to ensure nodes are stopped
+  afterEach(async function () {
+    if (lightningNode) {
+      try {
+        lightningNode.kill();
+        await new Promise(resolve => {
+          lightningNode.on('close', () => resolve());
+        });
+      } catch (e) {
+        console.error('Error stopping Lightning node:', e);
+      }
+      lightningNode = null;
+    }
+
+    if (bitcoinNode) {
+      try {
+        bitcoinNode.kill();
+        await new Promise(resolve => {
+          bitcoinNode.on('close', () => resolve());
+        });
+      } catch (e) {
+        console.error('Error stopping Bitcoin node:', e);
+      }
+      bitcoinNode = null;
+    }
+
+    // Additional cleanup - remove test directories
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const testDirs = [
+        './stores/bitcoin-regtest',
+        './stores/lightning-regtest'
+      ];
+
+      for (const dir of testDirs) {
+        if (fs.existsSync(dir)) {
+          fs.rmSync(dir, { recursive: true, force: true });
+        }
+      }
+    } catch (e) {
+      console.error('Error cleaning up test directories:', e);
+    }
+  });
+
   describe('Lightning', function () {
     xit('can create an instance', async function provenance () {
       let lightning = new Lightning({
@@ -67,6 +116,59 @@ describe('@fabric/core/services/lightning', function () {
       assert.ok(lightning);
       assert.ok(message);
       assert.ok(prediction);
+    });
+
+    it('can create and start a local Lightning node', async function () {
+      this.timeout(30000); // Increase timeout to 30 seconds
+
+      try {
+        // First create and start a Bitcoin node
+        bitcoin = new Bitcoin({
+          name: 'TestBitcoinNode',
+          network: 'regtest',
+          fullnode: true,
+          debug: true
+        });
+
+        // Start the Bitcoin node
+        bitcoinNode = await bitcoin.createLocalNode();
+        assert.ok(bitcoinNode, 'Bitcoin node should be created');
+        assert.ok(bitcoinNode.pid, 'Bitcoin node should have a process ID');
+
+        // Wait for Bitcoin node to start
+        await new Promise(resolve => setTimeout(resolve, 10000));
+
+        // Now create the Lightning node using Bitcoin node's configuration
+        lightning = new Lightning({
+          name: 'TestLightningNode',
+          network: 'regtest',
+          fullnode: true,
+          debug: true,
+          bitcoin: {
+            datadir: bitcoin.settings.path,
+            username: bitcoin.settings.username,
+            password: bitcoin.settings.password,
+            host: '127.0.0.1',
+            port: bitcoin.settings.port
+          }
+        });
+
+        // Create the Lightning node
+        lightningNode = await lightning.createLocalNode();
+
+        // Verify the Lightning node was created
+        assert.ok(lightningNode, 'Lightning node should be created');
+        assert.ok(lightningNode.pid, 'Lightning node should have a process ID');
+
+        // Wait for Lightning node to start
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // Verify the Lightning node is running
+        assert.strictEqual(lightningNode.killed, false, 'Lightning node should be running');
+      } catch (error) {
+        console.error('Test failed:', error);
+        throw error; // Re-throw to fail the test
+      }
     });
   });
 });
