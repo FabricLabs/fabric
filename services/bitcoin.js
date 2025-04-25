@@ -642,7 +642,7 @@ class Bitcoin extends Service {
    * @param {PeerPacket} msg Message from peer.
    */
   async _handlePeerPacket (msg) {
-    console.log('[SERVICES:BITCOIN]', 'Peer sent packet:', msg);
+    console.debug('[SERVICES:BITCOIN]', 'Peer sent packet:', msg);
 
     switch (msg.cmd) {
       default:
@@ -771,36 +771,42 @@ class Bitcoin extends Service {
 
   async _loadWallet (name) {
     const actor = new Actor({ content: name });
-    const created = await this._makeRPCRequest('createwallet', [
-      actor.id,
-      false,
-      false, // blank (use sethdseed)
-      '', // passphrase
-      true, // avoid reuse
-      false, // descriptors
-    ]);
-
-    const wallet = await this._makeRPCRequest('loadwallet', [actor.id]);
-
-    /* if (created.error && wallet.error) {
-      return this.emit('error', `Could not create or load wallet: ${created.error || wallet.error}`);
-    } */
 
     try {
-      this.addresses = await this._listAddresses();
-    } catch (exception) {}
+      // Try to create wallet first
+      await this._makeRPCRequest('createwallet', [
+        actor.id,
+        false,
+        false, // blank (use sethdseed)
+        '', // passphrase
+        true, // avoid reuse
+        false, // descriptors
+      ]);
 
-    // console.log('addresses:', this.addresses);
-    if (this.addresses.error) this.addresses = [];
+      // Load the wallet
+      await this._makeRPCRequest('loadwallet', [actor.id]);
 
-    if (!this.addresses.length) {
-      const address = await this.getUnusedAddress();
-      this.addresses.push(address);
+      // Get addresses
+      try {
+        this.addresses = await this._listAddresses();
+      } catch (exception) {
+        if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Error listing addresses:', exception.message);
+        this.addresses = [];
+      }
+
+      // If no addresses, generate one
+      if (!this.addresses || !this.addresses.length) {
+        const address = await this.getUnusedAddress();
+        this.addresses = [address];
+      }
+
+      return {
+        id: actor.id
+      };
+    } catch (error) {
+      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Error loading wallet:', error.message);
+      throw error;
     }
-
-    return {
-      id: actor.id
-    };
   }
 
   /**
@@ -1043,17 +1049,12 @@ class Bitcoin extends Service {
   }
 
   async _makeRPCRequest (method, params = []) {
-    const self = this;
+    if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `RPC request: ${method}(${params})`);
     return new Promise((resolve, reject) => {
-      if (!self.rpc) {
-        return reject(new Error('RPC manager does not exist'));
-      }
-
+      if (!this.rpc) return reject(new Error('RPC manager does not exist'));
       try {
-        self.rpc.request(method, params, function responseHandler (err, response) {
-          if (err) {
-            return reject(new Error(err.error ? JSON.parse(JSON.parse(err.error)) : err));
-          }
+        this.rpc.request(method, params, function responseHandler (err, response) {
+          if (err) return reject(new Error(err.error ? JSON.parse(JSON.parse(err.error)) : err));
           return resolve(response.result);
         });
       } catch (exception) {
@@ -1077,9 +1078,15 @@ class Bitcoin extends Service {
   }
 
   async _requestBestBlockHash () {
-    const hash = await this._makeRPCRequest('getbestblockhash', []);
-    // this.emit('debug', `Got best block hash: ${hash}`);
-    return hash;
+    try {
+      const hash = await this._makeRPCRequest('getbestblockhash', []);
+      this.best = hash;
+      await this.commit();
+      return this.best;
+    } catch (error) {
+      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Error requesting best block hash:', error.message);
+      throw error;
+    }
   }
 
   async _requestBlockHeader (hash) {
@@ -1598,11 +1605,15 @@ class Bitcoin extends Service {
   }
 
   async _syncBestBlockHash () {
-    const best = await this._requestBestBlockHash();
-    if (best.error) return this.emit('error', `[${this.settings.name}] Could not make request to RPC host: ${best.error}`);
-    this.best = best;
-    await this.commit();
-    return this.best;
+    try {
+      const best = await this._requestBestBlockHash();
+      this.best = best;
+      await this.commit();
+      return this.best;
+    } catch (error) {
+      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Error syncing best block hash:', error.message);
+      throw error;
+    }
   }
 
   async _syncHeaders () {
@@ -1750,6 +1761,39 @@ class Bitcoin extends Service {
     return this;
   }
 
+  async _isBitcoindOnline () {
+    try {
+      // Try to get blockchain info - this will fail if bitcoind is not ready
+      await this._makeRPCRequest('getblockchaininfo', []);
+      return true;
+    } catch (error) {
+      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Bitcoind not yet ready:', error.message);
+      return false;
+    }
+  }
+
+  async _waitForBitcoind (maxAttempts = 30, initialDelay = 1000) {
+    let attempts = 0;
+    let delay = initialDelay;
+
+    while (attempts < maxAttempts) {
+      if (await this._isBitcoindOnline()) {
+        if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Bitcoind is online!');
+        return true;
+      }
+
+      attempts++;
+      if (attempts < maxAttempts) {
+        if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Waiting for bitcoind to come online (attempt ${attempts}/${maxAttempts})...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        // Exponential backoff with a max delay of 10 seconds
+        delay = Math.min(delay * 1.5, 10000);
+      }
+    }
+
+    throw new Error('Timed out waiting for bitcoind to come online');
+  }
+
   async createLocalNode () {
     if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Creating local node...');
     let datadir = './stores/bitcoin';
@@ -1812,9 +1856,11 @@ class Bitcoin extends Service {
     params.push(`-datadir=${datadir}`);
 
     // Start bitcoind
-    if (this.settings.fullnode) {
+    if (this.settings.managed) {
       // Ensure storage directory exists
       await mkdirp(datadir);
+
+      // Spawn process
       const child = children.spawn('bitcoind', params);
 
       // Store the child process reference
@@ -1835,6 +1881,13 @@ class Bitcoin extends Service {
         if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Bitcoin Core exited with code ' + code);
         this.emit('log', `[FABRIC:BITCOIN] Bitcoin Core exited with code ${code}`);
         this._nodeProcess = null;
+      });
+
+      child.on('error', (err) => {
+        console.error('[FABRIC:BITCOIN]', 'Bitcoin Core process error:', err);
+        this.emit('error', `[FABRIC:BITCOIN] Bitcoin Core process error: ${err}`);
+        // Attempt to restart the process
+        // this._restartBitcoind();
       });
 
       // Add cleanup handlers
@@ -1874,13 +1927,17 @@ class Bitcoin extends Service {
       // Initialize RPC client
       const config = {
         host: '127.0.0.1',
-        port: this.settings.rpcport
+        port: this.settings.rpcport,
+        timeout: 300000 // 5 minute timeout for heavy operations
       };
 
       const auth = `${this.settings.username}:${this.settings.password}`;
       config.headers = { Authorization: `Basic ${Buffer.from(auth, 'utf8').toString('base64')}` };
 
       this.rpc = jayson.http(config);
+
+      // Wait for bitcoind to be fully online
+      await this._waitForBitcoind();
 
       return child;
     } else {
@@ -1965,7 +2022,7 @@ class Bitcoin extends Service {
         this.settings.secure = (url.protocol === 'https:') ? true : false;
       }
 
-      const authority = `http${(this.settings.secure == true) ? 's': ''}://${this.settings.username}:${this.settings.password}@${this.settings.host}:${this.settings.port}`;
+      const authority = `http${(this.settings.secure == true) ? 's': ''}://${this.settings.username}:${this.settings.password}@${this.settings.host}:${this.settings.rpcport}`;
       const provider = new URL(authority);
       const config = {
         host: provider.hostname,
@@ -2051,6 +2108,16 @@ class Bitcoin extends Service {
 
     console.log('[FABRIC:BITCOIN]', 'Service stopped');
     return this;
+  }
+
+  // Add cleanup method
+  async cleanup () {
+    console.debug('[FABRIC:BITCOIN]', 'Cleaning up...');
+    await this.stop();
+    // Remove process event listeners
+    process.removeAllListeners('uncaughtException');
+    process.removeAllListeners('unhandledRejection');
+    console.debug('[FABRIC:BITCOIN]', 'Cleanup complete');
   }
 }
 
