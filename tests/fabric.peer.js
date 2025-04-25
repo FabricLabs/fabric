@@ -20,7 +20,10 @@ describe('@fabric/core/types/peer', function () {
     });
 
     it('can cleanly start and stop', async function () {
-      const peer = new Peer();
+      const peer = new Peer({
+        listen: true,
+        port: 7778  // Use a different port for Peer tests
+      });
 
       await peer.start();
       await peer.stop();

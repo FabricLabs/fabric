@@ -127,7 +127,8 @@ describe('@fabric/core/services/lightning', function () {
           name: 'TestBitcoinNode',
           network: 'regtest',
           fullnode: true,
-          debug: true
+          debug: true,
+          port: 20454  // Use a different port for Lightning tests
         });
 
         // Start the Bitcoin node
