@@ -67,6 +67,12 @@ jobs:
           mkdir -p stores/lightning/logs
           touch stores/lightning/logs/lightningd.log
         fi
+    - name: Build Lightning GRPC
+      uses: actions-rs/cargo@v1
+      with:
+        command: build
+        args: --quiet --bin cln-grpc
+        working-directory: lightning
     - name: Generate coverage report
       run: npm run report:coverage
     - name: Send coverage report
