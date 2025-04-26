@@ -34,6 +34,7 @@ jobs:
         toolchain: stable
         profile: minimal
         override: true
+        components: rustfmt, clippy
     - name: Install dependencies
       run: npm ci
     - name: Download and install bitcoind
@@ -68,11 +69,9 @@ jobs:
           touch stores/lightning/logs/lightningd.log
         fi
     - name: Build Lightning GRPC
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-        args: --quiet --bin cln-grpc
-        working-directory: lightning
+      run: |
+        cd lightning
+        cargo build --quiet --bin cln-grpc
     - name: Generate coverage report
       run: npm run report:coverage
     - name: Send coverage report
