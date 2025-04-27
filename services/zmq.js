@@ -24,12 +24,13 @@ class ZMQ extends Service {
     // Assign settings over the defaults
     // NOTE: switch to lodash.merge if clobbering defaults
     this.settings = Object.assign({
-      host: 'localhost',
+      host: '127.0.0.1',
       port: 29000,
       subscriptions: [
         'hashblock',
         'rawblock',
-        'sequence'
+        'hashtx',
+        'rawtx'
       ]
     }, settings);
 
@@ -47,9 +48,24 @@ class ZMQ extends Service {
     const self = this;
 
     this.socket = zeromq.socket('sub');
+
+    // Add connection event handlers
+    this.socket.on('connect', () => {
+      console.log(`[ZMQ] Connected to ${this.settings.host}:${this.settings.port}`);
+    });
+
+    this.socket.on('disconnect', () => {
+      console.log(`[ZMQ] Disconnected from ${this.settings.host}:${this.settings.port}`);
+    });
+
+    this.socket.on('error', (error) => {
+      console.error('[ZMQ] Error:', error);
+    });
+
     this.socket.connect(`tcp://${this.settings.host}:${this.settings.port}`);
     this.socket.on('message', function _handleSocketMessage (topic, message) {
       const path = `channels/${topic.toString()}`;
+      console.log(`[ZMQ] Received message on topic: ${topic.toString()}, length: ${message.length}`);
       self.emit('debug', `ZMQ message @ [${path}] (${message.length} bytes) ⇒ ${message.toString('hex')}`);
       self.emit('message', Message.fromVector(['Generic', {
         topic: topic.toString(),
@@ -74,7 +90,7 @@ class ZMQ extends Service {
    */
   async stop () {
     this.status = 'STOPPING';
-    this.socket.close();
+    if (this.socket) this.socket.close();
     this.status = 'STOPPED';
     return this;
   }

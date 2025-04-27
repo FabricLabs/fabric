@@ -1381,11 +1381,11 @@ class Wallet extends Service {
     const pair = this.key.deriveKeyPair(++this.index);
     const keypair = {
       index: this.index,
-      public: pair.public,
+      public: pair.publicKey,
       address: payments.p2pkh({
-        pubkey: Buffer.from(pair.public, 'hex')
+        pubkey: Buffer.from(pair.publicKey, 'hex'),
+        network: this.key.settings.networks[this.key.settings.network]
       })
-      // keyring: keyring
     };
 
     return keypair;

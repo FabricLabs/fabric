@@ -28,15 +28,8 @@ jobs:
       uses: actions/setup-python@v2
       with:
         python-version: '3.8'
-    - name: Install Rust toolchain
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        profile: minimal
-        override: true
-        components: rustfmt, clippy
     - name: Install dependencies
-      run: npm ci
+      run: npm run report:install
     - name: Download and install bitcoind
       run: |
         if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
@@ -45,28 +38,6 @@ jobs:
           sudo mv bitcoin-27.0/bin/bitcoind /usr/local/bin/
         else
           brew install bitcoin
-        fi
-    - name: Install Lightning
-      run: |
-        if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
-          sudo apt-get update
-          sudo apt-get install -y \
-            jq autoconf automake build-essential git libtool libsqlite3-dev libffi-dev \
-            python3 python3-pip net-tools zlib1g-dev libsodium-dev gettext protobuf-compiler
-          pip3 install --upgrade pip
-          pip3 install --user poetry mako grpcio-tools
-          git clone https://github.com/ElementsProject/lightning.git
-          cd lightning
-          ./configure
-          make
-          sudo make install
-          cd ..
-          mkdir -p stores/lightning/logs
-          touch stores/lightning/logs/lightningd.log
-        else
-          brew install lightningd
-          mkdir -p stores/lightning/logs
-          touch stores/lightning/logs/lightningd.log
         fi
     - name: Generate coverage report
       run: npm run report:coverage

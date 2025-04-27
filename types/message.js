@@ -87,6 +87,9 @@ class Message extends Actor {
 
     if (input.data && input.type) {
       this.type = input.type;
+      // Set the type field to the numeric constant
+      const typeCode = this.types[input.type] || GENERIC_MESSAGE_TYPE;
+      this.raw.type.writeUInt32BE(typeCode, 0);
 
       if (typeof input.data !== 'string') {
         this.data = JSON.stringify(input.data);
@@ -209,6 +212,27 @@ class Message extends Actor {
   }
 
   /**
+   * Signs the message using a specific key instead of the associated signer.
+   * @param {Object} key - The key object containing sign and pubkey methods
+   * @returns {Message} Signed message.
+   */
+  signWithKey (key) {
+    if (!this.header) throw new Error('No header property.');
+    if (!this.raw) throw new Error('No raw property.');
+    if (!key || typeof key.sign !== 'function') throw new Error('Invalid key provided');
+
+    const hash = Hash256.digest(this.raw.data);
+    const signature = key.sign(Buffer.from(hash, 'hex'));
+
+    this.raw.author.write(key.pubkey.toString('hex'), 'hex');
+    this.raw.signature.write(signature.toString('hex'), 'hex');
+
+    Object.freeze(this);
+
+    return this;
+  }
+
+  /**
    * Verify a message's signature.
    * @returns {Boolean} `true` if the signature is valid, `false` if not.
    */
@@ -287,24 +311,34 @@ class Message extends Actor {
 
   static fromRaw (input) {
     if (!input) return null;
-    if (!(input instanceof Buffer)) throw new Error('Input must be a buffer.');
-    // if (input.length < HEADER_SIZE) return null;
-    // if (input.length > MAX_MESSAGE_SIZE) return new Error('Input too large.');
+    // Convert various buffer-like inputs to Buffer
+    let buffer;
+    if (input instanceof Buffer) {
+      buffer = input;
+    } else if (input instanceof Uint8Array) {
+      buffer = Buffer.from(input.buffer);
+    } else if (input instanceof ArrayBuffer) {
+      buffer = Buffer.from(input);
+    } else if (input.buffer instanceof ArrayBuffer) {
+      buffer = Buffer.from(input.buffer);
+    } else {
+      throw new Error('Input must be a buffer or buffer-like object.');
+    }
 
     const message = new Message();
 
     message.raw = {
-      magic: input.slice(0, 4),
-      version: input.slice(4, 8),
-      parent: input.slice(8, 40),
-      author: input.slice(40, 72),
-      type: input.slice(72, 76),
-      size: input.slice(76, 80),
-      hash: input.slice(80, 112),
-      signature: input.slice(112, HEADER_SIZE)
+      magic: buffer.subarray(0, 4),
+      version: buffer.subarray(4, 8),
+      parent: buffer.subarray(8, 40),
+      author: buffer.subarray(40, 72),
+      type: buffer.subarray(72, 76),
+      size: buffer.subarray(76, 80),
+      hash: buffer.subarray(80, 112),
+      signature: buffer.subarray(112, HEADER_SIZE)
     };
 
-    message.data = input.slice(HEADER_SIZE);
+    message.data = buffer.subarray(HEADER_SIZE);
 
     return message;
   }
@@ -342,6 +376,7 @@ class Message extends Actor {
       'FabricLogMessage': LOG_MESSAGE_TYPE,
       'FabricServiceLogMessage': LOG_MESSAGE_TYPE,
       'GenericTransferQueue': GENERIC_LIST_TYPE,
+      'JSONBlob': GENERIC_MESSAGE_TYPE + 1,
       // TODO: document Generic type
       // P2P Commands
       'Generic': P2P_GENERIC,
@@ -419,6 +454,8 @@ Object.defineProperty(Message.prototype, 'type', {
     switch (code) {
       case GENERIC_MESSAGE_TYPE:
         return 'GenericMessage';
+      case GENERIC_MESSAGE_TYPE + 1:
+        return 'JSONBlob';
       case LOG_MESSAGE_TYPE:
         return 'GenericLogMessage';
       case GENERIC_LIST_TYPE:
@@ -469,10 +506,20 @@ Object.defineProperty(Message.prototype, 'type', {
   },
   set (value) {
     let code = this.types[value];
-    // Default to GenericMessage;
+    // Default to GenericMessage or JSONBlob based on content
     if (!code) {
       this.emit('warning', `Unknown message type: ${value}`);
-      code = this.types['GenericMessage'];
+      // Check if data is valid JSON
+      try {
+        if (this.data && JSON.parse(this.data)) {
+          code = this.types['JSONBlob'];
+          value = 'JSONBlob';
+        } else {
+          code = this.types['GenericMessage'];
+        }
+      } catch (e) {
+        code = this.types['GenericMessage'];
+      }
     }
 
     const padded = padDigits(code.toString(16), 8);

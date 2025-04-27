@@ -36,6 +36,7 @@ class Filesystem extends Actor {
       actors: {},
       content: {
         files: [],
+        parent: null,
         status: 'INITIALIZED'
       },
       documents: {}
@@ -154,8 +155,17 @@ class Filesystem extends Actor {
     const self = this;
     return new Promise((resolve, reject) => {
       try {
+        // Check for STATE file in .fabric directory
+        const statePath = path.join(self.path, '.fabric', 'STATE');
+        if (fs.existsSync(statePath)) {
+          const stateHex = fs.readFileSync(statePath, 'utf8');
+          const stateBuffer = Buffer.from(stateHex, 'hex');
+          const state = JSON.parse(stateBuffer.toString());
+          self._state.content = state;
+        }
+
         const files = fs.readdirSync(self.path);
-        self._state.content = { files };
+        self._state.content.files = files;
         self.commit();
 
         resolve(self);
@@ -203,7 +213,13 @@ class Filesystem extends Actor {
   }
 
   async start () {
+    console.debug('[FILESYSTEM]', 'Starting filesystem:', this.path);
     this._state.content.status = 'STARTING';
+
+    // Create .fabric directory
+    const fabricPath = path.join(this.path, '.fabric');
+    this.touchDir(fabricPath);
+
     this.touchDir(this.path); // ensure exists
     this.sync();
 
@@ -231,6 +247,52 @@ class Filesystem extends Actor {
     await this._loadFromDisk();
     this.commit();
     return this;
+  }
+
+  async addToChain (message) {
+    if (!message) throw new Error('Message is required');
+
+    // Convert message to buffer
+    const buffer = message.toBuffer();
+
+    // Convert buffer to hex
+    const hex = buffer.toString('hex');
+
+    // Write hex to CHAIN in .fabric directory
+    const chainPath = path.join(this.path, '.fabric', 'CHAIN');
+    const result = await this.writeFile(chainPath, hex);
+
+    if (!result) {
+      this.emit('error', 'Failed to write message to chain');
+      return false;
+    }
+
+    this.emit('chain:update', {
+      message: message,
+      hex: hex
+    });
+
+    return true;
+  }
+
+  commit () {
+    const state = new Actor(this.state);
+
+    // Store current state's hash as parent
+    this._state.content.parent = state.id;
+
+    // Write state to STATE file
+    const statePath = path.join(this.path, '.fabric', 'STATE');
+    const stateHex = Buffer.from(JSON.stringify(this.state)).toString('hex');
+    this.writeFile(statePath, stateHex);
+
+    const commit = Message.fromVector(['COMMIT', state]);
+
+    // Sign the commit message
+    const signature = commit.sign();
+    commit.signatures.push(signature);
+
+    this.emit('commit', commit);
   }
 }
 

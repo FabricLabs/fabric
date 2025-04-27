@@ -137,6 +137,24 @@ class Service extends Actor {
 
     // Keeps track of changes
     this.observer = null;
+    this.cache = {
+      _data: new Map(),
+      _ttl: new Map(),
+      get: async (key) => {
+        const now = Date.now();
+        const ttl = this.cache._ttl.get(key);
+        if (ttl && ttl < now) {
+          this.cache._data.delete(key);
+          this.cache._ttl.delete(key);
+          return null;
+        }
+        return this.cache._data.get(key);
+      },
+      set: async (key, value, ttl = 60000) => {
+        this.cache._data.set(key, value);
+        this.cache._ttl.set(key, Date.now() + ttl);
+      }
+    };
 
     /* if (this.settings.networking) {
       this.swarm = new Swarm(this.settings);
