@@ -42,8 +42,6 @@ const struct = require('struct');
 // Fabric Types
 const Actor = require('./actor');
 const Hash256 = require('./hash256');
-const Key = require('./key');
-// const Signer = require('./signer');
 
 // Function Definitions
 const padDigits = require('../functions/padDigits');
@@ -83,7 +81,6 @@ class Message extends Actor {
       this.signer = input.signer;
     } else {
       this.signer = null;
-      // this.signer = new Key();
     }
 
     if (input.data && input.type) {
@@ -194,43 +191,36 @@ class Message extends Actor {
   }
 
   /**
-   * Signs the message using the associated signer.
+   * Signs the message using a specific key.
+   * @param {Object} key Key object with private key and sign method.
+   * @param {String|Buffer} key.private Private key
+   * @param {String|Buffer} key.pubkey Public key
+   * @param {Function} key.sign Signing function
    * @returns {Message} Signed message.
-   */
-  sign () {
-    if (!this.header) throw new Error('No header property.');
-    if (!this.raw) throw new Error('No raw property.');
-
-    const hash = Hash256.digest(this.raw.data);
-    const signature = this.signer.sign(Buffer.from(hash, 'hex'));
-
-    this.raw.author.write(this.signer.pubkey.toString('hex'), 'hex');
-    this.raw.signature.write(signature.toString('hex'), 'hex');
-
-    Object.freeze(this);
-
-    return this;
-  }
-
-  /**
-   * Signs the message using a specific key instead of the associated signer.
-   * @param {Object} key - The key object containing sign and pubkey methods
-   * @returns {Message} Signed message.
+   * @throws {Error} If attempting to sign without a private key
    */
   signWithKey (key) {
-    if (!this.header) throw new Error('No header property.');
-    if (!this.raw) throw new Error('No raw property.');
-    if (!key || typeof key.sign !== 'function') throw new Error('Invalid key provided');
+    if (!key) throw new Error('No key provided.');
+    if (!key.private) throw new Error('Cannot sign message with public key only.');
+    if (!key.sign) throw new Error('Key object must implement sign method');
 
-    const hash = Hash256.digest(this.raw.data);
-    const signature = key.sign(Buffer.from(hash, 'hex'));
+    // Hash the message data according to BIP 340
+    const message = this.raw.data.toString('utf8');
+    const messageHash = Hash256.digest(message);
+    const signature = key.sign(messageHash);
 
     this.raw.author.write(key.pubkey.toString('hex'), 'hex');
     this.raw.signature.write(signature.toString('hex'), 'hex');
 
-    Object.freeze(this);
-
     return this;
+  }
+
+  sign () {
+    if (!this.signer) throw new Error('No signer available.');
+    if (!this.signer.private) throw new Error('Cannot sign message with public key only.');
+    if (!this.signer.sign) throw new Error('Signer must implement sign method');
+
+    return this.signWithKey(this.signer);
   }
 
   /**
@@ -241,26 +231,46 @@ class Message extends Actor {
     if (!this.header) throw new Error('No header property.');
     if (!this.raw) throw new Error('No raw property.');
     if (!this.signer) throw new Error('No signer available.');
+    if (!this.signer.verify) throw new Error('Signer must implement verify method');
 
     const hash = Hash256.digest(this.raw.data);
     const signature = this.raw.signature;
-    const verified = this.signer.verify(this.raw.author, hash, signature);
 
-    if (!verified) {
-      throw new Error('Message signature failed to verify.');
-    }
+    return this.verifyWithKey(this.signer);
+  }
 
-    return true;
+  /**
+   * Verify a message's signature with a specific key.
+   * @param {Object} key Key object with verify method.
+   * @param {Function} key.verify Verification function
+   * @returns {Boolean} `true` if the signature is valid, `false` if not.
+   */
+  verifyWithKey (key) {
+    if (!this.header) throw new Error('No header property.');
+    if (!this.raw) throw new Error('No raw property.');
+    if (!key) throw new Error('No key provided.');
+    if (!key.verify) throw new Error('Key object must implement verify method');
+
+    // Get the raw message data as a string
+    const message = this.raw.data.toString('utf8');
+    const messageHash = Hash256.digest(message);
+    const signature = this.raw.signature;
+
+    return key.verify(messageHash, signature);
   }
 
   /**
    * Sets the signer for the message.
-   * @param {Key} signer Key instance.
+   * @param {Object} key Key object with pubkey property.
+   * @param {String|Buffer} key.pubkey Public key
    * @returns {Message} Instance of the Message with associated signer.
    */
-  _setSigner (signer) {
-    // if (this.signer) throw new Error('Cannot override signer.');
-    this.signer = signer;
+  _setSigner (key) {
+    if (!key || !key.pubkey) {
+      throw new Error('Key object with pubkey is required');
+    }
+
+    this.signer = key;
     return this;
   }
 

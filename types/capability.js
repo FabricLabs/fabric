@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const m = require('macaroon');
 
 const Entity = require('./entity');
-const Signer = require('./signer');
+const Key = require('./key');
 const Witness = require('./witness');
 
 class Capability extends Entity {
@@ -22,7 +22,7 @@ class Capability extends Entity {
     };
 
     this.settings = Object.assign({}, this._state, settings);
-    this.signer = new Signer(this.settings);
+    this.key = settings.key || new Key(this.settings);
     this.witness = new Witness(this.settings);
 
     return this;
@@ -48,7 +48,7 @@ class Capability extends Entity {
 
     const json = JSON.stringify(token);
     const hash = crypto.createHash('sha256').update(Buffer.from(json, 'utf8')).digest('hex');
-    const signature = this.signer.sign(Buffer.from(hash, 'hex'));
+    const signature = this.key.sign(Buffer.from(hash, 'hex'));
 
     return {
       json: json,

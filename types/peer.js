@@ -256,7 +256,7 @@ class Peer extends Service {
     })];
 
     // Create offer message
-    const P2P_SESSION_OFFER = Message.fromVector(vector)._setSigner(this.key).sign();
+    const P2P_SESSION_OFFER = Message.fromVector(vector).signWithKey(this.key);
     const message = P2P_SESSION_OFFER.toBuffer();
     if (this.settings.debug) this.emit('debug', `session_offer ${P2P_SESSION_OFFER} ${message.toString('hex')}`);
 
@@ -486,7 +486,7 @@ class Peer extends Service {
           }
         })];
 
-        const PACKET_SESSION_START = Message.fromVector(vector)._setSigner(this.key).sign();
+        const PACKET_SESSION_START = Message.fromVector(vector).signWithKey(this.key);
         const reply = PACKET_SESSION_START.toBuffer();
         if (this.settings.debug) this.emit('debug', `session_start ${PACKET_SESSION_START} ${reply.toString('hex')}`);
         this.connections[origin.name]._writeFabric(reply, socket);
@@ -498,7 +498,8 @@ class Peer extends Service {
         break;
       case 'P2P_CHAT_MESSAGE':
         this.emit('chat', message);
-        const relay = Message.fromVector(['ChatMessage', JSON.stringify(message)])._setSigner(this.key);
+        const relay = Message.fromVector(['ChatMessage', JSON.stringify(message)]);
+        relay.signWithKey(this.key);
         // this.emit('debug', `Relayed chat message: ${JSON.stringify(relay.toGenericMessage())}`);
         this.relayFrom(origin.name, relay);
         break;
@@ -826,7 +827,7 @@ class Peer extends Service {
         host: this._externalIP,
         port: this.settings.port
       }
-    })])._setSigner(this.signer).sign();
+    })]).signWithKey(this.key);
     const announcement = PACKET_PEER_ANNOUNCE.toBuffer();
     // this.emit('debug', `Announcing peer: ${announcement.toString('utf8')}`);
     this.connections[origin.name]._writeFabric(announcement, socket);

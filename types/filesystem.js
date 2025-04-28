@@ -308,9 +308,12 @@ class Filesystem extends Actor {
     const commit = Message.fromVector(['COMMIT', state]);
     commit.signatures = commit.signatures || [];
 
-    // Sign the commit message using the configured key
-    const signature = this.key.sign(commit);
-    commit.signatures.push(signature);
+    // Only sign if we have a key with private key component
+    if (this.key && this.key.xprv) {
+      // Sign the commit message using the configured key
+      const signature = this.key.sign(commit);
+      commit.signatures.push(signature);
+    }
 
     this.emit('commit', commit);
   }

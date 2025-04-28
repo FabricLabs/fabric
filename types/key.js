@@ -10,7 +10,10 @@
 
 // Constants
 const {
-  FABRIC_KEY_DERIVATION_PATH
+  BITCOIN_KEY_DERIVATION_PATH,
+  FABRIC_KEY_DERIVATION_PATH,
+  LIGHTNING_KEY_DERIVATION_PATH,
+  BECH32M_CHARSET
 } = require('../constants');
 
 // Node Modules
@@ -32,7 +35,6 @@ const payments = require('bitcoinjs-lib/src/payments');
 // Fabric Dependencies
 const Actor = require('./actor');
 const Hash256 = require('./hash256');
-const Message = require('./message');
 
 // Simple Key Management
 const BIP32 = require('bip32').default;
@@ -78,7 +80,7 @@ class Key extends EventEmitter {
       passphrase: '',
       password: null,
       index: 0,
-      path: './',
+      path: null,
       cipher: {
         iv: {
           size: 16
@@ -126,8 +128,7 @@ class Key extends EventEmitter {
     }, input);
 
     this.bip32 = new BIP32(ecc);
-    this._bech32mCharset = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
-
+    this._bech32mCharset = BECH32M_CHARSET;
 
     this.clock = 0;
     this.master = null;
@@ -194,19 +195,10 @@ class Key extends EventEmitter {
       !this.settings.private &&
       !this.settings.xprv
     ) ? false : this.keypair.getPrivate();
-
     this.public = this.keypair.getPublic(true);
 
     // TODO: determine if this makes sense / needs to be private
     this.privkey = (this.private) ? this.private.toString() : null;
-
-    // STANDARD BEGINS HERE
-    this.pubkey = this.public.encodeCompressed('hex');
-
-    // BELOW THIS NON-STANDARD
-    // DO NOT USE IN PRODUCTION
-    // this.pubkeyhash = this.keyring.getKeyHash('hex');
-    this.pubkeyhash = '';
 
     // Configure Deterministic Random
     // WARNING: this will currently loop after 2^32 bits
@@ -505,14 +497,21 @@ class Key extends EventEmitter {
 
   _sign (msg) {
     if (typeof msg !== 'string') msg = JSON.stringify(msg);
-    const hmac = crypto.createHash('sha256').update(msg).digest('hex');
-    return this.keypair.sign(hmac).toDER();
+    return this.signSchnorr(msg);
   }
 
   _verify (msg, sig) {
-    const hmac = crypto.createHash('sha256').update(msg).digest('hex');
-    const valid = this.keypair.verify(hmac, sig);
-    return valid;
+    return this.verifySchnorr(msg, sig);
+  }
+
+  /**
+   * Verify a message's signature.
+   * @param {Buffer|String} msg - The message that was signed
+   * @param {Buffer|String} sig - The signature to verify
+   * @returns {Boolean} Whether the signature is valid
+   */
+  verify (msg, sig) {
+    return this._verify(msg, sig);
   }
 
   /**
@@ -580,9 +579,6 @@ class Key extends EventEmitter {
     // Store current state's hash
     this._state.hash = state.id;
 
-    const commit = Message.fromVector(['COMMIT', state]);
-    commit.signatures = commit.signatures || [];
-
     // Sign the commit message using the configured key
     const signature = this.sign(commit);
     commit.signatures.push(signature);
@@ -591,9 +587,9 @@ class Key extends EventEmitter {
   }
 
   /**
-   * Signs a message using the key's private key.
-   * @param {Buffer|String} msg - The message to sign
-   * @returns {Buffer} The signature
+   * Sign a buffer of data using BIP 340: https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki
+   * @param {Buffer} data Buffer of data to sign.
+   * @returns {Buffer} Resulting signature (64 bytes).
    */
   sign (msg) {
     return this._sign(msg);
@@ -633,6 +629,15 @@ class Key extends EventEmitter {
     this.commit();
 
     return this;
+  }
+
+  get pubkeyhash () {
+    const input = Buffer.from(this.pubkey, 'hex');
+    return Hash256.digest(input);
+  }
+
+  get pubkey () {
+    return this.public.encodeCompressed('hex');
   }
 }
 
