@@ -15,6 +15,7 @@ const {
 
 // Node Modules
 const crypto = require('crypto');
+const EventEmitter = require('events').EventEmitter;
 
 // Deterministic Random
 // TODO: remove
@@ -29,7 +30,9 @@ const ecc = require('tiny-secp256k1');
 const payments = require('bitcoinjs-lib/src/payments');
 
 // Fabric Dependencies
+const Actor = require('./actor');
 const Hash256 = require('./hash256');
+const Message = require('./message');
 
 // Simple Key Management
 const BIP32 = require('bip32').default;
@@ -41,7 +44,7 @@ const bip39 = require('bip39');
 /**
  * Represents a cryptographic key.
  */
-class Key {
+class Key extends EventEmitter {
   /**
    * Create an instance of a Fabric Key, either restoring from some known
    * values or from prior knowledge.  For instance, you can call `new Key()`
@@ -55,6 +58,9 @@ class Key {
    * @param {String} [settings.purpose=44] Constrains derivations to this space.
    */
   constructor (input = {}) {
+    super(input);
+
+    // Settings
     this.settings = Object.assign({
       debug: false,
       network: 'main',
@@ -72,6 +78,7 @@ class Key {
       passphrase: '',
       password: null,
       index: 0,
+      path: './',
       cipher: {
         iv: {
           size: 16
@@ -270,6 +277,10 @@ class Key {
       return self.bit().toString();
     }).join(''), 2).toString(16);
     return Buffer.from(bits.toString(16), 'hex');
+  }
+
+  get path () {
+    return this.settings.path;
   }
 
   get purpose () {
@@ -560,6 +571,23 @@ class Key {
 
     // Verify using tiny-secp256k1's Schnorr implementation
     return ecc.verifySchnorr(messageHash, xOnlyPubkey, sigBuffer);
+  }
+
+  commit () {
+    const reference = { ...this.state };
+    const state = new Actor(reference);
+
+    // Store current state's hash
+    this._state.hash = state.id;
+
+    const commit = Message.fromVector(['COMMIT', state]);
+    commit.signatures = commit.signatures || [];
+
+    // Sign the commit message using the configured key
+    const signature = this.sign(commit);
+    commit.signatures.push(signature);
+
+    this.emit('commit', commit);
   }
 
   /**
