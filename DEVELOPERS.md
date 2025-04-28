@@ -29,7 +29,7 @@ The `@fabric/core` library consists of a few key components:
 2. `components` — generic "interface" elements for describing Types to users.
 3. `resources` — Fabric-based definitions for `@fabric/core/types/resource`.
 4. `services` — Maintainer-accepted definitions of the `Service` class.  Yes, you can submit your own!
-5. `types` — a library of ES6 classes implementing various bits; `Actor`, `Channel`, `Oracle`, `Service`, and `Signer` are all interesting. :)
+5. `types` — a library of ES6 classes implementing various bits; `Actor`, `Channel`, `Oracle`, `Service`, and `Key` are all interesting. :)
 
 Let's go over each in more detail.
 
@@ -207,16 +207,16 @@ const Actor = require('@fabric/core/types/actor');
 Grab what you need, use what you take. :)
 
 ##### Fabric Types by Example
-Create and sign some string message using the built-in Schnorr `Signer` type:
+Create and sign some string message using the built-in Schnorr `Key` type:
 ```js
 const Hash256 = require('@fabric/core/types/hash256');
-const Signer = require('@fabric/core/types/signer');
+const Key = require('@fabric/core/types/key');
 const message = 'Hello, world!';
-const signer = new Signer();
-const signature = signer.sign(message);
+const key = new Key();
+const signature = key.sign(message);
 console.log('Message:', message);
 console.log('Message Hash:', Hash256.digest(message));
-console.log('Signer Pubkey:', signer.public);
+console.log('Key Pubkey:', key.public);
 console.log('Purported Signature:', message);
 ```
 

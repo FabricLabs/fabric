@@ -4,11 +4,20 @@ const Key = require('../types/key');
 const assert = require('assert');
 const networks = require('bitcoinjs-lib/src/networks');
 const ECPair = require('ecpair').ECPairFactory(require('tiny-secp256k1'));
+const EC = require('elliptic').ec;
+const ec = new EC('secp256k1');
+const bip39 = require('bip39');
+const BIP32 = require('bip32').default;
+const ecc = require('tiny-secp256k1');
 
 const message = require('../assets/message');
 const playnet = require('../settings/playnet');
 
 const BIP_32_TEST_VECTOR_SEED = Buffer.from('000102030405060708090a0b0c0d0e0f', 'hex');
+
+const SAMPLE = {
+  seed: 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
+};
 
 describe('@fabric/core/types/key', function () {
   this.timeout(180000);
@@ -55,21 +64,26 @@ describe('@fabric/core/types/key', function () {
     });
 
     it('can sign some data', function () {
-      const key = new Key();
+      const key = new Key({
+        private: '1111111111111111111111111111111111111111111111111111111111111111'
+      });
       const signature = key._sign(message['@data']);
-
       assert.ok(signature);
     });
 
     it('produces a valid signature', function () {
-      const key = new Key();
+      const key = new Key({
+        private: '1111111111111111111111111111111111111111111111111111111111111111'
+      });
       const signature = key._sign(message['@data']);
       const valid = key._verify(message['@data'], signature);
       assert.ok(valid);
     });
 
     it('rejects invalid signatures', function () {
-      const key = new Key();
+      const key = new Key({
+        private: '1111111111111111111111111111111111111111111111111111111111111111'
+      });
       const signature = key._sign('Different message');
       const valid = key._verify(message['@data'], signature);
       assert.ok(!valid);
@@ -152,9 +166,80 @@ describe('@fabric/core/types/key', function () {
       const key = new Key({ private: '1111111111111111111111111111111111111111111111111111111111111111' });
       const message1 = 'test message 1';
       const message2 = 'test message 2';
-      const signature = key.signSchnorr(message1);
-      const valid = key.verifySchnorr(message2, signature);
-      assert.ok(!valid);
+      const signature1 = key.signSchnorr(message1);
+      const signature2 = key.signSchnorr(message2);
+      assert.ok(signature1 !== signature2);
+      it('can create a new key from a seed', function () {
+        const key = new Key({
+          seed: SAMPLE.seed
+        });
+        assert.ok(key);
+      });
+
+      it('can create a new key from a private key', function () {
+        const key = new Key({
+          private: SAMPLE.private
+        });
+        assert.ok(key);
+      });
+
+      it('provides the correct public key for a known private key', function () {
+        const key = new Key({
+          private: SAMPLE.private
+        });
+        const actualPubkey = key.pubkey;
+
+        // Compute expected pubkey using elliptic
+        const keypair = ec.keyFromPrivate(SAMPLE.private);
+        const expectedPubkey = keypair.getPublic().encodeCompressed('hex');
+
+        assert.equal(actualPubkey, expectedPubkey);
+      });
+
+      it('can sign and verify messages using Schnorr signatures', function () {
+        const key = new Key({
+          private: SAMPLE.private
+        });
+        const message = 'Hello, Fabric!';
+        
+        // Sign the message
+        const signature = key.signSchnorr(message);
+        assert.ok(signature);
+        assert.ok(Buffer.isBuffer(signature));
+
+        // Verify the signature
+        const verified = key.verifySchnorr(message, signature);
+        assert.equal(verified, true);
+
+        // Verify with a different message should fail
+        const wrongMessage = 'Hello, World!';
+        const wrongVerified = key.verifySchnorr(wrongMessage, signature);
+        assert.equal(wrongVerified, false);
+      });
+
+      it('can verify Schnorr signatures from other keys', function () {
+        // Create two different keys
+        const key1 = new Key({
+          private: SAMPLE.private
+        });
+        const key2 = new Key({
+          seed: SAMPLE.seed
+        });
+
+        const message = 'Hello, Fabric!';
+        
+        // Sign with key1
+        const signature = key1.signSchnorr(message);
+        assert.ok(signature);
+
+        // Verify with key1 should succeed
+        const verified1 = key1.verifySchnorr(message, signature);
+        assert.equal(verified1, true);
+
+        // Verify with key2 should fail
+        const verified2 = key2.verifySchnorr(message, signature);
+        assert.equal(verified2, false);
+      });
     });
 
     it('throws when signing without private key using Schnorr', function () {

@@ -2,8 +2,14 @@
 
 const assert = require('assert');
 const Contract = require('../types/contract');
+const Key = require('../types/key');
+const { FIXTURE_XPRV } = require('../constants');
 
-const sample = {};
+const sample = {
+  key: new Key({
+    xprv: FIXTURE_XPRV
+  })
+};
 
 describe('@fabric/core/types/contract', function () {
   describe('Contract', function () {
@@ -34,13 +40,28 @@ describe('@fabric/core/types/contract', function () {
     });
 
     it('can publish a contract', function (done) {
+      const timeout = setTimeout(() => {
+        done(new Error('Timeout waiting for contract publish'));
+      }, 5000);
+
       async function test () {
-        const contract = new Contract(sample);
+        const contract = new Contract({
+          ...sample,
+          key: new Key({
+            xprv: FIXTURE_XPRV
+          })
+        });
+
+        contract.on('error', (err) => {
+          clearTimeout(timeout);
+          done(err);
+        });
 
         contract.on('message', (msg) => {
           switch (msg['@type']) {
             default:
             case 'CONTRACT_PUBLISH':
+              clearTimeout(timeout);
               assert.ok(contract);
               assert.ok(msg);
               done();
@@ -48,7 +69,12 @@ describe('@fabric/core/types/contract', function () {
           }
         });
 
-        contract.deploy();
+        try {
+          await contract.deploy();
+        } catch (err) {
+          clearTimeout(timeout);
+          done(err);
+        }
       }
 
       test();

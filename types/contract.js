@@ -15,7 +15,6 @@ const Actor = require('./actor');
 const Key = require('./key');
 const Message = require('./message');
 const Service = require('./service');
-const Signer = require('./signer');
 
 class Contract extends Service {
   constructor (settings = {}) {
@@ -43,7 +42,6 @@ class Contract extends Service {
 
     // tweaked pubkey
     this.key = new Key(this.settings.key);
-    this.signer = new Signer(this.settings.key);
     this.messages = {};
 
     this._inner = null;
@@ -139,7 +137,7 @@ class Contract extends Service {
       object: {
         input: input
       }
-    })])._setSigner(this.signer).sign().toBuffer();
+    })])._setSigner(this.key).sign().toBuffer();
 
     // Get hash of message
     const hash = crypto.createHash('sha256').update(PACKET_CONTRACT_GENESIS).digest('hex');

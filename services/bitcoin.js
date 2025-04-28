@@ -1454,7 +1454,7 @@ class Bitcoin extends Service {
     const scriptsig = bitcoin.payments.p2sh({
       redeem: {
         input: bitcoin.script.compile([
-          bitcoin.script.signature.encode(options.signer.sign(sighash), hashtype),
+          bitcoin.script.signature.encode(options.key.sign(sighash), hashtype),
           bitcoin.opcodes.OP_TRUE
         ]),
         output: options.script

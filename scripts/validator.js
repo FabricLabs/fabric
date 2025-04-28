@@ -17,9 +17,8 @@ const merge = require('lodash.merge');
 // const Chain = require('../types/chain');
 const Environment = require('../types/environment');
 const Federation = require('../types/federation');
-// const Key = require('../types/key');
+const Key = require('../types/key');
 const Machine = require('../types/machine');
-const Signer = require('../types/signer');
 
 // Fabric Services
 const Bitcoin = require('../services/bitcoin');
@@ -34,11 +33,11 @@ const FABRIC_XPUB = environment.readVariable('FABRIC_XPUB');
 
 console.log('seed:', FABRIC_SEED);
 
-const signer = new Signer({
+const key = new Key({
   private: FIXTURE_SEED
 });
 
-console.log('signer:', signer);
+console.log('key:', key);
 
 /* const bond = Buffer.from([
     0x51, // witness v1
@@ -88,12 +87,12 @@ async function main (input = {}) {
 
   // Anchor Chain
   const bitcoin = new Bitcoin();
-  const fixture = new Signer({ seed: FIXTURE_SEED });
+  const fixture = new Key({ seed: FIXTURE_SEED });
 
-  console.log('public:', fixture.key.public.encodeCompressed('hex'));
+  console.log('public:', fixture.public.encodeCompressed('hex'));
 
   federation.addMember({
-    public: fixture.key.public.encodeCompressed('hex')
+    public: fixture.public.encodeCompressed('hex')
   });
 
   federation.start();
