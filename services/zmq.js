@@ -65,7 +65,7 @@ class ZMQ extends Service {
     this.socket.connect(`tcp://${this.settings.host}:${this.settings.port}`);
     this.socket.on('message', function _handleSocketMessage (topic, message) {
       const path = `channels/${topic.toString()}`;
-      console.log(`[ZMQ] Received message on topic: ${topic.toString()}, length: ${message.length}`);
+      if (self.settings.debug) self.emit('debug', `[ZMQ] Received message on topic: ${topic.toString()}, length: ${message.length}`);
       self.emit('debug', `ZMQ message @ [${path}] (${message.length} bytes) ⇒ ${message.toString('hex')}`);
       self.emit('message', Message.fromVector(['Generic', {
         topic: topic.toString(),

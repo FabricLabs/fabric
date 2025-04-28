@@ -5,6 +5,7 @@ const merge = require('lodash.merge');
 const { run } = require('minsc');
 const crypto = require('crypto');
 const ecc = require('tiny-secp256k1');
+const bitcoin = require('bitcoinjs-lib');
 
 // Fabric Types
 const Contract = require('./contract');

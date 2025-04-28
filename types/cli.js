@@ -24,8 +24,11 @@ const Message = require('./message');
 const Hash256 = require('./hash256');
 const Identity = require('./identity');
 const Filesystem = require('./filesystem');
-const Signer = require('./signer');
 const Wallet = require('./wallet');
+const Key = require('./key');
+
+// Functions
+const truncateMiddle = require('../functions/truncateMiddle');
 
 // Services
 const Bitcoin = require('../services/bitcoin');
@@ -97,7 +100,7 @@ class CLI extends App {
     this.connections = {};
 
     this.fs = new Filesystem(this.settings.storage);
-    this.signer = null;
+    this.key = null;
 
     // State
     this._state = {
@@ -122,10 +125,10 @@ class CLI extends App {
     };
 
     this.attachWallet();
-
     this._loadPeer();
-    this._loadBitcoin();
-    if (this.settings.lightning.enable) this._loadLightning();
+
+    if (this.settings.bitcoin && this.settings.bitcoin.enable) this._loadBitcoin();
+    if (this.settings.lightning && this.settings.lightning.enable) this._loadLightning();
 
     this.identity = new Identity(this.settings);
 
@@ -135,7 +138,6 @@ class CLI extends App {
 
   assumeIdentity (key) {
     this.identity = new Identity(key);
-    this.signer = new Signer(key);
     return this;
   }
 
@@ -299,16 +301,18 @@ class CLI extends App {
 
     // ## Anchor handlers
     // ### Bitcoin
-    this.bitcoin.on('debug', this._handleBitcoinDebug.bind(this));
-    this.bitcoin.on('ready', this._handleBitcoinReady.bind(this));
-    this.bitcoin.on('error', this._handleBitcoinError.bind(this));
-    this.bitcoin.on('warning', this._handleBitcoinWarning.bind(this));
-    this.bitcoin.on('message', this._handleBitcoinMessage.bind(this));
-    this.bitcoin.on('log', this._handleBitcoinLog.bind(this));
-    this.bitcoin.on('commit', this._handleBitcoinCommit.bind(this));
-    this.bitcoin.on('sync', this._handleBitcoinSync.bind(this));
-    this.bitcoin.on('block', this._handleBitcoinBlock.bind(this));
-    this.bitcoin.on('transaction', this._handleBitcoinTransaction.bind(this));
+    if (this.settings.bitcoin && this.settings.bitcoin.enable) {
+      this.bitcoin.on('debug', this._handleBitcoinDebug.bind(this));
+      this.bitcoin.on('ready', this._handleBitcoinReady.bind(this));
+      this.bitcoin.on('error', this._handleBitcoinError.bind(this));
+      this.bitcoin.on('warning', this._handleBitcoinWarning.bind(this));
+      this.bitcoin.on('message', this._handleBitcoinMessage.bind(this));
+      this.bitcoin.on('log', this._handleBitcoinLog.bind(this));
+      this.bitcoin.on('commit', this._handleBitcoinCommit.bind(this));
+      this.bitcoin.on('sync', this._handleBitcoinSync.bind(this));
+      this.bitcoin.on('block', this._handleBitcoinBlock.bind(this));
+      this.bitcoin.on('transaction', this._handleBitcoinTransaction.bind(this));
+    }
 
     // #### Lightning
     if (this.settings.lightning && this.settings.lightning.enable) {
@@ -355,7 +359,7 @@ class CLI extends App {
 
     // ## Start Anchor Services
     // Start Bitcoin service
-    await this.bitcoin.start();
+    if (this.settings.bitcoin && this.settings.bitcoin.enable) await this.bitcoin.start();
 
     // Start Lightning service
     if (this.settings.lightning.enable) await this.lightning.start();
@@ -695,6 +699,7 @@ class CLI extends App {
   }
 
   async _handleBitcoinReady (bitcoin) {
+    this._appendMessage(`Bitcoin ready: ${JSON.stringify(bitcoin)}`);
     this._syncChainDisplay();
   }
 
@@ -875,7 +880,8 @@ class CLI extends App {
   }
 
   async _handlePeerChat (chat) {
-    this._appendMessage(`[@${chat.actor.id}]: ${chat.object.content}`);
+    const truncatedId = truncateMiddle(chat.actor.username || chat.actor.id, 10, '…', 5);
+    this._appendMessage(`[@${truncatedId}]: ${chat.object.content}`);
   }
 
   async _handlePeerUPNP (upnp) {
@@ -887,7 +893,8 @@ class CLI extends App {
       case 'ChatMessage':
         try {
           const parsed = JSON.parse(message.data);
-          this._appendMessage(`[@${parsed.actor}]: ${parsed.object.content}`);
+          const truncatedId = truncateMiddle(parsed.actor.username || parsed.actor, 10, '…', 5);
+          this._appendMessage(`[@${truncatedId}]: ${parsed.object.content}`);
         } catch (exception) {
           this._appendError(`Could not parse <ChatMessage> data (should be JSON): ${message.data}`);
         }
@@ -1007,8 +1014,13 @@ class CLI extends App {
         target: '/messages'
       };
 
-      const message = Message.fromVector(['ChatMessage', JSON.stringify(msg)])._setSigner(this.signer).sign();
-      // this._appendDebug(`Chat Message created (${message.data.length} bytes): ${message.data}`);
+      let message = Message.fromVector(['ChatMessage', JSON.stringify(msg)]);
+
+      // Only attempt to sign if we have a signer
+      if (this.key) {
+        message = message._setSigner(this.key).sign();
+      }
+
       self.setPane('messages');
 
       // Log own message
@@ -1216,6 +1228,7 @@ class CLI extends App {
 
   async _syncChainDisplay () {
     if (!this.settings.render) return this;
+    if (!this.settings.bitcoin.enable) return this;
 
     try {
       const height = await this.bitcoin._makeRPCRequest('getblockcount');
@@ -1309,6 +1322,25 @@ class CLI extends App {
     const balance = result.data.content + this.lightning.balances.spendable;
 
     return balance;
+  }
+
+  _allConfigured () {
+    if (
+      this._isBitcoinConfigured() &&
+      this._isLightningConfigured()
+    ) {
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  _isBitcoinConfigured () {
+    return (this.settings.bitcoin) ? true : false;
+  }
+
+  _isLightningConfigured () {
+    return (this.settings.lightning) ? true : false;
   }
 
   _syncConnectionList () {

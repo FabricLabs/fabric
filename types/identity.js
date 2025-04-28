@@ -4,7 +4,7 @@ const Actor = require('./actor');
 const Bech32 = require('./bech32');
 const Hash256 = require('./hash256');
 const Key = require('./key');
-const Signer = require('./signer');
+// const Signer = require('./signer');
 
 /**
  * Manage a network identity.
@@ -29,8 +29,8 @@ class Identity extends Actor {
       index: 0
     }, this.settings, settings);
 
-    this.key = new Key(this.settings);
-    this.signer = new Signer(this.settings);
+    this.key = new Key(this.settings.key);
+    // this.signer = new Signer(this.settings.key);
 
     this._state = {
       content: {
@@ -97,8 +97,7 @@ class Identity extends Actor {
    * @returns {Signature} Resulting signature (64 bytes).
    */
   sign (data = Buffer.from('', 'hex')) {
-    this._signAsSchnorr(data.toString('hex'));
-    return this._signature;
+    return this.key.sign(data);
   }
 
   /**
@@ -127,7 +126,7 @@ class Identity extends Actor {
 
   _signAsSchnorr (input) {
     if (!input) input = this.pubkeyhash;
-    this._signature = this.signer.sign(input)
+    this._signature = this.key.sign(input)
     return this;
   }
 }

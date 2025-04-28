@@ -8,6 +8,8 @@ const mkdirp = require('mkdirp');
 // Fabric Types
 const Actor = require('./actor');
 const Hash256 = require('./hash256');
+const Key = require('./key');
+const Message = require('./message');
 const Tree = require('./tree');
 
 /**
@@ -18,6 +20,7 @@ class Filesystem extends Actor {
    * Synchronize an {@link Actor} with a local filesystem.
    * @param {Object} [settings] Configuration for the Fabric filesystem.
    * @param {Object} [settings.path] Path of the local filesystem.
+   * @param {Object} [settings.key] Signing key for the filesystem.
    * @returns {Filesystem} Instance of the Fabric filesystem.
    */
   constructor (settings = {}) {
@@ -25,8 +28,16 @@ class Filesystem extends Actor {
 
     this.settings = Object.assign({
       encoding: 'utf8',
-      path: './'
+      path: './',
+      key: null
     }, this.settings, settings);
+
+    // Ensure path is absolute
+    this.settings.path = path.resolve(this.settings.path);
+
+    // Initialize signing key
+    this.key = this.settings.key ? new Key(this.settings.key) : new Key();
+    this.pubkey = this.key.pubkey;
 
     this.tree = new Tree({
       leaves: []
@@ -124,9 +135,17 @@ class Filesystem extends Actor {
    * @returns {Boolean} `true` if the write succeeded, `false` if it did not.
    */
   writeFile (name, content) {
-    const file = path.join(this.path, name);
+    // Ensure the file path is absolute and properly resolved
+    const file = path.resolve(this.path, name);
 
     try {
+      // Ensure parent directory exists
+      const parentDir = path.dirname(file);
+      if (!fs.existsSync(parentDir)) {
+        mkdirp.sync(parentDir);
+      }
+
+      this.touch(file);
       fs.writeFileSync(file, content);
       return true;
     } catch (exception) {
@@ -281,15 +300,16 @@ class Filesystem extends Actor {
     // Store current state's hash as parent
     this._state.content.parent = state.id;
 
-    // Write state to STATE file
-    const statePath = path.join(this.path, '.fabric', 'STATE');
+    // Write state to STATE file using absolute path
+    const statePath = path.resolve(this.path, '.fabric', 'STATE');
     const stateHex = Buffer.from(JSON.stringify(this.state)).toString('hex');
     this.writeFile(statePath, stateHex);
 
     const commit = Message.fromVector(['COMMIT', state]);
+    commit.signatures = commit.signatures || [];
 
-    // Sign the commit message
-    const signature = commit.sign();
+    // Sign the commit message using the configured key
+    const signature = this.key.sign(commit);
     commit.signatures.push(signature);
 
     this.emit('commit', commit);

@@ -42,6 +42,7 @@ const struct = require('struct');
 // Fabric Types
 const Actor = require('./actor');
 const Hash256 = require('./hash256');
+const Key = require('./key');
 // const Signer = require('./signer');
 
 // Function Definitions
@@ -82,7 +83,7 @@ class Message extends Actor {
       this.signer = input.signer;
     } else {
       this.signer = null;
-      // this.signer = new Signer();
+      // this.signer = new Key();
     }
 
     if (input.data && input.type) {
@@ -239,20 +240,14 @@ class Message extends Actor {
   verify () {
     if (!this.header) throw new Error('No header property.');
     if (!this.raw) throw new Error('No raw property.');
+    if (!this.signer) throw new Error('No signer available.');
 
-    // Compute sha256 hash of message body
     const hash = Hash256.digest(this.raw.data);
-
-    // If the raw header doesn't match the computed values, reject
-    if (this.raw.hash.toString('hex') !== hash.toString('hex')) {
-      return false;
-    }
-
     const signature = this.raw.signature;
     const verified = this.signer.verify(this.raw.author, hash, signature);
 
     if (!verified) {
-      throw new Error('Did not verify.');
+      throw new Error('Message signature failed to verify.');
     }
 
     return true;
@@ -260,7 +255,7 @@ class Message extends Actor {
 
   /**
    * Sets the signer for the message.
-   * @param {Signer} signer Signer instance.
+   * @param {Key} signer Key instance.
    * @returns {Message} Instance of the Message with associated signer.
    */
   _setSigner (signer) {
