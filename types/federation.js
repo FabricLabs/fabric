@@ -75,7 +75,6 @@ class Federation extends Contract {
       likely@$federation || ($timeout && $recovery)
     `;
 
-    console.log('contract:', contract);
     return contract.trim();
   }
 
@@ -100,8 +99,10 @@ class Federation extends Contract {
     // Store the member's key for signing
     this._state.content.keys = this._state.content.keys || {};
     this._state.content.keys[pubkey] = key;
-    console.log('consensus validators:', this._state.content.validators);
-    console.log('contract for step 0:', this.contractForStep(0));
+
+    // console.log('consensus validators:', this._state.content.validators);
+    // console.log('contract for step 0:', this.contractForStep(0));
+
     this.commit();
   }
 

@@ -102,9 +102,9 @@
 ./types/circuit.js:    // TODO: generate polynomial for circuit
 ./types/contract.js:    // TODO: parse on-chain transaction for update to contract balance
 ./types/bitcoin/transaction.js:// TODO: PSBTs
-./types/bitcoin/transaction.js:    return `<hash>`; // TODO: real hash
+./types/bitcoin/transaction.js:    return '<hash>'; // TODO: real hash
 ./types/bitcoin/transaction.js:    return '<fabricID>'; // TODO: Fabric ID
-./types/bitcoin/transaction.js:    return `<txID>`; // TODO: bitcoin txid
+./types/bitcoin/transaction.js:    return '<txID>'; // TODO: bitcoin txid
 ./types/hash256.js:  // TODO: document `hash256.value`
 ./types/bond.js:      content: Buffer.alloc(4) // TODO: Bitcoin encoded values?
 ./types/actor.js:    // TODO: encourage use of `state` over `_state`
@@ -122,11 +122,8 @@
 ./types/router.js:// TODO: re-define this class for Fabric messages
 ./types/router.js:            // TODO: remove this.fabric.plugins call
 ./types/mempool.js:    // TODO: compare target.id and entity.id
-./types/wallet.js:    // TODO: enable wordlist translations
-./types/wallet.js:    // TODO: remove these
 ./types/wallet.js:        // TODO: export this.logs
 ./types/wallet.js:        // TODO: reduce to C mem equivalent
-./types/wallet.js:    // TODO: new Key() here, then use key.export()
 ./types/wallet.js:    // TODO: bind @fabric/core/services/bitcoin to addresses on wallet...
 ./types/wallet.js:    // TODO: update channels
 ./types/wallet.js:    // TODO: parse as {@link Message}
@@ -139,15 +136,10 @@
 ./types/wallet.js:    // TODO: use the MTX to select outputs
 ./types/wallet.js:    // TODO: use Fabric.Script
 ./types/wallet.js:    // TODO: remove short-circuit
-./types/wallet.js:    // TODO: complete order construction
-./types/wallet.js:      // TODO: should be split parts
-./types/wallet.js:    // TODO: remove short-circuit
 ./types/wallet.js:      // TODO: replace this with a randomly-generated input
 ./types/wallet.js:    // TODO: remove short-circuit
 ./types/wallet.js:    // TODO: complete order construction
 ./types/wallet.js:      // TODO: should be split parts
-./types/wallet.js:    // TODO: labeled keypairs
-./types/wallet.js:      rate: 10000, // TODO: fee calculation
 ./types/wallet.js:    // TODO: labeled keypairs
 ./types/wallet.js:      rate: 10000, // TODO: fee calculation
 ./types/wallet.js:    // TODO: return a full object for Fabric
@@ -175,7 +167,6 @@
 ./types/cli.js:const pointer = require('json-pointer'); // TODO: move uses to App
 ./types/cli.js:const monitor = require('fast-json-patch'); // TODO: move uses to App
 ./types/cli.js:// TODO: use Jade to render pre-registered components
-./types/cli.js:        mode: 'rpc', // TODO: change name of mode to `rest`?
 ./types/cli.js:    // TODO: ZMQ
 ./types/cli.js:    // TODO: enable
 ./types/cli.js:    // TODO: sign
@@ -246,7 +237,6 @@
 ./tests/fabric.router.js:// TODO: test class/function middleware
 ./tests/fabric.stack.js:      // TODO: move to constants, verify
 ./tests/fabric.stack.js:      // TODO: migrate to Stack
-./tests/fabric.wallet.js:        // TODO: replace with fixture
 ./tests/fixtures/lightning.js:// TODO: test same as before
 ./DEVELOPERS.md:All agreements in Fabric are represented as well-formed descriptions of **Resources**<sup>[TODO: link here]</sup> — a term we use to describe a standardized service a peer might offer.  Each node in the Fabric network decides which resources they provide (determining which contracts they run), and what prices they accept for participation.  This, in concert with the bidders requesting these resources, forms the "Information Market" discussed in Fabric's whitepaper.
 ./DEVELOPERS.md:    // TODO: make optional

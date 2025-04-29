@@ -92,6 +92,91 @@ class Circuit extends Actor {
     this.methods[name] = method;
   }
 
+  fromBristolFashion () {
+    // Convert from Bristol Fashion format to internal circuit representation
+    const lines = this.dot.split('\n');
+    const [numGates, numWires, numInputWires, numOutputWires] = lines[0].split(' ').map(Number);
+
+    this.gates = [];
+    this.wires = [];
+    this.inputWires = numInputWires;
+    this.outputWires = numOutputWires;
+
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+
+      const parts = line.split(' ');
+      if (parts.length < 4) continue;
+
+      const numInputs = parseInt(parts[0]);
+      const numOutputs = parseInt(parts[1]);
+      const gate = {
+        type: parts[parts.length - 1],
+        numInputs: numInputs,
+        numOutputs: numOutputs,
+        inputs: parts.slice(2, 2 + numInputs).map(Number),
+        outputs: parts.slice(2 + numInputs, 2 + numInputs + numOutputs).map(Number)
+      };
+
+      this.gates.push(gate);
+    }
+
+    return this;
+  }
+
+  fromBristolFormat () {
+    // Convert from Bristol Format to internal circuit representation
+    const lines = this.dot.split('\n');
+    const [numGates, numWires] = lines[0].split(' ').map(Number);
+
+    this.gates = [];
+    this.wires = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+
+      const parts = line.split(' ');
+      if (parts.length < 3) continue;
+
+      const gate = {
+        type: parts[parts.length - 1],
+        inputs: parts.slice(0, -1).map(Number)
+      };
+
+      this.gates.push(gate);
+    }
+
+    return this;
+  }
+
+  toBristolFashion () {
+    // Convert internal circuit representation to Bristol Fashion format
+    let output = `${this.gates.length} ${this.wires.length} ${this.inputWires || 0} ${this.outputWires || 0}\n`;
+
+    for (const gate of this.gates) {
+      const numInputs = gate.numInputs || gate.inputs.length;
+      const numOutputs = gate.numOutputs || 1;
+      const inputs = gate.inputs.join(' ');
+      const outputs = gate.outputs ? gate.outputs.join(' ') : '';
+      output += `${numInputs} ${numOutputs} ${inputs} ${outputs} ${gate.type}\n`;
+    }
+
+    return output;
+  }
+
+  toBristolFormat () {
+    // Convert internal circuit representation to Bristol Format
+    let output = `${this.gates.length} ${this.wires.length}\n`;
+
+    for (const gate of this.gates) {
+      output += `${gate.inputs.join(' ')} ${gate.type}\n`;
+    }
+
+    return output;
+  }
+
   toObject () {
     return parser(this.dot);
   }

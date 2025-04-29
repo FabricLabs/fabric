@@ -3450,12 +3450,9 @@ Manage keys and track their balances.
 * [Wallet](#Wallet) : <code>Object</code>
     * [new Wallet([settings])](#new_Wallet_new)
     * _instance_
-        * [.loadKey(keypair)](#Wallet+loadKey) ⇒ [<code>Wallet</code>](#Wallet)
         * [.start()](#Wallet+start)
-        * [._load(settings)](#Wallet+_load)
         * [.getAddressForScript(script)](#Wallet+getAddressForScript)
         * [.getAddressFromRedeemScript(redeemScript)](#Wallet+getAddressFromRedeemScript)
-        * [.createPricedOrder(order)](#Wallet+createPricedOrder)
         * [._sign(tx)](#Wallet+_sign)
         * [._createCrowdfund(fund)](#Wallet+_createCrowdfund)
         * [._getSwapInputScript(redeemScript, secret)](#Wallet+_getSwapInputScript)
@@ -3479,37 +3476,12 @@ Create an instance of a [Wallet](#Wallet).
 | [settings.key] | <code>Object</code> |  | Key to restore from. |
 | [settings.key.seed] | <code>String</code> |  | Mnemonic seed for a restored wallet. |
 
-<a name="Wallet+loadKey"></a>
-
-### wallet.loadKey(keypair) ⇒ [<code>Wallet</code>](#Wallet)
-Import a key to the wallet.
-
-**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
-**Returns**: [<code>Wallet</code>](#Wallet) - Instance of the Wallet.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| keypair | <code>Object</code> | Keypair. |
-| keypair.public | <code>Buffer</code> | Public key. |
-| [keypair.private] | <code>Buffer</code> | Private key. |
-
 <a name="Wallet+start"></a>
 
 ### wallet.start()
 Start the wallet, including listening for transactions.
 
 **Kind**: instance method of [<code>Wallet</code>](#Wallet)  
-<a name="Wallet+_load"></a>
-
-### wallet.\_load(settings)
-Initialize the wallet, including keys and addresses.
-
-**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| settings | <code>Object</code> | Settings to load. |
-
 <a name="Wallet+getAddressForScript"></a>
 
 ### wallet.getAddressForScript(script)
@@ -3531,19 +3503,6 @@ Generate a [BitcoinAddress](BitcoinAddress) for the supplied [BitcoinScript](Bit
 | Param | Type |
 | --- | --- |
 | redeemScript | <code>BitcoinScript</code> | 
-
-<a name="Wallet+createPricedOrder"></a>
-
-### wallet.createPricedOrder(order)
-Create a priced order.
-
-**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
-
-| Param | Type |
-| --- | --- |
-| order | <code>Object</code> | 
-| order.asset | <code>Object</code> | 
-| order.amount | <code>Object</code> | 
 
 <a name="Wallet+_sign"></a>
 

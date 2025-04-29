@@ -879,7 +879,7 @@ class Bitcoin extends Service {
   }
 
   async _startZMQ () {
-    if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'Starting ZMQ...');
+    if (this.settings.verbosity >= 5) console.debug('[AUDIT]', 'Starting ZMQ service...');
     this.zmq.on('log', (msg) => {
       if (this.settings.debug) console.log('[ZMQ]', msg);
     });
@@ -901,7 +901,7 @@ class Bitcoin extends Service {
         return;
       }
 
-      if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'ZMQ Received:', msg);
+      if (this.settings.debug) this.emit('debug', '[ZMQ] Received message on topic:', topic, 'Message length:', content.length);
 
       try {
         switch (topic) {
@@ -2222,7 +2222,7 @@ class Bitcoin extends Service {
       this._nodeProcess = null;
     }
 
-    console.log('[FABRIC:BITCOIN]', 'Service stopped');
+    if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Service stopped');
     return this;
   }
 

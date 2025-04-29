@@ -30,17 +30,21 @@ class Identity extends Actor {
     }, settings);
 
     // Initialize key
-    this.key = new Key({
-      seed: this.settings.seed,
-      xprv: this.settings.xprv,
-      passphrase: this.settings.passphrase
-    });
+    if (settings instanceof Key) {
+      this.key = settings;
+    } else {
+      this.key = new Key({
+        seed: this.settings.seed,
+        xprv: this.settings.xprv,
+        passphrase: this.settings.passphrase
+      });
 
-    // Ensure we have a private key
-    if (!this.key.xprv) {
-      // Generate a new key if none provided
-      this.key = new Key();
-      this.settings.xprv = this.key.xprv;
+      // Ensure we have a private key
+      if (!this.key.xprv) {
+        // Generate a new key if none provided
+        this.key = new Key();
+        this.settings.xprv = this.key.xprv;
+      }
     }
 
     this._state = {
@@ -110,15 +114,10 @@ class Identity extends Actor {
    * @returns {String} Public identity.
    */
   toString () {
-    if (this.settings.debug) console.log('master key:', this.key.master.publicKey);
-    if (this.settings.debug) console.log('pubkey for id:', this.pubkey);
-
     const bech32 = new Bech32({
       hrp: 'id',
       content: this.pubkeyhash
     });
-
-    if (this.settings.debug) console.log('bech32:', bech32);
 
     return bech32.toString();
   }

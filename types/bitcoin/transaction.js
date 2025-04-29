@@ -4,7 +4,6 @@ const crypto = require('crypto');
 
 const Actor = require('../actor');
 const Key = require('../key');
-const Transaction = require('../transaction');
 // TODO: PSBTs
 
 class BitcoinTransaction extends Actor {
@@ -33,7 +32,7 @@ class BitcoinTransaction extends Actor {
   }
 
   get hash () {
-    return `<hash>`; // TODO: real hash
+    return '<hash>'; // TODO: real hash
   }
 
   get id () {
@@ -41,7 +40,7 @@ class BitcoinTransaction extends Actor {
   }
 
   get txid () {
-    return `<txID>`; // TODO: bitcoin txid
+    return '<txID>'; // TODO: bitcoin txid
   }
 
   signAsHolder () {

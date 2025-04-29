@@ -64,13 +64,13 @@ class CLI extends App {
       debug: true,
       ephemeral: false,
       listen: false,
-      peering: true, // set to true to start Peer
+      peering: true,
       render: true,
       services: [],
       network: 'regtest',
       interval: 1000,
       bitcoin: {
-        mode: 'rpc', // TODO: change name of mode to `rest`?
+        mode: 'rpc',
         host: 'localhost',
         port: 8443,
         secure: false
@@ -81,8 +81,26 @@ class CLI extends App {
       },
       storage: {
         path: `${process.env.HOME}/.fabric/console`
-      }
+      },
+      // Add key settings
+      seed: null,
+      xprv: null,
+      passphrase: null
     }, settings);
+
+    // Initialize key with proper settings
+    this.key = new Key({
+      seed: this.settings.seed,
+      xprv: this.settings.xprv,
+      passphrase: this.settings.passphrase,
+      network: this.settings.network
+    });
+
+    // Ensure key has required properties
+    if (!this.key.private || !this.key.public || !this.key.sign) {
+      // Generate new key if properties are missing
+      this.key = new Key();
+    }
 
     // Properties
     this.screen = null;
@@ -100,7 +118,6 @@ class CLI extends App {
     this.connections = {};
 
     this.fs = new Filesystem(this.settings.storage);
-    this.key = null;
 
     // State
     this._state = {
@@ -125,12 +142,11 @@ class CLI extends App {
     };
 
     this.attachWallet();
+    this.identity = new Identity(this.settings);
     this._loadPeer();
 
     if (this.settings.bitcoin && this.settings.bitcoin.enable) this._loadBitcoin();
     if (this.settings.lightning && this.settings.lightning.enable) this._loadLightning();
-
-    this.identity = new Identity(this.settings);
 
     // Chainable
     return this;
@@ -226,9 +242,7 @@ class CLI extends App {
     this._registerCommand('channels', this._handleChannelRequest);
     this._registerCommand('identity', this._handleIdentityRequest);
     this._registerCommand('generate', this._handleGenerateRequest);
-    this._registerCommand('unspent', this._handleUnspentRequest);
-    this._registerCommand('receive', this._handleReceiveAddressRequest);
-    this._registerCommand('balance', this._handleBalanceRequest);
+    this._registerCommand('wallet', this._handleWalletCommand);
     this._registerCommand('service', this._handleServiceCommand);
     this._registerCommand('publish', this._handlePublishCommand);
     this._registerCommand('request', this._handleRequestCommand);
@@ -731,6 +745,7 @@ class CLI extends App {
     }
 
     this._syncPeerList();
+    this._syncConnectionList();
   }
 
   async _handleConnectionError (msg) {
@@ -1015,11 +1030,7 @@ class CLI extends App {
       };
 
       let message = Message.fromVector(['ChatMessage', JSON.stringify(msg)]);
-
-      // Only attempt to sign if we have a signer
-      if (this.key) {
-        message = message._setSigner(this.key).sign();
-      }
+      message = message.signWithKey(this.key);
 
       self.setPane('messages');
 
@@ -1637,10 +1648,10 @@ class CLI extends App {
         }
       },
       commands: {
-        'Help': {
+        'Home': {
           keys: ['f1'],
           callback: function () {
-            this.setPane('help');
+            this.setPane('home');
           }.bind(this)
         },
         'Console': {
@@ -1958,6 +1969,9 @@ class CLI extends App {
       // self._appendMessage('10 seconds have passed.');
       // self.bitcoin.generateBlock();
     }, 10000);
+
+    // Enable mouse support
+    self.screen.program.enableMouse();
   }
 
   tableDataFor (input = [], exclusions = []) {
@@ -1975,6 +1989,31 @@ class CLI extends App {
     });
 
     return [ keys ].concat(entries);
+  }
+
+  async _handleWalletCommand (params) {
+    if (!params[1]) {
+      this._appendMessage('Available wallet commands:');
+      this._appendMessage('  wallet balance - Show current balance');
+      this._appendMessage('  wallet send <address> <amount> - Send funds to address');
+      this._appendMessage('  wallet receive - Generate a new receive address');
+      this._appendMessage('  wallet unspent - List unspent outputs');
+      return false;
+    }
+
+    switch (params[1]) {
+      case 'balance':
+        return this._handleBalanceRequest(params);
+      case 'send':
+        return this._handleSendRequest(params);
+      case 'receive':
+        return this._handleReceiveAddressRequest(params);
+      case 'unspent':
+        return this._handleUnspentRequest(params);
+      default:
+        this._appendError(`Unknown wallet command: ${params[1]}`);
+        return false;
+    }
   }
 }
 

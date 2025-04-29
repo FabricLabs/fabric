@@ -1,0 +1,20 @@
+{
+  "globals": [
+    "describe",
+    "it",
+    "before",
+    "after",
+    "beforeEach",
+    "afterEach"
+  ],
+  "rules": {
+    "no-trailing-spaces": "error",
+    "no-multiple-empty-lines": ["error", { "max": 1 }],
+    "no-empty-lines-with-spaces": "error"
+  },
+  "ignore": [
+    "node_modules/**",
+    "coverage/**",
+    "reports/**"
+  ]
+} 

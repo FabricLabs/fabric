@@ -3,7 +3,8 @@
   "version": "0.1.0-RC1",
   "description": "Experimental peer-to-peer framework.",
   "main": "types/fabric.js",
-  "module": "index.js",
+  "module": "types/fabric.mjs",
+  "types": "types/fabric.d.ts",
   "bin": {
     "fabric": "scripts/cli.js"
   },
@@ -31,6 +32,8 @@
     "examples": "npm run make:examples && http-server -p 8000 examples",
     "keygen": "node scripts/keygen.js",
     "lint:fix": "npx semistandard --fix",
+    "lint:types": "npx semistandard types/**/*.js",
+    "lint:types:fix": "npx semistandard --fix types/**/*.js",
     "lint": "npx semistandard",
     "local": "npm run build && http-server -p 8000 ./assets",
     "make:all": "npm run make:service && npm run make:app && npm run make:lib && npm run make:dev # && npm run make:binary",
@@ -164,5 +167,23 @@
       "logs/",
       "stores/"
     ]
+  },
+  "exports": {
+    ".": {
+      "require": "./types/fabric.js",
+      "import": "./types/fabric.mjs"
+    },
+    "./constants": {
+      "require": "./constants.js"
+    },
+    "./types/*": {
+      "require": "./types/*.js"
+    },
+    "./services/*": {
+      "require": "./services/*.js"
+    },
+    "./functions/*": {
+      "require": "./functions/*.js"
+    }
   }
 }

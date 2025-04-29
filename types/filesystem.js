@@ -63,21 +63,25 @@ class Filesystem extends Actor {
   get hashes () {
     const self = this;
     return self.files.map(f => {
-      return Hash256.digest(self.readFile(f));
-    });
+      const content = self.readFile(f);
+      if (!content) return null;
+      return Hash256.digest(content);
+    }).filter(hash => hash !== null);
   }
 
   get files () {
-    return this.ls();
+    return this.ls().filter(file => file !== '.fabric');
   }
 
   get leaves () {
     const self = this;
     return self.files.map(f => {
-      const hash = Hash256.digest(self.readFile(f));
+      const content = self.readFile(f);
+      if (!content) return null;
+      const hash = Hash256.digest(content);
       const key = [f, hash].join(':');
       return Hash256.digest(key);
-    });
+    }).filter(leaf => leaf !== null);
   }
 
   get documents () {
@@ -125,6 +129,10 @@ class Filesystem extends Actor {
   readFile (name) {
     const file = path.join(this.path, name);
     if (!fs.existsSync(file)) return null;
+
+    // Skip directories
+    if (fs.statSync(file).isDirectory()) return null;
+
     return fs.readFileSync(file);
   }
 
@@ -147,6 +155,10 @@ class Filesystem extends Actor {
 
       this.touch(file);
       fs.writeFileSync(file, content);
+
+      // Emit file update event
+      this._handleDiskChange('change', name);
+
       return true;
     } catch (exception) {
       this.emit('error', `Could not write file: ${content} ${exception}`);
@@ -184,7 +196,7 @@ class Filesystem extends Actor {
         }
 
         const files = fs.readdirSync(self.path);
-        self._state.content.files = files;
+        self._state.content.files = files.filter(file => file !== '.fabric');
         self.commit();
 
         resolve(self);
@@ -211,18 +223,18 @@ class Filesystem extends Actor {
   }
 
   async publish (name, document) {
-    if (typeof document !== 'string') {
-      document = JSON.stringify(document, null, '  ');
-    }
-
+    const content = typeof document === 'string' ? document : JSON.stringify(document, null, '  ');
     const actor = new Actor(document);
-    const hash = Hash256.digest(document);
+    const hash = Hash256.digest(content);
 
+    // Update state
     this._state.actors[actor.id] = actor;
-    this._state.documents[hash] = document;
+    this._state.documents[hash] = content;
 
-    this.writeFile(name, document);
+    // Write the file last, after state is set
+    this.writeFile(name, content);
 
+    // Ensure changes are persisted
     await this.sync();
 
     return {
@@ -232,7 +244,7 @@ class Filesystem extends Actor {
   }
 
   async start () {
-    console.debug('[FILESYSTEM]', 'Starting filesystem:', this.path);
+    if (this.settings.debug) console.debug('[FILESYSTEM]', 'Starting filesystem:', this.path);
     this._state.content.status = 'STARTING';
 
     // Create .fabric directory
