@@ -92,6 +92,7 @@ class Fabric extends Service {
     };
   }
 
+  static get Actor() { return Actor; }
   // static get Application () { return Application; }
   static get Block () { return Block; }
   static get Chain () { return Chain; }
