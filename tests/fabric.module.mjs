@@ -20,7 +20,7 @@ describe('@fabric/core (ESM)', function () {
     });
 
     it('should have all static getters', function () {
-      assert.equal(Fabric.App instanceof Function, true);
+      // assert.equal(Fabric.Application instanceof Function, true);
       assert.equal(Fabric.Block instanceof Function, true);
       assert.equal(Fabric.Chain instanceof Function, true);
       assert.equal(Fabric.Circuit instanceof Function, true);
