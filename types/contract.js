@@ -15,7 +15,6 @@ const Actor = require('./actor');
 const Key = require('./key');
 const Message = require('./message');
 const Service = require('./service');
-const Signer = require('./signer');
 
 class Contract extends Service {
   constructor (settings = {}) {
@@ -43,7 +42,6 @@ class Contract extends Service {
 
     // tweaked pubkey
     this.key = new Key(this.settings.key);
-    this.signer = new Signer(this.settings.key);
     this.messages = {};
 
     this._inner = null;
@@ -139,7 +137,7 @@ class Contract extends Service {
       object: {
         input: input
       }
-    })])._setSigner(this.signer).sign().toBuffer();
+    })]).signWithKey(this.key).toBuffer();
 
     // Get hash of message
     const hash = crypto.createHash('sha256').update(PACKET_CONTRACT_GENESIS).digest('hex');
@@ -149,7 +147,7 @@ class Contract extends Service {
 
     // Contract template
     const template = {
-      author: this.signer.pubkey,
+      author: this.key.pubkey,
       bond: null, // BTC transaction which is spent
       checksum: '',
       created: now,
@@ -170,9 +168,9 @@ class Contract extends Service {
     const PACKET_CONTRACT_PUBLISH = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify({
       type: 'CONTRACT_PUBLISH',
       object: template
-    })]);
+    })]).signWithKey(this.key);
 
-    const signed = PACKET_CONTRACT_PUBLISH._setSigner(this.signer).sign();
+    const signed = PACKET_CONTRACT_PUBLISH.signWithKey(this.key);
     const pubhash = crypto.createHash('sha256').update(signed.toBuffer()).digest('hex');
 
     this.messages[pubhash] = PACKET_CONTRACT_PUBLISH.toString('hex');
@@ -246,7 +244,7 @@ class Contract extends Service {
     const json = JSON.stringify(baseline); // native JSON.stringify
     const buffer = Buffer.from(json, 'utf8');
 
-    const signer = new Signer(identity);
+    const signer = new Key(identity);
     const signature = signer.sign(buffer);
 
     return { signature };

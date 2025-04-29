@@ -59,6 +59,7 @@ class Codec {
       return blob;
     } catch (exception) {
       console.error('err:', exception);
+      return null;
     }
   }
 

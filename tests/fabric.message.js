@@ -21,10 +21,14 @@ const {
 } = require('../constants');
 
 const Message = require('../types/message');
-const Signer = require('../types/signer');
+const Key = require('../types/key');
 const assert = require('assert');
 
-const signer = new Signer();
+// Create a key with a private key for signing
+const key = new Key({
+  private: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+});
+
 const example = {
   type: 'Call',
   data: {
@@ -117,7 +121,7 @@ describe('@fabric/core/types/message', function () {
     it('can sign a message', async function prove () {
       const message = Message.fromVector(['Call', JSON.stringify(example.data)]);
       const literal = message.toObject();
-      const signed = message._setSigner(signer).sign();
+      const signed = message.signWithKey(key);
 
       assert.ok(signed);
       assert.ok(message);
@@ -157,7 +161,8 @@ describe('@fabric/core/types/message', function () {
     it('can verify authorship', async function prove () {
       const message = Message.fromVector(['Generic', JSON.stringify(example.data)]);
       const literal = message.toObject();
-      const signed = message._setSigner(signer).sign(Buffer.from('hello, world!', 'utf8'));
+      const signed = message.signWithKey(key);
+      signed._setSigner(key);
       const verified = signed.verify();
 
       assert.ok(message);

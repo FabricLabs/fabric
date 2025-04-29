@@ -2,6 +2,10 @@
 
 // Dependencies
 const net = require('net');
+const { mkdirp } = require('mkdirp');
+const children = require('child_process');
+const path = require('path');
+const fs = require('fs');
 
 // Fabric Types
 const Actor = require('../types/actor');
@@ -31,7 +35,8 @@ class Lightning extends Service {
       port: 8181,
       path: './stores/lightning',
       mode: 'socket',
-      interval: 1000
+      interval: 1000,
+      managed: false
     }, this.settings, settings);
 
     this.machine = new Machine(this.settings);
@@ -346,6 +351,79 @@ class Lightning extends Service {
     await this._syncInfo();
     this.emit('sync', this.state);
     return this;
+  }
+
+  async createLocalNode () {
+    if (this.settings.debug) console.log('[FABRIC:LIGHTNING]', 'Creating local Lightning node...');
+    const port = 9735; // Default Lightning port
+    let datadir = path.resolve('./stores/lightning');
+
+    // Configure based on network
+    switch (this.settings.network) {
+      default:
+      case 'mainnet':
+        datadir = path.resolve('./stores/lightning');
+        break;
+      case 'testnet':
+        datadir = path.resolve('./stores/lightning-testnet');
+        break;
+      case 'regtest':
+        datadir = path.resolve('./stores/lightning-regtest');
+        break;
+    }
+
+    // Ensure storage directory exists
+    await mkdirp(datadir);
+
+    // Create log file
+    const logFile = path.join(datadir, 'lightningd.log');
+    try {
+      fs.writeFileSync(logFile, '', { flag: 'w' });
+    } catch (error) {
+      throw new Error(`Failed to create log file ${logFile}: ${error.message}`);
+    }
+
+    // Configure Lightning node parameters
+    const params = [
+      `--network=${this.settings.network}`,
+      `--lightning-dir=${datadir}`,
+      `--bitcoin-datadir=${this.settings.bitcoin.datadir}`, // Connect to Bitcoin node
+      `--bitcoin-rpcuser=${this.settings.bitcoin.username}`,
+      `--bitcoin-rpcpassword=${this.settings.bitcoin.password}`,
+      `--bitcoin-rpcconnect=${this.settings.bitcoin.host}`,
+      `--bitcoin-rpcport=${this.settings.bitcoin.rpcport}`, // Use different port range while maintaining last digits
+      '--daemon', // Run as daemon
+      `--log-file=${logFile}`, // Specify log file
+      '--log-level=debug' // Enable debug logging
+    ];
+
+    // Start lightningd
+    if (this.settings.managed) {
+      const child = children.spawn('lightningd', params);
+
+      child.stdout.on('data', (data) => {
+        if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', data.toString('utf8').trim());
+        if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] ${data.toString('utf8').trim()}`);
+      });
+
+      child.stderr.on('data', (data) => {
+        console.error('[FABRIC:LIGHTNING]', '[ERROR]', data.toString('utf8').trim());
+        this.emit('error', `[FABRIC:LIGHTNING] ${data.toString('utf8').trim()}`);
+      });
+
+      child.on('close', (code) => {
+        if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Lightning node exited with code ' + code);
+        this.emit('log', `[FABRIC:LIGHTNING] Lightning node exited with code ${code}`);
+      });
+
+      return child;
+    } else {
+      return null;
+    }
+  }
+
+  async sync () {
+    // TODO: sync local data with node
   }
 }
 

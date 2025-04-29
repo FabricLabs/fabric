@@ -19,7 +19,7 @@ jobs:
     - name: Checkout branch
       uses: actions/checkout@v3
     - name: Install Node.js on ${{ matrix.os }}
-      uses: actions/setup-node@v2
+      uses: actions/setup-node@v4
       with:
         node-version-file: '.nvmrc'
         cache: 'npm'
@@ -29,12 +29,16 @@ jobs:
       with:
         python-version: '3.8'
     - name: Install dependencies
-      run: npm ci
-    - name: Download bitcoind
+      run: npm run report:install
+    - name: Download and install bitcoind
       run: |
-        wget https://bitcoin.org/bin/bitcoin-core-27.0/bitcoin-27.0-x86_64-linux-gnu.tar.gz
-        tar -xzf bitcoin-27.0-x86_64-linux-gnu.tar.gz
-        sudo mv bitcoin-27.0/bin/bitcoind /usr/local/bin/
+        if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+          wget https://bitcoin.org/bin/bitcoin-core-27.0/bitcoin-27.0-x86_64-linux-gnu.tar.gz
+          tar -xzf bitcoin-27.0-x86_64-linux-gnu.tar.gz
+          sudo mv bitcoin-27.0/bin/bitcoind /usr/local/bin/
+        else
+          brew install bitcoin
+        fi
     - name: Generate coverage report
       run: npm run report:coverage
     - name: Send coverage report

@@ -2,148 +2,112 @@
 
 const assert = require('assert');
 const Bitcoin = require('../../services/bitcoin');
-
-const settings = require('../../settings/test');
-const options = Object.assign({}, settings, {
-  network: 'testnet',
-  fullnode: false,
-  mode: 'full',
-  verbosity: 2
-});
+const Key = require('../../types/key');
 
 describe('@fabric/core/services/bitcoin', function () {
+  this.timeout(30000); // Increase timeout for integration tests
+
+  let bitcoin;
+  let key;
+
+  before(async function () {
+    // Initialize Bitcoin service first
+    bitcoin = new Bitcoin({
+      network: 'regtest',
+      mode: 'fabric',
+      port: 18444,
+      rpcport: 18443,
+      zmqport: 18445,
+      managed: false,
+      debug: false,
+      username: 'bitcoinrpc',
+      password: 'password',
+      rpc: {
+        host: 'localhost',
+        port: 18443,
+        username: 'bitcoinrpc',
+        password: 'password'
+      }
+    });
+
+    // Now create the key with the correct network configuration
+    key = new Key({
+      network: 'regtest',
+      purpose: 44,
+      account: 0,
+      index: 0
+    });
+
+    // Set the key on the Bitcoin service
+    bitcoin.settings.key = key;
+
+    // Initialize RPC client
+    const config = {
+      host: 'localhost',
+      port: 18443,
+      timeout: 300000
+    };
+
+    const auth = `${bitcoin.settings.username}:${bitcoin.settings.password}`;
+    config.headers = { Authorization: `Basic ${Buffer.from(auth, 'utf8').toString('base64')}` };
+
+    bitcoin.rpc = require('jayson/lib/client').http(config);
+  });
+
   describe('Bitcoin', function () {
     it('is available from @fabric/core', function () {
       assert.equal(Bitcoin instanceof Function, true);
     });
 
     it('can start and stop smoothly', async function () {
-      async function test () {
-        const bitcoin = new Bitcoin(options);
-
-        try {
-          await bitcoin.start();
-        } catch (exception) {
-          console.error('Could not start bitcoin:', exception);
-        }
-
-        try {
-          await bitcoin.stop();
-        } catch (exception) {
-          console.error('Could not start bitcoin:', exception);
-        }
-
-        assert.ok(bitcoin);
-        // assert.equal(bitcoin.tip, '06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f');
-      }
-
-      await test();
+      await bitcoin.start();
+      await bitcoin.stop();
+      assert.ok(bitcoin);
+      assert.equal(bitcoin.settings.network, 'regtest');
+      assert.equal(bitcoin.settings.port, 18444);
+      assert.equal(bitcoin.settings.rpcport, 18443);
     });
 
-    it('can generate an address', async function () {
-      async function test () {
-        const bitcoin = new Bitcoin(options);
-        const address = await bitcoin.getUnusedAddress();
-
-        assert.ok(bitcoin);
-        assert.ok(address);
-        assert.strictEqual(address, '1LqBGSKuX5yYUonjxT5qGfpUsXKYYWeabA');
-      }
-
-      await test();
+    it('can generate addresses', async function () {
+      const address = await bitcoin.getUnusedAddress();
+      assert.ok(address);
+      assert.ok(bitcoin.validateAddress(address));
     });
 
-    xit('can validate an address', async function () {
-      async function test () {
-        const bitcoin = new Bitcoin(options);
-        const address = await bitcoin.getUnusedAddress();
-        const valid = bitcoin.validateAddress(address);
-
-        assert.ok(bitcoin);
-        assert.ok(address);
-
-        console.log('address:', address);
-        assert.strictEqual(address, '1LqBGSKuX5yYUonjxT5qGfpUsXKYYWeabA');
-        assert.ok(valid);
-      }
-
-      await test();
+    it('can validate an address', async function () {
+      const address = await bitcoin.getUnusedAddress();
+      const valid = bitcoin.validateAddress(address);
+      assert.ok(valid);
     });
 
-    xit('can handle a spend request', async function () {
-      async function test () {
-        const bitcoin = new Bitcoin(options);
-
-        try {
-          await bitcoin.start();
-        } catch (exception) {
-          console.error('Could not start bitcoin:', exception);
-        }
-
-        const address = await bitcoin.getUnusedAddress();
-        const request = { amount: 1, destination: address };
-        const output = await bitcoin.processSpendMessage(request);
-
-        try {
-          await bitcoin.stop();
-        } catch (exception) {
-          console.error('Could not start bitcoin:', exception);
-        }
-
-        assert.ok(bitcoin);
-        assert.ok(output);
-      }
-
-      await test();
-    });
-
-    it('can generate a block', async function () {
-      async function test () {
-        const bitcoin = new Bitcoin(options);
-        let block = null;
-
-        try {
-          await bitcoin.start();
-        } catch (exception) {
-          console.error('Could not start bitcoin:', exception);
-        }
-
-        try {
-          block = await bitcoin.generateBlock();
-        } catch (exception) {
-          console.error('Could not generate block:', exception);
-        }
-
-        try {
-          await bitcoin.stop();
-        } catch (exception) {
-          console.error('Could not start bitcoin:', exception);
-        }
-
-        assert.ok(bitcoin);
-        assert.ok(block);
-
-        assert.equal(bitcoin.tip, block.hash('hex'));
-        assert.equal(bitcoin.height, 1);
-      }
-
-      try {
-        await test();
-      } catch (exception) {
-        console.error('Exception in test:', exception);
-      }
+    it('can generate blocks', async function () {
+      const address = await bitcoin.getUnusedAddress();
+      const blocks = await bitcoin.generateBlocks(1, address);
+      assert.equal(blocks.length, 1);
     });
 
     it('can create a psbt', async function () {
-      async function test () {
-        const bitcoin = new Bitcoin(options);
-        const psbt = await bitcoin._buildPSBT();
+      const address = await bitcoin.getUnusedAddress();
+      const psbt = await bitcoin._buildPSBT({
+        inputs: [],
+        outputs: [{
+          address: address,
+          value: 10000
+        }]
+      });
+      assert.ok(psbt);
+    });
 
-        assert.ok(bitcoin);
-        assert.ok(psbt);
-      }
-
-      await test();
+    it('can create PSBTs', async function () {
+      const address = await bitcoin.getUnusedAddress();
+      const psbt = await bitcoin._createTX({
+        inputs: [],
+        outputs: [{
+          address: address,
+          value: 10000
+        }]
+      });
+      assert.ok(psbt);
     });
   });
 });

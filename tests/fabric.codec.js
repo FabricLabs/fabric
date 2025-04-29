@@ -24,14 +24,37 @@ describe('@fabric/core/types/codec', function () {
     });
 
     it('can encode data', async function () {
-      const codec = new Codec(playnet);
+      const codec = new Codec({
+        ...playnet,
+        key: {
+          xprv: playnet.key.xprv,
+          mode: 'aes-256-cbc',
+          curve: 'secp256k1'
+        }
+      });
       const blob = codec.encode('Hello, world!');
       assert.ok(blob);
+      assert.strictEqual(typeof blob, 'string');
     });
 
-    xit('can decode data', async function () {
-      const encoder = new Codec(playnet);
-      const decoder = new Codec(playnet);
+    it('can decode data', async function () {
+      const encoder = new Codec({
+        ...playnet,
+        key: {
+          xprv: playnet.key.xprv,
+          mode: 'aes-256-cbc',
+          curve: 'secp256k1'
+        }
+      });
+
+      const decoder = new Codec({
+        ...playnet,
+        key: {
+          xprv: playnet.key.xprv,
+          mode: 'aes-256-cbc',
+          curve: 'secp256k1'
+        }
+      });
 
       const blob = encoder.encode('Hello, world!');
       const data = decoder.decode(blob);
