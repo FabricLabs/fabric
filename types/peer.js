@@ -28,7 +28,6 @@ const merge = require('lodash.merge');
 // Fabric Types
 const Actor = require('./actor');
 const Identity = require('./identity');
-const Signer = require('./signer');
 const Key = require('./key');
 const Machine = require('./machine');
 const Message = require('./message');
@@ -90,7 +89,6 @@ class Peer extends Service {
     });
 
     this.identity = new Identity(this.settings.key);
-    this.signer = new Signer(this.settings.key);
     this.key = new Key(this.settings.key);
     // this.wallet = new Wallet(this.settings.key);
 
@@ -258,7 +256,7 @@ class Peer extends Service {
     })];
 
     // Create offer message
-    const P2P_SESSION_OFFER = Message.fromVector(vector)._setSigner(this.signer).sign();
+    const P2P_SESSION_OFFER = Message.fromVector(vector).signWithKey(this.key);
     const message = P2P_SESSION_OFFER.toBuffer();
     if (this.settings.debug) this.emit('debug', `session_offer ${P2P_SESSION_OFFER} ${message.toString('hex')}`);
 
@@ -282,6 +280,17 @@ class Peer extends Service {
     const id = url.username;
 
     if (!url.port) target += `:${P2P_PORT}`;
+
+    const derived = this.identity.key.derive(FABRIC_KEY_DERIVATION_PATH);
+    this.emit('debug', `Local derived ID: ${JSON.stringify(derived)}`);
+
+    // Store the user's public key if provided
+    if (id) {
+      this.peers[target] = {
+        ...this.peers[target],
+        publicKey: id
+      };
+    }
 
     this._registerActor({ name: target });
     this._registerPeer({ identity: id });
@@ -404,9 +413,15 @@ class Peer extends Service {
     const checksum = crypto.createHash('sha256').update(message.body, 'utf8').digest('hex');
     if (checksum !== message.raw.hash.toString('hex')) throw new Error('Message received with incorrect hash.');
 
-    // TODO: verify signatures
-    // const signer = new Signer({ public: message.raw.author });
-    // this.emit('debug', `Message signer: ${signer}`);
+    // Verify message signature if we have the peer's public key
+    if (origin && this.peers[origin] && this.peers[origin].publicKey) {
+      const signer = new Key({ public: this.peers[origin].publicKey });
+      if (!message.verifyWithKey(signer)) {
+        this.emit('error', `Invalid message signature from ${origin}`);
+        return;
+      }
+    }
+
     if (this.settings.debug) this.emit('debug', `Message author: ${message.raw.signature.toString('hex')}`);
     if (this.settings.debug) this.emit('debug', `Message signature: ${message.raw.signature.toString('hex')}`);
 
@@ -471,7 +486,7 @@ class Peer extends Service {
           }
         })];
 
-        const PACKET_SESSION_START = Message.fromVector(vector)._setSigner(this.signer).sign();
+        const PACKET_SESSION_START = Message.fromVector(vector).signWithKey(this.key);
         const reply = PACKET_SESSION_START.toBuffer();
         if (this.settings.debug) this.emit('debug', `session_start ${PACKET_SESSION_START} ${reply.toString('hex')}`);
         this.connections[origin.name]._writeFabric(reply, socket);
@@ -483,7 +498,8 @@ class Peer extends Service {
         break;
       case 'P2P_CHAT_MESSAGE':
         this.emit('chat', message);
-        const relay = Message.fromVector(['ChatMessage', JSON.stringify(message)])._setSigner(this.signer);
+        const relay = Message.fromVector(['ChatMessage', JSON.stringify(message)]);
+        relay.signWithKey(this.key);
         // this.emit('debug', `Relayed chat message: ${JSON.stringify(relay.toGenericMessage())}`);
         this.relayFrom(origin.name, relay);
         break;
@@ -811,7 +827,7 @@ class Peer extends Service {
         host: this._externalIP,
         port: this.settings.port
       }
-    })])._setSigner(this.signer).sign();
+    })]).signWithKey(this.key);
     const announcement = PACKET_PEER_ANNOUNCE.toBuffer();
     // this.emit('debug', `Announcing peer: ${announcement.toString('utf8')}`);
     this.connections[origin.name]._writeFabric(announcement, socket);

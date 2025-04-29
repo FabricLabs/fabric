@@ -42,7 +42,6 @@ const struct = require('struct');
 // Fabric Types
 const Actor = require('./actor');
 const Hash256 = require('./hash256');
-// const Signer = require('./signer');
 
 // Function Definitions
 const padDigits = require('../functions/padDigits');
@@ -82,11 +81,13 @@ class Message extends Actor {
       this.signer = input.signer;
     } else {
       this.signer = null;
-      // this.signer = new Signer();
     }
 
     if (input.data && input.type) {
       this.type = input.type;
+      // Set the type field to the numeric constant
+      const typeCode = this.types[input.type] || GENERIC_MESSAGE_TYPE;
+      this.raw.type.writeUInt32BE(typeCode, 0);
 
       if (typeof input.data !== 'string') {
         this.data = JSON.stringify(input.data);
@@ -190,22 +191,36 @@ class Message extends Actor {
   }
 
   /**
-   * Signs the message using the associated signer.
+   * Signs the message using a specific key.
+   * @param {Object} key Key object with private key and sign method.
+   * @param {String|Buffer} key.private Private key
+   * @param {String|Buffer} key.pubkey Public key
+   * @param {Function} key.sign Signing function
    * @returns {Message} Signed message.
+   * @throws {Error} If attempting to sign without a private key
    */
-  sign () {
-    if (!this.header) throw new Error('No header property.');
-    if (!this.raw) throw new Error('No raw property.');
+  signWithKey (key) {
+    if (!key) throw new Error('No key provided.');
+    if (!key.private) throw new Error('Cannot sign message with public key only.');
+    if (!key.sign) throw new Error('Key object must implement sign method');
 
-    const hash = Hash256.digest(this.raw.data);
-    const signature = this.signer.sign(Buffer.from(hash, 'hex'));
+    // Hash the message data according to BIP 340
+    const message = this.raw.data.toString('utf8');
+    const messageHash = Hash256.digest(message);
+    const signature = key.sign(messageHash);
 
-    this.raw.author.write(this.signer.pubkey.toString('hex'), 'hex');
+    this.raw.author.write(key.pubkey.toString('hex'), 'hex');
     this.raw.signature.write(signature.toString('hex'), 'hex');
 
-    Object.freeze(this);
-
     return this;
+  }
+
+  sign () {
+    if (!this.signer) throw new Error('No signer available.');
+    if (!this.signer.private) throw new Error('Cannot sign message with public key only.');
+    if (!this.signer.sign) throw new Error('Signer must implement sign method');
+
+    return this.signWithKey(this.signer);
   }
 
   /**
@@ -215,33 +230,47 @@ class Message extends Actor {
   verify () {
     if (!this.header) throw new Error('No header property.');
     if (!this.raw) throw new Error('No raw property.');
+    if (!this.signer) throw new Error('No signer available.');
+    if (!this.signer.verify) throw new Error('Signer must implement verify method');
 
-    // Compute sha256 hash of message body
     const hash = Hash256.digest(this.raw.data);
-
-    // If the raw header doesn't match the computed values, reject
-    if (this.raw.hash.toString('hex') !== hash.toString('hex')) {
-      return false;
-    }
-
     const signature = this.raw.signature;
-    const verified = this.signer.verify(this.raw.author, hash, signature);
 
-    if (!verified) {
-      throw new Error('Did not verify.');
-    }
+    return this.verifyWithKey(this.signer);
+  }
 
-    return true;
+  /**
+   * Verify a message's signature with a specific key.
+   * @param {Object} key Key object with verify method.
+   * @param {Function} key.verify Verification function
+   * @returns {Boolean} `true` if the signature is valid, `false` if not.
+   */
+  verifyWithKey (key) {
+    if (!this.header) throw new Error('No header property.');
+    if (!this.raw) throw new Error('No raw property.');
+    if (!key) throw new Error('No key provided.');
+    if (!key.verify) throw new Error('Key object must implement verify method');
+
+    // Get the raw message data as a string
+    const message = this.raw.data.toString('utf8');
+    const messageHash = Hash256.digest(message);
+    const signature = this.raw.signature;
+
+    return key.verify(messageHash, signature);
   }
 
   /**
    * Sets the signer for the message.
-   * @param {Signer} signer Signer instance.
+   * @param {Object} key Key object with pubkey property.
+   * @param {String|Buffer} key.pubkey Public key
    * @returns {Message} Instance of the Message with associated signer.
    */
-  _setSigner (signer) {
-    // if (this.signer) throw new Error('Cannot override signer.');
-    this.signer = signer;
+  _setSigner (key) {
+    if (!key || !key.pubkey) {
+      throw new Error('Key object with pubkey is required');
+    }
+
+    this.signer = key;
     return this;
   }
 
@@ -287,24 +316,34 @@ class Message extends Actor {
 
   static fromRaw (input) {
     if (!input) return null;
-    if (!(input instanceof Buffer)) throw new Error('Input must be a buffer.');
-    // if (input.length < HEADER_SIZE) return null;
-    // if (input.length > MAX_MESSAGE_SIZE) return new Error('Input too large.');
+    // Convert various buffer-like inputs to Buffer
+    let buffer;
+    if (input instanceof Buffer) {
+      buffer = input;
+    } else if (input instanceof Uint8Array) {
+      buffer = Buffer.from(input.buffer);
+    } else if (input instanceof ArrayBuffer) {
+      buffer = Buffer.from(input);
+    } else if (input.buffer instanceof ArrayBuffer) {
+      buffer = Buffer.from(input.buffer);
+    } else {
+      throw new Error('Input must be a buffer or buffer-like object.');
+    }
 
     const message = new Message();
 
     message.raw = {
-      magic: input.slice(0, 4),
-      version: input.slice(4, 8),
-      parent: input.slice(8, 40),
-      author: input.slice(40, 72),
-      type: input.slice(72, 76),
-      size: input.slice(76, 80),
-      hash: input.slice(80, 112),
-      signature: input.slice(112, HEADER_SIZE)
+      magic: buffer.subarray(0, 4),
+      version: buffer.subarray(4, 8),
+      parent: buffer.subarray(8, 40),
+      author: buffer.subarray(40, 72),
+      type: buffer.subarray(72, 76),
+      size: buffer.subarray(76, 80),
+      hash: buffer.subarray(80, 112),
+      signature: buffer.subarray(112, HEADER_SIZE)
     };
 
-    message.data = input.slice(HEADER_SIZE);
+    message.data = buffer.subarray(HEADER_SIZE);
 
     return message;
   }
@@ -342,6 +381,7 @@ class Message extends Actor {
       'FabricLogMessage': LOG_MESSAGE_TYPE,
       'FabricServiceLogMessage': LOG_MESSAGE_TYPE,
       'GenericTransferQueue': GENERIC_LIST_TYPE,
+      'JSONBlob': GENERIC_MESSAGE_TYPE + 1,
       // TODO: document Generic type
       // P2P Commands
       'Generic': P2P_GENERIC,
@@ -419,6 +459,8 @@ Object.defineProperty(Message.prototype, 'type', {
     switch (code) {
       case GENERIC_MESSAGE_TYPE:
         return 'GenericMessage';
+      case GENERIC_MESSAGE_TYPE + 1:
+        return 'JSONBlob';
       case LOG_MESSAGE_TYPE:
         return 'GenericLogMessage';
       case GENERIC_LIST_TYPE:
@@ -469,10 +511,20 @@ Object.defineProperty(Message.prototype, 'type', {
   },
   set (value) {
     let code = this.types[value];
-    // Default to GenericMessage;
+    // Default to GenericMessage or JSONBlob based on content
     if (!code) {
       this.emit('warning', `Unknown message type: ${value}`);
-      code = this.types['GenericMessage'];
+      // Check if data is valid JSON
+      try {
+        if (this.data && JSON.parse(this.data)) {
+          code = this.types['JSONBlob'];
+          value = 'JSONBlob';
+        } else {
+          code = this.types['GenericMessage'];
+        }
+      } catch (e) {
+        code = this.types['GenericMessage'];
+      }
     }
 
     const padded = padDigits(code.toString(16), 8);

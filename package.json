@@ -3,7 +3,8 @@
   "version": "0.1.0-RC1",
   "description": "Experimental peer-to-peer framework.",
   "main": "types/fabric.js",
-  "module": "index.js",
+  "module": "types/fabric.mjs",
+  "types": "types/fabric.d.ts",
   "bin": {
     "fabric": "scripts/cli.js"
   },
@@ -31,6 +32,8 @@
     "examples": "npm run make:examples && http-server -p 8000 examples",
     "keygen": "node scripts/keygen.js",
     "lint:fix": "npx semistandard --fix",
+    "lint:types": "npx semistandard types/**/*.js",
+    "lint:types:fix": "npx semistandard --fix types/**/*.js",
     "lint": "npx semistandard",
     "local": "npm run build && http-server -p 8000 ./assets",
     "make:all": "npm run make:service && npm run make:app && npm run make:lib && npm run make:dev # && npm run make:binary",
@@ -94,7 +97,6 @@
     "bitcoinjs-lib": "=6.1.7",
     "blessed": "=0.1.81",
     "bn.js": "=5.2.1",
-    "buffer": "=6.0.3",
     "commander": "=13.1.0",
     "content-type": "=1.0.5",
     "cross-fetch": "=4.1.0",
@@ -123,6 +125,7 @@
     "zeromq": "=6.3.0"
   },
   "devDependencies": {
+    "buffer": "=6.0.3",
     "c8": "=10.1.3",
     "chai": "=4.0.2",
     "cross-env": "=7.0.3",
@@ -164,5 +167,23 @@
       "logs/",
       "stores/"
     ]
+  },
+  "exports": {
+    ".": {
+      "require": "./types/fabric.js",
+      "import": "./types/fabric.mjs"
+    },
+    "./constants": {
+      "require": "./constants.js"
+    },
+    "./types/*": {
+      "require": "./types/*.js"
+    },
+    "./services/*": {
+      "require": "./services/*.js"
+    },
+    "./functions/*": {
+      "require": "./functions/*.js"
+    }
   }
 }

@@ -34,7 +34,7 @@ class Session extends Entity {
     }, settings);
 
     // Session Key
-    this.key = this._getOddKey();
+    this.key = settings.key || this._getOddKey();
     this.derived = null;
 
     // Internal State

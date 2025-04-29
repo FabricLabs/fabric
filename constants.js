@@ -67,6 +67,9 @@ const OP_RETURN = '6a';
 const OP_EQUALVERIFY = '88';
 const OP_SEPARATOR = 'ab';
 
+// Bech32m
+const BECH32M_CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
+
 // Peering
 const P2P_PORT = 7777;
 const P2P_GENERIC = 0x80; // 128 in decimal
@@ -144,6 +147,7 @@ module.exports = {
   CHAT_MESSAGE,
   INPUT_HINT,
   ZERO_LENGTH_PLAINTEXT,
+  BECH32M_CHARSET,
   FABRIC_PLAYNET_ADDRESS,
   FABRIC_PLAYNET_ORIGIN,
   LIGHTNING_TEST_HEADER,

@@ -3,8 +3,7 @@
 const crypto = require('crypto');
 
 const Actor = require('../actor');
-const Signer = require('../signer');
-const Transaction = require('../transaction');
+const Key = require('../key');
 // TODO: PSBTs
 
 class BitcoinTransaction extends Actor {
@@ -15,7 +14,7 @@ class BitcoinTransaction extends Actor {
       raw: null
     }, settings);
 
-    this.holder = new Signer(this.settings.signer);
+    this.holder = new Key(this.settings.key);
 
     this.inputs = [];
     this.outputs = [];
@@ -33,7 +32,7 @@ class BitcoinTransaction extends Actor {
   }
 
   get hash () {
-    return `<hash>`; // TODO: real hash
+    return '<hash>'; // TODO: real hash
   }
 
   get id () {
@@ -41,7 +40,7 @@ class BitcoinTransaction extends Actor {
   }
 
   get txid () {
-    return `<txID>`; // TODO: bitcoin txid
+    return '<txID>'; // TODO: bitcoin txid
   }
 
   signAsHolder () {

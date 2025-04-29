@@ -428,9 +428,8 @@ class Store extends Actor {
     let store = this;
     let name = `/sources/${store.id}`;
 
-    source.on('put', function (key, value) {
-      // store.log('[TRUST:SOURCE]', source.constructor.name, 'emitted a put event', name, key, value.constructor.name, value);
-      if (store.settings.verbosity >= 5) console.log('[TRUST:SOURCE]', source.constructor.name, 'emitted a put event', name, key, value.constructor.name, value);
+    source.on('write', function (key, value) {
+      if (store.settings.verbosity >= 5) console.log('[TRUST:SOURCE]', source.constructor.name, 'emitted a write event', name, key, value.constructor.name, value);
 
       let id = pointer.escape(key);
       let router = store.sha256(id);

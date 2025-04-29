@@ -30,17 +30,14 @@ const {
   REMOTEPUBKEY,
   LOCAL_DELAYEDPUBKEY,
   LOCAL_REVOCATION_PUBKEY
-} = require('./fixtures/lightning');
+} = require('../fixtures/lightning');
 
 // Testing
 const assert = require('assert');
 
-const Message = require('../types/message');
-const Bitcoin = require('../services/bitcoin');
-const Lightning = require('../services/lightning');
-
-const config = require('../settings/test');
-const handler = require('../functions/handleException');
+const Message = require('../../types/message');
+const Bitcoin = require('../../services/bitcoin');
+const Lightning = require('../../services/lightning');
 
 describe('@fabric/core/services/lightning', function () {
   // Store node references for cleanup

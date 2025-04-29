@@ -4,7 +4,6 @@ const Actor = require('./actor');
 const Bech32 = require('./bech32');
 const Hash256 = require('./hash256');
 const Key = require('./key');
-const Signer = require('./signer');
 
 /**
  * Manage a network identity.
@@ -18,6 +17,7 @@ class Identity extends Actor {
    * @param {String} [settings.xpub] Serialized BIP 32 master public key.
    * @param {Number} [settings.account=0] BIP 44 account index.
    * @param {Number} [settings.index=0] BIP 44 key index.
+   * @param {String} [settings.passphrase] Passphrase for the key.
    * @returns {Identity} Instance of the identity.
    */
   constructor (settings = {}) {
@@ -25,12 +25,27 @@ class Identity extends Actor {
 
     this.settings = Object.assign({
       seed: null,
-      account: 0,
-      index: 0
-    }, this.settings, settings);
+      xprv: null,
+      passphrase: null
+    }, settings);
 
-    this.key = new Key(this.settings);
-    this.signer = new Signer(this.settings);
+    // Initialize key
+    if (settings instanceof Key) {
+      this.key = settings;
+    } else {
+      this.key = new Key({
+        seed: this.settings.seed,
+        xprv: this.settings.xprv,
+        passphrase: this.settings.passphrase
+      });
+
+      // Ensure we have a private key
+      if (!this.key.xprv) {
+        // Generate a new key if none provided
+        this.key = new Key();
+        this.settings.xprv = this.key.xprv;
+      }
+    }
 
     this._state = {
       content: {
@@ -69,8 +84,7 @@ class Identity extends Actor {
   }
 
   get pubkey () {
-    // x-only pubkey
-    return this.key.public.x.toString('hex');
+    return this.key.pubkey;
   }
 
   get pubkeyhash () {
@@ -91,14 +105,8 @@ class Identity extends Actor {
     return this;
   }
 
-  /**
-   * Sign a buffer of data using BIP 340: https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki
-   * @param {Buffer} data Buffer of data to sign.
-   * @returns {Signature} Resulting signature (64 bytes).
-   */
   sign (data = Buffer.from('', 'hex')) {
-    this._signAsSchnorr(data.toString('hex'));
-    return this._signature;
+    return this.key.sign(data);
   }
 
   /**
@@ -106,15 +114,10 @@ class Identity extends Actor {
    * @returns {String} Public identity.
    */
   toString () {
-    if (this.settings.debug) console.log('master key:', this.key.master.publicKey);
-    if (this.settings.debug) console.log('pubkey for id:', this.pubkey);
-
     const bech32 = new Bech32({
       hrp: 'id',
       content: this.pubkeyhash
     });
-
-    if (this.settings.debug) console.log('bech32:', bech32);
 
     return bech32.toString();
   }
@@ -127,8 +130,12 @@ class Identity extends Actor {
 
   _signAsSchnorr (input) {
     if (!input) input = this.pubkeyhash;
-    this._signature = this.signer.sign(input)
+    this._signature = this.key.sign(input)
     return this;
+  }
+
+  _verifyKeyIsChild (key, parent) {
+    
   }
 }
 
