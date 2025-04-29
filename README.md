@@ -2,7 +2,6 @@
 ![Project Status][badge-status]
 [![Coverage Status][badge-coverage]][coverage]
 [![GitHub contributors][badge-contributors]][contributors]
-[![Community][badge-chat]][chat]
 
 [The `@fabric/core` project][fabric-github] provides an API for building peer-to-peer applications on [Bitcoin][bitcoin].
 
@@ -112,7 +111,6 @@ Fabric is an extensible framework, supporting a variety of plugins.
 |------------------------------------|--------------------------------------------|----------------------------------------------------------------------|
 | [`@fabric/http`][http-plugin]      | serve Fabric apps to the legacy web (HTTP) | [![Coverage Status][badge-http-coverage]][badge-http-coverage]       |
 | [`@fabric/hub`][hub-plugin]        | run your own Fabric Hub                    | [![Coverage Status][badge-hub-coverage]][badge-hub-coverage]         |
-| [`@fabric/matrix`][matrix-plugin]  | connect to Matrix servers                  | [![Coverage Status][badge-matrix-coverage]][badge-matrix-coverage]   |
 | [`@fabric/doorman`][doorman]       | an artificially intelligent assistant      | [![Coverage Status][badge-doorman-coverage]][doorman-coverage-home]  |
 
 ## Running on Fabric
@@ -143,7 +141,6 @@ Either Fabric libraries or projects running Fabric, this list encompasses the mo
 | [`@fabric/http`][http-plugin] | Edge Nodes
 | [`hub.fabric.pub`](https://hub.fabric.pub) |
 | [`labs.fabric.pub`](https://labs.fabric.pub) |
-| [`grove.chat`][chat] |
 | `sensemaker.io` | | | `FALSE`
 | `verse.pub` | | |
 
@@ -174,7 +171,6 @@ Fabric on Twitter: [@FabricProtocol][twitter]
 [fabric-github]: https://github.com/FabricLabs/fabric
 [http-plugin]: https://github.com/FabricLabs/fabric-http
 [hub-plugin]: https://github.com/FabricLabs/hub.fabric.pub
-[matrix-plugin]: https://github.com/FabricLabs/fabric-matrix
 [twilio-plugin]: https://github.com/FabricLabs/fabric-twilio
 [zapier-plugin]: https://github.com/FabricLabs/fabric-zapier
 [github-plugin]: https://github.com/FabricLabs/fabric-github
@@ -187,7 +183,6 @@ Fabric on Twitter: [@FabricProtocol][twitter]
 [badge-build]: https://img.shields.io/travis/FabricLabs/fabric.svg?branch=master&style=flat-square
 [badge-coverage]: https://img.shields.io/codecov/c/github/FabricLabs/fabric.svg?style=flat-square
 [badge-contributors]: https://img.shields.io/github/contributors/FabricLabs/fabric.svg?style=flat-square
-[badge-chat]: https://img.shields.io/matrix/hub:fabric.pub.svg?server_fqdn=matrix.org&style=flat-square
 
 [badge-doorman-status]: https://img.shields.io/travis/FabricLabs/doorman.svg?branch=master&style=flat-square
 [badge-doorman-coverage]: https://img.shields.io/codecov/c/github/FabricLabs/doorman.svg?style=flat-square
@@ -195,8 +190,6 @@ Fabric on Twitter: [@FabricProtocol][twitter]
 [badge-hub-status]: https://img.shields.io/travis/FabricLabs/fabric-hub.svg?branch=master&style=flat-square
 [badge-http-coverage]: https://img.shields.io/codecov/c/github/FabricLabs/fabric-http.svg?style=flat-square
 [badge-hub-coverage]: https://img.shields.io/codecov/c/github/FabricLabs/fabric-hub.svg?style=flat-square
-[badge-matrix-status]: https://img.shields.io/travis/FabricLabs/fabric-matrix.svg?branch=master&style=flat-square
-[badge-matrix-coverage]: https://img.shields.io/codecov/c/github/FabricLabs/fabric-matrix.svg?style=flat-square
 [badge-twilio-status]: https://img.shields.io/travis/FabricLabs/fabric-twilio.svg?branch=master&style=flat-square
 [badge-twilio-coverage]: https://img.shields.io/codecov/c/github/FabricLabs/fabric-twilio.svg?style=flat-square
 [badge-zapier-status]: https://img.shields.io/travis/FabricLabs/fabric-zapier.svg?branch=master&style=flat-square
@@ -208,7 +201,6 @@ Fabric on Twitter: [@FabricProtocol][twitter]
 
 [doorman-test-status]: https://app.travis-ci.com/github/FabricLabs/doorman
 [http-test-status]: https://app.travis-ci.com/github/FabricLabs/fabric-http
-[matrix-test-status]: https://app.travis-ci.com/github/FabricLabs/fabric-matrix
 [twilio-test-status]: https://app.travis-ci.com/github/FabricLabs/fabric-twilio
 [zapier-test-status]: https://app.travis-ci.com/github/FabricLabs/fabric-zapier
 [soundtrack-test-status]: https://app.travis-ci.com/github/FabricLabs/soundtrack
