@@ -155,7 +155,7 @@
             <dd class="tag-source">
               <ul class="dummy">
                 <li>
-                  <a href="types_message.js.html">types/message.js</a>, <a href="types_message.js.html#line56">line 56</a>
+                  <a href="types_message.js.html">types/message.js</a>, <a href="types_message.js.html#line55">line 55</a>
                 </li>
               </ul>
             </dd>
@@ -235,7 +235,7 @@
 
 
 
-        <h4 class="name" id="_setSigner"><span class="type-signature"></span>_setSigner<span class="signature">(signer)</span><span class="type-signature"> &rarr; {<a href="Message.html">Message</a>}</span></h4>
+        <h4 class="name" id="_setSigner"><span class="type-signature"></span>_setSigner<span class="signature">(key)</span><span class="type-signature"> &rarr; {<a href="Message.html">Message</a>}</span></h4>
 
 
 
@@ -279,13 +279,13 @@
 
             <tr>
 
-              <td class="name"><code>signer</code></td>
+              <td class="name"><code>key</code></td>
 
 
               <td class="type">
 
 
-                <span class="param-type"><a href="Signer.html">Signer</a></span>
+                <span class="param-type">Object</span>
 
 
 
@@ -295,7 +295,59 @@
 
 
 
-              <td class="description last">Signer instance.</td>
+              <td class="description last">Key object with pubkey property.
+                <h6>Properties</h6>
+
+
+                <table class="params">
+                  <thead>
+                    <tr>
+
+                      <th>Name</th>
+
+
+                      <th>Type</th>
+
+
+
+
+
+                      <th class="last">Description</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+
+
+                    <tr>
+
+                      <td class="name"><code>pubkey</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">String</span>
+                        |
+
+                        <span class="param-type">Buffer</span>
+
+
+
+                      </td>
+
+
+
+
+
+                      <td class="description last">Public key</td>
+                    </tr>
+
+
+                  </tbody>
+                </table>
+
+              </td>
             </tr>
 
 
@@ -338,7 +390,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_message.js.html">types/message.js</a>, <a href="types_message.js.html#line242">line 242</a>
+                <a href="types_message.js.html">types/message.js</a>, <a href="types_message.js.html#line268">line 268</a>
               </li>
             </ul>
           </dd>
@@ -452,7 +504,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_message.js.html">types/message.js</a>, <a href="types_message.js.html#line153">line 153</a>
+                <a href="types_message.js.html">types/message.js</a>, <a href="types_message.js.html#line154">line 154</a>
               </li>
             </ul>
           </dd>
@@ -512,7 +564,7 @@
 
 
 
-        <h4 class="name" id="sign"><span class="type-signature"></span>sign<span class="signature">()</span><span class="type-signature"> &rarr; {<a href="Message.html">Message</a>}</span></h4>
+        <h4 class="name" id="signWithKey"><span class="type-signature"></span>signWithKey<span class="signature">(key)</span><span class="type-signature"> &rarr; {<a href="Message.html">Message</a>}</span></h4>
 
 
 
@@ -520,7 +572,7 @@
 
 
         <div class="description">
-          Signs the message using the associated signer.
+          Signs the message using a specific key.
         </div>
 
 
@@ -529,6 +581,156 @@
 
 
 
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>key</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Key object with private key and sign method.
+                <h6>Properties</h6>
+
+
+                <table class="params">
+                  <thead>
+                    <tr>
+
+                      <th>Name</th>
+
+
+                      <th>Type</th>
+
+
+
+
+
+                      <th class="last">Description</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+
+
+                    <tr>
+
+                      <td class="name"><code>private</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">String</span>
+                        |
+
+                        <span class="param-type">Buffer</span>
+
+
+
+                      </td>
+
+
+
+
+
+                      <td class="description last">Private key</td>
+                    </tr>
+
+
+
+                    <tr>
+
+                      <td class="name"><code>pubkey</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">String</span>
+                        |
+
+                        <span class="param-type">Buffer</span>
+
+
+
+                      </td>
+
+
+
+
+
+                      <td class="description last">Public key</td>
+                    </tr>
+
+
+
+                    <tr>
+
+                      <td class="name"><code>sign</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">function</span>
+
+
+
+                      </td>
+
+
+
+
+
+                      <td class="description last">Signing function</td>
+                    </tr>
+
+
+                  </tbody>
+                </table>
+
+              </td>
+            </tr>
+
+
+          </tbody>
+        </table>
 
 
 
@@ -566,7 +768,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_message.js.html">types/message.js</a>, <a href="types_message.js.html#line196">line 196</a>
+                <a href="types_message.js.html">types/message.js</a>, <a href="types_message.js.html#line202">line 202</a>
               </li>
             </ul>
           </dd>
@@ -588,6 +790,35 @@
 
 
 
+
+
+
+        <h5>Throws:</h5>
+
+
+
+        <dl>
+          <dt>
+            <div class="param-desc">
+              If attempting to sign without a private key
+            </div>
+          </dt>
+          <dd></dd>
+          <dt>
+            <dl>
+              <dt>
+                Type
+              </dt>
+              <dd>
+
+                <span class="param-type">Error</span>
+
+
+              </dd>
+            </dl>
+          </dt>
+          <dd></dd>
+        </dl>
 
 
 
@@ -680,7 +911,219 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_message.js.html">types/message.js</a>, <a href="types_message.js.html#line215">line 215</a>
+                <a href="types_message.js.html">types/message.js</a>, <a href="types_message.js.html#line230">line 230</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          `true` if the signature is valid, `false` if not.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Boolean</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="verifyWithKey"><span class="type-signature"></span>verifyWithKey<span class="signature">(key)</span><span class="type-signature"> &rarr; {Boolean}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Verify a message's signature with a specific key.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>key</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Key object with verify method.
+                <h6>Properties</h6>
+
+
+                <table class="params">
+                  <thead>
+                    <tr>
+
+                      <th>Name</th>
+
+
+                      <th>Type</th>
+
+
+
+
+
+                      <th class="last">Description</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+
+
+                    <tr>
+
+                      <td class="name"><code>verify</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">function</span>
+
+
+
+                      </td>
+
+
+
+
+
+                      <td class="description last">Verification function</td>
+                    </tr>
+
+
+                  </tbody>
+                </table>
+
+              </td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_message.js.html">types/message.js</a>, <a href="types_message.js.html#line248">line 248</a>
               </li>
             </ul>
           </dd>
@@ -753,18 +1196,18 @@
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
-      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
-      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
@@ -782,7 +1225,6 @@
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
-      <li><a href="Signer.html">Signer</a></li>
       <li><a href="Snapshot.html">Snapshot</a></li>
       <li><a href="Stack.html">Stack</a></li>
       <li><a href="Stash.html">Stash</a></li>

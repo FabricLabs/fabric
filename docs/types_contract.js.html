@@ -48,7 +48,6 @@ const Actor = require('./actor');
 const Key = require('./key');
 const Message = require('./message');
 const Service = require('./service');
-const Signer = require('./signer');
 
 class Contract extends Service {
   constructor (settings = {}) {
@@ -76,7 +75,6 @@ class Contract extends Service {
 
     // tweaked pubkey
     this.key = new Key(this.settings.key);
-    this.signer = new Signer(this.settings.key);
     this.messages = {};
 
     this._inner = null;
@@ -172,7 +170,7 @@ class Contract extends Service {
       object: {
         input: input
       }
-    })])._setSigner(this.signer).sign().toBuffer();
+    })]).signWithKey(this.key).toBuffer();
 
     // Get hash of message
     const hash = crypto.createHash('sha256').update(PACKET_CONTRACT_GENESIS).digest('hex');
@@ -182,7 +180,7 @@ class Contract extends Service {
 
     // Contract template
     const template = {
-      author: this.signer.pubkey,
+      author: this.key.pubkey,
       bond: null, // BTC transaction which is spent
       checksum: '',
       created: now,
@@ -203,9 +201,9 @@ class Contract extends Service {
     const PACKET_CONTRACT_PUBLISH = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify({
       type: 'CONTRACT_PUBLISH',
       object: template
-    })]);
+    })]).signWithKey(this.key);
 
-    const signed = PACKET_CONTRACT_PUBLISH._setSigner(this.signer).sign();
+    const signed = PACKET_CONTRACT_PUBLISH.signWithKey(this.key);
     const pubhash = crypto.createHash('sha256').update(signed.toBuffer()).digest('hex');
 
     this.messages[pubhash] = PACKET_CONTRACT_PUBLISH.toString('hex');
@@ -279,7 +277,7 @@ class Contract extends Service {
     const json = JSON.stringify(baseline); // native JSON.stringify
     const buffer = Buffer.from(json, 'utf8');
 
-    const signer = new Signer(identity);
+    const signer = new Key(identity);
     const signature = signer.sign(buffer);
 
     return { signature };
@@ -326,18 +324,18 @@ module.exports = Contract;
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
-      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
-      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
@@ -355,7 +353,6 @@ module.exports = Contract;
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
-      <li><a href="Signer.html">Signer</a></li>
       <li><a href="Snapshot.html">Snapshot</a></li>
       <li><a href="Stack.html">Stack</a></li>
       <li><a href="Stash.html">Stash</a></li>

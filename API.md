@@ -868,12 +868,8 @@ Casts the Actor to a normalized Buffer.
 ### actor.toGenericMessage() ⇒ <code>Object</code>
 Casts the Actor to a generic message, used to uniquely identify the Actor's state.
 Fields:
-- `preimage`: JSON.stringify(state)
-- `hash`: SHA256(preimage)
 - `type`: 'FabricActorState'
-- `version`: 1 (for now)
 - `object`: state
-- `parent`: null (for now)
 
 **Kind**: instance method of [<code>Actor</code>](#Actor)  
 **Returns**: <code>Object</code> - Generic message object.  
@@ -2076,12 +2072,8 @@ Casts the Actor to a normalized Buffer.
 ### logger.toGenericMessage() ⇒ <code>Object</code>
 Casts the Actor to a generic message, used to uniquely identify the Actor's state.
 Fields:
-- `preimage`: JSON.stringify(state)
-- `hash`: SHA256(preimage)
 - `type`: 'FabricActorState'
-- `version`: 1 (for now)
 - `object`: state
-- `parent`: null (for now)
 
 **Kind**: instance method of [<code>Logger</code>](#Logger)  
 **Overrides**: [<code>toGenericMessage</code>](#Actor+toGenericMessage)  

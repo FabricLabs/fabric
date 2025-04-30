@@ -35,6 +35,7 @@
 
 const {
   BITCOIN_GENESIS,
+  BITCOIN_GENESIS_HASH,
   FABRIC_USER_AGENT
 } = require('../constants');
 
@@ -89,21 +90,17 @@ class Bitcoin extends Service {
   constructor (settings = {}) {
     super(settings);
 
-    // Internal State
-    this.state = {
-      blocks: {}
-    };
-
     // Local Settings
     this.settings = Object.assign({
       name: '@services/bitcoin',
-      mode: 'rpc',
+      mode: 'fabric',
       genesis: BITCOIN_GENESIS,
       network: 'regtest',
       path: './stores/bitcoin',
       mining: false,
       listen: false,
       fullnode: false,
+      managed: false,
       constraints: {
         storage: {
           size: 550 // size in MB
@@ -114,19 +111,36 @@ class Bitcoin extends Service {
       },
       zmq: {
         host: 'localhost',
-        port: 29000
+        port: 29500
+      },
+      state: {
+        actors: {},
+        blocks: {}, // Map of blocks by block hash
+        height: 0,
+        tip: BITCOIN_GENESIS_HASH,
+        transactions: {}, // Map of transactions by txid
+        addresses: {}, // Map of addresses to their transactions
+        index: 0 // Current address index
       },
       nodes: ['127.0.0.1'],
       seeds: ['127.0.0.1'],
       servers: [],
       targets: [],
       peers: [],
-      port: 18444,
-      interval: 10 * 60 * 1000, // every 10 minutes, write a checkpoint
+      port: 18333, // P2P port
+      rpcport: 18332, // RPC port
+      interval: 60000, // 10 * 60 * 1000, // every 10 minutes, write a checkpoint
       verbosity: 2
     }, settings);
 
-    if (this.settings.verbosity >= 4) console.log('[DEBUG]', 'Instance of Bitcoin service created, settings:', this.settings);
+    // Initialize network configurations
+    this._networkConfigs = {
+      mainnet: bitcoin.networks.bitcoin,
+      testnet: bitcoin.networks.testnet,
+      regtest: bitcoin.networks.regtest
+    };
+
+    if (this.settings.debug &amp;&amp; this.settings.verbosity >= 4) console.debug('[DEBUG]', 'Instance of Bitcoin service created, settings:', this.settings);
 
     // Bcoin for JS full node
     // bcoin.set(this.settings.network);
@@ -196,8 +210,7 @@ class Bitcoin extends Service {
       workers: true
     }); */
 
-    // TODO: import ZMQ settings
-    this.zmq = new ZMQ();
+    this.zmq = new ZMQ(this.settings.zmq);
 
     // Define Bitcoin P2P Messages
     this.define('VersionPacket', { type: 0 });
@@ -224,12 +237,7 @@ class Bitcoin extends Service {
           immature: 0
         }
       },
-      content: {
-        actors: {},
-        blocks: [],
-        height: 0,
-        tip: this.settings.genesis
-      },
+      content: this.settings.state,
       chain: [],
       blocks: {},
       headers: [],
@@ -283,11 +291,7 @@ class Bitcoin extends Service {
   }
 
   get networks () {
-    return {
-      'mainnet': bitcoin.networks.mainnet,
-      'regtest': bitcoin.networks.regtest,
-      'testnet': bitcoin.networks.testnet
-    };
+    return this._networkConfigs;
   }
 
   set best (best) {
@@ -379,9 +383,19 @@ class Bitcoin extends Service {
 
   validateAddress (address) {
     try {
-      bitcoin.address.toOutputScript(address, this.networks[this.settings.network]);
+      // Get the correct network configuration
+      const network = this.networks[this.settings.network];
+      if (!network) {
+        throw new Error(`Invalid network: ${this.settings.network}`);
+      }
+
+      // Try to convert the address to an output script
+      bitcoin.address.toOutputScript(address, network);
       return true;
     } catch (e) {
+      if (this.settings.debug) {
+        console.debug('[FABRIC:BITCOIN]', 'Address validation failed:', e.message);
+      }
       return false;
     }
   }
@@ -418,14 +432,14 @@ class Bitcoin extends Service {
    * @param {TX} tx Bitcoin transaction
    */
   async broadcast (msg) {
-    console.log('[SERVICES:BITCOIN]', 'Broadcasting:', msg);
+    console.debug('[SERVICES:BITCOIN]', 'Broadcasting:', msg);
     const verify = await msg.verify();
-    console.log('[SERVICES:BITCOIN]', 'Verified TX:', verify);
+    console.debug('[SERVICES:BITCOIN]', 'Verified TX:', verify);
 
     await this.spv.sendTX(msg);
     // await this.spv.broadcast(msg);
     await this.spv.relay(msg);
-    console.log('[SERVICES:BITCOIN]', 'Broadcasted!');
+    console.debug('[SERVICES:BITCOIN]', 'Broadcasted!');
   }
 
   async processSpendMessage (message) {
@@ -434,7 +448,7 @@ class Bitcoin extends Service {
 
   async _processRawBlock (raw) {
     const block = bcoin.Block.fromRaw(raw);
-    console.log('rawBlock:', block);
+    console.debug('rawBlock:', block);
   }
 
   /**
@@ -539,8 +553,7 @@ class Bitcoin extends Service {
     let hash = require('crypto').createHash('sha256').update(obj.data).digest('hex');
 
     // TODO: verify local hash (see below)
-    console.log('local hash from node:', hash);
-    console.log('WARNING [!!!]: double check that:', `${obj.headers.hash('hex')} === ${hash}`);
+    console.debug('WARNING [!!!]: double check that:', `${obj.headers.hash('hex')} === ${hash}`);
 
     try {
       // TODO: verify block hash!!!
@@ -607,61 +620,22 @@ class Bitcoin extends Service {
     let tx = await this._GET(`/transactions/${obj.hash}`);
     console.log('registered tx:', tx);
 
-    let txns = await this._GET(`/transactions`);
-    let txids = Object.keys(txns);
-    let inputs = [];
-    let outputs = [];
-
+    // Track transactions for each address
     if (obj.inputs) {
-      for (let i = 0; obj.inputs.length; i++) {
-        let input = obj.inputs[i];
-
-        if (input.address) {
-          await this._registerAddress({
-            id: input.address
-          });
+      for (let input of obj.inputs) {
+        if (input.address &amp;&amp; this.settings.state.addresses[input.address]) {
+          this.settings.state.addresses[input.address].transactions.push(obj.hash);
         }
-
-        inputs.push(input);
       }
     }
 
     if (obj.outputs) {
-      for (let i = 0; obj.outputs.length; i++) {
-        let output = obj.outputs[i];
-
-        if (output.address) {
-          await this._registerAddress({
-            id: output.address
-          });
+      for (let output of obj.outputs) {
+        if (output.address &amp;&amp; this.settings.state.addresses[output.address]) {
+          this.settings.state.addresses[output.address].transactions.push(obj.hash);
         }
-
-        outputs.push(output);
       }
     }
-
-    let transaction = Object.assign({
-      id: obj.hash,
-      hash: obj.hash,
-      inputs: inputs,
-      outputs: outputs
-    }, obj);
-
-    // await this._PUT(`/transactions`, txids);
-    await this.commit();
-
-    this.emit(`message`, {
-      '@type': 'TransactionRegistration',
-      '@data': tx,
-      actor: `services/bitcoin`,
-      target: `/transactions`,
-      object: transaction,
-      origin: {
-        type: 'Link',
-        name: 'Bitcoin',
-        link: `/services/bitcoin`
-      }
-    });
 
     return tx;
   }
@@ -675,7 +649,7 @@ class Bitcoin extends Service {
    * @param {PeerPacket} msg Message from peer.
    */
   async _handlePeerPacket (msg) {
-    console.log('[SERVICES:BITCOIN]', 'Peer sent packet:', msg);
+    console.debug('[SERVICES:BITCOIN]', 'Peer sent packet:', msg);
 
     switch (msg.cmd) {
       default:
@@ -694,7 +668,7 @@ class Bitcoin extends Service {
           data: msg.block.toBlock()._raw,
         });
 
-        console.log('registered block:', block);
+        console.debug('registered block:', block);
         break;
       case 'inv':
         this.peer.getData(msg.items);
@@ -705,11 +679,11 @@ class Bitcoin extends Service {
           hash: msg.tx.hash('hex') + '',
           confirmations: 0
         });
-        console.log('regtest tx:', transaction);
+        console.debug('regtest tx:', transaction);
         break;
     }
 
-    console.log('[SERVICES:BITCOIN]', 'State:', this.state);
+    console.debug('[SERVICES:BITCOIN]', 'State:', this.state);
   }
 
   async _handleBlockMessage (msg) {
@@ -748,6 +722,9 @@ class Bitcoin extends Service {
       block: msg
     });
 
+    // Update state with new block
+    this._state.content.blocks[block.hash] = block;
+
     // if (this.settings.verbosity >= 5) console.log('created block:', block);
     if (this.settings.verbosity >= 5) console.log('block count:', Object.keys(this.blocks.list()).length);
 
@@ -780,6 +757,9 @@ class Bitcoin extends Service {
       }
     };
 
+    // Update state with new transaction
+    this._state.content.transactions[tx.hash('hex')] = msg['@data'];
+
     this.emit('transaction', msg);
     this.emit('message', { '@type': 'ServiceMessage', '@data': msg });
 
@@ -804,36 +784,42 @@ class Bitcoin extends Service {
 
   async _loadWallet (name) {
     const actor = new Actor({ content: name });
-    const created = await this._makeRPCRequest('createwallet', [
-      actor.id,
-      false,
-      false, // blank (use sethdseed)
-      '', // passphrase
-      true, // avoid reuse
-      false, // descriptors
-    ]);
-
-    const wallet = await this._makeRPCRequest('loadwallet', [actor.id]);
-
-    /* if (created.error &amp;&amp; wallet.error) {
-      return this.emit('error', `Could not create or load wallet: ${created.error || wallet.error}`);
-    } */
 
     try {
-      this.addresses = await this._listAddresses();
-    } catch (exception) {}
+      // Try to create wallet first
+      await this._makeRPCRequest('createwallet', [
+        actor.id,
+        false,
+        false, // blank (use sethdseed)
+        '', // passphrase
+        true, // avoid reuse
+        false, // descriptors
+      ]);
 
-    // console.log('addresses:', this.addresses);
-    if (this.addresses.error) this.addresses = [];
+      // Load the wallet
+      await this._makeRPCRequest('loadwallet', [actor.id]);
 
-    if (!this.addresses.length) {
-      const address = await this.getUnusedAddress();
-      this.addresses.push(address);
+      // Get addresses
+      try {
+        this.addresses = await this._listAddresses();
+      } catch (exception) {
+        if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Error listing addresses:', exception.message);
+        this.addresses = [];
+      }
+
+      // If no addresses, generate one
+      if (!this.addresses || !this.addresses.length) {
+        const address = await this.getUnusedAddress();
+        this.addresses = [address];
+      }
+
+      return {
+        id: actor.id
+      };
+    } catch (error) {
+      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Error loading wallet:', error.message);
+      throw error;
     }
-
-    return {
-      id: actor.id
-    };
   }
 
   /**
@@ -926,97 +912,125 @@ class Bitcoin extends Service {
   }
 
   async _startZMQ () {
-    const self = this;
-
-    this.zmq.on('log', async function _handleZMQLogEvent (event) {
-      if (this.settings.debug) self.emit('debug', `[BITCOIN:ZMQ] Log: ${event}`);
-      self.emit('log', `[BITCOIN:ZMQ] Log: ${event}`);
+    if (this.settings.verbosity >= 5) console.debug('[AUDIT]', 'Starting ZMQ service...');
+    this.zmq.on('log', (msg) => {
+      if (this.settings.debug) console.log('[ZMQ]', msg);
     });
 
-    this.zmq.on('message', async function _handleZMQMessage (event) {
-      if (this.settings.debug) self.emit('debug', `[BITCOIN:ZMQ] Message: ${JSON.stringify(event)}`);
+    this.zmq.on('message', async (msg) => {
+      let topic, content;
 
-      let data = null;
+      // Handle both raw ZMQ messages and Message objects
+      if (Array.isArray(msg)) {
+        // Raw ZMQ message format
+        topic = msg[0].toString();
+        content = msg[1];
+      } else if (msg &amp;&amp; typeof msg === 'object') {
+        // Message object format
+        topic = msg.type;
+        content = msg.data;
+      } else {
+        console.error('[BITCOIN]', 'Invalid message format:', msg);
+        return;
+      }
+
+      if (this.settings.debug) this.emit('debug', '[ZMQ] Received message on topic:', topic, 'Message length:', content.length);
 
       try {
-        data = JSON.parse(event.data);
+        switch (topic) {
+          case 'GenericMessage':
+            // Handle generic message
+            if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'Received generic message:', content.toString());
+            console.debug('current state:', this.state);
+            break;
+          case 'hashblock':
+            // Update state with block hash (reversed byte order)
+            const blockHash = content.toString('hex');
+            this._state.content.blocks[blockHash] = {
+              hash: blockHash,
+              raw: null,
+              timestamp: Date.now()
+            };
+            if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'Received block hash:', blockHash);
+            break;
+          case 'rawblock':
+            // Update state with full block data
+            const block = await this.blocks.create({
+              hash: content.hash('hex'),
+              parent: content.prevBlock.toString('hex'),
+              transactions: content.txs.map(tx => tx.hash('hex')),
+              block: content,
+              raw: content.toRaw().toString('hex'),
+              timestamp: Date.now()
+            });
+            this._state.content.blocks[block.hash] = block;
+            if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'Received raw block:', block.hash);
+            break;
+          case 'hashtx':
+            // Update state with transaction hash (reversed byte order)
+            const txHash = content.toString('hex');
+            if (!this._state.content.transactions[txHash]) {
+              this._state.content.transactions[txHash] = {
+                hash: txHash,
+                raw: null,
+                timestamp: Date.now()
+              };
+            }
+            if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'Received transaction hash:', txHash);
+            break;
+          case 'rawtx':
+            // Update state with full transaction data
+            const tx = {
+              hash: content.hash('hex'),
+              inputs: content.inputs,
+              outputs: content.outputs,
+              tx: content,
+              raw: content.toRaw().toString('hex'),
+              timestamp: Date.now()
+            };
+            this._state.content.transactions[tx.hash] = tx;
+            if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'Received raw transaction:', tx.hash);
+            break;
+          default:
+            if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'Unknown ZMQ topic:', topic);
+        }
       } catch (exception) {
-        self.emit('error', 'Could not parse raw block:', event.data);
+        this.emit('error', `Could not process ZMQ message: ${exception}`);
       }
+    });
 
-      if (!data || !data.topic) return;
+    this.zmq.on('error', (err) => {
+      console.error('[ZMQ] Error:', err);
+    });
 
-      switch (data.topic) {
-        case 'hashblock':
-          try {
-            await self._requestBlock(data.message);
-          } catch (exception) {
-            self.emit('error', `Could not retrieve reported block: ${data.message}`);
-          }
-          break;
-        case 'rawblock':
-          try {
-            await self._processRawBlock(data.message);
-          } catch (exception) {
-            self.emit('error', `Could not retrieve reported block: ${data.message}`);
-          }
-          break;
-        default:
-          self.emit('warning', `[BITCOIN:ZMQ] Unhandled topic: ${data.topic}`);
-          break;
-      }
+    this.zmq.on('connect', () => {
+      console.log('[ZMQ] Connected to Bitcoin node');
+    });
+
+    this.zmq.on('disconnect', () => {
+      console.log('[ZMQ] Disconnected from Bitcoin node');
     });
 
     await this.zmq.start();
-    return this;
-  }
-
-  async _startLocalNode () {
-    const self = this;
-
-    if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', `Starting fullnode for network "${this.settings.network}"...`);
-
-    /* for (const candidate of this.settings.seeds) {
-      let parts = candidate.split(':');
-      let addr = new NetAddress({
-        host: parts[0],
-        port: parseInt(parts[1]) || this.provider.port
-      });
-
-      let peer = this.fullnode.pool.createOutbound(addr);
-      this.fullnode.pool.peers.add(peer);
-    } */
-
-    await this.fullnode.open();
-    await this.fullnode.connect();
-
-    // TODO: listen for sync finalization
-    this.fullnode.startSync();
-
-    if (this.settings.verbosity >= 4) console.log('[SERVICES:BITCOIN]', `Full Node for network "${this.settings.network}" started!`);
+    if (this.settings.debug) console.log('[AUDIT]', 'ZMQ Started.');
   }
 
   async generateBlock (address) {
-    let block = null;
-
     if (!address) address = await this.getUnusedAddress();
 
     switch (this.settings.mode) {
       case 'rpc':
         const result = await this._makeRPCRequest('generatetoaddress', [1, address]);
-        break;
+        return result[0];
+      case 'fabric':
+        // In fabric mode, we just increment the height and return a mock block hash
+        this.settings.state.height++;
+        const mockHash = crypto.createHash('sha256').update(`${this.settings.state.height}`).digest('hex');
+        this.settings.state.tip = mockHash;
+        return mockHash;
       default:
-        try {
-          block = await this.fullnode.miner.mineBlock(this.fullnode.chain.tip, address);
-          // Add the block to our chain
-          await this.fullnode.chain.add(block);
-        } catch (exception) {
-          return this.emit('error', `Could not mine block: ${exception}`);
-        }
-        break;
+        throw new Error('Invalid mode for block generation');
     }
-
-    return block;
   }
 
   async generateBlocks (count = 1, address = this.wallet.receive) {
@@ -1045,8 +1059,32 @@ class Bitcoin extends Service {
     if (this.rpc) {
       const address = await this._makeRPCRequest('getnewaddress');
       return address;
+    } else if (this.settings.key) {
+      // In fabric mode, use the provided key to derive an address
+      const target = this.settings.key.deriveAddress(this.settings.state.index);
+      // Increment the index for next time
+      this.settings.state.index++;
+      // Track the address
+      this.settings.state.addresses[target.address] = {
+        index: this.settings.state.index - 1,
+        transactions: []
+      };
+      return target.address;
     } else {
-      const target = this.key.deriveAddress(this.state.index);
+      // If no key is provided, generate a new key for regtest
+      const key = new Key({
+        network: this.settings.network,
+        purpose: 44,
+        account: 0,
+        index: this.settings.state.index
+      });
+      this.settings.key = key;
+      const target = key.deriveAddress(this.settings.state.index);
+      this.settings.state.index++;
+      this.settings.state.addresses[target.address] = {
+        index: this.settings.state.index - 1,
+        transactions: []
+      };
       return target.address;
     }
   }
@@ -1076,27 +1114,69 @@ class Bitcoin extends Service {
   }
 
   async _makeRPCRequest (method, params = []) {
-    const self = this;
-    return new Promise((resolve, reject) => {
-      if (!self.rpc) {
-        self.emit('error', `No local RPC: ${self} \n${OP_TRACE({ name: 'foo' })}`);
-        return reject(new Error('RPC manager does not exist.'));
-      }
-
-      try {
-        self.rpc.request(method, params, function responseHandler (err, response) {
-          if (err) {
-            // TODO: replace with reject()
-            return resolve({
-              error: (err.error) ? JSON.parse(JSON.parse(err.error)) : err,
-              response: response
-            });
+    if (this.settings.mode === 'fabric') {
+      // In fabric mode, handle requests locally
+      switch (method) {
+        case 'getnewaddress':
+          if (this.settings.key) {
+            const target = this.settings.key.deriveAddress(this.settings.state.index);
+            this.settings.state.index++;
+            this.settings.state.addresses[target.address] = {
+              index: this.settings.state.index - 1,
+              transactions: []
+            };
+            return target.address;
           }
+          throw new Error('No key provided for address generation in fabric mode');
+        case 'validateaddress':
+          return { isvalid: this.validateAddress(params[0]) };
+        case 'getblockchaininfo':
+          return { blocks: this.settings.state.height };
+        case 'getblockcount':
+          return this.settings.state.height;
+        case 'getbestblockhash':
+          return this.settings.state.tip;
+        case 'listunspent':
+          return [];
+        default:
+          if (this.settings.managed) {
+            // Allow RPC request to be sent in managed mode
+            break;
+          }
+          throw new Error(`Method ${method} not implemented in fabric mode`);
+      }
+    }
 
+    if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Making RPC request: ${method}(${JSON.stringify(params)})`);
+    return new Promise((resolve, reject) => {
+      if (!this.rpc) {
+        const error = new Error('RPC manager does not exist');
+        if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'RPC request failed:', error.message);
+        return reject(error);
+      }
+      try {
+        this.rpc.request(method, params, (err, response) => {
+          if (err) {
+            if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'RPC request failed:', err);
+            // Handle different types of errors
+            if (err.error) {
+              try {
+                // If err.error is a string, try to parse it as JSON
+                const errorObj = typeof err.error === 'string' ? JSON.parse(err.error) : err.error;
+                return reject(new Error(errorObj.message || errorObj.error || JSON.stringify(errorObj)));
+              } catch (parseError) {
+                // If parsing fails, use the original error
+                return reject(new Error(err.error));
+              }
+            }
+            return reject(new Error(err.message || err));
+          }
+          if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `RPC response for ${method}:`, response.result);
           return resolve(response.result);
         });
       } catch (exception) {
-        return reject(exception);
+        if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'RPC request failed with exception:', exception);
+        return reject(new Error(`RPC request failed: ${exception.message}`));
       }
     });
   }
@@ -1116,9 +1196,15 @@ class Bitcoin extends Service {
   }
 
   async _requestBestBlockHash () {
-    const hash = await this._makeRPCRequest('getbestblockhash', []);
-    // this.emit('debug', `Got best block hash: ${hash}`);
-    return hash;
+    try {
+      const hash = await this._makeRPCRequest('getbestblockhash', []);
+      this.best = hash;
+      await this.commit();
+      return this.best;
+    } catch (error) {
+      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Error requesting best block hash:', error.message);
+      throw error;
+    }
   }
 
   async _requestBlockHeader (hash) {
@@ -1401,7 +1487,7 @@ class Bitcoin extends Service {
     const scriptsig = bitcoin.payments.p2sh({
       redeem: {
         input: bitcoin.script.compile([
-          bitcoin.script.signature.encode(options.signer.sign(sighash), hashtype),
+          bitcoin.script.signature.encode(options.key.sign(sighash), hashtype),
           bitcoin.opcodes.OP_TRUE
         ]),
         output: options.script
@@ -1487,9 +1573,13 @@ class Bitcoin extends Service {
     if (!options.inputs) options.inputs = [];
     if (!options.outputs) options.outputs = [];
 
-    const psbt = new bitcoin.Psbt({
-      network: this.networks[this.settings.network]
-    });
+    // Get the correct network configuration
+    const network = this.networks[this.settings.network];
+    if (!network) {
+      throw new Error(`Invalid network: ${this.settings.network}`);
+    }
+
+    const psbt = new bitcoin.Psbt({ network });
 
     for (let i = 0; i &lt; options.inputs.length; i++) {
       const input = options.inputs[i];
@@ -1503,12 +1593,20 @@ class Bitcoin extends Service {
 
     for (let i = 0; i &lt; options.outputs.length; i++) {
       const output = options.outputs[i];
-      const data = {
-        address: output.address,
-        value: output.value
-      };
+      try {
+        const script = bitcoin.address.toOutputScript(output.address, network);
+        const data = {
+          script,
+          value: output.value
+        };
 
-      psbt.addOutput(data);
+        psbt.addOutput(data);
+      } catch (e) {
+        if (this.settings.debug) {
+          console.debug('[FABRIC:BITCOIN]', 'Failed to add output:', e.message);
+        }
+        throw new Error(`Invalid address ${output.address}: ${e.message}`);
+      }
     }
 
     return psbt;
@@ -1637,11 +1735,15 @@ class Bitcoin extends Service {
   }
 
   async _syncBestBlockHash () {
-    const best = await this._requestBestBlockHash();
-    if (best.error) return this.emit('error', `[${this.settings.name}] Could not make request to RPC host: ${best.error}`);
-    this.best = best;
-    await this.commit();
-    return this.best;
+    try {
+      const best = await this._requestBestBlockHash();
+      this.best = best;
+      await this.commit();
+      return this.best;
+    } catch (error) {
+      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Error syncing best block hash:', error.message);
+      throw error;
+    }
   }
 
   async _syncHeaders () {
@@ -1779,23 +1881,75 @@ class Bitcoin extends Service {
   }
 
   async _syncWithRPC () {
-    // await this._syncChainInfoOverRPC();
-    await this._syncChainOverRPC();
-    await this.commit();
-
+    try {
+      await this._syncChainOverRPC();
+      await this.commit();
+    } catch (error) {
+      console.error('[FABRIC:BITCOIN]', 'Sync failed:', error.message);
+      throw error;
+    }
     return this;
   }
 
-  async createLocalNode (settings = {}) {
-    if (this.settings.debug) console.log('[FABRIC:BITCOIN]', 'Creating local node...');
+  async _isBitcoindOnline () {
+    try {
+      // Try to get blockchain info - this will fail if bitcoind is not ready
+      await this._makeRPCRequest('getblockchaininfo', []);
+      return true;
+    } catch (error) {
+      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Bitcoind not yet ready:', error.message);
+      return false;
+    }
+  }
+
+  async _waitForBitcoind (maxAttempts = 30, initialDelay = 1000) {
+    if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Waiting for bitcoind to be ready...');
+    let attempts = 0;
+    let delay = initialDelay;
+
+    while (attempts &lt; maxAttempts) {
+      try {
+        if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Attempt ${attempts + 1}/${maxAttempts} to connect to bitcoind...`);
+        
+        // Check multiple RPC endpoints to ensure full readiness
+        const checks = [
+          this._makeRPCRequest('getblockchaininfo'), // Basic blockchain info
+          this._makeRPCRequest('getnetworkinfo'),    // Network status
+          this._makeRPCRequest('getwalletinfo')      // Wallet status
+        ];
+
+        // Wait for all checks to complete
+        const results = await Promise.all(checks);
+        
+        if (this.settings.debug) {
+          console.debug('[FABRIC:BITCOIN]', 'Successfully connected to bitcoind:');
+          console.debug('[FABRIC:BITCOIN]', '- Blockchain info:', results[0]);
+          console.debug('[FABRIC:BITCOIN]', '- Network info:', results[1]);
+          console.debug('[FABRIC:BITCOIN]', '- Wallet info:', results[2]);
+        }
+        
+        return true;
+      } catch (error) {
+        if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Connection attempt ${attempts + 1} failed:`, error.message);
+        attempts++;
+        if (attempts >= maxAttempts) {
+          throw new Error(`Failed to connect to bitcoind after ${maxAttempts} attempts: ${error.message}`);
+        }
+        await new Promise(resolve => setTimeout(resolve, delay));
+        delay = Math.min(delay * 1.5, 10000); // Exponential backoff with max 10s delay
+      }
+    }
+  }
+
+  async createLocalNode () {
+    if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Creating local node...');
     let datadir = './stores/bitcoin';
-    const port = 20444;
 
     // TODO: use RPC auth
     const params = [
-      `-port=${settings.port || this.settings.port || 18444}`,
+      `-port=${this.settings.port}`,
       '-rpcbind=127.0.0.1',
-      `-rpcport=${port}`,
+      `-rpcport=${this.settings.rpcport}`,
       '-server',
       '-zmqpubrawblock=tcp://127.0.0.1:29500',
       '-zmqpubrawtx=tcp://127.0.0.1:29500',
@@ -1803,6 +1957,7 @@ class Bitcoin extends Service {
       '-zmqpubhashblock=tcp://127.0.0.1:29500'
     ];
 
+    if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Bitcoind parameters:', params);
     if (this.settings.username &amp;&amp; this.settings.password) {
       params.push(`-rpcuser=${this.settings.username}`);
       params.push(`-rpcpassword=${this.settings.password}`);
@@ -1811,7 +1966,7 @@ class Bitcoin extends Service {
       const auth = this.createRPCAuth({ username });
       this.settings.username = auth.username;
       this.settings.password = auth.password;
-      this.settings.authority = `http://${this.settings.username}:${this.settings.password}@127.0.0.1:${port}`;
+      this.settings.authority = `http://${this.settings.username}:${this.settings.password}@127.0.0.1:${this.settings.rpcport}`;
       params.push(`-rpcauth=${auth.content}`);
     }
 
@@ -1838,6 +1993,8 @@ class Bitcoin extends Service {
         break;
     }
 
+    if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Using datadir:', datadir);
+
     // If storage constraints are set, prune the blockchain
     if (this.settings.constraints.storage.size) {
       params.push(`-prune=${this.settings.constraints.storage.size}`);
@@ -1849,13 +2006,21 @@ class Bitcoin extends Service {
     params.push(`-datadir=${datadir}`);
 
     // Start bitcoind
-    if (this.settings.fullnode) {
+    if (this.settings.managed) {
       // Ensure storage directory exists
       await mkdirp(datadir);
+      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Storage directory created:', datadir);
+
+      // Spawn process
+      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Spawning bitcoind process...');
       const child = children.spawn('bitcoind', params);
 
+      // Store the child process reference
+      this._nodeProcess = child;
+
+      // Handle process events
       child.stdout.on('data', (data) => {
-        if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', data.toString('utf8').trim());
+        if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'bitcoind stdout:', data.toString('utf8').trim());
         if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] ${data.toString('utf8').trim()}`);
       });
 
@@ -1867,7 +2032,64 @@ class Bitcoin extends Service {
       child.on('close', (code) => {
         if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Bitcoin Core exited with code ' + code);
         this.emit('log', `[FABRIC:BITCOIN] Bitcoin Core exited with code ${code}`);
+        this._nodeProcess = null;
       });
+
+      child.on('error', (err) => {
+        console.error('[FABRIC:BITCOIN]', 'Bitcoin Core process error:', err);
+        this.emit('error', `[FABRIC:BITCOIN] Bitcoin Core process error: ${err}`);
+        // Attempt to restart the process
+        // this._restartBitcoind();
+      });
+
+      // Add cleanup handlers
+      const cleanup = async () => {
+        if (this._nodeProcess) {
+          try {
+            console.debug('[FABRIC:BITCOIN]', 'Cleaning up Bitcoin node...');
+            this._nodeProcess.kill();
+            await new Promise(resolve => {
+              this._nodeProcess.on('close', () => resolve());
+            });
+          } catch (e) {
+            console.error('[FABRIC:BITCOIN]', 'Error during cleanup:', e);
+          }
+        }
+      };
+
+      // Handle process termination signals
+      process.on('SIGINT', cleanup);
+      process.on('SIGTERM', cleanup);
+      process.on('exit', cleanup);
+
+      // Handle uncaught exceptions
+      process.on('uncaughtException', async (err) => {
+        console.error('[FABRIC:BITCOIN]', 'Uncaught exception:', err);
+        await cleanup();
+        this.emit('error', err);
+      });
+
+      // Handle unhandled promise rejections
+      process.on('unhandledRejection', async (reason, promise) => {
+        console.error('[FABRIC:BITCOIN]', 'Unhandled rejection at:', promise, 'reason:', reason);
+        // await cleanup();
+        this.emit('error', reason);
+      });
+
+      // Initialize RPC client
+      const config = {
+        host: '127.0.0.1',
+        port: this.settings.rpcport,
+        timeout: 300000 // 5 minute timeout for heavy operations
+      };
+
+      const auth = `${this.settings.username}:${this.settings.password}`;
+      config.headers = { Authorization: `Basic ${Buffer.from(auth, 'utf8').toString('base64')}` };
+
+      this.rpc = jayson.http(config);
+
+      // Wait for bitcoind to be fully online
+      await this._waitForBitcoind();
 
       return child;
     } else {
@@ -1882,30 +2104,26 @@ class Bitcoin extends Service {
     this.emit('debug', `[SERVICES:BITCOIN] Starting for network "${this.settings.network}"...`);
     this.status = 'STARTING';
 
-    await this.createLocalNode();
+    // Create and wait for local node only if managed mode is enabled
+    if (this.settings.managed) {
+      const node = await this.createLocalNode();
+      if (!node) {
+        throw new Error('Failed to create local Bitcoin node');
+      }
+    }
 
     // Bitcoin events
-    if (this.peer) this.peer.on('error', this._handlePeerError.bind(this));
-    if (this.peer) this.peer.on('packet', this._handlePeerPacket.bind(this));
-    // NOTE: we always ask for genesis block on peer open
-    if (this.peer) this.peer.on('open', () => {
-      let block = this.peer.getBlock([this.network.genesis.hash]);
-    });
+    if (this.peer) {
+      this.peer.on('error', this._handlePeerError.bind(this));
+      this.peer.on('packet', this._handlePeerPacket.bind(this));
+      this.peer.on('open', () => {
+        let block = this.peer.getBlock([this.network.genesis.hash]);
+      });
+    }
 
     if (this.store) await this.store.open();
-    /* if (this.settings.fullnode) {
-      this.fullnode.on('peer connect', function peerConnectHandler (peer) {
-        self.emit('warning', `[SERVICES:BITCOIN]', 'Peer connected to Full Node: ${peer}`);
-      });
 
-      this.fullnode.on('block', this._handleBlockMessage.bind(this));
-      this.fullnode.on('connect', this._handleConnectMessage.bind(this));
-
-      this.fullnode.on('tx', async function fullnodeTxHandler (tx) {
-        self.emit('log', `tx event: ${JSON.stringify(tx)}`);
-      });
-    } */
-
+    // Set up wallet event handlers
     this.wallet.on('message', (msg) => {
       this.emit('log', `wallet msg: ${msg}`);
     });
@@ -1930,14 +2148,6 @@ class Bitcoin extends Service {
 
     this.observer = monitor.observe(this._state.content);
 
-    // Start services
-    await this.wallet.start();
-    // await this.chain.start();
-
-    // Start nodes
-    // if (this.settings.fullnode) await this._startLocalNode();
-    if (this.settings.zmq) await this._startZMQ();
-
     // Handle RPC mode
     if (this.settings.mode === 'rpc') {
       // If deprecated setting `authority` is provided, compose settings
@@ -1952,11 +2162,12 @@ class Bitcoin extends Service {
         this.settings.secure = (url.protocol === 'https:') ? true : false;
       }
 
-      const authority = `http${(this.settings.secure == true) ? 's': ''}://${this.settings.username}:${this.settings.password}@${this.settings.host}:${this.settings.port}`;
+      const authority = `http${(this.settings.secure == true) ? 's': ''}://${this.settings.username}:${this.settings.password}@${this.settings.host}:${this.settings.rpcport}`;
       const provider = new URL(authority);
       const config = {
         host: provider.hostname,
-        port: provider.port
+        port: provider.port,
+        timeout: 300000 // 5 minute timeout for heavy operations
       };
 
       const auth = provider.username + ':' + provider.password;
@@ -1968,12 +2179,20 @@ class Bitcoin extends Service {
         this.rpc = jayson.http(config);
       }
 
+      // Wait for bitcoind to be fully online
+      await this._waitForBitcoind();
+    }
+
+    // Start services
+    await this.wallet.start();
+
+    // Start ZMQ if enabled
+    if (this.settings.zmq) await this._startZMQ();
+
+    // Handle RPC mode operations
+    if (this.settings.mode === 'rpc') {
       const wallet = await this._loadWallet();
-
-      // Heartbeat
       this._heart = setInterval(this.tick.bind(this), this.settings.interval);
-
-      // Sync!
       await this._syncWithRPC();
     }
 
@@ -2001,17 +2220,53 @@ class Bitcoin extends Service {
    * Stop the Bitcoin service.
    */
   async stop () {
-    if (this.peer &amp;&amp; this.peer.connected) await this.peer.destroy();
-    // if (this.fullnode) await this.fullnode.close();
-    await this.wallet.stop();
-    // await this.chain.stop();
+    if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Stopping Bitcoin service...');
 
+    // Remove all event listeners
+    this.removeAllListeners();
+
+    // Stop the heartbeat interval if it exists
     if (this._heart) {
       clearInterval(this._heart);
       delete this._heart;
     }
 
+    // Stop the wallet
+    if (this.wallet) {
+      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Stopping wallet...');
+      await this.wallet.stop();
+    }
+
+    // Stop the ZMQ service
+    if (this.zmq) {
+      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Stopping ZMQ...');
+      await this.zmq.stop();
+    }
+
+    // Kill the Bitcoin node process if it exists
+    if (this._nodeProcess) {
+      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Killing Bitcoin node process...');
+      try {
+        this._nodeProcess.kill('SIGKILL');
+        console.debug('[FABRIC:BITCOIN]', 'Process killed');
+      } catch (error) {
+        console.error('[FABRIC:BITCOIN]', 'Error killing process:', error);
+      }
+      this._nodeProcess = null;
+    }
+
+    if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Service stopped');
     return this;
+  }
+
+  // Add cleanup method
+  async cleanup () {
+    console.log('[FABRIC:BITCOIN]', 'Cleaning up...');
+    await this.stop();
+    // Remove process event listeners
+    process.removeAllListeners('uncaughtException');
+    process.removeAllListeners('unhandledRejection');
+    console.log('[FABRIC:BITCOIN]', 'Cleanup complete');
   }
 }
 
@@ -2029,18 +2284,18 @@ module.exports = Bitcoin;
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
-      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
-      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
@@ -2058,7 +2313,6 @@ module.exports = Bitcoin;
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
-      <li><a href="Signer.html">Signer</a></li>
       <li><a href="Snapshot.html">Snapshot</a></li>
       <li><a href="Stack.html">Stack</a></li>
       <li><a href="Stash.html">Stash</a></li>

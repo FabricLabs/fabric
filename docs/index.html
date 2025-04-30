@@ -76,7 +76,7 @@
           <li><code>components</code> — generic &quot;interface&quot; elements for describing Types to users.</li>
           <li><code>resources</code> — Fabric-based definitions for <code>@fabric/core/types/resource</code>.</li>
           <li><code>services</code> — Maintainer-accepted definitions of the <code>Service</code> class. Yes, you can submit your own!</li>
-          <li><code>types</code> — a library of ES6 classes implementing various bits; <code>Actor</code>, <code>Channel</code>, <code>Oracle</code>, <code>Service</code>, and <code>Signer</code> are all interesting. :)</li>
+          <li><code>types</code> — a library of ES6 classes implementing various bits; <code>Actor</code>, <code>Channel</code>, <code>Oracle</code>, <code>Service</code>, and <code>Key</code> are all interesting. :)</li>
         </ol>
         <p>Let's go over each in more detail.</p>
         <h4>0. Assets</h4>
@@ -219,15 +219,15 @@ class MyClockService extends Service {
 </code></pre>
         <p>Grab what you need, use what you take. :)</p>
         <h5>Fabric Types by Example</h5>
-        <p>Create and sign some string message using the built-in Schnorr <code>Signer</code> type:</p>
+        <p>Create and sign some string message using the built-in Schnorr <code>Key</code> type:</p>
         <pre class="prettyprint source lang-js"><code>const Hash256 = require('@fabric/core/types/hash256');
-const Signer = require('@fabric/core/types/signer');
+const Key = require('@fabric/core/types/key');
 const message = 'Hello, world!';
-const signer = new Signer();
-const signature = signer.sign(message);
+const key = new Key();
+const signature = key.sign(message);
 console.log('Message:', message);
 console.log('Message Hash:', Hash256.digest(message));
-console.log('Signer Pubkey:', signer.public);
+console.log('Key Pubkey:', key.public);
 console.log('Purported Signature:', message);
 </code></pre>
         <h1>Parking Lot</h1>
@@ -251,18 +251,18 @@ console.log('Purported Signature:', message);
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
-      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
-      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
@@ -280,7 +280,6 @@ console.log('Purported Signature:', message);
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
-      <li><a href="Signer.html">Signer</a></li>
       <li><a href="Snapshot.html">Snapshot</a></li>
       <li><a href="Stack.html">Stack</a></li>
       <li><a href="Stash.html">Stash</a></li>
