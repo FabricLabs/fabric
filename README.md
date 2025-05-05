@@ -221,7 +221,7 @@ Fabric on Twitter: [@FabricProtocol][twitter]
 [coordination]: https://i.imgur.com/Ki3fbTh.gif
 [bitcoin-donations]: bitcoin:3CHGLadfbcKrM1sS5uYtASaq75VAuMSMpb
 [bitcoin-donations-image]: https://fabric.pub/assets/3CHGLadfbcKrM1sS5uYtASaq75VAuMSMpb.png
-[twitter]: https://twitter.com/FabricProtocol
+[x (formerly twitter)]: https://x.com/FabricProtocol
 [join]: https://chat.fabric.pub#register
 [actor-model]: http://hdl.handle.net/1721.1/6935
 [specification]: https://dev.fabric.pub/snippets/specification.html
