@@ -1,6 +1,9 @@
 'use strict';
 
+// Dependencies
 const assert = require('assert');
+
+// Fabric Types
 const Bitcoin = require('../../services/bitcoin');
 const Key = require('../../types/key');
 
@@ -59,6 +62,30 @@ describe('@fabric/core/services/bitcoin', function () {
       assert.equal(Bitcoin instanceof Function, true);
     });
 
+    it('provides reasonable defaults', function () {
+      const local = new Bitcoin();
+      assert.equal(local.UAString, 'Fabric Core 0.1.0 (@fabric/core#v0.1.0-RC1)');
+      assert.equal(local.supply, 0);
+      assert.equal(local.network, 'mainnet');
+      // assert.equal(local.addresses, []);
+      assert.equal(local.balance, 0);
+      assert.equal(local.height, 0);
+      assert.equal(local.best, '000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f');
+      // assert.equal(local.headers, []);
+    });
+
+    it('provides createRPCAuth method', function () {
+      const auth = bitcoin.createRPCAuth({
+        username: 'bitcoinrpc',
+        password: 'password'
+      });
+
+      assert.ok(auth);
+      assert.ok(auth.username);
+      assert.ok(auth.password);
+      assert.ok(auth.content);
+    });
+
     it('can start and stop smoothly', async function () {
       await bitcoin.start();
       await bitcoin.stop();
@@ -84,6 +111,43 @@ describe('@fabric/core/services/bitcoin', function () {
       const address = await bitcoin.getUnusedAddress();
       const blocks = await bitcoin.generateBlocks(1, address);
       assert.equal(blocks.length, 1);
+    });
+
+    it('can manage a local bitcoind instance', async function () {
+      const local = new Bitcoin({
+        listen: 0,
+        network: 'regtest',
+        managed: true
+      });
+
+      await local.start();
+      await local.stop();
+      assert.ok(local);
+    });
+
+    it('can generate regtest balances', async function () {
+      const local = new Bitcoin({
+        listen: 0,
+        network: 'regtest',
+        managed: true,
+        mode: 'rpc'
+      });
+
+      await local.start();
+
+      const created = await local._makeRPCRequest('createwallet', ['testwallet', false, false, null, true, true]);
+      const loaded = await local._makeRPCRequest('loadwallet', ['testwallet']);
+      const address = await local._makeRPCRequest('getnewaddress', []);
+      const generated = await local._makeRPCRequest('generatetoaddress', [101, address]);
+      const wallet = await local._makeRPCRequest('getwalletinfo', []);
+      const balance = await local._makeRPCRequest('getbalance', []);
+      const blockchain = await local._makeRPCRequest('getblockchaininfo', []);
+
+      await local.stop();
+
+      assert.ok(local);
+      assert.ok(balance);
+      assert.equal(balance, 50);
     });
 
     it('can create a psbt', async function () {

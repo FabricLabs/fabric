@@ -62,7 +62,7 @@ class Bitcoin extends Service {
       name: '@services/bitcoin',
       mode: 'fabric',
       genesis: BITCOIN_GENESIS,
-      network: 'regtest',
+      network: 'mainnet',
       path: './stores/bitcoin',
       mining: false,
       listen: false,
@@ -87,7 +87,8 @@ class Bitcoin extends Service {
         tip: BITCOIN_GENESIS_HASH,
         transactions: {}, // Map of transactions by txid
         addresses: {}, // Map of addresses to their transactions
-        index: 0 // Current address index
+        walletIndex: 0, // Current address index
+        supply: 0
       },
       nodes: ['127.0.0.1'],
       seeds: ['127.0.0.1'],
@@ -257,6 +258,10 @@ class Bitcoin extends Service {
     return bitcoin;
   }
 
+  get network () {
+    return this.settings.network;
+  }
+
   get networks () {
     return this._networkConfigs;
   }
@@ -334,18 +339,6 @@ class Bitcoin extends Service {
       password: password,
       username: username
     };
-  }
-
-  signTweaked (messageHash, key) {
-    // Order of the curve (N) - 1
-    const N_LESS_1 = Buffer.from('fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140', 'hex');
-    // 1 represented as 32 bytes BE
-    const ONE = Buffer.from('0000000000000000000000000000000000000000000000000000000000000001', 'hex');
-    const privateKey = (key.publicKey[0] === 2) ? key.privateKey : ecc.privateAdd(ecc.privateSub(N_LESS_1, key.privateKey), ONE);
-    const tweakHash = bitcoin.crypto.taggedHash('TapTweak', key.publicKey.slice(1, 33));
-    const newPrivateKey = ecc.privateAdd(privateKey, tweakHash);
-    if (newPrivateKey === null) throw new Error('Invalid Tweak');
-    return ecc.signSchnorr(messageHash, newPrivateKey, Buffer.alloc(32));
   }
 
   validateAddress (address) {
@@ -1028,12 +1021,12 @@ class Bitcoin extends Service {
       return address;
     } else if (this.settings.key) {
       // In fabric mode, use the provided key to derive an address
-      const target = this.settings.key.deriveAddress(this.settings.state.index);
+      const target = this.settings.key.deriveAddress(this.settings.state.walletIndex);
       // Increment the index for next time
-      this.settings.state.index++;
+      this.settings.state.walletIndex++;
       // Track the address
       this.settings.state.addresses[target.address] = {
-        index: this.settings.state.index - 1,
+        index: this.settings.state.walletIndex - 1,
         transactions: []
       };
       return target.address;
@@ -1043,13 +1036,13 @@ class Bitcoin extends Service {
         network: this.settings.network,
         purpose: 44,
         account: 0,
-        index: this.settings.state.index
+        index: this.settings.state.walletIndex
       });
       this.settings.key = key;
-      const target = key.deriveAddress(this.settings.state.index);
-      this.settings.state.index++;
+      const target = key.deriveAddress(this.settings.state.walletIndex);
+      this.settings.state.walletIndex++;
       this.settings.state.addresses[target.address] = {
-        index: this.settings.state.index - 1,
+        index: this.settings.state.walletIndex - 1,
         transactions: []
       };
       return target.address;
@@ -1086,10 +1079,10 @@ class Bitcoin extends Service {
       switch (method) {
         case 'getnewaddress':
           if (this.settings.key) {
-            const target = this.settings.key.deriveAddress(this.settings.state.index);
-            this.settings.state.index++;
+            const target = this.settings.key.deriveAddress(this.settings.state.walletIndex);
+            this.settings.state.walletIndex++;
             this.settings.state.addresses[target.address] = {
-              index: this.settings.state.index - 1,
+              index: this.settings.state.walletIndex - 1,
               transactions: []
             };
             return target.address;

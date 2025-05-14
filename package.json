@@ -175,6 +175,9 @@
     "./constants": {
       "require": "./constants.js"
     },
+    "./fixtures": {
+      "require": "./fixtures.js"
+    },
     "./types/*": {
       "require": "./types/*.js"
     },
