@@ -4,7 +4,6 @@
 const BN = require('bn.js');
 const EC = require('elliptic').ec;
 const merge = require('lodash.merge');
-const payments = require('bitcoinjs-lib/src/payments');
 const networks = require('bitcoinjs-lib/src/networks');
 
 // Mnemonics
