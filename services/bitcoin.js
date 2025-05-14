@@ -1961,6 +1961,11 @@ class Bitcoin extends Service {
         break;
     }
 
+    if (this.settings.datadir) {
+      datadir = this.settings.datadir;
+      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Using custom datadir:', datadir);
+    }
+
     if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Using datadir:', datadir);
 
     // If storage constraints are set, prune the blockchain
