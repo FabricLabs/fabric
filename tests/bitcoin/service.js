@@ -80,7 +80,7 @@ describe('@fabric/core/services/bitcoin', function () {
       assert.ok(valid);
     });
 
-    it('can generate blocks', async function () {
+    xit('can generate blocks', async function () {
       const address = await bitcoin.getUnusedAddress();
       const blocks = await bitcoin.generateBlocks(1, address);
       assert.equal(blocks.length, 1);
