@@ -58,6 +58,13 @@ describe('@fabric/core/services/bitcoin', function () {
   });
 
   describe('Bitcoin', function () {
+    afterEach(async function() {
+      // Ensure any local bitcoin instance is stopped
+      if (this.currentTest.ctx.local) {
+        await this.currentTest.ctx.local.stop();
+      }
+    });
+
     it('is available from @fabric/core', function () {
       assert.equal(Bitcoin instanceof Function, true);
     });
@@ -117,9 +124,11 @@ describe('@fabric/core/services/bitcoin', function () {
       const local = new Bitcoin({
         listen: 0,
         network: 'regtest',
-        managed: true
+        managed: true,
+        datadir: `${process.cwd()}/stores/bitcoin-regtest-${Date.now()}` // Unique directory
       });
 
+      this.test.ctx.local = local;
       await local.start();
       await local.stop();
       assert.ok(local);
@@ -130,8 +139,11 @@ describe('@fabric/core/services/bitcoin', function () {
         listen: 0,
         network: 'regtest',
         managed: true,
-        mode: 'rpc'
+        mode: 'rpc',
+        datadir: `${process.cwd()}/stores/bitcoin-regtest-${Date.now()}` // Unique directory
       });
+
+      this.test.ctx.local = local;
 
       await local.start();
 
