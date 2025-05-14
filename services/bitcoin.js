@@ -1877,35 +1877,43 @@ class Bitcoin extends Service {
     while (attempts < maxAttempts) {
       try {
         if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Attempt ${attempts + 1}/${maxAttempts} to connect to bitcoind...`);
-        
+
         // Check multiple RPC endpoints to ensure full readiness
         const checks = [
-          this._makeRPCRequest('getblockchaininfo'), // Basic blockchain info
-          this._makeRPCRequest('getnetworkinfo'),    // Network status
-          this._makeRPCRequest('getwalletinfo')      // Wallet status
+          this._makeRPCRequest('getblockchaininfo'),
+          this._makeRPCRequest('getnetworkinfo'),
+          this._makeRPCRequest('getwalletinfo')
         ];
 
         // Wait for all checks to complete
         const results = await Promise.all(checks);
-        
+
         if (this.settings.debug) {
           console.debug('[FABRIC:BITCOIN]', 'Successfully connected to bitcoind:');
           console.debug('[FABRIC:BITCOIN]', '- Blockchain info:', results[0]);
           console.debug('[FABRIC:BITCOIN]', '- Network info:', results[1]);
           console.debug('[FABRIC:BITCOIN]', '- Wallet info:', results[2]);
         }
-        
+
         return true;
       } catch (error) {
         if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Connection attempt ${attempts + 1} failed:`, error.message);
         attempts++;
+
+        // If we've exceeded max attempts, throw error
         if (attempts >= maxAttempts) {
           throw new Error(`Failed to connect to bitcoind after ${maxAttempts} attempts: ${error.message}`);
         }
+
+        // Wait before next attempt with exponential backoff
         await new Promise(resolve => setTimeout(resolve, delay));
         delay = Math.min(delay * 1.5, 10000); // Exponential backoff with max 10s delay
+        continue; // Continue to next attempt
       }
     }
+
+    // Should never reach here due to maxAttempts check in catch block
+    throw new Error('Failed to connect to bitcoind: Max attempts exceeded');
   }
 
   async createLocalNode () {
@@ -2151,7 +2159,7 @@ class Bitcoin extends Service {
     }
 
     // Start services
-    await this.wallet.start();
+    // await this.wallet.start();
 
     // Start ZMQ if enabled
     if (this.settings.zmq) await this._startZMQ();
@@ -2234,6 +2242,25 @@ class Bitcoin extends Service {
     process.removeAllListeners('uncaughtException');
     process.removeAllListeners('unhandledRejection');
     console.log('[FABRIC:BITCOIN]', 'Cleanup complete');
+  }
+
+  async getRootKeyAddress () {
+    if (!this.settings.key) {
+      throw new Error('No key provided for mining');
+    }
+    const rootKey = this.settings.key;
+    const address = rootKey.deriveAddress(0, 0, 'p2pkh');
+    return address.address;
+  }
+
+  async generateBlock () {
+    if (!this.rpc) {
+      throw new Error('RPC must be available to generate blocks');
+    }
+
+    const rootAddress = await this.getRootKeyAddress();
+    await this._makeRPCRequest('generatetoaddress', [1, rootAddress]);
+    return this._syncBestBlock();
   }
 }
 
