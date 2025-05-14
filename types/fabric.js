@@ -5,7 +5,6 @@ const crypto = require('crypto');
 
 // components
 const Actor = require('../types/actor');
-const App = require('../types/app');
 const Block = require('../types/block');
 const Chain = require('../types/chain');
 const Circuit = require('../types/circuit');
@@ -13,8 +12,8 @@ const Collection = require('../types/collection');
 // const Contract = require('./contract');
 // const Disk = require('./disk');
 const Entity = require('../types/entity');
+const Hash256 = require('../types/hash256');
 const Key = require('../types/key');
-const Ledger = require('../types/ledger');
 const Machine = require('../types/machine');
 const Message = require('../types/message');
 const Observer = require('../types/observer');
@@ -24,7 +23,6 @@ const Program = require('../types/program');
 const Remote = require('../types/remote');
 const Resource = require('../types/resource');
 const Service = require('../types/service');
-const Scribe = require('../types/scribe');
 const Script = require('../types/script');
 const Stack = require('../types/stack');
 const State = require('../types/state');
@@ -97,7 +95,7 @@ class Fabric extends Service {
     };
   }
 
-  static get App () { return App; }
+  static get Actor () { return Actor; }
   static get Block () { return Block; }
   static get Chain () { return Chain; }
   static get Circuit () { return Circuit; }
@@ -105,8 +103,8 @@ class Fabric extends Service {
   // static get Contract () { return Contract; }
   // static get Disk () { return Disk; }
   static get Entity () { return Entity; }
+  static get Hash256 () { return Hash256; }
   static get Key () { return Key; }
-  static get Ledger () { return Ledger; }
   static get Machine () { return Machine; }
   static get Message () { return Message; }
   static get Observer () { return Observer; }
@@ -116,14 +114,12 @@ class Fabric extends Service {
   static get Remote () { return Remote; }
   static get Resource () { return Resource; }
   static get Service () { return Service; }
-  static get Scribe () { return Scribe; }
   static get Script () { return Script; }
   static get Stack () { return Stack; }
   static get State () { return State; }
   static get Store () { return Store; }
   // static get Swarm () { return Swarm; }
   // static get Transaction () { return Transaction; }
-  static get Vector () { return Vector; }
   static get Wallet () { return Wallet; }
   static get Worker () { return Worker; }
 
