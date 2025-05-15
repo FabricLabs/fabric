@@ -1554,8 +1554,7 @@ class Bitcoin extends Service {
         // Check multiple RPC endpoints to ensure full readiness
         const checks = [
           this._makeRPCRequest('getblockchaininfo'),
-          this._makeRPCRequest('getnetworkinfo'),
-          this._makeRPCRequest('getwalletinfo')
+          this._makeRPCRequest('getnetworkinfo')
         ];
 
         // Wait for all checks to complete
@@ -1565,7 +1564,6 @@ class Bitcoin extends Service {
           console.debug('[FABRIC:BITCOIN]', 'Successfully connected to bitcoind:');
           console.debug('[FABRIC:BITCOIN]', '- Blockchain info:', results[0]);
           console.debug('[FABRIC:BITCOIN]', '- Network info:', results[1]);
-          console.debug('[FABRIC:BITCOIN]', '- Wallet info:', results[2]);
         }
 
         return true;
