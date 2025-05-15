@@ -122,6 +122,7 @@ describe('@fabric/core/services/bitcoin', function () {
 
     it('can manage a local bitcoind instance', async function () {
       const local = new Bitcoin({
+        debug: true,
         listen: 0,
         network: 'regtest',
         managed: true,
@@ -136,6 +137,7 @@ describe('@fabric/core/services/bitcoin', function () {
 
     it('can generate regtest balances', async function () {
       const local = new Bitcoin({
+        debug: true,
         listen: 0,
         network: 'regtest',
         managed: true,
