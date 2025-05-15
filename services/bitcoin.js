@@ -719,7 +719,7 @@ class Bitcoin extends Service {
         false, // blank (use sethdseed)
         null,  // passphrase
         true,  // avoid reuse
-        false  // descriptors
+        true   // descriptors
       ]);
 
       // Load the wallet
@@ -1853,7 +1853,6 @@ class Bitcoin extends Service {
 
     // Handle RPC mode operations
     if (this.settings.mode === 'rpc') {
-      const wallet = await this._loadWallet();
       this._heart = setInterval(this.tick.bind(this), this.settings.interval);
       await this._syncWithRPC();
     }
