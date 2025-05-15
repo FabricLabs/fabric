@@ -1416,6 +1416,8 @@ class Bitcoin extends Service {
     this.best = best;
     this.height = height;
 
+    this.commit();
+
     return this;
   }
 
@@ -1484,6 +1486,7 @@ class Bitcoin extends Service {
 
     await this._syncBestBlock();
     await this._syncSupply();
+    await this._syncBalances();
     // await this._syncChainHeadersOverRPC(this.best);
     // await this._syncRawChainOverRPC();
 
