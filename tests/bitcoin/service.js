@@ -141,7 +141,7 @@ describe('@fabric/core/services/bitcoin', function () {
 
     it('can generate regtest balances', async function () {
       const local = new Bitcoin({
-        debug: false,
+        debug: true,
         listen: 0,
         network: 'regtest',
         managed: true,
