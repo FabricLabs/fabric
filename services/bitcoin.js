@@ -283,51 +283,6 @@ class Bitcoin extends Service {
     return this._state.content.supply;
   }
 
-  createKeySpendOutput (publicKey) {
-    // x-only pubkey (remove 1 byte y parity)
-    const myXOnlyPubkey = publicKey.slice(1, 33);
-    const commitHash = bitcoin.crypto.taggedHash('TapTweak', myXOnlyPubkey);
-    const tweakResult = ecc.xOnlyPointAddTweak(myXOnlyPubkey, commitHash);
-    if (tweakResult === null) throw new Error('Invalid Tweak');
-
-    const { xOnlyPubkey: tweaked } = tweakResult;
-
-    // scriptPubkey
-    return Buffer.concat([
-      // witness v1, PUSH_DATA 32 bytes
-      Buffer.from([0x51, 0x20]),
-      // x-only tweaked pubkey
-      tweaked,
-    ]);
-  }
-
-  createSigned (key, txid, vout, amountToSend, scriptPubkeys, values) {
-    const tx = new bitcoin.Transaction();
-
-    tx.version = 2;
-
-    // Add input
-    tx.addInput(Buffer.from(txid, 'hex').reverse(), vout);
-
-    // Add output
-    tx.addOutput(scriptPubkeys[0], amountToSend);
-
-    const sighash = tx.hashForWitnessV1(
-      0, // which input
-      scriptPubkeys, // All previous outputs of all inputs
-      values, // All previous values of all inputs
-      bitcoin.Transaction.SIGHASH_DEFAULT // sighash flag, DEFAULT is schnorr-only (DEFAULT == ALL)
-    );
-
-    const signature = Buffer.from(signTweaked(sighash, key));
-
-    // witness stack for keypath spend is just the signature.
-    // If sighash is not SIGHASH_DEFAULT (ALL) then you must add 1 byte with sighash value
-    tx.ins[0].witness = [signature];
-
-    return tx;
-  }
-
   createRPCAuth (settings = {}) {
     if (!settings.username) throw new Error('Username is required.');
     const username = settings.username;
@@ -1250,42 +1205,6 @@ class Bitcoin extends Service {
     return this._makeRPCRequest('signrawtransaction', [rawTX, JSON.stringify(prevouts)]);
   }
 
-  async _getUTXOSetMeta (utxos) {
-    const coins = [];
-    const keys = [];
-
-    let inputSum = 0;
-    let inputCount = 0;
-
-    for (let i = 0; i < utxos.length; i++) {
-      const candidate = utxos[i];
-      const template = {
-        hash: Buffer.from(candidate.txid, 'hex').reverse(),
-        index: candidate.vout,
-        value: Amount.fromBTC(candidate.amount).toValue(),
-        script: Script.fromAddress(candidate.address)
-      };
-
-      const c = Coin.fromOptions(template);
-      const keypair = await this._dumpKeyPair(candidate.address);
-
-      coins.push(c);
-      keys.push(keypair);
-
-      inputCount++;
-      // TODO: not rely on parseFloat
-      // use bitwise...
-      inputSum += parseFloat(template.value);
-    }
-
-    return {
-      inputs: {
-        count: inputCount,
-        total: inputSum
-      }
-    };
-  }
-
   /**
    * Creates an unsigned Bitcoin transaction.
    * @param {Object} options 
@@ -1316,89 +1235,6 @@ class Bitcoin extends Service {
     };
   }
 
-  async _createContractFromProposal (proposal) {
-    const tx = proposal.mtx.toTX();
-    const raw = tx.toRaw().toString('hex');
-    return {
-      tx: tx,
-      raw: raw
-    };
-  }
-
-  async _getCoinsFromInputs (inputs = []) {
-    const coins = [];
-    const keys = [];
-
-    let inputSum = 0;
-    let inputCount = 0;
-
-    for (let i = 0; i < inputs.length; i++) {
-      const candidate = inputs[i];
-      const template = {
-        hash: Buffer.from(candidate.txid, 'hex').reverse(),
-        index: candidate.vout,
-        value: Amount.fromBTC(candidate.amount).toValue(),
-        script: Script.fromAddress(candidate.address)
-      };
-
-      const c = Coin.fromOptions(template);
-      const keypair = await this._dumpKeyPair(candidate.address);
-
-      coins.push(c);
-      keys.push(keypair);
-
-      inputCount++;
-      // TODO: not rely on parseFloat
-      // use bitwise...
-      inputSum += parseFloat(template.value);
-    }
-
-    return coins;
-  }
-
-  async _getKeysFromCoins (coins) {
-    console.log('coins:', coins);
-  }
-
-  async _attachOutputToContract (output, contract) {
-    // TODO: add support for segwit, taproot
-    // is the scriptpubkey still set?
-    const scriptpubkey = output.scriptpubkey;
-    const value = output.value;
-    // contract.mtx.addOutput(scriptpubkey, value);
-    return contract;
-  }
-
-  async _signInputForContract (index, contract) {
-
-  }
-
-  async _signAllContractInputs (contract) {
-
-  }
-
-  async _generateScriptAddress () {
-    const script = new Script();
-    script.pushOp(bcoin.opcodes.OP_); // Segwit version
-    script.pushData(ring.getKeyHash());
-    script.compile();
-
-    return {
-      address: script.getAddress(),
-      script: script
-    };
-  }
-
-  async _estimateFeeRate (options = {}) {
-    // satoshis per kilobyte
-    // TODO: use satoshis/vbyte
-    return 10000;
-  }
-
-  async _coinSelectNaive (options = {}) {
-
-  }
-
   async _createSwapScript (options) {
     const sequence = await this._encodeSequenceTargetBlock(options.constraints.blocktime);
     const asm = `
@@ -1415,71 +1251,6 @@ class Bitcoin extends Service {
 
     const clean = asm.trim().replace(/\s+/g, ' ');
     return bitcoin.script.fromASM(clean);
-  }
-
-  async _createSwapTX (options) {
-    const network = this.networks[this.settings.network];
-    const tx = new bitcoin.Transaction();
-
-    tx.locktime = bip65.encode({ blocks: options.constraints.blocktime });
-
-    const input = options.inputs[0];
-    tx.addInput(Buffer.from(input.txid, 'hex').reverse(), input.vout, 0xfffffffe);
-
-    const output = bitcoin.address.toOutputScript(options.destination, network);
-    tx.addOutput(output, options.amount * 100000000);
-
-    return tx;
-  }
-
-  async _p2shForOutput (output) {
-    return bitcoin.payments.p2sh({
-      redeem: { output },
-      network: this.networks[this.settings.network]
-    });
-  }
-
-  async _spendSwapTX (options) {
-    const network = this.networks[this.settings.network];
-    const tx = options.tx;
-    const hashtype = bitcoin.Transaction.SIGHASH_ALL;
-    const sighash = tx.hashForSignature(0, options.script, hashtype);
-    const scriptsig = bitcoin.payments.p2sh({
-      redeem: {
-        input: bitcoin.script.compile([
-          bitcoin.script.signature.encode(options.key.sign(sighash), hashtype),
-          bitcoin.opcodes.OP_TRUE
-        ]),
-        output: options.script
-      },
-      network: network
-    });
-
-    tx.setInputScript(0, scriptsig.input);
-
-    return tx;
-  }
-
-  async _createP2WPKHTransaction (options) {
-    const p2wpkh = this._createPayment(options);
-    const psbt = new bitcoin.Psbt({ network: this.networks[this.settings.network] })
-      .addInput(options.input)
-      .addOutput({
-        address: options.change,
-        value: 2e4,
-      })
-      .signInput(0, p2wpkh.keys[0]);
-
-    psbt.finalizeAllInputs();
-    const tx = psbt.extractTransaction();
-    return tx;
-  }
-
-  async _createP2WKHPayment (options) {
-    return bitcoin.payments.p2wsh({
-      pubkey: options.pubkey, 
-      network: this.networks[this.settings.network]
-    });
   }
 
   _createPayment (options) {
@@ -1589,97 +1360,6 @@ class Bitcoin extends Service {
     const psbt = await this._buildPSBT(options);
 
     return psbt;
-  }
-
-  _getFinalScriptsForInput (inputIndex, input, script, isSegwit, isP2SH, isP2WSH) {
-    const options = {
-      inputIndex,
-      input,
-      script,
-      isSegwit,
-      isP2SH,
-      isP2WSH
-    };
-
-    const decompiled = bitcoin.script.decompile(options.script);
-    // TODO: SECURITY !!!
-    // This is a very naive implementation of a script-validating heuristic.
-    // DO NOT USE IN PRODUCTION
-    //
-    // Checking if first OP is OP_IF... should do better check in production!
-    // You may even want to check the public keys in the script against a
-    // whitelist depending on the circumstances!!!
-    // You also want to check the contents of the input to see if you have enough
-    // info to actually construct the scriptSig and Witnesses.
-    if (!decompiled || decompiled[0] !== bitcoin.opcodes.OP_IF) {
-      throw new Error(`Can not finalize input #${inputIndex}`);
-    }
-
-    const signature = (options.input.partialSig)
-      ? options.input.partialSig[0].signature
-      : undefined;
-
-    const template = {
-      network: this.networks[this.settings.network],
-      output: options.script,
-      input: bitcoin.script.compile([
-        signature,
-        bitcoin.opcodes.OP_TRUE
-      ])
-    };
-
-    let payment = null;
-
-    if (options.isP2WSH && options.isSegwit) {
-      payment = bitcoin.payments.p2wsh({
-        network: this.networks[this.settings.network],
-        redeem: template,
-      });
-    }
-
-    if (options.isP2SH) {
-      payment = bitcoin.payments.p2sh({
-        network: this.networks[this.settings.network],
-        redeem: template,
-      });
-    }
-
-    return {
-      finalScriptSig: payment.input,
-      finalScriptWitness: payment.witness && payment.witness.length > 0
-        ? this._witnessStackToScriptWitness(payment.witness)
-        : undefined
-    };
-  }
-
-  _witnessStackToScriptWitness (stack) {
-    const buffer = Buffer.alloc(0);
-
-    function writeSlice (slice) {
-      buffer = Buffer.concat([buffer, Buffer.from(slice)]);
-    }
-
-    function writeVarInt (i) {
-      const currentLen = buffer.length;
-      const varintLen = varuint.encodingLength(i);
-
-      buffer = Buffer.concat([buffer, Buffer.allocUnsafe(varintLen)]);
-      varuint.encode(i, buffer, currentLen);
-    }
-
-    function writeVarSlice (slice) {
-      writeVarInt(slice.length);
-      writeSlice(slice);
-    }
-
-    function writeVector (vector) {
-      writeVarInt(vector.length);
-      vector.forEach(writeVarSlice);
-    }
-
-    writeVector(stack);
-
-    return buffer;
   }
 
   async _buildTX () {
@@ -2221,7 +1901,6 @@ class Bitcoin extends Service {
       if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Killing Bitcoin node process...');
       try {
         this._nodeProcess.kill('SIGKILL');
-        console.debug('[FABRIC:BITCOIN]', 'Process killed');
       } catch (error) {
         console.error('[FABRIC:BITCOIN]', 'Error killing process:', error);
       }
