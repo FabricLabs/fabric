@@ -837,93 +837,59 @@ class Bitcoin extends Service {
     }
   }
 
+  async _handleZMQMessage (msg) {
+    let topic, content;
+
+    // Handle both raw ZMQ messages and Message objects
+    if (Array.isArray(msg)) {
+      // Raw ZMQ message format
+      topic = msg[0].toString();
+      content = msg[1];
+    } else if (msg && typeof msg === 'object') {
+      // Message object format
+      topic = msg.type;
+      content = msg.data;
+    } else {
+      console.error('[BITCOIN]', 'Invalid message format:', msg);
+      return;
+    }
+
+    if (this.settings.debug) this.emit('debug', '[ZMQ] Received message on topic:', topic, 'Message length:', content.length);
+
+    try {
+      switch (topic) {
+        case 'BitcoinBlock':
+        case 'BitcoinTransactionHash':
+          break;
+        case 'BitcoinBlockHash':
+          const message = JSON.parse(content.toString());
+          const supply = await this._makeRPCRequest('gettxoutsetinfo', []);
+          this._state.content.height = supply.height;
+          this._state.content.tip = message.content;
+          this._state.content.supply = supply.total_amount;
+          this.commit();
+          break;
+        case 'BitcoinTransaction':
+          // const record = JSON.parse(content.toString());
+          const balance = await this._makeRPCRequest('getbalances', []);
+          this._state.balances.mine.trusted = balance;
+          this.commit();
+          break;
+        default:
+          if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'Unknown ZMQ topic:', topic);
+      }
+    } catch (exception) {
+      //', `Could not process ZMQ message: ${exception}`);
+    }
+  }
+
   async _startZMQ () {
     if (this.settings.verbosity >= 5) console.debug('[AUDIT]', 'Starting ZMQ service...');
     this.zmq.on('log', (msg) => {
       if (this.settings.debug) console.log('[ZMQ]', msg);
     });
 
-    this.zmq.on('message', async (msg) => {
-      let topic, content;
-
-      // Handle both raw ZMQ messages and Message objects
-      if (Array.isArray(msg)) {
-        // Raw ZMQ message format
-        topic = msg[0].toString();
-        content = msg[1];
-      } else if (msg && typeof msg === 'object') {
-        // Message object format
-        topic = msg.type;
-        content = msg.data;
-      } else {
-        console.error('[BITCOIN]', 'Invalid message format:', msg);
-        return;
-      }
-
-      if (this.settings.debug) this.emit('debug', '[ZMQ] Received message on topic:', topic, 'Message length:', content.length);
-
-      try {
-        switch (topic) {
-          case 'GenericMessage':
-            // Handle generic message
-            if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'Received generic message:', content.toString());
-            console.debug('current state:', this.state);
-            break;
-          case 'hashblock':
-            // Update state with block hash (reversed byte order)
-            const blockHash = content.toString('hex');
-            this._state.content.blocks[blockHash] = {
-              hash: blockHash,
-              raw: null,
-              timestamp: Date.now()
-            };
-            if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'Received block hash:', blockHash);
-            break;
-          case 'rawblock':
-            // Update state with full block data
-            const block = await this.blocks.create({
-              hash: content.hash('hex'),
-              parent: content.prevBlock.toString('hex'),
-              transactions: content.txs.map(tx => tx.hash('hex')),
-              block: content,
-              raw: content.toRaw().toString('hex'),
-              timestamp: Date.now()
-            });
-            this._state.content.blocks[block.hash] = block;
-            if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'Received raw block:', block.hash);
-            break;
-          case 'hashtx':
-            // Update state with transaction hash (reversed byte order)
-            const txHash = content.toString('hex');
-            if (!this._state.content.transactions[txHash]) {
-              this._state.content.transactions[txHash] = {
-                hash: txHash,
-                raw: null,
-                timestamp: Date.now()
-              };
-            }
-            if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'Received transaction hash:', txHash);
-            break;
-          case 'rawtx':
-            // Update state with full transaction data
-            const tx = {
-              hash: content.hash('hex'),
-              inputs: content.inputs,
-              outputs: content.outputs,
-              tx: content,
-              raw: content.toRaw().toString('hex'),
-              timestamp: Date.now()
-            };
-            this._state.content.transactions[tx.hash] = tx;
-            if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'Received raw transaction:', tx.hash);
-            break;
-          default:
-            if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'Unknown ZMQ topic:', topic);
-        }
-      } catch (exception) {
-        this.emit('error', `Could not process ZMQ message: ${exception}`);
-      }
-    });
+    this.zmq.on('message', this._handleZMQMessage.bind(this));
 
     this.zmq.on('error', (err) => {
       console.error('[ZMQ] Error:', err);
@@ -1517,6 +1483,7 @@ class Bitcoin extends Service {
     this.emit('log', `Beginning chain sync for height ${this.height} with best block: ${this.best}`);
 
     await this._syncBestBlock();
+    await this._syncSupply();
     // await this._syncChainHeadersOverRPC(this.best);
     // await this._syncRawChainOverRPC();
 
@@ -1528,6 +1495,13 @@ class Bitcoin extends Service {
 
     this.commit();
 
+    return this;
+  }
+
+  async _syncSupply () {
+    const supply = await this._makeRPCRequest('gettxoutsetinfo');
+    this._state.content.supply = supply.total_amount;
+    this.commit();
     return this;
   }
 
@@ -1644,6 +1618,8 @@ class Bitcoin extends Service {
       case 'regtest':
         datadir = './stores/bitcoin-regtest';
         params.push('-regtest');
+        params.push('-fallbackfee=1.0');
+        params.push('-maxtxfee=1.1');
         break;
       case 'playnet':
         datadir = './stores/bitcoin-playnet';
