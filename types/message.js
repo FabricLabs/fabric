@@ -9,6 +9,10 @@ const {
   GENERIC_MESSAGE_TYPE,
   LOG_MESSAGE_TYPE,
   GENERIC_LIST_TYPE,
+  BITCOIN_BLOCK_TYPE,
+  BITCOIN_BLOCK_HASH_TYPE,
+  BITCOIN_TRANSACTION_TYPE,
+  BITCOIN_TRANSACTION_HASH_TYPE,
   P2P_GENERIC,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
@@ -374,6 +378,10 @@ class Message extends Actor {
   get types () {
     // Message Types
     return {
+      'BitcoinBlock': BITCOIN_BLOCK_TYPE,
+      'BitcoinBlockHash': BITCOIN_BLOCK_HASH_TYPE,
+      'BitcoinTransaction': BITCOIN_TRANSACTION_TYPE,
+      'BitcoinTransactionHash': BITCOIN_TRANSACTION_HASH_TYPE,
       'GenericMessage': GENERIC_MESSAGE_TYPE,
       'GenericLogMessage': LOG_MESSAGE_TYPE,
       'GenericList': GENERIC_LIST_TYPE,
@@ -457,6 +465,14 @@ Object.defineProperty(Message.prototype, 'type', {
   get () {
     const code = parseInt(this.raw.type.toString('hex'), 16);
     switch (code) {
+      case BITCOIN_BLOCK_TYPE:
+        return 'BitcoinBlock';
+      case BITCOIN_BLOCK_HASH_TYPE:
+        return 'BitcoinBlockHash';
+      case BITCOIN_TRANSACTION_TYPE:
+        return 'BitcoinTransaction';
+      case BITCOIN_TRANSACTION_HASH_TYPE:
+        return 'BitcoinTransactionHash';
       case GENERIC_MESSAGE_TYPE:
         return 'GenericMessage';
       case GENERIC_MESSAGE_TYPE + 1:

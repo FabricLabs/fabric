@@ -134,9 +134,11 @@ class Key extends EventEmitter {
     this.master = null;
     this.private = null;
     this.public = null;
+    this._state = null; // Initialize as null to defer state updates
 
-    // TODO: design state machine for input (configuration)
-    if (this.settings.seed) {
+    if (this.settings.mnemonic) {
+      this._mode = 'FROM_MNEMONIC';
+    } else if (this.settings.seed) {
       this._mode = 'FROM_SEED';
     } else if (this.settings.private) {
       this._mode = 'FROM_PRIVATE_KEY';
@@ -150,10 +152,13 @@ class Key extends EventEmitter {
       this._mode = 'FROM_RANDOM';
     }
 
+    let seed = null;
+    let root = null;
+
     switch (this._mode) {
-      case 'FROM_SEED':
-        const seed = bip39.mnemonicToSeedSync(this.settings.seed, this.settings.passphrase);
-        const root = this.bip32.fromSeed(seed);
+      case 'FROM_MNEMONIC':
+        seed = bip39.mnemonicToSeedSync(this.settings.mnemonic, this.settings.passphrase);
+        root = this.bip32.fromSeed(seed);
         this.seed = this.settings.seed;
         this.xprv = root.toBase58();
         this.xpub = root.neutered().toBase58();
@@ -161,6 +166,15 @@ class Key extends EventEmitter {
         this.keypair = ec.keyFromPrivate(root.privateKey);
         this.status = 'seeded';
         break;
+      case 'FROM_SEED':
+        seed = bip39.mnemonicToSeedSync(this.settings.seed, this.settings.passphrase);
+        root = this.bip32.fromSeed(seed);
+        this.seed = this.settings.seed;
+        this.xprv = root.toBase58();
+        this.xpub = root.neutered().toBase58();
+        this.master = root;
+        this.keypair = ec.keyFromPrivate(root.privateKey);
+          break;
       case 'FROM_XPRV':
         this.master = this.bip32.fromBase58(this.settings.xprv);
         this.xprv = this.master.toBase58();
@@ -195,6 +209,7 @@ class Key extends EventEmitter {
       !this.settings.private &&
       !this.settings.xprv
     ) ? false : this.keypair.getPrivate();
+
     this.public = this.keypair.getPublic(true);
 
     // TODO: determine if this makes sense / needs to be private
