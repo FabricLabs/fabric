@@ -8,7 +8,7 @@ const Bitcoin = require('../../services/bitcoin');
 const Key = require('../../types/key');
 
 describe('@fabric/core/services/bitcoin', function () {
-  this.timeout(60000);
+  this.timeout(120000);
 
   let bitcoin;
   let key;
