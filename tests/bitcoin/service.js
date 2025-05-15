@@ -149,8 +149,17 @@ describe('@fabric/core/services/bitcoin', function () {
 
       await local.start();
 
-      const created = await local._makeRPCRequest('createwallet', ['testwallet', false, false, null, true, true]);
-      const loaded = await local._makeRPCRequest('loadwallet', ['testwallet']);
+      // Create a descriptor wallet
+      const created = await local._makeRPCRequest('createwallet', [
+        'testwallet',
+        false, // disable private keys
+        false,  // blank
+        null,  // passphrase
+        true,  // avoid reuse
+        true,  // descriptor wallet
+      ]);
+
+      const loaded = await local._makeRPCRequest('restorewallet', ['testwallet']);
       const address = await local._makeRPCRequest('getnewaddress', []);
       const generated = await local._makeRPCRequest('generatetoaddress', [101, address]);
       const wallet = await local._makeRPCRequest('getwalletinfo', []);

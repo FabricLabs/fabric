@@ -33,6 +33,7 @@ const ZMQ = require('../services/zmq');
 const Actor = require('../types/actor');
 const Collection = require('../types/collection');
 const Entity = require('../types/entity');
+const Key = require('../types/key');
 const Service = require('../types/service');
 const State = require('../types/state');
 const Wallet = require('../types/wallet');
@@ -80,6 +81,13 @@ class Bitcoin extends Service {
         host: 'localhost',
         port: 29500
       },
+      key: {
+        mnemonic: null,
+        seed: null,
+        xprv: null,
+        xpub: null,
+        passphrase: null
+      },
       state: {
         actors: {},
         blocks: {}, // Map of blocks by block hash
@@ -109,6 +117,10 @@ class Bitcoin extends Service {
     };
 
     if (this.settings.debug && this.settings.verbosity >= 4) console.debug('[DEBUG]', 'Instance of Bitcoin service created, settings:', this.settings);
+
+    this._rootKey = new Key({
+      ...this.settings.key
+    });
 
     // Bcoin for JS full node
     // bcoin.set(this.settings.network);
@@ -701,18 +713,17 @@ class Bitcoin extends Service {
     const actor = new Actor({ content: name });
 
     try {
-      // Try to create wallet first
       await this._makeRPCRequest('createwallet', [
         actor.id,
-        false,
+        false, // private keys
         false, // blank (use sethdseed)
-        '', // passphrase
-        true, // avoid reuse
-        false, // descriptors
+        null,  // passphrase
+        true,  // avoid reuse
+        false  // descriptors
       ]);
 
       // Load the wallet
-      await this._makeRPCRequest('loadwallet', [actor.id]);
+      await this._makeRPCRequest('restorewallet', [actor.id]);
 
       // Get addresses
       try {
