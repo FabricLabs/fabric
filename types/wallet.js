@@ -75,16 +75,9 @@ class Wallet extends Service {
     this.seed = null;
 
     // Initialize key management
-    if (this.settings.key && this.settings.key.seed) {
-      this.key = new Key({
-        seed: this.settings.key.seed,
-        passphrase: this.settings.key.passphrase || ''
-      });
-      this.seed = this.settings.key.seed;
-    } else {
-      this.key = new Key();
-      this.seed = this.key.mnemonic;
-    }
+    this.key = new Key(this.settings.key);
+    this.seed = this.key.seed;
+
     this.wallet = {
       keypair: this.key.keypair
     };

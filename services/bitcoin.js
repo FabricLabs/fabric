@@ -129,7 +129,7 @@ class Bitcoin extends Service {
     // Internal Services
     this.observer = null;
     // this.provider = new Consensus({ provider: 'bcoin' });
-    this.wallet = new Wallet(this.settings);
+    this.wallet = new Wallet({ ...this.settings, key: { xprv: this._rootKey.xprv } });
     // this.chain = new Chain(this.settings);
 
     // ## Collections
@@ -190,7 +190,7 @@ class Bitcoin extends Service {
       workers: true
     }); */
 
-    this.zmq = new ZMQ(this.settings.zmq);
+    this.zmq = new ZMQ({ ...this.settings.zmq, key: { xprv: this._rootKey.xprv } });
 
     // Define Bitcoin P2P Messages
     this.define('VersionPacket', { type: 0 });
@@ -1591,7 +1591,6 @@ class Bitcoin extends Service {
       '-zmqpubhashblock=tcp://127.0.0.1:29500'
     ];
 
-    if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Bitcoind parameters:', params);
     if (this.settings.username && this.settings.password) {
       params.push(`-rpcuser=${this.settings.username}`);
       params.push(`-rpcpassword=${this.settings.password}`);
@@ -1645,6 +1644,8 @@ class Bitcoin extends Service {
 
     // Set data directory
     params.push(`-datadir=${datadir}`);
+
+    if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Bitcoind parameters:', params);
 
     // Start bitcoind
     if (this.settings.managed) {
