@@ -51,6 +51,9 @@ describe('@fabric/core/types/key', function () {
     });
 
     it('can load from an existing xpub', function () {
+      const spec = new Key();
+      const thing = new Key({ xpub: spec.xpub });
+      assert.equal(thing.xpub, spec.xpub);
       const key = new Key({ xpub: playnet.key.xpub });
       assert.equal(key.public.encodeCompressed('hex'), '0223cffd5e94da3c8915c6b868f06d15183c1aeffad8ddf58fcb35a428e3158e71');
     });

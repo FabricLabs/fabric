@@ -116,7 +116,7 @@ class Peer extends Service {
     this.sessions = {};
 
     // Internal Stack Machine
-    this.machine = new Machine();
+    this.machine = new Machine({ key: this.settings.key });
     this.observer = null;
 
     this.meta = {

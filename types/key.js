@@ -134,9 +134,11 @@ class Key extends EventEmitter {
     this.master = null;
     this.private = null;
     this.public = null;
+    this._state = null; // Initialize as null to defer state updates
 
-    // TODO: design state machine for input (configuration)
-    if (this.settings.seed) {
+    if (this.settings.mnemonic) {
+      this._mode = 'FROM_MNEMONIC';
+    } else if (this.settings.seed) {
       this._mode = 'FROM_SEED';
     } else if (this.settings.private) {
       this._mode = 'FROM_PRIVATE_KEY';
@@ -150,10 +152,13 @@ class Key extends EventEmitter {
       this._mode = 'FROM_RANDOM';
     }
 
+    let seed = null;
+    let root = null;
+
     switch (this._mode) {
-      case 'FROM_SEED':
-        const seed = bip39.mnemonicToSeedSync(this.settings.seed, this.settings.passphrase);
-        const root = this.bip32.fromSeed(seed);
+      case 'FROM_MNEMONIC':
+        seed = bip39.mnemonicToSeedSync(this.settings.mnemonic, this.settings.passphrase);
+        root = this.bip32.fromSeed(seed);
         this.seed = this.settings.seed;
         this.xprv = root.toBase58();
         this.xpub = root.neutered().toBase58();
@@ -161,6 +166,16 @@ class Key extends EventEmitter {
         this.keypair = ec.keyFromPrivate(root.privateKey);
         this.status = 'seeded';
         break;
+      case 'FROM_SEED':
+        // TODO: allow setting of raw seed (deprecates passing a mnemonic in the `seed` property)
+        seed = bip39.mnemonicToSeedSync(this.settings.seed, this.settings.passphrase);
+        root = this.bip32.fromSeed(seed);
+        this.seed = this.settings.seed;
+        this.xprv = root.toBase58();
+        this.xpub = root.neutered().toBase58();
+        this.master = root;
+        this.keypair = ec.keyFromPrivate(root.privateKey);
+          break;
       case 'FROM_XPRV':
         this.master = this.bip32.fromBase58(this.settings.xprv);
         this.xprv = this.master.toBase58();
@@ -168,8 +183,9 @@ class Key extends EventEmitter {
         this.keypair = ec.keyFromPrivate(this.master.privateKey);
         break;
       case 'FROM_XPUB':
-        const xpub = this.bip32.fromBase58(this.settings.xpub);
-        this.keypair = ec.keyFromPublic(xpub.publicKey);
+        this.master = this.bip32.fromBase58(this.settings.xpub);
+        this.xpub = this.master.neutered().toBase58();
+        this.keypair = ec.keyFromPublic(this.master.publicKey);
         break;
       case 'FROM_PRIVATE_KEY':
         // Key is private
@@ -182,19 +198,18 @@ class Key extends EventEmitter {
         this.keypair = ec.keyFromPublic((pubkey instanceof Buffer) ? pubkey : Buffer.from(pubkey, 'hex'));
         break;
       case 'FROM_RANDOM':
-        const mnemonic = bip39.generateMnemonic();
-        const interim = bip39.mnemonicToSeedSync(mnemonic);
+        this.mnemonic = bip39.generateMnemonic();
+        // TODO: set property `seed` as the actual derived seed, not the seed phrase
+        const interim = bip39.mnemonicToSeedSync(this.mnemonic);
         this.master = this.bip32.fromSeed(interim);
+        this.xprv = this.master.toBase58();
+        this.xpub = this.master.neutered().toBase58();
         this.keypair = ec.keyFromPrivate(this.master.privateKey);
         break;
     }
 
     // Read the pair
-    this.private = (
-      !this.settings.seed &&
-      !this.settings.private &&
-      !this.settings.xprv
-    ) ? false : this.keypair.getPrivate();
+    this.private = (this.keypair.priv) ? this.keypair.getPrivate() : null;
     this.public = this.keypair.getPublic(true);
 
     // TODO: determine if this makes sense / needs to be private
@@ -204,15 +219,7 @@ class Key extends EventEmitter {
     // WARNING: this will currently loop after 2^32 bits
     // TODO: evaluate compression when treating seed phrase as ascii
     // TODO: consider using sha256(masterprivkey) or sha256(sha256(...))?
-
-    this._starseed = Hash256.digest((
-      this.settings.seed ||
-      this.settings.xprv ||
-      this.settings.private
-    ) + '').toString('hex');
-
-    if (!this._starseed) this._starseed = '0000000000000000000000000000000000000000000000000000000000000000';
-
+    this._starseed = Hash256.digest(this.pubkeyhash).toString('hex');
     this.q = parseInt(this._starseed.substring(0, 4), 16);
     this.generator = new Generator(this.q);
 
@@ -235,9 +242,7 @@ class Key extends EventEmitter {
   }
 
   static Mnemonic (seed) {
-    if (!seed) {
-      seed = crypto.randomBytes(32);
-    }
+    if (!seed) seed = crypto.randomBytes(32);
     const mnemonic = bip39.entropyToMnemonic(seed);
     const seedBuffer = bip39.mnemonicToSeedSync(mnemonic);
     const bip32 = new BIP32(ecc);
@@ -264,11 +269,7 @@ class Key extends EventEmitter {
   }
 
   get iv () {
-    const self = this;
-    const bits = new BN([...Array(128)].map(() => {
-      return self.bit().toString();
-    }).join(''), 2).toString(16);
-    return Buffer.from(bits.toString(16), 'hex');
+    return crypto.randomBytes(16);
   }
 
   get path () {
@@ -614,11 +615,13 @@ class Key extends EventEmitter {
    */
   secure () {
     // Clear sensitive key material
+    Buffer.write(this.private, 0, this.private.length);
+
+    // Null out sensitive properties
     this.private = null;
     this.privkey = null;
     this.seed = null;
     this.master = null;
-    this.keypair = null;
 
     // Clear any derived keys
     this.xprv = null;

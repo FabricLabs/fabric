@@ -33,6 +33,7 @@ const ZMQ = require('../services/zmq');
 const Actor = require('../types/actor');
 const Collection = require('../types/collection');
 const Entity = require('../types/entity');
+const Key = require('../types/key');
 const Service = require('../types/service');
 const State = require('../types/state');
 const Wallet = require('../types/wallet');
@@ -62,7 +63,7 @@ class Bitcoin extends Service {
       name: '@services/bitcoin',
       mode: 'fabric',
       genesis: BITCOIN_GENESIS,
-      network: 'regtest',
+      network: 'mainnet',
       path: './stores/bitcoin',
       mining: false,
       listen: false,
@@ -80,6 +81,13 @@ class Bitcoin extends Service {
         host: 'localhost',
         port: 29500
       },
+      key: {
+        mnemonic: null,
+        seed: null,
+        xprv: null,
+        xpub: null,
+        passphrase: null
+      },
       state: {
         actors: {},
         blocks: {}, // Map of blocks by block hash
@@ -87,7 +95,8 @@ class Bitcoin extends Service {
         tip: BITCOIN_GENESIS_HASH,
         transactions: {}, // Map of transactions by txid
         addresses: {}, // Map of addresses to their transactions
-        index: 0 // Current address index
+        walletIndex: 0, // Current address index
+        supply: 0
       },
       nodes: ['127.0.0.1'],
       seeds: ['127.0.0.1'],
@@ -109,6 +118,10 @@ class Bitcoin extends Service {
 
     if (this.settings.debug && this.settings.verbosity >= 4) console.debug('[DEBUG]', 'Instance of Bitcoin service created, settings:', this.settings);
 
+    this._rootKey = new Key({
+      ...this.settings.key
+    });
+
     // Bcoin for JS full node
     // bcoin.set(this.settings.network);
     // this.network = bcoin.Network.get(this.settings.network);
@@ -116,7 +129,7 @@ class Bitcoin extends Service {
     // Internal Services
     this.observer = null;
     // this.provider = new Consensus({ provider: 'bcoin' });
-    this.wallet = new Wallet(this.settings);
+    this.wallet = new Wallet({ ...this.settings, key: { xprv: this._rootKey.xprv } });
     // this.chain = new Chain(this.settings);
 
     // ## Collections
@@ -177,7 +190,7 @@ class Bitcoin extends Service {
       workers: true
     }); */
 
-    this.zmq = new ZMQ(this.settings.zmq);
+    this.zmq = new ZMQ({ ...this.settings.zmq, key: { xprv: this._rootKey.xprv } });
 
     // Define Bitcoin P2P Messages
     this.define('VersionPacket', { type: 0 });
@@ -257,6 +270,10 @@ class Bitcoin extends Service {
     return bitcoin;
   }
 
+  get network () {
+    return this.settings.network;
+  }
+
   get networks () {
     return this._networkConfigs;
   }
@@ -278,51 +295,6 @@ class Bitcoin extends Service {
     return this._state.content.supply;
   }
 
-  createKeySpendOutput (publicKey) {
-    // x-only pubkey (remove 1 byte y parity)
-    const myXOnlyPubkey = publicKey.slice(1, 33);
-    const commitHash = bitcoin.crypto.taggedHash('TapTweak', myXOnlyPubkey);
-    const tweakResult = ecc.xOnlyPointAddTweak(myXOnlyPubkey, commitHash);
-    if (tweakResult === null) throw new Error('Invalid Tweak');
-
-    const { xOnlyPubkey: tweaked } = tweakResult;
-
-    // scriptPubkey
-    return Buffer.concat([
-      // witness v1, PUSH_DATA 32 bytes
-      Buffer.from([0x51, 0x20]),
-      // x-only tweaked pubkey
-      tweaked,
-    ]);
-  }
-
-  createSigned (key, txid, vout, amountToSend, scriptPubkeys, values) {
-    const tx = new bitcoin.Transaction();
-
-    tx.version = 2;
-
-    // Add input
-    tx.addInput(Buffer.from(txid, 'hex').reverse(), vout);
-
-    // Add output
-    tx.addOutput(scriptPubkeys[0], amountToSend);
-
-    const sighash = tx.hashForWitnessV1(
-      0, // which input
-      scriptPubkeys, // All previous outputs of all inputs
-      values, // All previous values of all inputs
-      bitcoin.Transaction.SIGHASH_DEFAULT // sighash flag, DEFAULT is schnorr-only (DEFAULT == ALL)
-    );
-
-    const signature = Buffer.from(signTweaked(sighash, key));
-
-    // witness stack for keypath spend is just the signature.
-    // If sighash is not SIGHASH_DEFAULT (ALL) then you must add 1 byte with sighash value
-    tx.ins[0].witness = [signature];
-
-    return tx;
-  }
-
   createRPCAuth (settings = {}) {
     if (!settings.username) throw new Error('Username is required.');
     const username = settings.username;
@@ -334,18 +306,6 @@ class Bitcoin extends Service {
       password: password,
       username: username
     };
-  }
-
-  signTweaked (messageHash, key) {
-    // Order of the curve (N) - 1
-    const N_LESS_1 = Buffer.from('fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140', 'hex');
-    // 1 represented as 32 bytes BE
-    const ONE = Buffer.from('0000000000000000000000000000000000000000000000000000000000000001', 'hex');
-    const privateKey = (key.publicKey[0] === 2) ? key.privateKey : ecc.privateAdd(ecc.privateSub(N_LESS_1, key.privateKey), ONE);
-    const tweakHash = bitcoin.crypto.taggedHash('TapTweak', key.publicKey.slice(1, 33));
-    const newPrivateKey = ecc.privateAdd(privateKey, tweakHash);
-    if (newPrivateKey === null) throw new Error('Invalid Tweak');
-    return ecc.signSchnorr(messageHash, newPrivateKey, Buffer.alloc(32));
   }
 
   validateAddress (address) {
@@ -753,18 +713,17 @@ class Bitcoin extends Service {
     const actor = new Actor({ content: name });
 
     try {
-      // Try to create wallet first
       await this._makeRPCRequest('createwallet', [
         actor.id,
-        false,
+        false, // private keys
         false, // blank (use sethdseed)
-        '', // passphrase
-        true, // avoid reuse
-        false, // descriptors
+        null,  // passphrase
+        true,  // avoid reuse
+        true   // descriptors
       ]);
 
       // Load the wallet
-      await this._makeRPCRequest('loadwallet', [actor.id]);
+      await this._makeRPCRequest('restorewallet', [actor.id]);
 
       // Get addresses
       try {
@@ -878,93 +837,59 @@ class Bitcoin extends Service {
     }
   }
 
+  async _handleZMQMessage (msg) {
+    let topic, content;
+
+    // Handle both raw ZMQ messages and Message objects
+    if (Array.isArray(msg)) {
+      // Raw ZMQ message format
+      topic = msg[0].toString();
+      content = msg[1];
+    } else if (msg && typeof msg === 'object') {
+      // Message object format
+      topic = msg.type;
+      content = msg.data;
+    } else {
+      console.error('[BITCOIN]', 'Invalid message format:', msg);
+      return;
+    }
+
+    if (this.settings.debug) this.emit('debug', '[ZMQ] Received message on topic:', topic, 'Message length:', content.length);
+
+    try {
+      switch (topic) {
+        case 'BitcoinBlock':
+        case 'BitcoinTransactionHash':
+          break;
+        case 'BitcoinBlockHash':
+          const message = JSON.parse(content.toString());
+          const supply = await this._makeRPCRequest('gettxoutsetinfo', []);
+          this._state.content.height = supply.height;
+          this._state.content.tip = message.content;
+          this._state.content.supply = supply.total_amount;
+          this.commit();
+          break;
+        case 'BitcoinTransaction':
+          // const record = JSON.parse(content.toString());
+          const balance = await this._makeRPCRequest('getbalances', []);
+          this._state.balances.mine.trusted = balance;
+          this.commit();
+          break;
+        default:
+          if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'Unknown ZMQ topic:', topic);
+      }
+    } catch (exception) {
+      //', `Could not process ZMQ message: ${exception}`);
+    }
+  }
+
   async _startZMQ () {
     if (this.settings.verbosity >= 5) console.debug('[AUDIT]', 'Starting ZMQ service...');
     this.zmq.on('log', (msg) => {
       if (this.settings.debug) console.log('[ZMQ]', msg);
     });
 
-    this.zmq.on('message', async (msg) => {
-      let topic, content;
-
-      // Handle both raw ZMQ messages and Message objects
-      if (Array.isArray(msg)) {
-        // Raw ZMQ message format
-        topic = msg[0].toString();
-        content = msg[1];
-      } else if (msg && typeof msg === 'object') {
-        // Message object format
-        topic = msg.type;
-        content = msg.data;
-      } else {
-        console.error('[BITCOIN]', 'Invalid message format:', msg);
-        return;
-      }
-
-      if (this.settings.debug) this.emit('debug', '[ZMQ] Received message on topic:', topic, 'Message length:', content.length);
-
-      try {
-        switch (topic) {
-          case 'GenericMessage':
-            // Handle generic message
-            if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'Received generic message:', content.toString());
-            console.debug('current state:', this.state);
-            break;
-          case 'hashblock':
-            // Update state with block hash (reversed byte order)
-            const blockHash = content.toString('hex');
-            this._state.content.blocks[blockHash] = {
-              hash: blockHash,
-              raw: null,
-              timestamp: Date.now()
-            };
-            if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'Received block hash:', blockHash);
-            break;
-          case 'rawblock':
-            // Update state with full block data
-            const block = await this.blocks.create({
-              hash: content.hash('hex'),
-              parent: content.prevBlock.toString('hex'),
-              transactions: content.txs.map(tx => tx.hash('hex')),
-              block: content,
-              raw: content.toRaw().toString('hex'),
-              timestamp: Date.now()
-            });
-            this._state.content.blocks[block.hash] = block;
-            if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'Received raw block:', block.hash);
-            break;
-          case 'hashtx':
-            // Update state with transaction hash (reversed byte order)
-            const txHash = content.toString('hex');
-            if (!this._state.content.transactions[txHash]) {
-              this._state.content.transactions[txHash] = {
-                hash: txHash,
-                raw: null,
-                timestamp: Date.now()
-              };
-            }
-            if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'Received transaction hash:', txHash);
-            break;
-          case 'rawtx':
-            // Update state with full transaction data
-            const tx = {
-              hash: content.hash('hex'),
-              inputs: content.inputs,
-              outputs: content.outputs,
-              tx: content,
-              raw: content.toRaw().toString('hex'),
-              timestamp: Date.now()
-            };
-            this._state.content.transactions[tx.hash] = tx;
-            if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'Received raw transaction:', tx.hash);
-            break;
-          default:
-            if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'Unknown ZMQ topic:', topic);
-        }
-      } catch (exception) {
-        this.emit('error', `Could not process ZMQ message: ${exception}`);
-      }
-    });
+    this.zmq.on('message', this._handleZMQMessage.bind(this));
 
     this.zmq.on('error', (err) => {
       console.error('[ZMQ] Error:', err);
@@ -1028,12 +953,12 @@ class Bitcoin extends Service {
       return address;
     } else if (this.settings.key) {
       // In fabric mode, use the provided key to derive an address
-      const target = this.settings.key.deriveAddress(this.settings.state.index);
+      const target = this.settings.key.deriveAddress(this.settings.state.walletIndex);
       // Increment the index for next time
-      this.settings.state.index++;
+      this.settings.state.walletIndex++;
       // Track the address
       this.settings.state.addresses[target.address] = {
-        index: this.settings.state.index - 1,
+        index: this.settings.state.walletIndex - 1,
         transactions: []
       };
       return target.address;
@@ -1043,13 +968,13 @@ class Bitcoin extends Service {
         network: this.settings.network,
         purpose: 44,
         account: 0,
-        index: this.settings.state.index
+        index: this.settings.state.walletIndex
       });
       this.settings.key = key;
-      const target = key.deriveAddress(this.settings.state.index);
-      this.settings.state.index++;
+      const target = key.deriveAddress(this.settings.state.walletIndex);
+      this.settings.state.walletIndex++;
       this.settings.state.addresses[target.address] = {
-        index: this.settings.state.index - 1,
+        index: this.settings.state.walletIndex - 1,
         transactions: []
       };
       return target.address;
@@ -1086,10 +1011,10 @@ class Bitcoin extends Service {
       switch (method) {
         case 'getnewaddress':
           if (this.settings.key) {
-            const target = this.settings.key.deriveAddress(this.settings.state.index);
-            this.settings.state.index++;
+            const target = this.settings.key.deriveAddress(this.settings.state.walletIndex);
+            this.settings.state.walletIndex++;
             this.settings.state.addresses[target.address] = {
-              index: this.settings.state.index - 1,
+              index: this.settings.state.walletIndex - 1,
               transactions: []
             };
             return target.address;
@@ -1257,42 +1182,6 @@ class Bitcoin extends Service {
     return this._makeRPCRequest('signrawtransaction', [rawTX, JSON.stringify(prevouts)]);
   }
 
-  async _getUTXOSetMeta (utxos) {
-    const coins = [];
-    const keys = [];
-
-    let inputSum = 0;
-    let inputCount = 0;
-
-    for (let i = 0; i < utxos.length; i++) {
-      const candidate = utxos[i];
-      const template = {
-        hash: Buffer.from(candidate.txid, 'hex').reverse(),
-        index: candidate.vout,
-        value: Amount.fromBTC(candidate.amount).toValue(),
-        script: Script.fromAddress(candidate.address)
-      };
-
-      const c = Coin.fromOptions(template);
-      const keypair = await this._dumpKeyPair(candidate.address);
-
-      coins.push(c);
-      keys.push(keypair);
-
-      inputCount++;
-      // TODO: not rely on parseFloat
-      // use bitwise...
-      inputSum += parseFloat(template.value);
-    }
-
-    return {
-      inputs: {
-        count: inputCount,
-        total: inputSum
-      }
-    };
-  }
-
   /**
    * Creates an unsigned Bitcoin transaction.
    * @param {Object} options 
@@ -1323,89 +1212,6 @@ class Bitcoin extends Service {
     };
   }
 
-  async _createContractFromProposal (proposal) {
-    const tx = proposal.mtx.toTX();
-    const raw = tx.toRaw().toString('hex');
-    return {
-      tx: tx,
-      raw: raw
-    };
-  }
-
-  async _getCoinsFromInputs (inputs = []) {
-    const coins = [];
-    const keys = [];
-
-    let inputSum = 0;
-    let inputCount = 0;
-
-    for (let i = 0; i < inputs.length; i++) {
-      const candidate = inputs[i];
-      const template = {
-        hash: Buffer.from(candidate.txid, 'hex').reverse(),
-        index: candidate.vout,
-        value: Amount.fromBTC(candidate.amount).toValue(),
-        script: Script.fromAddress(candidate.address)
-      };
-
-      const c = Coin.fromOptions(template);
-      const keypair = await this._dumpKeyPair(candidate.address);
-
-      coins.push(c);
-      keys.push(keypair);
-
-      inputCount++;
-      // TODO: not rely on parseFloat
-      // use bitwise...
-      inputSum += parseFloat(template.value);
-    }
-
-    return coins;
-  }
-
-  async _getKeysFromCoins (coins) {
-    console.log('coins:', coins);
-  }
-
-  async _attachOutputToContract (output, contract) {
-    // TODO: add support for segwit, taproot
-    // is the scriptpubkey still set?
-    const scriptpubkey = output.scriptpubkey;
-    const value = output.value;
-    // contract.mtx.addOutput(scriptpubkey, value);
-    return contract;
-  }
-
-  async _signInputForContract (index, contract) {
-
-  }
-
-  async _signAllContractInputs (contract) {
-
-  }
-
-  async _generateScriptAddress () {
-    const script = new Script();
-    script.pushOp(bcoin.opcodes.OP_); // Segwit version
-    script.pushData(ring.getKeyHash());
-    script.compile();
-
-    return {
-      address: script.getAddress(),
-      script: script
-    };
-  }
-
-  async _estimateFeeRate (options = {}) {
-    // satoshis per kilobyte
-    // TODO: use satoshis/vbyte
-    return 10000;
-  }
-
-  async _coinSelectNaive (options = {}) {
-
-  }
-
   async _createSwapScript (options) {
     const sequence = await this._encodeSequenceTargetBlock(options.constraints.blocktime);
     const asm = `
@@ -1422,71 +1228,6 @@ class Bitcoin extends Service {
 
     const clean = asm.trim().replace(/\s+/g, ' ');
     return bitcoin.script.fromASM(clean);
-  }
-
-  async _createSwapTX (options) {
-    const network = this.networks[this.settings.network];
-    const tx = new bitcoin.Transaction();
-
-    tx.locktime = bip65.encode({ blocks: options.constraints.blocktime });
-
-    const input = options.inputs[0];
-    tx.addInput(Buffer.from(input.txid, 'hex').reverse(), input.vout, 0xfffffffe);
-
-    const output = bitcoin.address.toOutputScript(options.destination, network);
-    tx.addOutput(output, options.amount * 100000000);
-
-    return tx;
-  }
-
-  async _p2shForOutput (output) {
-    return bitcoin.payments.p2sh({
-      redeem: { output },
-      network: this.networks[this.settings.network]
-    });
-  }
-
-  async _spendSwapTX (options) {
-    const network = this.networks[this.settings.network];
-    const tx = options.tx;
-    const hashtype = bitcoin.Transaction.SIGHASH_ALL;
-    const sighash = tx.hashForSignature(0, options.script, hashtype);
-    const scriptsig = bitcoin.payments.p2sh({
-      redeem: {
-        input: bitcoin.script.compile([
-          bitcoin.script.signature.encode(options.key.sign(sighash), hashtype),
-          bitcoin.opcodes.OP_TRUE
-        ]),
-        output: options.script
-      },
-      network: network
-    });
-
-    tx.setInputScript(0, scriptsig.input);
-
-    return tx;
-  }
-
-  async _createP2WPKHTransaction (options) {
-    const p2wpkh = this._createPayment(options);
-    const psbt = new bitcoin.Psbt({ network: this.networks[this.settings.network] })
-      .addInput(options.input)
-      .addOutput({
-        address: options.change,
-        value: 2e4,
-      })
-      .signInput(0, p2wpkh.keys[0]);
-
-    psbt.finalizeAllInputs();
-    const tx = psbt.extractTransaction();
-    return tx;
-  }
-
-  async _createP2WKHPayment (options) {
-    return bitcoin.payments.p2wsh({
-      pubkey: options.pubkey, 
-      network: this.networks[this.settings.network]
-    });
   }
 
   _createPayment (options) {
@@ -1598,97 +1339,6 @@ class Bitcoin extends Service {
     return psbt;
   }
 
-  _getFinalScriptsForInput (inputIndex, input, script, isSegwit, isP2SH, isP2WSH) {
-    const options = {
-      inputIndex,
-      input,
-      script,
-      isSegwit,
-      isP2SH,
-      isP2WSH
-    };
-
-    const decompiled = bitcoin.script.decompile(options.script);
-    // TODO: SECURITY !!!
-    // This is a very naive implementation of a script-validating heuristic.
-    // DO NOT USE IN PRODUCTION
-    //
-    // Checking if first OP is OP_IF... should do better check in production!
-    // You may even want to check the public keys in the script against a
-    // whitelist depending on the circumstances!!!
-    // You also want to check the contents of the input to see if you have enough
-    // info to actually construct the scriptSig and Witnesses.
-    if (!decompiled || decompiled[0] !== bitcoin.opcodes.OP_IF) {
-      throw new Error(`Can not finalize input #${inputIndex}`);
-    }
-
-    const signature = (options.input.partialSig)
-      ? options.input.partialSig[0].signature
-      : undefined;
-
-    const template = {
-      network: this.networks[this.settings.network],
-      output: options.script,
-      input: bitcoin.script.compile([
-        signature,
-        bitcoin.opcodes.OP_TRUE
-      ])
-    };
-
-    let payment = null;
-
-    if (options.isP2WSH && options.isSegwit) {
-      payment = bitcoin.payments.p2wsh({
-        network: this.networks[this.settings.network],
-        redeem: template,
-      });
-    }
-
-    if (options.isP2SH) {
-      payment = bitcoin.payments.p2sh({
-        network: this.networks[this.settings.network],
-        redeem: template,
-      });
-    }
-
-    return {
-      finalScriptSig: payment.input,
-      finalScriptWitness: payment.witness && payment.witness.length > 0
-        ? this._witnessStackToScriptWitness(payment.witness)
-        : undefined
-    };
-  }
-
-  _witnessStackToScriptWitness (stack) {
-    const buffer = Buffer.alloc(0);
-
-    function writeSlice (slice) {
-      buffer = Buffer.concat([buffer, Buffer.from(slice)]);
-    }
-
-    function writeVarInt (i) {
-      const currentLen = buffer.length;
-      const varintLen = varuint.encodingLength(i);
-
-      buffer = Buffer.concat([buffer, Buffer.allocUnsafe(varintLen)]);
-      varuint.encode(i, buffer, currentLen);
-    }
-
-    function writeVarSlice (slice) {
-      writeVarInt(slice.length);
-      writeSlice(slice);
-    }
-
-    function writeVector (vector) {
-      writeVarInt(vector.length);
-      vector.forEach(writeVarSlice);
-    }
-
-    writeVector(stack);
-
-    return buffer;
-  }
-
   async _buildTX () {
     return new bitcoin.TransactionBuilder();
   }
@@ -1766,6 +1416,8 @@ class Bitcoin extends Service {
     this.best = best;
     this.height = height;
 
+    this.commit();
+
     return this;
   }
 
@@ -1833,6 +1485,8 @@ class Bitcoin extends Service {
     this.emit('log', `Beginning chain sync for height ${this.height} with best block: ${this.best}`);
 
     await this._syncBestBlock();
+    await this._syncSupply();
+    await this._syncBalances();
     // await this._syncChainHeadersOverRPC(this.best);
     // await this._syncRawChainOverRPC();
 
@@ -1844,6 +1498,13 @@ class Bitcoin extends Service {
 
     this.commit();
 
+    return this;
+  }
+
+  async _syncSupply () {
+    const supply = await this._makeRPCRequest('gettxoutsetinfo');
+    this._state.content.supply = supply.total_amount;
+    this.commit();
     return this;
   }
 
@@ -1877,35 +1538,41 @@ class Bitcoin extends Service {
     while (attempts < maxAttempts) {
       try {
         if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Attempt ${attempts + 1}/${maxAttempts} to connect to bitcoind...`);
-        
+
         // Check multiple RPC endpoints to ensure full readiness
         const checks = [
-          this._makeRPCRequest('getblockchaininfo'), // Basic blockchain info
-          this._makeRPCRequest('getnetworkinfo'),    // Network status
-          this._makeRPCRequest('getwalletinfo')      // Wallet status
+          this._makeRPCRequest('getblockchaininfo'),
+          this._makeRPCRequest('getnetworkinfo')
         ];
 
         // Wait for all checks to complete
         const results = await Promise.all(checks);
-        
+
         if (this.settings.debug) {
           console.debug('[FABRIC:BITCOIN]', 'Successfully connected to bitcoind:');
           console.debug('[FABRIC:BITCOIN]', '- Blockchain info:', results[0]);
           console.debug('[FABRIC:BITCOIN]', '- Network info:', results[1]);
-          console.debug('[FABRIC:BITCOIN]', '- Wallet info:', results[2]);
         }
-        
+
         return true;
       } catch (error) {
         if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Connection attempt ${attempts + 1} failed:`, error.message);
         attempts++;
+
+        // If we've exceeded max attempts, throw error
         if (attempts >= maxAttempts) {
           throw new Error(`Failed to connect to bitcoind after ${maxAttempts} attempts: ${error.message}`);
         }
+
+        // Wait before next attempt with exponential backoff
         await new Promise(resolve => setTimeout(resolve, delay));
         delay = Math.min(delay * 1.5, 10000); // Exponential backoff with max 10s delay
+        continue; // Continue to next attempt
       }
     }
+
+    // Should never reach here due to maxAttempts check in catch block
+    throw new Error('Failed to connect to bitcoind: Max attempts exceeded');
   }
 
   async createLocalNode () {
@@ -1924,7 +1591,6 @@ class Bitcoin extends Service {
       '-zmqpubhashblock=tcp://127.0.0.1:29500'
     ];
 
-    if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Bitcoind parameters:', params);
     if (this.settings.username && this.settings.password) {
       params.push(`-rpcuser=${this.settings.username}`);
       params.push(`-rpcpassword=${this.settings.password}`);
@@ -1954,10 +1620,17 @@ class Bitcoin extends Service {
       case 'regtest':
         datadir = './stores/bitcoin-regtest';
         params.push('-regtest');
+        params.push('-fallbackfee=1.0');
+        params.push('-maxtxfee=1.1');
         break;
       case 'playnet':
         datadir = './stores/bitcoin-playnet';
         break;
+    }
+
+    if (this.settings.datadir) {
+      datadir = this.settings.datadir;
+      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Using custom datadir:', datadir);
     }
 
     if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Using datadir:', datadir);
@@ -1971,6 +1644,8 @@ class Bitcoin extends Service {
 
     // Set data directory
     params.push(`-datadir=${datadir}`);
+
+    if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Bitcoind parameters:', params);
 
     // Start bitcoind
     if (this.settings.managed) {
@@ -2151,14 +1826,13 @@ class Bitcoin extends Service {
     }
 
     // Start services
-    await this.wallet.start();
+    // await this.wallet.start();
 
     // Start ZMQ if enabled
     if (this.settings.zmq) await this._startZMQ();
 
     // Handle RPC mode operations
     if (this.settings.mode === 'rpc') {
-      const wallet = await this._loadWallet();
       this._heart = setInterval(this.tick.bind(this), this.settings.interval);
       await this._syncWithRPC();
     }
@@ -2215,7 +1889,6 @@ class Bitcoin extends Service {
       if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Killing Bitcoin node process...');
       try {
         this._nodeProcess.kill('SIGKILL');
-        console.debug('[FABRIC:BITCOIN]', 'Process killed');
       } catch (error) {
         console.error('[FABRIC:BITCOIN]', 'Error killing process:', error);
       }
@@ -2234,6 +1907,25 @@ class Bitcoin extends Service {
     process.removeAllListeners('uncaughtException');
     process.removeAllListeners('unhandledRejection');
     console.log('[FABRIC:BITCOIN]', 'Cleanup complete');
+  }
+
+  async getRootKeyAddress () {
+    if (!this.settings.key) {
+      throw new Error('No key provided for mining');
+    }
+    const rootKey = this.settings.key;
+    const address = rootKey.deriveAddress(0, 0, 'p2pkh');
+    return address.address;
+  }
+
+  async generateBlock () {
+    if (!this.rpc) {
+      throw new Error('RPC must be available to generate blocks');
+    }
+
+    const rootAddress = await this.getRootKeyAddress();
+    await this._makeRPCRequest('generatetoaddress', [1, rootAddress]);
+    return this._syncBestBlock();
   }
 }
 
