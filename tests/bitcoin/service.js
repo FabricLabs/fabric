@@ -118,6 +118,7 @@ describe('@fabric/core/services/bitcoin', function () {
 
     it('can validate an address', async function () {
       await bitcoin.start();
+      await bitcoin._loadWallet();
       const address = await bitcoin.getUnusedAddress();
       await bitcoin.stop();
       const valid = bitcoin.validateAddress(address);
@@ -126,6 +127,7 @@ describe('@fabric/core/services/bitcoin', function () {
 
     xit('can generate blocks', async function () {
       await bitcoin.start();
+      await bitcoin._loadWallet();
       const address = await bitcoin.getUnusedAddress();
       await bitcoin.stop();
       const blocks = await bitcoin.generateBlocks(1, address);
@@ -199,6 +201,7 @@ describe('@fabric/core/services/bitcoin', function () {
       this.test.ctx.local = local;
 
       await local.start();
+      await local._loadWallet('testwallet');
       // Create a descriptor wallet
       const created = await local._makeRPCRequest('createwallet', [
         'testwallet',
@@ -209,8 +212,8 @@ describe('@fabric/core/services/bitcoin', function () {
         true   // descriptor wallet
       ]);
       await local._makeRPCRequest('unloadwallet', ['testwallet']);
-
       await local._makeRPCRequest('loadwallet', ['testwallet']);
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for wallet to load
       const address = await local._makeRPCRequest('getnewaddress', []);
       const generated = await local._makeRPCRequest('generatetoaddress', [101, address]);
       const wallet = await local._makeRPCRequest('getwalletinfo', []);
@@ -252,8 +255,8 @@ describe('@fabric/core/services/bitcoin', function () {
         true   // descriptor wallet
       ]);
       await local._makeRPCRequest('unloadwallet', ['testwallet1']);
-
       await local._makeRPCRequest('loadwallet', ['testwallet1']);
+      await new Promise(resolve => setTimeout(resolve, 1000));
       const miner = await local._makeRPCRequest('getnewaddress', []);
       const generated = await local._makeRPCRequest('generatetoaddress', [101, miner]);
       await local._makeRPCRequest('unloadwallet', ['testwallet1']);
@@ -269,15 +272,18 @@ describe('@fabric/core/services/bitcoin', function () {
       ]);
 
       await local._makeRPCRequest('loadwallet', ['testwallet2']);
+      await new Promise(resolve => setTimeout(resolve, 1000));
       const destination = await local._makeRPCRequest('getnewaddress', []);
       await local._makeRPCRequest('unloadwallet', ['testwallet2']);
 
       await local._makeRPCRequest('loadwallet', ['testwallet1']);
+      await new Promise(resolve => setTimeout(resolve, 1000));
       const payment = await local._makeRPCRequest('sendtoaddress', [destination, 1]);
       const confirmation = await local._makeRPCRequest('generatetoaddress', [1, miner]);
       await local._makeRPCRequest('unloadwallet', ['testwallet1']);
 
       await local._makeRPCRequest('loadwallet', ['testwallet2']);
+      await new Promise(resolve => setTimeout(resolve, 1000));
       const wallet = await local._makeRPCRequest('getwalletinfo', []);
       const balance = await local._makeRPCRequest('getbalance', []);
       await local._makeRPCRequest('unloadwallet', ['testwallet2']);
@@ -291,6 +297,7 @@ describe('@fabric/core/services/bitcoin', function () {
 
     it('can create a psbt', async function () {
       await bitcoin.start();
+      await bitcoin._loadWallet();
       const address = await bitcoin.getUnusedAddress();
       const psbt = await bitcoin._buildPSBT({
         inputs: [],
@@ -305,6 +312,7 @@ describe('@fabric/core/services/bitcoin', function () {
 
     it('can create PSBTs', async function () {
       await bitcoin.start();
+      await bitcoin._loadWallet();
       const address = await bitcoin.getUnusedAddress();
       const psbt = await bitcoin._createTX({
         inputs: [],
