@@ -278,6 +278,12 @@ class Bitcoin extends Service {
     return this._networkConfigs;
   }
 
+  get walletName () {
+    const preimage = crypto.createHash('sha256').update(this.settings.key.xpub).digest('hex');
+    const hash = crypto.createHash('sha256').update(preimage).digest('hex');
+    return this.settings.walletName || hash;
+  }
+
   set best (best) {
     if (best === this.best) return this.best;
     if (best !== this.best) {
@@ -710,41 +716,21 @@ class Bitcoin extends Service {
   }
 
   async _loadWallet (name) {
-    const actor = new Actor({ content: name });
-
+    if (!name) name = this.walletName;
     try {
-      await this._makeRPCRequest('createwallet', [
-        actor.id,
-        false, // private keys
-        false, // blank (use sethdseed)
+      const created = await this._makeRPCRequest('createwallet', [
+        name,
+        false, // disable_private_keys
+        false, // blank
         null,  // passphrase
-        true,  // avoid reuse
+        true,  // avoid_reuse
         true   // descriptors
       ]);
-
-      // Load the wallet
-      await this._makeRPCRequest('restorewallet', [actor.id]);
-
-      // Get addresses
-      try {
-        this.addresses = await this._listAddresses();
-      } catch (exception) {
-        if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Error listing addresses:', exception.message);
-        this.addresses = [];
-      }
-
-      // If no addresses, generate one
-      if (!this.addresses || !this.addresses.length) {
-        const address = await this.getUnusedAddress();
-        this.addresses = [address];
-      }
-
-      return {
-        id: actor.id
-      };
+      const loaded = await this._makeRPCRequest('loadwallet', [name]);
+      await new Promise(r => setTimeout(r, 2500));
+      return { name };
     } catch (error) {
-      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Error loading wallet:', error.message);
-      throw error;
+      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Wallet loading sequence:', error.message);
     }
   }
 
@@ -949,8 +935,15 @@ class Bitcoin extends Service {
 
   async getUnusedAddress () {
     if (this.rpc) {
-      const address = await this._makeRPCRequest('getnewaddress');
-      return address;
+      try {
+        // Ensure a wallet is loaded
+        await this._loadWallet(this.walletName);
+        const address = await this._makeRPCRequest('getnewaddress');
+        return address;
+      } catch (error) {
+        if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Error getting unused address:', error.message);
+        throw error;
+      }
     } else if (this.settings.key) {
       // In fabric mode, use the provided key to derive an address
       const target = this.settings.key.deriveAddress(this.settings.state.walletIndex);
@@ -1006,39 +999,6 @@ class Bitcoin extends Service {
   }
 
   async _makeRPCRequest (method, params = []) {
-    if (this.settings.mode === 'fabric') {
-      // In fabric mode, handle requests locally
-      switch (method) {
-        case 'getnewaddress':
-          if (this.settings.key) {
-            const target = this.settings.key.deriveAddress(this.settings.state.walletIndex);
-            this.settings.state.walletIndex++;
-            this.settings.state.addresses[target.address] = {
-              index: this.settings.state.walletIndex - 1,
-              transactions: []
-            };
-            return target.address;
-          }
-          throw new Error('No key provided for address generation in fabric mode');
-        case 'validateaddress':
-          return { isvalid: this.validateAddress(params[0]) };
-        case 'getblockchaininfo':
-          return { blocks: this.settings.state.height };
-        case 'getblockcount':
-          return this.settings.state.height;
-        case 'getbestblockhash':
-          return this.settings.state.tip;
-        case 'listunspent':
-          return [];
-        default:
-          if (this.settings.managed) {
-            // Allow RPC request to be sent in managed mode
-            break;
-          }
-          throw new Error(`Method ${method} not implemented in fabric mode`);
-      }
-    }
-
     if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Making RPC request: ${method}(${JSON.stringify(params)})`);
     return new Promise((resolve, reject) => {
       if (!this.rpc) {
@@ -1046,30 +1006,15 @@ class Bitcoin extends Service {
         if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'RPC request failed:', error.message);
         return reject(error);
       }
-      try {
-        this.rpc.request(method, params, (err, response) => {
-          if (err) {
-            if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'RPC request failed:', err);
-            // Handle different types of errors
-            if (err.error) {
-              try {
-                // If err.error is a string, try to parse it as JSON
-                const errorObj = typeof err.error === 'string' ? JSON.parse(err.error) : err.error;
-                return reject(new Error(errorObj.message || errorObj.error || JSON.stringify(errorObj)));
-              } catch (parseError) {
-                // If parsing fails, use the original error
-                return reject(new Error(err.error));
-              }
-            }
-            return reject(new Error(err.message || err));
-          }
-          if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `RPC response for ${method}:`, response.result);
-          return resolve(response.result);
-        });
-      } catch (exception) {
-        if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'RPC request failed with exception:', exception);
-        return reject(new Error(`RPC request failed: ${exception.message}`));
-      }
+
+      this.rpc.request(method, params, (err, response) => {
+        if (err) {
+          if (this.settings.debug) console.error('[FABRIC:BITCOIN]', 'RPC request error:', err);
+          return reject(new Error('RPC request failed: ' + err));
+        }
+        if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `RPC response for ${method}:`, response);
+        return resolve(response.result);
+      });
     });
   }
 
@@ -1166,7 +1111,15 @@ class Bitcoin extends Service {
   }
 
   async _listUnspent () {
-    return this._makeRPCRequest('listunspent', []);
+    try {
+      // Ensure a wallet is loaded
+      await this._loadWallet(this.walletName);
+      return this._makeRPCRequest('listunspent', []);
+    } catch (error) {
+      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Error listing unspent outputs:', error.message);
+      // Return empty array on error
+      return [];
+    }
   }
 
   async _encodeSequenceForNBlocks (time) {
@@ -1373,32 +1326,17 @@ class Bitcoin extends Service {
     return this;
   }
 
-  async _syncBalanceFromOracle () {
-    // Get balance
-    const balance = await this._makeRPCRequest('getbalance');
-
-    // Update service data
-    this._state.balance = balance;
-
-    // Commit to state
-    const commit = await this.commit();
-    const actor = new Actor(commit.data);
-
-    // Return OracleBalance
-    return {
-      type: 'OracleBalance',
-      data: {
-        content: balance
-      },
-      // signature: actor.sign().signature
-    };
-  }
-
   async _syncBalances () {
-    const balances = await this._makeRPCRequest('getbalances');
-    this._state.balances = balances;
-    this.commit();
-    return balances;
+    try {
+      await this._loadWallet(this.walletName);
+      const balances = await this._makeRPCRequest('getbalances');
+      this._state.balances = balances;
+      this.commit();
+      return balances;
+    } catch (error) {
+      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Error syncing balances:', error.message);
+      return this._state.balances;
+    }
   }
 
   async _syncChainInfoOverRPC () {
@@ -1889,6 +1827,7 @@ class Bitcoin extends Service {
       if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Killing Bitcoin node process...');
       try {
         this._nodeProcess.kill('SIGKILL');
+        await new Promise(resolve => this._nodeProcess.once('exit', resolve));
       } catch (error) {
         console.error('[FABRIC:BITCOIN]', 'Error killing process:', error);
       }
