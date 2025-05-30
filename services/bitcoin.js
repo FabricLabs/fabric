@@ -734,6 +734,7 @@ class Bitcoin extends Service {
 
       const loaded = await this._makeRPCRequest('loadwallet', [name]);
       await new Promise(r => setTimeout(r, 250));
+
       return { name };
     } catch (error) {
       if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Wallet loading sequence:', error.message);
@@ -1024,7 +1025,7 @@ class Bitcoin extends Service {
 
       this.rpc.request(method, params, (err, response) => {
         if (err) {
-          if (this.settings.debug) console.error('[FABRIC:BITCOIN]', 'RPC request error:', err);
+          console.trace('[FABRIC:BITCOIN]', 'RPC request error:', err);
           return reject(new Error('RPC request failed: ' + err));
         }
         if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `RPC response for ${method}:`, response);

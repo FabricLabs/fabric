@@ -163,8 +163,12 @@ describe('@fabric/core/services/bitcoin', function () {
       await local.start();
 
       // Create a descriptor wallet
-      const secondblock = await local._makeRPCRequest('getblockhash', [1]);
-      const invalidated = await local._makeRPCRequest('invalidateblock', [secondblock]);
+      const height = await local._makeRPCRequest('getblockcount', []);
+      if (height > 0) {
+        const secondblock = await local._makeRPCRequest('getblockhash', [1]);
+        await local._makeRPCRequest('invalidateblock', [secondblock]);
+      }
+
       const created = await local._loadWallet('testwallet');
       const address = await local._makeRPCRequest('getnewaddress', []);
       const generated = await local._makeRPCRequest('generatetoaddress', [101, address]);
