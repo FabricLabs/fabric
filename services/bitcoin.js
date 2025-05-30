@@ -727,10 +727,20 @@ class Bitcoin extends Service {
         true   // descriptors
       ]);
       const loaded = await this._makeRPCRequest('loadwallet', [name]);
-      await new Promise(r => setTimeout(r, 2500));
+      await new Promise(r => setTimeout(r, 250));
       return { name };
     } catch (error) {
       if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Wallet loading sequence:', error.message);
+    }
+  }
+
+  async _unloadWallet (name) {
+    if (!name) name = this.walletName;
+    try {
+      await this._makeRPCRequest('unloadwallet', [name]);
+      return { name };
+    } catch (error) {
+      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Wallet unloading sequence:', error.message);
     }
   }
 
@@ -1467,7 +1477,7 @@ class Bitcoin extends Service {
     }
   }
 
-  async _waitForBitcoind (maxAttempts = 30, initialDelay = 1000) {
+  async _waitForBitcoind (maxAttempts = 5, initialDelay = 1000) {
     if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Waiting for bitcoind to be ready...');
     let attempts = 0;
     let delay = initialDelay;
