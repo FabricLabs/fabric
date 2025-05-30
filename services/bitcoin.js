@@ -718,14 +718,20 @@ class Bitcoin extends Service {
   async _loadWallet (name) {
     if (!name) name = this.walletName;
     try {
+      const info = await this._makeRPCRequest('getnetworkinfo');
+      const version = parseInt(info.version);
+
+      // Adjust wallet creation parameters based on version
+      const useDescriptors = version >= 240000; // Descriptors became stable in v24.0
       const created = await this._makeRPCRequest('createwallet', [
         name,
         false, // disable_private_keys
         false, // blank
         null,  // passphrase
         true,  // avoid_reuse
-        true   // descriptors
+        useDescriptors // descriptors - only enable for newer versions
       ]);
+
       const loaded = await this._makeRPCRequest('loadwallet', [name]);
       await new Promise(r => setTimeout(r, 250));
       return { name };

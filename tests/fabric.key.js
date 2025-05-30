@@ -9,6 +9,7 @@ const ec = new EC('secp256k1');
 const bip39 = require('bip39');
 const BIP32 = require('bip32').default;
 const ecc = require('tiny-secp256k1');
+const base58 = require('bs58check');
 
 const message = require('../assets/message');
 const playnet = require('../settings/playnet');
@@ -43,6 +44,29 @@ describe('@fabric/core/types/key', function () {
     it('can load from an existing seed', function () {
       const key = new Key({ seed: playnet.key.seed });
       assert.equal(key.public.encodeCompressed('hex'), '0223cffd5e94da3c8915c6b868f06d15183c1aeffad8ddf58fcb35a428e3158e71');
+    });
+
+    it('can load from a WIF', function () {
+      const origin = new Key();
+      const wif = origin.toWIF();
+      const key = Key.fromWIF(wif);
+      assert.equal(key.toWIF(), wif);
+      assert.equal(key.toBitcoinAddress(), origin.toBitcoinAddress());
+    });
+
+    it('can load from a WIF passed in options', function () {
+      const origin = new Key();
+      const wif = origin.toWIF();
+      const key = new Key({ wif: wif });
+      assert.equal(key.toWIF(), wif);
+      assert.equal(key.toBitcoinAddress(), origin.toBitcoinAddress());
+    });
+
+    it('can load from a known WIF', function () {
+      const wif = '5Kb8kLf9zgWQnogidDA76MzPL6TsZZY36hWXMssSzNydYXYB9KF';
+      const key = Key.fromWIF(wif);
+      const address = key.toBitcoinAddress();
+      assert.equal(address, '1CC3X2gu58d6wXUWMffpuzN9JAfTUWu4Kj');
     });
 
     it('can load from an existing xprv', function () {

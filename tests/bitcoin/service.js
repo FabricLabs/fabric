@@ -59,6 +59,7 @@ describe('@fabric/core/services/bitcoin', function () {
 
   describe('Bitcoin', function () {
     afterEach(async function() {
+      await bitcoin._unloadWallet();
       await bitcoin.stop();
 
       // Ensure any local bitcoin instance is stopped
@@ -139,8 +140,7 @@ describe('@fabric/core/services/bitcoin', function () {
         debug: false,
         listen: 0,
         network: 'regtest',
-        managed: true,
-        datadir: `${process.cwd()}/stores/bitcoin-regtest-${Date.now()}` // Unique directory
+        managed: true
       });
 
       this.test.ctx.local = local;
@@ -155,8 +155,7 @@ describe('@fabric/core/services/bitcoin', function () {
         listen: 0,
         network: 'regtest',
         managed: true,
-        mode: 'rpc',
-        datadir: `${process.cwd()}/stores/bitcoin-regtest-${Date.now()}` // Unique directory
+        mode: 'rpc'
       });
 
       this.test.ctx.local = local;
@@ -164,6 +163,8 @@ describe('@fabric/core/services/bitcoin', function () {
       await local.start();
 
       // Create a descriptor wallet
+      const secondblock = await local._makeRPCRequest('getblockhash', [1]);
+      const invalidated = await local._makeRPCRequest('invalidateblock', [secondblock]);
       const created = await local._loadWallet('testwallet');
       const address = await local._makeRPCRequest('getnewaddress', []);
       const generated = await local._makeRPCRequest('generatetoaddress', [101, address]);
@@ -185,8 +186,7 @@ describe('@fabric/core/services/bitcoin', function () {
         listen: 0,
         network: 'regtest',
         managed: true,
-        mode: 'rpc',
-        datadir: `${process.cwd()}/stores/bitcoin-regtest-${Date.now()}`
+        mode: 'rpc'
       });
 
       this.test.ctx.local = local;
@@ -215,8 +215,7 @@ describe('@fabric/core/services/bitcoin', function () {
         listen: 0,
         network: 'regtest',
         managed: true,
-        mode: 'rpc',
-        datadir: `${process.cwd()}/stores/bitcoin-regtest-${Date.now()}`
+        mode: 'rpc'
       });
 
       this.test.ctx.local = local;
