@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const mkdirp = require('mkdirp');
+const chokidar = require('chokidar');
 
 // Fabric Types
 const Actor = require('./actor');
@@ -256,10 +257,13 @@ class Filesystem extends Actor {
     await this._loadFromDisk();
 
     // Watch for changes in the filesystem
-    fs.watch(this.path, {
+    chokidar.watch(this.path, {
+      ignoreInitial: true,
       persistent: false,
-      recursive: true
-    }, this._handleDiskChange.bind(this));
+      ignored: /(^|[/\\])\.fabric([/\\]|$)/ // ignore .fabric directory
+    }).on('all', (event, filePath) => {
+      this._handleDiskChange(event, filePath);
+    });
 
     this._state.content.status = 'STARTED';
     this.commit();

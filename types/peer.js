@@ -211,6 +211,11 @@ class Peer extends Service {
     return this.settings.port || 7777;
   }
 
+  get publicPeers () {
+    const peers = [];
+    return peers;
+  }
+
   beat () {
     const initial = new Actor(this.state);
     const now = (new Date()).toISOString();

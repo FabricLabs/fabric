@@ -936,7 +936,6 @@ class Bitcoin extends Service {
   async getUnusedAddress () {
     if (this.rpc) {
       try {
-        // Ensure a wallet is loaded
         await this._loadWallet(this.walletName);
         const address = await this._makeRPCRequest('getnewaddress');
         return address;

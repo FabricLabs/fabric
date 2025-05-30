@@ -32,6 +32,7 @@ const {
   CHAT_MESSAGE,
   DOCUMENT_PUBLISH_TYPE,
   DOCUMENT_REQUEST_TYPE,
+  JSON_CALL_TYPE,
   BLOCK_CANDIDATE,
   PEER_CANDIDATE,
   SESSION_START
@@ -113,6 +114,10 @@ class Message extends Actor {
     ]) Object.defineProperty(this, name, { enumerable: false });
 
     return this;
+  }
+
+  get author () {
+    return this.raw.author.toString('hex');
   }
 
   get body () {
@@ -390,6 +395,7 @@ class Message extends Actor {
       'FabricServiceLogMessage': LOG_MESSAGE_TYPE,
       'GenericTransferQueue': GENERIC_LIST_TYPE,
       'JSONBlob': GENERIC_MESSAGE_TYPE + 1,
+      'JSONCall': JSON_CALL_TYPE,
       // TODO: document Generic type
       // P2P Commands
       'Generic': P2P_GENERIC,
@@ -519,6 +525,8 @@ Object.defineProperty(Message.prototype, 'type', {
         return 'StartSession';
       case CHAT_MESSAGE:
         return 'ChatMessage';
+      case JSON_CALL_TYPE:
+        return 'JSONCall';
       case P2P_START_CHAIN:
         return 'StartChain';
       default:
