@@ -1,7 +1,6 @@
 /**
  * @fabric/core/types/key
- * A cryptographic key management system for the Fabric protocol.
- * Provides functionality for key generation, derivation, signing and encryption.
+ * Cryptographic key generation, derivation, signing, and encryption.
  * 
  * @signers
  * - Eric Martindale <eric@ericmartindale.com>
@@ -30,6 +29,7 @@ const BN = require('bn.js');
 const EC = require('elliptic').ec;
 const ec = new EC('secp256k1');
 const ecc = require('tiny-secp256k1');
+const base58 = require('bs58check');
 const payments = require('bitcoinjs-lib/src/payments');
 
 // Fabric Dependencies
@@ -57,6 +57,7 @@ class Key extends EventEmitter {
    * @param {String} [settings.seed] Mnemonic seed for initializing the key.
    * @param {String} [settings.public] Public key in hex.
    * @param {String} [settings.private] Private key in hex.
+   * @param {String} [settings.wif] WIF-encoded private key.
    * @param {String} [settings.purpose=44] Constrains derivations to this space.
    */
   constructor (input = {}) {
@@ -72,6 +73,7 @@ class Key extends EventEmitter {
       prefix: '00',
       public: null,
       private: null,
+      wif: null,
       purpose: 44,
       account: 0,
       bits: 256,
@@ -140,6 +142,8 @@ class Key extends EventEmitter {
       this._mode = 'FROM_MNEMONIC';
     } else if (this.settings.seed) {
       this._mode = 'FROM_SEED';
+    } else if (this.settings.wif) {
+      this._mode = 'FROM_WIF';
     } else if (this.settings.private) {
       this._mode = 'FROM_PRIVATE_KEY';
     } else if (this.settings.xprv) {
@@ -175,7 +179,22 @@ class Key extends EventEmitter {
         this.xpub = root.neutered().toBase58();
         this.master = root;
         this.keypair = ec.keyFromPrivate(root.privateKey);
-          break;
+        break;
+      case 'FROM_WIF':
+        const decoded = base58.decode(this.settings.wif);
+        const version = decoded[0];
+        const privateKey = decoded.slice(1, 33);
+        const isCompressed = decoded.length === 34 && decoded[33] === 0x01;
+        this.keypair = ec.keyFromPrivate(privateKey);
+        if (!isCompressed) {
+          const pub = this.keypair.getPublic();
+          pub.compressed = false;
+          // Force the public key to be uncompressed
+          this.public = pub;
+        } else {
+          this.public = this.keypair.getPublic(true);
+        }
+        break;
       case 'FROM_XPRV':
         this.master = this.bip32.fromBase58(this.settings.xprv);
         this.xprv = this.master.toBase58();
@@ -239,6 +258,16 @@ class Key extends EventEmitter {
     Object.defineProperty(this, 'private', { enumerable: false });
 
     return this;
+  }
+
+  /**
+   * Create a Key instance from a WIF-encoded private key.
+   * @param {String} wif - The WIF-encoded private key
+   * @param {Object} [options] - Additional options for key creation
+   * @returns {Key} A new Key instance
+   */
+  static fromWIF (wif, options = {}) {
+    return new Key({ ...options, wif });
   }
 
   static Mnemonic (seed) {
@@ -641,6 +670,58 @@ class Key extends EventEmitter {
 
   get pubkey () {
     return this.public.encodeCompressed('hex');
+  }
+
+  /**
+   * Exports the private key in Wallet Import Format (WIF)
+   * @returns {String} The private key encoded in WIF format
+   * @throws {Error} If the key doesn't have a private component
+   */
+  toWIF () {
+    if (!this.private) throw new Error('Cannot export WIF without private key');
+    let privateKeyBuffer;
+
+    if (Buffer.isBuffer(this.private)) {
+      privateKeyBuffer = this.private;
+    } else if (BN.isBN(this.private)) {
+      privateKeyBuffer = Buffer.from(this.private.toString(16).padStart(64, '0'), 'hex');
+    } else if (typeof this.private === 'string') {
+      privateKeyBuffer = Buffer.from(this.private.padStart(64, '0'), 'hex');
+    } else {
+      throw new Error('Invalid private key format');
+    }
+
+    const network = this.settings.network === 'regtest'
+      ? this.settings.networks.testnet
+      : this.settings.networks[this.settings.network] || this.settings.networks.mainnet;
+
+    const prefix = Buffer.from([network.wif]);
+    const payload = Buffer.concat([
+      prefix,
+      privateKeyBuffer,
+      Buffer.from([0x01])
+    ]);
+
+    const firstHash = crypto.createHash('sha256').update(payload).digest();
+    const secondHash = crypto.createHash('sha256').update(firstHash).digest();
+    const checksum = secondHash.slice(0, 4);
+    const combined = Buffer.concat([payload, checksum]);
+
+    return base58.encode(combined);
+  }
+
+  toBitcoinAddress () {
+    if (!this.public) throw new Error('Cannot derive Bitcoin address without public key');
+    const network = this.settings.network === 'regtest'
+      ? this.settings.networks.testnet
+      : this.settings.networks[this.settings.network] || this.settings.networks.mainnet;
+
+    const p2pkh = payments.p2pkh({
+      pubkey: Buffer.from(this.public.encode('hex'), 'hex'),
+      network: network
+    });
+
+    return p2pkh.address;
   }
 }
 
