@@ -220,11 +220,9 @@ describe('@fabric/core/services/bitcoin', function () {
       await local.start();
       await local._loadWallet('testwallet');
       const address = await local._makeRPCRequest('getnewaddress', []);
-      const generated = await local._makeRPCRequest('generatetoaddress', [101, address]);
+      await local._makeRPCRequest('generatetoaddress', [101, address]);
       const utxos = await local._makeRPCRequest('listunspent', []);
       assert.ok(utxos.length > 0, 'No UTXOs available to spend');
-
-      // Use the first UTXO as input
       const inputs = [{
         txid: utxos[0].txid,
         vout: utxos[0].vout

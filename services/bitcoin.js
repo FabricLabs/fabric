@@ -1583,14 +1583,14 @@ class Bitcoin extends Service {
     }
   }
 
-  async _waitForBitcoind (maxAttempts = 5, initialDelay = 1000) {
+  async _waitForBitcoind (maxAttempts = 10, initialDelay = 2000) {
     if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Waiting for bitcoind to be ready...');
     let attempts = 0;
     let delay = initialDelay;
 
     while (attempts < maxAttempts) {
       try {
-        if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Attempt ${attempts + 1}/${maxAttempts} to connect to bitcoind...`);
+        if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Attempt ${attempts + 1}/${maxAttempts} to connect to bitcoind on port ${this.settings.rpcport}...`);
 
         // Check multiple RPC endpoints to ensure full readiness
         const checks = [
