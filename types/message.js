@@ -9,6 +9,10 @@ const {
   GENERIC_MESSAGE_TYPE,
   LOG_MESSAGE_TYPE,
   GENERIC_LIST_TYPE,
+  BITCOIN_BLOCK_TYPE,
+  BITCOIN_BLOCK_HASH_TYPE,
+  BITCOIN_TRANSACTION_TYPE,
+  BITCOIN_TRANSACTION_HASH_TYPE,
   P2P_GENERIC,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
@@ -28,6 +32,7 @@ const {
   CHAT_MESSAGE,
   DOCUMENT_PUBLISH_TYPE,
   DOCUMENT_REQUEST_TYPE,
+  JSON_CALL_TYPE,
   BLOCK_CANDIDATE,
   PEER_CANDIDATE,
   SESSION_START
@@ -109,6 +114,10 @@ class Message extends Actor {
     ]) Object.defineProperty(this, name, { enumerable: false });
 
     return this;
+  }
+
+  get author () {
+    return this.raw.author.toString('hex');
   }
 
   get body () {
@@ -374,6 +383,10 @@ class Message extends Actor {
   get types () {
     // Message Types
     return {
+      'BitcoinBlock': BITCOIN_BLOCK_TYPE,
+      'BitcoinBlockHash': BITCOIN_BLOCK_HASH_TYPE,
+      'BitcoinTransaction': BITCOIN_TRANSACTION_TYPE,
+      'BitcoinTransactionHash': BITCOIN_TRANSACTION_HASH_TYPE,
       'GenericMessage': GENERIC_MESSAGE_TYPE,
       'GenericLogMessage': LOG_MESSAGE_TYPE,
       'GenericList': GENERIC_LIST_TYPE,
@@ -382,6 +395,7 @@ class Message extends Actor {
       'FabricServiceLogMessage': LOG_MESSAGE_TYPE,
       'GenericTransferQueue': GENERIC_LIST_TYPE,
       'JSONBlob': GENERIC_MESSAGE_TYPE + 1,
+      'JSONCall': JSON_CALL_TYPE,
       // TODO: document Generic type
       // P2P Commands
       'Generic': P2P_GENERIC,
@@ -457,6 +471,14 @@ Object.defineProperty(Message.prototype, 'type', {
   get () {
     const code = parseInt(this.raw.type.toString('hex'), 16);
     switch (code) {
+      case BITCOIN_BLOCK_TYPE:
+        return 'BitcoinBlock';
+      case BITCOIN_BLOCK_HASH_TYPE:
+        return 'BitcoinBlockHash';
+      case BITCOIN_TRANSACTION_TYPE:
+        return 'BitcoinTransaction';
+      case BITCOIN_TRANSACTION_HASH_TYPE:
+        return 'BitcoinTransactionHash';
       case GENERIC_MESSAGE_TYPE:
         return 'GenericMessage';
       case GENERIC_MESSAGE_TYPE + 1:
@@ -503,6 +525,8 @@ Object.defineProperty(Message.prototype, 'type', {
         return 'StartSession';
       case CHAT_MESSAGE:
         return 'ChatMessage';
+      case JSON_CALL_TYPE:
+        return 'JSONCall';
       case P2P_START_CHAIN:
         return 'StartChain';
       default:
