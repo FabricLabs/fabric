@@ -731,6 +731,9 @@ class Bitcoin extends Service {
       const info = await this._makeRPCRequest('getnetworkinfo');
       const version = parseInt(info.version);
       const useDescriptors = version >= 240000; // Descriptors became stable in v24.0
+
+      if (this.settings.debug) console.trace('[FABRIC:BITCOIN]', `Loading wallet: ${name}, version: ${version}, descriptors: ${useDescriptors}`);
+
       const walletParams = [
         name,
         false, // disable_private_keys
@@ -742,6 +745,7 @@ class Bitcoin extends Service {
 
       try {
         await this._makeRPCRequest('loadwallet', [name]);
+        if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Successfully loaded existing wallet: ${name}`);
         return { name };
       } catch (loadError) {
         // If wallet doesn't exist (-18) or path doesn't exist, we need to create it
@@ -757,10 +761,13 @@ class Bitcoin extends Service {
 
         // For any other error, try unloading and recreating
         try {
+          if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Attempting to unload and recreate wallet: ${name}`);
           await this._makeRPCRequest('unloadwallet', [name]);
           await this._makeRPCRequest('createwallet', walletParams);
+          if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Successfully recreated wallet: ${name}`);
           return { name };
         } catch (recreateError) {
+          if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Recreate error for wallet ${name}:`, recreateError.message);
           throw recreateError;
         }
       }
@@ -773,7 +780,9 @@ class Bitcoin extends Service {
   async _unloadWallet (name) {
     if (!name) name = this.walletName;
     try {
+      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Attempting to unload wallet: ${name}`);
       await this._makeRPCRequest('unloadwallet', [name]);
+      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Successfully unloaded wallet: ${name}`);
       return { name };
     } catch (error) {
       if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Wallet unloading sequence:', error.message);
@@ -1590,6 +1599,7 @@ class Bitcoin extends Service {
         }
 
         // Wait before next attempt with exponential backoff
+        if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Waiting ${delay}ms before retry...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         delay = Math.min(delay * 1.5, 10000); // Exponential backoff with max 10s delay
         continue; // Continue to next attempt

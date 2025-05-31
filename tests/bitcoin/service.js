@@ -14,6 +14,8 @@ describe('@fabric/core/services/bitcoin', function () {
   let key;
 
   before(async function () {
+    this.timeout(180000); // 3 minutes for setup
+
     // Initialize Bitcoin service first
     bitcoin = new Bitcoin({
       network: 'regtest',
@@ -25,6 +27,7 @@ describe('@fabric/core/services/bitcoin', function () {
       debug: true,
       username: 'bitcoinrpc',
       password: 'password',
+      datadir: './stores/bitcoin-regtest-test',
       rpc: {
         host: 'localhost',
         port: 18443,
@@ -59,7 +62,6 @@ describe('@fabric/core/services/bitcoin', function () {
 
   describe('Bitcoin', function () {
     afterEach(async function() {
-      await bitcoin._unloadWallet();
       await bitcoin.stop();
 
       // Ensure any local bitcoin instance is stopped
