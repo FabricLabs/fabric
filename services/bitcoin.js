@@ -743,26 +743,45 @@ class Bitcoin extends Service {
         useDescriptors // descriptors - only enable for newer versions
       ];
 
+      // First try to load an existing wallet
       try {
         await this._makeRPCRequest('loadwallet', [name]);
         if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Successfully loaded existing wallet: ${name}`);
         return { name };
       } catch (loadError) {
+        if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Load error for wallet ${name}:`, loadError.message);
+
         // If wallet doesn't exist (-18) or path doesn't exist, we need to create it
-        if (loadError.code === -18) {
-          await this._makeRPCRequest('createwallet', walletParams);
-          return { name };
+        if (loadError.code === -18 || loadError.message.includes('does not exist')) {
+          if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Wallet path does not exist, creating new wallet: ${name}`);
+
+          try {
+            await this._makeRPCRequest('createwallet', walletParams);
+            if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Successfully created wallet: ${name}`);
+            return { name };
+          } catch (createError) {
+            if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Create error for wallet ${name}:`, createError.message);
+            throw createError;
+          }
         }
 
         // If wallet is already loaded (-35), that's fine
         if (loadError.code === -35) {
+          if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Wallet ${name} already loaded`);
           return { name };
         }
 
-        // For any other error, try unloading and recreating
+        // For any other error where the wallet might be in a bad state, try unloading and recreating
         try {
           if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Attempting to unload and recreate wallet: ${name}`);
-          await this._makeRPCRequest('unloadwallet', [name]);
+          // Try to unload (might fail if wallet isn't loaded, but that's okay)
+          try {
+            await this._makeRPCRequest('unloadwallet', [name]);
+          } catch (unloadError) {
+            if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Unload failed (wallet may not be loaded): ${unloadError.message}`);
+            // Continue anyway - the wallet probably wasn't loaded
+          }
+
           await this._makeRPCRequest('createwallet', walletParams);
           if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Successfully recreated wallet: ${name}`);
           return { name };
