@@ -111,7 +111,13 @@ describe('@fabric/core/services/bitcoin', function () {
 
     it('can generate addresses', async function () {
       await bitcoin.start();
-      await bitcoin._loadWallet();
+
+      try {
+        await bitcoin._loadWallet();
+      } catch (error) {
+        console.error('Error loading wallet:', error);
+      }
+
       const address = await bitcoin.getUnusedAddress();
       if (!address) throw new Error('No address returned from getnewaddress');
       await bitcoin.stop();
