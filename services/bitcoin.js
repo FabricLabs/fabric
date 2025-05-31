@@ -1638,11 +1638,21 @@ class Bitcoin extends Service {
       `-port=${this.settings.port}`,
       '-rpcbind=127.0.0.1',
       `-rpcport=${this.settings.rpcport}`,
+      `-rpcworkqueue=128`, // Default is 16
+      `-rpcthreads=8`, // Default is 4
       '-server',
       '-zmqpubrawblock=tcp://127.0.0.1:29500',
       '-zmqpubrawtx=tcp://127.0.0.1:29500',
       '-zmqpubhashtx=tcp://127.0.0.1:29500',
-      '-zmqpubhashblock=tcp://127.0.0.1:29500'
+      '-zmqpubhashblock=tcp://127.0.0.1:29500',
+      // Add reindex parameter to handle witness data
+      // '-reindex',
+      // Add memory management parameters
+      // '-dbcache=512',
+      // '-maxmempool=100',
+      // '-maxconnections=10',
+      // Reduce memory usage for validation
+      // '-par=1'
     ];
 
     if (this.settings.username && this.settings.password) {
@@ -1710,6 +1720,7 @@ class Bitcoin extends Service {
       // Spawn process
       if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Spawning bitcoind process...');
       const child = children.spawn('bitcoind', params);
+      await new Promise(r => setTimeout(r, 1000));
 
       // Store the child process reference
       this._nodeProcess = child;

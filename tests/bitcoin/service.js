@@ -10,31 +10,36 @@ const Key = require('../../types/key');
 describe('@fabric/core/services/bitcoin', function () {
   this.timeout(120000);
 
+  const defaults = {
+    network: 'regtest',
+    mode: 'fabric',
+    port: 18444,
+    rpcport: 18443,
+    zmqport: 18445,
+    managed: true,
+    debug: false,
+    username: 'bitcoinrpc',
+    password: 'password',
+    datadir: './stores/bitcoin-regtest-test'
+  };
+
   let bitcoin;
   let key;
+
+  async function resetChain (chain) {
+    const height = await chain._makeRPCRequest('getblockcount', []);
+    if (height > 0) {
+      const secondblock = await chain._makeRPCRequest('getblockhash', [1]);
+      await chain._makeRPCRequest('invalidateblock', [secondblock]);
+      const after = await chain._makeRPCRequest('getblockcount', []);
+    }
+  }
 
   before(async function () {
     this.timeout(180000); // 3 minutes for setup
 
     // Initialize Bitcoin service first
-    bitcoin = new Bitcoin({
-      network: 'regtest',
-      mode: 'fabric',
-      port: 18444,
-      rpcport: 18443,
-      zmqport: 18445,
-      managed: true,
-      debug: true,
-      username: 'bitcoinrpc',
-      password: 'password',
-      datadir: './stores/bitcoin-regtest-test',
-      rpc: {
-        host: 'localhost',
-        port: 18443,
-        username: 'bitcoinrpc',
-        password: 'password'
-      }
-    });
+    bitcoin = new Bitcoin(defaults);
 
     // Now create the key with the correct network configuration
     key = new Key({
@@ -113,13 +118,7 @@ describe('@fabric/core/services/bitcoin', function () {
 
     it('can generate addresses', async function () {
       await bitcoin.start();
-
-      try {
-        await bitcoin._loadWallet();
-      } catch (error) {
-        console.error('Error loading wallet:', error);
-      }
-
+      await bitcoin._loadWallet();
       const address = await bitcoin.getUnusedAddress();
       if (!address) throw new Error('No address returned from getnewaddress');
       await bitcoin.stop();
@@ -159,24 +158,10 @@ describe('@fabric/core/services/bitcoin', function () {
     });
 
     it('can generate regtest balances', async function () {
-      const local = new Bitcoin({
-        debug: false,
-        listen: 0,
-        network: 'regtest',
-        managed: true,
-        mode: 'rpc'
-      });
-
+      const local = new Bitcoin(defaults);
       this.test.ctx.local = local;
-
       await local.start();
-
-      // Create a descriptor wallet
-      const height = await local._makeRPCRequest('getblockcount', []);
-      if (height > 0) {
-        const secondblock = await local._makeRPCRequest('getblockhash', [1]);
-        await local._makeRPCRequest('invalidateblock', [secondblock]);
-      }
+      await resetChain(local);
 
       const created = await local._loadWallet('testwallet');
       const address = await local._makeRPCRequest('getnewaddress', []);
@@ -194,14 +179,7 @@ describe('@fabric/core/services/bitcoin', function () {
     });
 
     it('can create unsigned transactions', async function () {
-      const local = new Bitcoin({
-        debug: false,
-        listen: 0,
-        network: 'regtest',
-        managed: true,
-        mode: 'rpc'
-      });
-
+      const local = new Bitcoin(defaults);
       this.test.ctx.local = local;
 
       await local.start();
@@ -272,14 +250,7 @@ describe('@fabric/core/services/bitcoin', function () {
     });
 
     it('can complete a payment', async function () {
-      const local = new Bitcoin({
-        debug: false,
-        listen: 0,
-        network: 'regtest',
-        managed: true,
-        mode: 'rpc'
-      });
-
+      const local = new Bitcoin(defaults);
       this.test.ctx.local = local;
 
       await local.start();
