@@ -26,6 +26,9 @@ const bip68 = require('bip68');
 const ECPair = ECPairFactory(ecc);
 const bitcoin = require('bitcoinjs-lib');
 
+// Initialize bitcoinjs-lib with the ECC library
+bitcoin.initEccLib(ecc);
+
 // Services
 const ZMQ = require('../services/zmq');
 
@@ -317,9 +320,16 @@ class Bitcoin extends Service {
   validateAddress (address) {
     try {
       // Get the correct network configuration
-      const network = this.networks[this.settings.network];
+      const network = this._networkConfigs[this.settings.network];
       if (!network) {
         throw new Error(`Invalid network: ${this.settings.network}`);
+      }
+
+      try {
+        bitcoin.address.toOutputScript(address, network);
+        return true;
+      } catch (e) {
+        return false;
       }
 
       // Try to convert the address to an output script
@@ -720,24 +730,43 @@ class Bitcoin extends Service {
     try {
       const info = await this._makeRPCRequest('getnetworkinfo');
       const version = parseInt(info.version);
-
-      // Adjust wallet creation parameters based on version
       const useDescriptors = version >= 240000; // Descriptors became stable in v24.0
-      const created = await this._makeRPCRequest('createwallet', [
+      const walletParams = [
         name,
         false, // disable_private_keys
-        false, // blank
+        false, // TODO: enable blank, import _rootKey
         null,  // passphrase
         true,  // avoid_reuse
         useDescriptors // descriptors - only enable for newer versions
-      ]);
+      ];
 
-      const loaded = await this._makeRPCRequest('loadwallet', [name]);
-      await new Promise(r => setTimeout(r, 250));
+      try {
+        await this._makeRPCRequest('loadwallet', [name]);
+        return { name };
+      } catch (loadError) {
+        // If wallet doesn't exist (-18) or path doesn't exist, we need to create it
+        if (loadError.code === -18) {
+          await this._makeRPCRequest('createwallet', walletParams);
+          return { name };
+        }
 
-      return { name };
+        // If wallet is already loaded (-35), that's fine
+        if (loadError.code === -35) {
+          return { name };
+        }
+
+        // For any other error, try unloading and recreating
+        try {
+          await this._makeRPCRequest('unloadwallet', [name]);
+          await this._makeRPCRequest('createwallet', walletParams);
+          return { name };
+        } catch (recreateError) {
+          throw recreateError;
+        }
+      }
     } catch (error) {
-      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Wallet loading sequence:', error.message);
+      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Wallet loading sequence error:', error);
+      throw error;
     }
   }
 
@@ -957,7 +986,7 @@ class Bitcoin extends Service {
         const address = await this._makeRPCRequest('getnewaddress');
         return address;
       } catch (error) {
-        if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Error getting unused address:', error.message);
+        if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Error getting unused address:', error);
         throw error;
       }
     } else if (this.settings.key) {
@@ -1014,20 +1043,31 @@ class Bitcoin extends Service {
     return this._makeRPCRequest('listreceivedbyaddress', [1, true]);
   }
 
+  /**
+   * Make a single RPC request to the Bitcoin node.
+   * @param {String} method The RPC method to call.
+   * @param {Array} params The parameters to pass to the RPC method.
+   * @returns {Promise} A promise that resolves to the RPC response.
+   */
   async _makeRPCRequest (method, params = []) {
-    if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Making RPC request: ${method}(${JSON.stringify(params)})`);
     return new Promise((resolve, reject) => {
-      if (!this.rpc) {
-        const error = new Error('RPC manager does not exist');
-        if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'RPC request failed:', error.message);
-        return reject(error);
-      }
+      if (!this.rpc) return reject(new Error('RPC manager does not exist'));
 
       this.rpc.request(method, params, (err, response) => {
         if (err) {
-          console.trace('[FABRIC:BITCOIN]', 'RPC request error:', err);
-          return reject(new Error('RPC request failed: ' + err));
+          console.trace('[FABRIC:BITCOIN]', `RPC error for ${method}(${params.join(', ')}):`, err);
+          return reject(err);
         }
+
+        if (!response) {
+          return reject(new Error(`No response from RPC call ${method}`));
+        }
+
+        if (response.error) {
+          if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `RPC response error for ${method}:`, response.error);
+          return reject(response.error);
+        }
+
         if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `RPC response for ${method}:`, response);
         return resolve(response.result);
       });
@@ -1206,6 +1246,11 @@ class Bitcoin extends Service {
     });
   }
 
+  async _estimateFeeRate (withinBlocks = 1) {
+    const estimate = await this._makeRPCRequest('estimatesmartfee', [withinBlocks]);
+    return estimate.feerate;
+  }
+
   async _getInputData (options = {}) {
     const unspent = options.input;
     const isSegwit = true;
@@ -1256,13 +1301,32 @@ class Bitcoin extends Service {
       throw new Error(`Invalid network: ${this.settings.network}`);
     }
 
+    // Calculate total input amount
+    let inputAmount = 0;
+    for (const input of options.inputs) {
+      const utxo = await this._makeRPCRequest('gettxout', [input.txid, input.vout]);
+      if (utxo) {
+        inputAmount += utxo.value * 100000000; // Convert BTC to satoshis
+      }
+    }
+
+    // Calculate total output amount
+    let outputAmount = 0;
+    for (const output of options.outputs) {
+      outputAmount += output.value;
+    }
+
+    // TODO: add change output
+
+    // Create the PSBT
     const psbt = new bitcoin.Psbt({ network });
 
     for (let i = 0; i < options.inputs.length; i++) {
       const input = options.inputs[i];
       const data = {
         hash: input.txid,
-        index: input.vout
+        index: input.vout,
+        sequence: 0xffffffff
       };
 
       psbt.addInput(data);

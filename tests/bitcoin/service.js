@@ -113,6 +113,7 @@ describe('@fabric/core/services/bitcoin', function () {
       await bitcoin.start();
       await bitcoin._loadWallet();
       const address = await bitcoin.getUnusedAddress();
+      if (!address) throw new Error('No address returned from getnewaddress');
       await bitcoin.stop();
       assert.ok(address);
     });
@@ -199,18 +200,67 @@ describe('@fabric/core/services/bitcoin', function () {
       await local._loadWallet('testwallet');
       const address = await local._makeRPCRequest('getnewaddress', []);
       const generated = await local._makeRPCRequest('generatetoaddress', [101, address]);
-      const wallet = await local._makeRPCRequest('getwalletinfo', []);
-      const balance = await local._makeRPCRequest('getbalance', []);
-      const blockchain = await local._makeRPCRequest('getblockchaininfo', []);
-      const transaction = await local._makeRPCRequest('createrawtransaction', [[], { [address]: 1 }]);
+      const utxos = await local._makeRPCRequest('listunspent', []);
+      assert.ok(utxos.length > 0, 'No UTXOs available to spend');
+
+      const inputs = [{
+        txid: utxos[0].txid,
+        vout: utxos[0].vout
+      }];
+
+      const outputs = { [address]: 1 };
+      const transaction = await local._makeRPCRequest('createrawtransaction', [inputs, outputs]);
       const decoded = await local._makeRPCRequest('decoderawtransaction', [transaction]);
-      const signed = await local._makeRPCRequest('signrawtransactionwithwallet', [transaction]);
-      // const broadcast = await local._makeRPCRequest('sendrawtransaction', [signed.hex]);
-      const confirmation = await local._makeRPCRequest('generatetoaddress', [1, address]);
+
       await local.stop();
 
       assert.ok(transaction);
-      assert.strictEqual(transaction.length, 82);
+      assert.ok(transaction.length > 0);
+      assert.ok(decoded.vin.length > 0, "Transaction should have at least one input");
+      assert.ok(decoded.vout.length > 0, "Transaction should have at least one output");
+    });
+
+    it('can sign and broadcast transactions', async function () {
+      const local = new Bitcoin({
+        debug: false,
+        listen: 0,
+        network: 'regtest',
+        managed: true,
+        mode: 'rpc'
+      });
+
+      this.test.ctx.local = local;
+
+      await local.start();
+      await local._loadWallet('testwallet');
+      const address = await local._makeRPCRequest('getnewaddress', []);
+      const generated = await local._makeRPCRequest('generatetoaddress', [101, address]);
+      const utxos = await local._makeRPCRequest('listunspent', []);
+      assert.ok(utxos.length > 0, 'No UTXOs available to spend');
+
+      // Use the first UTXO as input
+      const inputs = [{
+        txid: utxos[0].txid,
+        vout: utxos[0].vout
+      }];
+
+      // Calculate amount minus fee
+      const inputAmount = utxos[0].amount;
+      const fee = 0.00001; // 0.00001 BTC fee
+      const sendAmount = inputAmount - fee;
+      const outputs = { [address]: sendAmount };
+      const transaction = await local._makeRPCRequest('createrawtransaction', [inputs, outputs]);
+      const decoded = await local._makeRPCRequest('decoderawtransaction', [transaction]);
+      const signed = await local._makeRPCRequest('signrawtransactionwithwallet', [transaction]);
+      const broadcast = await local._makeRPCRequest('sendrawtransaction', [signed.hex]);
+      const confirmation = await local._makeRPCRequest('generatetoaddress', [1, address]);
+
+      await local.stop();
+
+      assert.ok(transaction);
+      assert.ok(transaction.length > 0);
+      assert.ok(decoded.vin.length > 0, "Transaction should have at least one input");
+      assert.ok(decoded.vout.length > 0, "Transaction should have at least one output");
     });
 
     it('can complete a payment', async function () {
@@ -254,26 +304,11 @@ describe('@fabric/core/services/bitcoin', function () {
       assert.equal(balance, 1);
     });
 
-    it('can create a psbt', async function () {
-      await bitcoin.start();
-      await bitcoin._loadWallet();
-      const address = await bitcoin.getUnusedAddress();
-      const psbt = await bitcoin._buildPSBT({
-        inputs: [],
-        outputs: [{
-          address: address,
-          value: 10000
-        }]
-      });
-      await bitcoin.stop();
-      assert.ok(psbt);
-    });
-
     it('can create PSBTs', async function () {
       await bitcoin.start();
       await bitcoin._loadWallet();
       const address = await bitcoin.getUnusedAddress();
-      const psbt = await bitcoin._createTX({
+      const psbt = await bitcoin._buildPSBT({
         inputs: [],
         outputs: [{
           address: address,
