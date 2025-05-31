@@ -983,7 +983,14 @@ class Bitcoin extends Service {
     if (this.rpc) {
       try {
         await this._loadWallet(this.walletName);
-        const address = await this._makeRPCRequest('getnewaddress');
+        const info = await this._makeRPCRequest('getnetworkinfo');
+        const version = parseInt(info.version);
+        const address = await this._makeRPCRequest('getnewaddress', [
+          '', // label
+          version >= 240000 ? 'legacy' : 'legacy' // address type
+        ]);
+
+        if (!address) throw new Error('No address returned from getnewaddress');
         return address;
       } catch (error) {
         if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Error getting unused address:', error);

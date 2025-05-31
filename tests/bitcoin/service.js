@@ -22,7 +22,7 @@ describe('@fabric/core/services/bitcoin', function () {
       rpcport: 18443,
       zmqport: 18445,
       managed: true,
-      debug: false,
+      debug: true,
       username: 'bitcoinrpc',
       password: 'password',
       rpc: {
