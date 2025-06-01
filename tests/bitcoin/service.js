@@ -148,6 +148,8 @@ describe('@fabric/core/services/bitcoin', function () {
         debug: false,
         listen: 0,
         network: 'regtest',
+        datadir: 'bitcoin-local',
+        rpcport: 18443,
         managed: true
       });
 
