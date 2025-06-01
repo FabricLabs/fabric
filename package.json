@@ -87,7 +87,6 @@
   "homepage": "https://github.com/FabricLabs/fabric#readme",
   "dependencies": {
     "arbitrary": "=1.4.10",
-    "base58check": "=2.0.0",
     "bech32-buffer": "=0.2.1",
     "bip-schnorr": "=0.6.7",
     "bip32": "=4.0.0",
@@ -175,6 +174,9 @@
     },
     "./constants": {
       "require": "./constants.js"
+    },
+    "./fixtures": {
+      "require": "./fixtures.js"
     },
     "./types/*": {
       "require": "./types/*.js"

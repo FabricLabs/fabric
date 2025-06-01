@@ -19,6 +19,7 @@ const manager = require('fast-json-patch');
 const Actor = require('./actor');
 const Collection = require('./collection');
 const Entity = require('./entity');
+const Filesystem = require('./filesystem');
 const Hash256 = require('./hash256');
 const Identity = require('./identity');
 const Key = require('./key');
@@ -68,6 +69,7 @@ class Service extends Actor {
       fs: {
         path: `./stores/fabric-service-${this.name}`
       },
+      key: null,
       state: {
         ...super.state,
         actors: {}, // TODO: schema
@@ -110,6 +112,7 @@ class Service extends Actor {
     //          Error: Not implemented yet
     this.key = new Key(this.settings.key);
     this.identity = new Identity(this.settings.key);
+    this.fs = new Filesystem({ ...this.settings.fs, key: this.settings.key });
 
     if (this.settings.persistent) {
       try {
