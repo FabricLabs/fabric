@@ -209,14 +209,7 @@ describe('@fabric/core/services/bitcoin', function () {
     });
 
     it('can sign and broadcast transactions', async function () {
-      const local = new Bitcoin({
-        debug: false,
-        listen: 0,
-        network: 'regtest',
-        managed: true,
-        mode: 'rpc'
-      });
-
+      const local = new Bitcoin(defaults);
       this.test.ctx.local = local;
 
       await local.start();
