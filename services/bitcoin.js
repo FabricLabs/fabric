@@ -1090,7 +1090,7 @@ class Bitcoin extends Service {
 
       this.rpc.request(method, params, (err, response) => {
         if (err) {
-          console.trace('[FABRIC:BITCOIN]', `RPC error for ${method}(${params.join(', ')}):`, err);
+          if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `RPC error for ${method}(${params.join(', ')}):`, err);
           return reject(err);
         }
 
