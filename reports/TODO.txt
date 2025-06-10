@@ -13,7 +13,6 @@
 ./settings/local.js:  // TODO: regtest, playnet, signet, testnet, mainnet (in order)
 ./settings/local.js:  // TODO: test `true`
 ./settings/default.json:      "@comment": "// TODO: remove routes, add by default",
-./SETTINGS.md:### WARNING: TODO
 ./types/witness.js:      // TODO: assign R coordinate
 ./types/witness.js:      // TODO: assign S coordinate
 ./types/channel.js:    // TODO: remove short-circuit
@@ -25,7 +24,6 @@
 ./types/scribe.js:    // TODO: enable
 ./types/key.js:// TODO: remove
 ./types/key.js:// TODO: remove all external dependencies
-./types/key.js:    // TODO: design state machine for input (configuration)
 ./types/key.js:    // TODO: determine if this makes sense / needs to be private
 ./types/key.js:    // TODO: evaluate compression when treating seed phrase as ascii
 ./types/key.js:    // TODO: consider using sha256(masterprivkey) or sha256(sha256(...))?
@@ -142,18 +140,7 @@
 ./types/wallet.js:      // TODO: should be split parts
 ./types/wallet.js:    // TODO: labeled keypairs
 ./types/wallet.js:      rate: 10000, // TODO: fee calculation
-./types/wallet.js:    // TODO: return a full object for Fabric
 ./types/wallet.js:    // TODO: restore swap code, abstract input types
-./types/wallet.js:    // TODO: use Satoshis for all calculations
-./types/wallet.js:    // TODO: remove all fake coinbases
-./types/wallet.js:    // TODO: remove all short-circuits
-./types/wallet.js:    // TODO: remove short-circuit
-./types/wallet.js:    // TODO: remove entirely, test short-circuit removal
-./types/wallet.js:    // TODO: wallet._getSpendableOutput()
-./types/wallet.js:    // TODO: load available outputs from wallet
-./types/wallet.js:      // TODO: fee estimation
-./types/wallet.js:      // TODO: fee estimation
-./types/wallet.js:    // TODO: load available outputs from wallet
 ./types/wallet.js:      // TODO: fee estimation
 ./types/wallet.js:      // TODO: restore address tracking in state
 ./types/wallet.js:      // TODO: check on above events, should be more like...
@@ -244,6 +231,7 @@
 ./DEVELOPERS.md:- [ ] Remove TODOs
 ./package.json:    "report:todo": "grep --exclude-dir=.git --exclude-dir=_book --exclude-dir=assets --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs -rEI \"TODO|FIXME\" . > reports/TODO.txt",
 ./package.json:    "review:todo": "npm run report:todo && cat reports/TODO.txt && echo '\nOutstanding TODO items (@fabric/core):' && wc -l reports/TODO.txt && echo '\nIssues List: https://github.com/FabricLabs/fabric/issues\nDisclosures: securiy@fabric.pub\n\n'",
+./guides/SETTINGS.md:### WARNING: TODO
 ./examples/bitcoin.js:  // TODO: import these into core process logic
 ./examples/game.js:    // TODO: use fabric call
 ./examples/swarm.html:          <p>TODO: create entities on seed node
@@ -287,12 +275,7 @@
 ./services/bitcoin.js:      // TODO: verify block hash!!!
 ./services/bitcoin.js:      // TODO: enable sharing of local hashes
 ./services/bitcoin.js:      // TODO: fix @types/wallet to use named types for Addresses...
-./services/bitcoin.js:      // TODO: not rely on parseFloat
 ./services/bitcoin.js:    // TODO: report FundingError: Not enough funds
-./services/bitcoin.js:      // TODO: not rely on parseFloat
-./services/bitcoin.js:    // TODO: add support for segwit, taproot
-./services/bitcoin.js:    // TODO: use satoshis/vbyte
-./services/bitcoin.js:    // TODO: SECURITY !!!
 ./services/bitcoin.js:    // TODO: async (i.e., Promise.all) chainsync
 ./services/bitcoin.js:    // TODO: use RPC auth
 ./services/bitcoin.js:    // TODO: re-enable these

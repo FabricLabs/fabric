@@ -433,7 +433,7 @@ class Store extends Actor {
 
       let id = pointer.escape(key);
       let router = store.sha256(id);
-      let state = new State(value);
+      let state = new Actor(value);
 
       pointer.set(store['@entity']['@data'], `${name}`, value);
       pointer.set(store['@entity']['@data'], `/states/${state.id}`, value);

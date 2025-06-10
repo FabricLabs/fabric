@@ -32,18 +32,14 @@ class Machine extends Actor {
       debug: false,
       deterministic: true,
       interval: 60, // seconds
+      key: null,
       precision: 8,
       script: [],
-      seed: 1, // TODO: select seed for production
       type: 'fabric'
     }, settings);
 
     // machine key
-    this.key = new Key({
-      seed: this.settings.seed + '', // casts to string
-      xprv: this.settings.xprv,
-      private: this.settings.private,
-    });
+    this.key = new Key(this.settings.key);
 
     // internal clock
     this.clock = this.settings.clock;
