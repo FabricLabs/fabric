@@ -33,9 +33,9 @@ jobs:
     - name: Download and install bitcoind
       run: |
         if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
-          wget https://bitcoin.org/bin/bitcoin-core-27.0/bitcoin-27.0-x86_64-linux-gnu.tar.gz
-          tar -xzf bitcoin-27.0-x86_64-linux-gnu.tar.gz
-          sudo mv bitcoin-27.0/bin/bitcoind /usr/local/bin/
+          wget https://bitcoin.org/bin/bitcoin-core-28.0/bitcoin-28.0-x86_64-linux-gnu.tar.gz
+          tar -xzf bitcoin-28.0-x86_64-linux-gnu.tar.gz
+          sudo mv bitcoin-28.0/bin/bitcoind /usr/local/bin/
         else
           brew install bitcoin
         fi
