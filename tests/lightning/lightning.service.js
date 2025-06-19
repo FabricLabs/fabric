@@ -340,6 +340,9 @@ describe('@fabric/core/services/lightning', function () {
       const unconnected = await carol.createInvoice(10000000);
       const initialPayment = await lightning._makeRPCRequest('pay', [invoice.bolt11]);
 
+      // Wait for channel balances to update
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
       const current1 = await lightning.listFunds();
       const current2 = await peer.listFunds();
       const channels1 = await lightning._makeRPCRequest('listchannels', []);
