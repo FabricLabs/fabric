@@ -116,7 +116,8 @@ class Bitcoin extends Service {
     this._networkConfigs = {
       mainnet: bitcoin.networks.bitcoin,
       testnet: bitcoin.networks.testnet,
-      regtest: bitcoin.networks.regtest
+      regtest: bitcoin.networks.regtest,
+      signet: bitcoin.networks.testnet // Signet uses testnet address format
     };
 
     if (this.settings.debug && this.settings.verbosity >= 4) console.debug('[DEBUG]', 'Instance of Bitcoin service created, settings:', this.settings);
@@ -226,6 +227,15 @@ class Bitcoin extends Service {
       headers: [],
       genesis: this.settings.genesis,
       tip: this.settings.genesis
+    };
+
+    // Store handler references for cleanup
+    this._errorHandlers = {
+      uncaughtException: null,
+      unhandledRejection: null,
+      SIGINT: null,
+      SIGTERM: null,
+      exit: null
     };
 
     // Chainable
@@ -1681,6 +1691,10 @@ class Bitcoin extends Service {
         datadir = './stores/bitcoin-testnet4';
         params.push('-testnet4');
         break;
+      case 'signet':
+        datadir = './stores/bitcoin-signet';
+        params.push('-signet');
+        break;
       case 'regtest':
         datadir = './stores/bitcoin-regtest';
         params.push('-regtest');
@@ -1698,9 +1712,10 @@ class Bitcoin extends Service {
     }
 
     if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Using datadir:', datadir);
+    this.settings.datadir = datadir; // for downstream users accessing the settings property, e.g. for lightning nodes
 
     // If storage constraints are set, prune the blockchain
-    if (this.settings.constraints.storage.size) {
+    if (this.settings.network !== 'regtest' && this.settings.constraints.storage.size) {
       params.push(`-prune=${this.settings.constraints.storage.size}`);
     } else {
       params.push(`-txindex`);
@@ -1764,24 +1779,33 @@ class Bitcoin extends Service {
         }
       };
 
-      // Handle process termination signals
-      process.on('SIGINT', cleanup);
-      process.on('SIGTERM', cleanup);
-      process.on('exit', cleanup);
+      // Store and attach handlers with proper error attribution
+      this._errorHandlers.SIGINT = cleanup;
+      this._errorHandlers.SIGTERM = cleanup;
+      this._errorHandlers.exit = cleanup;
+      this._errorHandlers.uncaughtException = async (err) => {
+        // Only handle errors from this service's child process
+        if (err.source === 'bitcoin' || (this._nodeProcess && err.pid === this._nodeProcess.pid)) {
+          console.trace('[FABRIC:BITCOIN]', 'Uncaught exception from Bitcoin service:', err);
+          // await cleanup();
+          // this.emit('error', err);
+        }
+      };
+      this._errorHandlers.unhandledRejection = async (reason, promise) => {
+        // Only handle rejections from this service's operations
+        if (reason.source === 'bitcoin' || (this._nodeProcess && reason.pid === this._nodeProcess.pid)) {
+          console.trace('[FABRIC:BITCOIN]', 'Unhandled rejection from Bitcoin service at:', promise, 'reason:', reason);
+          // await cleanup();
+          // this.emit('error', reason);
+        }
+      };
 
-      // Handle uncaught exceptions
-      process.on('uncaughtException', async (err) => {
-        console.error('[FABRIC:BITCOIN]', 'Uncaught exception:', err);
-        await cleanup();
-        this.emit('error', err);
-      });
-
-      // Handle unhandled promise rejections
-      process.on('unhandledRejection', async (reason, promise) => {
-        console.error('[FABRIC:BITCOIN]', 'Unhandled rejection at:', promise, 'reason:', reason);
-        // await cleanup();
-        this.emit('error', reason);
-      });
+      // Attach the handlers
+      process.on('SIGINT', this._errorHandlers.SIGINT);
+      process.on('SIGTERM', this._errorHandlers.SIGTERM);
+      process.on('exit', this._errorHandlers.exit);
+      process.on('uncaughtException', this._errorHandlers.uncaughtException);
+      process.on('unhandledRejection', this._errorHandlers.unhandledRejection);
 
       // Initialize RPC client
       const config = {
@@ -1951,12 +1975,25 @@ class Bitcoin extends Service {
 
     // Kill the Bitcoin node process if it exists
     if (this._nodeProcess) {
-      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Killing Bitcoin node process...');
+      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Stopping Bitcoin node process...');
       try {
-        this._nodeProcess.kill('SIGKILL');
-        await new Promise(resolve => this._nodeProcess.once('exit', resolve));
+        // First try SIGTERM for graceful shutdown
+        this._nodeProcess.kill('SIGTERM');
+
+        // Wait up to 10 seconds for graceful shutdown
+        const terminated = await Promise.race([
+          new Promise(resolve => this._nodeProcess.once('exit', () => resolve(true))),
+          new Promise(resolve => setTimeout(() => resolve(false), 10000))
+        ]);
+
+        // If graceful shutdown failed, force kill
+        if (!terminated && this._nodeProcess) {
+          if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Graceful shutdown failed, using SIGKILL...');
+          this._nodeProcess.kill('SIGKILL');
+          await new Promise(resolve => this._nodeProcess.once('exit', resolve));
+        }
       } catch (error) {
-        console.error('[FABRIC:BITCOIN]', 'Error killing process:', error);
+        console.error('[FABRIC:BITCOIN]', 'Error stopping process:', error);
       }
       this._nodeProcess = null;
     }
@@ -1969,9 +2006,17 @@ class Bitcoin extends Service {
   async cleanup () {
     console.log('[FABRIC:BITCOIN]', 'Cleaning up...');
     await this.stop();
-    // Remove process event listeners
-    process.removeAllListeners('uncaughtException');
-    process.removeAllListeners('unhandledRejection');
+
+    // Remove process event listeners if they exist
+    if (this._errorHandlers) {
+      Object.entries(this._errorHandlers).forEach(([event, handler]) => {
+        if (handler) {
+          process.removeListener(event, handler);
+          this._errorHandlers[event] = null;
+        }
+      });
+    }
+
     console.log('[FABRIC:BITCOIN]', 'Cleanup complete');
   }
 

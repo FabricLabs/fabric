@@ -43,10 +43,10 @@ describe('@fabric/core/services/lightning', function () {
     managed: true,
     socket: 'lightningd.sock',
     mode: 'socket',
-    network: 'regtest',
-    log_level: 'debug'
+    network: 'regtest'
   };
 
+  // Store node references for cleanup
   let key;
   let bitcoin;
   let lightning;
@@ -148,71 +148,61 @@ describe('@fabric/core/services/lightning', function () {
     });
   });
 
-  after(async function () {
-    console.debug('[FABRIC:LIGHTNING]', 'Cleaning up test environment...');
+  // Cleanup hook to ensure nodes are stopped
+  afterEach(async function () {
+    try {
+      console.debug('[FABRIC:LIGHTNING]', 'Cleaning up test environment...');
 
-    // Clean up first node
-    if (carol) {
-      try {
-        console.debug('[FABRIC:LIGHTNING]', 'Stopping carol node...');
-        await carol.stop();
-        console.debug('[FABRIC:LIGHTNING]', 'Peer node stopped');
-      } catch (error) {
-        console.error('[FABRIC:LIGHTNING]', 'Error stopping Peer:', error);
-        // Force kill if process exists
-        if (carol._child && !carol._child.killed) {
-          console.debug('[FABRIC:LIGHTNING]', 'Force killing carol process...');
-          carol._child.kill('SIGKILL');
+      // Clean up first node
+      if (carol) {
+        try {
+          console.debug('[FABRIC:LIGHTNING]', 'Stopping carol node...');
+          await carol.stop();
+          console.debug('[FABRIC:LIGHTNING]', 'Carol node stopped');
+        } catch (error) {
+          console.error('[FABRIC:LIGHTNING]', 'Error stopping Carol:', error);
         }
+        carol = null;
       }
-    }
 
-    // Clean up second node
-    if (peer) {
-      try {
-        console.debug('[FABRIC:LIGHTNING]', 'Stopping peer node...');
-        await peer.stop();
-        console.debug('[FABRIC:LIGHTNING]', 'Peer node stopped');
-      } catch (error) {
-        console.error('[FABRIC:LIGHTNING]', 'Error stopping Peer:', error);
-        // Force kill if process exists
-        if (peer._child && !peer._child.killed) {
-          console.debug('[FABRIC:LIGHTNING]', 'Force killing peer process...');
-          peer._child.kill('SIGKILL');
+      // Clean up second node
+      if (peer) {
+        try {
+          console.debug('[FABRIC:LIGHTNING]', 'Stopping peer node...');
+          await peer.stop();
+          console.debug('[FABRIC:LIGHTNING]', 'Peer node stopped');
+        } catch (error) {
+          console.error('[FABRIC:LIGHTNING]', 'Error stopping Peer:', error);
         }
+        peer = null;
       }
-    }
 
-    // Clean up Lightning
-    if (lightning) {
-      try {
-        console.debug('[FABRIC:LIGHTNING]', 'Stopping main node...');
-        await lightning.stop();
-        console.debug('[FABRIC:LIGHTNING]', 'Main node stopped');
-      } catch (error) {
-        console.error('[FABRIC:LIGHTNING]', 'Error stopping Lightning:', error);
-        // Force kill if process exists
-        if (lightning._child && !lightning._child.killed) {
-          console.debug('[FABRIC:LIGHTNING]', 'Force killing main process...');
-          lightning._child.kill('SIGKILL');
+      // Clean up Lightning
+      if (lightning) {
+        try {
+          console.debug('[FABRIC:LIGHTNING]', 'Stopping main node...');
+          await lightning.stop();
+          console.debug('[FABRIC:LIGHTNING]', 'Main node stopped');
+        } catch (error) {
+          console.error('[FABRIC:LIGHTNING]', 'Error stopping Lightning:', error);
         }
+        lightning = null;
       }
-    }
 
-    // Then clean up Bitcoin
-    if (bitcoin) {
-      try {
-        console.debug('[FABRIC:BITCOIN]', 'Stopping Bitcoin node...');
-        await bitcoin.stop();
-        console.debug('[FABRIC:BITCOIN]', 'Bitcoin node stopped');
-      } catch (error) {
-        console.error('[FABRIC:BITCOIN]', 'Error stopping Bitcoin:', error);
-        // Force kill if process exists
-        if (bitcoin._nodeProcess && !bitcoin._nodeProcess.killed) {
-          console.debug('[FABRIC:BITCOIN]', 'Force killing Bitcoin process...');
-          bitcoin._nodeProcess.kill('SIGKILL');
+      // Then clean up Bitcoin
+      if (bitcoin) {
+        try {
+          console.debug('[FABRIC:BITCOIN]', 'Stopping Bitcoin service...');
+          await bitcoin.stop();
+          console.debug('[FABRIC:BITCOIN]', 'Bitcoin service stopped');
+        } catch (error) {
+          console.error('[FABRIC:BITCOIN]', 'Error stopping Bitcoin:', error);
         }
+        bitcoin = null;
       }
+    } catch (error) {
+      console.error('[FABRIC:LIGHTNING]', 'Error in cleanup:', error);
+      throw error; // Re-throw to fail the test
     }
   });
 
@@ -222,7 +212,51 @@ describe('@fabric/core/services/lightning', function () {
     });
 
     it('can complete a payment (happy path)', async function () {
-      resetChain(bitcoin);
+      this.timeout(180000); // 3 minutes for the test
+
+      // Initialize Bitcoin service first
+      bitcoin = new Bitcoin(bitcoinDefaults);
+
+      // Set the key on the Bitcoin service
+      key = new Key({
+        network: 'regtest',
+        purpose: 44,
+        account: 0,
+        index: 0
+      });
+      bitcoin.settings.key = { xpub: key.xpub };
+
+      // Start Bitcoin service
+      await bitcoin.start();
+
+      // Wait for Bitcoin to be ready
+      await new Promise(resolve => setTimeout(resolve, 10000));
+
+      // Initialize Lightning nodes
+      lightning = new Lightning(lightningDefaults);
+      peer = new Lightning({
+        ...lightningDefaults,
+        datadir: './stores/lightning-regtest-test-peer',
+        port: 9888,
+        plugins: {
+          grpc: {
+            port: 9836
+          }
+        }
+      });
+      carol = new Lightning({
+        ...lightningDefaults,
+        datadir: './stores/lightning-regtest-test-carol',
+        port: 9890,
+        plugins: {
+          grpc: {
+            port: 9837
+          }
+        }
+      });
+
+      // Reset chain to known state
+      await resetChain(bitcoin);
 
       // Create a descriptor wallet
       console.debug('\n[DEBUG] Creating test wallet...');

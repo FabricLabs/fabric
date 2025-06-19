@@ -79,6 +79,15 @@ class Lightning extends Service {
       nodes: {}
     };
 
+    // Store handler references for cleanup
+    this._errorHandlers = {
+      uncaughtException: null,
+      unhandledRejection: null,
+      SIGINT: null,
+      SIGTERM: null,
+      exit: null
+    };
+
     return this;
   }
 
@@ -305,6 +314,49 @@ class Lightning extends Service {
         if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Lightning node exited with code ' + code);
         this.emit('log', `[FABRIC:LIGHTNING] Lightning node exited with code ${code}`);
       });
+
+      // Add cleanup handler
+      const cleanup = async () => {
+        if (this._child) {
+          try {
+            console.debug('[FABRIC:LIGHTNING]', 'Cleaning up Lightning node...');
+            this._child.kill();
+            await new Promise(resolve => {
+              this._child.on('close', () => resolve());
+            });
+          } catch (e) {
+            console.error('[FABRIC:LIGHTNING]', 'Error during cleanup:', e);
+          }
+        }
+      };
+
+      // Store and attach handlers with proper error attribution
+      this._errorHandlers.SIGINT = cleanup;
+      this._errorHandlers.SIGTERM = cleanup;
+      this._errorHandlers.exit = cleanup;
+      this._errorHandlers.uncaughtException = async (err) => {
+        // Only handle errors from this service's child process
+        if (err.source === 'lightning' || (this._child && err.pid === this._child.pid)) {
+          console.trace('[FABRIC:LIGHTNING]', 'Uncaught exception from Lightning service:', err);
+          // await cleanup();
+          // this.emit('error', err);
+        }
+      };
+      this._errorHandlers.unhandledRejection = async (reason, promise) => {
+        // Only handle rejections from this service's operations
+        if (reason.source === 'lightning' || (this._child && reason.pid === this._child.pid)) {
+          console.trace('[FABRIC:LIGHTNING]', 'Unhandled rejection from Lightning service at:', promise, 'reason:', reason);
+          // await cleanup();
+          // this.emit('error', reason);
+        }
+      };
+
+      // Attach the handlers
+      process.on('SIGINT', this._errorHandlers.SIGINT);
+      process.on('SIGTERM', this._errorHandlers.SIGTERM);
+      process.on('exit', this._errorHandlers.exit);
+      process.on('uncaughtException', this._errorHandlers.uncaughtException);
+      process.on('unhandledRejection', this._errorHandlers.unhandledRejection);
 
       // Wait for lightningd to be ready
       await this._waitForLightningD();
@@ -542,6 +594,19 @@ class Lightning extends Service {
     this.status = 'stopping';
     if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Starting Lightning service shutdown...');
 
+    // Remove custom error handlers
+    if (this._errorHandlers) {
+      Object.entries(this._errorHandlers).forEach(([event, handler]) => {
+        if (handler) {
+          process.removeListener(event, handler);
+          this._errorHandlers[event] = null;
+        }
+      });
+    }
+
+    // Remove all other event listeners
+    this.removeAllListeners();
+
     // Clear heartbeat interval
     if (this._heart) {
       if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Clearing heartbeat interval...');
@@ -598,58 +663,19 @@ class Lightning extends Service {
         }
       }
 
-      // Wait for process to exit with a timeout
+      // Clean up socket file
+      const socketPath = path.resolve(this.settings.datadir, this.settings.socket);
       try {
-        if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Waiting for process to exit...');
-        await Promise.race([
-          new Promise((resolve) => {
-            if (this._child) {
-              if (this._child.exitCode !== null) {
-                if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Process already exited with code:', this._child.exitCode);
-                resolve();
-              } else {
-                this._child.on('exit', (code) => {
-                  if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', `lightningd process exited with code ${code}`);
-                  resolve();
-                });
-              }
-            } else {
-              if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'No child process to wait for');
-              resolve();
-            }
-          }),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Process exit timeout')), 5000)
-          )
-        ]);
-        if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Process exit wait completed');
-      } catch (error) {
-        if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Error waiting for process exit:', error.message);
-        // Force kill if still running
-        if (this._child && !this._child.killed) {
-          if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Force killing process after exit timeout');
-          this._child.kill('SIGKILL');
+        if (fs.existsSync(socketPath)) {
+          if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Cleaning up socket file:', socketPath);
+          fs.unlinkSync(socketPath);
         }
+      } catch (error) {
+        if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Error cleaning up socket file:', error.message);
       }
-
-      this._child = null;
-    }
-
-    // Clean up socket file
-    const socketPath = path.resolve(this.settings.datadir, this.settings.socket);
-    try {
-      if (fs.existsSync(socketPath)) {
-        if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Cleaning up socket file:', socketPath);
-        fs.unlinkSync(socketPath);
-      }
-    } catch (error) {
-      if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Error cleaning up socket file:', error.message);
     }
 
     this.status = 'stopped';
-    this.emit('stopped');
-    if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Lightning service shutdown complete');
-
     return this;
   }
 }
