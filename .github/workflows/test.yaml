@@ -39,6 +39,9 @@ jobs:
         else
           brew install bitcoin
         fi
+    - name: Install Rust toolchain
+      if: matrix.os == 'ubuntu-latest'
+      uses: dtolnay/rust-toolchain@1.79.0
     - name: Install lightningd
       run: |
         if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
