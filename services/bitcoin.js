@@ -1228,7 +1228,7 @@ class Bitcoin extends Service {
 
   /**
    * Creates an unsigned Bitcoin transaction.
-   * @param {Object} options 
+   * @param {Object} options Options for the transaction.
    * @returns {ContractProposal} Instance of the proposal.
    */
   async _createContractProposal (options = {}) {
@@ -1583,7 +1583,7 @@ class Bitcoin extends Service {
     }
   }
 
-  async _waitForBitcoind (maxAttempts = 10, initialDelay = 2000) {
+  async _waitForBitcoind (maxAttempts = 32, initialDelay = 2000) {
     if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Waiting for bitcoind to be ready...');
     let attempts = 0;
     let delay = initialDelay;

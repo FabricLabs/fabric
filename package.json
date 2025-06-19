@@ -54,6 +54,7 @@
     "report:credits": "license-checker --json > reports/credits.json",
     "report:install": "rm -rf node_modules && echo \"\n\" > package-lock.json && echo \"$ npm i\" > reports/install.log && npm i >> reports/install.log",
     "report:legal": "license-checker --json > reports/licenses.json",
+    "report:noisy": "node scripts/analyze-deps.js | tee reports/noisy-deps.txt",
     "report:todo": "grep --exclude-dir=.git --exclude-dir=_book --exclude-dir=assets --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs -rEI \"TODO|FIXME\" . > reports/TODO.txt",
     "reports": "npm run report:install && npm run make:coverage && npm run report:todo",
     "review:coverage": "npm run make:coverage && http-server -p 8000 reports/coverage",
