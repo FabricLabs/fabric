@@ -336,9 +336,8 @@ describe('@fabric/core/services/lightning', function () {
       console.debug('Peer channels:', peerChannels);
       console.debug('Carol channels:', carolChannels);
 
-      // invoice 0.1 sats
-      const invoice = await peer.createInvoice(100);
-      const unconnected = await carol.createInvoice(100);
+      const invoice = await peer.createInvoice(10000000);
+      const unconnected = await carol.createInvoice(10000000);
       const initialPayment = await lightning._makeRPCRequest('pay', [invoice.bolt11]);
 
       const current1 = await lightning.listFunds();
@@ -414,7 +413,7 @@ describe('@fabric/core/services/lightning', function () {
       assert.equal(peerToCarol.amount_msat, '100000000', 'Peer to carol channel should have 0.001 BTC capacity');
 
       // Test routing capabilities
-      const route = await lightning._makeRPCRequest('getroute', [after3.id, 100, 1, 0]);
+      const route = await lightning._makeRPCRequest('getroute', [after3.id, 10000000, 1, 0]);
       assert.ok(route, 'Should be able to find a route to carol');
       assert.ok(route.route, 'Route should contain path information');
       assert.equal(route.route.length, 2, 'Route should have 2 hops');
@@ -422,7 +421,7 @@ describe('@fabric/core/services/lightning', function () {
       assert.equal(route.route[1].id, after3.id, 'Second hop should be carol');
 
       // Test payment through the route
-      const carolInvoice = await carol.createInvoice(100, 'Test routed payment', 'Payment through peer');
+      const carolInvoice = await carol.createInvoice(10000000, 'Test routed payment', 'Payment through peer');
       const routedPayment = await lightning._makeRPCRequest('pay', [carolInvoice.bolt11]);
 
       // Log payment response for debugging
@@ -460,7 +459,7 @@ describe('@fabric/core/services/lightning', function () {
       });
 
       // Verify that the payment amount matches the invoice
-      assert.equal(routedPayment.amount_msat, '100', 'Payment amount should match invoice amount');
+      assert.equal(routedPayment.amount_msat, '10000000', 'Payment amount should match invoice amount');
       assert.equal(routedPayment.destination, after3.id, 'Payment destination should be carol');
 
       // Send a payment from wallet1 to wallet2
