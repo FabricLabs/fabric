@@ -145,12 +145,9 @@ describe('@fabric/core/services/bitcoin', function () {
 
     it('can manage a local bitcoind instance', async function () {
       const local = new Bitcoin({
+        ...defaults,  // Use the same defaults as other tests
         debug: false,
-        listen: 0,
-        network: 'regtest',
-        datadir: 'bitcoin-local',
-        rpcport: 18443,
-        managed: true
+        listen: 0
       });
 
       this.test.ctx.local = local;
@@ -171,6 +168,9 @@ describe('@fabric/core/services/bitcoin', function () {
       const wallet = await local._makeRPCRequest('getwalletinfo', []);
       const balance = await local._makeRPCRequest('getbalance', []);
       const blockchain = await local._makeRPCRequest('getblockchaininfo', []);
+
+      // Sync the supply after generating blocks
+      await local._syncSupply();
 
       await local.stop();
 
