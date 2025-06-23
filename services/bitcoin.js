@@ -292,7 +292,7 @@ class Bitcoin extends Service {
   }
 
   get walletName () {
-    const preimage = crypto.createHash('sha256').update(this.settings.key.xpub).digest('hex');
+    const preimage = crypto.createHash('sha256').update(this._rootKey.xpub).digest('hex');
     const hash = crypto.createHash('sha256').update(preimage).digest('hex');
     return this.settings.walletName || hash;
   }
