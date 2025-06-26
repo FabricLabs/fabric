@@ -1647,6 +1647,7 @@ class Bitcoin extends Service {
     const params = [
       `-port=${this.settings.port}`,
       '-rpcbind=127.0.0.1',
+      '-rpcallowip=127.0.0.1',
       `-rpcport=${this.settings.rpcport}`,
       `-rpcworkqueue=128`, // Default is 16
       `-rpcthreads=8`, // Default is 4
