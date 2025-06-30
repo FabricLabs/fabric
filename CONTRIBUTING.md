@@ -25,7 +25,7 @@ We're borne of a swarm of storytellers, eager to tell a tale.  [Join `#lobby:rol
 
 ## Further Reading
 - [`DEVELOPERS.md`](DEVELOPERS.md)
-- [The RPG Marketplace](https://www.roleplaygateway.com/orders)
+- [The RPG Marketplace](https://rpgmarket.com/)
 - [RPG's Rules](https://www.roleplaygateway.com/rules)
 
 [chat-beta]: https://grove.chat/#/room/#beta:fabric.pub
