@@ -46,6 +46,18 @@ describe('@fabric/core/services/lightning', function () {
   let bitcoin = null;
   let lightning = null;
 
+  before(function () {
+    // Check if lightningd is available before running tests
+    const { execSync } = require('child_process');
+    try {
+      execSync('which lightningd', { stdio: 'ignore' });
+    } catch (error) {
+      console.warn('[FABRIC:LIGHTNING] lightningd not found in PATH, skipping Lightning unit tests');
+      this.skip();
+      return;
+    }
+  });
+
   // Cleanup hook to ensure nodes are stopped
   afterEach(async function () {
     if (lightningNode) {

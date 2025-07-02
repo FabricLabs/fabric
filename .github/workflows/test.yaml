@@ -59,10 +59,37 @@ jobs:
           cd lightning
           git checkout v25.05
           ./configure
-          make
+          make -j$(nproc)
           sudo make install
+          
+          # Verify installation and add to PATH
+          which lightningd || echo "lightningd not found in PATH"
+          ls -la /usr/local/bin/lightningd || echo "lightningd not found in /usr/local/bin"
+          sudo ln -sf /usr/local/bin/lightningd /usr/bin/lightningd || true
+          echo "Lightning Network installation completed"
         else
           brew install lightning
+          
+          # Verify installation
+          which lightningd || echo "lightningd not found in PATH"
+          lightningd --version || echo "lightningd version check failed"
+          echo "Lightning Network installation completed"
+        fi
+    - name: Verify lightningd installation
+      run: |
+        echo "Checking lightningd installation..."
+        if command -v lightningd &> /dev/null; then
+          echo "✅ lightningd is available in PATH"
+          lightningd --version || echo "⚠️ lightningd version check failed"
+        else
+          echo "❌ lightningd not found in PATH"
+          echo "PATH: $PATH"
+          echo "Searching for lightningd..."
+          find /usr -name lightningd 2>/dev/null || echo "No lightningd found in /usr"
+          find /usr/local -name lightningd 2>/dev/null || echo "No lightningd found in /usr/local"
+          if [ "${{ matrix.os }}" = "macos-latest" ]; then
+            find /opt/homebrew -name lightningd 2>/dev/null || echo "No lightningd found in /opt/homebrew"
+          fi
         fi
     - name: Generate coverage report
       run: npm run report:coverage

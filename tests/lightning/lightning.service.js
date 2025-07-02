@@ -64,6 +64,16 @@ describe('@fabric/core/services/lightning', function () {
   before(async function () {
     this.timeout(180000); // 3 minutes for setup
 
+    // Check if lightningd is available before running tests
+    const { execSync } = require('child_process');
+    try {
+      execSync('which lightningd', { stdio: 'ignore' });
+    } catch (error) {
+      console.warn('[FABRIC:LIGHTNING] lightningd not found in PATH, skipping Lightning integration tests');
+      this.skip();
+      return;
+    }
+
     // Clean up test directories
     try {
       const { execSync } = require('child_process');
