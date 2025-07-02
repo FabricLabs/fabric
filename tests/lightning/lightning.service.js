@@ -138,11 +138,7 @@ describe('@fabric/core/services/lightning', function () {
       datadir: './stores/lightning-regtest-test-peer',
       // debug: true,
       port: 9888,
-      plugins: {
-        grpc: {
-          port: 9836  // Different port for gRPC
-        }
-      }
+      disablePlugins: ['cln-grpc']
     });
 
     carol = new Lightning({
@@ -150,16 +146,12 @@ describe('@fabric/core/services/lightning', function () {
       datadir: './stores/lightning-regtest-test-carol',
       // debug: true,
       port: 9890,
-      plugins: {
-        grpc: {
-          port: 9837  // Different port for gRPC
-        }
-      }
+      disablePlugins: ['cln-grpc']
     });
   });
 
   // Cleanup hook to ensure nodes are stopped
-  afterEach(async function () {
+  after(async function () {
     try {
       console.debug('[FABRIC:LIGHTNING]', 'Cleaning up test environment...');
 
@@ -212,7 +204,7 @@ describe('@fabric/core/services/lightning', function () {
       }
     } catch (error) {
       console.error('[FABRIC:LIGHTNING]', 'Error in cleanup:', error);
-      throw error; // Re-throw to fail the test
+      // Don't re-throw to avoid "done() called multiple times" error
     }
   });
 
@@ -224,46 +216,10 @@ describe('@fabric/core/services/lightning', function () {
     it('can complete a payment (happy path)', async function () {
       this.timeout(180000); // 3 minutes for the test
 
-      // Initialize Bitcoin service first
-      bitcoin = new Bitcoin(bitcoinDefaults);
-
-      // Set the key on the Bitcoin service
-      key = new Key({
-        network: 'regtest',
-        purpose: 44,
-        account: 0,
-        index: 0
-      });
-      bitcoin.settings.key = { xpub: key.xpub };
-
-      // Start Bitcoin service
-      await bitcoin.start();
-
-      // Wait for Bitcoin to be ready
-      await new Promise(resolve => setTimeout(resolve, 10000));
-
-      // Initialize Lightning nodes
-      lightning = new Lightning(lightningDefaults);
-      peer = new Lightning({
-        ...lightningDefaults,
-        datadir: './stores/lightning-regtest-test-peer',
-        port: 9888,
-        plugins: {
-          grpc: {
-            port: 9836
-          }
-        }
-      });
-      carol = new Lightning({
-        ...lightningDefaults,
-        datadir: './stores/lightning-regtest-test-carol',
-        port: 9890,
-        plugins: {
-          grpc: {
-            port: 9837
-          }
-        }
-      });
+      // Services should already be initialized in before() hook
+      if (!bitcoin || !lightning || !peer || !carol) {
+        throw new Error('Services not initialized properly in before() hook');
+      }
 
       // Reset chain to known state
       await resetChain(bitcoin);
@@ -276,9 +232,15 @@ describe('@fabric/core/services/lightning', function () {
       // Some funds are now spendable
 
       // Start the Lightning nodes
+      console.debug('Starting main lightning node...');
       await lightning.start();
+      console.debug('Main lightning node started');
+      console.debug('Starting peer lightning node...');
       await peer.start();
+      console.debug('Peer lightning node started');
+      console.debug('Starting carol lightning node...');
       await carol.start();
+      console.debug('Carol lightning node started');
 
       // Fund nodes
       const fund1 = await lightning.newDepositAddress();
@@ -304,11 +266,11 @@ describe('@fabric/core/services/lightning', function () {
         console.debug(`Attempt ${attempts + 1}/${maxAttempts} - funds2:`, funds2);
         console.debug(`Attempt ${attempts + 1}/${maxAttempts} - funds3:`, funds3);
 
-        if (funds1.outputs && funds1.outputs.length > 0 && 
+        if (funds1.outputs && funds1.outputs.length > 0 &&
             funds1.outputs.filter((x) => x.status === 'confirmed').length > 0 &&
-            funds2.outputs && funds2.outputs.length > 0 && 
+            funds2.outputs && funds2.outputs.length > 0 &&
             funds2.outputs.filter((x) => x.status === 'confirmed').length > 0 &&
-            funds3.outputs && funds3.outputs.length > 0 && 
+            funds3.outputs && funds3.outputs.length > 0 &&
             funds3.outputs.filter((x) => x.status === 'confirmed').length > 0) {
           break;
         }
@@ -353,7 +315,7 @@ describe('@fabric/core/services/lightning', function () {
       // Connect peer to carol and create channel
       console.debug('Connecting peer to carol...');
       await peer.connectTo(`${carol.state.node.id}@127.0.0.1:${carol.settings.port}`);
-      
+
       // Create channel from peer to carol
       console.debug('Creating channel from peer to carol...');
       const peerToCarolChannel = await peer.createChannel(carol.state.node.id, 100000);

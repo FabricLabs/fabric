@@ -285,12 +285,31 @@ class Lightning extends Service {
       '--log-level=debug'
     ];
 
-    // Add plugin configurations if specified
+    // Add plugin configurations if specified and supported
+    // Note: Only add plugin configurations for known supported plugins
+    // to avoid invalid command-line arguments on systems without certain plugins
     if (this.settings.plugins) {
+      const supportedPlugins = ['experimental-offers', 'experimental-features'];
       Object.entries(this.settings.plugins).forEach(([plugin, config]) => {
-        Object.entries(config).forEach(([key, value]) => {
-          params.push(`--${plugin}-${key}=${value}`);
-        });
+        if (supportedPlugins.includes(plugin)) {
+          Object.entries(config).forEach(([key, value]) => {
+            params.push(`--${plugin}-${key}=${value}`);
+          });
+        } else {
+          if (this.settings.debug) {
+            console.debug('[FABRIC:LIGHTNING]', `Skipping unsupported plugin configuration: ${plugin}`);
+          }
+        }
+      });
+    }
+
+    // Disable specific plugins if requested
+    if (this.settings.disablePlugins && Array.isArray(this.settings.disablePlugins)) {
+      this.settings.disablePlugins.forEach(plugin => {
+        params.push(`--disable-plugin=${plugin}`);
+        if (this.settings.debug) {
+          console.debug('[FABRIC:LIGHTNING]', `Disabling plugin: ${plugin}`);
+        }
       });
     }
 
