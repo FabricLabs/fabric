@@ -1023,10 +1023,10 @@ class Bitcoin extends Service {
         await this._loadWallet(this.walletName);
         const info = await this._makeRPCRequest('getnetworkinfo');
         const version = parseInt(info.version);
-        const address = await this._makeRPCRequest('getnewaddress', [
+        const address = await this._makeWalletRequest('getnewaddress', [
           '', // label
           version >= 240000 ? 'legacy' : 'legacy' // address type
-        ]);
+        ], this.walletName);
 
         if (!address) throw new Error('No address returned from getnewaddress');
         return address;
@@ -1097,7 +1097,6 @@ class Bitcoin extends Service {
   async _makeRPCRequest (method, params = []) {
     return new Promise((resolve, reject) => {
       if (!this.rpc) return reject(new Error('RPC manager does not exist'));
-
       this.rpc.request(method, params, (err, response) => {
         if (err) {
           if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `RPC error for ${method}(${params.join(', ')}):`, err);
@@ -1114,6 +1113,54 @@ class Bitcoin extends Service {
         }
 
         if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `RPC response for ${method}:`, response);
+        return resolve(response.result);
+      });
+    });
+  }
+
+  async _makeWalletRequest (method, params = [], wallet) {
+    if (!wallet) throw new Error('Wallet name is required for wallet-specific requests');
+
+    return new Promise((resolve, reject) => {
+      if (!this.rpc) return reject(new Error('RPC manager does not exist'));
+
+      // Reuse existing RPC config but change the URL to target the specific wallet
+      const protocol = this.settings.secure ? 'https' : 'http';
+      const host = this.settings.host;
+      const port = this.settings.rpcport;
+      const auth = `${this.settings.username}:${this.settings.password}`;
+
+      const config = {
+        host: host,
+        port: port,
+        timeout: 300000, // 5 minute timeout for heavy operations
+        headers: { Authorization: `Basic ${Buffer.from(auth, 'utf8').toString('base64')}` },
+        path: `/wallet/${wallet}`
+      };
+
+      let walletRpc;
+      if (this.settings.secure) {
+        walletRpc = jayson.https(config);
+      } else {
+        walletRpc = jayson.http(config);
+      }
+
+      walletRpc.request(method, params, (err, response) => {
+        if (err) {
+          if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Wallet RPC error for ${method}(${params.join(', ')}) on wallet ${wallet}:`, err);
+          return reject(err);
+        }
+
+        if (!response) {
+          return reject(new Error(`No response from wallet RPC call ${method} on wallet ${wallet}`));
+        }
+
+        if (response.error) {
+          if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Wallet RPC response error for ${method} on wallet ${wallet}:`, response.error);
+          return reject(response.error);
+        }
+
+        if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Wallet RPC response for ${method} on wallet ${wallet}:`, response);
         return resolve(response.result);
       });
     });
