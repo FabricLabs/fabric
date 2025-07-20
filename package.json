@@ -131,7 +131,7 @@
     "cross-env": "=7.0.3",
     "debug-trace": "=2.2.3",
     "docco": "=0.9.1",
-    "eslint": "=9.19.0",
+    "eslint": "=9.31.0",
     "honkit": "=6.0.3",
     "http-server": "=14.1.1",
     "is-my-json-valid": "=2.20.6",
