@@ -14,14 +14,14 @@ applications for downstream developers.
 ## Quick Start
 `npm i -g FabricLabs/fabric#master`
 
-Install Fabric CLI to your system using the above command, then run:
+You'll now have the `fabric` binary available on your system.  Set up your environment with a newly-generated cryptographic key by using:
 ```
 fabric setup
 ```
 
 | 🚨 Stop here! |
 |--------------|
-| The output of the above command will include your SEED, which should never be shared. |
+| The output of the above command will include your SEED, which should never be shared.  Take a moment to write it down safely, without  |
 
 Once complete, you'll have a fully configured Fabric client available by running:
 ```
