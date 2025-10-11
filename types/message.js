@@ -33,9 +33,31 @@ const {
   DOCUMENT_PUBLISH_TYPE,
   DOCUMENT_REQUEST_TYPE,
   JSON_CALL_TYPE,
+  PATCH_MESSAGE_TYPE,
   BLOCK_CANDIDATE,
   PEER_CANDIDATE,
-  SESSION_START
+  SESSION_START,
+  // Lightning message codes
+  LIGHTNING_WARNING,
+  LIGHTNING_INIT,
+  LIGHTNING_ERROR,
+  LIGHTNING_PING,
+  LIGHTNING_PONG,
+  LIGHTNING_OPEN_CHANNEL,
+  LIGHTNING_ACCEPT_CHANNEL,
+  LIGHTNING_FUNDING_CREATED,
+  LIGHTNING_FUNDING_SIGNED,
+  LIGHTNING_CHANNEL_READY,
+  LIGHTNING_SHUTDOWN,
+  LIGHTNING_CLOSING_SIGNED,
+  LIGHTNING_UPDATE_ADD_HTLC,
+  LIGHTNING_UPDATE_FULFILL_HTLC,
+  LIGHTNING_UPDATE_FAIL_HTLC,
+  LIGHTNING_COMMITMENT_SIGNED,
+  LIGHTNING_REVOKE_AND_ACK,
+  LIGHTNING_CHANNEL_ANNOUNCEMENT,
+  LIGHTNING_NODE_ANNOUNCEMENT,
+  LIGHTNING_CHANNEL_UPDATE
 } = require('../constants');
 
 const HEADER_SIG_SIZE = 64;
@@ -193,6 +215,10 @@ class Message extends Actor {
       type: this.type,
       data: this.data
     };
+  }
+
+  toVector () {
+    return [this.type, this.data];
   }
 
   fromObject (input) {
@@ -396,6 +422,7 @@ class Message extends Actor {
       'GenericTransferQueue': GENERIC_LIST_TYPE,
       'JSONBlob': GENERIC_MESSAGE_TYPE + 1,
       'JSONCall': JSON_CALL_TYPE,
+      'JSONPatch': PATCH_MESSAGE_TYPE,
       // TODO: document Generic type
       // P2P Commands
       'Generic': P2P_GENERIC,
@@ -527,8 +554,51 @@ Object.defineProperty(Message.prototype, 'type', {
         return 'ChatMessage';
       case JSON_CALL_TYPE:
         return 'JSONCall';
+      case PATCH_MESSAGE_TYPE:
+        return 'JSONPatch';
       case P2P_START_CHAIN:
         return 'StartChain';
+      // Lightning (BOLT) types
+      case LIGHTNING_WARNING:
+        return 'LightningWarning';
+      case LIGHTNING_INIT:
+        return 'LightningInit';
+      case LIGHTNING_ERROR:
+        return 'LightningError';
+      case LIGHTNING_PING:
+        return 'LightningPing';
+      case LIGHTNING_PONG:
+        return 'LightningPong';
+      case LIGHTNING_OPEN_CHANNEL:
+        return 'OpenChannel';
+      case LIGHTNING_ACCEPT_CHANNEL:
+        return 'AcceptChannel';
+      case LIGHTNING_FUNDING_CREATED:
+        return 'FundingCreated';
+      case LIGHTNING_FUNDING_SIGNED:
+        return 'FundingSigned';
+      case LIGHTNING_CHANNEL_READY:
+        return 'ChannelReady';
+      case LIGHTNING_SHUTDOWN:
+        return 'Shutdown';
+      case LIGHTNING_CLOSING_SIGNED:
+        return 'ClosingSigned';
+      case LIGHTNING_UPDATE_ADD_HTLC:
+        return 'UpdateAddHTLC';
+      case LIGHTNING_UPDATE_FULFILL_HTLC:
+        return 'UpdateFulfillHTLC';
+      case LIGHTNING_UPDATE_FAIL_HTLC:
+        return 'UpdateFailHTLC';
+      case LIGHTNING_COMMITMENT_SIGNED:
+        return 'CommitmentSigned';
+      case LIGHTNING_REVOKE_AND_ACK:
+        return 'RevokeAndAck';
+      case LIGHTNING_CHANNEL_ANNOUNCEMENT:
+        return 'ChannelAnnouncement';
+      case LIGHTNING_NODE_ANNOUNCEMENT:
+        return 'NodeAnnouncement';
+      case LIGHTNING_CHANNEL_UPDATE:
+        return 'ChannelUpdate';
       default:
         return 'GenericMessage';
     }

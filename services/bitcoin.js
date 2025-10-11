@@ -116,7 +116,8 @@ class Bitcoin extends Service {
     this._networkConfigs = {
       mainnet: bitcoin.networks.bitcoin,
       testnet: bitcoin.networks.testnet,
-      regtest: bitcoin.networks.regtest
+      regtest: bitcoin.networks.regtest,
+      signet: bitcoin.networks.testnet // Signet uses testnet address format
     };
 
     if (this.settings.debug && this.settings.verbosity >= 4) console.debug('[DEBUG]', 'Instance of Bitcoin service created, settings:', this.settings);
@@ -228,6 +229,15 @@ class Bitcoin extends Service {
       tip: this.settings.genesis
     };
 
+    // Store handler references for cleanup
+    this._errorHandlers = {
+      uncaughtException: null,
+      unhandledRejection: null,
+      SIGINT: null,
+      SIGTERM: null,
+      exit: null
+    };
+
     // Chainable
     return this;
   }
@@ -282,7 +292,7 @@ class Bitcoin extends Service {
   }
 
   get walletName () {
-    const preimage = crypto.createHash('sha256').update(this.settings.key.xpub).digest('hex');
+    const preimage = crypto.createHash('sha256').update(this._rootKey.xpub).digest('hex');
     const hash = crypto.createHash('sha256').update(preimage).digest('hex');
     return this.settings.walletName || hash;
   }
@@ -1013,10 +1023,10 @@ class Bitcoin extends Service {
         await this._loadWallet(this.walletName);
         const info = await this._makeRPCRequest('getnetworkinfo');
         const version = parseInt(info.version);
-        const address = await this._makeRPCRequest('getnewaddress', [
+        const address = await this._makeWalletRequest('getnewaddress', [
           '', // label
           version >= 240000 ? 'legacy' : 'legacy' // address type
-        ]);
+        ], this.walletName);
 
         if (!address) throw new Error('No address returned from getnewaddress');
         return address;
@@ -1087,7 +1097,6 @@ class Bitcoin extends Service {
   async _makeRPCRequest (method, params = []) {
     return new Promise((resolve, reject) => {
       if (!this.rpc) return reject(new Error('RPC manager does not exist'));
-
       this.rpc.request(method, params, (err, response) => {
         if (err) {
           if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `RPC error for ${method}(${params.join(', ')}):`, err);
@@ -1104,6 +1113,54 @@ class Bitcoin extends Service {
         }
 
         if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `RPC response for ${method}:`, response);
+        return resolve(response.result);
+      });
+    });
+  }
+
+  async _makeWalletRequest (method, params = [], wallet) {
+    if (!wallet) throw new Error('Wallet name is required for wallet-specific requests');
+
+    return new Promise((resolve, reject) => {
+      if (!this.rpc) return reject(new Error('RPC manager does not exist'));
+
+      // Reuse existing RPC config but change the URL to target the specific wallet
+      const protocol = this.settings.secure ? 'https' : 'http';
+      const host = this.settings.host;
+      const port = this.settings.rpcport;
+      const auth = `${this.settings.username}:${this.settings.password}`;
+
+      const config = {
+        host: host,
+        port: port,
+        timeout: 300000, // 5 minute timeout for heavy operations
+        headers: { Authorization: `Basic ${Buffer.from(auth, 'utf8').toString('base64')}` },
+        path: `/wallet/${wallet}`
+      };
+
+      let walletRpc;
+      if (this.settings.secure) {
+        walletRpc = jayson.https(config);
+      } else {
+        walletRpc = jayson.http(config);
+      }
+
+      walletRpc.request(method, params, (err, response) => {
+        if (err) {
+          if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Wallet RPC error for ${method}(${params.join(', ')}) on wallet ${wallet}:`, err);
+          return reject(err);
+        }
+
+        if (!response) {
+          return reject(new Error(`No response from wallet RPC call ${method} on wallet ${wallet}`));
+        }
+
+        if (response.error) {
+          if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Wallet RPC response error for ${method} on wallet ${wallet}:`, response.error);
+          return reject(response.error);
+        }
+
+        if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', `Wallet RPC response for ${method} on wallet ${wallet}:`, response);
         return resolve(response.result);
       });
     });
@@ -1228,7 +1285,7 @@ class Bitcoin extends Service {
 
   /**
    * Creates an unsigned Bitcoin transaction.
-   * @param {Object} options 
+   * @param {Object} options Options for the transaction.
    * @returns {ContractProposal} Instance of the proposal.
    */
   async _createContractProposal (options = {}) {
@@ -1583,7 +1640,7 @@ class Bitcoin extends Service {
     }
   }
 
-  async _waitForBitcoind (maxAttempts = 10, initialDelay = 2000) {
+  async _waitForBitcoind (maxAttempts = 32, initialDelay = 2000) {
     if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Waiting for bitcoind to be ready...');
     let attempts = 0;
     let delay = initialDelay;
@@ -1637,6 +1694,7 @@ class Bitcoin extends Service {
     const params = [
       `-port=${this.settings.port}`,
       '-rpcbind=127.0.0.1',
+      '-rpcallowip=127.0.0.1',
       `-rpcport=${this.settings.rpcport}`,
       `-rpcworkqueue=128`, // Default is 16
       `-rpcthreads=8`, // Default is 4
@@ -1681,6 +1739,10 @@ class Bitcoin extends Service {
         datadir = './stores/bitcoin-testnet4';
         params.push('-testnet4');
         break;
+      case 'signet':
+        datadir = './stores/bitcoin-signet';
+        params.push('-signet');
+        break;
       case 'regtest':
         datadir = './stores/bitcoin-regtest';
         params.push('-regtest');
@@ -1698,9 +1760,10 @@ class Bitcoin extends Service {
     }
 
     if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Using datadir:', datadir);
+    this.settings.datadir = datadir; // for downstream users accessing the settings property, e.g. for lightning nodes
 
     // If storage constraints are set, prune the blockchain
-    if (this.settings.constraints.storage.size) {
+    if (this.settings.network !== 'regtest' && this.settings.constraints.storage.size) {
       params.push(`-prune=${this.settings.constraints.storage.size}`);
     } else {
       params.push(`-txindex`);
@@ -1764,24 +1827,33 @@ class Bitcoin extends Service {
         }
       };
 
-      // Handle process termination signals
-      process.on('SIGINT', cleanup);
-      process.on('SIGTERM', cleanup);
-      process.on('exit', cleanup);
+      // Store and attach handlers with proper error attribution
+      this._errorHandlers.SIGINT = cleanup;
+      this._errorHandlers.SIGTERM = cleanup;
+      this._errorHandlers.exit = cleanup;
+      this._errorHandlers.uncaughtException = async (err) => {
+        // Only handle errors from this service's child process
+        if (err.source === 'bitcoin' || (this._nodeProcess && err.pid === this._nodeProcess.pid)) {
+          console.trace('[FABRIC:BITCOIN]', 'Uncaught exception from Bitcoin service:', err);
+          // await cleanup();
+          // this.emit('error', err);
+        }
+      };
+      this._errorHandlers.unhandledRejection = async (reason, promise) => {
+        // Only handle rejections from this service's operations
+        if (reason.source === 'bitcoin' || (this._nodeProcess && reason.pid === this._nodeProcess.pid)) {
+          console.trace('[FABRIC:BITCOIN]', 'Unhandled rejection from Bitcoin service at:', promise, 'reason:', reason);
+          // await cleanup();
+          // this.emit('error', reason);
+        }
+      };
 
-      // Handle uncaught exceptions
-      process.on('uncaughtException', async (err) => {
-        console.error('[FABRIC:BITCOIN]', 'Uncaught exception:', err);
-        await cleanup();
-        this.emit('error', err);
-      });
-
-      // Handle unhandled promise rejections
-      process.on('unhandledRejection', async (reason, promise) => {
-        console.error('[FABRIC:BITCOIN]', 'Unhandled rejection at:', promise, 'reason:', reason);
-        // await cleanup();
-        this.emit('error', reason);
-      });
+      // Attach the handlers
+      process.on('SIGINT', this._errorHandlers.SIGINT);
+      process.on('SIGTERM', this._errorHandlers.SIGTERM);
+      process.on('exit', this._errorHandlers.exit);
+      process.on('uncaughtException', this._errorHandlers.uncaughtException);
+      process.on('unhandledRejection', this._errorHandlers.unhandledRejection);
 
       // Initialize RPC client
       const config = {
@@ -1951,12 +2023,25 @@ class Bitcoin extends Service {
 
     // Kill the Bitcoin node process if it exists
     if (this._nodeProcess) {
-      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Killing Bitcoin node process...');
+      if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Stopping Bitcoin node process...');
       try {
-        this._nodeProcess.kill('SIGKILL');
-        await new Promise(resolve => this._nodeProcess.once('exit', resolve));
+        // First try SIGTERM for graceful shutdown
+        this._nodeProcess.kill('SIGTERM');
+
+        // Wait up to 10 seconds for graceful shutdown
+        const terminated = await Promise.race([
+          new Promise(resolve => this._nodeProcess.once('exit', () => resolve(true))),
+          new Promise(resolve => setTimeout(() => resolve(false), 10000))
+        ]);
+
+        // If graceful shutdown failed, force kill
+        if (!terminated && this._nodeProcess) {
+          if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Graceful shutdown failed, using SIGKILL...');
+          this._nodeProcess.kill('SIGKILL');
+          await new Promise(resolve => this._nodeProcess.once('exit', resolve));
+        }
       } catch (error) {
-        console.error('[FABRIC:BITCOIN]', 'Error killing process:', error);
+        console.error('[FABRIC:BITCOIN]', 'Error stopping process:', error);
       }
       this._nodeProcess = null;
     }
@@ -1969,9 +2054,17 @@ class Bitcoin extends Service {
   async cleanup () {
     console.log('[FABRIC:BITCOIN]', 'Cleaning up...');
     await this.stop();
-    // Remove process event listeners
-    process.removeAllListeners('uncaughtException');
-    process.removeAllListeners('unhandledRejection');
+
+    // Remove process event listeners if they exist
+    if (this._errorHandlers) {
+      Object.entries(this._errorHandlers).forEach(([event, handler]) => {
+        if (handler) {
+          process.removeListener(event, handler);
+          this._errorHandlers[event] = null;
+        }
+      });
+    }
+
     console.log('[FABRIC:BITCOIN]', 'Cleanup complete');
   }
 

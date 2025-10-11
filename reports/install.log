@@ -1,16 +1,7 @@
 $ npm i
 
-added 694 packages, and audited 695 packages in 22s
+> @fabric/core@0.1.0-RC1 install
+> node-gyp rebuild
 
-112 packages are looking for funding
-  run `npm fund` for details
 
-5 low severity vulnerabilities
-
-To address all issues possible, run:
-  npm audit fix --force
-
-Some issues need review, and may require choosing
-a different dependency.
-
-Run `npm audit` for details.
+  CXX(target) Release/obj.target/fabric/src/binding.o

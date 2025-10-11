@@ -24,6 +24,8 @@
 ./types/scribe.js:    // TODO: enable
 ./types/key.js:// TODO: remove
 ./types/key.js:// TODO: remove all external dependencies
+./types/key.js:        // TODO: allow setting of raw seed (deprecates passing a mnemonic in the `seed` property)
+./types/key.js:        // TODO: set property `seed` as the actual derived seed, not the seed phrase
 ./types/key.js:    // TODO: determine if this makes sense / needs to be private
 ./types/key.js:    // TODO: evaluate compression when treating seed phrase as ascii
 ./types/key.js:    // TODO: consider using sha256(masterprivkey) or sha256(sha256(...))?
@@ -169,7 +171,6 @@
 ./types/consensus.js:    // TODO: define class ConsensusProvider
 ./types/consensus.js:  // TODO: remove from {@link Consensus}
 ./types/consensus.js:      // TODO: compute from chain height
-./types/machine.js:      seed: 1, // TODO: select seed for production
 ./types/peer.js:    // TODO: switch to child pubkey
 ./types/peer.js:              // TODO: consider making this a FabricMessageID
 ./types/peer.js:    // TODO: output stream
@@ -229,6 +230,7 @@
 ./DEVELOPERS.md:    // TODO: make optional
 ./DEVELOPERS.md:## TODO
 ./DEVELOPERS.md:- [ ] Remove TODOs
+./AUDIT.md:| Technical Debt | TODOs and legacy code | Low | Refactor and clean up |
 ./package.json:    "report:todo": "grep --exclude-dir=.git --exclude-dir=_book --exclude-dir=assets --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs -rEI \"TODO|FIXME\" . > reports/TODO.txt",
 ./package.json:    "review:todo": "npm run report:todo && cat reports/TODO.txt && echo '\nOutstanding TODO items (@fabric/core):' && wc -l reports/TODO.txt && echo '\nIssues List: https://github.com/FabricLabs/fabric/issues\nDisclosures: securiy@fabric.pub\n\n'",
 ./guides/SETTINGS.md:### WARNING: TODO
@@ -274,8 +276,10 @@
 ./services/bitcoin.js:    // TODO: verify local hash (see below)
 ./services/bitcoin.js:      // TODO: verify block hash!!!
 ./services/bitcoin.js:      // TODO: enable sharing of local hashes
+./services/bitcoin.js:        false, // TODO: enable blank, import _rootKey
 ./services/bitcoin.js:      // TODO: fix @types/wallet to use named types for Addresses...
 ./services/bitcoin.js:    // TODO: report FundingError: Not enough funds
+./services/bitcoin.js:    // TODO: add change output
 ./services/bitcoin.js:    // TODO: async (i.e., Promise.all) chainsync
 ./services/bitcoin.js:    // TODO: use RPC auth
 ./services/bitcoin.js:    // TODO: re-enable these
@@ -283,7 +287,5 @@
 ./services/bitcoin.js:    // END TODO
 ./services/turntable.js:    // TODO: await REST or GraphQL API?
 ./services/exchange.js:    // TODO: finalize Collection API in #docs-update
-./services/lightning.js:        // TODO: re-work Polar integration
-./services/lightning.js:    // TODO: sync local data with node
 ./whitepaper.md:TODO
 ./whitepaper.md:TODO: include content hashes of links as they appear at

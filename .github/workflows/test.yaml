@@ -35,9 +35,61 @@ jobs:
         if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
           wget https://bitcoin.org/bin/bitcoin-core-28.0/bitcoin-28.0-x86_64-linux-gnu.tar.gz
           tar -xzf bitcoin-28.0-x86_64-linux-gnu.tar.gz
-          sudo mv bitcoin-28.0/bin/bitcoind /usr/local/bin/
+          sudo mv bitcoin-28.0/bin/bitcoind bitcoin-28.0/bin/bitcoin-cli /usr/local/bin/
         else
           brew install bitcoin
+        fi
+    - name: Install Rust toolchain
+      if: matrix.os == 'ubuntu-latest'
+      uses: dtolnay/rust-toolchain@1.79.0
+    - name: Install lightningd
+      run: |
+        if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+          # Install dependencies
+          sudo apt-get update
+          sudo apt-get install -y \
+            autoconf automake build-essential git libtool python3 python3-pip \
+            net-tools zlib1g-dev libsqlite3-dev libgmp-dev libsodium-dev gettext
+
+          # Install Python dependencies for wire generation
+          pip3 install mako
+
+          # Clone and build Core Lightning v25.05
+          git clone https://github.com/ElementsProject/lightning.git
+          cd lightning
+          git checkout v25.05
+          ./configure
+          make -j$(nproc)
+          sudo make install
+          
+          # Verify installation and add to PATH
+          which lightningd || echo "lightningd not found in PATH"
+          ls -la /usr/local/bin/lightningd || echo "lightningd not found in /usr/local/bin"
+          sudo ln -sf /usr/local/bin/lightningd /usr/bin/lightningd || true
+          echo "Lightning Network installation completed"
+        else
+          brew install lightning
+          
+          # Verify installation
+          which lightningd || echo "lightningd not found in PATH"
+          lightningd --version || echo "lightningd version check failed"
+          echo "Lightning Network installation completed"
+        fi
+    - name: Verify lightningd installation
+      run: |
+        echo "Checking lightningd installation..."
+        if command -v lightningd &> /dev/null; then
+          echo "✅ lightningd is available in PATH"
+          lightningd --version || echo "⚠️ lightningd version check failed"
+        else
+          echo "❌ lightningd not found in PATH"
+          echo "PATH: $PATH"
+          echo "Searching for lightningd..."
+          find /usr -name lightningd 2>/dev/null || echo "No lightningd found in /usr"
+          find /usr/local -name lightningd 2>/dev/null || echo "No lightningd found in /usr/local"
+          if [ "${{ matrix.os }}" = "macos-latest" ]; then
+            find /opt/homebrew -name lightningd 2>/dev/null || echo "No lightningd found in /opt/homebrew"
+          fi
         fi
     - name: Generate coverage report
       run: npm run report:coverage
