@@ -1,27 +1,32 @@
+/**
+ * Settings for a local Fabric node.
+ */
+
+// # Local Settings
+// You can use the `settings/local.js` file to configure your local Fabric node.
 'use strict';
 
-// Contracts
+// ## Contracts
+// Contracts are imported from the `contracts` directory.
 // TODO: test env variables with OP_TEST
 const OP_TEST = require('../contracts/test');
 
-// Settings
+// ## Settings
+// Settings are exported as a module.
 module.exports = {
   name: process.env['NAME'],
   namespace: process.env['NAMESPACE'],
   seed: process.env['FABRIC_SEED'],
   xprv: process.env['FABRIC_XPRV'],
   xpub: process.env['FABRIC_XPUB'],
-  port: process.env['FABRIC_PORT'],
-  // Strict Functions
+  port: process.env['FABRIC_PORT'] || 7777,
   functions: {
     OP_TEST: JSON.stringify(OP_TEST)
   },
   // TODO: regtest, playnet, signet, testnet, mainnet (in order)
   network: 'playnet',
   debug: false,
-  // TODO: test `true`
-  fullnode: false,
-  // Open listener?
+  fullnode: true,
   listen: true,
   // Render UI?
   render: true,
@@ -50,9 +55,8 @@ module.exports = {
   },
   // Subservices
   services: [
-    // 'bitcoin',
-    // 'lightning',
-    // 'matrix'
+    'bitcoin',
+    'lightning'
   ],
   upnp: true,
   // Log Level
