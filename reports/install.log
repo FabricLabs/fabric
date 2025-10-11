@@ -5,3 +5,21 @@ $ npm i
 
 
   CXX(target) Release/obj.target/fabric/src/binding.o
+  CC(target) Release/obj.target/fabric/src/peer.o
+  CC(target) Release/obj.target/fabric/src/message.o
+  CC(target) Release/obj.target/fabric/src/errors.o
+  CC(target) Release/obj.target/fabric/src/threads.o
+  CC(target) Release/obj.target/fabric/src/scoring.o
+  SOLINK_MODULE(target) Release/fabric.node
+
+added 684 packages, and audited 685 packages in 9s
+
+116 packages are looking for funding
+  run `npm fund` for details
+
+3 low severity vulnerabilities
+
+Some issues need review, and may require choosing
+a different dependency.
+
+Run `npm audit` for details.

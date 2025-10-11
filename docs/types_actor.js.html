@@ -35,6 +35,7 @@
 
 // Generics
 const EventEmitter = require('events');
+const stream = require('node:stream/promises');
 
 // Dependencies
 const monitor = require('fast-json-patch');
@@ -311,6 +312,35 @@ class Actor extends EventEmitter {
   setStatus (value) {
     if (!value) throw new Error('Cannot remove status.');
     this.status = value;
+  }
+
+  /**
+   * Returns a new output stream for the Actor.
+   * @param {TransformStream} [pipe] Pipe to stream to.
+   * @returns {TransformStream} New output stream for the Actor.
+   */
+  stream (pipe) {
+    if (pipe) {
+      //
+      const stream = new stream.Transform({
+        transform (chunk, encoding, done) {
+          done(null, chunk);
+        }
+      });
+
+      // TODO: test this
+      // 1. Stream to the output pipe
+      stream.pipe(pipe);
+
+      // 2. Stream to the actor
+      this.stream.pipe(stream);
+
+      return stream;
+    } else {
+      return this.stream;
+    }
+
+    return this.stream;
   }
 
   /**
