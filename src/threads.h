@@ -163,56 +163,54 @@ int fabric_atomic_int32_is_initialized(const FabricAtomicInt32 *atomic);
         }                                                  \
     } while (0)
 
-// Thread safety macros for automatic locking
-// Returns FabricError value - use in functions that return FabricError
-// For void* functions, use direct function calls or _VOID macros
-#define FABRIC_MUTEX_LOCK(mutex)                           \
+// Thread safety macros with explicit error handling callbacks
+#define FABRIC_MUTEX_LOCK_OR(mutex, on_failure)            \
     do                                                     \
     {                                                      \
         ThreadError __result = fabric_mutex_lock(mutex);   \
         if (__result != THREAD_SUCCESS)                    \
         {                                                  \
-            return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION; \
+            on_failure;                                    \
         }                                                  \
     } while (0)
 
-#define FABRIC_MUTEX_UNLOCK(mutex)                         \
+#define FABRIC_MUTEX_UNLOCK_OR(mutex, on_failure)          \
     do                                                     \
     {                                                      \
         ThreadError __result = fabric_mutex_unlock(mutex); \
         if (__result != THREAD_SUCCESS)                    \
         {                                                  \
-            return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION; \
+            on_failure;                                    \
         }                                                  \
     } while (0)
 
-#define FABRIC_RWLOCK_RDLOCK(rwlock)                       \
+#define FABRIC_RWLOCK_RDLOCK_OR(rwlock, on_failure)        \
     do                                                     \
     {                                                      \
         ThreadError __result = fabric_rwlock_rdlock(rwlock); \
         if (__result != THREAD_SUCCESS)                    \
         {                                                  \
-            return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION; \
+            on_failure;                                    \
         }                                                  \
     } while (0)
 
-#define FABRIC_RWLOCK_WRLOCK(rwlock)                       \
+#define FABRIC_RWLOCK_WRLOCK_OR(rwlock, on_failure)        \
     do                                                     \
     {                                                      \
         ThreadError __result = fabric_rwlock_wrlock(rwlock); \
         if (__result != THREAD_SUCCESS)                    \
         {                                                  \
-            return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION; \
+            on_failure;                                    \
         }                                                  \
     } while (0)
 
-#define FABRIC_RWLOCK_UNLOCK(rwlock)                       \
+#define FABRIC_RWLOCK_UNLOCK_OR(rwlock, on_failure)        \
     do                                                     \
     {                                                      \
         ThreadError __result = fabric_rwlock_unlock(rwlock); \
         if (__result != THREAD_SUCCESS)                    \
         {                                                  \
-            return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION; \
+            on_failure;                                    \
         }                                                  \
     } while (0)
 
