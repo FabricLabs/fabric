@@ -164,14 +164,15 @@ int fabric_atomic_int32_is_initialized(const FabricAtomicInt32 *atomic);
     } while (0)
 
 // Thread safety macros for automatic locking (FabricError return)
-// These macros work with both FabricError and void* return types
+// Note: These macros return an integer value that works for FabricError functions.
+// For void* functions, use the _VOID versions or direct function calls.
 #define FABRIC_MUTEX_LOCK(mutex)                           \
     do                                                     \
     {                                                      \
         ThreadError __result = fabric_mutex_lock(mutex);   \
         if (__result != THREAD_SUCCESS)                    \
         {                                                  \
-            return (void*)(intptr_t)FABRIC_ERROR_INTERNAL_STATE_CORRUPTION; \
+            return (FabricError)FABRIC_ERROR_INTERNAL_STATE_CORRUPTION; \
         }                                                  \
     } while (0)
 
@@ -181,7 +182,7 @@ int fabric_atomic_int32_is_initialized(const FabricAtomicInt32 *atomic);
         ThreadError __result = fabric_mutex_unlock(mutex); \
         if (__result != THREAD_SUCCESS)                    \
         {                                                  \
-            return (void*)(intptr_t)FABRIC_ERROR_INTERNAL_STATE_CORRUPTION; \
+            return (FabricError)FABRIC_ERROR_INTERNAL_STATE_CORRUPTION; \
         }                                                  \
     } while (0)
 
@@ -191,7 +192,7 @@ int fabric_atomic_int32_is_initialized(const FabricAtomicInt32 *atomic);
         ThreadError __result = fabric_rwlock_rdlock(rwlock); \
         if (__result != THREAD_SUCCESS)                    \
         {                                                  \
-            return (void*)(intptr_t)FABRIC_ERROR_INTERNAL_STATE_CORRUPTION; \
+            return (FabricError)FABRIC_ERROR_INTERNAL_STATE_CORRUPTION; \
         }                                                  \
     } while (0)
 
@@ -201,7 +202,7 @@ int fabric_atomic_int32_is_initialized(const FabricAtomicInt32 *atomic);
         ThreadError __result = fabric_rwlock_wrlock(rwlock); \
         if (__result != THREAD_SUCCESS)                    \
         {                                                  \
-            return (void*)(intptr_t)FABRIC_ERROR_INTERNAL_STATE_CORRUPTION; \
+            return (FabricError)FABRIC_ERROR_INTERNAL_STATE_CORRUPTION; \
         }                                                  \
     } while (0)
 
@@ -211,7 +212,7 @@ int fabric_atomic_int32_is_initialized(const FabricAtomicInt32 *atomic);
         ThreadError __result = fabric_rwlock_unlock(rwlock); \
         if (__result != THREAD_SUCCESS)                    \
         {                                                  \
-            return (void*)(intptr_t)FABRIC_ERROR_INTERNAL_STATE_CORRUPTION; \
+            return (FabricError)FABRIC_ERROR_INTERNAL_STATE_CORRUPTION; \
         }                                                  \
     } while (0)
 
