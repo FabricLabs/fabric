@@ -25,15 +25,12 @@ $ npm i
   CC(target) Release/obj.target/fabric/src/webgpu/dawn_integration.o
   SOLINK_MODULE(target) Release/fabric.node
 
-added 690 packages, and audited 691 packages in 8s
+added 687 packages, and audited 688 packages in 14s
 
-122 packages are looking for funding
+121 packages are looking for funding
   run `npm fund` for details
 
-8 vulnerabilities (3 low, 5 high)
-
-To address all issues possible (including breaking changes), run:
-  npm audit fix --force
+3 low severity vulnerabilities
 
 Some issues need review, and may require choosing
 a different dependency.
