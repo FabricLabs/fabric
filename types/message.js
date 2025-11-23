@@ -450,7 +450,12 @@ class Message extends Actor {
       'StateRequest': P2P_STATE_REQUEST,
       'Transaction': P2P_TRANSACTION,
       'Call': P2P_CALL,
-      'LogMessage': LOG_MESSAGE_TYPE
+      'LogMessage': LOG_MESSAGE_TYPE,
+      'LightningError': LIGHTNING_ERROR,
+      'LightningInit': LIGHTNING_INIT,
+      'LightningPing': LIGHTNING_PING,
+      'LightningPong': LIGHTNING_PONG,
+      'LightningWarning': LIGHTNING_WARNING
     };
   }
 
