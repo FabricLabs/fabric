@@ -13,7 +13,7 @@ const Key = require('./key');
 const Wallet = require('./wallet');
 
 /**
- * Create and manage sets of signers with the Federation class.
+ * Create and manage sets of {Signer} instances with the Federation class.
  */
 class Federation extends Contract {
   /**

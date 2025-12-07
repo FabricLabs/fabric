@@ -1,6 +1,6 @@
 'use strict';
 
-module.exports = function oxfordJoin(list) {
+module.exports = function oxfordJoin (list) {
   if (!Array.isArray(list) || list.length === 0) {
     return '';
   }

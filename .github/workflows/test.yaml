@@ -28,6 +28,8 @@ jobs:
       uses: actions/setup-python@v2
       with:
         python-version: '3.8'
+    - name: Install secp256k1 dependencies
+      run: sudo apt-get update && sudo apt-get install -y libsecp256k1-dev
     - name: Install dependencies
       run: npm run report:install
     - name: Download and install bitcoind
@@ -61,7 +63,7 @@ jobs:
           ./configure
           make -j$(nproc)
           sudo make install
-          
+
           # Verify installation and add to PATH
           which lightningd || echo "lightningd not found in PATH"
           ls -la /usr/local/bin/lightningd || echo "lightningd not found in /usr/local/bin"
@@ -69,7 +71,7 @@ jobs:
           echo "Lightning Network installation completed"
         else
           brew install lightning
-          
+
           # Verify installation
           which lightningd || echo "lightningd not found in PATH"
           lightningd --version || echo "lightningd version check failed"
