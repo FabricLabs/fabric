@@ -738,9 +738,6 @@ Interact with the user's Environment.
 
 * [Environment](#Environment)
     * [new Environment([settings])](#new_Environment_new)
-    * [._getDefaultBitcoinDatadir([configPath])](#Environment+_getDefaultBitcoinDatadir) ⇒ <code>Object</code>
-    * [._parseConfigValue(value)](#Environment+_parseConfigValue) ⇒ <code>\*</code>
-    * [._toFabricSettings(bitcoinConf)](#Environment+_toFabricSettings) ⇒ <code>Object</code>
     * [.readVariable(name)](#Environment+readVariable) ⇒ <code>String</code>
     * [.setWallet(wallet, force)](#Environment+setWallet) ⇒ [<code>Environment</code>](#Environment)
     * [.start()](#Environment+start) ⇒ [<code>Environment</code>](#Environment)
@@ -755,42 +752,6 @@ Create an instance of [Environment](#Environment).
 | Param | Type | Description |
 | --- | --- | --- |
 | [settings] | <code>Object</code> | Settings for the Fabric environment. |
-
-<a name="Environment+_getDefaultBitcoinDatadir"></a>
-
-### environment.\_getDefaultBitcoinDatadir([configPath]) ⇒ <code>Object</code>
-Read and parse Bitcoin configuration from bitcoin.conf file
-
-**Kind**: instance method of [<code>Environment</code>](#Environment)  
-**Returns**: <code>Object</code> - Parsed Bitcoin configuration object  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [configPath] | <code>String</code> | Optional path to bitcoin.conf, defaults to ~/.bitcoin/bitcoin.conf |
-
-<a name="Environment+_parseConfigValue"></a>
-
-### environment.\_parseConfigValue(value) ⇒ <code>\*</code>
-Parse configuration value to appropriate type
-
-**Kind**: instance method of [<code>Environment</code>](#Environment)  
-**Returns**: <code>\*</code> - Parsed value (string, number, or boolean)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| value | <code>String</code> | The raw configuration value |
-
-<a name="Environment+_toFabricSettings"></a>
-
-### environment.\_toFabricSettings(bitcoinConf) ⇒ <code>Object</code>
-Convert bitcoin.conf configuration to Fabric Bitcoin service settings
-
-**Kind**: instance method of [<code>Environment</code>](#Environment)  
-**Returns**: <code>Object</code> - Settings object compatible with Fabric Bitcoin service  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| bitcoinConf | <code>Object</code> | The parsed bitcoin.conf configuration |
 
 <a name="Environment+readVariable"></a>
 
