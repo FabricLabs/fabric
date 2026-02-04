@@ -1,7 +1,7 @@
 /**
  * @fabric/core/types/key
  * Cryptographic key generation, derivation, signing, and encryption.
- * 
+ *
  * @signers
  * - Eric Martindale <eric@ericmartindale.com>
  */
@@ -550,6 +550,7 @@ class Key extends EventEmitter {
    * @returns {Buffer} The signature
    */
   signSchnorr (msg) {
+    // console.debug('signing schnorr:', msg, this.settings);
     if (!this.private) throw new Error('Cannot sign without private key');
 
     // Convert message to Buffer if it's a string
@@ -557,6 +558,37 @@ class Key extends EventEmitter {
 
     // Create message hash
     const messageHash = crypto.createHash('sha256').update(messageBuffer).digest();
+
+    // Get private key as 32-byte buffer
+    let privateKeyBuffer;
+    if (Buffer.isBuffer(this.private)) {
+      privateKeyBuffer = this.private;
+    } else if (BN.isBN(this.private)) {
+      privateKeyBuffer = Buffer.from(this.private.toString(16).padStart(64, '0'), 'hex');
+    } else if (typeof this.private === 'string') {
+      privateKeyBuffer = Buffer.from(this.private.padStart(64, '0'), 'hex');
+    } else {
+      throw new Error('Invalid private key format');
+    }
+
+    // Sign using tiny-secp256k1's Schnorr implementation
+    const signature = ecc.signSchnorr(messageHash, privateKeyBuffer);
+
+    // Ensure we return a Buffer
+    return Buffer.isBuffer(signature) ? signature : Buffer.from(signature);
+  }
+
+  /**
+   * Signs a pre-computed hash using Schnorr signatures (BIP340).
+   * This is useful when the message has already been hashed (e.g., with a tagged hash).
+   * @param {Buffer} messageHash - The pre-computed message hash (32 bytes)
+   * @returns {Buffer} The signature (64 bytes)
+   */
+  signSchnorrHash (messageHash) {
+    if (!this.private) throw new Error('Cannot sign without private key');
+    if (!Buffer.isBuffer(messageHash) || messageHash.length !== 32) {
+      throw new Error('Message hash must be a 32-byte Buffer');
+    }
 
     // Get private key as 32-byte buffer
     let privateKeyBuffer;
@@ -592,6 +624,29 @@ class Key extends EventEmitter {
 
     // Get x-only public key (32 bytes) from compressed public key (33 bytes)
     // For Schnorr, we only need the x coordinate (first 32 bytes after the prefix)
+    const compressedPubkey = Buffer.from(this.public.encodeCompressed('hex'), 'hex');
+    const xOnlyPubkey = compressedPubkey.slice(1); // Remove the prefix byte
+
+    // Ensure signature is a Buffer
+    const sigBuffer = Buffer.isBuffer(sig) ? sig : Buffer.from(sig);
+
+    // Verify using tiny-secp256k1's Schnorr implementation
+    return ecc.verifySchnorr(messageHash, xOnlyPubkey, sigBuffer);
+  }
+
+  /**
+   * Verifies a Schnorr signature with a pre-computed hash (BIP340).
+   * This is useful when the message has already been hashed (e.g., with a tagged hash).
+   * @param {Buffer} messageHash - The pre-computed message hash (32 bytes)
+   * @param {Buffer} sig - The signature to verify (64 bytes)
+   * @returns {Boolean} Whether the signature is valid
+   */
+  verifySchnorrHash (messageHash, sig) {
+    if (!Buffer.isBuffer(messageHash) || messageHash.length !== 32) {
+      throw new Error('Message hash must be a 32-byte Buffer');
+    }
+
+    // Get x-only public key (32 bytes) from compressed public key (33 bytes)
     const compressedPubkey = Buffer.from(this.public.encodeCompressed('hex'), 'hex');
     const xOnlyPubkey = compressedPubkey.slice(1); // Remove the prefix byte
 
