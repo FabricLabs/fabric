@@ -5,32 +5,22 @@ $ npm i
 
 
   CXX(target) Release/obj.target/fabric/src/binding.o
-  CC(target) Release/obj.target/fabric/src/bip340.o
-  CC(target) Release/obj.target/fabric/src/taproot.o
   CC(target) Release/obj.target/fabric/src/peer.o
   CC(target) Release/obj.target/fabric/src/message.o
   CC(target) Release/obj.target/fabric/src/errors.o
   CC(target) Release/obj.target/fabric/src/threads.o
   CC(target) Release/obj.target/fabric/src/scoring.o
-  CC(target) Release/obj.target/fabric/src/secure_random.o
-  CC(target) Release/obj.target/fabric/src/secure_memory.o
-  CC(target) Release/obj.target/fabric/src/validation.o
-  CC(target) Release/obj.target/fabric/src/timing_protection.o
-  CC(target) Release/obj.target/fabric/src/webgpu/webgpu_core.o
-  CC(target) Release/obj.target/fabric/src/webgpu/webgpu_stubs.o
-  CC(target) Release/obj.target/fabric/src/webgpu/crypto_gpu.o
-  CC(target) Release/obj.target/fabric/src/webgpu/garbled_circuits.o
-  CC(target) Release/obj.target/fabric/src/webgpu/fabric_webgpu.o
-  CC(target) Release/obj.target/fabric/src/webgpu/shader_sources.o
-  CC(target) Release/obj.target/fabric/src/webgpu/dawn_integration.o
   SOLINK_MODULE(target) Release/fabric.node
 
-added 681 packages, and audited 682 packages in 32s
+added 679 packages, and audited 680 packages in 24s
 
-121 packages are looking for funding
+122 packages are looking for funding
   run `npm fund` for details
 
-3 low severity vulnerabilities
+6 low severity vulnerabilities
+
+To address all issues possible (including breaking changes), run:
+  npm audit fix --force
 
 Some issues need review, and may require choosing
 a different dependency.
