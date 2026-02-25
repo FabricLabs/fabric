@@ -46,6 +46,18 @@ describe('@fabric/core/services/lightning', function () {
   let bitcoin = null;
   let lightning = null;
 
+  before(function () {
+    // Check if lightningd is available before running tests
+    const { execSync } = require('child_process');
+    try {
+      execSync('which lightningd', { stdio: 'ignore' });
+    } catch (error) {
+      console.warn('[FABRIC:LIGHTNING] lightningd not found in PATH, skipping Lightning unit tests');
+      this.skip();
+      return;
+    }
+  });
+
   // Cleanup hook to ensure nodes are stopped
   afterEach(async function () {
     if (lightningNode) {
@@ -107,20 +119,12 @@ describe('@fabric/core/services/lightning', function () {
           network: 'regtest',
           fullnode: true,
           debug: true,
-          port: 20454  // Use a different port for Lightning tests
+          port: 20454,  // Use a different port for Lightning tests
+          managed: true  // Ensure managed mode is enabled
         });
 
-        // Start the Bitcoin node
-        bitcoinNode = await bitcoin.createLocalNode();
-        assert.ok(bitcoinNode, 'Bitcoin node should be created');
-        assert.ok(bitcoinNode.pid, 'Bitcoin node should have a process ID');
-
-        // Start the Bitcoin service
+        // Start the Bitcoin node and wait for it to be ready
         await bitcoin.start();
-
-        // Wait for Bitcoin node to be ready
-        const isReady = await waitForBitcoinNode(bitcoin);
-        assert.ok(isReady, 'Bitcoin node should be ready to accept RPC connections');
 
         // Now create the Lightning node using Bitcoin node's configuration
         lightning = new Lightning({

@@ -1,8 +1,7 @@
 /**
  * @fabric/core/types/key
- * A cryptographic key management system for the Fabric protocol.
- * Provides functionality for key generation, derivation, signing and encryption.
- * 
+ * Cryptographic key generation, derivation, signing, and encryption.
+ *
  * @signers
  * - Eric Martindale <eric@ericmartindale.com>
  */
@@ -29,7 +28,13 @@ const Generator = require('arbitrary').default.Generator;
 const BN = require('bn.js');
 const EC = require('elliptic').ec;
 const ec = new EC('secp256k1');
+
+// @soatok/elliptic-to-noble expects hex strings by default; pass 'bytes' when using Buffers/Uint8Array
+function enc (buf) {
+  return (buf && (Buffer.isBuffer(buf) || buf instanceof Uint8Array)) ? 'bytes' : 'hex';
+}
 const ecc = require('tiny-secp256k1');
+const base58 = require('bs58check');
 const payments = require('bitcoinjs-lib/src/payments');
 
 // Fabric Dependencies
@@ -57,6 +62,7 @@ class Key extends EventEmitter {
    * @param {String} [settings.seed] Mnemonic seed for initializing the key.
    * @param {String} [settings.public] Public key in hex.
    * @param {String} [settings.private] Private key in hex.
+   * @param {String} [settings.wif] WIF-encoded private key.
    * @param {String} [settings.purpose=44] Constrains derivations to this space.
    */
   constructor (input = {}) {
@@ -72,6 +78,7 @@ class Key extends EventEmitter {
       prefix: '00',
       public: null,
       private: null,
+      wif: null,
       purpose: 44,
       account: 0,
       bits: 256,
@@ -134,10 +141,15 @@ class Key extends EventEmitter {
     this.master = null;
     this.private = null;
     this.public = null;
+    this._pubUncompressed = false; // set true for legacy uncompressed WIF
+    this._state = null; // Initialize as null to defer state updates
 
-    // TODO: design state machine for input (configuration)
-    if (this.settings.seed) {
+    if (this.settings.mnemonic) {
+      this._mode = 'FROM_MNEMONIC';
+    } else if (this.settings.seed) {
       this._mode = 'FROM_SEED';
+    } else if (this.settings.wif) {
+      this._mode = 'FROM_WIF';
     } else if (this.settings.private) {
       this._mode = 'FROM_PRIVATE_KEY';
     } else if (this.settings.xprv) {
@@ -150,52 +162,78 @@ class Key extends EventEmitter {
       this._mode = 'FROM_RANDOM';
     }
 
+    let seed = null;
+    let root = null;
+
     switch (this._mode) {
-      case 'FROM_SEED':
-        const seed = bip39.mnemonicToSeedSync(this.settings.seed, this.settings.passphrase);
-        const root = this.bip32.fromSeed(seed);
+      case 'FROM_MNEMONIC':
+        seed = bip39.mnemonicToSeedSync(this.settings.mnemonic, this.settings.passphrase);
+        root = this.bip32.fromSeed(seed);
         this.seed = this.settings.seed;
         this.xprv = root.toBase58();
         this.xpub = root.neutered().toBase58();
         this.master = root;
-        this.keypair = ec.keyFromPrivate(root.privateKey);
+        this.keypair = ec.keyFromPrivate(root.privateKey, enc(root.privateKey));
         this.status = 'seeded';
+        break;
+      case 'FROM_SEED':
+        // TODO: allow setting of raw seed (deprecates passing a mnemonic in the `seed` property)
+        seed = bip39.mnemonicToSeedSync(this.settings.seed, this.settings.passphrase);
+        root = this.bip32.fromSeed(seed);
+        this.seed = this.settings.seed;
+        this.xprv = root.toBase58();
+        this.xpub = root.neutered().toBase58();
+        this.master = root;
+        this.keypair = ec.keyFromPrivate(root.privateKey, enc(root.privateKey));
+        break;
+      case 'FROM_WIF':
+        const decoded = base58.decode(this.settings.wif);
+        const version = decoded[0];
+        const privateKey = decoded.slice(1, 33);
+        const isCompressed = decoded.length === 34 && decoded[33] === 0x01;
+        this.keypair = ec.keyFromPrivate(privateKey, enc(privateKey));
+        if (!isCompressed) this._pubUncompressed = true;
         break;
       case 'FROM_XPRV':
         this.master = this.bip32.fromBase58(this.settings.xprv);
         this.xprv = this.master.toBase58();
         this.xpub = this.master.neutered().toBase58();
-        this.keypair = ec.keyFromPrivate(this.master.privateKey);
+        this.keypair = ec.keyFromPrivate(this.master.privateKey, enc(this.master.privateKey));
         break;
       case 'FROM_XPUB':
-        const xpub = this.bip32.fromBase58(this.settings.xpub);
-        this.keypair = ec.keyFromPublic(xpub.publicKey);
+        this.master = this.bip32.fromBase58(this.settings.xpub);
+        this.xpub = this.master.neutered().toBase58();
+        this.keypair = ec.keyFromPublic(this.master.publicKey, enc(this.master.publicKey));
         break;
       case 'FROM_PRIVATE_KEY':
         // Key is private
         const provision = (this.settings.private instanceof Buffer) ? this.settings.private : Buffer.from(this.settings.private, 'hex');
-        this.keypair = ec.keyFromPrivate(provision);
+        this.keypair = ec.keyFromPrivate(provision, enc(provision));
         break;
       case 'FROM_PUBLIC_KEY':
         const pubkey = this.settings.pubkey || this.settings.public;
         // Key is only public
-        this.keypair = ec.keyFromPublic((pubkey instanceof Buffer) ? pubkey : Buffer.from(pubkey, 'hex'));
+        const pubkeyBuf = (pubkey instanceof Buffer) ? pubkey : Buffer.from(pubkey, 'hex');
+        this.keypair = ec.keyFromPublic(pubkeyBuf, enc(pubkeyBuf));
         break;
       case 'FROM_RANDOM':
-        const mnemonic = bip39.generateMnemonic();
-        const interim = bip39.mnemonicToSeedSync(mnemonic);
+        this.mnemonic = bip39.generateMnemonic();
+        // TODO: set property `seed` as the actual derived seed, not the seed phrase
+        const interim = bip39.mnemonicToSeedSync(this.mnemonic);
         this.master = this.bip32.fromSeed(interim);
-        this.keypair = ec.keyFromPrivate(this.master.privateKey);
+        this.xprv = this.master.toBase58();
+        this.xpub = this.master.neutered().toBase58();
+        this.keypair = ec.keyFromPrivate(this.master.privateKey, enc(this.master.privateKey));
         break;
     }
 
     // Read the pair
-    this.private = (
-      !this.settings.seed &&
-      !this.settings.private &&
-      !this.settings.xprv
-    ) ? false : this.keypair.getPrivate();
-    this.public = this.keypair.getPublic(true);
+    this.private = (this.keypair.priv) ? this.keypair.getPrivate() : null;
+    // Adapter for @soatok/elliptic-to-noble: getPublic returns hex string, we need encodeCompressed/encode
+    this.public = {
+      encodeCompressed: (e) => this.keypair.getPublic(!this._pubUncompressed, e || 'hex'),
+      encode: (e) => this.keypair.getPublic(false, e || 'hex')
+    };
 
     // TODO: determine if this makes sense / needs to be private
     this.privkey = (this.private) ? this.private.toString() : null;
@@ -204,15 +242,7 @@ class Key extends EventEmitter {
     // WARNING: this will currently loop after 2^32 bits
     // TODO: evaluate compression when treating seed phrase as ascii
     // TODO: consider using sha256(masterprivkey) or sha256(sha256(...))?
-
-    this._starseed = Hash256.digest((
-      this.settings.seed ||
-      this.settings.xprv ||
-      this.settings.private
-    ) + '').toString('hex');
-
-    if (!this._starseed) this._starseed = '0000000000000000000000000000000000000000000000000000000000000000';
-
+    this._starseed = Hash256.digest(this.pubkeyhash).toString('hex');
     this.q = parseInt(this._starseed.substring(0, 4), 16);
     this.generator = new Generator(this.q);
 
@@ -234,10 +264,18 @@ class Key extends EventEmitter {
     return this;
   }
 
+  /**
+   * Create a Key instance from a WIF-encoded private key.
+   * @param {String} wif - The WIF-encoded private key
+   * @param {Object} [options] - Additional options for key creation
+   * @returns {Key} A new Key instance
+   */
+  static fromWIF (wif, options = {}) {
+    return new Key({ ...options, wif });
+  }
+
   static Mnemonic (seed) {
-    if (!seed) {
-      seed = crypto.randomBytes(32);
-    }
+    if (!seed) seed = crypto.randomBytes(32);
     const mnemonic = bip39.entropyToMnemonic(seed);
     const seedBuffer = bip39.mnemonicToSeedSync(mnemonic);
     const bip32 = new BIP32(ecc);
@@ -264,11 +302,7 @@ class Key extends EventEmitter {
   }
 
   get iv () {
-    const self = this;
-    const bits = new BN([...Array(128)].map(() => {
-      return self.bit().toString();
-    }).join(''), 2).toString(16);
-    return Buffer.from(bits.toString(16), 'hex');
+    return crypto.randomBytes(16);
   }
 
   get path () {
@@ -448,7 +482,7 @@ class Key extends EventEmitter {
   deriveKeyPair (addressID = 0, change = 0) {
     const path = `m/${this.purpose}'/0'/${this.account}'/${change}/${addressID}`;
     const derived = this.master.derivePath(path);
-    const pair = ec.keyFromPrivate(derived.privateKey);
+    const pair = ec.keyFromPrivate(derived.privateKey, enc(derived.privateKey));
 
     return {
       privateKey: pair.getPrivate('hex'),
@@ -520,6 +554,7 @@ class Key extends EventEmitter {
    * @returns {Buffer} The signature
    */
   signSchnorr (msg) {
+    // console.debug('signing schnorr:', msg, this.settings);
     if (!this.private) throw new Error('Cannot sign without private key');
 
     // Convert message to Buffer if it's a string
@@ -527,6 +562,37 @@ class Key extends EventEmitter {
 
     // Create message hash
     const messageHash = crypto.createHash('sha256').update(messageBuffer).digest();
+
+    // Get private key as 32-byte buffer
+    let privateKeyBuffer;
+    if (Buffer.isBuffer(this.private)) {
+      privateKeyBuffer = this.private;
+    } else if (BN.isBN(this.private)) {
+      privateKeyBuffer = Buffer.from(this.private.toString(16).padStart(64, '0'), 'hex');
+    } else if (typeof this.private === 'string') {
+      privateKeyBuffer = Buffer.from(this.private.padStart(64, '0'), 'hex');
+    } else {
+      throw new Error('Invalid private key format');
+    }
+
+    // Sign using tiny-secp256k1's Schnorr implementation
+    const signature = ecc.signSchnorr(messageHash, privateKeyBuffer);
+
+    // Ensure we return a Buffer
+    return Buffer.isBuffer(signature) ? signature : Buffer.from(signature);
+  }
+
+  /**
+   * Signs a pre-computed hash using Schnorr signatures (BIP340).
+   * This is useful when the message has already been hashed (e.g., with a tagged hash).
+   * @param {Buffer} messageHash - The pre-computed message hash (32 bytes)
+   * @returns {Buffer} The signature (64 bytes)
+   */
+  signSchnorrHash (messageHash) {
+    if (!this.private) throw new Error('Cannot sign without private key');
+    if (!Buffer.isBuffer(messageHash) || messageHash.length !== 32) {
+      throw new Error('Message hash must be a 32-byte Buffer');
+    }
 
     // Get private key as 32-byte buffer
     let privateKeyBuffer;
@@ -562,6 +628,29 @@ class Key extends EventEmitter {
 
     // Get x-only public key (32 bytes) from compressed public key (33 bytes)
     // For Schnorr, we only need the x coordinate (first 32 bytes after the prefix)
+    const compressedPubkey = Buffer.from(this.public.encodeCompressed('hex'), 'hex');
+    const xOnlyPubkey = compressedPubkey.slice(1); // Remove the prefix byte
+
+    // Ensure signature is a Buffer
+    const sigBuffer = Buffer.isBuffer(sig) ? sig : Buffer.from(sig);
+
+    // Verify using tiny-secp256k1's Schnorr implementation
+    return ecc.verifySchnorr(messageHash, xOnlyPubkey, sigBuffer);
+  }
+
+  /**
+   * Verifies a Schnorr signature with a pre-computed hash (BIP340).
+   * This is useful when the message has already been hashed (e.g., with a tagged hash).
+   * @param {Buffer} messageHash - The pre-computed message hash (32 bytes)
+   * @param {Buffer} sig - The signature to verify (64 bytes)
+   * @returns {Boolean} Whether the signature is valid
+   */
+  verifySchnorrHash (messageHash, sig) {
+    if (!Buffer.isBuffer(messageHash) || messageHash.length !== 32) {
+      throw new Error('Message hash must be a 32-byte Buffer');
+    }
+
+    // Get x-only public key (32 bytes) from compressed public key (33 bytes)
     const compressedPubkey = Buffer.from(this.public.encodeCompressed('hex'), 'hex');
     const xOnlyPubkey = compressedPubkey.slice(1); // Remove the prefix byte
 
@@ -614,11 +703,13 @@ class Key extends EventEmitter {
    */
   secure () {
     // Clear sensitive key material
+    Buffer.write(this.private, 0, this.private.length);
+
+    // Null out sensitive properties
     this.private = null;
     this.privkey = null;
     this.seed = null;
     this.master = null;
-    this.keypair = null;
 
     // Clear any derived keys
     this.xprv = null;
@@ -638,6 +729,58 @@ class Key extends EventEmitter {
 
   get pubkey () {
     return this.public.encodeCompressed('hex');
+  }
+
+  /**
+   * Exports the private key in Wallet Import Format (WIF)
+   * @returns {String} The private key encoded in WIF format
+   * @throws {Error} If the key doesn't have a private component
+   */
+  toWIF () {
+    if (!this.private) throw new Error('Cannot export WIF without private key');
+    let privateKeyBuffer;
+
+    if (Buffer.isBuffer(this.private)) {
+      privateKeyBuffer = this.private;
+    } else if (BN.isBN(this.private)) {
+      privateKeyBuffer = Buffer.from(this.private.toString(16).padStart(64, '0'), 'hex');
+    } else if (typeof this.private === 'string') {
+      privateKeyBuffer = Buffer.from(this.private.padStart(64, '0'), 'hex');
+    } else {
+      throw new Error('Invalid private key format');
+    }
+
+    const network = this.settings.network === 'regtest'
+      ? this.settings.networks.testnet
+      : this.settings.networks[this.settings.network] || this.settings.networks.mainnet;
+
+    const prefix = Buffer.from([network.wif]);
+    const payload = Buffer.concat([
+      prefix,
+      privateKeyBuffer,
+      Buffer.from([0x01])
+    ]);
+
+    const firstHash = crypto.createHash('sha256').update(payload).digest();
+    const secondHash = crypto.createHash('sha256').update(firstHash).digest();
+    const checksum = secondHash.slice(0, 4);
+    const combined = Buffer.concat([payload, checksum]);
+
+    return base58.encode(combined);
+  }
+
+  toBitcoinAddress () {
+    if (!this.public) throw new Error('Cannot derive Bitcoin address without public key');
+    const network = this.settings.network === 'regtest'
+      ? this.settings.networks.testnet
+      : this.settings.networks[this.settings.network] || this.settings.networks.mainnet;
+
+    const p2pkh = payments.p2pkh({
+      pubkey: Buffer.from(this.public.encode('hex'), 'hex'),
+      network: network
+    });
+
+    return p2pkh.address;
   }
 }
 
