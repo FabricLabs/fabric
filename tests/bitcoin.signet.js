@@ -6,9 +6,12 @@ const Key = require('../types/key');
 const fs = require('fs');
 const path = require('path');
 
-describe('@fabric/core/bitcoin/signet', function () {
-  this.timeout(300000); // 5 minutes timeout for signet operations
+const runSignet = !!process.env.FABRIC_E2E_SIGNET;
+if (!runSignet) {
+  console.log('[SKIP] Set FABRIC_E2E_SIGNET=1 to run signet network tests');
+}
 
+function signetSuite () {
   const defaults = {
     network: 'signet',
     mode: 'fabric',
@@ -50,7 +53,7 @@ describe('@fabric/core/bitcoin/signet', function () {
     // Generate a new address in the wallet
     const result = await bitcoin._makeRPCRequest('getnewaddress', ['test']);
     const address = result.result;
-    
+
     // Store the address for later use
     testAddress = address;
   }
@@ -139,4 +142,15 @@ describe('@fabric/core/bitcoin/signet', function () {
       // No assertions about UTXO content since we're starting fresh
     });
   });
-});
+}
+
+if (runSignet) {
+  describe('@fabric/core/bitcoin/signet', function () {
+    this.timeout(300000);
+    signetSuite();
+  });
+} else {
+  describe.skip('@fabric/core/bitcoin/signet', function () {
+    it('requires FABRIC_E2E_SIGNET=1 and bitcoind signet', function () { this.skip(); });
+  });
+}
