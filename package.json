@@ -17,6 +17,7 @@
     "node": "22.14.0"
   },
   "scripts": {
+    "preinstall": "node -e \"\"",
     "audit": "npm audit --json --level critical > reports/AUDIT.json",
     "book": "npm run dev",
     "build:book": "npm run make:book && npm run tidy",

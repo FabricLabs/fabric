@@ -1,18 +1,10 @@
 $ npm i
 
-> @fabric/core@0.1.0-RC1 install
-> node-gyp rebuild
+> @fabric/core@0.1.0-RC1 preinstall
+> node -e ""
 
 
-  CXX(target) Release/obj.target/fabric/src/binding.o
-  CC(target) Release/obj.target/fabric/src/peer.o
-  CC(target) Release/obj.target/fabric/src/message.o
-  CC(target) Release/obj.target/fabric/src/errors.o
-  CC(target) Release/obj.target/fabric/src/threads.o
-  CC(target) Release/obj.target/fabric/src/scoring.o
-  SOLINK_MODULE(target) Release/fabric.node
-
-added 678 packages, and audited 679 packages in 12s
+added 678 packages, and audited 679 packages in 26s
 
 125 packages are looking for funding
   run `npm fund` for details
