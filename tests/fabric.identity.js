@@ -31,11 +31,12 @@ describe('@fabric/core/types/identity', function () {
       });
       const actualPubkey = identity.pubkey;
 
-      // Compute expected pubkey using bip32
+      // Compute expected pubkey using bip32 (shim expects 'bytes' for Buffer/Uint8Array)
       const seed = bip39.mnemonicToSeedSync(SAMPLE.seed);
       const root = new BIP32(ecc).fromSeed(seed);
-      const keypair = ec.keyFromPrivate(root.privateKey);
-      const expectedPubkey = keypair.getPublic().encodeCompressed('hex');
+      const enc = typeof root.privateKey === 'string' ? 'hex' : 'bytes';
+      const keypair = ec.keyFromPrivate(root.privateKey, enc);
+      const expectedPubkey = keypair.getPublic(true, 'hex');
 
       assert.ok(identity);
       assert.equal(actualPubkey, expectedPubkey);
@@ -49,12 +50,13 @@ describe('@fabric/core/types/identity', function () {
       const actualChild = identity.key.derive('m/0');
       const actualChildPubkey = actualChild.pubkey;
 
-      // Compute expected child key using bip32
+      // Compute expected child key using bip32 (shim expects 'bytes' for Buffer/Uint8Array)
       const seed = bip39.mnemonicToSeedSync(SAMPLE.seed);
       const root = new BIP32(ecc).fromSeed(seed);
       const child = root.derivePath('m/0');
-      const childKeypair = ec.keyFromPrivate(child.privateKey);
-      const expectedChildPubkey = childKeypair.getPublic().encodeCompressed('hex');
+      const childEnc = typeof child.privateKey === 'string' ? 'hex' : 'bytes';
+      const childKeypair = ec.keyFromPrivate(child.privateKey, childEnc);
+      const expectedChildPubkey = childKeypair.getPublic(true, 'hex');
 
       assert.ok(actualChild);
       assert.equal(actualChildPubkey, expectedChildPubkey);
@@ -70,13 +72,14 @@ describe('@fabric/core/types/identity', function () {
       const actualSignature = identity.sign(message);
       const actualVerified = identity.key.verify(message, actualSignature);
 
-      // Compute expected signature using bip32
+      // Compute expected signature using bip32 (shim expects 'bytes' for Buffer/Uint8Array)
       const seed = bip39.mnemonicToSeedSync(SAMPLE.seed);
       const root = new BIP32(ecc).fromSeed(seed);
-      const keypair = ec.keyFromPrivate(root.privateKey);
+      const enc = typeof root.privateKey === 'string' ? 'hex' : 'bytes';
+      const keypair = ec.keyFromPrivate(root.privateKey, enc);
       const msgHash = Buffer.from(message).toString('hex');
-      const expectedSignature = keypair.sign(msgHash).toDER('hex');
-      const expectedVerified = keypair.verify(msgHash, expectedSignature);
+      const expectedSigObj = keypair.sign(msgHash);
+      const expectedVerified = keypair.verify(msgHash, expectedSigObj);
 
       assert.ok(actualSignature);
       assert.equal(actualVerified, true);
