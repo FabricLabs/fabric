@@ -97,8 +97,7 @@ jobs, and by default the <code>fabric</code> property will serve as an I/O strea
 familiar semantics.</p>
 </dd>
 <dt><a href="#Session">Session</a></dt>
-<dd><p>The <a href="#Session">Session</a> type describes a connection between <a href="#Peer">Peer</a>
-objects, and includes its own lifecycle.</p>
+<dd><p>The <a href="#Session">Session</a> type describes a connection between <a href="#Peer">Peer</a> objects, and includes its own lifecycle.</p>
 </dd>
 <dt><a href="#Snapshot">Snapshot</a></dt>
 <dd><p>A type of message to be expected from a <a href="#Service">Service</a>.</p>
@@ -1224,7 +1223,9 @@ Represents a cryptographic key.
     * _instance_
         * [.verify(msg, sig)](#Key+verify) ⇒ <code>Boolean</code>
         * [.signSchnorr(msg)](#Key+signSchnorr) ⇒ <code>Buffer</code>
+        * [.signSchnorrHash(messageHash)](#Key+signSchnorrHash) ⇒ <code>Buffer</code>
         * [.verifySchnorr(msg, sig)](#Key+verifySchnorr) ⇒ <code>Boolean</code>
+        * [.verifySchnorrHash(messageHash, sig)](#Key+verifySchnorrHash) ⇒ <code>Boolean</code>
         * [.sign(data)](#Key+sign) ⇒ <code>Buffer</code>
         * [.secure()](#Key+secure)
         * [.toWIF()](#Key+toWIF) ⇒ <code>String</code>
@@ -1275,6 +1276,19 @@ Signs a message using Schnorr signatures (BIP340).
 | --- | --- | --- |
 | msg | <code>Buffer</code> \| <code>String</code> | The message to sign |
 
+<a name="Key+signSchnorrHash"></a>
+
+### key.signSchnorrHash(messageHash) ⇒ <code>Buffer</code>
+Signs a pre-computed hash using Schnorr signatures (BIP340).
+This is useful when the message has already been hashed (e.g., with a tagged hash).
+
+**Kind**: instance method of [<code>Key</code>](#Key)  
+**Returns**: <code>Buffer</code> - The signature (64 bytes)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| messageHash | <code>Buffer</code> | The pre-computed message hash (32 bytes) |
+
 <a name="Key+verifySchnorr"></a>
 
 ### key.verifySchnorr(msg, sig) ⇒ <code>Boolean</code>
@@ -1287,6 +1301,20 @@ Verifies a Schnorr signature (BIP340).
 | --- | --- | --- |
 | msg | <code>Buffer</code> \| <code>String</code> | The message that was signed |
 | sig | <code>Buffer</code> | The signature to verify |
+
+<a name="Key+verifySchnorrHash"></a>
+
+### key.verifySchnorrHash(messageHash, sig) ⇒ <code>Boolean</code>
+Verifies a Schnorr signature with a pre-computed hash (BIP340).
+This is useful when the message has already been hashed (e.g., with a tagged hash).
+
+**Kind**: instance method of [<code>Key</code>](#Key)  
+**Returns**: <code>Boolean</code> - Whether the signature is valid  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| messageHash | <code>Buffer</code> | The pre-computed message hash (32 bytes) |
+| sig | <code>Buffer</code> | The signature to verify (64 bytes) |
 
 <a name="Key+sign"></a>
 
@@ -1719,6 +1747,8 @@ Returns a [Buffer](Buffer) of the complete message.
 
 ### message.signWithKey(key) ⇒ [<code>Message</code>](#Message)
 Signs the message using a specific key.
+Uses BIP-340 Schnorr signatures with tagged hash "Fabric/Message".
+Signs the complete message (header + body) as per C implementation.
 
 **Kind**: instance method of [<code>Message</code>](#Message)  
 **Returns**: [<code>Message</code>](#Message) - Signed message.  
@@ -1745,6 +1775,8 @@ Verify a message's signature.
 
 ### message.verifyWithKey(key) ⇒ <code>Boolean</code>
 Verify a message's signature with a specific key.
+Uses BIP-340 Schnorr signature verification with tagged hash "Fabric/Message".
+Verifies the complete message (header + body) as per C implementation.
 
 **Kind**: instance method of [<code>Message</code>](#Message)  
 **Returns**: <code>Boolean</code> - `true` if the signature is valid, `false` if not.  
@@ -2322,25 +2354,25 @@ Sends a message.
 <a name="Session"></a>
 
 ## Session
-The [Session](#Session) type describes a connection between [Peer](#Peer)
-objects, and includes its own lifecycle.
+The [Session](#Session) type describes a connection between [Peer](#Peer) objects, and includes its own lifecycle.
 
 **Kind**: global class  
 
 * [Session](#Session)
-    * [new Session(settings)](#new_Session_new)
+    * [new Session([settings])](#new_Session_new)
     * [.start()](#Session+start)
     * [.stop()](#Session+stop)
 
 <a name="new_Session_new"></a>
 
-### new Session(settings)
+### new Session([settings])
 Creates a new [Session](#Session).
 
+**Returns**: [<code>Session</code>](#Session) - The session instance.  
 
-| Param | Type |
-| --- | --- |
-| settings | <code>Object</code> | 
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Configuration. |
 
 <a name="Session+start"></a>
 
