@@ -1,14 +1,7 @@
 'use strict';
 
-const FabricScribe = require('../types/scribe');
-const FabricHTTPServer = require('../types/server');
+const FabricScribe = require('../types/scribe')
 const FabricStash = require('../types/stash');
-
-/**
- * Deprecated 2021-10-16.
- * @deprecated
- */
-class HTTPServer extends FabricHTTPServer {}
 
 /**
  * Deprecated 2021-11-06.
