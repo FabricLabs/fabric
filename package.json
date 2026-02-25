@@ -106,13 +106,13 @@
     "bip68": "=1.0.4",
     "bitcoinjs-lib": "=6.1.7",
     "blessed": "=0.1.81",
-    "bn.js": "=5.2.2",
+    "bn.js": "=5.2.3",
     "commander": "=14.0.0",
     "content-type": "=1.0.5",
     "cross-fetch": "=4.1.0",
     "dotparser": "=1.1.1",
     "ecpair": "=2.1.0",
-    "elliptic": "=6.6.1",
+    "elliptic": "npm:@soatok/elliptic-to-noble@^9999.0.0",
     "events": "=3.3.0",
     "fast-json-patch": "=3.1.1",
     "javascript-state-machine": "=3.1.0",
@@ -134,6 +134,9 @@
     "struct": "=0.0.12",
     "tiny-secp256k1": "=2.2.4",
     "zeromq": "=6.5.0"
+  },
+  "overrides": {
+    "elliptic": "$elliptic"
   },
   "devDependencies": {
     "buffer": "=6.0.3",

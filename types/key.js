@@ -28,6 +28,11 @@ const Generator = require('arbitrary').default.Generator;
 const BN = require('bn.js');
 const EC = require('elliptic').ec;
 const ec = new EC('secp256k1');
+
+// @soatok/elliptic-to-noble expects hex strings by default; pass 'bytes' when using Buffers/Uint8Array
+function enc (buf) {
+  return (buf && (Buffer.isBuffer(buf) || buf instanceof Uint8Array)) ? 'bytes' : 'hex';
+}
 const ecc = require('tiny-secp256k1');
 const base58 = require('bs58check');
 const payments = require('bitcoinjs-lib/src/payments');
@@ -136,6 +141,7 @@ class Key extends EventEmitter {
     this.master = null;
     this.private = null;
     this.public = null;
+    this._pubUncompressed = false; // set true for legacy uncompressed WIF
     this._state = null; // Initialize as null to defer state updates
 
     if (this.settings.mnemonic) {
@@ -167,7 +173,7 @@ class Key extends EventEmitter {
         this.xprv = root.toBase58();
         this.xpub = root.neutered().toBase58();
         this.master = root;
-        this.keypair = ec.keyFromPrivate(root.privateKey);
+        this.keypair = ec.keyFromPrivate(root.privateKey, enc(root.privateKey));
         this.status = 'seeded';
         break;
       case 'FROM_SEED':
@@ -178,43 +184,37 @@ class Key extends EventEmitter {
         this.xprv = root.toBase58();
         this.xpub = root.neutered().toBase58();
         this.master = root;
-        this.keypair = ec.keyFromPrivate(root.privateKey);
+        this.keypair = ec.keyFromPrivate(root.privateKey, enc(root.privateKey));
         break;
       case 'FROM_WIF':
         const decoded = base58.decode(this.settings.wif);
         const version = decoded[0];
         const privateKey = decoded.slice(1, 33);
         const isCompressed = decoded.length === 34 && decoded[33] === 0x01;
-        this.keypair = ec.keyFromPrivate(privateKey);
-        if (!isCompressed) {
-          const pub = this.keypair.getPublic();
-          pub.compressed = false;
-          // Force the public key to be uncompressed
-          this.public = pub;
-        } else {
-          this.public = this.keypair.getPublic(true);
-        }
+        this.keypair = ec.keyFromPrivate(privateKey, enc(privateKey));
+        if (!isCompressed) this._pubUncompressed = true;
         break;
       case 'FROM_XPRV':
         this.master = this.bip32.fromBase58(this.settings.xprv);
         this.xprv = this.master.toBase58();
         this.xpub = this.master.neutered().toBase58();
-        this.keypair = ec.keyFromPrivate(this.master.privateKey);
+        this.keypair = ec.keyFromPrivate(this.master.privateKey, enc(this.master.privateKey));
         break;
       case 'FROM_XPUB':
         this.master = this.bip32.fromBase58(this.settings.xpub);
         this.xpub = this.master.neutered().toBase58();
-        this.keypair = ec.keyFromPublic(this.master.publicKey);
+        this.keypair = ec.keyFromPublic(this.master.publicKey, enc(this.master.publicKey));
         break;
       case 'FROM_PRIVATE_KEY':
         // Key is private
         const provision = (this.settings.private instanceof Buffer) ? this.settings.private : Buffer.from(this.settings.private, 'hex');
-        this.keypair = ec.keyFromPrivate(provision);
+        this.keypair = ec.keyFromPrivate(provision, enc(provision));
         break;
       case 'FROM_PUBLIC_KEY':
         const pubkey = this.settings.pubkey || this.settings.public;
         // Key is only public
-        this.keypair = ec.keyFromPublic((pubkey instanceof Buffer) ? pubkey : Buffer.from(pubkey, 'hex'));
+        const pubkeyBuf = (pubkey instanceof Buffer) ? pubkey : Buffer.from(pubkey, 'hex');
+        this.keypair = ec.keyFromPublic(pubkeyBuf, enc(pubkeyBuf));
         break;
       case 'FROM_RANDOM':
         this.mnemonic = bip39.generateMnemonic();
@@ -223,13 +223,17 @@ class Key extends EventEmitter {
         this.master = this.bip32.fromSeed(interim);
         this.xprv = this.master.toBase58();
         this.xpub = this.master.neutered().toBase58();
-        this.keypair = ec.keyFromPrivate(this.master.privateKey);
+        this.keypair = ec.keyFromPrivate(this.master.privateKey, enc(this.master.privateKey));
         break;
     }
 
     // Read the pair
     this.private = (this.keypair.priv) ? this.keypair.getPrivate() : null;
-    this.public = this.keypair.getPublic(true);
+    // Adapter for @soatok/elliptic-to-noble: getPublic returns hex string, we need encodeCompressed/encode
+    this.public = {
+      encodeCompressed: (e) => this.keypair.getPublic(!this._pubUncompressed, e || 'hex'),
+      encode: (e) => this.keypair.getPublic(false, e || 'hex')
+    };
 
     // TODO: determine if this makes sense / needs to be private
     this.privkey = (this.private) ? this.private.toString() : null;
@@ -478,7 +482,7 @@ class Key extends EventEmitter {
   deriveKeyPair (addressID = 0, change = 0) {
     const path = `m/${this.purpose}'/0'/${this.account}'/${change}/${addressID}`;
     const derived = this.master.derivePath(path);
-    const pair = ec.keyFromPrivate(derived.privateKey);
+    const pair = ec.keyFromPrivate(derived.privateKey, enc(derived.privateKey));
 
     return {
       privateKey: pair.getPrivate('hex'),
