@@ -30,6 +30,8 @@ jobs:
         python-version: '3.8'
     - name: Install secp256k1 dependencies
       run: sudo apt-get update && sudo apt-get install -y libsecp256k1-dev
+    - name: Install Noise dependency
+      run: sudo apt-get install libnoise-dev
     - name: Install dependencies
       run: npm run report:install
     - name: Download and install bitcoind
