@@ -34,7 +34,7 @@ class Token {
 
     // Trust Chain
     this.issuer = this.settings.issuer ? this.settings.issuer : this.ephemera;
-    this.subject = this.settings.subject ? this.settings.subject : this.ephemera.keypair.getPublic(true).encodeCompressed('hex');
+    this.subject = this.settings.subject ? this.settings.subject : this.ephemera.keypair.getPublic(true, 'hex');
 
     // ECDSA Signature
     this.signature = null;
