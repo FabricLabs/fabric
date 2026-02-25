@@ -1,6 +1,6 @@
 'use strict';
 
-const FabricScribe = require('../types/scribe')
+const FabricScribe = require('../types/scribe');
 const FabricStash = require('../types/stash');
 
 /**
