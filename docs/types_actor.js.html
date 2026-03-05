@@ -35,6 +35,7 @@
 
 // Generics
 const EventEmitter = require('events');
+// const stream = require('node:stream/promises');
 
 // Dependencies
 const monitor = require('fast-json-patch');
@@ -314,6 +315,35 @@ class Actor extends EventEmitter {
   }
 
   /**
+   * Returns a new output stream for the Actor.
+   * @param {TransformStream} [pipe] Pipe to stream to.
+   * @returns {TransformStream} New output stream for the Actor.
+   */
+  stream (pipe) {
+    if (pipe) {
+      //
+      const stream = new stream.Transform({
+        transform (chunk, encoding, done) {
+          done(null, chunk);
+        }
+      });
+
+      // TODO: test this
+      // 1. Stream to the output pipe
+      stream.pipe(pipe);
+
+      // 2. Stream to the actor
+      this.stream.pipe(stream);
+
+      return stream;
+    } else {
+      return this.stream;
+    }
+
+    return this.stream;
+  }
+
+  /**
    * Casts the Actor to a normalized Buffer.
    * @returns {Buffer}
    */
@@ -505,18 +535,18 @@ module.exports = Actor;
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
-      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
-      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
@@ -534,7 +564,6 @@ module.exports = Actor;
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
-      <li><a href="Signer.html">Signer</a></li>
       <li><a href="Snapshot.html">Snapshot</a></li>
       <li><a href="Stack.html">Stack</a></li>
       <li><a href="Stash.html">Stash</a></li>
