@@ -141,7 +141,7 @@
   },
   "devDependencies": {
     "buffer": "=6.0.3",
-    "c8": "=10.1.3",
+    "c8": "=11.0.0",
     "chai": "=5.2.1",
     "cross-env": "=7.0.3",
     "debug-trace": "=2.2.3",
