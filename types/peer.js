@@ -339,7 +339,11 @@ class Peer extends Service {
 
     socket.on('error', (error) => {
       this.emit('debug', `--- debug error from _connect() ---`);
-      this.emit('error', `Socket error: ${error}`);
+      if (error && (error.code === 'EPIPE' || error.code === 'ECONNRESET')) {
+        this.emit('warning', `Suppressing transient outbound socket error (${error.code}) from _connect().`);
+      } else {
+        this.emit('error', `Socket error: ${error}`);
+      }
     });
 
     socket.on('open', (info) => {
@@ -664,10 +668,24 @@ class Peer extends Service {
       verify: this._verifyNOISE.bind(this)
     });
 
+    // Handle low-level socket errors for inbound connections
+    socket.on('error', (error) => {
+      this.emit('debug', `--- debug error from _NOISESocketHandler() ---`);
+      if (error && (error.code === 'EPIPE' || error.code === 'ECONNRESET')) {
+        this.emit('warning', `Suppressing transient inbound socket error (${error.code}) from _NOISESocketHandler().`);
+      } else {
+        this.emit('error', `Inbound socket error: ${error}`);
+      }
+    });
+
     // Set up NOISE event handlers
     handler.encrypt.on('handshake', this._handleNOISEHandshake.bind(this));
     handler.encrypt.on('error', (error) => {
-      this.emit('error', `NOISE encrypt error: ${error}`);
+      if (error && (error.code === 'EPIPE' || error.code === 'ECONNRESET')) {
+        this.emit('warning', `Suppressing transient NOISE encrypt error (${error.code}).`);
+      } else {
+        this.emit('error', `NOISE encrypt error: ${error}`);
+      }
     });
 
     handler.encrypt.on('end', (data) => {
@@ -678,7 +696,11 @@ class Peer extends Service {
     });
 
     handler.decrypt.on('error', (error) => {
-      this.emit('error', `NOISE decrypt error: ${error}`);
+      if (error && (error.code === 'EPIPE' || error.code === 'ECONNRESET')) {
+        this.emit('warning', `Suppressing transient NOISE decrypt error (${error.code}).`);
+      } else {
+        this.emit('error', `NOISE decrypt error: ${error}`);
+      }
     });
 
     handler.decrypt.on('close', (data) => {
@@ -985,9 +1007,32 @@ class Peer extends Service {
 
     const terminator = async () => {
       return new Promise((resolve, reject) => {
-        if (!this.server.address()) return resolve();
+        // Always attempt to close the server, even if address() returns null
+        // This ensures cleanup even if the server failed to start properly
+        if (!this.server || typeof this.server.close !== 'function') {
+          return resolve();
+        }
+
+        // Check if server is listening
+        const address = this.server.address();
+        if (!address) {
+          // Server not listening, but still try to close to be safe
+          // Some server states might not have address() but still need cleanup
+          try {
+            this.server.close(() => resolve());
+          } catch (error) {
+            // If close fails, it's likely already closed - resolve anyway
+            resolve();
+          }
+          return;
+        }
+
+        // Server is listening, close it properly
         return this.server.close(function serverClosed (error) {
-          if (error) return reject(error);
+          // Ignore errors if server wasn't running or already closed
+          if (error && error.code !== 'ERR_SERVER_NOT_RUNNING') {
+            return reject(error);
+          }
           resolve();
         });
       });
@@ -1077,8 +1122,30 @@ class Peer extends Service {
   async listen () {
     return new Promise((resolve, reject) => {
       console.debug('Listening on', this.interface, this.port);
+
+      // Handle server errors before attempting to listen
+      const errorHandler = (error) => {
+        if (error.code === 'EADDRINUSE') {
+          this.emit('error', `Port ${this.port} is already in use. Please stop the process using this port or use a different port.`);
+          reject(error);
+        } else {
+          this.emit('error', `Server socket error: ${error}`);
+          // Don't reject on other errors during listen, let the callback handle it
+        }
+      };
+
+      this.server.once('error', errorHandler);
+
       this.server.listen(this.port, this.interface, (error) => {
-        if (error) return reject(error);
+        // Remove the error handler since we're handling the result here
+        this.server.removeListener('error', errorHandler);
+
+        if (error) {
+          if (error.code === 'EADDRINUSE') {
+            this.emit('error', `Port ${this.port} is already in use. Please stop the process using this port or use a different port.`);
+          }
+          return reject(error);
+        }
 
         const details = this.server.address();
         const address = `${details.address}:${details.port}`;
@@ -1087,8 +1154,11 @@ class Peer extends Service {
         return resolve(address);
       });
 
+      // Keep a general error handler for runtime errors
       this.server.on('error', (error) => {
-        this.emit('error', `Server socket error: ${error}`);
+        if (error.code !== 'EADDRINUSE') {
+          this.emit('error', `Server socket error: ${error}`);
+        }
       });
     });
   }
