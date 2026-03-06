@@ -231,6 +231,38 @@ class Peer extends Service {
 
   get publicPeers () {
     const peers = [];
+
+    // First, include all active connections as "connected" peers.
+    for (const address in this.connections) {
+      if (!Object.prototype.hasOwnProperty.call(this.connections, address)) continue;
+      const socket = this.connections[address];
+
+      peers.push({
+        id: address,
+        address: address,
+        status: 'connected',
+        lastMessage: socket._lastMessage || null
+      });
+    }
+
+    // Then, include any known peers that are not currently connected.
+    for (const key in this.peers) {
+      if (!Object.prototype.hasOwnProperty.call(this.peers, key)) continue;
+
+      // Skip if this peer is already represented as a connected peer.
+      if (peers.find((p) => p.id === key || p.address === key)) continue;
+
+      const peer = this.peers[key];
+      const id = peer && peer.id ? peer.id : key;
+      const address = peer && peer.address ? peer.address : key;
+
+      peers.push({
+        id,
+        address,
+        status: 'disconnected'
+      });
+    }
+
     return peers;
   }
 
@@ -259,6 +291,11 @@ class Peer extends Service {
       if (id === origin) continue;
       this.connections[id]._writeFabric(message);
     }
+  }
+
+  connectTo (address) {
+    this._connect(address);
+    return this;
   }
 
   relayFrom (origin, message, socket = null) {
