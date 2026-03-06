@@ -9,9 +9,9 @@ class Hash256 {
   /**
    * Create an instance of a `Hash256` object by calling `new Hash256()`,
    * where `settings` can be provided to supply a particular input object.
-   * 
+   *
    * If the `settings` is not a string, `input` must be provided.
-   * @param {Object} settings 
+   * @param {Object} settings
    * @param {String} settings.input Input string to map as 256-bit hash.
    */
   constructor (settings = {}) {
@@ -71,12 +71,9 @@ class Hash256 {
   }
 
   static async hash (input) {
-    const encoder = new TextEncoder();
-    const dataBuffer = encoder.encode(input);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    return hashHex;
+    // Use @noble/hashes for browser compatibility (crypto.subtle is undefined in non-secure context)
+    const data = typeof input === 'string' ? Buffer.from(input, 'utf8') : input;
+    return Hash256.compute(data);
   }
 
   reverse (input = this.value) {

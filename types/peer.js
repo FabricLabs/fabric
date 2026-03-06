@@ -135,8 +135,9 @@ class Peer extends Service {
     this.connections = {};
     this.history = [];
     this.peers = {};
-    // Persistent peer registry (state.peers); load/save via store when persistent
-    this._peerRegistrySaveScheduled = null;
+    // Peers: keyed by public key (id). Persistent registry in _state.peers.
+    // Map connection address (IP:port) -> peer id (public key). Learned on P2P_SESSION_OFFER/OPEN.
+    this._addressToId = {};
     this.mailboxes = {};
     this.memory = {};
     this.handlers = {};
@@ -156,13 +157,28 @@ class Peer extends Service {
 
     this._state = {
       content: this.settings.state,
-      peers: {}, // local state: peer registry (not part of global content)
+      peers: {}, // Peer registry keyed by public key (id). Persisted to LevelDB.
       chains: {},
       connections: {},
       status: 'sleeping'
     };
 
     return this;
+  }
+
+  _resolveToAddress (idOrAddress) {
+    if (!idOrAddress || typeof idOrAddress !== 'string') return null;
+    // Direct match on connection address
+    if (this.connections[idOrAddress]) return idOrAddress;
+    // Look up by id: find which address this id is connected from
+    const registry = this._state.peers || {};
+    const byId = registry[idOrAddress];
+    if (byId && byId.address && this.connections[byId.address]) return byId.address;
+    // Check _addressToId reverse: find address that maps to this id
+    for (const [addr, id] of Object.entries(this._addressToId || {})) {
+      if (id === idOrAddress && this.connections[addr]) return addr;
+    }
+    return null;
   }
 
   get id () {
@@ -241,15 +257,17 @@ class Peer extends Service {
 
   get publicPeers () {
     const peers = [];
+    const addressToId = this._addressToId || {};
 
-    // First, include all active connections as "connected" peers.
+    // Connections are keyed by IP:port. Map each to peer id (public key) when known.
     for (const address in this.connections) {
       if (!Object.prototype.hasOwnProperty.call(this.connections, address)) continue;
       const socket = this.connections[address];
+      const id = addressToId[address] || address;
 
       peers.push({
-        id: address,
-        address: address,
+        id,
+        address,
         status: 'connected',
         lastMessage: socket._lastMessage || null
       });
@@ -283,16 +301,18 @@ class Peer extends Service {
    */
   get knownPeers () {
     const now = new Date().toISOString();
-    const byAddress = {};
+    const byId = {};
     const registry = this._state.peers || {};
+    const addressToId = this._addressToId || {};
 
-    // Start from persisted registry so we include everyone we've ever seen
-    for (const addr in registry) {
-      if (!Object.prototype.hasOwnProperty.call(registry, addr)) continue;
-      const reg = registry[addr];
-      byAddress[addr] = {
-        address: addr,
-        id: reg.id || addr,
+    // Start from persisted registry (keyed by id)
+    for (const key in registry) {
+      if (!Object.prototype.hasOwnProperty.call(registry, key)) continue;
+      const reg = registry[key];
+      const id = reg.id || key;
+      byId[id] = {
+        id,
+        address: reg.address || key,
         status: 'disconnected',
         score: reg.score != null ? reg.score : 0,
         firstSeen: reg.firstSeen,
@@ -303,31 +323,47 @@ class Peer extends Service {
       };
     }
 
-    // Overlay current connections
+    // Overlay current connections (map address -> id, then update byId)
     for (const address in this.connections) {
       if (!Object.prototype.hasOwnProperty.call(this.connections, address)) continue;
       const socket = this.connections[address];
-      if (!byAddress[address]) byAddress[address] = { address, id: address, status: 'connected', score: 0 };
-      byAddress[address].status = 'connected';
-      byAddress[address].lastMessage = socket._lastMessage || byAddress[address].lastMessage;
-      if (socket._alias) byAddress[address].alias = socket._alias;
+      const id = addressToId[address] || address;
+      if (!byId[id]) byId[id] = { id, address, status: 'connected', score: 0 };
+      byId[id].status = 'connected';
+      byId[id].address = address;
+      byId[id].lastMessage = socket._lastMessage || byId[id].lastMessage;
+      if (socket._alias) byId[id].alias = socket._alias;
     }
 
-    // Include any this.peers not yet in registry (e.g. not yet persisted)
+    // Include any this.peers not yet in registry
     for (const key in this.peers) {
       if (!Object.prototype.hasOwnProperty.call(this.peers, key)) continue;
-      if (byAddress[key]) continue;
       const peer = this.peers[key];
-      byAddress[key] = {
+      const id = (peer && peer.id) || key;
+      if (byId[id]) continue;
+      byId[id] = {
+        id,
         address: key,
-        id: (peer && peer.id) || key,
         status: 'disconnected',
         score: 0,
         lastSeen: now
       };
     }
 
-    return Object.values(byAddress);
+    return Object.values(byId);
+  }
+
+  _resolveToAddress (idOrAddress) {
+    if (!idOrAddress) return null;
+    if (this.connections[idOrAddress]) return idOrAddress;
+    const addressToId = this._addressToId || {};
+    for (const addr in addressToId) {
+      if (addressToId[addr] === idOrAddress && this.connections[addr]) return addr;
+    }
+    const registry = this._state.peers || {};
+    const entry = registry[idOrAddress];
+    if (entry && entry.address && this.connections[entry.address]) return entry.address;
+    return null;
   }
 
   beat () {
@@ -530,6 +566,7 @@ class Peer extends Service {
 
     delete this.connections[target];
     delete this.peers[target];
+    if (this._addressToId) delete this._addressToId[target];
 
     this.emit('connections:close', {
       address: target,
@@ -551,7 +588,19 @@ class Peer extends Service {
       const raw = await this._peersDb.get('peers').catch(() => null);
       const peers = raw ? JSON.parse(raw) : {};
       if (peers && typeof peers === 'object') {
-        this._state.peers = peers;
+        // Migrate legacy address-keyed entries to id-keyed (id is the fixed public key)
+        const migrated = {};
+        for (const key of Object.keys(peers)) {
+          const entry = peers[key];
+          const id = entry && entry.id;
+          if (id) {
+            migrated[id] = merge({ id, address: key }, entry);
+          } else {
+            // No id yet (pre-handshake); keep keyed by address until we learn id
+            migrated[key] = merge({ address: key }, entry);
+          }
+        }
+        this._state.peers = migrated;
         if (this.settings.debug) this.emit('debug', `[FABRIC:PEER] Loaded peer registry: ${Object.keys(this._state.peers).length} entries`);
       }
     } catch (err) {
@@ -584,13 +633,16 @@ class Peer extends Service {
    * @param {string} address - Peer address (e.g. host:port).
    * @param {Object} [updates] - Fields to set/merge (id, score, firstSeen, lastSeen, alias, publicKey).
    */
-  _upsertPeerRegistry (address, updates = {}) {
+  _upsertPeerRegistry (key, updates = {}) {
     const registry = this._state.peers || {};
     const now = new Date().toISOString();
-    const existing = registry[address];
-    const base = existing ? { ...existing } : { address, score: 0, firstSeen: now, lastSeen: now };
-    registry[address] = merge(base, updates);
-    if (!registry[address].lastSeen) registry[address].lastSeen = now;
+    const canonicalKey = updates.id || key;
+    const existing = registry[canonicalKey] || registry[key];
+    const base = existing ? { ...existing } : { id: canonicalKey, address: key.includes(':') ? key : undefined, score: 0, firstSeen: now, lastSeen: now };
+    const merged = merge(base, updates);
+    if (!merged.lastSeen) merged.lastSeen = now;
+    registry[canonicalKey] = merged;
+    if (key !== canonicalKey && registry[key]) delete registry[key];
     this._state.peers = registry;
     this._savePeerRegistry();
   }
@@ -719,24 +771,39 @@ class Peer extends Service {
         this.emit('debug', `Unhandled Generic Message: ${message.type} ${JSON.stringify(message, null, '  ')}`);
         break;
       case 'P2P_SESSION_OFFER':
+        const peerId = message.actor.id;
+        const connAddress = origin.name;
         if (this.settings.debug) this.emit('debug', `Handling session offer: ${JSON.stringify(message.object)}`);
         if (this.settings.debug) this.emit('debug', `Session offer origin: ${JSON.stringify(origin)}`);
-        if (this.settings.debug) this.emit('debug', `connections: ${JSON.stringify(Object.keys(this.connections))}`);
 
-        // Peer is valid
-        // TODO: remove this assumption (validate above)
-        // TODO: check for existing peer, update instead of replace
-        this.peers[origin.name] = new Actor({
-          id: message.actor.id,
-          name: origin.name,
-          address: origin.name,
-          connections: [ origin.name ]
+        // Same peer reconnecting from new port? Close old connection and replace with new
+        const addressToId = this._addressToId || {};
+        for (const [addr, id] of Object.entries(addressToId)) {
+          if (id === peerId && addr !== connAddress) {
+            const oldSocket = this.connections[addr];
+            if (oldSocket) {
+              if (oldSocket._keepalive) clearInterval(oldSocket._keepalive);
+              delete this.connections[addr];
+              delete this.peers[addr];
+              delete this._addressToId[addr];
+              if (typeof oldSocket.destroy === 'function') oldSocket.destroy();
+            }
+            break;
+          }
+        }
+
+        this.peers[connAddress] = new Actor({
+          id: peerId,
+          name: connAddress,
+          address: connAddress,
+          connections: [ connAddress ]
         });
 
-        this._upsertPeerRegistry(origin.name, { id: message.actor.id, lastSeen: new Date().toISOString() });
+        this._upsertPeerRegistry(connAddress, { id: peerId, address: connAddress, lastSeen: new Date().toISOString() });
+        this._addressToId[connAddress] = peerId;
 
         // Emit peer event
-        this.emit('peer', this.peers[origin.name]);
+        this.emit('peer', this.peers[connAddress]);
 
         // Send session open event
         const vector = ['P2P_SESSION_OPEN', JSON.stringify({
@@ -751,12 +818,14 @@ class Peer extends Service {
         const PACKET_SESSION_START = Message.fromVector(vector).signWithKey(this.key);
         const reply = PACKET_SESSION_START.toBuffer();
         if (this.settings.debug) this.emit('debug', `session_start ${PACKET_SESSION_START} ${reply.toString('hex')}`);
-        this.connections[origin.name]._writeFabric(reply, socket);
+        this.connections[connAddress]._writeFabric(reply, socket);
         break;
       case 'P2P_SESSION_OPEN':
         if (this.settings.debug) this.emit('debug', `Handling session open: ${JSON.stringify(message.object)}`);
-        this.peers[origin.name] = { id: message.object.counterparty, name: origin.name, address: origin };
-        this._upsertPeerRegistry(origin.name, { id: message.object.counterparty, lastSeen: new Date().toISOString() });
+        const openPeerId = message.object.counterparty;
+        this.peers[origin.name] = { id: openPeerId, name: origin.name, address: origin };
+        this._upsertPeerRegistry(origin.name, { id: openPeerId, address: origin.name, lastSeen: new Date().toISOString() });
+        this._addressToId[origin.name] = openPeerId;
         // Don't emit peer event here - it's already emitted in P2P_SESSION_OFFER
         break;
       case 'P2P_CHAT_MESSAGE':
@@ -799,8 +868,9 @@ class Peer extends Service {
         this.commit();
 
         const registry = this._state.peers || {};
-        const regEntry = registry[origin.name];
-        this._upsertPeerRegistry(origin.name, { score: (regEntry && regEntry.score != null ? regEntry.score : 0) + 1, lastSeen: new Date().toISOString() });
+        const pongPeerId = (this._addressToId && this._addressToId[origin.name]) || origin.name;
+        const regEntry = registry[pongPeerId] || registry[origin.name];
+        this._upsertPeerRegistry(pongPeerId, { id: pongPeerId, address: origin.name, score: (regEntry && regEntry.score != null ? regEntry.score : 0) + 1, lastSeen: new Date().toISOString() });
 
         if (this.settings.debug) this.emit('debug', `Received pong: ${JSON.stringify(message, null, '  ')}`);
         this.emit('state', this.state);
@@ -809,7 +879,8 @@ class Peer extends Service {
       case 'P2P_PEER_ALIAS':
         this.emit('debug', `peer_alias ${origin.name} <Generic>${JSON.stringify(message.object || '')}`);
         this.connections[origin.name]._alias = message.object.name;
-        this._upsertPeerRegistry(origin.name, { alias: message.object && message.object.name });
+        const aliasPeerId = (this._addressToId && this._addressToId[origin.name]) || origin.name;
+        this._upsertPeerRegistry(aliasPeerId, { id: aliasPeerId, address: origin.name, alias: message.object && message.object.name });
         // const alias = Message.fromVector(['PeerAlias', JSON.stringify(message)]);
         // this.relayFrom(origin.name, alias);
         break;
@@ -823,6 +894,9 @@ class Peer extends Service {
         // this.relayFrom(origin.name, announce);
         break;
       case 'P2P_DOCUMENT_PUBLISH':
+        break;
+      case 'P2P_FILE_SEND':
+        this.emit('file', { message, origin });
         break;
       case 'CONTRACT_PUBLISH':
         // TODO: reject and punish mis-behaving peers
