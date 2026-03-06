@@ -30,6 +30,9 @@ class Lightning extends Service {
   constructor (settings = {}) {
     super(settings);
 
+    // Increase max listeners to accommodate multiple services
+    process.setMaxListeners(20);
+
     this.settings = Object.assign({
       authority: 'http://127.0.0.1:8181',
       datadir: './stores/lightning',

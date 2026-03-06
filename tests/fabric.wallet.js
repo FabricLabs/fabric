@@ -81,6 +81,49 @@ describe('@fabric/core/types/wallet', function () {
       assert(typeof address === 'string');
     });
 
+    it('marks addresses as used and tracks lastUsedIndex', async function () {
+      const wallet = new Wallet();
+
+      // Seed internal address state
+      wallet._state.addresses = {
+        addr1: { index: 0, used: false },
+        addr2: { index: 1, used: false }
+      };
+      wallet._state.lastUsedIndex = -1;
+
+      await wallet.markAddressAsUsed('addr1');
+      assert.strictEqual(wallet._state.addresses.addr1.used, true);
+      assert.strictEqual(wallet._state.lastUsedIndex, 0);
+
+      await wallet.markAddressAsUsed('addr2');
+      assert.strictEqual(wallet._state.addresses.addr2.used, true);
+      assert.strictEqual(wallet._state.lastUsedIndex, 1);
+    });
+
+    it('returns only used addresses by default', async function () {
+      const wallet = new Wallet();
+      wallet._state.addresses = {
+        used1: { index: 0, used: true },
+        unused1: { index: 1, used: false }
+      };
+
+      const addrs = await wallet.getAddresses();
+      const ids = addrs.map(x => x.address);
+      assert.deepStrictEqual(ids, ['used1']);
+    });
+
+    it('can return all addresses when requested', async function () {
+      const wallet = new Wallet();
+      wallet._state.addresses = {
+        used1: { index: 0, used: true },
+        unused1: { index: 1, used: false }
+      };
+
+      const addrs = await wallet.getAddresses(true);
+      const ids = addrs.map(x => x.address).sort();
+      assert.deepStrictEqual(ids, ['unused1', 'used1']);
+    });
+
     it('can get unspent transaction outputs', async function () {
       const wallet = new Wallet(options);
       const utxos = await wallet.getUnspentTransactionOutputs();

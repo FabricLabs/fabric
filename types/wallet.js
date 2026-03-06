@@ -6,7 +6,7 @@ const merge = require('lodash.merge');
 const networks = require('bitcoinjs-lib/src/networks');
 
 // Mnemonics
-const ecc = require('tiny-secp256k1');
+const ecc = require('./ecc');
 const BIP32 = require('bip32').default;
 const bip32 = new BIP32(ecc);
 const bip39 = require('bip39');

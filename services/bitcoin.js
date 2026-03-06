@@ -18,9 +18,9 @@ const monitor = require('fast-json-patch');
 const { mkdirp } = require('mkdirp');
 
 // crypto support libraries
-// TODO: replace with  `secp256k1`
+// Use noble-curves-backed ECC shim instead of tiny-secp256k1
 const ECPairFactory = require('ecpair').default;
-const ecc = require('tiny-secp256k1');
+const ecc = require('../types/ecc');
 const bip65 = require('bip65');
 const bip68 = require('bip68');
 const ECPair = ECPairFactory(ecc);

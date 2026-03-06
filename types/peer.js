@@ -20,6 +20,7 @@ const {
 // Dependencies
 const net = require('net');
 const crypto = require('crypto');
+const { Level } = require('level');
 const stream = require('stream');
 const manager = require('fast-json-patch');
 const noise = require('noise-protocol-stream');
@@ -32,7 +33,7 @@ const Key = require('./key');
 const Machine = require('./machine');
 const Message = require('./message');
 const Service = require('./service');
-const Wallet = require('./wallet');
+// const Wallet = require('./wallet');
 
 // Constants
 const PROLOGUE = 'FABRIC';
@@ -66,7 +67,13 @@ class Peer extends Service {
       networking: true, // Ensure networking is enabled by default
       listen: true,
       peers: [],
+      // LevelDB path (Node) or IndexedDB name (browser)
+      // In tests, default to no persistent registry to avoid reconnecting to
+      // a developer machine's stale peer list (which can hang/timeout the suite).
+      peersDb: (process.env.NODE_ENV === 'test') ? null : 'stores/hub/peers',
       port: 7777,
+      reconnectToKnownPeers: true,
+      connectTimeout: 5000,
       state: Object.assign({
         actors: {},
         channels: {},
@@ -80,9 +87,10 @@ class Peer extends Service {
     }, config);
 
     // Log settings at construction
-    if (this.settings.debug || true) {
+    if (this.settings.debug) {
       console.log('[FABRIC:PEER:CONSTRUCTOR] networking:', this.settings.networking);
       console.log('[FABRIC:PEER:CONSTRUCTOR] peers:', this.settings.peers);
+      console.log('[FABRIC:PEER:CONSTRUCTOR] peersDb:', this.settings.peersDb);
     }
 
     // Network Internals
@@ -127,6 +135,8 @@ class Peer extends Service {
     this.connections = {};
     this.history = [];
     this.peers = {};
+    // Persistent peer registry (state.peers); load/save via store when persistent
+    this._peerRegistrySaveScheduled = null;
     this.mailboxes = {};
     this.memory = {};
     this.handlers = {};
@@ -146,7 +156,7 @@ class Peer extends Service {
 
     this._state = {
       content: this.settings.state,
-      peers: {},
+      peers: {}, // local state: peer registry (not part of global content)
       chains: {},
       connections: {},
       status: 'sleeping'
@@ -266,6 +276,60 @@ class Peer extends Service {
     return peers;
   }
 
+  /**
+   * All peers ever seen: persistent registry merged with current connection status.
+   * Includes score, firstSeen, lastSeen, alias, and other metadata when persistence is enabled.
+   * @returns {Array<{ address: string, id?: string, status: string, score?: number, firstSeen?: string, lastSeen?: string, alias?: string, lastMessage?: number }>}
+   */
+  get knownPeers () {
+    const now = new Date().toISOString();
+    const byAddress = {};
+    const registry = this._state.peers || {};
+
+    // Start from persisted registry so we include everyone we've ever seen
+    for (const addr in registry) {
+      if (!Object.prototype.hasOwnProperty.call(registry, addr)) continue;
+      const reg = registry[addr];
+      byAddress[addr] = {
+        address: addr,
+        id: reg.id || addr,
+        status: 'disconnected',
+        score: reg.score != null ? reg.score : 0,
+        firstSeen: reg.firstSeen,
+        lastSeen: reg.lastSeen,
+        nickname: reg.nickname,
+        alias: reg.alias,
+        lastMessage: reg.lastMessage
+      };
+    }
+
+    // Overlay current connections
+    for (const address in this.connections) {
+      if (!Object.prototype.hasOwnProperty.call(this.connections, address)) continue;
+      const socket = this.connections[address];
+      if (!byAddress[address]) byAddress[address] = { address, id: address, status: 'connected', score: 0 };
+      byAddress[address].status = 'connected';
+      byAddress[address].lastMessage = socket._lastMessage || byAddress[address].lastMessage;
+      if (socket._alias) byAddress[address].alias = socket._alias;
+    }
+
+    // Include any this.peers not yet in registry (e.g. not yet persisted)
+    for (const key in this.peers) {
+      if (!Object.prototype.hasOwnProperty.call(this.peers, key)) continue;
+      if (byAddress[key]) continue;
+      const peer = this.peers[key];
+      byAddress[key] = {
+        address: key,
+        id: (peer && peer.id) || key,
+        status: 'disconnected',
+        score: 0,
+        lastSeen: now
+      };
+    }
+
+    return Object.values(byAddress);
+  }
+
   beat () {
     const initial = new Actor(this.state);
     const now = (new Date()).toISOString();
@@ -345,6 +409,16 @@ class Peer extends Service {
    * @param {String} target Target address.
    */
   _connect (target) {
+    if (!target || typeof target !== 'string') {
+      this.emit('error', '[FABRIC:PEER:_connect] target must be a non-empty string');
+      return;
+    }
+
+    if (this.connections[target]) {
+      this.emit('debug', `[FABRIC:PEER:_connect] Already connected to ${target}; skipping`);
+      return;
+    }
+
     this.emit('debug', `[FABRIC:PEER:_connect] Attempting to connect to: ${target}`);
     const url = new URL(`tcp://${target}`);
     const id = url.username;
@@ -364,9 +438,25 @@ class Peer extends Service {
 
     this._registerActor({ name: target });
     this._registerPeer({ identity: id });
+    this._upsertPeerRegistry(target, { address: target });
 
     // Set up the NOISE socket
     const socket = net.createConnection(url.port || P2P_PORT, url.hostname);
+    // Don't keep the test runner alive just because we're connecting.
+    if (typeof socket.unref === 'function') socket.unref();
+
+    // Bound connection establishment time; otherwise Node's TCP timeout can be long.
+    const connectTimeoutMs = (typeof this.settings.connectTimeout === 'number')
+      ? this.settings.connectTimeout
+      : 5000;
+    socket.setTimeout(connectTimeoutMs);
+    socket.once('timeout', () => {
+      const msg = `Socket timeout: connect ${url.hostname}:${url.port || P2P_PORT} after ${connectTimeoutMs}ms`;
+      this.emit('warning', msg);
+      socket.destroy(new Error(msg));
+    });
+    socket.once('connect', () => socket.setTimeout(0));
+
     const client = noise({
       initiator: true,
       prologue: Buffer.from(PROLOGUE),
@@ -379,7 +469,10 @@ class Peer extends Service {
       if (error && (error.code === 'EPIPE' || error.code === 'ECONNRESET')) {
         this.emit('warning', `Suppressing transient outbound socket error (${error.code}) from _connect().`);
       } else {
-        this.emit('error', `Socket error: ${error}`);
+        const msg = `Socket error: ${error}`;
+        // Avoid crashing consumers/tests that haven't registered an 'error' listener.
+        if (this.listenerCount('error') > 0) this.emit('error', msg);
+        else this.emit('warning', msg);
       }
     });
 
@@ -442,6 +535,64 @@ class Peer extends Service {
       address: target,
       name: target
     });
+  }
+
+  /**
+   * Load persistent peer registry from LevelDB.
+   * Uses classic-level in Node, browser-level (IndexedDB) in browser.
+   * @returns {Promise<void>}
+   */
+  async _loadPeerRegistry () {
+    const location = this.settings.peersDb;
+    if (!location) return;
+
+    try {
+      this._peersDb = this._peersDb || new Level(location);
+      const raw = await this._peersDb.get('peers').catch(() => null);
+      const peers = raw ? JSON.parse(raw) : {};
+      if (peers && typeof peers === 'object') {
+        this._state.peers = peers;
+        if (this.settings.debug) this.emit('debug', `[FABRIC:PEER] Loaded peer registry: ${Object.keys(this._state.peers).length} entries`);
+      }
+    } catch (err) {
+      this.emit('debug', `[FABRIC:PEER] No peer registry or load error: ${err && err.message}`);
+      if (!this._state.peers) this._state.peers = {};
+    }
+  }
+
+  /**
+   * Persist peer registry to LevelDB (debounced).
+   */
+  _savePeerRegistry () {
+    const location = this.settings.peersDb;
+    if (!location) return;
+
+    if (this._peerRegistrySaveScheduled) clearTimeout(this._peerRegistrySaveScheduled);
+
+    this._peerRegistrySaveScheduled = setTimeout(() => {
+      this._peerRegistrySaveScheduled = null;
+      this._peersDb = this._peersDb || new Level(location);
+      const payload = JSON.stringify(this._state.peers || {});
+      this._peersDb.put('peers', payload)
+        .then(() => { if (this.settings.debug) this.emit('debug', '[FABRIC:PEER] Saved peer registry'); })
+        .catch((err) => this.emit('error', `Failed to save peer registry: ${err && err.message}`));
+    }, 500);
+  }
+
+  /**
+   * Upsert a peer into the persistent registry (state.peers) and schedule save to LevelDB.
+   * @param {string} address - Peer address (e.g. host:port).
+   * @param {Object} [updates] - Fields to set/merge (id, score, firstSeen, lastSeen, alias, publicKey).
+   */
+  _upsertPeerRegistry (address, updates = {}) {
+    const registry = this._state.peers || {};
+    const now = new Date().toISOString();
+    const existing = registry[address];
+    const base = existing ? { ...existing } : { address, score: 0, firstSeen: now, lastSeen: now };
+    registry[address] = merge(base, updates);
+    if (!registry[address].lastSeen) registry[address].lastSeen = now;
+    this._state.peers = registry;
+    this._savePeerRegistry();
   }
 
   /**
@@ -582,6 +733,8 @@ class Peer extends Service {
           connections: [ origin.name ]
         });
 
+        this._upsertPeerRegistry(origin.name, { id: message.actor.id, lastSeen: new Date().toISOString() });
+
         // Emit peer event
         this.emit('peer', this.peers[origin.name]);
 
@@ -603,6 +756,7 @@ class Peer extends Service {
       case 'P2P_SESSION_OPEN':
         if (this.settings.debug) this.emit('debug', `Handling session open: ${JSON.stringify(message.object)}`);
         this.peers[origin.name] = { id: message.object.counterparty, name: origin.name, address: origin };
+        this._upsertPeerRegistry(origin.name, { id: message.object.counterparty, lastSeen: new Date().toISOString() });
         // Don't emit peer event here - it's already emitted in P2P_SESSION_OFFER
         break;
       case 'P2P_CHAT_MESSAGE':
@@ -635,13 +789,18 @@ class Peer extends Service {
         // Update the peer's score for succesfully responding to a ping
         // TODO: ensure no pong is handled when a ping was not previously sent
         const instance = this.state.actors[actor.id] ? this.state.actors[actor.id] : {};
+        const newScore = (instance.score || 0) + 1;
 
         this.actors[actor.id].adopt([
-          { op: 'replace', path: '/score', value: (instance.score || 0) + 1 }
+          { op: 'replace', path: '/score', value: newScore }
         ]);
 
         this._state.content.actors[actor.id] = this.actors[actor.id].state;
         this.commit();
+
+        const registry = this._state.peers || {};
+        const regEntry = registry[origin.name];
+        this._upsertPeerRegistry(origin.name, { score: (regEntry && regEntry.score != null ? regEntry.score : 0) + 1, lastSeen: new Date().toISOString() });
 
         if (this.settings.debug) this.emit('debug', `Received pong: ${JSON.stringify(message, null, '  ')}`);
         this.emit('state', this.state);
@@ -650,6 +809,7 @@ class Peer extends Service {
       case 'P2P_PEER_ALIAS':
         this.emit('debug', `peer_alias ${origin.name} <Generic>${JSON.stringify(message.object || '')}`);
         this.connections[origin.name]._alias = message.object.name;
+        this._upsertPeerRegistry(origin.name, { alias: message.object && message.object.name });
         // const alias = Message.fromVector(['PeerAlias', JSON.stringify(message)]);
         // this.relayFrom(origin.name, alias);
         break;
@@ -946,8 +1106,10 @@ class Peer extends Service {
    * Start the Peer.
    */
   async start () {
+    await this._loadPeerRegistry();
+
     // Log settings at start
-    if (this.settings.debug || true) {
+    if (this.settings.debug) {
       this.emit('debug', `[FABRIC:PEER:START] networking: ${this.settings.networking}`);
       this.emit('debug', `[FABRIC:PEER:START] peers: ${JSON.stringify(this.settings.peers)}`);
     }
@@ -955,7 +1117,14 @@ class Peer extends Service {
     let address = null;
     this.emit('log', 'Peer starting...');
 
-    if (this.settings.debug || true) {
+    // Ensure initial peers from config are in the registry
+    if (this.settings.peers && Array.isArray(this.settings.peers)) {
+      for (const candidate of this.settings.peers) {
+        this._upsertPeerRegistry(candidate, { address: candidate });
+      }
+    }
+
+    if (this.settings.debug) {
       this.emit('debug', `[FABRIC:PEER] Listening on port: ${this.settings.port}`);
       this.emit('debug', `[FABRIC:PEER] Peer list: ${JSON.stringify(this.settings.peers)}`);
     }
@@ -987,6 +1156,39 @@ class Peer extends Service {
         } catch (error) {
           this.emit('error', `[FABRIC:PEER] Failed to initiate connection to ${candidate}: ${error.message}`);
         }
+      }
+    }
+
+    // Reconnect to known peers from the persistent registry (if not already connected).
+    // Only do this when a persistent registry is configured and the caller hasn't provided
+    // an explicit peer list (prevents duplicate outbound connects and avoids test hangs).
+    if (
+      this.settings.networking !== false &&
+      this.settings.reconnectToKnownPeers !== false &&
+      this.settings.peersDb &&
+      (!this.settings.peers || this.settings.peers.length === 0) &&
+      this._state.peers &&
+      typeof this._state.peers === 'object'
+    ) {
+      const registry = this._state.peers;
+      const toReconnect = Object.keys(registry).filter((addr) => {
+        if (this.connections[addr]) return false;
+        const listenAddr = this.listenAddress || `${this.interface}:${this.port}`;
+        if (addr === listenAddr) return false;
+        return true;
+      });
+      if (toReconnect.length > 0) {
+        this.emit('debug', `[FABRIC:PEER] Reconnecting to ${toReconnect.length} known peers from registry`);
+        toReconnect.forEach((addr, i) => {
+          setTimeout(() => {
+            try {
+              this._connect(addr);
+              this.emit('debug', `[FABRIC:PEER] Reconnect attempt for: ${addr}`);
+            } catch (err) {
+              this.emit('debug', `[FABRIC:PEER] Reconnect failed for ${addr}: ${err && err.message}`);
+            }
+          }, i * 150);
+        });
       }
     }
 
@@ -1042,6 +1244,15 @@ class Peer extends Service {
       this.connections[id].destroy();
     }
 
+    // Cancel pending registry save and close LevelDB
+    if (this._peerRegistrySaveScheduled) clearTimeout(this._peerRegistrySaveScheduled);
+    if (this._peersDb) {
+      try {
+        await this._peersDb.close();
+      } catch (e) { /* ignore */ }
+      this._peersDb = null;
+    }
+
     const terminator = async () => {
       return new Promise((resolve, reject) => {
         // Always attempt to close the server, even if address() returns null
@@ -1094,18 +1305,19 @@ class Peer extends Service {
 
   _disconnect (address) {
     this.emit('debug', `Disconnect request for address: ${address}`);
-    if (!this.connections[address]) return false;
+    const socket = this.connections[address];
+    if (!socket) return false;
 
-    // Halt any heartbeat
-    if (this.connections[address].heartbeat) {
-      clearInterval(this.connections[address].heartbeat);
-    }
-
-    // Destroy the connection
-    // this.connections[address].destroy();
-
-    // Remove connection from map
+    if (socket._keepalive) clearInterval(socket._keepalive);
+    if (socket.heartbeat) clearInterval(socket.heartbeat);
     delete this.connections[address];
+    delete this.peers[address];
+    if (typeof socket.destroy === 'function') socket.destroy();
+
+    this._upsertPeerRegistry(address, { lastSeen: new Date().toISOString() });
+
+    this.emit('connections:close', { address, name: address });
+    return true;
   }
 
   _maintainConnection (address) {

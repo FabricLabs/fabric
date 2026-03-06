@@ -3,6 +3,7 @@
 // Dependencies
 const Peer = require('../types/peer');
 const assert = require('assert');
+const net = require('net');
 
 const NODEA = require('../settings/node-a');
 const NODEB = require('../settings/node-b');
@@ -10,17 +11,54 @@ const NODEB = require('../settings/node-b');
 // Settings
 const settings = {
   debug: process.env.DEBUG || false,
-  port: 9898
+  // Avoid fixed ports in tests (can conflict with dev machines/CI).
+  port: 0
 };
 
+async function getFreePort () {
+  return await new Promise((resolve, reject) => {
+    const s = net.createServer();
+    s.unref();
+    s.once('error', reject);
+    s.listen(0, '127.0.0.1', () => {
+      const addr = s.address();
+      const port = addr && typeof addr === 'object' ? addr.port : null;
+      s.close(() => {
+        if (!port) return reject(new Error('Could not allocate a free port'));
+        resolve(port);
+      });
+    });
+  });
+}
+
 describe('@fabric/core/types/peer', function () {
+  // Track all peers created during tests for cleanup
+  const peers = [];
+
+  // Cleanup hook to ensure all peers are stopped even if tests fail
+  after(async function () {
+    for (const peer of peers) {
+      try {
+        if (peer && typeof peer.stop === 'function') {
+          await peer.stop();
+        }
+      } catch (error) {
+        // Ignore cleanup errors to avoid masking test failures
+        console.warn('[TEST:CLEANUP] Error stopping peer:', error.message);
+      }
+    }
+    peers.length = 0; // Clear the array
+  });
+
   describe('Peer', function () {
     it('is a constructor', function () {
       assert.equal(Peer instanceof Function, true);
     });
 
     it('can cleanly start and stop', async function () {
-      const peer = new Peer(settings);
+      const port = await getFreePort();
+      const peer = new Peer({ ...settings, port, peers: [], upnp: false, networking: false, peersDb: null });
+      peers.push(peer);
 
       await peer.start();
       await peer.stop();
@@ -33,12 +71,28 @@ describe('@fabric/core/types/peer', function () {
       assert.ok(peer.documentation);
     });
 
-    xit('can receive a connection', function (done) {
+    it('can receive a connection', function (done) {
       async function test () {
-        const server = new Peer(Object.assign({ verbosity: 2 }, NODEA, { listen: true, port: settings.port, upnp: false, peers: [] }));
-        const client = new Peer(Object.assign({ verbosity: 2 }, NODEB, { peers: [
-          `${server.key.pubkey}@localhost:${settings.port}`
-        ] }));
+        const port = await getFreePort();
+        const server = new Peer(Object.assign(
+          { verbosity: 2 },
+          NODEA,
+          { listen: true, port, upnp: false, peers: [], networking: false, peersDb: null }
+        ));
+        const client = new Peer(Object.assign(
+          { verbosity: 2 },
+          NODEB,
+          {
+            listen: false,
+            port: 0,
+            upnp: false,
+            peersDb: null,
+            peers: [`${server.key.pubkey}@localhost:${port}`]
+          }
+        ));
+
+        // Track peers for cleanup
+        peers.push(server, client);
 
         async function handleClientMessage (msg) {
           console.log(`[TEST:SERVER] event "message" - <${typeof msg}>`, msg);
@@ -91,7 +145,9 @@ describe('@fabric/core/types/peer', function () {
     });
 
     it('can recover a message', async function () {
-      const peer = new Peer(settings);
+      const port = await getFreePort();
+      const peer = new Peer({ ...settings, port, peers: [], upnp: false, networking: false, peersDb: null });
+      peers.push(peer);
 
       await peer.start();
       await peer.stop();

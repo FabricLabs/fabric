@@ -3,12 +3,10 @@
 const Key = require('../types/key');
 const assert = require('assert');
 const networks = require('bitcoinjs-lib/src/networks');
-const ECPair = require('ecpair').ECPairFactory(require('tiny-secp256k1'));
 const EC = require('elliptic').ec;
 const ec = new EC('secp256k1');
 const bip39 = require('bip39');
 const BIP32 = require('bip32').default;
-const ecc = require('tiny-secp256k1');
 const base58 = require('bs58check');
 
 const message = require('../assets/message');
