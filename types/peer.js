@@ -294,11 +294,6 @@ class Peer extends Service {
     return peers;
   }
 
-  /**
-   * All peers ever seen: persistent registry merged with current connection status.
-   * Includes score, firstSeen, lastSeen, alias, and other metadata when persistence is enabled.
-   * @returns {Array<{ address: string, id?: string, status: string, score?: number, firstSeen?: string, lastSeen?: string, alias?: string, lastMessage?: number }>}
-   */
   get knownPeers () {
     const now = new Date().toISOString();
     const byId = {};
