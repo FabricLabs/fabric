@@ -9,7 +9,7 @@
  * @module functions/taggedHash
  */
 
-const { sha256 } = require('@noble/hashes/sha256');
+const { sha256 } = require('@noble/hashes/sha2.js');
 
 /**
  * Compute BIP-340 tagged hash

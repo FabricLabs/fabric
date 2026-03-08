@@ -27,7 +27,7 @@ const Generator = require('arbitrary').default.Generator;
 // TODO: remove all external dependencies
 const BN = require('bn.js');
 const ecc = require('./ecc');
-const { secp256k1, schnorr: nobleSchnorr } = require('@noble/curves/secp256k1');
+const { secp256k1, schnorr: nobleSchnorr } = require('@noble/curves/secp256k1.js');
 const SecpPoint = secp256k1.ProjectivePoint || secp256k1.Point;
 
 function secpPointFromPublicKey (pubkey) {

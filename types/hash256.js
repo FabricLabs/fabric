@@ -1,6 +1,6 @@
 'use strict';
 
-const { sha256 } = require('@noble/hashes/sha256');
+const { sha256 } = require('@noble/hashes/sha2.js');
 
 /**
  * Simple interaction with 256-bit spaces.

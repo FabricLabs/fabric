@@ -10,7 +10,7 @@ const {
 const BN = require('bn.js');
 const struct = require('struct');
 const crypto = require('crypto');
-const { secp256k1 } = require('@noble/curves/secp256k1');
+const { secp256k1 } = require('@noble/curves/secp256k1.js');
 
 // Fabric Types
 const Entity = require('./entity');

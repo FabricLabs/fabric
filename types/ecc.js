@@ -1,7 +1,7 @@
 'use strict';
 
 // Shared noble-curves-based secp256k1 shim implementing the tiny-secp256k1-style interface
-const { secp256k1, schnorr: schnorrModule } = require('@noble/curves/secp256k1');
+const { secp256k1, schnorr: schnorrModule } = require('@noble/curves/secp256k1.js');
 const SecpPoint = secp256k1.ProjectivePoint || secp256k1.Point;
 
 // noble-curves v1 exposes secp256k1.CURVE.n; v2 exposes secp256k1.Point.Fn.ORDER
