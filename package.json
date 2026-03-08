@@ -38,7 +38,7 @@
     "lint": "npx semistandard",
     "local": "npm run build && http-server -p 8000 ./assets",
     "make:all": "npm run make:service && npm run make:app && npm run make:lib && npm run make:dev # && npm run make:binary",
-    "make:api": "jsdoc2md --configure jsdoc.json --files types/*.js schemata/*.js services/*.js settings/deprecations.js README.md > API.md",
+    "make:api": "NODE_OPTIONS=\"--require ./scripts/bigint-json.js\" jsdoc2md --configure jsdoc.json --files types/*.js schemata/*.js services/*.js settings/deprecations.js README.md > API.md",
     "make:app": "### ERROR: Not yet implemented.  Debug: `examples/app.js` to `assets/app.js`",
     "make:binary": "pkg -c package.json -o assets/binaries/fabric scripts/cli.js",
     "make:book": "mkdir -p _book && honkit build",
