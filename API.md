@@ -149,9 +149,6 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 <dt><a href="#ZMQ">ZMQ</a></dt>
 <dd><p>Connect and subscribe to ZeroMQ publishers.</p>
 </dd>
-<dt><del><a href="#HTTPServer">HTTPServer</a></del></dt>
-<dd><p>Deprecated 2021-10-16.</p>
-</dd>
 <dt><del><a href="#Scribe">Scribe</a></del></dt>
 <dd><p>Deprecated 2021-11-06.</p>
 </dd>
@@ -1811,6 +1808,9 @@ An in-memory representation of a node in our network.
     * ~~[.address](#Peer+address)~~
     * [.broadcast(message)](#Peer+broadcast)
     * [._connect(target)](#Peer+_connect)
+    * [._loadPeerRegistry()](#Peer+_loadPeerRegistry) ⇒ <code>Promise.&lt;void&gt;</code>
+    * [._savePeerRegistry()](#Peer+_savePeerRegistry)
+    * [._upsertPeerRegistry(address, [updates])](#Peer+_upsertPeerRegistry)
     * [._fillPeerSlots()](#Peer+_fillPeerSlots) ⇒ [<code>Peer</code>](#Peer)
     * [._handleFabricMessage(buffer)](#Peer+_handleFabricMessage) ⇒ [<code>Peer</code>](#Peer)
     * [.start()](#Peer+start)
@@ -1858,6 +1858,31 @@ Open a Fabric connection to the target address and initiate the Fabric Protocol.
 | Param | Type | Description |
 | --- | --- | --- |
 | target | <code>String</code> | Target address. |
+
+<a name="Peer+_loadPeerRegistry"></a>
+
+### peer.\_loadPeerRegistry() ⇒ <code>Promise.&lt;void&gt;</code>
+Load persistent peer registry from LevelDB.
+Uses classic-level in Node, browser-level (IndexedDB) in browser.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+<a name="Peer+_savePeerRegistry"></a>
+
+### peer.\_savePeerRegistry()
+Persist peer registry to LevelDB (debounced).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+<a name="Peer+_upsertPeerRegistry"></a>
+
+### peer.\_upsertPeerRegistry(address, [updates])
+Upsert a peer into the persistent registry (state.peers) and schedule save to LevelDB.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| address | <code>string</code> | Peer address (e.g. host:port). |
+| [updates] | <code>Object</code> | Fields to set/merge (id, score, firstSeen, lastSeen, alias, publicKey). |
 
 <a name="Peer+_fillPeerSlots"></a>
 
@@ -3691,14 +3716,6 @@ Closes the connection to the ZMQ publisher.
 
 **Kind**: instance method of [<code>ZMQ</code>](#ZMQ)  
 **Returns**: [<code>ZMQ</code>](#ZMQ) - Instance of the service.  
-<a name="HTTPServer"></a>
-
-## ~~HTTPServer~~
-***Deprecated***
-
-Deprecated 2021-10-16.
-
-**Kind**: global class  
 <a name="Scribe"></a>
 
 ## ~~Scribe~~
