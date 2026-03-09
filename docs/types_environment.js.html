@@ -40,6 +40,8 @@ const {
 
 // Dependencies
 const fs = require('fs');
+const path = require('path');
+const os = require('os');
 const merge = require('lodash.merge');
 
 // Fabric Types
@@ -74,6 +76,7 @@ class Environment extends Entity {
 
     this.local = null;
     this.wallet = null;
+    this.bitcoinConfig = null;
 
     this._state = {
       status: this.settings.state.status,
@@ -141,6 +144,193 @@ class Environment extends Entity {
     ].find(any);
   }
 
+  get bitcoinSettings () {
+    if (!this.bitcoinConfig) return {};
+    return this._toFabricSettings(this.bitcoinConfig);
+  }
+
+  /**
+   * Read and parse Bitcoin configuration from bitcoin.conf file
+   * @param {String} [configPath] Optional path to bitcoin.conf, defaults to ~/.bitcoin/bitcoin.conf
+   * @returns {Object} Parsed Bitcoin configuration object
+   */
+  _getDefaultBitcoinDatadir () {
+    switch (os.platform()) {
+      case 'darwin': // macOS
+        return path.join(os.homedir(), 'Library', 'Application Support', 'Bitcoin');
+      case 'win32': // Windows
+        return path.join(os.homedir(), 'AppData', 'Roaming', 'Bitcoin');
+      default: // Linux and other Unix-like systems
+        return path.join(os.homedir(), '.bitcoin');
+    }
+  }
+
+  _readBitcoinConf (configPath = null) {
+    // Default path if not provided
+    if (!configPath) {
+      configPath = path.join(this._getDefaultBitcoinDatadir(), 'bitcoin.conf');
+    }
+
+    const config = {
+      found: false,
+      path: configPath,
+      rpc: {},
+      network: {},
+      general: {}
+    };
+
+    try {
+      // Check if file exists
+      if (!fs.existsSync(configPath)) {
+        return config;
+      }
+
+      // Read the file
+      const fileContent = fs.readFileSync(configPath, 'utf8');
+      config.found = true;
+
+      // Parse the configuration
+      const lines = fileContent.split('\n');
+
+      for (const line of lines) {
+        // Skip empty lines and comments
+        const trimmedLine = line.trim();
+        if (!trimmedLine || trimmedLine.startsWith('#') || trimmedLine.startsWith(';')) {
+          continue;
+        }
+
+        // Split key=value pairs
+        const equalIndex = trimmedLine.indexOf('=');
+        if (equalIndex === -1) {
+          // Lines without = are treated as boolean flags (set to true)
+          config.general[trimmedLine] = true;
+          continue;
+        }
+
+        const key = trimmedLine.substring(0, equalIndex).trim();
+        const value = trimmedLine.substring(equalIndex + 1).trim();
+
+        // Categorize configuration options
+        if (key.startsWith('rpc') || ['server', 'rpcbind', 'rpcallowip'].includes(key)) {
+          config.rpc[key] = this._parseConfigValue(value);
+        } else if (['testnet', 'regtest', 'signet', 'mainnet'].includes(key)) {
+          config.network[key] = this._parseConfigValue(value);
+        } else {
+          config.general[key] = this._parseConfigValue(value);
+        }
+      }
+
+      // Infer network from flags
+      if (config.network.testnet) {
+        config.network.active = 'testnet';
+      } else if (config.network.regtest) {
+        config.network.active = 'regtest';
+      } else if (config.network.signet) {
+        config.network.active = 'signet';
+      } else {
+        config.network.active = 'mainnet';
+      }
+
+      // Set default RPC port based on network if not specified
+      if (!config.rpc.rpcport) {
+        switch (config.network.active) {
+          case 'mainnet':
+            config.rpc.rpcport = 8332;
+            break;
+          case 'testnet':
+            config.rpc.rpcport = 18332;
+            break;
+          case 'regtest':
+            config.rpc.rpcport = 18443;
+            break;
+          case 'signet':
+            config.rpc.rpcport = 38332;
+            break;
+          default:
+            config.rpc.rpcport = 8332;
+        }
+      }
+
+      // Default RPC host
+      if (!config.rpc.rpcbind &amp;&amp; !config.rpc.rpcconnect) {
+        config.rpc.host = '127.0.0.1';
+      } else {
+        config.rpc.host = config.rpc.rpcbind || config.rpc.rpcconnect || '127.0.0.1';
+      }
+
+    } catch (error) {
+      config.error = error.message;
+    }
+
+    return config;
+  }
+
+  /**
+   * Parse configuration value to appropriate type
+   * @param {String} value The raw configuration value
+   * @returns {*} Parsed value (string, number, or boolean)
+   */
+  _parseConfigValue (value) {
+    // Remove surrounding quotes if present
+    if ((value.startsWith('"') &amp;&amp; value.endsWith('"')) ||
+        (value.startsWith("'") &amp;&amp; value.endsWith("'"))) {
+      return value.slice(1, -1);
+    }
+
+    // Parse numbers
+    if (/^\d+$/.test(value)) {
+      return parseInt(value, 10);
+    }
+
+    if (/^\d*\.\d+$/.test(value)) {
+      return parseFloat(value);
+    }
+
+    // Parse booleans
+    const lowerValue = value.toLowerCase();
+    if (lowerValue === 'true' || lowerValue === '1') {
+      return true;
+    }
+    if (lowerValue === 'false' || lowerValue === '0') {
+      return false;
+    }
+
+    // Return as string
+    return value;
+  }
+
+  /**
+   * Convert bitcoin.conf configuration to Fabric Bitcoin service settings
+   * @param {Object} bitcoinConf The parsed bitcoin.conf configuration
+   * @returns {Object} Settings object compatible with Fabric Bitcoin service
+   */
+  _toFabricSettings(bitcoinConf) {
+    if (!bitcoinConf.found) {
+      return {};
+    }
+
+    const settings = {
+      mode: 'rpc',
+      network: bitcoinConf.network.active || 'mainnet',
+      host: bitcoinConf.rpc.host || '127.0.0.1',
+      rpcport: bitcoinConf.rpc.rpcport,
+      secure: false
+    };
+
+    // Add authentication if available
+    if (bitcoinConf.rpc.rpcuser &amp;&amp; bitcoinConf.rpc.rpcpassword) {
+      settings.username = bitcoinConf.rpc.rpcuser;
+      settings.password = bitcoinConf.rpc.rpcpassword;
+    }
+
+    // Add authority URL for backward compatibility
+    if (settings.username &amp;&amp; settings.password) {
+      settings.authority = `http://${settings.username}:${settings.password}@${settings.host}:${settings.rpcport}`;
+    }
+
+    return settings;
+  }
+
   storeExists () {
     return fs.existsSync(this.settings.store);
   }
@@ -177,6 +367,20 @@ class Environment extends Entity {
     }
 
     return true;
+  }
+
+  loadBitcoinConfig () {
+    this.bitcoinConfig = this._readBitcoinConf();
+
+    if (this.bitcoinConfig.found) {
+      this.emit('debug', '[FABRIC:ENV]', `Bitcoin configuration loaded from: ${this.bitcoinConfig.path}`);
+      const settings = this.bitcoinSettings;
+      this.emit('debug', '[FABRIC:ENV]', `Network: ${settings.network}, RPC: ${settings.host}:${settings.rpcport}`);
+    } else {
+      this.emit('debug', '[FABRIC:ENV]', 'No bitcoin.conf found, using default settings');
+    }
+
+    return this;
   }
 
   loadWallet () {
@@ -314,6 +518,9 @@ class Environment extends Entity {
   start () {
     this._state.status = 'STARTING';
     this.local = this.readSeedFile();
+
+    // Load Bitcoin configuration from bitcoin.conf
+    this.loadBitcoinConfig();
 
     this.loadWallet();
 
