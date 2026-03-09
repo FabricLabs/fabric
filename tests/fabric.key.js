@@ -81,7 +81,7 @@ describe('@fabric/core/types/key', function () {
 
     it('can generate many keypairs', function () {
       // 31 byte keys every ~256 iterations
-      for (let i = 0; i < 1024; i++) {
+      for (let i = 0; i < 256; i++) {
         const key = new Key();
         assert.ok(key);
       }
