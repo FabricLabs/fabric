@@ -58,7 +58,7 @@
     "report:noisy": "node scripts/analyze-deps.js | tee reports/noisy-deps.txt",
     "report:todo": "grep --exclude-dir=.git --exclude-dir=_book --exclude-dir=assets --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs -rEI \"TODO|FIXME\" . > reports/TODO.txt",
     "reports": "npm run report:install && npm run make:coverage && npm run report:todo",
-    "review:coverage": "npm run make:coverage && http-server -p 8000 reports/coverage",
+    "review:coverage": "npm run make:coverage && http-server -p 0 reports/coverage",
     "review:todo": "npm run report:todo && cat reports/TODO.txt && echo '\nOutstanding TODO items (@fabric/core):' && wc -l reports/TODO.txt && echo '\nIssues List: https://github.com/FabricLabs/fabric/issues\nDisclosures: securiy@fabric.pub\n\n'",
     "start": "node scripts/app.js",
     "static": "npm run build:scripts && http-server -p 8000 assets",

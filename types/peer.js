@@ -1202,11 +1202,11 @@ class Peer extends Service {
 
     if (this.settings.listen) {
       this.emit('log', 'Listener starting...');
-      console.debug('Starting listener on', this.interface, this.port);
+      if (this.settings.debug) console.debug('Starting listener on', this.interface, this.port);
 
       try {
         address = await this.listen();
-        console.debug('got address:', address)
+        if (this.settings.debug) console.debug('got address:', address);
         this.listenAddress = address;
         this.emit('log', 'Listener started!');
       } catch (exception) {
@@ -1439,7 +1439,7 @@ class Peer extends Service {
    */
   async listen () {
     return new Promise((resolve, reject) => {
-      console.debug('Listening on', this.interface, this.port);
+      if (this.settings.debug) console.debug('Listening on', this.interface, this.port);
 
       // Handle server errors before attempting to listen
       const errorHandler = (error) => {
