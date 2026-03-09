@@ -134,6 +134,7 @@ class Lightning extends Service {
     if (!id || !address) throw new Error(`Invalid remote format: ${remote}. Expected format: id@ip:port`);
     const [ ip, port ] = address.split(':');
     const result = await this._makeRPCRequest('connect', [id, ip, port]);
+    if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', `Connected to remote node ${id} at ${ip}:${port}`, result);
     this._state.peers[id] = {
       id: id,
       address: address,
@@ -149,8 +150,13 @@ class Lightning extends Service {
    * @param {String} peer Public key of the peer to create a channel with.
    * @param {String} amount Amount in satoshis to fund the channel.
    */
-  async createChannel (peer, amount) {
-    const result = await this._makeRPCRequest('fundchannel', [peer, amount]);
+  async createChannel (peer, amount, pushMsat = null) {
+    const params = [peer, amount];
+    if (pushMsat != null && Number.isFinite(Number(pushMsat))) {
+      params.push(Number(pushMsat));
+    }
+    const result = await this._makeRPCRequest('fundchannel', params);
+    if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', `Created channel with peer ${peer} for amount ${amount}:`, result);
     return result;
   }
 
@@ -227,8 +233,8 @@ class Lightning extends Service {
           throw new Error(`RPC socket not found at ${socketPath}`);
         }
 
-        // Wait a bit for lightningd to initialize
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Brief pause for lightningd to finish initializing after socket appears
+        await new Promise(resolve => setTimeout(resolve, 500));
 
         // Check multiple RPC endpoints to ensure full readiness
         const checks = [
@@ -339,16 +345,38 @@ class Lightning extends Service {
 
       // Add cleanup handler
       const cleanup = async () => {
-        if (this._child) {
-          try {
-            console.debug('[FABRIC:LIGHTNING]', 'Cleaning up Lightning node...');
-            this._child.kill();
-            await new Promise(resolve => {
-              this._child.on('close', () => resolve());
-            });
-          } catch (e) {
-            console.error('[FABRIC:LIGHTNING]', 'Error during cleanup:', e);
+        const child = this._child;
+        if (!child) return;
+
+        try {
+          console.debug('[FABRIC:LIGHTNING]', 'Cleaning up Lightning node...');
+
+          if (child.exitCode === null && !child.killed) {
+            child.kill('SIGTERM');
           }
+
+          await Promise.race([
+            new Promise((resolve) => child.once('close', () => resolve())),
+            new Promise((resolve) => setTimeout(resolve, 5000))
+          ]);
+
+          // Force terminate if graceful shutdown did not complete in time.
+          if (child.exitCode === null) {
+            try {
+              child.kill('SIGKILL');
+            } catch (error) {
+              // Ignore if process already exited between checks.
+            }
+
+            await Promise.race([
+              new Promise((resolve) => child.once('close', () => resolve())),
+              new Promise((resolve) => setTimeout(resolve, 3000))
+            ]);
+          }
+        } catch (e) {
+          console.error('[FABRIC:LIGHTNING]', 'Error during cleanup:', e);
+        } finally {
+          if (this._child === child) this._child = null;
         }
       };
 
@@ -534,21 +562,38 @@ class Lightning extends Service {
    * Make an RPC request through the Lightning UNIX socket.
    * @param {String} method Name of method to call.
    * @param {Array} [params] Array of parameters.
+   * @param {Number} [timeoutMs] Optional timeout in ms; default 30000. Prevents hanging when lightningd is busy.
    * @returns {Object|String} Respond from the Lightning node.
    */
-  async _makeRPCRequest (method, params = []) {
+  async _makeRPCRequest (method, params = [], timeoutMs = 30000) {
+    console.debug('[FABRIC:LIGHTNING]', `Making RPC request to method ${method} with params:`, params);
     return new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = (fn, arg) => {
+        if (settled) return;
+        settled = true;
+        if (timeoutId) clearTimeout(timeoutId);
+        try { client.destroy(); } catch (_) {}
+        fn(arg);
+      };
+
       const socketPath = path.resolve(this.settings.datadir, this.settings.socket);
-      const exists = fs.existsSync(socketPath);
+      let client;
+      const timeoutId = timeoutMs > 0 ? setTimeout(() => {
+        finish(reject, new Error(`Lightning RPC timeout after ${timeoutMs}ms (${method})`));
+      }, timeoutMs) : null;
+
       try {
-        const client = net.createConnection({ path: socketPath });
+        client = net.createConnection({ path: socketPath });
+        client.on('error', (err) => finish(reject, err));
         client.on('data', (data) => {
           try {
             const response = JSON.parse(data.toString('utf8'));
-            if (response.result) {
-              return resolve(response.result);
-            } else if (response.error) {
-              return reject(response.error);
+            if (response.result !== undefined) {
+              return finish(resolve, response.result);
+            }
+            if (response.error) {
+              return finish(reject, Object.assign(new Error(response.error.message || 'RPC error'), response.error));
             }
           } catch (exception) {
             this.emit('error', `Could not make RPC request: ${exception}\n${data.toString('utf8')}`);
@@ -565,7 +610,7 @@ class Lightning extends Service {
 
         client.write(JSON.stringify(request) + '\n');
       } catch (exception) {
-        reject(exception);
+        finish(reject, exception);
       }
     });
   }
@@ -671,6 +716,13 @@ class Lightning extends Service {
             if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', `lightningd already exited with code ${exitCode}`);
           }
         }
+
+        if (this._child) {
+          await Promise.race([
+            new Promise((resolve) => this._child.once('close', () => resolve())),
+            new Promise((resolve) => setTimeout(resolve, 5000))
+          ]);
+        }
       } catch (error) {
         if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Error during graceful shutdown:', error.message);
         // Force kill if graceful shutdown fails and process is still running
@@ -682,6 +734,13 @@ class Lightning extends Service {
           } else {
             if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', `lightningd already exited with code ${exitCode}`);
           }
+        }
+
+        if (this._child) {
+          await Promise.race([
+            new Promise((resolve) => this._child.once('close', () => resolve())),
+            new Promise((resolve) => setTimeout(resolve, 5000))
+          ]);
         }
       }
 
