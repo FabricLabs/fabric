@@ -8,6 +8,8 @@ const {
 } = require('../constants');
 
 // Internal Dependencies
+const os = require('os');
+const path = require('path');
 const fs = require('fs');
 const EventEmitter = require('events').EventEmitter;
 
@@ -23,6 +25,7 @@ const Actor = require('./actor');
 const Message = require('./message');
 const Hash256 = require('./hash256');
 const Identity = require('./identity');
+const Environment = require('./environment');
 const Filesystem = require('./filesystem');
 const Wallet = require('./wallet');
 const Key = require('./key');
@@ -59,6 +62,19 @@ class CLI extends App {
   constructor (settings = {}) {
     super(settings);
 
+    // Create and start environment to load configurations
+    this.environment = new Environment();
+    this.environment.start();
+
+    // Determine Bitcoin configuration priority:
+    // 1. Use bitcoin.conf if found
+    // 2. Use settings.bitcoin if passed by user
+    // 3. Use defaults
+    const bitcoinConfigFound = this.environment.bitcoinConfig && this.environment.bitcoinConfig.found;
+    const bitcoinSettings = bitcoinConfigFound
+      ? this.environment.bitcoinSettings
+      : (settings.bitcoin || {});
+
     // Assign Settings
     this.settings = merge({
       debug: true,
@@ -67,21 +83,30 @@ class CLI extends App {
       peering: true,
       render: true,
       services: [],
-      network: 'regtest',
+      network: bitcoinSettings.network || 'regtest',
       interval: 1000,
-      bitcoin: {
-        mode: 'rpc',
+      port: 7777, // Default port
+      bitcoin: merge({
+        enable: bitcoinConfigFound || (settings.bitcoin && settings.bitcoin.enable), // Enable if config found OR explicitly enabled in settings
+        mode: 'rpc', // Always use RPC mode for connections
+        managed: !bitcoinConfigFound, // Only manage our own node if no config file found
         host: 'localhost',
         port: 8443,
-        secure: false
-      },
+        rpcport: 18443,
+        secure: false,
+        datadir: this._getDefaultBitcoinDatadir() // Use platform-specific Bitcoin datadir
+      }, bitcoinSettings), // Bitcoin settings from config/user take precedence
       lightning: {
+        enable: false, // Disabled by default
         mode: 'socket',
         path: './stores/lightning-playnet/regtest/lightning-rpc'
       },
       storage: {
         path: `${process.env.HOME}/.fabric/console`
       },
+      peers: [
+        'localhost:7778' // Add our chat peer by default
+      ],
       // Add key settings
       seed: null,
       xprv: null,
@@ -117,6 +142,18 @@ class CLI extends App {
     this.services = {};
     this.connections = {};
 
+    // Add reconnection tracking
+    this.reconnectTimers = {};
+    this.reconnectAttempts = {};
+
+    // Add sync operation tracking to prevent concurrent operations
+    this.syncInProgress = {
+      chain: false,
+      balance: false,
+      contracts: false,
+      unspent: false
+    };
+
     this.fs = new Filesystem(this.settings.storage);
 
     // State
@@ -144,9 +181,11 @@ class CLI extends App {
     this.attachWallet();
     this.identity = new Identity(this.settings);
     this._loadPeer();
+    this._loadBitcoin();
+    this._loadLightning();
 
-    if (this.settings.bitcoin && this.settings.bitcoin.enable) this._loadBitcoin();
-    if (this.settings.lightning && this.settings.lightning.enable) this._loadLightning();
+    // Default to META mode for vi-style interaction
+    this.mode = 'META';
 
     // Chainable
     return this;
@@ -181,10 +220,17 @@ class CLI extends App {
       interface: this.settings.interface,
       port: this.settings.port,
       peers: this.settings.peers,
+      networking: true, // Ensure networking is always enabled
       state: state,
       upnp: this.settings.upnp,
       key: this.identity.settings
     });
+
+    if (this.settings.debug) {
+      this.node.on('debug', (msg) => {
+        this._appendDebug(`[PEER] ${msg}`);
+      });
+    }
 
     return this;
   }
@@ -199,23 +245,52 @@ class CLI extends App {
     return this;
   }
 
+  _getDefaultBitcoinDatadir () {
+    switch (os.platform()) {
+      case 'darwin': // macOS
+        return path.join(os.homedir(), 'Library', 'Application Support', 'Bitcoin');
+      case 'win32': // Windows
+        return path.join(os.homedir(), 'AppData', 'Roaming', 'Bitcoin');
+      default: // Linux and other Unix-like systems
+        return path.join(os.homedir(), '.bitcoin');
+    }
+  }
+
   async bootstrap () {
     try {
       await this.fs.start();
       return true;
     } catch (exception) {
-      this._appendError(`Could not bootstrap: ${exception}`)
+      this._appendError(`Could not bootstrap: ${exception}`);
       return false;
     }
   }
 
   async tick () {
-    // Poll for new information
-    // TODO: ZMQ
-    await this._syncChainDisplay();
-    await this._syncContracts();
-    await this._syncBalance();
-    await this._syncUnspent();
+    // Poll for new information with much more conservative throttling
+    // Only sync Bitcoin data every 30 ticks (30 seconds) to avoid overwhelming RPC
+    if (this._state.clock % 30 === 0 && this.settings.bitcoin.enable) {
+      if (this.settings.debug) this._appendMessage(`Tick ${this._state.clock}: syncing Bitcoin displays...`);
+      try {
+        await this._syncChainDisplay();
+        // Wait between RPC calls to avoid queue depth issues
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        await this._syncBalance();
+      } catch (exception) {
+        this._appendError(`Sync failed during tick: ${exception.message}`);
+      }
+    }
+
+    // Sync contracts and unspent even less frequently
+    if (this._state.clock % 60 === 0) {
+      try {
+        await this._syncContracts();
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        await this._syncUnspent();
+      } catch (exception) {
+        this._appendError(`Contract/unspent sync failed: ${exception.message}`);
+      }
+    }
 
     // Increment clock and commit
     this._state.clock++;
@@ -267,6 +342,15 @@ class CLI extends App {
     this._registerCommand('bitcoin', this._handleBitcoinRequest);
     this._registerCommand('lightning', this._handleLightningRequest);
 
+    // Debug Commands
+    this._registerCommand('syncui', this._handleSyncUIRequest);
+    this._registerCommand('listelements', this._handleListElementsRequest);
+    this._registerCommand('testrpc', this._handleTestRPCRequest);
+    this._registerCommand('createwallet', this._handleCreateWalletRequest);
+    this._registerCommand('loadwallet', this._handleLoadWalletRequest);
+    this._registerCommand('listwallets', this._handleListWalletsRequest);
+    this._registerCommand('bitcoinhelp', this._handleBitcoinHelpRequest);
+
     // Services
     this._registerService('bitcoin', Bitcoin);
     this._registerService('lightning', Lightning);
@@ -276,6 +360,12 @@ class CLI extends App {
     if (this.settings.render) {
       // Render UI
       this.render();
+    }
+
+    // Log the listening port and peer list when debugging is enabled
+    if (this.settings.debug) {
+      this._appendDebug(`[FABRIC:CLI] Listening on port: ${this.settings.port}`);
+      this._appendDebug(`[FABRIC:CLI] Peer list: ${JSON.stringify(this.settings.peers)}`);
     }
 
     // ## Bindings
@@ -296,7 +386,9 @@ class CLI extends App {
     this.node.on('state', this._handlePeerState.bind(this));
     this.node.on('chat', this._handlePeerChat.bind(this));
     this.node.on('upnp', this._handlePeerUPNP.bind(this));
+    this.node.on('actorset', this._handleActorSet.bind(this));
     this.node.on('contractset', this._handleContractSet.bind(this));
+    // this.node.on('peerset', this._handlePeerSet.bind(this));
 
     // ## Raw Connections
     this.node.on('connection', this._handleConnection.bind(this));
@@ -316,6 +408,9 @@ class CLI extends App {
     // ## Anchor handlers
     // ### Bitcoin
     if (this.settings.bitcoin && this.settings.bitcoin.enable) {
+      if (!this.bitcoin) {
+        throw new Error('Bitcoin service is not initialized. Check your settings and environment.');
+      }
       this.bitcoin.on('debug', this._handleBitcoinDebug.bind(this));
       this.bitcoin.on('ready', this._handleBitcoinReady.bind(this));
       this.bitcoin.on('error', this._handleBitcoinError.bind(this));
@@ -371,15 +466,30 @@ class CLI extends App {
     // TODO: enable
     // this.on('changes', this._handleChanges.bind(this));
 
+    // ## Start P2P node FIRST (so peer connections happen immediately)
+    if (this.settings.peering) {
+      console.log('[FABRIC:CLI:start] About to start node with peers:', this.node.settings.peers);
+      console.log('[FABRIC:CLI:start] About to start node with networking:', this.node.settings.networking);
+      this._appendDebug('[FABRIC:CLI] Starting P2P node...');
+      await this.node.start();
+      console.log('[FABRIC:CLI:start] Node started');
+      this._appendDebug('[FABRIC:CLI] P2P node started');
+    }
+
     // ## Start Anchor Services
     // Start Bitcoin service
-    if (this.settings.bitcoin && this.settings.bitcoin.enable) await this.bitcoin.start();
+    if (this.settings.bitcoin && this.settings.bitcoin.enable) {
+      this._appendDebug('[FABRIC:CLI] Starting Bitcoin service...');
+      await this.bitcoin.start();
+      this._appendDebug('[FABRIC:CLI] Bitcoin service started');
+    }
 
     // Start Lightning service
-    if (this.settings.lightning.enable) await this.lightning.start();
-
-    // ## Start P2P node
-    if (this.settings.peering) this.node.start();
+    if (this.settings.lightning.enable) {
+      this._appendDebug('[FABRIC:CLI] Starting Lightning service...');
+      await this.lightning.start();
+      this._appendDebug('[FABRIC:CLI] Lightning service started');
+    }
 
     // ## Attach Heartbeat
     this._heart = setInterval(this.tick.bind(this), this.settings.interval);
@@ -396,6 +506,22 @@ class CLI extends App {
    * Disconnect all interfaces and exit the process.
    */
   async stop () {
+    // Clear all reconnection timers
+    for (const address in this.reconnectTimers) {
+      clearTimeout(this.reconnectTimers[address]);
+    }
+
+    this.reconnectTimers = {};
+    this.reconnectAttempts = {};
+
+    // Clear any in-progress sync operations
+    this.syncInProgress = {
+      chain: false,
+      balance: false,
+      contracts: false,
+      unspent: false
+    };
+
     await this.node.stop();
     return process.exit(0);
   }
@@ -446,7 +572,7 @@ class CLI extends App {
       // this._appendMessage(`Changes: ${JSON.stringify(changes, null, '  ')}`);
 
       this.emit('changes', changes);
-      this.emit('state', this['@state']);
+      // this.emit('state', this['@state']);
       this.emit('message', {
         '@type': 'Transaction',
         '@data': {
@@ -460,7 +586,7 @@ class CLI extends App {
   }
 
   trust (source, name = this.constructor.name) {
-    if (!(source instanceof EventEmitter)) throw new Error('Source is not an EventEmitter.')
+    if (!(source instanceof EventEmitter)) throw new Error('Source is not an EventEmitter.');
     const self = this;
 
     return {
@@ -476,7 +602,7 @@ class CLI extends App {
       _handleTrustedReady: source.on('ready', async function handleTrustedReady (ready) {
         self._appendMessage(`[SOURCE:${name.toUpperCase()}] Ready! ${ready}`);
       })
-    }
+    };
   }
 
   async _appendMessage (msg) {
@@ -499,6 +625,10 @@ class CLI extends App {
 
   async _appendError (msg) {
     this._appendMessage(`{red-fg}${msg}{/red-fg}`);
+  }
+
+  async _handleActorSet (actorset) {
+    this._appendDebug(`[ACTORSET] ${JSON.stringify(actorset, null, '  ')}`);
   }
 
   async _handleContractSet (contractset) {
@@ -647,12 +777,10 @@ class CLI extends App {
     if (!params[1]) return this._appendError(`You must specify the file to publish.`);
     if (!params[2]) return this._appendError(`You must specify the rate to pay.`);
     if (!this.documents[params[1]]) return this._appendError(`This file does not exist in the local library.`);
-    const message = Message.fromVector(['DocumentPublish', {
-      id: params[1],
-      content: this.documents[params[1]],
-      reward: params[2]
-    }]);
-    this.node.broadcast(message);
+
+    this.fs.touchDir(`documents`);
+    this.fs.publish(`${params[1]}`, this.documents[params[1]]);
+    this.node._publishDocument(params[1], this.documents[params[1]].toString('utf8'));
   }
 
   async _handleRequestCommand (params) {
@@ -714,11 +842,39 @@ class CLI extends App {
 
   async _handleBitcoinReady (bitcoin) {
     this._appendMessage(`Bitcoin ready: ${JSON.stringify(bitcoin)}`);
-    this._syncChainDisplay();
+    this._appendMessage(`Immediately updating header displays...`);
+    // Immediately update displays when Bitcoin becomes ready
+    try {
+      await this._syncChainDisplay();
+      await this._syncBalance();
+      this._appendMessage(`Header displays updated successfully.`);
+    } catch (exception) {
+      this._appendError(`Failed to update displays: ${exception.message}`);
+    }
   }
 
   async _handleConnectionOpen (msg) {
     this._appendMessage(`Node emitted "connections:open" event: ${JSON.stringify(msg)}`);
+
+    // Reset reconnection attempts for this address
+    const address = msg.address || msg.name;
+    if (this.reconnectTimers[address]) {
+      clearTimeout(this.reconnectTimers[address]);
+      delete this.reconnectTimers[address];
+    }
+
+    delete this.reconnectAttempts[address];
+
+    // Mark peer as connected
+    for (const id in this.peers) {
+      const peer = this.peers[id];
+      if (peer.address === address) {
+        peer.status = 'connected';
+        delete peer.disconnectedAt;
+        this._appendMessage(`Peer ${address} successfully reconnected`);
+        break;
+      }
+    }
 
     await this._handleConnection(msg);
 
@@ -729,14 +885,20 @@ class CLI extends App {
   async _handleConnectionClose (msg) {
     this._appendMessage(`Node emitted "connections:close" event: ${JSON.stringify(msg, null, '  ')}`);
 
+    // Mark peers as disconnected instead of deleting them
     for (const id in this.peers) {
       const peer = this.peers[id];
       if (peer.address === msg.name) {
-        this._appendMessage(`Address matches.`);
-        delete this.peers[id];
+        this._appendMessage(`Address matches. Marking peer as disconnected.`);
+        peer.status = 'disconnected';
+        peer.disconnectedAt = Date.now();
+
+        // Start reconnection process
+        this._scheduleReconnect(msg.name);
       }
     }
 
+    // Remove connections but keep peer records
     for (const id in this.connections) {
       const connections = this.connections[id];
       if (connections.address === msg.address) {
@@ -750,6 +912,58 @@ class CLI extends App {
 
   async _handleConnectionError (msg) {
     this._appendWarning(`Node emitted "connection:error" event: ${JSON.stringify(msg)}`);
+  }
+
+  _scheduleReconnect (address) {
+    // Clear any existing timer for this address
+    if (this.reconnectTimers[address]) {
+      clearTimeout(this.reconnectTimers[address]);
+    }
+
+    // Initialize or increment attempt counter
+    if (!this.reconnectAttempts[address]) {
+      this.reconnectAttempts[address] = 0;
+    }
+    this.reconnectAttempts[address]++;
+
+    // Calculate backoff delay: 1s, 2s, 4s, 8s, 16s, 32s, 60s (max)
+    const baseDelay = 1000; // 1 second
+    const maxDelay = 60000; // 60 seconds
+    const attempt = this.reconnectAttempts[address];
+    const delay = Math.min(baseDelay * Math.pow(2, attempt - 1), maxDelay);
+
+    this._appendMessage(`Scheduling reconnection to ${address} in ${delay/1000}s (attempt ${attempt})`);
+
+    this.reconnectTimers[address] = setTimeout(() => {
+      this._attemptReconnect(address);
+    }, delay);
+  }
+
+  _attemptReconnect (address) {
+    this._appendMessage(`Attempting to reconnect to ${address}`);
+
+    // Mark peer as connecting
+    for (const id in this.peers) {
+      const peer = this.peers[id];
+      if (peer.address === address) {
+        peer.status = 'connecting';
+        break;
+      }
+    }
+
+    // Update display
+    this._syncPeerList();
+    this.screen.render();
+
+    // Attempt to connect
+    try {
+      this.node._connect(address);
+    } catch (error) {
+      this._appendError(`Failed to reconnect to ${address}: ${error}`);
+
+      // Schedule another attempt
+      this._scheduleReconnect(address);
+    }
   }
 
   async _handleConnection (connection) {
@@ -822,7 +1036,10 @@ class CLI extends App {
 
     if (!peer.id) {
       self._appendMessage('Peer did not send an ID.  Event received: ' + JSON.stringify(peer));
+      if (self.settings.debug) self._appendDebug(`[DEBUG] Skipping peer registration: missing id in peer object: ${JSON.stringify(peer)}`);
+      return;
     }
+    if (self.settings.debug) self._appendDebug(`[DEBUG] Registering peer with id: ${peer.id}`);
 
     // TODO: use @fabric/core/types/channel
     const channel = {
@@ -831,8 +1048,14 @@ class CLI extends App {
     };
 
     if (!self.peers[peer.id]) {
+      // Mark new peers as connected by default
+      peer.status = 'connected';
       self.peers[peer.id] = peer;
       self.emit('peer', peer);
+    } else {
+      // Update existing peer status to connected
+      self.peers[peer.id].status = 'connected';
+      delete self.peers[peer.id].disconnectedAt;
     }
 
     if (!self.channels[channel.id]) {
@@ -858,8 +1081,9 @@ class CLI extends App {
   }
 
   async _handleNodeReady (node) {
-    if (this.settings.render) {
-      // this.elements['identityString'].setContent(node.id);
+    if (this.settings.render && this.elements && this.elements['identityString']) {
+      this.elements['identityString'].setContent(node.id);
+      this.screen.render();
     }
 
     this.emit('identity', {
@@ -901,6 +1125,10 @@ class CLI extends App {
 
   async _handlePeerUPNP (upnp) {
     this._appendDebug(`[UPNP] ${JSON.stringify(upnp)}`);
+  }
+
+  async _handlePeerSet (peerset) {
+    this._appendDebug(`[PEERSET] ${JSON.stringify(peerset, null, '  ')}`);
   }
 
   async _handlePeerMessage (message) {
@@ -993,6 +1221,18 @@ class CLI extends App {
     self.elements['prompt'].key(['up'], self._handlePromptUpKey.bind(self));
     self.elements['prompt'].key(['down'], self._handlePromptDownKey.bind(self));
 
+    // Add ESC key binding to exit INSERT mode and set modeline to META
+    self.elements['prompt'].key(['escape'], function () {
+      if (self.settings.debug) console.log('[FABRIC:CLI] ESC pressed in prompt');
+      self.defocusInput();
+    });
+
+    // Also handle blur event to reset modeline
+    self.elements['prompt'].on('blur', function () {
+      if (self.settings.debug) console.log('[FABRIC:CLI] prompt blur event');
+      self.defocusInput();
+    });
+
     return true;
   }
 
@@ -1073,6 +1313,7 @@ class CLI extends App {
 
   _handleFlushRequest () {
     this.flush();
+    console.log('Fabric store flushed!');
     this.stop();
     return false;
   }
@@ -1144,6 +1385,251 @@ class CLI extends App {
     }
   }
 
+  async _handleSyncUIRequest (params) {
+    this._appendMessage(`Manually syncing UI displays...`);
+    await this._syncChainDisplay();
+    await this._syncBalance();
+    this._appendMessage(`UI sync complete.`);
+  }
+
+  async _handleListElementsRequest (params) {
+    if (this.elements) {
+      const elementNames = Object.keys(this.elements);
+      this._appendMessage(`Available UI elements: ${elementNames.join(', ')}`);
+      this._appendMessage(`Total elements: ${elementNames.length}`);
+    } else {
+      this._appendMessage(`No elements object found`);
+    }
+  }
+
+  async _handleTestRPCRequest (params) {
+    if (!this.bitcoin || !this.bitcoin._makeRPCRequest) {
+      this._appendError(`Bitcoin service not available`);
+      return;
+    }
+
+    this._appendMessage(`Testing Bitcoin RPC connectivity...`);
+
+    // Test basic blockchain info
+    try {
+      const chainInfo = await this.bitcoin._makeRPCRequest('getblockchaininfo');
+      this._appendMessage(`✓ getblockchaininfo: chain=${chainInfo.chain}, blocks=${chainInfo.blocks}`);
+    } catch (error) {
+      this._appendError(`✗ getblockchaininfo failed: ${error.message}`);
+    }
+
+    // Test block count
+    try {
+      const height = await this.bitcoin._makeRPCRequest('getblockcount');
+      this._appendMessage(`✓ getblockcount: ${height}`);
+    } catch (error) {
+      this._appendError(`✗ getblockcount failed: ${error.message}`);
+    }
+
+    // Test wallet list
+    try {
+      const wallets = await this.bitcoin._makeRPCRequest('listwallets');
+      this._appendMessage(`✓ listwallets: ${wallets.length} wallets (${wallets.join(', ')})`);
+
+      if (wallets.length > 0) {
+        // Test balance if wallet exists - use first loaded wallet
+        try {
+          const balance = await this.bitcoin._makeWalletRequest('getbalance', [], wallets[0]);
+          this._appendMessage(`✓ getbalance: ${balance} BTC (wallet: ${wallets[0]})`);
+        } catch (balanceError) {
+          this._appendError(`✗ getbalance failed: ${balanceError.message}`);
+        }
+      } else {
+        this._appendMessage(`ℹ No wallets loaded - balance calls will fail`);
+      }
+    } catch (error) {
+      this._appendError(`✗ listwallets failed: ${error.message}`);
+    }
+
+    this._appendMessage(`RPC test complete.`);
+  }
+
+  async _handleCreateWalletRequest (params) {
+    if (!this.bitcoin || !this.bitcoin._makeRPCRequest) {
+      this._appendError(`Bitcoin service not available`);
+      return;
+    }
+
+    const walletName = params[1] || 'fabric-wallet';
+    this._appendMessage(`Creating wallet: ${walletName}...`);
+
+    try {
+      // Check if wallet already exists
+      const existingWallets = await this.bitcoin._makeRPCRequest('listwallets');
+      if (existingWallets.includes(walletName)) {
+        this._appendMessage(`Wallet ${walletName} already exists and is loaded`);
+        return;
+      }
+
+      // Create new wallet
+      const result = await this.bitcoin._makeRPCRequest('createwallet', [walletName]);
+      this._appendMessage(`✓ Created wallet: ${result.name}`);
+
+      // Test the new wallet
+      const balance = await this.bitcoin._makeWalletRequest('getbalance', [], walletName);
+      this._appendMessage(`✓ New wallet balance: ${balance} BTC`);
+
+      // Trigger UI update
+      await this._syncBalance();
+
+    } catch (error) {
+      this._appendError(`Failed to create wallet: ${error.message}`);
+
+      // Try to load existing wallet instead
+      if (error.message && error.message.includes('already exists')) {
+        try {
+          await this.bitcoin._makeRPCRequest('loadwallet', [walletName]);
+          this._appendMessage(`✓ Loaded existing wallet: ${walletName}`);
+          await this._syncBalance();
+        } catch (loadError) {
+          this._appendError(`Could not load wallet: ${loadError.message}`);
+        }
+      }
+    }
+  }
+
+  async _handleLoadWalletRequest (params) {
+    if (!this.bitcoin || !this.bitcoin._makeRPCRequest) {
+      this._appendError(`Bitcoin service not available`);
+      return;
+    }
+
+    if (!params[1]) {
+      this._appendError(`Usage: loadwallet <wallet_name>`);
+      this._appendMessage(`Example: loadwallet my-wallet`);
+      return;
+    }
+
+    const walletName = params[1];
+    this._appendMessage(`Loading wallet: ${walletName}...`);
+
+    try {
+      // Check if wallet is already loaded
+      const existingWallets = await this.bitcoin._makeRPCRequest('listwallets');
+      if (existingWallets.includes(walletName)) {
+        this._appendMessage(`Wallet ${walletName} is already loaded`);
+
+        // Still test the balance and update UI
+        try {
+          const balance = await this.bitcoin._makeWalletRequest('getbalance', [], walletName);
+          this._appendMessage(`Current balance: ${balance} BTC`);
+          await this._syncBalance();
+        } catch (balanceError) {
+          this._appendError(`Could not get balance: ${balanceError.message}`);
+        }
+        return;
+      }
+
+      // Load the wallet
+      const result = await this.bitcoin._makeRPCRequest('loadwallet', [walletName]);
+      this._appendMessage(`✓ Loaded wallet: ${result.name}`);
+
+      // Test the loaded wallet
+      const balance = await this.bitcoin._makeWalletRequest('getbalance', [], walletName);
+      this._appendMessage(`✓ Wallet balance: ${balance} BTC`);
+
+      // Trigger UI update
+      await this._syncBalance();
+      this._appendMessage(`UI updated with wallet data`);
+
+    } catch (error) {
+      if (error.message && error.message.includes('not found')) {
+        this._appendError(`Wallet '${walletName}' not found`);
+        this._appendMessage(`Try: createwallet ${walletName}`);
+      } else {
+        this._appendError(`Failed to load wallet: ${error.message}`);
+      }
+    }
+  }
+
+  async _handleListWalletsRequest (params) {
+    if (!this.bitcoin || !this.bitcoin._makeRPCRequest) {
+      this._appendError(`Bitcoin service not available`);
+      return;
+    }
+
+    this._appendMessage(`Checking wallet status...`);
+
+    try {
+      // Get currently loaded wallets
+      const loadedWallets = await this.bitcoin._makeRPCRequest('listwallets');
+
+      if (loadedWallets.length > 0) {
+        this._appendMessage(`✓ Loaded wallets (${loadedWallets.length}):`);
+        loadedWallets.forEach(wallet => {
+          this._appendMessage(`  • ${wallet}`);
+        });
+      } else {
+        this._appendMessage(`ℹ No wallets currently loaded`);
+      }
+
+      // Try to get available wallets from disk
+      try {
+        const availableWallets = await this.bitcoin._makeRPCRequest('listwalletdir');
+        if (availableWallets && availableWallets.wallets && availableWallets.wallets.length > 0) {
+          this._appendMessage(`\nAvailable wallets on disk (${availableWallets.wallets.length}):`);
+          availableWallets.wallets.forEach(walletInfo => {
+            const name = walletInfo.name;
+            const isLoaded = loadedWallets.includes(name);
+            const status = isLoaded ? '(loaded)' : '(unloaded)';
+            this._appendMessage(`  • ${name} ${status}`);
+          });
+
+          if (loadedWallets.length === 0) {
+            this._appendMessage(`\nTo load a wallet: loadwallet <wallet_name>`);
+            this._appendMessage(`To create a new wallet: createwallet <wallet_name>`);
+          }
+        }
+      } catch (listDirError) {
+        // listwalletdir might not be supported in older versions
+        if (this.settings.debug) {
+          this._appendMessage(`Note: Could not list wallet directory: ${listDirError.message}`);
+        }
+      }
+
+      // Show current balance if any wallet is loaded
+      if (loadedWallets.length > 0) {
+        try {
+          const balance = await this.bitcoin._makeWalletRequest('getbalance', [], loadedWallets[0]);
+          this._appendMessage(`\nCurrent total balance: ${balance} BTC`);
+        } catch (balanceError) {
+          this._appendMessage(`\nCould not get balance: ${balanceError.message}`);
+        }
+      }
+
+    } catch (error) {
+      this._appendError(`Failed to list wallets: ${error.message}`);
+    }
+  }
+
+  async _handleBitcoinHelpRequest (params) {
+    this._appendMessage(`{bold}Bitcoin Core Recovery Help{/bold}\n`);
+
+    this._appendMessage(`{yellow-fg}If you're seeing Bitcoin Core errors:{/yellow-fg}`);
+    this._appendMessage(`1. Stop Bitcoin Core: bitcoin-cli stop`);
+    this._appendMessage(`2. Check disk space: df -h ~/Library/Application\\ Support/Bitcoin/`);
+    this._appendMessage(`3. Check debug log: tail ~/Library/Application\\ Support/Bitcoin/debug.log`);
+
+    this._appendMessage(`\n{yellow-fg}Recovery options (try in order):{/yellow-fg}`);
+    this._appendMessage(`1. Reindex blockchain: bitcoind -reindex`);
+    this._appendMessage(`2. Rebuild chainstate: bitcoind -reindex-chainstate`);
+    this._appendMessage(`3. Fresh start: backup wallet, delete datadir, restart`);
+
+    this._appendMessage(`\n{yellow-fg}Fabric commands:{/yellow-fg}`);
+    this._appendMessage(`• testrpc - Test Bitcoin RPC connection`);
+    this._appendMessage(`• listwallets - Show wallet status`);
+    this._appendMessage(`• createwallet <name> - Create new wallet`);
+    this._appendMessage(`• loadwallet <name> - Load existing wallet`);
+
+    this._appendMessage(`\n{green-fg}Bitcoin Core is independent of Fabric.{/green-fg}`);
+    this._appendMessage(`{green-fg}Fix Bitcoin Core first, then restart Fabric.{/green-fg}`);
+  }
+
   async _handleRotateRequest () {
     const account = await this.identity._nextAccount();
     this._appendMessage('Rotated to Account: ' + account.id);
@@ -1209,7 +1695,7 @@ class CLI extends App {
 
     switch (params[1]) {
       default:
-        text = `{bold}Fabric CLI Help{/bold}\nThe Fabric CLI offers a simple command-based interface to a Fabric-speaking Network.  You can use \`/connect <address>\` to establish a connection to a known peer, or any of the available commands.\n\n{bold}Available Commands{/bold}:\n\n${Object.keys(this.commands).map(x => `\t${x}`).join('\n')}\n`
+        text = `{bold}Fabric CLI Help{/bold}\nThe Fabric CLI offers a simple command-based interface to a Fabric-speaking Network.  You can use \`/connect <address>\` to establish a connection to a known peer, or any of the available commands.\n\n{bold}Available Commands{/bold}:\n\n${Object.keys(this.commands).map(x => `  ${x}`).join('\n')}\n\n{bold}Usage{/bold}:\n  Type any command with a forward slash, e.g. /help, /peers, /connect localhost:7777\n\n{bold}Examples{/bold}:\n  /help          - Show this help message\n  /peers         - List connected peers\n  /connect <addr> - Connect to a peer\n  /identity      - Show your identity\n  /wallet        - Show wallet information\n  /bitcoin       - Show Bitcoin service status\n  /quit          - Exit the application`
         break;
     }
 
@@ -1239,24 +1725,97 @@ class CLI extends App {
 
   async _syncChainDisplay () {
     if (!this.settings.render) return this;
-    if (!this.settings.bitcoin.enable) return this;
+
+    // Prevent concurrent sync operations
+    if (this.syncInProgress.chain) {
+      if (this.settings.debug) this._appendMessage(`_syncChainDisplay: Already in progress, skipping`);
+      return this;
+    }
+
+    this.syncInProgress.chain = true;
 
     try {
-      const height = await this.bitcoin._makeRPCRequest('getblockcount');
-      const stats = await this.bitcoin._makeRPCRequest('getblockchaininfo');
-      const progress = this.bitcoin._state.headers.length;
-      const unconfirmed = 0.0;
-      const bonded = 0.0;
+      if (!this.settings.bitcoin.enable) {
+        // Set default values when Bitcoin is not enabled
+        if (this.elements) {
+          if (this.elements['heightValue']) this.elements['heightValue'].setContent('N/A (Bitcoin disabled)');
+          if (this.elements['chainTip']) this.elements['chainTip'].setContent('N/A (Bitcoin disabled)');
+          if (this.elements['unconfirmedValue']) this.elements['unconfirmedValue'].setContent('0.00000000');
+          if (this.elements['bondedValue']) this.elements['bondedValue'].setContent('0.00000000');
+          if (this.elements['progressStatus']) this.elements['progressStatus'].setContent('N/A (Bitcoin disabled)');
+          if (this.screen) this.screen.render();
+        }
+        return this;
+      }
 
-      this.elements['heightValue'].setContent(`${height}`);
-      this.elements['chainTip'].setContent(`${stats.bestblockhash}`);
-      this.elements['unconfirmedValue'].setContent(`${bonded}`);
-      this.elements['bondedValue'].setContent(`${bonded}`);
-      this.elements['progressStatus'].setContent(`${progress - 1} of ${height} (${(((progress - 1) / height) * 100)} %)`);
+      // Check if Bitcoin service is ready
+      if (!this.bitcoin || !this.bitcoin._makeRPCRequest) {
+        if (this.settings.debug) this._appendMessage(`_syncChainDisplay: Bitcoin service not ready yet`);
+        if (this.elements) {
+          if (this.elements['heightValue']) this.elements['heightValue'].setContent('loading...');
+          if (this.elements['chainTip']) this.elements['chainTip'].setContent('loading...');
+          if (this.elements['unconfirmedValue']) this.elements['unconfirmedValue'].setContent('syncing...');
+          if (this.elements['bondedValue']) this.elements['bondedValue'].setContent('syncing...');
+          if (this.elements['progressStatus']) this.elements['progressStatus'].setContent('syncing...');
+          if (this.screen) this.screen.render();
+        }
+        return this;
+      }
 
-      this.screen.render();
+      if (this.settings.debug) this._appendMessage(`_syncChainDisplay: Making RPC calls...`);
+
+      // Update height immediately when available
+      try {
+        const height = await this.bitcoin._makeRPCRequest('getblockcount');
+        if (this.elements && this.elements['heightValue']) {
+          this.elements['heightValue'].setContent(`${height}`);
+          if (this.elements['progressStatus']) {
+            this.elements['progressStatus'].setContent(`synced to block ${height}`);
+          }
+          this.screen.render();
+          if (this.settings.debug) this._appendMessage(`_syncChainDisplay: Updated height to ${height}`);
+        }
+
+        // Small delay before next call
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // Update chain tip when available
+        const stats = await this.bitcoin._makeRPCRequest('getblockchaininfo');
+        if (this.elements && this.elements['chainTip']) {
+          this.elements['chainTip'].setContent(`${stats.bestblockhash}`);
+          this.screen.render();
+          if (this.settings.debug) this._appendMessage(`_syncChainDisplay: Updated chain tip to ${stats.bestblockhash.substring(0, 16)}...`);
+        }
+
+        // Update unconfirmed and bonded values (currently static)
+        const unconfirmed = 0.0;
+        const bonded = 0.0;
+        if (this.elements) {
+          if (this.elements['unconfirmedValue']) {
+            this.elements['unconfirmedValue'].setContent(`${unconfirmed.toFixed(8)}`);
+          }
+          if (this.elements['bondedValue']) {
+            this.elements['bondedValue'].setContent(`${bonded.toFixed(8)}`);
+          }
+          this.screen.render();
+        }
+
+        if (this.settings.debug) this._appendMessage(`_syncChainDisplay: All elements updated`);
+      } catch (rpcError) {
+        // If any individual RPC call fails, just update what we can
+        if (this.settings.debug) this._appendMessage(`_syncChainDisplay: Individual RPC call failed: ${rpcError.message}`);
+        throw rpcError; // Re-throw to be caught by outer try-catch
+      }
     } catch (exception) {
-      if (this.settings.debug) this._appendError(`Could not sync chain: ${exception}`);
+      if (this.settings.debug) this._appendError(`Could not sync chain: ${exception.message || exception}`);
+      if (this.elements) {
+        if (this.elements['heightValue']) this.elements['heightValue'].setContent('Error');
+        if (this.elements['chainTip']) this.elements['chainTip'].setContent('Connection Error');
+        if (this.elements['progressStatus']) this.elements['progressStatus'].setContent('RPC Error');
+        if (this.screen) this.screen.render();
+      }
+    } finally {
+      this.syncInProgress.chain = false;
     }
   }
 
@@ -1266,28 +1825,150 @@ class CLI extends App {
   }
 
   async _syncBalance () {
-    try {
-      const balance = await this._getBalance();
-      const balances = await this.bitcoin._syncBalances();
-      const lightning = await this.lightning._syncBalances();
+    if (!this.settings.render) return this;
 
-      this._state.balances.confirmed = balance;
-      this._state.balances.trusted = balances.mine.trusted;
-      this._state.balances.immature = balances.mine.immature;
-      this._state.balances.pending = balances.mine.untrusted_pending;
-
-      this.elements['balance'].setContent(balance.toFixed(8));
-
-      this.elements.wallethelp.setContent(
-        `  {bold}SPENDABLE{/bold}: ${balance.toFixed(8)} BTC\n` +
-        `{bold}UNCONFIRMED{/bold}: ${this._state.balances.pending.toFixed(8)} BTC\n` +
-        `   {bold}IMMATURE{/bold}: ${this._state.balances.immature.toFixed(8)} BTC\n`
-      );
-
-      this.screen.render();
-    } catch (exception) {
-      // if (this.settings.debug) this._appendError(`Could not sync balance: ${JSON.stringify(exception)}`);
+    // Prevent concurrent sync operations
+    if (this.syncInProgress.balance) {
+      if (this.settings.debug) this._appendMessage(`_syncBalance: Already in progress, skipping`);
+      return this;
     }
+
+    this.syncInProgress.balance = true;
+
+    try {
+      if (!this.settings.bitcoin.enable) {
+        // Set default values when Bitcoin is not enabled
+        if (this.elements) {
+          if (this.elements['balance']) this.elements['balance'].setContent('0.00000000');
+          if (this.elements.wallethelp) {
+            this.elements.wallethelp.setContent(
+              `  {bold}SPENDABLE{/bold}: 0.00000000 BTC\n` +
+              `{bold}UNCONFIRMED{/bold}: 0.00000000 BTC\n` +
+              `   {bold}IMMATURE{/bold}: 0.00000000 BTC\n` +
+              `\n{yellow-fg}Bitcoin services disabled{/yellow-fg}`
+            );
+          }
+          if (this.screen) this.screen.render();
+        }
+        return this;
+      }
+
+      // Check if Bitcoin service is ready
+      if (!this.bitcoin || !this.bitcoin._makeRPCRequest) {
+        if (this.elements) {
+          if (this.elements['balance']) this.elements['balance'].setContent('Bitcoin error');
+          if (this.elements.wallethelp) {
+            this.elements.wallethelp.setContent(
+              `{red-fg}Bitcoin Core error detected{/red-fg}\n` +
+              `Check Bitcoin Core status\n` +
+              `May need reindex: bitcoind -reindex`
+            );
+          }
+          if (this.screen) this.screen.render();
+        }
+        return this;
+      }
+
+      // Check if any wallets are loaded first
+      let hasWallet = false;
+      let defaultWallet = null;
+      try {
+        const walletList = await this.bitcoin._makeRPCRequest('listwallets');
+        hasWallet = walletList && walletList.length > 0;
+        if (hasWallet) defaultWallet = walletList[0];
+        if (this.settings.debug) this._appendMessage(`_syncBalance: Found ${walletList.length} loaded wallets`);
+      } catch (walletListError) {
+        if (this.settings.debug) this._appendMessage(`_syncBalance: Could not list wallets: ${walletListError.message}`);
+      }
+
+      if (!hasWallet) {
+        // No wallet loaded - show zero balance
+        this._state.balances.confirmed = 0;
+        this._state.balances.trusted = 0;
+        this._state.balances.immature = 0;
+        this._state.balances.pending = 0;
+
+        if (this.elements) {
+          if (this.elements['balance']) {
+            this.elements['balance'].setContent('0.00000000');
+          }
+          if (this.elements.wallethelp) {
+            this.elements.wallethelp.setContent(
+              `  {bold}SPENDABLE{/bold}: 0.00000000 BTC\n` +
+              `{bold}UNCONFIRMED{/bold}: 0.00000000 BTC\n` +
+              `   {bold}IMMATURE{/bold}: 0.00000000 BTC\n` +
+              `\n{yellow-fg}No wallet loaded{/yellow-fg}`
+            );
+          }
+          this.screen.render();
+        }
+        return this;
+      }
+
+      // Update balance immediately when available
+      const balance = await this.bitcoin._makeWalletRequest('getbalance', [], defaultWallet);
+      this._state.balances.confirmed = balance;
+      this._state.balances.trusted = balance;
+
+      // Update balance element immediately
+      if (this.elements && this.elements['balance']) {
+        this.elements['balance'].setContent(balance.toFixed(8));
+        this.screen.render();
+        if (this.settings.debug) this._appendMessage(`_syncBalance: Updated balance to ${balance.toFixed(8)} BTC from wallet: ${defaultWallet}`);
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Try to get wallet info, but don't fail if no wallet is loaded
+      let walletInfo = { immature_balance: 0, unconfirmed_balance: 0 };
+      try {
+        walletInfo = await this.bitcoin._makeWalletRequest('getwalletinfo', [], defaultWallet);
+        this._state.balances.immature = walletInfo.immature_balance || 0;
+        this._state.balances.pending = walletInfo.unconfirmed_balance || 0;
+
+        // Update wallet help with complete information
+        if (this.elements && this.elements.wallethelp) {
+          this.elements.wallethelp.setContent(
+            `  {bold}SPENDABLE{/bold}: ${balance.toFixed(8)} BTC\n` +
+            `{bold}UNCONFIRMED{/bold}: ${this._state.balances.pending.toFixed(8)} BTC\n` +
+            `   {bold}IMMATURE{/bold}: ${this._state.balances.immature.toFixed(8)} BTC\n`
+          );
+          this.screen.render();
+          if (this.settings.debug) this._appendMessage(`_syncBalance: Updated wallet info with detailed balances`);
+        }
+      } catch (walletException) {
+        if (this.settings.debug) this._appendMessage(`_syncBalance: No wallet loaded or getwalletinfo failed, using defaults`);
+        // Update with basic balance info only
+        this._state.balances.immature = 0;
+        this._state.balances.pending = 0;
+
+        if (this.elements && this.elements.wallethelp) {
+          this.elements.wallethelp.setContent(
+            `  {bold}SPENDABLE{/bold}: ${balance.toFixed(8)} BTC\n` +
+            `{bold}UNCONFIRMED{/bold}: 0.00000000 BTC\n` +
+            `   {bold}IMMATURE{/bold}: 0.00000000 BTC\n`
+          );
+          this.screen.render();
+        }
+      }
+    } catch (exception) {
+      // Set error values when connection fails
+      if (this.elements) {
+        if (this.elements['balance']) this.elements['balance'].setContent('Error');
+        if (this.elements.wallethelp) {
+          this.elements.wallethelp.setContent(
+            `{red-fg}Bitcoin RPC error{/red-fg}\n` +
+            `${exception.message || 'Connection failed'}`
+          );
+        }
+        if (this.screen) this.screen.render();
+      }
+      if (this.settings.debug) this._appendError(`Could not sync balance: ${exception.message || exception}`);
+    } finally {
+      this.syncInProgress.balance = false;
+    }
+
+    return this;
   }
 
   async _syncUnspent () {
@@ -1297,6 +1978,10 @@ class CLI extends App {
         const map = {};
 
         for (const [key, value] of Object.entries(x)) {
+          if ([
+
+          ].includes(key)) continue;
+
           map[key] = value.toString();
         }
 
@@ -1382,18 +2067,41 @@ class CLI extends App {
   }
 
   _syncPeerList () {
+    if (!this.elements || !this.elements['peers']) return;
+
     this.elements['peers'].clearItems();
 
     for (const id in this.peers) {
       const peer = this.peers[id];
+
+      // Determine status icon
+      let icon = '✓'; // Default connected
+      switch (peer.status) {
+        case 'disconnected':
+          icon = '~';
+          break;
+        case 'connecting':
+          icon = '…';
+          break;
+        case 'connected':
+        default:
+          icon = '✓';
+          break;
+      }
+
       const element = blessed.element({
         name: peer.id,
-        content: `[✓] ${peer.id}@${peer.address}`
+        content: `[${icon}] ${peer.id}@${peer.address}`
       });
 
       // TODO: use peer ID for managed list
       // self.elements['peers'].insertItem(0, element);
       this.elements['peers'].add(element.content);
+    }
+
+    // Force screen render to update the display
+    if (this.screen) {
+      this.screen.render();
     }
   }
 
@@ -1440,14 +2148,20 @@ class CLI extends App {
   }
 
   focusInput () {
-    this.elements['prompt'].clearValue();
-    this.elements['prompt'].focus();
-    this.screen.render();
+    this.mode = 'INSERT';
+    if (this.elements['prompt']) this.elements['prompt'].clearValue();
+    if (this.elements['prompt']) this.elements['prompt'].focus();
+    if (this.elements.modeline) this.elements.modeline.setContent(' INSERT ');
+    if (this.screen) this.screen.render();
+    if (this.settings.debug) console.log('[FABRIC:CLI] focusInput: mode=INSERT');
   }
 
   defocusInput () {
-    this.elements['prompt'].blur();
-    this.screen.render();
+    this.mode = 'META';
+    if (this.elements['dummy']) this.elements['dummy'].focus();
+    if (this.elements.modeline) this.elements.modeline.setContent('  META ');
+    if (this.screen) this.screen.render();
+    if (this.settings.debug) console.log('[FABRIC:CLI] defocusInput: mode=META');
   }
 
   setPane (name) {
@@ -1495,6 +2209,28 @@ class CLI extends App {
       fullUnicode: this.settings.fullUnicode
     });
 
+    // Add a hidden dummy element for focus management
+    self.elements['dummy'] = blessed.box({
+      parent: self.screen,
+      width: 1,
+      height: 1,
+      top: 0,
+      left: 0,
+      hidden: true
+    });
+
+    self.elements.modeline = blessed.text({
+      parent: self.screen,
+      content: '  META ',
+      bottom: 0,
+      right: 0,
+      width: 8,
+      style: {
+        bg: 'white',
+        fg: 'black'
+      }
+    });
+
     self.elements['home'] = blessed.box({
       parent: self.screen,
       content: 'Fabric Command Line Interface\nVersion 0.0.1-dev (@martindale)',
@@ -1503,6 +2239,11 @@ class CLI extends App {
       border: {
         type: 'line'
       },
+      style: {
+        border: {
+          fg: 'white'
+        }
+      }
     });
 
     self.elements['help'] = blessed.box({
@@ -1682,9 +2423,10 @@ class CLI extends App {
       }
     });
 
-    self.elements['status'] = blessed.box({
+    // Remove Info block and move identity to FABRIC (formerly Status)
+    self.elements['fabric'] = blessed.box({
       parent: self.screen,
-      label: '{bold}[ Status ]{/bold}',
+      label: '{bold}[ FABRIC ]{/bold}',
       tags: true,
       border: {
         type: 'line'
@@ -1695,17 +2437,16 @@ class CLI extends App {
     });
 
     self.elements['identity'] = blessed.box({
-      parent: self.elements['status'],
-      left: 1
+      parent: self.elements['fabric'],
+      left: 1,
+      top: 0
     });
-
     self.elements['identityLabel'] = blessed.text({
       parent: self.elements['identity'],
       content: 'IDENTITY:',
       top: 0,
       bold: true
     });
-
     self.elements['identityString'] = blessed.text({
       parent: self.elements['identity'],
       content: 'loading...',
@@ -1713,8 +2454,10 @@ class CLI extends App {
       left: 10
     });
 
+    // Update all children of Status to use 'fabric' as parent
+    // Replace all self.elements['status'] with self.elements['fabric'] below
     self.elements['wallet'] = blessed.box({
-      parent: self.elements['status'],
+      parent: self.elements['fabric'],
       right: 1,
       width: 29,
       height: 4
@@ -1743,7 +2486,7 @@ class CLI extends App {
     });
 
     self.elements['unconfirmed'] = blessed.box({
-      parent: self.elements['status'],
+      parent: self.elements['fabric'],
       top: 1,
       left: 1
     });
@@ -1764,7 +2507,7 @@ class CLI extends App {
     });
 
     self.elements['bonded'] = blessed.box({
-      parent: self.elements['status'],
+      parent: self.elements['fabric'],
       top: 2,
       left: 1
     });
@@ -1785,7 +2528,7 @@ class CLI extends App {
     });
 
     self.elements['progress'] = blessed.box({
-      parent: self.elements['status'],
+      parent: self.elements['fabric'],
       top: 3,
       left: 1
     });
@@ -1806,7 +2549,7 @@ class CLI extends App {
     });
 
     self.elements['chain'] = blessed.box({
-      parent: self.elements['status'],
+      parent: self.elements['fabric'],
       top: 1,
       left: 1,
       width: 50
@@ -1826,7 +2569,7 @@ class CLI extends App {
     });
 
     self.elements['height'] = blessed.box({
-      parent: self.elements['status'],
+      parent: self.elements['fabric'],
       top: 2,
       left: 1,
       width: 62
@@ -1846,7 +2589,7 @@ class CLI extends App {
     });
 
     self.elements['mempool'] = blessed.box({
-      parent: self.elements['status'],
+      parent: self.elements['fabric'],
       top: 3,
       left: 1,
       width: 29
@@ -1878,11 +2621,51 @@ class CLI extends App {
           fg: 'blue'
         }
       },
-      top: 6,
+      top: 6, // directly below FABRIC block (height: 6)
       width: '80%',
-      bottom: 4,
+      bottom: 4, // keep controls visible at the bottom
       mouse: true,
       tags: true
+    });
+
+    // Add message details pane
+    self.elements['messageDetails'] = blessed.box({
+      parent: self.screen,
+      label: '{bold}[ Message Details ]{/bold}',
+      tags: true,
+      border: {
+        type: 'line'
+      },
+      top: 6,
+      left: '80%+1',
+      bottom: 4,
+      width: '20%',
+      hidden: false // Show by default
+    });
+
+    self.elements['messageContent'] = blessed.text({
+      parent: self.elements['messageDetails'],
+      tags: true,
+      top: 1,
+      left: 1,
+      right: 1,
+      bottom: 1,
+      wrap: true
+    });
+
+    // Add click handler for messages
+    self.elements['messages'].on('click', function (data) {
+      // Get the visible messages from the log
+      const messages = self.elements['messages'].getLines();
+      // Calculate which message was clicked based on the y position
+      const messageIndex = data.y - self.elements['messages'].top - 1;
+      if (messageIndex >= 0 && messageIndex < messages.length) {
+        const message = messages[messageIndex];
+        self._showMessageDetails(message);
+        // Ensure the details pane is visible
+        self.elements['messageDetails'].show();
+        self.screen.render();
+      }
     });
 
     self.elements['peers'] = blessed.list({
@@ -1991,6 +2774,23 @@ class CLI extends App {
     return [ keys ].concat(entries);
   }
 
+  _showMessageDetails (message) {
+    // Parse the message content
+    const timestamp = message.match(/\[(.*?)\]/)?.[1] || 'Unknown';
+    const content = message.replace(/\[.*?\]\s*/, '').trim();
+
+    // Format the details
+    const details = [
+      '{bold}Timestamp:{/bold} ' + timestamp,
+      '{bold}Content:{/bold} ' + content,
+      '{bold}Length:{/bold} ' + content.length + ' characters'
+    ].join('\n\n');
+
+    // Update the details pane
+    this.elements['messageContent'].setContent(details);
+    this.screen.render();
+  }
+
   async _handleWalletCommand (params) {
     if (!params[1]) {
       this._appendMessage('Available wallet commands:');
@@ -2014,6 +2814,35 @@ class CLI extends App {
         this._appendError(`Unknown wallet command: ${params[1]}`);
         return false;
     }
+  }
+
+  async _checkLocalBitcoindOnline (settings) {
+    // Try to connect to a local bitcoind using the provided settings
+    const jayson = require('jayson/lib/client');
+    return new Promise((resolve) => {
+      try {
+        const config = {
+          host: settings.host || '127.0.0.1',
+          port: settings.rpcport || 8332,
+          timeout: 3000
+        };
+        if (settings.username && settings.password) {
+          config.headers = {
+            Authorization: `Basic ${Buffer.from(settings.username + ':' + settings.password, 'utf8').toString('base64')}`
+          };
+        }
+        const rpc = settings.secure ? jayson.https(config) : jayson.http(config);
+        rpc.request('getblockchaininfo', [], (err, response) => {
+          if (err || !response || response.error) {
+            resolve(false);
+          } else {
+            resolve(true);
+          }
+        });
+      } catch (e) {
+        resolve(false);
+      }
+    });
   }
 }
 
