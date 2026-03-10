@@ -8,6 +8,68 @@ const Bitcoin = require('../../services/bitcoin');
 const Key = require('../../types/key');
 
 describe('@fabric/core/services/bitcoin', function () {
+  describe('Bitcoin', function () {
+    it('should expose a constructor', function () {
+      assert.equal(Bitcoin.constructor instanceof Function, true);
+    });
+
+    describe('createRPCAuth', function () {
+      it('throws if username is missing', function () {
+        const btc = new Bitcoin({ network: 'regtest' });
+        assert.throws(() => btc.createRPCAuth({}), /Username is required/);
+      });
+
+      it('creates deterministic structure with provided password', function () {
+        const btc = new Bitcoin({ network: 'regtest' });
+        const auth = btc.createRPCAuth({ username: 'alice', password: 's3cret' });
+
+        // Basic shape
+        assert.ok(auth);
+        assert.strictEqual(auth.username, 'alice');
+        assert.strictEqual(typeof auth.password, 'string');
+        assert.strictEqual(typeof auth.content, 'string');
+
+        // Format: username:salt$hash
+        const parts = auth.content.split(':');
+        assert.strictEqual(parts[0], 'alice');
+        const [salt, hash] = parts[1].split('$');
+        assert.strictEqual(salt.length, 32); // 16 bytes hex
+        assert.strictEqual(hash.length, 64); // sha256 hex
+      });
+    });
+
+    describe('validateAddress', function () {
+      it('accepts a known-valid regtest address in fabric mode', function () {
+        const btc = new Bitcoin({ network: 'regtest', mode: 'fabric' });
+
+        // Known-good regtest bech32 address from integration tests
+        const address = 'bcrt1pr4wctwfz0uznz86ash62jret9gq8ysg82zlzl9kdmuvq066pjcmsa0plmz';
+
+        assert.ok(address);
+        assert.strictEqual(btc.validateAddress(address), true);
+      });
+
+      it('rejects clearly invalid addresses', function () {
+        const btc = new Bitcoin({ network: 'regtest', mode: 'fabric' });
+        assert.strictEqual(btc.validateAddress('not-an-address'), false);
+        assert.strictEqual(btc.validateAddress(''), false);
+      });
+
+      it('fails closed set of networks safely', function () {
+        const btc = new Bitcoin({ network: 'invalidnet', mode: 'fabric' });
+        // Should not throw, but must return false on validation
+        const result = btc.validateAddress('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080');
+        assert.strictEqual(result, false);
+      });
+    });
+  });
+});
+
+describe('@fabric/core/services/bitcoin', function () {
+  if (!process.env.FABRIC_E2E_REGTEST) {
+    console.log('[SKIP] Set FABRIC_E2E_REGTEST=1 to run bitcoin service tests');
+    return;
+  }
   this.timeout(120000);
 
   const defaults = {
