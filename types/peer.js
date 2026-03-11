@@ -765,6 +765,11 @@ class Peer extends Service {
       default:
         this.emit('debug', `Unhandled Generic Message: ${message.type} ${JSON.stringify(message, null, '  ')}`);
         break;
+      case 'INVENTORY_REQUEST':
+        // Upstream Inventory request (typically for documents). Emit an 'inventory'
+        // event so higher-level services (e.g. hub) can respond appropriately.
+        this.emit('inventory', { message, origin, socket });
+        break;
       case 'P2P_SESSION_OFFER':
         const peerId = message.actor.id;
         const connAddress = origin.name;
