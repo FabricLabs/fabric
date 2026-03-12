@@ -1321,11 +1321,40 @@ class Bitcoin extends Service {
 
   /**
    * Make a single RPC request to the Bitcoin node.
+   * Retries on "Work queue depth exceeded" (bitcoind temporary backpressure).
    * @param {String} method The RPC method to call.
    * @param {Array} params The parameters to pass to the RPC method.
+   * @param {Object} [opts] Options. retries: max retries for work-queue errors (default 5).
    * @returns {Promise} A promise that resolves to the RPC response.
    */
-  async _makeRPCRequest (method, params = []) {
+  async _makeRPCRequest (method, params = [], opts = {}) {
+    const maxRetries = opts.retries != null ? opts.retries : 5;
+    let lastError;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const result = await this._makeRPCRequestOnce(method, params);
+        return result;
+      } catch (err) {
+        lastError = err;
+        const msg = err && (err.message || err);
+        const isWorkQueue = typeof msg === 'string' && msg.includes('Work queue depth exceeded');
+        if (!isWorkQueue || attempt === maxRetries) {
+          throw err;
+        }
+        if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] Work queue depth exceeded, retrying ${method} in 100ms (attempt ${attempt + 1}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+
+    throw lastError;
+  }
+
+  /**
+   * Single attempt at an RPC request (no retries).
+   * @private
+   */
+  _makeRPCRequestOnce (method, params = []) {
     return new Promise((resolve, reject) => {
       if (!this.rpc) return reject(new Error('RPC manager does not exist'));
       this.rpc.request(method, params, (err, response) => {
