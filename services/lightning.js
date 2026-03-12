@@ -496,7 +496,7 @@ class Lightning extends Service {
 
   async listFunds () {
     try {
-      const result = this._makeRPCRequest('listfunds');
+      const result = await this._makeRPCRequest('listfunds');
       return result;
     } catch (exception) {
       this.emit('error', `Could not list funds: ${exception}`);
