@@ -1780,6 +1780,11 @@ class Bitcoin extends Service {
       await mkdirp(datadir);
       if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Storage directory created:', datadir);
 
+      // Allow caller to add extra args (e.g. -dnsseed=0 to avoid DNS in sandboxed environments)
+      if (this.settings.bitcoinExtraParams && Array.isArray(this.settings.bitcoinExtraParams)) {
+        params.push(...this.settings.bitcoinExtraParams);
+      }
+
       // Spawn process
       if (this.settings.debug) console.debug('[FABRIC:BITCOIN]', 'Spawning bitcoind process...');
       const child = children.spawn('bitcoind', params);
