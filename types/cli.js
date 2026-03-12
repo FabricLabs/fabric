@@ -66,14 +66,47 @@ class CLI extends App {
     this.environment = new Environment();
     this.environment.start();
 
-    // Determine Bitcoin configuration priority:
-    // 1. Use bitcoin.conf if found
-    // 2. Use settings.bitcoin if passed by user
-    // 3. Use defaults
+    // Determine Bitcoin settings:
+    // - Preserve discovered bitcoin.conf credentials/host hints.
+    // - Keep regtest as the default execution target unless explicitly overridden.
     const bitcoinConfigFound = this.environment.bitcoinConfig && this.environment.bitcoinConfig.found;
     const bitcoinSettings = bitcoinConfigFound
-      ? this.environment.bitcoinSettings
-      : (settings.bitcoin || {});
+      ? { ...this.environment.bitcoinSettings }
+      : { ...(settings.bitcoin || {}) };
+
+    // Network priority:
+    // 1) explicit CLI setting
+    // 2) explicit nested bitcoin setting
+    // 3) discovered bitcoin.conf setting
+    // 4) regtest default for isolated local usage
+    const explicitNetwork = settings.network || (settings.bitcoin && settings.bitcoin.network);
+    if (explicitNetwork) {
+      bitcoinSettings.network = explicitNetwork;
+    } else {
+      bitcoinSettings.network = 'regtest';
+    }
+
+    const defaultRPCPortByNetwork = {
+      mainnet: 8332,
+      testnet: 18332,
+      signet: 38332,
+      regtest: 18443,
+      testnet4: 48332
+    };
+
+    const explicitRPCPort = settings.bitcoin && Object.prototype.hasOwnProperty.call(settings.bitcoin, 'rpcport');
+    if (!explicitRPCPort) {
+      bitcoinSettings.rpcport = defaultRPCPortByNetwork[bitcoinSettings.network] || 18443;
+    }
+
+    // Managed mode policy:
+    // - Default to managed for regtest so local CLI usage is self-contained.
+    // - Bitcoin service will still disable managed mode at runtime if it detects
+    //   a reachable existing bitcoind.
+    const explicitManaged = settings.bitcoin && Object.prototype.hasOwnProperty.call(settings.bitcoin, 'managed');
+    const shouldAutoManageBitcoin = explicitManaged
+      ? settings.bitcoin.managed
+      : (bitcoinSettings.network === 'regtest');
 
     // Assign Settings
     this.settings = merge({
@@ -83,18 +116,20 @@ class CLI extends App {
       peering: true,
       render: true,
       services: [],
-      network: bitcoinSettings.network || 'regtest',
+      network: bitcoinSettings.network,
       interval: 1000,
       port: 7777, // Default port
       bitcoin: merge({
         enable: bitcoinConfigFound || (settings.bitcoin && settings.bitcoin.enable), // Enable if config found OR explicitly enabled in settings
         mode: 'rpc', // Always use RPC mode for connections
-        managed: !bitcoinConfigFound, // Only manage our own node if no config file found
+        managed: shouldAutoManageBitcoin,
         host: 'localhost',
         port: 8443,
-        rpcport: 18443,
+        rpcport: defaultRPCPortByNetwork[bitcoinSettings.network] || 18443,
         secure: false,
-        datadir: this._getDefaultBitcoinDatadir() // Use platform-specific Bitcoin datadir
+        // For regtest we want an isolated, local datadir so we never touch a
+        // mainnet/testnet installation. Callers can still override this.
+        datadir: (bitcoinSettings.network === 'regtest') ? './stores/bitcoin-regtest' : undefined
       }, bitcoinSettings), // Bitcoin settings from config/user take precedence
       lightning: {
         enable: false, // Disabled by default
@@ -112,6 +147,21 @@ class CLI extends App {
       xprv: null,
       passphrase: null
     }, settings);
+
+    // Populate RPC probe candidates from environment so Bitcoin service can
+    // detect/reuse a local bitcoind without doing filesystem/OS probing itself.
+    this.settings.bitcoin.rpcProbeCandidates = this.environment.getBitcoinRPCCandidates(this.settings.bitcoin);
+
+    // Keep Lightning pinned to the same Bitcoin RPC endpoint/credentials used by
+    // the Bitcoin service so CLN startup checks don't drift.
+    this.settings.lightning = this.settings.lightning || {};
+    this.settings.lightning.bitcoin = merge({
+      host: this.settings.bitcoin.host,
+      rpcport: this.settings.bitcoin.rpcport,
+      datadir: this.settings.bitcoin.datadir,
+      rpcuser: this.settings.bitcoin.rpcuser || this.settings.bitcoin.username,
+      rpcpassword: this.settings.bitcoin.rpcpassword || this.settings.bitcoin.password
+    }, this.settings.lightning.bitcoin || {});
 
     // Initialize key with proper settings
     this.key = new Key({
@@ -436,10 +486,6 @@ class CLI extends App {
       // this.lightning.on('transaction', this._handleLightningTransaction.bind(this));
     }
 
-    /* this.on('log', function (log) {
-      console.log('local log:', log);
-    }); */
-
     // this.on('debug', this._appendDebug.bind(this));
 
     // const events = this.trust(this.lightning);
@@ -448,6 +494,8 @@ class CLI extends App {
     for (const [name, service] of Object.entries(this.services)) {
       // Skip when service name not found in settings
       if (!this.settings.services.includes(name)) continue;
+      // Anchor services are started below with explicit ordering.
+      if (name === 'bitcoin' || name === 'lightning') continue;
       this._appendDebug(`Service "${name}" is enabled.  Starting...`);
       this.trust(this.services[name], name);
 
@@ -468,27 +516,70 @@ class CLI extends App {
 
     // ## Start P2P node FIRST (so peer connections happen immediately)
     if (this.settings.peering) {
-      console.log('[FABRIC:CLI:start] About to start node with peers:', this.node.settings.peers);
-      console.log('[FABRIC:CLI:start] About to start node with networking:', this.node.settings.networking);
+      if (this.settings.debug) {
+        this._appendDebug(`[FABRIC:CLI] About to start node with peers: ${JSON.stringify(this.node.settings.peers)}`);
+        this._appendDebug(`[FABRIC:CLI] About to start node with networking: ${this.node.settings.networking}`);
+      }
       this._appendDebug('[FABRIC:CLI] Starting P2P node...');
       await this.node.start();
-      console.log('[FABRIC:CLI:start] Node started');
       this._appendDebug('[FABRIC:CLI] P2P node started');
     }
 
-    // ## Start Anchor Services
-    // Start Bitcoin service
+    // ## Start Anchor Services (asynchronously so the TUI remains responsive)
+    let bitcoinStartPromise = null;
+
+    // Start Bitcoin service first
     if (this.settings.bitcoin && this.settings.bitcoin.enable) {
-      this._appendDebug('[FABRIC:CLI] Starting Bitcoin service...');
-      await this.bitcoin.start();
-      this._appendDebug('[FABRIC:CLI] Bitcoin service started');
+      this._appendDebug('[FABRIC:CLI] Starting Bitcoin service (async)...');
+      bitcoinStartPromise = this.bitcoin.start().then(() => {
+        this._appendDebug('[FABRIC:CLI] Bitcoin service started');
+        return true;
+      }).catch((exception) => {
+        this._appendError(`[FABRIC:CLI] Bitcoin service failed to start: ${exception.message || exception}`);
+        throw exception;
+      });
     }
 
-    // Start Lightning service
-    if (this.settings.lightning.enable) {
-      this._appendDebug('[FABRIC:CLI] Starting Lightning service...');
-      await this.lightning.start();
-      this._appendDebug('[FABRIC:CLI] Lightning service started');
+    // Start Lightning service only after Bitcoin startup settles.
+    if (this.settings.lightning && this.settings.lightning.enable) {
+      const startLightning = async () => {
+        if (bitcoinStartPromise) {
+          try {
+            await bitcoinStartPromise;
+          } catch (exception) {
+            this._appendError('[FABRIC:CLI] Skipping Lightning startup because Bitcoin did not start successfully');
+            return;
+          }
+        }
+
+        // If Bitcoin is in degraded mode (no reachable RPC), Lightning cannot start.
+        if (this.bitcoin && this.bitcoin._rpcReady === false) {
+          this._appendWarning('[FABRIC:CLI] Skipping Lightning startup because Bitcoin RPC is not reachable');
+          return;
+        }
+
+        // Refresh Lightning's Bitcoin RPC settings from the started Bitcoin service.
+        // Bitcoin startup may normalize or auto-detect host/port/auth at runtime.
+        if (this.bitcoin && this.lightning) {
+          this.lightning.settings.bitcoin = merge({}, this.lightning.settings.bitcoin || {}, {
+            host: this.bitcoin.settings.host,
+            rpcport: this.bitcoin.settings.rpcport,
+            datadir: this.bitcoin.settings.datadir,
+            rpcuser: this.bitcoin.settings.rpcuser || this.bitcoin.settings.username,
+            rpcpassword: this.bitcoin.settings.rpcpassword || this.bitcoin.settings.password
+          });
+        }
+
+        this._appendDebug('[FABRIC:CLI] Starting Lightning service (async)...');
+        try {
+          await this.lightning.start();
+          this._appendDebug('[FABRIC:CLI] Lightning service started');
+        } catch (exception) {
+          this._appendError(`[FABRIC:CLI] Lightning service failed to start: ${exception.message || exception}`);
+        }
+      };
+
+      startLightning();
     }
 
     // ## Attach Heartbeat
@@ -607,11 +698,14 @@ class CLI extends App {
 
   async _appendMessage (msg) {
     const message = `[${(new Date()).toISOString()}] ${msg}`;
-    if (this.settings.render) {
+    if (this.settings.render && this.elements['messages']) {
       this.elements['messages'].log(message);
-      this.screen.render();
+      if (this.screen) this.screen.render();
     } else {
-      console.log(`[FABRIC:CLI] ${message}`);
+      // When not rendering, send output through stdout once so callers can capture it.
+      // Avoid duplicating blessed output here to keep the TUI stable.
+      // eslint-disable-next-line no-console
+      console.log(message);
     }
   }
 
@@ -1223,13 +1317,11 @@ class CLI extends App {
 
     // Add ESC key binding to exit INSERT mode and set modeline to META
     self.elements['prompt'].key(['escape'], function () {
-      if (self.settings.debug) console.log('[FABRIC:CLI] ESC pressed in prompt');
       self.defocusInput();
     });
 
     // Also handle blur event to reset modeline
     self.elements['prompt'].on('blur', function () {
-      if (self.settings.debug) console.log('[FABRIC:CLI] prompt blur event');
       self.defocusInput();
     });
 
@@ -1313,7 +1405,7 @@ class CLI extends App {
 
   _handleFlushRequest () {
     this.flush();
-    console.log('Fabric store flushed!');
+    this._appendMessage('Fabric store flushed!');
     this.stop();
     return false;
   }
@@ -1972,6 +2064,8 @@ class CLI extends App {
   }
 
   async _syncUnspent () {
+    if (!this.settings.render) return this;
+
     try {
       const unspent = await this.bitcoin._listUnspent();
       const list = unspent.map((x) => {
@@ -1990,21 +2084,24 @@ class CLI extends App {
 
       this._state.unspent = unspent;
 
-      const data = [
-        Object.keys(unspent[0])
-      ].concat(list);
+      const headers = (unspent && unspent.length > 0) ? Object.keys(unspent[0]) : [];
+      const data = headers.length ? [headers].concat(list) : [];
 
-      this.elements.outputlist.setData(data);
+      if (this.elements && this.elements.outputlist && typeof this.elements.outputlist.setData === 'function') {
+        this.elements.outputlist.setData(data);
+      }
 
       this.commit();
 
-      this.screen.render();
+      if (this.screen && typeof this.screen.render === 'function') this.screen.render();
     } catch (exception) {
       // if (this.settings.debug) this._appendError(`Could not sync balance: ${JSON.stringify(exception)}`);
     }
   }
 
   async _syncLightningChannels () {
+    if (!this.settings.render) return this;
+    if (!this.elements || !this.elements.contracthelp || typeof this.elements.contracthelp.setContent !== 'function') return this;
     this.elements.contracthelp.setContent(
       `   {bold}STATUS:{/bold} ${this.status}\n` +
       `{bold}LIGHTNING:{/bold} ${this.lightning.status}`);
@@ -2153,7 +2250,6 @@ class CLI extends App {
     if (this.elements['prompt']) this.elements['prompt'].focus();
     if (this.elements.modeline) this.elements.modeline.setContent(' INSERT ');
     if (this.screen) this.screen.render();
-    if (this.settings.debug) console.log('[FABRIC:CLI] focusInput: mode=INSERT');
   }
 
   defocusInput () {
@@ -2161,7 +2257,6 @@ class CLI extends App {
     if (this.elements['dummy']) this.elements['dummy'].focus();
     if (this.elements.modeline) this.elements.modeline.setContent('  META ');
     if (this.screen) this.screen.render();
-    if (this.settings.debug) console.log('[FABRIC:CLI] defocusInput: mode=META');
   }
 
   setPane (name) {

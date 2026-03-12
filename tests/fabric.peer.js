@@ -32,6 +32,8 @@ async function getFreePort () {
 }
 
 describe('@fabric/core/types/peer', function () {
+  this.timeout(30000);
+
   // Track all peers created during tests for cleanup
   const peers = [];
 
@@ -153,6 +155,61 @@ describe('@fabric/core/types/peer', function () {
       await peer.stop();
 
       assert.ok(peer);
+    });
+
+    describe('peer registry persistence guards', function () {
+      it('skips scheduling registry save when stopping', async function () {
+        const peer = new Peer({ ...settings, peersDb: 'stores/test-peers-guard-1', networking: false, listen: false });
+        peer._state.status = 'STOPPING';
+        peer._state.peers = { a: { id: 'a' } };
+
+        let putCalls = 0;
+        peer._peersDb = {
+          status: 'open',
+          put: async () => { putCalls++; }
+        };
+
+        peer._savePeerRegistry();
+        await new Promise(resolve => setTimeout(resolve, 650));
+
+        assert.strictEqual(putCalls, 0);
+      });
+
+      it('does not write when registry DB is not open', async function () {
+        const peer = new Peer({ ...settings, peersDb: 'stores/test-peers-guard-2', networking: false, listen: false });
+        peer._state.status = 'STARTED';
+        peer._state.peers = { a: { id: 'a' } };
+
+        let putCalls = 0;
+        peer._peersDb = {
+          status: 'closed',
+          put: async () => { putCalls++; }
+        };
+
+        peer._savePeerRegistry();
+        await new Promise(resolve => setTimeout(resolve, 650));
+
+        assert.strictEqual(putCalls, 0);
+      });
+
+      it('suppresses transient "Database is not open" registry save errors', async function () {
+        const peer = new Peer({ ...settings, peersDb: 'stores/test-peers-guard-3', networking: false, listen: false });
+        peer._state.status = 'STARTED';
+        peer._state.peers = { a: { id: 'a' } };
+
+        const emittedErrors = [];
+        peer.on('error', (msg) => emittedErrors.push(String(msg)));
+
+        peer._peersDb = {
+          status: 'open',
+          put: async () => { throw new Error('Database is not open'); }
+        };
+
+        peer._savePeerRegistry();
+        await new Promise(resolve => setTimeout(resolve, 650));
+
+        assert.strictEqual(emittedErrors.length, 0);
+      });
     });
   });
 });

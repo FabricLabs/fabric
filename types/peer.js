@@ -86,13 +86,6 @@ class Peer extends Service {
       key: {}
     }, config);
 
-    // Log settings at construction
-    if (this.settings.debug) {
-      console.log('[FABRIC:PEER:CONSTRUCTOR] networking:', this.settings.networking);
-      console.log('[FABRIC:PEER:CONSTRUCTOR] peers:', this.settings.peers);
-      console.log('[FABRIC:PEER:CONSTRUCTOR] peersDb:', this.settings.peersDb);
-    }
-
     // Network Internals
     this.upnp = null;
 
@@ -380,7 +373,7 @@ class Peer extends Service {
    * @param {Buffer} message Message buffer to send.
    */
   broadcast (message, origin = null) {
-    console.debug('broadcasting:', message);
+    if (this.settings.debug) this.emit('debug', `Broadcasting message (${message && message.length ? message.length : 0} bytes)`);
     for (const id in this.connections) {
       this.emit('debug', `Broadcast [!!!] — evaluating connection: ${id}`);
       if (id === origin) continue;
@@ -610,16 +603,24 @@ class Peer extends Service {
   _savePeerRegistry () {
     const location = this.settings.peersDb;
     if (!location) return;
+    if (this._state.status === 'STOPPING' || this._state.status === 'STOPPED') return;
 
     if (this._peerRegistrySaveScheduled) clearTimeout(this._peerRegistrySaveScheduled);
 
     this._peerRegistrySaveScheduled = setTimeout(() => {
       this._peerRegistrySaveScheduled = null;
+      if (this._state.status === 'STOPPING' || this._state.status === 'STOPPED') return;
       this._peersDb = this._peersDb || new Level(location);
+      // Avoid noisy errors from writes scheduled while DB is closing/closed.
+      if (this._peersDb && this._peersDb.status && this._peersDb.status !== 'open') return;
       const payload = JSON.stringify(this._state.peers || {});
       this._peersDb.put('peers', payload)
         .then(() => { if (this.settings.debug) this.emit('debug', '[FABRIC:PEER] Saved peer registry'); })
-        .catch((err) => this.emit('error', `Failed to save peer registry: ${err && err.message}`));
+        .catch((err) => {
+          const message = err && err.message ? err.message : String(err);
+          if (message.includes('Database is not open')) return;
+          this.emit('error', `Failed to save peer registry: ${message}`);
+        });
     }, 500);
   }
 
@@ -764,6 +765,11 @@ class Peer extends Service {
     switch (message.type) {
       default:
         this.emit('debug', `Unhandled Generic Message: ${message.type} ${JSON.stringify(message, null, '  ')}`);
+        break;
+      case 'INVENTORY_REQUEST':
+        // Upstream Inventory request (typically for documents). Emit an 'inventory'
+        // event so higher-level services (e.g. hub) can respond appropriately.
+        this.emit('inventory', { message, origin, socket });
         break;
       case 'P2P_SESSION_OFFER':
         const peerId = message.actor.id;

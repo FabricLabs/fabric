@@ -24,7 +24,7 @@ module.exports = {
     OP_TEST: JSON.stringify(OP_TEST)
   },
   // TODO: regtest, playnet, signet, testnet, mainnet (in order)
-  network: 'playnet',
+  network: 'regtest',
   debug: false,
   fullnode: true,
   listen: true,
