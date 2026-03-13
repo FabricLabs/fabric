@@ -29,6 +29,7 @@ const {
   P2P_STATE_REQUEST,
   P2P_TRANSACTION,
   P2P_CALL,
+  P2P_RELAY,
   CHAT_MESSAGE,
   DOCUMENT_PUBLISH_TYPE,
   DOCUMENT_REQUEST_TYPE,
@@ -479,7 +480,7 @@ class Message extends Actor {
     }
 
     const message = new Message();
-
+    const payload = buffer.subarray(HEADER_SIZE);
     message.raw = {
       magic: buffer.subarray(0, 4),
       version: buffer.subarray(4, 8),
@@ -488,10 +489,11 @@ class Message extends Actor {
       type: buffer.subarray(72, 76),
       size: buffer.subarray(76, 80),
       hash: buffer.subarray(80, 112),
-      signature: buffer.subarray(112, HEADER_SIZE)
+      signature: buffer.subarray(112, HEADER_SIZE),
+      data: payload
     };
 
-    message.data = buffer.subarray(HEADER_SIZE);
+    message.data = payload;
 
     return message;
   }
@@ -563,6 +565,7 @@ class Message extends Actor {
       'StateRequest': P2P_STATE_REQUEST,
       'Transaction': P2P_TRANSACTION,
       'Call': P2P_CALL,
+      'P2P_RELAY': P2P_RELAY,
       'LogMessage': LOG_MESSAGE_TYPE,
       // Lightning (BOLT) types
       'AcceptChannel': LIGHTNING_ACCEPT_CHANNEL,
@@ -680,6 +683,8 @@ Object.defineProperty(Message.prototype, 'type', {
         return 'Transaction';
       case P2P_CALL:
         return 'Call';
+      case P2P_RELAY:
+        return 'P2P_RELAY';
       case PEER_CANDIDATE:
         return 'PeerCandidate';
       case SESSION_START:
