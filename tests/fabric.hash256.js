@@ -6,6 +6,9 @@ const Hash256 = require('../types/hash256');
 const sample = 'Hello, world!';
 const fixture = '315f5bdb76d078c43b8ac0064e4a0164612b1fce77c869345bfc94c75894edd3';
 
+const NIST_TEST = 'abc';
+const NIST_CHECK = 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad';
+
 describe('@fabric/core/types/hash256', function () {
   describe('Hash256', function () {
     it('is available from @fabric/core', function () {
@@ -27,6 +30,13 @@ describe('@fabric/core/types/hash256', function () {
       assert.strictEqual(hash256.value, fixture);
     });
 
+    it('provides a static compute() method', function () {
+      const digest = Hash256.compute(sample);
+      assert.ok(digest);
+      assert.strictEqual(digest.length, 64);
+      assert.strictEqual(digest, fixture);
+    });
+
     it('provides a static digest() method', function () {
       const digest = Hash256.digest(sample);
       assert.ok(digest);
@@ -34,8 +44,21 @@ describe('@fabric/core/types/hash256', function () {
       assert.strictEqual(digest, fixture);
     });
 
+    it('provides a hash property', function () {
+      const sha256 = new Hash256(sample);
+      const digest = sha256.hash;
+      assert.ok(digest);
+      assert.strictEqual(digest.length, 64);
+      assert.strictEqual(digest, fixture);
+    });
+
     it('throws an error when static digest() is called on a non-string', function () {
       assert.throws(() => Hash256.digest({ sample }));
+    });
+
+    it('correctly provides the NIST hash', function () {
+      const hash = new Hash256(NIST_TEST);
+      assert.strictEqual(hash.value, NIST_CHECK);
     });
 
     it('can reverse a known hash', function () {

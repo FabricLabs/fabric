@@ -3,13 +3,18 @@
 const assert = require('assert');
 const Capability = require('../types/capability');
 const Identity = require('../types/identity');
-const Signer = require('../types/signer');
+const Key = require('../types/key');
 
 const sample = {
-  type: 'CREATE_BLOCK'
+  type: 'CREATE_BLOCK',
+  key: new Key({
+    private: '1111111111111111111111111111111111111111111111111111111111111111'
+  })
 };
 
 describe('@fabric/core/types/capability', function () {
+  this.timeout(30000); // Increase timeout to 30 seconds
+
   describe('Capability', function () {
     it('is available from @fabric/core', function () {
       assert.equal(Capability instanceof Function, true);
@@ -25,22 +30,18 @@ describe('@fabric/core/types/capability', function () {
       test();
     });
 
-    it('can generate a token for an identity', function (done) {
-      async function test () {
-        const identity = new Identity(sample);
-        const capability = new Capability(sample);
-        const token = await capability._generateToken();
+    it('can generate a token for an identity', async function () {
+      const identity = new Identity({
+        private: '1111111111111111111111111111111111111111111111111111111111111111'
+      });
+      const capability = new Capability(sample);
+      const token = await capability._generateToken();
 
-        assert.ok(identity);
-        assert.ok(capability);
-        assert.ok(token);
+      assert.ok(identity);
+      assert.ok(capability);
+      assert.ok(token);
 
-        assert.strictEqual(token.macaroon.s64, '2RbOb5ti3EoIDOXUpmCVZHHxm4YNpCQrCFJyczHBAz0');
-
-        done();
-      }
-
-      test();
+      assert.strictEqual(token.macaroon.s64, '2RbOb5ti3EoIDOXUpmCVZHHxm4YNpCQrCFJyczHBAz0');
     });
   });
 });

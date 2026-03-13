@@ -13,7 +13,6 @@
 ./settings/local.js:  // TODO: regtest, playnet, signet, testnet, mainnet (in order)
 ./settings/local.js:  // TODO: test `true`
 ./settings/default.json:      "@comment": "// TODO: remove routes, add by default",
-./SETTINGS.md:### WARNING: TODO
 ./types/witness.js:      // TODO: assign R coordinate
 ./types/witness.js:      // TODO: assign S coordinate
 ./types/channel.js:    // TODO: remove short-circuit
@@ -21,10 +20,12 @@
 ./types/interface.js:    // TODO: use Layer
 ./types/interface.js:      // TODO: document why @input is removed
 ./types/interface.js:    // TODO: apply `transaction.operations` to Interface state
+./types/filesystem.js:    // TODO: only sync changed files
 ./types/scribe.js:    // TODO: enable
 ./types/key.js:// TODO: remove
 ./types/key.js:// TODO: remove all external dependencies
-./types/key.js:    // TODO: design state machine for input (configuration)
+./types/key.js:        // TODO: allow setting of raw seed (deprecates passing a mnemonic in the `seed` property)
+./types/key.js:        // TODO: set property `seed` as the actual derived seed, not the seed phrase
 ./types/key.js:    // TODO: determine if this makes sense / needs to be private
 ./types/key.js:    // TODO: evaluate compression when treating seed phrase as ascii
 ./types/key.js:    // TODO: consider using sha256(masterprivkey) or sha256(sha256(...))?
@@ -63,9 +64,8 @@
 ./types/service.js:    // TODO: use Resource definition to de-deuplicate by fields.id
 ./types/service.js:    // TODO: reduce storage to references
 ./types/service.js:    // TODO: implement a basic Stream
-./types/service.js:      // TODO: add robust + convenient database opener
-./types/service.js:        // TODO: notify status?
 ./types/service.js:      // TODO: allow configurable validators
+./types/service.js:        // TODO: invalidate changes without appropriate capability token
 ./types/service.js:        // TODO: update this in constructor
 ./types/service.js:      // TODO: re-evaluate inclusion on Service itself
 ./types/service.js:        // TODO: evaluate @fabric/core/types/store
@@ -96,14 +96,15 @@
 ./types/compiler.js:  // TODO: @melnx to refactor into f(x) => y
 ./types/vector.js:  // TODO: standardize on a serialization format
 ./types/vector.js:    // TODO: standardize on a serialization format
+./types/token.js:    // TODO: determine rounding preference (secwise)
+./types/token.js:    // TODO: determine rounding preference (secwise)
+./types/token.js:    // TODO: reconcile with JWT spec
 ./types/circuit.js:    // TODO: generate polynomial for circuit
-./types/signer.js:    // TODO: fix bcoin in React / WebPack
-./types/signer.js:    this.value = this._readObject(actor); // TODO: use Buffer?
-./types/signer.js:    // TODO: use pubkey
-./types/signer.js:    // TODO: encode pubkey correctly for verification
-./types/signer.js:    // TODO: check with bip-schnorr on behavior of signing > 32 byte messages
-./types/signer.js:    // TODO: unpause input stream here
-./types/bitcoin/block.js:    // TODO: validation
+./types/contract.js:    // TODO: parse on-chain transaction for update to contract balance
+./types/bitcoin/transaction.js:// TODO: PSBTs
+./types/bitcoin/transaction.js:    return '<hash>'; // TODO: real hash
+./types/bitcoin/transaction.js:    return '<fabricID>'; // TODO: Fabric ID
+./types/bitcoin/transaction.js:    return '<txID>'; // TODO: bitcoin txid
 ./types/hash256.js:  // TODO: document `hash256.value`
 ./types/bond.js:      content: Buffer.alloc(4) // TODO: Bitcoin encoded values?
 ./types/actor.js:    // TODO: encourage use of `state` over `_state`
@@ -121,11 +122,8 @@
 ./types/router.js:// TODO: re-define this class for Fabric messages
 ./types/router.js:            // TODO: remove this.fabric.plugins call
 ./types/mempool.js:    // TODO: compare target.id and entity.id
-./types/wallet.js:    // TODO: enable wordlist translations
-./types/wallet.js:    // TODO: remove these
 ./types/wallet.js:        // TODO: export this.logs
 ./types/wallet.js:        // TODO: reduce to C mem equivalent
-./types/wallet.js:    // TODO: new Key() here, then use key.export()
 ./types/wallet.js:    // TODO: bind @fabric/core/services/bitcoin to addresses on wallet...
 ./types/wallet.js:    // TODO: update channels
 ./types/wallet.js:    // TODO: parse as {@link Message}
@@ -138,29 +136,13 @@
 ./types/wallet.js:    // TODO: use the MTX to select outputs
 ./types/wallet.js:    // TODO: use Fabric.Script
 ./types/wallet.js:    // TODO: remove short-circuit
-./types/wallet.js:    // TODO: complete order construction
-./types/wallet.js:      // TODO: should be split parts
-./types/wallet.js:    // TODO: remove short-circuit
 ./types/wallet.js:      // TODO: replace this with a randomly-generated input
 ./types/wallet.js:    // TODO: remove short-circuit
 ./types/wallet.js:    // TODO: complete order construction
 ./types/wallet.js:      // TODO: should be split parts
 ./types/wallet.js:    // TODO: labeled keypairs
 ./types/wallet.js:      rate: 10000, // TODO: fee calculation
-./types/wallet.js:    // TODO: labeled keypairs
-./types/wallet.js:      rate: 10000, // TODO: fee calculation
-./types/wallet.js:    // TODO: return a full object for Fabric
 ./types/wallet.js:    // TODO: restore swap code, abstract input types
-./types/wallet.js:    // TODO: use Satoshis for all calculations
-./types/wallet.js:    // TODO: remove all fake coinbases
-./types/wallet.js:    // TODO: remove all short-circuits
-./types/wallet.js:    // TODO: remove short-circuit
-./types/wallet.js:    // TODO: remove entirely, test short-circuit removal
-./types/wallet.js:    // TODO: wallet._getSpendableOutput()
-./types/wallet.js:    // TODO: load available outputs from wallet
-./types/wallet.js:      // TODO: fee estimation
-./types/wallet.js:      // TODO: fee estimation
-./types/wallet.js:    // TODO: load available outputs from wallet
 ./types/wallet.js:      // TODO: fee estimation
 ./types/wallet.js:      // TODO: restore address tracking in state
 ./types/wallet.js:      // TODO: check on above events, should be more like...
@@ -174,9 +156,9 @@
 ./types/cli.js:const pointer = require('json-pointer'); // TODO: move uses to App
 ./types/cli.js:const monitor = require('fast-json-patch'); // TODO: move uses to App
 ./types/cli.js:// TODO: use Jade to render pre-registered components
-./types/cli.js:        mode: 'rpc', // TODO: change name of mode to `rest`?
 ./types/cli.js:    // TODO: ZMQ
 ./types/cli.js:    // TODO: enable
+./types/cli.js:    // TODO: sign
 ./types/cli.js:    // TODO: create payment channel (@fabric/core/types/channel)
 ./types/cli.js:      // TODO: exit function here
 ./types/cli.js:    // TODO: use @fabric/core/types/channel
@@ -189,34 +171,15 @@
 ./types/consensus.js:    // TODO: define class ConsensusProvider
 ./types/consensus.js:  // TODO: remove from {@link Consensus}
 ./types/consensus.js:      // TODO: compute from chain height
-./types/machine.js:      seed: 1, // TODO: select seed for production
-./types/peer.js:        // TODO: parse as encrypted data
 ./types/peer.js:    // TODO: switch to child pubkey
-./types/peer.js:    // TODO: use Proxy
+./types/peer.js:              // TODO: consider making this a FabricMessageID
 ./types/peer.js:    // TODO: output stream
 ./types/peer.js:        // TODO: remove this assumption (validate above)
-./types/peer.js:      // TODO: convert callbacks to promises
-./types/peer.js:          // TODO: notify remote peer of closure
-./types/peer.js:  // TODO: use in _connect
-./types/peer.js:    // TODO: evaluate trust model
-./types/peer.js:    // TODO: consolidate with similar _handleConnection segment
-./types/peer.js:    // TODO: check peer ID, eject if self or known
-./types/peer.js:    // TODO re-enable (disabled to reduce spammy messaging)
-./types/peer.js:    // TODO: re-evaluate use of IdentityRequest
-./types/peer.js:    // TODO: actually decrypt packet
-./types/peer.js:    // TODO: use known key
-./types/peer.js:    // TODO: document peer announcement
-./types/peer.js:    // TODO: eliminate use of JSON in messaging
-./types/peer.js:          // TODO: remove in favor of StartSession
-./types/peer.js:        // TODO: use packet's peer ID, not socket address
-./types/peer.js:        // TODO: avoid using JSON in overall protocol
-./types/peer.js:        // TODO: validate signature
-./types/peer.js:        // TODO: restore session identity
-./types/peer.js:          // TODO: document peer registration process
-./types/peer.js:          // TODO: use message type for next phase of session (i.e., NOISE)
-./types/peer.js:        // TODO: test protocol flow (i.e., understand StateRoot)
-./types/peer.js:        // TODO: use Fabric.Script / Fabric.Machine
-./types/peer.js:      // TODO: select type byte for state updates
+./types/peer.js:        // TODO: check for existing peer, update instead of replace
+./types/peer.js:        // TODO: ensure no pong is handled when a ping was not previously sent
+./types/peer.js:        // TODO: reject and punish mis-behaving peers
+./types/peer.js:        // TODO: reject and punish mis-behaving peers
+./types/peer.js:    // TODO: reconcile APIs for these methods
 ./types/entity.js:    // TODO: use getters/setters to restrict access to these elements
 ./types/entity.js:        // TODO: write up longer-form explanation as to why we use an Array here
 ./types/collection.js:    // TODO: document `listeners` handler (currently only `create`)
@@ -235,13 +198,8 @@
 ./types/app.js:    // TODO: debug these in browser
 ./types/app.js:    // TODO: debug this in browser
 ./types/app.js:      // TODO: decide on resource['@data'] vs. resource (new)
-./types/layer.js:    // TODO: describe state-passing for key
 ./types/environment.js:      // TODO: encrypt inner store with password (`object` property)
-./types/noise.js:    // TODO: The returned value is the SHA256 of the compressed format of the generated point.
-./types/noise.js:      // TODO: NOISE Protocol Act 1
-./types/noise.js:      c.destroy(); // TODO: test various network conditions (safe closure vs. network interruption)
 ./types/stack.js:    // TODO: return Transaction
-./API.md:TODO: move to @fabric/http/types/spa
 ./API.md:TODO: move to @fabric/http/types/spa
 ./API.md:TODO: move to @fabric/http/types/spa
 ./SUMMARY.md:* [✅ TODO List][todo]
@@ -251,7 +209,7 @@
 ./contracts/node.js:    // TODO: configure with input?
 ./contracts/setup.js.bak:  // TODO: discuss w/ @ChronicSmoke
 ./contracts/setup.js.bak:  // TODO: use in walletExists
-./contracts/federation.js:    // TODO: get signatures
+./contracts/fabric.c:  // TODO: emit the message object
 ./contracts/setup.js:  // TODO: replicate this program in C / ASM
 ./contracts/setup.js:    // TODO: remove from log output...
 ./contracts/chat.js:  const chat = new CLI(settings); // TODO: this.settings
@@ -260,23 +218,22 @@
 ./tests/fabric.interface.js:      // TODO: remove this case / rework messages
 ./tests/fabric.tree.js:      assert.strictEqual(tree.root.toString('hex'), ''); // TODO: wat?
 ./tests/fabric.tree.js:      assert.strictEqual(tree.root.toString('hex'), '906b5aaf65ae98f8c98848de5e81ba865659f16fd53aefa4c78b34176f068079'); // TODO: wat?
-./tests/fabric.key.js:        // TODO: test against BIP_84_TEST_VECTOR_ZPRV
 ./tests/fabric.core.js:// TODO: write parser for comments
 ./tests/fabric.core.js:  // TODO: implement polyfill for browserland
-./tests/fabric.weave.js:      assert.strictEqual(weave._state.root, '906b5aaf65ae98f8c98848de5e81ba865659f16fd53aefa4c78b34176f068079'); // TODO: wat?
 ./tests/fabric.machine.js:      // TODO: use Fabric itself
 ./tests/fabric.machine.js:      // TODO: use Fabric instead of Machine
 ./tests/fabric.router.js:// TODO: test class/function middleware
 ./tests/fabric.stack.js:      // TODO: move to constants, verify
 ./tests/fabric.stack.js:      // TODO: migrate to Stack
-./tests/fabric.wallet.js:        // TODO: replace with fixture
 ./tests/fixtures/lightning.js:// TODO: test same as before
 ./DEVELOPERS.md:All agreements in Fabric are represented as well-formed descriptions of **Resources**<sup>[TODO: link here]</sup> — a term we use to describe a standardized service a peer might offer.  Each node in the Fabric network decides which resources they provide (determining which contracts they run), and what prices they accept for participation.  This, in concert with the bidders requesting these resources, forms the "Information Market" discussed in Fabric's whitepaper.
 ./DEVELOPERS.md:    // TODO: make optional
 ./DEVELOPERS.md:## TODO
 ./DEVELOPERS.md:- [ ] Remove TODOs
+./AUDIT.md:| Technical Debt | TODOs and legacy code | Low | Refactor and clean up |
 ./package.json:    "report:todo": "grep --exclude-dir=.git --exclude-dir=_book --exclude-dir=assets --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs -rEI \"TODO|FIXME\" . > reports/TODO.txt",
 ./package.json:    "review:todo": "npm run report:todo && cat reports/TODO.txt && echo '\nOutstanding TODO items (@fabric/core):' && wc -l reports/TODO.txt && echo '\nIssues List: https://github.com/FabricLabs/fabric/issues\nDisclosures: securiy@fabric.pub\n\n'",
+./guides/SETTINGS.md:### WARNING: TODO
 ./examples/bitcoin.js:  // TODO: import these into core process logic
 ./examples/game.js:    // TODO: use fabric call
 ./examples/swarm.html:          <p>TODO: create entities on seed node
@@ -301,6 +258,7 @@
 ./examples/game.html:          <p>TODO: use fabric call
 ./examples/app.js:  // TODO: document defer as trust(authority) with Remote class
 ./scripts/lightning-demo.js:    // TODO: import configs from Polar
+./scripts/create-validator-script.sh:# TODO: set pubkey length from actual pubkey length
 ./scripts/example.js:// TODO: generate signature, hash of function definition (the "type")
 ./scripts/cli.js:  // TODO: read & test contracts
 ./scripts/schemata.js:      // TODO: here for Eric's review.
@@ -310,30 +268,24 @@
 ./scripts/chat.js:      // TODO: replicate this program in C / ASM
 ./scripts/transfer.js:  // TODO: add support for segwit, taproot
 ./functions/_handleFabricMessage.js:  const message = Message.fromVector([...data]); // TODO: redefine...
-./GOALS.md:- [ ] Find all TODO items (run script, check diff)
+./GOALS.md:- [x] Find all TODO items (run script, check diff)
 ./services/bitcoin.js:// TODO: replace with  `secp256k1`
 ./services/bitcoin.js:      // httpPort: 48449, // TODO: disable HTTP entirely!
-./services/bitcoin.js:    // TODO: import ZMQ settings
 ./services/bitcoin.js:      message.amount = message.amount.fixed().toPrecision(8); // TODO: evaluate precision behavior
 ./services/bitcoin.js:    // TODO: ensure all appropriate fields, valid block
 ./services/bitcoin.js:    // TODO: verify local hash (see below)
 ./services/bitcoin.js:      // TODO: verify block hash!!!
 ./services/bitcoin.js:      // TODO: enable sharing of local hashes
+./services/bitcoin.js:        false, // TODO: enable blank, import _rootKey
 ./services/bitcoin.js:      // TODO: fix @types/wallet to use named types for Addresses...
-./services/bitcoin.js:    // TODO: listen for sync finalization
-./services/bitcoin.js:            // TODO: replace with reject()
-./services/bitcoin.js:      // TODO: not rely on parseFloat
 ./services/bitcoin.js:    // TODO: report FundingError: Not enough funds
-./services/bitcoin.js:      // TODO: not rely on parseFloat
-./services/bitcoin.js:    // TODO: add support for segwit, taproot
-./services/bitcoin.js:    // TODO: use satoshis/vbyte
-./services/bitcoin.js:    // TODO: SECURITY !!!
+./services/bitcoin.js:    // TODO: add change output
 ./services/bitcoin.js:    // TODO: async (i.e., Promise.all) chainsync
+./services/bitcoin.js:    // TODO: use RPC auth
 ./services/bitcoin.js:    // TODO: re-enable these
 ./services/bitcoin.js:    // TODO: re-enable SPV
 ./services/bitcoin.js:    // END TODO
 ./services/turntable.js:    // TODO: await REST or GraphQL API?
 ./services/exchange.js:    // TODO: finalize Collection API in #docs-update
-./services/lightning.js:        // TODO: re-work Polar integration
 ./whitepaper.md:TODO
 ./whitepaper.md:TODO: include content hashes of links as they appear at

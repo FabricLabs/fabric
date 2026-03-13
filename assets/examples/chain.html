@@ -1,154 +1,210 @@
 <!DOCTYPE html>
 
 <html>
+
 <head>
   <title>chain.js</title>
   <meta http-equiv="content-type" content="text/html; charset=UTF-8">
   <meta name="viewport" content="width=device-width, target-densitydpi=160dpi, initial-scale=1.0; maximum-scale=1.0; user-scalable=0;">
-  <link rel="stylesheet" media="all" href="docco.css" />
+  <link rel="stylesheet" media="all" href="../docco.css" />
 </head>
+
 <body>
   <div id="container">
     <div id="background"></div>
-    
-      <ul id="jump_to">
-        <li>
-          <a class="large" href="javascript:void(0);">Jump To &hellip;</a>
-          <a class="small" href="javascript:void(0);">+</a>
-          <div id="jump_wrapper">
+
+    <ul id="jump_to">
+      <li>
+        <a class="large" href="javascript:void(0);">Jump To &hellip;</a>
+        <a class="small" href="javascript:void(0);">+</a>
+        <div id="jump_wrapper">
           <div id="jump_page_wrapper">
             <div id="jump_page">
-              
-                
-                <a class="source" href="app.html">
-                  app.js
-                </a>
-              
-                
-                <a class="source" href="bitcoin.html">
-                  bitcoin.js
-                </a>
-              
-                
-                <a class="source" href="blockchain.html">
-                  blockchain.js
-                </a>
-              
-                
-                <a class="source" href="chain.html">
-                  chain.js
-                </a>
-              
-                
-                <a class="source" href="cli.html">
-                  cli.js
-                </a>
-              
-                
-                <a class="source" href="collection.html">
-                  collection.js
-                </a>
-              
-                
-                <a class="source" href="fabric.html">
-                  fabric.js
-                </a>
-              
-                
-                <a class="source" href="game.html">
-                  game.js
-                </a>
-              
-                
-                <a class="source" href="http.html">
-                  http.js
-                </a>
-              
-                
-                <a class="source" href="index.html">
-                  index.js
-                </a>
-              
-                
-                <a class="source" href="network.html">
-                  network.js
-                </a>
-              
-                
-                <a class="source" href="oracle.html">
-                  oracle.js
-                </a>
-              
-                
-                <a class="source" href="p2pkh.html">
-                  p2pkh.js
-                </a>
-              
-                
-                <a class="source" href="service.html">
-                  service.js
-                </a>
-              
-                
-                <a class="source" href="store.html">
-                  store.js
-                </a>
-              
-                
-                <a class="source" href="witness.html">
-                  witness.js
-                </a>
-              
+
+
+              <a class="source" href="app.html">
+                examples/app.js
+              </a>
+
+
+              <a class="source" href="bitcoin.html">
+                examples/bitcoin.js
+              </a>
+
+
+              <a class="source" href="blockchain.html">
+                examples/blockchain.js
+              </a>
+
+
+              <a class="source" href="chain.html">
+                examples/chain.js
+              </a>
+
+
+              <a class="source" href="cli.html">
+                examples/cli.js
+              </a>
+
+
+              <a class="source" href="collection.html">
+                examples/collection.js
+              </a>
+
+
+              <a class="source" href="environment.html">
+                examples/environment.js
+              </a>
+
+
+              <a class="source" href="fabric.html">
+                examples/fabric.js
+              </a>
+
+
+              <a class="source" href="game.html">
+                examples/game.js
+              </a>
+
+
+              <a class="source" href="heartbeat.html">
+                examples/heartbeat.js
+              </a>
+
+
+              <a class="source" href="http.html">
+                examples/http.js
+              </a>
+
+
+              <a class="source" href="index.html">
+                examples/index.js
+              </a>
+
+
+              <a class="source" href="lightning.html">
+                examples/lightning.js
+              </a>
+
+
+              <a class="source" href="message.html">
+                examples/message.js
+              </a>
+
+
+              <a class="source" href="network.html">
+                examples/network.js
+              </a>
+
+
+              <a class="source" href="oracle.html">
+                examples/oracle.js
+              </a>
+
+
+              <a class="source" href="p2pkh.html">
+                examples/p2pkh.js
+              </a>
+
+
+              <a class="source" href="relay.html">
+                examples/relay.js
+              </a>
+
+
+              <a class="source" href="service.html">
+                examples/service.js
+              </a>
+
+
+              <a class="source" href="store.html">
+                examples/store.js
+              </a>
+
+
+              <a class="source" href="swarm.html">
+                examples/swarm.js
+              </a>
+
+
+              <a class="source" href="witness.html">
+                examples/witness.js
+              </a>
+
             </div>
           </div>
-        </li>
-      </ul>
-    
+      </li>
+    </ul>
+
     <ul class="sections">
-        
-          <li id="title">
-              <div class="annotation">
-                  <h1>chain.js</h1>
-              </div>
-          </li>
-        
-        
-        
-        <li id="section-1">
-            <div class="annotation">
-              
-              <div class="pilwrap ">
-                <a class="pilcrow" href="#section-1">&#182;</a>
-              </div>
-              
-            </div>
-            
-            <div class="content"><div class='highlight'><pre><span class="hljs-meta">'use strict'</span>;
 
-<span class="hljs-keyword">const</span> Chain = <span class="hljs-built_in">require</span>(<span class="hljs-string">'../lib/chain'</span>);
-<span class="hljs-keyword">const</span> chain = <span class="hljs-keyword">new</span> Chain();
+      <li id="title">
+        <div class="annotation">
+          <h1>chain.js</h1>
+        </div>
+      </li>
 
-<span class="hljs-keyword">async</span> <span class="hljs-function"><span class="hljs-keyword">function</span> <span class="hljs-title">main</span> (<span class="hljs-params"></span>) </span>{
-  <span class="hljs-keyword">await</span> chain.storage.open();
 
-  chain.on(<span class="hljs-string">'block'</span>, <span class="hljs-function"><span class="hljs-keyword">function</span> (<span class="hljs-params">block</span>) </span>{
-    <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'[CHAIN]'</span>, <span class="hljs-string">'new block:'</span>, block);
-    <span class="hljs-built_in">console</span>.log(<span class="hljs-string">'[CHAIN]'</span>, <span class="hljs-string">'chain:'</span>, chain);
+
+      <li id="section-1">
+        <div class="annotation">
+
+          <div class="sswrap ">
+            <a class="ss" href="#section-1">&#x00a7;</a>
+          </div>
+
+        </div>
+
+        <div class="content">
+          <div class='highlight'>
+            <pre><span class="hljs-meta">&#x27;use strict&#x27;</span>;</pre>
+          </div>
+        </div>
+
+      </li>
+
+
+      <li id="section-2">
+        <div class="annotation">
+
+          <div class="sswrap ">
+            <a class="ss" href="#section-2">&#x00a7;</a>
+          </div>
+          <p>Fabric Dependencies</p>
+
+        </div>
+
+        <div class="content">
+          <div class='highlight'>
+            <pre><span class="hljs-keyword">const</span> <span class="hljs-title class_">Chain</span> = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;../types/chain&#x27;</span>);
+<span class="hljs-keyword">const</span> chain = <span class="hljs-keyword">new</span> <span class="hljs-title class_">Chain</span>();
+
+<span class="hljs-keyword">async</span> <span class="hljs-keyword">function</span> <span class="hljs-title function_">main</span> () {
+  <span class="hljs-keyword">await</span> chain.<span class="hljs-property">storage</span>.<span class="hljs-title function_">open</span>();
+
+  chain.<span class="hljs-title function_">on</span>(<span class="hljs-string">&#x27;block&#x27;</span>, <span class="hljs-keyword">function</span> (<span class="hljs-params">block</span>) {
+    <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;[CHAIN]&#x27;</span>, <span class="hljs-string">&#x27;new block:&#x27;</span>, block);
+    <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;[CHAIN]&#x27;</span>, <span class="hljs-string">&#x27;chain:&#x27;</span>, chain);
   });
 
-  chain.append({ <span class="hljs-attr">test</span>: <span class="hljs-string">'foo'</span> });
-  chain.append({ <span class="hljs-attr">test</span>: <span class="hljs-string">'bar'</span> });
+  chain.<span class="hljs-title function_">append</span>({ <span class="hljs-attr">test</span>: <span class="hljs-string">&#x27;foo&#x27;</span> });
+  chain.<span class="hljs-title function_">append</span>({ <span class="hljs-attr">test</span>: <span class="hljs-string">&#x27;bar&#x27;</span> });
 
-  <span class="hljs-keyword">await</span> chain.storage.close();
+  <span class="hljs-keyword">await</span> chain.<span class="hljs-property">storage</span>.<span class="hljs-title function_">close</span>();
 
-  <span class="hljs-keyword">return</span> <span class="hljs-keyword">this</span>;
+  <span class="hljs-keyword">return</span> <span class="hljs-variable language_">this</span>;
 }
 
-main();</pre></div></div>
-            
-        </li>
-        
+<span class="hljs-title function_">main</span>().<span class="hljs-title function_">catch</span>(<span class="hljs-function">(<span class="hljs-params">exception</span>) =&gt;</span> {
+  <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">error</span>(<span class="hljs-string">&#x27;[EXAMPLES:CHAIN]&#x27;</span>, <span class="hljs-string">&#x27;Main Process Exception:&#x27;</span>, exception);
+});</pre>
+          </div>
+        </div>
+
+      </li>
+
     </ul>
   </div>
 </body>
+
 </html>

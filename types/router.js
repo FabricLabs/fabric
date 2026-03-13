@@ -6,15 +6,7 @@ const Scribe = require('./scribe');
 // Current code is specific to @fabric/doorman — should be a general-
 // purpose Router, not for strings and triggers in chat messages.
 
-/**
- * Process incoming messages.
- * @extends Scribe
- */
 class Router extends Scribe {
-  /**
-   * Maintains a list of triggers ("commands") and their behaviors.
-   * @param       {Object} map Map of command names => behaviors.
-   */
   constructor (config) {
     super(config);
 

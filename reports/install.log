@@ -1,8 +1,23 @@
 $ npm i
 
-added 688 packages, and audited 689 packages in 1m
+> @fabric/core@0.1.0-RC1 preinstall
+> node -e ""
 
-75 packages are looking for funding
+
+added 678 packages, and audited 679 packages in 21s
+
+124 packages are looking for funding
   run `npm fund` for details
 
-found 0 vulnerabilities
+8 vulnerabilities (3 low, 5 high)
+
+To address issues that do not require attention, run:
+  npm audit fix
+
+To address all issues possible (including breaking changes), run:
+  npm audit fix --force
+
+Some issues need review, and may require choosing
+a different dependency.
+
+Run `npm audit` for details.

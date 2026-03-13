@@ -20,12 +20,17 @@ describe('@fabric/core/types/peer', function () {
     });
 
     it('can cleanly start and stop', async function () {
-      const peer = new Peer();
+      const peer = new Peer(settings);
 
       await peer.start();
       await peer.stop();
 
       assert.ok(peer);
+    });
+
+    it('provides documentation', function () {
+      const peer = new Peer();
+      assert.ok(peer.documentation);
     });
 
     xit('can receive a connection', function (done) {
@@ -83,6 +88,15 @@ describe('@fabric/core/types/peer', function () {
       }
 
       test();
+    });
+
+    it('can recover a message', async function () {
+      const peer = new Peer(settings);
+
+      await peer.start();
+      await peer.stop();
+
+      assert.ok(peer);
     });
   });
 });

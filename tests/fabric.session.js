@@ -12,7 +12,11 @@ describe('@fabric/core/types/session', function () {
     });
 
     it('can cleanly start and stop', async function () {
-      let session = new Session();
+      let session = new Session({
+        key: new Key({
+          private: '1111111111111111111111111111111111111111111111111111111111111111'
+        })
+      });
 
       await session.start();
       await session.stop();
@@ -24,7 +28,11 @@ describe('@fabric/core/types/session', function () {
     });
 
     it('can append an arbitrary message', async function () {
-      let session = new Session();
+      let session = new Session({
+        key: new Key({
+          private: '1111111111111111111111111111111111111111111111111111111111111111'
+        })
+      });
       let message = session.TypedMessage('arbitrary').buffer();
 
       await session.start();
@@ -39,7 +47,11 @@ describe('@fabric/core/types/session', function () {
 
     it('emits session message event', function (done) {
       async function test () {
-        let session = new Session();
+        let session = new Session({
+          key: new Key({
+            private: '1111111111111111111111111111111111111111111111111111111111111111'
+          })
+        });
         let message = session.TypedMessage('arbitrary').buffer();
 
         session.on('message', function messageHandler (message) {

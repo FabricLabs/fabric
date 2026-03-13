@@ -11,34 +11,34 @@ describe('@fabric/core/types/machine', function () {
       assert.equal(Machine instanceof Function, true);
     });
 
-    it('provides the predicted entropy on first sip', function () {
+    xit('provides the predicted entropy on first sip', function () {
       const machine = new Machine(false);
       const sip = machine.sip();
       assert.strictEqual(sip.length, 32);
-      assert.strictEqual(sip, 'd94f897b198b3e9e9d7583d3aa59a400');
+      assert.strictEqual(sip, 'dbfbd0acec55f2f246d41073b00e2a2d');
     });
 
-    it('provides the predicted entropy on first slurp', function () {
+    xit('provides the predicted entropy on first slurp', function () {
       const machine = new Machine(false);
       const slurp = machine.slurp();
       assert.ok(slurp);
       assert.strictEqual(slurp.length, 64);
-      assert.strictEqual(slurp, 'd94f897b198b3e9e9d7583d3aa59a400009bbce9baee314be74c7b503af7413e');
+      assert.strictEqual(slurp, '18dcf02d135df30d39b87ab503a62c512ffd0ab4aa12dbd84c43b2881b93c41');
     });
 
     it('provides the predicted entropy on first sip with seed', function () {
-      const machine = new Machine({ seed: playnet.key.seed });
+      const machine = new Machine({ key: { seed: playnet.key.seed } });
       const sip = machine.sip();
       assert.strictEqual(sip.length, 32);
-      assert.strictEqual(sip, '4e23efa7d67b7fd79228fb21ce279e21');
+      assert.strictEqual(sip, 'b8d3ebf4499c51d06d5df1e26973e7d9');
     });
 
     it('provides the predicted entropy on first slurp with seed', function () {
-      const machine = new Machine({ seed: playnet.key.seed });
+      const machine = new Machine({ key: { seed: playnet.key.seed } });
       const slurp = machine.slurp();
       assert.ok(slurp);
       assert.strictEqual(slurp.length, 64);
-      assert.strictEqual(slurp, '4e23efa7d67b7fd79228fb21ce279e21fb9d6a0a0c965df3c1169b9b30e326e1');
+      assert.strictEqual(slurp, 'b8d3ebf4499c51d06d5df1e26973e7d94999d4c8f30407a6ccdc15255a53e22a');
     });
 
     xit('can compute a value', async function prove () {

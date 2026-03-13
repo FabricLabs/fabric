@@ -8,17 +8,7 @@ const bcoin = require('bcoin');
 // Native Dependencies
 const crypto = require('crypto');
 
-/**
- * The {@link Swap} contract executes a set of transactions on two distinct
- * {@link Chain} components, utilizing a secret-reveal mechanism to atomically
- * execute either the full set or none.
- * @type {Object}
- */
 class Swap {
-  /**
-   * Atomically execute a set of transactions across two {@link Chain} components.
-   * @param  {Object} [settings={}] Configuration for the swap.
-   */
   constructor (settings = {}) {
     this.settings = Object.assign({
       chain: 'bitcoin:regtest'

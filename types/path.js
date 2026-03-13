@@ -1,14 +1,6 @@
 'use strict';
 
-/**
- * A {@link Path} is a {@link Fabric}-native link to a {@link Document}
- * within the network.
- */
 class Path extends String {
-  /**
-   * Create a new {@link Path}.
-   * @param {String|Object} input Named path.
-   */
   constructor (input = {}) {
     super(input);
 

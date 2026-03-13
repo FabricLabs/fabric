@@ -13,16 +13,7 @@ const Message = require('./message');
 const Tree = require('./tree');
 const Key = require('./key');
 
-/**
- * Provides an encrypted datastore for generic object storage.
- */
 class Keystore extends Actor {
-  /**
-   * Create an instance of the Store.
-   * @param {FabricStoreConfiguration} [configuration] Settings to use.
-   * @param {String} [configuration.name="DefaultStore"] Name of the Store.
-   * @returns {Keystore} Instance of the store.
-   */
   constructor (settings = {}) {
     super(settings);
     if (!settings.seed) settings.seed = (process) ? process.env.FABRIC_SEED || null : null;
@@ -131,9 +122,16 @@ class Keystore extends Actor {
       }
 
       try {
+        // Level/level-transcoder requires encode/decode as enumerable properties
+        const encoding = {
+          encode: (data) => keystore.codec.encode(data),
+          decode: (data) => keystore.codec.decode(data),
+          buffer: keystore.codec.buffer,
+          name: keystore.codec.type
+        };
         keystore.db = new Level(keystore.settings.path, {
-          keyEncoding: keystore.codec,
-          valueEncoding: keystore.codec
+          keyEncoding: encoding,
+          valueEncoding: encoding
         }, _handleDiskOpen.bind(keystore));
 
         keystore.status = 'open';

@@ -9,15 +9,7 @@ const EncryptedPromise = require('./promise');
 const Entity = require('./entity');
 const Witness = require('./witness');
 
-/**
- * The {@link Transition} type reflects a change from one finite
- * {@link State} to another.
- */
 class Transition extends Entity {
-  /**
-   *
-   * @param {Object} settings Configuration for the transition object.
-   */
   constructor (settings = {}) {
     super(settings);
 

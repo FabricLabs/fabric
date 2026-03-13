@@ -15,19 +15,7 @@ const Collection = require('../types/collection');
 const Message = require('../types/message');
 const Service = require('../types/service');
 
-/**
- * Implements a basic Exchange.
- */
 class Exchange extends Service {
-  /**
-   * Create an instance of the Exchange.  You may run two instances at
-   * once to simulate two-party contracts, or use the Fabric Market to
-   * find and trade with real peers.
-   * @param {Object} settings Map of settings to values.
-   * @param {Object} settings.fees Map of fee settings (all values in BTC).
-   * @param {Object} settings.fees.minimum Minimum fee (satoshis).
-   * @returns Exchnge
-   */
   constructor (settings = {}) {
     super(settings);
 

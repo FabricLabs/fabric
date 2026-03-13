@@ -14,7 +14,7 @@ async function OP_MOUNT (command) {
   });
 
   filesystem.on('log', log => {
-    console.log('log:', log);
+    console.log('[FILESYSTEM]', 'log:', log);
   });
 
   filesystem.on('message', message => {

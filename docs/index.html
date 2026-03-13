@@ -55,7 +55,7 @@
         <h2>Quick Start</h2>
         <p>See also <a href="QUICKSTART.md"><code>QUICKSTART.md</code></a> for up-to-date instructions.</p>
         <ol start="0">
-          <li><code>nvm use 16.17.1</code> (you can get <code>nvm</code> from <a href="https://nvm.sh">nvm.sh</a>)</li>
+          <li><code>nvm use 22.14.0</code> (you can get <code>nvm</code> from <a href="https://nvm.sh">nvm.sh</a>)</li>
           <li><code>npm install -g @fabric/core</code> to add <code>fabric</code> to your path</li>
           <li>(optional) <code>fabric setup</code> to set up your environment (generates a new master key)</li>
           <li><code>fabric</code> should now be enough to get you up and running!</li>
@@ -63,6 +63,10 @@
         <p>That's it! Let's take a look at overall Fabric system and how you, as a developer, might interact with it.</p>
         <h2>Architecture</h2>
         <p>Fabric is two things — a protocol for machines to exchange information (&quot;the Fabric Protocol&quot;), and a sotware library (<code>@fabric/core</code>) offering up many tools and utilities for building your own networks which speak this protocol.</p>
+        <p>Typically, you will need the following:</p>
+        <ul>
+          <li>a Bitcoin Node (bitcoind and/or bcoin with <code>bcoin --only=127.0.0.1</code>)</li>
+        </ul>
         <h3>Overview</h3>
         <p>Using Fabric to interface securely with decentralized systems, you'll start by following the instructions above to obtain a globally-available version of the <code>fabric</code> command-line client, which provides the majority of tools you'll need along the way.</p>
         <p>The <code>@fabric/core</code> library consists of a few key components:</p>
@@ -72,7 +76,7 @@
           <li><code>components</code> — generic &quot;interface&quot; elements for describing Types to users.</li>
           <li><code>resources</code> — Fabric-based definitions for <code>@fabric/core/types/resource</code>.</li>
           <li><code>services</code> — Maintainer-accepted definitions of the <code>Service</code> class. Yes, you can submit your own!</li>
-          <li><code>types</code> — a library of ES6 classes implementing various bits; <code>Actor</code>, <code>Channel</code>, <code>Oracle</code>, <code>Service</code>, and <code>Signer</code> are all interesting. :)</li>
+          <li><code>types</code> — a library of ES6 classes implementing various bits; <code>Actor</code>, <code>Channel</code>, <code>Oracle</code>, <code>Service</code>, and <code>Key</code> are all interesting. :)</li>
         </ol>
         <p>Let's go over each in more detail.</p>
         <h4>0. Assets</h4>
@@ -95,7 +99,7 @@
         <p>All agreements in Fabric are represented as well-formed descriptions of <strong>Resources</strong><sup>[TODO: link here]</sup> — a term we use to describe a standardized service a peer might offer. Each node in the Fabric network decides which resources they provide (determining which contracts they run), and what prices they accept for participation. This, in concert with the bidders requesting these resources, forms the &quot;Information Market&quot; discussed in Fabric's whitepaper.</p>
         <p>To create an</p>
         <h5>1.2a: Convergence</h5>
-        <p>You'll read in the Components section about our thoughts on User Interface Design, especially Software Development Inteface Design. Maybe someday we'll have a blog to share this on, but my personal goal is to design my software one time, and have it adapt to each platform while still retaining complete, functionality — even if, for example, mobile and desktop users might have different access profiles (usage patterns).</p>
+        <p>You'll read in the Components section about our thoughts on User Interface Design, especially Software Development Interface Design. Maybe someday we'll have a blog to share this on, but my personal goal is to design my software one time, and have it adapt to each platform while still retaining complete, functionality — even if, for example, mobile and desktop users might have different access profiles (usage patterns).</p>
         <p>This raises the question: <strong>how should peer-to-peer contracts be written?</strong></p>
         <p>We can easily take the philosophical route in saying &quot;any way the users want&quot; but... that's a lot of engineering, and we won't get there without help from a strong community of contributors. My thoughts are that we start with something small (in terms of implementation cost), formalize it, then start offering up other contract types through the <code>type</code> setting of the <code>Machine</code> class.</p>
         <h5>1.2b: JavaScript</h5>
@@ -215,15 +219,15 @@ class MyClockService extends Service {
 </code></pre>
         <p>Grab what you need, use what you take. :)</p>
         <h5>Fabric Types by Example</h5>
-        <p>Create and sign some string message using the built-in Schnorr <code>Signer</code> type:</p>
+        <p>Create and sign some string message using the built-in Schnorr <code>Key</code> type:</p>
         <pre class="prettyprint source lang-js"><code>const Hash256 = require('@fabric/core/types/hash256');
-const Signer = require('@fabric/core/types/signer');
+const Key = require('@fabric/core/types/key');
 const message = 'Hello, world!';
-const signer = new Signer();
-const signature = signer.sign(message);
+const key = new Key();
+const signature = key.sign(message);
 console.log('Message:', message);
 console.log('Message Hash:', Hash256.digest(message));
-console.log('Signer Pubkey:', signer.public);
+console.log('Key Pubkey:', key.public);
 console.log('Purported Signature:', message);
 </code></pre>
         <h1>Parking Lot</h1>
@@ -246,57 +250,43 @@ console.log('Purported Signature:', message);
     <h3>Classes</h3>
     <ul>
       <li><a href="Actor.html">Actor</a></li>
-      <li><a href="Aggregator.html">Aggregator</a></li>
-      <li><a href="App.html">App</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
-      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
-      <li><a href="Compiler.html">Compiler</a></li>
-      <li><a href="Consensus.html">Consensus</a></li>
-      <li><a href="Entity.html">Entity</a></li>
       <li><a href="Environment.html">Environment</a></li>
-      <li><a href="Exchange.html">Exchange</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
-      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
-      <li><a href="Keystore.html">Keystore</a></li>
       <li><a href="Ledger.html">Ledger</a></li>
       <li><a href="Lightning.html">Lightning</a></li>
       <li><a href="Logger.html">Logger</a></li>
       <li><a href="Machine.html">Machine</a></li>
-      <li><a href="Mempool.html">Mempool</a></li>
       <li><a href="Message.html">Message</a></li>
-      <li><a href="Node.html">Node</a></li>
-      <li><a href="Oracle.html">Oracle</a></li>
-      <li><a href="Path.html">Path</a></li>
       <li><a href="Peer.html">Peer</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
-      <li><a href="Router.html">Router</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
-      <li><a href="Signer.html">Signer</a></li>
       <li><a href="Snapshot.html">Snapshot</a></li>
       <li><a href="Stack.html">Stack</a></li>
       <li><a href="Stash.html">Stash</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
-      <li><a href="Swap.html">Swap</a></li>
       <li><a href="Swarm.html">Swarm</a></li>
-      <li><a href="Transition.html">Transition</a></li>
+      <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Value.html">Value</a></li>
       <li><a href="Vector.html">Vector</a></li>

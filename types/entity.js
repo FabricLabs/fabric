@@ -3,16 +3,7 @@
 const crypto = require('crypto');
 const { EventEmitter } = require('events');
 
-/**
- * Live instance of an ARC in Fabric.
- * @type {Object}
- */
 class Entity extends EventEmitter {
-  /**
-   * Generic template for virtual objects.
-   * @param  {Object} [data={}] Pass an object to use.
-   * @return {Entity}           Instance of the {@link Entity}.
-   */
   constructor (data = {}) {
     super(data);
 

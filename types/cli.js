@@ -3,10 +3,9 @@
 // Constants
 const {
   MAX_CHAT_MESSAGE_LENGTH,
+  INPUT_HINT,
   BITCOIN_GENESIS
 } = require('../constants');
-
-const INPUT_HINT = 'Press the "i" key to begin typing.';
 
 // Internal Dependencies
 const fs = require('fs');
@@ -25,8 +24,11 @@ const Message = require('./message');
 const Hash256 = require('./hash256');
 const Identity = require('./identity');
 const Filesystem = require('./filesystem');
-const Signer = require('./signer');
 const Wallet = require('./wallet');
+const Key = require('./key');
+
+// Functions
+const truncateMiddle = require('../functions/truncateMiddle');
 
 // Services
 const Bitcoin = require('../services/bitcoin');
@@ -62,13 +64,13 @@ class CLI extends App {
       debug: true,
       ephemeral: false,
       listen: false,
-      peering: true, // set to true to start Peer
+      peering: true,
       render: true,
       services: [],
       network: 'regtest',
       interval: 1000,
       bitcoin: {
-        mode: 'rpc', // TODO: change name of mode to `rest`?
+        mode: 'rpc',
         host: 'localhost',
         port: 8443,
         secure: false
@@ -79,8 +81,26 @@ class CLI extends App {
       },
       storage: {
         path: `${process.env.HOME}/.fabric/console`
-      }
-    }, this.settings, settings);
+      },
+      // Add key settings
+      seed: null,
+      xprv: null,
+      passphrase: null
+    }, settings);
+
+    // Initialize key with proper settings
+    this.key = new Key({
+      seed: this.settings.seed,
+      xprv: this.settings.xprv,
+      passphrase: this.settings.passphrase,
+      network: this.settings.network
+    });
+
+    // Ensure key has required properties
+    if (!this.key.private || !this.key.public || !this.key.sign) {
+      // Generate new key if properties are missing
+      this.key = new Key();
+    }
 
     // Properties
     this.screen = null;
@@ -98,7 +118,6 @@ class CLI extends App {
     this.connections = {};
 
     this.fs = new Filesystem(this.settings.storage);
-    this.signer = null;
 
     // State
     this._state = {
@@ -123,12 +142,11 @@ class CLI extends App {
     };
 
     this.attachWallet();
-
-    this._loadPeer();
-    this._loadBitcoin();
-    this._loadLightning();
-
     this.identity = new Identity(this.settings);
+    this._loadPeer();
+
+    if (this.settings.bitcoin && this.settings.bitcoin.enable) this._loadBitcoin();
+    if (this.settings.lightning && this.settings.lightning.enable) this._loadLightning();
 
     // Chainable
     return this;
@@ -136,7 +154,6 @@ class CLI extends App {
 
   assumeIdentity (key) {
     this.identity = new Identity(key);
-    this.signer = new Signer(key);
     return this;
   }
 
@@ -225,9 +242,7 @@ class CLI extends App {
     this._registerCommand('channels', this._handleChannelRequest);
     this._registerCommand('identity', this._handleIdentityRequest);
     this._registerCommand('generate', this._handleGenerateRequest);
-    this._registerCommand('unspent', this._handleUnspentRequest);
-    this._registerCommand('receive', this._handleReceiveAddressRequest);
-    this._registerCommand('balance', this._handleBalanceRequest);
+    this._registerCommand('wallet', this._handleWalletCommand);
     this._registerCommand('service', this._handleServiceCommand);
     this._registerCommand('publish', this._handlePublishCommand);
     this._registerCommand('request', this._handleRequestCommand);
@@ -243,6 +258,10 @@ class CLI extends App {
 
     // Contracts
     this._registerCommand('contracts', this._handleContractsRequest);
+    this._registerCommand('subscribe', this._handleSubscribeRequest);
+    this._registerCommand('create', this._handleCreateRequest);
+    this._registerCommand('deploy', this._handleDeployRequest);
+    this._registerCommand('accept', this._handleAcceptRequest);
 
     // Service Commands
     this._registerCommand('bitcoin', this._handleBitcoinRequest);
@@ -296,27 +315,31 @@ class CLI extends App {
 
     // ## Anchor handlers
     // ### Bitcoin
-    this.bitcoin.on('debug', this._handleBitcoinDebug.bind(this));
-    this.bitcoin.on('ready', this._handleBitcoinReady.bind(this));
-    this.bitcoin.on('error', this._handleBitcoinError.bind(this));
-    this.bitcoin.on('warning', this._handleBitcoinWarning.bind(this));
-    this.bitcoin.on('message', this._handleBitcoinMessage.bind(this));
-    this.bitcoin.on('log', this._handleBitcoinLog.bind(this));
-    this.bitcoin.on('commit', this._handleBitcoinCommit.bind(this));
-    this.bitcoin.on('sync', this._handleBitcoinSync.bind(this));
-    this.bitcoin.on('block', this._handleBitcoinBlock.bind(this));
-    this.bitcoin.on('transaction', this._handleBitcoinTransaction.bind(this));
+    if (this.settings.bitcoin && this.settings.bitcoin.enable) {
+      this.bitcoin.on('debug', this._handleBitcoinDebug.bind(this));
+      this.bitcoin.on('ready', this._handleBitcoinReady.bind(this));
+      this.bitcoin.on('error', this._handleBitcoinError.bind(this));
+      this.bitcoin.on('warning', this._handleBitcoinWarning.bind(this));
+      this.bitcoin.on('message', this._handleBitcoinMessage.bind(this));
+      this.bitcoin.on('log', this._handleBitcoinLog.bind(this));
+      this.bitcoin.on('commit', this._handleBitcoinCommit.bind(this));
+      this.bitcoin.on('sync', this._handleBitcoinSync.bind(this));
+      this.bitcoin.on('block', this._handleBitcoinBlock.bind(this));
+      this.bitcoin.on('transaction', this._handleBitcoinTransaction.bind(this));
+    }
 
     // #### Lightning
-    this.lightning.on('debug', this._handleLightningDebug.bind(this));
-    this.lightning.on('ready', this._handleLightningReady.bind(this));
-    this.lightning.on('error', this._handleLightningError.bind(this));
-    this.lightning.on('warning', this._handleLightningWarning.bind(this));
-    this.lightning.on('message', this._handleLightningMessage.bind(this));
-    this.lightning.on('log', this._handleLightningLog.bind(this));
-    this.lightning.on('commit', this._handleLightningCommit.bind(this));
-    this.lightning.on('sync', this._handleLightningSync.bind(this));
-    // this.lightning.on('transaction', this._handleLightningTransaction.bind(this));
+    if (this.settings.lightning && this.settings.lightning.enable) {
+      this.lightning.on('debug', this._handleLightningDebug.bind(this));
+      this.lightning.on('ready', this._handleLightningReady.bind(this));
+      this.lightning.on('error', this._handleLightningError.bind(this));
+      this.lightning.on('warning', this._handleLightningWarning.bind(this));
+      this.lightning.on('message', this._handleLightningMessage.bind(this));
+      this.lightning.on('log', this._handleLightningLog.bind(this));
+      this.lightning.on('commit', this._handleLightningCommit.bind(this));
+      this.lightning.on('sync', this._handleLightningSync.bind(this));
+      // this.lightning.on('transaction', this._handleLightningTransaction.bind(this));
+    }
 
     /* this.on('log', function (log) {
       console.log('local log:', log);
@@ -350,10 +373,10 @@ class CLI extends App {
 
     // ## Start Anchor Services
     // Start Bitcoin service
-    await this.bitcoin.start();
+    if (this.settings.bitcoin && this.settings.bitcoin.enable) await this.bitcoin.start();
 
     // Start Lightning service
-    this.lightning.start();
+    if (this.settings.lightning.enable) await this.lightning.start();
 
     // ## Start P2P node
     if (this.settings.peering) this.node.start();
@@ -509,8 +532,47 @@ class CLI extends App {
     this._appendMessage(`New Changes: ${JSON.stringify(changes, null, '  ')}`);
   }
 
+  async _handleAcceptRequest (params) {
+    if (!params || !params[1]) {
+      this._appendMessage(`You must provide a contract parameter.`);
+      return false;
+    }
+
+    const contract = this.contracts[params[1]];
+    this._appendMessage(`{bold}Accepting{/bold}: ${params[1]} ${JSON.stringify(contract)}`);
+    // TODO: sign
+    return false;
+  }
+
+  async _handleCreateRequest (params) {
+    this._appendMessage(`{bold}Creating{/bold}: ${params[1]}`);
+    const now = (new Date()).toISOString();
+    const template = {
+      created: now,
+      main: JSON.stringify(async function main () { return {}; })
+    };
+
+    const entity = new Actor(template);
+    this.contracts[entity.id] = entity;
+
+    if (params[1]) this.aliases[params[1]] = entity.id;
+
+    this._appendDebug(`Created: ${entity.id}`);
+    return false;
+  }
+
   async _handleContractsRequest (params) {
     this._appendMessage('{bold}Current Contracts{/bold}: ' + JSON.stringify(this.contracts, null, '  '));
+    return false;
+  }
+
+  async _handleSubscribeRequest (params) {
+    this._appendMessage('{bold}Subscribing{/bold}: ' + JSON.stringify(params[1], null, '  '));
+    return false;
+  }
+
+  async _handleDeployRequest (params) {
+    this._appendMessage(`{bold}Deploying{/bold}: ${params[1]}`);
     return false;
   }
 
@@ -651,6 +713,7 @@ class CLI extends App {
   }
 
   async _handleBitcoinReady (bitcoin) {
+    this._appendMessage(`Bitcoin ready: ${JSON.stringify(bitcoin)}`);
     this._syncChainDisplay();
   }
 
@@ -682,6 +745,7 @@ class CLI extends App {
     }
 
     this._syncPeerList();
+    this._syncConnectionList();
   }
 
   async _handleConnectionError (msg) {
@@ -831,7 +895,8 @@ class CLI extends App {
   }
 
   async _handlePeerChat (chat) {
-    this._appendMessage(`[@${chat.actor.id}]: ${chat.object.content}`);
+    const truncatedId = truncateMiddle(chat.actor.username || chat.actor.id, 10, '…', 5);
+    this._appendMessage(`[@${truncatedId}]: ${chat.object.content}`);
   }
 
   async _handlePeerUPNP (upnp) {
@@ -843,7 +908,8 @@ class CLI extends App {
       case 'ChatMessage':
         try {
           const parsed = JSON.parse(message.data);
-          this._appendMessage(`[@${parsed.actor}]: ${parsed.object.content}`);
+          const truncatedId = truncateMiddle(parsed.actor.username || parsed.actor, 10, '…', 5);
+          this._appendMessage(`[@${truncatedId}]: ${parsed.object.content}`);
         } catch (exception) {
           this._appendError(`Could not parse <ChatMessage> data (should be JSON): ${message.data}`);
         }
@@ -963,8 +1029,9 @@ class CLI extends App {
         target: '/messages'
       };
 
-      const message = Message.fromVector(['ChatMessage', JSON.stringify(msg)])._setSigner(this.signer).sign();
-      // this._appendDebug(`Chat Message created (${message.data.length} bytes): ${message.data}`);
+      let message = Message.fromVector(['ChatMessage', JSON.stringify(msg)]);
+      message = message.signWithKey(this.key);
+
       self.setPane('messages');
 
       // Log own message
@@ -1172,6 +1239,7 @@ class CLI extends App {
 
   async _syncChainDisplay () {
     if (!this.settings.render) return this;
+    if (!this.settings.bitcoin.enable) return this;
 
     try {
       const height = await this.bitcoin._makeRPCRequest('getblockcount');
@@ -1193,7 +1261,7 @@ class CLI extends App {
   }
 
   async _syncContracts () {
-    await this._syncLightningChannels();
+    if (this.settings.lightning.enable) await this._syncLightningChannels();
     return this;
   }
 
@@ -1265,6 +1333,25 @@ class CLI extends App {
     const balance = result.data.content + this.lightning.balances.spendable;
 
     return balance;
+  }
+
+  _allConfigured () {
+    if (
+      this._isBitcoinConfigured() &&
+      this._isLightningConfigured()
+    ) {
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  _isBitcoinConfigured () {
+    return (this.settings.bitcoin) ? true : false;
+  }
+
+  _isLightningConfigured () {
+    return (this.settings.lightning) ? true : false;
   }
 
   _syncConnectionList () {
@@ -1561,10 +1648,10 @@ class CLI extends App {
         }
       },
       commands: {
-        'Help': {
+        'Home': {
           keys: ['f1'],
           callback: function () {
-            this.setPane('help');
+            this.setPane('home');
           }.bind(this)
         },
         'Console': {
@@ -1882,6 +1969,9 @@ class CLI extends App {
       // self._appendMessage('10 seconds have passed.');
       // self.bitcoin.generateBlock();
     }, 10000);
+
+    // Enable mouse support
+    self.screen.program.enableMouse();
   }
 
   tableDataFor (input = [], exclusions = []) {
@@ -1899,6 +1989,31 @@ class CLI extends App {
     });
 
     return [ keys ].concat(entries);
+  }
+
+  async _handleWalletCommand (params) {
+    if (!params[1]) {
+      this._appendMessage('Available wallet commands:');
+      this._appendMessage('  wallet balance - Show current balance');
+      this._appendMessage('  wallet send <address> <amount> - Send funds to address');
+      this._appendMessage('  wallet receive - Generate a new receive address');
+      this._appendMessage('  wallet unspent - List unspent outputs');
+      return false;
+    }
+
+    switch (params[1]) {
+      case 'balance':
+        return this._handleBalanceRequest(params);
+      case 'send':
+        return this._handleSendRequest(params);
+      case 'receive':
+        return this._handleReceiveAddressRequest(params);
+      case 'unspent':
+        return this._handleUnspentRequest(params);
+      default:
+        this._appendError(`Unknown wallet command: ${params[1]}`);
+        return false;
+    }
   }
 }
 

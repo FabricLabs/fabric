@@ -28,6 +28,9 @@ Welcome to Fabric!
 [api-docs]: https://dev.fabric.pub/docs
 [api-examples]: https://dev.fabric.pub/examples
 
+[actors]: ACTORS.md
+[contracts]: CONTRACTS.md
+
 [readme]: README.md
 [welcome]: WELCOME.md
 [quickstart]: QUICKSTART.md

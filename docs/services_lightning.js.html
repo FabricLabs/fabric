@@ -35,6 +35,10 @@
 
 // Dependencies
 const net = require('net');
+const { mkdirp } = require('mkdirp');
+const children = require('child_process');
+const path = require('path');
+const fs = require('fs');
 
 // Fabric Types
 const Actor = require('../types/actor');
@@ -64,7 +68,8 @@ class Lightning extends Service {
       port: 8181,
       path: './stores/lightning',
       mode: 'socket',
-      interval: 1000
+      interval: 1000,
+      managed: false
     }, this.settings, settings);
 
     this.machine = new Machine(this.settings);
@@ -76,7 +81,12 @@ class Lightning extends Service {
     this._state = {
       content: {
         actors: {},
-        balances: {},
+        balances: {
+          spendable: 0,
+          total: 0,
+          confirmed: 0,
+          unconfirmed: 0
+        },
         channels: {},
         blockheight: null,
         node: {
@@ -375,6 +385,79 @@ class Lightning extends Service {
     this.emit('sync', this.state);
     return this;
   }
+
+  async createLocalNode () {
+    if (this.settings.debug) console.log('[FABRIC:LIGHTNING]', 'Creating local Lightning node...');
+    const port = 9735; // Default Lightning port
+    let datadir = path.resolve('./stores/lightning');
+
+    // Configure based on network
+    switch (this.settings.network) {
+      default:
+      case 'mainnet':
+        datadir = path.resolve('./stores/lightning');
+        break;
+      case 'testnet':
+        datadir = path.resolve('./stores/lightning-testnet');
+        break;
+      case 'regtest':
+        datadir = path.resolve('./stores/lightning-regtest');
+        break;
+    }
+
+    // Ensure storage directory exists
+    await mkdirp(datadir);
+
+    // Create log file
+    const logFile = path.join(datadir, 'lightningd.log');
+    try {
+      fs.writeFileSync(logFile, '', { flag: 'w' });
+    } catch (error) {
+      throw new Error(`Failed to create log file ${logFile}: ${error.message}`);
+    }
+
+    // Configure Lightning node parameters
+    const params = [
+      `--network=${this.settings.network}`,
+      `--lightning-dir=${datadir}`,
+      `--bitcoin-datadir=${this.settings.bitcoin.datadir}`, // Connect to Bitcoin node
+      `--bitcoin-rpcuser=${this.settings.bitcoin.username}`,
+      `--bitcoin-rpcpassword=${this.settings.bitcoin.password}`,
+      `--bitcoin-rpcconnect=${this.settings.bitcoin.host}`,
+      `--bitcoin-rpcport=${this.settings.bitcoin.rpcport}`, // Use different port range while maintaining last digits
+      '--daemon', // Run as daemon
+      `--log-file=${logFile}`, // Specify log file
+      '--log-level=debug' // Enable debug logging
+    ];
+
+    // Start lightningd
+    if (this.settings.managed) {
+      const child = children.spawn('lightningd', params);
+
+      child.stdout.on('data', (data) => {
+        if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', data.toString('utf8').trim());
+        if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] ${data.toString('utf8').trim()}`);
+      });
+
+      child.stderr.on('data', (data) => {
+        console.error('[FABRIC:LIGHTNING]', '[ERROR]', data.toString('utf8').trim());
+        this.emit('error', `[FABRIC:LIGHTNING] ${data.toString('utf8').trim()}`);
+      });
+
+      child.on('close', (code) => {
+        if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Lightning node exited with code ' + code);
+        this.emit('log', `[FABRIC:LIGHTNING] Lightning node exited with code ${code}`);
+      });
+
+      return child;
+    } else {
+      return null;
+    }
+  }
+
+  async sync () {
+    // TODO: sync local data with node
+  }
 }
 
 module.exports = Lightning;
@@ -390,57 +473,43 @@ module.exports = Lightning;
     <h3>Classes</h3>
     <ul>
       <li><a href="Actor.html">Actor</a></li>
-      <li><a href="Aggregator.html">Aggregator</a></li>
-      <li><a href="App.html">App</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
-      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Collection.html">Collection</a></li>
-      <li><a href="Compiler.html">Compiler</a></li>
-      <li><a href="Consensus.html">Consensus</a></li>
-      <li><a href="Entity.html">Entity</a></li>
       <li><a href="Environment.html">Environment</a></li>
-      <li><a href="Exchange.html">Exchange</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
-      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
       <li><a href="HTTPServer.html">HTTPServer</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
       <li><a href="Key.html">Key</a></li>
-      <li><a href="Keystore.html">Keystore</a></li>
       <li><a href="Ledger.html">Ledger</a></li>
       <li><a href="Lightning.html">Lightning</a></li>
       <li><a href="Logger.html">Logger</a></li>
       <li><a href="Machine.html">Machine</a></li>
-      <li><a href="Mempool.html">Mempool</a></li>
       <li><a href="Message.html">Message</a></li>
-      <li><a href="Node.html">Node</a></li>
-      <li><a href="Oracle.html">Oracle</a></li>
-      <li><a href="Path.html">Path</a></li>
       <li><a href="Peer.html">Peer</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
-      <li><a href="Router.html">Router</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
-      <li><a href="Signer.html">Signer</a></li>
       <li><a href="Snapshot.html">Snapshot</a></li>
       <li><a href="Stack.html">Stack</a></li>
       <li><a href="Stash.html">Stash</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
-      <li><a href="Swap.html">Swap</a></li>
       <li><a href="Swarm.html">Swarm</a></li>
-      <li><a href="Transition.html">Transition</a></li>
+      <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Value.html">Value</a></li>
       <li><a href="Vector.html">Vector</a></li>

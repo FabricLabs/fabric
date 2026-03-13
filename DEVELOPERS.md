@@ -5,7 +5,7 @@ applications, so grab a coffee ☕ and settle in.
 ## Quick Start
 See also [`QUICKSTART.md`][quickstart-guide] for up-to-date instructions.
 
-0. `nvm use 16.17.1` (you can get `nvm` from [nvm.sh][nvm-official])
+0. `nvm use 22.14.0` (you can get `nvm` from [nvm.sh][nvm-official])
 1. `npm install -g @fabric/core` to add `fabric` to your path
 2. (optional) `fabric setup` to set up your environment (generates a new master key)
 3. `fabric` should now be enough to get you up and running!
@@ -14,6 +14,10 @@ That's it!  Let's take a look at overall Fabric system and how you, as a develop
 
 ## Architecture
 Fabric is two things — a protocol for machines to exchange information ("the Fabric Protocol"), and a sotware library (`@fabric/core`) offering up many tools and utilities for building your own networks which speak this protocol.
+
+Typically, you will need the following:
+
+  - a Bitcoin Node (bitcoind and/or bcoin with `bcoin --only=127.0.0.1`)
 
 ### Overview
 Using Fabric to interface securely with decentralized systems, you'll start by following the instructions above to obtain a globally-available version of the `fabric` command-line client, which provides the majority of tools you'll need along the way.
@@ -25,7 +29,7 @@ The `@fabric/core` library consists of a few key components:
 2. `components` — generic "interface" elements for describing Types to users.
 3. `resources` — Fabric-based definitions for `@fabric/core/types/resource`.
 4. `services` — Maintainer-accepted definitions of the `Service` class.  Yes, you can submit your own!
-5. `types` — a library of ES6 classes implementing various bits; `Actor`, `Channel`, `Oracle`, `Service`, and `Signer` are all interesting. :)
+5. `types` — a library of ES6 classes implementing various bits; `Actor`, `Channel`, `Oracle`, `Service`, and `Key` are all interesting. :)
 
 Let's go over each in more detail.
 
@@ -57,7 +61,7 @@ All agreements in Fabric are represented as well-formed descriptions of **Resour
 To create an
 
 ##### 1.2a: Convergence
-You'll read in the Components section about our thoughts on User Interface Design, especially Software Development Inteface Design.  Maybe someday we'll have a blog to share this on, but my personal goal is to design my software one time, and have it adapt to each platform while still retaining complete, functionality — even if, for example, mobile and desktop users might have different access profiles (usage patterns).
+You'll read in the Components section about our thoughts on User Interface Design, especially Software Development Interface Design.  Maybe someday we'll have a blog to share this on, but my personal goal is to design my software one time, and have it adapt to each platform while still retaining complete, functionality — even if, for example, mobile and desktop users might have different access profiles (usage patterns).
 
 This raises the question: **how should peer-to-peer contracts be written?**
 
@@ -203,16 +207,16 @@ const Actor = require('@fabric/core/types/actor');
 Grab what you need, use what you take. :)
 
 ##### Fabric Types by Example
-Create and sign some string message using the built-in Schnorr `Signer` type:
+Create and sign some string message using the built-in Schnorr `Key` type:
 ```js
 const Hash256 = require('@fabric/core/types/hash256');
-const Signer = require('@fabric/core/types/signer');
+const Key = require('@fabric/core/types/key');
 const message = 'Hello, world!';
-const signer = new Signer();
-const signature = signer.sign(message);
+const key = new Key();
+const signature = key.sign(message);
 console.log('Message:', message);
 console.log('Message Hash:', Hash256.digest(message));
-console.log('Signer Pubkey:', signer.public);
+console.log('Key Pubkey:', key.public);
 console.log('Purported Signature:', message);
 ```
 

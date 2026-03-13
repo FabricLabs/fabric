@@ -2,7 +2,7 @@
 
 // Dependencies
 const fs = require('fs');
-const mkdirp = require('mkdirp');
+const { mkdirp } = require('mkdirp');
 
 // Fabric Types
 const Actor = require('./actor');
@@ -18,7 +18,8 @@ class Logger extends Actor {
 
     this.settings = Object.assign({
       name: this.id,
-      path: './logs'
+      path: './logs',
+      silent: true
     }, settings);
 
     this._state = {
@@ -54,6 +55,7 @@ class Logger extends Actor {
     }
 
     this.stream.write(msg + '\n');
+
     return true;
   }
 
@@ -66,11 +68,19 @@ class Logger extends Actor {
    */
   async start () {
     this._state.status = 'STARTING';
+
     await mkdirp(this.settings.path);
-    this.stream = fs.createWriteStream(this.path, { flags: 'a+' })
-      .on('error', err => console.warn(err.message, err.stack))
-      .once('close', () => { this._state.status = 'STOPPED'; });
+
+    this.stream = fs.createWriteStream(this.path, {
+      flags: 'a+'
+    }).on('error', (err) => {
+      console.warn(err.message, err.stack);
+    }).once('close', () => {
+      this._state.status = 'STOPPED';
+    });
+
     this._state.status = 'STARTED';
+
     return this;
   }
 

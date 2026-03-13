@@ -44,7 +44,8 @@ assets/app.js
 assets/service.js
 # Minified fabric.js bundle
 assets/fabric.min.js
-
+# Local Settings
+settings/local.js
 # Hide bitcoin node blocks
 stores
 

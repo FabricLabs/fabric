@@ -2,6 +2,7 @@
 
 // Generics
 const EventEmitter = require('events');
+// const stream = require('node:stream/promises');
 
 // Dependencies
 const monitor = require('fast-json-patch');
@@ -132,7 +133,7 @@ class Actor extends EventEmitter {
 
   get id () {
     const buffer = Buffer.from(this.preimage, 'hex');
-    return Hash256.digest(buffer);
+    return Hash256.compute(buffer);
   }
 
   get spendable () {
@@ -148,7 +149,7 @@ class Actor extends EventEmitter {
     if (!this.generic) throw new Error('Could not get generic');
     const string = JSON.stringify(this.generic, null, '  ');
     const secret = Buffer.from(string, 'utf8');
-    const preimage = Hash256.digest(secret);
+    const preimage = Hash256.compute(secret);
     return preimage;
   }
 
@@ -281,6 +282,35 @@ class Actor extends EventEmitter {
   }
 
   /**
+   * Returns a new output stream for the Actor.
+   * @param {TransformStream} [pipe] Pipe to stream to.
+   * @returns {TransformStream} New output stream for the Actor.
+   */
+  stream (pipe) {
+    if (pipe) {
+      //
+      const stream = new stream.Transform({
+        transform (chunk, encoding, done) {
+          done(null, chunk);
+        }
+      });
+
+      // TODO: test this
+      // 1. Stream to the output pipe
+      stream.pipe(pipe);
+
+      // 2. Stream to the actor
+      this.stream.pipe(stream);
+
+      return stream;
+    } else {
+      return this.stream;
+    }
+
+    return this.stream;
+  }
+
+  /**
    * Casts the Actor to a normalized Buffer.
    * @returns {Buffer}
    */
@@ -289,10 +319,15 @@ class Actor extends EventEmitter {
   }
 
   /**
-   * Casts the Actor to a generic message.
+   * Casts the Actor to a generic message, used to uniquely identify the Actor's state.
+   * Fields:
+   * - `type`: 'FabricActorState'
+   * - `object`: state
+   * @see {@link https://en.wikipedia.org/wiki/Merkle_tree}
+   * @see {@link https://dev.fabric.pub/messages}
    * @returns {Object} Generic message object.
    */
-  toGenericMessage () {
+  toGenericMessage (type = 'FabricActorState') {
     return {
       type: 'FabricActorState',
       object: this.toObject()

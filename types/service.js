@@ -19,6 +19,7 @@ const manager = require('fast-json-patch');
 const Actor = require('./actor');
 const Collection = require('./collection');
 const Entity = require('./entity');
+const Filesystem = require('./filesystem');
 const Hash256 = require('./hash256');
 const Identity = require('./identity');
 const Key = require('./key');
@@ -41,18 +42,22 @@ const Store = require('./store');
 class Service extends Actor {
   /**
    * Create an instance of a Service.
-   * @param       {Object} settings Configuration for this service.
-   * @param       {Boolean} [settings.networking=true] Whether or not to connect to the network.
-   * @param       {Object} [settings.@data] Internal data to assign.
+   * @param {Object} [settings] Configuration for this service.
+   * @param {Boolean} [settings.networking=true] Whether or not to connect to the network.
+   * @param {Object} [settings.frequency] Interval frequency in hertz.
+   * @param {Object} [settings.state] Initial state to assign.
    */
   constructor (settings = {}) {
     // Initialize Scribe, our logging tool
     super(settings);
 
+    this.name = this.constructor.name;
+
     // Configure (with defaults)
     this.settings = merge({
       name: 'Service',
       path: './stores/service',
+      frequency: 0.0133333334, // Hz
       networking: true,
       persistent: false,
       constraints: {
@@ -61,6 +66,10 @@ class Service extends Actor {
           max: 67108864
         }
       },
+      fs: {
+        path: `./stores/fabric-service-${this.name}`
+      },
+      key: null,
       state: {
         ...super.state,
         actors: {}, // TODO: schema
@@ -78,13 +87,14 @@ class Service extends Actor {
         messages: {},
         members: {}
       } */
-    }, this.settings, settings);
+    }, settings);
 
     // Reserve a place for ourselves
     this.agent = null;
     this.actor = null;
     this.name = this.settings.name;
 
+    this.aliases = {};
     this.collections = {};
     this.definitions = {};
     this.resources = {};
@@ -102,6 +112,7 @@ class Service extends Actor {
     //          Error: Not implemented yet
     this.key = new Key(this.settings.key);
     this.identity = new Identity(this.settings.key);
+    this.fs = new Filesystem({ ...this.settings.fs, key: this.settings.key });
 
     if (this.settings.persistent) {
       try {
@@ -129,6 +140,24 @@ class Service extends Actor {
 
     // Keeps track of changes
     this.observer = null;
+    this.cache = {
+      _data: new Map(),
+      _ttl: new Map(),
+      get: async (key) => {
+        const now = Date.now();
+        const ttl = this.cache._ttl.get(key);
+        if (ttl && ttl < now) {
+          this.cache._data.delete(key);
+          this.cache._ttl.delete(key);
+          return null;
+        }
+        return this.cache._data.get(key);
+      },
+      set: async (key, value, ttl = 60000) => {
+        this.cache._data.set(key, value);
+        this.cache._ttl.set(key, Date.now() + ttl);
+      }
+    };
 
     /* if (this.settings.networking) {
       this.swarm = new Swarm(this.settings);
@@ -158,6 +187,10 @@ class Service extends Actor {
 
   get heartbeat () {
     return this._heart;
+  }
+
+  get interval () {
+    return 1000 / this.settings.frequency;
   }
 
   get status () {
@@ -389,13 +422,13 @@ class Service extends Actor {
         self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted channel: ${JSON.stringify(channel, null, '  ')}`);
       }),
       _handleCommit: source.on('commit', async function (commit) {
-        self.emit('log', `[FABRIC:SERVICE] Source "${name}" committed: ${JSON.stringify(commit, null, '  ')}`);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" committed: ${JSON.stringify(commit, null, '  ')}`);
       }),
       _handleError: source.on('error', async function _handleTrustedError (error) {
         self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted error: ${error}`);
       }),
       _handleLog: source.on('log', async function _handleTrustedLog (log) {
-        self.emit('log', `[FABRIC:SERVICE] Source "${name}" emitted log: ${log}`);
+        if (self.settings.debug) self.emit('log', `[FABRIC:SERVICE] Source "${name}" emitted log: ${log}`);
       }),
       _handleMessage: source.on('message', async function (message) {
         self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted message: ${JSON.stringify(message.toObject ? message.toObject() : message, null, '  ')}`);
@@ -413,7 +446,7 @@ class Service extends Actor {
         self.alert(`[FABRIC:SERVICE] New ${name} chaintip: ${hash}`);
       }),
       _handleWarning: source.on('warning', async function _handleTrustedWarning (warning) {
-        self.emit('warning', `[FABRIC:SERVICE] Source "${name}" emitted warning: ${warning}`);
+        if (self.settings?.verbosity >= 2) self.emit('warning', `[FABRIC:SERVICE] Source "${name}" emitted warning: ${warning}`);
       })
     };
   }
@@ -483,6 +516,16 @@ class Service extends Actor {
     });
 
     return true;
+  }
+
+  /**
+   * Bind a method to an event, with current state as the immutable context.
+   * @param {String} event Name of the event upon which to execute `method` as a function.
+   * @param {Function} method Function to execute when named {@link Event} `event` is encountered.
+   * @returns {EventEmitter} Instance of EventEmitter.
+   */
+  when (event, method) {
+    return this.on(event, method.call(this.state));
   }
 
   _defineResource (name, definition) {
@@ -907,6 +950,7 @@ class Service extends Actor {
     });
 
     this.emit('commit', { ...commit.toObject(), id: commit.id });
+    // this.emit('state', this.state);
 
     return commit.id;
   }

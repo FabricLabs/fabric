@@ -186,7 +186,7 @@ let
         ''}
     '';
 
-  # Recursively traverses all dependencies of a package and pinpoints all
+  # Recursively traverses all package dependencies and pinpoints all
   # dependencies in the package.json file to the versions that are actually
   # being used.
 
@@ -362,7 +362,7 @@ let
           ${lib.optionalString reconstructLock ''
             if [ -f package-lock.json ]
             then
-                echo "WARNING: Reconstruct lock option enabled, but a lock file already exists!"
+                echo "WARNING: The reconstruct lock option is enabled, but a lock file already exists!"
                 echo "This will most likely result in version mismatches! We will remove the lock file and regenerate it!"
                 rm package-lock.json
             else

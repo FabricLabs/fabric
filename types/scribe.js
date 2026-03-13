@@ -5,17 +5,7 @@ const crypto = require('crypto');
 // Fabric Components
 const State = require('./state');
 
-/**
- * Simple tag-based recordkeeper.
- * @extends State
- * @property {Object} config Current configuration.
- */
 class Scribe extends State {
-  /**
-   * The "Scribe" is a simple tag-based recordkeeper.
-   * @param       {Object} config General configuration object.
-   * @param       {Boolean} config.verbose Should the Scribe be noisy?
-   */
   constructor (config = {}) {
     super(config);
 

@@ -9,6 +9,10 @@ const {
   GENERIC_MESSAGE_TYPE,
   LOG_MESSAGE_TYPE,
   GENERIC_LIST_TYPE,
+  BITCOIN_BLOCK_TYPE,
+  BITCOIN_BLOCK_HASH_TYPE,
+  BITCOIN_TRANSACTION_TYPE,
+  BITCOIN_TRANSACTION_HASH_TYPE,
   P2P_GENERIC,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
@@ -28,26 +32,48 @@ const {
   CHAT_MESSAGE,
   DOCUMENT_PUBLISH_TYPE,
   DOCUMENT_REQUEST_TYPE,
+  JSON_CALL_TYPE,
+  PATCH_MESSAGE_TYPE,
   BLOCK_CANDIDATE,
   PEER_CANDIDATE,
-  SESSION_START
+  SESSION_START,
+  // Lightning message codes
+  LIGHTNING_WARNING,
+  LIGHTNING_INIT,
+  LIGHTNING_ERROR,
+  LIGHTNING_PING,
+  LIGHTNING_PONG,
+  LIGHTNING_OPEN_CHANNEL,
+  LIGHTNING_ACCEPT_CHANNEL,
+  LIGHTNING_FUNDING_CREATED,
+  LIGHTNING_FUNDING_SIGNED,
+  LIGHTNING_CHANNEL_READY,
+  LIGHTNING_SHUTDOWN,
+  LIGHTNING_CLOSING_SIGNED,
+  LIGHTNING_UPDATE_ADD_HTLC,
+  LIGHTNING_UPDATE_FULFILL_HTLC,
+  LIGHTNING_UPDATE_FAIL_HTLC,
+  LIGHTNING_COMMITMENT_SIGNED,
+  LIGHTNING_REVOKE_AND_ACK,
+  LIGHTNING_CHANNEL_ANNOUNCEMENT,
+  LIGHTNING_NODE_ANNOUNCEMENT,
+  LIGHTNING_CHANNEL_UPDATE
 } = require('../constants');
 
+const HEADER_SIG_SIZE = 64;
+
 // Dependencies
-const crypto = require('crypto');
+// const crypto = require('crypto');
 const struct = require('struct');
 
 // Fabric Types
 const Actor = require('./actor');
-const Label = require('./label');
-// const Signer = require('./signer');
+const Hash256 = require('./hash256');
+const Key = require('./key');
 
 // Function Definitions
 const padDigits = require('../functions/padDigits');
-
-// Type Labels
-const TYPE_ETHEREUM_BLOCK        = parseInt((new Label('types/EthereumBlock'))._id, 16);
-const TYPE_ETHEREUM_BLOCK_NUMBER = parseInt((new Label('types/EthereumBlockNumber'))._id, 16);
+const taggedHash = require('../functions/taggedHash');
 
 /**
  * The {@link Message} type defines the Application Messaging Protocol, or AMP.
@@ -84,17 +110,43 @@ class Message extends Actor {
       this.signer = input.signer;
     } else {
       this.signer = null;
-      // this.signer = new Signer();
     }
 
-    if (input.data && input.type) {
-      this.type = input.type;
+    // Support both @type/@data (deprecated) and type/data (preferred) formats
+    const messageType = input.type || input['@type'];
+    const messageData = input.data || input['@data'];
 
-      if (typeof input.data !== 'string') {
-        this.data = JSON.stringify(input.data);
+    if (messageData && messageType) {
+      this.type = messageType;
+      // Set the type field to the numeric constant
+      const typeCode = this.types[messageType] || GENERIC_MESSAGE_TYPE;
+      this.raw.type.writeUInt32BE(typeCode, 0);
+
+      if (typeof messageData !== 'string') {
+        this.data = JSON.stringify(messageData);
       } else {
-        this.data = input.data;
+        this.data = messageData;
       }
+    }
+
+    // Log HEARTBEAT message creation to track origin
+    if (this.type === 'HEARTBEAT' || messageType === 'HEARTBEAT') {
+      const hasSignature = input.signature || (this.raw.signature && this.raw.signature.toString('hex') !== '0'.repeat(128));
+      const inputSummary = {
+        type: input.type || input['@type'],
+        hasType: !!(input.type || input['@type']),
+        hasData: !!(input.data || input['@data']),
+        hasSignature: !!hasSignature,
+        inputKeys: Object.keys(input).filter(k => !k.startsWith('_') && k !== 'signer')
+      };
+
+      console.log('[FABRIC:MESSAGE]', '⚠️  HEARTBEAT message created:', {
+        messageType: this.type || messageType,
+        input: inputSummary,
+        hasSignature: hasSignature,
+        signatureHex: this.raw.signature ? this.raw.signature.toString('hex').substring(0, 16) + '...' : 'none'
+      });
+      console.trace('[FABRIC:MESSAGE]', 'HEARTBEAT creation stack trace:');
     }
 
     // Set various properties to be unenumerable
@@ -110,6 +162,10 @@ class Message extends Actor {
     ]) Object.defineProperty(this, name, { enumerable: false });
 
     return this;
+  }
+
+  get author () {
+    return this.raw.author.toString('hex');
   }
 
   get body () {
@@ -187,27 +243,84 @@ class Message extends Actor {
     };
   }
 
+  toVector () {
+    return [this.type, this.data];
+  }
+
   fromObject (input) {
     return new Message(input);
   }
 
   /**
-   * Signs the message using the associated signer.
+   * Signs the message using a specific key.
+   * Uses BIP-340 Schnorr signatures with tagged hash "Fabric/Message".
+   * Signs the complete message (header + body) as per C implementation.
+   *
+   * @param {Object} key Key object with private key and sign method.
+   * @param {String|Buffer} key.private Private key
+   * @param {String|Buffer} key.pubkey Public key
+   * @param {Function} key.sign Signing function
    * @returns {Message} Signed message.
+   * @throws {Error} If attempting to sign without a private key
    */
-  sign () {
-    if (!this.header) throw new Error('No header property.');
-    if (!this.raw) throw new Error('No raw property.');
+  signWithKey (key) {
+    if (!key) throw new Error('No key provided.');
+    if (!key.private) throw new Error('Cannot sign message with public key only.');
+    if (!key.sign) throw new Error('Key object must implement sign method');
 
-    const hash = crypto.createHash('sha256').update(this.raw.data).digest();
-    const signature = this.signer.sign(hash);
+    // Extract x-only public key (32 bytes) from compressed pubkey (33 bytes)
+    // This matches the C implementation which uses secp256k1_xonly_pubkey_serialize
+    const compressedPubkey = Buffer.from(key.public.encodeCompressed('hex'), 'hex');
+    const xOnlyPubkey = compressedPubkey.slice(1); // Remove prefix byte (first byte)
 
-    this.raw.author.write(this.signer.pubkey.toString('hex'), 'hex');
+    // Set author field BEFORE signing so it's included in the signed data
+    // Write x-only pubkey to author field (32 bytes = 64 hex chars)
+    this.raw.author.write(xOnlyPubkey.toString('hex'), 'hex');
+
+    // Create header with signature field zeroed (as it would be during signing)
+    // The C implementation includes the signature field in offsetof(Message, body),
+    // but it's zero/uninitialized when signing, so we zero it
+    const zeroedSignature = Buffer.alloc(64); // 64 bytes of zeros
+    const headerForHash = Buffer.concat([
+      Buffer.from(this.raw.magic, 'hex'),
+      Buffer.from(this.raw.version, 'hex'),
+      Buffer.from(this.raw.parent, 'hex'),
+      Buffer.from(this.raw.author, 'hex'),
+      Buffer.from(this.raw.type, 'hex'),
+      Buffer.from(this.raw.size, 'hex'),
+      Buffer.from(this.raw.hash, 'hex'),
+      zeroedSignature // Signature field zeroed for hash computation
+    ]);
+
+    // Create buffer with header (signature zeroed) + body
+    // This matches the C implementation: memcpy(data_buffer, message, offsetof(Message, body))
+    const dataBuffer = Buffer.concat([
+      headerForHash,
+      this.raw.data || Buffer.alloc(0)
+    ]);
+
+    // Compute tagged hash with "Fabric/Message" tag (BIP-340)
+    // This matches: secp256k1_tagged_sha256(ctx, msghash, "Fabric/Message", data_buffer, data_size)
+    const tag = 'Fabric/Message';
+    const messageHash = taggedHash(tag, dataBuffer);
+
+    // Sign the tagged hash using BIP-340 Schnorr
+    // This matches: secp256k1_schnorrsig_sign32(ctx, signature, msghash, &keypair, NULL)
+    // Use signSchnorrHash since we already have a pre-computed hash
+    const signature = key.signSchnorrHash(messageHash);
+
+    // Write signature (64 bytes = 128 hex chars)
     this.raw.signature.write(signature.toString('hex'), 'hex');
 
-    Object.freeze(this);
-
     return this;
+  }
+
+  sign () {
+    if (!this.signer) throw new Error('No signer available.');
+    if (!this.signer.private) throw new Error('Cannot sign message with public key only.');
+    if (!this.signer.sign) throw new Error('Signer must implement sign method');
+
+    return this.signWithKey(this.signer);
   }
 
   /**
@@ -217,33 +330,95 @@ class Message extends Actor {
   verify () {
     if (!this.header) throw new Error('No header property.');
     if (!this.raw) throw new Error('No raw property.');
+    if (!this.signer) throw new Error('No signer available.');
+    if (!this.signer.verify) throw new Error('Signer must implement verify method');
 
-    // Compute sha256 hash of message body
-    const hash = crypto.createHash('sha256').update(this.raw.data).digest();
+    const hash = Hash256.digest(this.raw.data);
+    const signature = this.raw.signature;
 
-    // If the raw header doesn't match the computed values, reject
-    if (this.raw.hash.toString('hex') !== hash.toString('hex')) {
+    return this.verifyWithKey(this.signer);
+  }
+
+  /**
+   * Verify a message's signature with a specific key.
+   * Uses BIP-340 Schnorr signature verification with tagged hash "Fabric/Message".
+   * Verifies the complete message (header + body) as per C implementation.
+   *
+   * @param {Object} key Key object with verify method.
+   * @param {Function} key.verify Verification function
+   * @returns {Boolean} `true` if the signature is valid, `false` if not.
+   */
+  verifyWithKey (key) {
+    if (!this.header) throw new Error('No header property.');
+    if (!this.raw) throw new Error('No raw property.');
+    if (!key) throw new Error('No key provided.');
+    if (!key.verify) throw new Error('Key object must implement verify method');
+
+    // Parse x-only pubkey from author field (32 bytes = 64 hex chars)
+    // This matches the C implementation which uses secp256k1_xonly_pubkey_parse
+    const authorHex = this.raw.author.toString('hex');
+    if (authorHex.length !== 64) {
+      throw new Error(`Invalid author field length: expected 64 hex chars (32 bytes), got ${authorHex.length}`);
+    }
+    const xOnlyPubkeyFromAuthor = Buffer.from(authorHex, 'hex');
+
+    // Get x-only pubkey from the provided key for comparison
+    // This allows us to verify using the key directly instead of reconstructing
+    const compressedPubkeyFromKey = Buffer.from(key.public.encodeCompressed('hex'), 'hex');
+    const xOnlyPubkeyFromKey = compressedPubkeyFromKey.slice(1);
+
+    // Verify that the author field matches the key's x-only pubkey
+    if (!xOnlyPubkeyFromAuthor.equals(xOnlyPubkeyFromKey)) {
       return false;
     }
 
+    // Create header with signature field zeroed (as it would be during signing)
+    // The C implementation includes the signature field in offsetof(Message, body),
+    // but it's zero/uninitialized when signing, so we zero it for verification
+    const zeroedSignature = Buffer.alloc(64); // 64 bytes of zeros
+    const headerForHash = Buffer.concat([
+      Buffer.from(this.raw.magic, 'hex'),
+      Buffer.from(this.raw.version, 'hex'),
+      Buffer.from(this.raw.parent, 'hex'),
+      Buffer.from(this.raw.author, 'hex'),
+      Buffer.from(this.raw.type, 'hex'),
+      Buffer.from(this.raw.size, 'hex'),
+      Buffer.from(this.raw.hash, 'hex'),
+      zeroedSignature // Signature field zeroed for hash computation
+    ]);
+
+    // Create buffer with header (signature zeroed) + body
+    // This matches the C implementation: memcpy(data_buffer, message, offsetof(Message, body))
+    const dataBuffer = Buffer.concat([
+      headerForHash,
+      this.raw.data || Buffer.alloc(0)
+    ]);
+
+    // Compute tagged hash with "Fabric/Message" tag (BIP-340)
+    const tag = 'Fabric/Message';
+    const messageHash = taggedHash(tag, dataBuffer);
+
+    // Get signature
     const signature = this.raw.signature;
-    const verified = this.signer.verify(this.raw.author, hash, signature);
+    const sigBuffer = Buffer.isBuffer(signature) ? signature : Buffer.from(signature.toString('hex'), 'hex');
 
-    if (!verified) {
-      throw new Error('Did not verify.');
-    }
-
-    return true;
+    // Use the provided key's verifySchnorrHash method directly
+    // This avoids needing to reconstruct the key from the author field
+    return key.verifySchnorrHash(messageHash, sigBuffer);
   }
 
   /**
    * Sets the signer for the message.
-   * @param {Signer} signer Signer instance.
+   * @param {Object} key Key object with pubkey property.
+   * @param {String|Buffer} key.pubkey Public key
    * @returns {Message} Instance of the Message with associated signer.
    */
-  _setSigner (signer) {
-    // if (this.signer) throw new Error('Cannot override signer.');
-    this.signer = signer;
+  _setSigner (key) {
+    if (!key || !key.pubkey) {
+      throw new Error('Key object with pubkey is required');
+    }
+
+    this.signer = key;
     return this;
   }
 
@@ -289,24 +464,34 @@ class Message extends Actor {
 
   static fromRaw (input) {
     if (!input) return null;
-    if (!(input instanceof Buffer)) throw new Error('Input must be a buffer.');
-    // if (input.length < HEADER_SIZE) return null;
-    // if (input.length > MAX_MESSAGE_SIZE) return new Error('Input too large.');
+    // Convert various buffer-like inputs to Buffer
+    let buffer;
+    if (input instanceof Buffer) {
+      buffer = input;
+    } else if (input instanceof Uint8Array) {
+      buffer = Buffer.from(input.buffer);
+    } else if (input instanceof ArrayBuffer) {
+      buffer = Buffer.from(input);
+    } else if (input.buffer instanceof ArrayBuffer) {
+      buffer = Buffer.from(input.buffer);
+    } else {
+      throw new Error('Input must be a buffer or buffer-like object.');
+    }
 
     const message = new Message();
 
     message.raw = {
-      magic: input.slice(0, 4),
-      version: input.slice(4, 8),
-      parent: input.slice(8, 40),
-      author: input.slice(40, 72),
-      type: input.slice(72, 76),
-      size: input.slice(76, 80),
-      hash: input.slice(80, 112),
-      signature: input.slice(112, HEADER_SIZE)
+      magic: buffer.subarray(0, 4),
+      version: buffer.subarray(4, 8),
+      parent: buffer.subarray(8, 40),
+      author: buffer.subarray(40, 72),
+      type: buffer.subarray(72, 76),
+      size: buffer.subarray(76, 80),
+      hash: buffer.subarray(80, 112),
+      signature: buffer.subarray(112, HEADER_SIZE)
     };
 
-    message.data = input.slice(HEADER_SIZE);
+    message.data = buffer.subarray(HEADER_SIZE);
 
     return message;
   }
@@ -331,12 +516,16 @@ class Message extends Actor {
   } */
 
   get id () {
-    return crypto.createHash('sha256').update(this.asRaw()).digest('hex');
+    return Hash256.digest(this.asRaw());
   }
 
   get types () {
     // Message Types
     return {
+      'BitcoinBlock': BITCOIN_BLOCK_TYPE,
+      'BitcoinBlockHash': BITCOIN_BLOCK_HASH_TYPE,
+      'BitcoinTransaction': BITCOIN_TRANSACTION_TYPE,
+      'BitcoinTransactionHash': BITCOIN_TRANSACTION_HASH_TYPE,
       'GenericMessage': GENERIC_MESSAGE_TYPE,
       'GenericLogMessage': LOG_MESSAGE_TYPE,
       'GenericList': GENERIC_LIST_TYPE,
@@ -344,6 +533,9 @@ class Message extends Actor {
       'FabricLogMessage': LOG_MESSAGE_TYPE,
       'FabricServiceLogMessage': LOG_MESSAGE_TYPE,
       'GenericTransferQueue': GENERIC_LIST_TYPE,
+      'JSONBlob': GENERIC_MESSAGE_TYPE + 1,
+      'JSONCall': JSON_CALL_TYPE,
+      'JSONPatch': PATCH_MESSAGE_TYPE,
       // TODO: document Generic type
       // P2P Commands
       'Generic': P2P_GENERIC,
@@ -372,8 +564,27 @@ class Message extends Actor {
       'Transaction': P2P_TRANSACTION,
       'Call': P2P_CALL,
       'LogMessage': LOG_MESSAGE_TYPE,
-      'EthereumBlock': TYPE_ETHEREUM_BLOCK,
-      'EthereumBlockNumber': TYPE_ETHEREUM_BLOCK_NUMBER
+      // Lightning (BOLT) types
+      'AcceptChannel': LIGHTNING_ACCEPT_CHANNEL,
+      'ChannelAnnouncement': LIGHTNING_CHANNEL_ANNOUNCEMENT,
+      'ChannelReady': LIGHTNING_CHANNEL_READY,
+      'ChannelUpdate': LIGHTNING_CHANNEL_UPDATE,
+      'ClosingSigned': LIGHTNING_CLOSING_SIGNED,
+      'CommitmentSigned': LIGHTNING_COMMITMENT_SIGNED,
+      'FundingCreated': LIGHTNING_FUNDING_CREATED,
+      'FundingSigned': LIGHTNING_FUNDING_SIGNED,
+      'LightningError': LIGHTNING_ERROR,
+      'LightningInit': LIGHTNING_INIT,
+      'LightningPing': LIGHTNING_PING,
+      'LightningPong': LIGHTNING_PONG,
+      'LightningWarning': LIGHTNING_WARNING,
+      'NodeAnnouncement': LIGHTNING_NODE_ANNOUNCEMENT,
+      'OpenChannel': LIGHTNING_OPEN_CHANNEL,
+      'RevokeAndAck': LIGHTNING_REVOKE_AND_ACK,
+      'Shutdown': LIGHTNING_SHUTDOWN,
+      'UpdateAddHTLC': LIGHTNING_UPDATE_ADD_HTLC,
+      'UpdateFailHTLC': LIGHTNING_UPDATE_FAIL_HTLC,
+      'UpdateFulfillHTLC': LIGHTNING_UPDATE_FULFILL_HTLC
     };
   }
 
@@ -421,8 +632,18 @@ Object.defineProperty(Message.prototype, 'type', {
   get () {
     const code = parseInt(this.raw.type.toString('hex'), 16);
     switch (code) {
+      case BITCOIN_BLOCK_TYPE:
+        return 'BitcoinBlock';
+      case BITCOIN_BLOCK_HASH_TYPE:
+        return 'BitcoinBlockHash';
+      case BITCOIN_TRANSACTION_TYPE:
+        return 'BitcoinTransaction';
+      case BITCOIN_TRANSACTION_HASH_TYPE:
+        return 'BitcoinTransactionHash';
       case GENERIC_MESSAGE_TYPE:
         return 'GenericMessage';
+      case GENERIC_MESSAGE_TYPE + 1:
+        return 'JSONBlob';
       case LOG_MESSAGE_TYPE:
         return 'GenericLogMessage';
       case GENERIC_LIST_TYPE:
@@ -465,22 +686,74 @@ Object.defineProperty(Message.prototype, 'type', {
         return 'StartSession';
       case CHAT_MESSAGE:
         return 'ChatMessage';
+      case JSON_CALL_TYPE:
+        return 'JSONCall';
+      case PATCH_MESSAGE_TYPE:
+        return 'JSONPatch';
       case P2P_START_CHAIN:
         return 'StartChain';
-      case TYPE_ETHEREUM_BLOCK:
-        return 'EthereumBlock';
-      case TYPE_ETHEREUM_BLOCK_NUMBER:
-        return 'EthereumBlockNumber';
+      // Lightning (BOLT) types
+      case LIGHTNING_WARNING:
+        return 'LightningWarning';
+      case LIGHTNING_INIT:
+        return 'LightningInit';
+      case LIGHTNING_ERROR:
+        return 'LightningError';
+      case LIGHTNING_PING:
+        return 'LightningPing';
+      case LIGHTNING_PONG:
+        return 'LightningPong';
+      case LIGHTNING_OPEN_CHANNEL:
+        return 'OpenChannel';
+      case LIGHTNING_ACCEPT_CHANNEL:
+        return 'AcceptChannel';
+      case LIGHTNING_FUNDING_CREATED:
+        return 'FundingCreated';
+      case LIGHTNING_FUNDING_SIGNED:
+        return 'FundingSigned';
+      case LIGHTNING_CHANNEL_READY:
+        return 'ChannelReady';
+      case LIGHTNING_SHUTDOWN:
+        return 'Shutdown';
+      case LIGHTNING_CLOSING_SIGNED:
+        return 'ClosingSigned';
+      case LIGHTNING_UPDATE_ADD_HTLC:
+        return 'UpdateAddHTLC';
+      case LIGHTNING_UPDATE_FULFILL_HTLC:
+        return 'UpdateFulfillHTLC';
+      case LIGHTNING_UPDATE_FAIL_HTLC:
+        return 'UpdateFailHTLC';
+      case LIGHTNING_COMMITMENT_SIGNED:
+        return 'CommitmentSigned';
+      case LIGHTNING_REVOKE_AND_ACK:
+        return 'RevokeAndAck';
+      case LIGHTNING_CHANNEL_ANNOUNCEMENT:
+        return 'ChannelAnnouncement';
+      case LIGHTNING_NODE_ANNOUNCEMENT:
+        return 'NodeAnnouncement';
+      case LIGHTNING_CHANNEL_UPDATE:
+        return 'ChannelUpdate';
       default:
         return 'GenericMessage';
     }
   },
   set (value) {
+    // console.trace('setting type:', value);
     let code = this.types[value];
-    // Default to GenericMessage;
+    // Default to GenericMessage or JSONBlob based on content
     if (!code) {
       this.emit('warning', `Unknown message type: ${value}`);
-      code = this.types['GenericMessage'];
+      // Check if data is valid JSON
+      try {
+        if (this.data && JSON.parse(this.data)) {
+          code = this.types['JSONBlob'];
+          value = 'JSONBlob';
+        } else {
+          code = this.types['GenericMessage'];
+        }
+      } catch (e) {
+        code = this.types['GenericMessage'];
+      }
     }
 
     const padded = padDigits(code.toString(16), 8);
@@ -496,8 +769,7 @@ Object.defineProperty(Message.prototype, 'data', {
   },
   set (value) {
     if (!value) value = '';
-    const hash = crypto.createHash('sha256').update(value.toString('utf8'));
-    this.raw.hash = hash.digest();
+    this.raw.hash = Hash256.digest(value.toString('utf8'));
     this.raw.data = Buffer.from(value);
     this.raw.size.write(padDigits(this.raw.data.byteLength.toString(16), 8), 'hex');
   }

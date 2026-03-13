@@ -5,15 +5,7 @@ const Service = require('./service');
 const Collection = require('./collection');
 const Transaction = require('./transaction');
 
-/**
- * Stores a list of {@link Transaction} elements.
- * @emits {Message} confirmed Emitted when the Mempool has dropped a transaction.
- */
 class Mempool extends Service {
-  /**
-   * Creates an instance of a {@link Mempool} {@link Service}.
-   * @param {Object} settings Map of settings to utilize.
-   */
   constructor (settings = {}) {
     super(settings);
 

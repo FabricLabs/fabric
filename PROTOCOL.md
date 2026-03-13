@@ -31,9 +31,12 @@ The base list of Fabric Message Types is as follows:
 - `BID` — decimal `300` (`0000012C`)
 - `ASK` — decimal `402` (`0000192`)
 - `CLOSE` — decimal `512` (`0000200`)
+- `PATCH` — decimal `1024` (`0000400`)
 
 #### The `GENERIC` Message Type
 UTF8-encoded JSON payload.
+
+If the `version` field is `1` the payload MUST be valid JSON.
 
 #### The `ANNOUNCE` Message Type
 Used for Peer announcements.

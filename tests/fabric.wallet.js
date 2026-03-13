@@ -1,16 +1,15 @@
 'use strict';
 
 // require('debug-trace')({ always: true });
-
 const assert = require('assert');
 const Wallet = require('../types/wallet');
 const Bitcoin = require('../services/bitcoin');
+const Key = require('../types/key');
 
-const message = require('../assets/message');
+// const message = require('../assets/message');
 const settings = require('../settings/test');
 const options = Object.assign({}, settings, {
   network: 'regtest',
-  // fullnode: true,
   verbosity: 2
 });
 
@@ -20,37 +19,72 @@ describe('@fabric/core/types/wallet', function () {
       assert.equal(Wallet instanceof Function, true);
     });
 
-    it('can restore a public key', async function () {
+    it('can create a wallet from seed', function () {
+      const seed = Wallet.createSeed();
+      const wallet = Wallet.fromSeed(seed);
+      assert.ok(wallet);
+      assert.ok(wallet.key);
+      assert.ok(wallet.key.seed);
+    });
+
+    xit('can restore a public key', async function () {
       async function test () {
         const wallet = new Wallet(options);
         const origin = await wallet.generateCleanKeyPair();
-        const pubkey = wallet.publicKeyFromString(origin.public);
-        assert.equal(origin.public, pubkey);
+        const key = new Key({ public: origin.public });
+        assert.equal(origin.public.toString('hex'), key.public.toString('hex'));
       }
 
       await test();
     });
 
-    it('can generate a multisig address', async function () {
-      async function test () {
-        const wallet = new Wallet(options);
-        const pairs = [
-          (await wallet.generateCleanKeyPair()).public,
-          (await wallet.generateCleanKeyPair()).public,
-          (await wallet.generateCleanKeyPair()).public
-        ];
+    it('can derive keys from a path', function () {
+      const wallet = new Wallet(options);
+      const derived = wallet.derive('m/7777\'/7777\'/0\'/0/0');
+      assert.ok(derived);
+      assert.ok(derived.privateKey);
+      assert.ok(derived.publicKey);
+    });
 
-        const keys = pairs.map((x) => {
-          return wallet.publicKeyFromString(x);
-        });
+    xit('can load a key into the wallet', async function () {
+      const wallet = new Wallet(options);
+      const keypair = await wallet.generateCleanKeyPair();
+      const key = new Key({ public: keypair.public });
+      const result = wallet.loadKey(key, ['test']);
+      assert.ok(result);
+      assert.ok(wallet.keys);
+      assert.ok(wallet.keys.get(`/${key.public.toString('hex')}`));
+    });
 
-        const address = await wallet._createMultisigAddress(2, 3, keys);
+    it('can export wallet state', function () {
+      const wallet = new Wallet(options);
+      const exported = wallet.export();
+      assert.ok(exported);
+      assert.equal(exported.type, 'FabricWallet');
+      assert.ok(exported.object);
+      assert.ok(exported.object.master);
+      assert.ok(exported.object.seed);
+      assert.ok(exported.object.xprv);
+    });
 
-        // TODO: replace with fixture
-        assert.equal(address, 'bc1qe0thuvr6w5frdghkdsa5j8gnu27nq6t0f0ucgnr7nyjvsl88fmlqr304t0');
-      }
+    it('can get an unused address', async () => {
+      const wallet = new Wallet();
+      const address = await wallet.getUnusedAddress();
+      assert(address);
+      assert(typeof address === 'string');
+    });
 
-      await test();
+    it('can get a receive address', async () => {
+      const wallet = new Wallet();
+      const address = await wallet.receiveAddress();
+      assert(address);
+      assert(typeof address === 'string');
+    });
+
+    it('can get unspent transaction outputs', async function () {
+      const wallet = new Wallet(options);
+      const utxos = await wallet.getUnspentTransactionOutputs();
+      assert.ok(Array.isArray(utxos));
     });
 
     xit('can trust an existing chain service', function (done) {

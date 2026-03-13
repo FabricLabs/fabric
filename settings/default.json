@@ -5,6 +5,7 @@
   "network": "regtest",
   "interface": "0.0.0.0",
   "port": "7777",
+  "prefix": "FABRIC_",
   "resources": {
     "Event": {
       "name": "Event",
