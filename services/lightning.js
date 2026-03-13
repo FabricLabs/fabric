@@ -139,12 +139,11 @@ class Lightning extends Service {
     this.emit('error', `Got REST error: ${error}`);
   }
 
-  // format: id@ip:port
+  // format: id@ip:port (CLN accepts this as single param)
   async connectTo (remote) {
-    const [ id, address ] = remote.split('@');
+    const [id, address] = remote.split('@');
     if (!id || !address) throw new Error(`Invalid remote format: ${remote}. Expected format: id@ip:port`);
-    const [ ip, port ] = address.split(':');
-    const result = await this._makeRPCRequest('connect', [id, ip, port]);
+    const result = await this._makeRPCRequest('connect', [remote]);
     if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Connected to remote node ${id} at ${ip}:${port}`);
     this._state.peers[id] = {
       id: id,
@@ -162,10 +161,10 @@ class Lightning extends Service {
    * @param {String} amount Amount in satoshis to fund the channel.
    */
   async createChannel (peer, amount, pushMsat = null) {
-    const params = [peer, amount];
-    if (pushMsat != null && Number.isFinite(Number(pushMsat))) {
-      params.push(Number(pushMsat));
-    }
+    const pushVal = pushMsat != null && Number.isFinite(Number(pushMsat)) ? Number(pushMsat) : null;
+    const params = pushVal != null
+      ? { id: peer, amount: String(amount), push_msat: pushVal }
+      : [peer, String(amount)];
     const result = await this._makeRPCRequest('fundchannel', params);
     if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Created channel with peer ${peer} for amount ${amount}`);
     return result;

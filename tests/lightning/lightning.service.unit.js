@@ -74,7 +74,7 @@ describe('@fabric/core/services/lightning (unit)', function () {
       const ln = new Lightning();
       ln._makeRPCRequest = async (method, params) => {
         assert.strictEqual(method, 'connect');
-        assert.deepStrictEqual(params, ['nodeid', '127.0.0.1', '9735']);
+        assert.deepStrictEqual(params, ['nodeid@127.0.0.1:9735']);
         return { direction: 'out', features: 'xxx' };
       };
       await ln.connectTo('nodeid@127.0.0.1:9735');
@@ -96,10 +96,13 @@ describe('@fabric/core/services/lightning (unit)', function () {
       assert.strictEqual(out.txid, 'abc');
     });
 
-    it('includes pushMsat when finite number', async function () {
+    it('includes push_msat when finite number', async function () {
       const ln = new Lightning();
       ln._makeRPCRequest = async (method, params) => {
-        assert.strictEqual(params[2], 50000);
+        assert.strictEqual(method, 'fundchannel');
+        assert.strictEqual(params.push_msat, 50000);
+        assert.strictEqual(params.id, 'p');
+        assert.strictEqual(params.amount, '100000');
         return {};
       };
       await ln.createChannel('p', '100000', 50000);
