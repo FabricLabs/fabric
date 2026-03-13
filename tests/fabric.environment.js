@@ -98,6 +98,11 @@ describe('@fabric/core/types/environment', function () {
     });
 
     it('can touch the wallet', async function () {
+      if (process.env.FABRIC_ALLOW_WALLET_TOUCH !== '1') {
+        // Avoid failures in environments without permission to write to $HOME
+        return;
+      }
+
       const environment = new Environment();
       environment.touchWallet();
       assert.ok(environment);

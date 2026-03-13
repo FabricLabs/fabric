@@ -63,7 +63,71 @@ class Token {
       input += '=';
     }
 
-    return Buffer.from(input, 'base64').toString();
+    return Buffer.from(input, 'base64').toString('utf8');
+  }
+
+  static base64UrlDecodeToBuffer (input) {
+    let s = input.replace(/-/g, '+').replace(/_/g, '/');
+    while (s.length % 4) s += '=';
+    return Buffer.from(s, 'base64');
+  }
+
+  static base64UrlEncodeBuffer (input) {
+    const b = Buffer.isBuffer(input) ? input : Buffer.from(input);
+    return b.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  /**
+   * Create a cryptographically signed token string.
+   * Format: base64url(payload).base64url(signature)
+   * Payload: { cap, iss, sub, iat, exp }. Signature: Schnorr over payload JSON.
+   * @param {Object} [options]
+   * @param {number} [options.expiresInSeconds=31536000] Token lifetime (default 1 year).
+   * @returns {string}
+   */
+  toSignedString (options = {}) {
+    const expiresInSeconds = options.expiresInSeconds ?? 365 * 24 * 60 * 60;
+    const iat = Math.floor(Date.now() / 1000);
+    const exp = iat + expiresInSeconds;
+    const iss = this.issuer.public ? this.issuer.public.encodeCompressed('hex') : this.issuer.keypair.getPublic(true, 'hex');
+    const payload = {
+      cap: this.capability,
+      iss,
+      sub: this.settings.subject ?? this.subject,
+      iat,
+      exp
+    };
+    const payloadStr = JSON.stringify(payload);
+    const payloadB64 = Token.base64UrlEncode(payloadStr);
+    const signature = this.issuer.sign(payloadStr);
+    const sigB64 = Token.base64UrlEncodeBuffer(Buffer.isBuffer(signature) ? signature : Buffer.from(signature));
+    return `${payloadB64}.${sigB64}`;
+  }
+
+  /**
+   * Verify a signed token string. Returns parsed payload if valid, null otherwise.
+   * @param {string} tokenString
+   * @param {Key} verificationKey Key used to verify the signature (must match issuer).
+   * @returns {{ cap: string, iss: string, sub: string, iat: number, exp: number }|null}
+   */
+  static verifySigned (tokenString, verificationKey) {
+    if (!tokenString || typeof tokenString !== 'string') return null;
+    if (!verificationKey) return null;
+    const parts = tokenString.split('.');
+    if (parts.length !== 2) return null;
+    try {
+      const payloadStr = Token.base64UrlDecode(parts[0]);
+      const payload = JSON.parse(payloadStr);
+      const sig = Token.base64UrlDecodeToBuffer(parts[1]);
+      if (!payload || !payload.iss || payload.exp == null) return null;
+      if (Date.now() / 1000 > payload.exp) return null;
+      const ourIss = verificationKey.public ? verificationKey.public.encodeCompressed('hex') : verificationKey.keypair.getPublic(true, 'hex');
+      if (payload.iss !== ourIss) return null;
+      if (!verificationKey.verify(payloadStr, sig)) return null;
+      return payload;
+    } catch {
+      return null;
+    }
   }
 
   static fromString (input) {
