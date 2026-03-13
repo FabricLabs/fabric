@@ -165,7 +165,7 @@
             <dd class="tag-source">
               <ul class="dummy">
                 <li>
-                  <a href="types_environment.js.html">types/environment.js</a>, <a href="types_environment.js.html#line24">line 24</a>
+                  <a href="types_environment.js.html">types/environment.js</a>, <a href="types_environment.js.html#line26">line 26</a>
                 </li>
               </ul>
             </dd>
@@ -238,6 +238,507 @@
 
 
         <h3 class="subsection-title">Methods</h3>
+
+
+
+
+
+
+
+        <h4 class="name" id="_getDefaultBitcoinDatadir"><span class="type-signature"></span>_getDefaultBitcoinDatadir<span class="signature">(configPath<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Read and parse Bitcoin configuration from bitcoin.conf file
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>configPath</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">Optional path to bitcoin.conf, defaults to ~/.bitcoin/bitcoin.conf</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_environment.js.html">types/environment.js</a>, <a href="types_environment.js.html#line124">line 124</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Parsed Bitcoin configuration object
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="_parseConfigValue"><span class="type-signature"></span>_parseConfigValue<span class="signature">(value)</span><span class="type-signature"> &rarr; {*}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Parse configuration value to appropriate type
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>value</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">The raw configuration value</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_environment.js.html">types/environment.js</a>, <a href="types_environment.js.html#line240">line 240</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Parsed value (string, number, or boolean)
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">*</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="_toFabricSettings"><span class="type-signature"></span>_toFabricSettings<span class="signature">(bitcoinConf)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Convert bitcoin.conf configuration to Fabric Bitcoin service settings
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>bitcoinConf</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">The parsed bitcoin.conf configuration</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_environment.js.html">types/environment.js</a>, <a href="types_environment.js.html#line274">line 274</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Settings object compatible with Fabric Bitcoin service
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
 
 
 
@@ -348,7 +849,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_environment.js.html">types/environment.js</a>, <a href="types_environment.js.html#line226">line 226</a>
+                <a href="types_environment.js.html">types/environment.js</a>, <a href="types_environment.js.html#line430">line 430</a>
               </li>
             </ul>
           </dd>
@@ -546,7 +1047,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_environment.js.html">types/environment.js</a>, <a href="types_environment.js.html#line242">line 242</a>
+                <a href="types_environment.js.html">types/environment.js</a>, <a href="types_environment.js.html#line446">line 446</a>
               </li>
             </ul>
           </dd>
@@ -660,7 +1161,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_environment.js.html">types/environment.js</a>, <a href="types_environment.js.html#line281">line 281</a>
+                <a href="types_environment.js.html">types/environment.js</a>, <a href="types_environment.js.html#line485">line 485</a>
               </li>
             </ul>
           </dd>
@@ -743,7 +1244,6 @@
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
-      <li><a href="HTTPServer.html">HTTPServer</a></li>
       <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>

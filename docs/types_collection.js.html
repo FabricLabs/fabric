@@ -70,7 +70,7 @@ class Collection extends Stack {
 
     // Set name to plural version, define path for storage
     this.name = pluralize(this.settings.name);
-    this.path = `/` + this.name.toLowerCase();
+    this._path = `/${this.name.toLowerCase()}`;
 
     this._state = {};
     this.value = {};
@@ -91,6 +91,15 @@ class Collection extends Stack {
 
   get routes () {
     return this.settings.routes;
+  }
+
+  get path () {
+    return this._path;
+  }
+
+  set path (value) {
+    this._path = value;
+    return this._path;
   }
 
   /**
@@ -260,10 +269,14 @@ class Collection extends Stack {
   async push (data, commit = true) {
     super.push(data);
 
+    const entity = new Entity(data);
     let state = new State(data);
 
     this['@entity'].states[this.id] = this['@data'];
-    this['@entity'].states[state.id] = state['@data'];
+    this['@entity'].states[entity.id] = state['@data'];
+
+    // Use entity IDs for collection indexing to avoid collisions in State IDs.
+    this['@data'][this['@data'].length - 1] = entity.id;
 
     this['@entity']['@data'] = this['@data'].map(x => x.toString());
     this['@data'] = this['@entity']['@data'];
@@ -349,7 +362,7 @@ class Collection extends Stack {
   toTypedArray () {
     const map = this.map();
     const ids = Object.keys(map);
-    return ids.map((x) => this._wrapResult(map[ids[x]]));
+    return ids.map((id) => this._wrapResult(map[id]));
   }
 
   typedMap () {
@@ -370,11 +383,12 @@ class Collection extends Stack {
    * @returns {Array}
    */
   map () {
-    return Collection.pointer.get(this.value, `${this.path}`);
+    return pointer.get(this.value, `${this.path}`);
   }
 
   render () {
-    return this.serialize(this.state);
+    // Collection rendering should expose the ordered ID list, not internal state metadata.
+    return JSON.stringify(this['@entity']['@data'] || []);
   }
 
   /**
@@ -544,7 +558,6 @@ module.exports = Collection;
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
-      <li><a href="HTTPServer.html">HTTPServer</a></li>
       <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>

@@ -149,13 +149,19 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 <dt><a href="#ZMQ">ZMQ</a></dt>
 <dd><p>Connect and subscribe to ZeroMQ publishers.</p>
 </dd>
-<dt><del><a href="#HTTPServer">HTTPServer</a></del></dt>
-<dd><p>Deprecated 2021-10-16.</p>
+<dt><del><a href="#Stack">Stack</a></del></dt>
+<dd><p>Deprecated 2026-03-08.</p>
+</dd>
+<dt><del><a href="#Swarm">Swarm</a></del></dt>
+<dd><p>Deprecated 2026-03-08.</p>
 </dd>
 <dt><del><a href="#Scribe">Scribe</a></del></dt>
 <dd><p>Deprecated 2021-11-06.</p>
 </dd>
 <dt><del><a href="#Stash">Stash</a></del></dt>
+<dd><p>Deprecated 2021-11-06.</p>
+</dd>
+<dt><del><a href="#Value">Value</a></del></dt>
 <dd><p>Deprecated 2021-11-06.</p>
 </dd>
 </dl>
@@ -737,6 +743,9 @@ Interact with the user's Environment.
 
 * [Environment](#Environment)
     * [new Environment([settings])](#new_Environment_new)
+    * [._getDefaultBitcoinDatadir([configPath])](#Environment+_getDefaultBitcoinDatadir) ⇒ <code>Object</code>
+    * [._parseConfigValue(value)](#Environment+_parseConfigValue) ⇒ <code>\*</code>
+    * [._toFabricSettings(bitcoinConf)](#Environment+_toFabricSettings) ⇒ <code>Object</code>
     * [.readVariable(name)](#Environment+readVariable) ⇒ <code>String</code>
     * [.setWallet(wallet, force)](#Environment+setWallet) ⇒ [<code>Environment</code>](#Environment)
     * [.start()](#Environment+start) ⇒ [<code>Environment</code>](#Environment)
@@ -751,6 +760,42 @@ Create an instance of [Environment](#Environment).
 | Param | Type | Description |
 | --- | --- | --- |
 | [settings] | <code>Object</code> | Settings for the Fabric environment. |
+
+<a name="Environment+_getDefaultBitcoinDatadir"></a>
+
+### environment.\_getDefaultBitcoinDatadir([configPath]) ⇒ <code>Object</code>
+Read and parse Bitcoin configuration from bitcoin.conf file
+
+**Kind**: instance method of [<code>Environment</code>](#Environment)  
+**Returns**: <code>Object</code> - Parsed Bitcoin configuration object  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [configPath] | <code>String</code> | Optional path to bitcoin.conf, defaults to ~/.bitcoin/bitcoin.conf |
+
+<a name="Environment+_parseConfigValue"></a>
+
+### environment.\_parseConfigValue(value) ⇒ <code>\*</code>
+Parse configuration value to appropriate type
+
+**Kind**: instance method of [<code>Environment</code>](#Environment)  
+**Returns**: <code>\*</code> - Parsed value (string, number, or boolean)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| value | <code>String</code> | The raw configuration value |
+
+<a name="Environment+_toFabricSettings"></a>
+
+### environment.\_toFabricSettings(bitcoinConf) ⇒ <code>Object</code>
+Convert bitcoin.conf configuration to Fabric Bitcoin service settings
+
+**Kind**: instance method of [<code>Environment</code>](#Environment)  
+**Returns**: <code>Object</code> - Settings object compatible with Fabric Bitcoin service  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| bitcoinConf | <code>Object</code> | The parsed bitcoin.conf configuration |
 
 <a name="Environment+readVariable"></a>
 
@@ -1811,6 +1856,9 @@ An in-memory representation of a node in our network.
     * ~~[.address](#Peer+address)~~
     * [.broadcast(message)](#Peer+broadcast)
     * [._connect(target)](#Peer+_connect)
+    * [._loadPeerRegistry()](#Peer+_loadPeerRegistry) ⇒ <code>Promise.&lt;void&gt;</code>
+    * [._savePeerRegistry()](#Peer+_savePeerRegistry)
+    * [._upsertPeerRegistry(address, [updates])](#Peer+_upsertPeerRegistry)
     * [._fillPeerSlots()](#Peer+_fillPeerSlots) ⇒ [<code>Peer</code>](#Peer)
     * [._handleFabricMessage(buffer)](#Peer+_handleFabricMessage) ⇒ [<code>Peer</code>](#Peer)
     * [.start()](#Peer+start)
@@ -1858,6 +1906,31 @@ Open a Fabric connection to the target address and initiate the Fabric Protocol.
 | Param | Type | Description |
 | --- | --- | --- |
 | target | <code>String</code> | Target address. |
+
+<a name="Peer+_loadPeerRegistry"></a>
+
+### peer.\_loadPeerRegistry() ⇒ <code>Promise.&lt;void&gt;</code>
+Load persistent peer registry from LevelDB.
+Uses classic-level in Node, browser-level (IndexedDB) in browser.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+<a name="Peer+_savePeerRegistry"></a>
+
+### peer.\_savePeerRegistry()
+Persist peer registry to LevelDB (debounced).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+<a name="Peer+_upsertPeerRegistry"></a>
+
+### peer.\_upsertPeerRegistry(address, [updates])
+Upsert a peer into the persistent registry (state.peers) and schedule save to LevelDB.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| address | <code>string</code> | Peer address (e.g. host:port). |
+| [updates] | <code>Object</code> | Fields to set/merge (id, score, firstSeen, lastSeen, alias, publicKey). |
 
 <a name="Peer+_fillPeerSlots"></a>
 
@@ -3137,7 +3210,7 @@ Manages interaction with the Bitcoin network.
     * [._subscribeToShard(shard)](#Bitcoin+_subscribeToShard)
     * [._connectSPV()](#Bitcoin+_connectSPV)
     * [.connect(addr)](#Bitcoin+connect)
-    * [._makeRPCRequest(method, params)](#Bitcoin+_makeRPCRequest) ⇒ <code>Promise</code>
+    * [._makeRPCRequest(method, params, [opts])](#Bitcoin+_makeRPCRequest) ⇒ <code>Promise</code>
     * [._requestBlockAtHeight(height)](#Bitcoin+_requestBlockAtHeight) ⇒ <code>Object</code>
     * [._createContractProposal(options)](#Bitcoin+_createContractProposal) ⇒ <code>ContractProposal</code>
     * [._buildPSBT(options)](#Bitcoin+_buildPSBT) ⇒ <code>PSBT</code>
@@ -3304,8 +3377,9 @@ Connect to a Fabric [Peer](#Peer).
 
 <a name="Bitcoin+_makeRPCRequest"></a>
 
-### bitcoin.\_makeRPCRequest(method, params) ⇒ <code>Promise</code>
+### bitcoin.\_makeRPCRequest(method, params, [opts]) ⇒ <code>Promise</code>
 Make a single RPC request to the Bitcoin node.
+Retries on "Work queue depth exceeded" (bitcoind temporary backpressure).
 
 **Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
 **Returns**: <code>Promise</code> - A promise that resolves to the RPC response.  
@@ -3314,6 +3388,7 @@ Make a single RPC request to the Bitcoin node.
 | --- | --- | --- |
 | method | <code>String</code> | The RPC method to call. |
 | params | <code>Array</code> | The parameters to pass to the RPC method. |
+| [opts] | <code>Object</code> | Options. retries: max retries for work-queue errors (default 5). |
 
 <a name="Bitcoin+_requestBlockAtHeight"></a>
 
@@ -3558,7 +3633,7 @@ Manage a Lightning node.
     * [.createChannel(peer, amount)](#Lightning+createChannel)
     * [.createInvoice(amount)](#Lightning+createInvoice)
     * [.computeLiquidity()](#Lightning+computeLiquidity) ⇒ <code>Object</code>
-    * [._makeRPCRequest(method, [params])](#Lightning+_makeRPCRequest) ⇒ <code>Object</code> \| <code>String</code>
+    * [._makeRPCRequest(method, [params], [timeoutMs])](#Lightning+_makeRPCRequest) ⇒ <code>Object</code> \| <code>String</code>
 
 <a name="new_Lightning_new"></a>
 
@@ -3602,16 +3677,17 @@ Computes the total liquidity of the Lightning node.
 **Returns**: <code>Object</code> - Liquidity in BTC.  
 <a name="Lightning+_makeRPCRequest"></a>
 
-### lightning.\_makeRPCRequest(method, [params]) ⇒ <code>Object</code> \| <code>String</code>
+### lightning.\_makeRPCRequest(method, [params], [timeoutMs]) ⇒ <code>Object</code> \| <code>String</code>
 Make an RPC request through the Lightning UNIX socket.
 
 **Kind**: instance method of [<code>Lightning</code>](#Lightning)  
 **Returns**: <code>Object</code> \| <code>String</code> - Respond from the Lightning node.  
 
-| Param | Type | Description |
-| --- | --- | --- |
-| method | <code>String</code> | Name of method to call. |
-| [params] | <code>Array</code> | Array of parameters. |
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| method | <code>String</code> |  | Name of method to call. |
+| [params] | <code>Array</code> |  | Array of parameters. |
+| [timeoutMs] | <code>Number</code> | <code>30000</code> | Optional timeout in ms; default 30000. Prevents hanging when lightningd is busy. |
 
 <a name="Redis"></a>
 
@@ -3691,14 +3767,88 @@ Closes the connection to the ZMQ publisher.
 
 **Kind**: instance method of [<code>ZMQ</code>](#ZMQ)  
 **Returns**: [<code>ZMQ</code>](#ZMQ) - Instance of the service.  
-<a name="HTTPServer"></a>
+<a name="Stack"></a>
 
-## ~~HTTPServer~~
+## ~~Stack~~
 ***Deprecated***
 
-Deprecated 2021-10-16.
+Deprecated 2026-03-08.
 
 **Kind**: global class  
+
+* ~~[Stack](#Stack)~~
+    * [new Stack([list])](#new_Stack_new)
+    * [.push(data)](#Stack+push) ⇒ <code>Number</code>
+
+<a name="new_Stack_new"></a>
+
+### new Stack([list])
+Create a [Stack](#Stack) instance.
+
+**Returns**: [<code>Stack</code>](#Stack) - Instance of the [Stack](#Stack).  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [list] | <code>Array</code> | <code>[]</code> | Genesis state for the [Stack](#Stack) instance. |
+
+<a name="Stack+push"></a>
+
+### stack.push(data) ⇒ <code>Number</code>
+Push data onto the stack.  Changes the [Stack#frame](Stack#frame) and
+[Stack#id](Stack#id).
+
+**Kind**: instance method of [<code>Stack</code>](#Stack)  
+**Returns**: <code>Number</code> - Resulting size of the stack.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| data | <code>Mixed</code> | Treated as a [State](#State). |
+
+<a name="Swarm"></a>
+
+## ~~Swarm~~
+***Deprecated***
+
+Deprecated 2026-03-08.
+
+**Kind**: global class  
+
+* ~~[Swarm](#Swarm)~~
+    * [new Swarm(config)](#new_Swarm_new)
+    * [.trust(source)](#Swarm+trust)
+    * [.start()](#Swarm+start) ⇒ <code>Promise</code>
+
+<a name="new_Swarm_new"></a>
+
+### new Swarm(config)
+Create an instance of a [Swarm](#Swarm).
+
+**Returns**: [<code>Swarm</code>](#Swarm) - Instance of the Swarm.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| config | <code>Object</code> | Configuration object. |
+
+<a name="Swarm+trust"></a>
+
+### swarm.trust(source)
+Explicitly trust an [EventEmitter](EventEmitter) to provide messages using
+the expected [Interface](#Interface), providing [Message](#Message) objects as
+the expected [Type](Type).
+
+**Kind**: instance method of [<code>Swarm</code>](#Swarm)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| source | <code>EventEmitter</code> | [Actor](#Actor) to utilize. |
+
+<a name="Swarm+start"></a>
+
+### swarm.start() ⇒ <code>Promise</code>
+Begin computing.
+
+**Kind**: instance method of [<code>Swarm</code>](#Swarm)  
+**Returns**: <code>Promise</code> - Resolves to instance of [Swarm](#Swarm).  
 <a name="Scribe"></a>
 
 ## ~~Scribe~~
@@ -3752,3 +3902,37 @@ Use an existing Scribe instance as a parent.
 Deprecated 2021-11-06.
 
 **Kind**: global class  
+<a name="Value"></a>
+
+## ~~Value~~
+***Deprecated***
+
+Deprecated 2021-11-06.
+
+**Kind**: global class  
+
+* ~~[Value](#Value)~~
+    * [new Value(data)](#new_Value_new)
+    * [.value(input)](#Value+value)
+
+<a name="new_Value_new"></a>
+
+### new Value(data)
+Use the [Value](#Value) type to interact with [Number](Number)-like objects.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| data | <code>Mixed</code> | Input value. |
+
+<a name="Value+value"></a>
+
+### value.value(input)
+Compute the numeric representation of this input.
+
+**Kind**: instance method of [<code>Value</code>](#Value)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>String</code> | Input string to seek for value. |
+

@@ -12,31 +12,28 @@ const CLI = require('../types/cli');
 // Program Definition
 async function OP_CHAT () {
   if (!this.environment.wallet) {
-    console.error('No wallet found!  Set up your Fabric wallet by running:');
+    console.error('[FABRIC:OP_CHAT] No wallet found!  Set up your Fabric wallet by running:');
     console.error('\tfabric setup');
     process.exit(1);
   }
 
-  // Fabric CLI
-  const chat = new CLI(settings); // TODO: this.settings
+  // Merge CLI context settings into local settings
+  const merged = Object.assign({}, settings, this.settings || {});
+  const chat = new CLI(merged);
 
   chat.on('error', (error) => {
     console.error('[FABRIC:CHAT]', '[ERROR]', error);
   });
 
-  // Use local wallet
   chat.attachWallet(this.environment.wallet);
-
-  // Assume identity
-  // TODO: remove, re-work Peer and Wallet key import in CLI
   chat.assumeIdentity(this.environment.wallet.settings.key);
+
+  await chat.start();
 
   // ## Services
   // TODO: reconcile API wth @fabric/doorman as appears at: https://github.com/FabricLabs/doorman
   // chat._registerService('matrix', Matrix);
   // chat._registerService('rpg', RPG);
-
-  await chat.start();
 
   return JSON.stringify({
     id: chat.id,

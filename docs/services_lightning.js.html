@@ -63,6 +63,9 @@ class Lightning extends Service {
   constructor (settings = {}) {
     super(settings);
 
+    // Increase max listeners to accommodate multiple services
+    process.setMaxListeners(20);
+
     this.settings = Object.assign({
       authority: 'http://127.0.0.1:8181',
       datadir: './stores/lightning',
@@ -756,7 +759,6 @@ module.exports = Lightning;
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
-      <li><a href="HTTPServer.html">HTTPServer</a></li>
       <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>

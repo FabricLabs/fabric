@@ -18,6 +18,13 @@ const Machine = require('../types/machine');
 // Contracts
 const OP_TEST = require('../contracts/test');
 
+function redactSensitiveCommandArg (arg) {
+  return String(arg).replace(
+    /((?:--?rpcpassword|--?rpcuser|--?rpcauth|--bitcoin-rpcpassword|--bitcoin-rpcuser)=).*/i,
+    '$1[REDACTED]'
+  );
+}
+
 /**
  * Manage a Lightning node.
  */
@@ -29,6 +36,9 @@ class Lightning extends Service {
    */
   constructor (settings = {}) {
     super(settings);
+
+    // Increase max listeners to accommodate multiple services
+    process.setMaxListeners(20);
 
     this.settings = Object.assign({
       authority: 'http://127.0.0.1:8181',
@@ -49,6 +59,10 @@ class Lightning extends Service {
         datadir: './stores/bitcoin-regtest'
       }
     }, settings);
+
+    // Accept both rpcuser/rpcpassword and username/password shapes.
+    this.settings.bitcoin.rpcuser = this.settings.bitcoin.rpcuser || this.settings.bitcoin.username;
+    this.settings.bitcoin.rpcpassword = this.settings.bitcoin.rpcpassword || this.settings.bitcoin.password;
 
     this.machine = new Machine(this.settings);
     this.rpc = null;
@@ -131,6 +145,7 @@ class Lightning extends Service {
     if (!id || !address) throw new Error(`Invalid remote format: ${remote}. Expected format: id@ip:port`);
     const [ ip, port ] = address.split(':');
     const result = await this._makeRPCRequest('connect', [id, ip, port]);
+    if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Connected to remote node ${id} at ${ip}:${port}`);
     this._state.peers[id] = {
       id: id,
       address: address,
@@ -146,8 +161,13 @@ class Lightning extends Service {
    * @param {String} peer Public key of the peer to create a channel with.
    * @param {String} amount Amount in satoshis to fund the channel.
    */
-  async createChannel (peer, amount) {
-    const result = await this._makeRPCRequest('fundchannel', [peer, amount]);
+  async createChannel (peer, amount, pushMsat = null) {
+    const params = [peer, amount];
+    if (pushMsat != null && Number.isFinite(Number(pushMsat))) {
+      params.push(Number(pushMsat));
+    }
+    const result = await this._makeRPCRequest('fundchannel', params);
+    if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Created channel with peer ${peer} for amount ${amount}`);
     return result;
   }
 
@@ -208,24 +228,24 @@ class Lightning extends Service {
   }
 
   async _waitForLightningD (maxAttempts = 10, initialDelay = 1000) {
-    if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Waiting for lightningd to be ready...');
+    if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Waiting for lightningd to be ready...');
     let attempts = 0;
     let delay = initialDelay;
 
     while (attempts < maxAttempts) {
       try {
-        if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', `Attempt ${attempts + 1}/${maxAttempts} to connect to lightningd...`);
+        if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Attempt ${attempts + 1}/${maxAttempts} to connect to lightningd...`);
 
         // Check if the RPC socket exists
         const socketPath = path.resolve(this.settings.datadir, this.settings.socket);
-        if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', `Checking for socket at: ${socketPath}`);
+        if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Checking for socket at: ${socketPath}`);
 
         if (!fs.existsSync(socketPath)) {
           throw new Error(`RPC socket not found at ${socketPath}`);
         }
 
-        // Wait a bit for lightningd to initialize
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Brief pause for lightningd to finish initializing after socket appears
+        await new Promise(resolve => setTimeout(resolve, 500));
 
         // Check multiple RPC endpoints to ensure full readiness
         const checks = [
@@ -236,13 +256,12 @@ class Lightning extends Service {
         const results = await Promise.all(checks);
 
         if (this.settings.debug) {
-          console.debug('[FABRIC:LIGHTNING]', 'Successfully connected to lightningd:');
-          console.debug('[FABRIC:LIGHTNING]', '- Node info:', results[0]);
+          this.emit('debug', '[FABRIC:LIGHTNING] Successfully connected to lightningd');
         }
 
         return true;
       } catch (error) {
-        if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', `Connection attempt ${attempts + 1} failed:`, error.message);
+        if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Connection attempt ${attempts + 1} failed: ${error.message}`);
         attempts++;
 
         // If we've exceeded max attempts, throw error
@@ -251,7 +270,7 @@ class Lightning extends Service {
         }
 
         // Wait before next attempt with exponential backoff
-        if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', `Waiting ${delay}ms before retry...`);
+        if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Waiting ${delay}ms before retry...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         delay = Math.min(delay * 1.5, 10000); // Exponential backoff with max 10s delay
         continue; // Continue to next attempt
@@ -263,7 +282,7 @@ class Lightning extends Service {
   }
 
   async createLocalNode () {
-    if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Creating local Lightning node...');
+    if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Creating local Lightning node...');
     const datadir = path.resolve(this.settings.datadir);
     const bitcoinDatadir = path.resolve(this.settings.bitcoin.datadir);
     const socketPath = path.join(datadir, this.settings.socket);
@@ -297,7 +316,7 @@ class Lightning extends Service {
           });
         } else {
           if (this.settings.debug) {
-            console.debug('[FABRIC:LIGHTNING]', `Skipping unsupported plugin configuration: ${plugin}`);
+            if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Skipping unsupported plugin configuration: ${plugin}`);
           }
         }
       });
@@ -308,44 +327,67 @@ class Lightning extends Service {
       this.settings.disablePlugins.forEach(plugin => {
         params.push(`--disable-plugin=${plugin}`);
         if (this.settings.debug) {
-          console.debug('[FABRIC:LIGHTNING]', `Disabling plugin: ${plugin}`);
+          if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Disabling plugin: ${plugin}`);
         }
       });
     }
 
-    if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'LightningD parameters:', params);
+    if (this.settings.debug) {
+      const safeParams = params.map(redactSensitiveCommandArg);
+      this.emit('debug', `[FABRIC:LIGHTNING] LightningD parameters: ${safeParams.join(' ')}`);
+    }
 
     // Start lightningd
     if (this.settings.managed) {
       this._child = children.spawn('lightningd', params);
 
       this._child.stdout.on('data', (data) => {
-        if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', data.toString('utf8').trim());
         if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] ${data.toString('utf8').trim()}`);
       });
 
       this._child.stderr.on('data', (data) => {
-        console.error('[FABRIC:LIGHTNING]', '[ERROR]', data.toString('utf8').trim());
         this.emit('error', `[FABRIC:LIGHTNING] ${data.toString('utf8').trim()}`);
       });
 
       this._child.on('close', (code) => {
-        if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Lightning node exited with code ' + code);
+        if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Lightning node exited with code ${code}`);
         this.emit('log', `[FABRIC:LIGHTNING] Lightning node exited with code ${code}`);
       });
 
       // Add cleanup handler
       const cleanup = async () => {
-        if (this._child) {
-          try {
-            console.debug('[FABRIC:LIGHTNING]', 'Cleaning up Lightning node...');
-            this._child.kill();
-            await new Promise(resolve => {
-              this._child.on('close', () => resolve());
-            });
-          } catch (e) {
-            console.error('[FABRIC:LIGHTNING]', 'Error during cleanup:', e);
+        const child = this._child;
+        if (!child) return;
+
+        try {
+          if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Cleaning up Lightning node...');
+
+          if (child.exitCode === null && !child.killed) {
+            child.kill('SIGTERM');
           }
+
+          await Promise.race([
+            new Promise((resolve) => child.once('close', () => resolve())),
+            new Promise((resolve) => setTimeout(resolve, 5000))
+          ]);
+
+          // Force terminate if graceful shutdown did not complete in time.
+          if (child.exitCode === null) {
+            try {
+              child.kill('SIGKILL');
+            } catch (error) {
+              // Ignore if process already exited between checks.
+            }
+
+            await Promise.race([
+              new Promise((resolve) => child.once('close', () => resolve())),
+              new Promise((resolve) => setTimeout(resolve, 3000))
+            ]);
+          }
+        } catch (e) {
+          this.emit('error', `[FABRIC:LIGHTNING] Error during cleanup: ${e.message || e}`);
+        } finally {
+          if (this._child === child) this._child = null;
         }
       };
 
@@ -356,7 +398,7 @@ class Lightning extends Service {
       this._errorHandlers.uncaughtException = async (err) => {
         // Only handle errors from this service's child process
         if (err.source === 'lightning' || (this._child && err.pid === this._child.pid)) {
-          console.trace('[FABRIC:LIGHTNING]', 'Uncaught exception from Lightning service:', err);
+          this.emit('error', `[FABRIC:LIGHTNING] Uncaught exception from Lightning service: ${err.message || err}`);
           // await cleanup();
           // this.emit('error', err);
         }
@@ -364,7 +406,7 @@ class Lightning extends Service {
       this._errorHandlers.unhandledRejection = async (reason, promise) => {
         // Only handle rejections from this service's operations
         if (reason.source === 'lightning' || (this._child && reason.pid === this._child.pid)) {
-          console.trace('[FABRIC:LIGHTNING]', 'Unhandled rejection from Lightning service at:', promise, 'reason:', reason);
+          this.emit('error', '[FABRIC:LIGHTNING] Unhandled rejection from Lightning service');
           // await cleanup();
           // this.emit('error', reason);
         }
@@ -395,7 +437,7 @@ class Lightning extends Service {
     this.status = 'starting';
 
     // Wait for Lightning to be ready
-    if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Waiting for Lightning to be ready...');
+    if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Waiting for Lightning to be ready...');
     try {
       // Check Lightning connection
       const bitcoinCli = children.spawn('bitcoin-cli', [
@@ -418,7 +460,9 @@ class Lightning extends Service {
           output += data.toString();
         });
         bitcoinCli.stderr.on('data', (data) => {
-          console.error('[FABRIC:LIGHTNING]', 'Lightning CLI error:', data.toString());
+          const line = data.toString();
+          // Route Lightning CLI errors into the service error channel so the TUI can render them safely.
+          this.emit('error', `[FABRIC:LIGHTNING] Lightning CLI error: ${line.trim()}`);
         });
         bitcoinCli.on('close', (code) => {
           if (code === 0) {
@@ -429,7 +473,7 @@ class Lightning extends Service {
         });
       });
 
-      if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Lightning is ready');
+      if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Lightning is ready');
     } catch (error) {
       throw new Error(`Could not connect to bitcoind using bitcoin-cli. Is lightningd running?\n\nMake sure you have bitcoind running and that bitcoin-cli is able to connect to bitcoind.\n\nYou can verify that your Bitcoin Core installation is ready for use by running:\n\n    $ bitcoin-cli -regtest -datadir=${this.settings.bitcoin.datadir} -rpcclienttimeout=60 -rpcconnect=${this.settings.bitcoin.host} -rpcport=${this.settings.bitcoin.rpcport} -rpcuser=${this.settings.bitcoin.rpcuser} -stdinrpcpass echo 'hello world'`);
     }
@@ -452,7 +496,7 @@ class Lightning extends Service {
 
   async listFunds () {
     try {
-      const result = this._makeRPCRequest('listfunds');
+      const result = await this._makeRPCRequest('listfunds');
       return result;
     } catch (exception) {
       this.emit('error', `Could not list funds: ${exception}`);
@@ -531,21 +575,38 @@ class Lightning extends Service {
    * Make an RPC request through the Lightning UNIX socket.
    * @param {String} method Name of method to call.
    * @param {Array} [params] Array of parameters.
+   * @param {Number} [timeoutMs] Optional timeout in ms; default 30000. Prevents hanging when lightningd is busy.
    * @returns {Object|String} Respond from the Lightning node.
    */
-  async _makeRPCRequest (method, params = []) {
+  async _makeRPCRequest (method, params = [], timeoutMs = 30000) {
+    if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Making RPC request to method ${method}`);
     return new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = (fn, arg) => {
+        if (settled) return;
+        settled = true;
+        if (timeoutId) clearTimeout(timeoutId);
+        try { client.destroy(); } catch (_) {}
+        fn(arg);
+      };
+
       const socketPath = path.resolve(this.settings.datadir, this.settings.socket);
-      const exists = fs.existsSync(socketPath);
+      let client;
+      const timeoutId = timeoutMs > 0 ? setTimeout(() => {
+        finish(reject, new Error(`Lightning RPC timeout after ${timeoutMs}ms (${method})`));
+      }, timeoutMs) : null;
+
       try {
-        const client = net.createConnection({ path: socketPath });
+        client = net.createConnection({ path: socketPath });
+        client.on('error', (err) => finish(reject, err));
         client.on('data', (data) => {
           try {
             const response = JSON.parse(data.toString('utf8'));
-            if (response.result) {
-              return resolve(response.result);
-            } else if (response.error) {
-              return reject(response.error);
+            if (response.result !== undefined) {
+              return finish(resolve, response.result);
+            }
+            if (response.error) {
+              return finish(reject, Object.assign(new Error(response.error.message || 'RPC error'), response.error));
             }
           } catch (exception) {
             this.emit('error', `Could not make RPC request: ${exception}\n${data.toString('utf8')}`);
@@ -562,7 +623,7 @@ class Lightning extends Service {
 
         client.write(JSON.stringify(request) + '\n');
       } catch (exception) {
-        reject(exception);
+        finish(reject, exception);
       }
     });
   }
@@ -611,7 +672,7 @@ class Lightning extends Service {
 
   async stop () {
     this.status = 'stopping';
-    if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Starting Lightning service shutdown...');
+    if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Starting Lightning service shutdown...');
 
     // Remove custom error handlers
     if (this._errorHandlers) {
@@ -628,57 +689,71 @@ class Lightning extends Service {
 
     // Clear heartbeat interval
     if (this._heart) {
-      if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Clearing heartbeat interval...');
+      if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Clearing heartbeat interval...');
       clearInterval(this._heart);
       this._heart = null;
     }
 
     // Stop the machine
     if (this.machine) {
-      if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Stopping machine...');
+      if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Stopping machine...');
       await this.machine.stop();
     }
 
     // Stop lightningd if it was started
     if (this.settings.managed && this._child) {
-      if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Stopping lightningd...');
+      if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Stopping lightningd...');
 
       try {
         // Try graceful shutdown first with a timeout
-        if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Attempting graceful shutdown...');
+        if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Attempting graceful shutdown...');
         const gracefulShutdown = this._makeRPCRequest('stop');
         const timeout = new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Graceful shutdown timeout')), 5000)
         );
 
         await Promise.race([gracefulShutdown, timeout]);
-        if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Graceful shutdown successful');
+        if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Graceful shutdown successful');
 
         // Wait a bit for graceful shutdown
-        if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Waiting for graceful shutdown to complete...');
+        if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Waiting for graceful shutdown to complete...');
         await new Promise(resolve => setTimeout(resolve, 2000));
 
         // Only force kill if process is still running
         if (this._child && !this._child.killed) {
           const exitCode = this._child.exitCode;
           if (exitCode === null) {
-            if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Force killing lightningd...');
+            if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Force killing lightningd...');
             this._child.kill('SIGKILL');
           } else {
-            if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', `lightningd already exited with code ${exitCode}`);
+            if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] lightningd already exited with code ${exitCode}`);
           }
         }
+
+        if (this._child) {
+          await Promise.race([
+            new Promise((resolve) => this._child.once('close', () => resolve())),
+            new Promise((resolve) => setTimeout(resolve, 5000))
+          ]);
+        }
       } catch (error) {
-        if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Error during graceful shutdown:', error.message);
+        if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Error during graceful shutdown: ${error.message}`);
         // Force kill if graceful shutdown fails and process is still running
         if (this._child && !this._child.killed) {
           const exitCode = this._child.exitCode;
           if (exitCode === null) {
-            if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Force killing lightningd after failed graceful shutdown...');
+            if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Force killing lightningd after failed graceful shutdown...');
             this._child.kill('SIGKILL');
           } else {
-            if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', `lightningd already exited with code ${exitCode}`);
+            if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] lightningd already exited with code ${exitCode}`);
           }
+        }
+
+        if (this._child) {
+          await Promise.race([
+            new Promise((resolve) => this._child.once('close', () => resolve())),
+            new Promise((resolve) => setTimeout(resolve, 5000))
+          ]);
         }
       }
 
@@ -686,11 +761,11 @@ class Lightning extends Service {
       const socketPath = path.resolve(this.settings.datadir, this.settings.socket);
       try {
         if (fs.existsSync(socketPath)) {
-          if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Cleaning up socket file:', socketPath);
+          if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Cleaning up socket file: ${socketPath}`);
           fs.unlinkSync(socketPath);
         }
       } catch (error) {
-        if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Error cleaning up socket file:', error.message);
+        if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Error cleaning up socket file: ${error.message}`);
       }
     }
 

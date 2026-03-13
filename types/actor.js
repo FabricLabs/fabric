@@ -103,14 +103,12 @@ class Actor extends EventEmitter {
     let result = null;
 
     if (typeof input === 'string' && input.length) {
-      console.log('trying to parse as JSON:', input);
       try {
         result = JSON.parse(input);
       } catch (E) {
-        console.error('Failure in fromJSON:', E);
+        // Fail closed: callers expect null on invalid JSON.
+        result = null;
       }
-    } else {
-      console.trace('Invalid input:', typeof input);
     }
 
     return result;
@@ -258,7 +256,6 @@ class Actor extends EventEmitter {
     ];
 
     monitor.applyPatch(this._state.content, patches);
-    console.log('new state:', this._state.content);
     this.commit();
 
     return this;

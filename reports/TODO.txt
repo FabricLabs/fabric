@@ -11,7 +11,6 @@
 ./snippets/specification.md:// TODO: migrate script
 ./settings/local.js:// TODO: test env variables with OP_TEST
 ./settings/local.js:  // TODO: regtest, playnet, signet, testnet, mainnet (in order)
-./settings/local.js:  // TODO: test `true`
 ./settings/default.json:      "@comment": "// TODO: remove routes, add by default",
 ./types/witness.js:      // TODO: assign R coordinate
 ./types/witness.js:      // TODO: assign S coordinate
@@ -113,6 +112,7 @@
 ./types/actor.js:    // TODO: evaluate disabling by default
 ./types/actor.js:    // TODO: use elegant method to strip these properties
 ./types/actor.js:      state: state.id // TODO: include whole state?
+./types/actor.js:      // TODO: test this
 ./types/actor.js:    // TODO: emit global state event here
 ./types/oracle.js:    // TODO: define all resources
 ./types/oracle.js:    // TODO: pre-populate
@@ -204,12 +204,8 @@
 ./API.md:TODO: move to @fabric/http/types/spa
 ./SUMMARY.md:* [✅ TODO List][todo]
 ./SUMMARY.md:[todo]: TODO.md
-./fabric-whitepaper.md:### TODO: include content hashes of links as they appear at document compilation time.
 ./contracts/exchange.js:  // TODO: reconcile API wth @fabric/doorman as appears at: https://github.com/FabricLabs/doorman
 ./contracts/node.js:    // TODO: configure with input?
-./contracts/setup.js.bak:  // TODO: discuss w/ @ChronicSmoke
-./contracts/setup.js.bak:  // TODO: use in walletExists
-./contracts/fabric.c:  // TODO: emit the message object
 ./contracts/setup.js:  // TODO: replicate this program in C / ASM
 ./contracts/setup.js:    // TODO: remove from log output...
 ./contracts/chat.js:  const chat = new CLI(settings); // TODO: this.settings
@@ -230,7 +226,6 @@
 ./DEVELOPERS.md:    // TODO: make optional
 ./DEVELOPERS.md:## TODO
 ./DEVELOPERS.md:- [ ] Remove TODOs
-./AUDIT.md:| Technical Debt | TODOs and legacy code | Low | Refactor and clean up |
 ./package.json:    "report:todo": "grep --exclude-dir=.git --exclude-dir=_book --exclude-dir=assets --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs -rEI \"TODO|FIXME\" . > reports/TODO.txt",
 ./package.json:    "review:todo": "npm run report:todo && cat reports/TODO.txt && echo '\nOutstanding TODO items (@fabric/core):' && wc -l reports/TODO.txt && echo '\nIssues List: https://github.com/FabricLabs/fabric/issues\nDisclosures: securiy@fabric.pub\n\n'",
 ./guides/SETTINGS.md:### WARNING: TODO
@@ -246,18 +241,9 @@
 ./examples/swarm.js:  // TODO: create entities on swarm instance
 ./examples/oracle.html:          <p>TODO: use bottom panel for inline execution (<em>a la</em> “Run this Code &raquo;”)</p>
 ./examples/oracle.js:// TODO: use bottom panel for inline execution (_a la_ "Run this Code &raquo;")
-./examples/examples/swarm.html:              <p>TODO: create entities on seed node
-./examples/examples/swarm.html:TODO: receive entities from seed node
-./examples/examples/swarm.html:TODO: create entities on swarm instance</p>
-./examples/examples/bitcoin.html:              <p>TODO: import these into core process logic
-./examples/examples/oracle.html:              <p>TODO: use bottom panel for inline execution (<em>a la</em> “Run this Code &raquo;”)</p>
-./examples/examples/service.html:              <p>TODO: revert to OPTIONS (this was a temporary fix for an NGINX bug)</p>
-./examples/examples/game.html:              <p>TODO: use fabric call
-./examples/examples/app.html:              <p>TODO: document defer as trust(authority) with Remote class</p>
 ./examples/service.html:          <p>TODO: revert to OPTIONS (this was a temporary fix for an NGINX bug)</p>
 ./examples/game.html:          <p>TODO: use fabric call
 ./examples/app.js:  // TODO: document defer as trust(authority) with Remote class
-./scripts/lightning-demo.js:    // TODO: import configs from Polar
 ./scripts/create-validator-script.sh:# TODO: set pubkey length from actual pubkey length
 ./scripts/example.js:// TODO: generate signature, hash of function definition (the "type")
 ./scripts/cli.js:  // TODO: read & test contracts
@@ -268,6 +254,8 @@
 ./scripts/chat.js:      // TODO: replicate this program in C / ASM
 ./scripts/transfer.js:  // TODO: add support for segwit, taproot
 ./functions/_handleFabricMessage.js:  const message = Message.fromVector([...data]); // TODO: redefine...
+./build/gyp-mac-tool:            # TODO(thakis): This copies file attributes like mtime, while the
+./build/Makefile:# TODO(evan): move all cross-compilation logic to gyp-time so we don't need
 ./GOALS.md:- [x] Find all TODO items (run script, check diff)
 ./services/bitcoin.js:// TODO: replace with  `secp256k1`
 ./services/bitcoin.js:      // httpPort: 48449, // TODO: disable HTTP entirely!

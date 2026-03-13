@@ -13,7 +13,10 @@ const Key = require('../../types/key');
 const Bitcoin = require('../../services/bitcoin');
 const Lightning = require('../../services/lightning');
 
-describe('@fabric/core/services/lightning', function () {
+const runLightning = !!process.env.FABRIC_E2E_REGTEST;
+const d = runLightning ? describe : describe.skip;
+
+d('@fabric/core/services/lightning', function () {
   this.timeout(180000);
 
   const bitcoinDefaults = {

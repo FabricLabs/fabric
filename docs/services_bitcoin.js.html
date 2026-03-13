@@ -51,9 +51,9 @@ const monitor = require('fast-json-patch');
 const { mkdirp } = require('mkdirp');
 
 // crypto support libraries
-// TODO: replace with  `secp256k1`
+// Use noble-curves-backed ECC shim instead of tiny-secp256k1
 const ECPairFactory = require('ecpair').default;
-const ecc = require('tiny-secp256k1');
+const ecc = require('../types/ecc');
 const bip65 = require('bip65');
 const bip68 = require('bip68');
 const ECPair = ECPairFactory(ecc);
@@ -2145,7 +2145,6 @@ module.exports = Bitcoin;
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
-      <li><a href="HTTPServer.html">HTTPServer</a></li>
       <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>

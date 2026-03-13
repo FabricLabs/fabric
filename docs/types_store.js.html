@@ -462,19 +462,22 @@ class Store extends Actor {
     let name = `/sources/${store.id}`;
 
     source.on('write', function (key, value) {
-      if (store.settings.verbosity >= 5) console.log('[TRUST:SOURCE]', source.constructor.name, 'emitted a write event', name, key, value.constructor.name, value);
+      const valueType = (value &amp;&amp; value.constructor &amp;&amp; value.constructor.name) || typeof value;
+      if (store.settings.verbosity >= 5) console.log('[TRUST:SOURCE]', source.constructor.name, 'emitted a write event', name, key, valueType, value);
 
       let id = pointer.escape(key);
       let router = store.sha256(id);
       let state = new Actor(value);
 
+      // TODO: refactor storage paths
       pointer.set(store['@entity']['@data'], `${name}`, value);
       pointer.set(store['@entity']['@data'], `/states/${state.id}`, value);
       pointer.set(store['@entity']['@data'], `/blobs/${state.id}`, state.serialize());
-      pointer.set(store['@entity']['@data'], `/types/${state.id}`, value.constructor.name);
+      pointer.set(store['@entity']['@data'], `/types/${state.id}`, valueType);
       pointer.set(store['@entity']['@data'], `/tips/${router}`, state.id);
       pointer.set(store['@entity']['@data'], `/names/${router}`, id);
 
+      // TODO: document this event
       store.emit('source/events', {
         '@type': 'Request',
         '@method': 'put',
@@ -627,7 +630,6 @@ module.exports = Store;
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
-      <li><a href="HTTPServer.html">HTTPServer</a></li>
       <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>

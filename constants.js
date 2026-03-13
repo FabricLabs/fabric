@@ -78,6 +78,9 @@ const BECH32M_CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
 
 // Peering
 const P2P_PORT = 7777;
+// Gossip and peering discovery (WebRTC + Fabric P2P)
+const P2P_PEER_GOSSIP = 'P2P_PEER_GOSSIP'; // Gossip known peers for cross-cluster discovery
+const P2P_PEERING_OFFER = 'P2P_PEERING_OFFER'; // Peer needs more connections; gossiped until fulfilled
 const P2P_GENERIC = 0x80; // 128 in decimal
 const P2P_IDENT_REQUEST = 0x01; // 1, or the identity
 const P2P_IDENT_RESPONSE = 0x11;
@@ -93,6 +96,7 @@ const P2P_STATE_COMMITTMENT = 0x00000032; // TODO: select w/ no overlap
 const P2P_STATE_CHANGE = 0x00000033; // TODO: select w/ no overlap
 const P2P_TRANSACTION = 0x00000039; // TODO: select w/ no overlap
 const P2P_CALL = 0x00000042;
+const P2P_RELAY = 0x00000043; // Relay envelope for onion routing; preserves original message + signature
 const P2P_CHAIN_SYNC_REQUEST = 0x55;
 const P2P_SESSION_ACK = 0x4200;
 const P2P_MUSIG_START = 0x4220;
@@ -240,6 +244,8 @@ module.exports = {
   OP_EQUALVERIFY,
   OP_SEPARATOR,
   P2P_GENERIC,
+  P2P_PEER_GOSSIP,
+  P2P_PEERING_OFFER,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
   P2P_CHAIN_SYNC_REQUEST,
@@ -256,6 +262,7 @@ module.exports = {
   P2P_STATE_REQUEST,
   P2P_TRANSACTION,
   P2P_CALL,
+  P2P_RELAY,
   P2P_SESSION_ACK,
   P2P_MUSIG_START,
   P2P_MUSIG_ACCEPT,
