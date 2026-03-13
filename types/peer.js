@@ -1506,8 +1506,8 @@ class Peer extends Service {
       // Handle server errors before attempting to listen
       const errorHandler = (error) => {
         if (error.code === 'EADDRINUSE') {
-          this.emit('error', `Port ${this.port} is already in use. Please stop the process using this port or use a different port.`);
-          reject(error);
+          // Don't emit('error') here - caller gets rejection; emit would cause ERR_UNHANDLED_ERROR if no listener
+          this.server.close(() => reject(error));
         } else {
           this.emit('error', `Server socket error: ${error}`);
           // Don't reject on other errors during listen, let the callback handle it
@@ -1521,9 +1521,7 @@ class Peer extends Service {
         this.server.removeListener('error', errorHandler);
 
         if (error) {
-          if (error.code === 'EADDRINUSE') {
-            this.emit('error', `Port ${this.port} is already in use. Please stop the process using this port or use a different port.`);
-          }
+          // Don't emit('error') for EADDRINUSE - caller gets rejection; emit would cause ERR_UNHANDLED_ERROR if no listener
           return reject(error);
         }
 
