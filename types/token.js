@@ -85,7 +85,9 @@ class Token {
   toString () {
     // TODO: determine rounding preference (secwise)
     const utime = Math.floor(this.created / 1000);
-    const issuer = this.issuer.keypair.getPublic(true).encodeCompressed('hex');
+    // Fabric Key: keypair.getPublic returns hex string; elliptic: returns Point with encodeCompressed
+    const pub = this.issuer.keypair.getPublic(true);
+    const issuer = typeof pub === 'string' ? pub : (pub && typeof pub.encodeCompressed === 'function' ? pub.encodeCompressed('hex') : '');
     const header = {
       alg: 'ES256K',
       iss: issuer,

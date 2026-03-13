@@ -3,8 +3,11 @@
 // Constants
 const {
   FABRIC_KEY_DERIVATION_PATH,
+  MAX_PEERS,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
+  P2P_PEER_GOSSIP,
+  P2P_PEERING_OFFER,
   P2P_ROOT,
   P2P_PING,
   P2P_PONG,
@@ -843,6 +846,32 @@ class Peer extends Service {
         const state = new Actor(message.object.state);
         this.emit('debug', `state_announce <Generic>${JSON.stringify(message.object || '')} ${state.toGenericMessage()}`);
         break;
+      case P2P_PEER_GOSSIP:
+        this.emit('peeringGossip', { message, origin });
+        if (origin && origin.name) {
+          const gossipRelay = Message.fromVector(['GENERIC', JSON.stringify(message)]).signWithKey(this.key);
+          this.relayFrom(origin.name, gossipRelay);
+        }
+        break;
+      case P2P_PEERING_OFFER:
+        this.emit('peeringOffer', { message, origin });
+        {
+          const obj = message.object || {};
+          const transport = obj.transport || 'fabric';
+          if (transport === 'fabric' && obj.host && obj.port) {
+            const connCount = Object.keys(this.connections || {}).length;
+            const maxPeers = (this.settings.constraints && this.settings.constraints.peers && this.settings.constraints.peers.max) || MAX_PEERS;
+            if (connCount < maxPeers) {
+              const candidate = { host: obj.host, port: Number(obj.port) };
+              this.candidates.push(candidate);
+            }
+          }
+          if (origin && origin.name) {
+            const offerRelay = Message.fromVector(['GENERIC', JSON.stringify(message)]).signWithKey(this.key);
+            this.relayFrom(origin.name, offerRelay);
+          }
+        }
+        break;
       case 'P2P_PING':
         const now = (new Date()).toISOString();
         const P2P_PONG = Message.fromVector(['GENERIC', JSON.stringify({
@@ -898,6 +927,30 @@ class Peer extends Service {
         // this.relayFrom(origin.name, announce);
         break;
       case 'P2P_DOCUMENT_PUBLISH':
+        break;
+      case P2P_PEER_GOSSIP:
+        this.emit('peeringGossip', { message, origin });
+        {
+          const gossipRelay = Message.fromVector(['GENERIC', JSON.stringify(message)]).signWithKey(this.key);
+          this.relayFrom(origin.name, gossipRelay);
+        }
+        break;
+      case P2P_PEERING_OFFER:
+        this.emit('peeringOffer', { message, origin });
+        {
+          const obj = message.object || {};
+          const transport = obj.transport || 'fabric';
+          if (transport === 'fabric' && obj.host && obj.port) {
+            const connCount = Object.keys(this.connections || {}).length;
+            const maxPeers = (this.settings.constraints && this.settings.constraints.peers && this.settings.constraints.peers.max) || MAX_PEERS;
+            if (connCount < maxPeers) {
+              const candidate = { host: obj.host, port: Number(obj.port) };
+              this.candidates.push(candidate);
+            }
+          }
+          const offerRelay = Message.fromVector(['GENERIC', JSON.stringify(message)]).signWithKey(this.key);
+          this.relayFrom(origin.name, offerRelay);
+        }
         break;
       case 'P2P_FILE_SEND':
         this.emit('file', { message, origin });
