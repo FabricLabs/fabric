@@ -149,10 +149,19 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 <dt><a href="#ZMQ">ZMQ</a></dt>
 <dd><p>Connect and subscribe to ZeroMQ publishers.</p>
 </dd>
+<dt><del><a href="#Stack">Stack</a></del></dt>
+<dd><p>Deprecated 2026-03-08.</p>
+</dd>
+<dt><del><a href="#Swarm">Swarm</a></del></dt>
+<dd><p>Deprecated 2026-03-08.</p>
+</dd>
 <dt><del><a href="#Scribe">Scribe</a></del></dt>
 <dd><p>Deprecated 2021-11-06.</p>
 </dd>
 <dt><del><a href="#Stash">Stash</a></del></dt>
+<dd><p>Deprecated 2021-11-06.</p>
+</dd>
+<dt><del><a href="#Value">Value</a></del></dt>
 <dd><p>Deprecated 2021-11-06.</p>
 </dd>
 </dl>
@@ -3201,7 +3210,7 @@ Manages interaction with the Bitcoin network.
     * [._subscribeToShard(shard)](#Bitcoin+_subscribeToShard)
     * [._connectSPV()](#Bitcoin+_connectSPV)
     * [.connect(addr)](#Bitcoin+connect)
-    * [._makeRPCRequest(method, params)](#Bitcoin+_makeRPCRequest) ⇒ <code>Promise</code>
+    * [._makeRPCRequest(method, params, [opts])](#Bitcoin+_makeRPCRequest) ⇒ <code>Promise</code>
     * [._requestBlockAtHeight(height)](#Bitcoin+_requestBlockAtHeight) ⇒ <code>Object</code>
     * [._createContractProposal(options)](#Bitcoin+_createContractProposal) ⇒ <code>ContractProposal</code>
     * [._buildPSBT(options)](#Bitcoin+_buildPSBT) ⇒ <code>PSBT</code>
@@ -3368,8 +3377,9 @@ Connect to a Fabric [Peer](#Peer).
 
 <a name="Bitcoin+_makeRPCRequest"></a>
 
-### bitcoin.\_makeRPCRequest(method, params) ⇒ <code>Promise</code>
+### bitcoin.\_makeRPCRequest(method, params, [opts]) ⇒ <code>Promise</code>
 Make a single RPC request to the Bitcoin node.
+Retries on "Work queue depth exceeded" (bitcoind temporary backpressure).
 
 **Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
 **Returns**: <code>Promise</code> - A promise that resolves to the RPC response.  
@@ -3378,6 +3388,7 @@ Make a single RPC request to the Bitcoin node.
 | --- | --- | --- |
 | method | <code>String</code> | The RPC method to call. |
 | params | <code>Array</code> | The parameters to pass to the RPC method. |
+| [opts] | <code>Object</code> | Options. retries: max retries for work-queue errors (default 5). |
 
 <a name="Bitcoin+_requestBlockAtHeight"></a>
 
@@ -3622,7 +3633,7 @@ Manage a Lightning node.
     * [.createChannel(peer, amount)](#Lightning+createChannel)
     * [.createInvoice(amount)](#Lightning+createInvoice)
     * [.computeLiquidity()](#Lightning+computeLiquidity) ⇒ <code>Object</code>
-    * [._makeRPCRequest(method, [params])](#Lightning+_makeRPCRequest) ⇒ <code>Object</code> \| <code>String</code>
+    * [._makeRPCRequest(method, [params], [timeoutMs])](#Lightning+_makeRPCRequest) ⇒ <code>Object</code> \| <code>String</code>
 
 <a name="new_Lightning_new"></a>
 
@@ -3666,16 +3677,17 @@ Computes the total liquidity of the Lightning node.
 **Returns**: <code>Object</code> - Liquidity in BTC.  
 <a name="Lightning+_makeRPCRequest"></a>
 
-### lightning.\_makeRPCRequest(method, [params]) ⇒ <code>Object</code> \| <code>String</code>
+### lightning.\_makeRPCRequest(method, [params], [timeoutMs]) ⇒ <code>Object</code> \| <code>String</code>
 Make an RPC request through the Lightning UNIX socket.
 
 **Kind**: instance method of [<code>Lightning</code>](#Lightning)  
 **Returns**: <code>Object</code> \| <code>String</code> - Respond from the Lightning node.  
 
-| Param | Type | Description |
-| --- | --- | --- |
-| method | <code>String</code> | Name of method to call. |
-| [params] | <code>Array</code> | Array of parameters. |
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| method | <code>String</code> |  | Name of method to call. |
+| [params] | <code>Array</code> |  | Array of parameters. |
+| [timeoutMs] | <code>Number</code> | <code>30000</code> | Optional timeout in ms; default 30000. Prevents hanging when lightningd is busy. |
 
 <a name="Redis"></a>
 
@@ -3755,6 +3767,88 @@ Closes the connection to the ZMQ publisher.
 
 **Kind**: instance method of [<code>ZMQ</code>](#ZMQ)  
 **Returns**: [<code>ZMQ</code>](#ZMQ) - Instance of the service.  
+<a name="Stack"></a>
+
+## ~~Stack~~
+***Deprecated***
+
+Deprecated 2026-03-08.
+
+**Kind**: global class  
+
+* ~~[Stack](#Stack)~~
+    * [new Stack([list])](#new_Stack_new)
+    * [.push(data)](#Stack+push) ⇒ <code>Number</code>
+
+<a name="new_Stack_new"></a>
+
+### new Stack([list])
+Create a [Stack](#Stack) instance.
+
+**Returns**: [<code>Stack</code>](#Stack) - Instance of the [Stack](#Stack).  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [list] | <code>Array</code> | <code>[]</code> | Genesis state for the [Stack](#Stack) instance. |
+
+<a name="Stack+push"></a>
+
+### stack.push(data) ⇒ <code>Number</code>
+Push data onto the stack.  Changes the [Stack#frame](Stack#frame) and
+[Stack#id](Stack#id).
+
+**Kind**: instance method of [<code>Stack</code>](#Stack)  
+**Returns**: <code>Number</code> - Resulting size of the stack.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| data | <code>Mixed</code> | Treated as a [State](#State). |
+
+<a name="Swarm"></a>
+
+## ~~Swarm~~
+***Deprecated***
+
+Deprecated 2026-03-08.
+
+**Kind**: global class  
+
+* ~~[Swarm](#Swarm)~~
+    * [new Swarm(config)](#new_Swarm_new)
+    * [.trust(source)](#Swarm+trust)
+    * [.start()](#Swarm+start) ⇒ <code>Promise</code>
+
+<a name="new_Swarm_new"></a>
+
+### new Swarm(config)
+Create an instance of a [Swarm](#Swarm).
+
+**Returns**: [<code>Swarm</code>](#Swarm) - Instance of the Swarm.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| config | <code>Object</code> | Configuration object. |
+
+<a name="Swarm+trust"></a>
+
+### swarm.trust(source)
+Explicitly trust an [EventEmitter](EventEmitter) to provide messages using
+the expected [Interface](#Interface), providing [Message](#Message) objects as
+the expected [Type](Type).
+
+**Kind**: instance method of [<code>Swarm</code>](#Swarm)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| source | <code>EventEmitter</code> | [Actor](#Actor) to utilize. |
+
+<a name="Swarm+start"></a>
+
+### swarm.start() ⇒ <code>Promise</code>
+Begin computing.
+
+**Kind**: instance method of [<code>Swarm</code>](#Swarm)  
+**Returns**: <code>Promise</code> - Resolves to instance of [Swarm](#Swarm).  
 <a name="Scribe"></a>
 
 ## ~~Scribe~~
@@ -3808,3 +3902,37 @@ Use an existing Scribe instance as a parent.
 Deprecated 2021-11-06.
 
 **Kind**: global class  
+<a name="Value"></a>
+
+## ~~Value~~
+***Deprecated***
+
+Deprecated 2021-11-06.
+
+**Kind**: global class  
+
+* ~~[Value](#Value)~~
+    * [new Value(data)](#new_Value_new)
+    * [.value(input)](#Value+value)
+
+<a name="new_Value_new"></a>
+
+### new Value(data)
+Use the [Value](#Value) type to interact with [Number](Number)-like objects.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| data | <code>Mixed</code> | Input value. |
+
+<a name="Value+value"></a>
+
+### value.value(input)
+Compute the numeric representation of this input.
+
+**Kind**: instance method of [<code>Value</code>](#Value)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>String</code> | Input string to seek for value. |
+
