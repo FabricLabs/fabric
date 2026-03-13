@@ -1,7 +1,7 @@
 'use strict';
 
 // Dependencies
-const level = require('level');
+const { Level } = require('level');
 const merge = require('lodash.merge');
 const monitor = require('fast-json-patch');
 const pointer = require('json-pointer');
@@ -131,7 +131,7 @@ class Keystore extends Actor {
       }
 
       try {
-        keystore.db = level(keystore.settings.path, {
+        keystore.db = new Level(keystore.settings.path, {
           keyEncoding: keystore.codec,
           valueEncoding: keystore.codec
         }, _handleDiskOpen.bind(keystore));
