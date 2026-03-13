@@ -144,7 +144,7 @@ class Lightning extends Service {
     const [id, address] = remote.split('@');
     if (!id || !address) throw new Error(`Invalid remote format: ${remote}. Expected format: id@ip:port`);
     const result = await this._makeRPCRequest('connect', [remote]);
-    if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Connected to remote node ${id} at ${ip}:${port}`);
+    if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Connected to remote node ${id} at ${address}`);
     this._state.peers[id] = {
       id: id,
       address: address,
@@ -159,12 +159,22 @@ class Lightning extends Service {
    * Creates a new Lightning channel.
    * @param {String} peer Public key of the peer to create a channel with.
    * @param {String} amount Amount in satoshis to fund the channel.
+   * @param {Number|null} [pushMsat=null] Optional push amount in millisatoshis.
+   * @param {Object} [options={}] Optional overrides (e.g. minconf for regtest).
    */
-  async createChannel (peer, amount, pushMsat = null) {
+  async createChannel (peer, amount, pushMsat = null, options = {}) {
     const pushVal = pushMsat != null && Number.isFinite(Number(pushMsat)) ? Number(pushMsat) : null;
-    const params = pushVal != null
-      ? { id: peer, amount: String(amount), push_msat: pushVal }
-      : [peer, String(amount)];
+    const network = String(this.settings.network || 'bitcoin').toLowerCase();
+    const useMinconfZero = network === 'regtest' || network === 'signet' || network === 'testnet';
+    const params = {
+      id: peer,
+      amount: String(amount),
+      ...(pushVal != null ? { push_msat: pushVal } : {}),
+      ...(useMinconfZero ? { minconf: 0 } : {}),
+      ...(options.minconf !== undefined ? { minconf: Number(options.minconf) } : {}),
+      ...(Array.isArray(options.utxos) && options.utxos.length > 0 ? { utxos: options.utxos } : {}),
+      ...(options.feerate !== undefined ? { feerate: options.feerate } : useMinconfZero ? { feerate: '253perkw' } : {})
+    };
     const result = await this._makeRPCRequest('fundchannel', params);
     if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Created channel with peer ${peer} for amount ${amount}`);
     return result;
@@ -300,7 +310,9 @@ class Lightning extends Service {
       `--bitcoin-rpcpassword=${this.settings.bitcoin.rpcpassword}`,
       `--bitcoin-rpcconnect=${this.settings.bitcoin.host}`,
       `--bitcoin-rpcport=${this.settings.bitcoin.rpcport}`,
-      '--log-level=debug'
+      '--log-level=debug',
+      // Regtest fee estimates are unreliable; force 253 perkw (min) for all feerate types
+      '--force-feerates=253'
     ];
 
     // Add plugin configurations if specified and supported
@@ -435,11 +447,12 @@ class Lightning extends Service {
   async start () {
     this.status = 'starting';
 
-    // Wait for Lightning to be ready
-    if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Waiting for Lightning to be ready...');
-    try {
-      // Check Lightning connection
-      const bitcoinCli = children.spawn('bitcoin-cli', [
+    // When managed, verify bitcoind is reachable before spawning lightningd.
+    // When unmanaged (external socket), skip—the external lightningd has its own bitcoind.
+    if (this.settings.managed && this.settings.bitcoin) {
+      if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Waiting for Lightning to be ready...');
+      try {
+        const bitcoinCli = children.spawn('bitcoin-cli', [
         '-regtest',
         `-datadir=${this.settings.bitcoin.datadir}`,
         '-rpcclienttimeout=60',
@@ -472,9 +485,10 @@ class Lightning extends Service {
         });
       });
 
-      if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Lightning is ready');
-    } catch (error) {
-      throw new Error(`Could not connect to bitcoind using bitcoin-cli. Is lightningd running?\n\nMake sure you have bitcoind running and that bitcoin-cli is able to connect to bitcoind.\n\nYou can verify that your Bitcoin Core installation is ready for use by running:\n\n    $ bitcoin-cli -regtest -datadir=${this.settings.bitcoin.datadir} -rpcclienttimeout=60 -rpcconnect=${this.settings.bitcoin.host} -rpcport=${this.settings.bitcoin.rpcport} -rpcuser=${this.settings.bitcoin.rpcuser} -stdinrpcpass echo 'hello world'`);
+        if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Lightning is ready');
+      } catch (error) {
+        throw new Error(`Could not connect to bitcoind using bitcoin-cli. Is lightningd running?\n\nMake sure you have bitcoind running and that bitcoin-cli is able to connect to bitcoind.\n\nYou can verify that your Bitcoin Core installation is ready for use by running:\n\n    $ bitcoin-cli -regtest -datadir=${this.settings.bitcoin.datadir} -rpcclienttimeout=60 -rpcconnect=${this.settings.bitcoin.host} -rpcport=${this.settings.bitcoin.rpcport} -rpcuser=${this.settings.bitcoin.rpcuser} -stdinrpcpass echo 'hello world'`);
+      }
     }
 
     await this.machine.start();
@@ -596,19 +610,17 @@ class Lightning extends Service {
       }, timeoutMs) : null;
 
       try {
+        let buffer = '';
         client = net.createConnection({ path: socketPath });
         client.on('error', (err) => finish(reject, err));
         client.on('data', (data) => {
+          buffer += data.toString('utf8');
           try {
-            const response = JSON.parse(data.toString('utf8'));
-            if (response.result !== undefined) {
-              return finish(resolve, response.result);
-            }
-            if (response.error) {
-              return finish(reject, Object.assign(new Error(response.error.message || 'RPC error'), response.error));
-            }
-          } catch (exception) {
-            this.emit('error', `Could not make RPC request: ${exception}\n${data.toString('utf8')}`);
+            const response = JSON.parse(buffer);
+            if (response.result !== undefined) return finish(resolve, response.result);
+            if (response.error) return finish(reject, Object.assign(new Error(response.error.message || 'RPC error'), response.error));
+          } catch (_) {
+            if (buffer.length > 2 * 1024 * 1024) finish(reject, new Error('Lightning RPC response too large'));
           }
         });
 

@@ -86,10 +86,12 @@ describe('@fabric/core/services/lightning (unit)', function () {
 
   describe('createChannel', function () {
     it('calls fundchannel with peer and amount', async function () {
-      const ln = new Lightning();
+      const ln = new Lightning({ network: 'regtest' });
       ln._makeRPCRequest = async (method, params) => {
         assert.strictEqual(method, 'fundchannel');
-        assert.deepStrictEqual(params, ['peerid', '100000']);
+        assert.strictEqual(params.id, 'peerid');
+        assert.strictEqual(params.amount, '100000');
+        assert.strictEqual(params.minconf, 0);
         return { txid: 'abc' };
       };
       const out = await ln.createChannel('peerid', '100000');
@@ -97,15 +99,26 @@ describe('@fabric/core/services/lightning (unit)', function () {
     });
 
     it('includes push_msat when finite number', async function () {
-      const ln = new Lightning();
+      const ln = new Lightning({ network: 'regtest' });
       ln._makeRPCRequest = async (method, params) => {
         assert.strictEqual(method, 'fundchannel');
         assert.strictEqual(params.push_msat, 50000);
         assert.strictEqual(params.id, 'p');
         assert.strictEqual(params.amount, '100000');
+        assert.strictEqual(params.minconf, 0);
         return {};
       };
       await ln.createChannel('p', '100000', 50000);
+    });
+
+    it('accepts options.minconf override', async function () {
+      const ln = new Lightning({ network: 'bitcoin' });
+      ln._makeRPCRequest = async (method, params) => {
+        assert.strictEqual(method, 'fundchannel');
+        assert.strictEqual(params.minconf, 2);
+        return {};
+      };
+      await ln.createChannel('p', '100000', null, { minconf: 2 });
     });
   });
 
