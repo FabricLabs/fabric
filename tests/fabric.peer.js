@@ -369,6 +369,8 @@ describe('@fabric/core/types/peer', function () {
         await new Promise((resolve) => other.listen(port, '127.0.0.1', resolve));
         const peer = new Peer({ ...settings, port, listen: true, peers: [], networking: false, peersDb: null });
         peers.push(peer);
+        // Prevent ERR_UNHANDLED_ERROR if Peer emits 'error' before rejecting
+        peer.on('error', () => {});
         try {
           await peer.listen();
           assert.fail('expected listen to reject');
