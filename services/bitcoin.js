@@ -1189,9 +1189,11 @@ class Bitcoin extends Service {
         case 'BitcoinTransaction': {
           try {
             const balance = await this._makeRPCRequest('getbalances', []).catch(() => null);
-            if (balance != null) this._state.balances.mine.trusted = balance;
-            this.commit();
-            this.emit('transaction', { balance: this._state.balances.mine.trusted });
+            if (balance != null) {
+              this._state.balances.mine.trusted = balance;
+              this.commit();
+              this.emit('transaction', { balance: this._state.balances.mine.trusted });
+            }
           } catch (e) {
             if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] ZMQ BitcoinTransaction handler: ${e.message || e}`);
           }
@@ -2239,6 +2241,32 @@ class Bitcoin extends Service {
 
       return child;
     } else {
+      // Unmanaged: configure authority and credentials for connecting to external node
+      const host = this.settings.host || '127.0.0.1';
+      const rpcport = this.settings.rpcport || 18443;
+      this.settings.authority = `http://${host}:${rpcport}`;
+      if (!this.settings.username || !this.settings.password) {
+        const chainSubdir = this.settings.network === 'regtest' ? 'regtest' : this.settings.network === 'testnet' ? 'testnet3' : '';
+        const cookiePath = path.resolve(process.cwd(), datadir, chainSubdir, '.cookie');
+        try {
+          if (fs.existsSync(cookiePath)) {
+            const raw = fs.readFileSync(cookiePath, 'utf8').trim();
+            const colon = raw.indexOf(':');
+            if (colon !== -1) {
+              this.settings.username = raw.slice(0, colon);
+              this.settings.password = raw.slice(colon + 1);
+              if (this.settings.debug) this.emit('debug', '[FABRIC:BITCOIN] Read RPC credentials from cookie file (unmanaged)');
+            }
+          }
+        } catch (e) {
+          // Cookie not available
+        }
+        if (!this.settings.username || !this.settings.password) {
+          this.settings.username = `fabric_${crypto.randomBytes(8).toString('hex')}`;
+          this.settings.password = crypto.randomBytes(32).toString('hex');
+          if (this.settings.debug) this.emit('debug', '[FABRIC:BITCOIN] Generated placeholder RPC credentials (unmanaged, no cookie)');
+        }
+      }
       return null;
     }
   }
