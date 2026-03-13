@@ -11,6 +11,8 @@ const OP_TRACE = require('../contracts/trace');
 // Dependencies
 const crypto = require('crypto');
 const children = require('child_process');
+const fs = require('fs');
+const path = require('path');
 
 // External Dependencies
 const jayson = require('jayson/lib/client');
@@ -648,8 +650,9 @@ class Bitcoin extends Service {
     }
 
     const actor = new Actor(message);
-     // sendtoaddress "address" amount ( "comment" "comment_to" subtractfeefromamount replaceable conf_target "estimate_mode" avoid_reuse fee_rate verbose )
-    const txid = await this._makeRPCRequest('sendtoaddress', [
+    // Bitcoin Core 0.21+ does not load a default wallet; ensure our wallet is loaded and use wallet RPC
+    await this._loadWallet(this.walletName);
+    const txid = await this._makeWalletRequest('sendtoaddress', [
       message.destination,
       message.amount,
       message.comment || `_processSendMessage ${actor.id} ${message.created}`,
@@ -659,9 +662,9 @@ class Bitcoin extends Service {
       1,
       'conservative',
       true
-    ]);
+    ], this.walletName);
 
-    if (txid.error) {
+    if (txid && typeof txid === 'object' && txid.error) {
       this.emit('error', `Could not create transaction: ${txid.error}`);
       return false;
     }
@@ -998,6 +1001,11 @@ class Bitcoin extends Service {
             if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] Successfully created wallet: ${name}`);
             return { name };
           } catch (createError) {
+            if (createError.code === -4 || (createError.message && createError.message.includes('Database already exists'))) {
+              if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] Wallet DB already exists, loading: ${name}`);
+              await this._makeRPCRequest('loadwallet', [name]);
+              return { name };
+            }
             if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] Create error for wallet ${name}: ${createError.message}`);
             throw createError;
           }
@@ -1011,19 +1019,22 @@ class Bitcoin extends Service {
 
         // For any other error where the wallet might be in a bad state, try unloading and recreating
         try {
-        if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] Attempting to unload and recreate wallet: ${name}`);
-          // Try to unload (might fail if wallet isn't loaded, but that's okay)
+          if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] Attempting to unload and recreate wallet: ${name}`);
           try {
             await this._makeRPCRequest('unloadwallet', [name]);
           } catch (unloadError) {
             if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] Unload failed (wallet may not be loaded): ${unloadError.message}`);
-            // Continue anyway - the wallet probably wasn't loaded
           }
 
           await this._makeRPCRequest('createwallet', walletParams);
           if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] Successfully recreated wallet: ${name}`);
           return { name };
         } catch (recreateError) {
+          if (recreateError.code === -4 || (recreateError.message && recreateError.message.includes('Database already exists'))) {
+            if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] Wallet DB already exists, loading: ${name}`);
+            await this._makeRPCRequest('loadwallet', [name]);
+            return { name };
+          }
           if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] Recreate error for wallet ${name}: ${recreateError.message}`);
           throw recreateError;
         }
@@ -1152,27 +1163,40 @@ class Bitcoin extends Service {
       return;
     }
 
-    if (this.settings.debug) this.emit('debug', '[ZMQ] Received message on topic:', topic, 'Message length:', content.length);
+    if (this.settings.debug) this.emit('debug', '[ZMQ] Received message on topic:', topic, 'Message length:', content && (Buffer.isBuffer(content) ? content.length : (typeof content === 'object' ? JSON.stringify(content).length : String(content).length)));
 
     try {
       switch (topic) {
         case 'BitcoinBlock':
         case 'BitcoinTransactionHash':
           break;
-        case 'BitcoinBlockHash':
-          const message = JSON.parse(content.toString());
+        case 'BitcoinBlockHash': {
+          const blockHashHex = (content && typeof content === 'object' && content.content)
+            ? content.content
+            : (JSON.parse(Buffer.isBuffer(content) ? content.toString() : String(content))).content;
           const supply = await this._makeRPCRequest('gettxoutsetinfo', []);
           this._state.content.height = supply.height;
-          this._state.content.tip = message.content;
+          this._state.content.tip = blockHashHex;
           this._state.content.supply = supply.total_amount;
           this.commit();
+          this.emit('block', {
+            tip: blockHashHex,
+            height: supply.height,
+            supply: supply.total_amount
+          });
           break;
-        case 'BitcoinTransaction':
-          // const record = JSON.parse(content.toString());
-          const balance = await this._makeRPCRequest('getbalances', []);
-          this._state.balances.mine.trusted = balance;
-          this.commit();
+        }
+        case 'BitcoinTransaction': {
+          try {
+            const balance = await this._makeRPCRequest('getbalances', []).catch(() => null);
+            if (balance != null) this._state.balances.mine.trusted = balance;
+            this.commit();
+            this.emit('transaction', { balance: this._state.balances.mine.trusted });
+          } catch (e) {
+            if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] ZMQ BitcoinTransaction handler: ${e.message || e}`);
+          }
           break;
+        }
         default:
           if (this.settings.verbosity >= 5) this.emit('debug', `[AUDIT] Unknown ZMQ topic: ${topic}`);
       }
@@ -1368,8 +1392,14 @@ class Bitcoin extends Service {
         }
 
         if (response.error) {
-          if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] RPC response error for ${method}: ${JSON.stringify(response.error)}`);
-          return reject(response.error);
+          const re = response.error;
+          const msg = typeof re === 'object' && re !== null && re.message
+            ? (re.code != null ? `[${re.code}] ${re.message}` : re.message)
+            : JSON.stringify(re);
+          if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] RPC response error for ${method}: ${msg}`);
+          const err = re instanceof Error ? re : new Error(msg);
+          if (typeof re === 'object' && re !== null && re.code != null) err.code = re.code;
+          return reject(err);
         }
 
         if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] RPC response for ${method}`);
@@ -1416,8 +1446,14 @@ class Bitcoin extends Service {
         }
 
         if (response.error) {
-          if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] Wallet RPC response error for ${method} on wallet ${wallet}: ${JSON.stringify(response.error)}`);
-          return reject(response.error);
+          const re = response.error;
+          const msg = typeof re === 'object' && re !== null && re.message
+            ? (re.code != null ? `[${re.code}] ${re.message}` : re.message)
+            : JSON.stringify(re);
+          if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] Wallet RPC response error for ${method} on wallet ${wallet}: ${msg}`);
+          const err = re instanceof Error ? re : new Error(msg);
+          if (typeof re === 'object' && re !== null && re.code != null) err.code = re.code;
+          return reject(err);
         }
 
         if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] Wallet RPC response for ${method} on wallet ${wallet}`);
@@ -1974,17 +2010,13 @@ class Bitcoin extends Service {
       // '-par=1'
     ];
 
+    const useCookieAuth = !(this.settings.username && this.settings.password);
     if (this.settings.username && this.settings.password) {
       params.push(`-rpcuser=${this.settings.username}`);
       params.push(`-rpcpassword=${this.settings.password}`);
-    } else {
-      const username = crypto.randomBytes(16).toString('hex');
-      const auth = this.createRPCAuth({ username });
-      this.settings.username = auth.username;
-      this.settings.password = auth.password;
-      this.settings.authority = `http://127.0.0.1:${this.settings.rpcport}`;
-      params.push(`-rpcauth=${auth.content}`);
     }
+    // When no credentials are set, we do not pass -rpcuser/-rpcpassword so bitcoind
+    // uses cookie auth; we then read the cookie file and use it for the RPC client.
 
     // Configure network
     switch (this.settings.network) {
@@ -2160,6 +2192,36 @@ class Bitcoin extends Service {
       process.on('uncaughtException', this._errorHandlers.uncaughtException);
       process.on('unhandledRejection', this._errorHandlers.unhandledRejection);
 
+      // When using cookie auth, wait for bitcoind to create the cookie file then read credentials
+      if (useCookieAuth) {
+        const chainSubdir = this.settings.network === 'regtest' ? 'regtest' : this.settings.network === 'testnet' ? 'testnet3' : '';
+        const cookiePath = path.resolve(process.cwd(), datadir, chainSubdir, '.cookie');
+        const cookieTimeoutMs = 15000;
+        const cookiePollMs = 100;
+        const cookieDeadline = Date.now() + cookieTimeoutMs;
+        while (Date.now() < cookieDeadline) {
+          try {
+            if (fs.existsSync(cookiePath)) {
+              const raw = fs.readFileSync(cookiePath, 'utf8').trim();
+              const colon = raw.indexOf(':');
+              if (colon !== -1) {
+                this.settings.username = raw.slice(0, colon);
+                this.settings.password = raw.slice(colon + 1);
+                this.settings.authority = `http://127.0.0.1:${this.settings.rpcport}`;
+                if (this.settings.debug) this.emit('debug', '[FABRIC:BITCOIN] Read RPC credentials from cookie file');
+                break;
+              }
+            }
+          } catch (e) {
+            // ignore read errors, keep polling
+          }
+          await new Promise(r => setTimeout(r, cookiePollMs));
+        }
+        if (!this.settings.username || !this.settings.password) {
+          throw new Error(`[FABRIC:BITCOIN] Cookie file did not appear at ${cookiePath} within ${cookieTimeoutMs}ms`);
+        }
+      }
+
       // Initialize RPC client
       const config = {
         host: '127.0.0.1',
@@ -2240,13 +2302,15 @@ class Bitcoin extends Service {
 
     // Handle RPC mode
     if (this.settings.mode === 'rpc') {
-      // If deprecated setting `authority` is provided, compose settings
+      // If deprecated setting `authority` is provided, compose settings (host, port, secure).
+      // Only take username/password from the URL when the URL actually contains them (e.g. http://user:pass@host);
+      // otherwise leave existing credentials (e.g. from cookie auth in createLocalNode) intact.
       if (this.settings.authority) {
         const url = new URL(this.settings.authority);
-
-        // Assign all parameters
-        this.settings.username = url.username;
-        this.settings.password = url.password;
+        if (url.username || url.password) {
+          this.settings.username = url.username;
+          this.settings.password = url.password;
+        }
         this.settings.host = url.hostname;
         this.settings.port = url.port;
         this.settings.secure = (url.protocol === 'https:') ? true : false;
@@ -2271,6 +2335,11 @@ class Bitcoin extends Service {
         this.rpc = jayson.https(config);
       } else {
         this.rpc = jayson.http(config);
+      }
+
+      // Brief delay so bitcoind's HTTP server is ready to accept authenticated RPC after "Done loading"
+      if (this._nodeProcess && this.settings.username && this.settings.password) {
+        await new Promise(r => setTimeout(r, 600));
       }
 
       // Wait for bitcoind to be fully online; if it isn't, continue in degraded mode

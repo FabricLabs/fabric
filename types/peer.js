@@ -706,6 +706,9 @@ class Peer extends Service {
       default:
         this.emit('debug', `Unhandled message type: ${message.type}`);
         break;
+      case 'P2P_RELAY':
+        this.relayFrom(origin.name, message);
+        break;
       case 'GenericMessage':
       case 'PeerMessage':
       case 'ChatMessage':
