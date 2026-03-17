@@ -4,7 +4,7 @@ $ npm i
 > node -e ""
 
 
-added 674 packages, and audited 675 packages in 22s
+added 674 packages, and audited 675 packages in 6s
 
 124 packages are looking for funding
   run `npm fund` for details
