@@ -23,6 +23,7 @@
     "build:book": "npm run make:book && npm run tidy",
     "build": "npm run make:all",
     "chat": "node scripts/cli.js chat",
+    "ci": "npm test",
     "clean:all": "rm -rf node_modules package-lock.json",
     "clean": "rm -rf node_modules",
     "cli": "npm run chat",

@@ -18,6 +18,7 @@ const path = require('path');
 const jayson = require('jayson/lib/client');
 const monitor = require('fast-json-patch');
 const { mkdirp } = require('mkdirp');
+const fetch = require('cross-fetch');
 
 // crypto support libraries
 // Use noble-curves-backed ECC shim instead of tiny-secp256k1
@@ -89,6 +90,8 @@ class Bitcoin extends Service {
       spv: {
         port: 18332
       },
+      /** Optional HTTP origin for block/tx/address REST fallback (e.g. a Hub). Null = RPC only. */
+      explorerBaseUrl: null,
       zmq: {
         host: 'localhost',
         port: 29500
@@ -1377,6 +1380,135 @@ class Bitcoin extends Service {
   }
 
   /**
+   * Base URL for Bitcoin REST paths (`/services/bitcoin/...`) when using explorer fallback.
+   * @returns {String|null} Origin + `/services/bitcoin`, or null if fallback disabled.
+   * @private
+   */
+  _explorerRestBase () {
+    const raw = this.settings.explorerBaseUrl;
+    if (raw == null) return null;
+    const trimmed = String(raw).trim();
+    if (!trimmed) return null;
+    return trimmed.replace(/\/+$/, '') + '/services/bitcoin';
+  }
+
+  /**
+   * Blockchain explorer: fetch block info by hash or height.
+   * Uses RPC when available; optional HTTP API when `explorerBaseUrl` is set.
+   * @param {String|Number} hashOrHeight Block hash (hex) or block height.
+   * @returns {Promise<Object>} Block info { hash, height, time, txcount, size, ... }.
+   */
+  async getBlockInfo (hashOrHeight) {
+    if (this._rpcReady && this.rpc) {
+      try {
+        const hash = typeof hashOrHeight === 'number'
+          ? await this._makeRPCRequest('getblockhash', [hashOrHeight])
+          : hashOrHeight;
+        const block = await this._makeRPCRequest('getblock', [hash, 1]);
+        return {
+          hash: block.hash,
+          height: block.height,
+          time: block.time,
+          txcount: block.tx ? block.tx.length : 0,
+          size: block.size,
+          strippedsize: block.strippedsize,
+          weight: block.weight,
+          mediantime: block.mediantime,
+          difficulty: block.difficulty,
+          chainwork: block.chainwork,
+          previousblockhash: block.previousblockhash,
+          nextblockhash: block.nextblockhash
+        };
+      } catch (e) {
+        if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] RPC getBlockInfo failed: ${e.message}`);
+      }
+    }
+    const base = this._explorerRestBase();
+    if (!base) {
+      throw new Error('Bitcoin getBlockInfo: RPC unavailable and no explorerBaseUrl configured (set bitcoin.explorerBaseUrl or FABRIC_EXPLORER_URL for HTTP fallback).');
+    }
+    const url = typeof hashOrHeight === 'number'
+      ? `${base}/blocks/height/${hashOrHeight}`
+      : `${base}/blocks/${hashOrHeight}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Block not found: ${hashOrHeight}`);
+    const block = await res.json();
+    return {
+      hash: block.hash,
+      height: block.height,
+      time: block.time,
+      txcount: block.tx ? block.tx.length : 0,
+      size: block.size,
+      strippedsize: block.strippedsize,
+      weight: block.weight,
+      mediantime: block.mediantime,
+      difficulty: block.difficulty,
+      previousblockhash: block.previousblockhash,
+      nextblockhash: block.nextblockhash
+    };
+  }
+
+  /**
+   * Blockchain explorer: fetch transaction info by txid.
+   * Uses RPC when available; optional HTTP API when `explorerBaseUrl` is set.
+   * @param {String} txid Transaction ID (hex).
+   * @returns {Promise<Object>} Transaction info.
+   */
+  async getTransactionInfo (txid) {
+    if (this._rpcReady && this.rpc) {
+      try {
+        const tx = await this._makeRPCRequest('getrawtransaction', [txid, true]);
+        return {
+          txid: tx.txid,
+          hash: tx.hash,
+          version: tx.version,
+          size: tx.size,
+          vsize: tx.vsize,
+          weight: tx.weight,
+          locktime: tx.locktime,
+          vin: tx.vin,
+          vout: tx.vout,
+          blockhash: tx.blockhash,
+          confirmations: tx.confirmations,
+          time: tx.time,
+          blocktime: tx.blocktime
+        };
+      } catch (e) {
+        if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] RPC getTransactionInfo failed: ${e.message}`);
+      }
+    }
+    const base = this._explorerRestBase();
+    if (!base) {
+      throw new Error('Bitcoin getTransactionInfo: RPC unavailable and no explorerBaseUrl configured (set bitcoin.explorerBaseUrl or FABRIC_EXPLORER_URL for HTTP fallback).');
+    }
+    const res = await fetch(`${base}/transactions/${txid}`);
+    if (!res.ok) throw new Error(`Transaction not found: ${txid}`);
+    return res.json();
+  }
+
+  /**
+   * Blockchain explorer: fetch address info (balance, tx count, recent txs).
+   * Requires `explorerBaseUrl` (Core has no generic address index over RPC alone).
+   * @param {String} address Bitcoin address.
+   * @returns {Promise<Object>} Address info { address, chain_stats, mempool_stats, recent_txs }.
+   */
+  async getAddressInfo (address) {
+    const base = this._explorerRestBase();
+    if (!base) {
+      throw new Error('Bitcoin getAddressInfo requires explorerBaseUrl (set bitcoin.explorerBaseUrl or FABRIC_EXPLORER_URL).');
+    }
+    const res = await fetch(`${base}/addresses/${encodeURIComponent(address)}`);
+    if (!res.ok) throw new Error(`Address not found: ${address}`);
+    const data = await res.json();
+    return {
+      address: data.address,
+      chain_stats: data.chain_stats || {},
+      mempool_stats: data.mempool_stats || {},
+      recent_txs: data.recent_txs || []
+    };
+  }
+
+  /**
    * Single attempt at an RPC request (no retries).
    * @private
    */
@@ -2196,7 +2328,13 @@ class Bitcoin extends Service {
 
       // When using cookie auth, wait for bitcoind to create the cookie file then read credentials
       if (useCookieAuth) {
-        const chainSubdir = this.settings.network === 'regtest' ? 'regtest' : this.settings.network === 'testnet' ? 'testnet3' : '';
+        const chainSubdir = (() => {
+          const n = (this.settings.network || '').toLowerCase();
+          if (n === 'regtest') return 'regtest';
+          if (n === 'testnet') return 'testnet3';
+          if (n === 'signet') return 'signet';
+          return '';
+        })();
         const cookiePath = path.resolve(process.cwd(), datadir, chainSubdir, '.cookie');
         const cookieTimeoutMs = 15000;
         const cookiePollMs = 100;
@@ -2246,7 +2384,13 @@ class Bitcoin extends Service {
       const rpcport = this.settings.rpcport || 18443;
       this.settings.authority = `http://${host}:${rpcport}`;
       if (!this.settings.username || !this.settings.password) {
-        const chainSubdir = this.settings.network === 'regtest' ? 'regtest' : this.settings.network === 'testnet' ? 'testnet3' : '';
+        const chainSubdir = (() => {
+          const n = (this.settings.network || '').toLowerCase();
+          if (n === 'regtest') return 'regtest';
+          if (n === 'testnet') return 'testnet3';
+          if (n === 'signet') return 'signet';
+          return '';
+        })();
         const cookiePath = path.resolve(process.cwd(), datadir, chainSubdir, '.cookie');
         try {
           if (fs.existsSync(cookiePath)) {

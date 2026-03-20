@@ -17,7 +17,8 @@ const {
   P2P_STATE_COMMITTMENT,
   P2P_STATE_CHANGE,
   P2P_TRANSACTION,
-  P2P_CALL
+  P2P_CALL,
+  P2P_MESSAGE_RECEIPT
 } = require('../constants');
 
 const Message = require('../types/message');
@@ -73,6 +74,28 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(literal.headers.size, 29);
       assert.strictEqual(literal.headers.hash, '29ef07455d1e3ab5f0b5ad485d4bb85a00a4dd4003dabd43cab0f43199fc316e');
       assert.strictEqual(message.type, 'Call');
+    });
+
+    it('round-trips P2P_MESSAGE_RECEIPT with stable type code', function () {
+      const payload = {
+        '@type': 'Receipt',
+        '@actor': 'deadbeef',
+        '@data': { ok: true },
+        '@version': 1
+      };
+      const message = Message.fromVector(['P2P_MESSAGE_RECEIPT', payload]);
+      assert.strictEqual(message.type, 'P2P_MESSAGE_RECEIPT');
+
+      const literal = message.toObject();
+      assert.strictEqual(literal.headers.type, P2P_MESSAGE_RECEIPT);
+
+      const buffer = message.toBuffer();
+      const restored = Message.fromBuffer(buffer);
+      assert.strictEqual(restored.type, 'P2P_MESSAGE_RECEIPT');
+      const body = JSON.parse(restored.body);
+      assert.strictEqual(body['@type'], 'Receipt');
+      assert.strictEqual(body['@version'], 1);
+      assert.strictEqual(body['@actor'], 'deadbeef');
     });
   });
 

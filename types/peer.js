@@ -777,6 +777,10 @@ class Peer extends Service {
         // event so higher-level services (e.g. hub) can respond appropriately.
         this.emit('inventory', { message, origin, socket });
         break;
+      case 'INVENTORY_RESPONSE':
+        // Document inventory reply (may include per-item L1 HTLC offers).
+        this.emit('inventoryResponse', { message, origin, socket });
+        break;
       case 'P2P_SESSION_OFFER':
         const peerId = message.actor.id;
         const connAddress = origin.name;

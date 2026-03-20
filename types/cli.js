@@ -99,6 +99,21 @@ class CLI extends App {
       bitcoinSettings.rpcport = defaultRPCPortByNetwork[bitcoinSettings.network] || 18443;
     }
 
+    // Explorer API fallback: hub.fabric.pub or custom URL
+    const explorerUrl = process.env.FABRIC_EXPLORER_URL || (settings.bitcoin && settings.bitcoin.explorerBaseUrl);
+    if (explorerUrl) bitcoinSettings.explorerBaseUrl = String(explorerUrl).replace(/\/+$/, '');
+
+    // SPV / remote node: use FABRIC_BITCOIN_NODE (host or host:port) for mainnet without local bitcoind
+    const spvNode = process.env.FABRIC_BITCOIN_NODE || (settings.bitcoin && settings.bitcoin.spvNode);
+    if (spvNode) {
+      const defaultHost = '192.168.50.5';
+      const [host, port] = String(spvNode).split(':');
+      bitcoinSettings.host = (host && host.length > 1 && !/^1$|^true$/i.test(host)) ? host : defaultHost;
+      if (port) bitcoinSettings.rpcport = parseInt(port, 10);
+      bitcoinSettings.managed = false;
+      if (!explicitNetwork) bitcoinSettings.network = 'mainnet';
+    }
+
     // Managed mode policy:
     // - Default to managed for regtest so local CLI usage is self-contained.
     // - Bitcoin service will still disable managed mode at runtime if it detects
@@ -400,6 +415,12 @@ class CLI extends App {
     this._registerCommand('loadwallet', this._handleLoadWalletRequest);
     this._registerCommand('listwallets', this._handleListWalletsRequest);
     this._registerCommand('bitcoinhelp', this._handleBitcoinHelpRequest);
+
+    // Blockchain explorer
+    this._registerCommand('block', this._handleBlockExplorerRequest);
+    this._registerCommand('tx', this._handleTxExplorerRequest);
+    this._registerCommand('address', this._handleAddressExplorerRequest);
+    this._registerCommand('explorer', this._handleExplorerHelpRequest);
 
     // Services
     this._registerService('bitcoin', Bitcoin);
@@ -1722,6 +1743,122 @@ class CLI extends App {
     this._appendMessage(`{green-fg}Fix Bitcoin Core first, then restart Fabric.{/green-fg}`);
   }
 
+  async _handleBlockExplorerRequest (params) {
+    if (!params[1]) {
+      this._appendError('Usage: block <hash|height>');
+      this._appendMessage('Example: block 0000000000000000000123456789abcdef...');
+      this._appendMessage('Example: block 850000');
+      return;
+    }
+    const arg = params[1];
+    const hashOrHeight = /^\d+$/.test(arg) ? parseInt(arg, 10) : arg;
+    if (!this.bitcoin || !this.bitcoin.getBlockInfo) {
+      this._appendError('Bitcoin service or explorer not available');
+      return;
+    }
+    try {
+      this._appendMessage(`Fetching block ${hashOrHeight}...`);
+      const info = await this.bitcoin.getBlockInfo(hashOrHeight);
+      const ts = info.timestamp != null ? info.timestamp : info.time;
+      const txCount = info.tx_count != null ? info.tx_count : (info.txcount != null ? info.txcount : (info.tx ? info.tx.length : null));
+      const lines = [
+        `{bold}Block{/bold}`,
+        `  Hash: ${info.hash || info.id || 'N/A'}`,
+        `  Height: ${info.height != null ? info.height : 'N/A'}`,
+        `  Time: ${ts != null ? new Date(ts * 1000).toISOString() : 'N/A'}`,
+        `  Tx count: ${txCount != null ? txCount : 'N/A'}`,
+        `  Size: ${info.size != null ? `${info.size} bytes` : 'N/A'}`
+      ];
+      if (info.mediantime) lines.push(`  Median time: ${new Date(info.mediantime * 1000).toISOString()}`);
+      if (info.difficulty) lines.push(`  Difficulty: ${info.difficulty}`);
+      this._appendMessage(lines.join('\n'));
+      this._updateBlockchainPanel(lines.join('\n'));
+    } catch (e) {
+      this._appendError(`Block lookup failed: ${e.message}`);
+    }
+  }
+
+  async _handleTxExplorerRequest (params) {
+    if (!params[1]) {
+      this._appendError('Usage: tx <txid>');
+      this._appendMessage('Example: tx 0000000000000000000123456789abcdef...');
+      return;
+    }
+    const txid = params[1];
+    if (!this.bitcoin || !this.bitcoin.getTransactionInfo) {
+      this._appendError('Bitcoin service or explorer not available');
+      return;
+    }
+    try {
+      this._appendMessage(`Fetching transaction ${txid.substring(0, 16)}...`);
+      const info = await this.bitcoin.getTransactionInfo(txid);
+      const vinCount = info.vin ? info.vin.length : 0;
+      const voutCount = info.vout ? info.vout.length : 0;
+      const totalOut = info.vout ? info.vout.reduce((s, o) => s + (o.value || 0), 0) : 0;
+      const lines = [
+        `{bold}Transaction{/bold}`,
+        `  Txid: ${info.txid || info.txid || 'N/A'}`,
+        `  Size: ${info.size != null ? info.size : info.vsize || 'N/A'} bytes`,
+        `  Confirmations: ${info.status ? (info.status.confirmed ? 'confirmed' : 'unconfirmed') : (info.confirmations != null ? info.confirmations : 'N/A')}`,
+        `  Inputs: ${vinCount}, Outputs: ${voutCount}`,
+        `  Total out: ${totalOut} BTC`
+      ];
+      if (info.block_hash || info.blockhash) lines.push(`  Block: ${info.block_hash || info.blockhash}`);
+      this._appendMessage(lines.join('\n'));
+      this._updateBlockchainPanel(lines.join('\n'));
+    } catch (e) {
+      this._appendError(`Transaction lookup failed: ${e.message}`);
+    }
+  }
+
+  async _handleAddressExplorerRequest (params) {
+    if (!params[1]) {
+      this._appendError('Usage: address <address>');
+      this._appendMessage('Example: address bc1q...');
+      return;
+    }
+    const address = params[1];
+    if (!this.bitcoin || !this.bitcoin.getAddressInfo) {
+      this._appendError('Bitcoin service or explorer not available');
+      return;
+    }
+    try {
+      this._appendMessage(`Fetching address ${address.substring(0, 16)}...`);
+      const info = await this.bitcoin.getAddressInfo(address);
+      const chain = info.chain_stats || {};
+      const mempool = info.mempool_stats || {};
+      const funded = (chain.funded_txo_sum || 0) / 1e8;
+      const spent = (chain.spent_txo_sum || 0) / 1e8;
+      const balance = funded - spent;
+      const txCount = chain.tx_count != null ? chain.tx_count : 0;
+      const lines = [
+        `{bold}Address{/bold}`,
+        `  ${address}`,
+        `  Balance: ${balance.toFixed(8)} BTC`,
+        `  Tx count: ${txCount}`,
+        `  Unconfirmed: ${mempool.tx_count != null ? mempool.tx_count : 0} txs`
+      ];
+      if (info.recent_txs && info.recent_txs.length > 0) {
+        lines.push(`  Recent txs: ${info.recent_txs.slice(0, 5).map(t => t.txid ? t.txid.substring(0, 16) + '...' : 'N/A').join(', ')}`);
+      }
+      this._appendMessage(lines.join('\n'));
+      this._updateBlockchainPanel(lines.join('\n'));
+    } catch (e) {
+      this._appendError(`Address lookup failed: ${e.message}`);
+    }
+  }
+
+  _handleExplorerHelpRequest (params) {
+    this._appendMessage(`{bold}Blockchain Explorer{/bold}`);
+    this._appendMessage(`  block <hash|height>  - Look up block by hash or height`);
+    this._appendMessage(`  tx <txid>           - Look up transaction by txid`);
+    this._appendMessage(`  address <addr>     - Look up address balance and history`);
+    this._appendMessage(`  explorer            - Show this help`);
+    this._appendMessage(`\nUses RPC when connected to bitcoind; hub.fabric.pub API as fallback.`);
+    this._appendMessage(`SPV mode: FABRIC_BITCOIN_NODE=192.168.50.5 or bitcoin.spvNode in settings.`);
+    this._appendMessage(`Explorer: FABRIC_EXPLORER_URL or bitcoin.explorerBaseUrl (optional HTTP fallback; unset = RPC only)`);
+  }
+
   async _handleRotateRequest () {
     const account = await this.identity._nextAccount();
     this._appendMessage('Rotated to Account: ' + account.id);
@@ -1787,7 +1924,7 @@ class CLI extends App {
 
     switch (params[1]) {
       default:
-        text = `{bold}Fabric CLI Help{/bold}\nThe Fabric CLI offers a simple command-based interface to a Fabric-speaking Network.  You can use \`/connect <address>\` to establish a connection to a known peer, or any of the available commands.\n\n{bold}Available Commands{/bold}:\n\n${Object.keys(this.commands).map(x => `  ${x}`).join('\n')}\n\n{bold}Usage{/bold}:\n  Type any command with a forward slash, e.g. /help, /peers, /connect localhost:7777\n\n{bold}Examples{/bold}:\n  /help          - Show this help message\n  /peers         - List connected peers\n  /connect <addr> - Connect to a peer\n  /identity      - Show your identity\n  /wallet        - Show wallet information\n  /bitcoin       - Show Bitcoin service status\n  /quit          - Exit the application`
+        text = `{bold}Fabric CLI Help{/bold}\nThe Fabric CLI offers a simple command-based interface to a Fabric-speaking Network.  You can use \`/connect <address>\` to establish a connection to a known peer, or any of the available commands.\n\n{bold}Panels{/bold}: F1 Home | F2 Console | F3 Network | F4 Wallet | F5 Contracts | F6 Blockchain\n\n{bold}Available Commands{/bold}:\n\n${Object.keys(this.commands).map(x => `  ${x}`).join('\n')}\n\n{bold}Usage{/bold}:\n  Type any command with a forward slash, e.g. /help, /peers, /connect localhost:7777\n\n{bold}Examples{/bold}:\n  /help          - Show this help message\n  /block 850000  - Browse block by height (F6 panel)\n  /tx <txid>     - Look up transaction\n  /address <addr> - Look up address\n  /peers         - List connected peers\n  /connect <addr> - Connect to a peer\n  /identity      - Show your identity\n  /wallet        - Show wallet information\n  /bitcoin       - Show Bitcoin service status\n  /quit          - Exit the application`
         break;
     }
 
@@ -1813,6 +1950,65 @@ class CLI extends App {
     }
 
     return false;
+  }
+
+  async _refreshBlockchainPanel () {
+    if (!this.settings.render || !this.elements['blockchainBox'] || !this.elements['blockchainContent']) return;
+    if (!this.bitcoin || !this.bitcoin.getBlockInfo) return;
+
+    const header = this.elements['blockchainHeader'];
+    const content = this.elements['blockchainContent'];
+    const helpText = '\n{bold}Canonical record{/bold} - Use /block <height>, /tx <txid>, /address <addr>';
+
+    try {
+      let heightNum = null;
+      let tip = 'loading...';
+      if (this.bitcoin._rpcReady && this.bitcoin._makeRPCRequest) {
+        try {
+          heightNum = await this.bitcoin._makeRPCRequest('getblockcount');
+          const info = await this.bitcoin._makeRPCRequest('getblockchaininfo');
+          tip = (info.bestblockhash || '').substring(0, 24) + '...';
+        } catch (e) {
+          tip = 'RPC unavailable';
+        }
+      }
+      const heightStr = heightNum != null ? String(heightNum) : '--';
+      if (header) header.setContent(`Height: ${heightStr}  |  Tip: ${tip}${helpText}`);
+
+      if (heightNum == null || heightNum < 0) {
+        content.setContent('{yellow-fg}Connect to a node (RPC or SPV) to browse the chain.{/yellow-fg}\n\nOr use /block <height> with Blockstream API fallback.');
+      } else {
+        const blockInfo = await this.bitcoin.getBlockInfo(heightNum);
+        if (!blockInfo) {
+          content.setContent('{yellow-fg}No block data.{/yellow-fg}');
+        } else {
+          const ts = blockInfo.timestamp != null ? blockInfo.timestamp : blockInfo.time;
+          const txCount = blockInfo.tx_count != null ? blockInfo.tx_count : (blockInfo.tx ? blockInfo.tx.length : 0);
+          const lines = [
+            `{bold}Block ${blockInfo.height != null ? blockInfo.height : 'N/A'}{/bold}`,
+            `Hash: ${blockInfo.hash || blockInfo.id || 'N/A'}`,
+            `Time: ${ts != null ? new Date(ts * 1000).toISOString() : 'N/A'}`,
+            `Transactions: ${txCount}`,
+            `Size: ${blockInfo.size != null ? blockInfo.size + ' bytes' : 'N/A'}`,
+            '',
+            'Use /block <height> to view another block',
+            'Use /tx <txid> to view a transaction',
+            'Use /address <addr> to view an address'
+          ];
+          content.setContent(lines.join('\n'));
+        }
+      }
+      if (this.screen) this.screen.render();
+    } catch (e) {
+      if (content) content.setContent(`{yellow-fg}${e.message || 'Could not load chain'}{/yellow-fg}\n\nUse /block <height>, /tx <txid>, /address <addr> to browse.`);
+      if (this.screen) this.screen.render();
+    }
+  }
+
+  _updateBlockchainPanel (text) {
+    if (!this.settings.render || !this.elements['blockchainContent']) return;
+    this.elements['blockchainContent'].setContent(text);
+    if (this.screen) this.screen.render();
   }
 
   async _syncChainDisplay () {
@@ -2266,6 +2462,7 @@ class CLI extends App {
     this.elements['contracts'].detach();
     this.elements['network'].detach();
     this.elements['walletBox'].detach();
+    if (this.elements['blockchainBox']) this.elements['blockchainBox'].detach();
 
     switch (name) {
       default:
@@ -2287,6 +2484,10 @@ class CLI extends App {
         break;
       case 'wallet':
         this.screen.append(this.elements['walletBox'])
+        break;
+      case 'blockchain':
+        this.screen.append(this.elements['blockchainBox'])
+        this._refreshBlockchainPanel()
         break;
     }
   }
@@ -2472,6 +2673,51 @@ class CLI extends App {
       bottom: 0
     });
 
+    // Blockchain explorer panel - browse the canonical record
+    self.elements['blockchainBox'] = blessed.box({
+      parent: self.screen,
+      label: '{bold}[ Blockchain ]{/bold}',
+      tags: true,
+      border: {
+        type: 'line'
+      },
+      top: 6,
+      bottom: 4,
+      width: '100%'
+    });
+
+    self.elements['blockchainHeader'] = blessed.text({
+      parent: self.elements['blockchainBox'],
+      tags: true,
+      top: 1,
+      left: 2,
+      right: 2,
+      height: 3,
+      content: 'Height: --  |  Tip: loading...\n{bold}Canonical record{/bold} - Use /block <height>, /tx <txid>, /address <addr>'
+    });
+
+    self.elements['blockchainContent'] = blessed.box({
+      parent: self.elements['blockchainBox'],
+      tags: true,
+      top: 4,
+      left: 2,
+      right: 2,
+      bottom: 2,
+      mouse: true,
+      keys: true,
+      vi: true,
+      scrollable: true,
+      alwaysScroll: true,
+      scrollbar: {
+        ch: ' ',
+        style: {
+          bg: 'blue',
+          fg: 'white'
+        }
+      },
+      content: 'Loading chain tip...'
+    });
+
     self.elements['menu'] = blessed.listbar({
       parent: self.screen,
       top: '100%-1',
@@ -2513,6 +2759,12 @@ class CLI extends App {
           keys: ['f5'],
           callback: function () {
             this.setPane('contracts');
+          }.bind(this)
+        },
+        'Blockchain': {
+          keys: ['f6'],
+          callback: function () {
+            this.setPane('blockchain');
           }.bind(this)
         },
       }
