@@ -316,17 +316,19 @@ class Actor extends EventEmitter {
   }
 
   /**
-   * Casts the Actor to a generic message, used to uniquely identify the Actor's state.
-   * Fields:
-   * - `type`: 'FabricActorState'
-   * - `object`: state
+   * Casts the Actor to a generic message envelope for state announcements and history.
+   * Shape is stable: `{ type, object }` where `object` is sorted-key state ({@link Actor#toObject}).
+   * {@link Actor#id} derives from a digest of the pretty-printed generic message; extending this
+   * envelope requires a format/version migration across the network.
+   * @param {String} [type='FabricActorState'] Logical message type string.
    * @see {@link https://en.wikipedia.org/wiki/Merkle_tree}
    * @see {@link https://dev.fabric.pub/messages}
-   * @returns {Object} Generic message object.
+   * @returns {Object} `{ type, object }`
    */
   toGenericMessage (type = 'FabricActorState') {
+    const messageType = type || 'FabricActorState';
     return {
-      type: 'FabricActorState',
+      type: messageType,
       object: this.toObject()
     };
   }

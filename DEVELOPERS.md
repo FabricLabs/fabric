@@ -12,6 +12,12 @@ See also [`QUICKSTART.md`][quickstart-guide] for up-to-date instructions.
 
 That's it!  Let's take a look at overall Fabric system and how you, as a developer, might interact with it.
 
+## Bitcoin service (`services/bitcoin`)
+RPC is the **source of truth** when a node is connected. Optional HTTP fallback for block, transaction, and address-index reads is configured only via `bitcoin.explorerBaseUrl` or `FABRIC_EXPLORER_URL` (an **origin**, not a path). If unset, those helpers stay RPC-only or fail closed with a clear error—`@fabric/core` does not default to any public explorer.
+
+## Message types (`types/message`)
+`P2P_MESSAGE_RECEIPT` (`constants.P2P_MESSAGE_RECEIPT`, `0x44`) is the on-wire type for server acknowledgements of an inbound WebSocket/P2P message (payload JSON uses `@type: Receipt`). It is distinct from `GenericMessage` so clients can discriminate without parsing the body first.
+
 ## Architecture
 Fabric is two things — a protocol for machines to exchange information ("the Fabric Protocol"), and a sotware library (`@fabric/core`) offering up many tools and utilities for building your own networks which speak this protocol.
 

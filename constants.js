@@ -55,6 +55,8 @@ const DOCUMENT_PUBLISH_TYPE = 998;
 const DOCUMENT_REQUEST_TYPE = 999;
 const JSON_CALL_TYPE = 16000;
 const PATCH_MESSAGE_TYPE = 1024;
+/** Contract negotiation: batched Fabric messages + chain Merkle root + JSON Patch (RFC 6902) — see docs/CONTRACT_PROPOSAL.md */
+const CONTRACT_PROPOSAL_TYPE = 138; // 0x8A (POLICY.md / FABRIC_MESSAGE_TYPE_CONSOLIDATION)
 
 // Opcodes
 const OP_CYCLE = '00';
@@ -97,6 +99,7 @@ const P2P_STATE_CHANGE = 0x00000033; // TODO: select w/ no overlap
 const P2P_TRANSACTION = 0x00000039; // TODO: select w/ no overlap
 const P2P_CALL = 0x00000042;
 const P2P_RELAY = 0x00000043; // Relay envelope for onion routing; preserves original message + signature
+const P2P_MESSAGE_RECEIPT = 0x00000044; // Ack/receipt for a processed inbound message (WebSocket / P2P)
 const P2P_CHAIN_SYNC_REQUEST = 0x55;
 const P2P_SESSION_ACK = 0x4200;
 const P2P_MUSIG_START = 0x4220;
@@ -263,6 +266,7 @@ module.exports = {
   P2P_TRANSACTION,
   P2P_CALL,
   P2P_RELAY,
+  P2P_MESSAGE_RECEIPT,
   P2P_SESSION_ACK,
   P2P_MUSIG_START,
   P2P_MUSIG_ACCEPT,
@@ -275,6 +279,7 @@ module.exports = {
   DOCUMENT_REQUEST_TYPE,
   JSON_CALL_TYPE,
   PATCH_MESSAGE_TYPE,
+  CONTRACT_PROPOSAL_TYPE,
   SESSION_START,
   VERSION_NUMBER
 };

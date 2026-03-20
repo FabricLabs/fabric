@@ -30,11 +30,13 @@ const {
   P2P_TRANSACTION,
   P2P_CALL,
   P2P_RELAY,
+  P2P_MESSAGE_RECEIPT,
   CHAT_MESSAGE,
   DOCUMENT_PUBLISH_TYPE,
   DOCUMENT_REQUEST_TYPE,
   JSON_CALL_TYPE,
   PATCH_MESSAGE_TYPE,
+  CONTRACT_PROPOSAL_TYPE,
   BLOCK_CANDIDATE,
   PEER_CANDIDATE,
   SESSION_START,
@@ -538,6 +540,7 @@ class Message extends Actor {
       'JSONBlob': GENERIC_MESSAGE_TYPE + 1,
       'JSONCall': JSON_CALL_TYPE,
       'JSONPatch': PATCH_MESSAGE_TYPE,
+      'ContractProposal': CONTRACT_PROPOSAL_TYPE,
       // TODO: document Generic type
       // P2P Commands
       'Generic': P2P_GENERIC,
@@ -566,6 +569,7 @@ class Message extends Actor {
       'Transaction': P2P_TRANSACTION,
       'Call': P2P_CALL,
       'P2P_RELAY': P2P_RELAY,
+      'P2P_MESSAGE_RECEIPT': P2P_MESSAGE_RECEIPT,
       'LogMessage': LOG_MESSAGE_TYPE,
       // Lightning (BOLT) types
       'AcceptChannel': LIGHTNING_ACCEPT_CHANNEL,
@@ -685,6 +689,8 @@ Object.defineProperty(Message.prototype, 'type', {
         return 'Call';
       case P2P_RELAY:
         return 'P2P_RELAY';
+      case P2P_MESSAGE_RECEIPT:
+        return 'P2P_MESSAGE_RECEIPT';
       case PEER_CANDIDATE:
         return 'PeerCandidate';
       case SESSION_START:
@@ -695,6 +701,8 @@ Object.defineProperty(Message.prototype, 'type', {
         return 'JSONCall';
       case PATCH_MESSAGE_TYPE:
         return 'JSONPatch';
+      case CONTRACT_PROPOSAL_TYPE:
+        return 'ContractProposal';
       case P2P_START_CHAIN:
         return 'StartChain';
       // Lightning (BOLT) types
