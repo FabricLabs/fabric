@@ -42,6 +42,18 @@ class Hash256 {
   }
 
   /**
+   * Double-SHA256 digest (Bitcoin-style). Matches C message body hash.
+   * @param {String|Buffer} input Content to digest.
+   * @returns {String} SHA256(SHA256(input)) as hexadecimal string.
+   */
+  static doubleDigest (input) {
+    if (typeof input === 'string') input = Buffer.from(input, 'utf8');
+    const first = sha256(new Uint8Array(input));
+    const second = sha256(first);
+    return Buffer.from(second).toString('hex');
+  }
+
+  /**
    * Produce a SHA256 digest of some input data.
    * @param {String|Buffer} input Content to digest.
    * @returns {String} `SHA256(input)` as a hexadecimal string.
