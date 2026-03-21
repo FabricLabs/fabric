@@ -3,6 +3,16 @@
 [![Coverage Status][badge-coverage]][coverage]
 [![GitHub contributors][badge-contributors]][contributors]
 
+**Status:** `0.1.0-RC1` — run **`npm run ci`** before release tags (full test suite).
+
+| Doc | Purpose |
+|-----|---------|
+| [DEVELOPERS.md](DEVELOPERS.md) | Repo layout, tests, core types, storage |
+| [docs/PRODUCTION.md](docs/PRODUCTION.md) | Node version, native deps, downstream alignment |
+| [PRIVACY.md](PRIVACY.md) | Privacy model for operators |
+| [CHANGELOG.md](CHANGELOG.md) | Release notes |
+| [docs/README.md](docs/README.md) | Index of operational docs |
+
 [The `@fabric/core` project][fabric-github] provides an API for building peer-to-peer applications on [Bitcoin][bitcoin].
 
 Fabric is an experimental approach to the secure establishment and execution of
@@ -21,7 +31,7 @@ fabric setup
 
 | 🚨 Stop here! |
 |--------------|
-| The output of the above command will include your SEED, which should never be shared.  Take a moment to write it down safely, without  |
+| The output of `fabric setup` includes your **SEED**. Never share it or store it in plain text in cloud-synced folders. Write it down offline or use a password manager. |
 
 Once complete, you'll have a fully configured Fabric client available by running:
 ```
@@ -135,18 +145,18 @@ Full Fabric nodes connected to the World Wide Web (WWW).  Only SSL (port 443) is
 ### Fabric Projects
 Either Fabric libraries or projects running Fabric, this list encompasses the most interesting work in the ecosystem.
 
-| Name | Description | Status | v0.1.0-RC1 ready
-| ---- | ----------- | ------ | ----------
-| [`@fabric/core`][fabric-github] | Core Library
-| [`@fabric/http`][http-plugin] | Edge Nodes
-| [`hub.fabric.pub`](https://hub.fabric.pub) |
-| [`labs.fabric.pub`](https://labs.fabric.pub) |
-| `sensemaker.io` | | | `FALSE`
-| `verse.pub` | | |
+| Name | Description | Status | v0.1.0-RC1 ready |
+| ---- | ----------- | ------ | ---------------- |
+| [`@fabric/core`][fabric-github] | Core library | Active | In RC |
+| [`@fabric/http`][http-plugin] | HTTP bridge | Active | In RC |
+| [`hub.fabric.pub`](https://hub.fabric.pub) | Public hub | See Edge Nodes | — |
+| [`labs.fabric.pub`](https://labs.fabric.pub) | Labs hub | OFFLINE | — |
+| `sensemaker.io` | — | — | No |
+| `verse.pub` | — | — | — |
 
 ## Learning More
 The best place to get started is in [the #learning channel][learning], a
-collection of empassioned educators eager to help you.
+collection of impassioned educators eager to help you.
 
 Fabric on Twitter: [@FabricProtocol][twitter]
 

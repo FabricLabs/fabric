@@ -49,7 +49,7 @@ const settings = {
 
 // ## Dependencies
 // Import the `App` type.
-const App = require('../types/app');
+const App = require('../types/service').App;
 
 // ## Resources
 // Resources are named collections.

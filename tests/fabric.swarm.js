@@ -3,12 +3,12 @@
 // require('debug-trace')({ always: true });
 
 const config = require('../settings/test');
-const Swarm = require('../types/swarm');
+const { Swarm } = require('../types/peer');
 
 // Testing
 const assert = require('assert');
 
-describe('@fabric/core/types/swarm', function () {
+describe('@fabric/core/types/peer (Swarm)', function () {
   // Track all swarms created during tests for cleanup
   const swarms = [];
 

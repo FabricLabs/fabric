@@ -27,7 +27,7 @@ const Script = require('../types/script');
 const Stack = require('../types/stack');
 const State = require('../types/state');
 const Store = require('../types/store');
-// const Swarm = require('../types/swarm');
+// Swarm: require('./peer').Swarm
 // const Transaction = require('./transaction');
 const Vector = require('../types/vector');
 const Wallet = require('../types/wallet');
@@ -118,7 +118,7 @@ class Fabric extends Service {
   static get Stack () { return Stack; }
   static get State () { return State; }
   static get Store () { return Store; }
-  // static get Swarm () { return Swarm; }
+  // static get Swarm () { return require('./peer').Swarm; }
   // static get Transaction () { return Transaction; }
   static get Wallet () { return Wallet; }
   static get Worker () { return Worker; }

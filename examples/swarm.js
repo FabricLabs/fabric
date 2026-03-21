@@ -2,7 +2,7 @@
 
 // Dependencies
 const Peer = require('../types/peer');
-const Swarm = require('../types/swarm');
+const { Swarm } = require('../types/peer');
 const Message = require('../types/message');
 
 // Configuration
