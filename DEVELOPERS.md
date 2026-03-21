@@ -45,7 +45,7 @@ Working from a **git checkout** (not the global package) is best when you are ch
 - **Unit tests:** `npm test` — runs Mocha recursively under `tests/`.
 - **Lint:** `npm run lint` / `npm run lint:fix` (Semistandard).
 - **API reference:** `npm run make:api` writes `API.md` from JSDoc (see `scripts/list-jsdoc-type-files.js` for which `types/*.js` files are included).
-- **HTML docs:** `npm run make:docs` (runs `make:api` first, **removes prior `docs/*.html`** so deleted types do not leave stale pages, then JSDoc HTML under `docs/`).
+- **HTML docs:** `npm run make:docs` (runs `make:api` first, then **`scripts/clean-jsdoc-html.js`** — removes all **`docs/**/*.html`** and JSDoc template dirs **`docs/fonts`**, **`docs/scripts`**, **`docs/styles`**, **`docs/public`** so stale pages and duplicate assets do not accumulate, then JSDoc writes under `docs/`).
 - **Historical / one-off Markdown:** see **`docs/NON_CANONICAL.md`** — root-level “completion” and analysis files are not the same tier as **VISION.md** or **`docs/README.md`**.
 - **Native addon (`fabric.node`):** it is **not** `require()`’d unless **`FABRIC_NATIVE_DOUBLE_SHA256=1`**; message body double-SHA256 uses **@noble/hashes** by default. Enable that env var when exercising the C **`doubleSha256`** export.
 - **Local packages:** when `fabric`, `fabric-http`, and Hub are sibling repos, `npm install ../fabric ../fabric-http --no-save` keeps Message opcodes and servers aligned.
@@ -58,12 +58,12 @@ Use this repo as a **library** or run the **`fabric`** CLI in environments you c
 | Step | Where |
 |------|--------|
 | Node **22.14.x**, `npm ci`, **`npm run ci`** | [`docs/PRODUCTION.md`](docs/PRODUCTION.md) |
-| Completion / privacy / security matrix | [`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md) |
+| Completion / privacy / security matrix | [`docs/PRODUCTION-CHECKLIST.md`](docs/PRODUCTION-CHECKLIST.md), [`PRIVACY.md`](PRIVACY.md), [`SECURITY.md`](SECURITY.md) |
 | Version tag, changelog, Hub & fabric-http bumps | [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) |
 | Operator privacy model | [`PRIVACY.md`](PRIVACY.md) |
 | Vulnerability process | [`SECURITY.md`](SECURITY.md) |
 
-**Build scripts:** `npm run build` runs `make:all`, which still has **placeholder** `make:service` / `make:app` / `make:lib` steps. The **release gate for quality is `npm run ci`** (full Mocha suite), not a successful `npm run build`. Track bundle work in [`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md).
+**Build scripts:** `npm run build` runs `make:all`, which still has **placeholder** `make:service` / `make:app` / `make:lib` steps. The **release gate for quality is `npm run ci`** (full Mocha suite), not a successful `npm run build`. Track operator and bundle readiness in [`docs/PRODUCTION-CHECKLIST.md`](docs/PRODUCTION-CHECKLIST.md) and [`docs/PRODUCTION.md`](docs/PRODUCTION.md).
 
 ## Core Types (reference)
 These live under `types/*.js` (CommonJS). The **`Fabric`** facade (`types/fabric.js`) re-exports many of them for quick experiments; production code usually imports a **leaf** type.

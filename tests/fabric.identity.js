@@ -1,7 +1,6 @@
 'use strict';
 
 const Identity = require('../types/identity');
-const Key = require('../types/key');
 const assert = require('assert');
 const bip39 = require('bip39');
 const BIP32 = require('bip32').default;

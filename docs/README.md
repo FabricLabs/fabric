@@ -25,7 +25,9 @@
 
 ## Generated output
 
-After **`npm run make:docs`**: JSDoc HTML under **`docs/*.html`** (plus **`npm run make:api`** refreshes root **`API.md`**). Regenerate after changing public JSDoc on `types/` or `services/`.
+After **`npm run make:docs`**: **`scripts/clean-jsdoc-html.js`** clears prior **`docs/**/*.html`** and JSDoc asset dirs (`fonts`, `scripts`, `styles`, `public`), then JSDoc writes HTML under **`docs/`** (and **`npm run make:api`** refreshes root **`API.md`**). Regenerate after changing public JSDoc on `types/` or `services/`.
+
+Stale or unlinked sample Markdown files are not kept in **`docs/`**—use root **`API.md`**, **`QUICKSTART.md`**, and **`guides/`** for tutorials. Historical one-off reports are listed in **[NON_CANONICAL.md](NON_CANONICAL.md)**.
 
 ## Non-canonical / historical notes
 One-off reports and analysis files in the repo root are listed in **[NON_CANONICAL.md](NON_CANONICAL.md)**—they are **not** the same tier as **VISION.md** or this index.

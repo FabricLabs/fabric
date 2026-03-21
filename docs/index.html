@@ -123,7 +123,7 @@
           <li><strong>Unit tests:</strong> <code>npm test</code> — runs Mocha recursively under <code>tests/</code>.</li>
           <li><strong>Lint:</strong> <code>npm run lint</code> / <code>npm run lint:fix</code> (Semistandard).</li>
           <li><strong>API reference:</strong> <code>npm run make:api</code> writes <code>API.md</code> from JSDoc (see <code>scripts/list-jsdoc-type-files.js</code> for which <code>types/*.js</code> files are included).</li>
-          <li><strong>HTML docs:</strong> <code>npm run make:docs</code> (runs <code>make:api</code> first, <strong>removes prior <code>docs/*.html</code></strong> so deleted types do not leave stale pages, then JSDoc HTML under <code>docs/</code>).</li>
+          <li><strong>HTML docs:</strong> <code>npm run make:docs</code> (runs <code>make:api</code> first, then <strong><code>scripts/clean-jsdoc-html.js</code></strong> — removes all <strong><code>docs/**/*.html</code></strong> and JSDoc template dirs <strong><code>docs/fonts</code></strong>, <strong><code>docs/scripts</code></strong>, <strong><code>docs/styles</code></strong>, <strong><code>docs/public</code></strong> so stale pages and duplicate assets do not accumulate, then JSDoc writes under <code>docs/</code>).</li>
           <li><strong>Historical / one-off Markdown:</strong> see <strong><code>docs/NON_CANONICAL.md</code></strong> — root-level “completion” and analysis files are not the same tier as <strong>VISION.md</strong> or <strong><code>docs/README.md</code></strong>.</li>
           <li><strong>Native addon (<code>fabric.node</code>):</strong> it is <strong>not</strong> <code>require()</code>’d unless <strong><code>FABRIC_NATIVE_DOUBLE_SHA256=1</code></strong>; message body double-SHA256 uses <strong>@noble/hashes</strong> by default. Enable that env var when exercising the C <strong><code>doubleSha256</code></strong> export.</li>
           <li><strong>Local packages:</strong> when <code>fabric</code>, <code>fabric-http</code>, and Hub are sibling repos, <code>npm install ../fabric ../fabric-http --no-save</code> keeps Message opcodes and servers aligned.</li>
@@ -145,7 +145,7 @@
             </tr>
             <tr>
               <td>Completion / privacy / security matrix</td>
-              <td><a href="PRODUCTION_READINESS.md"><code>PRODUCTION_READINESS.md</code></a></td>
+              <td><a href="docs/PRODUCTION-CHECKLIST.md"><code>docs/PRODUCTION-CHECKLIST.md</code></a>, <a href="PRIVACY.md"><code>PRIVACY.md</code></a>, <a href="SECURITY.md"><code>SECURITY.md</code></a></td>
             </tr>
             <tr>
               <td>Version tag, changelog, Hub &amp; fabric-http bumps</td>
@@ -161,7 +161,7 @@
             </tr>
           </tbody>
         </table>
-        <p><strong>Build scripts:</strong> <code>npm run build</code> runs <code>make:all</code>, which still has <strong>placeholder</strong> <code>make:service</code> / <code>make:app</code> / <code>make:lib</code> steps. The <strong>release gate for quality is <code>npm run ci</code></strong> (full Mocha suite), not a successful <code>npm run build</code>. Track bundle work in <a href="PRODUCTION_READINESS.md"><code>PRODUCTION_READINESS.md</code></a>.</p>
+        <p><strong>Build scripts:</strong> <code>npm run build</code> runs <code>make:all</code>, which still has <strong>placeholder</strong> <code>make:service</code> / <code>make:app</code> / <code>make:lib</code> steps. The <strong>release gate for quality is <code>npm run ci</code></strong> (full Mocha suite), not a successful <code>npm run build</code>. Track operator and bundle readiness in <a href="docs/PRODUCTION-CHECKLIST.md"><code>docs/PRODUCTION-CHECKLIST.md</code></a> and <a href="docs/PRODUCTION.md"><code>docs/PRODUCTION.md</code></a>.</p>
         <h2>Core Types (reference)</h2>
         <p>These live under <code>types/*.js</code> (CommonJS). The <strong><code>Fabric</code></strong> facade (<code>types/fabric.js</code>) re-exports many of them for quick experiments; production code usually imports a <strong>leaf</strong> type.</p>
         <table>

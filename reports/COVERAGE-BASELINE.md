@@ -1,14 +1,14 @@
 # Test coverage baseline
-_Generated: 2026-03-20 — from `c8` json-summary after `npm test` (see `npm run report:coverage-baseline`)._
+_Generated: 2026-03-21 — from `c8` text-summary after `npm run coverage` (see `npm run report:coverage-baseline` for json-summary)._
 
 | Metric | % |
 | --- | ---: |
-| Lines | 60.96 |
-| Statements | 60.96 |
-| Functions | 45.42 |
-| Branches | 65.8 |
+| Lines | 61.42 |
+| Statements | 61.42 |
+| Functions | 46.28 |
+| Branches | 66.05 |
 
-**Goal:** raise toward 100% incrementally; prioritize `types/message.js`, `types/peer.js`, `services/bitcoin.js`, and CLI paths.
+**Goal:** raise toward 100% incrementally; prioritize `types/cli.js`, `types/service.js`, `types/message.js`, `types/peer.js`, and `services/bitcoin.js`. `functions/fabricNativeAccel.js` is included in c8 (other `functions/*` remain excluded).
 
 Regenerate: `npm run report:coverage-baseline` (full suite + `c8`, ~5 minutes).
 

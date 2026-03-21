@@ -1,7 +1,12 @@
 #!/usr/bin/env node
 /**
- * Remove top-level docs/*.html before `jsdoc` so removed types do not leave
- * stale pages or broken global nav links (JSDoc does not delete old outputs).
+ * Reset JSDoc output under docs/ before `jsdoc` runs.
+ *
+ * JSDoc does not delete old outputs; without this, removed types leave stale
+ * HTML and duplicate template assets (fonts, scripts, styles) accumulate in
+ * git and on sites that publish _book/ + docs/ (e.g. dev.fabric.pub).
+ *
+ * Preserves curated **Markdown** under docs/ (e.g. README, PRODUCTION.md).
  */
 'use strict';
 
@@ -10,7 +15,29 @@ const path = require('path');
 
 const docsDir = path.join(__dirname, '..', 'docs');
 
-for (const name of fs.readdirSync(docsDir)) {
-  if (!name.endsWith('.html')) continue;
-  fs.unlinkSync(path.join(docsDir, name));
+const JSDOC_ASSET_DIRS = ['fonts', 'scripts', 'styles', 'public'];
+
+function walkRemoveHtml (dir) {
+  if (!fs.existsSync(dir)) return;
+  for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, ent.name);
+    if (ent.isDirectory()) {
+      walkRemoveHtml(full);
+    } else if (ent.name.endsWith('.html')) {
+      fs.unlinkSync(full);
+    }
+  }
 }
+
+if (!fs.existsSync(docsDir)) {
+  process.exit(0);
+}
+
+for (const sub of JSDOC_ASSET_DIRS) {
+  const p = path.join(docsDir, sub);
+  if (fs.existsSync(p)) {
+    fs.rmSync(p, { recursive: true, force: true });
+  }
+}
+
+walkRemoveHtml(docsDir);
