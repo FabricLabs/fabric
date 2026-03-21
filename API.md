@@ -726,7 +726,7 @@ Create an instance of an [Entity](Entity).
 Loads [State](#State) into memory.
 
 **Kind**: instance method of [<code>Collection</code>](#Collection)  
-**Emits**: <code>event:message Will emit one {@link Snapshot} message.</code>  
+**Emits**: <code>event:message Will emit one &#x60;CollectionSnapshot&#x60; message (not the removed Snapshot type).</code>  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -1887,9 +1887,15 @@ An in-memory representation of a node in our network.
     * [.messages](#Peer+messages)
     * [._gossipPayloadSeen](#Peer+_gossipPayloadSeen)
     * [._gossipRelayByOrigin](#Peer+_gossipRelayByOrigin)
+    * [._peeringPayloadSeen](#Peer+_peeringPayloadSeen)
+    * [._peeringRelayByOrigin](#Peer+_peeringRelayByOrigin)
+    * [._candidateKeys](#Peer+_candidateKeys)
     * ~~[.address](#Peer+address)~~
     * [._gossipPayloadDedupKey(msg)](#Peer+_gossipPayloadDedupKey) ⇒ <code>string</code>
     * [._gossipRateLimitAllow(originName)](#Peer+_gossipRateLimitAllow) ⇒ <code>boolean</code>
+    * [._peeringOfferPayloadDedupKey(msg)](#Peer+_peeringOfferPayloadDedupKey) ⇒ <code>string</code>
+    * [._peeringRateLimitAllow(originName)](#Peer+_peeringRateLimitAllow) ⇒ <code>boolean</code>
+    * [._enqueuePeeringCandidate(host, port)](#Peer+_enqueuePeeringCandidate)
     * [.broadcast(message)](#Peer+broadcast)
     * [._connect(target)](#Peer+_connect)
     * [._loadPeerRegistry()](#Peer+_loadPeerRegistry) ⇒ <code>Promise.&lt;void&gt;</code>
@@ -1933,6 +1939,24 @@ Logical gossip payload dedup (excludes signature / hop churn).
 origin address → { count, windowStart } for gossip relay rate limiting.
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_peeringPayloadSeen"></a>
+
+### peer.\_peeringPayloadSeen
+Logical peering-offer payload dedup (ignores per-hop re-signing).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_peeringRelayByOrigin"></a>
+
+### peer.\_peeringRelayByOrigin
+origin address → { count, windowStart } for peering-offer relay rate limiting.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_candidateKeys"></a>
+
+### peer.\_candidateKeys
+`host:port` keys for [P2P_PEERING_OFFER](P2P_PEERING_OFFER) candidate queue dedup.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+address"></a>
 
 ### ~~peer.address~~
@@ -1959,6 +1983,39 @@ Stable id for gossip *logical* content (ignores `gossipHop` and wire signature c
 | Param | Type | Description |
 | --- | --- | --- |
 | originName | <code>string</code> | Connection id (e.g. `host:port`) |
+
+<a name="Peer+_peeringOfferPayloadDedupKey"></a>
+
+### peer.\_peeringOfferPayloadDedupKey(msg) ⇒ <code>string</code>
+Stable id for peering-offer *logical* content (ignores `peeringHop` and wire signature changes).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>string</code> - hex sha256  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | <code>object</code> | Generic message (`type`, `object`, …) |
+
+<a name="Peer+_peeringRateLimitAllow"></a>
+
+### peer.\_peeringRateLimitAllow(originName) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| originName | <code>string</code> | Connection id (e.g. `host:port`) |
+
+<a name="Peer+_enqueuePeeringCandidate"></a>
+
+### peer.\_enqueuePeeringCandidate(host, port)
+Enqueue a fabric candidate from [P2P_PEERING_OFFER](P2P_PEERING_OFFER); FIFO-capped and deduped by host:port.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| host | <code>string</code> | 
+| port | <code>number</code> | 
 
 <a name="Peer+broadcast"></a>
 
@@ -3643,10 +3700,13 @@ Manage a Lightning node.
 
 * [Lightning](#Lightning)
     * [new Lightning([settings])](#new_Lightning_new)
-    * [.createChannel(peer, amount, [pushMsat], [options])](#Lightning+createChannel)
-    * [.createInvoice(amount)](#Lightning+createInvoice)
-    * [.computeLiquidity()](#Lightning+computeLiquidity) ⇒ <code>Object</code>
-    * [._makeRPCRequest(method, [params], [timeoutMs])](#Lightning+_makeRPCRequest) ⇒ <code>Object</code> \| <code>String</code>
+    * _instance_
+        * [.createChannel(peer, amount, [pushMsat], [options])](#Lightning+createChannel)
+        * [.createInvoice(amount)](#Lightning+createInvoice)
+        * [.computeLiquidity()](#Lightning+computeLiquidity) ⇒ <code>Object</code>
+        * [._makeRPCRequest(method, [params], [timeoutMs])](#Lightning+_makeRPCRequest) ⇒ <code>Object</code> \| <code>String</code>
+    * _static_
+        * [.CLN_RPC_METHODS](#Lightning.CLN_RPC_METHODS) : <code>ReadonlyArray.&lt;string&gt;</code>
 
 <a name="new_Lightning_new"></a>
 
@@ -3704,6 +3764,12 @@ Make an RPC request through the Lightning UNIX socket.
 | [params] | <code>Array</code> |  | Array of parameters. |
 | [timeoutMs] | <code>Number</code> | <code>30000</code> | Optional timeout in ms; default 30000. Prevents hanging when lightningd is busy. |
 
+<a name="Lightning.CLN_RPC_METHODS"></a>
+
+### Lightning.CLN\_RPC\_METHODS : <code>ReadonlyArray.&lt;string&gt;</code>
+Core Lightning JSON-RPC method names invoked by this service (see docs/LIGHTNING_COMPAT.md).
+
+**Kind**: static property of [<code>Lightning</code>](#Lightning)  
 <a name="Redis"></a>
 
 ## Redis

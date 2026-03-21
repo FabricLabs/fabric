@@ -257,13 +257,13 @@ node examples/app.<span class="hljs-property">js</span>
             <a class="ss" href="#section-5">&#x00a7;</a>
           </div>
           <h2 id="dependencies">Dependencies</h2>
-          <p>Import the <code>App</code> type.</p>
+          <p>Import the <code>FabricShell</code> type (browser / CLI application shell).</p>
 
         </div>
 
         <div class="content">
           <div class='highlight'>
-            <pre><span class="hljs-keyword">const</span> <span class="hljs-title class_">App</span> = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;../types/service&#x27;</span>).<span class="hljs-property">App</span>;</pre>
+            <pre><span class="hljs-keyword">const</span> { <span class="hljs-title class_">FabricShell</span> } = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;../types/service&#x27;</span>);</pre>
           </div>
         </div>
 
@@ -366,7 +366,7 @@ node examples/app.<span class="hljs-property">js</span>
 
         <div class="content">
           <div class='highlight'>
-            <pre>  <span class="hljs-variable language_">window</span>.<span class="hljs-property">app</span> = <span class="hljs-keyword">new</span> <span class="hljs-title class_">App</span>(input);
+            <pre>  <span class="hljs-variable language_">window</span>.<span class="hljs-property">app</span> = <span class="hljs-keyword">new</span> <span class="hljs-title class_">FabricShell</span>(input);
   <span class="hljs-variable language_">window</span>.<span class="hljs-property">app</span>.<span class="hljs-title function_">start</span>();</pre>
           </div>
         </div>

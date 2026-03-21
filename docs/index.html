@@ -124,6 +124,8 @@
           <li><strong>Lint:</strong> <code>npm run lint</code> / <code>npm run lint:fix</code> (Semistandard).</li>
           <li><strong>API reference:</strong> <code>npm run make:api</code> writes <code>API.md</code> from JSDoc (see <code>scripts/list-jsdoc-type-files.js</code> for which <code>types/*.js</code> files are included).</li>
           <li><strong>HTML docs:</strong> <code>npm run make:docs</code> (runs <code>make:api</code> first, <strong>removes prior <code>docs/*.html</code></strong> so deleted types do not leave stale pages, then JSDoc HTML under <code>docs/</code>).</li>
+          <li><strong>Historical / one-off Markdown:</strong> see <strong><code>docs/NON_CANONICAL.md</code></strong> — root-level “completion” and analysis files are not the same tier as <strong>VISION.md</strong> or <strong><code>docs/README.md</code></strong>.</li>
+          <li><strong>Native addon (<code>fabric.node</code>):</strong> it is <strong>not</strong> <code>require()</code>’d unless <strong><code>FABRIC_NATIVE_DOUBLE_SHA256=1</code></strong>; message body double-SHA256 uses <strong>@noble/hashes</strong> by default. Enable that env var when exercising the C <strong><code>doubleSha256</code></strong> export.</li>
           <li><strong>Local packages:</strong> when <code>fabric</code>, <code>fabric-http</code>, and Hub are sibling repos, <code>npm install ../fabric ../fabric-http --no-save</code> keeps Message opcodes and servers aligned.</li>
         </ul>
         <p>Agent-oriented services (lifecycle, workers, payments) are summarized in <a href="AGENTS.md"><code>AGENTS.md</code></a>.</p>

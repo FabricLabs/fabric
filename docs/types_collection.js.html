@@ -451,7 +451,7 @@ class Collection extends Stack {
    * Loads {@link State} into memory.
    * @param {State} state State to import.
    * @param {Boolean} commit Whether or not to commit the result.
-   * @emits message Will emit one {@link Snapshot} message.
+   * @emits message Will emit one `CollectionSnapshot` message (not the removed Snapshot type).
    */
   async import (input, commit = true) {
     if (input['@data']) input = input['@data'];
@@ -485,7 +485,7 @@ class Collection extends Stack {
     if (this.settings.verbosity >= 4) console.log('input.id', input.id);
 
     this.emit('message', {
-      '@type': 'Snapshot',
+      '@type': 'CollectionSnapshot',
       '@data': {
         path: this.path,
         state: pointer.get(this.value, this.path)
