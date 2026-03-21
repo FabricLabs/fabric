@@ -9,6 +9,9 @@ Fabric aims to maximize the security of a sensible default configuration while k
 ## P2P gossip (`P2P_PEER_GOSSIP`)
 Relay of gossip is bounded to reduce amplification DoS: **logical payload** deduplication (stable hash over `type` + `object` sans `gossipHop`), **`gossipHop` TTL** (default 5, decremented on each relay), **per-origin relay budget** per rolling minute (default 60), and **FIFO-capped** wire-hash and payload caches. See `constants.js` (`GOSSIP_*`, `PEER_MAX_WIRE_HASH_CACHE`) and `Peer` `settings.gossip`.
 
+## P2P peering offers (`P2P_PEERING_OFFER`)
+Relay uses the same class of controls as gossip, with separate state: logical dedup (hash over `type` + `object` sans `peeringHop`), **`peeringHop` TTL** (default 5), **per-origin relay budget** per rolling minute (default 60), **FIFO-capped** payload cache, and a **bounded, deduped** candidate queue for offered addresses (`PEER_MAX_CANDIDATES_QUEUE`, default 128). See `constants.js` (`PEERING_OFFER_*`, `PEER_MAX_CANDIDATES_QUEUE`) and `Peer` `settings.peering`.
+
 ## Operator-facing docs
 | Doc | Use |
 |-----|-----|

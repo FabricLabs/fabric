@@ -521,6 +521,75 @@ describe('@fabric/core/types/peer', function () {
         }
         assert.strictEqual(relays, 2);
       });
+      it('P2P_PEERING_OFFER dedupes logical payload (no relay amplification on re-sign)', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        let relays = 0;
+        peer.relayFrom = function () { relays++; };
+        const origin = { name: '127.0.0.1:4' };
+        const body = {
+          type: 'P2P_PEERING_OFFER',
+          object: { host: '1.2.3.4', port: 9000, transport: 'fabric' }
+        };
+        peer._handleGenericMessage(body, origin);
+        peer._handleGenericMessage({ ...body, object: { ...body.object } }, origin);
+        assert.strictEqual(relays, 1);
+      });
+      it('P2P_PEERING_OFFER does not relay when peeringHop is 0', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        let relays = 0;
+        peer.relayFrom = function () { relays++; };
+        const origin = { name: '127.0.0.1:5' };
+        peer._handleGenericMessage({
+          type: 'P2P_PEERING_OFFER',
+          object: { host: '5.6.7.8', port: 1, transport: 'fabric', peeringHop: 0 }
+        }, origin);
+        assert.strictEqual(relays, 0);
+      });
+      it('P2P_PEERING_OFFER rate-limits relays per origin', function () {
+        const peer = new Peer({
+          listen: false,
+          peersDb: null,
+          peering: { maxRelaysPerOriginPerMinute: 2 }
+        });
+        let relays = 0;
+        peer.relayFrom = function () { relays++; };
+        const origin = { name: '127.0.0.1:6' };
+        for (let i = 0; i < 4; i++) {
+          peer._handleGenericMessage({
+            type: 'P2P_PEERING_OFFER',
+            object: { host: '9.8.7.6', port: 7000 + i, transport: 'fabric' }
+          }, origin);
+        }
+        assert.strictEqual(relays, 2);
+      });
+      it('P2P_PEERING_OFFER caps and dedupes candidate queue', function () {
+        const peer = new Peer({
+          listen: false,
+          peersDb: null,
+          constraints: { peers: { max: 32 } },
+          peering: { maxCandidates: 2 }
+        });
+        peer._handleGenericMessage({
+          type: 'P2P_PEERING_OFFER',
+          object: { host: '10.0.0.1', port: 1, transport: 'fabric' }
+        }, { name: '127.0.0.1:7' });
+        peer._handleGenericMessage({
+          type: 'P2P_PEERING_OFFER',
+          object: { host: '10.0.0.2', port: 2, transport: 'fabric' }
+        }, { name: '127.0.0.1:8' });
+        peer._handleGenericMessage({
+          type: 'P2P_PEERING_OFFER',
+          object: { host: '10.0.0.3', port: 3, transport: 'fabric' }
+        }, { name: '127.0.0.1:9' });
+        assert.strictEqual(peer.candidates.length, 2);
+        assert.ok(peer.candidates.some((c) => c.host === '10.0.0.2'));
+        assert.ok(peer.candidates.some((c) => c.host === '10.0.0.3'));
+        peer._handleGenericMessage({
+          type: 'P2P_PEERING_OFFER',
+          object: { host: '10.0.0.2', port: 2, transport: 'fabric' }
+        }, { name: '127.0.0.1:10' });
+        assert.strictEqual(peer.candidates.length, 2);
+      });
       it('emits file for P2P_FILE_SEND', function (done) {
         const peer = new Peer({ listen: false, peersDb: null });
         peer.once('file', (ev) => {

@@ -7,6 +7,10 @@ const {
   GOSSIP_MAX_PAYLOAD_CACHE,
   GOSSIP_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
   MAX_PEERS,
+  PEERING_OFFER_MAX_HOPS,
+  PEERING_OFFER_MAX_PAYLOAD_CACHE,
+  PEERING_OFFER_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
+  PEER_MAX_CANDIDATES_QUEUE,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
   P2P_PEER_GOSSIP,
@@ -157,6 +161,13 @@ class Peer extends Service {
     this._gossipPayloadOrder = [];
     /** origin address → { count, windowStart } for gossip relay rate limiting. */
     this._gossipRelayByOrigin = new Map();
+    /** Logical peering-offer payload dedup (ignores per-hop re-signing). */
+    this._peeringPayloadSeen = new Map();
+    this._peeringPayloadOrder = [];
+    /** origin address → { count, windowStart } for peering-offer relay rate limiting. */
+    this._peeringRelayByOrigin = new Map();
+    /** `host:port` keys for {@link P2P_PEERING_OFFER} candidate queue dedup. */
+    this._candidateKeys = new Set();
     this.sessions = {};
 
     // Internal Stack Machine
@@ -243,6 +254,65 @@ class Peer extends Service {
     slot.count++;
     this._gossipRelayByOrigin.set(originName, slot);
     return true;
+  }
+
+  /**
+   * Stable id for peering-offer *logical* content (ignores `peeringHop` and wire signature changes).
+   * @param {object} msg Generic message (`type`, `object`, …)
+   * @returns {string} hex sha256
+   */
+  _peeringOfferPayloadDedupKey (msg) {
+    const obj = (msg && msg.object && typeof msg.object === 'object') ? { ...msg.object } : {};
+    delete obj.peeringHop;
+    const body = JSON.stringify({ type: msg && msg.type, object: obj });
+    return crypto.createHash('sha256').update(body).digest('hex');
+  }
+
+  _peeringRememberPayload (key) {
+    const max = (this.settings.peering && this.settings.peering.maxPayloadCache) || PEERING_OFFER_MAX_PAYLOAD_CACHE;
+    while (this._peeringPayloadOrder.length >= max) {
+      const drop = this._peeringPayloadOrder.shift();
+      this._peeringPayloadSeen.delete(drop);
+    }
+    this._peeringPayloadSeen.set(key, true);
+    this._peeringPayloadOrder.push(key);
+  }
+
+  /**
+   * @param {string} originName Connection id (e.g. `host:port`)
+   * @returns {boolean}
+   */
+  _peeringRateLimitAllow (originName) {
+    const limit = (this.settings.peering && this.settings.peering.maxRelaysPerOriginPerMinute) || PEERING_OFFER_MAX_RELAYS_PER_ORIGIN_PER_MINUTE;
+    const now = Date.now();
+    let slot = this._peeringRelayByOrigin.get(originName);
+    if (!slot || now - slot.windowStart > 60000) {
+      slot = { count: 0, windowStart: now };
+    }
+    if (slot.count >= limit) return false;
+    slot.count++;
+    this._peeringRelayByOrigin.set(originName, slot);
+    return true;
+  }
+
+  /**
+   * Enqueue a fabric candidate from {@link P2P_PEERING_OFFER}; FIFO-capped and deduped by host:port.
+   * @param {string} host
+   * @param {number} port
+   */
+  _enqueuePeeringCandidate (host, port) {
+    const max = (this.settings.peering && this.settings.peering.maxCandidates) || PEER_MAX_CANDIDATES_QUEUE;
+    const key = `${String(host)}:${Number(port)}`;
+    if (this._candidateKeys.has(key)) return;
+    while (this.candidates.length >= max) {
+      const old = this.candidates.shift();
+      const o = old && (old.object || old);
+      if (o && o.host != null && o.port != null) {
+        this._candidateKeys.delete(`${String(o.host)}:${Number(o.port)}`);
+      }
+    }
+    this._candidateKeys.add(key);
+    this.candidates.push({ host, port: Number(port) });
   }
 
   get id () {
@@ -728,7 +798,9 @@ class Peer extends Service {
       this.emit('debug', `Filling peer slot ${i} of ${openCount} (max ${this.settings.constraints.peers.max}) with candidate: ${JSON.stringify(candidate, null, '  ')}`);
 
       try {
-        this._connect(`${candidate.object.host}:${candidate.object.port}`);
+        const host = candidate.object ? candidate.object.host : candidate.host;
+        const port = candidate.object ? candidate.object.port : candidate.port;
+        this._connect(`${host}:${port}`);
       } catch (exception) {
         this.emit('error', `Unable to fill open peer slot ${i}: ${exception}`);
       }
@@ -942,25 +1014,35 @@ class Peer extends Service {
         this.relayFrom(origin.name, gossipRelay);
         break;
       }
-      case P2P_PEERING_OFFER:
+      case P2P_PEERING_OFFER: {
+        if (!origin || !origin.name) break;
+        const p = this.settings.peering || {};
+        const maxHops = p.maxHops != null ? p.maxHops : PEERING_OFFER_MAX_HOPS;
+        const payloadKey = this._peeringOfferPayloadDedupKey(message);
+        if (this._peeringPayloadSeen.has(payloadKey)) break;
+        const obj = message.object || {};
+        let hop = obj.peeringHop != null ? Number(obj.peeringHop) : maxHops;
+        if (!Number.isFinite(hop) || hop < 0) hop = maxHops;
+        hop = Math.min(hop, maxHops);
+        if (hop <= 0) break;
+        if (!this._peeringRateLimitAllow(origin.name)) break;
         this.emit('peeringOffer', { message, origin });
-        {
-          const obj = message.object || {};
-          const transport = obj.transport || 'fabric';
-          if (transport === 'fabric' && obj.host && obj.port) {
-            const connCount = Object.keys(this.connections || {}).length;
-            const maxPeers = (this.settings.constraints && this.settings.constraints.peers && this.settings.constraints.peers.max) || MAX_PEERS;
-            if (connCount < maxPeers) {
-              const candidate = { host: obj.host, port: Number(obj.port) };
-              this.candidates.push(candidate);
-            }
-          }
-          if (origin && origin.name) {
-            const offerRelay = Message.fromVector(['GENERIC', JSON.stringify(message)]).signWithKey(this.key);
-            this.relayFrom(origin.name, offerRelay);
+        this._peeringRememberPayload(payloadKey);
+        const transport = obj.transport || 'fabric';
+        if (transport === 'fabric' && obj.host && obj.port) {
+          const connCount = Object.keys(this.connections || {}).length;
+          const maxPeers = (this.settings.constraints && this.settings.constraints.peers && this.settings.constraints.peers.max) || MAX_PEERS;
+          if (connCount < maxPeers) {
+            this._enqueuePeeringCandidate(obj.host, obj.port);
           }
         }
+        const relayBody = Object.assign({}, message, {
+          object: Object.assign({}, obj, { peeringHop: hop - 1 })
+        });
+        const offerRelay = Message.fromVector(['GENERIC', JSON.stringify(relayBody)]).signWithKey(this.key);
+        this.relayFrom(origin.name, offerRelay);
         break;
+      }
       case 'P2P_PING':
         const now = (new Date()).toISOString();
         const P2P_PONG = Message.fromVector(['GENERIC', JSON.stringify({
