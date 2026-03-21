@@ -1,5 +1,5 @@
 # Documentation audit (living)
-_Last pass: 2026-03-20_
+_Last pass: 2026-03-20 · `npm run make:dev` + `npm run check:book-links` **OK** (relative links, default skip `docs/`)._
 
 ## Scope
 | Area | Role | Maintainer notes |

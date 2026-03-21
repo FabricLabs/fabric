@@ -691,8 +691,11 @@ class Peer extends Service {
     // Store message for later
     this.messages[hash] = buffer.toString('hex');
 
-    const checksum = crypto.createHash('sha256').update(message.body, 'utf8').digest('hex');
-    if (checksum !== message.raw.hash.toString('hex')) throw new Error('Message received with incorrect hash.');
+    // Double-SHA256 on raw body bytes (matches C message_verify_body_hash)
+    const bodyBuf = message.raw.data || Buffer.alloc(0);
+    const checksum = Hash256.doubleDigest(bodyBuf);
+    const expectedHash = Buffer.isBuffer(message.raw.hash) ? message.raw.hash.toString('hex') : message.raw.hash;
+    if (checksum !== expectedHash) throw new Error('Message received with incorrect hash.');
 
     // Verify message signature if we have the peer's public key
     if (origin && this.peers[origin] && this.peers[origin].publicKey) {

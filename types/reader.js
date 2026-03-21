@@ -105,7 +105,8 @@ class Reader extends EventEmitter {
     parts.push(header.slice(72, 76)); // type
     parts.push(header.slice(76, 80)); // payload size
     parts.push(header.slice(80, 112)); // hash
-    parts.push(header.slice(112, HEADER_SIZE)); // signature
+    parts.push(header.slice(112, 144)); // preimage
+    parts.push(header.slice(144, HEADER_SIZE)); // signature
 
     const map = parts.map((x) => Buffer.from(x, 'hex'));
     const elements = map.map((x) => parseInt(x.toString('hex'), 16));

@@ -17,10 +17,10 @@ and no mission succeeds without a clearly-defined set of goals.
 ## Current Goals
 These are our immediate goals:
 
-- [x] Find all TODO items (run script, check diff)
-- [ ] Audit all documentation
-- [ ] Check all hyperlinks on `npm run dev`
-- [ ] 100% test coverage
+- [x] Find all TODO items (run script, check diff) — `npm run report:todo` → `reports/TODO.txt` (≈300 lines as of 2026-03)
+- [ ] Audit all documentation — **in progress:** handbook `SUMMARY.md` guide paths fixed; [`docs/DOCUMENTATION-AUDIT.md`](docs/DOCUMENTATION-AUDIT.md) lists scope + follow-ups (JSDoc `docs/` tree, `book.json` branch)
+- [x] Check all hyperlinks on `npm run dev` — **`npm run check:book-links`** after **`npm run make:dev`** verified (HonKit + copied `docs/`/`examples/`); JSDoc subtree skipped by default (`BOOK_LINK_SKIP_PREFIXES=docs/`) — see [`docs/DOCUMENTATION-AUDIT.md`](docs/DOCUMENTATION-AUDIT.md)
+- [ ] 100% test coverage — baseline & percentages: `npm run report:coverage-baseline` → [`reports/COVERAGE-BASELINE.md`](reports/COVERAGE-BASELINE.md)
 - [ ] Completion of 1 or more of our #projects: https://chat.fabric.pub/#/room/#projects:fabric.pub
 
 ## Credits

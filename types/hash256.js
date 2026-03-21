@@ -1,6 +1,7 @@
 'use strict';
 
 const { sha256 } = require('@noble/hashes/sha2.js');
+const fabricNativeAccel = require('../functions/fabricNativeAccel');
 
 /**
  * Simple interaction with 256-bit spaces.
@@ -48,9 +49,7 @@ class Hash256 {
    */
   static doubleDigest (input) {
     if (typeof input === 'string') input = Buffer.from(input, 'utf8');
-    const first = sha256(new Uint8Array(input));
-    const second = sha256(first);
-    return Buffer.from(second).toString('hex');
+    return fabricNativeAccel.doubleSha256Hex(input);
   }
 
   /**

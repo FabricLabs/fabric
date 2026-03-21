@@ -1,6 +1,8 @@
 # Production consolidation checklist
 Use this after merging core JS/native work (e.g. message parity, peer fixes) and before tagging a release.
 
+**CI:** GitHub Actions runs `npm run report:coverage` (full test suite + `reports/coverage.lcov` for Codecov) **immediately after** installing `bitcoind`, *before* building Core Lightning — so test failures surface without waiting on Lightning.
+
 ## Package & API
 - [x] **Version** — `package.json` at **`0.1.0-RC2`**; **`engines.node`** matches **`.nvmrc`** / CI (`22.14.0`). For the next tag, bump semver and keep tag = published version.
 - [x] **Exports** — `package.json` `exports` cover `.`, `./constants`, `./types/*`, `./services/*`, `./functions/*` (review when adding new surfaces).

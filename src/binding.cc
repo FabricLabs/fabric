@@ -1,17 +1,28 @@
 #include <napi.h>
 #include <secp256k1.h>
 #include <noise/protocol.h>
+#include <wally_core.h>
+#include <wally_crypto.h>
 
 extern "C"
 {
 #include "peer.h"
 #include "message.h"
 #include "errors.h"
+#include "bip340.h"
+#include "taproot.h"
 }
 
 // Initialize the Fabric addon
 Napi::Object Init(Napi::Env env, Napi::Object exports)
 {
+  // Initialize libwally once for cryptographic primitives (trusted by wallet)
+  static bool g_wally_inited = false;
+  if (!g_wally_inited) {
+    if (wally_init(0) == 0) {
+      g_wally_inited = true;
+    }
+  }
   // Message methods
   exports.Set("createMessage", Napi::Function::New(env, [](const Napi::CallbackInfo &info) -> Napi::Value
                                                    {
@@ -38,6 +49,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports)
     result.Set("parent", Napi::Buffer<uint8_t>::Copy(env, msg->parent, 32));
     result.Set("author", Napi::Buffer<uint8_t>::Copy(env, msg->author, 32));
     result.Set("hash", Napi::Buffer<uint8_t>::Copy(env, msg->hash, 32));
+    result.Set("preimage", Napi::Buffer<uint8_t>::Copy(env, msg->preimage, 32));
     result.Set("signature", Napi::Buffer<uint8_t>::Copy(env, msg->signature, 64));
 
     return result; }));
@@ -516,6 +528,229 @@ Napi::Object Init(Napi::Env env, Napi::Object exports)
   // Static constants
   exports.Set("MESSAGE_MAGIC", Napi::Number::New(env, MESSAGE_MAGIC));
   exports.Set("MESSAGE_VERSION", Napi::Number::New(env, MESSAGE_VERSION));
+
+  // BIP340 bindings
+  exports.Set("bip340Init", Napi::Function::New(env, [](const Napi::CallbackInfo &info) -> Napi::Value {
+    Napi::Env env = info.Env();
+    FabricError err = fabric_bip340_init();
+    if (err != FABRIC_SUCCESS) {
+      Napi::Error::New(env, "BIP340 init failed").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    return Napi::Boolean::New(env, true);
+  }));
+
+  exports.Set("bip340Cleanup", Napi::Function::New(env, [](const Napi::CallbackInfo &info) -> Napi::Value {
+    Napi::Env env = info.Env();
+    fabric_bip340_cleanup();
+    return env.Undefined();
+  }));
+
+  exports.Set("bip340Keygen", Napi::Function::New(env, [](const Napi::CallbackInfo &info) -> Napi::Value {
+    Napi::Env env = info.Env();
+    FabricBip340Keypair kp;
+    FabricError err = fabric_bip340_keygen(&kp);
+    if (err != FABRIC_SUCCESS) {
+      Napi::Error::New(env, "BIP340 keygen failed").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    Napi::Object obj = Napi::Object::New(env);
+    obj.Set("privateKey", Napi::Buffer<uint8_t>::Copy(env, kp.private_key, 32));
+    obj.Set("publicKeyX", Napi::Buffer<uint8_t>::Copy(env, kp.xonly_public_key, 32));
+    return obj;
+  }));
+
+  exports.Set("bip340PubkeyFromPrivate", Napi::Function::New(env, [](const Napi::CallbackInfo &info) -> Napi::Value {
+    Napi::Env env = info.Env();
+    if (info.Length() < 1 || !info[0].IsBuffer()) {
+      Napi::TypeError::New(env, "Expected 32-byte private key Buffer").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    Napi::Buffer<uint8_t> sk = info[0].As<Napi::Buffer<uint8_t>>();
+    if (sk.Length() != 32) {
+      Napi::TypeError::New(env, "Private key must be 32 bytes").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    uint8_t px[32];
+    FabricError err = fabric_bip340_pubkey_from_private(sk.Data(), px);
+    if (err != FABRIC_SUCCESS) {
+      Napi::Error::New(env, "BIP340 pubkey derivation failed").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    return Napi::Buffer<uint8_t>::Copy(env, px, 32);
+  }));
+
+  exports.Set("bip340Sign", Napi::Function::New(env, [](const Napi::CallbackInfo &info) -> Napi::Value {
+    Napi::Env env = info.Env();
+    if (info.Length() < 2 || !info[0].IsBuffer() || !info[1].IsBuffer()) {
+      Napi::TypeError::New(env, "Expected msg32 Buffer and 32-byte private key Buffer").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    Napi::Buffer<uint8_t> msg = info[0].As<Napi::Buffer<uint8_t>>();
+    Napi::Buffer<uint8_t> sk = info[1].As<Napi::Buffer<uint8_t>>();
+    if (msg.Length() != 32 || sk.Length() != 32) {
+      Napi::TypeError::New(env, "msg must be 32 bytes and key must be 32 bytes").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    uint8_t sig[64];
+    FabricError err = fabric_bip340_sign(msg.Data(), sk.Data(), sig);
+    if (err != FABRIC_SUCCESS) {
+      Napi::Error::New(env, "BIP340 sign failed").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    return Napi::Buffer<uint8_t>::Copy(env, sig, 64);
+  }));
+
+  exports.Set("bip340Verify", Napi::Function::New(env, [](const Napi::CallbackInfo &info) -> Napi::Value {
+    Napi::Env env = info.Env();
+    if (info.Length() < 3 || !info[0].IsBuffer() || !info[1].IsBuffer() || !info[2].IsBuffer()) {
+      Napi::TypeError::New(env, "Expected msg Buffer, x-only pubkey (32), signature (64)").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    Napi::Buffer<uint8_t> msg = info[0].As<Napi::Buffer<uint8_t>>();
+    Napi::Buffer<uint8_t> px = info[1].As<Napi::Buffer<uint8_t>>();
+    Napi::Buffer<uint8_t> sig = info[2].As<Napi::Buffer<uint8_t>>();
+    if (px.Length() != 32 || sig.Length() != 64) {
+      Napi::TypeError::New(env, "Invalid argument sizes").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    int valid = 0;
+    FabricError err = fabric_bip340_verify(msg.Data(), msg.Length(), px.Data(), sig.Data(), &valid);
+    if (err != FABRIC_SUCCESS) {
+      // For invalid inputs (e.g., malformed pubkey or signature), return false instead of throwing
+      // to support vector-driven negative tests without crashing the process.
+      if (err == FABRIC_ERROR_INVALID_KEY || err == FABRIC_ERROR_SIGNATURE_FAILED) {
+        return Napi::Boolean::New(env, false);
+      }
+      Napi::Error::New(env, "BIP340 verify failed").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    return Napi::Boolean::New(env, valid == 1);
+  }));
+
+  // Taproot scriptPubKey builder (P2TR)
+  exports.Set("taprootScriptPubKey", Napi::Function::New(env, [](const Napi::CallbackInfo &info) -> Napi::Value {
+    Napi::Env env = info.Env();
+    if (info.Length() < 1 || !info[0].IsBuffer()) {
+      Napi::TypeError::New(env, "Expected 32-byte x-only internal key Buffer").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    Napi::Buffer<uint8_t> px = info[0].As<Napi::Buffer<uint8_t>>();
+    if (px.Length() != 32) {
+      Napi::TypeError::New(env, "Internal key must be 32 bytes").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    uint8_t script[FABRIC_TAPROOT_SCRIPT_PUBKEY_SIZE];
+    size_t script_len = 0;
+    FabricError err = fabric_taproot_build_scriptpubkey(px.Data(), script, sizeof(script), &script_len);
+    if (err != FABRIC_SUCCESS) {
+      Napi::Error::New(env, "Failed to build Taproot scriptPubKey").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    return Napi::Buffer<uint8_t>::Copy(env, script, script_len);
+  }));
+
+  // Taproot tweak (x-only pubkey)
+  exports.Set("taprootTweakXOnly", Napi::Function::New(env, [](const Napi::CallbackInfo &info) -> Napi::Value {
+    Napi::Env env = info.Env();
+    if (info.Length() < 1 || !info[0].IsBuffer()) {
+      Napi::TypeError::New(env, "Expected internal x-only pubkey Buffer (32 bytes)").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    Napi::Buffer<uint8_t> px = info[0].As<Napi::Buffer<uint8_t>>();
+    if (px.Length() != 32) {
+      Napi::TypeError::New(env, "Internal key must be 32 bytes").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    const uint8_t *merkle = nullptr;
+    if (info.Length() >= 2 && info[1].IsBuffer()) {
+      Napi::Buffer<uint8_t> mr = info[1].As<Napi::Buffer<uint8_t>>();
+      if (mr.Length() == 32) merkle = mr.Data();
+    }
+    // Ensure Taproot/secp context initialized once
+    if (fabric_taproot_init() != FABRIC_SUCCESS) {
+      Napi::Error::New(env, "Taproot init failed").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    uint8_t outx[32];
+    FabricError err = fabric_taproot_tweak_xonly_pubkey(px.Data(), merkle, outx);
+    if (err != FABRIC_SUCCESS) {
+      Napi::Error::New(env, "Taproot tweak failed").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    return Napi::Buffer<uint8_t>::Copy(env, outx, 32);
+  }));
+
+  // Taproot key-path signer (SIGHASH_DEFAULT outside; this signs msg32)
+  exports.Set("taprootKeypathSign", Napi::Function::New(env, [](const Napi::CallbackInfo &info) -> Napi::Value {
+    Napi::Env env = info.Env();
+    if (info.Length() < 2 || !info[0].IsBuffer() || !info[1].IsBuffer()) {
+      Napi::TypeError::New(env, "Expected msg32 Buffer and 32-byte internal seckey Buffer").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    Napi::Buffer<uint8_t> msg = info[0].As<Napi::Buffer<uint8_t>>();
+    Napi::Buffer<uint8_t> sk = info[1].As<Napi::Buffer<uint8_t>>();
+    if (msg.Length() != 32 || sk.Length() != 32) {
+      Napi::TypeError::New(env, "msg must be 32 bytes and seckey must be 32 bytes").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    const uint8_t *merkle = nullptr;
+    if (info.Length() >= 3 && info[2].IsBuffer()) {
+      Napi::Buffer<uint8_t> mr = info[2].As<Napi::Buffer<uint8_t>>();
+      if (mr.Length() == 32) merkle = mr.Data();
+    }
+    if (fabric_taproot_init() != FABRIC_SUCCESS) {
+      Napi::Error::New(env, "Taproot init failed").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    uint8_t sig[64];
+    FabricError err = fabric_taproot_keypath_sign(msg.Data(), sk.Data(), merkle, sig);
+    if (err != FABRIC_SUCCESS) {
+      Napi::Error::New(env, "Taproot keypath sign failed").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    return Napi::Buffer<uint8_t>::Copy(env, sig, 64);
+  }));
+
+  // BIP341 SIGHASH_DEFAULT helper
+  exports.Set("bip341SighashDefault", Napi::Function::New(env, [](const Napi::CallbackInfo &info) -> Napi::Value {
+    Napi::Env env = info.Env();
+    if (info.Length() < 4 || !info[0].IsBuffer() || !info[1].IsNumber() || !info[2].IsBuffer() || !info[3].IsNumber()) {
+      Napi::TypeError::New(env, "Expected tx Buffer, inputIndex Number, prevoutScript Buffer, prevoutValue Number").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    Napi::Buffer<uint8_t> tx = info[0].As<Napi::Buffer<uint8_t>>();
+    uint32_t index = info[1].As<Napi::Number>().Uint32Value();
+    Napi::Buffer<uint8_t> script = info[2].As<Napi::Buffer<uint8_t>>();
+    uint64_t value = (uint64_t) info[3].As<Napi::Number>().Int64Value();
+    uint8_t out32[32];
+    FabricError err = fabric_bip341_sighash_default(tx.Data(), tx.Length(), index, script.Data(), script.Length(), value, out32);
+    if (err != FABRIC_SUCCESS) {
+      Napi::Error::New(env, "bip341 sighash failed").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    return Napi::Buffer<uint8_t>::Copy(env, out32, 32);
+  }));
+
+  // Narrow acceleration surface for JS harness: double-SHA256 (wire body hash)
+  exports.Set("doubleSha256", Napi::Function::New(env, [](const Napi::CallbackInfo &info) -> Napi::Value {
+    Napi::Env env = info.Env();
+    if (info.Length() < 1 || !info[0].IsBuffer()) {
+      Napi::TypeError::New(env, "doubleSha256: expected Buffer").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    Napi::Buffer<uint8_t> in = info[0].As<Napi::Buffer<uint8_t>>();
+    uint8_t tmp[32], out32[32];
+    if (wally_sha256(in.Data(), in.Length(), tmp, sizeof(tmp)) != WALLY_OK) {
+      Napi::Error::New(env, "doubleSha256: inner sha256 failed").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    if (wally_sha256(tmp, 32, out32, sizeof(out32)) != WALLY_OK) {
+      Napi::Error::New(env, "doubleSha256: outer sha256 failed").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    return Napi::Buffer<uint8_t>::Copy(env, out32, 32);
+  }));
 
   return exports;
 }
