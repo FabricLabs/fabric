@@ -1,7 +1,7 @@
 /**
  * Minimal TypeScript surface for `@fabric/core`.
- * Primary implementation and API remain in `types/fabric.js` (JSDoc).
- * Expand this file incrementally as types are formalized.
+ * Runtime is CommonJS (`types/fabric.js`); leaf modules under `types/*.js` are authoritative.
+ * Expand declarations incrementally as coverage grows (see REMAINING_WORK.md).
  */
 declare class Fabric {
   constructor (settings?: Record<string, unknown>);

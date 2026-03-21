@@ -358,6 +358,9 @@ class Key extends EventEmitter {
     return this.pubkeyhash;
   }
 
+  /**
+   * @deprecated Per-message IVs are generated in {@link Key#encrypt}. Do not rely on this getter.
+   */
   get iv () {
     return crypto.randomBytes(16);
   }
@@ -548,7 +551,7 @@ class Key extends EventEmitter {
 
   encrypt (value) {
     try {
-      const ivbuff = Buffer.from(this.iv, 'hex');
+      const ivbuff = crypto.randomBytes(16);
       // Derive a 32-byte key from the private key using SHA-256
       const key = crypto.createHash('sha256')
         .update(this.private.toString('hex'))

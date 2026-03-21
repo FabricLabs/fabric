@@ -15,7 +15,7 @@ const bip39 = require('bip39');
 const Key = require('./key');
 const Actor = require('./actor');
 const Collection = require('./collection');
-// const Consensus = require('./consensus');
+// (legacy bcoin facade removed; use services/bitcoin + RPC)
 // const Channel = require('./channel');
 const Hash256 = require('./hash256');
 const Service = require('./service');

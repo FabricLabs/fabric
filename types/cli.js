@@ -19,7 +19,8 @@ const pointer = require('json-pointer'); // TODO: move uses to App
 const monitor = require('fast-json-patch'); // TODO: move uses to App
 
 // Fabric Types
-const App = require('./app');
+const Service = require('./service');
+const App = Service.App;
 const Peer = require('./peer');
 const Actor = require('./actor');
 const Message = require('./message');

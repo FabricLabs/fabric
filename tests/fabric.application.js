@@ -1,11 +1,11 @@
 'use strict';
 
-const App = require('../types/app');
+const App = require('../types/service').App;
 
 const assert = require('assert');
 const expect = require('chai').expect;
 
-describe('@fabric/core/types/app', function () {
+describe('@fabric/core/types/service (App)', function () {
   describe('App', function () {
     this.timeout(10000);
 

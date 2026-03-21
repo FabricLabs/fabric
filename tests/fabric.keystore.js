@@ -3,29 +3,29 @@
 const assert = require('assert');
 const playnet = require('../settings/playnet');
 
-const Keystore = require('../types/keystore');
+const Store = require('../types/store');
 const Hash256 = require('../types/hash256');
 
-describe('@fabric/core/types/keystore', function () {
-  describe('Keystore', function () {
+describe('@fabric/core/types/store (encrypted)', function () {
+  describe('Store.openEncrypted', function () {
     it('is available from @fabric/core', function () {
-      assert.strictEqual(Keystore instanceof Function, true);
+      assert.strictEqual(typeof Store.openEncrypted, 'function');
     });
 
     it('can instantiate smoothly', async function () {
-      const store = new Keystore();
+      const store = Store.openEncrypted();
       assert.ok(store);
     });
 
     it('can open and close smoothly', async function () {
-      const store = new Keystore();
+      const store = Store.openEncrypted();
       await store.open();
       await store.close();
       assert.ok(store);
     });
 
     xit('provides the appropriate codec', async function () {
-      const store = new Keystore(playnet);
+      const store = Store.openEncrypted(playnet);
       await store.open();
       await store.close();
       assert.ok(store);
@@ -34,7 +34,7 @@ describe('@fabric/core/types/keystore', function () {
     });
 
     xit('can call _setState', async function () {
-      const store = new Keystore(playnet);
+      const store = Store.openEncrypted(playnet);
       await store.open();
 
       await store._setState({
@@ -46,8 +46,8 @@ describe('@fabric/core/types/keystore', function () {
     });
 
     xit('can restore after _setState', async function () {
-      const beforeStore = new Keystore(playnet);
-      const afterStore = new Keystore(playnet);
+      const beforeStore = Store.openEncrypted(playnet);
+      const afterStore = Store.openEncrypted(playnet);
 
       await beforeStore.open();
       await beforeStore._setState({
@@ -70,7 +70,7 @@ describe('@fabric/core/types/keystore', function () {
     });
 
     xit('can wipe after _setState', async function () {
-      const store = new Keystore();
+      const store = Store.openEncrypted();
       await store.open();
       await store._setState({
         content: 'Hello, world!',

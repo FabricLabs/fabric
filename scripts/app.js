@@ -5,7 +5,7 @@
 const settings = require('../settings/default');
 
 // Fabric Types
-const App = require('../types/app');
+const App = require('../types/service').App;
 
 // Fabric Services
 const Lightning = require('../services/lightning');

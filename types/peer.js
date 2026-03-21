@@ -975,14 +975,12 @@ class Peer extends Service {
     }
   }
 
-  _handleNOISEHandshake (localPrivateKey, localPublicKey, remotePublicKey) {
-    // const counterparty = new Identity({ public: remotePublicKey.toString('hex') });
+  _handleNOISEHandshake (_localPrivateKey, localPublicKey, remotePublicKey) {
     if (this.settings.debug) {
-      this.emit('debug', `Peer transport handshake using local key: ${localPrivateKey.toString('hex')}`);
+      // Never log private key material — public keys only for transport diagnostics.
       this.emit('debug', `Peer transport handshake using local public key: ${localPublicKey.toString('hex')}`);
       this.emit('debug', `Peer transport handshake with remote public key: ${remotePublicKey.toString('hex')}`);
     }
-    // this.emit('debug', `Peer transport handshake with remote identity: ${counterparty.id}`);
   }
 
   _NOISESocketHandler (socket) {
@@ -992,10 +990,9 @@ class Peer extends Service {
     // Store a unique actor for this inbound connection
     this._registerActor({ name: target });
 
-    // this.emit('debug', `Local NOISE key: ${JSON.stringify(this.identity.key, null, '  ')}`);
     const derived = this.identity.key.derive(FABRIC_KEY_DERIVATION_PATH);
     if (this.settings.debug) {
-      this.emit('debug', `Derived NOISE key: ${derived.private.toString('hex')}`);
+      this.emit('debug', 'NOISE inbound: session key derived for handshake (private key not logged)');
     }
 
     // Create NOISE handler
@@ -1554,4 +1551,164 @@ class Peer extends Service {
   }
 }
 
+class Swarm extends Actor {
+  constructor (config = {}) {
+    super(config);
+
+    this.name = 'Swarm';
+    this.settings = Object.assign({
+      name: 'fabric',
+      seeds: [],
+      peers: [],
+      contract: 0xC0D3F33D
+    }, config);
+
+    this.agent = new Peer(this.settings);
+
+    this.nodes = {};
+    this.peers = {};
+
+    return this;
+  }
+
+  broadcast (msg) {
+    if (this.settings.verbosity >= 5) console.log('broadcasting:', msg);
+    this.agent.broadcast(msg);
+  }
+
+  connect (address) {
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', `Connecting to: ${address}`);
+
+    try {
+      this.agent._connect(address);
+    } catch (E) {
+      this.error('Error connecting:', E);
+    }
+  }
+
+  trust (source) {
+    super.trust(source);
+    const swarm = this;
+
+    swarm.agent.on('ready', function (agent) {
+      swarm.emit('agent', agent);
+    });
+
+    swarm.agent.on('message', function (message) {
+      swarm.emit('message', message);
+    });
+
+    swarm.agent.on('state', function (state) {
+      console.log('[FABRIC:SWARM]', 'Received state from agent:', state);
+      swarm.emit('state', state);
+    });
+
+    swarm.agent.on('change', function (change) {
+      console.log('[FABRIC:SWARM]', 'Received change from agent:', change);
+      swarm.emit('change', change);
+    });
+
+    swarm.agent.on('patches', function (patches) {
+      console.log('[FABRIC:SWARM]', 'Received patches from agent:', patches);
+      swarm.emit('patches', patches);
+    });
+
+    swarm.agent.on('peer', function (peer) {
+      console.log('[FABRIC:SWARM]', 'Received peer from agent:', peer);
+      swarm._registerPeer(peer);
+    });
+
+    swarm.agent.on('connections:open', function (connection) {
+      swarm.emit('connections:open', connection);
+    });
+
+    swarm.agent.on('connections:close', function (connection) {
+      swarm.emit('connections:close', connection);
+      swarm._fillPeerSlots();
+    });
+
+    swarm.agent.on('collections:post', function (message) {
+      swarm.emit('collections:post', message);
+    });
+
+    swarm.agent.on('socket:data', function (message) {
+      swarm.emit('socket:data', message);
+    });
+
+    swarm.agent.on('ready', function (info) {
+      swarm.log(`swarm is ready (${info.id})`);
+      swarm.emit('ready');
+      swarm._fillPeerSlots();
+    });
+
+    return this;
+  }
+
+  _broadcastTypedMessage (type, msg) {
+    if (!type) return new Error('Message type must be supplied.');
+    this.agent._broadcastTypedMessage(type, msg);
+  }
+
+  _registerPeer (peer) {
+    const swarm = this;
+    if (!swarm.peers[peer.id]) swarm.peers[peer.id] = peer;
+    swarm.emit('peer', peer);
+  }
+
+  _scheduleReconnect (peer) {
+    const swarm = this;
+    this.log('schedule reconnect:', peer);
+
+    if (swarm.peers[peer.id]) {
+      if (swarm.peers[peer.id].timer) return true;
+      swarm.peers[peer.id].timer = setTimeout(function () {
+        clearTimeout(swarm.peers[peer.id].timer);
+        swarm.connect(peer);
+      }, 60000);
+    }
+  }
+
+  _fillPeerSlots () {
+    const swarm = this;
+    const slots = MAX_PEERS - Object.keys(this.nodes).length;
+    const peers = Object.keys(this.peers).map(function (id) {
+      if (swarm.settings.verbosity >= 5) console.log('[FABRIC:SWARM]', '_fillPeerSlots()', 'Checking:', swarm.peers[id]);
+      return swarm.peers[id].address;
+    });
+    const candidates = swarm.settings.peers.filter(function (address) {
+      return !peers.includes(address);
+    });
+
+    if (slots) {
+      for (let i = 0; (i < candidates.length && i < slots); i++) {
+        swarm._scheduleReconnect(candidates[i]);
+      }
+    }
+  }
+
+  async _connectSeedNodes () {
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', 'Connecting to seed nodes...', this.settings.seeds);
+    for (const id in this.settings.seeds) {
+      if (this.settings.verbosity >= 5) console.log('[FABRIC:SWARM]', 'Iterating on seed:', this.settings.seeds[id]);
+      this.connect(this.settings.seeds[id]);
+    }
+  }
+
+  async start () {
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', 'Starting...');
+    await this.agent.start();
+    await this._connectSeedNodes();
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', 'Started!');
+    return this;
+  }
+
+  async stop () {
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', 'Stopping...');
+    await this.agent.stop();
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', 'Stopped!');
+    return this;
+  }
+}
+
 module.exports = Peer;
+module.exports.Swarm = Swarm;

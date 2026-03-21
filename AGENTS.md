@@ -1,6 +1,7 @@
 # Fabric Agents
-Fabric enables automated payments between node instances, which we can leverage for distributing
-load across multiple cores.
+See also [DEVELOPERS.md](DEVELOPERS.md) (repo layout, tests) and [docs/PRODUCTION.md](docs/PRODUCTION.md) (release gate).
+
+Fabric enables automated payments between node instances, which we can leverage for distributing load across multiple cores.
 
 Fabric Agents are long-running services that can:
 
@@ -55,7 +56,6 @@ Agents SHOULD follow these operational rules:
 - make start/stop idempotent when practical
 
 ## Observability
-
 At minimum, agents SHOULD:
 
 - emit `debug` logs for lifecycle transitions
@@ -63,7 +63,6 @@ At minimum, agents SHOULD:
 - expose useful identifiers (for example, payment or identity address)
 
 ## Example: Multi-Core Distributor
-
 Reference implementation: `examples/agents.js`.
 
 The example demonstrates common agent elements from this specification:
@@ -76,7 +75,6 @@ The example demonstrates common agent elements from this specification:
 - provides `start()` and `stop()` lifecycle methods
 
 ### agents.js: Bitcoin + Lightning integration
-
 The example runs a Bitcoin regtest node, Master Lightning node, and Alice Lightning node. Flow:
 
 1. **Bitcoin** — Start, mine 101 blocks if no spendable UTXOs, then mine one block every 10s.
@@ -87,7 +85,6 @@ The example runs a Bitcoin regtest node, Master Lightning node, and Alice Lightn
 Configuration: `FABRIC_MNEMONIC` for deterministic keys; `ALICE_LIGHTNING_PORT` (default 19735); `MIN_CHANNEL_FUNDING_SATS` (default 10000); `MAX_ALICE_DEPOSIT_BTC` (default 1) caps Alice's on-chain deposit to avoid "Fee exceeds maximum" when the wallet has many UTXOs.
 
 ### Lightning: multi-node setup
-
 When running multiple Lightning nodes (Master + Alice) against one bitcoind:
 
 - **`disablePlugins: ['cln-grpc']`** — Required for secondary nodes to avoid conflicts.
@@ -95,7 +92,6 @@ When running multiple Lightning nodes (Master + Alice) against one bitcoind:
 - **Clean datadir** — Run with `FABRIC_CLEAN_ALICE=1` if Alice fails with ECONNREFUSED or socket errors (stale state from prior runs).
 
 ### Lightning: troubleshooting
-
 The Lightning service uses timeouts and retries to avoid hangs:
 
 - **RPC timeout** — 30s default; if `getinfo` blocks (e.g. during chain sync), the call fails and retries.
@@ -148,8 +144,14 @@ class Distributor extends Service {
 }
 ```
 
-## Authoring Checklist
+## Release verification
+```bash
+npm run ci    # NODE_ENV=test mocha --recursive tests
+```
 
+Operator and marketing context: [docs/PRODUCTION.md](docs/PRODUCTION.md), [docs/MARKETING_OVERVIEW.md](docs/MARKETING_OVERVIEW.md), [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md).
+
+## Authoring Checklist
 Before merging a new Fabric agent:
 
 - constructor initializes explicit state shape
