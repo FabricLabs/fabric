@@ -1214,9 +1214,9 @@ class Service extends Actor {
 
 /**
  * Browser / CLI application shell: encrypted store, peer node, resources.
- * @class
+ * @class FabricShell
  */
-class App extends Service {
+class FabricShell extends Service {
   constructor (definition = {}) {
     super(definition);
 
@@ -1492,4 +1492,4 @@ class App extends Service {
 }
 
 module.exports = Service;
-module.exports.App = App;
+module.exports.FabricShell = FabricShell;

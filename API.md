@@ -96,11 +96,10 @@ this prototype.  In general, <code>connect</code> and <code>send</code> are the 
 jobs, and by default the <code>fabric</code> property will serve as an I/O stream using
 familiar semantics.</p>
 </dd>
+<dt><a href="#FabricShell">FabricShell</a></dt>
+<dd></dd>
 <dt><a href="#Session">Session</a></dt>
 <dd><p>The <a href="#Session">Session</a> type describes a connection between <a href="#Peer">Peer</a> objects, and includes its own lifecycle.</p>
-</dd>
-<dt><a href="#Snapshot">Snapshot</a></dt>
-<dd><p>A type of message to be expected from a <a href="#Service">Service</a>.</p>
 </dd>
 <dt><a href="#State">State</a> ⇐ <code>EventEmitter</code></dt>
 <dd><p>The <a href="#State">State</a> is the core of most <a href="User">User</a>-facing interactions.  To
@@ -139,9 +138,6 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 <dd><p>Connect and subscribe to ZeroMQ publishers.</p>
 </dd>
 <dt><del><a href="#Scribe">Scribe</a></del></dt>
-<dd><p>Deprecated 2021-11-06.</p>
-</dd>
-<dt><del><a href="#Stash">Stash</a></del></dt>
 <dd><p>Deprecated 2021-11-06.</p>
 </dd>
 </dl>
@@ -720,7 +716,7 @@ Create an instance of an [Entity](Entity).
 Loads [State](#State) into memory.
 
 **Kind**: instance method of [<code>Collection</code>](#Collection)  
-**Emits**: <code>event:message Will emit one {@link Snapshot} message.</code>  
+**Emits**: <code>event:message Will emit one &#x60;CollectionSnapshot&#x60; message (not the removed Snapshot type).</code>  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -2429,6 +2425,15 @@ Sends a message.
 | --- | --- | --- |
 | message | <code>Mixed</code> | Message to send. |
 
+<a name="FabricShell"></a>
+
+## FabricShell
+**Kind**: global class  
+<a name="new_FabricShell_new"></a>
+
+### new FabricShell()
+Browser / CLI application shell: encrypted store, peer node, resources.
+
 <a name="Session"></a>
 
 ## Session
@@ -2464,33 +2469,6 @@ Opens the [Session](#Session) for interaction.
 Closes the [Session](#Session), preventing further interaction.
 
 **Kind**: instance method of [<code>Session</code>](#Session)  
-<a name="Snapshot"></a>
-
-## Snapshot
-A type of message to be expected from a [Service](#Service).
-
-**Kind**: global class  
-
-* [Snapshot](#Snapshot)
-    * [new Snapshot(settings)](#new_Snapshot_new)
-    * [.commit()](#Snapshot+commit)
-
-<a name="new_Snapshot_new"></a>
-
-### new Snapshot(settings)
-Creates an instance of a [Snapshot](#Snapshot).
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| settings | <code>Object</code> | Map of settings to configure the [Snapshot](#Snapshot) with. |
-
-<a name="Snapshot+commit"></a>
-
-### snapshot.commit()
-Retrieves the `sha256` fingerprint for the [Snapshot](#Snapshot) state.
-
-**Kind**: instance method of [<code>Snapshot</code>](#Snapshot)  
 <a name="State"></a>
 
 ## State ⇐ <code>EventEmitter</code>
@@ -3775,14 +3753,6 @@ Use an existing Scribe instance as a parent.
 | --- | --- | --- |
 | scribe | [<code>Scribe</code>](#Scribe) | Instance of Scribe to use as parent. |
 
-<a name="Stash"></a>
-
-## ~~Stash~~
-***Deprecated***
-
-Deprecated 2021-11-06.
-
-**Kind**: global class  
 <a name="explorerBaseUrl"></a>
 
 ## explorerBaseUrl

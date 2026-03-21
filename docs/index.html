@@ -50,72 +50,211 @@
     <section>
       <article>
         <h1>Fabric Developer Resources</h1>
-        <p>There's a lot of information to cover with regards to building decentralized
-          applications, so grab a coffee ☕ and settle in.</p>
+        <p>There is a lot to cover when building decentralized applications on Fabric, so grab a coffee ☕ and settle in.</p>
+        <h2>Contents</h2>
+        <ul>
+          <li><a href="#vision">Vision</a></li>
+          <li><a href="#quick-start">Quick start</a></li>
+          <li><a href="#repository-layout">Repository layout</a></li>
+          <li><a href="#development-workflow">Development workflow</a></li>
+          <li><a href="#bitcoin-service-servicesbitcoin">Bitcoin service</a></li>
+          <li><a href="#message-types-typesmessage">Message types</a></li>
+          <li><a href="#architecture">Architecture</a></li>
+          <li><a href="#storage-typesstore">Storage</a></li>
+          <li><a href="#reference-links">Reference links</a></li>
+          <li><a href="#production--release">Production &amp; release</a></li>
+          <li><a href="#core-types-reference">Core types (reference)</a></li>
+          <li><a href="#roadmap--doc-backlog">Roadmap &amp; doc backlog</a></li>
+        </ul>
+        <h2>Vision</h2>
+        <p>Read <strong><a href="VISION.md">VISION.md</a></strong> first for what Fabric is building, how <strong><code>@fabric/core</code></strong> fits (JS reference client, Bitcoin/Lightning services, <strong>FabricShell</strong>/CLI), and which docs are canonical vs experimental.</p>
         <h2>Quick Start</h2>
         <p>See also <a href="QUICKSTART.md"><code>QUICKSTART.md</code></a> for up-to-date instructions.</p>
         <ol start="0">
-          <li><code>nvm use 22.14.0</code> (you can get <code>nvm</code> from <a href="https://nvm.sh">nvm.sh</a>)</li>
-          <li><code>npm install -g @fabric/core</code> to add <code>fabric</code> to your path</li>
-          <li>(optional) <code>fabric setup</code> to set up your environment (generates a new master key)</li>
-          <li><code>fabric</code> should now be enough to get you up and running!</li>
+          <li><code>nvm use 22.14.0</code> (install <a href="https://nvm.sh"><code>nvm</code></a> if needed)</li>
+          <li>From a clone of this repo: <code>npm install</code> (or <code>npm install -g @fabric/core</code> to put <code>fabric</code> on your <code>PATH</code>)</li>
+          <li>(optional) <code>fabric setup</code> to generate a master key and local config</li>
+          <li>Run <code>fabric</code> — the CLI entry is wired through <code>types/cli.js</code> and extends <code>Service.FabricShell</code></li>
         </ol>
-        <p>That's it! Let's take a look at overall Fabric system and how you, as a developer, might interact with it.</p>
-        <h2>Architecture</h2>
-        <p>Fabric is two things — a protocol for machines to exchange information (&quot;the Fabric Protocol&quot;), and a sotware library (<code>@fabric/core</code>) offering up many tools and utilities for building your own networks which speak this protocol.</p>
-        <p>Typically, you will need the following:</p>
+        <p>Working from a <strong>git checkout</strong> (not the global package) is best when you are changing <code>@fabric/core</code> itself; use <code>npm link</code> or <code>npm install ../fabric</code> from downstream packages (Hub, HTTP server) as described in the repo README.</p>
+        <h2>Repository layout</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Path</th>
+              <th>Role</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>types/</code></td>
+              <td>ES6 <strong>classes</strong> — <code>Actor</code>, <code>Peer</code>, <code>Service</code>, <code>Store</code>, <code>Message</code>, etc. CommonJS (<code>require</code>) throughout.</td>
+            </tr>
+            <tr>
+              <td><code>services/</code></td>
+              <td>Long-running <strong>integrations</strong> (Bitcoin RPC, Lightning stubs, ZMQ, …) built on <code>Service</code>.</td>
+            </tr>
+            <tr>
+              <td><code>contracts/</code></td>
+              <td>Language snippets, traces, and tooling (e.g. type dependency graph).</td>
+            </tr>
+            <tr>
+              <td><code>scripts/</code></td>
+              <td>CLI entrypoints, doc helpers (<code>list-jsdoc-type-files.js</code>, <code>remove-legacy-types.sh</code>).</td>
+            </tr>
+            <tr>
+              <td><code>tests/</code></td>
+              <td>Mocha suites; run with <code>npm test</code>.</td>
+            </tr>
+            <tr>
+              <td><code>settings/</code></td>
+              <td>Default and environment-specific config; <code>settings/deprecations.js</code> holds legacy aliases.</td>
+            </tr>
+            <tr>
+              <td><code>assets/</code></td>
+              <td><strong>Generated</strong> browser bundles; rebuild with <code>npm run build</code> after type changes.</td>
+            </tr>
+          </tbody>
+        </table>
+        <h2>Development workflow</h2>
         <ul>
-          <li>a Bitcoin Node (bitcoind and/or bcoin with <code>bcoin --only=127.0.0.1</code>)</li>
+          <li><strong>Node:</strong> engines field in <code>package.json</code> is authoritative (currently Node 22.x).</li>
+          <li><strong>Unit tests:</strong> <code>npm test</code> — runs Mocha recursively under <code>tests/</code>.</li>
+          <li><strong>Lint:</strong> <code>npm run lint</code> / <code>npm run lint:fix</code> (Semistandard).</li>
+          <li><strong>API reference:</strong> <code>npm run make:api</code> writes <code>API.md</code> from JSDoc (see <code>scripts/list-jsdoc-type-files.js</code> for which <code>types/*.js</code> files are included).</li>
+          <li><strong>HTML docs:</strong> <code>npm run make:docs</code> (runs <code>make:api</code> first, then JSDoc HTML under <code>docs/</code>).</li>
+          <li><strong>Local packages:</strong> when <code>fabric</code>, <code>fabric-http</code>, and Hub are sibling repos, <code>npm install ../fabric ../fabric-http --no-save</code> keeps Message opcodes and servers aligned.</li>
         </ul>
+        <p>Agent-oriented services (lifecycle, workers, payments) are summarized in <a href="AGENTS.md"><code>AGENTS.md</code></a>.</p>
+        <h2>Production &amp; Release</h2>
+        <p>Use this repo as a <strong>library</strong> or run the <strong><code>fabric</code></strong> CLI in environments you control. For shipping:</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Step</th>
+              <th>Where</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Node <strong>22.14.x</strong>, <code>npm ci</code>, <strong><code>npm run ci</code></strong></td>
+              <td><a href="docs/PRODUCTION.md"><code>docs/PRODUCTION.md</code></a></td>
+            </tr>
+            <tr>
+              <td>Completion / privacy / security matrix</td>
+              <td><a href="PRODUCTION_READINESS.md"><code>PRODUCTION_READINESS.md</code></a></td>
+            </tr>
+            <tr>
+              <td>Version tag, changelog, Hub &amp; fabric-http bumps</td>
+              <td><a href="docs/RELEASE_CHECKLIST.md"><code>docs/RELEASE_CHECKLIST.md</code></a></td>
+            </tr>
+            <tr>
+              <td>Operator privacy model</td>
+              <td><a href="PRIVACY.md"><code>PRIVACY.md</code></a></td>
+            </tr>
+            <tr>
+              <td>Vulnerability process</td>
+              <td><a href="SECURITY.md"><code>SECURITY.md</code></a></td>
+            </tr>
+          </tbody>
+        </table>
+        <p><strong>Build scripts:</strong> <code>npm run build</code> runs <code>make:all</code>, which still has <strong>placeholder</strong> <code>make:service</code> / <code>make:app</code> / <code>make:lib</code> steps. The <strong>release gate for quality is <code>npm run ci</code></strong> (full Mocha suite), not a successful <code>npm run build</code>. Track bundle work in <a href="PRODUCTION_READINESS.md"><code>PRODUCTION_READINESS.md</code></a>.</p>
+        <h2>Core Types (reference)</h2>
+        <p>These live under <code>types/*.js</code> (CommonJS). The <strong><code>Fabric</code></strong> facade (<code>types/fabric.js</code>) re-exports many of them for quick experiments; production code usually imports a <strong>leaf</strong> type.</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Role</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong><code>Actor</code></strong></td>
+              <td>Base identity + vector clock + <code>commit()</code>; most user-facing types extend it.</td>
+            </tr>
+            <tr>
+              <td><strong><code>Message</code></strong></td>
+              <td>Wire envelope for P2P and services; opcode-driven dispatch.</td>
+            </tr>
+            <tr>
+              <td><strong><code>Peer</code></strong></td>
+              <td>TCP/NOISE P2P node, relay, registry; <strong><code>Peer.Swarm</code></strong> multi-peer orchestration.</td>
+            </tr>
+            <tr>
+              <td><strong><code>Service</code></strong></td>
+              <td>Long-lived app surface, resources; <strong><code>Service.FabricShell</code></strong> is the browser/CLI application shell (<code>CLI</code> extends it).</td>
+            </tr>
+            <tr>
+              <td><strong><code>Store</code></strong></td>
+              <td>LevelDB persistence; <strong><code>Store.openEncrypted</code></strong> for at-rest crypto.</td>
+            </tr>
+            <tr>
+              <td><strong><code>Entity</code></strong></td>
+              <td>Generic structured document; <strong><code>Entity.Transition</code></strong> for JSON Patch diffs.</td>
+            </tr>
+            <tr>
+              <td><strong><code>Key</code> / <code>Identity</code></strong></td>
+              <td>Schnorr/secp256k1 keys and BIP32/BIP39 identity.</td>
+            </tr>
+            <tr>
+              <td><strong><code>Chain</code> / <code>Block</code></strong></td>
+              <td>Local chain views and block helpers (network-specific services extend these).</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>Regenerate <strong><code>API.md</code></strong> with <code>npm run make:api</code> after JSDoc changes. Experimental or legacy-only files may be omitted via <strong><code>scripts/list-jsdoc-type-files.js</code></strong>.</p>
+        <h2>Bitcoin service (<code>services/bitcoin</code>)</h2>
+        <p>RPC is the <strong>source of truth</strong> when a node is connected. Optional HTTP fallback for block, transaction, and address-index reads is configured only via <code>bitcoin.explorerBaseUrl</code> or <code>FABRIC_EXPLORER_URL</code> (an <strong>origin</strong>, not a path). If unset, those helpers stay RPC-only or fail closed with a clear error — <code>@fabric/core</code> does not default to any public explorer.</p>
+        <h2>Message types (<code>types/message</code>)</h2>
+        <p><code>P2P_MESSAGE_RECEIPT</code> (<code>constants.P2P_MESSAGE_RECEIPT</code>, <code>0x44</code>) is the on-wire type for server acknowledgements of an inbound WebSocket/P2P message (payload JSON uses <code>@type: Receipt</code>). It is distinct from <code>GenericMessage</code> so clients can discriminate without parsing the body first.</p>
+        <h2>Architecture</h2>
+        <p>Fabric is two things: a <strong>protocol</strong> for machines to exchange information (“the Fabric Protocol”), and a <strong>software library</strong> (<code>@fabric/core</code>) with tools for building networks that speak that protocol.</p>
+        <p>You will typically run against a <strong>Bitcoin</strong> node (bitcoind and/or bcoin with <code>bcoin --only=127.0.0.1</code>) for L1 workflows; Lightning and other L2 paths are integrated where the <code>services/</code> layer provides them.</p>
         <h3>Overview</h3>
-        <p>Using Fabric to interface securely with decentralized systems, you'll start by following the instructions above to obtain a globally-available version of the <code>fabric</code> command-line client, which provides the majority of tools you'll need along the way.</p>
-        <p>The <code>@fabric/core</code> library consists of a few key components:</p>
-        <ol start="0">
-          <li><code>assets</code><sup>~</sup> [???] — this may or may not be included in the final release (function may change). Contains the static build.</li>
-          <li><code>contracts</code> — a list of Maintainer-reviewed smart contracts, written in any of: <code>.pur</code> for Purity (our own language), <code>.bsc</code> for Bitcoin Script, <code>.msc</code> for <a href="https://min.sc">Minsc</a>, and even <code>.sol</code> for Solidity). We may choose to remove some of these before launch, your mileage may vary.</li>
-          <li><code>components</code> — generic &quot;interface&quot; elements for describing Types to users.</li>
-          <li><code>resources</code> — Fabric-based definitions for <code>@fabric/core/types/resource</code>.</li>
-          <li><code>services</code> — Maintainer-accepted definitions of the <code>Service</code> class. Yes, you can submit your own!</li>
-          <li><code>types</code> — a library of ES6 classes implementing various bits; <code>Actor</code>, <code>Channel</code>, <code>Oracle</code>, <code>Service</code>, and <code>Key</code> are all interesting. :)</li>
-        </ol>
-        <p>Let's go over each in more detail.</p>
-        <h4>0. Assets</h4>
-        <p>All files in this folder will be imported to the default &quot;inventory&quot; for the <code>0.1</code> release. Additionally, when using <code>@fabric/http/types/server</code> all of these files will be available directly at the root path, <code>/</code> (configurable). Used for any generated files required for the <em>default</em> Fabric runtime (not downstream), including binaries and other important media. Don't commit here unless absolutely necessary!</p>
-        <h5>0.1: Inventory</h5>
-        <p>We're focused on enabling Lightning-based document exchange for <code>0.1</code> — the upcoming, first &quot;official&quot; release of Fabric. Fabric nodes (anyone running <code>fabric chat</code>) will be able to:</p>
+        <p>The <code>fabric</code> CLI is the default operator surface. The <code>@fabric/core</code> library is organized into the areas below (numbered for reference — not every folder name matches one-to-one).</p>
+        <p>The <code>@fabric/core</code> library consists of these major areas:
+          0. <strong>Assets</strong> — static and generated files for the default runtime (see below).</p>
         <ol>
-          <li>Load a file from disk into local inventory by using <code>/import &lt;filename&gt;</code></li>
-          <li>Offer up that file to peers by using <code>/publish &lt;documentID&gt; &lt;rate&gt;</code></li>
-          <li>Request a file from the network by using <code>/request &lt;documentID&gt; &lt;rate&gt;</code></li>
+          <li><strong>Contracts</strong> — reviewed contract descriptions and scripts (Purity, Bitcoin Script, Minsc, Solidity, etc.).</li>
+          <li><strong>Components</strong> — interface vocabulary for describing types to users (CLI-first; web follows).</li>
+          <li><strong>Resources</strong> — declarative definitions consumed by <code>types/resource</code> and apps.</li>
+          <li><strong>Services</strong> — <code>Service</code> subclasses and integrations under <code>services/</code>.</li>
+          <li><strong>Types</strong> — ES6 classes under <code>types/</code> (<code>Actor</code>, <code>Channel</code>, <code>Oracle</code>, <code>Service</code>, <code>Key</code>, …).</li>
         </ol>
-        <p>Once this core set of features is complete and sufficiently covered by tests, we'll begin pushing for <code>0.1.0-RC1</code> and triggering the formal security audit. <code>0.1.0-RC2</code> will surely exist afterwards, but hopefully it'll be the last one before <code>v0.1.0</code> itself.</p>
-        <h5>0.2: The Future</h5>
-        <p>You can use <a href="https://github.com/FabricLabs/fabric/projects/1">the Official Fabric Roadmap</a> to look ahead to what we have planned. :)</p>
+        <h4>0. Assets</h4>
+        <p>Files here feed the default <strong>inventory</strong> for packaged releases. When using <code>@fabric/http</code>’s server, many assets are served from <code>/</code> (configurable). Use this tree for <strong>generated</strong> binaries, WASM, and bundled UI — avoid committing large binaries unless they are part of the release process.</p>
+        <h5>0.1 Inventory</h5>
+        <p>For the <code>0.1</code> line, focus is Lightning-oriented document exchange. Operators running <code>fabric chat</code> can:</p>
+        <ol>
+          <li>Load a file into local inventory: <code>/import &lt;filename&gt;</code></li>
+          <li>Publish to peers: <code>/publish &lt;documentID&gt; &lt;rate&gt;</code></li>
+          <li>Request from the network: <code>/request &lt;documentID&gt; &lt;rate&gt;</code></li>
+        </ol>
+        <p>When this surface is stable and well tested, the project can tag <code>0.1.0-RC1</code> and move toward a security audit.</p>
+        <h5>0.2 Roadmap</h5>
+        <p>See <a href="https://github.com/FabricLabs/fabric/projects/1">the official Fabric roadmap</a> for planned work.</p>
         <h4>1. Contracts</h4>
-        <p>Peer-to-peer applications (or, &quot;agreements&quot;) are self-enforcing; the two peers in any particular arrangement (a <code>Channel</code> usually) agree to update their contract's state (or &quot;status&quot; for legal folks) after reliably responding to their counterparty's requests (in the form of a Layer 2, spendable UTXO to which you hold the secret) for the duration of the contract. Should the contract expire, an &quot;exit&quot; clause is provided and all parties are able to spend funds at Layer 1 again. In all cases, both parties have already signed the latest, most-valid state, and maintain full control over their own deposit.</p>
-        <p>Before establishing an agreement, Fabric-speaking peers must first establish a &quot;Payment Channel&quot; using Lightning, Raiden, or something similar.<sup>[Note]</sup></p>
-        <p><small><strong>Note:</strong> for security's sake, we're only implementing Bitcoin. PRs welcome.</small></p>
-        <h5>1.1: Application Resource Contracts</h5>
-        <p>All agreements in Fabric are represented as well-formed descriptions of <strong>Resources</strong><sup>[TODO: link here]</sup> — a term we use to describe a standardized service a peer might offer. Each node in the Fabric network decides which resources they provide (determining which contracts they run), and what prices they accept for participation. This, in concert with the bidders requesting these resources, forms the &quot;Information Market&quot; discussed in Fabric's whitepaper.</p>
-        <p>To create an</p>
-        <h5>1.2a: Convergence</h5>
-        <p>You'll read in the Components section about our thoughts on User Interface Design, especially Software Development Interface Design. Maybe someday we'll have a blog to share this on, but my personal goal is to design my software one time, and have it adapt to each platform while still retaining complete, functionality — even if, for example, mobile and desktop users might have different access profiles (usage patterns).</p>
-        <p>This raises the question: <strong>how should peer-to-peer contracts be written?</strong></p>
-        <p>We can easily take the philosophical route in saying &quot;any way the users want&quot; but... that's a lot of engineering, and we won't get there without help from a strong community of contributors. My thoughts are that we start with something small (in terms of implementation cost), formalize it, then start offering up other contract types through the <code>type</code> setting of the <code>Machine</code> class.</p>
-        <h5>1.2b: JavaScript</h5>
-        <p><strong>Right now, we're starting with a subset of JavaScript.</strong> Why? Because it's the only tool non-developers can use <em>right now</em> to get started on their learning journey.</p>
-        <p>But also aecause it's easy. Yes yes, it's arbitrary code, and browsers are notably insecure; <em>sooooo</em> we started work on a formal grammar, and hope to publish it as some kind of standalone language.</p>
-        <p>In any case, we're limiting everything to pure functions and a stack-based execution model. This will lend itself to easy migration of existing work to other purely-functional languages, and even to <em>formal verification</em> when we get the resources to accomplish that. :)</p>
-        <p>While Turing Completeness <em>is</em> possible with a Fabric-based system (take note!), we've been careful to avoid any obvious footguns, and are doing our best to iron out all the cryptography-based gotchas. Code review is everything!</p>
-        <h4>4. Components</h4>
-        <p>Fabric aims to assist more than just developers, and in doing so we are seeking to build a visual composer for functional, reasonably-well secured applications, both on native platforms like <code>x86</code> and <code>ARM</code> but also for what we call <a href="https://web.fabric.pub">the &quot;legacy&quot; web</a>.</p>
-        <p>As you may know, the World Wide Web is still an incredible place, but due in part to oversight in its design, it lacks a lot of the privacy and security guarantees that we've come to expect from Bitcoin and other decentralized systems. The browser-based web is full of complexity, the enemy of security, so we've set out to define some kind of interface language that <em>isn't</em> web first, not even NATIVE FIRST, but rather <em>terminal</em> first.</p>
-        <p>You've probably encountered the Fabric CLI when you first installed Fabric: <code>npm i -g @fabric/core</code> — this is our barebones prototype for implementation in whatever we choose for the final version. we've already identified a few off-the-shelf solutions which don't mandate a specific downstream package (Native Web Components, in particular, stand out). Feel free to chat with about it in [Grove][grove] or using <a href="https://github.com/FabricLabs/fabric/discussions">GitHub Discussions</a> for more formality and structure.</p>
-        <h4>5. Resources</h4>
-        <p>Fabric makes a truly decentralized web possible by establishing formal contracts surrounding the concept of a <strong>Resource</strong>. Generally, a &quot;Resource&quot; is a committed agreement to provide some data, document or otherwise, in exchange for a pre-determined fee. Providers of services within the Fabric network will deliver the document (or a proof of delivery) in the form of an HTLC (&quot;Hash or Time Locked Contract&quot;) on the selected Layer 2 network.</p>
-        <p>In Fabric, we describe these broadly as &quot;Application Resource Contracts&quot; — or, just ARCs for short. They are the complete set of &quot;storyline arcs&quot; any particular contract can take.</p>
-        <h5>An Example Resource</h5>
-        <p><code>resources/document.json</code></p>
+        <p>Peer-to-peer applications (“agreements”) are self-enforcing: two peers in a <code>Channel</code> update shared contract state after responding to counterparty requests (for example via L2 spendable UTXOs). If the contract expires, exit clauses let parties spend on L1 again; both hold the latest signed state.</p>
+        <p>Before an agreement, Fabric peers normally open a <strong>payment channel</strong> (Lightning-class or similar).</p>
+        <p><strong>Note:</strong> shipping security targets <strong>Bitcoin</strong> first; other chains are out of scope until contributors extend the stack.</p>
+        <h5>1.1 Application resource contracts</h5>
+        <p>Agreements are expressed as structured <a href="#3-resources"><strong>Resources</strong></a> — standardized services a peer may offer. Each node chooses which resources it provides and at what price; demand and supply form the “information market” described in the Fabric whitepaper.</p>
+        <p>To create an application resource contract, you combine a <strong>Resource</strong> definition (JSON or programmatic) with a <strong>Service</strong> implementation that honors the declared routes, roles, and constraints. The <code>Machine</code> and execution layers then interpret or validate transitions according to the contract <code>type</code> you select.</p>
+        <h5>1.2a Convergence</h5>
+        <p>User-facing design should be <strong>terminal-first</strong> where possible: one logical app, multiple shells (CLI, web, native). That implies clear <strong>Software Development Interface</strong> boundaries so the same resource definitions work across environments.</p>
+        <p><strong>How should peer-to-peer contracts be written?</strong> Start with a <strong>small, formal</strong> contract type, prove it in tests, then add variants via the <code>Machine</code> / <code>type</code> settings rather than ad-hoc scripts everywhere.</p>
+        <h5>1.2b JavaScript</h5>
+        <p>Execution today starts with a <strong>restricted subset of JavaScript</strong> so newcomers can experiment without a new language. Sandboxing matters: prefer <strong>pure</strong>, stack-friendly functions; a formal grammar for a Fabric-specific dialect is a longer-term goal.</p>
+        <p>Turing completeness is possible; the design still avoids obvious cryptographic footguns. <strong>Code review</strong> remains essential for anything that moves funds or identity.</p>
+        <h4>2. Components</h4>
+        <p>Fabric targets more than raw library users: a <strong>visual composer</strong> for secured apps on native (<code>x86</code>, <code>ARM</code>) and the <a href="https://web.fabric.pub">legacy web</a> is a goal. Browsers add complexity; the project biases toward <strong>Native Web Components</strong> and similar primitives that do not lock you to a single SPA framework.</p>
+        <p>The Fabric CLI (<code>npm i -g @fabric/core</code>) is the reference shell. Discussion happens in <a href="https://dev.fabric.pub">Grove</a> and <a href="https://github.com/FabricLabs/fabric/discussions">GitHub Discussions</a>.</p>
+        <h4>3. Resources</h4>
+        <p>Fabric’s decentralized “web” is built around the <strong>Resource</strong> type: a committed agreement to deliver data (often with payment), frequently using HTLC-style flows on the chosen L2.</p>
+        <p>These are sometimes called <strong>Application Resource Contracts (ARCs)</strong> — the allowed storylines for a contract.</p>
+        <h5>Example resource</h5>
+        <p><code>resources/document.json</code>:</p>
         <pre class="prettyprint source lang-json"><code>{
   &quot;name&quot;: &quot;Document&quot;,
   &quot;description&quot;: &quot;A generic document resource.  All data treated as raw bytes, no additional protocols or parameters.&quot;,
@@ -142,94 +281,121 @@
     &quot;view&quot;: [&quot;*&quot;],
     &quot;create&quot;: [&quot;~owner&quot;],
     &quot;update&quot;: [&quot;~owner&quot;],
-    &quot;delete&quot;: [&quot;~owner&quot;],
+    &quot;delete&quot;: [&quot;~owner&quot;]
   }
 }
 </code></pre>
-        <p>You can see this is a declarative, JSON-based description of a &quot;generic document&quot; resource. It contains a human-friendly description, and a few other configuration values which we'll go over in more detail later.</p>
-        <h5>Interesting Properties of a Fabric Resource Definition</h5>
+        <p>This is a declarative description of a generic document API: paths, UI component names, state constraints, and RBAC-style roles.</p>
+        <h5>Interesting properties</h5>
         <ul>
-          <li><code>components</code> — named list of user-sourced events to their corresponding user interface elements (currently all written for terminals, the Fabric CLI).</li>
-          <li><code>constraints</code> — limitations to hold the system accountable for. Here, we specify that the clock<sup>Note</sup> never exceed 1000 cycles, so a single document stored in this collection could be served 999 other times before the resource is considered &quot;consumed&quot; — in this way we can also constrain other arbitrary aspects of the application state.</li>
+          <li><strong><code>components</code></strong> — maps named events to UI elements (today oriented to the CLI; same names can map to web components later).</li>
+          <li><strong><code>constraints</code></strong> — caps and invariants; the example bounds a <strong>vector clock</strong> so the resource “consumes” capacity as state advances.</li>
         </ul>
-        <p><small><strong>Note (a long one):</strong> all classes in Fabric will carry with them a vector clock, incremented any time the state is updated using the <code>commit()</code> method found on anything inheriting from the <code>Actor</code> class. Some incoming messages can generate multiple clock events, so be careful with your global event relay policies! With each new state, channel balances will be updated (unless <code>NOOP</code>, a full burn of all bonds), so it will be important to test lower cycle times on high-latency and low-reliability connections.</small></p>
-        <p>Importantly, the <code>Resource</code> type is used in combination with the <code>Service</code> type to define exactly what features that service provides to other consumers of its information.</p>
-        <h4>5. Services</h4>
-        <p>Fabric relies on <code>Message</code> objects passed between nodes to exchange information,
-          like transaction data and requests for computation (RFCs). Services offer up
-          one or more &quot;Resources&quot; as described above, emitting events for any listening consumer,
-          or sometimes, for connectivity with external networks (like the World Wide Web).</p>
-        <p>The <code>Service</code> class can be extended to add Fabric support to your favorite project.</p>
-        <h5>An Example Fabric Service</h5>
-        <pre class="prettyprint source lang-js"><code>// Fabric Dependencies
+        <p><strong>Note on clocks:</strong> types inheriting <code>Actor</code> advance a vector clock on <code>commit()</code>. Some messages may advance the clock more than once; design relays and limits accordingly. Channel balances update with state unless the transition is a <code>NOOP</code> burn.</p>
+        <p><code>Resource</code> pairs with <code>Service</code> to describe <strong>what</strong> a node exposes to the network.</p>
+        <h4>4. Services</h4>
+        <p>Nodes exchange <strong><code>Message</code></strong> instances — transactions, computation requests, and control plane data. A <strong>Service</strong> publishes one or more resources and emits events for local consumers or bridges (e.g. HTTP).</p>
+        <p>Extend <code>Service</code> to integrate external systems.</p>
+        <h5>Example service</h5>
+        <pre class="prettyprint source lang-js"><code>'use strict';
+
 const Service = require('@fabric/core/types/service');
 
-// Class Definition
 class MyClockService extends Service {
   constructor (input = {}) {
-    // Mandatory
     super(input);
 
-    // Try to configure, else return null
-    try {
-      // Apply the input to some defaults
-      this.settings = Object.assign({
-        clock: 0,    // vector clock start
-        frequency: 1 // Hz
-      }, input);
-    } catch (exception) {
-      // Failed to apply input to an object {}...
-      // Maybe we should switch to TypeScript? ;)
-      console.error('Could not create MyService:', exception);
-      return null;
-    }
+    this.settings = Object.assign({
+      clock: 0,
+      frequency: 1
+    }, input);
 
-    // Currently mandatory
-    // TODO: make optional
     this._state = {
       content: null
     };
 
-    // Chainable pattern
     return this;
   }
 
-  // Called once per 
   tick () {
-    const origin = this.get('clock');
+    const origin = this.get('clock') || 0;
     console.log('clock:', origin);
-    this.set('clock', origin++);
-    this.
+    this.set('clock', origin + 1);
   }
 
-  // custom start function
-  // you can obviously call `super.start()` and `super.stop()`
-  // but this is an example :) and we haven't fully defined expected behaviors yet!
   async start () {
-    // super.start(); // disabled for clean example
-    
+    await super.start();
+    return this;
   }
 }
+
+module.exports = MyClockService;
 </code></pre>
-        <p>Services will define how, if any, an ecosystem emerges and <em>actually</em> succeeds at replacing the web. They enable a common API between otherwise disparate projects, such as between Bitcoin and Ethereum.</p>
-        <p>See <a href="../SERVICES.html">the Services Overview</a> for more information.</p>
-        <h4>6. Types</h4>
-        <p><code>@fabric/core</code> is a NodeJS-targeted software library, but you don't need the whole kit-and-kaboodle. Our pattern is to expose CommonJS-based ES6 classes, for several reasons, including maximum compatibility, so you will typically import a Fabric class like this:</p>
+        <p>Services are the integration boundary where ecosystems meet Fabric’s messaging model.</p>
+        <p>See <a href="guides/SERVICES.md"><code>guides/SERVICES.md</code></a> for a longer overview of bundled services (Bitcoin, Lightning, Exchange, Redis, ZMQ).</p>
+        <h4>5. Types</h4>
+        <p><code>@fabric/core</code> ships <strong>CommonJS</strong> ES6 classes for broad compatibility. Typical import:</p>
         <pre class="prettyprint source lang-js"><code>const Actor = require('@fabric/core/types/actor');
 </code></pre>
-        <p>Grab what you need, use what you take. :)</p>
-        <h5>Fabric Types by Example</h5>
-        <p>Create and sign some string message using the built-in Schnorr <code>Key</code> type:</p>
-        <pre class="prettyprint source lang-js"><code>const Hash256 = require('@fabric/core/types/hash256');
+        <h5>Types by example</h5>
+        <p>Create and sign a message with the Schnorr <strong><code>Key</code></strong> type:</p>
+        <pre class="prettyprint source lang-js"><code>'use strict';
+
+const Hash256 = require('@fabric/core/types/hash256');
 const Key = require('@fabric/core/types/key');
+
 const message = 'Hello, world!';
 const key = new Key();
 const signature = key.sign(message);
+
 console.log('Message:', message);
-console.log('Message Hash:', Hash256.digest(message));
-console.log('Key Pubkey:', key.public);
-console.log('Purported Signature:', message);
+console.log('Message hash:', Hash256.digest(message));
+console.log('Public key:', key.public);
+console.log('Signature (hex):', signature.toString('hex'));
 </code></pre>
+        <h2>Storage (<code>types/store</code>)</h2>
+        <p><strong><code>Store</code></strong> is the long-term Level-backed storage primitive. Pass an optional <strong><code>Codec</code></strong> (<code>types/codec</code>) in settings to encrypt values at rest; Level uses a <code>buffer</code> wire format with Fabric encrypt/decrypt.</p>
+        <p>Use <strong><code>Store.encryptedSettings(settings)</code></strong> / <strong><code>Store.openEncrypted(settings)</code></strong> for defaults that match the former <code>types/keystore.js</code> (path <code>./stores/keystore</code>, <code>Codec</code> from <code>{ key, mode, version }</code> / <code>FABRIC_SEED</code>). Use additional plain <strong><code>Store</code></strong> instances for caches or indexes (no codec).</p>
+        <p><strong><code>FabricShell</code></strong> (browser/CLI shell) is <strong><code>types/service.js</code></strong> <strong><code>Service.FabricShell</code></strong>: it wires <code>Store.openEncrypted</code>, peer, machine, tips/stash stores, and resources. <strong><code>CLI</code></strong> extends <strong><code>FabricShell</code></strong>.</p>
+        <p>Other <strong><code>Store</code></strong> subclasses add domain behavior — for example <strong><code>Datastore</code></strong>, <strong><code>Oracle</code></strong>, and <strong><code>Resource</code></strong>.</p>
+        <h3>Consolidated prototypes (fewer top-level <code>types/*.js</code> files)</h3>
+        <ul>
+          <li><strong><code>Transition</code></strong> — defined on <strong><code>types/entity.js</code></strong>; export <strong><code>Entity.Transition</code></strong> (JSON Patch between entity states).</li>
+          <li><strong><code>Swarm</code></strong> — <strong><code>Peer.Swarm</code></strong> on <strong><code>types/peer.js</code></strong> (<code>Actor</code> wrapping an embedded <code>Peer</code>).</li>
+          <li>Removed standalone modules (unused or superseded): <strong><code>aggregator</code></strong>, <strong><code>consensus</code></strong>, <strong><code>mempool</code></strong>, <strong><code>swap</code></strong>, <strong><code>value</code></strong>, <strong><code>walker</code></strong>. See <strong><code>scripts/remove-legacy-types.sh</code></strong>.</li>
+          <li>Removed <strong><code>types/stash.js</code></strong> (legacy <code>Vector</code> + localforage); use <strong><code>Store</code></strong> or app-specific caches instead.</li>
+        </ul>
+        <h2>Reference links</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Link</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><a href="QUICKSTART.md">QUICKSTART.md</a></td>
+              <td>Install and first commands</td>
+            </tr>
+            <tr>
+              <td><a href="AGENTS.md">AGENTS.md</a></td>
+              <td>Agent services, lifecycle, workers</td>
+            </tr>
+            <tr>
+              <td><a href="SECURITY.md">SECURITY.md</a></td>
+              <td>Disclosure process, release hygiene</td>
+            </tr>
+          </tbody>
+        </table>
+        <h2>Roadmap &amp; doc backlog</h2>
+        <p>Short list of documentation improvements (edit here as items land):</p>
+        <ul>
+          <li>[ ] Markdown/CMS for published docs site</li>
+          <li>[ ] Sweep remaining <code>TODO</code> markers in repo-specific guides</li>
+          <li>[ ] Cross-link <code>docs/*.html</code> JSDoc output from this guide where helpful</li>
+        </ul>
+        <hr>
         <h1>Parking Lot</h1>
         <h2>TODO</h2>
         <ul>
@@ -258,6 +424,7 @@ console.log('Purported Signature:', message);
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
@@ -279,24 +446,18 @@ console.log('Purported Signature:', message);
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
-      <li><a href="Snapshot.html">Snapshot</a></li>
-      <li><a href="Stack.html">Stack</a></li>
-      <li><a href="Stash.html">Stash</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
-      <li><a href="Swarm.html">Swarm</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
-      <li><a href="Value.html">Value</a></li>
       <li><a href="Vector.html">Vector</a></li>
-      <li><a href="Walker.html">Walker</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
-    <h3>Events</h3>
+    <h3>Global</h3>
     <ul>
-      <li><a href="Aggregator.html#event:commit">commit</a></li>
+      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
     </ul>
   </nav>
   <br class="clear" />

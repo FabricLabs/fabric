@@ -226,7 +226,7 @@
             <dd class="tag-source">
               <ul class="dummy">
                 <li>
-                  <a href="types_store.js.html">types/store.js</a>, <a href="types_store.js.html#line18">line 18</a>
+                  <a href="types_store.js.html">types/store.js</a>, <a href="types_store.js.html#line19">line 19</a>
                 </li>
               </ul>
             </dd>
@@ -288,6 +288,78 @@
 
 
 
+
+
+
+
+
+
+
+
+        <h3 class="subsection-title">Members</h3>
+
+
+
+        <h4 class="name" id="codec"><span class="type-signature"></span>codec<span class="type-signature"></span></h4>
+
+
+
+
+        <div class="description">
+          Optional Codec for encrypted at-rest values (Level `valueEncoding`).
+          Browser and Hub-style apps typically use one <a href="Store.html">Store</a> with `codec` for
+          secrets and separate plain stores for cache/tips.
+        </div>
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_store.js.html">types/store.js</a>, <a href="types_store.js.html#line42">line 42</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
 
 
 
@@ -432,7 +504,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_store.js.html">types/store.js</a>, <a href="types_store.js.html#line175">line 175</a>
+                <a href="types_store.js.html">types/store.js</a>, <a href="types_store.js.html#line220">line 220</a>
               </li>
             </ul>
           </dd>
@@ -595,7 +667,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_store.js.html">types/store.js</a>, <a href="types_store.js.html#line96">line 96</a>
+                <a href="types_store.js.html">types/store.js</a>, <a href="types_store.js.html#line141">line 141</a>
               </li>
             </ul>
           </dd>
@@ -663,7 +735,7 @@
 
 
         <div class="description">
-          Remove a <a href="Value.html">Value</a> by <a href="Path.html">Path</a>.
+          Remove a Value by <a href="Path.html">Path</a>.
         </div>
 
 
@@ -758,7 +830,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_store.js.html">types/store.js</a>, <a href="types_store.js.html#line465">line 465</a>
+                <a href="types_store.js.html">types/store.js</a>, <a href="types_store.js.html#line526">line 526</a>
               </li>
             </ul>
           </dd>
@@ -850,7 +922,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_store.js.html">types/store.js</a>, <a href="types_store.js.html#line508">line 508</a>
+                <a href="types_store.js.html">types/store.js</a>, <a href="types_store.js.html#line569">line 569</a>
               </li>
             </ul>
           </dd>
@@ -991,7 +1063,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_store.js.html">types/store.js</a>, <a href="types_store.js.html#line337">line 337</a>
+                <a href="types_store.js.html">types/store.js</a>, <a href="types_store.js.html#line382">line 382</a>
               </li>
             </ul>
           </dd>
@@ -1177,7 +1249,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_store.js.html">types/store.js</a>, <a href="types_store.js.html#line358">line 358</a>
+                <a href="types_store.js.html">types/store.js</a>, <a href="types_store.js.html#line403">line 403</a>
               </li>
             </ul>
           </dd>
@@ -1269,7 +1341,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_store.js.html">types/store.js</a>, <a href="types_store.js.html#line540">line 540</a>
+                <a href="types_store.js.html">types/store.js</a>, <a href="types_store.js.html#line601">line 601</a>
               </li>
             </ul>
           </dd>
@@ -1432,7 +1504,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_store.js.html">types/store.js</a>, <a href="types_store.js.html#line427">line 427</a>
+                <a href="types_store.js.html">types/store.js</a>, <a href="types_store.js.html#line488">line 488</a>
               </li>
             </ul>
           </dd>
@@ -1492,6 +1564,366 @@
 
 
 
+        <h4 class="name" id=".encryptedSettings"><span class="type-signature">(static) </span>encryptedSettings<span class="signature">(settings<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Settings object for a <a href="Store.html">Store</a> with Codec at-rest encryption
+          (same defaults as the legacy `Keystore` type). Prefer `openEncrypted` or
+          `new Store(Store.encryptedSettings(...))` over ad-hoc Codec wiring.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+              <th>Default</th>
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>settings</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+                {}
+
+              </td>
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_store.js.html">types/store.js</a>, <a href="types_store.js.html#line84">line 84</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Settings merged with `codec` when absent.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id=".openEncrypted"><span class="type-signature">(static) </span>openEncrypted<span class="signature">(settings<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {<a href="Store.html">Store</a>}</span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+              <th>Default</th>
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>settings</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+                {}
+
+              </td>
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_store.js.html">types/store.js</a>, <a href="types_store.js.html#line110">line 110</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="Store.html">Store</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
       </article>
 
     </section>
@@ -1512,6 +1944,7 @@
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
@@ -1533,24 +1966,18 @@
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
-      <li><a href="Snapshot.html">Snapshot</a></li>
-      <li><a href="Stack.html">Stack</a></li>
-      <li><a href="Stash.html">Stash</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
-      <li><a href="Swarm.html">Swarm</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
-      <li><a href="Value.html">Value</a></li>
       <li><a href="Vector.html">Vector</a></li>
-      <li><a href="Walker.html">Walker</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
-    <h3>Events</h3>
+    <h3>Global</h3>
     <ul>
-      <li><a href="Aggregator.html#event:commit">commit</a></li>
+      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
     </ul>
   </nav>
   <br class="clear" />

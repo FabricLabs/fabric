@@ -62,11 +62,14 @@ const {
   P2P_STATE_REQUEST,
   P2P_TRANSACTION,
   P2P_CALL,
+  P2P_RELAY,
+  P2P_MESSAGE_RECEIPT,
   CHAT_MESSAGE,
   DOCUMENT_PUBLISH_TYPE,
   DOCUMENT_REQUEST_TYPE,
   JSON_CALL_TYPE,
   PATCH_MESSAGE_TYPE,
+  CONTRACT_PROPOSAL_TYPE,
   BLOCK_CANDIDATE,
   PEER_CANDIDATE,
   SESSION_START,
@@ -512,7 +515,7 @@ class Message extends Actor {
     }
 
     const message = new Message();
-
+    const payload = buffer.subarray(HEADER_SIZE);
     message.raw = {
       magic: buffer.subarray(0, 4),
       version: buffer.subarray(4, 8),
@@ -521,10 +524,11 @@ class Message extends Actor {
       type: buffer.subarray(72, 76),
       size: buffer.subarray(76, 80),
       hash: buffer.subarray(80, 112),
-      signature: buffer.subarray(112, HEADER_SIZE)
+      signature: buffer.subarray(112, HEADER_SIZE),
+      data: payload
     };
 
-    message.data = buffer.subarray(HEADER_SIZE);
+    message.data = payload;
 
     return message;
   }
@@ -569,6 +573,7 @@ class Message extends Actor {
       'JSONBlob': GENERIC_MESSAGE_TYPE + 1,
       'JSONCall': JSON_CALL_TYPE,
       'JSONPatch': PATCH_MESSAGE_TYPE,
+      'ContractProposal': CONTRACT_PROPOSAL_TYPE,
       // TODO: document Generic type
       // P2P Commands
       'Generic': P2P_GENERIC,
@@ -596,6 +601,8 @@ class Message extends Actor {
       'StateRequest': P2P_STATE_REQUEST,
       'Transaction': P2P_TRANSACTION,
       'Call': P2P_CALL,
+      'P2P_RELAY': P2P_RELAY,
+      'P2P_MESSAGE_RECEIPT': P2P_MESSAGE_RECEIPT,
       'LogMessage': LOG_MESSAGE_TYPE,
       // Lightning (BOLT) types
       'AcceptChannel': LIGHTNING_ACCEPT_CHANNEL,
@@ -713,6 +720,10 @@ Object.defineProperty(Message.prototype, 'type', {
         return 'Transaction';
       case P2P_CALL:
         return 'Call';
+      case P2P_RELAY:
+        return 'P2P_RELAY';
+      case P2P_MESSAGE_RECEIPT:
+        return 'P2P_MESSAGE_RECEIPT';
       case PEER_CANDIDATE:
         return 'PeerCandidate';
       case SESSION_START:
@@ -723,6 +734,8 @@ Object.defineProperty(Message.prototype, 'type', {
         return 'JSONCall';
       case PATCH_MESSAGE_TYPE:
         return 'JSONPatch';
+      case CONTRACT_PROPOSAL_TYPE:
+        return 'ContractProposal';
       case P2P_START_CHAIN:
         return 'StartChain';
       // Lightning (BOLT) types
@@ -829,6 +842,7 @@ module.exports = Message;
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
@@ -850,24 +864,18 @@ module.exports = Message;
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
-      <li><a href="Snapshot.html">Snapshot</a></li>
-      <li><a href="Stack.html">Stack</a></li>
-      <li><a href="Stash.html">Stash</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
-      <li><a href="Swarm.html">Swarm</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
-      <li><a href="Value.html">Value</a></li>
       <li><a href="Vector.html">Vector</a></li>
-      <li><a href="Walker.html">Walker</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
-    <h3>Events</h3>
+    <h3>Global</h3>
     <ul>
-      <li><a href="Aggregator.html#event:commit">commit</a></li>
+      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
     </ul>
   </nav>
   <br class="clear" />
