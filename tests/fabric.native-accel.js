@@ -23,5 +23,26 @@ describe('fabricNativeAccel', function () {
     const s = accel.status();
     assert.strictEqual(typeof s.available, 'boolean');
     assert.ok(Array.isArray(s.methods));
+    assert.strictEqual(typeof s.nativeDoubleSha256OptIn, 'boolean');
+    assert.ok('path' in s);
+  });
+
+  it('doubleSha256Buffer requires a Buffer', function () {
+    assert.throws(
+      () => accel.doubleSha256Buffer('not a buffer'),
+      /doubleSha256Buffer expects Buffer/
+    );
+  });
+
+  it('doubleSha256Buffer returns 32-byte Buffer', function () {
+    const buf = Buffer.from([0, 1, 2, 3]);
+    const out = accel.doubleSha256Buffer(buf);
+    assert.ok(Buffer.isBuffer(out));
+    assert.strictEqual(out.length, 32);
+  });
+
+  it('exports SUPPORTED_ADDON_EXPORTS', function () {
+    assert.ok(accel.SUPPORTED_ADDON_EXPORTS);
+    assert.ok(accel.SUPPORTED_ADDON_EXPORTS.includes('doubleSha256'));
   });
 });

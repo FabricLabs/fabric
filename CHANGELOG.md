@@ -1,7 +1,7 @@
 # `@fabric/core` Changelog
 Recent changes to Fabric Core.
 
-## [0.1.0-RC2] — 2026-03-20
+## 2026-03-20
 Pre-release focusing on wire parity, tooling, and release hygiene.
 
 **Protocol / core**
@@ -31,7 +31,7 @@ Pre-release focusing on wire parity, tooling, and release hygiene.
 
 ---
 
-## [0.1.0-RC1] — 2023-04-01
+## 2023-04-01
 First pass at public playnet — initial release candidate for the `v0.1.0` tag.
 
 **Notable**
