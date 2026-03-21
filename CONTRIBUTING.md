@@ -24,6 +24,7 @@ Do not send Bitcoin to any of our previously published addresses.  We'll enable 
 We're borne of a swarm of storytellers, eager to tell a tale.  [Join `#lobby:roleplaygateway.com`][chat-rpg-lobby] to start your journey, or [jump to the end][rpg] to list your work.
 
 ## Further Reading
+- [`VISION.md`](VISION.md) — product direction and doc tiers
 - [`DEVELOPERS.md`](DEVELOPERS.md)
 - [The RPG Marketplace](https://www.roleplaygateway.com/orders)
 - [RPG's Rules](https://www.roleplaygateway.com/rules)

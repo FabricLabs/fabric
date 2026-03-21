@@ -2,6 +2,8 @@
 Recent changes to Fabric Core.
 
 ## 2026-03-21
+- **Docs:** Added **[VISION.md](VISION.md)** (north-star vision + doc map); expanded **[docs/README.md](docs/README.md)**; fixed **[SUMMARY.md](SUMMARY.md)** links (`guides/SERVICES.md`, `guides/ACTORS.md`, …); **[README.md](README.md)** / **[DEVELOPERS.md](DEVELOPERS.md)** / **[examples/README.md](examples/README.md)** aligned with JS-first path and **FabricShell**. **`npm run make:docs`** now runs **`scripts/clean-jsdoc-html.js`** first so removed types do not leave stale **`docs/*.html`** or broken nav links.
+- **Breaking (types):** Removed unused **`types/snapshot.js`** and **`types/stash.js`**. **`Service.App`** renamed to **`FabricShell`** (`module.exports.FabricShell`); **`CLI`** extends **`FabricShell`**. Collection `import()` messages now use **`@type: 'CollectionSnapshot'`** (was `'Snapshot'`). Downstream: replace `new App()` / `Service.App` with **`FabricShell`**. Regenerate **`API.md`** with `npm run make:api`. Rebuild **`assets/service.js`** if you bundle the service worker example.
 - **Operations / security docs:** [PRIVACY.md](PRIVACY.md) — consolidated completion, privacy, and security tracking; [AUDIT.md](AUDIT.md) and [SECURITY.md](SECURITY.md) refreshed; [docs/README.md](docs/README.md) index.
 - **Security:** `types/peer.js` — NOISE debug logs no longer emit private keys; public-key diagnostics gated on `settings.debug`. `types/key.js` — `encrypt()` uses explicit `crypto.randomBytes(16)` for IVs.
 - **Docs:** [DEVELOPERS.md](DEVELOPERS.md) — production & release, core types table; [README.md](README.md) — seed warning + doc table; [QUICKSTART.md](QUICKSTART.md) — links to PRODUCTION/DEVELOPERS.
