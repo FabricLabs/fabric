@@ -10,16 +10,21 @@
  * cannot segfault the process during normal tests or `Message` construction.
  * Default is pure JS (same output as libwally when the addon works).
  *
+ * **Browser / webpack:** do not `require('fs')` at module scope — bundlers execute
+ * that at load time and fail. Node-only requires live inside `tryLoadAddon` after
+ * an `isNode()` guard (see Hub `webpack` `resolve.fallback.fs`).
+ *
  * Supported methods (C addon must export these names):
  *   - `doubleSha256(Buffer)` → Buffer(32) — Bitcoin-style SHA256(SHA256(data))
  *
  * @module @fabric/core/functions/fabricNativeAccel
  */
 
-const fs = require('fs');
-const path = require('path');
-
 const { sha256 } = require('@noble/hashes/sha2.js');
+
+function isNode () {
+  return typeof process !== 'undefined' && process.versions && typeof process.versions.node === 'string';
+}
 
 let addon = null;
 let loadAttempted = false;
@@ -28,15 +33,15 @@ let loadError = null;
 const SUPPORTED_ADDON_EXPORTS = Object.freeze(['doubleSha256']);
 
 function nativeDoubleSha256Enabled () {
-  const v = process.env.FABRIC_NATIVE_DOUBLE_SHA256;
+  const v = typeof process !== 'undefined' && process.env ? process.env.FABRIC_NATIVE_DOUBLE_SHA256 : undefined;
   return v === '1' || v === 'true';
 }
 
-function addonPathCandidates () {
-  const env = process.env.FABRIC_ADDON_PATH;
+function addonPathCandidates (pathMod) {
+  const env = typeof process !== 'undefined' && process.env ? process.env.FABRIC_ADDON_PATH : undefined;
   const list = [];
   if (env) list.push(env);
-  list.push(path.join(__dirname, '..', 'build', 'Release', 'fabric.node'));
+  list.push(pathMod.join(__dirname, '..', 'build', 'Release', 'fabric.node'));
   return list;
 }
 
@@ -47,7 +52,12 @@ function tryLoadAddon () {
   if (!nativeDoubleSha256Enabled()) {
     return;
   }
-  for (const p of addonPathCandidates()) {
+  if (!isNode()) {
+    return;
+  }
+  const fs = require('fs');
+  const pathMod = require('path');
+  for (const p of addonPathCandidates(pathMod)) {
     try {
       if (!p || !fs.existsSync(p)) continue;
       addon = require(p);
@@ -68,11 +78,17 @@ function status () {
   const methods = [];
   const canUseNative = nativeDoubleSha256Enabled() && addon && typeof addon.doubleSha256 === 'function';
   if (canUseNative) methods.push('doubleSha256');
+  let pathStr = null;
+  if (addon && isNode()) {
+    const pathMod = require('path');
+    pathStr = (typeof process !== 'undefined' && process.env && process.env.FABRIC_ADDON_PATH) ||
+      pathMod.join(__dirname, '..', 'build', 'Release', 'fabric.node');
+  }
   return {
     available: methods.length > 0,
     methods,
     nativeDoubleSha256OptIn: nativeDoubleSha256Enabled(),
-    path: addon ? (process.env.FABRIC_ADDON_PATH || path.join(__dirname, '..', 'build', 'Release', 'fabric.node')) : null,
+    path: pathStr,
     error: !addon && loadError ? loadError.message : undefined
   };
 }
