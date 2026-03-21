@@ -6,6 +6,9 @@ Fabric aims to maximize the security of a sensible default configuration while k
 - Minimal attack surface where practical
 - Clear separation between **experimental** APIs and **release** commitments (see [CHANGELOG.md](CHANGELOG.md))
 
+## P2P gossip (`P2P_PEER_GOSSIP`)
+Relay of gossip is bounded to reduce amplification DoS: **logical payload** deduplication (stable hash over `type` + `object` sans `gossipHop`), **`gossipHop` TTL** (default 5, decremented on each relay), **per-origin relay budget** per rolling minute (default 60), and **FIFO-capped** wire-hash and payload caches. See `constants.js` (`GOSSIP_*`, `PEER_MAX_WIRE_HASH_CACHE`) and `Peer` `settings.gossip`.
+
 ## Operator-facing docs
 | Doc | Use |
 |-----|-----|

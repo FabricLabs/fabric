@@ -84,6 +84,14 @@ const P2P_PORT = 7777;
 // Gossip and peering discovery (WebRTC + Fabric P2P)
 const P2P_PEER_GOSSIP = 'P2P_PEER_GOSSIP'; // Gossip known peers for cross-cluster discovery
 const P2P_PEERING_OFFER = 'P2P_PEERING_OFFER'; // Peer needs more connections; gossiped until fulfilled
+/** Max gossip relays per logical hop (anti amplification). */
+const GOSSIP_MAX_HOPS = 5;
+/** Per-origin relay budget per rolling minute (anti flood). */
+const GOSSIP_MAX_RELAYS_PER_ORIGIN_PER_MINUTE = 60;
+/** Max entries for logical gossip payload dedup (excluding hop/signature churn). */
+const GOSSIP_MAX_PAYLOAD_CACHE = 50000;
+/** Max wire-hash dedup entries in {@link Peer} (bounded memory). */
+const PEER_MAX_WIRE_HASH_CACHE = 10000;
 const P2P_GENERIC = 0x80; // 128 in decimal
 const P2P_IDENT_REQUEST = 0x01; // 1, or the identity
 const P2P_IDENT_RESPONSE = 0x11;
@@ -250,6 +258,10 @@ module.exports = {
   P2P_GENERIC,
   P2P_PEER_GOSSIP,
   P2P_PEERING_OFFER,
+  GOSSIP_MAX_HOPS,
+  GOSSIP_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
+  GOSSIP_MAX_PAYLOAD_CACHE,
+  PEER_MAX_WIRE_HASH_CACHE,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
   P2P_CHAIN_SYNC_REQUEST,

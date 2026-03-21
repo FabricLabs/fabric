@@ -483,6 +483,44 @@ describe('@fabric/core/types/peer', function () {
         peer._handleGenericMessage({ type: 'P2P_PEER_ANNOUNCE', object: { host: '127.0.0.1', port: 7777 } }, { name: 'o' });
         assert.ok(peer.candidates.length >= 1);
       });
+      it('P2P_PEER_GOSSIP dedupes logical payload (no relay amplification on re-sign)', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        let relays = 0;
+        peer.relayFrom = function () { relays++; };
+        const origin = { name: '127.0.0.1:1' };
+        const body = { type: 'P2P_PEER_GOSSIP', object: { host: '1.2.3.4', port: 9000 } };
+        peer._handleGenericMessage(body, origin);
+        peer._handleGenericMessage({ ...body, object: { ...body.object } }, origin);
+        assert.strictEqual(relays, 1);
+      });
+      it('P2P_PEER_GOSSIP does not relay when gossipHop is 0', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        let relays = 0;
+        peer.relayFrom = function () { relays++; };
+        const origin = { name: '127.0.0.1:2' };
+        peer._handleGenericMessage({
+          type: 'P2P_PEER_GOSSIP',
+          object: { host: '5.6.7.8', port: 1, gossipHop: 0 }
+        }, origin);
+        assert.strictEqual(relays, 0);
+      });
+      it('P2P_PEER_GOSSIP rate-limits relays per origin', function () {
+        const peer = new Peer({
+          listen: false,
+          peersDb: null,
+          gossip: { maxRelaysPerOriginPerMinute: 2 }
+        });
+        let relays = 0;
+        peer.relayFrom = function () { relays++; };
+        const origin = { name: '127.0.0.1:3' };
+        for (let i = 0; i < 4; i++) {
+          peer._handleGenericMessage({
+            type: 'P2P_PEER_GOSSIP',
+            object: { host: '9.8.7.6', port: 7000 + i }
+          }, origin);
+        }
+        assert.strictEqual(relays, 2);
+      });
       it('emits file for P2P_FILE_SEND', function (done) {
         const peer = new Peer({ listen: false, peersDb: null });
         peer.once('file', (ev) => {

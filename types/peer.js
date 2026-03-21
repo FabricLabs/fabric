@@ -3,11 +3,15 @@
 // Constants
 const {
   FABRIC_KEY_DERIVATION_PATH,
+  GOSSIP_MAX_HOPS,
+  GOSSIP_MAX_PAYLOAD_CACHE,
+  GOSSIP_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
   MAX_PEERS,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
   P2P_PEER_GOSSIP,
   P2P_PEERING_OFFER,
+  PEER_MAX_WIRE_HASH_CACHE,
   P2P_ROOT,
   P2P_PING,
   P2P_PONG,
@@ -78,6 +82,13 @@ class Peer extends Service {
       port: 7777,
       reconnectToKnownPeers: true,
       connectTimeout: 5000,
+      /** Limits relay amplification on {@link P2P_PEER_GOSSIP} (hop TTL, payload dedup, per-origin rate). */
+      gossip: {
+        maxHops: GOSSIP_MAX_HOPS,
+        maxRelaysPerOriginPerMinute: GOSSIP_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
+        maxPayloadCache: GOSSIP_MAX_PAYLOAD_CACHE,
+        maxWireHashCache: PEER_MAX_WIRE_HASH_CACHE
+      },
       state: Object.assign({
         actors: {},
         channels: {},
@@ -138,7 +149,14 @@ class Peer extends Service {
     this.mailboxes = {};
     this.memory = {};
     this.handlers = {};
-    this.messages = new Set();
+    /** Wire-envelope dedup (SHA-256 of full buffer); FIFO-capped via {@link Peer#_rememberWireHash}. */
+    this.messages = {};
+    this._wireHashOrder = [];
+    /** Logical gossip payload dedup (excludes signature / hop churn). */
+    this._gossipPayloadSeen = new Map();
+    this._gossipPayloadOrder = [];
+    /** origin address → { count, windowStart } for gossip relay rate limiting. */
+    this._gossipRelayByOrigin = new Map();
     this.sessions = {};
 
     // Internal Stack Machine
@@ -176,6 +194,55 @@ class Peer extends Service {
       if (id === idOrAddress && this.connections[addr]) return addr;
     }
     return null;
+  }
+
+  /**
+   * Stable id for gossip *logical* content (ignores `gossipHop` and wire signature changes).
+   * @param {object} msg Generic message (`type`, `object`, …)
+   * @returns {string} hex sha256
+   */
+  _gossipPayloadDedupKey (msg) {
+    const obj = (msg && msg.object && typeof msg.object === 'object') ? { ...msg.object } : {};
+    delete obj.gossipHop;
+    const body = JSON.stringify({ type: msg && msg.type, object: obj });
+    return crypto.createHash('sha256').update(body).digest('hex');
+  }
+
+  _rememberWireHash (hash) {
+    const max = (this.settings.gossip && this.settings.gossip.maxWireHashCache) || PEER_MAX_WIRE_HASH_CACHE;
+    while (this._wireHashOrder.length >= max) {
+      const drop = this._wireHashOrder.shift();
+      delete this.messages[drop];
+    }
+    this.messages[hash] = true;
+    this._wireHashOrder.push(hash);
+  }
+
+  _gossipRememberPayload (key) {
+    const max = (this.settings.gossip && this.settings.gossip.maxPayloadCache) || GOSSIP_MAX_PAYLOAD_CACHE;
+    while (this._gossipPayloadOrder.length >= max) {
+      const drop = this._gossipPayloadOrder.shift();
+      this._gossipPayloadSeen.delete(drop);
+    }
+    this._gossipPayloadSeen.set(key, true);
+    this._gossipPayloadOrder.push(key);
+  }
+
+  /**
+   * @param {string} originName Connection id (e.g. `host:port`)
+   * @returns {boolean}
+   */
+  _gossipRateLimitAllow (originName) {
+    const limit = (this.settings.gossip && this.settings.gossip.maxRelaysPerOriginPerMinute) || GOSSIP_MAX_RELAYS_PER_ORIGIN_PER_MINUTE;
+    const now = Date.now();
+    let slot = this._gossipRelayByOrigin.get(originName);
+    if (!slot || now - slot.windowStart > 60000) {
+      slot = { count: 0, windowStart: now };
+    }
+    if (slot.count >= limit) return false;
+    slot.count++;
+    this._gossipRelayByOrigin.set(originName, slot);
+    return true;
   }
 
   get id () {
@@ -688,8 +755,7 @@ class Peer extends Service {
       return;
     }
 
-    // Store message for later
-    this.messages[hash] = buffer.toString('hex');
+    this._rememberWireHash(hash);
 
     // Double-SHA256 on raw body bytes (matches C message_verify_body_hash)
     const bodyBuf = message.raw.data || Buffer.alloc(0);
@@ -854,13 +920,27 @@ class Peer extends Service {
         const state = new Actor(message.object.state);
         this.emit('debug', `state_announce <Generic>${JSON.stringify(message.object || '')} ${state.toGenericMessage()}`);
         break;
-      case P2P_PEER_GOSSIP:
+      case P2P_PEER_GOSSIP: {
+        if (!origin || !origin.name) break;
+        const g = this.settings.gossip || {};
+        const maxHops = g.maxHops != null ? g.maxHops : GOSSIP_MAX_HOPS;
+        const payloadKey = this._gossipPayloadDedupKey(message);
+        if (this._gossipPayloadSeen.has(payloadKey)) break;
+        const obj = message.object || {};
+        let hop = obj.gossipHop != null ? Number(obj.gossipHop) : maxHops;
+        if (!Number.isFinite(hop) || hop < 0) hop = maxHops;
+        hop = Math.min(hop, maxHops);
+        if (hop <= 0) break;
+        if (!this._gossipRateLimitAllow(origin.name)) break;
         this.emit('peeringGossip', { message, origin });
-        if (origin && origin.name) {
-          const gossipRelay = Message.fromVector(['GENERIC', JSON.stringify(message)]).signWithKey(this.key);
-          this.relayFrom(origin.name, gossipRelay);
-        }
+        this._gossipRememberPayload(payloadKey);
+        const relayBody = Object.assign({}, message, {
+          object: Object.assign({}, obj, { gossipHop: hop - 1 })
+        });
+        const gossipRelay = Message.fromVector(['GENERIC', JSON.stringify(relayBody)]).signWithKey(this.key);
+        this.relayFrom(origin.name, gossipRelay);
         break;
+      }
       case P2P_PEERING_OFFER:
         this.emit('peeringOffer', { message, origin });
         {
@@ -935,30 +1015,6 @@ class Peer extends Service {
         // this.relayFrom(origin.name, announce);
         break;
       case 'P2P_DOCUMENT_PUBLISH':
-        break;
-      case P2P_PEER_GOSSIP:
-        this.emit('peeringGossip', { message, origin });
-        {
-          const gossipRelay = Message.fromVector(['GENERIC', JSON.stringify(message)]).signWithKey(this.key);
-          this.relayFrom(origin.name, gossipRelay);
-        }
-        break;
-      case P2P_PEERING_OFFER:
-        this.emit('peeringOffer', { message, origin });
-        {
-          const obj = message.object || {};
-          const transport = obj.transport || 'fabric';
-          if (transport === 'fabric' && obj.host && obj.port) {
-            const connCount = Object.keys(this.connections || {}).length;
-            const maxPeers = (this.settings.constraints && this.settings.constraints.peers && this.settings.constraints.peers.max) || MAX_PEERS;
-            if (connCount < maxPeers) {
-              const candidate = { host: obj.host, port: Number(obj.port) };
-              this.candidates.push(candidate);
-            }
-          }
-          const offerRelay = Message.fromVector(['GENERIC', JSON.stringify(message)]).signWithKey(this.key);
-          this.relayFrom(origin.name, offerRelay);
-        }
         break;
       case 'P2P_FILE_SEND':
         this.emit('file', { message, origin });
@@ -1221,7 +1277,7 @@ class Peer extends Service {
 
   _writeFabric (msg, stream) {
     const hash = crypto.createHash('sha256').update(msg).digest('hex');
-    this.messages[hash] = msg.toString('hex');
+    this._rememberWireHash(hash);
     this.commit();
     if (!stream || !stream.encrypt) return;
 

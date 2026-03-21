@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="utf-8">
-  <title>Source: types/walker.js &middot; Docs</title>
+  <title>Class: App &middot; Docs</title>
   <script src="scripts/prettify/prettify.js"> </script>
   <script src="scripts/prettify/lang-css.js"> </script>
   <!--[if lt IE 9]>
@@ -24,92 +24,138 @@
 
 <body>
   <div id="main">
-    <h1 class="page-title">Source: types/walker.js</h1>
+    <h1 class="page-title">Class: App</h1>
 
 
 
 
     <section>
+
+      <header>
+
+        <h2><span class="attribs"><span class="type-signature"></span></span>App<span class="signature">()</span><span class="type-signature"></span></h2>
+
+        <div class="class-description">Browser / CLI application shell: encrypted store, peer node, resources.</div>
+
+
+      </header>
+
       <article>
-        <pre class="prettyprint source linenums"><code>'use strict';
+        <div class="container-overview">
 
-const util = require('util');
-const path = require('path');
-const fs = require('fs');
 
-/**
- * The Walker explores a directory tree and maps it to memory.
- * @param       {Vector} init - Initial state tree.
- * @constructor
- */
-function Walker (init) {
-  this['@data'] = init || {};
-  this.clock = 0;
-  this.stack = [];
-  this.known = {};
 
-  // this.store = new Store();
 
-  this.init();
-}
+          <h2>Constructor</h2>
 
-util.inherits(Walker, require('./vector'));
 
-/**
- * Explores a directory tree on the local system's disk.
- * @param  {String} path      [description]
- * @param  {Object} [map={}] [description]
- * @return {Object}          [description]
- */
-Walker.prototype._explore = function crawl (path, map = {}) {
-  const self = this;
 
-  fs.readdirSync(path).forEach(file => {
-    const filePath = path.join(path, file);
-    const isDir = fs.statSync(filePath).isDirectory();
-    const content = (isDir) ? self._explore(filePath) : fs.readFileSync(filePath);
+          <h4 class="name" id="App"><span class="type-signature"></span>new App<span class="signature">()</span><span class="type-signature"></span></h4>
 
-    map[file] = content;
-  });
 
-  return map;
-};
 
-/**
- * Explores a directory tree on the local system's disk.
- * @param  {String} dir      Path to crawl on local disk.
- * @param  {Object} [map={}] Pointer to previous step in stack.
- * @return {Object}          A hashmap of directory contents.
- */
-Walker.prototype._define = async function crawl (dir, map = {}) {
-  const self = this;
-  var list = [];
 
-  if (dir instanceof Array) {
-    list = dir.map(function (x) {
-      return path.join('./assets', x);
-    });
-  } else {
-    list = fs.readdirSync(dir).map(function (x) {
-      return path.join(dir, x);
-    });
-  }
 
-  for (var i = 0; i &lt; list.length; i++) {
-    let file = list[i];
-    let isDir = fs.statSync(file).isDirectory();
-    let content = (isDir) ? await self._define(file, map) : fs.readFileSync(file);
-    let result = content.toString('utf8');
 
-    map[file] = result;
-  }
 
-  return map;
-};
 
-module.exports = Walker;
-</code></pre>
+
+
+
+
+
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line1219">line 1219</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
       </article>
+
     </section>
 
 
@@ -120,6 +166,7 @@ module.exports = Walker;
     <h3>Classes</h3>
     <ul>
       <li><a href="Actor.html">Actor</a></li>
+      <li><a href="App.html">App</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
       <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
@@ -150,27 +197,20 @@ module.exports = Walker;
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
       <li><a href="Snapshot.html">Snapshot</a></li>
-      <li><a href="Stack.html">Stack</a></li>
       <li><a href="Stash.html">Stash</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
-      <li><a href="Swarm.html">Swarm</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
-      <li><a href="Value.html">Value</a></li>
       <li><a href="Vector.html">Vector</a></li>
-      <li><a href="Walker.html">Walker</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
-    <h3>Events</h3>
-    <ul>
-      <li><a href="Aggregator.html#event:commit">commit</a></li>
-    </ul>
     <h3>Global</h3>
     <ul>
       <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
+      <li><a href="global.html#gossip">gossip</a></li>
       <li><a href="global.html#isAllZero32">isAllZero32</a></li>
     </ul>
   </nav>

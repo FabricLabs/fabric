@@ -347,7 +347,7 @@
             <dd class="tag-source">
               <ul class="dummy">
                 <li>
-                  <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line48">line 48</a>
+                  <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line52">line 52</a>
                 </li>
               </ul>
             </dd>
@@ -396,6 +396,138 @@
 
 
         <h3 class="subsection-title">Members</h3>
+
+
+
+        <h4 class="name" id="_gossipPayloadSeen"><span class="type-signature"></span>_gossipPayloadSeen<span class="type-signature"></span></h4>
+
+
+
+
+        <div class="description">
+          Logical gossip payload dedup (excludes signature / hop churn).
+        </div>
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line156">line 156</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+        <h4 class="name" id="_gossipRelayByOrigin"><span class="type-signature"></span>_gossipRelayByOrigin<span class="type-signature"></span></h4>
+
+
+
+
+        <div class="description">
+          origin address → { count, windowStart } for gossip relay rate limiting.
+        </div>
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line159">line 159</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
 
 
 
@@ -448,7 +580,73 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line194">line 194</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line261">line 261</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+        <h4 class="name" id="messages"><span class="type-signature"></span>messages<span class="type-signature"></span></h4>
+
+
+
+
+        <div class="description">
+          Wire-envelope dedup (SHA-256 of full buffer); FIFO-capped via Peer#_rememberWireHash.
+        </div>
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line153">line 153</a>
               </li>
             </ul>
           </dd>
@@ -581,7 +779,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line439">line 439</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line506">line 506</a>
               </li>
             </ul>
           </dd>
@@ -673,7 +871,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line654">line 654</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line721">line 721</a>
               </li>
             </ul>
           </dd>
@@ -716,6 +914,324 @@
           <dd>
 
             <span class="param-type"><a href="Peer.html">Peer</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="_gossipPayloadDedupKey"><span class="type-signature"></span>_gossipPayloadDedupKey<span class="signature">(msg)</span><span class="type-signature"> &rarr; {string}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Stable id for gossip *logical* content (ignores `gossipHop` and wire signature changes).
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>msg</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Generic message (`type`, `object`, …)</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line204">line 204</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          hex sha256
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">string</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="_gossipRateLimitAllow"><span class="type-signature"></span>_gossipRateLimitAllow<span class="signature">(originName)</span><span class="type-signature"> &rarr; {boolean}</span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>originName</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Connection id (e.g. `host:port`)</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line235">line 235</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">boolean</span>
 
 
           </dd>
@@ -836,7 +1352,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line680">line 680</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line747">line 747</a>
               </li>
             </ul>
           </dd>
@@ -951,7 +1467,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line574">line 574</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line641">line 641</a>
               </li>
             </ul>
           </dd>
@@ -1061,7 +1577,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line607">line 607</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line674">line 674</a>
               </li>
             </ul>
           </dd>
@@ -1245,7 +1761,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line636">line 636</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line703">line 703</a>
               </li>
             </ul>
           </dd>
@@ -1386,7 +1902,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line379">line 379</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line446">line 446</a>
               </li>
             </ul>
           </dd>
@@ -1478,7 +1994,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line1517">line 1517</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line1570">line 1570</a>
               </li>
             </ul>
           </dd>
@@ -1592,7 +2108,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line1253">line 1253</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line1306">line 1306</a>
               </li>
             </ul>
           </dd>
@@ -1684,7 +2200,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line1379">line 1379</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line1432">line 1432</a>
               </li>
             </ul>
           </dd>
@@ -1734,6 +2250,7 @@
     <h3>Classes</h3>
     <ul>
       <li><a href="Actor.html">Actor</a></li>
+      <li><a href="App.html">App</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
       <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
@@ -1764,27 +2281,20 @@
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
       <li><a href="Snapshot.html">Snapshot</a></li>
-      <li><a href="Stack.html">Stack</a></li>
       <li><a href="Stash.html">Stash</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
-      <li><a href="Swarm.html">Swarm</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
-      <li><a href="Value.html">Value</a></li>
       <li><a href="Vector.html">Vector</a></li>
-      <li><a href="Walker.html">Walker</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
-    <h3>Events</h3>
-    <ul>
-      <li><a href="Aggregator.html#event:commit">commit</a></li>
-    </ul>
     <h3>Global</h3>
     <ul>
       <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
+      <li><a href="global.html#gossip">gossip</a></li>
       <li><a href="global.html#isAllZero32">isAllZero32</a></li>
     </ul>
   </nav>
