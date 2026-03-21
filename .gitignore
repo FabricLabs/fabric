@@ -49,6 +49,9 @@ settings/local.js
 # Hide bitcoin node blocks
 stores
 
+# Filesystem tests may write runtime state under versioned fixtures
+tests/fixtures/filesystem/.fabric/
+
 # Nix
 result*
 
