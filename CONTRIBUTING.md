@@ -25,6 +25,7 @@ We're borne of a swarm of storytellers, eager to tell a tale.  [Join `#lobby:rol
 
 ## Further Reading
 - [`VISION.md`](VISION.md) — product direction and doc tiers
+- [`GOALS.md`](GOALS.md) — immediate engineering goals (docs audit, book links, coverage)
 - [`DEVELOPERS.md`](DEVELOPERS.md)
 - [The RPG Marketplace](https://www.roleplaygateway.com/orders)
 - [RPG's Rules](https://www.roleplaygateway.com/rules)

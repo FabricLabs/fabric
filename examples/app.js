@@ -12,7 +12,7 @@
 // ```
 // git clone git@github.com:FabricLabs/fabric.git
 // cd fabric
-// git checkout v0.1.0-RC1
+// git checkout v0.1.0-RC2
 // ```
 //
 // You should now be on the latest branch.

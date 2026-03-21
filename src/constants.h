@@ -6,7 +6,8 @@
 
 // Message/version constants
 #define FABRIC_MESSAGE_VERSION 1
-#define FABRIC_MAX_MESSAGE_BODY 4096
+/* Max payload bytes (4096 byte frame − 208-byte on-wire header: magic…signature) */
+#define FABRIC_MAX_MESSAGE_BODY 3888
 
 // Default networking
 #define FABRIC_DEFAULT_PORT 7777

@@ -12,7 +12,7 @@ const MAX_PEERS = 32;
 const PRECISION = 100;
 
 // Fabric Core
-const FABRIC_USER_AGENT = 'Fabric Core 0.1.0 (@fabric/core#v0.1.0-RC1)';
+const FABRIC_USER_AGENT = 'Fabric Core 0.1.0 (@fabric/core#v0.1.0-RC2)';
 const BITCOIN_NETWORK = 'mainnet';
 const BITCOIN_GENESIS = '000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f';
 const BITCOIN_GENESIS_ROOT = '4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b';
@@ -23,8 +23,9 @@ const FIXTURE_XPRV = 'xprv9s21ZrQH143K2cCWaTZPjPDwac1CzTW4LKMfzLFEMNZJUoDYppxpyP
 
 // Message Constants
 const MAGIC_BYTES = 0xC0D3F33D;
-const VERSION_NUMBER = 0x01; // 0 for development, pre-alpha, 1 for production
-const HEADER_SIZE = 176; // [4], [4], [32], [32], [4], [4], [32], [64] bytes
+const VERSION_NUMBER = 0x02; // bumped for 208-byte header (optional preimage field)
+/* magic, version, parent, author, type, size, hash, preimage, signature — then body */
+const HEADER_SIZE = 208;
 const LARGE_COLLECTION_SIZE = 10; // TODO: test with 1,000,000
 const MAX_MESSAGE_SIZE = 4096 - HEADER_SIZE;
 
@@ -83,6 +84,14 @@ const P2P_PORT = 7777;
 // Gossip and peering discovery (WebRTC + Fabric P2P)
 const P2P_PEER_GOSSIP = 'P2P_PEER_GOSSIP'; // Gossip known peers for cross-cluster discovery
 const P2P_PEERING_OFFER = 'P2P_PEERING_OFFER'; // Peer needs more connections; gossiped until fulfilled
+/** Max gossip relays per logical hop (anti amplification). */
+const GOSSIP_MAX_HOPS = 5;
+/** Per-origin relay budget per rolling minute (anti flood). */
+const GOSSIP_MAX_RELAYS_PER_ORIGIN_PER_MINUTE = 60;
+/** Max entries for logical gossip payload dedup (excluding hop/signature churn). */
+const GOSSIP_MAX_PAYLOAD_CACHE = 50000;
+/** Max wire-hash dedup entries in {@link Peer} (bounded memory). */
+const PEER_MAX_WIRE_HASH_CACHE = 10000;
 const P2P_GENERIC = 0x80; // 128 in decimal
 const P2P_IDENT_REQUEST = 0x01; // 1, or the identity
 const P2P_IDENT_RESPONSE = 0x11;
@@ -249,6 +258,10 @@ module.exports = {
   P2P_GENERIC,
   P2P_PEER_GOSSIP,
   P2P_PEERING_OFFER,
+  GOSSIP_MAX_HOPS,
+  GOSSIP_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
+  GOSSIP_MAX_PAYLOAD_CACHE,
+  PEER_MAX_WIRE_HASH_CACHE,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
   P2P_CHAIN_SYNC_REQUEST,

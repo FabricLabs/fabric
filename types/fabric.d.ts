@@ -1,7 +1,11 @@
 /**
- * Minimal entry typings for `@fabric/core`. The runtime is CommonJS (`types/fabric.js`);
- * leaf modules under `types/*.js` are authoritative. Expand declarations as coverage grows
- * (see REMAINING_WORK.md).
+ * Minimal TypeScript surface for `@fabric/core`.
+ * Runtime is CommonJS (`types/fabric.js`); leaf modules under `types/*.js` are authoritative.
+ * Expand declarations incrementally as coverage grows (see REMAINING_WORK.md).
  */
-declare const Fabric: any;
+declare class Fabric {
+  constructor (settings?: Record<string, unknown>);
+  [key: string]: unknown;
+}
+
 export = Fabric;

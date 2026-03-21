@@ -24,7 +24,8 @@ See also [`QUICKSTART.md`][quickstart-guide] for up-to-date instructions.
 0. `nvm use 22.14.0` (install [`nvm`][nvm-official] if needed)
 1. From a clone of this repo: `npm install` (or `npm install -g @fabric/core` to put `fabric` on your `PATH`)
 2. (optional) `fabric setup` to generate a master key and local config
-3. Run `fabric` — the CLI entry is wired through `types/cli.js` and extends `Service.FabricShell`
+3. (optional) `fabric keygen` to generate a new master key without saving to disk (ephemeral)
+4. Run `fabric` — the CLI entry is wired through `types/cli.js` and extends **`Service.FabricShell`**
 
 Working from a **git checkout** (not the global package) is best when you are changing `@fabric/core` itself; use `npm link` or `npm install ../fabric` from downstream packages (Hub, HTTP server) as described in the repo README.
 
@@ -221,6 +222,7 @@ class MyClockService extends Service {
     return this;
   }
 
+  // Called once per tick when the service is running
   tick () {
     const origin = this.get('clock') || 0;
     console.log('clock:', origin);
@@ -301,6 +303,7 @@ Short list of documentation improvements (edit here as items land):
 
 ---
 
+[services]: guides/SERVICES.md
 [actor-type]: Actor.html
 [fabric-core-github]: https://github.com/FabricLabs/fabric
 [fabric-core-github-discussions]: https://github.com/FabricLabs/fabric/discussions

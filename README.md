@@ -58,28 +58,38 @@ you're ready to integrate Fabric into your application.
 ### Compiling from Source
 See also [`BUILD.md`][build-guide] for a full guide, including Bitcoin and Lightning.
 
+See [`BUILD.md`][build-guide] for the native addon (`npm run build:c`), system libraries (libwally-core, secp256k1, noise), and JS-only workflows. C↔JS message wire parity is documented in [`docs/C-JS-PARITY.md`](docs/C-JS-PARITY.md). Ongoing **JavaScript** work is outlined in [`docs/JS-PLAN.md`](docs/JS-PLAN.md).
+
 ```
 git clone git@github.com:FabricLabs/fabric.git
 cd fabric
 git checkout feature/v0.1.0-RC1
-npm install -g
-npm run build
+npm ci
+npm test
+# optional: compile N-API addon
+npm run build:c
 ```
 
+For global CLI install: `npm install -g` (after `npm ci` / `npm install` in the repo).
+
+### Production
+Before tagging or publishing, use [`docs/PRODUCTION-CHECKLIST.md`](docs/PRODUCTION-CHECKLIST.md) (tests, lint gates, audit reports, optional `make:dev` + `check:book-links`). CI on push/PR runs smoke, lint, **tests with coverage** (after `bitcoind` is available), then installs Lightning for downstream tooling.
+
 ## Available Commands
-- `npm run cli` provides a direct command-line interface to the Fabric network.
+- The **`fabric`** binary is the Node harness for the default Blessed TUI (`chat`); optional `fabric.node` accelerates a tiny crypto surface — see [docs/CLI-BINARY.md](docs/CLI-BINARY.md).
+- `npm run cli` runs `scripts/fabric.js` (same entry as `npm run chat`).
 - `npm run dev` serves a developer interface over localhost HTTP.
 - `npm run docs` creates a local HTTP server for browsing documentation.
 - `npm run examples` creates a local HTTP server for interacting with examples.
 - `npm start` creates a local Fabric node.
 
 ## Native Dependencies
-Installing Fabric from npm (`npm i @fabric/core` or
-`npm i FabricLabs/fabric#develop`) will generally compile the following
-dependencies from the local system:
-- `secp256k1`
-- `level`
-- `zeromq`
+Installing from npm may compile native addons (`node-gyp`).  Typical toolchain
+needs: **Node 22.x**, **Python 3** (for `node-gyp`), plus **secp256k1**,
+**libwally-core**, and **noise** libraries for `fabric.node` — see [BUILD.md](BUILD.md).
+
+JS tests do not require `fabric.node`.  Separately, **`level`** and **`zeromq`**
+may compile platform bindings when those packages are installed.
 
 ## API
 The Fabric reference implementation exposes a simple message-passing interface

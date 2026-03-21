@@ -7,7 +7,12 @@
       "src/message.c",
       "src/errors.c",
       "src/threads.c",
-      "src/scoring.c"
+      "src/scoring.c",
+      "src/validation.c",
+      "src/secure_memory.c",
+      "src/secure_random.c",
+      "src/bip340.c",
+      "src/taproot.c"
     ],
     "include_dirs": [
       "<!@(node -p \"require('node-addon-api').include\")",
@@ -16,11 +21,11 @@
     "conditions": [
       ["OS=='linux'", {
         "include_dirs": ["/usr/include", "/usr/local/include"],
-        "libraries": ["-L/usr/lib", "-L/usr/local/lib", "-lsecp256k1", "-lnoiseprotocol", "-lnoisekeys"]
+        "libraries": ["-L/usr/lib", "-L/usr/local/lib", "-lsecp256k1", "-lnoiseprotocol", "-lnoisekeys", "-lwallycore"]
       }],
       ["OS=='mac'", {
-        "include_dirs": ["/opt/homebrew/opt/secp256k1/include", "/usr/local/include"],
-        "libraries": ["-L/opt/homebrew/opt/secp256k1/lib", "-L/usr/local/lib", "-lsecp256k1", "-lnoiseprotocol", "-lnoisekeys"]
+        "include_dirs": ["/opt/homebrew/opt/secp256k1/include", "/opt/homebrew/opt/libwally-core/include", "/usr/local/include"],
+        "libraries": ["-L/opt/homebrew/opt/secp256k1/lib", "-L/opt/homebrew/opt/libwally-core/lib", "-L/usr/local/lib", "-lsecp256k1", "-lnoiseprotocol", "-lnoisekeys", "-lwallycore"]
       }]
     ],
     "cflags!": ["-fno-exceptions"],

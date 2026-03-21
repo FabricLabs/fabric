@@ -145,9 +145,19 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 ## Members
 
 <dl>
+<dt><a href="#gossip">gossip</a></dt>
+<dd><p>Limits relay amplification on <a href="P2P_PEER_GOSSIP">P2P_PEER_GOSSIP</a> (hop TTL, payload dedup, per-origin rate).</p>
+</dd>
 <dt><a href="#explorerBaseUrl">explorerBaseUrl</a></dt>
 <dd><p>Optional HTTP origin for block/tx/address REST fallback (e.g. a Hub). Null = RPC only.</p>
 </dd>
+</dl>
+
+## Functions
+
+<dl>
+<dt><a href="#isAllZero32">isAllZero32(buf)</a></dt>
+<dd></dd>
 </dl>
 
 <a name="Actor"></a>
@@ -716,7 +726,7 @@ Create an instance of an [Entity](Entity).
 Loads [State](#State) into memory.
 
 **Kind**: instance method of [<code>Collection</code>](#Collection)  
-**Emits**: <code>event:message Will emit one &#x60;CollectionSnapshot&#x60; message (not the removed Snapshot type).</code>  
+**Emits**: <code>event:message Will emit one {@link Snapshot} message.</code>  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -1065,6 +1075,7 @@ Simple interaction with 256-bit spaces.
 
 * [Hash256](#Hash256)
     * [new Hash256(settings)](#new_Hash256_new)
+    * [.doubleDigest(input)](#Hash256.doubleDigest) ⇒ <code>String</code>
     * [.digest(input)](#Hash256.digest) ⇒ <code>String</code>
     * [.reverse()](#Hash256.reverse)
 
@@ -1081,6 +1092,18 @@ If the `settings` is not a string, `input` must be provided.
 | --- | --- | --- |
 | settings | <code>Object</code> |  |
 | settings.input | <code>String</code> | Input string to map as 256-bit hash. |
+
+<a name="Hash256.doubleDigest"></a>
+
+### Hash256.doubleDigest(input) ⇒ <code>String</code>
+Double-SHA256 digest (Bitcoin-style). Matches C message body hash.
+
+**Kind**: static method of [<code>Hash256</code>](#Hash256)  
+**Returns**: <code>String</code> - SHA256(SHA256(input)) as hexadecimal string.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>String</code> \| <code>Buffer</code> | Content to digest. |
 
 <a name="Hash256.digest"></a>
 
@@ -1765,6 +1788,7 @@ selectively disclosing new routes to peers which may have open circuits.
 
 * [Message](#Message) : <code>Object</code>
     * [new Message(message)](#new_Message_new)
+    * [.preimage](#Message+preimage)
     * [.asRaw()](#Message+asRaw) ⇒ <code>Buffer</code>
     * [.signWithKey(key)](#Message+signWithKey) ⇒ [<code>Message</code>](#Message)
     * [.verify()](#Message+verify) ⇒ <code>Boolean</code>
@@ -1782,6 +1806,12 @@ The `Message` type is standardized in [Fabric](#Fabric) as a [Array](Array), whi
 | --- | --- | --- |
 | message | <code>Object</code> | Message vector.  Will be serialized by [Array#_serialize](Array#_serialize). |
 
+<a name="Message+preimage"></a>
+
+### message.preimage
+Optional 32-byte preimage (e.g. HTLC secret). `null` when unset / public (all-zero on wire).
+
+**Kind**: instance property of [<code>Message</code>](#Message)  
 <a name="Message+asRaw"></a>
 
 ### message.asRaw() ⇒ <code>Buffer</code>
@@ -1854,7 +1884,12 @@ An in-memory representation of a node in our network.
 
 * [Peer](#Peer)
     * [new Peer([config])](#new_Peer_new)
+    * [.messages](#Peer+messages)
+    * [._gossipPayloadSeen](#Peer+_gossipPayloadSeen)
+    * [._gossipRelayByOrigin](#Peer+_gossipRelayByOrigin)
     * ~~[.address](#Peer+address)~~
+    * [._gossipPayloadDedupKey(msg)](#Peer+_gossipPayloadDedupKey) ⇒ <code>string</code>
+    * [._gossipRateLimitAllow(originName)](#Peer+_gossipRateLimitAllow) ⇒ <code>boolean</code>
     * [.broadcast(message)](#Peer+broadcast)
     * [._connect(target)](#Peer+_connect)
     * [._loadPeerRegistry()](#Peer+_loadPeerRegistry) ⇒ <code>Promise.&lt;void&gt;</code>
@@ -1880,12 +1915,51 @@ Create an instance of [Peer](#Peer).
 | [config.port] | <code>Number</code> | <code>7777</code> | Port to use for P2P connections. |
 | [config.peers] | <code>Array</code> | <code>[]</code> | List of initial peers. |
 
+<a name="Peer+messages"></a>
+
+### peer.messages
+Wire-envelope dedup (SHA-256 of full buffer); FIFO-capped via [Peer#_rememberWireHash](Peer#_rememberWireHash).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_gossipPayloadSeen"></a>
+
+### peer.\_gossipPayloadSeen
+Logical gossip payload dedup (excludes signature / hop churn).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_gossipRelayByOrigin"></a>
+
+### peer.\_gossipRelayByOrigin
+origin address → { count, windowStart } for gossip relay rate limiting.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+address"></a>
 
 ### ~~peer.address~~
 ***Deprecated***
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_gossipPayloadDedupKey"></a>
+
+### peer.\_gossipPayloadDedupKey(msg) ⇒ <code>string</code>
+Stable id for gossip *logical* content (ignores `gossipHop` and wire signature changes).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>string</code> - hex sha256  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | <code>object</code> | Generic message (`type`, `object`, …) |
+
+<a name="Peer+_gossipRateLimitAllow"></a>
+
+### peer.\_gossipRateLimitAllow(originName) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| originName | <code>string</code> | Connection id (e.g. `host:port`) |
+
 <a name="Peer+broadcast"></a>
 
 ### peer.broadcast(message)
@@ -3753,9 +3827,24 @@ Use an existing Scribe instance as a parent.
 | --- | --- | --- |
 | scribe | [<code>Scribe</code>](#Scribe) | Instance of Scribe to use as parent. |
 
+<a name="gossip"></a>
+
+## gossip
+Limits relay amplification on [P2P_PEER_GOSSIP](P2P_PEER_GOSSIP) (hop TTL, payload dedup, per-origin rate).
+
+**Kind**: global variable  
 <a name="explorerBaseUrl"></a>
 
 ## explorerBaseUrl
 Optional HTTP origin for block/tx/address REST fallback (e.g. a Hub). Null = RPC only.
 
 **Kind**: global variable  
+<a name="isAllZero32"></a>
+
+## isAllZero32(buf)
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| buf | <code>Buffer</code> | 
+

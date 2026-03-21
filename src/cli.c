@@ -35,21 +35,22 @@ static int init_ncurses_and_windows(FabricCLI *cli)
   if (has_colors())
   {
     start_color();
-    init_pair(1, COLOR_WHITE, COLOR_BLACK);  // Normal text
-    init_pair(2, COLOR_RED, COLOR_BLACK);    // Error
-    init_pair(3, COLOR_YELLOW, COLOR_BLACK); // Warning
-    init_pair(4, COLOR_GREEN, COLOR_BLACK);  // Success
-    init_pair(5, COLOR_CYAN, COLOR_BLACK);   // Input
+    use_default_colors();           // Enable default terminal colors
+    init_pair(1, COLOR_WHITE, -1);  // Normal text with default background
+    init_pair(2, COLOR_RED, -1);    // Error with default background
+    init_pair(3, COLOR_YELLOW, -1); // Warning with default background
+    init_pair(4, COLOR_GREEN, -1);  // Success with default background
+    init_pair(5, COLOR_CYAN, -1);   // Input with default background
   }
 
   // Get terminal dimensions
   int max_y, max_x;
   getmaxyx(stdscr, max_y, max_x);
 
-  // Create windows
-  cli->status_win = newwin(1, max_x, 0, 0);
-  cli->content_win = newwin(max_y - 3, max_x, 1, 0);
-  cli->input_win = newwin(2, max_x, max_y - 2, 0);
+  // Create windows (accounting for box borders)
+  cli->status_win = newwin(3, max_x, 0, 0);          // 3 lines for box + content
+  cli->content_win = newwin(max_y - 7, max_x, 3, 0); // Extended by 1 row
+  cli->input_win = newwin(3, max_x, max_y - 3, 0);   // 3 lines for box + content
 
   if (!cli->status_win || !cli->content_win || !cli->input_win)
   {
@@ -204,6 +205,71 @@ void cli_add_message(FabricCLI *cli, const char *content, const char *actor, boo
   pthread_mutex_unlock(&cli->state.mutex);
 }
 
+// Process peer events from the peer system and add them to CLI log
+void cli_process_peer_events(FabricCLI *cli)
+{
+  if (!cli || !cli->state.peer)
+    return;
+
+  // Process all available peer events
+  PeerEvent *event;
+  int processed = 0;
+  while ((event = peer_get_next_event(cli->state.peer)) != NULL)
+  {
+    // Add the peer event to the CLI log
+    cli_add_message(cli, event->message, "peer", false, false);
+    processed++;
+  }
+
+  // Process incoming messages from peers
+  Message *received_msg = message_create();
+  if (received_msg) {
+    int active_connections = 0;
+    // Try to receive messages from all connections
+    for (int i = 0; i < PEER_MAX_CONNECTIONS; i++) {
+      if (cli->state.peer->connections[i].sock >= 0) {
+        active_connections++;
+        FabricError recv_result = peer_receive_message(cli->state.peer, i, received_msg);
+        if (recv_result == FABRIC_SUCCESS) {
+          // Create a formatted message for the log
+          char msg_display[256];
+          snprintf(msg_display, sizeof(msg_display),
+                   "Received %s message from peer: %.*s",
+                   received_msg->type == 32769 ? "CHAT" : "message",
+                   (int)received_msg->size, (char*)received_msg->body);
+
+          cli_add_message(cli, msg_display, "message", false, false);
+          processed++;
+        } else if (recv_result != FABRIC_ERROR_SOCKET_RECV_FAILED) {
+          // Log other errors (but not the common "no data" error)
+          char debug_msg[128];
+          snprintf(debug_msg, sizeof(debug_msg), "Message receive error %d on connection %d", recv_result, i);
+          cli_add_message(cli, debug_msg, "debug", false, false);
+        }
+      }
+    }
+
+    // Log connection status
+    if (active_connections > 0) {
+      // snprintf(conn_msg, sizeof(conn_msg), "Checking %d active connections for messages", active_connections);
+      //cli_add_message(cli, conn_msg, "debug", false, false);
+    }
+
+    message_destroy(received_msg);
+  }
+
+  // Add a test message if we processed events (this will help debug)
+  if (processed > 0)
+  {
+    char debug_msg[64];
+    snprintf(debug_msg, sizeof(debug_msg), "Processed %d peer events", processed);
+    cli_add_message(cli, debug_msg, "system", false, false);
+
+    // Set flag to indicate redraw is needed (don't call cli_render while holding mutex)
+    cli->state.needs_redraw = true;
+  }
+}
+
 // Set input text
 void cli_set_input(FabricCLI *cli, const char *input)
 {
@@ -239,18 +305,40 @@ void cli_render(FabricCLI *cli)
 
   pthread_mutex_lock(&cli->state.mutex);
 
-  // Render status bar
+  // Render status bar with box
   wclear(cli->status_win);
-  wprintw(cli->status_win, " Fabric CLI | Identity: %s | Balance: %s | Network: %s ",
-          cli->state.identity, cli->state.balance, cli->state.network);
+  box(cli->status_win, 0, 0);
+  mvwprintw(cli->status_win, 0, 2, " FABRIC ");
+
+  // Get connection count
+  int connection_count = 0;
+  if (cli->state.peer)
+  {
+    connection_count = cli->state.peer->connection_count.value;
+  }
+
+  // Status line with peer info
+  if (cli->state.is_listening)
+  {
+    mvwprintw(cli->status_win, 1, 2, " Identity: %s | Balance: %s | Network: %s | Listening: %d | Peers: %d ",
+              cli->state.identity, cli->state.balance, cli->state.network, cli->state.listening_port, connection_count);
+  }
+  else
+  {
+    mvwprintw(cli->status_win, 1, 2, " Identity: %s | Balance: %s | Network: %s | Not Listening | Peers: %d ",
+              cli->state.identity, cli->state.balance, cli->state.network, connection_count);
+  }
   wrefresh(cli->status_win);
 
-  // Render content area (log)
+  // Render content area (log) with box
   wclear(cli->content_win);
+  box(cli->content_win, 0, 0);
+  mvwprintw(cli->content_win, 0, 2, " LOG ");
+
   int max_y, max_x;
   getmaxyx(cli->content_win, max_y, max_x);
 
-  int display_lines = max_y - 2;
+  int display_lines = max_y - 2; // Account for top and bottom borders
   int start_idx = 0;
   if (cli->state.message_count > display_lines)
   {
@@ -272,18 +360,20 @@ void cli_render(FabricCLI *cli)
       color_pair = 3; // Yellow
 
     wattron(cli->content_win, COLOR_PAIR(color_pair));
-    wprintw(cli->content_win, "[%s] %s: %s\n", time_str, msg->actor, msg->content);
+    mvwprintw(cli->content_win, (i - start_idx) + 1, 1, "[%s] %s: %s", time_str, msg->actor, msg->content);
     wattroff(cli->content_win, COLOR_PAIR(color_pair));
   }
   wrefresh(cli->content_win);
 
-  // Render input area
+  // Render input area with box
   wclear(cli->input_win);
-  wprintw(cli->input_win, "> ");
-  wprintw(cli->input_win, "%s", cli->state.input_buffer);
+  box(cli->input_win, 0, 0);
+  mvwprintw(cli->input_win, 0, 2, " INPUT ");
+  mvwprintw(cli->input_win, 1, 1, "> ");
+  mvwprintw(cli->input_win, 1, 3, "%s", cli->state.input_buffer);
 
   // Position cursor
-  wmove(cli->input_win, 0, 2 + cli->state.cursor_pos);
+  wmove(cli->input_win, 1, 3 + cli->state.cursor_pos);
   wrefresh(cli->input_win);
 
   cli->state.needs_redraw = false;
@@ -370,6 +460,108 @@ static void process_input(FabricCLI *cli, int ch)
       {
         strncpy(cli->state.network, cli->state.input_buffer + 8, sizeof(cli->state.network) - 1);
         cli->state.network[sizeof(cli->state.network) - 1] = '\0';
+      }
+      else if (strncmp(cli->state.input_buffer, "listen ", 7) == 0)
+      {
+        // Start listening on specified port
+        int port = atoi(cli->state.input_buffer + 7);
+        if (port > 0 && port < 65536)
+        {
+          if (cli->state.peer)
+          {
+            FabricError result = peer_start_listening(cli->state.peer, port);
+            if (result == FABRIC_SUCCESS)
+            {
+              cli->state.listening_port = port;
+              cli->state.is_listening = true;
+              snprintf(status_message, sizeof(status_message), "Started listening on port %d", port);
+            }
+            else
+            {
+              snprintf(status_message, sizeof(status_message), "Failed to start listening (error: %d)", result);
+              is_error_message = true;
+            }
+          }
+          else
+          {
+            strncpy(status_message, "Peer system not initialized", sizeof(status_message) - 1);
+            is_error_message = true;
+          }
+        }
+        else
+        {
+          strncpy(status_message, "Invalid port number (1-65535)", sizeof(status_message) - 1);
+          is_error_message = true;
+        }
+      }
+      else if (strcmp(cli->state.input_buffer, "stop") == 0)
+      {
+        // Stop listening
+        if (cli->state.is_listening)
+        {
+          peer_stop_listening(cli->state.peer);
+          cli->state.is_listening = false;
+          cli->state.listening_port = 0;
+          strncpy(status_message, "Stopped listening", sizeof(status_message) - 1);
+        }
+      }
+      else if (strncmp(cli->state.input_buffer, "connect ", 8) == 0)
+      {
+        // Connect to a peer
+        char *host_port = cli->state.input_buffer + 8;
+        char *colon = strchr(host_port, ':');
+        if (colon)
+        {
+          *colon = '\0';
+          int port = atoi(colon + 1);
+          if (peer_connect(cli->state.peer, host_port, port) == FABRIC_SUCCESS)
+          {
+            strncpy(status_message, "Connected to peer", sizeof(status_message) - 1);
+          }
+          else
+          {
+            strncpy(status_message, "Failed to connect to peer", sizeof(status_message) - 1);
+            is_error_message = true;
+          }
+        }
+        else
+        {
+          strncpy(status_message, "Invalid host:port format", sizeof(status_message) - 1);
+          is_error_message = true;
+        }
+      }
+      else if (strncmp(cli->state.input_buffer, "broadcast ", 10) == 0)
+      {
+        // Broadcast a signed message to all peers
+        const char *message_text = cli->state.input_buffer + 10;
+        if (strlen(message_text) > 0)
+        {
+          // Create and sign message
+          Message *msg = message_create();
+          if (msg)
+          {
+            message_set_body(msg, (uint8_t *)message_text, strlen(message_text));
+            message_compute_body_hash(msg);
+            message_sign(msg, cli->state.peer->private_key, cli->state.peer->secp256k1_ctx);
+
+            // Broadcast to all connections
+            for (int i = 0; i < PEER_MAX_CONNECTIONS; i++)
+            {
+              if (cli->state.peer->connections[i].sock > 0)
+              {
+                peer_send_message(cli->state.peer, i, msg);
+              }
+            }
+
+            message_destroy(msg);
+            strncpy(status_message, "Message broadcasted to peers", sizeof(status_message) - 1);
+          }
+          else
+          {
+            strncpy(status_message, "Failed to create message", sizeof(status_message) - 1);
+            is_error_message = true;
+          }
+        }
       }
 
       // Clear input

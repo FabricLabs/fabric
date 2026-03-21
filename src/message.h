@@ -27,6 +27,7 @@ typedef struct
   uint32_t type;
   uint32_t size;
   uint8_t hash[32];
+  uint8_t preimage[32]; /* zero = public / none; optional HTLC-style secret on wire */
   uint8_t signature[64];
   uint8_t *body;
 } Message;

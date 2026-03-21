@@ -74,7 +74,8 @@
           <li><code>nvm use 22.14.0</code> (install <a href="https://nvm.sh"><code>nvm</code></a> if needed)</li>
           <li>From a clone of this repo: <code>npm install</code> (or <code>npm install -g @fabric/core</code> to put <code>fabric</code> on your <code>PATH</code>)</li>
           <li>(optional) <code>fabric setup</code> to generate a master key and local config</li>
-          <li>Run <code>fabric</code> — the CLI entry is wired through <code>types/cli.js</code> and extends <code>Service.FabricShell</code></li>
+          <li>(optional) <code>fabric keygen</code> to generate a new master key without saving to disk (ephemeral)</li>
+          <li>Run <code>fabric</code> — the CLI entry is wired through <code>types/cli.js</code> and extends <strong><code>Service.FabricShell</code></strong></li>
         </ol>
         <p>Working from a <strong>git checkout</strong> (not the global package) is best when you are changing <code>@fabric/core</code> itself; use <code>npm link</code> or <code>npm install ../fabric</code> from downstream packages (Hub, HTTP server) as described in the repo README.</p>
         <h2>Repository layout</h2>
@@ -122,7 +123,7 @@
           <li><strong>Unit tests:</strong> <code>npm test</code> — runs Mocha recursively under <code>tests/</code>.</li>
           <li><strong>Lint:</strong> <code>npm run lint</code> / <code>npm run lint:fix</code> (Semistandard).</li>
           <li><strong>API reference:</strong> <code>npm run make:api</code> writes <code>API.md</code> from JSDoc (see <code>scripts/list-jsdoc-type-files.js</code> for which <code>types/*.js</code> files are included).</li>
-          <li><strong>HTML docs:</strong> <code>npm run make:docs</code> (runs <code>make:api</code> first, then JSDoc HTML under <code>docs/</code>).</li>
+          <li><strong>HTML docs:</strong> <code>npm run make:docs</code> (runs <code>make:api</code> first, <strong>removes prior <code>docs/*.html</code></strong> so deleted types do not leave stale pages, then JSDoc HTML under <code>docs/</code>).</li>
           <li><strong>Local packages:</strong> when <code>fabric</code>, <code>fabric-http</code>, and Hub are sibling repos, <code>npm install ../fabric ../fabric-http --no-save</code> keeps Message opcodes and servers aligned.</li>
         </ul>
         <p>Agent-oriented services (lifecycle, workers, payments) are summarized in <a href="AGENTS.md"><code>AGENTS.md</code></a>.</p>
@@ -317,6 +318,7 @@ class MyClockService extends Service {
     return this;
   }
 
+  // Called once per tick when the service is running
   tick () {
     const origin = this.get('clock') || 0;
     console.log('clock:', origin);
@@ -458,6 +460,8 @@ console.log('Signature (hex):', signature.toString('hex'));
     <h3>Global</h3>
     <ul>
       <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
+      <li><a href="global.html#gossip">gossip</a></li>
+      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
     </ul>
   </nav>
   <br class="clear" />

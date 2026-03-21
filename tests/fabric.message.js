@@ -23,6 +23,7 @@ const {
 
 const Message = require('../types/message');
 const Key = require('../types/key');
+const Hash256 = require('../types/hash256');
 const assert = require('assert');
 
 // Create a key with a private key for signing
@@ -56,7 +57,7 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(literal.headers.version, VERSION_NUMBER);
       assert.strictEqual(literal.headers.type, P2P_CALL);
       assert.strictEqual(literal.headers.size, 29);
-      assert.strictEqual(literal.headers.hash, '29ef07455d1e3ab5f0b5ad485d4bb85a00a4dd4003dabd43cab0f43199fc316e');
+      assert.strictEqual(literal.headers.hash, 'd3595887441da0b0ac8bdb05c8b85b2e4fbad11c43dbbf4ce8b6ec27d7cd0646');
       assert.strictEqual(message.type, 'Call');
     });
 
@@ -72,7 +73,7 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(literal.headers.version, VERSION_NUMBER);
       assert.strictEqual(literal.headers.type, P2P_CALL);
       assert.strictEqual(literal.headers.size, 29);
-      assert.strictEqual(literal.headers.hash, '29ef07455d1e3ab5f0b5ad485d4bb85a00a4dd4003dabd43cab0f43199fc316e');
+      assert.strictEqual(literal.headers.hash, 'd3595887441da0b0ac8bdb05c8b85b2e4fbad11c43dbbf4ce8b6ec27d7cd0646');
       assert.strictEqual(message.type, 'Call');
     });
 
@@ -97,6 +98,40 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(body['@version'], 1);
       assert.strictEqual(body['@actor'], 'deadbeef');
     });
+
+    it('fromBuffer keeps header hash bytes from wire (body integrity field)', function () {
+      const message = Message.fromVector(['Call', JSON.stringify(example.data)]);
+      message.signWithKey(key);
+      const buf = message.toBuffer();
+      const hashOnWire = buf.subarray(80, 112).toString('hex');
+      const restored = Message.fromBuffer(buf);
+      const hashAfterParse = Buffer.isBuffer(restored.raw.hash)
+        ? restored.raw.hash.toString('hex')
+        : restored.raw.hash;
+      assert.strictEqual(hashAfterParse, hashOnWire);
+      assert.strictEqual(Hash256.doubleDigest(restored.raw.data), hashOnWire);
+    });
+
+    it('optional preimage is null on wire for public messages and round-trips when set', function () {
+      const pub = Message.fromVector(['Call', JSON.stringify(example.data)]);
+      pub.signWithKey(key);
+      assert.strictEqual(pub.preimage, null);
+      const lit = pub.toObject();
+      assert.strictEqual(lit.headers.preimage, null);
+
+      const secret = Buffer.alloc(32, 0xab);
+      const priv = new Message({
+        type: 'Call',
+        data: JSON.stringify(example.data),
+        preimage: secret
+      });
+      priv.signWithKey(key);
+      assert.ok(priv.preimage);
+      assert.strictEqual(priv.preimage.toString('hex'), secret.toString('hex'));
+      const back = Message.fromBuffer(priv.toBuffer());
+      assert.strictEqual(back.preimage.toString('hex'), secret.toString('hex'));
+      assert.ok(back.verifyWithKey(key));
+    });
   });
 
   describe('parseRawMessage()', function () {
@@ -110,6 +145,7 @@ describe('@fabric/core/types/message', function () {
         type: Buffer.from('00000067', 'hex'),
         size: Buffer.from('00000015', 'hex'),
         hash: Buffer.alloc(32),
+        preimage: Buffer.alloc(32),
         signature: Buffer.alloc(64),
         data: Buffer.from('"Hello, world!"', 'utf8')
       };
@@ -122,6 +158,7 @@ describe('@fabric/core/types/message', function () {
         format.type,
         format.size,
         format.hash,
+        format.preimage,
         format.signature,
         format.data
       ]);
@@ -135,6 +172,7 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(format.type.toString('hex'), parsed.type.toString('hex'));
       assert.strictEqual(format.size.toString('hex'), parsed.size.toString('hex'));
       assert.strictEqual(format.hash.toString('hex'), parsed.hash.toString('hex'));
+      assert.strictEqual(format.preimage.toString('hex'), parsed.preimage.toString('hex'));
       assert.strictEqual(format.signature.toString('hex'), parsed.signature.toString('hex'));
       assert.strictEqual(format.data.toString('hex'), parsed.data.toString('hex'));
     });
@@ -155,7 +193,7 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(literal.headers.version, VERSION_NUMBER);
       assert.strictEqual(literal.headers.type, P2P_CALL);
       assert.strictEqual(literal.headers.size, 29);
-      assert.strictEqual(literal.headers.hash, '29ef07455d1e3ab5f0b5ad485d4bb85a00a4dd4003dabd43cab0f43199fc316e');
+      assert.strictEqual(literal.headers.hash, 'd3595887441da0b0ac8bdb05c8b85b2e4fbad11c43dbbf4ce8b6ec27d7cd0646');
       assert.strictEqual(message.type, 'Call');
     });
   });
@@ -197,7 +235,7 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(literal.headers.version, VERSION_NUMBER);
       // assert.strictEqual(literal.headers.type, P2P_CALL);
       assert.strictEqual(literal.headers.size, 29);
-      assert.strictEqual(literal.headers.hash, '29ef07455d1e3ab5f0b5ad485d4bb85a00a4dd4003dabd43cab0f43199fc316e');
+      assert.strictEqual(literal.headers.hash, 'd3595887441da0b0ac8bdb05c8b85b2e4fbad11c43dbbf4ce8b6ec27d7cd0646');
       assert.strictEqual(message.type, 'Generic');
     });
   });
