@@ -1,6 +1,6 @@
 {
   "name": "@fabric/core",
-  "version": "0.1.0-RC2",
+  "version": "0.1.0-RC1",
   "description": "Experimental peer-to-peer framework.",
   "main": "types/fabric.js",
   "module": "types/fabric.mjs",

@@ -872,7 +872,7 @@ describe('@fabric/core/services/bitcoin', function () {
 
     it('provides reasonable defaults', function () {
       const local = new Bitcoin();
-      assert.equal(local.UAString, 'Fabric Core 0.1.0 (@fabric/core#v0.1.0-RC2)');
+      assert.equal(local.UAString, 'Fabric Core 0.1.0 (@fabric/core#v0.1.0-RC1)');
       assert.equal(local.supply, 0);
       assert.equal(local.network, 'mainnet');
       // assert.equal(local.addresses, []);

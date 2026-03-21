@@ -10,10 +10,8 @@ Fabric aims to maximize the security of a sensible default configuration while k
 | Doc | Use |
 |-----|-----|
 | [DEVELOPERS.md](DEVELOPERS.md) | Contributor workflow, core types, tests |
-| [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md) | Completion, privacy, security checklist |
 | [PRIVACY.md](PRIVACY.md) | What is / is not hidden from peers and observers |
 | [AUDIT.md](AUDIT.md) | Known issues and recommendations |
-| [SECURITY_IMPLEMENTATION_PLAN.md](SECURITY_IMPLEMENTATION_PLAN.md) | Native/C hardening roadmap |
 | [docs/PRODUCTION.md](docs/PRODUCTION.md) | Node version, native addons, downstream alignment |
 
 ## Process

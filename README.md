@@ -3,7 +3,7 @@
 [![Coverage Status][badge-coverage]][coverage]
 [![GitHub contributors][badge-contributors]][contributors]
 
-**Status:** `0.1.0-RC2` — run **`npm run ci`** before release tags (full test suite).
+**Status:** `0.1.0-RC1` — run **`npm run ci`** before release tags (full test suite).
 
 | Doc | Purpose |
 |-----|---------|
@@ -62,7 +62,7 @@ See [`BUILD.md`][build-guide] for the native addon (`npm run build:c`), system l
 ```
 git clone git@github.com:FabricLabs/fabric.git
 cd fabric
-git checkout feature/v0.1.0-RC2
+git checkout feature/v0.1.0-RC1
 npm ci
 npm test
 # optional: compile N-API addon
@@ -155,7 +155,7 @@ Full Fabric nodes connected to the World Wide Web (WWW).  Only SSL (port 443) is
 ### Fabric Projects
 Either Fabric libraries or projects running Fabric, this list encompasses the most interesting work in the ecosystem.
 
-| Name | Description | Status | v0.1.0-RC2 ready |
+| Name | Description | Status | v0.1.0-RC1 ready |
 | ---- | ----------- | ------ | ---------------- |
 | [`@fabric/core`][fabric-github] | Core library | Active | In RC |
 | [`@fabric/http`][http-plugin] | HTTP bridge | Active | In RC |

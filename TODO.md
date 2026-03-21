@@ -3,6 +3,7 @@
 
 ## Current Goals
 - [ ] Release `@fabric/core#v0.1.0-RC2`
+- [ ] Release `@fabric/core#v0.1.0-RC1`
   - [ ] Document development process
     - [ ] `reports/`
     - [ ] `scripts/`
