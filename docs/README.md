@@ -27,6 +27,9 @@
 
 After **`npm run make:docs`**: JSDoc HTML under **`docs/*.html`** (plus **`npm run make:api`** refreshes root **`API.md`**). Regenerate after changing public JSDoc on `types/` or `services/`.
 
+## Non-canonical / historical notes
+One-off reports and analysis files in the repo root are listed in **[NON_CANONICAL.md](NON_CANONICAL.md)**—they are **not** the same tier as **VISION.md** or this index.
+
 ## Downstream
 
 **hub.fabric.pub** (rendezvous hub, HTTP bridge) and **@fabric/http** are separate repos; align versions per **[docs/RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)** and **[../DEVELOPERS.md](../DEVELOPERS.md)**.

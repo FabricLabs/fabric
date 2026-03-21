@@ -3,6 +3,7 @@ Welcome to Fabric!
 
 ## Overview
 * [🤔 Introduction][readme]
+* [🔭 Vision][vision]
 * [👀 Quick Start][quickstart]
 * [🎯 Goals][goals]
 * [🔭 Roadmap][roadmap]
@@ -25,12 +26,15 @@ Welcome to Fabric!
 ## Archive
 * [📄 Whitepaper (latest)][whitepaper]
 * [📃 Whitepaper (2015)][whitepaper-2015]
+* [🗂️ Non-canonical / historical docs][non-canonical]
 
 [api-md]: API.md
 [api-docs]: https://dev.fabric.pub/docs
 [api-examples]: https://dev.fabric.pub/examples
 
 [readme]: README.md
+[vision]: VISION.md
+[non-canonical]: docs/NON_CANONICAL.md
 [welcome]: WELCOME.md
 [quickstart]: QUICKSTART.md
 [whitepaper]: whitepaper.md
