@@ -1,4 +1,5 @@
 # Fabric Engineering Goals
+Product direction and documentation tiers: **[VISION.md](VISION.md)**.
 
 1. Complexity is the enemy.  Prefer simplicity.
 2. Make it work, make it right, make it fast.  In that order.
@@ -18,7 +19,8 @@ and no mission succeeds without a clearly-defined set of goals.
 These are our immediate goals:
 
 - [x] Find all TODO items (run script, check diff)
-- [ ] Audit all documentation
+- [x] Establish **[VISION.md](VISION.md)** and fix broken links in **SUMMARY.md** / **docs/README.md**
+- [ ] Audit remaining markdown for alignment with VISION (archive or label legacy reports)
 - [ ] Check all hyperlinks on `npm run dev`
 - [ ] 100% test coverage
 - [ ] Completion of 1 or more of our #projects: https://chat.fabric.pub/#/room/#projects:fabric.pub

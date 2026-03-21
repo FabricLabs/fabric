@@ -48,8 +48,8 @@ const settings = {
 };
 
 // ## Dependencies
-// Import the `App` type.
-const App = require('../types/service').App;
+// Import the `FabricShell` type (browser / CLI application shell).
+const { FabricShell } = require('../types/service');
 
 // ## Resources
 // Resources are named collections.
@@ -71,7 +71,7 @@ function _handleOutput (output) {
 // ## Main Process
 async function main (input = {}) {
   // Create and start the Fabric Application
-  window.app = new App(input);
+  window.app = new FabricShell(input);
   window.app.start();
 
   // Return new Object

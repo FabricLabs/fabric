@@ -2,6 +2,7 @@
 There is a lot to cover when building decentralized applications on Fabric, so grab a coffee ☕ and settle in.
 
 ## Contents
+- [Vision](#vision)
 - [Quick start](#quick-start)
 - [Repository layout](#repository-layout)
 - [Development workflow](#development-workflow)
@@ -14,13 +15,16 @@ There is a lot to cover when building decentralized applications on Fabric, so g
 - [Core types (reference)](#core-types-reference)
 - [Roadmap & doc backlog](#roadmap--doc-backlog)
 
+## Vision
+Read **[VISION.md](VISION.md)** first for what Fabric is building, how **`@fabric/core`** fits (JS reference client, Bitcoin/Lightning services, **FabricShell**/CLI), and which docs are canonical vs experimental.
+
 ## Quick Start
 See also [`QUICKSTART.md`][quickstart-guide] for up-to-date instructions.
 
 0. `nvm use 22.14.0` (install [`nvm`][nvm-official] if needed)
 1. From a clone of this repo: `npm install` (or `npm install -g @fabric/core` to put `fabric` on your `PATH`)
 2. (optional) `fabric setup` to generate a master key and local config
-3. Run `fabric` — the CLI entry is wired through `types/cli.js` and extends `Service.App`
+3. Run `fabric` — the CLI entry is wired through `types/cli.js` and extends `Service.FabricShell`
 
 Working from a **git checkout** (not the global package) is best when you are changing `@fabric/core` itself; use `npm link` or `npm install ../fabric` from downstream packages (Hub, HTTP server) as described in the repo README.
 
@@ -40,7 +44,7 @@ Working from a **git checkout** (not the global package) is best when you are ch
 - **Unit tests:** `npm test` — runs Mocha recursively under `tests/`.
 - **Lint:** `npm run lint` / `npm run lint:fix` (Semistandard).
 - **API reference:** `npm run make:api` writes `API.md` from JSDoc (see `scripts/list-jsdoc-type-files.js` for which `types/*.js` files are included).
-- **HTML docs:** `npm run make:docs` (runs `make:api` first, then JSDoc HTML under `docs/`).
+- **HTML docs:** `npm run make:docs` (runs `make:api` first, **removes prior `docs/*.html`** so deleted types do not leave stale pages, then JSDoc HTML under `docs/`).
 - **Local packages:** when `fabric`, `fabric-http`, and Hub are sibling repos, `npm install ../fabric ../fabric-http --no-save` keeps Message opcodes and servers aligned.
 
 Agent-oriented services (lifecycle, workers, payments) are summarized in [`AGENTS.md`](AGENTS.md).
@@ -66,7 +70,7 @@ These live under `types/*.js` (CommonJS). The **`Fabric`** facade (`types/fabric
 | **`Actor`** | Base identity + vector clock + `commit()`; most user-facing types extend it. |
 | **`Message`** | Wire envelope for P2P and services; opcode-driven dispatch. |
 | **`Peer`** | TCP/NOISE P2P node, relay, registry; **`Peer.Swarm`** multi-peer orchestration. |
-| **`Service`** | Long-lived app surface, resources, **`Service.App`** full application shell. |
+| **`Service`** | Long-lived app surface, resources; **`Service.FabricShell`** is the browser/CLI application shell (`CLI` extends it). |
 | **`Store`** | LevelDB persistence; **`Store.openEncrypted`** for at-rest crypto. |
 | **`Entity`** | Generic structured document; **`Entity.Transition`** for JSON Patch diffs. |
 | **`Key` / `Identity`** | Schnorr/secp256k1 keys and BIP32/BIP39 identity. |
@@ -270,7 +274,7 @@ console.log('Signature (hex):', signature.toString('hex'));
 
 Use **`Store.encryptedSettings(settings)`** / **`Store.openEncrypted(settings)`** for defaults that match the former `types/keystore.js` (path `./stores/keystore`, `Codec` from `{ key, mode, version }` / `FABRIC_SEED`). Use additional plain **`Store`** instances for caches or indexes (no codec).
 
-**`App`** (browser/CLI shell) lives on **`types/service.js`** as **`Service.App`**: it wires `Store.openEncrypted`, peer, machine, tips/stash stores, and resources.
+**`FabricShell`** (browser/CLI shell) is **`types/service.js`** **`Service.FabricShell`**: it wires `Store.openEncrypted`, peer, machine, tips/stash stores, and resources. **`CLI`** extends **`FabricShell`**.
 
 Other **`Store`** subclasses add domain behavior — for example **`Datastore`**, **`Oracle`**, and **`Resource`**.
 
@@ -279,20 +283,16 @@ Other **`Store`** subclasses add domain behavior — for example **`Datastore`**
 - **`Transition`** — defined on **`types/entity.js`**; export **`Entity.Transition`** (JSON Patch between entity states).
 - **`Swarm`** — **`Peer.Swarm`** on **`types/peer.js`** (`Actor` wrapping an embedded `Peer`).
 - Removed standalone modules (unused or superseded): **`aggregator`**, **`consensus`**, **`mempool`**, **`swap`**, **`value`**, **`walker`**. See **`scripts/remove-legacy-types.sh`**.
-- **`Stash`** (browser `localforage` on **`Vector`**) remains for legacy examples; omitted from JSDoc inputs via **`scripts/list-jsdoc-type-files.js`**.
+- Removed **`types/stash.js`** (legacy `Vector` + localforage); use **`Store`** or app-specific caches instead.
 
 ## Reference links
-
 | Link | Description |
 |------|-------------|
 | [QUICKSTART.md][quickstart-guide] | Install and first commands |
 | [AGENTS.md](AGENTS.md) | Agent services, lifecycle, workers |
-| [`guides/SERVICES.md`](guides/SERVICES.md) | Overview of bundled `services/` (Bitcoin, Lightning, …) |
 | [SECURITY.md](SECURITY.md) | Disclosure process, release hygiene |
-| [docs/README.md](docs/README.md) | Index of all operational docs |
 
 ## Roadmap & doc backlog
-
 Short list of documentation improvements (edit here as items land):
 
 - [ ] Markdown/CMS for published docs site

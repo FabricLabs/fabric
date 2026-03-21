@@ -20,7 +20,7 @@ const monitor = require('fast-json-patch'); // TODO: move uses to App
 
 // Fabric Types
 const Service = require('./service');
-const App = Service.App;
+const { FabricShell } = Service;
 const Peer = require('./peer');
 const Actor = require('./actor');
 const Message = require('./message');
@@ -54,7 +54,7 @@ const blessed = require('blessed');
  * Provides a Command Line Interface (CLI) for interacting with
  * the Fabric network using a terminal emulator.
  */
-class CLI extends App {
+class CLI extends FabricShell {
   /**
    * Create a terminal-based interface for a {@link User}.
    * @param {Object} [settings] Configuration values.
@@ -910,7 +910,7 @@ class CLI extends App {
 
   async _handleBitcoinMessage (message) {
     switch (message['@type']) {
-      case 'Snapshot':
+      case 'CollectionSnapshot':
         break;
       default:
         this._appendMessage(`Bitcoin service emitted message: ${JSON.stringify(message)}`);

@@ -7,11 +7,12 @@
 
 | Doc | Purpose |
 |-----|---------|
+| [VISION.md](VISION.md) | Product vision, architecture snapshot, documentation map |
 | [DEVELOPERS.md](DEVELOPERS.md) | Repo layout, tests, core types, storage |
 | [docs/PRODUCTION.md](docs/PRODUCTION.md) | Node version, native deps, downstream alignment |
 | [PRIVACY.md](PRIVACY.md) | Privacy model for operators |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
-| [docs/README.md](docs/README.md) | Index of operational docs |
+| [docs/README.md](docs/README.md) | Index of operational and generated docs |
 
 [The `@fabric/core` project][fabric-github] provides an API for building peer-to-peer applications on [Bitcoin][bitcoin].
 
