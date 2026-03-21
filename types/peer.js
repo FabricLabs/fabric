@@ -316,7 +316,8 @@ class Peer extends Service {
   }
 
   get port () {
-    return this.settings.port || 7777;
+    const p = this.settings.port;
+    return (typeof p === 'number' && !Number.isNaN(p)) ? p : 7777;
   }
 
   get publicPeers () {
@@ -1339,7 +1340,8 @@ class Peer extends Service {
         this.listenAddress = address;
         this.emit('log', 'Listener started!');
       } catch (exception) {
-        this.emit('error', 'Could not listen:', exception);
+        // Do not emit('error') here — with no listener Node throws ERR_UNHANDLED_ERROR; callers get the throw below.
+        this.emit('warning', 'Could not listen:', exception);
         throw new Error('Peer failed to listen: ' + (exception && exception.message ? exception.message : exception));
       }
     }

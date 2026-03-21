@@ -457,20 +457,13 @@ describe('@fabric/core/services/lightning (unit)', function () {
 
   describe('redactSensitiveCommandArg (via createLocalNode params)', function () {
     it('builds params without exposing password in debug', function () {
-      const ln = new Lightning({
-        managed: false,
-        debug: false,
-        bitcoin: { rpcuser: 'u', rpcpassword: 'secret', host: '127.0.0.1', rpcport: 18443, datadir: '/tmp' }
-      });
       const params = [
         `--bitcoin-rpcuser=u`,
         `--bitcoin-rpcpassword=secret`
       ];
-      const redact = (arg) => String(arg).replace(
-        /((?:--?rpcpassword|--?rpcuser)=).*/i,
-        '$1[REDACTED]'
-      );
+      const redact = Lightning.redactSensitiveCommandArg;
       assert.ok(/REDACTED/.test(redact(params[1])));
+      assert.ok(/REDACTED/.test(redact(params[0])));
     });
   });
 });

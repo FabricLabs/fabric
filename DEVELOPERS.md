@@ -47,6 +47,7 @@ Working from a **git checkout** (not the global package) is best when you are ch
 - **API reference:** `npm run make:api` writes `API.md` from JSDoc (see `scripts/list-jsdoc-type-files.js` for which `types/*.js` files are included).
 - **HTML docs:** `npm run make:docs` (runs `make:api` first, **removes prior `docs/*.html`** so deleted types do not leave stale pages, then JSDoc HTML under `docs/`).
 - **Historical / one-off Markdown:** see **`docs/NON_CANONICAL.md`** — root-level “completion” and analysis files are not the same tier as **VISION.md** or **`docs/README.md`**.
+- **Native addon (`fabric.node`):** it is **not** `require()`’d unless **`FABRIC_NATIVE_DOUBLE_SHA256=1`**; message body double-SHA256 uses **@noble/hashes** by default. Enable that env var when exercising the C **`doubleSha256`** export.
 - **Local packages:** when `fabric`, `fabric-http`, and Hub are sibling repos, `npm install ../fabric ../fabric-http --no-save` keeps Message opcodes and servers aligned.
 
 Agent-oriented services (lifecycle, workers, payments) are summarized in [`AGENTS.md`](AGENTS.md).

@@ -5,6 +5,11 @@
  * If `build/Release/fabric.node` is missing or fails to load, all helpers fall
  * back to pure JavaScript (@noble/hashes / existing types).
  *
+ * **Double-SHA256 (body hash):** the native `doubleSha256` path is **opt-in**
+ * (`FABRIC_NATIVE_DOUBLE_SHA256=1`) so a broken or ABI-mismatched `fabric.node`
+ * cannot segfault the process during normal tests or `Message` construction.
+ * Default is pure JS (same output as libwally when the addon works).
+ *
  * Supported methods (C addon must export these names):
  *   - `doubleSha256(Buffer)` → Buffer(32) — Bitcoin-style SHA256(SHA256(data))
  *
@@ -22,6 +27,11 @@ let loadError = null;
 
 const SUPPORTED_ADDON_EXPORTS = Object.freeze(['doubleSha256']);
 
+function nativeDoubleSha256Enabled () {
+  const v = process.env.FABRIC_NATIVE_DOUBLE_SHA256;
+  return v === '1' || v === 'true';
+}
+
 function addonPathCandidates () {
   const env = process.env.FABRIC_ADDON_PATH;
   const list = [];
@@ -33,6 +43,10 @@ function addonPathCandidates () {
 function tryLoadAddon () {
   if (loadAttempted) return;
   loadAttempted = true;
+  // Never `require()` fabric.node unless opted in — a bad binary can segfault on load.
+  if (!nativeDoubleSha256Enabled()) {
+    return;
+  }
   for (const p of addonPathCandidates()) {
     try {
       if (!p || !fs.existsSync(p)) continue;
@@ -52,10 +66,12 @@ function tryLoadAddon () {
 function status () {
   tryLoadAddon();
   const methods = [];
-  if (addon && typeof addon.doubleSha256 === 'function') methods.push('doubleSha256');
+  const canUseNative = nativeDoubleSha256Enabled() && addon && typeof addon.doubleSha256 === 'function';
+  if (canUseNative) methods.push('doubleSha256');
   return {
     available: methods.length > 0,
     methods,
+    nativeDoubleSha256OptIn: nativeDoubleSha256Enabled(),
     path: addon ? (process.env.FABRIC_ADDON_PATH || path.join(__dirname, '..', 'build', 'Release', 'fabric.node')) : null,
     error: !addon && loadError ? loadError.message : undefined
   };
@@ -68,7 +84,7 @@ function status () {
 function doubleSha256Buffer (buf) {
   if (!Buffer.isBuffer(buf)) throw new Error('doubleSha256Buffer expects Buffer');
   tryLoadAddon();
-  if (addon && typeof addon.doubleSha256 === 'function') {
+  if (nativeDoubleSha256Enabled() && addon && typeof addon.doubleSha256 === 'function') {
     const out = addon.doubleSha256(buf);
     if (Buffer.isBuffer(out) && out.length === 32) return out;
   }

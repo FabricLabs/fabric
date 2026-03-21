@@ -3,10 +3,10 @@ Welcome to Fabric!
 
 ## Overview
 * [🤔 Introduction][readme]
-* [🔭 Vision][vision]
 * [👀 Quick Start][quickstart]
 * [🎯 Goals][goals]
 * [🔭 Roadmap][roadmap]
+* [🔭 Vision][vision]
 * [看板 kanban][meta]
 
 ## Documentation
@@ -26,7 +26,6 @@ Welcome to Fabric!
 ## Archive
 * [📄 Whitepaper (latest)][whitepaper]
 * [📃 Whitepaper (2015)][whitepaper-2015]
-* [🗂️ Non-canonical / historical docs][non-canonical]
 
 [api-md]: API.md
 [api-docs]: https://dev.fabric.pub/docs

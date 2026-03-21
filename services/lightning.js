@@ -785,4 +785,21 @@ class Lightning extends Service {
   }
 }
 
+/**
+ * Core Lightning JSON-RPC method names invoked by this service (see docs/LIGHTNING_COMPAT.md).
+ * @type {ReadonlyArray<string>}
+ */
+Lightning.CLN_RPC_METHODS = Object.freeze([
+  'connect',
+  'fundchannel',
+  'getinfo',
+  'invoice',
+  'listchannels',
+  'listfunds',
+  'newaddr',
+  'stop'
+]);
+
+Lightning.redactSensitiveCommandArg = redactSensitiveCommandArg;
+
 module.exports = Lightning;
