@@ -237,6 +237,437 @@
 
 
 
+        <h3 class="subsection-title">Methods</h3>
+
+
+
+
+
+
+
+        <h4 class="name" id="toSignedString"><span class="type-signature"></span>toSignedString<span class="signature">(options<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {string}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Create a cryptographically signed token string.
+          Format: base64url(payload).base64url(signature)
+          Payload: { cap, iss, sub, iat, exp }. Signature: Schnorr over payload JSON.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>options</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">
+                <h6>Properties</h6>
+
+
+                <table class="params">
+                  <thead>
+                    <tr>
+
+                      <th>Name</th>
+
+
+                      <th>Type</th>
+
+
+                      <th>Attributes</th>
+
+
+
+                      <th>Default</th>
+
+
+                      <th class="last">Description</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+
+
+                    <tr>
+
+                      <td class="name"><code>expiresInSeconds</code></td>
+
+
+                      <td class="type">
+
+
+                        <span class="param-type">number</span>
+
+
+
+                      </td>
+
+
+                      <td class="attributes">
+
+                        &lt;optional><br>
+
+
+
+
+
+                      </td>
+
+
+
+                      <td class="default">
+
+                        31536000
+
+                      </td>
+
+
+                      <td class="description last">Token lifetime (default 1 year).</td>
+                    </tr>
+
+
+                  </tbody>
+                </table>
+
+              </td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_token.js.html">types/token.js</a>, <a href="types_token.js.html#line88">line 88</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">string</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id=".verifySigned"><span class="type-signature">(static) </span>verifySigned<span class="signature">(tokenString, verificationKey)</span><span class="type-signature"> &rarr; {Object|null}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Verify a signed token string. Returns parsed payload if valid, null otherwise.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>tokenString</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>verificationKey</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type"><a href="Key.html">Key</a></span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Key used to verify the signature (must match issuer).</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_token.js.html">types/token.js</a>, <a href="types_token.js.html#line113">line 113</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+            |
+
+            <span class="param-type">null</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
 
 
 
@@ -261,6 +692,7 @@
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
@@ -282,24 +714,20 @@
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
-      <li><a href="Snapshot.html">Snapshot</a></li>
-      <li><a href="Stack.html">Stack</a></li>
-      <li><a href="Stash.html">Stash</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
-      <li><a href="Swarm.html">Swarm</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
-      <li><a href="Value.html">Value</a></li>
       <li><a href="Vector.html">Vector</a></li>
-      <li><a href="Walker.html">Walker</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
-    <h3>Events</h3>
+    <h3>Global</h3>
     <ul>
-      <li><a href="Aggregator.html#event:commit">commit</a></li>
+      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
+      <li><a href="global.html#gossip">gossip</a></li>
+      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
     </ul>
   </nav>
   <br class="clear" />

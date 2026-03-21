@@ -3,6 +3,7 @@
 // Dependencies
 const { Level } = require('level');
 const crypto = require('crypto');
+const merge = require('lodash.merge');
 const pointer = require('json-pointer');
 
 // Fabric Types
@@ -32,6 +33,13 @@ class Store extends Actor {
       persistent: true,
       verbosity: 2, // 0 none, 1 error, 2 warning, 3 notice, 4 debug
     }, settings);
+
+    /**
+     * Optional {@link Codec} for encrypted at-rest values (Level `valueEncoding`).
+     * Browser and Hub-style apps typically use one {@link Store} with `codec` for
+     * secrets and separate plain stores for cache/tips.
+     */
+    this.codec = this.settings.codec || null;
 
     this['@entity'] = {
       '@type': 'Store',
@@ -64,6 +72,43 @@ class Store extends Actor {
     Object.defineProperty(this, 'services', { enumerable: false });
 
     return this;
+  }
+
+  /**
+   * Settings object for a {@link Store} with {@link Codec} at-rest encryption
+   * (same defaults as the legacy `Keystore` type). Prefer `openEncrypted` or
+   * `new Store(Store.encryptedSettings(...))` over ad-hoc Codec wiring.
+   * @param {Object} [settings={}]
+   * @returns {Object} Settings merged with `codec` when absent.
+   */
+  static encryptedSettings (settings = {}) {
+    const Codec = require('./codec');
+    const envSeed = (typeof process !== 'undefined' && process.env && process.env.FABRIC_SEED) || null;
+    const merged = merge({
+      name: 'Keystore',
+      path: './stores/keystore',
+      type: 'EncryptedFabricStore',
+      persistent: true,
+      mode: 'aes-256-cbc',
+      version: 0,
+      seed: envSeed
+    }, settings);
+
+    const codec = merged.codec || new Codec({
+      key: merged.key,
+      mode: merged.mode,
+      version: merged.version
+    });
+
+    return merge(merged, { codec });
+  }
+
+  /**
+   * @param {Object} [settings={}]
+   * @returns {Store}
+   */
+  static openEncrypted (settings = {}) {
+    return new Store(Store.encryptedSettings(settings));
   }
 
   _getPathForKey (key) {
@@ -390,7 +435,23 @@ class Store extends Actor {
     // if (this.db) return this;
 
     try {
-      this.db = new Level(this.settings.path);
+      const levelOpts = {};
+      if (this.codec && typeof this.codec.encode === 'function' && typeof this.codec.decode === 'function') {
+        const codec = this.codec;
+        levelOpts.valueEncoding = {
+          name: 'fabric-codec',
+          format: 'buffer',
+          encode: function encodeFabricValue (value) {
+            const out = codec.encode(value);
+            if (out == null) throw new Error('[FABRIC:STORE] Codec.encode returned null');
+            return Buffer.isBuffer(out) ? out : Buffer.from(typeof out === 'string' ? out : JSON.stringify(out), 'utf8');
+          },
+          decode: function decodeFabricValue (buffer) {
+            return codec.decode(buffer);
+          }
+        };
+      }
+      this.db = new Level(this.settings.path, levelOpts);
       this.trust(this.db);
       this.status = 'opened';
       await this.commit();

@@ -1,7 +1,9 @@
 //importScripts('/app.min.js');
 
 const url = require('url');
-const Stash = require('../types/stash');
+
+/** Minimal URI → response cache (replaces legacy Stash type). */
+const stash = new Map();
 
 self.addEventListener('message', function (e) {
   e.source.postMessage('[GUARDIAN]', 'Hello! Your message was: ' + e.data);
@@ -15,14 +17,13 @@ self.addEventListener('fetch', async function (event) {
   const target = url.parse(path);
   const uri = target.pathname;
 
-  const stash = new Stash();
   console.log('stash:', stash);
   console.log('target:', target);
 
   //await stash.set('/messages', [{ foo: 'bar' }]);
-  console.log('recovery:', await stash.get('/messages'));
+  console.log('recovery:', stash.get('/messages'));
 
-  const value = await stash.get(uri);
+  const value = stash.get(uri);
   if (value) {
     console.log('was cached:', uri, value.length, 'bytes');
     const request = new Request(uri, {

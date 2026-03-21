@@ -35,7 +35,7 @@ class Machine extends Actor {
       key: null,
       precision: 8,
       script: [],
-      type: 'fabric'
+      type: 'x86'
     }, settings);
 
     // machine key

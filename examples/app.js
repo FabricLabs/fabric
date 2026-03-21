@@ -12,7 +12,7 @@
 // ```
 // git clone git@github.com:FabricLabs/fabric.git
 // cd fabric
-// git checkout v0.1.0-RC1
+// git checkout v0.1.0-RC2
 // ```
 //
 // You should now be on the latest branch.
@@ -48,8 +48,8 @@ const settings = {
 };
 
 // ## Dependencies
-// Import the `App` type.
-const App = require('../types/app');
+// Import the `FabricShell` type (browser / CLI application shell).
+const { FabricShell } = require('../types/service');
 
 // ## Resources
 // Resources are named collections.
@@ -71,7 +71,7 @@ function _handleOutput (output) {
 // ## Main Process
 async function main (input = {}) {
   // Create and start the Fabric Application
-  window.app = new App(input);
+  window.app = new FabricShell(input);
   window.app.start();
 
   // Return new Object

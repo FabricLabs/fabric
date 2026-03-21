@@ -5,7 +5,7 @@
 const settings = require('../settings/default');
 
 // Fabric Types
-const App = require('../types/app');
+const { FabricShell } = require('../types/service');
 
 // Fabric Services
 const Lightning = require('../services/lightning');
@@ -17,7 +17,7 @@ const _handleError = require('../functions/_handleError');
 
 async function main () {
   // Instantiate Application
-  const app = new App(settings);
+  const app = new FabricShell(settings);
 
   // Define Resources
   await app.define('Example', {

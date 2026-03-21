@@ -8,6 +8,13 @@ _Include this file in your repo to keep uses of `git status` quite clean._
 _Used as a string separator when reading this file. :)_
 
 ## Ignore:
+## Source
+src
+src/**
+
+# WIP
+types/cli.js
+
 ### Logs
 logs
 *.log
@@ -27,7 +34,7 @@ coverage
 .lock-wscript
 
 ### Compiled binary addons (http://nodejs.org/api/addons.html)
-build/Release
+build/
 
 ### Dependency directory
 #### https://www.npmjs.org/doc/misc/npm-faq.html#should-i-check-my-node_modules-folder-into-git

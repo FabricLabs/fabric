@@ -6,5 +6,5 @@ module.exports = {
   definitions: {
     Actor: Actor
   },
-  version: 'v0.1.0-RC1'
+  version: 'v0.1.0-RC2'
 };

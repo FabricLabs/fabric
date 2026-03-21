@@ -1,4 +1,4 @@
-name: npm test
+name: CI
 on:
   pull_request:
     branches:
@@ -6,6 +6,7 @@ on:
   push:
     branches:
     - master
+    - develop
 jobs:
   test:
     name: Run tests
@@ -17,7 +18,7 @@ jobs:
         - ubuntu-latest
     steps:
     - name: Checkout branch
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
     - name: Install Node.js on ${{ matrix.os }}
       uses: actions/setup-node@v4
       with:
@@ -25,16 +26,30 @@ jobs:
         cache: 'npm'
         cache-dependency-path: package-lock.json
     - name: Set up Python
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
-        python-version: '3.8'
+        # 3.12+ dropped stdlib distutils; CLN's bundled libwally (external/Makefile) still imports it.
+        python-version: '3.11'
     - name: Install Ubuntu build deps and C libs
       if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential libsecp256k1-dev
     - name: Install dependencies
-      run: npm run report:install
+      run: npm run report:install-ci
+    - name: Upload install report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: install-report-${{ matrix.os }}
+        path: reports/install.log
+        if-no-files-found: ignore
+    - name: Smoke load (core modules)
+      run: npm run smoke
+    - name: Lint types
+      run: npm run lint:types
+    - name: Lint CLI harness + native accel shim
+      run: npm run lint:pkg
     - name: Download and install bitcoind
       run: |
         if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
@@ -44,6 +59,9 @@ jobs:
         else
           brew install bitcoin
         fi
+    - name: Run tests (with coverage for Codecov)
+      run: npm run report:coverage
+      timeout-minutes: 30
     - name: Install Rust toolchain
       if: matrix.os == 'ubuntu-latest'
       uses: dtolnay/rust-toolchain@1.79.0
@@ -56,8 +74,12 @@ jobs:
             autoconf automake build-essential git libtool python3 python3-pip \
             net-tools zlib1g-dev libsqlite3-dev libgmp-dev libsodium-dev gettext
 
-          # Install Python dependencies for wire generation
-          pip3 install mako
+          # Wire generation + setuptools (distutils compatibility if build scripts expect it)
+          pip3 install --upgrade pip setuptools wheel mako
+
+          # Prefer Actions Python on PATH (apt's /usr/bin/python3 may be 3.12+ without distutils)
+          export PYTHON="$(command -v python3)"
+          python3 --version
 
           # Clone and build Core Lightning v25.05
           git clone https://github.com/ElementsProject/lightning.git
@@ -96,9 +118,8 @@ jobs:
             find /opt/homebrew -name lightningd 2>/dev/null || echo "No lightningd found in /opt/homebrew"
           fi
         fi
-    - name: Generate coverage report
-      run: npm run report:coverage
     - name: Send coverage report
-      uses: codecov/codecov-action@v3.1.1
+      uses: codecov/codecov-action@v4
       with:
         directory: ./reports/
+      continue-on-error: true

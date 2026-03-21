@@ -12,7 +12,7 @@ const MAX_PEERS = 32;
 const PRECISION = 100;
 
 // Fabric Core
-const FABRIC_USER_AGENT = 'Fabric Core 0.1.0 (@fabric/core#v0.1.0-RC1)';
+const FABRIC_USER_AGENT = 'Fabric Core 0.1.0 (@fabric/core#v0.1.0-RC2)';
 const BITCOIN_NETWORK = 'mainnet';
 const BITCOIN_GENESIS = '000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f';
 const BITCOIN_GENESIS_ROOT = '4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b';
@@ -23,8 +23,9 @@ const FIXTURE_XPRV = 'xprv9s21ZrQH143K2cCWaTZPjPDwac1CzTW4LKMfzLFEMNZJUoDYppxpyP
 
 // Message Constants
 const MAGIC_BYTES = 0xC0D3F33D;
-const VERSION_NUMBER = 0x01; // 0 for development, pre-alpha, 1 for production
-const HEADER_SIZE = 176; // [4], [4], [32], [32], [4], [4], [32], [64] bytes
+const VERSION_NUMBER = 0x02; // bumped for 208-byte header (optional preimage field)
+/* magic, version, parent, author, type, size, hash, preimage, signature — then body */
+const HEADER_SIZE = 208;
 const LARGE_COLLECTION_SIZE = 10; // TODO: test with 1,000,000
 const MAX_MESSAGE_SIZE = 4096 - HEADER_SIZE;
 
@@ -55,6 +56,8 @@ const DOCUMENT_PUBLISH_TYPE = 998;
 const DOCUMENT_REQUEST_TYPE = 999;
 const JSON_CALL_TYPE = 16000;
 const PATCH_MESSAGE_TYPE = 1024;
+/** Contract negotiation: batched Fabric messages + chain Merkle root + JSON Patch (RFC 6902) — see docs/CONTRACT_PROPOSAL.md */
+const CONTRACT_PROPOSAL_TYPE = 138; // 0x8A (POLICY.md / FABRIC_MESSAGE_TYPE_CONSOLIDATION)
 
 // Opcodes
 const OP_CYCLE = '00';
@@ -78,6 +81,23 @@ const BECH32M_CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
 
 // Peering
 const P2P_PORT = 7777;
+// Gossip and peering discovery (WebRTC + Fabric P2P)
+const P2P_PEER_GOSSIP = 'P2P_PEER_GOSSIP'; // Gossip known peers for cross-cluster discovery
+const P2P_PEERING_OFFER = 'P2P_PEERING_OFFER'; // Peer needs more connections; gossiped until fulfilled
+/** Max gossip relays per logical hop (anti amplification). */
+const GOSSIP_MAX_HOPS = 5;
+/** Per-origin relay budget per rolling minute (anti flood). */
+const GOSSIP_MAX_RELAYS_PER_ORIGIN_PER_MINUTE = 60;
+/** Max entries for logical gossip payload dedup (excluding hop/signature churn). */
+const GOSSIP_MAX_PAYLOAD_CACHE = 50000;
+/** Peering-offer relay: same defaults as gossip (separate caches / rate map). */
+const PEERING_OFFER_MAX_HOPS = 5;
+const PEERING_OFFER_MAX_RELAYS_PER_ORIGIN_PER_MINUTE = 60;
+const PEERING_OFFER_MAX_PAYLOAD_CACHE = 50000;
+/** Max queued connection candidates from {@link P2P_PEERING_OFFER} (FIFO eviction). */
+const PEER_MAX_CANDIDATES_QUEUE = 128;
+/** Max wire-hash dedup entries in {@link Peer} (bounded memory). */
+const PEER_MAX_WIRE_HASH_CACHE = 10000;
 const P2P_GENERIC = 0x80; // 128 in decimal
 const P2P_IDENT_REQUEST = 0x01; // 1, or the identity
 const P2P_IDENT_RESPONSE = 0x11;
@@ -93,6 +113,8 @@ const P2P_STATE_COMMITTMENT = 0x00000032; // TODO: select w/ no overlap
 const P2P_STATE_CHANGE = 0x00000033; // TODO: select w/ no overlap
 const P2P_TRANSACTION = 0x00000039; // TODO: select w/ no overlap
 const P2P_CALL = 0x00000042;
+const P2P_RELAY = 0x00000043; // Relay envelope for onion routing; preserves original message + signature
+const P2P_MESSAGE_RECEIPT = 0x00000044; // Ack/receipt for a processed inbound message (WebSocket / P2P)
 const P2P_CHAIN_SYNC_REQUEST = 0x55;
 const P2P_SESSION_ACK = 0x4200;
 const P2P_MUSIG_START = 0x4220;
@@ -240,6 +262,16 @@ module.exports = {
   OP_EQUALVERIFY,
   OP_SEPARATOR,
   P2P_GENERIC,
+  P2P_PEER_GOSSIP,
+  P2P_PEERING_OFFER,
+  GOSSIP_MAX_HOPS,
+  GOSSIP_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
+  GOSSIP_MAX_PAYLOAD_CACHE,
+  PEERING_OFFER_MAX_HOPS,
+  PEERING_OFFER_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
+  PEERING_OFFER_MAX_PAYLOAD_CACHE,
+  PEER_MAX_CANDIDATES_QUEUE,
+  PEER_MAX_WIRE_HASH_CACHE,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
   P2P_CHAIN_SYNC_REQUEST,
@@ -256,6 +288,8 @@ module.exports = {
   P2P_STATE_REQUEST,
   P2P_TRANSACTION,
   P2P_CALL,
+  P2P_RELAY,
+  P2P_MESSAGE_RECEIPT,
   P2P_SESSION_ACK,
   P2P_MUSIG_START,
   P2P_MUSIG_ACCEPT,
@@ -268,6 +302,7 @@ module.exports = {
   DOCUMENT_REQUEST_TYPE,
   JSON_CALL_TYPE,
   PATCH_MESSAGE_TYPE,
+  CONTRACT_PROPOSAL_TYPE,
   SESSION_START,
   VERSION_NUMBER
 };

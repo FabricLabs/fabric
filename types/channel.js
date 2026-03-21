@@ -10,7 +10,7 @@ const Entity = require('./entity');
 const Scribe = require('./scribe');
 const Secret = require('./secret');
 
-// const Consensus = require('./consensus');
+// (legacy Consensus type removed)
 // const Layer = require('./layer');
 
 /**

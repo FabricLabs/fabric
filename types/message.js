@@ -29,11 +29,14 @@ const {
   P2P_STATE_REQUEST,
   P2P_TRANSACTION,
   P2P_CALL,
+  P2P_RELAY,
+  P2P_MESSAGE_RECEIPT,
   CHAT_MESSAGE,
   DOCUMENT_PUBLISH_TYPE,
   DOCUMENT_REQUEST_TYPE,
   JSON_CALL_TYPE,
   PATCH_MESSAGE_TYPE,
+  CONTRACT_PROPOSAL_TYPE,
   BLOCK_CANDIDATE,
   PEER_CANDIDATE,
   SESSION_START,
@@ -61,6 +64,12 @@ const {
 } = require('../constants');
 
 const HEADER_SIG_SIZE = 64;
+
+/** @param {Buffer} buf */
+function isAllZero32 (buf) {
+  if (!buf || buf.length !== 32) return true;
+  return buf.equals(Buffer.alloc(32));
+}
 
 // Dependencies
 // const crypto = require('crypto');
@@ -98,6 +107,7 @@ class Message extends Actor {
       type: Buffer.alloc(4), // TODO: 8, 32
       size: Buffer.alloc(4), // TODO: 8, 32
       hash: Buffer.alloc(32),
+      preimage: Buffer.alloc(32),
       signature: Buffer.alloc(64),
       data: null
     };
@@ -128,6 +138,8 @@ class Message extends Actor {
         this.data = messageData;
       }
     }
+
+    if (input.preimage != null) this.preimage = input.preimage;
 
     // Log HEARTBEAT message creation to track origin
     if (this.type === 'HEARTBEAT' || messageType === 'HEARTBEAT') {
@@ -200,6 +212,28 @@ class Message extends Actor {
     this.raw.signature.write(value, 'hex');
   }
 
+  /**
+   * Optional 32-byte preimage (e.g. HTLC secret). `null` when unset / public (all-zero on wire).
+   */
+  get preimage () {
+    if (!this.raw || !Buffer.isBuffer(this.raw.preimage) || this.raw.preimage.length !== 32) return null;
+    if (isAllZero32(this.raw.preimage)) return null;
+    return Buffer.from(this.raw.preimage);
+  }
+
+  set preimage (value) {
+    if (!this.raw.preimage || !Buffer.isBuffer(this.raw.preimage) || this.raw.preimage.length !== 32) {
+      this.raw.preimage = Buffer.alloc(32);
+    }
+    if (value === null || value === undefined) {
+      this.raw.preimage.fill(0);
+      return;
+    }
+    const buf = Buffer.isBuffer(value) ? value : Buffer.from(value, 'hex');
+    if (buf.length !== 32) throw new Error('Message preimage must be 32 bytes');
+    buf.copy(this.raw.preimage);
+  }
+
   toBuffer () {
     return this.asRaw();
   }
@@ -236,6 +270,7 @@ class Message extends Actor {
         type: parseInt(`${this.raw.type.toString('hex')}`, 16),
         size: parseInt(`${this.raw.size.toString('hex')}`, 16),
         hash: this.raw.hash.toString('hex'),
+        preimage: this.preimage ? this.preimage.toString('hex') : null,
         signature: this.raw.signature.toString('hex'),
       },
       type: this.type,
@@ -281,6 +316,10 @@ class Message extends Actor {
     // The C implementation includes the signature field in offsetof(Message, body),
     // but it's zero/uninitialized when signing, so we zero it
     const zeroedSignature = Buffer.alloc(64); // 64 bytes of zeros
+    const pre = Buffer.isBuffer(this.raw.preimage)
+      ? this.raw.preimage
+      : Buffer.from(this.raw.preimage || '', 'hex');
+    if (pre.length !== 32) throw new Error('Message preimage must be 32 bytes on wire');
     const headerForHash = Buffer.concat([
       Buffer.from(this.raw.magic, 'hex'),
       Buffer.from(this.raw.version, 'hex'),
@@ -289,6 +328,7 @@ class Message extends Actor {
       Buffer.from(this.raw.type, 'hex'),
       Buffer.from(this.raw.size, 'hex'),
       Buffer.from(this.raw.hash, 'hex'),
+      pre,
       zeroedSignature // Signature field zeroed for hash computation
     ]);
 
@@ -333,9 +373,6 @@ class Message extends Actor {
     if (!this.signer) throw new Error('No signer available.');
     if (!this.signer.verify) throw new Error('Signer must implement verify method');
 
-    const hash = Hash256.digest(this.raw.data);
-    const signature = this.raw.signature;
-
     return this.verifyWithKey(this.signer);
   }
 
@@ -376,6 +413,10 @@ class Message extends Actor {
     // The C implementation includes the signature field in offsetof(Message, body),
     // but it's zero/uninitialized when signing, so we zero it for verification
     const zeroedSignature = Buffer.alloc(64); // 64 bytes of zeros
+    const pre = Buffer.isBuffer(this.raw.preimage)
+      ? this.raw.preimage
+      : Buffer.from(this.raw.preimage || '', 'hex');
+    if (pre.length !== 32) throw new Error('Message preimage must be 32 bytes on wire');
     const headerForHash = Buffer.concat([
       Buffer.from(this.raw.magic, 'hex'),
       Buffer.from(this.raw.version, 'hex'),
@@ -384,6 +425,7 @@ class Message extends Actor {
       Buffer.from(this.raw.type, 'hex'),
       Buffer.from(this.raw.size, 'hex'),
       Buffer.from(this.raw.hash, 'hex'),
+      pre,
       zeroedSignature // Signature field zeroed for hash computation
     ]);
 
@@ -427,9 +469,11 @@ class Message extends Actor {
       .charsnt('magic', 4, 'hex')
       .charsnt('version', 4, 'hex')
       .charsnt('parent', 32, 'hex')
+      .charsnt('author', 32, 'hex')
       .charsnt('type', 4, 'hex')
       .charsnt('size', 4, 'hex')
       .charsnt('hash', 32, 'hex')
+      .charsnt('preimage', 32, 'hex')
       .charsnt('signature', 64, 'hex')
       .charsnt('data', buffer.length - HEADER_SIZE);
 
@@ -448,7 +492,8 @@ class Message extends Actor {
       type: buffer.slice(72, 76),
       size: buffer.slice(76, 80),
       hash: buffer.slice(80, 112),
-      signature: buffer.slice(112, HEADER_SIZE)
+      preimage: buffer.slice(112, 144),
+      signature: buffer.slice(144, HEADER_SIZE)
     };
 
     if (buffer.length >= HEADER_SIZE) {
@@ -479,7 +524,7 @@ class Message extends Actor {
     }
 
     const message = new Message();
-
+    const payload = buffer.subarray(HEADER_SIZE);
     message.raw = {
       magic: buffer.subarray(0, 4),
       version: buffer.subarray(4, 8),
@@ -488,10 +533,14 @@ class Message extends Actor {
       type: buffer.subarray(72, 76),
       size: buffer.subarray(76, 80),
       hash: buffer.subarray(80, 112),
-      signature: buffer.subarray(112, HEADER_SIZE)
+      preimage: buffer.subarray(112, 144),
+      signature: buffer.subarray(144, HEADER_SIZE),
+      data: payload
     };
 
-    message.data = buffer.subarray(HEADER_SIZE);
+    // Do not assign `message.data` here: the `data` setter recomputes `raw.hash`
+    // (double-SHA256 of the body), which would replace the on-wire hash and break
+    // `Peer._handleFabricMessage` body-integrity checks (C parity).
 
     return message;
   }
@@ -536,6 +585,7 @@ class Message extends Actor {
       'JSONBlob': GENERIC_MESSAGE_TYPE + 1,
       'JSONCall': JSON_CALL_TYPE,
       'JSONPatch': PATCH_MESSAGE_TYPE,
+      'ContractProposal': CONTRACT_PROPOSAL_TYPE,
       // TODO: document Generic type
       // P2P Commands
       'Generic': P2P_GENERIC,
@@ -563,6 +613,8 @@ class Message extends Actor {
       'StateRequest': P2P_STATE_REQUEST,
       'Transaction': P2P_TRANSACTION,
       'Call': P2P_CALL,
+      'P2P_RELAY': P2P_RELAY,
+      'P2P_MESSAGE_RECEIPT': P2P_MESSAGE_RECEIPT,
       'LogMessage': LOG_MESSAGE_TYPE,
       // Lightning (BOLT) types
       'AcceptChannel': LIGHTNING_ACCEPT_CHANNEL,
@@ -613,6 +665,9 @@ class Message extends Actor {
   }
 
   get header () {
+    if (!Buffer.isBuffer(this.raw.preimage) || this.raw.preimage.length !== 32) {
+      throw new Error('Message raw.preimage must be a 32-byte Buffer');
+    }
     const parts = [
       Buffer.from(this.raw.magic, 'hex'),
       Buffer.from(this.raw.version, 'hex'),
@@ -621,6 +676,7 @@ class Message extends Actor {
       Buffer.from(this.raw.type, 'hex'),
       Buffer.from(this.raw.size, 'hex'),
       Buffer.from(this.raw.hash, 'hex'),
+      this.raw.preimage,
       Buffer.from(this.raw.signature, 'hex')
     ];
 
@@ -680,6 +736,10 @@ Object.defineProperty(Message.prototype, 'type', {
         return 'Transaction';
       case P2P_CALL:
         return 'Call';
+      case P2P_RELAY:
+        return 'P2P_RELAY';
+      case P2P_MESSAGE_RECEIPT:
+        return 'P2P_MESSAGE_RECEIPT';
       case PEER_CANDIDATE:
         return 'PeerCandidate';
       case SESSION_START:
@@ -690,6 +750,8 @@ Object.defineProperty(Message.prototype, 'type', {
         return 'JSONCall';
       case PATCH_MESSAGE_TYPE:
         return 'JSONPatch';
+      case CONTRACT_PROPOSAL_TYPE:
+        return 'ContractProposal';
       case P2P_START_CHAIN:
         return 'StartChain';
       // Lightning (BOLT) types
@@ -769,8 +831,10 @@ Object.defineProperty(Message.prototype, 'data', {
   },
   set (value) {
     if (!value) value = '';
-    this.raw.hash = Hash256.digest(value.toString('utf8'));
-    this.raw.data = Buffer.from(value);
+    const bodyBuf = Buffer.from(value);
+    // Double-SHA256 for wire integrity (matches C message_compute_body_hash)
+    this.raw.hash = Hash256.doubleDigest(bodyBuf);
+    this.raw.data = bodyBuf;
     this.raw.size.write(padDigits(this.raw.data.byteLength.toString(16), 8), 'hex');
   }
 });

@@ -7,6 +7,34 @@ const ecc = require('../types/ecc');
 const h = (hex) => Buffer.from(hex, 'hex');
 
 describe('@fabric/core/types/ecc', function () {
+  it('runs browser self-test path once when window exists', function () {
+    const modulePath = require.resolve('../types/ecc');
+    const originalWindow = global.window;
+    const originalFlag = globalThis.__FABRIC_ECC_SELFTESTED__;
+    const originalLog = console.log;
+    const originalError = console.error;
+
+    delete require.cache[modulePath];
+    global.window = {};
+    delete globalThis.__FABRIC_ECC_SELFTESTED__;
+
+    try {
+      console.log = function () {};
+      console.error = function () {};
+      const browserEcc = require('../types/ecc');
+      assert.ok(browserEcc);
+      assert.equal(globalThis.__FABRIC_ECC_SELFTESTED__, true);
+    } finally {
+      console.log = originalLog;
+      console.error = originalError;
+      delete require.cache[modulePath];
+      if (typeof originalWindow === 'undefined') delete global.window;
+      else global.window = originalWindow;
+      if (typeof originalFlag === 'undefined') delete globalThis.__FABRIC_ECC_SELFTESTED__;
+      else globalThis.__FABRIC_ECC_SELFTESTED__ = originalFlag;
+    }
+  });
+
   it('accepts and rejects private keys by range', function () {
     assert.equal(ecc.isPrivate(h('79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798')), true);
     assert.equal(ecc.isPrivate(h('0000000000000000000000000000000000000000000000000000000000000000')), false);

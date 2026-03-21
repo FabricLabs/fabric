@@ -19,7 +19,7 @@ service to the network.</p>
 <dd><p>The <a href="#Circuit">Circuit</a> is the mechanism through which <a href="#Fabric">Fabric</a>
 operates, a computable directed graph describing a network of
 <a href="#Peer">Peer</a> components and their interactions (side effects).
-See also <a href="#Swarm">Swarm</a> for deeper inspection of <a href="#Machine">Machine</a>
+See also <a href="Swarm">Swarm</a> for deeper inspection of <a href="#Machine">Machine</a>
 mechanics.</p>
 </dd>
 <dt><a href="#CLI">CLI</a></dt>
@@ -96,14 +96,10 @@ this prototype.  In general, <code>connect</code> and <code>send</code> are the 
 jobs, and by default the <code>fabric</code> property will serve as an I/O stream using
 familiar semantics.</p>
 </dd>
+<dt><a href="#FabricShell">FabricShell</a></dt>
+<dd></dd>
 <dt><a href="#Session">Session</a></dt>
 <dd><p>The <a href="#Session">Session</a> type describes a connection between <a href="#Peer">Peer</a> objects, and includes its own lifecycle.</p>
-</dd>
-<dt><a href="#Snapshot">Snapshot</a></dt>
-<dd><p>A type of message to be expected from a <a href="#Service">Service</a>.</p>
-</dd>
-<dt><a href="#Stack">Stack</a></dt>
-<dd><p>Manage stacks of data.</p>
 </dd>
 <dt><a href="#State">State</a> ⇐ <code>EventEmitter</code></dt>
 <dd><p>The <a href="#State">State</a> is the core of most <a href="User">User</a>-facing interactions.  To
@@ -113,21 +109,13 @@ committing to the outcome.  This workflow keeps app design quite simple!</p>
 <dt><a href="#Store">Store</a></dt>
 <dd><p>Long-term storage.</p>
 </dd>
-<dt><a href="#Swarm">Swarm</a> : <code>String</code></dt>
-<dd><p>Orchestrates a network of peers.</p>
-</dd>
 <dt><a href="#Token">Token</a></dt>
 <dd><p>Implements a capability-based security token.</p>
 </dd>
 <dt><a href="#Tree">Tree</a></dt>
 <dd><p>Class implementing a Merkle Tree.</p>
 </dd>
-<dt><a href="#Value">Value</a></dt>
-<dd><p><a href="Number">Number</a>-like type.</p>
-</dd>
 <dt><a href="#Vector">Vector</a></dt>
-<dd></dd>
-<dt><a href="#Walker">Walker</a></dt>
 <dd></dd>
 <dt><a href="#Wallet">Wallet</a> : <code>Object</code></dt>
 <dd><p>Manage keys and track their balances.</p>
@@ -152,9 +140,24 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 <dt><del><a href="#Scribe">Scribe</a></del></dt>
 <dd><p>Deprecated 2021-11-06.</p>
 </dd>
-<dt><del><a href="#Stash">Stash</a></del></dt>
-<dd><p>Deprecated 2021-11-06.</p>
+</dl>
+
+## Members
+
+<dl>
+<dt><a href="#gossip">gossip</a></dt>
+<dd><p>Limits relay amplification on <a href="P2P_PEER_GOSSIP">P2P_PEER_GOSSIP</a> (hop TTL, payload dedup, per-origin rate).</p>
 </dd>
+<dt><a href="#explorerBaseUrl">explorerBaseUrl</a></dt>
+<dd><p>Optional HTTP origin for block/tx/address REST fallback (e.g. a Hub). Null = RPC only.</p>
+</dd>
+</dl>
+
+## Functions
+
+<dl>
+<dt><a href="#isAllZero32">isAllZero32(buf)</a></dt>
+<dd></dd>
 </dl>
 
 <a name="Actor"></a>
@@ -183,7 +186,7 @@ Generic Fabric Actor.
         * [.set(path, value)](#Actor+set) ⇒ <code>Object</code>
         * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
         * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
-        * [.toGenericMessage()](#Actor+toGenericMessage) ⇒ <code>Object</code>
+        * [.toGenericMessage([type])](#Actor+toGenericMessage) ⇒ <code>Object</code>
         * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
         * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
         * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
@@ -283,18 +286,23 @@ Casts the Actor to a normalized Buffer.
 **Kind**: instance method of [<code>Actor</code>](#Actor)  
 <a name="Actor+toGenericMessage"></a>
 
-### actor.toGenericMessage() ⇒ <code>Object</code>
-Casts the Actor to a generic message, used to uniquely identify the Actor's state.
-Fields:
-- `type`: 'FabricActorState'
-- `object`: state
+### actor.toGenericMessage([type]) ⇒ <code>Object</code>
+Casts the Actor to a generic message envelope for state announcements and history.
+Shape is stable: `{ type, object }` where `object` is sorted-key state ([toObject](#Actor+toObject)).
+[Actor#id](Actor#id) derives from a digest of the pretty-printed generic message; extending this
+envelope requires a format/version migration across the network.
 
 **Kind**: instance method of [<code>Actor</code>](#Actor)  
-**Returns**: <code>Object</code> - Generic message object.  
+**Returns**: <code>Object</code> - `{ type, object }`  
 **See**
 
 - [https://en.wikipedia.org/wiki/Merkle_tree](https://en.wikipedia.org/wiki/Merkle_tree)
 - [https://dev.fabric.pub/messages](https://dev.fabric.pub/messages)
+
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [type] | <code>String</code> | <code>&#x27;FabricActorState&#x27;</code> | Logical message type string. |
 
 <a name="Actor+toObject"></a>
 
@@ -469,7 +477,7 @@ Opens a [Channel](#Channel) with a [Peer](#Peer).
 The [Circuit](#Circuit) is the mechanism through which [Fabric](#Fabric)
 operates, a computable directed graph describing a network of
 [Peer](#Peer) components and their interactions (side effects).
-See also [Swarm](#Swarm) for deeper inspection of [Machine](#Machine)
+See also [Swarm](Swarm) for deeper inspection of [Machine](#Machine)
 mechanics.
 
 **Kind**: global class  
@@ -718,7 +726,7 @@ Create an instance of an [Entity](Entity).
 Loads [State](#State) into memory.
 
 **Kind**: instance method of [<code>Collection</code>](#Collection)  
-**Emits**: <code>event:message Will emit one {@link Snapshot} message.</code>  
+**Emits**: <code>event:message Will emit one &#x60;CollectionSnapshot&#x60; message (not the removed Snapshot type).</code>  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -734,6 +742,9 @@ Interact with the user's Environment.
 
 * [Environment](#Environment)
     * [new Environment([settings])](#new_Environment_new)
+    * [._getDefaultBitcoinDatadir([configPath])](#Environment+_getDefaultBitcoinDatadir) ⇒ <code>Object</code>
+    * [._parseConfigValue(value)](#Environment+_parseConfigValue) ⇒ <code>\*</code>
+    * [._toFabricSettings(bitcoinConf)](#Environment+_toFabricSettings) ⇒ <code>Object</code>
     * [.readVariable(name)](#Environment+readVariable) ⇒ <code>String</code>
     * [.setWallet(wallet, force)](#Environment+setWallet) ⇒ [<code>Environment</code>](#Environment)
     * [.start()](#Environment+start) ⇒ [<code>Environment</code>](#Environment)
@@ -748,6 +759,42 @@ Create an instance of [Environment](#Environment).
 | Param | Type | Description |
 | --- | --- | --- |
 | [settings] | <code>Object</code> | Settings for the Fabric environment. |
+
+<a name="Environment+_getDefaultBitcoinDatadir"></a>
+
+### environment.\_getDefaultBitcoinDatadir([configPath]) ⇒ <code>Object</code>
+Read and parse Bitcoin configuration from bitcoin.conf file
+
+**Kind**: instance method of [<code>Environment</code>](#Environment)  
+**Returns**: <code>Object</code> - Parsed Bitcoin configuration object  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [configPath] | <code>String</code> | Optional path to bitcoin.conf, defaults to ~/.bitcoin/bitcoin.conf |
+
+<a name="Environment+_parseConfigValue"></a>
+
+### environment.\_parseConfigValue(value) ⇒ <code>\*</code>
+Parse configuration value to appropriate type
+
+**Kind**: instance method of [<code>Environment</code>](#Environment)  
+**Returns**: <code>\*</code> - Parsed value (string, number, or boolean)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| value | <code>String</code> | The raw configuration value |
+
+<a name="Environment+_toFabricSettings"></a>
+
+### environment.\_toFabricSettings(bitcoinConf) ⇒ <code>Object</code>
+Convert bitcoin.conf configuration to Fabric Bitcoin service settings
+
+**Kind**: instance method of [<code>Environment</code>](#Environment)  
+**Returns**: <code>Object</code> - Settings object compatible with Fabric Bitcoin service  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| bitcoinConf | <code>Object</code> | The parsed bitcoin.conf configuration |
 
 <a name="Environment+readVariable"></a>
 
@@ -792,7 +839,7 @@ Reliable decentralized infrastructure.
 * [Fabric](#Fabric)
     * [new Fabric(config)](#new_Fabric_new)
     * [.register(service)](#Fabric+register)
-    * [.push(value)](#Fabric+push) ⇒ [<code>Stack</code>](#Stack)
+    * [.push(value)](#Fabric+push) ⇒ <code>Stack</code>
     * [.trust(source)](#Fabric+trust) ⇒ [<code>Fabric</code>](#Fabric)
     * [.compute()](#Fabric+compute) ⇒ [<code>Fabric</code>](#Fabric)
 
@@ -824,7 +871,7 @@ Register an available [Service](#Service) using an ES6 [Class](Class).
 
 <a name="Fabric+push"></a>
 
-### fabric.push(value) ⇒ [<code>Stack</code>](#Stack)
+### fabric.push(value) ⇒ <code>Stack</code>
 Push an instruction onto the stack.
 
 **Kind**: instance method of [<code>Fabric</code>](#Fabric)  
@@ -1028,6 +1075,7 @@ Simple interaction with 256-bit spaces.
 
 * [Hash256](#Hash256)
     * [new Hash256(settings)](#new_Hash256_new)
+    * [.doubleDigest(input)](#Hash256.doubleDigest) ⇒ <code>String</code>
     * [.digest(input)](#Hash256.digest) ⇒ <code>String</code>
     * [.reverse()](#Hash256.reverse)
 
@@ -1044,6 +1092,18 @@ If the `settings` is not a string, `input` must be provided.
 | --- | --- | --- |
 | settings | <code>Object</code> |  |
 | settings.input | <code>String</code> | Input string to map as 256-bit hash. |
+
+<a name="Hash256.doubleDigest"></a>
+
+### Hash256.doubleDigest(input) ⇒ <code>String</code>
+Double-SHA256 digest (Bitcoin-style). Matches C message body hash.
+
+**Kind**: static method of [<code>Hash256</code>](#Hash256)  
+**Returns**: <code>String</code> - SHA256(SHA256(input)) as hexadecimal string.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>String</code> \| <code>Buffer</code> | Content to digest. |
 
 <a name="Hash256.digest"></a>
 
@@ -1218,6 +1278,7 @@ Represents a cryptographic key.
 * [Key](#Key)
     * [new Key([settings])](#new_Key_new)
     * _instance_
+        * ~~[.iv](#Key+iv)~~
         * [.verify(msg, sig)](#Key+verify) ⇒ <code>Boolean</code>
         * [.signSchnorr(msg)](#Key+signSchnorr) ⇒ <code>Buffer</code>
         * [.signSchnorrHash(messageHash)](#Key+signSchnorrHash) ⇒ <code>Buffer</code>
@@ -1248,6 +1309,12 @@ create it from a known public key.
 | [settings.wif] | <code>String</code> |  | WIF-encoded private key. |
 | [settings.purpose] | <code>String</code> | <code>44</code> | Constrains derivations to this space. |
 
+<a name="Key+iv"></a>
+
+### ~~key.iv~~
+***Per-message IVs are generated in [Key#encrypt](Key#encrypt). Do not rely on this getter.***
+
+**Kind**: instance property of [<code>Key</code>](#Key)  
 <a name="Key+verify"></a>
 
 ### key.verify(msg, sig) ⇒ <code>Boolean</code>
@@ -1369,7 +1436,7 @@ An ordered stack of pages.
 | Name | Type | Description |
 | --- | --- | --- |
 | memory | <code>Buffer</code> | The ledger's memory (4096 bytes). |
-| stack | [<code>Stack</code>](#Stack) | The ledger's stack. |
+| stack | <code>Stack</code> | The ledger's stack. |
 | tip | <code>Mixed</code> | The most recent page in the ledger. |
 
 
@@ -1445,7 +1512,7 @@ A basic logger that writes logs to the local file system
     * [.set(path, value)](#Actor+set) ⇒ <code>Object</code>
     * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
     * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
-    * [.toGenericMessage()](#Actor+toGenericMessage) ⇒ <code>Object</code>
+    * [.toGenericMessage([type])](#Actor+toGenericMessage) ⇒ <code>Object</code>
     * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
     * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
     * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
@@ -1567,19 +1634,24 @@ Casts the Actor to a normalized Buffer.
 **Overrides**: [<code>toBuffer</code>](#Actor+toBuffer)  
 <a name="Actor+toGenericMessage"></a>
 
-### logger.toGenericMessage() ⇒ <code>Object</code>
-Casts the Actor to a generic message, used to uniquely identify the Actor's state.
-Fields:
-- `type`: 'FabricActorState'
-- `object`: state
+### logger.toGenericMessage([type]) ⇒ <code>Object</code>
+Casts the Actor to a generic message envelope for state announcements and history.
+Shape is stable: `{ type, object }` where `object` is sorted-key state ([toObject](#Actor+toObject)).
+[Actor#id](Actor#id) derives from a digest of the pretty-printed generic message; extending this
+envelope requires a format/version migration across the network.
 
 **Kind**: instance method of [<code>Logger</code>](#Logger)  
 **Overrides**: [<code>toGenericMessage</code>](#Actor+toGenericMessage)  
-**Returns**: <code>Object</code> - Generic message object.  
+**Returns**: <code>Object</code> - `{ type, object }`  
 **See**
 
 - [https://en.wikipedia.org/wiki/Merkle_tree](https://en.wikipedia.org/wiki/Merkle_tree)
 - [https://dev.fabric.pub/messages](https://dev.fabric.pub/messages)
+
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [type] | <code>String</code> | <code>&#x27;FabricActorState&#x27;</code> | Logical message type string. |
 
 <a name="Actor+toObject"></a>
 
@@ -1716,6 +1788,7 @@ selectively disclosing new routes to peers which may have open circuits.
 
 * [Message](#Message) : <code>Object</code>
     * [new Message(message)](#new_Message_new)
+    * [.preimage](#Message+preimage)
     * [.asRaw()](#Message+asRaw) ⇒ <code>Buffer</code>
     * [.signWithKey(key)](#Message+signWithKey) ⇒ [<code>Message</code>](#Message)
     * [.verify()](#Message+verify) ⇒ <code>Boolean</code>
@@ -1733,6 +1806,12 @@ The `Message` type is standardized in [Fabric](#Fabric) as a [Array](Array), whi
 | --- | --- | --- |
 | message | <code>Object</code> | Message vector.  Will be serialized by [Array#_serialize](Array#_serialize). |
 
+<a name="Message+preimage"></a>
+
+### message.preimage
+Optional 32-byte preimage (e.g. HTLC secret). `null` when unset / public (all-zero on wire).
+
+**Kind**: instance property of [<code>Message</code>](#Message)  
 <a name="Message+asRaw"></a>
 
 ### message.asRaw() ⇒ <code>Buffer</code>
@@ -1805,7 +1884,18 @@ An in-memory representation of a node in our network.
 
 * [Peer](#Peer)
     * [new Peer([config])](#new_Peer_new)
+    * [.messages](#Peer+messages)
+    * [._gossipPayloadSeen](#Peer+_gossipPayloadSeen)
+    * [._gossipRelayByOrigin](#Peer+_gossipRelayByOrigin)
+    * [._peeringPayloadSeen](#Peer+_peeringPayloadSeen)
+    * [._peeringRelayByOrigin](#Peer+_peeringRelayByOrigin)
+    * [._candidateKeys](#Peer+_candidateKeys)
     * ~~[.address](#Peer+address)~~
+    * [._gossipPayloadDedupKey(msg)](#Peer+_gossipPayloadDedupKey) ⇒ <code>string</code>
+    * [._gossipRateLimitAllow(originName)](#Peer+_gossipRateLimitAllow) ⇒ <code>boolean</code>
+    * [._peeringOfferPayloadDedupKey(msg)](#Peer+_peeringOfferPayloadDedupKey) ⇒ <code>string</code>
+    * [._peeringRateLimitAllow(originName)](#Peer+_peeringRateLimitAllow) ⇒ <code>boolean</code>
+    * [._enqueuePeeringCandidate(host, port)](#Peer+_enqueuePeeringCandidate)
     * [.broadcast(message)](#Peer+broadcast)
     * [._connect(target)](#Peer+_connect)
     * [._loadPeerRegistry()](#Peer+_loadPeerRegistry) ⇒ <code>Promise.&lt;void&gt;</code>
@@ -1831,12 +1921,102 @@ Create an instance of [Peer](#Peer).
 | [config.port] | <code>Number</code> | <code>7777</code> | Port to use for P2P connections. |
 | [config.peers] | <code>Array</code> | <code>[]</code> | List of initial peers. |
 
+<a name="Peer+messages"></a>
+
+### peer.messages
+Wire-envelope dedup (SHA-256 of full buffer); FIFO-capped via [Peer#_rememberWireHash](Peer#_rememberWireHash).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_gossipPayloadSeen"></a>
+
+### peer.\_gossipPayloadSeen
+Logical gossip payload dedup (excludes signature / hop churn).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_gossipRelayByOrigin"></a>
+
+### peer.\_gossipRelayByOrigin
+origin address → { count, windowStart } for gossip relay rate limiting.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_peeringPayloadSeen"></a>
+
+### peer.\_peeringPayloadSeen
+Logical peering-offer payload dedup (ignores per-hop re-signing).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_peeringRelayByOrigin"></a>
+
+### peer.\_peeringRelayByOrigin
+origin address → { count, windowStart } for peering-offer relay rate limiting.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_candidateKeys"></a>
+
+### peer.\_candidateKeys
+`host:port` keys for [P2P_PEERING_OFFER](P2P_PEERING_OFFER) candidate queue dedup.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+address"></a>
 
 ### ~~peer.address~~
 ***Deprecated***
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_gossipPayloadDedupKey"></a>
+
+### peer.\_gossipPayloadDedupKey(msg) ⇒ <code>string</code>
+Stable id for gossip *logical* content (ignores `gossipHop` and wire signature changes).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>string</code> - hex sha256  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | <code>object</code> | Generic message (`type`, `object`, …) |
+
+<a name="Peer+_gossipRateLimitAllow"></a>
+
+### peer.\_gossipRateLimitAllow(originName) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| originName | <code>string</code> | Connection id (e.g. `host:port`) |
+
+<a name="Peer+_peeringOfferPayloadDedupKey"></a>
+
+### peer.\_peeringOfferPayloadDedupKey(msg) ⇒ <code>string</code>
+Stable id for peering-offer *logical* content (ignores `peeringHop` and wire signature changes).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>string</code> - hex sha256  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | <code>object</code> | Generic message (`type`, `object`, …) |
+
+<a name="Peer+_peeringRateLimitAllow"></a>
+
+### peer.\_peeringRateLimitAllow(originName) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| originName | <code>string</code> | Connection id (e.g. `host:port`) |
+
+<a name="Peer+_enqueuePeeringCandidate"></a>
+
+### peer.\_enqueuePeeringCandidate(host, port)
+Enqueue a fabric candidate from [P2P_PEERING_OFFER](P2P_PEERING_OFFER); FIFO-capped and deduped by host:port.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| host | <code>string</code> | 
+| port | <code>number</code> | 
+
 <a name="Peer+broadcast"></a>
 
 ### peer.broadcast(message)
@@ -2376,6 +2556,15 @@ Sends a message.
 | --- | --- | --- |
 | message | <code>Mixed</code> | Message to send. |
 
+<a name="FabricShell"></a>
+
+## FabricShell
+**Kind**: global class  
+<a name="new_FabricShell_new"></a>
+
+### new FabricShell()
+Browser / CLI application shell: encrypted store, peer node, resources.
+
 <a name="Session"></a>
 
 ## Session
@@ -2411,68 +2600,6 @@ Opens the [Session](#Session) for interaction.
 Closes the [Session](#Session), preventing further interaction.
 
 **Kind**: instance method of [<code>Session</code>](#Session)  
-<a name="Snapshot"></a>
-
-## Snapshot
-A type of message to be expected from a [Service](#Service).
-
-**Kind**: global class  
-
-* [Snapshot](#Snapshot)
-    * [new Snapshot(settings)](#new_Snapshot_new)
-    * [.commit()](#Snapshot+commit)
-
-<a name="new_Snapshot_new"></a>
-
-### new Snapshot(settings)
-Creates an instance of a [Snapshot](#Snapshot).
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| settings | <code>Object</code> | Map of settings to configure the [Snapshot](#Snapshot) with. |
-
-<a name="Snapshot+commit"></a>
-
-### snapshot.commit()
-Retrieves the `sha256` fingerprint for the [Snapshot](#Snapshot) state.
-
-**Kind**: instance method of [<code>Snapshot</code>](#Snapshot)  
-<a name="Stack"></a>
-
-## Stack
-Manage stacks of data.
-
-**Kind**: global class  
-
-* [Stack](#Stack)
-    * [new Stack([list])](#new_Stack_new)
-    * [.push(data)](#Stack+push) ⇒ <code>Number</code>
-
-<a name="new_Stack_new"></a>
-
-### new Stack([list])
-Create a [Stack](#Stack) instance.
-
-**Returns**: [<code>Stack</code>](#Stack) - Instance of the [Stack](#Stack).  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| [list] | <code>Array</code> | <code>[]</code> | Genesis state for the [Stack](#Stack) instance. |
-
-<a name="Stack+push"></a>
-
-### stack.push(data) ⇒ <code>Number</code>
-Push data onto the stack.  Changes the [Stack#frame](Stack#frame) and
-[Stack#id](Stack#id).
-
-**Kind**: instance method of [<code>Stack</code>](#Stack)  
-**Returns**: <code>Number</code> - Resulting size of the stack.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| data | <code>Mixed</code> | Treated as a [State](#State). |
-
 <a name="State"></a>
 
 ## State ⇐ <code>EventEmitter</code>
@@ -2627,14 +2754,19 @@ Long-term storage.
 
 * [Store](#Store)
     * [new Store([settings])](#new_Store_new)
-    * [._REGISTER(obj)](#Store+_REGISTER) ⇒ [<code>Vector</code>](#Vector)
-    * [._POST(key, value)](#Store+_POST) ⇒ <code>Promise</code>
-    * [.get(key)](#Store+get) ⇒ <code>Promise</code>
-    * [.set(key, value)](#Store+set)
-    * [.trust(source)](#Store+trust) ⇒ [<code>Store</code>](#Store)
-    * [.del(key)](#Store+del)
-    * [.flush()](#Store+flush)
-    * [.start()](#Store+start) ⇒ <code>Promise</code>
+    * _instance_
+        * [.codec](#Store+codec)
+        * [._REGISTER(obj)](#Store+_REGISTER) ⇒ [<code>Vector</code>](#Vector)
+        * [._POST(key, value)](#Store+_POST) ⇒ <code>Promise</code>
+        * [.get(key)](#Store+get) ⇒ <code>Promise</code>
+        * [.set(key, value)](#Store+set)
+        * [.trust(source)](#Store+trust) ⇒ [<code>Store</code>](#Store)
+        * [.del(key)](#Store+del)
+        * [.flush()](#Store+flush)
+        * [.start()](#Store+start) ⇒ <code>Promise</code>
+    * _static_
+        * [.encryptedSettings([settings])](#Store.encryptedSettings) ⇒ <code>Object</code>
+        * [.openEncrypted([settings])](#Store.openEncrypted) ⇒ [<code>Store</code>](#Store)
 
 <a name="new_Store_new"></a>
 
@@ -2648,6 +2780,14 @@ particularly useful when building a user-facing [Product](Product).
 | --- | --- | --- | --- |
 | [settings] | <code>Object</code> | <code>{}</code> | configuration object. |
 
+<a name="Store+codec"></a>
+
+### store.codec
+Optional [Codec](Codec) for encrypted at-rest values (Level `valueEncoding`).
+Browser and Hub-style apps typically use one [Store](#Store) with `codec` for
+secrets and separate plain stores for cache/tips.
+
+**Kind**: instance property of [<code>Store</code>](#Store)  
 <a name="Store+_REGISTER"></a>
 
 ### store.\_REGISTER(obj) ⇒ [<code>Vector</code>](#Vector)
@@ -2712,7 +2852,7 @@ Implicitly trust an [Event](Event) source.
 <a name="Store+del"></a>
 
 ### store.del(key)
-Remove a [Value](#Value) by [Path](Path).
+Remove a [Value](Value) by [Path](Path).
 
 **Kind**: instance method of [<code>Store</code>](#Store)  
 
@@ -2733,55 +2873,43 @@ Start running the process.
 
 **Kind**: instance method of [<code>Store</code>](#Store)  
 **Returns**: <code>Promise</code> - Resolves on complete.  
-<a name="Swarm"></a>
+<a name="Store.encryptedSettings"></a>
 
-## Swarm : <code>String</code>
-Orchestrates a network of peers.
+### Store.encryptedSettings([settings]) ⇒ <code>Object</code>
+Settings object for a [Store](#Store) with [Codec](Codec) at-rest encryption
+(same defaults as the legacy `Keystore` type). Prefer `openEncrypted` or
+`new Store(Store.encryptedSettings(...))` over ad-hoc Codec wiring.
 
-**Kind**: global class  
+**Kind**: static method of [<code>Store</code>](#Store)  
+**Returns**: <code>Object</code> - Settings merged with `codec` when absent.  
 
-* [Swarm](#Swarm) : <code>String</code>
-    * [new Swarm(config)](#new_Swarm_new)
-    * [.trust(source)](#Swarm+trust)
-    * [.start()](#Swarm+start) ⇒ <code>Promise</code>
-
-<a name="new_Swarm_new"></a>
-
-### new Swarm(config)
-Create an instance of a [Swarm](#Swarm).
-
-**Returns**: [<code>Swarm</code>](#Swarm) - Instance of the Swarm.  
-
-| Param | Type | Description |
+| Param | Type | Default |
 | --- | --- | --- |
-| config | <code>Object</code> | Configuration object. |
+| [settings] | <code>Object</code> | <code>{}</code> | 
 
-<a name="Swarm+trust"></a>
+<a name="Store.openEncrypted"></a>
 
-### swarm.trust(source)
-Explicitly trust an [EventEmitter](EventEmitter) to provide messages using
-the expected [Interface](#Interface), providing [Message](#Message) objects as
-the expected [Type](Type).
+### Store.openEncrypted([settings]) ⇒ [<code>Store</code>](#Store)
+**Kind**: static method of [<code>Store</code>](#Store)  
 
-**Kind**: instance method of [<code>Swarm</code>](#Swarm)  
-
-| Param | Type | Description |
+| Param | Type | Default |
 | --- | --- | --- |
-| source | <code>EventEmitter</code> | [Actor](#Actor) to utilize. |
+| [settings] | <code>Object</code> | <code>{}</code> | 
 
-<a name="Swarm+start"></a>
-
-### swarm.start() ⇒ <code>Promise</code>
-Begin computing.
-
-**Kind**: instance method of [<code>Swarm</code>](#Swarm)  
-**Returns**: <code>Promise</code> - Resolves to instance of [Swarm](#Swarm).  
 <a name="Token"></a>
 
 ## Token
 Implements a capability-based security token.
 
 **Kind**: global class  
+
+* [Token](#Token)
+    * [new Token([settings])](#new_Token_new)
+    * _instance_
+        * [.toSignedString([options])](#Token+toSignedString) ⇒ <code>string</code>
+    * _static_
+        * [.verifySigned(tokenString, verificationKey)](#Token.verifySigned) ⇒ <code>Object</code> \| <code>null</code>
+
 <a name="new_Token_new"></a>
 
 ### new Token([settings])
@@ -2792,6 +2920,32 @@ Create a new Fabric Token.
 | Param | Type | Description |
 | --- | --- | --- |
 | [settings] | <code>Object</code> | Configuration. |
+
+<a name="Token+toSignedString"></a>
+
+### token.toSignedString([options]) ⇒ <code>string</code>
+Create a cryptographically signed token string.
+Format: base64url(payload).base64url(signature)
+Payload: { cap, iss, sub, iat, exp }. Signature: Schnorr over payload JSON.
+
+**Kind**: instance method of [<code>Token</code>](#Token)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [options] | <code>Object</code> |  |  |
+| [options.expiresInSeconds] | <code>number</code> | <code>31536000</code> | Token lifetime (default 1 year). |
+
+<a name="Token.verifySigned"></a>
+
+### Token.verifySigned(tokenString, verificationKey) ⇒ <code>Object</code> \| <code>null</code>
+Verify a signed token string. Returns parsed payload if valid, null otherwise.
+
+**Kind**: static method of [<code>Token</code>](#Token)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| tokenString | <code>string</code> |  |
+| verificationKey | [<code>Key</code>](#Key) | Key used to verify the signature (must match issuer). |
 
 <a name="Tree"></a>
 
@@ -2835,38 +2989,6 @@ Get a list of the [Tree](#Tree)'s leaves.
 
 **Kind**: instance method of [<code>Tree</code>](#Tree)  
 **Returns**: <code>Array</code> - A list of the [Tree](#Tree)'s leaves.  
-<a name="Value"></a>
-
-## Value
-[Number](Number)-like type.
-
-**Kind**: global class  
-
-* [Value](#Value)
-    * [new Value(data)](#new_Value_new)
-    * [.value(input)](#Value+value)
-
-<a name="new_Value_new"></a>
-
-### new Value(data)
-Use the [Value](#Value) type to interact with [Number](Number)-like objects.
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| data | <code>Mixed</code> | Input value. |
-
-<a name="Value+value"></a>
-
-### value.value(input)
-Compute the numeric representation of this input.
-
-**Kind**: instance method of [<code>Value</code>](#Value)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| input | <code>String</code> | Input string to seek for value. |
-
 <a name="Vector"></a>
 
 ## Vector
@@ -2909,52 +3031,6 @@ Render the output to a [String](String).
 | Param | Type | Description |
 | --- | --- | --- |
 | input | <code>Mixed</code> | Arbitrary input. |
-
-<a name="Walker"></a>
-
-## Walker
-**Kind**: global class  
-
-* [Walker](#Walker)
-    * [new Walker(init)](#new_Walker_new)
-    * [._explore(path, [map])](#Walker+_explore) ⇒ <code>Object</code>
-    * [._define(dir, [map])](#Walker+_define) ⇒ <code>Object</code>
-
-<a name="new_Walker_new"></a>
-
-### new Walker(init)
-The Walker explores a directory tree and maps it to memory.
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| init | [<code>Vector</code>](#Vector) | Initial state tree. |
-
-<a name="Walker+_explore"></a>
-
-### walker.\_explore(path, [map]) ⇒ <code>Object</code>
-Explores a directory tree on the local system's disk.
-
-**Kind**: instance method of [<code>Walker</code>](#Walker)  
-**Returns**: <code>Object</code> - [description]  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| path | <code>String</code> |  | [description] |
-| [map] | <code>Object</code> | <code>{}</code> | [description] |
-
-<a name="Walker+_define"></a>
-
-### walker.\_define(dir, [map]) ⇒ <code>Object</code>
-Explores a directory tree on the local system's disk.
-
-**Kind**: instance method of [<code>Walker</code>](#Walker)  
-**Returns**: <code>Object</code> - A hashmap of directory contents.  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| dir | <code>String</code> |  | Path to crawl on local disk. |
-| [map] | <code>Object</code> | <code>{}</code> | Pointer to previous step in stack. |
 
 <a name="Wallet"></a>
 
@@ -3162,7 +3238,10 @@ Manages interaction with the Bitcoin network.
     * [._subscribeToShard(shard)](#Bitcoin+_subscribeToShard)
     * [._connectSPV()](#Bitcoin+_connectSPV)
     * [.connect(addr)](#Bitcoin+connect)
-    * [._makeRPCRequest(method, params)](#Bitcoin+_makeRPCRequest) ⇒ <code>Promise</code>
+    * [._makeRPCRequest(method, params, [opts])](#Bitcoin+_makeRPCRequest) ⇒ <code>Promise</code>
+    * [.getBlockInfo(hashOrHeight)](#Bitcoin+getBlockInfo) ⇒ <code>Promise.&lt;Object&gt;</code>
+    * [.getTransactionInfo(txid)](#Bitcoin+getTransactionInfo) ⇒ <code>Promise.&lt;Object&gt;</code>
+    * [.getAddressInfo(address)](#Bitcoin+getAddressInfo) ⇒ <code>Promise.&lt;Object&gt;</code>
     * [._requestBlockAtHeight(height)](#Bitcoin+_requestBlockAtHeight) ⇒ <code>Object</code>
     * [._createContractProposal(options)](#Bitcoin+_createContractProposal) ⇒ <code>ContractProposal</code>
     * [._buildPSBT(options)](#Bitcoin+_buildPSBT) ⇒ <code>PSBT</code>
@@ -3329,8 +3408,9 @@ Connect to a Fabric [Peer](#Peer).
 
 <a name="Bitcoin+_makeRPCRequest"></a>
 
-### bitcoin.\_makeRPCRequest(method, params) ⇒ <code>Promise</code>
+### bitcoin.\_makeRPCRequest(method, params, [opts]) ⇒ <code>Promise</code>
 Make a single RPC request to the Bitcoin node.
+Retries on "Work queue depth exceeded" (bitcoind temporary backpressure).
 
 **Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
 **Returns**: <code>Promise</code> - A promise that resolves to the RPC response.  
@@ -3339,6 +3419,46 @@ Make a single RPC request to the Bitcoin node.
 | --- | --- | --- |
 | method | <code>String</code> | The RPC method to call. |
 | params | <code>Array</code> | The parameters to pass to the RPC method. |
+| [opts] | <code>Object</code> | Options. retries: max retries for work-queue errors (default 5). |
+
+<a name="Bitcoin+getBlockInfo"></a>
+
+### bitcoin.getBlockInfo(hashOrHeight) ⇒ <code>Promise.&lt;Object&gt;</code>
+Blockchain explorer: fetch block info by hash or height.
+Uses RPC when available; optional HTTP API when `explorerBaseUrl` is set.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - Block info { hash, height, time, txcount, size, ... }.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| hashOrHeight | <code>String</code> \| <code>Number</code> | Block hash (hex) or block height. |
+
+<a name="Bitcoin+getTransactionInfo"></a>
+
+### bitcoin.getTransactionInfo(txid) ⇒ <code>Promise.&lt;Object&gt;</code>
+Blockchain explorer: fetch transaction info by txid.
+Uses RPC when available; optional HTTP API when `explorerBaseUrl` is set.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - Transaction info.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| txid | <code>String</code> | Transaction ID (hex). |
+
+<a name="Bitcoin+getAddressInfo"></a>
+
+### bitcoin.getAddressInfo(address) ⇒ <code>Promise.&lt;Object&gt;</code>
+Blockchain explorer: fetch address info (balance, tx count, recent txs).
+Requires `explorerBaseUrl` (Core has no generic address index over RPC alone).
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - Address info { address, chain_stats, mempool_stats, recent_txs }.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| address | <code>String</code> | Bitcoin address. |
 
 <a name="Bitcoin+_requestBlockAtHeight"></a>
 
@@ -3580,10 +3700,13 @@ Manage a Lightning node.
 
 * [Lightning](#Lightning)
     * [new Lightning([settings])](#new_Lightning_new)
-    * [.createChannel(peer, amount)](#Lightning+createChannel)
-    * [.createInvoice(amount)](#Lightning+createInvoice)
-    * [.computeLiquidity()](#Lightning+computeLiquidity) ⇒ <code>Object</code>
-    * [._makeRPCRequest(method, [params])](#Lightning+_makeRPCRequest) ⇒ <code>Object</code> \| <code>String</code>
+    * _instance_
+        * [.createChannel(peer, amount, [pushMsat], [options])](#Lightning+createChannel)
+        * [.createInvoice(amount)](#Lightning+createInvoice)
+        * [.computeLiquidity()](#Lightning+computeLiquidity) ⇒ <code>Object</code>
+        * [._makeRPCRequest(method, [params], [timeoutMs])](#Lightning+_makeRPCRequest) ⇒ <code>Object</code> \| <code>String</code>
+    * _static_
+        * [.CLN_RPC_METHODS](#Lightning.CLN_RPC_METHODS) : <code>ReadonlyArray.&lt;string&gt;</code>
 
 <a name="new_Lightning_new"></a>
 
@@ -3597,15 +3720,17 @@ Create an instance of the Lightning [Service](#Service).
 
 <a name="Lightning+createChannel"></a>
 
-### lightning.createChannel(peer, amount)
+### lightning.createChannel(peer, amount, [pushMsat], [options])
 Creates a new Lightning channel.
 
 **Kind**: instance method of [<code>Lightning</code>](#Lightning)  
 
-| Param | Type | Description |
-| --- | --- | --- |
-| peer | <code>String</code> | Public key of the peer to create a channel with. |
-| amount | <code>String</code> | Amount in satoshis to fund the channel. |
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| peer | <code>String</code> |  | Public key of the peer to create a channel with. |
+| amount | <code>String</code> |  | Amount in satoshis to fund the channel. |
+| [pushMsat] | <code>Number</code> \| <code>null</code> | <code></code> | Optional push amount in millisatoshis. |
+| [options] | <code>Object</code> | <code>{}</code> | Optional overrides (e.g. minconf for regtest). |
 
 <a name="Lightning+createInvoice"></a>
 
@@ -3627,17 +3752,24 @@ Computes the total liquidity of the Lightning node.
 **Returns**: <code>Object</code> - Liquidity in BTC.  
 <a name="Lightning+_makeRPCRequest"></a>
 
-### lightning.\_makeRPCRequest(method, [params]) ⇒ <code>Object</code> \| <code>String</code>
+### lightning.\_makeRPCRequest(method, [params], [timeoutMs]) ⇒ <code>Object</code> \| <code>String</code>
 Make an RPC request through the Lightning UNIX socket.
 
 **Kind**: instance method of [<code>Lightning</code>](#Lightning)  
 **Returns**: <code>Object</code> \| <code>String</code> - Respond from the Lightning node.  
 
-| Param | Type | Description |
-| --- | --- | --- |
-| method | <code>String</code> | Name of method to call. |
-| [params] | <code>Array</code> | Array of parameters. |
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| method | <code>String</code> |  | Name of method to call. |
+| [params] | <code>Array</code> |  | Array of parameters. |
+| [timeoutMs] | <code>Number</code> | <code>30000</code> | Optional timeout in ms; default 30000. Prevents hanging when lightningd is busy. |
 
+<a name="Lightning.CLN_RPC_METHODS"></a>
+
+### Lightning.CLN\_RPC\_METHODS : <code>ReadonlyArray.&lt;string&gt;</code>
+Core Lightning JSON-RPC method names invoked by this service (see docs/LIGHTNING_COMPAT.md).
+
+**Kind**: static property of [<code>Lightning</code>](#Lightning)  
 <a name="Redis"></a>
 
 ## Redis
@@ -3761,11 +3893,24 @@ Use an existing Scribe instance as a parent.
 | --- | --- | --- |
 | scribe | [<code>Scribe</code>](#Scribe) | Instance of Scribe to use as parent. |
 
-<a name="Stash"></a>
+<a name="gossip"></a>
 
-## ~~Stash~~
-***Deprecated***
+## gossip
+Limits relay amplification on [P2P_PEER_GOSSIP](P2P_PEER_GOSSIP) (hop TTL, payload dedup, per-origin rate).
 
-Deprecated 2021-11-06.
+**Kind**: global variable  
+<a name="explorerBaseUrl"></a>
 
-**Kind**: global class  
+## explorerBaseUrl
+Optional HTTP origin for block/tx/address REST fallback (e.g. a Hub). Null = RPC only.
+
+**Kind**: global variable  
+<a name="isAllZero32"></a>
+
+## isAllZero32(buf)
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| buf | <code>Buffer</code> | 
+

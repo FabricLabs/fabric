@@ -180,7 +180,7 @@ class Environment extends Entity {
         // Categorize configuration options
         if (key.startsWith('rpc') || ['server', 'rpcbind', 'rpcallowip'].includes(key)) {
           config.rpc[key] = this._parseConfigValue(value);
-        } else if (['testnet', 'regtest', 'signet', 'mainnet'].includes(key)) {
+        } else if (['testnet', 'testnet4', 'regtest', 'signet', 'mainnet'].includes(key)) {
           config.network[key] = this._parseConfigValue(value);
         } else {
           config.general[key] = this._parseConfigValue(value);
@@ -190,6 +190,8 @@ class Environment extends Entity {
       // Infer network from flags
       if (config.network.testnet) {
         config.network.active = 'testnet';
+      } else if (config.network.testnet4) {
+        config.network.active = 'testnet4';
       } else if (config.network.regtest) {
         config.network.active = 'regtest';
       } else if (config.network.signet) {
@@ -213,6 +215,9 @@ class Environment extends Entity {
           case 'signet':
             config.rpc.rpcport = 38332;
             break;
+          case 'testnet4':
+            config.rpc.rpcport = 48332;
+            break;
           default:
             config.rpc.rpcport = 8332;
         }
@@ -222,7 +227,7 @@ class Environment extends Entity {
       if (!config.rpc.rpcbind && !config.rpc.rpcconnect) {
         config.rpc.host = '127.0.0.1';
       } else {
-        config.rpc.host = config.rpc.rpcbind || config.rpc.rpcconnect || '127.0.0.1';
+        config.rpc.host = this._normalizeRPCHost(config.rpc.rpcbind || config.rpc.rpcconnect || '127.0.0.1');
       }
 
     } catch (error) {
@@ -266,12 +271,207 @@ class Environment extends Entity {
     return value;
   }
 
+  _normalizeRPCHost (value) {
+    if (!value) return '127.0.0.1';
+    const host = String(value).trim();
+    if (!host) return '127.0.0.1';
+
+    // bitcoin.conf can express rpcbind/rpcconnect as host:port.
+    if (host.includes(':') && !host.startsWith('[') && host.split(':').length === 2) {
+      return host.split(':')[0];
+    }
+
+    return host;
+  }
+
+  _extractRPCPort (value) {
+    if (!value) return null;
+    const endpoint = String(value).trim();
+    if (!endpoint.includes(':')) return null;
+    const parts = endpoint.split(':');
+    const maybePort = Number(parts[parts.length - 1]);
+    return Number.isFinite(maybePort) ? maybePort : null;
+  }
+
+  _defaultRPCPortForNetwork (network = 'mainnet') {
+    switch (network) {
+      case 'testnet':
+        return 18332;
+      case 'testnet4':
+        return 48332;
+      case 'regtest':
+        return 18443;
+      case 'signet':
+        return 38332;
+      default:
+        return 8332;
+    }
+  }
+
+  _getChainSubdirectory (network) {
+    switch (network) {
+      case 'testnet':
+        return 'testnet3';
+      case 'testnet4':
+        return 'testnet4';
+      case 'regtest':
+        return 'regtest';
+      case 'signet':
+        return 'signet';
+      default:
+        return '';
+    }
+  }
+
+  _readAuthCookie (baseDatadir, network) {
+    const chainSubdir = this._getChainSubdirectory(network);
+    const cookiePath = chainSubdir
+      ? path.join(baseDatadir, chainSubdir, '.cookie')
+      : path.join(baseDatadir, '.cookie');
+
+    try {
+      if (!fs.existsSync(cookiePath)) return null;
+      const content = fs.readFileSync(cookiePath, 'utf8').trim();
+      if (!content.includes(':')) return null;
+      const [username, password] = content.split(':');
+      if (!username || !password) return null;
+      return { username, password };
+    } catch (error) {
+      return null;
+    }
+  }
+
+  getBitcoinRPCCandidates (baseSettings = {}) {
+    const candidates = [];
+    const seen = new Set();
+    const defaultDatadir = this._getDefaultBitcoinDatadir();
+    const conf = this.bitcoinConfig || this._readBitcoinConf();
+    const confNetwork = conf.network ? conf.network.active : null;
+    const preferredHost = this._normalizeRPCHost(baseSettings.host || '127.0.0.1');
+
+    const pushCandidate = (candidate) => {
+      if (!candidate || !candidate.host || !candidate.rpcport) return;
+      const normalized = {
+        ...candidate,
+        host: this._normalizeRPCHost(candidate.host),
+        rpcport: Number(candidate.rpcport)
+      };
+      if (!Number.isFinite(normalized.rpcport)) return;
+      const key = [
+        normalized.host,
+        normalized.rpcport,
+        normalized.network || '',
+        normalized.username || '',
+        normalized.password || ''
+      ].join('|');
+      if (seen.has(key)) return;
+      seen.add(key);
+      candidates.push(normalized);
+    };
+
+    if (baseSettings.host && baseSettings.rpcport) {
+      pushCandidate({
+        source: 'settings',
+        host: baseSettings.host,
+        rpcport: baseSettings.rpcport,
+        network: baseSettings.network,
+        username: baseSettings.username,
+        password: baseSettings.password,
+        secure: baseSettings.secure === true
+      });
+    }
+
+    let confDatadir = defaultDatadir;
+    if (conf.found) {
+      const confHost = this._normalizeRPCHost(conf.rpc.rpcconnect || conf.rpc.rpcbind || conf.rpc.host || preferredHost);
+      const network = confNetwork || baseSettings.network || 'mainnet';
+      const port = Number(conf.rpc.rpcport || this._extractRPCPort(conf.rpc.rpcconnect || conf.rpc.rpcbind) || this._defaultRPCPortForNetwork(network));
+      confDatadir = conf.general && conf.general.datadir
+        ? (path.isAbsolute(conf.general.datadir) ? conf.general.datadir : path.resolve(path.dirname(conf.path), conf.general.datadir))
+        : defaultDatadir;
+
+      pushCandidate({
+        source: 'bitcoin.conf',
+        host: confHost,
+        rpcport: port,
+        network,
+        username: conf.rpc.rpcuser,
+        password: conf.rpc.rpcpassword,
+        secure: false
+      });
+
+      const cookieAuth = this._readAuthCookie(confDatadir, network);
+      if (cookieAuth) {
+        pushCandidate({
+          source: 'bitcoin.conf.cookie',
+          host: confHost,
+          rpcport: port,
+          network,
+          username: cookieAuth.username,
+          password: cookieAuth.password,
+          secure: false
+        });
+      }
+    }
+
+    const allNetworks = ['mainnet', 'testnet', 'signet', 'regtest', 'testnet4'];
+    const preferredNetworks = [];
+    if (baseSettings.network) preferredNetworks.push(baseSettings.network);
+    if (confNetwork && !preferredNetworks.includes(confNetwork)) preferredNetworks.push(confNetwork);
+    for (const network of allNetworks) {
+      if (!preferredNetworks.includes(network)) preferredNetworks.push(network);
+    }
+
+    const datadirs = [baseSettings.datadir, confDatadir, defaultDatadir].filter(Boolean);
+    for (const network of preferredNetworks) {
+      const rpcport = this._defaultRPCPortForNetwork(network);
+
+      if (baseSettings.username && baseSettings.password) {
+        pushCandidate({
+          source: 'settings.credentials',
+          host: preferredHost,
+          rpcport,
+          network,
+          username: baseSettings.username,
+          password: baseSettings.password,
+          secure: baseSettings.secure === true
+        });
+      }
+
+      for (const datadir of datadirs) {
+        const cookieAuth = this._readAuthCookie(datadir, network);
+        if (!cookieAuth) continue;
+        pushCandidate({
+          source: `cookie:${network}`,
+          host: preferredHost,
+          rpcport,
+          network,
+          username: cookieAuth.username,
+          password: cookieAuth.password,
+          secure: false
+        });
+      }
+
+      pushCandidate({
+        source: `localhost:${network}`,
+        host: preferredHost,
+        rpcport,
+        network,
+        username: baseSettings.username,
+        password: baseSettings.password,
+        secure: baseSettings.secure === true
+      });
+    }
+
+    return candidates;
+  }
+
   /**
    * Convert bitcoin.conf configuration to Fabric Bitcoin service settings
    * @param {Object} bitcoinConf The parsed bitcoin.conf configuration
    * @returns {Object} Settings object compatible with Fabric Bitcoin service
    */
-  _toFabricSettings(bitcoinConf) {
+  _toFabricSettings (bitcoinConf) {
     if (!bitcoinConf.found) {
       return {};
     }
@@ -279,8 +479,8 @@ class Environment extends Entity {
     const settings = {
       mode: 'rpc',
       network: bitcoinConf.network.active || 'mainnet',
-      host: bitcoinConf.rpc.host || '127.0.0.1',
-      rpcport: bitcoinConf.rpc.rpcport,
+      host: this._normalizeRPCHost(bitcoinConf.rpc.host || '127.0.0.1'),
+      rpcport: Number(bitcoinConf.rpc.rpcport),
       secure: false
     };
 
@@ -290,10 +490,8 @@ class Environment extends Entity {
       settings.password = bitcoinConf.rpc.rpcpassword;
     }
 
-    // Add authority URL for backward compatibility
-    if (settings.username && settings.password) {
-      settings.authority = `http://${settings.username}:${settings.password}@${settings.host}:${settings.rpcport}`;
-    }
+    // Keep authority credential-free to avoid accidental secret disclosure.
+    settings.authority = `http://${settings.host}:${settings.rpcport}`;
 
     return settings;
   }

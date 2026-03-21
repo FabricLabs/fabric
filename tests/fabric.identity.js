@@ -5,7 +5,14 @@ const assert = require('assert');
 const bip39 = require('bip39');
 const BIP32 = require('bip32').default;
 const ecc = require('../types/ecc');
-const { secp256k1, schnorr: nobleSchnorr } = require('@noble/curves/secp256k1.js');
+let nobleSecp256k1 = null;
+try {
+  nobleSecp256k1 = require('@noble/curves/secp256k1.js');
+} catch (error) {
+  // Support older noble-curves subpath exports used in some CI environments.
+  nobleSecp256k1 = require('@noble/curves/secp256k1');
+}
+const { secp256k1, schnorr: nobleSchnorr } = nobleSecp256k1;
 const crypto = require('crypto');
 
 const SAMPLE = {

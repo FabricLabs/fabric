@@ -165,7 +165,7 @@
             <dd class="tag-source">
               <ul class="dummy">
                 <li>
-                  <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line24">line 24</a>
+                  <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line31">line 31</a>
                 </li>
               </ul>
             </dd>
@@ -231,6 +231,86 @@
 
 
 
+        <h3 class="subsection-title">Members</h3>
+
+
+
+        <h4 class="name" id=".CLN_RPC_METHODS"><span class="type-signature">(static) </span>CLN_RPC_METHODS<span class="type-signature"> :ReadonlyArray.&lt;string></span></h4>
+
+
+
+
+        <div class="description">
+          Core Lightning JSON-RPC method names invoked by this service (see docs/LIGHTNING_COMPAT.md).
+        </div>
+
+
+
+        <h5>Type:</h5>
+        <ul>
+          <li>
+
+            <span class="param-type">ReadonlyArray.&lt;string></span>
+
+
+          </li>
+        </ul>
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line792">line 792</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
 
 
         <h3 class="subsection-title">Methods</h3>
@@ -241,7 +321,7 @@
 
 
 
-        <h4 class="name" id="_makeRPCRequest"><span class="type-signature">(async) </span>_makeRPCRequest<span class="signature">(method, params<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Object|String}</span></h4>
+        <h4 class="name" id="_makeRPCRequest"><span class="type-signature">(async) </span>_makeRPCRequest<span class="signature">(method, params<span class="signature-attributes">opt</span>, timeoutMs<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Object|String}</span></h4>
 
 
 
@@ -277,6 +357,8 @@
 
 
 
+              <th>Default</th>
+
 
               <th class="last">Description</th>
             </tr>
@@ -309,6 +391,10 @@
               </td>
 
 
+
+              <td class="default">
+
+              </td>
 
 
               <td class="description last">Name of method to call.</td>
@@ -343,8 +429,51 @@
 
 
 
+              <td class="default">
+
+              </td>
+
 
               <td class="description last">Array of parameters.</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>timeoutMs</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Number</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+                30000
+
+              </td>
+
+
+              <td class="description last">Optional timeout in ms; default 30000. Prevents hanging when lightningd is busy.</td>
             </tr>
 
 
@@ -387,7 +516,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line539">line 539</a>
+                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line594">line 594</a>
               </li>
             </ul>
           </dd>
@@ -504,7 +633,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line174">line 174</a>
+                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line200">line 200</a>
               </li>
             </ul>
           </dd>
@@ -564,7 +693,7 @@
 
 
 
-        <h4 class="name" id="createChannel"><span class="type-signature">(async) </span>createChannel<span class="signature">(peer, amount)</span><span class="type-signature"></span></h4>
+        <h4 class="name" id="createChannel"><span class="type-signature">(async) </span>createChannel<span class="signature">(peer, amount, pushMsat<span class="signature-attributes">opt</span>, options<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h4>
 
 
 
@@ -596,7 +725,11 @@
               <th>Type</th>
 
 
+              <th>Attributes</th>
 
+
+
+              <th>Default</th>
 
 
               <th class="last">Description</th>
@@ -621,7 +754,19 @@
               </td>
 
 
+              <td class="attributes">
 
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+              </td>
 
 
               <td class="description last">Public key of the peer to create a channel with.</td>
@@ -644,10 +789,103 @@
               </td>
 
 
+              <td class="attributes">
 
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+              </td>
 
 
               <td class="description last">Amount in satoshis to fund the channel.</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>pushMsat</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Number</span>
+                |
+
+                <span class="param-type">null</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+                null
+
+              </td>
+
+
+              <td class="description last">Optional push amount in millisatoshis.</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>options</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+                {}
+
+              </td>
+
+
+              <td class="description last">Optional overrides (e.g. minconf for regtest).</td>
             </tr>
 
 
@@ -690,7 +928,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line152">line 152</a>
+                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line165">line 165</a>
               </li>
             </ul>
           </dd>
@@ -831,7 +1069,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line161">line 161</a>
+                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line187">line 187</a>
               </li>
             </ul>
           </dd>
@@ -889,6 +1127,7 @@
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
@@ -910,24 +1149,20 @@
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
-      <li><a href="Snapshot.html">Snapshot</a></li>
-      <li><a href="Stack.html">Stack</a></li>
-      <li><a href="Stash.html">Stash</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
-      <li><a href="Swarm.html">Swarm</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
-      <li><a href="Value.html">Value</a></li>
       <li><a href="Vector.html">Vector</a></li>
-      <li><a href="Walker.html">Walker</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
-    <h3>Events</h3>
+    <h3>Global</h3>
     <ul>
-      <li><a href="Aggregator.html#event:commit">commit</a></li>
+      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
+      <li><a href="global.html#gossip">gossip</a></li>
+      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
     </ul>
   </nav>
   <br class="clear" />

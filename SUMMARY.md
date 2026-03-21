@@ -6,6 +6,7 @@ Welcome to Fabric!
 * [👀 Quick Start][quickstart]
 * [🎯 Goals][goals]
 * [🔭 Roadmap][roadmap]
+* [🔭 Vision][vision]
 * [看板 kanban][meta]
 
 ## Documentation
@@ -17,6 +18,8 @@ Welcome to Fabric!
 ## Guides
 * [⚙️ Settings][settings]
 * [🏦 Services Overview][services]
+* [🎭 Actors][actors]
+* [📜 Contracts][contracts]
 * [💁 Contributing][contributing]
 * [✅ TODO List][todo]
 
@@ -28,18 +31,18 @@ Welcome to Fabric!
 [api-docs]: https://dev.fabric.pub/docs
 [api-examples]: https://dev.fabric.pub/examples
 
-[actors]: ACTORS.md
-[contracts]: CONTRACTS.md
-
 [readme]: README.md
+[vision]: VISION.md
+[non-canonical]: docs/NON_CANONICAL.md
 [welcome]: WELCOME.md
 [quickstart]: QUICKSTART.md
 [whitepaper]: whitepaper.md
 [whitepaper-2015]: whitepaper-2015.md
 [developers]: DEVELOPERS.md
-[actors]: ACTORS.md
-[services]: SERVICES.md
-[settings]: SETTINGS.md
+[actors]: guides/ACTORS.md
+[services]: guides/SERVICES.md
+[settings]: guides/SETTINGS.md
+[contracts]: guides/CONTRACTS.md
 [contributing]: CONTRIBUTING.md
 [goals]: GOALS.md
 [todo]: TODO.md

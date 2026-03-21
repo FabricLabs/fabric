@@ -49,5 +49,24 @@ describe('@fabric/core/types/token', function () {
 
       assert.ok(combined);
     });
+
+    it('can create and verify a signed token', async function () {
+      const issuer = new Key();
+      const token = new Token({
+        capability: 'OP_IDENTITY',
+        issuer,
+        subject: 'admin'
+      });
+      const signed = token.toSignedString();
+      assert.ok(signed);
+      assert.ok(signed.includes('.'));
+      const payload = Token.verifySigned(signed, issuer);
+      assert.ok(payload);
+      assert.strictEqual(payload.cap, 'OP_IDENTITY');
+      assert.strictEqual(payload.sub, 'admin');
+      assert.ok(payload.iat);
+      assert.ok(payload.exp > payload.iat);
+      assert.strictEqual(Token.verifySigned(signed, new Key()), null);
+    });
   });
 });
