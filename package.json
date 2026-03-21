@@ -6,7 +6,7 @@
   "module": "types/fabric.mjs",
   "types": "types/fabric.d.ts",
   "bin": {
-    "fabric": "scripts/cli.js"
+    "fabric": "scripts/fabric.js"
   },
   "directories": {
     "doc": "docs",
@@ -33,15 +33,15 @@
     "docs": "npm run make:api && npm run make:docs && http-server -p 8000 docs",
     "examples": "npm run make:examples && http-server -p 8000 examples",
     "keygen": "node scripts/keygen.js",
-    "lint:fix": "npx semistandard --fix",
-    "lint:types": "npx semistandard types/**/*.js",
-    "lint:types:fix": "npx semistandard --fix types/**/*.js",
-    "lint": "npx semistandard",
+    "lint:fix": "semistandard --fix",
+    "lint:types": "semistandard types/**/*.js",
+    "lint:types:fix": "semistandard --fix types/**/*.js",
+    "lint": "semistandard",
     "local": "npm run build && http-server -p 8000 ./assets",
     "make:all": "npm run make:service && npm run make:app && npm run make:lib && npm run make:dev # && npm run make:binary",
     "make:api": "NODE_OPTIONS=\"--require ./scripts/bigint-json.js\" jsdoc2md --configure jsdoc.json --files types/*.js schemata/*.js services/*.js settings/deprecations.js README.md > API.md",
     "make:app": "### ERROR: Not yet implemented.  Debug: `examples/app.js` to `assets/app.js`",
-    "make:binary": "pkg -c package.json -o assets/binaries/fabric scripts/cli.js",
+    "make:binary": "pkg -c package.json -o assets/binaries/fabric scripts/fabric.js",
     "make:book": "mkdir -p _book && honkit build",
     "make:coverage": "npm run coverage && c8 report --reporter html",
     "make:dev": "npm run make:examples && npm run make:docs && npm run make:book && cp -rf docs _book/ && cp -rf examples _book/ && js-beautify --indent-size 2 -r _book/**.html",
@@ -99,6 +99,8 @@
   },
   "homepage": "https://github.com/FabricLabs/fabric#readme",
   "dependencies": {
+    "@noble/curves": "=2.0.1",
+    "@noble/hashes": "=2.0.1",
     "arbitrary": "=1.4.10",
     "bech32-buffer": "=0.2.1",
     "bip-schnorr": "=0.6.7",
@@ -134,8 +136,6 @@
     "redis": "=5.6.0",
     "simple-aes": "=0.1.1",
     "struct": "=0.0.12",
-    "@noble/curves": "=2.0.1",
-    "@noble/hashes": "=2.0.1",
     "zeromq": "=6.5.0"
   },
   "overrides": {
@@ -157,7 +157,8 @@
     "jsdoc-to-markdown": "=9.1.2",
     "json-to-dot": "=1.1.0",
     "mocha": "=12.0.0-beta-10",
-    "node-gyp": "=12.1.0"
+    "node-gyp": "=12.1.0",
+    "semistandard": "=17.0.0"
   },
   "c8": {
     "exclude": [

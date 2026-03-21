@@ -31,6 +31,7 @@ const merge = require('lodash.merge');
 
 // Fabric Types
 const Actor = require('./actor');
+const Hash256 = require('./hash256');
 const Identity = require('./identity');
 const Key = require('./key');
 const Machine = require('./machine');
@@ -976,9 +977,11 @@ class Peer extends Service {
 
   _handleNOISEHandshake (localPrivateKey, localPublicKey, remotePublicKey) {
     // const counterparty = new Identity({ public: remotePublicKey.toString('hex') });
-    this.emit('debug', `Peer transport handshake using local key: ${localPrivateKey.toString('hex')}`);
-    this.emit('debug', `Peer transport handshake using local public key: ${localPublicKey.toString('hex')}`);
-    this.emit('debug', `Peer transport handshake with remote public key: ${remotePublicKey.toString('hex')}`);
+    if (this.settings.debug) {
+      this.emit('debug', `Peer transport handshake using local key: ${localPrivateKey.toString('hex')}`);
+      this.emit('debug', `Peer transport handshake using local public key: ${localPublicKey.toString('hex')}`);
+      this.emit('debug', `Peer transport handshake with remote public key: ${remotePublicKey.toString('hex')}`);
+    }
     // this.emit('debug', `Peer transport handshake with remote identity: ${counterparty.id}`);
   }
 
@@ -991,7 +994,9 @@ class Peer extends Service {
 
     // this.emit('debug', `Local NOISE key: ${JSON.stringify(this.identity.key, null, '  ')}`);
     const derived = this.identity.key.derive(FABRIC_KEY_DERIVATION_PATH);
-    this.emit('debug', `Derived NOISE key: ${derived.private.toString('hex')}`);
+    if (this.settings.debug) {
+      this.emit('debug', `Derived NOISE key: ${derived.private.toString('hex')}`);
+    }
 
     // Create NOISE handler
     const handler = noise({
@@ -1002,7 +1007,7 @@ class Peer extends Service {
 
     // Handle low-level socket errors for inbound connections
     socket.on('error', (error) => {
-      this.emit('debug', `--- debug error from _NOISESocketHandler() ---`);
+      if (this.settings.debug) this.emit('debug', `--- debug error from _NOISESocketHandler() ---`);
       if (error && (error.code === 'EPIPE' || error.code === 'ECONNRESET')) {
         this.emit('warning', `Suppressing transient inbound socket error (${error.code}) from _NOISESocketHandler().`);
       } else {
@@ -1021,7 +1026,7 @@ class Peer extends Service {
     });
 
     handler.encrypt.on('end', (data) => {
-      this.emit('debug', `Peer encrypt end: ${data}`);
+      if (this.settings.debug) this.emit('debug', `Peer encrypt end: ${data}`);
       // socket.destroy();
       delete this.connections[target];
       this.peers[target].status = 'disconnected';
@@ -1036,12 +1041,14 @@ class Peer extends Service {
     });
 
     handler.decrypt.on('close', (data) => {
-      this.emit('debug', `Peer decrypt close: ${data}`);
+      if (this.settings.debug) this.emit('debug', `Peer decrypt close: ${data}`);
     });
 
     handler.decrypt.on('end', (data) => {
-      this.emit('debug', `Peer decrypt end: (${target}) ${data}`);
-      this.emit('debug', `Connections: ${Object.keys(this.connections)}`);
+      if (this.settings.debug) {
+        this.emit('debug', `Peer decrypt end: (${target}) ${data}`);
+        this.emit('debug', `Connections: ${Object.keys(this.connections)}`);
+      }
       socket._destroyFabric();
     });
 
@@ -1376,7 +1383,8 @@ class Peer extends Service {
 
     this.emit('debug', 'Closing all connections...');
     for (const id in this.connections) {
-      this.connections[id].destroy();
+      const c = this.connections[id];
+      if (c && typeof c.destroy === 'function') c.destroy();
     }
 
     // Cancel pending registry save and close LevelDB

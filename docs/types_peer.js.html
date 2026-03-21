@@ -36,8 +36,11 @@
 // Constants
 const {
   FABRIC_KEY_DERIVATION_PATH,
+  MAX_PEERS,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
+  P2P_PEER_GOSSIP,
+  P2P_PEERING_OFFER,
   P2P_ROOT,
   P2P_PING,
   P2P_PONG,
@@ -61,6 +64,7 @@ const merge = require('lodash.merge');
 
 // Fabric Types
 const Actor = require('./actor');
+const Hash256 = require('./hash256');
 const Identity = require('./identity');
 const Key = require('./key');
 const Machine = require('./machine');
@@ -118,13 +122,6 @@ class Peer extends Service {
       upnp: false,
       key: {}
     }, config);
-
-    // Log settings at construction
-    if (this.settings.debug) {
-      console.log('[FABRIC:PEER:CONSTRUCTOR] networking:', this.settings.networking);
-      console.log('[FABRIC:PEER:CONSTRUCTOR] peers:', this.settings.peers);
-      console.log('[FABRIC:PEER:CONSTRUCTOR] peersDb:', this.settings.peersDb);
-    }
 
     // Network Internals
     this.upnp = null;
@@ -413,7 +410,7 @@ class Peer extends Service {
    * @param {Buffer} message Message buffer to send.
    */
   broadcast (message, origin = null) {
-    console.debug('broadcasting:', message);
+    if (this.settings.debug) this.emit('debug', `Broadcasting message (${message &amp;&amp; message.length ? message.length : 0} bytes)`);
     for (const id in this.connections) {
       this.emit('debug', `Broadcast [!!!] — evaluating connection: ${id}`);
       if (id === origin) continue;
@@ -643,16 +640,24 @@ class Peer extends Service {
   _savePeerRegistry () {
     const location = this.settings.peersDb;
     if (!location) return;
+    if (this._state.status === 'STOPPING' || this._state.status === 'STOPPED') return;
 
     if (this._peerRegistrySaveScheduled) clearTimeout(this._peerRegistrySaveScheduled);
 
     this._peerRegistrySaveScheduled = setTimeout(() => {
       this._peerRegistrySaveScheduled = null;
+      if (this._state.status === 'STOPPING' || this._state.status === 'STOPPED') return;
       this._peersDb = this._peersDb || new Level(location);
+      // Avoid noisy errors from writes scheduled while DB is closing/closed.
+      if (this._peersDb &amp;&amp; this._peersDb.status &amp;&amp; this._peersDb.status !== 'open') return;
       const payload = JSON.stringify(this._state.peers || {});
       this._peersDb.put('peers', payload)
         .then(() => { if (this.settings.debug) this.emit('debug', '[FABRIC:PEER] Saved peer registry'); })
-        .catch((err) => this.emit('error', `Failed to save peer registry: ${err &amp;&amp; err.message}`));
+        .catch((err) => {
+          const message = err &amp;&amp; err.message ? err.message : String(err);
+          if (message.includes('Database is not open')) return;
+          this.emit('error', `Failed to save peer registry: ${message}`);
+        });
     }, 500);
   }
 
@@ -719,8 +724,11 @@ class Peer extends Service {
     // Store message for later
     this.messages[hash] = buffer.toString('hex');
 
-    const checksum = crypto.createHash('sha256').update(message.body, 'utf8').digest('hex');
-    if (checksum !== message.raw.hash.toString('hex')) throw new Error('Message received with incorrect hash.');
+    // Double-SHA256 on raw body bytes (matches C message_verify_body_hash)
+    const bodyBuf = message.raw.data || Buffer.alloc(0);
+    const checksum = Hash256.doubleDigest(bodyBuf);
+    const expectedHash = Buffer.isBuffer(message.raw.hash) ? message.raw.hash.toString('hex') : message.raw.hash;
+    if (checksum !== expectedHash) throw new Error('Message received with incorrect hash.');
 
     // Verify message signature if we have the peer's public key
     if (origin &amp;&amp; this.peers[origin] &amp;&amp; this.peers[origin].publicKey) {
@@ -737,6 +745,9 @@ class Peer extends Service {
     switch (message.type) {
       default:
         this.emit('debug', `Unhandled message type: ${message.type}`);
+        break;
+      case 'P2P_RELAY':
+        this.relayFrom(origin.name, message);
         break;
       case 'GenericMessage':
       case 'PeerMessage':
@@ -797,6 +808,15 @@ class Peer extends Service {
     switch (message.type) {
       default:
         this.emit('debug', `Unhandled Generic Message: ${message.type} ${JSON.stringify(message, null, '  ')}`);
+        break;
+      case 'INVENTORY_REQUEST':
+        // Upstream Inventory request (typically for documents). Emit an 'inventory'
+        // event so higher-level services (e.g. hub) can respond appropriately.
+        this.emit('inventory', { message, origin, socket });
+        break;
+      case 'INVENTORY_RESPONSE':
+        // Document inventory reply (may include per-item L1 HTLC offers).
+        this.emit('inventoryResponse', { message, origin, socket });
         break;
       case 'P2P_SESSION_OFFER':
         const peerId = message.actor.id;
@@ -867,6 +887,32 @@ class Peer extends Service {
         const state = new Actor(message.object.state);
         this.emit('debug', `state_announce &lt;Generic>${JSON.stringify(message.object || '')} ${state.toGenericMessage()}`);
         break;
+      case P2P_PEER_GOSSIP:
+        this.emit('peeringGossip', { message, origin });
+        if (origin &amp;&amp; origin.name) {
+          const gossipRelay = Message.fromVector(['GENERIC', JSON.stringify(message)]).signWithKey(this.key);
+          this.relayFrom(origin.name, gossipRelay);
+        }
+        break;
+      case P2P_PEERING_OFFER:
+        this.emit('peeringOffer', { message, origin });
+        {
+          const obj = message.object || {};
+          const transport = obj.transport || 'fabric';
+          if (transport === 'fabric' &amp;&amp; obj.host &amp;&amp; obj.port) {
+            const connCount = Object.keys(this.connections || {}).length;
+            const maxPeers = (this.settings.constraints &amp;&amp; this.settings.constraints.peers &amp;&amp; this.settings.constraints.peers.max) || MAX_PEERS;
+            if (connCount &lt; maxPeers) {
+              const candidate = { host: obj.host, port: Number(obj.port) };
+              this.candidates.push(candidate);
+            }
+          }
+          if (origin &amp;&amp; origin.name) {
+            const offerRelay = Message.fromVector(['GENERIC', JSON.stringify(message)]).signWithKey(this.key);
+            this.relayFrom(origin.name, offerRelay);
+          }
+        }
+        break;
       case 'P2P_PING':
         const now = (new Date()).toISOString();
         const P2P_PONG = Message.fromVector(['GENERIC', JSON.stringify({
@@ -923,6 +969,30 @@ class Peer extends Service {
         break;
       case 'P2P_DOCUMENT_PUBLISH':
         break;
+      case P2P_PEER_GOSSIP:
+        this.emit('peeringGossip', { message, origin });
+        {
+          const gossipRelay = Message.fromVector(['GENERIC', JSON.stringify(message)]).signWithKey(this.key);
+          this.relayFrom(origin.name, gossipRelay);
+        }
+        break;
+      case P2P_PEERING_OFFER:
+        this.emit('peeringOffer', { message, origin });
+        {
+          const obj = message.object || {};
+          const transport = obj.transport || 'fabric';
+          if (transport === 'fabric' &amp;&amp; obj.host &amp;&amp; obj.port) {
+            const connCount = Object.keys(this.connections || {}).length;
+            const maxPeers = (this.settings.constraints &amp;&amp; this.settings.constraints.peers &amp;&amp; this.settings.constraints.peers.max) || MAX_PEERS;
+            if (connCount &lt; maxPeers) {
+              const candidate = { host: obj.host, port: Number(obj.port) };
+              this.candidates.push(candidate);
+            }
+          }
+          const offerRelay = Message.fromVector(['GENERIC', JSON.stringify(message)]).signWithKey(this.key);
+          this.relayFrom(origin.name, offerRelay);
+        }
+        break;
       case 'P2P_FILE_SEND':
         this.emit('file', { message, origin });
         break;
@@ -943,9 +1013,11 @@ class Peer extends Service {
 
   _handleNOISEHandshake (localPrivateKey, localPublicKey, remotePublicKey) {
     // const counterparty = new Identity({ public: remotePublicKey.toString('hex') });
-    this.emit('debug', `Peer transport handshake using local key: ${localPrivateKey.toString('hex')}`);
-    this.emit('debug', `Peer transport handshake using local public key: ${localPublicKey.toString('hex')}`);
-    this.emit('debug', `Peer transport handshake with remote public key: ${remotePublicKey.toString('hex')}`);
+    if (this.settings.debug) {
+      this.emit('debug', `Peer transport handshake using local key: ${localPrivateKey.toString('hex')}`);
+      this.emit('debug', `Peer transport handshake using local public key: ${localPublicKey.toString('hex')}`);
+      this.emit('debug', `Peer transport handshake with remote public key: ${remotePublicKey.toString('hex')}`);
+    }
     // this.emit('debug', `Peer transport handshake with remote identity: ${counterparty.id}`);
   }
 
@@ -958,7 +1030,9 @@ class Peer extends Service {
 
     // this.emit('debug', `Local NOISE key: ${JSON.stringify(this.identity.key, null, '  ')}`);
     const derived = this.identity.key.derive(FABRIC_KEY_DERIVATION_PATH);
-    this.emit('debug', `Derived NOISE key: ${derived.private.toString('hex')}`);
+    if (this.settings.debug) {
+      this.emit('debug', `Derived NOISE key: ${derived.private.toString('hex')}`);
+    }
 
     // Create NOISE handler
     const handler = noise({
@@ -969,7 +1043,7 @@ class Peer extends Service {
 
     // Handle low-level socket errors for inbound connections
     socket.on('error', (error) => {
-      this.emit('debug', `--- debug error from _NOISESocketHandler() ---`);
+      if (this.settings.debug) this.emit('debug', `--- debug error from _NOISESocketHandler() ---`);
       if (error &amp;&amp; (error.code === 'EPIPE' || error.code === 'ECONNRESET')) {
         this.emit('warning', `Suppressing transient inbound socket error (${error.code}) from _NOISESocketHandler().`);
       } else {
@@ -988,7 +1062,7 @@ class Peer extends Service {
     });
 
     handler.encrypt.on('end', (data) => {
-      this.emit('debug', `Peer encrypt end: ${data}`);
+      if (this.settings.debug) this.emit('debug', `Peer encrypt end: ${data}`);
       // socket.destroy();
       delete this.connections[target];
       this.peers[target].status = 'disconnected';
@@ -1003,12 +1077,14 @@ class Peer extends Service {
     });
 
     handler.decrypt.on('close', (data) => {
-      this.emit('debug', `Peer decrypt close: ${data}`);
+      if (this.settings.debug) this.emit('debug', `Peer decrypt close: ${data}`);
     });
 
     handler.decrypt.on('end', (data) => {
-      this.emit('debug', `Peer decrypt end: (${target}) ${data}`);
-      this.emit('debug', `Connections: ${Object.keys(this.connections)}`);
+      if (this.settings.debug) {
+        this.emit('debug', `Peer decrypt end: (${target}) ${data}`);
+        this.emit('debug', `Connections: ${Object.keys(this.connections)}`);
+      }
       socket._destroyFabric();
     });
 
@@ -1343,7 +1419,8 @@ class Peer extends Service {
 
     this.emit('debug', 'Closing all connections...');
     for (const id in this.connections) {
-      this.connections[id].destroy();
+      const c = this.connections[id];
+      if (c &amp;&amp; typeof c.destroy === 'function') c.destroy();
     }
 
     // Cancel pending registry save and close LevelDB
@@ -1477,8 +1554,8 @@ class Peer extends Service {
       // Handle server errors before attempting to listen
       const errorHandler = (error) => {
         if (error.code === 'EADDRINUSE') {
-          this.emit('error', `Port ${this.port} is already in use. Please stop the process using this port or use a different port.`);
-          reject(error);
+          // Don't emit('error') here - caller gets rejection; emit would cause ERR_UNHANDLED_ERROR if no listener
+          this.server.close(() => reject(error));
         } else {
           this.emit('error', `Server socket error: ${error}`);
           // Don't reject on other errors during listen, let the callback handle it
@@ -1492,9 +1569,7 @@ class Peer extends Service {
         this.server.removeListener('error', errorHandler);
 
         if (error) {
-          if (error.code === 'EADDRINUSE') {
-            this.emit('error', `Port ${this.port} is already in use. Please stop the process using this port or use a different port.`);
-          }
+          // Don't emit('error') for EADDRINUSE - caller gets rejection; emit would cause ERR_UNHANDLED_ERROR if no listener
           return reject(error);
         }
 
@@ -1575,6 +1650,11 @@ module.exports = Peer;
     <h3>Events</h3>
     <ul>
       <li><a href="Aggregator.html#event:commit">commit</a></li>
+    </ul>
+    <h3>Global</h3>
+    <ul>
+      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
+      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
     </ul>
   </nav>
   <br class="clear" />

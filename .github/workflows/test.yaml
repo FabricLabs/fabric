@@ -1,4 +1,4 @@
-name: npm test
+name: CI
 on:
   pull_request:
     branches:
@@ -6,6 +6,7 @@ on:
   push:
     branches:
     - master
+    - develop
 jobs:
   test:
     name: Run tests
@@ -17,7 +18,7 @@ jobs:
         - ubuntu-latest
     steps:
     - name: Checkout branch
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
     - name: Install Node.js on ${{ matrix.os }}
       uses: actions/setup-node@v4
       with:
@@ -25,16 +26,29 @@ jobs:
         cache: 'npm'
         cache-dependency-path: package-lock.json
     - name: Set up Python
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
-        python-version: '3.8'
+        python-version: '3.12'
     - name: Install Ubuntu build deps and C libs
       if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential libsecp256k1-dev
     - name: Install dependencies
-      run: npm run report:install
+      run: npm run report:install-ci
+    - name: Upload install report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: install-report-${{ matrix.os }}
+        path: reports/install.log
+        if-no-files-found: ignore
+    - name: Smoke load (core modules)
+      run: npm run smoke
+    - name: Lint types
+      run: npm run lint:types
+    - name: Lint CLI harness + native accel shim
+      run: npm run lint:pkg
     - name: Download and install bitcoind
       run: |
         if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
@@ -100,6 +114,7 @@ jobs:
       run: npm run report:coverage
       timeout-minutes: 15
     - name: Send coverage report
-      uses: codecov/codecov-action@v3.1.1
+      uses: codecov/codecov-action@v4
       with:
         directory: ./reports/
+      continue-on-error: true

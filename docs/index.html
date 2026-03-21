@@ -58,9 +58,14 @@
           <li><code>nvm use 22.14.0</code> (you can get <code>nvm</code> from <a href="https://nvm.sh">nvm.sh</a>)</li>
           <li><code>npm install -g @fabric/core</code> to add <code>fabric</code> to your path</li>
           <li>(optional) <code>fabric setup</code> to set up your environment (generates a new master key)</li>
+          <li>(optional) <code>fabric keygen</code> to generate a new master key without saving to disk (ephemeral)</li>
           <li><code>fabric</code> should now be enough to get you up and running!</li>
         </ol>
         <p>That's it! Let's take a look at overall Fabric system and how you, as a developer, might interact with it.</p>
+        <h2>Bitcoin service (<code>services/bitcoin</code>)</h2>
+        <p>RPC is the <strong>source of truth</strong> when a node is connected. Optional HTTP fallback for block, transaction, and address-index reads is configured only via <code>bitcoin.explorerBaseUrl</code> or <code>FABRIC_EXPLORER_URL</code> (an <strong>origin</strong>, not a path). If unset, those helpers stay RPC-only or fail closed with a clear error—<code>@fabric/core</code> does not default to any public explorer.</p>
+        <h2>Message types (<code>types/message</code>)</h2>
+        <p><code>P2P_MESSAGE_RECEIPT</code> (<code>constants.P2P_MESSAGE_RECEIPT</code>, <code>0x44</code>) is the on-wire type for server acknowledgements of an inbound WebSocket/P2P message (payload JSON uses <code>@type: Receipt</code>). It is distinct from <code>GenericMessage</code> so clients can discriminate without parsing the body first.</p>
         <h2>Architecture</h2>
         <p>Fabric is two things — a protocol for machines to exchange information (&quot;the Fabric Protocol&quot;), and a sotware library (<code>@fabric/core</code>) offering up many tools and utilities for building your own networks which speak this protocol.</p>
         <p>Typically, you will need the following:</p>
@@ -194,7 +199,7 @@ class MyClockService extends Service {
     return this;
   }
 
-  // Called once per 
+  // Called once per
   tick () {
     const origin = this.get('clock');
     console.log('clock:', origin);
@@ -207,12 +212,12 @@ class MyClockService extends Service {
   // but this is an example :) and we haven't fully defined expected behaviors yet!
   async start () {
     // super.start(); // disabled for clean example
-    
+
   }
 }
 </code></pre>
         <p>Services will define how, if any, an ecosystem emerges and <em>actually</em> succeeds at replacing the web. They enable a common API between otherwise disparate projects, such as between Bitcoin and Ethereum.</p>
-        <p>See <a href="../SERVICES.html">the Services Overview</a> for more information.</p>
+        <p>See <a href="guides/SERVICES.md">the Services Overview</a> for more information.</p>
         <h4>6. Types</h4>
         <p><code>@fabric/core</code> is a NodeJS-targeted software library, but you don't need the whole kit-and-kaboodle. Our pattern is to expose CommonJS-based ES6 classes, for several reasons, including maximum compatibility, so you will typically import a Fabric class like this:</p>
         <pre class="prettyprint source lang-js"><code>const Actor = require('@fabric/core/types/actor');
@@ -297,6 +302,11 @@ console.log('Purported Signature:', message);
     <h3>Events</h3>
     <ul>
       <li><a href="Aggregator.html#event:commit">commit</a></li>
+    </ul>
+    <h3>Global</h3>
+    <ul>
+      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
+      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
     </ul>
   </nav>
   <br class="clear" />
