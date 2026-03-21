@@ -24,10 +24,5 @@ Production installs may compile **native** dependencies (e.g. **secp256k1**, **l
 |-----|---------|
 | [README.md](../README.md) | CLI, quick start, API overview |
 | [DEVELOPERS.md](../DEVELOPERS.md) | Contributors: layout, tests, core types |
-| [PRODUCTION_READINESS.md](../PRODUCTION_READINESS.md) | Completion, privacy, security checklist |
 | [PRIVACY.md](../PRIVACY.md) | Operator-facing privacy model |
-| [PAYMENTS_DOCUMENT_BINDING.md](PAYMENTS_DOCUMENT_BINDING.md) | `DocumentPublish` envelope + L1 / HTLC hash chain (`functions/publishedDocumentEnvelope.js`) |
-| [CONTRACT_PROPOSAL.md](CONTRACT_PROPOSAL.md) | `ContractProposal` message: batched wires + Merkle chain + JSON Patch (`functions/contractProposal.js`) |
-| [MARKETING_OVERVIEW.md](MARKETING_OVERVIEW.md) | Positioning |
-| [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) | Tag & downstream bumps |
 | [AGENTS.md](../AGENTS.md) | Agent service contract |
