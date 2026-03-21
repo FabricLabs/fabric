@@ -4,11 +4,6 @@ const util = require('util');
 const path = require('path');
 const fs = require('fs');
 
-/**
- * The Walker explores a directory tree and maps it to memory.
- * @param       {Vector} init - Initial state tree.
- * @constructor
- */
 function Walker (init) {
   this['@data'] = init || {};
   this.clock = 0;
@@ -22,12 +17,6 @@ function Walker (init) {
 
 util.inherits(Walker, require('./vector'));
 
-/**
- * Explores a directory tree on the local system's disk.
- * @param  {String} path      [description]
- * @param  {Object} [map={}] [description]
- * @return {Object}          [description]
- */
 Walker.prototype._explore = function crawl (path, map = {}) {
   const self = this;
 
@@ -42,12 +31,6 @@ Walker.prototype._explore = function crawl (path, map = {}) {
   return map;
 };
 
-/**
- * Explores a directory tree on the local system's disk.
- * @param  {String} dir      Path to crawl on local disk.
- * @param  {Object} [map={}] Pointer to previous step in stack.
- * @return {Object}          A hashmap of directory contents.
- */
 Walker.prototype._define = async function crawl (dir, map = {}) {
   const self = this;
   var list = [];

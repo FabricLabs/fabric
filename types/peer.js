@@ -974,12 +974,12 @@ class Peer extends Service {
     }
   }
 
-  _handleNOISEHandshake (localPrivateKey, localPublicKey, remotePublicKey) {
-    // const counterparty = new Identity({ public: remotePublicKey.toString('hex') });
-    this.emit('debug', `Peer transport handshake using local key: ${localPrivateKey.toString('hex')}`);
-    this.emit('debug', `Peer transport handshake using local public key: ${localPublicKey.toString('hex')}`);
-    this.emit('debug', `Peer transport handshake with remote public key: ${remotePublicKey.toString('hex')}`);
-    // this.emit('debug', `Peer transport handshake with remote identity: ${counterparty.id}`);
+  _handleNOISEHandshake (_localPrivateKey, localPublicKey, remotePublicKey) {
+    if (this.settings.debug) {
+      // Never log private key material — public keys only for transport diagnostics.
+      this.emit('debug', `Peer transport handshake using local public key: ${localPublicKey.toString('hex')}`);
+      this.emit('debug', `Peer transport handshake with remote public key: ${remotePublicKey.toString('hex')}`);
+    }
   }
 
   _NOISESocketHandler (socket) {
@@ -989,9 +989,10 @@ class Peer extends Service {
     // Store a unique actor for this inbound connection
     this._registerActor({ name: target });
 
-    // this.emit('debug', `Local NOISE key: ${JSON.stringify(this.identity.key, null, '  ')}`);
     const derived = this.identity.key.derive(FABRIC_KEY_DERIVATION_PATH);
-    this.emit('debug', `Derived NOISE key: ${derived.private.toString('hex')}`);
+    if (this.settings.debug) {
+      this.emit('debug', 'NOISE inbound: session key derived for handshake (private key not logged)');
+    }
 
     // Create NOISE handler
     const handler = noise({

@@ -44,11 +44,6 @@ class Aggregator extends Service {
     return new Tree({ leaves: this.settings.inputs.map(x => x.hash) });
   }
 
-  /**
-   * Import a list of {@link AnchorBalance} instances.
-   * @param {Array} list List of inputs to add.
-   * @returns {AnchorBalance} Summary of resulting balances.
-   */
   _importBalances (list = []) {
     for (let i = 0; i < list.length; i++) {
       this._state.inputs.push(list[i]);
@@ -57,10 +52,6 @@ class Aggregator extends Service {
     return this.balances;
   }
 
-  /**
-   * Updates the state to reflect balances from current inputs.
-   * @returns {AnchorBalance} Summary of balances.
-   */
   _computeBalances () {
     this._state.balances = this._state.inputs.reduce((o, e) => {
       o.total += e.total;
@@ -75,11 +66,6 @@ class Aggregator extends Service {
     return this.balances;
   }
 
-  /**
-   * Commits the balance of all input.
-   * @fires Aggregator#commit
-   * @returns {AggregatorCommit} Commit instance.
-   */
   commit () {
     this._computeBalances();
 
@@ -103,13 +89,6 @@ class Aggregator extends Service {
     message.root = this._tree.root;
     message.leaves = this._tree.getLeaves();
 
-    /**
-     * Commit event.
-     * @event Aggregator#commit
-     * @type {Object}
-     * @property {Uint8Array} root Root of the {@link Tree}.
-     * @property {Array} leaves Leaves of the {@link Tree}.
-     */
     this.emit('commit', message);
 
     return message;

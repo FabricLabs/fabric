@@ -50,7 +50,7 @@ class Consensus {
     return this.providers[this.settings.provider].Transaction;
   }
 
-  // TODO: remove from {@link Consensus}
+  // TODO: remove from Consensus
   get Wallet () {
     return this.providers[this.settings.provider].Wallet;
   }

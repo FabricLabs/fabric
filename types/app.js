@@ -5,7 +5,6 @@ const merge = require('lodash.merge');
 
 // Types
 const Actor = require('./actor');
-const KeyStore = require('./keystore');
 const Machine = require('./machine');
 const Message = require('./message');
 const Peer = require('./peer');
@@ -34,9 +33,9 @@ class App extends Service {
     this.node = new Peer(this.settings);
     this.actor = new Actor(this.settings);
     this.machine = new Machine(this.settings);
-    this.store = new KeyStore(this.settings);
+    this.store = Storage.openEncrypted(this.settings);
 
-    // TODO: replace these with KeyStore
+    // Separate Level roots for non-secret indexes (same Store type; no Codec).
     this.tips = new Storage({ path: './stores/tips' });
     this.stash = new Storage({ path: './stores/stash' });
 
@@ -101,10 +100,6 @@ class App extends Service {
     return this.key.sign(input);
   }
 
-  /**
-   * Start the program.
-   * @return {Promise}
-   */
   async start () {
     this._appendMessage(`[FABRIC:APP] @${this.id} -- Starting...`);
     this.status = 'STARTING';
@@ -127,10 +122,6 @@ class App extends Service {
     return this;
   }
 
-  /**
-   * Stop the program.
-   * @return {Promise}
-   */
   async stop () {
     this.emit('log', '[FABRIC:APP] Stopping...');
     await this.node.stop();
@@ -140,12 +131,6 @@ class App extends Service {
     return this;
   }
 
-  /**
-   * Define a Resource, or "Type", used by the application.
-   * @param  {String} name      Human-friendly name for the Resource.
-   * @param  {Object} structure Map of attribute names -> definitions.
-   * @return {Object}           [description]
-   */
   async define (name, structure) {
     const self = this;
 
@@ -173,11 +158,6 @@ class App extends Service {
     this.components[component.name] = component;
   }
 
-  /**
-   * Defer control of this application to an outside authority.
-   * @param  {String} authority Hostname to trust.
-   * @return {App}           The configured application as deferred to `authority`.
-   */
   async defer (authority) {
     let self = this;
     let resources = {};
@@ -225,21 +205,11 @@ class App extends Service {
     console.error(`[${(new Date()).toISOString()}]: ${msg}`);
   }
 
-  /**
-   * Configure the Application to use a specific element.
-   * @param  {DOMElement} element DOM element to bind to.
-   * @return {App}           Configured instance of the Application.
-   */
   attach (element) {
     this.element = element;
     return this;
   }
 
-  /**
-   * Define the Application's resources from an existing resource map.
-   * @param  {Object} resources Map of resource definitions by name.
-   * @return {App}           Configured instance of the Application.
-   */
   consume (resources) {
     let self = this;
 
@@ -253,12 +223,6 @@ class App extends Service {
     return this;
   }
 
-  /**
-   * Use a CSS selector to find an element in the current document's tree and
-   * bind to it as the render target.
-   * @param  {String} selector CSS selector.
-   * @return {App}          Instance of app with bound element.
-   */
   envelop (selector) {
     try {
       let element = document.querySelector(selector);
@@ -277,22 +241,12 @@ class App extends Service {
     return this;
   }
 
-  /**
-   * Define a named {@link Resource}.
-   * @param  {String} name       Human-friendly name for this resource.
-   * @param  {Object} definition Map of configuration values.
-   * @return {App}            Configurated instance of the {@link App}.
-   */
   use (name, definition) {
     this.log('[APP]', 'using:', name, definition);
     super.use(name, definition);
     return this;
   }
 
-  /**
-   * Get the output of our program.
-   * @return {String} Output of the program.
-   */
   render () {
     const actor = new Actor(this._state);
     const html = `<fabric-${this.name.toLowerCase()}>` +
@@ -315,15 +269,6 @@ class App extends Service {
     this.commands[command] = method.bind(this);
   }
 
-  /**
-   * Registers a named {@link Service} with the application.  Services are
-   * standardized interfaces for Fabric contracts, emitting {@link Message}
-   * events with a predictable lifecycle.
-   * @internal
-   * @param {String} name Internal name of the service.
-   * @param {Class} Service The ES6 class definition implementing {@link Service}.
-   * @returns {Service} The registered service instance.
-   */
   _registerService (name, Service) {
     const self = this;
     const service = new Service(merge({}, this.settings, this.settings[name]));

@@ -56,13 +56,6 @@ class Swap {
     this.offer.outputs.push(output);
   }
 
-  /**
-   * Find an input from the provided transaction which spends from the target
-   * P2SH address.
-   * @param  {Transaction} tx      {@link Transaction} to iterate over.
-   * @param  {String} address P2SH address to search for.
-   * @return {Mixed}         False on failure, secret value on success.
-   */
   extractSecret (tx, address) {
     // Find the input that spends from the P2SH address
     for (const input of tx.inputs) {

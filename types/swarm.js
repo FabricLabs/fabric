@@ -7,16 +7,7 @@ const {
 const Peer = require('./peer');
 const Actor = require('./actor');
 
-/**
- * Orchestrates a network of peers.
- * @type {String}
- */
 class Swarm extends Actor {
-  /**
-   * Create an instance of a {@link Swarm}.
-   * @param  {Object} config Configuration object.
-   * @return {Swarm}        Instance of the Swarm.
-   */
   constructor (config = {}) {
     super(config);
 
@@ -53,12 +44,6 @@ class Swarm extends Actor {
     }
   }
 
-  /**
-   * Explicitly trust an {@link EventEmitter} to provide messages using
-   * the expected {@link Interface}, providing {@link Message} objects as
-   * the expected {@link Type}.
-   * @param {EventEmitter} source {@link Actor} to utilize.
-   */
   trust (source) {
     super.trust(source);
     const swarm = this;
@@ -174,10 +159,6 @@ class Swarm extends Actor {
     }
   }
 
-  /**
-   * Begin computing.
-   * @return {Promise} Resolves to instance of {@link Swarm}.
-   */
   async start () {
     if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', 'Starting...');
     // await super.start();
