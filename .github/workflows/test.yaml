@@ -28,7 +28,8 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.12'
+        # 3.12+ dropped stdlib distutils; CLN's bundled libwally (external/Makefile) still imports it.
+        python-version: '3.11'
     - name: Install Ubuntu build deps and C libs
       if: matrix.os == 'ubuntu-latest'
       run: |
@@ -73,8 +74,12 @@ jobs:
             autoconf automake build-essential git libtool python3 python3-pip \
             net-tools zlib1g-dev libsqlite3-dev libgmp-dev libsodium-dev gettext
 
-          # Install Python dependencies for wire generation
-          pip3 install mako
+          # Wire generation + setuptools (distutils compatibility if build scripts expect it)
+          pip3 install --upgrade pip setuptools wheel mako
+
+          # Prefer Actions Python on PATH (apt's /usr/bin/python3 may be 3.12+ without distutils)
+          export PYTHON="$(command -v python3)"
+          python3 --version
 
           # Clone and build Core Lightning v25.05
           git clone https://github.com/ElementsProject/lightning.git
