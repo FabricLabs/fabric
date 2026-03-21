@@ -58,6 +58,9 @@ jobs:
         else
           brew install bitcoin
         fi
+    - name: Run tests (with coverage for Codecov)
+      run: npm run report:coverage
+      timeout-minutes: 30
     - name: Install Rust toolchain
       if: matrix.os == 'ubuntu-latest'
       uses: dtolnay/rust-toolchain@1.79.0
@@ -110,9 +113,6 @@ jobs:
             find /opt/homebrew -name lightningd 2>/dev/null || echo "No lightningd found in /opt/homebrew"
           fi
         fi
-    - name: Generate coverage report
-      run: npm run report:coverage
-      timeout-minutes: 15
     - name: Send coverage report
       uses: codecov/codecov-action@v4
       with:

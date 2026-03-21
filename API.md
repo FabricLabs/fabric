@@ -166,6 +166,21 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 </dd>
 </dl>
 
+## Members
+
+<dl>
+<dt><a href="#explorerBaseUrl">explorerBaseUrl</a></dt>
+<dd><p>Optional HTTP origin for block/tx/address REST fallback (e.g. a Hub). Null = RPC only.</p>
+</dd>
+</dl>
+
+## Functions
+
+<dl>
+<dt><a href="#isAllZero32">isAllZero32(buf)</a></dt>
+<dd></dd>
+</dl>
+
 <a name="Actor"></a>
 
 ## Actor
@@ -192,7 +207,7 @@ Generic Fabric Actor.
         * [.set(path, value)](#Actor+set) ⇒ <code>Object</code>
         * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
         * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
-        * [.toGenericMessage()](#Actor+toGenericMessage) ⇒ <code>Object</code>
+        * [.toGenericMessage([type])](#Actor+toGenericMessage) ⇒ <code>Object</code>
         * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
         * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
         * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
@@ -292,18 +307,23 @@ Casts the Actor to a normalized Buffer.
 **Kind**: instance method of [<code>Actor</code>](#Actor)  
 <a name="Actor+toGenericMessage"></a>
 
-### actor.toGenericMessage() ⇒ <code>Object</code>
-Casts the Actor to a generic message, used to uniquely identify the Actor's state.
-Fields:
-- `type`: 'FabricActorState'
-- `object`: state
+### actor.toGenericMessage([type]) ⇒ <code>Object</code>
+Casts the Actor to a generic message envelope for state announcements and history.
+Shape is stable: `{ type, object }` where `object` is sorted-key state ([toObject](#Actor+toObject)).
+[Actor#id](Actor#id) derives from a digest of the pretty-printed generic message; extending this
+envelope requires a format/version migration across the network.
 
 **Kind**: instance method of [<code>Actor</code>](#Actor)  
-**Returns**: <code>Object</code> - Generic message object.  
+**Returns**: <code>Object</code> - `{ type, object }`  
 **See**
 
 - [https://en.wikipedia.org/wiki/Merkle_tree](https://en.wikipedia.org/wiki/Merkle_tree)
 - [https://dev.fabric.pub/messages](https://dev.fabric.pub/messages)
+
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [type] | <code>String</code> | <code>&#x27;FabricActorState&#x27;</code> | Logical message type string. |
 
 <a name="Actor+toObject"></a>
 
@@ -1076,6 +1096,7 @@ Simple interaction with 256-bit spaces.
 
 * [Hash256](#Hash256)
     * [new Hash256(settings)](#new_Hash256_new)
+    * [.doubleDigest(input)](#Hash256.doubleDigest) ⇒ <code>String</code>
     * [.digest(input)](#Hash256.digest) ⇒ <code>String</code>
     * [.reverse()](#Hash256.reverse)
 
@@ -1092,6 +1113,18 @@ If the `settings` is not a string, `input` must be provided.
 | --- | --- | --- |
 | settings | <code>Object</code> |  |
 | settings.input | <code>String</code> | Input string to map as 256-bit hash. |
+
+<a name="Hash256.doubleDigest"></a>
+
+### Hash256.doubleDigest(input) ⇒ <code>String</code>
+Double-SHA256 digest (Bitcoin-style). Matches C message body hash.
+
+**Kind**: static method of [<code>Hash256</code>](#Hash256)  
+**Returns**: <code>String</code> - SHA256(SHA256(input)) as hexadecimal string.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>String</code> \| <code>Buffer</code> | Content to digest. |
 
 <a name="Hash256.digest"></a>
 
@@ -1493,7 +1526,7 @@ A basic logger that writes logs to the local file system
     * [.set(path, value)](#Actor+set) ⇒ <code>Object</code>
     * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
     * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
-    * [.toGenericMessage()](#Actor+toGenericMessage) ⇒ <code>Object</code>
+    * [.toGenericMessage([type])](#Actor+toGenericMessage) ⇒ <code>Object</code>
     * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
     * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
     * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
@@ -1615,19 +1648,24 @@ Casts the Actor to a normalized Buffer.
 **Overrides**: [<code>toBuffer</code>](#Actor+toBuffer)  
 <a name="Actor+toGenericMessage"></a>
 
-### logger.toGenericMessage() ⇒ <code>Object</code>
-Casts the Actor to a generic message, used to uniquely identify the Actor's state.
-Fields:
-- `type`: 'FabricActorState'
-- `object`: state
+### logger.toGenericMessage([type]) ⇒ <code>Object</code>
+Casts the Actor to a generic message envelope for state announcements and history.
+Shape is stable: `{ type, object }` where `object` is sorted-key state ([toObject](#Actor+toObject)).
+[Actor#id](Actor#id) derives from a digest of the pretty-printed generic message; extending this
+envelope requires a format/version migration across the network.
 
 **Kind**: instance method of [<code>Logger</code>](#Logger)  
 **Overrides**: [<code>toGenericMessage</code>](#Actor+toGenericMessage)  
-**Returns**: <code>Object</code> - Generic message object.  
+**Returns**: <code>Object</code> - `{ type, object }`  
 **See**
 
 - [https://en.wikipedia.org/wiki/Merkle_tree](https://en.wikipedia.org/wiki/Merkle_tree)
 - [https://dev.fabric.pub/messages](https://dev.fabric.pub/messages)
+
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [type] | <code>String</code> | <code>&#x27;FabricActorState&#x27;</code> | Logical message type string. |
 
 <a name="Actor+toObject"></a>
 
@@ -1764,6 +1802,7 @@ selectively disclosing new routes to peers which may have open circuits.
 
 * [Message](#Message) : <code>Object</code>
     * [new Message(message)](#new_Message_new)
+    * [.preimage](#Message+preimage)
     * [.asRaw()](#Message+asRaw) ⇒ <code>Buffer</code>
     * [.signWithKey(key)](#Message+signWithKey) ⇒ [<code>Message</code>](#Message)
     * [.verify()](#Message+verify) ⇒ <code>Boolean</code>
@@ -1781,6 +1820,12 @@ The `Message` type is standardized in [Fabric](#Fabric) as a [Array](Array), whi
 | --- | --- | --- |
 | message | <code>Object</code> | Message vector.  Will be serialized by [Array#_serialize](Array#_serialize). |
 
+<a name="Message+preimage"></a>
+
+### message.preimage
+Optional 32-byte preimage (e.g. HTLC secret). `null` when unset / public (all-zero on wire).
+
+**Kind**: instance property of [<code>Message</code>](#Message)  
 <a name="Message+asRaw"></a>
 
 ### message.asRaw() ⇒ <code>Buffer</code>
@@ -2830,6 +2875,14 @@ Begin computing.
 Implements a capability-based security token.
 
 **Kind**: global class  
+
+* [Token](#Token)
+    * [new Token([settings])](#new_Token_new)
+    * _instance_
+        * [.toSignedString([options])](#Token+toSignedString) ⇒ <code>string</code>
+    * _static_
+        * [.verifySigned(tokenString, verificationKey)](#Token.verifySigned) ⇒ <code>Object</code> \| <code>null</code>
+
 <a name="new_Token_new"></a>
 
 ### new Token([settings])
@@ -2840,6 +2893,32 @@ Create a new Fabric Token.
 | Param | Type | Description |
 | --- | --- | --- |
 | [settings] | <code>Object</code> | Configuration. |
+
+<a name="Token+toSignedString"></a>
+
+### token.toSignedString([options]) ⇒ <code>string</code>
+Create a cryptographically signed token string.
+Format: base64url(payload).base64url(signature)
+Payload: { cap, iss, sub, iat, exp }. Signature: Schnorr over payload JSON.
+
+**Kind**: instance method of [<code>Token</code>](#Token)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [options] | <code>Object</code> |  |  |
+| [options.expiresInSeconds] | <code>number</code> | <code>31536000</code> | Token lifetime (default 1 year). |
+
+<a name="Token.verifySigned"></a>
+
+### Token.verifySigned(tokenString, verificationKey) ⇒ <code>Object</code> \| <code>null</code>
+Verify a signed token string. Returns parsed payload if valid, null otherwise.
+
+**Kind**: static method of [<code>Token</code>](#Token)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| tokenString | <code>string</code> |  |
+| verificationKey | [<code>Key</code>](#Key) | Key used to verify the signature (must match issuer). |
 
 <a name="Tree"></a>
 
@@ -3211,6 +3290,9 @@ Manages interaction with the Bitcoin network.
     * [._connectSPV()](#Bitcoin+_connectSPV)
     * [.connect(addr)](#Bitcoin+connect)
     * [._makeRPCRequest(method, params, [opts])](#Bitcoin+_makeRPCRequest) ⇒ <code>Promise</code>
+    * [.getBlockInfo(hashOrHeight)](#Bitcoin+getBlockInfo) ⇒ <code>Promise.&lt;Object&gt;</code>
+    * [.getTransactionInfo(txid)](#Bitcoin+getTransactionInfo) ⇒ <code>Promise.&lt;Object&gt;</code>
+    * [.getAddressInfo(address)](#Bitcoin+getAddressInfo) ⇒ <code>Promise.&lt;Object&gt;</code>
     * [._requestBlockAtHeight(height)](#Bitcoin+_requestBlockAtHeight) ⇒ <code>Object</code>
     * [._createContractProposal(options)](#Bitcoin+_createContractProposal) ⇒ <code>ContractProposal</code>
     * [._buildPSBT(options)](#Bitcoin+_buildPSBT) ⇒ <code>PSBT</code>
@@ -3389,6 +3471,45 @@ Retries on "Work queue depth exceeded" (bitcoind temporary backpressure).
 | method | <code>String</code> | The RPC method to call. |
 | params | <code>Array</code> | The parameters to pass to the RPC method. |
 | [opts] | <code>Object</code> | Options. retries: max retries for work-queue errors (default 5). |
+
+<a name="Bitcoin+getBlockInfo"></a>
+
+### bitcoin.getBlockInfo(hashOrHeight) ⇒ <code>Promise.&lt;Object&gt;</code>
+Blockchain explorer: fetch block info by hash or height.
+Uses RPC when available; optional HTTP API when `explorerBaseUrl` is set.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - Block info { hash, height, time, txcount, size, ... }.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| hashOrHeight | <code>String</code> \| <code>Number</code> | Block hash (hex) or block height. |
+
+<a name="Bitcoin+getTransactionInfo"></a>
+
+### bitcoin.getTransactionInfo(txid) ⇒ <code>Promise.&lt;Object&gt;</code>
+Blockchain explorer: fetch transaction info by txid.
+Uses RPC when available; optional HTTP API when `explorerBaseUrl` is set.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - Transaction info.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| txid | <code>String</code> | Transaction ID (hex). |
+
+<a name="Bitcoin+getAddressInfo"></a>
+
+### bitcoin.getAddressInfo(address) ⇒ <code>Promise.&lt;Object&gt;</code>
+Blockchain explorer: fetch address info (balance, tx count, recent txs).
+Requires `explorerBaseUrl` (Core has no generic address index over RPC alone).
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - Address info { address, chain_stats, mempool_stats, recent_txs }.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| address | <code>String</code> | Bitcoin address. |
 
 <a name="Bitcoin+_requestBlockAtHeight"></a>
 
@@ -3630,7 +3751,7 @@ Manage a Lightning node.
 
 * [Lightning](#Lightning)
     * [new Lightning([settings])](#new_Lightning_new)
-    * [.createChannel(peer, amount)](#Lightning+createChannel)
+    * [.createChannel(peer, amount, [pushMsat], [options])](#Lightning+createChannel)
     * [.createInvoice(amount)](#Lightning+createInvoice)
     * [.computeLiquidity()](#Lightning+computeLiquidity) ⇒ <code>Object</code>
     * [._makeRPCRequest(method, [params], [timeoutMs])](#Lightning+_makeRPCRequest) ⇒ <code>Object</code> \| <code>String</code>
@@ -3647,15 +3768,17 @@ Create an instance of the Lightning [Service](#Service).
 
 <a name="Lightning+createChannel"></a>
 
-### lightning.createChannel(peer, amount)
+### lightning.createChannel(peer, amount, [pushMsat], [options])
 Creates a new Lightning channel.
 
 **Kind**: instance method of [<code>Lightning</code>](#Lightning)  
 
-| Param | Type | Description |
-| --- | --- | --- |
-| peer | <code>String</code> | Public key of the peer to create a channel with. |
-| amount | <code>String</code> | Amount in satoshis to fund the channel. |
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| peer | <code>String</code> |  | Public key of the peer to create a channel with. |
+| amount | <code>String</code> |  | Amount in satoshis to fund the channel. |
+| [pushMsat] | <code>Number</code> \| <code>null</code> | <code></code> | Optional push amount in millisatoshis. |
+| [options] | <code>Object</code> | <code>{}</code> | Optional overrides (e.g. minconf for regtest). |
 
 <a name="Lightning+createInvoice"></a>
 
@@ -3935,4 +4058,19 @@ Compute the numeric representation of this input.
 | Param | Type | Description |
 | --- | --- | --- |
 | input | <code>String</code> | Input string to seek for value. |
+
+<a name="explorerBaseUrl"></a>
+
+## explorerBaseUrl
+Optional HTTP origin for block/tx/address REST fallback (e.g. a Hub). Null = RPC only.
+
+**Kind**: global variable  
+<a name="isAllZero32"></a>
+
+## isAllZero32(buf)
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| buf | <code>Buffer</code> | 
 
