@@ -814,7 +814,16 @@ class Wallet extends Service {
    * @param {String} input Hex-encoded string to create key from.
    */
   publicKeyFromString (input) {
-    if (input instanceof Point) {
+    if (input === null || input === undefined) {
+      return new Key({ public: input });
+    }
+    if (typeof input === 'string' || typeof input === 'number') {
+      return new Key({ public: String(input) });
+    }
+    if (Buffer.isBuffer(input) || (typeof Uint8Array !== 'undefined' && input instanceof Uint8Array)) {
+      return new Key({ public: Buffer.from(input).toString('hex') });
+    }
+    if (typeof input === 'object' && typeof input.encode === 'function') {
       return new Key({ public: input.encode('hex', true) });
     }
     return new Key({ public: input });

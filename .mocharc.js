@@ -2,6 +2,9 @@ module.exports = {
   parallel: false,
   recursive: true,
   timeout: 10000,
+  // Some suites leave active handles (ZMQ, Level, timers, NOISE sockets). Without this,
+  // Mocha can report "passing" yet the Node process never exits. See `node --test` / `--detect-open-handles` to debug.
+  exit: true,
   // Exclude tests that require the native C addon (build/Release/fabric.node).
   // Loading them would run native code that can segfault if the addon is unbuilt
   // or linked against missing libs. Run those tests explicitly when the addon is built.

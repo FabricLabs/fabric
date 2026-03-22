@@ -706,6 +706,80 @@ describe('@fabric/core/services/bitcoin', function () {
         assert.strictEqual(btc._nodeProcess, null);
       });
     });
+
+    describe('getters, walletName, and entity preparation', function () {
+      it('exposes tip, supply, height, balance, lib, networks, and UAString', function () {
+        const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
+        assert.strictEqual(btc.tip, null);
+        assert.strictEqual(btc.supply, 0);
+        assert.strictEqual(btc.height, 0);
+        assert.strictEqual(btc.balance, 0);
+        assert.ok(btc.lib);
+        assert.ok(btc.networks.regtest);
+        assert.ok(btc.networks.mainnet);
+        assert.ok(String(btc.UAString).includes('Fabric'));
+      });
+
+      it('walletName is stable double-sha256 of xpub when unset', function () {
+        const btc = new Bitcoin({ network: 'regtest' });
+        assert.strictEqual(btc.walletName, btc.walletName);
+        assert.strictEqual(btc.walletName.length, 64);
+        assert.ok(/^[0-9a-f]+$/.test(btc.walletName));
+      });
+
+      it('walletName honors explicit settings.walletName', function () {
+        const btc = new Bitcoin({ network: 'regtest', walletName: 'integration-wallet' });
+        assert.strictEqual(btc.walletName, 'integration-wallet');
+      });
+
+      it('headers round-trips through getter and setter', function () {
+        const btc = new Bitcoin({ network: 'regtest' });
+        assert.deepStrictEqual(btc.headers, []);
+        btc.headers = [{ height: 1 }];
+        assert.deepStrictEqual(btc.headers, [{ height: 1 }]);
+      });
+
+      it('_prepareTransaction merges Entity id onto payload', async function () {
+        const btc = new Bitcoin({ network: 'regtest' });
+        const out = await btc._prepareTransaction({ label: 'x' });
+        assert.ok(out.id);
+        assert.strictEqual(out.label, 'x');
+      });
+
+      it('_prepareBlock requires transactions as an array', async function () {
+        const btc = new Bitcoin({ network: 'regtest' });
+        await assert.rejects(async () => btc._prepareBlock({}), /transactions.*property/);
+        await assert.rejects(async () => btc._prepareBlock({ transactions: {} }), /Array/);
+      });
+
+      it('_handleCommittedTransaction emits a transaction event', function (done) {
+        const btc = new Bitcoin({ network: 'regtest' });
+        btc.once('transaction', (tx) => {
+          assert.strictEqual(tx.txid, 'aa');
+          done();
+        });
+        btc._handleCommittedTransaction({ txid: 'aa' });
+      });
+
+      it('_registerAddress emits address', function (done) {
+        const btc = new Bitcoin({ network: 'regtest' });
+        btc.once('address', (addr) => {
+          assert.strictEqual(addr, 'bcrt1qaddr');
+          done();
+        });
+        btc._registerAddress('bcrt1qaddr');
+      });
+
+      it('_handlePeerError emits a service-scoped error string', function (done) {
+        const btc = new Bitcoin({ network: 'regtest' });
+        btc.once('error', (msg) => {
+          assert.ok(String(msg).includes('Peer'));
+          assert.ok(String(msg).includes('offline'));
+          done();
+        });
+        btc._handlePeerError(new Error('offline'));
+      });
+    });
   });
 });
 

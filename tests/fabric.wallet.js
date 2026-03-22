@@ -27,15 +27,12 @@ describe('@fabric/core/types/wallet', function () {
       assert.ok(wallet.key.seed);
     });
 
-    xit('can restore a public key', async function () {
-      async function test () {
-        const wallet = new Wallet(options);
-        const origin = await wallet.generateCleanKeyPair();
-        const key = new Key({ public: origin.public });
-        assert.equal(origin.public.toString('hex'), key.public.toString('hex'));
-      }
-
-      await test();
+    it('generateCleanKeyPair round-trips through publicKeyFromString', async function () {
+      const wallet = new Wallet(options);
+      const origin = await wallet.generateCleanKeyPair();
+      const hex = origin.public.encodeCompressed('hex');
+      const restored = wallet.publicKeyFromString(hex);
+      assert.strictEqual(hex, restored.pubkey);
     });
 
     it('can derive keys from a path', function () {
@@ -161,6 +158,45 @@ describe('@fabric/core/types/wallet', function () {
       const emitter = new (require('events').EventEmitter)();
       assert.strictEqual(wallet.trust(emitter), wallet);
       assert.ok(wallet.marshall.agents.length >= 1);
+    });
+
+    it('publicKeyFromString accepts hex pubkey string', function () {
+      const wallet = new Wallet(options);
+      const k = new Key();
+      const w = wallet.publicKeyFromString(k.pubkey);
+      assert.strictEqual(w.pubkey, k.pubkey);
+    });
+
+    it('balanceFromState returns 0 for empty transactions', function () {
+      const wallet = new Wallet(options);
+      assert.strictEqual(wallet.balanceFromState({ transactions: [] }), 0);
+    });
+
+    it('balanceFromState throws when transactions missing', function () {
+      const wallet = new Wallet(options);
+      assert.throws(() => wallet.balanceFromState({}), /transactions/);
+    });
+
+    it('_countUnusedAddresses and _getHighestUsedIndex reflect address map', async function () {
+      const wallet = new Wallet();
+      wallet._state.addresses = {
+        u1: { index: 0, used: false },
+        u2: { index: 1, used: true }
+      };
+      assert.strictEqual(await wallet._countUnusedAddresses(), 1);
+      assert.strictEqual(await wallet._getHighestUsedIndex(), 1);
+    });
+
+    it('_checkGapLimit compares unused count to gapLimit', async function () {
+      const wallet = new Wallet({ gapLimit: 5 });
+      wallet._state.addresses = { only: { used: false } };
+      assert.strictEqual(await wallet._checkGapLimit(), true);
+
+      wallet._state.addresses = {};
+      for (let i = 0; i < 25; i++) {
+        wallet._state.addresses[`k${i}`] = { used: false };
+      }
+      assert.strictEqual(await wallet._checkGapLimit(), false);
     });
 
     xit('can trust an existing chain service', function (done) {
