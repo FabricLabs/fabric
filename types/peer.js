@@ -21,6 +21,7 @@ const {
   P2P_PONG,
   P2P_PORT,
   P2P_START_CHAIN,
+  P2P_CHAIN_SYNC_REQUEST,
   P2P_INSTRUCTION,
   P2P_BASE_MESSAGE,
   P2P_STATE_COMMITTMENT,
@@ -102,7 +103,20 @@ class Peer extends Service {
         services: {}
       }, config.state),
       upnp: false,
-      key: {}
+      key: {},
+      /**
+       * Inbound wire traffic budgeting (Bitcoin Core–style peer quality).
+       * Credits accrue per rolling window; overflow de-ranks the peer (registry score)
+       * and drops the message. Heavier opcodes cost more credits.
+       */
+      wireTraffic: {
+        windowMs: 60 * 1000,
+        maxCreditsPerWindow: 520,
+        chainSyncCreditCost: 55,
+        bitcoinBlockCreditCost: 3,
+        defaultCreditCost: 1,
+        overLimitPenalty: 22
+      }
     }, config);
 
     // Network Internals
@@ -166,6 +180,8 @@ class Peer extends Service {
     this._peeringPayloadOrder = [];
     /** origin address → { count, windowStart } for peering-offer relay rate limiting. */
     this._peeringRelayByOrigin = new Map();
+    /** `host:port` → { credits, windowStart, penalized } — inbound wire flood / de-rank (per peer). */
+    this._wireInboundByOrigin = new Map();
     /** `host:port` keys for {@link P2P_PEERING_OFFER} candidate queue dedup. */
     this._candidateKeys = new Set();
     this.sessions = {};
@@ -254,6 +270,78 @@ class Peer extends Service {
     slot.count++;
     this._gossipRelayByOrigin.set(originName, slot);
     return true;
+  }
+
+  /**
+   * Credit cost for inbound wire messages (heavier types consume more of the peer's budget).
+   * @param {string|number} wireType
+   * @returns {number}
+   */
+  _wireInboundCreditCost (wireType) {
+    const w = this.settings.wireTraffic || {};
+    const t = wireType != null ? String(wireType) : '';
+    if (t === 'P2P_CHAIN_SYNC_REQUEST' || t === 'ChainSyncRequest' || wireType === P2P_CHAIN_SYNC_REQUEST) {
+      return Number(w.chainSyncCreditCost) || 55;
+    }
+    if (t === 'BITCOIN_BLOCK' || t === 'BitcoinBlock') {
+      return Number(w.bitcoinBlockCreditCost) || 3;
+    }
+    return Number(w.defaultCreditCost) || 1;
+  }
+
+  /**
+   * Apply rolling-window credits; on overflow, de-rank once per window and reject the message.
+   * @param {string} originName connection key (host:port)
+   * @param {number} creditCost
+   * @returns {boolean} false = drop message
+   */
+  _wireInboundRateAllowPeer (originName, creditCost) {
+    if (!originName) return true;
+    const w = this.settings.wireTraffic || {};
+    const windowMs = Number(w.windowMs) || 60000;
+    const maxCredits = Number(w.maxCreditsPerWindow) || 520;
+    const penalty = Number(w.overLimitPenalty) || 22;
+    const now = Date.now();
+    const cost = Number.isFinite(creditCost) && creditCost > 0 ? creditCost : 1;
+    let slot = this._wireInboundByOrigin.get(originName);
+    if (!slot || (now - slot.windowStart) >= windowMs) {
+      slot = { credits: 0, windowStart: now, penalized: false };
+    }
+    const next = slot.credits + cost;
+    if (next > maxCredits) {
+      if (!slot.penalized) {
+        slot.penalized = true;
+        this._derankPeerForWireTraffic(originName, penalty, 'inbound-rate');
+      }
+      this._wireInboundByOrigin.set(originName, slot);
+      return false;
+    }
+    slot.credits = next;
+    this._wireInboundByOrigin.set(originName, slot);
+    return true;
+  }
+
+  /**
+   * Lower registry {@link Peer#knownPeers} score for a connection (Bitcoin Core misbehavior analogue).
+   * @param {string} originName
+   * @param {number} penalty
+   * @param {string} reason
+   */
+  _derankPeerForWireTraffic (originName, penalty, reason) {
+    const peerId = (this._addressToId && this._addressToId[originName]) || originName;
+    const registry = this._state.peers || {};
+    const reg = registry[peerId] || registry[originName] || {};
+    const cur = Number(reg.score);
+    const base = Number.isFinite(cur) ? cur : 0;
+    const pen = Number.isFinite(penalty) && penalty > 0 ? penalty : 20;
+    const next = Math.max(0, base - pen);
+    this._upsertPeerRegistry(peerId, {
+      id: peerId,
+      address: reg.address || originName,
+      score: next,
+      lastSeen: new Date().toISOString()
+    });
+    this.emit('warning', `[FABRIC:PEER] De-ranked peer (${reason}): ${peerId} score ${base}→${next}`);
   }
 
   /**
@@ -857,6 +945,16 @@ class Peer extends Service {
       }
     }
 
+    if (origin && origin.name) {
+      const cost = this._wireInboundCreditCost(message.type);
+      if (!this._wireInboundRateAllowPeer(origin.name, cost)) {
+        if (this.settings.debug) {
+          this.emit('debug', `[FABRIC:PEER] Dropped (wire traffic budget): ${origin.name} type=${message.type}`);
+        }
+        return this;
+      }
+    }
+
     if (this.settings.debug) this.emit('debug', `Message author: ${message.raw.signature.toString('hex')}`);
     if (this.settings.debug) this.emit('debug', `Message signature: ${message.raw.signature.toString('hex')}`);
 
@@ -872,6 +970,19 @@ class Peer extends Service {
         // Chain-tip gossip: relay so sparse meshes learn Bitcoin network tip (hash/preimage/signature as any AMP message).
         this.emit('bitcoinBlock', { message, origin, socket });
         if (origin && origin.name) this.relayFrom(origin.name, message);
+        break;
+      case 'P2P_CHAIN_SYNC_REQUEST':
+      case 'ChainSyncRequest':
+        if (!origin || !origin.name) break;
+        try {
+          const raw = message.data != null
+            ? (typeof message.data === 'string' ? message.data : String(message.data))
+            : '{}';
+          const object = JSON.parse(raw || '{}');
+          this.emit('chainSyncRequest', { message, origin, socket, object });
+        } catch (parseErr) {
+          this.emit('chainSyncRequest', { message, origin, socket, object: {} });
+        }
         break;
       case 'GENERIC_MESSAGE':
       case 'GenericMessage':
