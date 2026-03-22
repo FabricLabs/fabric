@@ -15,7 +15,7 @@ _Generated: 2026-03-21 — from `c8` text-summary after `npm run coverage` (see 
 **Bitcoin / Wallet (service + types):**
 - **`tests/bitcoin/service.js`** — getters (`tip`, `supply`, `height`, `balance`, `lib`, `networks`, `UAString`), **`walletName`** (default hash vs explicit), **`headers`**, **`_prepareTransaction`**, **`_prepareBlock`** validation, **`_handleCommittedTransaction`**, **`_registerAddress`**, **`_handlePeerError`**.
 - **`tests/fabric.wallet.js`** — **`generateCleanKeyPair`** ↔ **`publicKeyFromString`**, **`publicKeyFromString`** (hex), **`balanceFromState`**, **`_countUnusedAddresses`**, **`_getHighestUsedIndex`**, **`_checkGapLimit`**.
-- **`types/wallet.js`** — **`publicKeyFromString`** now handles strings/hex before curve-point `encode` (fixes `ReferenceError: Point is not defined` and wrong branch for derived `Key` public objects).
+- **`types/wallet.js`** — **`publicKeyFromString`** now handles strings/hex before curve-point `encode` (fixes `ReferenceError: Point is not defined` and wrong branch for derived `Key` public objects). **`tests/fabric.wallet.js`** covers all branches: **`null`/`undefined`**, number coercion, **Buffer** / **Uint8Array**, **`encode()`** points, and fallback.
 
 **Coverage push (types + functions):**
 - **`tests/fabric.promise.js`** — **`EncryptedPromise`**: id, resolve, encrypt flag, **`_assignState`**, **`state`** getter.

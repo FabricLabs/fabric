@@ -167,6 +167,41 @@ describe('@fabric/core/types/wallet', function () {
       assert.strictEqual(w.pubkey, k.pubkey);
     });
 
+    describe('publicKeyFromString', function () {
+      it('passes null and undefined through to Key constructor', function () {
+        const wallet = new Wallet(options);
+        assert.ok(wallet.publicKeyFromString(null) instanceof Key);
+        assert.ok(wallet.publicKeyFromString(undefined) instanceof Key);
+      });
+
+      it('coerces number to string before Key parsing', function () {
+        const wallet = new Wallet(options);
+        assert.throws(() => wallet.publicKeyFromString(12345), /bad point|Invalid|type/i);
+      });
+
+      it('accepts Buffer and Uint8Array pubkey bytes', function () {
+        const wallet = new Wallet(options);
+        const k = new Key();
+        const raw = Buffer.from(k.pubkey, 'hex');
+        const fromBuf = wallet.publicKeyFromString(raw);
+        const fromU8 = wallet.publicKeyFromString(new Uint8Array(raw));
+        assert.strictEqual(fromBuf.pubkey, k.pubkey);
+        assert.strictEqual(fromU8.pubkey, k.pubkey);
+      });
+
+      it('accepts curve point objects with encode()', function () {
+        const wallet = new Wallet(options);
+        const k = new Key();
+        const w = wallet.publicKeyFromString(k.public);
+        assert.strictEqual(w.pubkey, k.pubkey);
+      });
+
+      it('fallback wraps other values for Key (invalid objects throw)', function () {
+        const wallet = new Wallet(options);
+        assert.throws(() => wallet.publicKeyFromString({ unexpected: true }), /./);
+      });
+    });
+
     it('balanceFromState returns 0 for empty transactions', function () {
       const wallet = new Wallet(options);
       assert.strictEqual(wallet.balanceFromState({ transactions: [] }), 0);
