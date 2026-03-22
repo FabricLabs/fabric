@@ -438,7 +438,7 @@ describe('@fabric/core/types/peer', function () {
         const msg = Message.fromVector(['LightningInit', 'x']);
         msg.signWithKey(peer.key);
         peer.once('lightning', (ev) => {
-          assert.strictEqual(ev.type, 'LightningInit');
+          assert.strictEqual(ev.type, 'LIGHTNING_INIT');
           assert.ok(ev.raw !== undefined);
           done();
         });

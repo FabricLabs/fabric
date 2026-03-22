@@ -253,6 +253,9 @@ class Contract extends Service {
   _handleActivity (activity) {
     return new Promise((resolve, reject) => {
       try {
+        if (activity == null || typeof activity !== 'object') {
+          return reject(new TypeError('activity must be a non-null object'));
+        }
         const actor = new Actor(activity);
         return resolve({
           id: actor.id,
