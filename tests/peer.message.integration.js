@@ -195,7 +195,7 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     assert.strictEqual(chats, 1);
   });
 
-  it('rejects body hash mismatch before signature (downstream integrity)', function () {
+  it('drops body hash mismatch before signature (wire integrity warning)', function () {
     const hub = mockHub();
     const k = new Key();
     const addr = '127.0.0.1:7600';
@@ -216,10 +216,12 @@ describe('peer/message integration (mesh & secure delivery)', function () {
       return m;
     };
     try {
-      assert.throws(
-        () => hub._handleFabricMessage(buf, { name: addr }, null),
-        /incorrect hash/
-      );
+      let warned = false;
+      hub.once('warning', (w) => {
+        if (/body hash mismatch/i.test(String(w))) warned = true;
+      });
+      hub._handleFabricMessage(buf, { name: addr }, null);
+      assert.ok(warned, 'expected warning when body hash does not match payload (signature not verified)');
     } finally {
       Message.fromBuffer = origFromBuffer;
     }

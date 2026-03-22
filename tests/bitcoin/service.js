@@ -780,6 +780,438 @@ describe('@fabric/core/services/bitcoin', function () {
         btc._handlePeerError(new Error('offline'));
       });
     });
+
+    describe('explorer REST, chain queries, and helpers', function () {
+      const crossFetchPath = require.resolve('cross-fetch');
+      let origCrossFetch;
+      let BitcoinMod;
+
+      before(function () {
+        origCrossFetch = require.cache[crossFetchPath].exports;
+        require.cache[crossFetchPath].exports = async (url) => {
+          const u = String(url);
+          if (u.includes('/blocks/height/')) {
+            return {
+              ok: true,
+              json: async () => ({
+                hash: 'from-height',
+                height: 7,
+                time: 100,
+                tx: [],
+                size: 1,
+                strippedsize: 1,
+                weight: 4,
+                mediantime: 100,
+                difficulty: 1,
+                chainwork: '00',
+                previousblockhash: null,
+                nextblockhash: null
+              })
+            };
+          }
+          if (u.includes('/blocks/')) {
+            return {
+              ok: true,
+              json: async () => ({
+                hash: 'deadbeef',
+                height: 2,
+                time: 0,
+                tx: ['a'],
+                size: 10,
+                strippedsize: 9,
+                weight: 40,
+                mediantime: 0,
+                difficulty: 1,
+                previousblockhash: null,
+                nextblockhash: null
+              })
+            };
+          }
+          if (u.includes('/transactions/')) {
+            return {
+              ok: true,
+              json: async () => ({
+                txid: 'tx1',
+                hash: 'tx1',
+                version: 2,
+                vin: [],
+                vout: []
+              })
+            };
+          }
+          if (u.includes('/addresses/')) {
+            return {
+              ok: true,
+              json: async () => ({
+                address: 'bc1qex',
+                chain_stats: { tx_count: 1 },
+                mempool_stats: { tx_count: 0 },
+                recent_txs: []
+              })
+            };
+          }
+          return { ok: false, status: 404 };
+        };
+        delete require.cache[require.resolve('../../services/bitcoin')];
+        BitcoinMod = require('../../services/bitcoin');
+      });
+
+      after(function () {
+        require.cache[crossFetchPath].exports = origCrossFetch;
+        delete require.cache[require.resolve('../../services/bitcoin')];
+      });
+
+      it('_explorerRestBase returns null for missing or blank explorer URL', function () {
+        assert.strictEqual(new BitcoinMod({ explorerBaseUrl: null })._explorerRestBase(), null);
+        assert.strictEqual(new BitcoinMod({ explorerBaseUrl: '   ' })._explorerRestBase(), null);
+      });
+
+      it('_explorerRestBase trims slashes and appends /services/bitcoin', function () {
+        const btc = new BitcoinMod({ explorerBaseUrl: ' https://hub.example/foo/// ' });
+        assert.strictEqual(btc._explorerRestBase(), 'https://hub.example/foo/services/bitcoin');
+      });
+
+      it('getBlockInfo uses RPC when _rpcReady and returns normalized fields', async function () {
+        const btc = new BitcoinMod({ network: 'regtest', mode: 'rpc' });
+        btc._rpcReady = true;
+        btc.rpc = {};
+        btc._makeRPCRequest = async (method, params) => {
+          if (method === 'getblockhash') return 'abc';
+          if (method === 'getblock') {
+            return {
+              hash: 'abc',
+              height: 5,
+              time: 1,
+              tx: ['t1'],
+              size: 100,
+              strippedsize: 90,
+              weight: 400,
+              mediantime: 1,
+              difficulty: 1,
+              chainwork: 'x',
+              previousblockhash: 'p',
+              nextblockhash: 'n'
+            };
+          }
+          throw new Error(`unexpected ${method}`);
+        };
+        const byHeight = await btc.getBlockInfo(10);
+        assert.strictEqual(byHeight.height, 5);
+        assert.strictEqual(byHeight.txcount, 1);
+
+        const byHash = await btc.getBlockInfo('deadbeef');
+        assert.strictEqual(byHash.hash, 'abc');
+      });
+
+      it('getBlockInfo falls back to explorer when RPC throws', async function () {
+        const btc = new BitcoinMod({
+          network: 'regtest',
+          mode: 'rpc',
+          explorerBaseUrl: 'https://hub.example',
+          debug: true
+        });
+        btc._rpcReady = true;
+        btc.rpc = {};
+        const debugLogs = [];
+        btc.on('debug', (m) => debugLogs.push(String(m)));
+        btc._makeRPCRequest = async () => {
+          throw new Error('rpc down');
+        };
+        const info = await btc.getBlockInfo(7);
+        assert.strictEqual(info.height, 7);
+        assert.strictEqual(info.hash, 'from-height');
+        assert.ok(debugLogs.some((x) => x.includes('RPC getBlockInfo failed')));
+      });
+
+      it('getBlockInfo uses explorer by hash path when RPC unavailable', async function () {
+        const btc = new BitcoinMod({
+          network: 'regtest',
+          explorerBaseUrl: 'https://hub.example'
+        });
+        btc._rpcReady = false;
+        const info = await btc.getBlockInfo('00'.repeat(32));
+        assert.strictEqual(info.hash, 'deadbeef');
+        assert.strictEqual(info.txcount, 1);
+      });
+
+      it('getTransactionInfo uses RPC path and explorer fallback', async function () {
+        const btcRpc = new BitcoinMod({ network: 'regtest', mode: 'rpc' });
+        btcRpc._rpcReady = true;
+        btcRpc.rpc = {};
+        btcRpc._makeRPCRequest = async (method, params) => {
+          assert.strictEqual(method, 'getrawtransaction');
+          return {
+            txid: 'aa',
+            hash: 'aa',
+            version: 2,
+            size: 100,
+            vsize: 100,
+            weight: 400,
+            locktime: 0,
+            vin: [],
+            vout: [],
+            blockhash: 'bb',
+            confirmations: 3,
+            time: 1,
+            blocktime: 2
+          };
+        };
+        const t1 = await btcRpc.getTransactionInfo('aa');
+        assert.strictEqual(t1.txid, 'aa');
+        assert.strictEqual(t1.confirmations, 3);
+
+        const btcHttp = new BitcoinMod({
+          network: 'regtest',
+          explorerBaseUrl: 'https://hub.example',
+          debug: true
+        });
+        btcHttp._rpcReady = true;
+        btcHttp.rpc = {};
+        const logs = [];
+        btcHttp.on('debug', (m) => logs.push(String(m)));
+        btcHttp._makeRPCRequest = async () => {
+          throw new Error('no rpc');
+        };
+        const t2 = await btcHttp.getTransactionInfo('tx1');
+        assert.strictEqual(t2.txid, 'tx1');
+        assert.ok(logs.some((x) => x.includes('RPC getTransactionInfo failed')));
+      });
+
+      it('getAddressInfo requires explorer base URL', async function () {
+        const btc = new BitcoinMod({ network: 'regtest' });
+        await assert.rejects(
+          () => btc.getAddressInfo('bc1q'),
+          /explorerBaseUrl/
+        );
+      });
+
+      it('getAddressInfo returns normalized payload from explorer', async function () {
+        const btc = new BitcoinMod({ explorerBaseUrl: 'https://hub.example' });
+        const info = await btc.getAddressInfo('bc1qex');
+        assert.strictEqual(info.address, 'bc1qex');
+        assert.deepStrictEqual(info.chain_stats, { tx_count: 1 });
+        assert.deepStrictEqual(info.recent_txs, []);
+      });
+
+      it('getBlockInfo and getTransactionInfo error when no RPC and no explorer', async function () {
+        const btc = new BitcoinMod({ network: 'regtest' });
+        btc._rpcReady = false;
+        await assert.rejects(() => btc.getBlockInfo(0), /explorerBaseUrl/);
+        await assert.rejects(() => btc.getTransactionInfo('aa'), /explorerBaseUrl/);
+      });
+    });
+
+    describe('RPC retries, chain sync, fabric generation, and spend helpers', function () {
+      it('_makeRPCRequest retries on work queue depth exceeded', async function () {
+        const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
+        let n = 0;
+        btc._makeRPCRequestOnce = async function () {
+          n++;
+          if (n < 3) throw new Error('Work queue depth exceeded');
+          return 42;
+        };
+        const result = await btc._makeRPCRequest('getblockcount', [], { retries: 5 });
+        assert.strictEqual(result, 42);
+        assert.strictEqual(n, 3);
+      });
+
+      it('_makeRPCRequest stops retrying after maxRetries', async function () {
+        const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
+        btc._makeRPCRequestOnce = async function () {
+          throw new Error('Work queue depth exceeded');
+        };
+        await assert.rejects(
+          () => btc._makeRPCRequest('x', [], { retries: 2 }),
+          /Work queue depth exceeded/
+        );
+      });
+
+      it('getChainHeight and getBalances delegate to RPC', async function () {
+        const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
+        btc._makeRPCRequest = async (method) => {
+          if (method === 'getblockchaininfo') return { blocks: 99 };
+          if (method === 'getbalances') return { mine: { trusted: 1.5 } };
+          throw new Error(method);
+        };
+        assert.strictEqual(await btc.getChainHeight(), 99);
+        assert.deepStrictEqual(await btc.getBalances(), { trusted: 1.5 });
+      });
+
+      it('_listAddresses calls listreceivedbyaddress', async function () {
+        const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
+        btc._makeRPCRequest = async (method, params) => {
+          assert.strictEqual(method, 'listreceivedbyaddress');
+          assert.deepStrictEqual(params, [1, true]);
+          return [{ address: 'a' }];
+        };
+        const rows = await btc._listAddresses();
+        assert.deepStrictEqual(rows, [{ address: 'a' }]);
+      });
+
+      it('tick runs sync hooks when RPC is ready', async function () {
+        const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
+        btc._rpcReady = true;
+        let synced = 0;
+        let balances = 0;
+        btc._syncBestBlock = async () => { synced++; };
+        btc._checkAllTargetBalances = async () => { balances++; };
+        const done = new Promise((resolve) => btc.once('beat', resolve));
+        await btc.tick();
+        await done;
+        assert.strictEqual(synced, 1);
+        assert.strictEqual(balances, 1);
+      });
+
+      it('connect emits when peer.connect throws', function (done) {
+        const btc = new Bitcoin({ network: 'regtest' });
+        btc.peer = { connect: () => { throw new Error('econn'); } };
+        btc.once('error', (msg) => {
+          assert.ok(String(msg).includes('SERVICES:BITCOIN'));
+          assert.ok(String(msg).includes('econn'));
+          done();
+        });
+        btc.connect('127.0.0.1:8333');
+      });
+
+      it('generateBlock and generateBlocks in fabric mode update tip', async function () {
+        const btc = new Bitcoin({ network: 'regtest', mode: 'fabric' });
+        const h1 = await btc.generateBlock('bcrt1q000000000000000000000000000000000000000000000000000000000000000000');
+        const h2 = await btc.generateBlocks(2, 'bcrt1q000000000000000000000000000000000000000000000000000000000000000000');
+        assert.strictEqual(h2.length, 2);
+        assert.strictEqual(btc.settings.state.tip, h2[1]);
+        assert.ok(h1 && h2[0] && h2[1]);
+      });
+
+      it('generateBlock rejects invalid mode', async function () {
+        const btc = new Bitcoin({ network: 'regtest', mode: 'nosuch' });
+        await assert.rejects(() => btc.generateBlock('addr'), /Invalid mode/);
+      });
+
+      it('getUnusedAddress derives sequential addresses in fabric mode', async function () {
+        const btc = new Bitcoin({ network: 'regtest', mode: 'fabric' });
+        const a = await btc.getUnusedAddress();
+        const b = await btc.getUnusedAddress();
+        assert.notStrictEqual(a, b);
+        assert.ok(btc.settings.state.addresses[a]);
+        assert.ok(btc.settings.state.addresses[b]);
+      });
+
+      it('_processSpendMessage sends via wallet RPC', async function () {
+        const btc = new Bitcoin({
+          network: 'regtest',
+          mode: 'rpc',
+          host: '127.0.0.1',
+          rpcport: 18443,
+          username: 'u',
+          password: 'p'
+        });
+        btc._loadWallet = async () => {};
+        btc._makeWalletRequest = async (method, params, walletName) => {
+          assert.strictEqual(method, 'sendtoaddress');
+          assert.strictEqual(params[0], 'bcrt1qdest');
+          assert.strictEqual(params[1], 0.01);
+          assert.ok(walletName);
+          return 'txidhex';
+        };
+        const txid = await btc._processSpendMessage({
+          amount: 0.01,
+          destination: 'bcrt1qdest'
+        });
+        assert.strictEqual(txid, 'txidhex');
+      });
+
+      it('_processSpendMessage emits error when wallet returns error object', async function () {
+        const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
+        btc._loadWallet = async () => {};
+        btc._makeWalletRequest = async () => ({ error: 'bad' });
+        const errors = [];
+        btc.on('error', (e) => errors.push(e));
+        const ok = await btc._processSpendMessage({
+          amount: 1,
+          destination: 'bcrt1qdest'
+        });
+        assert.strictEqual(ok, false);
+        assert.ok(errors.length >= 1);
+      });
+
+      it('_encodeSequenceForNBlocks and _encodeSequenceTargetBlock return encodings', async function () {
+        const btc = new Bitcoin({ network: 'regtest' });
+        const seq = await btc._encodeSequenceForNBlocks(3);
+        assert.ok(Number.isFinite(seq));
+        const lt = await btc._encodeSequenceTargetBlock(50);
+        assert.ok(typeof lt === 'string');
+        assert.ok(lt.length > 0);
+      });
+
+      it('_estimateFeeRate reads estimatesmartfee feerate', async function () {
+        const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
+        btc._makeRPCRequest = async (method, params) => {
+          assert.strictEqual(method, 'estimatesmartfee');
+          assert.deepStrictEqual(params, [6]);
+          return { feerate: 0.00002 };
+        };
+        const rate = await btc._estimateFeeRate(6);
+        assert.strictEqual(rate, 0.00002);
+      });
+
+      it('_requestBestBlockHash and _syncChainHeight use RPC', async function () {
+        const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
+        let bestCalls = 0;
+        btc._makeRPCRequest = async (method) => {
+          if (method === 'getbestblockhash') {
+            bestCalls++;
+            return 'tip-hash';
+          }
+          if (method === 'getblockcount') return 55;
+          throw new Error(method);
+        };
+        btc.commit = () => {};
+        const tip = await btc._requestBestBlockHash();
+        assert.strictEqual(tip, 'tip-hash');
+        assert.strictEqual(btc.best, 'tip-hash');
+        assert.strictEqual(bestCalls, 1);
+        const h = await btc._syncChainHeight();
+        assert.strictEqual(h, 55);
+        assert.strictEqual(btc.height, 55);
+      });
+
+      it('_prepareBlock commits transactions through collection', async function () {
+        const btc = new Bitcoin({ network: 'regtest' });
+        let created = 0;
+        btc.transactions.create = async (tx) => {
+          created++;
+          return tx;
+        };
+        const out = await btc._prepareBlock({
+          transactions: [{ label: 'coinbase' }]
+        });
+        assert.strictEqual(created, 1);
+        assert.ok(out.id);
+      });
+
+      it('_handleCommittedBlock expands tx hashes into transaction creates', async function () {
+        const btc = new Bitcoin({ network: 'regtest' });
+        const seen = [];
+        btc.transactions.create = async (tx) => {
+          seen.push(tx.hash);
+          return tx;
+        };
+        await btc._handleCommittedBlock({
+          transactions: [Buffer.from('aa', 'hex')]
+        });
+        assert.deepStrictEqual(seen, ['aa']);
+      });
+
+      it('_createPayment builds p2wpkh payment for network', function () {
+        const ecc = require('../../types/ecc');
+        const ECPairFactory = require('ecpair').default;
+        const ECPair = ECPairFactory(ecc);
+        const pair = ECPair.makeRandom({ network: require('bitcoinjs-lib').networks.regtest });
+        const btc = new Bitcoin({ network: 'regtest', mode: 'fabric' });
+        const pay = btc._createPayment({ pubkey: pair.publicKey });
+        assert.ok(pay.output && pay.output.length > 0);
+      });
+    });
   });
 });
 
