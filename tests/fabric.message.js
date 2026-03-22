@@ -58,7 +58,22 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(literal.headers.type, P2P_CALL);
       assert.strictEqual(literal.headers.size, 29);
       assert.strictEqual(literal.headers.hash, 'd3595887441da0b0ac8bdb05c8b85b2e4fbad11c43dbbf4ce8b6ec27d7cd0646');
-      assert.strictEqual(message.type, 'Call');
+      assert.strictEqual(message.type, 'P2P_CALL');
+    });
+
+    it('exposes wireType, friendlyType, and JSON-oriented toObject().type', function () {
+      const m = Message.fromVector(['Call', JSON.stringify(example.data)]);
+      assert.strictEqual(m.wireType, 'P2P_CALL');
+      assert.strictEqual(m.type, 'P2P_CALL');
+      assert.strictEqual(m.friendlyType, 'Call');
+      const o = m.toObject();
+      assert.strictEqual(o.type, 'Call');
+      assert.strictEqual(o.wireType, 'P2P_CALL');
+    });
+
+    it('static helpers convert friendly ↔ wire', function () {
+      assert.strictEqual(Message.wireTypeFromFriendly('ChatMessage'), 'CHAT_MESSAGE');
+      assert.strictEqual(Message.friendlyTypeFromWire('CHAT_MESSAGE'), 'ChatMessage');
     });
 
     it('can compose from an object literal', async function prove () {
@@ -74,7 +89,7 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(literal.headers.type, P2P_CALL);
       assert.strictEqual(literal.headers.size, 29);
       assert.strictEqual(literal.headers.hash, 'd3595887441da0b0ac8bdb05c8b85b2e4fbad11c43dbbf4ce8b6ec27d7cd0646');
-      assert.strictEqual(message.type, 'Call');
+      assert.strictEqual(message.type, 'P2P_CALL');
     });
 
     it('round-trips P2P_MESSAGE_RECEIPT with stable type code', function () {
@@ -206,7 +221,7 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(literal.headers.type, P2P_CALL);
       assert.strictEqual(literal.headers.size, 29);
       assert.strictEqual(literal.headers.hash, 'd3595887441da0b0ac8bdb05c8b85b2e4fbad11c43dbbf4ce8b6ec27d7cd0646');
-      assert.strictEqual(message.type, 'Call');
+      assert.strictEqual(message.type, 'P2P_CALL');
     });
   });
 
@@ -273,7 +288,7 @@ describe('@fabric/core/types/message', function () {
       // assert.strictEqual(literal.headers.type, P2P_CALL);
       assert.strictEqual(literal.headers.size, 29);
       assert.strictEqual(literal.headers.hash, 'd3595887441da0b0ac8bdb05c8b85b2e4fbad11c43dbbf4ce8b6ec27d7cd0646');
-      assert.strictEqual(message.type, 'Generic');
+      assert.strictEqual(message.type, 'P2P_GENERIC');
     });
   });
 });

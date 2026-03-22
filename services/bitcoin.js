@@ -118,6 +118,14 @@ class Bitcoin extends Service {
       servers: [],
       targets: [],
       peers: [],
+      /**
+       * After RPC is ready, call `addnode <host:port> add` for each entry (outbound P2P only).
+       * Used for LAN "playnet" regtest sync. Ignored on mainnet unless {@link p2pAddNodesAllowMainnet} is true.
+       * @type {string[]}
+       */
+      p2pAddNodes: [],
+      /** When true, {@link p2pAddNodes} is applied even on mainnet (private deployments only). */
+      p2pAddNodesAllowMainnet: false,
       host: '127.0.0.1',
       port: 8333, // P2P port
       rpcport: 8332, // RPC port
@@ -2116,6 +2124,72 @@ class Bitcoin extends Service {
     return false;
   }
 
+  _defaultBitcoinP2pPort (network) {
+    const n = String(network || '').toLowerCase();
+    if (n === 'regtest') return 18444;
+    if (n === 'testnet' || n === 'testnet4') return 18333;
+    if (n === 'signet') return 38333;
+    return 8333;
+  }
+
+  /**
+   * Normalize `host` or `host:port` for Bitcoin Core `addnode`.
+   * IPv6 must use brackets: `[::1]:18444`. If port is omitted, the default P2P port for {@link settings.network} is appended.
+   * @param {string} peer
+   * @returns {string|null}
+   */
+  _normalizeP2pPeerAddress (peer) {
+    const raw = String(peer || '').trim();
+    if (!raw) return null;
+    if (raw.startsWith('[')) {
+      const close = raw.indexOf(']');
+      if (close === -1) return null;
+      if (raw[close + 1] === ':' && /^\d+$/.test(raw.slice(close + 2))) return raw;
+      return `${raw.slice(0, close + 1)}:${this._defaultBitcoinP2pPort(this.settings.network)}`;
+    }
+    if (!raw.includes(':')) {
+      return `${raw}:${this._defaultBitcoinP2pPort(this.settings.network)}`;
+    }
+    const lastColon = raw.lastIndexOf(':');
+    const hostPart = raw.slice(0, lastColon);
+    const portPart = raw.slice(lastColon + 1);
+    if (/^\d+$/.test(portPart) && (hostPart.includes(':') === false || hostPart.startsWith('['))) {
+      return raw;
+    }
+    return raw;
+  }
+
+  _shouldApplyP2pAddNodes () {
+    if (this.settings.p2pAddNodesAllowMainnet) return true;
+    const n = String(this.settings.network || '').toLowerCase();
+    return n === 'regtest' || n === 'signet' || n === 'testnet' || n === 'testnet4' || n === 'playnet';
+  }
+
+  /**
+   * Connect to Bitcoin P2P peers via RPC (`addnode`). Best-effort per peer; failures emit `warning`.
+   * @param {string[]} peers
+   * @param {string} [command='add'] add | onetry | remove
+   * @returns {Promise<string[]>} Peers successfully passed to `addnode`
+   */
+  async applyP2pAddNodes (peers, command = 'add') {
+    const list = Array.isArray(peers) ? peers : [];
+    const cmd = ['add', 'onetry', 'remove'].includes(String(command)) ? String(command) : 'add';
+    const done = [];
+    for (const p of list) {
+      const addr = this._normalizeP2pPeerAddress(p);
+      if (!addr) continue;
+      try {
+        await this._makeRPCRequest('addnode', [addr, cmd]);
+        done.push(addr);
+        this.emit('log', `[FABRIC:BITCOIN] addnode ${cmd} ${addr}`);
+      } catch (e) {
+        const msg = e && e.message ? e.message : String(e);
+        this.emit('warning', `[FABRIC:BITCOIN] addnode failed ${addr}: ${msg}`);
+      }
+    }
+    return done;
+  }
+
   async createLocalNode () {
     if (this.settings.debug) this.emit('debug', '[FABRIC:BITCOIN] Creating local node...');
     let datadir = './stores/bitcoin';
@@ -2518,6 +2592,12 @@ class Bitcoin extends Service {
       this._rpcReady = await this._waitForBitcoind();
       if (!this._rpcReady) {
         this.emit('warning', '[FABRIC:BITCOIN] bitcoind not reachable; running in degraded mode');
+      } else if (this._shouldApplyP2pAddNodes() && Array.isArray(this.settings.p2pAddNodes) && this.settings.p2pAddNodes.length) {
+        try {
+          await this.applyP2pAddNodes(this.settings.p2pAddNodes);
+        } catch (e) {
+          this.emit('warning', `[FABRIC:BITCOIN] p2pAddNodes: ${e.message || e}`);
+        }
       }
     }
 

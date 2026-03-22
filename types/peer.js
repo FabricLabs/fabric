@@ -867,13 +867,17 @@ class Peer extends Service {
       case 'P2P_RELAY':
         this.relayFrom(origin.name, message);
         break;
+      case 'BITCOIN_BLOCK':
       case 'BitcoinBlock':
         // Chain-tip gossip: relay so sparse meshes learn Bitcoin network tip (hash/preimage/signature as any AMP message).
         this.emit('bitcoinBlock', { message, origin, socket });
         if (origin && origin.name) this.relayFrom(origin.name, message);
         break;
+      case 'GENERIC_MESSAGE':
       case 'GenericMessage':
+      case 'P2P_BASE_MESSAGE':
       case 'PeerMessage':
+      case 'CHAT_MESSAGE':
       case 'ChatMessage':
         // this.emit('debug', `message ${message}`);
         // this.emit('debug', `message data: ${message.data}`);
@@ -887,25 +891,45 @@ class Peer extends Service {
 
         break;
       // Lightning BOLT JSON payload fall-through (if any are sent with JSON bodies)
+      case 'LIGHTNING_WARNING':
       case 'LightningWarning':
+      case 'LIGHTNING_INIT':
       case 'LightningInit':
+      case 'LIGHTNING_ERROR':
       case 'LightningError':
+      case 'LIGHTNING_PING':
       case 'LightningPing':
+      case 'LIGHTNING_PONG':
       case 'LightningPong':
+      case 'LIGHTNING_OPEN_CHANNEL':
       case 'OpenChannel':
+      case 'LIGHTNING_ACCEPT_CHANNEL':
       case 'AcceptChannel':
+      case 'LIGHTNING_FUNDING_CREATED':
       case 'FundingCreated':
+      case 'LIGHTNING_FUNDING_SIGNED':
       case 'FundingSigned':
+      case 'LIGHTNING_CHANNEL_READY':
       case 'ChannelReady':
+      case 'LIGHTNING_SHUTDOWN':
       case 'Shutdown':
+      case 'LIGHTNING_CLOSING_SIGNED':
       case 'ClosingSigned':
+      case 'LIGHTNING_UPDATE_ADD_HTLC':
       case 'UpdateAddHTLC':
+      case 'LIGHTNING_UPDATE_FULFILL_HTLC':
       case 'UpdateFulfillHTLC':
+      case 'LIGHTNING_UPDATE_FAIL_HTLC':
       case 'UpdateFailHTLC':
+      case 'LIGHTNING_COMMITMENT_SIGNED':
       case 'CommitmentSigned':
+      case 'LIGHTNING_REVOKE_AND_ACK':
       case 'RevokeAndAck':
+      case 'LIGHTNING_CHANNEL_ANNOUNCEMENT':
       case 'ChannelAnnouncement':
+      case 'LIGHTNING_NODE_ANNOUNCEMENT':
       case 'NodeAnnouncement':
+      case 'LIGHTNING_CHANNEL_UPDATE':
       case 'ChannelUpdate':
         try {
           const content = JSON.parse(message.data);
