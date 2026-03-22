@@ -123,6 +123,12 @@ class Fabric extends Service {
   static get Wallet () { return Wallet; }
   static get Worker () { return Worker; }
 
+  /** @returns {typeof import('./federation')} */
+  static get Federation () { return require('./federation'); }
+
+  /** @returns {typeof import('./distributedExecution')} */
+  static get DistributedExecution () { return require('./distributedExecution'); }
+
   static sha256 (data) {
     return crypto.createHash('sha256').update(data).digest('hex');
   }

@@ -830,11 +830,21 @@ class Peer extends Service {
 
     this._rememberWireHash(hash);
 
-    // Double-SHA256 on raw body bytes (matches C message_verify_body_hash)
+    // Body integrity: `hash` header is double-SHA256(body). `preimage` is single SHA256(body) for
+    // non-sensitive sends, all-zero for sensitive, or an explicit HTLC secret — preimage is covered
+    // by the Schnorr signature; do not require preimage === SHA256(body) here (HTLC secrets differ).
     const bodyBuf = message.raw.data || Buffer.alloc(0);
     const checksum = Hash256.doubleDigest(bodyBuf);
     const expectedHash = Buffer.isBuffer(message.raw.hash) ? message.raw.hash.toString('hex') : message.raw.hash;
-    if (checksum !== expectedHash) throw new Error('Message received with incorrect hash.');
+    if (checksum !== expectedHash) {
+      const from = (origin && origin.name) ? origin.name : 'unknown';
+      const t = message.type || '?';
+      const hint = this.settings.debug
+        ? ` wire=${String(expectedHash).slice(0, 16)}… computed=${String(checksum).slice(0, 16)}…`
+        : '';
+      this.emit('warning', `[FABRIC:PEER] Dropping message (body hash mismatch): from=${from} type=${t}${hint}`);
+      return this;
+    }
 
     // Verify message signature if we have the peer's public key
     if (origin && this.peers[origin] && this.peers[origin].publicKey) {
@@ -854,6 +864,11 @@ class Peer extends Service {
         break;
       case 'P2P_RELAY':
         this.relayFrom(origin.name, message);
+        break;
+      case 'BitcoinBlock':
+        // Chain-tip gossip: relay so sparse meshes learn Bitcoin network tip (hash/preimage/signature as any AMP message).
+        this.emit('bitcoinBlock', { message, origin, socket });
+        if (origin && origin.name) this.relayFrom(origin.name, message);
         break;
       case 'GenericMessage':
       case 'PeerMessage':

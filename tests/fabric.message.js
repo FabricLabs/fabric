@@ -112,17 +112,29 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(Hash256.doubleDigest(restored.raw.data), hashOnWire);
     });
 
-    it('optional preimage is null on wire for public messages and round-trips when set', function () {
-      const pub = Message.fromVector(['Call', JSON.stringify(example.data)]);
+    it('public messages carry SHA256(body) in preimage; sensitive blanks preimage; explicit preimage overrides', function () {
+      const bodyJson = JSON.stringify(example.data);
+      const expectedCommit = Hash256.digest(Buffer.from(bodyJson));
+
+      const pub = Message.fromVector(['Call', bodyJson]);
       pub.signWithKey(key);
-      assert.strictEqual(pub.preimage, null);
+      assert.ok(pub.preimage);
+      assert.strictEqual(pub.preimage.toString('hex'), expectedCommit);
       const lit = pub.toObject();
-      assert.strictEqual(lit.headers.preimage, null);
+      assert.strictEqual(lit.headers.preimage, expectedCommit);
+
+      const sens = new Message({
+        type: 'Call',
+        data: bodyJson,
+        sensitive: true
+      });
+      sens.signWithKey(key);
+      assert.strictEqual(sens.preimage, null);
 
       const secret = Buffer.alloc(32, 0xab);
       const priv = new Message({
         type: 'Call',
-        data: JSON.stringify(example.data),
+        data: bodyJson,
         preimage: secret
       });
       priv.signWithKey(key);

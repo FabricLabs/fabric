@@ -122,6 +122,9 @@ class Message extends Actor {
       this.signer = null;
     }
 
+    /** When true, body preimage field is zeroed on wire (no SHA256(body) commitment). */
+    this._sensitive = !!(input && input.sensitive);
+
     // Support both @type/@data (deprecated) and type/data (preferred) formats
     const messageType = input.type || input['@type'];
     const messageData = input.data || input['@data'];
@@ -213,7 +216,10 @@ class Message extends Actor {
   }
 
   /**
-   * Optional 32-byte preimage (e.g. HTLC secret). `null` when unset / public (all-zero on wire).
+   * Optional 32-byte preimage on wire:
+   * - **All zeros:** sensitive payload (no commitment) or legacy; {@link Message#sensitive} uses this.
+   * - **SHA256(body):** default for non-sensitive messages (single digest; {@link Message#hash} is double-SHA256(body)).
+   * - **Other:** explicit HTLC secret or custom (must match what was signed).
    */
   get preimage () {
     if (!this.raw || !Buffer.isBuffer(this.raw.preimage) || this.raw.preimage.length !== 32) return null;
@@ -832,10 +838,43 @@ Object.defineProperty(Message.prototype, 'data', {
   set (value) {
     if (!value) value = '';
     const bodyBuf = Buffer.from(value);
-    // Double-SHA256 for wire integrity (matches C message_compute_body_hash)
-    this.raw.hash = Hash256.doubleDigest(bodyBuf);
+    const hexDouble = Hash256.doubleDigest(bodyBuf);
+    // Keep `raw.hash` as 32 bytes (double-SHA256 of body); do not assign a string to the buffer slot.
+    if (Buffer.isBuffer(this.raw.hash) && this.raw.hash.length === 32) {
+      Buffer.from(hexDouble, 'hex').copy(this.raw.hash);
+    } else {
+      this.raw.hash = Buffer.from(hexDouble, 'hex');
+    }
     this.raw.data = bodyBuf;
     this.raw.size.write(padDigits(this.raw.data.byteLength.toString(16), 8), 'hex');
+    // Preimage: single SHA256(body) for non-sensitive (commitment); zeros when sensitive (no body hash in preimage).
+    if (!Buffer.isBuffer(this.raw.preimage) || this.raw.preimage.length !== 32) {
+      this.raw.preimage = Buffer.alloc(32);
+    }
+    if (this._sensitive) {
+      this.raw.preimage.fill(0);
+    } else {
+      Buffer.from(Hash256.digest(bodyBuf), 'hex').copy(this.raw.preimage);
+    }
+  }
+});
+
+Object.defineProperty(Message.prototype, 'sensitive', {
+  get () {
+    return !!this._sensitive;
+  },
+  set (value) {
+    this._sensitive = !!value;
+    if (!this.raw || !Buffer.isBuffer(this.raw.data) || !this.raw.data.length) return;
+    const bodyBuf = this.raw.data;
+    if (!Buffer.isBuffer(this.raw.preimage) || this.raw.preimage.length !== 32) {
+      this.raw.preimage = Buffer.alloc(32);
+    }
+    if (this._sensitive) {
+      this.raw.preimage.fill(0);
+    } else {
+      Buffer.from(Hash256.digest(bodyBuf), 'hex').copy(this.raw.preimage);
+    }
   }
 });
 
