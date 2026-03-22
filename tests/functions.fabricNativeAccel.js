@@ -2,6 +2,8 @@
 
 const assert = require('assert');
 const crypto = require('crypto');
+const path = require('path');
+const { execFileSync } = require('child_process');
 const fabricNativeAccel = require('../functions/fabricNativeAccel');
 
 function doubleSha256Js (buf) {
@@ -38,5 +40,20 @@ describe('functions/fabricNativeAccel', function () {
     const hex = fabricNativeAccel.doubleSha256Hex(buf);
     assert.strictEqual(hex, fabricNativeAccel.doubleSha256Buffer(buf).toString('hex'));
     assert.strictEqual(hex, doubleSha256Js(buf).toString('hex'));
+  });
+
+  it('status in fresh subprocess with FABRIC_NATIVE_DOUBLE_SHA256=true reports opt-in', function () {
+    const modPath = path.join(__dirname, '..', 'functions', 'fabricNativeAccel.js');
+    const script = `
+      process.env.FABRIC_NATIVE_DOUBLE_SHA256 = 'true';
+      const m = require(${JSON.stringify(modPath)});
+      const s = m.status();
+      if (s.nativeDoubleSha256OptIn !== true) process.exit(1);
+      process.stdout.write(JSON.stringify({ optIn: s.nativeDoubleSha256OptIn, available: s.available }));
+    `;
+    const out = execFileSync(process.execPath, ['-e', script], { encoding: 'utf8' });
+    const j = JSON.parse(out);
+    assert.strictEqual(j.optIn, true);
+    assert.strictEqual(typeof j.available, 'boolean');
   });
 });

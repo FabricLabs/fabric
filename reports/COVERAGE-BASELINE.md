@@ -17,6 +17,12 @@ _Generated: 2026-03-21 — from `c8` text-summary after `npm run coverage` (see 
 - **`tests/fabric.wallet.js`** — **`generateCleanKeyPair`** ↔ **`publicKeyFromString`**, **`publicKeyFromString`** (hex), **`balanceFromState`**, **`_countUnusedAddresses`**, **`_getHighestUsedIndex`**, **`_checkGapLimit`**.
 - **`types/wallet.js`** — **`publicKeyFromString`** now handles strings/hex before curve-point `encode` (fixes `ReferenceError: Point is not defined` and wrong branch for derived `Key` public objects).
 
+**Coverage push (types + functions):**
+- **`tests/fabric.promise.js`** — **`EncryptedPromise`**: id, resolve, encrypt flag, **`_assignState`**, **`state`** getter.
+- **`tests/fabric.scribe.js`** — **`Scribe`**: **`start`/`stop`**, **`log`/`error`/`warn`/`debug`** emissions, **`trust`**, **`sha256`**.
+- **`tests/fabric.token.js`** — **`Token`**: **`base64Url*`** helpers, **`verifySigned`** rejection paths, **`toString`** / **`fromString`**.
+- **`tests/functions.fabricNativeAccel.js`** — subprocess loads module with **`FABRIC_NATIVE_DOUBLE_SHA256=true`** so **`status().nativeDoubleSha256OptIn`** and addon **`tryLoadAddon`** branches run in isolation (parent process keeps opt-in off).
+
 **Recently added tests (low-line-count / high-risk modules):**
 - **`tests/services.local.js`** — `Local` handler + `start`.
 - **`tests/fabric.ledger.js`** — genesis `start`, `append`, `consume`, `render` (stack depth via `pages['@data'].length`; `State#size` is buffer length, not frame count).
