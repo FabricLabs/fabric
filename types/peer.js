@@ -836,11 +836,13 @@ class Peer extends Service {
     const expectedHash = Buffer.isBuffer(message.raw.hash) ? message.raw.hash.toString('hex') : message.raw.hash;
     if (checksum !== expectedHash) throw new Error('Message received with incorrect hash.');
 
-    // Verify message signature if we have the peer's public key
-    if (origin && this.peers[origin] && this.peers[origin].publicKey) {
-      const signer = new Key({ public: this.peers[origin].publicKey });
+    // Verify message signature if we have the peer's public key (origin is `{ name }` from sockets)
+    const peerKey = origin && (origin.name != null ? origin.name : origin);
+    const peerRecord = peerKey && this.peers[peerKey];
+    if (peerRecord && peerRecord.publicKey) {
+      const signer = new Key({ public: peerRecord.publicKey });
       if (!message.verifyWithKey(signer)) {
-        this.emit('error', `Invalid message signature from ${origin}`);
+        this.emit('error', `Invalid message signature from ${peerKey}`);
         return;
       }
     }

@@ -130,6 +130,39 @@ describe('@fabric/core/types/wallet', function () {
       assert.ok(Array.isArray(utxos));
     });
 
+    it('exposes version, xprv, and xpub from key', function () {
+      const wallet = new Wallet(options);
+      assert.strictEqual(typeof wallet.version, 'number');
+      assert.ok(typeof wallet.xprv === 'string' || wallet.xprv === null);
+      assert.ok(typeof wallet.xpub === 'string' || wallet.xpub === null);
+    });
+
+    it('start transitions status to STARTED', function () {
+      const wallet = new Wallet(options);
+      wallet.start();
+      assert.strictEqual(wallet.status, 'STARTED');
+    });
+
+    it('loadTransaction requires id', function () {
+      const wallet = new Wallet(options);
+      assert.throws(() => wallet.loadTransaction(null), /must provide/);
+      assert.throws(() => wallet.loadTransaction({}), /id/);
+    });
+
+    it('loadTransaction records spendable transaction', function () {
+      const wallet = new Wallet(options);
+      const tx = { id: 'abc123', spendable: true };
+      wallet.loadTransaction(tx);
+      assert.ok(wallet._state.content.transactions.abc123);
+    });
+
+    it('trust wires emitter to wallet', function () {
+      const wallet = new Wallet(options);
+      const emitter = new (require('events').EventEmitter)();
+      assert.strictEqual(wallet.trust(emitter), wallet);
+      assert.ok(wallet.marshall.agents.length >= 1);
+    });
+
     xit('can trust an existing chain service', function (done) {
       const bitcoin = new Bitcoin(options);
       const wallet = new Wallet(options);

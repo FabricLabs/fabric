@@ -21,6 +21,42 @@ describe('@fabric/core/types/store', function () {
       assert.equal(Fabric.Store instanceof Function, true);
     });
 
+    it('getRouteInfo normalizes path and stable index', async function () {
+      const store = new Store({ persistent: false });
+      const a = await store.getRouteInfo('relative');
+      const b = await store.getRouteInfo('/absolute');
+      assert.strictEqual(a.path, '/relative');
+      assert.strictEqual(b.path, '/absolute');
+      assert.strictEqual(typeof a.index, 'string');
+      assert.notStrictEqual(a.index, b.index);
+    });
+
+    it('encodeValue and getDataInfo support string payloads', async function () {
+      const store = new Store({ persistent: false });
+      const hex = await store.encodeValue('hello');
+      assert.strictEqual(typeof hex, 'string');
+      assert.ok(hex.length > 0);
+      const info = await store.getDataInfo('hello');
+      assert.strictEqual(info.type, 'JSONString');
+      assert.strictEqual(info.size, 5);
+      assert.ok(info.hash);
+    });
+
+    it('encryptedSettings attaches codec defaults', function () {
+      const settings = Store.encryptedSettings({
+        path: './stores/test-encrypted-settings',
+        persistent: false
+      });
+      assert.ok(settings.codec);
+      assert.strictEqual(settings.type, 'EncryptedFabricStore');
+    });
+
+    it('openEncrypted returns a Store with encrypted defaults', function () {
+      const store = Store.openEncrypted({ persistent: false });
+      assert.ok(store instanceof Store);
+      assert.ok(store.codec);
+    });
+
     it('can set a key to a string value', async function () {
       let store = new Store({
         persistent: false

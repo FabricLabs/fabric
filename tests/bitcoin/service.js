@@ -72,6 +72,8 @@ describe('@fabric/core/services/bitcoin', function () {
         assert.strictEqual(btc._normalizeChainName('test'), 'testnet');
         assert.strictEqual(btc._normalizeChainName('regtest'), 'regtest');
         assert.strictEqual(btc._normalizeChainName('signet'), 'signet');
+        assert.strictEqual(btc._normalizeChainName('testnet4'), 'testnet4');
+        assert.strictEqual(btc._normalizeChainName('unknown-custom'), 'unknown-custom');
       });
 
       it('normalizes RPC host values safely', function () {

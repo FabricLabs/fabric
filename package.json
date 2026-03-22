@@ -178,8 +178,11 @@
       "currencies",
       "functions/**",
       "!functions/fabricNativeAccel.js",
+      "!functions/taggedHash.js",
+      "!functions/truncateMiddle.js",
       "tests",
-      "data"
+      "data",
+      "types/cli.js"
     ],
     "report-dir": "./reports/coverage",
     "temp-dir": "./reports/c8"

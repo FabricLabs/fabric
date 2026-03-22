@@ -305,7 +305,7 @@ class Fabric extends Service {
   trust (source) {
     let self = this;
 
-    this.warn('[TRUST]', 'trusting:', typeof source);
+    this.log('[TRUST]', 'trusting:', typeof source);
 
     source.on('changes', async function (changes) {
       self.log('source', typeof source, 'emitted:', changes);

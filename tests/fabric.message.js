@@ -199,6 +199,16 @@ describe('@fabric/core/types/message', function () {
   });
 
   describe('toBuffer()', function () {
+    it('round-trips signed wire bytes through fromBuffer', function () {
+      const m = Message.fromVector(['GenericMessage', JSON.stringify({ type: 'probe', n: 1 })]);
+      m.signWithKey(key);
+      const buf = m.toBuffer();
+      const restored = Message.fromBuffer(buf);
+      assert.strictEqual(restored.type, m.type);
+      assert.strictEqual(restored.data, m.data);
+      assert.ok(restored.verifyWithKey(key));
+    });
+
     xit('should generate a restorable buffer', async function prove () {
       const data = JSON.stringify({
         actor: 'deadbeefbabe',
@@ -215,6 +225,21 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(restored.data, '{"content":"Hello, world!"},"target":"/messages"}');
       assert.ok(message);
       assert.strictEqual(message.id, '9df866854b4e8bf23c7e9e3db0121e35ecb75ff001489c8a839545c98c67f722');
+    });
+  });
+
+  describe('verifyWithKey()', function () {
+    it('returns false when verifying with a different key than signer', function () {
+      const m = Message.fromVector(['Call', JSON.stringify(example.data)]);
+      m.signWithKey(key);
+      const other = new Key();
+      assert.strictEqual(m.verifyWithKey(other), false);
+    });
+
+    it('throws when key lacks verify', function () {
+      const m = Message.fromVector(['Call', JSON.stringify(example.data)]);
+      m.signWithKey(key);
+      assert.throws(() => m.verifyWithKey({}), /Key object must implement verify method/);
     });
   });
 
