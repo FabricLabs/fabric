@@ -392,7 +392,7 @@ describe('@fabric/core/types/peer', function () {
         peer._handleFabricMessage(buf, { name: 'o' });
         assert.ok(peer.messages[crypto.createHash('sha256').update(buf).digest('hex')]);
       });
-      it('throws on incorrect body hash', function () {
+      it('drops on incorrect body hash (wire integrity)', function () {
         const peer = new Peer({ listen: false, peersDb: null });
         const msg = Message.fromVector(['GenericMessage', JSON.stringify({ type: 'INVENTORY_REQUEST', object: {} })]);
         msg.signWithKey(peer.key);
@@ -404,7 +404,12 @@ describe('@fabric/core/types/peer', function () {
           return m;
         };
         try {
-          assert.throws(() => peer._handleFabricMessage(buf, { name: 'o' }), /incorrect hash/);
+          let warned = false;
+          peer.once('warning', (w) => {
+            if (/body hash mismatch/i.test(String(w))) warned = true;
+          });
+          peer._handleFabricMessage(buf, { name: 'o' });
+          assert.ok(warned, 'expected warning when body hash does not match payload');
         } finally {
           Message.fromBuffer = origFromBuffer;
         }

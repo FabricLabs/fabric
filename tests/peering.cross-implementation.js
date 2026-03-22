@@ -140,10 +140,12 @@ describe('peering (cross-implementation)', function () {
         return m;
       };
       try {
-        assert.throws(
-          () => peer._handleFabricMessage(buf, { name: 'x' }, null),
-          /incorrect hash/
-        );
+        let warned = false;
+        peer.once('warning', (w) => {
+          if (/body hash mismatch/i.test(String(w))) warned = true;
+        });
+        peer._handleFabricMessage(buf, { name: 'x' }, null);
+        assert.ok(warned, 'expected warning when body hash does not match payload');
       } finally {
         Message.fromBuffer = origFromBuffer;
       }

@@ -24,7 +24,7 @@
     "build": "npm run make:all",
     "chat": "node scripts/fabric.js chat",
     "ci": "npm run smoke && npm run lint:types && npm run lint:pkg && npm test",
-    "smoke": "node -e \"require('./types/fabric'); require('./types/message'); require('./types/peer'); require('./types/hash256'); require('./functions/fabricNativeAccel'); console.log('smoke ok');\"",
+    "smoke": "node -e \"require('./types/fabric'); require('./types/distributedExecution'); require('./types/message'); require('./types/peer'); require('./types/hash256'); require('./functions/fabricNativeAccel'); console.log('smoke ok');\"",
     "lint:pkg": "semistandard scripts/fabric.js scripts/cli.js scripts/gen-quality-reports.js scripts/check-book-links.js scripts/coverage-baseline.js scripts/clean-jsdoc-html.js functions/fabricNativeAccel.js",
     "exchange": "node scripts/fabric.js exchange",
     "fabric:start": "node scripts/fabric.js start",
