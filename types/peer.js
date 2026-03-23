@@ -51,6 +51,17 @@ const Service = require('./service');
 // Constants
 const PROLOGUE = 'FABRIC';
 
+/** Safe debug label for a derived Key — never log private material. */
+function peerDebugDerivedPublicSummary (keyInstance) {
+  if (!keyInstance || !keyInstance.settings) return '(unavailable)';
+  const pubHex = typeof keyInstance.settings.public === 'string'
+    ? keyInstance.settings.public.trim()
+    : '';
+  if (!pubHex) return '(no public key)';
+  if (pubHex.length > 28) return `${pubHex.slice(0, 12)}…${pubHex.slice(-10)}`;
+  return pubHex;
+}
+
 /**
  * An in-memory representation of a node in our network.
  */
@@ -680,7 +691,7 @@ class Peer extends Service {
     if (!url.port) target += `:${P2P_PORT}`;
 
     const derived = this.identity.key.derive(FABRIC_KEY_DERIVATION_PATH);
-    this.emit('debug', `Local derived ID: ${JSON.stringify(derived)}`);
+    this.emit('debug', `[FABRIC:PEER:_connect] Local derived key (public hex, truncated): ${peerDebugDerivedPublicSummary(derived)} path=${FABRIC_KEY_DERIVATION_PATH}`);
 
     // Store the user's public key if provided
     if (id) {
