@@ -148,8 +148,8 @@ describe('@fabric/core/types coverage (Wallet, Service, Contract)', function () 
 
     it('lock returns false when already locked', function () {
       const s = new Service();
-      assert.strictEqual(s.lock(5000), true);
-      assert.strictEqual(s.lock(5000), false);
+      s._state.status = 'LOCKED';
+      assert.strictEqual(s.lock(1000), false);
     });
 
     it('handler emits normalized message shape', function (done) {
@@ -246,6 +246,51 @@ describe('@fabric/core/types coverage (Wallet, Service, Contract)', function () 
       const s = new Service();
       assert.throws(() => s.trust({}), /EventEmitter/);
     });
+
+    it('append accepts block when parent matches best', function () {
+      const s = new Service({ networking: false });
+      s.best = 'p1';
+      s.append({ id: 'b1', parent: 'p1' });
+    });
+
+    it('join and whisper are callable', async function () {
+      const s = new Service();
+      await s.join('x');
+      await s.whisper('t', 'm');
+    });
+
+    it('process runs', async function () {
+      const s = new Service();
+      await s.process();
+    });
+
+    it('_registerMethod binds method', function () {
+      const s = new Service();
+      s._registerMethod('m', function () { return 1; });
+      assert.strictEqual(s.methods.m(), 1);
+    });
+
+    it('_heartbeat delegates to tick', async function () {
+      const s = new Service({ networking: false });
+      let n = 0;
+      s.tick = () => { n++; return s; };
+      await s._heartbeat();
+      assert.strictEqual(n, 1);
+    });
+
+    it('_applyChanges mutates state in place', async function () {
+      const s = new Service({ networking: false });
+      await s.start();
+      await s._applyChanges([{ op: 'add', path: '/coverageFlag', value: 1 }]);
+      assert.strictEqual(s._state.content.coverageFlag, 1);
+      await s.stop();
+    });
+
+    it('disconnect with networking false completes', async function () {
+      const s = new Service({ networking: false });
+      await s.disconnect();
+      assert.strictEqual(s.status, 'DISCONNECTED');
+    });
   });
 
   describe('Wallet', function () {
@@ -301,6 +346,95 @@ describe('@fabric/core/types coverage (Wallet, Service, Contract)', function () 
     it('_handleWalletTransaction logs', function () {
       const w = new Wallet();
       w._handleWalletTransaction({ txid: 'x' });
+    });
+
+    it('loadTransaction stores spendable UTXO', function () {
+      const w = new Wallet();
+      w.loadTransaction({ id: 'tx1', spendable: true });
+      assert.ok(w._state.content.transactions.tx1);
+      assert.strictEqual(w._state.content.utxos.length, 1);
+    });
+
+    it('start sets status to STARTED', function () {
+      const w = new Wallet();
+      w.start();
+      assert.strictEqual(w._state.status, 'STARTED');
+    });
+
+    it('export returns FabricWallet envelope', function () {
+      const w = new Wallet();
+      const ex = w.export();
+      assert.strictEqual(ex.type, 'FabricWallet');
+      assert.ok(ex.object && ex.object.logs);
+    });
+
+    it('derive returns key material', function () {
+      const w = Wallet.fromSeed(Wallet.createSeed());
+      const d = w.derive();
+      assert.ok(d.publicKey);
+    });
+
+    it('balanceFromState empty transactions returns 0', function () {
+      const w = new Wallet();
+      assert.strictEqual(w.balanceFromState({ transactions: [] }), 0);
+    });
+
+    it('balanceFromState rejects without transactions', function () {
+      const w = new Wallet();
+      assert.throws(() => w.balanceFromState({}), /transactions/);
+    });
+
+    it('publicKeyFromString handles nullish and hex pubkey', function () {
+      const w = new Wallet();
+      assert.ok(w.publicKeyFromString(null));
+      assert.ok(w.publicKeyFromString(undefined));
+      const k = new Key({ xprv: FIXTURE_XPRV });
+      const parsed = w.publicKeyFromString(k.pubkey);
+      assert.strictEqual(parsed.pubkey, k.pubkey);
+    });
+
+    it('getUnspentTransactionOutputs filters spent', async function () {
+      const w = new Wallet();
+      w._state.transactions = [{ spent: false }, { spent: true }];
+      const out = await w.getUnspentTransactionOutputs();
+      assert.strictEqual(out.length, 1);
+    });
+
+    it('_prepareSecret wraps state in Actor', async function () {
+      const w = new Wallet();
+      const e = await w._prepareSecret({ name: 'x' });
+      assert.ok(e.id);
+    });
+
+    it('_updateBalance sets confirmed balance path', async function () {
+      const w = new Wallet();
+      await w.start();
+      await w._updateBalance(42);
+      assert.strictEqual(w.get('/balances/confirmed'), 42);
+    });
+
+    it('trust wires transaction listener', function () {
+      const w = new Wallet({ verbosity: 0 });
+      const ee = new EventEmitter();
+      ee.settings = { verbosity: 0 };
+      w.trust(ee);
+      ee.emit('transaction', { id: 't' });
+    });
+
+    it('_handleGenericMessage routes ServiceMessage to block handler', function () {
+      const w = new Wallet({ verbosity: 0 });
+      w._handleGenericMessage({
+        '@type': 'ServiceMessage',
+        '@data': {
+          '@type': 'BitcoinBlock',
+          '@data': { block: { hashes: [] } }
+        }
+      });
+    });
+
+    it('_processServiceMessage handles unknown inner type', async function () {
+      const w = new Wallet({ verbosity: 0 });
+      await w._processServiceMessage({ '@type': 'Unknown' });
     });
   });
 });

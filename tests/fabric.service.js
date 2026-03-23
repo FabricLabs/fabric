@@ -181,17 +181,27 @@ describe('@fabric/core/types/service', function () {
       assert.ok(service);
       assert.ok(registration);
     });
+
+    it('persists a channel when an id is provided', async function () {
+      const service = new Service();
+      await service.start();
+      const registration = await service._registerChannel({ id: 'chad-chat', name: 'Chat of Chad' });
+      const fetched = await service._getChannel('chad-chat');
+      await service.stop();
+      assert.ok(registration && registration.id);
+      assert.ok(fetched);
+      assert.strictEqual(fetched.id, registration.id);
+    });
   });
 
   describe('_listChannels()', function () {
-    xit('can list channels successfully', async function () {
+    it('can list channels successfully', async function () {
       const service = new Service();
       await service.start();
-      const registration = await service._registerChannel({ name: 'Chat of Chad' });
+      await service._registerChannel({ id: 'list-ch', name: 'Chat of Chad' });
       const result = await service._listChannels();
       await service.stop();
-      assert.ok(service);
-      assert.ok(registration);
+      assert.ok(result);
       assert.strictEqual(result.length, 1);
     });
   });
@@ -210,10 +220,10 @@ describe('@fabric/core/types/service', function () {
   });
 
   describe('_addMemberToChannel()', function () {
-    xit('can add a member to a channel successfully', async function () {
+    it('can add a member to a channel successfully', async function () {
       const service = new Service();
       await service.start();
-      const channel = await service._registerChannel({ name: 'Chat of Chad' });
+      const channel = await service._registerChannel({ id: 'join-ch', name: 'Chat of Chad' });
       const registration = await service._registerActor({ name: 'Chad' });
       const join = await service._addMemberToChannel(registration.id, channel.id);
       const after = await service._getChannel(channel.id);
@@ -231,32 +241,38 @@ describe('@fabric/core/types/service', function () {
   });
 
   describe('_getSubscriptions()', function () {
-    xit('can retrieve actor subscriptions successfully', async function () {
+    it('can retrieve actor subscriptions successfully', async function () {
       const service = new Service();
       await service.start();
-      const channel = await service._registerChannel({ name: 'Chat of Chad' });
+      const channel = await service._registerChannel({ id: 'sub-ch', name: 'Chat of Chad' });
       const registration = await service._registerActor({ name: 'Chad' });
       const join = await service._addMemberToChannel(registration.id, channel.id);
+      const subs = await service._getSubscriptions(registration.id);
       await service.stop();
       assert.ok(service);
       assert.ok(registration);
       assert.ok(join);
+      assert.ok(Array.isArray(subs));
+      assert.strictEqual(subs.length, 1);
     });
   });
 
   describe('_getMembers()', function () {
-    xit('can retrieve channel members successfully', async function () {
+    it('can retrieve channel members successfully', async function () {
       const service = new Service();
       await service.start();
-      const channel = await service._registerChannel({ name: 'Chat of Chad' });
+      const channel = await service._registerChannel({ id: 'mem-ch', name: 'Chat of Chad' });
       const registration = await service._registerActor({ name: 'Chad' });
-      const members = await service._getMembers(channel.id);
+      const before = await service._getMembers(channel.id);
       const join = await service._addMemberToChannel(registration.id, channel.id);
+      const after = await service._getMembers(channel.id);
       await service.stop();
       assert.ok(service);
       assert.ok(registration);
-      assert.ok(members);
+      assert.ok(Array.isArray(before));
       assert.ok(join);
+      assert.ok(Array.isArray(after));
+      assert.strictEqual(after.length, 1);
     });
   });
 

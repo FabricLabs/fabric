@@ -1036,7 +1036,7 @@ class Service extends Actor {
     const path = `/channels/${target}`;
 
     try {
-      this._PUT(path, merge({
+      await this._PUT(path, merge({
         members: []
       }, channel));
     } catch (E) {
@@ -1094,7 +1094,10 @@ class Service extends Actor {
 
     try {
       // TODO: allow configurable validators
-      this._state.content = manager.applyPatch(this.state, changes, function isValid () {
+      // Mutate canonical state — do not applyPatch(this.state): the getter returns a
+      // shallow copy each time, so replacing _state.content with that copy breaks nested
+      // references after subscribe() / _applyChanges().
+      manager.applyPatch(this._state.content, changes, function isValid () {
         // TODO: invalidate changes without appropriate capability token
         return true;
       }, true /* mutate doc (1st param) */);
