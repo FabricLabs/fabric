@@ -54,6 +54,7 @@ const {
   P2P_PONG,
   P2P_PORT,
   P2P_START_CHAIN,
+  P2P_CHAIN_SYNC_REQUEST,
   P2P_INSTRUCTION,
   P2P_BASE_MESSAGE,
   P2P_STATE_COMMITTMENT,
@@ -82,6 +83,17 @@ const Service = require('./service');
 
 // Constants
 const PROLOGUE = 'FABRIC';
+
+/** Safe debug label for a derived Key — never log private material. */
+function peerDebugDerivedPublicSummary (keyInstance) {
+  if (!keyInstance || !keyInstance.settings) return '(unavailable)';
+  const pubHex = typeof keyInstance.settings.public === 'string'
+    ? keyInstance.settings.public.trim()
+    : '';
+  if (!pubHex) return '(no public key)';
+  if (pubHex.length > 28) return `${pubHex.slice(0, 12)}…${pubHex.slice(-10)}`;
+  return pubHex;
+}
 
 /**
  * An in-memory representation of a node in our network.
@@ -135,7 +147,20 @@ class Peer extends Service {
         services: {}
       }, config.state),
       upnp: false,
-      key: {}
+      key: {},
+      /**
+       * Inbound wire traffic budgeting (Bitcoin Core–style peer quality).
+       * Credits accrue per rolling window; overflow de-ranks the peer (registry score)
+       * and drops the message. Heavier opcodes cost more credits.
+       */
+      wireTraffic: {
+        windowMs: 60 * 1000,
+        maxCreditsPerWindow: 520,
+        chainSyncCreditCost: 55,
+        bitcoinBlockCreditCost: 3,
+        defaultCreditCost: 1,
+        overLimitPenalty: 22
+      }
     }, config);
 
     // Network Internals
@@ -199,8 +224,17 @@ class Peer extends Service {
     this._peeringPayloadOrder = [];
     /** origin address → { count, windowStart } for peering-offer relay rate limiting. */
     this._peeringRelayByOrigin = new Map();
+    /** `host:port` → { credits, windowStart, penalized } — inbound wire flood / de-rank (per peer). */
+    this._wireInboundByOrigin = new Map();
     /** `host:port` keys for {@link P2P_PEERING_OFFER} candidate queue dedup. */
     this._candidateKeys = new Set();
+    /**
+     * `host:port` strings we opened via {@link Peer#_connect} (outbound dials).
+     * {@link P2P_SESSION_OFFER} must not destroy these when the same peer also opens an inbound
+     * socket (mesh star): otherwise RPC paths that use the listen address (e.g. ChainSyncRequest)
+     * see `peer not connected` while an ephemeral inbound key remains.
+     */
+    this._outboundDialTargets = new Set();
     this.sessions = {};
 
     // Internal Stack Machine
@@ -287,6 +321,78 @@ class Peer extends Service {
     slot.count++;
     this._gossipRelayByOrigin.set(originName, slot);
     return true;
+  }
+
+  /**
+   * Credit cost for inbound wire messages (heavier types consume more of the peer's budget).
+   * @param {string|number} wireType
+   * @returns {number}
+   */
+  _wireInboundCreditCost (wireType) {
+    const w = this.settings.wireTraffic || {};
+    const t = wireType != null ? String(wireType) : '';
+    if (t === 'P2P_CHAIN_SYNC_REQUEST' || t === 'ChainSyncRequest' || wireType === P2P_CHAIN_SYNC_REQUEST) {
+      return Number(w.chainSyncCreditCost) || 55;
+    }
+    if (t === 'BITCOIN_BLOCK' || t === 'BitcoinBlock') {
+      return Number(w.bitcoinBlockCreditCost) || 3;
+    }
+    return Number(w.defaultCreditCost) || 1;
+  }
+
+  /**
+   * Apply rolling-window credits; on overflow, de-rank once per window and reject the message.
+   * @param {string} originName connection key (host:port)
+   * @param {number} creditCost
+   * @returns {boolean} false = drop message
+   */
+  _wireInboundRateAllowPeer (originName, creditCost) {
+    if (!originName) return true;
+    const w = this.settings.wireTraffic || {};
+    const windowMs = Number(w.windowMs) || 60000;
+    const maxCredits = Number(w.maxCreditsPerWindow) || 520;
+    const penalty = Number(w.overLimitPenalty) || 22;
+    const now = Date.now();
+    const cost = Number.isFinite(creditCost) &amp;&amp; creditCost > 0 ? creditCost : 1;
+    let slot = this._wireInboundByOrigin.get(originName);
+    if (!slot || (now - slot.windowStart) >= windowMs) {
+      slot = { credits: 0, windowStart: now, penalized: false };
+    }
+    const next = slot.credits + cost;
+    if (next > maxCredits) {
+      if (!slot.penalized) {
+        slot.penalized = true;
+        this._derankPeerForWireTraffic(originName, penalty, 'inbound-rate');
+      }
+      this._wireInboundByOrigin.set(originName, slot);
+      return false;
+    }
+    slot.credits = next;
+    this._wireInboundByOrigin.set(originName, slot);
+    return true;
+  }
+
+  /**
+   * Lower registry {@link Peer#knownPeers} score for a connection (Bitcoin Core misbehavior analogue).
+   * @param {string} originName
+   * @param {number} penalty
+   * @param {string} reason
+   */
+  _derankPeerForWireTraffic (originName, penalty, reason) {
+    const peerId = (this._addressToId &amp;&amp; this._addressToId[originName]) || originName;
+    const registry = this._state.peers || {};
+    const reg = registry[peerId] || registry[originName] || {};
+    const cur = Number(reg.score);
+    const base = Number.isFinite(cur) ? cur : 0;
+    const pen = Number.isFinite(penalty) &amp;&amp; penalty > 0 ? penalty : 20;
+    const next = Math.max(0, base - pen);
+    this._upsertPeerRegistry(peerId, {
+      id: peerId,
+      address: reg.address || originName,
+      score: next,
+      lastSeen: new Date().toISOString()
+    });
+    this.emit('warning', `[FABRIC:PEER] De-ranked peer (${reason}): ${peerId} score ${base}→${next}`);
   }
 
   /**
@@ -624,8 +730,10 @@ class Peer extends Service {
 
     if (!url.port) target += `:${P2P_PORT}`;
 
+    this._outboundDialTargets.add(target);
+
     const derived = this.identity.key.derive(FABRIC_KEY_DERIVATION_PATH);
-    this.emit('debug', `Local derived ID: ${JSON.stringify(derived)}`);
+    this.emit('debug', `[FABRIC:PEER:_connect] Local derived key (public hex, truncated): ${peerDebugDerivedPublicSummary(derived)} path=${FABRIC_KEY_DERIVATION_PATH}`);
 
     // Store the user's public key if provided
     if (id) {
@@ -726,6 +834,8 @@ class Peer extends Service {
 
   _destroyFabric (socket, target) {
     if (socket._keepalive) clearInterval(socket._keepalive);
+
+    if (this._outboundDialTargets) this._outboundDialTargets.delete(target);
 
     delete this.connections[target];
     delete this.peers[target];
@@ -863,18 +973,40 @@ class Peer extends Service {
 
     this._rememberWireHash(hash);
 
-    // Double-SHA256 on raw body bytes (matches C message_verify_body_hash)
+    // Body integrity: `hash` header is double-SHA256(body). `preimage` is single SHA256(body) for
+    // non-sensitive sends, all-zero for sensitive, or an explicit HTLC secret — preimage is covered
+    // by the Schnorr signature; do not require preimage === SHA256(body) here (HTLC secrets differ).
     const bodyBuf = message.raw.data || Buffer.alloc(0);
     const checksum = Hash256.doubleDigest(bodyBuf);
     const expectedHash = Buffer.isBuffer(message.raw.hash) ? message.raw.hash.toString('hex') : message.raw.hash;
-    if (checksum !== expectedHash) throw new Error('Message received with incorrect hash.');
+    if (checksum !== expectedHash) {
+      const from = (origin &amp;&amp; origin.name) ? origin.name : 'unknown';
+      const t = message.type || '?';
+      const hint = this.settings.debug
+        ? ` wire=${String(expectedHash).slice(0, 16)}… computed=${String(checksum).slice(0, 16)}…`
+        : '';
+      this.emit('warning', `[FABRIC:PEER] Dropping message (body hash mismatch): from=${from} type=${t}${hint}`);
+      return this;
+    }
 
-    // Verify message signature if we have the peer's public key
-    if (origin &amp;&amp; this.peers[origin] &amp;&amp; this.peers[origin].publicKey) {
-      const signer = new Key({ public: this.peers[origin].publicKey });
+    // Verify message signature if we have the peer's public key (origin is `{ name }` from sockets)
+    const peerKey = origin &amp;&amp; (origin.name != null ? origin.name : origin);
+    const peerRecord = peerKey &amp;&amp; this.peers[peerKey];
+    if (peerRecord &amp;&amp; peerRecord.publicKey) {
+      const signer = new Key({ public: peerRecord.publicKey });
       if (!message.verifyWithKey(signer)) {
-        this.emit('error', `Invalid message signature from ${origin}`);
+        this.emit('error', `Invalid message signature from ${peerKey}`);
         return;
+      }
+    }
+
+    if (origin &amp;&amp; origin.name) {
+      const cost = this._wireInboundCreditCost(message.type);
+      if (!this._wireInboundRateAllowPeer(origin.name, cost)) {
+        if (this.settings.debug) {
+          this.emit('debug', `[FABRIC:PEER] Dropped (wire traffic budget): ${origin.name} type=${message.type}`);
+        }
+        return this;
       }
     }
 
@@ -888,8 +1020,30 @@ class Peer extends Service {
       case 'P2P_RELAY':
         this.relayFrom(origin.name, message);
         break;
+      case 'BITCOIN_BLOCK':
+      case 'BitcoinBlock':
+        // Chain-tip gossip: relay so sparse meshes learn Bitcoin network tip (hash/preimage/signature as any AMP message).
+        this.emit('bitcoinBlock', { message, origin, socket });
+        if (origin &amp;&amp; origin.name) this.relayFrom(origin.name, message);
+        break;
+      case 'P2P_CHAIN_SYNC_REQUEST':
+      case 'ChainSyncRequest':
+        if (!origin || !origin.name) break;
+        try {
+          const raw = message.data != null
+            ? (typeof message.data === 'string' ? message.data : String(message.data))
+            : '{}';
+          const object = JSON.parse(raw || '{}');
+          this.emit('chainSyncRequest', { message, origin, socket, object });
+        } catch (parseErr) {
+          this.emit('chainSyncRequest', { message, origin, socket, object: {} });
+        }
+        break;
+      case 'GENERIC_MESSAGE':
       case 'GenericMessage':
+      case 'P2P_BASE_MESSAGE':
       case 'PeerMessage':
+      case 'CHAT_MESSAGE':
       case 'ChatMessage':
         // this.emit('debug', `message ${message}`);
         // this.emit('debug', `message data: ${message.data}`);
@@ -903,25 +1057,45 @@ class Peer extends Service {
 
         break;
       // Lightning BOLT JSON payload fall-through (if any are sent with JSON bodies)
+      case 'LIGHTNING_WARNING':
       case 'LightningWarning':
+      case 'LIGHTNING_INIT':
       case 'LightningInit':
+      case 'LIGHTNING_ERROR':
       case 'LightningError':
+      case 'LIGHTNING_PING':
       case 'LightningPing':
+      case 'LIGHTNING_PONG':
       case 'LightningPong':
+      case 'LIGHTNING_OPEN_CHANNEL':
       case 'OpenChannel':
+      case 'LIGHTNING_ACCEPT_CHANNEL':
       case 'AcceptChannel':
+      case 'LIGHTNING_FUNDING_CREATED':
       case 'FundingCreated':
+      case 'LIGHTNING_FUNDING_SIGNED':
       case 'FundingSigned':
+      case 'LIGHTNING_CHANNEL_READY':
       case 'ChannelReady':
+      case 'LIGHTNING_SHUTDOWN':
       case 'Shutdown':
+      case 'LIGHTNING_CLOSING_SIGNED':
       case 'ClosingSigned':
+      case 'LIGHTNING_UPDATE_ADD_HTLC':
       case 'UpdateAddHTLC':
+      case 'LIGHTNING_UPDATE_FULFILL_HTLC':
       case 'UpdateFulfillHTLC':
+      case 'LIGHTNING_UPDATE_FAIL_HTLC':
       case 'UpdateFailHTLC':
+      case 'LIGHTNING_COMMITMENT_SIGNED':
       case 'CommitmentSigned':
+      case 'LIGHTNING_REVOKE_AND_ACK':
       case 'RevokeAndAck':
+      case 'LIGHTNING_CHANNEL_ANNOUNCEMENT':
       case 'ChannelAnnouncement':
+      case 'LIGHTNING_NODE_ANNOUNCEMENT':
       case 'NodeAnnouncement':
+      case 'LIGHTNING_CHANNEL_UPDATE':
       case 'ChannelUpdate':
         try {
           const content = JSON.parse(message.data);
@@ -963,20 +1137,23 @@ class Peer extends Service {
         if (this.settings.debug) this.emit('debug', `Handling session offer: ${JSON.stringify(message.object)}`);
         if (this.settings.debug) this.emit('debug', `Session offer origin: ${JSON.stringify(origin)}`);
 
-        // Same peer reconnecting from new port? Close old connection and replace with new
+        // Same peer reconnecting from new port? Close old connection and replace with new.
+        // Do not tear down our outbound dial to the peer's listen address: concurrent inbound +
+        // outbound to the same Fabric id is normal (e.g. ring + star mesh); dropping the stable
+        // `host:listenPort` socket breaks address-keyed sends on the satellite.
         const addressToId = this._addressToId || {};
-        for (const [addr, id] of Object.entries(addressToId)) {
-          if (id === peerId &amp;&amp; addr !== connAddress) {
-            const oldSocket = this.connections[addr];
-            if (oldSocket) {
-              if (oldSocket._keepalive) clearInterval(oldSocket._keepalive);
-              delete this.connections[addr];
-              delete this.peers[addr];
-              delete this._addressToId[addr];
-              if (typeof oldSocket.destroy === 'function') oldSocket.destroy();
-            }
-            break;
+        for (const [addr, mappedId] of Object.entries(addressToId)) {
+          if (mappedId !== peerId || addr === connAddress) continue;
+          if (this._outboundDialTargets &amp;&amp; this._outboundDialTargets.has(addr)) continue;
+          const oldSocket = this.connections[addr];
+          if (oldSocket) {
+            if (oldSocket._keepalive) clearInterval(oldSocket._keepalive);
+            delete this.connections[addr];
+            delete this.peers[addr];
+            delete this._addressToId[addr];
+            if (typeof oldSocket.destroy === 'function') oldSocket.destroy();
           }
+          break;
         }
 
         this.peers[connAddress] = new Actor({
@@ -1941,9 +2118,25 @@ module.exports.Swarm = Swarm;
     </ul>
     <h3>Global</h3>
     <ul>
+      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
+      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
+      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
+      <li><a href="global.html#crypto">crypto</a></li>
+      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
       <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
+      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
       <li><a href="global.html#gossip">gossip</a></li>
       <li><a href="global.html#isAllZero32">isAllZero32</a></li>
+      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
+      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
+      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
+      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
+      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
+      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
+      <li><a href="global.html#stableStringify">stableStringify</a></li>
+      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
+      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
+      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
     </ul>
   </nav>
   <br class="clear" />

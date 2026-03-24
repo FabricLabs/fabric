@@ -263,6 +263,15 @@ class Service extends Actor {
     }
   }
 
+  /**
+   * @param {String} msg Warning text (used by {@link Service#_registerService} duplicate guard).
+   * @returns {Service} This instance.
+   */
+  _appendWarning (msg) {
+    this.emit('warning', msg);
+    return this;
+  }
+
   identify () {
     this.emit('auth', this.key.pubkey);
     return this.key.pubkey;
@@ -493,7 +502,7 @@ class Service extends Actor {
         object: message.object
       });
     } catch (E) {
-      this.error('Malformed message:', message);
+      this.emit('error', `Malformed message: ${E && E.message ? E.message : E}`);
     }
 
     return this;
@@ -507,12 +516,15 @@ class Service extends Actor {
   lock (duration = 1000) {
     if (this._state.status === 'LOCKED') return false;
     this._state.status = 'LOCKED';
+    if (this._lockTimer) clearTimeout(this._lockTimer);
+    this._lockTimer = setTimeout(() => {
+      this._lockTimer = null;
+      delete this.locker;
+      this._state.status = 'UNLOCKED';
+    }, duration);
     this.locker = new Actor({
       created: (new Date()).toISOString(),
-      contract: (setTimeout(() => {
-        delete this.locker;
-        this._state.status = 'UNLOCKED';
-      }, duration))
+      contract: 'locked'
     });
 
     return true;
@@ -544,7 +556,9 @@ class Service extends Actor {
   }
 
   async process () {
-    console.log('process created');
+    if (this.settings?.verbosity >= 4 || this.settings?.debug) {
+      this.emit('debug', '[FABRIC:SERVICE] process() created');
+    }
   }
 
   async broadcast (msg) {
@@ -553,7 +567,9 @@ class Service extends Actor {
 
     for (let name in this.clients) {
       let target = this.clients[name];
-      console.log('[FABRIC:SERVICE]', 'Sending broadcast to client:', target);
+      if (this.settings?.verbosity >= 4 || this.settings?.debug) {
+        this.emit('debug', `[FABRIC:SERVICE] Sending broadcast to client: ${target}`);
+      }
     }
 
     this.emit('message', msg);
@@ -565,25 +581,31 @@ class Service extends Actor {
    * @return {Promise}     Resolves with resulting {@link State}.
    */
   async route (msg) {
-    console.log('[FABRIC:SERVICE]', 'routing message:', msg);
-    console.log('[FABRIC:SERVICE]', 'definitions:', Object.keys(this.definitions));
+    if (this.settings?.verbosity >= 4 || this.settings?.debug) {
+      this.emit('debug', `[FABRIC:SERVICE] routing message: ${JSON.stringify(msg)}`);
+      this.emit('debug', `[FABRIC:SERVICE] definitions: ${JSON.stringify(Object.keys(this.definitions))}`);
+    }
 
     let result = null;
 
     if (this.definitions[msg.type]) {
-      console.log('[FABRIC:SERVICE]', this.name, 'received a well-defined message type from message in requested route:', msg);
+      if (this.settings?.verbosity >= 4 || this.settings?.debug) {
+        this.emit('debug', `[FABRIC:SERVICE] ${this.name} handling message type: ${msg.type}`);
+      }
 
       let handler = this.definitions[msg.type].handler;
       let state = handler.apply(this.state, [msg]);
 
-      console.log('sample:', state);
-      console.log('sample.channels:', state.channels);
-      console.log('sample.messages:', state.messages);
+      if (this.settings?.verbosity >= 4 || this.settings?.debug) {
+        this.emit('debug', `[FABRIC:SERVICE] route state sample: ${JSON.stringify(state)}`);
+      }
 
       result = state;
 
       let commit = await this.commit();
-      console.log('commit:', commit);
+      if (this.settings?.verbosity >= 4 || this.settings?.debug) {
+        this.emit('debug', `[FABRIC:SERVICE] route commit: ${commit}`);
+      }
     }
 
     return result;
@@ -755,7 +777,7 @@ class Service extends Actor {
       try {
         result = pointer.set(this.state, path, value);
       } catch (E) {
-        this.error(`Could not _PUT() ${path}:`, E);
+        this.emit('error', `Could not _PUT() ${path}: ${E && E.message ? E.message : E}`);
       }
     }
 
@@ -980,13 +1002,19 @@ class Service extends Actor {
   }
 
   async _getActor (id) {
-    if (!id) return this.error('Parameter "id" is required.');
+    if (!id) {
+      this.emit('error', 'Parameter "id" is required.');
+      return null;
+    }
     let path = pointer.escape(id);
     return this._GET(`/actors/${path}`);
   }
 
   async _getChannel (id) {
-    if (!id) return this.error('Parameter "id" is required.');
+    if (!id) {
+      this.emit('error', 'Parameter "id" is required.');
+      return null;
+    }
     let target = pointer.escape(id);
     return this._GET(`/channels/${target}`);
   }
@@ -1011,7 +1039,8 @@ class Service extends Actor {
         subscriptions: []
       }, actor, { id }));
     } catch (E) {
-      return this.error('Something went wrong saving:', E);
+      this.emit('error', `Something went wrong saving: ${E && E.message ? E.message : E}`);
+      return null;
     }
 
     await this.commit();

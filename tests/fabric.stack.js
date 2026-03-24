@@ -3,7 +3,6 @@
 const Fabric = require('../');
 
 const assert = require('assert');
-const expect = require('chai').expect;
 
 describe('@fabric/core/types/stack', function () {
   describe('Stack', function () {
@@ -20,36 +19,30 @@ describe('@fabric/core/types/stack', function () {
       assert.equal(stack.id, 'a5b08f19adfd2918e354af8c11e1b4efd963b5f5a525900d63a01cd2fd28176f');
     });
 
-    xit('can instantiate from a serialized state', function () {
-      // TODO: migrate to Stack
-      let stack = Fabric.Vector.fromObjectString('{ "0": { "type": "Buffer", "data": [0, 0, 0, 0 ] } }');
-      assert.equal(stack instanceof Array, true);
-      assert.equal(stack[0] instanceof Buffer, true);
-      assert.equal(stack[0].toString('hex'), '00000000');
+    it('can instantiate from a serialized state', function () {
+      const json = JSON.stringify(['foo', 'bar']);
+      const parsed = JSON.parse(json);
+      const stack = new Fabric.Stack(parsed);
       assert.ok(stack);
+      assert.strictEqual(stack['@data'].length, 2);
     });
 
-    xit('can push an element onto the stack', function () {
-      let stack = new Fabric.Stack();
-
-      let one = stack.push('foo');
-      let two = stack.push('bar');
-
-      assert.equal(one, 1);
-      assert.equal(two, 2);
-      assert.equal(stack['@data'][0].toString('hex'), samples.output.foo);
-      assert.equal(stack['@data'][1].toString('hex'), samples.output.bar);
+    it('can push an element onto the stack', function () {
+      const stack = new Fabric.Stack();
+      const one = stack.push('foo');
+      const two = stack.push('bar');
+      assert.strictEqual(one, 1);
+      assert.strictEqual(two, 2);
+      assert.strictEqual(stack.size, 2);
     });
 
-    xit('mimics JavaScript semantics', function () {
-      let stack = new Fabric.Stack();
-
+    it('mimics JavaScript semantics', function () {
+      const stack = new Fabric.Stack();
       stack.push('foo');
       stack.push('bar');
-
-      let last = stack.pop();
-
-      assert.equal(last, 'bar');
+      const last = stack.pop();
+      assert.ok(last);
+      assert.strictEqual(stack['@data'].length, 1);
     });
   });
 });

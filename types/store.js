@@ -11,6 +11,7 @@ const Actor = require('./actor');
 const Collection = require('./collection');
 const Entity = require('./entity');
 const Stack = require('./stack');
+const State = require('./state');
 
 /**
  * Long-term storage.
@@ -43,7 +44,9 @@ class Store extends Actor {
 
     this['@entity'] = {
       '@type': 'Store',
-      '@data': {}
+      '@data': {
+        addresses: {}
+      }
     };
 
     this.keys = {};
@@ -121,15 +124,37 @@ class Store extends Actor {
   }
 
   async _setEncrypted (path, value, passphrase = '') {
-    const secret = value; // TODO: encrypt value
-    const name = crypto.createHash('sha256').createHash(path).digest('hex');
+    if (typeof path !== 'string' || !path.length) {
+      throw new Error('Path is required for encrypted store writes.');
+    }
+
+    const plaintext = (typeof value === 'string') ? value : JSON.stringify(value);
+    let secret = plaintext;
+
+    // Prefer configured codec for at-rest encryption; fallback keeps compatibility.
+    if (this.codec && typeof this.codec.encode === 'function') {
+      const encoded = this.codec.encode(plaintext);
+      secret = Buffer.isBuffer(encoded) ? encoded.toString('hex') : String(encoded);
+    }
+
+    const name = crypto.createHash('sha256').update(path).digest('hex');
     return this.set(`/secrets/${name}`, secret);
   }
 
   async _getEncrypted (path, passphrase = '') {
-    const name = crypto.createHash('sha256').createHash(path).digest('hex');
-    const secret = this.get(`/secrets/${name}`);
-    const decrypted = secret; // TODO: decrypt value
+    if (typeof path !== 'string' || !path.length) return null;
+
+    const name = crypto.createHash('sha256').update(path).digest('hex');
+    const secret = await this.get(`/secrets/${name}`);
+    if (secret == null) return null;
+
+    let decrypted = secret;
+
+    if (this.codec && typeof this.codec.decode === 'function') {
+      const payload = Buffer.isBuffer(secret) ? secret : Buffer.from(String(secret), 'hex');
+      decrypted = this.codec.decode(payload);
+    }
+
     return decrypted;
   }
 
@@ -240,7 +265,10 @@ class Store extends Actor {
     self['@entity']['@data'].addresses[router] = address;
 
     let state = new State(value);
-    let serial = state.serialize();
+    const serializedState = state.serialize();
+    let serial = Buffer.isBuffer(serializedState)
+      ? serializedState
+      : Buffer.from(JSON.stringify(serializedState), 'utf8');
     let digest = this.sha256(serial);
 
     // defaults
@@ -267,9 +295,13 @@ class Store extends Actor {
 
     if (entity) {
       try {
-        entity = JSON.parse(entity);
+        if (typeof entity === 'string') {
+          entity = JSON.parse(entity);
+        }
       } catch (E) {
-        console.warn(`Couldn't parse: ${entity}`, E);
+        if (this.settings.verbosity >= 4 || this.settings.debug) {
+          console.warn(`Couldn't parse: ${entity}`, E);
+        }
       }
     }
 
@@ -288,6 +320,11 @@ class Store extends Actor {
       // Store the object at an entity locale
       let object = await self._PUT(`/entities/${state.id}`, value);
       let serialized = await origin.serialize();
+
+      // Keep in-memory collection view in sync for _GET/_PUT call paths.
+      const existingList = await self._GET(key);
+      const nextList = Array.isArray(existingList) ? existingList.concat([value]) : [value];
+      await self._PUT(key, nextList);
 
       // Write serialized Collection to disk
       let answer = await self.db.put(address, serialized.toString());
@@ -338,8 +375,18 @@ class Store extends Actor {
         size = value.length;
         hash = this.sha256(value);
         break;
+      case 'Object':
+      case 'Array': {
+        const encoded = JSON.stringify(value);
+        type = 'JSON';
+        size = encoded.length;
+        hash = this.sha256(encoded);
+        break;
+      }
       default:
-        console.error('unhandled type:', value.constructor.name);
+        if (this.settings.verbosity >= 4 || this.settings.debug) {
+          console.error('unhandled type:', value.constructor.name);
+        }
         type = 'Unhandled';
         break;
     }
@@ -409,7 +456,10 @@ class Store extends Actor {
     // This is what defines our key => value store.
     // All functions can be run as a map of an original input vector, allowing
     // binary scoping across trees of varying complexity.
-    const hash = this.sha256(value);
+    const hashInput = (typeof value === 'string' || Buffer.isBuffer(value))
+      ? value
+      : JSON.stringify(value);
+    const hash = this.sha256(hashInput);
     const actor = new Actor({
       type: 'FabricDocument',
       content: data,

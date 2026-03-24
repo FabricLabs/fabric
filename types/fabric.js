@@ -123,10 +123,10 @@ class Fabric extends Service {
   static get Wallet () { return Wallet; }
   static get Worker () { return Worker; }
 
-  /** @returns {typeof import('./federation')} */
+  /** @returns {Function} */
   static get Federation () { return require('./federation'); }
 
-  /** @returns {typeof import('./distributedExecution')} */
+  /** @returns {Function} */
   static get DistributedExecution () { return require('./distributedExecution'); }
 
   static sha256 (data) {

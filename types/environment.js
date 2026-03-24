@@ -97,7 +97,7 @@ class Environment extends Entity {
       this.settings.xprv,
       this['FABRIC_XPRV'],
       this.readVariable('FABRIC_XPRV'),
-      this.wallet.xprv
+      this.wallet && this.wallet.xprv
     ].find(any);
   }
 
@@ -107,7 +107,7 @@ class Environment extends Entity {
       this.settings.xpub,
       this['FABRIC_XPUB'],
       this.readVariable('FABRIC_XPUB'),
-      this.wallet.xpub
+      this.wallet && this.wallet.xpub
     ].find(any);
   }
 

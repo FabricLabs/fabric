@@ -847,7 +847,16 @@ class Wallet extends Service {
    * @param {String} input Hex-encoded string to create key from.
    */
   publicKeyFromString (input) {
-    if (input instanceof Point) {
+    if (input === null || input === undefined) {
+      return new Key({ public: input });
+    }
+    if (typeof input === 'string' || typeof input === 'number') {
+      return new Key({ public: String(input) });
+    }
+    if (Buffer.isBuffer(input) || (typeof Uint8Array !== 'undefined' &amp;&amp; input instanceof Uint8Array)) {
+      return new Key({ public: Buffer.from(input).toString('hex') });
+    }
+    if (typeof input === 'object' &amp;&amp; typeof input.encode === 'function') {
       return new Key({ public: input.encode('hex', true) });
     }
     return new Key({ public: input });
@@ -1028,9 +1037,25 @@ module.exports = Wallet;
     </ul>
     <h3>Global</h3>
     <ul>
+      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
+      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
+      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
+      <li><a href="global.html#crypto">crypto</a></li>
+      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
       <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
+      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
       <li><a href="global.html#gossip">gossip</a></li>
       <li><a href="global.html#isAllZero32">isAllZero32</a></li>
+      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
+      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
+      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
+      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
+      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
+      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
+      <li><a href="global.html#stableStringify">stableStringify</a></li>
+      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
+      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
+      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
     </ul>
   </nav>
   <br class="clear" />

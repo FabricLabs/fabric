@@ -3,7 +3,6 @@
 // require('debug-trace')({ always: true });
 const assert = require('assert');
 const Wallet = require('../types/wallet');
-const Bitcoin = require('../services/bitcoin');
 const Key = require('../types/key');
 
 // const message = require('../assets/message');
@@ -27,6 +26,12 @@ describe('@fabric/core/types/wallet', function () {
       assert.ok(wallet.key.seed);
     });
 
+    it('fromSeed rejects malformed seed objects', function () {
+      assert.throws(() => Wallet.fromSeed(null), /Seed object must provide/);
+      assert.throws(() => Wallet.fromSeed({}), /Seed object must provide/);
+      assert.throws(() => Wallet.fromSeed({ phrase: 'not a mnemonic' }), /valid BIP39 mnemonic/);
+    });
+
     it('generateCleanKeyPair round-trips through publicKeyFromString', async function () {
       const wallet = new Wallet(options);
       const origin = await wallet.generateCleanKeyPair();
@@ -43,14 +48,14 @@ describe('@fabric/core/types/wallet', function () {
       assert.ok(derived.publicKey);
     });
 
-    xit('can load a key into the wallet', async function () {
+    it('can load a key into the wallet', async function () {
       const wallet = new Wallet(options);
       const keypair = await wallet.generateCleanKeyPair();
-      const key = new Key({ public: keypair.public });
+      const key = new Key({ public: keypair.public.encodeCompressed('hex') });
       const result = wallet.loadKey(key, ['test']);
       assert.ok(result);
       assert.ok(wallet.keys);
-      assert.ok(wallet.keys.get(`/${key.public.toString('hex')}`));
+      assert.ok(wallet.keys.get(`/${key.pubkey}`));
     });
 
     it('can export wallet state', function () {
@@ -125,6 +130,21 @@ describe('@fabric/core/types/wallet', function () {
       const wallet = new Wallet(options);
       const utxos = await wallet.getUnspentTransactionOutputs();
       assert.ok(Array.isArray(utxos));
+    });
+
+    it('_importSeed validates BIP39 phrase', async function () {
+      const wallet = new Wallet(options);
+      await assert.rejects(() => wallet._importSeed(123), /Seed must be a string/);
+      await assert.rejects(() => wallet._importSeed('not a mnemonic'), /valid BIP39 mnemonic phrase/);
+      const created = Wallet.createSeed();
+      const loaded = await wallet._importSeed(` ${created.phrase} `);
+      assert.strictEqual(typeof loaded, 'string');
+    });
+
+    it('_loadSeed validates BIP39 phrase', async function () {
+      const wallet = new Wallet(options);
+      await assert.rejects(() => wallet._loadSeed(false), /Seed must be a string/);
+      await assert.rejects(() => wallet._loadSeed('not a mnemonic'), /valid BIP39 mnemonic phrase/);
     });
 
     it('exposes version, xprv, and xpub from key', function () {
@@ -234,23 +254,80 @@ describe('@fabric/core/types/wallet', function () {
       assert.strictEqual(await wallet._checkGapLimit(), false);
     });
 
-    xit('can trust an existing chain service', function (done) {
-      const bitcoin = new Bitcoin(options);
+    it('can trust an existing chain service', function () {
+      const emitter = new (require('events').EventEmitter)();
       const wallet = new Wallet(options);
 
-      wallet.trust(bitcoin);
+      wallet.trust(emitter);
+      emitter.emit('transaction', { id: 'tx-trusted', spendable: true });
+      assert.ok(wallet.marshall.agents.length >= 1);
+    });
 
-      async function test () {
-        wallet.on('synced', function (state) {
-          console.log('Wallet emitted "synced" event:', state);
-          done();
-        });
+    it('_handleGenericMessage routes ServiceMessage payload', function () {
+      const wallet = new Wallet(options);
+      let seen = null;
+      wallet._processServiceMessage = function (msg) {
+        seen = msg;
+        return 'ok';
+      };
 
-        await wallet.start();
-        await bitcoin.start();
-      }
+      const out = wallet._handleGenericMessage({
+        '@type': 'ServiceMessage',
+        '@data': { '@type': 'BitcoinTransaction', '@data': { id: 'x' } }
+      });
 
-      test();
+      assert.strictEqual(out, 'ok');
+      assert.ok(seen);
+      assert.strictEqual(seen['@type'], 'BitcoinTransaction');
+    });
+
+    it('_handleGenericMessage returns null for unknown message types', function () {
+      const wallet = new Wallet(options);
+      const out = wallet._handleGenericMessage({
+        '@type': 'UnknownMessageType',
+        '@data': {}
+      });
+      assert.strictEqual(out, null);
+    });
+
+    it('_attachTXID validates format and delegates creation', async function () {
+      const wallet = new Wallet(options);
+      wallet.txids = {
+        create: async (txid) => ({ id: txid })
+      };
+
+      await assert.rejects(() => wallet._attachTXID('abc'), /64-character hex string/);
+      const sample = 'a'.repeat(64);
+      const result = await wallet._attachTXID(sample);
+      assert.deepStrictEqual(result, { id: sample });
+    });
+
+    it('_findAddressInCurrentShard locates known address or returns null', async function () {
+      const wallet = new Wallet(options);
+      wallet.shard = [
+        { string: 'addr-a' },
+        { string: 'addr-b' }
+      ];
+
+      const found = await wallet._findAddressInCurrentShard('addr-b');
+      const missing = await wallet._findAddressInCurrentShard('addr-z');
+      assert.deepStrictEqual(found, { string: 'addr-b' });
+      assert.strictEqual(missing, null);
+    });
+
+    it('_scanChainForTransactions aggregates block scan results', async function () {
+      const wallet = new Wallet(options);
+      wallet._scanBlockForTransactions = async (block) => [{ id: `${block}-tx` }];
+
+      const out = await wallet._scanChainForTransactions({
+        blocks: ['a', 'b', 'c']
+      });
+
+      assert.deepStrictEqual(out, [
+        { id: 'a-tx' },
+        { id: 'b-tx' },
+        { id: 'c-tx' }
+      ]);
     });
   });
 });

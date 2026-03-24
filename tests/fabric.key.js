@@ -121,6 +121,20 @@ describe('@fabric/core/types/key', function () {
       assert.strictEqual(decrypted, testMessage);
     });
 
+    it('encrypt/decrypt return null without private key material', function () {
+      const key = new Key();
+      key.secure();
+      assert.strictEqual(key.encrypt('hello'), null);
+      assert.strictEqual(key.decrypt('abcd:1234'), null);
+    });
+
+    it('decrypt returns null on malformed ciphertext', function () {
+      const key = new Key();
+      assert.strictEqual(key.decrypt('not-a-ciphertext'), null);
+      assert.strictEqual(key.decrypt('zzzz:abcd'), null);
+      assert.strictEqual(key.decrypt('0011aabbccddeeff0011aabbccddeeff:not-hex'), null);
+    });
+
     it('can generate p2pkh addresses', function () {
       const key = new Key({ seed: playnet.key.seed });
       const target = key.deriveAddress(0, 0, 'p2pkh');
@@ -270,6 +284,16 @@ describe('@fabric/core/types/key', function () {
       const publicKey = new Key({ public: key.public.encodeCompressed() });
       const message = 'test message';
       assert.throws(() => publicKey.signSchnorr(message), /Cannot sign without private key/);
+    });
+
+    it('secure clears private material and marks state', function () {
+      const key = new Key();
+      assert.ok(key.private);
+      key.secure();
+      assert.strictEqual(key.private, null);
+      assert.strictEqual(key.seed, null);
+      assert.strictEqual(key.xprv, null);
+      assert.strictEqual(key._state.status, 'secured');
     });
   });
 });

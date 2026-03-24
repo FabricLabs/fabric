@@ -1451,12 +1451,12 @@ describe('@fabric/core/services/bitcoin', function () {
       assert.ok(valid);
     });
 
-    xit('can generate blocks', async function () {
+    it('can generate blocks', async function () {
       await bitcoin.start();
       await bitcoin._loadWallet();
       const address = await bitcoin.getUnusedAddress();
-      await bitcoin.stop();
       const blocks = await bitcoin.generateBlocks(1, address);
+      await bitcoin.stop();
       assert.equal(blocks.length, 1);
     });
 

@@ -32,8 +32,10 @@ describe('@fabric/core/types/peer (Swarm)', function () {
       assert.equal(Swarm instanceof Function, true);
     });
 
-    xit('can start and stop cleanly', async function () {
-      const swarm = new Swarm();
+    it('can start and stop cleanly', async function () {
+      const seed = process.pid % 10000;
+      const port = 20000 + (seed % 10000);
+      const swarm = new Swarm({ listen: true, port });
       swarms.push(swarm);
       await swarm.start();
       await swarm.stop();

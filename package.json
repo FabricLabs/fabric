@@ -112,6 +112,7 @@
   "dependencies": {
     "@noble/curves": "=2.0.1",
     "@noble/hashes": "=2.0.1",
+    "@webassemblyjs/ast": "^1.14.1",
     "arbitrary": "=1.4.10",
     "bech32-buffer": "=0.2.1",
     "bip-schnorr": "=0.6.7",
@@ -147,6 +148,7 @@
     "redis": "=5.6.0",
     "simple-aes": "=0.1.1",
     "struct": "=0.0.12",
+    "ts-morph": "^27.0.2",
     "zeromq": "=6.5.0"
   },
   "overrides": {

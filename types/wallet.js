@@ -173,9 +173,18 @@ class Wallet extends Service {
    * @returns {Wallet} Instance of the wallet.
    */
   static fromSeed (seed) {
+    if (!seed || typeof seed !== 'object' || typeof seed.phrase !== 'string') {
+      throw new Error('Seed object must provide a mnemonic phrase string.');
+    }
+
+    const phrase = seed.phrase.trim().replace(/\s+/g, ' ');
+    if (!bip39.validateMnemonic(phrase)) {
+      throw new Error('Seed phrase must be a valid BIP39 mnemonic.');
+    }
+
     return new Wallet({
       key: {
-        seed: seed.phrase,
+        seed: phrase,
         passphrase: ''
       }
     });
@@ -251,6 +260,43 @@ class Wallet extends Service {
   }
 
   /**
+   * Register a key with optional labels.
+   * Accepts a Key instance, pubkey hex string, or object-like key input.
+   * @param {Key|String|Object} input Key material to load.
+   * @param {Array<String>} [labels=[]] Optional labels.
+   * @returns {Object} Stored key descriptor.
+   */
+  loadKey (input, labels = []) {
+    let key = null;
+
+    if (input instanceof Key) {
+      key = input;
+    } else if (input && typeof input === 'object' && (input.pubkey || input.public)) {
+      key = this.publicKeyFromString(input.pubkey || input.public);
+    } else if (typeof input === 'string' || Buffer.isBuffer(input) || (typeof Uint8Array !== 'undefined' && input instanceof Uint8Array)) {
+      key = this.publicKeyFromString(input);
+    } else if (input && typeof input === 'object') {
+      key = this.publicKeyFromString(input);
+    } else {
+      throw new Error('Invalid key input.');
+    }
+
+    const pubkey = key.pubkey;
+    if (!pubkey || typeof pubkey !== 'string') throw new Error('Could not derive pubkey from key input.');
+
+    const item = {
+      pubkey,
+      labels: Array.isArray(labels) ? labels : []
+    };
+
+    this._state.keys[pubkey] = item;
+    this._state.content.keys[pubkey] = item;
+    this.keys.set(`/${pubkey}`, item);
+
+    return item;
+  }
+
+  /**
    * Start the wallet, including listening for transactions.
    */
   start () {
@@ -287,7 +333,10 @@ class Wallet extends Service {
       case 'ServiceMessage':
         return this._processServiceMessage(msg['@data']);
       default:
-        return console.warn('[FABRIC:WALLET]', `Unhandled message type: ${msg['@type']}`);
+        if (this.settings.verbosity >= 4 || this.settings.debug) {
+          this.emit('warning', `[FABRIC:WALLET] Unhandled message type: ${msg['@type']}`);
+        }
+        return null;
     }
   }
 
@@ -301,7 +350,10 @@ class Wallet extends Service {
         this.addTransactionToWallet(msg['@data']);
         break;
       default:
-        return console.warn('[FABRIC:WALLET]', `Unhandled message type: ${msg['@type']}`);
+        if (this.settings.verbosity >= 4 || this.settings.debug) {
+          this.emit('warning', `[FABRIC:WALLET] Unhandled message type: ${msg['@type']}`);
+        }
+        return null;
     }
   }
 
@@ -312,19 +364,23 @@ class Wallet extends Service {
       const txid = block.block.hashes[i].toString('hex');
       // ATTN: Eric
       // TODO: process transaction
-      console.log('found txid in block:', txid);
+      if (this.settings.verbosity >= 5) console.log('found txid in block:', txid);
     }
   }
 
   async _attachTXID (txid) {
-    // TODO: check that `txid` is a proper TXID
+    if (typeof txid !== 'string' || !/^[0-9a-fA-F]{64}$/.test(txid)) {
+      throw new Error('txid must be a 64-character hex string');
+    }
     let txp = await this.txids.create(txid);
     if (this.settings.verbosity >= 5) console.log('[AUDIT]', `Attached TXID ${txid} to Wallet ID ${this.id}, result:`, txp);
     return txp;
   }
 
   async _handleFabricTransaction (tx) {
-    console.log('[FABRIC:WALLET]', 'Handling Fabric Transaction:', tx);
+    if (this.settings.verbosity >= 5) {
+      console.log('[FABRIC:WALLET]', 'Handling Fabric Transaction:', tx);
+    }
   }
 
   async addTransactionToWallet (transaction) {
@@ -431,7 +487,9 @@ class Wallet extends Service {
       // sha256
       // -> pubkey
       contract.counterparty = await this.ring.getPublicKey();
-      console.log('contract counterparty artificially generated:', contract.counterparty);
+      if (this.settings.verbosity >= 5 || this.settings.debug) {
+        console.log('contract counterparty artificially generated:', contract.counterparty);
+      }
     }
 
     let leftover = contract.amount % this.settings.decimals;
@@ -446,11 +504,15 @@ class Wallet extends Service {
     let secret = await this.generateSecret();
     let image = Buffer.from(secret.hash);
 
-    console.log('secret generated:', secret);
-    console.log('image of secret:', image);
+    if (this.settings.verbosity >= 5 || this.settings.debug) {
+      console.log('secret generated:', secret);
+      console.log('image of secret:', image);
+    }
 
     let refund = await this.ring.getPublicKey();
-    console.log('refund:', refund);
+    if (this.settings.verbosity >= 5 || this.settings.debug) {
+      console.log('refund:', refund);
+    }
 
     script.pushSym('OP_IF');
     script.pushSym('OP_SHA256');
@@ -472,8 +534,10 @@ class Wallet extends Service {
       partials.push(script);
     }
 
-    console.log('parts:', partials);
-    console.log('leftover:', leftover);
+    if (this.settings.verbosity >= 5 || this.settings.debug) {
+      console.log('parts:', partials);
+      console.log('leftover:', leftover);
+    }
 
     let entity = new Actor({
       comment: 'List of transactions to validate.',
@@ -490,7 +554,9 @@ class Wallet extends Service {
     const entity = await this.secrets.create({
       hash: secret.hash
     });
-    console.log('created secret:', entity);
+    if (this.settings.verbosity >= 5 || this.settings.debug) {
+      console.log('created secret:', entity);
+    }
     return entity;
   }
 
@@ -568,7 +634,9 @@ class Wallet extends Service {
   }
 
   _handleWalletTransaction (tx) {
-    console.log('[BRIDGE:WALLET]', 'incoming transaction:', tx);
+    if (this.settings.verbosity >= 5) {
+      console.log('[BRIDGE:WALLET]', 'incoming transaction:', tx);
+    }
   }
 
   _getDepositAddress () {
@@ -609,8 +677,10 @@ class Wallet extends Service {
    */
   async _sign (tx) {
     let signature = await tx.sign(this.keyring);
-    console.log('signing tx:', tx);
-    console.log('signing sig:', signature);
+    if (this.settings.verbosity >= 5 || this.settings.debug) {
+      console.log('signing tx:', tx);
+      console.log('signing sig:', signature);
+    }
     return Object.assign({}, tx, { signature });
   }
 
@@ -638,7 +708,9 @@ class Wallet extends Service {
   }
 
   async _createFromFreshSeed (passphrase = '') {
-    console.log('creating fresh seed with passphrase:', passphrase);
+    if (this.settings.verbosity >= 5) {
+      console.log('creating fresh seed with passphrase:', passphrase ? '[REDACTED]' : '');
+    }
     const key = new Key({ passphrase: passphrase });
     return {
       phrase: key.mnemonic,
@@ -649,8 +721,16 @@ class Wallet extends Service {
   }
 
   async _importSeed (seed) {
-    let mnemonic = new Mnemonic(seed);
-    return this._loadSeed(mnemonic.toString());
+    if (typeof seed !== 'string') {
+      throw new Error('Seed must be a string.');
+    }
+
+    const phrase = seed.trim().replace(/\s+/g, ' ');
+    if (!bip39.validateMnemonic(phrase)) {
+      throw new Error('Seed must be a valid BIP39 mnemonic phrase.');
+    }
+
+    return this._loadSeed(phrase);
   }
 
   async _getBondAddress () {
@@ -682,7 +762,9 @@ class Wallet extends Service {
 
     await this._load();
 
-    console.log('funding transaction with coins:', this._state.utxos);
+    if (this.settings.verbosity >= 5 || this.settings.debug) {
+      console.log('funding transaction with coins:', this._state.utxos);
+    }
 
     // INSERT 1 Output
     mtx.addOutput({
@@ -696,10 +778,11 @@ class Wallet extends Service {
       changeAddress: self.ring.getAddress()
     });
 
-    console.log('out:', out);
-
-    console.trace('created mutable transaction:', mtx);
-    console.trace('created immutable transaction:', mtx.toTX());
+    if (this.settings.verbosity >= 5 || this.settings.debug) {
+      console.log('out:', out);
+      console.trace('created mutable transaction:', mtx);
+      console.trace('created immutable transaction:', mtx.toTX());
+    }
 
     return {
       tx: mtx.toTX(),
@@ -751,17 +834,21 @@ class Wallet extends Service {
   }
 
   async _scanBlockForTransactions (block) {
-    console.log('[AUDIT]', 'Scanning block for transactions:', block);
+    if (this.settings.verbosity >= 5 || this.settings.debug) {
+      console.log('[AUDIT]', 'Scanning block for transactions:', block);
+    }
     let found = [];
   }
 
   async _scanChainForTransactions (chain) {
-    console.log('[AUDIT]', 'Scanning chain for transactions:', chain);
+    if (this.settings.verbosity >= 5 || this.settings.debug) {
+      console.log('[AUDIT]', 'Scanning chain for transactions:', chain);
+    }
 
     let transactions = [];
 
     for (let i = 0; i < chain.blocks.length; i++) {
-      transactions.concat(await this._scanBlockForTransactions(chain.blocks[i]));
+      transactions = transactions.concat(await this._scanBlockForTransactions(chain.blocks[i]));
     }
 
     return transactions;
@@ -879,8 +966,23 @@ class Wallet extends Service {
   }
 
   async _loadSeed (seed) {
-    this.settings.key = { seed };
-    await this._load();
+    if (typeof seed !== 'string') {
+      throw new Error('Seed must be a string.');
+    }
+
+    const phrase = seed.trim().replace(/\s+/g, ' ');
+    if (!bip39.validateMnemonic(phrase)) {
+      throw new Error('Seed must be a valid BIP39 mnemonic phrase.');
+    }
+
+    this.settings.key = { seed: phrase };
+    if (typeof this._load === 'function') {
+      await this._load();
+    } else {
+      // Legacy fallback for runtimes that initialize directly from key settings.
+      this.key = new Key({ seed: phrase });
+      this.seed = this.key.seed;
+    }
     return this.seed;
   }
 

@@ -67,7 +67,7 @@ function epochCommitmentDigestHex (epochPayload) {
  * (`Key.signSchnorr(messageBuffer)`), without requiring a full {@link Federation} instance.
  *
  * @param {Buffer} messageBuffer — typically `Buffer.from(signingStringForBeaconEpoch(epoch), 'utf8')`
- * @param {{ version?: number, signatures?: Record<string, string> }} witness
+ * @param {object} witness
  * @param {string[]} validatorPubkeys — compressed secp256k1 pubkeys, hex
  * @param {number} [threshold=1]
  * @returns {boolean}
@@ -97,7 +97,7 @@ function verifyFederationWitnessOnMessage (messageBuffer, witness, validatorPubk
 /**
  * Setup-phase manifest schema (v1): program identity + allowed traffic + optional federation policy.
  * @param {object} raw
- * @returns {{ ok: boolean, manifest?: object, error?: string }}
+ * @returns {object}
  */
 function parseDistributedManifestV1 (raw) {
   if (!raw || typeof raw !== 'object') return { ok: false, error: 'manifest must be an object' };

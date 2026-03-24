@@ -11,7 +11,7 @@ describe('@fabric/core/types/collection', function () {
       assert.equal(Fabric.Collection instanceof Function, true);
     });
 
-    xit('starts as empty', async function () {
+    it('starts as empty', async function () {
       const set = new Fabric.Collection();
       assert.equal(set.render(), '[]');
     });
@@ -54,13 +54,13 @@ describe('@fabric/core/types/collection', function () {
       assert.equal(set.render(), JSON.stringify(expectedIDs));
     });
 
-    xit('can import with commit', async () => {
+    it('can import with commit', async () => {
       let set = new Fabric.Collection();
       let res = await set.import(samples.list[0]);
       assert.equal(set.len, 1);
     });
 
-    xit('can import without commit', async () => {
+    it('can import without commit', async () => {
       let set = new Fabric.Collection();
       let res = await set.import(samples.list[0], false);
       assert.equal(set.len, 1);
@@ -72,14 +72,14 @@ describe('@fabric/core/types/collection', function () {
       assert.equal(set.len, 3);
     });
 
-    xit('can create with commit', async () => {
+    it('can create with commit', async () => {
       let set = new Fabric.Collection();
       let res = await set.create(samples.list[0]);
 
       assert.equal(set.len, 1);
     });
 
-    xit('can create without commit', async () => {
+    it('can create without commit', async () => {
       let set = new Fabric.Collection();
       let res = await set.create(samples.list[0], false);
 
@@ -90,16 +90,20 @@ describe('@fabric/core/types/collection', function () {
     let converters = ['map', 'typedMap', 'list'];
 
     converters.forEach(converter => {
-      xit('can convert to ' + converter, async () => {
-        let set = new Fabric.Collection();
-        let res = await set.importList(samples.list);
-        let map = set[converter]();
+      it('can convert to ' + converter, async () => {
+        const set = new Fabric.Collection();
+        await set.importList(samples.list);
+        const converted = set[converter]();
 
-        for (var i in map) {
-          let item = map[i];
-          for (var k in item) {
-            let j = converter == 'toTypedArray' ? i : i - 1;
-            assert.equal(item[k], samples.list[j][k]);
+        assert.ok(converted);
+        const entries = Object.values(converted);
+        assert.strictEqual(entries.length, samples.list.length);
+
+        for (const sample of samples.list) {
+          const matched = entries.find((item) => item.id === sample.id);
+          assert.ok(matched, `missing converted item for ${sample.id}`);
+          for (const k of Object.keys(sample)) {
+            assert.strictEqual(matched[k], sample[k]);
           }
         }
       });

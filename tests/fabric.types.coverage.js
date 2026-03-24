@@ -24,18 +24,49 @@ describe('@fabric/core/types coverage (Wallet, Service, Contract)', function () 
       const c = Contract.fromDot(dot);
       assert.ok(c);
       assert.ok(c.settings.circuit && Array.isArray(c.settings.circuit.nodes));
+      assert.ok(Array.isArray(c.settings.circuit.edges));
+      assert.strictEqual(c.settings.circuit.edges.length, 1);
+      assert.deepStrictEqual(c.settings.circuit.edges[0], { from: 'a', to: 'b' });
     });
 
     it('fromGraph builds circuit nodes', function () {
+      const originalWarn = console.warn;
+      try {
+        console.warn = () => {};
+        const graphs = [{
+          id: 'root',
+          children: [
+            { type: 'node_stmt', node_id: { id: 'n1' } },
+            { type: 'unknown_type', foo: 1 }
+          ]
+        }];
+        const circuit = Contract.fromGraph(graphs);
+        assert.ok(circuit.nodes.length >= 1);
+        assert.ok(Array.isArray(circuit.unhandled));
+        assert.strictEqual(circuit.unhandled.length, 1);
+        assert.strictEqual(circuit.unhandled[0].type, 'unknown_type');
+      } finally {
+        console.warn = originalWarn;
+      }
+    });
+
+    it('fromGraph captures edge_stmt chains as edges', function () {
       const graphs = [{
         id: 'root',
-        children: [
-          { type: 'node_stmt', node_id: { id: 'n1' } },
-          { type: 'unknown_type', foo: 1 }
-        ]
+        children: [{
+          type: 'edge_stmt',
+          edge_list: [
+            { type: 'node_id', id: 'a' },
+            { type: 'node_id', id: 'b' },
+            { type: 'node_id', id: 'c' }
+          ]
+        }]
       }];
       const circuit = Contract.fromGraph(graphs);
-      assert.ok(circuit.nodes.length >= 1);
+      assert.deepStrictEqual(circuit.edges, [
+        { from: 'a', to: 'b' },
+        { from: 'b', to: 'c' }
+      ]);
     });
 
     it('contract getter uses first signer', function () {
@@ -115,13 +146,18 @@ describe('@fabric/core/types coverage (Wallet, Service, Contract)', function () 
       assert.ok(u.script);
     });
 
-    it('fromJavaScript throws until Template is wired', function () {
-      assert.throws(() => Contract.fromJavaScript('1+1'), ReferenceError);
+    it('fromJavaScript builds a contract with source metadata', function () {
+      const c = Contract.fromJavaScript('const x = 1 + 1;');
+      assert.ok(c);
+      assert.strictEqual(c.settings.ast['@language'], 'JavaScript');
+      assert.strictEqual(c.settings.state.source, 'const x = 1 + 1;');
     });
 
-    it('parse delegates to parseDot (missing on prototype)', function () {
+    it('parse delegates to parseDot and updates circuit', function () {
       const c = new Contract(keyOpts);
-      assert.throws(() => c.parse('digraph {}'), TypeError);
+      const out = c.parse('digraph G { a -> b }');
+      assert.strictEqual(out, c);
+      assert.ok(c.settings.circuit && Array.isArray(c.settings.circuit.nodes));
     });
   });
 
@@ -435,6 +471,12 @@ describe('@fabric/core/types coverage (Wallet, Service, Contract)', function () 
     it('_processServiceMessage handles unknown inner type', async function () {
       const w = new Wallet({ verbosity: 0 });
       await w._processServiceMessage({ '@type': 'Unknown' });
+    });
+
+    it('_attachTXID validates txid format', async function () {
+      const w = new Wallet({ verbosity: 0 });
+      await assert.rejects(() => w._attachTXID('xyz'), /64-character hex string/);
+      await assert.rejects(() => w._attachTXID(123), /64-character hex string/);
     });
   });
 });

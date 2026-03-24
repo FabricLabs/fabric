@@ -57,6 +57,27 @@ describe('@fabric/core/types/store', function () {
       assert.ok(store.codec);
     });
 
+    it('_setEncrypted/_getEncrypted round-trip plain values without codec', async function () {
+      const store = new Store({ persistent: false });
+      await store._setEncrypted('/wallet/secret', 'hello');
+      const out = await store._getEncrypted('/wallet/secret');
+      assert.strictEqual(out, 'hello');
+    });
+
+    it('_setEncrypted/_getEncrypted use codec when available', async function () {
+      const store = new Store({
+        persistent: false,
+        codec: {
+          encode: (value) => Buffer.from(`enc:${value}`, 'utf8'),
+          decode: (buffer) => buffer.toString('utf8')
+        }
+      });
+
+      await store._setEncrypted('/wallet/codec', 'hello');
+      const out = await store._getEncrypted('/wallet/codec');
+      assert.strictEqual(out, 'enc:hello');
+    });
+
     it('can set a key to a string value', async function () {
       let store = new Store({
         persistent: false
@@ -73,8 +94,11 @@ describe('@fabric/core/types/store', function () {
       assert.equal(set, samples.input.hello);
     });
 
-    xit('can recover string data after a restart', async function () {
-      let store = new Store();
+    it('can recover string data after a restart', async function () {
+      let store = new Store({
+        path: './stores/test-store-restart',
+        persistent: true
+      });
       await store.start();
       let set = await store.set('example', samples.input.hello);
       await store.stop();
@@ -91,7 +115,7 @@ describe('@fabric/core/types/store', function () {
       assert.equal(get, samples.input.hello);
     });
 
-    xit('can manage collections', async function () {
+    it('can manage collections', async function () {
       let data = { name: 'widget-alpha' };
       let alt = Object.assign({}, data, { extra: data });
       let store = new Store({
@@ -117,7 +141,7 @@ describe('@fabric/core/types/store', function () {
       //assert.equal(JSON.stringify(entity), JSON.stringify(data));
     });
 
-    xit('can manage large collections', async function () {
+    it('can manage large collections', async function () {
       let data = { name: 'widget-alpha' };
       let alt = Object.assign({}, data, { extra: data });
       let store = new Store({

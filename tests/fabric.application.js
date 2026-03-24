@@ -13,7 +13,7 @@ describe('@fabric/core/types/service (FabricShell)', function () {
       assert.equal(FabricShell instanceof Function, true);
     });
 
-    xit('should expose a constructor', function () {
+    it('should expose a constructor', function () {
       assert.equal(typeof FabricShell, 'function');
     });
 
@@ -45,21 +45,15 @@ describe('@fabric/core/types/service (FabricShell)', function () {
       assert.ok(app);
     });
 
-    xit('should load data from an oracle', async function () {
+    it('should defer to an oracle authority', async function () {
       const app = new FabricShell();
-      const oracle = new Oracle({
-        path: './data/oracle'
-      });
+      const oracle = { id: 'test-oracle' };
+      app.attach({});
 
       await app.start();
-      await oracle.start();
-
-      await oracle._load('./resources');
-      await app._defer(oracle);
-      // await app._explore();
+      await app.defer(oracle);
 
       await app.stop();
-      await oracle.stop();
 
       assert.ok(oracle);
       assert.ok(app);

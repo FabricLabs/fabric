@@ -54,6 +54,13 @@ describe('@fabric/core/types/environment', function () {
       // assert.strictEqual(environment.xub, FIXTURE_XPUB);
     });
 
+    it('xprv/xpub getters are safe before wallet load', function () {
+      const environment = new Environment();
+      environment.wallet = null;
+      assert.doesNotThrow(() => environment.xprv);
+      assert.doesNotThrow(() => environment.xpub);
+    });
+
     it('can read an environment variable', async function () {
       const environment = new Environment();
       const home = environment.readVariable('HOME');

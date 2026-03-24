@@ -550,6 +550,11 @@ class Key extends EventEmitter {
   }
 
   encrypt (value) {
+    if (!this.private) {
+      if (this.settings.debug) console.error('[FABRIC:KEY]', 'Cannot encrypt without private key');
+      return null;
+    }
+
     try {
       const ivbuff = crypto.randomBytes(16);
       // Derive a 32-byte key from the private key using SHA-256
@@ -561,18 +566,28 @@ class Key extends EventEmitter {
       encrypted += cipher.final('hex');
       return ivbuff.toString('hex') + ':' + encrypted;
     } catch (exception) {
-      console.error('err:', exception);
+      if (this.settings.debug) console.error('[FABRIC:KEY]', 'Encryption failed');
       return null;
     }
   }
 
   decrypt (text) {
     if (!text) return null;
+    if (!this.private) {
+      if (this.settings.debug) console.error('[FABRIC:KEY]', 'Cannot decrypt without private key');
+      return null;
+    }
     if (text instanceof Buffer) text = text.toString('utf8');
 
     try {
+      if (typeof text !== 'string' || !text.includes(':')) return null;
       const parts = text.split(':');
-      const iv = Buffer.from(parts.shift(), 'hex');
+      const ivHex = parts.shift();
+      if (!/^[0-9a-fA-F]{32}$/.test(ivHex || '')) return null;
+      const blobHex = parts.join(':');
+      if (!blobHex || !/^[0-9a-fA-F]+$/.test(blobHex)) return null;
+
+      const iv = Buffer.from(ivHex, 'hex');
       const blob = Buffer.from(parts.join(':'), 'hex');
       // Use the same key derivation as encrypt
       const key = crypto.createHash('sha256')
@@ -583,7 +598,7 @@ class Key extends EventEmitter {
       decrypted += decipher.final('utf8');
       return decrypted;
     } catch (exception) {
-      console.error('err:', exception);
+      if (this.settings.debug) console.error('[FABRIC:KEY]', 'Decryption failed');
       return null;
     }
   }
@@ -723,6 +738,11 @@ class Key extends EventEmitter {
   commit () {
     const reference = { ...this.state };
     const state = new Actor(reference);
+    const commit = {
+      type: 'KeyCommit',
+      hash: state.id,
+      signatures: []
+    };
 
     // Store current state's hash
     this._state.hash = state.id;
@@ -761,8 +781,14 @@ class Key extends EventEmitter {
    * to prevent sensitive data from remaining in memory.
    */
   secure () {
+    // Update state before clearing key material, so commit can still be signed.
+    this._state.status = 'secured';
+    this.commit();
+
     // Clear sensitive key material
-    Buffer.write(this.private, 0, this.private.length);
+    if (Buffer.isBuffer(this.private)) {
+      this.private.fill(0);
+    }
 
     // Null out sensitive properties
     this.private = null;
@@ -772,11 +798,6 @@ class Key extends EventEmitter {
 
     // Clear any derived keys
     this.xprv = null;
-
-    // Update state
-    this._state.status = 'secured';
-
-    this.commit();
 
     return this;
   }

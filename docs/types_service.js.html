@@ -1069,7 +1069,7 @@ class Service extends Actor {
     const path = `/channels/${target}`;
 
     try {
-      this._PUT(path, merge({
+      await this._PUT(path, merge({
         members: []
       }, channel));
     } catch (E) {
@@ -1127,7 +1127,10 @@ class Service extends Actor {
 
     try {
       // TODO: allow configurable validators
-      this._state.content = manager.applyPatch(this.state, changes, function isValid () {
+      // Mutate canonical state — do not applyPatch(this.state): the getter returns a
+      // shallow copy each time, so replacing _state.content with that copy breaks nested
+      // references after subscribe() / _applyChanges().
+      manager.applyPatch(this._state.content, changes, function isValid () {
         // TODO: invalidate changes without appropriate capability token
         return true;
       }, true /* mutate doc (1st param) */);
@@ -1579,9 +1582,25 @@ module.exports.FabricShell = FabricShell;
     </ul>
     <h3>Global</h3>
     <ul>
+      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
+      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
+      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
+      <li><a href="global.html#crypto">crypto</a></li>
+      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
       <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
+      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
       <li><a href="global.html#gossip">gossip</a></li>
       <li><a href="global.html#isAllZero32">isAllZero32</a></li>
+      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
+      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
+      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
+      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
+      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
+      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
+      <li><a href="global.html#stableStringify">stableStringify</a></li>
+      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
+      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
+      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
     </ul>
   </nav>
   <br class="clear" />

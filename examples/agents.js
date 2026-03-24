@@ -319,6 +319,30 @@ async function logChannelSnapshot (lightning, aliceLightning) {
   }
 }
 
+async function getLightningStatusSnapshot (lightning, aliceLightning) {
+  const safeFunds = async (instance) => {
+    try {
+      const funds = await instance.listFunds();
+      return funds || {};
+    } catch (error) {
+      return {};
+    }
+  };
+
+  const [masterFunds, aliceFunds] = await Promise.all([
+    safeFunds(lightning),
+    safeFunds(aliceLightning)
+  ]);
+
+  return {
+    masterFunds,
+    aliceFunds,
+    masterChannels: Array.isArray(masterFunds.channels) ? masterFunds.channels : [],
+    aliceChannels: Array.isArray(aliceFunds.channels) ? aliceFunds.channels : [],
+    updatedAt: new Date().toISOString()
+  };
+}
+
 async function payRequestedAmount (lightning, aliceLightning, request = {}) {
   const sats = Math.max(1, Number(request.amount) || 1);
   const amountMsat = sats * 1000;
@@ -513,7 +537,14 @@ class Distributor extends Service {
         completed: 0,
         failed: 0,
         nextWorkerIndex: 0,
-        stateTip: null
+        stateTip: null,
+        externalStatus: {
+          masterFunds: {},
+          aliceFunds: {},
+          masterChannels: [],
+          aliceChannels: [],
+          updatedAt: null
+        }
       },
       cores: [],
       status: 'PAUSED',
@@ -746,6 +777,17 @@ class Distributor extends Service {
     }
   }
 
+  setExternalStatus (snapshot = {}) {
+    this._state.content.externalStatus = Object.assign({
+      masterFunds: {},
+      aliceFunds: {},
+      masterChannels: [],
+      aliceChannels: [],
+      updatedAt: null
+    }, snapshot);
+    return this;
+  }
+
   status () {
     const workers = this._state.cores.map((core) => ({
       index: core.__index,
@@ -757,6 +799,7 @@ class Distributor extends Service {
     }));
 
     const historyRoot = this._computeHistoryRoot();
+    const externalStatus = this._state.content.externalStatus || {};
 
     return {
       status: this._state.status,
@@ -770,7 +813,12 @@ class Distributor extends Service {
       historyRoot,
       workersBusy: workers.filter((x) => x.busy).length,
       workersTotal: workers.length,
-      workers
+      workers,
+      masterFunds: externalStatus.masterFunds || {},
+      aliceFunds: externalStatus.aliceFunds || {},
+      masterChannels: Array.isArray(externalStatus.masterChannels) ? externalStatus.masterChannels : [],
+      aliceChannels: Array.isArray(externalStatus.aliceChannels) ? externalStatus.aliceChannels : [],
+      externalStatusUpdatedAt: externalStatus.updatedAt || null
     };
   }
 
@@ -1121,27 +1169,38 @@ async function main (input = {}) {
   }, PRODUCER_INTERVAL_MS);
 
   statusTimer = setInterval(() => {
-    const status = master.status();
-    const workerSummary = status.workers.map((worker) => {
-      const state = worker.state || {};
-      return `w${worker.index}:done=${worker.processed},err=${worker.errors},${worker.busy ? 'busy' : 'idle'},state.jobs=${state.queueProcessed || 0},state.depth=${state.depth || 0},state.last=${state.lastPayload || '-'}`;
-    }).join(' | ');
+    Promise.resolve().then(async () => {
+      const snapshot = await getLightningStatusSnapshot(lightning, aliceLightning);
+      master.setExternalStatus(snapshot);
 
-    console.log(
-      `[MASTER] [STATUS] queue=${status.queueDepth} completed=${status.completed} failed=${status.failed} processed=${status.processed} busy=${status.workersBusy}/${status.workersTotal} ${workerSummary}`
-    );
+      const status = master.status();
+      const aliceChannels = Array.isArray(status.aliceChannels) ? status.aliceChannels : [];
+      const masterChannels = Array.isArray(status.masterChannels) ? status.masterChannels : [];
+      const aliceFunds = status.aliceFunds || {};
+      const masterFunds = status.masterFunds || {};
+      const workerSummary = status.workers.map((worker) => {
+        const state = worker.state || {};
+        return `w${worker.index}:done=${worker.processed},err=${worker.errors},${worker.busy ? 'busy' : 'idle'},state.jobs=${state.queueProcessed || 0},state.depth=${state.depth || 0},state.last=${state.lastPayload || '-'}`;
+      }).join(' | ');
 
-    console.log(
-      `[ALICE] [STATUS:LIGHTNING] channels=${status.aliceChannels.length} funds=${status.aliceFunds.total_msat || status.aliceFunds.total || '-'}`
-    );
+      console.log(
+        `[MASTER] [STATUS] queue=${status.queueDepth} completed=${status.completed} failed=${status.failed} processed=${status.processed} busy=${status.workersBusy}/${status.workersTotal} ${workerSummary}`
+      );
 
-    console.log(
-      `[MASTER] [STATUS:LIGHTNING] channels=${status.masterChannels.length} funds=${status.masterFunds.total_msat || status.masterFunds.total || '-'}`
-    );
+      console.log(
+        `[ALICE] [STATUS:LIGHTNING] channels=${aliceChannels.length} funds=${aliceFunds.total_msat || aliceFunds.total || '-'}`
+      );
 
-    console.log(
-      `[MASTER] [MERKLE] depth=${status.stateDepth} root=${status.historyRoot || '-'} tip=${status.stateTip || '-'} parent=${status.stateParent || '-'}`
-    );
+      console.log(
+        `[MASTER] [STATUS:LIGHTNING] channels=${masterChannels.length} funds=${masterFunds.total_msat || masterFunds.total || '-'}`
+      );
+
+      console.log(
+        `[MASTER] [MERKLE] depth=${status.stateDepth} root=${status.historyRoot || '-'} tip=${status.stateTip || '-'} parent=${status.stateParent || '-'}`
+      );
+    }).catch((error) => {
+      console.warn('[STATUS]', 'Could not refresh Lightning status snapshot:', error.message);
+    });
   }, 5000);
 }
 

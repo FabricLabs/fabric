@@ -236,7 +236,7 @@ describe('@fabric/core/types/message', function () {
       assert.ok(restored.verifyWithKey(key));
     });
 
-    xit('should generate a restorable buffer', async function prove () {
+    it('should generate a restorable buffer', async function prove () {
       const data = JSON.stringify({
         actor: 'deadbeefbabe',
         object: {
@@ -249,9 +249,9 @@ describe('@fabric/core/types/message', function () {
       const buffer = message.toBuffer();
       const restored = Message.fromBuffer(buffer);
 
-      assert.strictEqual(restored.data, '{"content":"Hello, world!"},"target":"/messages"}');
+      assert.strictEqual(restored.data, data);
       assert.ok(message);
-      assert.strictEqual(message.id, '9df866854b4e8bf23c7e9e3db0121e35ecb75ff001489c8a839545c98c67f722');
+      assert.strictEqual(restored.id, message.id);
     });
   });
 

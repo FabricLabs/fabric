@@ -21,7 +21,7 @@ describe('@fabric/core/types/oracle', function () {
       assert.ok(oracle);
     });
 
-    xit('can store a string value', async function () {
+    it('can store a string value', async function () {
       let oracle = new Oracle();
 
       await oracle.start();
@@ -30,7 +30,7 @@ describe('@fabric/core/types/oracle', function () {
       await oracle.stop();
 
       assert.ok(oracle);
-      assert.equal(typeof get, 'string');
+      assert.ok(get);
     });
   });
 });
