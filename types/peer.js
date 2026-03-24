@@ -195,6 +195,13 @@ class Peer extends Service {
     this._wireInboundByOrigin = new Map();
     /** `host:port` keys for {@link P2P_PEERING_OFFER} candidate queue dedup. */
     this._candidateKeys = new Set();
+    /**
+     * `host:port` strings we opened via {@link Peer#_connect} (outbound dials).
+     * {@link P2P_SESSION_OFFER} must not destroy these when the same peer also opens an inbound
+     * socket (mesh star): otherwise RPC paths that use the listen address (e.g. ChainSyncRequest)
+     * see `peer not connected` while an ephemeral inbound key remains.
+     */
+    this._outboundDialTargets = new Set();
     this.sessions = {};
 
     // Internal Stack Machine
@@ -690,6 +697,8 @@ class Peer extends Service {
 
     if (!url.port) target += `:${P2P_PORT}`;
 
+    this._outboundDialTargets.add(target);
+
     const derived = this.identity.key.derive(FABRIC_KEY_DERIVATION_PATH);
     this.emit('debug', `[FABRIC:PEER:_connect] Local derived key (public hex, truncated): ${peerDebugDerivedPublicSummary(derived)} path=${FABRIC_KEY_DERIVATION_PATH}`);
 
@@ -792,6 +801,8 @@ class Peer extends Service {
 
   _destroyFabric (socket, target) {
     if (socket._keepalive) clearInterval(socket._keepalive);
+
+    if (this._outboundDialTargets) this._outboundDialTargets.delete(target);
 
     delete this.connections[target];
     delete this.peers[target];
@@ -1093,20 +1104,23 @@ class Peer extends Service {
         if (this.settings.debug) this.emit('debug', `Handling session offer: ${JSON.stringify(message.object)}`);
         if (this.settings.debug) this.emit('debug', `Session offer origin: ${JSON.stringify(origin)}`);
 
-        // Same peer reconnecting from new port? Close old connection and replace with new
+        // Same peer reconnecting from new port? Close old connection and replace with new.
+        // Do not tear down our outbound dial to the peer's listen address: concurrent inbound +
+        // outbound to the same Fabric id is normal (e.g. ring + star mesh); dropping the stable
+        // `host:listenPort` socket breaks address-keyed sends on the satellite.
         const addressToId = this._addressToId || {};
-        for (const [addr, id] of Object.entries(addressToId)) {
-          if (id === peerId && addr !== connAddress) {
-            const oldSocket = this.connections[addr];
-            if (oldSocket) {
-              if (oldSocket._keepalive) clearInterval(oldSocket._keepalive);
-              delete this.connections[addr];
-              delete this.peers[addr];
-              delete this._addressToId[addr];
-              if (typeof oldSocket.destroy === 'function') oldSocket.destroy();
-            }
-            break;
+        for (const [addr, mappedId] of Object.entries(addressToId)) {
+          if (mappedId !== peerId || addr === connAddress) continue;
+          if (this._outboundDialTargets && this._outboundDialTargets.has(addr)) continue;
+          const oldSocket = this.connections[addr];
+          if (oldSocket) {
+            if (oldSocket._keepalive) clearInterval(oldSocket._keepalive);
+            delete this.connections[addr];
+            delete this.peers[addr];
+            delete this._addressToId[addr];
+            if (typeof oldSocket.destroy === 'function') oldSocket.destroy();
           }
+          break;
         }
 
         this.peers[connAddress] = new Actor({

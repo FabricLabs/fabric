@@ -9,6 +9,16 @@ const cp = require('child_process');
 const Lightning = require('../../services/lightning');
 
 describe('@fabric/core/services/lightning (unit)', function () {
+  describe('defaultListenPortForNetwork', function () {
+    it('maps networks to conventional lightningd bind ports', function () {
+      assert.strictEqual(Lightning.defaultListenPortForNetwork('mainnet'), 9735);
+      assert.strictEqual(Lightning.defaultListenPortForNetwork('regtest'), 9735);
+      assert.strictEqual(Lightning.defaultListenPortForNetwork('testnet'), 19735);
+      assert.strictEqual(Lightning.defaultListenPortForNetwork('testnet4'), 19735);
+      assert.strictEqual(Lightning.defaultListenPortForNetwork('signet'), 39735);
+    });
+  });
+
   describe('constructor', function () {
     it('constructs with sane defaults', function () {
       const ln = new Lightning();
@@ -17,6 +27,11 @@ describe('@fabric/core/services/lightning (unit)', function () {
       assert.strictEqual(ln.settings.network, 'regtest');
       assert.ok(ln._state.content.balances);
       assert.ok(ln._state.content.node);
+    });
+
+    it('honours an explicit port for regtest', function () {
+      const ln = new Lightning({ network: 'regtest', port: 19846 });
+      assert.strictEqual(ln.settings.port, 19846);
     });
 
     it('accepts bitcoin username/password as alias for rpcuser/rpcpassword', function () {

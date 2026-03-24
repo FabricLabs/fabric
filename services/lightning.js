@@ -30,6 +30,18 @@ function redactSensitiveCommandArg (arg) {
  */
 class Lightning extends Service {
   /**
+   * Default TCP port lightningd listens on when {@link settings.port} is omitted (BOLT / common conventions).
+   * @param {string} [network]
+   * @returns {number}
+   */
+  static defaultListenPortForNetwork (network) {
+    const n = String(network || 'mainnet').toLowerCase();
+    if (n === 'testnet' || n === 'testnet4') return 19735;
+    if (n === 'signet') return 39735;
+    return 9735;
+  }
+
+  /**
    * Create an instance of the Lightning {@link Service}.
    * @param {Object} [settings] Settings.
    * @returns {Lightning}
@@ -45,7 +57,7 @@ class Lightning extends Service {
       datadir: './stores/lightning',
       host: '127.0.0.1',
       hostname: '127.0.0.1',
-      port: 9735,
+      port: null,
       socket: 'lightningd.sock',
       mode: 'socket',
       interval: 60000,
@@ -59,6 +71,10 @@ class Lightning extends Service {
         datadir: './stores/bitcoin-regtest'
       }
     }, settings);
+
+    if (this.settings.port == null || this.settings.port === '') {
+      this.settings.port = Lightning.defaultListenPortForNetwork(this.settings.network);
+    }
 
     // Accept both rpcuser/rpcpassword and username/password shapes.
     this.settings.bitcoin.rpcuser = this.settings.bitcoin.rpcuser || this.settings.bitcoin.username;
@@ -103,6 +119,15 @@ class Lightning extends Service {
     };
 
     return this;
+  }
+
+  _clnNetworkCliName () {
+    const n = String(this.settings.network || 'regtest').toLowerCase();
+    if (n === 'mainnet' || n === 'bitcoin' || n === 'main') return 'bitcoin';
+    if (n === 'testnet4') return 'testnet4';
+    if (n === 'testnet' || n === 'test') return 'testnet';
+    if (n === 'signet') return 'signet';
+    return 'regtest';
   }
 
   static plugin (state) {
@@ -302,7 +327,7 @@ class Lightning extends Service {
     // Configure Lightning node parameters
     const params = [
       `--addr=${this.settings.hostname}:${this.settings.port}`,
-      '--network=regtest',
+      `--network=${this._clnNetworkCliName()}`,
       `--lightning-dir=${datadir}`,
       `--rpc-file=${socketPath}`,
       `--bitcoin-datadir=${bitcoinDatadir}`,
