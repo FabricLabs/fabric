@@ -40,6 +40,28 @@ describe('@fabric/core/services/bitcoin', function () {
       });
     });
 
+    describe('network default listen and ports', function () {
+      it('uses standard regtest P2P/RPC and listen when only network is set', function () {
+        const btc = new Bitcoin({ network: 'regtest' });
+        assert.strictEqual(btc.settings.listen, true);
+        assert.strictEqual(btc.settings.port, 18444);
+        assert.strictEqual(btc.settings.rpcport, 18443);
+      });
+
+      it('keeps mainnet defaults on mainnet', function () {
+        const btc = new Bitcoin({ network: 'mainnet' });
+        assert.strictEqual(btc.settings.listen, true);
+        assert.strictEqual(btc.settings.port, 8333);
+        assert.strictEqual(btc.settings.rpcport, 8332);
+      });
+
+      it('allows explicit regtest ports without replacement', function () {
+        const btc = new Bitcoin({ network: 'regtest', port: 19500, rpcport: 19501 });
+        assert.strictEqual(btc.settings.port, 19500);
+        assert.strictEqual(btc.settings.rpcport, 19501);
+      });
+    });
+
     describe('validateAddress', function () {
       it('accepts a known-valid regtest address in fabric mode', function () {
         const btc = new Bitcoin({ network: 'regtest', mode: 'fabric' });

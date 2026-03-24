@@ -79,7 +79,7 @@ class Bitcoin extends Service {
       network: 'mainnet',
       path: './stores/bitcoin',
       mining: false,
-      listen: false,
+      listen: true,
       fullnode: false,
       managed: false,
       constraints: {
@@ -132,6 +132,14 @@ class Bitcoin extends Service {
       interval: 60000, // 10 * 60 * 1000, // every 10 minutes, write a checkpoint
       verbosity: 2
     }, settings);
+
+    const netNorm = this._normalizeChainName(this.settings.network || 'mainnet');
+    if (this.settings.port === 8333 && netNorm !== 'mainnet') {
+      this.settings.port = this._getDefaultP2PPort(netNorm);
+    }
+    if (this.settings.rpcport === 8332 && netNorm !== 'mainnet') {
+      this.settings.rpcport = this._getDefaultRPCPort(netNorm);
+    }
 
     // Initialize network configurations
     this._networkConfigs = {
