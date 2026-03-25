@@ -290,6 +290,22 @@ describe('@fabric/core/types/wallet', function () {
       assert.strictEqual(out, null);
     });
 
+    it('Wallet.purchaseContentHashHex matches publishedDocumentEnvelope', function () {
+      const { purchaseContentHashHex: envHash } = require('../functions/publishedDocumentEnvelope');
+      const docId = 'wallet-l1-doc';
+      const buf = Buffer.from('verify before spend', 'utf8');
+      const parsed = {
+        id: docId,
+        name: 'x.txt',
+        mime: 'text/plain',
+        revision: 1,
+        contentBase64: buf.toString('base64'),
+        size: buf.length,
+        sha256: require('crypto').createHash('sha256').update(buf).digest('hex')
+      };
+      assert.strictEqual(Wallet.purchaseContentHashHex(docId, parsed), envHash(docId, parsed));
+    });
+
     it('_attachTXID validates format and delegates creation', async function () {
       const wallet = new Wallet(options);
       wallet.txids = {

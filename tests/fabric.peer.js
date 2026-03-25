@@ -444,6 +444,53 @@ describe('@fabric/core/types/peer', function () {
         });
         peer._handleFabricMessage(msg.toBuffer(), { name: 'o' });
       });
+      it('emits documentRequest and DocumentRequest for DOCUMENT_REQUEST', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        let n = 0;
+        peer.on('documentRequest', (ev) => {
+          assert.strictEqual(ev.documentId, 'doc-wire-x');
+          assert.strictEqual(ev.source, 'canonical');
+          n++;
+        });
+        peer.on('DocumentRequest', (ev) => {
+          assert.strictEqual(ev.documentId, 'doc-wire-x');
+          n++;
+        });
+        peer.relayFrom = () => {};
+        const msg = Message.fromVector(['DocumentRequest', JSON.stringify({ document: 'doc-wire-x' })]);
+        msg.signWithKey(peer.key);
+        peer._handleFabricMessage(msg.toBuffer(), { name: 'o' }, null);
+        assert.strictEqual(n, 2);
+      });
+      it('DOCUMENT_REQUEST is relayed when document is not held locally', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        let relayed = 0;
+        peer.relayFrom = () => { relayed++; };
+        const msg = Message.fromVector(['DocumentRequest', JSON.stringify({ document: 'missing-doc' })]);
+        msg.signWithKey(peer.key);
+        peer._handleFabricMessage(msg.toBuffer(), { name: 'requester:9' }, null);
+        assert.strictEqual(relayed, 1);
+      });
+      it('DOCUMENT_REQUEST is answered with P2P_FILE_SEND when document is held', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        peer._state.content.documents = { 'doc-held': 'payload-bytes' };
+        let written = null;
+        peer.connections['requester:8'] = {
+          _writeFabric: (buf) => { written = buf; }
+        };
+        let relayed = 0;
+        peer.relayFrom = () => { relayed++; };
+        const msg = Message.fromVector(['DocumentRequest', JSON.stringify({ document: 'doc-held' })]);
+        msg.signWithKey(peer.key);
+        peer._handleFabricMessage(msg.toBuffer(), { name: 'requester:8' }, null);
+        assert.strictEqual(relayed, 0);
+        assert.ok(written && written.length);
+        const back = Message.fromBuffer(written);
+        const outer = JSON.parse(back.data);
+        assert.strictEqual(outer.type, 'P2P_FILE_SEND');
+        assert.strictEqual(outer.object.name, 'doc-held');
+        assert.strictEqual(Buffer.from(outer.object.body, 'base64').toString('utf8'), 'payload-bytes');
+      });
     });
 
     describe('_handleGenericMessage', function () {
@@ -473,6 +520,132 @@ describe('@fabric/core/types/peer', function () {
           done();
         });
         peer._handleGenericMessage({ type: 'INVENTORY_REQUEST', object: {}, message: {}, origin: {} }, { name: 'o' });
+      });
+      it('serveLocalDocumentInventory sends INVENTORY_RESPONSE for offerBtc requests', function () {
+        const peer = new Peer({ listen: false, peersDb: null, serveLocalDocumentInventory: true });
+        peer._state.content.documents = { doca: 'hello' };
+        peer._state.content.documentRates = { doca: 1000 };
+        let written = null;
+        peer.connections['127.0.0.1:11'] = {
+          _writeFabric: (b) => { written = b; }
+        };
+        peer._handleGenericMessage({
+          type: 'INVENTORY_REQUEST',
+          object: { offerBtc: true, maxSats: 500_000 }
+        }, { name: '127.0.0.1:11' });
+        assert.ok(written && written.length);
+        const back = Message.fromBuffer(written);
+        const inner = JSON.parse(back.data);
+        assert.strictEqual(inner.type, 'INVENTORY_RESPONSE');
+        assert.strictEqual(inner.object.items.length, 1);
+        assert.strictEqual(inner.object.items[0].id, 'doca');
+        assert.strictEqual(inner.object.items[0].rateSats, 1000);
+        assert.ok(/^[0-9a-f]{64}$/.test(inner.object.items[0].contentHash));
+      });
+      it('serveLocalDocumentInventory skips items above maxSats', function () {
+        const peer = new Peer({ listen: false, peersDb: null, serveLocalDocumentInventory: true });
+        peer._state.content.documents = { cheap: 'a', pricey: 'b' };
+        peer._state.content.documentRates = { cheap: 100, pricey: 999_999 };
+        const items = [];
+        peer.connections['127.0.0.1:12'] = {
+          _writeFabric: (b) => {
+            const inner = JSON.parse(Message.fromBuffer(b).data);
+            items.push(...(inner.object.items || []));
+          }
+        };
+        peer._handleGenericMessage({
+          type: 'INVENTORY_REQUEST',
+          object: { offerBtc: true, maxSats: 500 }
+        }, { name: '127.0.0.1:12' });
+        assert.strictEqual(items.length, 1);
+        assert.strictEqual(items[0].id, 'cheap');
+      });
+      it('serveLocalDocumentInventory does not respond without offerBtc', function () {
+        const peer = new Peer({ listen: false, peersDb: null, serveLocalDocumentInventory: true });
+        peer._state.content.documents = { x: 'y' };
+        let writes = 0;
+        peer.connections['127.0.0.1:13'] = {
+          _writeFabric: () => { writes++; }
+        };
+        peer._handleGenericMessage({
+          type: 'INVENTORY_REQUEST',
+          object: {}
+        }, { name: '127.0.0.1:13' });
+        assert.strictEqual(writes, 0);
+      });
+      it('relayInventoryRequest relays offerBtc INVENTORY_REQUEST when no local items', function () {
+        const peer = new Peer({ listen: false, peersDb: null, serveLocalDocumentInventory: true, relayInventoryRequest: true });
+        peer._state.content.documents = {};
+        let relays = 0;
+        peer.relayFrom = function () { relays++; };
+        const payload = { type: 'INVENTORY_REQUEST', object: { offerBtc: true, maxSats: 1e6 } };
+        const wire = Message.fromVector(['GenericMessage', JSON.stringify(payload)]);
+        wire.signWithKey(peer.key);
+        peer._handleGenericMessage(payload, { name: 'req:1' }, null, wire);
+        assert.strictEqual(relays, 1);
+      });
+      it('relayInventoryRequest does not relay when local inventory responds', function () {
+        const peer = new Peer({ listen: false, peersDb: null, serveLocalDocumentInventory: true, relayInventoryRequest: true });
+        peer._state.content.documents = { a: 'x' };
+        peer._state.content.documentRates = { a: 1 };
+        let relays = 0;
+        peer.relayFrom = function () { relays++; };
+        const payload = { type: 'INVENTORY_REQUEST', object: { offerBtc: true, maxSats: 1e6 } };
+        const wire = Message.fromVector(['GenericMessage', JSON.stringify(payload)]);
+        wire.signWithKey(peer.key);
+        peer.connections['req:2'] = { _writeFabric: () => {} };
+        peer._handleGenericMessage(payload, { name: 'req:2' }, null, wire);
+        assert.strictEqual(relays, 0);
+      });
+      it('relayInventoryRequest does not relay INVENTORY_REQUEST without offerBtc', function () {
+        const peer = new Peer({ listen: false, peersDb: null, serveLocalDocumentInventory: true, relayInventoryRequest: true });
+        let relays = 0;
+        peer.relayFrom = function () { relays++; };
+        const payload = { type: 'INVENTORY_REQUEST', object: { maxSats: 1 } };
+        const wire = Message.fromVector(['GenericMessage', JSON.stringify(payload)]);
+        wire.signWithKey(peer.key);
+        peer._handleGenericMessage(payload, { name: 'req:3' }, null, wire);
+        assert.strictEqual(relays, 0);
+      });
+      it('relayInventoryResponse relays INVENTORY_RESPONSE wire to other peers', function () {
+        const peer = new Peer({ listen: false, peersDb: null, relayInventoryResponse: true });
+        let relays = 0;
+        peer.relayFrom = function () { relays++; };
+        const payload = {
+          type: 'INVENTORY_RESPONSE',
+          object: { items: [{ id: 'd', rateSats: 0, contentHash: 'a'.repeat(64), network: 'bitcoin' }] }
+        };
+        const wire = Message.fromVector(['GenericMessage', JSON.stringify(payload)]);
+        wire.signWithKey(peer.key);
+        peer._handleGenericMessage(payload, { name: 'from:peer' }, null, wire);
+        assert.strictEqual(relays, 1);
+      });
+      it('sendDocumentFileToPeer sends P2P_FILE_SEND when document is held', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        peer._state.content.documents = { d1: 'zz' };
+        let written = null;
+        peer.connections['p1'] = {
+          _writeFabric: (b) => { written = b; }
+        };
+        assert.strictEqual(peer.sendDocumentFileToPeer('d1', 'p1'), true);
+        const inner = JSON.parse(Message.fromBuffer(written).data);
+        assert.strictEqual(inner.type, 'P2P_FILE_SEND');
+        assert.strictEqual(inner.object.name, 'd1');
+        assert.strictEqual(Buffer.from(inner.object.body, 'base64').toString('utf8'), 'zz');
+      });
+      it('_announceLocalDocumentsToPeer writes canonical + pricing buffers per document', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        peer._state.content.documents = { doc1: 'a', doc2: 'bb' };
+        peer._state.content.documentRates = { doc1: 500, doc2: 0 };
+        const writes = [];
+        peer.connections['peerZ'] = {
+          _writeFabric: (b) => writes.push(b)
+        };
+        peer._announceLocalDocumentsToPeer('peerZ');
+        assert.strictEqual(writes.length, 3);
+        assert.strictEqual(Message.fromBuffer(writes[0]).type, 'DOCUMENT_PUBLISH');
+        assert.strictEqual(Message.fromBuffer(writes[1]).type, 'GENERIC_MESSAGE');
+        assert.strictEqual(Message.fromBuffer(writes[2]).type, 'DOCUMENT_PUBLISH');
       });
       it('handles P2P_STATE_ANNOUNCE', function (done) {
         const peer = new Peer({ listen: false, peersDb: null });

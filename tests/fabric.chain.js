@@ -46,6 +46,32 @@ describe('@fabric/core/types/chain', function () {
       assert.ok(chain);
     });
 
+    it('exposes tip as the consensus id of the latest appended block', async function () {
+      const chain = new Chain();
+      const block = new Block({ debug: true, input: 'Hello, world.' });
+
+      await chain.start();
+      await chain.append(block);
+      assert.strictEqual(chain.tip, block.id);
+      assert.strictEqual(chain.consensus, block.id);
+      assert.strictEqual(chain.blocks[chain.blocks.length - 1], block.id);
+      await chain.stop();
+    });
+
+    it('advances tip and ledger entries as blocks are mined', async function () {
+      const chain = new Chain();
+      const first = new Block({ debug: true, input: 'Hello, world.' });
+      await chain.start();
+      await chain.append(first);
+      assert.strictEqual(chain.tip, first.id);
+      const second = await chain.generateBlock();
+      assert.strictEqual(chain.tip, second.id);
+      assert.strictEqual(chain.blocks.length, 2);
+      assert.ok(chain.blocks.includes(first.id));
+      assert.ok(chain.blocks.includes(second.id));
+      await chain.stop();
+    });
+
     it('can mine a second block', async function () {
       const chain = new Chain();
       const block = new Block({ debug: true, input: 'Hello, world.' });

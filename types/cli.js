@@ -905,7 +905,8 @@ class CLI extends FabricShell {
     const message = Message.fromVector(['DocumentRequest', {
       document: params[1]
     }]);
-    this.node.broadcast(message);
+    message.signWithKey(this.node.key);
+    this.node.broadcast(message.toBuffer());
   }
 
   async _handleBitcoinMessage (message) {
@@ -1183,11 +1184,21 @@ class CLI extends FabricShell {
   }
 
   async _handlePeerDocumentPublish (message) {
-    this._appendMessage('Peer requested document publish: ' + JSON.stringify(message));
+    const id = (message && message.documentId) || (message && message.parsed && message.parsed.id) || '';
+    const hash = (message && message.purchaseContentHashHex) || '';
+    const short = hash && hash.length > 16 ? `${hash.slice(0, 16)}…` : hash;
+    const held = id && this.documents && Object.prototype.hasOwnProperty.call(this.documents, id);
+    this._appendMessage(
+      `Document publish: ${id || '(unknown)'} contentHash=${short || 'n/a'}${held ? ' [held locally]' : ''}`
+    );
   }
 
   async _handlePeerDocumentRequest (message) {
-    this._appendMessage('Peer requested document delivery: ' + JSON.stringify(message));
+    const id = (message && message.documentId) || '';
+    const held = id && this.documents && Object.prototype.hasOwnProperty.call(this.documents, id);
+    this._appendMessage(
+      `Document request: ${id || '(unknown)'}${held ? ' [serving from local store]' : ''}`
+    );
   }
 
   async _handlePeerCandidate (peer) {

@@ -38,6 +38,13 @@ const manager = require('fast-json-patch');
 const noise = require('noise-protocol-stream');
 const merge = require('lodash.merge');
 
+// L1 document binding (hub / HTLC contentHash)
+const {
+  fabricCanonicalJson,
+  whitelistedDocumentFields,
+  purchaseContentHashHex
+} = require('../functions/publishedDocumentEnvelope');
+
 // Fabric Types
 const Actor = require('./actor');
 const Hash256 = require('./hash256');
@@ -97,6 +104,26 @@ class Peer extends Service {
       peersDb: (process.env.NODE_ENV === 'test') ? null : 'stores/hub/peers',
       port: 7777,
       reconnectToKnownPeers: true,
+      /**
+       * When true, answers `INVENTORY_REQUEST` (with `object.offerBtc`) using local
+       * `state.documents` / `documentRates` and {@link purchaseContentHashHex} for each item.
+       */
+      serveLocalDocumentInventory: false,
+      /**
+       * After `P2P_SESSION_OPEN` to a new inbound peer, re-send canonical `DocumentPublish` and
+       * pricing gossip for each entry in `state.documents` so late joiners see catalog offers.
+       */
+      announceDocumentsOnPeerConnect: false,
+      /**
+       * When {@link Peer#settings.serveLocalDocumentInventory} is enabled and this node sends no
+       * `INVENTORY_RESPONSE`, forward the original generic wire to other peers (POLICY.md conditional relay).
+       */
+      relayInventoryRequest: false,
+      /**
+       * After handling `INVENTORY_RESPONSE`, forward the same wire to peers other than the sender
+       * (star/mesh routers; default off to avoid leaking replies).
+       */
+      relayInventoryResponse: false,
       connectTimeout: 5000,
       /** Limits relay amplification on {@link P2P_PEER_GOSSIP} (hop TTL, payload dedup, per-origin rate). */
       gossip: {
@@ -110,6 +137,7 @@ class Peer extends Service {
         channels: {},
         contracts: {},
         documents: {},
+        documentRates: {},
         messages: {},
         services: {}
       }, config.state),
@@ -1006,6 +1034,39 @@ class Peer extends Service {
           this.emit('chainSyncRequest', { message, origin, socket, object: {} });
         }
         break;
+      case 'DOCUMENT_PUBLISH':
+      case 'DocumentPublish':
+        try {
+          const raw = message.data != null
+            ? (typeof message.data === 'string' ? message.data : String(message.data))
+            : '{}';
+          const parsed = JSON.parse(raw || '{}');
+          const docId = parsed.id;
+          if (!docId) break;
+          const purchaseHash = purchaseContentHashHex(docId, parsed);
+          const payload = {
+            message,
+            origin,
+            socket,
+            documentId: docId,
+            purchaseContentHashHex: purchaseHash,
+            parsed,
+            source: 'canonical'
+          };
+          this.emit('documentPublish', payload);
+          this.emit('DocumentPublish', payload);
+        } catch (exception) {
+          this.emit('warning', `[FABRIC:PEER] DOCUMENT_PUBLISH parse failed: ${exception.message}`);
+        }
+        break;
+      case 'DOCUMENT_REQUEST':
+      case 'DocumentRequest':
+        try {
+          this._handleDocumentRequestWire(message, origin, socket);
+        } catch (exception) {
+          this.emit('warning', `[FABRIC:PEER] DOCUMENT_REQUEST failed: ${exception.message}`);
+        }
+        break;
       case 'GENERIC_MESSAGE':
       case 'GenericMessage':
       case 'P2P_BASE_MESSAGE':
@@ -1017,7 +1078,7 @@ class Peer extends Service {
         // Parse JSON body
         try {
           const content = JSON.parse(message.data);
-          this._handleGenericMessage(content, origin, socket);
+          this._handleGenericMessage(content, origin, socket, message);
         } catch (exception) {
           this.emit('error', `Broken content body: ${exception}`);
         }
@@ -1079,7 +1140,7 @@ class Peer extends Service {
     return this;
   }
 
-  _handleGenericMessage (message, origin = null, socket = null) {
+  _handleGenericMessage (message, origin = null, socket = null, wireMessage = null) {
     if (this.settings.debug) this.emit('debug', `Generic message:\n\tFrom: ${JSON.stringify(origin)}\n\tType: ${message.type}\n\tBody:\n\`\`\`\n${JSON.stringify(message.object, null, '  ')}\n\`\`\``);
 
     // Lookup the appropriate Actor for the message's origin
@@ -1093,10 +1154,20 @@ class Peer extends Service {
         // Upstream Inventory request (typically for documents). Emit an 'inventory'
         // event so higher-level services (e.g. hub) can respond appropriately.
         this.emit('inventory', { message, origin, socket });
+        if (this.settings.serveLocalDocumentInventory) {
+          const served = this._respondInventoryFromLocalDocuments(message, origin);
+          const req = message.object || {};
+          if (this.settings.relayInventoryRequest && !served && wireMessage && req.offerBtc === true) {
+            this.relayFrom(origin.name, wireMessage, socket);
+          }
+        }
         break;
       case 'INVENTORY_RESPONSE':
         // Document inventory reply (may include per-item L1 HTLC offers).
         this.emit('inventoryResponse', { message, origin, socket });
+        if (this.settings.relayInventoryResponse && wireMessage) {
+          this.relayFrom(origin.name, wireMessage, socket);
+        }
         break;
       case 'P2P_SESSION_OFFER':
         const peerId = message.actor.id;
@@ -1150,6 +1221,9 @@ class Peer extends Service {
         const reply = PACKET_SESSION_START.toBuffer();
         if (this.settings.debug) this.emit('debug', `session_start ${PACKET_SESSION_START} ${reply.toString('hex')}`);
         this.connections[connAddress]._writeFabric(reply, socket);
+        if (this.settings.announceDocumentsOnPeerConnect) {
+          this._announceLocalDocumentsToPeer(connAddress);
+        }
         break;
       case 'P2P_SESSION_OPEN':
         if (this.settings.debug) this.emit('debug', `Handling session open: ${JSON.stringify(message.object)}`);
@@ -1275,6 +1349,15 @@ class Peer extends Service {
         // this.relayFrom(origin.name, announce);
         break;
       case 'P2P_DOCUMENT_PUBLISH':
+        this.emit('documentPublish', {
+          message,
+          origin,
+          socket,
+          documentId: message.object && message.object.hash,
+          rateSats: message.object && message.object.rate,
+          contentHash: message.object && message.object.contentHash,
+          source: 'pricing'
+        });
         break;
       case 'P2P_FILE_SEND':
         this.emit('file', { message, origin });
@@ -1392,22 +1475,209 @@ class Peer extends Service {
     });
   }
 
-  _publishDocument (hash, rate = 0) {
-    this._state.content.documents[hash] = document;
+  /**
+   * Build hub-compatible document metadata for {@link purchaseContentHashHex}.
+   * @param {String} documentId
+   * @param {String} content UTF-8 body
+   * @returns {Object} Parsed document record (whitelisted fields)
+   */
+  _buildDocumentParsedForPublish (documentId, content) {
+    const buf = Buffer.from(content === null || content === undefined ? '' : String(content), 'utf8');
+    return {
+      id: documentId,
+      name: (documentId && String(documentId).split('/').pop()) || 'document',
+      mime: 'text/plain',
+      revision: 1,
+      contentBase64: buf.toString('base64'),
+      size: buf.length,
+      sha256: crypto.createHash('sha256').update(buf).digest('hex')
+    };
+  }
+
+  /**
+   * Reply to `INVENTORY_REQUEST` with `INVENTORY_RESPONSE` built from local documents and rates.
+   * @param {{ type: string, object?: object }} message generic body from {@link Peer#_handleGenericMessage}
+   * @param {{ name: string }} origin
+   * @returns {boolean} true if an `INVENTORY_RESPONSE` was written to the requester
+   */
+  _respondInventoryFromLocalDocuments (message, origin) {
+    if (!origin || !origin.name) return false;
+    const req = message.object || {};
+    if (req.offerBtc !== true) return false;
+    const docs = this._state.content.documents;
+    if (!docs || typeof docs !== 'object') return false;
+    const rates = this._state.content.documentRates || {};
+    const maxSats = req.maxSats;
+    const items = [];
+    for (const docId of Object.keys(docs)) {
+      const body = docs[docId];
+      const parsed = this._buildDocumentParsedForPublish(docId, body);
+      const contentHash = purchaseContentHashHex(docId, parsed);
+      const rateSats = Object.prototype.hasOwnProperty.call(rates, docId) ? rates[docId] : 0;
+      if (maxSats != null && Number.isFinite(maxSats) && rateSats > maxSats) continue;
+      items.push({ id: docId, rateSats, contentHash, network: 'bitcoin' });
+    }
+    if (!items.length) return false;
+    const conn = this.connections[origin.name];
+    if (!conn || !conn._writeFabric) return false;
+    const payload = {
+      type: 'INVENTORY_RESPONSE',
+      object: { items }
+    };
+    const m = Message.fromVector(['GenericMessage', JSON.stringify(payload)]);
+    m.signWithKey(this.key);
+    conn._writeFabric(m.toBuffer());
+    return true;
+  }
+
+  /**
+   * Send a locally stored document to a connected peer as `P2P_FILE_SEND`.
+   * @param {string} documentId
+   * @param {string} peerAddress connection key in {@link Peer#connections}
+   * @returns {boolean} true if the payload was written
+   */
+  _sendP2pFileSendToPeer (documentId, peerAddress) {
+    const docs = this._state.content.documents;
+    if (!docs || !Object.prototype.hasOwnProperty.call(docs, documentId)) return false;
+    const body = docs[documentId];
+    const bodyStr = (body === null || body === undefined) ? '' : String(body);
+    const conn = peerAddress && this.connections[peerAddress];
+    if (!conn || !conn._writeFabric) return false;
+    const filePayload = {
+      type: 'P2P_FILE_SEND',
+      object: {
+        name: documentId,
+        body: Buffer.from(bodyStr, 'utf8').toString('base64')
+      }
+    };
+    const reply = Message.fromVector(['GenericMessage', JSON.stringify(filePayload)]);
+    reply.signWithKey(this.key);
+    conn._writeFabric(reply.toBuffer());
+    return true;
+  }
+
+  /**
+   * Public helper: push document bytes to a peer (same wire path as {@link Peer#_handleDocumentRequestWire} fulfillment).
+   * @param {string} documentId
+   * @param {string} peerAddress
+   * @returns {boolean}
+   */
+  sendDocumentFileToPeer (documentId, peerAddress) {
+    return this._sendP2pFileSendToPeer(documentId, peerAddress);
+  }
+
+  /**
+   * AMP buffers for one document: canonical `DocumentPublish`, then optional pricing `P2P_DOCUMENT_PUBLISH`.
+   * @param {string} documentId
+   * @param {string} body UTF-8 body
+   * @param {number} rateSats
+   * @returns {Buffer[]}
+   */
+  _buildPublishDocumentWireBuffers (documentId, body, rateSats) {
+    const parsed = this._buildDocumentParsedForPublish(documentId, body);
+    const dataStr = fabricCanonicalJson(whitelistedDocumentFields(documentId, parsed));
+    const canonical = Message.fromVector(['DocumentPublish', dataStr]);
+    canonical.signWithKey(this.key);
+    const buffers = [canonical.toBuffer()];
+    if (rateSats > 0) {
+      const contentHash = purchaseContentHashHex(documentId, parsed);
+      const rateMsg = Message.fromVector(['P2P_DOCUMENT_PUBLISH', JSON.stringify({
+        type: 'P2P_DOCUMENT_PUBLISH',
+        object: {
+          hash: documentId,
+          rate: rateSats,
+          contentHash
+        }
+      })]);
+      rateMsg.signWithKey(this.key);
+      buffers.push(rateMsg.toBuffer());
+    }
+    return buffers;
+  }
+
+  /**
+   * Re-send all local document publishes to one peer (same bytes as {@link Peer#_publishDocument}).
+   * @param {string} peerAddress connection key in {@link Peer#connections}
+   */
+  _announceLocalDocumentsToPeer (peerAddress) {
+    const docs = this._state.content.documents;
+    if (!docs || typeof docs !== 'object') return;
+    const rates = this._state.content.documentRates || {};
+    const conn = peerAddress && this.connections[peerAddress];
+    if (!conn || !conn._writeFabric) return;
+    for (const docId of Object.keys(docs)) {
+      const body = docs[docId];
+      const rateSats = Object.prototype.hasOwnProperty.call(rates, docId) ? rates[docId] : 0;
+      const buffers = this._buildPublishDocumentWireBuffers(docId, body, rateSats);
+      for (const buf of buffers) {
+        conn._writeFabric(buf);
+      }
+    }
+  }
+
+  /**
+   * Store a document locally and gossip to peers.
+   * 1) **Canonical** `DOCUMENT_PUBLISH` wire message (same bytes as hub `documentPublishEnvelope`) for L1 `contentHash`.
+   * 2) If `rateSats > 0`, a **pricing** `GENERIC` `P2P_DOCUMENT_PUBLISH` with `rate` and `contentHash` (sat ask).
+   * @param {String} documentId - Catalog key (e.g. CLI document name).
+   * @param {String} [content=''] - UTF-8 body stored under {@link Peer#state}.documents.
+   * @param {Number} [rateSats=0] - Ask price in satoshis (gossip only; not part of canonical hash).
+   */
+  _publishDocument (documentId, content = '', rateSats = 0) {
+    if (!this._state.content.documents) this._state.content.documents = {};
+    if (!this._state.content.documentRates) this._state.content.documentRates = {};
+    const body = (content === null || content === undefined) ? '' : String(content);
+    this._state.content.documents[documentId] = body;
+    this._state.content.documentRates[documentId] = rateSats;
 
     this.commit();
 
-    const PACKET_DOCUMENT_PUBLISH = Message.fromVector(['P2P_DOCUMENT_PUBLISH', JSON.stringify({
-      type: 'P2P_DOCUMENT_PUBLISH',
-      object: {
-        hash: hash,
-        rate: rate
-      }
-    })]);
+    const buffers = this._buildPublishDocumentWireBuffers(documentId, body, rateSats);
+    for (const buf of buffers) {
+      this.broadcast(buf);
+    }
 
-    const message = PACKET_DOCUMENT_PUBLISH.toBuffer();
-    if (this.settings.debug) this.emit('debug', `Broadcasting document publish: ${message.toString('utf8')}`);
-    this.broadcast(message);
+    if (this.settings.debug) {
+      this.emit('debug', '[FABRIC:PEER] Published canonical DOCUMENT_PUBLISH + pricing gossip (if rate > 0)');
+    }
+  }
+
+  /**
+   * Handle inbound `DOCUMENT_REQUEST`: emit `documentRequest` / `DocumentRequest`, then either
+   * send `P2P_FILE_SEND` to the requester if `state.documents[id]` is present, or relay the
+   * request to other peers (conditional relay).
+   * @param {Message} message
+   * @param {{ name: string }} origin
+   * @param {*} socket
+   */
+  _handleDocumentRequestWire (message, origin, socket) {
+    const raw = message.data != null
+      ? (typeof message.data === 'string' ? message.data : String(message.data))
+      : '{}';
+    const parsed = JSON.parse(raw || '{}');
+    const docId = parsed.document || parsed.id;
+    if (!docId) return;
+
+    const payload = {
+      message,
+      origin,
+      socket,
+      documentId: docId,
+      parsed,
+      source: 'canonical'
+    };
+    this.emit('documentRequest', payload);
+    this.emit('DocumentRequest', payload);
+
+    const docs = this._state.content.documents;
+    if (!docs || !Object.prototype.hasOwnProperty.call(docs, docId)) {
+      this.relayFrom(origin.name, message, socket);
+      return;
+    }
+
+    if (!this._sendP2pFileSendToPeer(docId, origin.name)) {
+      this.emit('warning', `[FABRIC:PEER] DOCUMENT_REQUEST: could not send P2P_FILE_SEND to ${origin && origin.name}`);
+    }
   }
 
   _registerActor (object) {

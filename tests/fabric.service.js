@@ -5,6 +5,9 @@ const assert = require('assert');
 const EventEmitter = require('events');
 const Service = require('../types/service');
 
+/** Skip real networking and heartbeat ticks during short unit tests. */
+const FAST_SERVICE = Object.freeze({ networking: false, interval: 86400000 });
+
 describe('@fabric/core/types/service', function () {
   describe('Service', function () {
     it('is available from @fabric/core', function () {
@@ -13,6 +16,7 @@ describe('@fabric/core/types/service', function () {
 
     it('can create an instance', async function provenance () {
       const service = new Service({
+        ...FAST_SERVICE,
         name: 'Test'
       });
 
@@ -21,6 +25,7 @@ describe('@fabric/core/types/service', function () {
 
     it('can start offering service', async function () {
       const service = new Service({
+        ...FAST_SERVICE,
         name: 'fun'
       });
 
@@ -42,6 +47,7 @@ describe('@fabric/core/types/service', function () {
     it('can run for 10 beats', function (done) {
       async function test () {
         const service = new Service({
+          ...FAST_SERVICE,
           name: 'fun',
           interval: 0
         });
@@ -60,6 +66,7 @@ describe('@fabric/core/types/service', function () {
 
     it('can run in persistent mode', async function provenance () {
       const service = new Service({
+        ...FAST_SERVICE,
         name: 'Test',
         persistent: true
       });
@@ -70,7 +77,7 @@ describe('@fabric/core/types/service', function () {
 
   describe('_registerActor()', function () {
     it('can register an actor successfully', async function () {
-      const service = new Service();
+      const service = new Service(FAST_SERVICE);
       await service.start();
       const registration = await service._registerActor({ name: 'Sally' });
       await service.stop();
@@ -80,7 +87,7 @@ describe('@fabric/core/types/service', function () {
 
     it('emits the "actor" event', function (done) {
       async function test () {
-        const service = new Service();
+        const service = new Service(FAST_SERVICE);
 
         service.on('actor', async function (actor) {
           if (actor.name && actor.name === 'Sally') {
@@ -98,7 +105,7 @@ describe('@fabric/core/types/service', function () {
 
     it('create an empty actor', function (done) {
       async function test () {
-        const service = new Service();
+        const service = new Service(FAST_SERVICE);
 
         service.on('actor', async function (actor) {
           if (actor.id && actor.id === 'a5b08f19adfd2918e354af8c11e1b4efd963b5f5a525900d63a01cd2fd28176f') {
@@ -116,7 +123,7 @@ describe('@fabric/core/types/service', function () {
 
     it('create an actor from an object', function (done) {
       async function test () {
-        const service = new Service();
+        const service = new Service(FAST_SERVICE);
 
         service.on('actor', async function (actor) {
           if (actor.id && actor.id === 'a5b08f19adfd2918e354af8c11e1b4efd963b5f5a525900d63a01cd2fd28176f') {
@@ -134,7 +141,7 @@ describe('@fabric/core/types/service', function () {
 
     it('create an actor from an array', function (done) {
       async function test () {
-        const service = new Service();
+        const service = new Service(FAST_SERVICE);
 
         service.on('actor', async function (actor) {
           if (actor.id && actor.id === 'a5b08f19adfd2918e354af8c11e1b4efd963b5f5a525900d63a01cd2fd28176f') {
@@ -153,7 +160,7 @@ describe('@fabric/core/types/service', function () {
 
   describe('sync()', function () {
     it('can run sync successfully', async function () {
-      const service = new Service();
+      const service = new Service(FAST_SERVICE);
       await service.start();
       service.sync();
       await service.stop();
@@ -163,7 +170,7 @@ describe('@fabric/core/types/service', function () {
 
   describe('_defineResource()', function () {
     it('can define a resoure successfully', async function () {
-      const service = new Service();
+      const service = new Service(FAST_SERVICE);
       await service.start();
       const resource = await service._defineResource('Test', {});
       await service.stop();
@@ -175,7 +182,7 @@ describe('@fabric/core/types/service', function () {
 
   describe('_registerChannel()', function () {
     it('can register a channel successfully', async function () {
-      const service = new Service();
+      const service = new Service(FAST_SERVICE);
       await service.start();
       const registration = await service._registerChannel({ name: 'Chat of Chad' });
       await service.stop();
@@ -184,7 +191,7 @@ describe('@fabric/core/types/service', function () {
     });
 
     it('persists a channel when an id is provided', async function () {
-      const service = new Service();
+      const service = new Service(FAST_SERVICE);
       await service.start();
       const registration = await service._registerChannel({ id: 'chad-chat', name: 'Chat of Chad' });
       const fetched = await service._getChannel('chad-chat');
@@ -197,7 +204,7 @@ describe('@fabric/core/types/service', function () {
 
   describe('_listChannels()', function () {
     it('can list channels successfully', async function () {
-      const service = new Service();
+      const service = new Service(FAST_SERVICE);
       await service.start();
       await service._registerChannel({ id: 'list-ch', name: 'Chat of Chad' });
       const result = await service._listChannels();
@@ -209,7 +216,7 @@ describe('@fabric/core/types/service', function () {
 
   describe('_listActors()', function () {
     it('can list channels successfully', async function () {
-      const service = new Service();
+      const service = new Service(FAST_SERVICE);
       await service.start();
       const registration = await service._registerActor({ name: 'Chad' });
       const result = await service._listActors();
@@ -222,7 +229,7 @@ describe('@fabric/core/types/service', function () {
 
   describe('_addMemberToChannel()', function () {
     it('can add a member to a channel successfully', async function () {
-      const service = new Service();
+      const service = new Service(FAST_SERVICE);
       await service.start();
       const channel = await service._registerChannel({ id: 'join-ch', name: 'Chat of Chad' });
       const registration = await service._registerActor({ name: 'Chad' });
@@ -243,7 +250,7 @@ describe('@fabric/core/types/service', function () {
 
   describe('_getSubscriptions()', function () {
     it('can retrieve actor subscriptions successfully', async function () {
-      const service = new Service();
+      const service = new Service(FAST_SERVICE);
       await service.start();
       const channel = await service._registerChannel({ id: 'sub-ch', name: 'Chat of Chad' });
       const registration = await service._registerActor({ name: 'Chad' });
@@ -260,7 +267,7 @@ describe('@fabric/core/types/service', function () {
 
   describe('_getMembers()', function () {
     it('can retrieve channel members successfully', async function () {
-      const service = new Service();
+      const service = new Service(FAST_SERVICE);
       await service.start();
       const channel = await service._registerChannel({ id: 'mem-ch', name: 'Chat of Chad' });
       const registration = await service._registerActor({ name: 'Chad' });
@@ -279,7 +286,7 @@ describe('@fabric/core/types/service', function () {
 
   describe('_POST()', function () {
     it('can call _POST successfully', async function () {
-      const service = new Service();
+      const service = new Service(FAST_SERVICE);
       await service.start();
       const link = await service._POST('/examples', { content: 'Hello, world!' });
       await service.stop();
@@ -288,7 +295,7 @@ describe('@fabric/core/types/service', function () {
     });
 
     it('provides a valid collection index', async function () {
-      const service = new Service();
+      const service = new Service(FAST_SERVICE);
       await service.start();
       const link = await service._POST('/examples', { content: 'Hello, world!' });
       const result = await service._GET('/examples');
@@ -302,7 +309,7 @@ describe('@fabric/core/types/service', function () {
     });
 
     it('provides the posted document in the expected location', async function () {
-      const service = new Service();
+      const service = new Service(FAST_SERVICE);
       await service.start();
       const link = await service._POST('/examples', { content: 'Hello, world!' });
       const result = await service._GET(link);
@@ -313,20 +320,111 @@ describe('@fabric/core/types/service', function () {
     });
   });
 
+  describe('on-chain visibility', function () {
+    it('commit emits a stable commitment id after state mutation', async function () {
+      const service = new Service(FAST_SERVICE);
+      await service.start();
+      const commits = [];
+      service.on('commit', (c) => commits.push(c));
+      service.set('/visibilityProbe', { seq: 1 });
+      await service.stop();
+      assert.strictEqual(commits.length, 1);
+      assert.ok(commits[0].id && typeof commits[0].id === 'string');
+      assert.ok(commits[0].id.length > 0);
+    });
+
+    it('patches and history expose RFC6902 deltas for audits', async function () {
+      const service = new Service(FAST_SERVICE);
+      await service.start();
+      const patchBatches = [];
+      service.on('patches', (p) => patchBatches.push(p));
+      service.set('/auditA', 1);
+      service.set('/auditB', 2);
+      await service.stop();
+      assert.strictEqual(patchBatches.length, 2);
+      assert.ok(patchBatches.every((batch) => Array.isArray(batch) && batch.length > 0));
+      assert.ok(patchBatches[0].some((op) => op.path && op.path.includes('auditA')));
+      assert.strictEqual(service.history.length, 2);
+    });
+
+    it('beat carries monotonic clock and state snapshot for observers', async function () {
+      const service = new Service(FAST_SERVICE);
+      await service.start();
+      let seen = null;
+      service.on('beat', (beat) => {
+        const payload = JSON.parse(beat.data);
+        seen = payload;
+      });
+      service.beat();
+      await service.stop();
+      assert.ok(seen);
+      assert.strictEqual(seen.clock, service.clock);
+      assert.ok(seen.created);
+      assert.ok(seen.state && typeof seen.state === 'object');
+    });
+
+    it('trust forwards tip hashes to subservices via alert', function () {
+      const alerts = [];
+      class ChainPeer extends Service {
+        alert (msg) {
+          alerts.push(msg);
+        }
+      }
+      const parent = new Service({ ...FAST_SERVICE, services: ['peer'] });
+      parent.services.peer = new ChainPeer(FAST_SERVICE);
+      const src = new EventEmitter();
+      src.settings = { debug: false, verbosity: -1 };
+      parent.trust(src, 'btc');
+      src.emit('tip', 'faded00beef');
+      assert.ok(alerts.some((a) => String(a).includes('faded00beef') && String(a).includes('chaintip')));
+    });
+
+    it('trust re-emits peer patches at the service boundary', async function () {
+      const parent = new Service(FAST_SERVICE);
+      await parent.start();
+      const src = new EventEmitter();
+      src.settings = { debug: false, verbosity: -1 };
+      parent.trust(src, 'peer');
+      const forwarded = [];
+      parent.on('patches', (p) => forwarded.push(p));
+      const sample = [{ op: 'add', path: '/x', value: 1 }];
+      src.emit('patches', sample);
+      await parent.stop();
+      assert.strictEqual(forwarded.length, 1);
+      assert.deepStrictEqual(forwarded[0], sample);
+    });
+
+    it('route with high verbosity emits routing and commit diagnostics', async function () {
+      const service = new Service({ ...FAST_SERVICE, verbosity: 4 });
+      await service.start();
+      const lines = [];
+      service.on('debug', (m) => lines.push(String(m)));
+      service.define('VisibleRoute', {
+        handler: function () {
+          return { ok: true };
+        }
+      });
+      await service.route({ type: 'VisibleRoute', data: {} });
+      await service.stop();
+      assert.ok(lines.some((x) => x.includes('routing message')));
+      assert.ok(lines.some((x) => x.includes('route commit')));
+    });
+  });
+
   describe('edge branches', function () {
     it('trust rejects non-EventEmitter sources', function () {
-      const service = new Service();
+      const service = new Service(FAST_SERVICE);
       assert.throws(() => service.trust({}), /EventEmitter/);
     });
 
     it('broadcast enforces @type and @data', async function () {
-      const service = new Service();
+      const service = new Service(FAST_SERVICE);
       await assert.rejects(() => service.broadcast({}), /@type/);
       await assert.rejects(() => service.broadcast({ '@type': 'X' }), /@data/);
     });
 
     it('_GET returns null for non-string path', async function () {
-      const service = new Service();
+      const service = new Service(FAST_SERVICE);
       await service.start();
       const value = await service._GET(123);
       await service.stop();
@@ -334,7 +432,7 @@ describe('@fabric/core/types/service', function () {
     });
 
     it('_PUT root path stores object on internal state container', async function () {
-      const service = new Service();
+      const service = new Service(FAST_SERVICE);
       await service.start();
       await service._PUT('/', { actors: {}, channels: {}, messages: {}, services: {}, custom: 1 });
       const state = service._state;
@@ -343,7 +441,7 @@ describe('@fabric/core/types/service', function () {
     });
 
     it('connect emits warning when store restore payload is invalid JSON', async function () {
-      const service = new Service({ networking: false });
+      const service = new Service(FAST_SERVICE);
       const warnings = [];
       service.on('warning', (msg) => warnings.push(String(msg)));
       service.store = {
@@ -355,7 +453,7 @@ describe('@fabric/core/types/service', function () {
     });
 
     it('_POST throws when path or data is missing', async function () {
-      const service = new Service({ networking: false });
+      const service = new Service(FAST_SERVICE);
       await service.start();
       await assert.rejects(() => service._POST('', { x: 1 }), /Path must be provided/);
       await assert.rejects(() => service._POST('/a', null), /Data must be provided/);
@@ -363,7 +461,7 @@ describe('@fabric/core/types/service', function () {
     });
 
     it('_PUT with invalid pointer path emits error (does not throw)', async function () {
-      const service = new Service({ networking: false });
+      const service = new Service(FAST_SERVICE);
       await service.start();
       const errors = [];
       service.on('error', (e) => errors.push(String(e)));
@@ -373,7 +471,7 @@ describe('@fabric/core/types/service', function () {
     });
 
     it('handler emits error for malformed message shapes', async function () {
-      const service = new Service({ networking: false });
+      const service = new Service(FAST_SERVICE);
       const errors = [];
       service.on('error', (e) => errors.push(String(e)));
       service.handler(null);
@@ -381,17 +479,17 @@ describe('@fabric/core/types/service', function () {
     });
 
     it('lock returns false while already LOCKED', async function () {
-      const service = new Service({ networking: false });
+      const service = new Service(FAST_SERVICE);
       await service.start();
-      assert.strictEqual(service.lock(200), true);
-      assert.strictEqual(service.lock(200), false);
-      await new Promise((r) => setTimeout(r, 250));
-      assert.strictEqual(service.lock(1), true);
+      assert.strictEqual(service.lock(20), true);
+      assert.strictEqual(service.lock(20), false);
+      await new Promise((r) => setTimeout(r, 35));
+      assert.strictEqual(service.lock(2), true);
       await service.stop();
     });
 
     it('route runs definition handler and returns handler result', async function () {
-      const service = new Service({ networking: false });
+      const service = new Service(FAST_SERVICE);
       await service.start();
       service.define('EdgeOp', {
         handler: function (msg) {
@@ -404,7 +502,7 @@ describe('@fabric/core/types/service', function () {
     });
 
     it('replay invokes route for each item', async function () {
-      const service = new Service({ networking: false });
+      const service = new Service(FAST_SERVICE);
       await service.start();
       let n = 0;
       service.route = async function routedStub (msg) {
@@ -418,7 +516,7 @@ describe('@fabric/core/types/service', function () {
     });
 
     it('trust forwards source message events through _handleTrustedMessage', async function () {
-      const service = new Service({ networking: false });
+      const service = new Service(FAST_SERVICE);
       await service.start();
       const src = new EventEmitter();
       src.settings = { debug: false, verbosity: 0 };
@@ -433,7 +531,7 @@ describe('@fabric/core/types/service', function () {
     });
 
     it('_startAllServices warns when services map was cleared', async function () {
-      const service = new Service({ networking: false });
+      const service = new Service(FAST_SERVICE);
       const warnings = [];
       service.on('warning', (w) => warnings.push(String(w)));
       service.services = null;
@@ -442,7 +540,7 @@ describe('@fabric/core/types/service', function () {
     });
 
     it('subscribe validates actor and channel ids', async function () {
-      const service = new Service({ networking: false });
+      const service = new Service(FAST_SERVICE);
       await service.start();
       await assert.rejects(() => service.subscribe('', 'ch'), /actor/i);
       await assert.rejects(() => service.subscribe('a', ''), /channel/i);
@@ -451,7 +549,7 @@ describe('@fabric/core/types/service', function () {
     });
 
     it('send writes a framed block to fabric after connect', async function () {
-      const service = new Service({ networking: false });
+      const service = new Service(FAST_SERVICE);
       await service.connect(false);
       const chunks = [];
       service.fabric.on('data', (buf) => chunks.push(buf));
@@ -462,7 +560,7 @@ describe('@fabric/core/types/service', function () {
     });
 
     it('identify emits auth with service public key', async function () {
-      const service = new Service({ networking: false });
+      const service = new Service(FAST_SERVICE);
       await service.start();
       let seen = null;
       service.on('auth', (k) => { seen = k; });
@@ -473,15 +571,15 @@ describe('@fabric/core/types/service', function () {
     });
 
     it('cache.get drops entries after TTL', async function () {
-      const service = new Service({ networking: false });
+      const service = new Service(FAST_SERVICE);
       await service.cache.set('ttl-key', 99, 2);
       assert.strictEqual(await service.cache.get('ttl-key'), 99);
-      await new Promise((r) => setTimeout(r, 15));
+      await new Promise((r) => setTimeout(r, 25));
       assert.strictEqual(await service.cache.get('ttl-key'), null);
     });
 
     it('toString exposes entity serialization of state', async function () {
-      const service = new Service({ networking: false });
+      const service = new Service(FAST_SERVICE);
       await service.start();
       const s = service.toString();
       await service.stop();
@@ -490,7 +588,7 @@ describe('@fabric/core/types/service', function () {
     });
 
     it('_getActor and _getChannel return null and emit when id missing', async function () {
-      const service = new Service({ networking: false });
+      const service = new Service(FAST_SERVICE);
       await service.start();
       const errors = [];
       service.on('error', (e) => errors.push(String(e)));
@@ -502,7 +600,7 @@ describe('@fabric/core/types/service', function () {
     });
 
     it('route returns null when no definition matches message type', async function () {
-      const service = new Service({ networking: false });
+      const service = new Service(FAST_SERVICE);
       await service.start();
       const out = await service.route({ type: 'NoSuchHandler' });
       await service.stop();
@@ -510,20 +608,20 @@ describe('@fabric/core/types/service', function () {
     });
 
     it('ready emits a ready event', function (done) {
-      const service = new Service({ networking: false });
+      const service = new Service(FAST_SERVICE);
       service.on('ready', () => done());
       service.ready();
     });
 
     it('init seeds Web Components map', function () {
-      const service = new Service({ networking: false });
+      const service = new Service(FAST_SERVICE);
       service.components = { x: 1 };
       service.init();
       assert.deepStrictEqual(service.components, {});
     });
 
     it('sync ensures _sources is an array', function () {
-      const service = new Service({ networking: false });
+      const service = new Service(FAST_SERVICE);
       delete service._sources;
       service.sync();
       assert.ok(Array.isArray(service._sources));
@@ -537,14 +635,14 @@ describe('@fabric/core/types/service', function () {
           received.push(m);
         }
       }
-      const parent = new Service({ networking: false, services: ['child'] });
-      parent.services.child = new Child({ networking: false });
+      const parent = new Service({ ...FAST_SERVICE, services: ['child'] });
+      parent.services.child = new Child(FAST_SERVICE);
       parent.alert('broadcast-body');
       assert.deepStrictEqual(received, ['broadcast-body']);
     });
 
     it('_registerService warns on duplicate registration', async function () {
-      const parent = new Service({ networking: false });
+      const parent = new Service(FAST_SERVICE);
       await parent.start();
       const warnings = [];
       parent.on('warning', (w) => warnings.push(String(w)));
@@ -556,7 +654,7 @@ describe('@fabric/core/types/service', function () {
     });
 
     it('_applyChanges catches invalid JSON Patch operations', async function () {
-      const service = new Service({ networking: false });
+      const service = new Service(FAST_SERVICE);
       await service.start();
       const stderr = [];
       const orig = console.error;
@@ -575,7 +673,7 @@ describe('@fabric/core/types/service', function () {
     });
 
     it('_send persists message entity and returns id', async function () {
-      const service = new Service({ networking: false });
+      const service = new Service(FAST_SERVICE);
       await service.start();
       const id = await service._send({ hello: 'world' });
       const doc = await service._GET(`/messages/${id}`);
@@ -586,7 +684,7 @@ describe('@fabric/core/types/service', function () {
     });
 
     it('process emits debug when settings.debug is true', async function () {
-      const service = new Service({ networking: false, debug: true });
+      const service = new Service({ ...FAST_SERVICE, debug: true });
       const lines = [];
       service.on('debug', (m) => lines.push(String(m)));
       await service.process();
@@ -594,7 +692,7 @@ describe('@fabric/core/types/service', function () {
     });
 
     it('trust binds debug listener when source.settings.debug', function () {
-      const service = new Service({ networking: false });
+      const service = new Service(FAST_SERVICE);
       const src = new EventEmitter();
       src.settings = { debug: true, verbosity: 0 };
       const dbg = [];
@@ -605,7 +703,7 @@ describe('@fabric/core/types/service', function () {
     });
 
     it('define default handler returns null from route', async function () {
-      const service = new Service({ networking: false });
+      const service = new Service(FAST_SERVICE);
       await service.start();
       service.define('OnlyDefault');
       const out = await service.route({ type: 'OnlyDefault', data: {} });

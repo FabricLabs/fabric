@@ -1050,6 +1050,17 @@ class Wallet extends Service {
     }
     return addresses;
   }
+
+  /**
+   * L1 / hub document purchase binding: same 64-char hex as hub `CreatePurchaseInvoice` / HTLC `contentHash`.
+   * @param {string} documentId
+   * @param {object} parsed Whitelisted document fields (see {@link Peer#_buildDocumentParsedForPublish}).
+   * @returns {string}
+   */
+  static purchaseContentHashHex (documentId, parsed) {
+    const { purchaseContentHashHex: hashFn } = require('../functions/publishedDocumentEnvelope');
+    return hashFn(documentId, parsed);
+  }
 }
 
 module.exports = Wallet;

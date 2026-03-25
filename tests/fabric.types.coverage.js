@@ -254,9 +254,9 @@ describe('@fabric/core/types coverage (Wallet, Service, Contract)', function () 
 
     it('cache get/set respects ttl', async function () {
       const s = new Service();
-      await s.cache.set('k', 42, 10);
+      await s.cache.set('k', 42, 2);
       assert.strictEqual(await s.cache.get('k'), 42);
-      await new Promise((r) => setTimeout(r, 30));
+      await new Promise((r) => setTimeout(r, 8));
       assert.strictEqual(await s.cache.get('k'), null);
     });
 
