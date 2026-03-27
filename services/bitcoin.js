@@ -535,6 +535,18 @@ class Bitcoin extends Service {
         ]);
 
         const detectedNetwork = this._normalizeChainName(chainInfo.chain || candidate.network);
+        const targetNetwork = this._normalizeChainName(this.settings.network || 'mainnet');
+
+        // Never reuse a daemon from a different chain.
+        if (detectedNetwork && targetNetwork && detectedNetwork !== targetNetwork) {
+          if (this.settings.debug) {
+            this.emit(
+              'debug',
+              `[FABRIC:BITCOIN] Ignoring external ${detectedNetwork} daemon while target network is ${targetNetwork}`
+            );
+          }
+          continue;
+        }
         if (this.settings.debug) {
           this.emit(
             'debug',
@@ -2238,7 +2250,7 @@ class Bitcoin extends Service {
     switch (this.settings.network) {
       default:
       case 'mainnet':
-        datadir = (this.settings.constraints.storage.size) ? './stores/bitcoin-pruned' : './stores/bitcoin';
+        datadir = (this.settings.constraints.storage.size) ? './stores/bitcoin-mainnet-pruned' : './stores/bitcoin-mainnet';
         break;
       case 'testnet':
         datadir = './stores/bitcoin-testnet';
@@ -2504,7 +2516,12 @@ class Bitcoin extends Service {
     this.emit('debug', `[SERVICES:BITCOIN] Starting for network "${this.settings.network}"...`);
     this.status = 'STARTING';
 
-    const existingBitcoindFound = await this._detectExistingBitcoind();
+    const shouldProbeExternalNode = !(
+      this.settings.enforceIsolatedRegtest &&
+      this.settings.managed &&
+      this.settings.network === 'regtest'
+    );
+    const existingBitcoindFound = shouldProbeExternalNode ? await this._detectExistingBitcoind() : false;
     if (existingBitcoindFound && this.settings.managed) {
       this.emit('log', '[FABRIC:BITCOIN] Existing bitcoind detected; not starting another managed instance');
       this.settings.managed = false;

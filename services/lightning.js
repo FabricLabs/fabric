@@ -130,6 +130,19 @@ class Lightning extends Service {
     return 'regtest';
   }
 
+  _bitcoinCliNetworkFlag () {
+    const network = this.settings.network || 'regtest';
+    switch (network) {
+      case 'mainnet': return null;
+      case 'testnet': return '-testnet';
+      case 'testnet4': return '-testnet4';
+      case 'signet': return '-signet';
+      case 'regtest':
+      default:
+        return '-regtest';
+    }
+  }
+
   static plugin (state) {
     const lightning = new Lightning(state);
     const plugin = new LightningPlugin(state);
@@ -477,16 +490,18 @@ class Lightning extends Service {
     if (this.settings.managed && this.settings.bitcoin) {
       if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Waiting for Lightning to be ready...');
       try {
-        const bitcoinCli = children.spawn('bitcoin-cli', [
-        '-regtest',
-        `-datadir=${this.settings.bitcoin.datadir}`,
-        '-rpcclienttimeout=60',
-        `-rpcconnect=${this.settings.bitcoin.host}`,
-        `-rpcport=${this.settings.bitcoin.rpcport}`,
-        `-rpcuser=${this.settings.bitcoin.rpcuser}`,
-        '-stdinrpcpass',
-        'getblockchaininfo'
-      ]);
+        const bitcoinCliArgs = [
+          `-datadir=${this.settings.bitcoin.datadir}`,
+          '-rpcclienttimeout=60',
+          `-rpcconnect=${this.settings.bitcoin.host}`,
+          `-rpcport=${this.settings.bitcoin.rpcport}`,
+          `-rpcuser=${this.settings.bitcoin.rpcuser}`,
+          '-stdinrpcpass',
+          'getblockchaininfo'
+        ];
+        const networkFlag = this._bitcoinCliNetworkFlag();
+        if (networkFlag) bitcoinCliArgs.unshift(networkFlag);
+        const bitcoinCli = children.spawn('bitcoin-cli', bitcoinCliArgs);
 
       bitcoinCli.stdin.write(this.settings.bitcoin.rpcpassword + '\n');
       bitcoinCli.stdin.end();
@@ -512,7 +527,9 @@ class Lightning extends Service {
 
         if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Lightning is ready');
       } catch (error) {
-        throw new Error(`Could not connect to bitcoind using bitcoin-cli. Is lightningd running?\n\nMake sure you have bitcoind running and that bitcoin-cli is able to connect to bitcoind.\n\nYou can verify that your Bitcoin Core installation is ready for use by running:\n\n    $ bitcoin-cli -regtest -datadir=${this.settings.bitcoin.datadir} -rpcclienttimeout=60 -rpcconnect=${this.settings.bitcoin.host} -rpcport=${this.settings.bitcoin.rpcport} -rpcuser=${this.settings.bitcoin.rpcuser} -stdinrpcpass echo 'hello world'`);
+        const networkFlag = this._bitcoinCliNetworkFlag();
+        const networkHint = networkFlag ? `${networkFlag} ` : '';
+        throw new Error(`Could not connect to bitcoind using bitcoin-cli. Is lightningd running?\n\nMake sure you have bitcoind running and that bitcoin-cli is able to connect to bitcoind.\n\nYou can verify that your Bitcoin Core installation is ready for use by running:\n\n    $ bitcoin-cli ${networkHint}-datadir=${this.settings.bitcoin.datadir} -rpcclienttimeout=60 -rpcconnect=${this.settings.bitcoin.host} -rpcport=${this.settings.bitcoin.rpcport} -rpcuser=${this.settings.bitcoin.rpcuser} -stdinrpcpass echo 'hello world'`);
       }
     }
 

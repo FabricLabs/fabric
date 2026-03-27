@@ -1861,11 +1861,11 @@ class Peer extends Service {
 
     if (this.settings.listen) {
       this.emit('log', 'Listener starting...');
-      if (this.settings.debug) console.debug('Starting listener on', this.interface, this.port);
+      if (this.settings.debug) this.emit('debug', `Starting listener on ${this.interface}:${this.port}`);
 
       try {
         address = await this.listen();
-        if (this.settings.debug) console.debug('got address:', address);
+        if (this.settings.debug) this.emit('debug', `got address: ${JSON.stringify(address)}`);
         this.listenAddress = address;
         this.emit('log', 'Listener started!');
       } catch (exception) {
@@ -2100,7 +2100,7 @@ class Peer extends Service {
    */
   async listen () {
     return new Promise((resolve, reject) => {
-      if (this.settings.debug) console.debug('Listening on', this.interface, this.port);
+      if (this.settings.debug) this.emit('debug', `Listening on ${this.interface}:${this.port}`);
 
       // Handle server errors before attempting to listen
       const errorHandler = (error) => {
@@ -2162,12 +2162,12 @@ class Swarm extends Actor {
   }
 
   broadcast (msg) {
-    if (this.settings.verbosity >= 5) console.log('broadcasting:', msg);
+    if (this.settings.verbosity >= 5) this.emit('debug', `broadcasting: ${JSON.stringify(msg)}`);
     this.agent.broadcast(msg);
   }
 
   connect (address) {
-    if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', `Connecting to: ${address}`);
+    if (this.settings.verbosity >= 4) this.emit('debug', `[FABRIC:SWARM] Connecting to: ${address}`);
 
     try {
       this.agent._connect(address);
@@ -2189,22 +2189,22 @@ class Swarm extends Actor {
     });
 
     swarm.agent.on('state', function (state) {
-      console.log('[FABRIC:SWARM]', 'Received state from agent:', state);
+      this.emit('debug', `[FABRIC:SWARM] Received state from agent: ${JSON.stringify(state)}`);
       swarm.emit('state', state);
     });
 
     swarm.agent.on('change', function (change) {
-      console.log('[FABRIC:SWARM]', 'Received change from agent:', change);
+      this.emit('debug', `[FABRIC:SWARM] Received change from agent: ${JSON.stringify(change)}`);
       swarm.emit('change', change);
     });
 
     swarm.agent.on('patches', function (patches) {
-      console.log('[FABRIC:SWARM]', 'Received patches from agent:', patches);
+      this.emit('debug', `[FABRIC:SWARM] Received patches from agent: ${JSON.stringify(patches)}`);
       swarm.emit('patches', patches);
     });
 
     swarm.agent.on('peer', function (peer) {
-      console.log('[FABRIC:SWARM]', 'Received peer from agent:', peer);
+      this.emit('debug', `[FABRIC:SWARM] Received peer from agent: ${JSON.stringify(peer)}`);
       swarm._registerPeer(peer);
     });
 
@@ -2262,7 +2262,7 @@ class Swarm extends Actor {
     const swarm = this;
     const slots = MAX_PEERS - Object.keys(this.nodes).length;
     const peers = Object.keys(this.peers).map(function (id) {
-      if (swarm.settings.verbosity >= 5) console.log('[FABRIC:SWARM]', '_fillPeerSlots()', 'Checking:', swarm.peers[id]);
+      if (swarm.settings.verbosity >= 5) swarm.emit('debug', `[FABRIC:SWARM] _fillPeerSlots() checking: ${JSON.stringify(swarm.peers[id])}`);
       return swarm.peers[id].address;
     });
     const candidates = swarm.settings.peers.filter(function (address) {
@@ -2277,25 +2277,25 @@ class Swarm extends Actor {
   }
 
   async _connectSeedNodes () {
-    if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', 'Connecting to seed nodes...', this.settings.seeds);
+    if (this.settings.verbosity >= 4) this.emit('debug', `[FABRIC:SWARM] Connecting to seed nodes: ${JSON.stringify(this.settings.seeds)}`);
     for (const id in this.settings.seeds) {
-      if (this.settings.verbosity >= 5) console.log('[FABRIC:SWARM]', 'Iterating on seed:', this.settings.seeds[id]);
+      if (this.settings.verbosity >= 5) this.emit('debug', `[FABRIC:SWARM] Iterating on seed: ${this.settings.seeds[id]}`);
       this.connect(this.settings.seeds[id]);
     }
   }
 
   async start () {
-    if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', 'Starting...');
+    if (this.settings.verbosity >= 4) this.emit('debug', '[FABRIC:SWARM] Starting...');
     await this.agent.start();
     await this._connectSeedNodes();
-    if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', 'Started!');
+    if (this.settings.verbosity >= 4) this.emit('debug', '[FABRIC:SWARM] Started!');
     return this;
   }
 
   async stop () {
-    if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', 'Stopping...');
+    if (this.settings.verbosity >= 4) this.emit('debug', '[FABRIC:SWARM] Stopping...');
     await this.agent.stop();
-    if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', 'Stopped!');
+    if (this.settings.verbosity >= 4) this.emit('debug', '[FABRIC:SWARM] Stopped!');
     return this;
   }
 }
