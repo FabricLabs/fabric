@@ -75,17 +75,12 @@ class CLI extends FabricShell {
       ? { ...this.environment.bitcoinSettings }
       : { ...(settings.bitcoin || {}) };
 
-    // Network priority:
+    // Network policy:
     // 1) explicit CLI setting
     // 2) explicit nested bitcoin setting
-    // 3) discovered bitcoin.conf setting
-    // 4) regtest default for isolated local usage
+    // 3) regtest default for interactive/local usage
     const explicitNetwork = settings.network || (settings.bitcoin && settings.bitcoin.network);
-    if (explicitNetwork) {
-      bitcoinSettings.network = explicitNetwork;
-    } else {
-      bitcoinSettings.network = 'regtest';
-    }
+    bitcoinSettings.network = explicitNetwork || 'regtest';
 
     const defaultRPCPortByNetwork = {
       mainnet: 8332,
@@ -116,13 +111,21 @@ class CLI extends FabricShell {
     }
 
     // Managed mode policy:
-    // - Default to managed for regtest so local CLI usage is self-contained.
+    // - Allow managed startup on all supported networks by default.
     // - Bitcoin service will still disable managed mode at runtime if it detects
-    //   a reachable existing bitcoind.
+    //   a reachable same-network bitcoind.
     const explicitManaged = settings.bitcoin && Object.prototype.hasOwnProperty.call(settings.bitcoin, 'managed');
     const shouldAutoManageBitcoin = explicitManaged
       ? settings.bitcoin.managed
-      : (bitcoinSettings.network === 'regtest');
+      : true;
+
+    const defaultDatadirByNetwork = {
+      regtest: './stores/bitcoin-regtest',
+      signet: './stores/bitcoin-signet',
+      mainnet: './stores/bitcoin-mainnet',
+      testnet: './stores/bitcoin-testnet',
+      testnet4: './stores/bitcoin-testnet4'
+    };
 
     // Assign Settings
     this.settings = merge({
@@ -139,13 +142,13 @@ class CLI extends FabricShell {
         enable: bitcoinConfigFound || (settings.bitcoin && settings.bitcoin.enable), // Enable if config found OR explicitly enabled in settings
         mode: 'rpc', // Always use RPC mode for connections
         managed: shouldAutoManageBitcoin,
+        enforceIsolatedRegtest: true,
         host: 'localhost',
         port: 8443,
         rpcport: defaultRPCPortByNetwork[bitcoinSettings.network] || 18443,
         secure: false,
-        // For regtest we want an isolated, local datadir so we never touch a
-        // mainnet/testnet installation. Callers can still override this.
-        datadir: (bitcoinSettings.network === 'regtest') ? './stores/bitcoin-regtest' : undefined
+        // Use per-network isolated datadirs by default; callers can override.
+        datadir: defaultDatadirByNetwork[bitcoinSettings.network]
       }, bitcoinSettings), // Bitcoin settings from config/user take precedence
       lightning: {
         enable: false, // Disabled by default
@@ -171,6 +174,7 @@ class CLI extends FabricShell {
     // Keep Lightning pinned to the same Bitcoin RPC endpoint/credentials used by
     // the Bitcoin service so CLN startup checks don't drift.
     this.settings.lightning = this.settings.lightning || {};
+    if (!this.settings.lightning.network) this.settings.lightning.network = this.settings.bitcoin.network;
     this.settings.lightning.bitcoin = merge({
       host: this.settings.bitcoin.host,
       rpcport: this.settings.bitcoin.rpcport,
@@ -207,6 +211,7 @@ class CLI extends FabricShell {
     this.requests = {};
     this.services = {};
     this.connections = {};
+    this._originalConsole = null;
 
     // Add reconnection tracking
     this.reconnectTimers = {};
@@ -432,6 +437,7 @@ class CLI extends FabricShell {
     if (this.settings.render) {
       // Render UI
       this.render();
+      this._installConsoleBridge();
     }
 
     // Log the listening port and peer list when debugging is enabled
@@ -583,6 +589,7 @@ class CLI extends FabricShell {
         // Refresh Lightning's Bitcoin RPC settings from the started Bitcoin service.
         // Bitcoin startup may normalize or auto-detect host/port/auth at runtime.
         if (this.bitcoin && this.lightning) {
+          this.lightning.settings.network = this.bitcoin.settings.network;
           this.lightning.settings.bitcoin = merge({}, this.lightning.settings.bitcoin || {}, {
             host: this.bitcoin.settings.host,
             rpcport: this.bitcoin.settings.rpcport,
@@ -635,8 +642,82 @@ class CLI extends FabricShell {
       unspent: false
     };
 
+    if (this._heart) {
+      clearInterval(this._heart);
+      this._heart = null;
+    }
+
+    // Stop anchors before tearing down the peer node to avoid orphaned managed daemons.
+    if (this.settings.lightning && this.settings.lightning.enable && this.lightning && typeof this.lightning.stop === 'function') {
+      try {
+        await this.lightning.stop();
+      } catch (exception) {
+        this._appendError(`[FABRIC:CLI] Lightning stop error: ${exception.message || exception}`);
+      }
+    }
+
+    if (this.settings.bitcoin && this.settings.bitcoin.enable && this.bitcoin && typeof this.bitcoin.stop === 'function') {
+      try {
+        await this.bitcoin.stop();
+      } catch (exception) {
+        this._appendError(`[FABRIC:CLI] Bitcoin stop error: ${exception.message || exception}`);
+      }
+    }
+
     await this.node.stop();
+    this._restoreConsoleBridge();
     return process.exit(0);
+  }
+
+  _installConsoleBridge () {
+    if (!this.settings.render) return;
+    if (this._originalConsole) return;
+
+    this._originalConsole = {
+      log: console.log.bind(console),
+      info: console.info.bind(console),
+      warn: console.warn.bind(console),
+      error: console.error.bind(console),
+      debug: console.debug.bind(console),
+      trace: console.trace.bind(console)
+    };
+
+    const bridge = (level) => (...args) => {
+      try {
+        const message = args.map((arg) => {
+          if (arg instanceof Error) return arg.stack || arg.message;
+          if (typeof arg === 'object') {
+            try { return JSON.stringify(arg); } catch (_) { return String(arg); }
+          }
+          return String(arg);
+        }).join(' ');
+
+        // Route all console output through the TUI log.
+        this._appendMessage(`{yellow-fg}[${level.toUpperCase()}]{/yellow-fg} ${message}`);
+      } catch (e) {
+        // Last-resort fallback if bridge formatting fails.
+        if (this._originalConsole) this._originalConsole.error('[FABRIC:CLI] console bridge failed:', e);
+      }
+    };
+
+    console.log = bridge('log');
+    console.info = bridge('info');
+    console.warn = bridge('warn');
+    console.error = bridge('error');
+    console.debug = bridge('debug');
+    console.trace = bridge('trace');
+  }
+
+  _restoreConsoleBridge () {
+    if (!this._originalConsole) return;
+
+    console.log = this._originalConsole.log;
+    console.info = this._originalConsole.info;
+    console.warn = this._originalConsole.warn;
+    console.error = this._originalConsole.error;
+    console.debug = this._originalConsole.debug;
+    console.trace = this._originalConsole.trace;
+    this._originalConsole = null;
   }
 
   get (path = '') {

@@ -514,7 +514,7 @@ class Environment extends Entity {
     try {
       fs.mkdirSync(this.settings.store);
     } catch (exception) {
-      console.error('Could not make store:', exception);
+      if (this.emit) this.emit('error', `Could not make store: ${exception.message || exception}`);
       return false;
     }
 
@@ -586,7 +586,7 @@ class Environment extends Entity {
           }
         });
       } catch (exception) {
-        console.error('[FABRIC:KEYGEN]', 'Could not load wallet data:', exception);
+        if (this.emit) this.emit('error', `[FABRIC:KEYGEN] Could not load wallet data: ${exception.message || exception}`);
       }
     } else {
       this.wallet = false;
@@ -600,7 +600,7 @@ class Environment extends Entity {
       fs.unlinkSync(this.WALLET_FILE);
       return true;
     } catch (exception) {
-      console.error('[FABRIC:ENVIRONMENT]', 'Wallet destroyed.');
+      if (this.emit) this.emit('warning', '[FABRIC:ENVIRONMENT] Wallet already destroyed or unavailable.');
       return false;
     }
   }
@@ -663,7 +663,7 @@ class Environment extends Entity {
       const content = JSON.stringify(encrypted, null, '  ') + '\n';
       fs.writeFileSync(this.WALLET_FILE, content);
     } catch (exception) {
-      console.error('[FABRIC:ENV]', 'Could not write wallet file:', exception);
+      if (this.emit) this.emit('error', `[FABRIC:ENV] Could not write wallet file: ${exception.message || exception}`);
       process.exit(1);
     }
 

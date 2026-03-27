@@ -118,7 +118,7 @@ class Service extends Actor {
       try {
         this.store = new Store(this.settings);
       } catch (E) {
-        console.error('Store Error:', E);
+        this.emit('error', `Store Error: ${E.message || E}`);
       }
     }
 
@@ -238,11 +238,11 @@ class Service extends Actor {
     try {
       plugin = require(local);
     } catch (E) {
-      console.log('could not load main:', E);
+      // Avoid direct stdout writes from library internals.
       try {
         plugin = require(fallback);
       } catch (E) {
-        console.log('Fallback service failed to load:', E);
+        // no-op: return null plugin below
       }
     }
 
@@ -255,7 +255,7 @@ class Service extends Actor {
     for (const [name, service] of Object.entries(this.services)) {
       if (!this.settings.services.includes(name)) continue;
       if (!service.alert) {
-        console.error('Service', name, 'does not have an alert function?');
+        this.emit('warning', `Service ${name} does not have an alert function`);
         continue;
       }
 
@@ -313,8 +313,7 @@ class Service extends Actor {
 
     if (!beat) {
       this.emit('error', 'Beat could not construct a Message!');
-      console.trace();
-      process.exit();
+      throw new Error('Beat could not construct a Message');
     }
 
     // TODO: remove JSON parser here — only needed for verification
@@ -348,7 +347,7 @@ class Service extends Actor {
     try {
       result = pointer.get(this._state.content, path);
     } catch (exception) {
-      console.error('[FABRIC:STATE]', 'Could not retrieve path:', path, pointer.get(this['@entity']['@data'], '/'), exception);
+      this.emit('error', `[FABRIC:STATE] Could not retrieve path ${path}: ${exception.message || exception}`);
     }
     return result;
   }
@@ -659,11 +658,11 @@ class Service extends Actor {
       });
 
       this.collections[key].on('message', (message) => {
-        console.log('[FABRIC:SERVICE]', 'Internal message:', key, message);
+        service.emit('debug', `[FABRIC:SERVICE] Internal message (${key}): ${JSON.stringify(message)}`);
       });
 
       this.collections[key].on('transaction', (transaction) => {
-        console.log('[FABRIC:SERVICE]', 'Internal transaction:', key, transaction);
+        service.emit('debug', `[FABRIC:SERVICE] Internal transaction (${key}): ${JSON.stringify(transaction)}`);
       });
 
       this.collections[key].on('changes', (changes) => {
@@ -679,7 +678,7 @@ class Service extends Actor {
       try {
         await this.store.start();
       } catch (E) {
-        console.error('[FABRIC:SERVICE]', 'Could not start store:', E);
+        this.emit('error', `[FABRIC:SERVICE] Could not start store: ${E.message || E}`);
       }
     }
 
@@ -694,7 +693,7 @@ class Service extends Actor {
     try {
       this.observer = manager.observe(this._state.content);
     } catch (exception) {
-      console.trace('Could not observe state:', this._state.content, exception);
+      this.emit('error', `[FABRIC:SERVICE] Could not observe state: ${exception.message || exception}`);
     }
 
     // Set a heartbeat
@@ -722,7 +721,7 @@ class Service extends Actor {
       try {
         await this.store.stop();
       } catch (E) {
-        console.error('[FABRIC:SERVICE]', 'Exception stopping store:', E);
+        this.emit('error', `[FABRIC:SERVICE] Exception stopping store: ${E.message || E}`);
       }
     }
 
@@ -814,7 +813,8 @@ class Service extends Actor {
     try {
       collection = new Collection(memory);
     } catch (E) {
-      console.error('Could not create collection:', E, memory);
+      this.emit('error', `Could not create collection: ${E.message || E}`);
+      return null;
     }
 
     // TODO: use Resource definition to de-deuplicate by fields.id
@@ -827,7 +827,7 @@ class Service extends Actor {
       await this.set(path, await collection.populate());
       result = `${path}/${data.address}`;
     } catch (E) {
-      console.log('NOPE:', E);
+      this.emit('error', `Could not persist collection update: ${E.message || E}`);
     }
 
     if (commit) await this.commit();
@@ -924,7 +924,7 @@ class Service extends Actor {
    * @return {Service}        Chainable method.
    */
   async send (channel, message, extra) {
-    if (this.debug) console.log('[SERVICE]', 'send()', 'Sending:', channel, message, extra);
+    if (this.debug) this.emit('debug', `[SERVICE] send() Sending: ${channel}`);
 
     const path = Buffer.alloc(256);
     const payload = Buffer.alloc(2048);
@@ -962,7 +962,7 @@ class Service extends Actor {
           this.emit('patches', patches);
         }
       } catch (E) {
-        console.error('Could not generate patches:', E);
+        this.emit('error', `Could not generate patches: ${E.message || E}`);
       }
     }
 
@@ -978,7 +978,7 @@ class Service extends Actor {
   }
 
   async _handleBitcoinCommit (commit) {
-    console.log('[FABRIC:SERVICE] Handling (Bitcoin?) commit:', commit);
+    this.emit('debug', `[FABRIC:SERVICE] Handling (Bitcoin?) commit: ${JSON.stringify(commit)}`);
   }
 
   async _attachBindings (emitter) {
@@ -1131,7 +1131,7 @@ class Service extends Actor {
         return true;
       }, true /* mutate doc (1st param) */);
     } catch (exception) {
-      console.error('Could not apply changes:', changes, exception);
+      console.error(`Could not apply changes: ${exception.message || exception}`);
     }
 
     this.commit();
@@ -1140,7 +1140,7 @@ class Service extends Actor {
   }
 
   async _handleStateChange (changes) {
-    console.log('MAGIC HANDLER:', changes);
+    this.emit('debug', `[FABRIC:SERVICE] State change: ${JSON.stringify(changes)}`);
     this.emit('message', {
       '@type': 'Transaction',
       '@data': {
@@ -1287,8 +1287,8 @@ class FabricShell extends Service {
     this.templates = {};
     this.keys = [];
 
-    this.stash.on('patches', function (patches) {
-      console.log('[FABRIC:APP]', 'heard patches!', patches);
+    this.stash.on('patches', (patches) => {
+      this.emit('debug', `[FABRIC:APP] heard patches: ${JSON.stringify(patches)}`);
     });
 
     if (this.settings.resources) {
@@ -1367,7 +1367,7 @@ class FabricShell extends Service {
 
       self.resources[name] = resource;
     } catch (E) {
-      console.error(E);
+      this.emit('error', E.message || String(E));
     }
 
     return this;
@@ -1381,7 +1381,7 @@ class FabricShell extends Service {
     const self = this;
     let resources = {};
 
-    console.warn('[APP]', 'deferring authority:', authority);
+    this.emit('warning', `[APP] deferring authority: ${authority}`);
 
     if (!resources) {
       resources = {};
@@ -1403,15 +1403,21 @@ class FabricShell extends Service {
   }
 
   async _appendMessage (msg) {
-    if (this.settings.verbosity > 2) console.log(`[${(new Date()).toISOString()}]: ${msg}`);
+    this.emit('log', `[${(new Date()).toISOString()}]: ${msg}`);
   }
 
   async _appendWarning (msg) {
-    console.warn(`[${(new Date()).toISOString()}]: ${msg}`);
+    this.emit('warning', `[${(new Date()).toISOString()}]: ${msg}`);
   }
 
   async _appendError (msg) {
-    console.error(`[${(new Date()).toISOString()}]: ${msg}`);
+    const line = `[${(new Date()).toISOString()}]: ${msg}`;
+    // Emitting `error` with no listener throws in Node.js EventEmitter.
+    if (this.listenerCount('error') > 0) {
+      this.emit('error', line);
+    } else {
+      this.emit('warning', line);
+    }
   }
 
   attach (element) {
@@ -1444,7 +1450,7 @@ class FabricShell extends Service {
       this._bindEvents(element);
       this.attach(element);
     } catch (E) {
-      console.error('Could not envelop element:', E);
+      this.emit('error', `Could not envelop element: ${E.message || E}`);
     }
 
     return this;

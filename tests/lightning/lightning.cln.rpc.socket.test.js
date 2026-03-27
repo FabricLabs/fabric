@@ -57,22 +57,36 @@ describe('@fabric/core/services/lightning CLN JSON-RPC socket', function () {
     } catch (_) {}
   });
 
+  function skipIfSocketPermissionDenied (ctx, error) {
+    if (error && (error.code === 'EPERM' || /operation not permitted/i.test(error.message || ''))) {
+      ctx.skip();
+      return true;
+    }
+    return false;
+  }
+
   it('_makeRPCRequest resolves result from a line-delimited JSON-RPC response', async function () {
-    const server = await createMockClnSocketServer(tmpDir, socketName, (req) => {
-      assert.strictEqual(req.jsonrpc, '2.0');
-      assert.strictEqual(req.method, 'getinfo');
-      assert.deepStrictEqual(req.params, []);
-      return {
-        jsonrpc: '2.0',
-        id: req.id,
-        result: {
-          id: '026e89b2b58b7f5f7b0b8c0d0e0f101112131415161718191a1b1c1d1e1f2021',
-          alias: 'mock',
-          color: '012345',
-          blockheight: 42
-        }
-      };
-    });
+    let server;
+    try {
+      server = await createMockClnSocketServer(tmpDir, socketName, (req) => {
+        assert.strictEqual(req.jsonrpc, '2.0');
+        assert.strictEqual(req.method, 'getinfo');
+        assert.deepStrictEqual(req.params, []);
+        return {
+          jsonrpc: '2.0',
+          id: req.id,
+          result: {
+            id: '026e89b2b58b7f5f7b0b8c0d0e0f101112131415161718191a1b1c1d1e1f2021',
+            alias: 'mock',
+            color: '012345',
+            blockheight: 42
+          }
+        };
+      });
+    } catch (error) {
+      if (skipIfSocketPermissionDenied(this, error)) return;
+      throw error;
+    }
 
     const ln = new Lightning({
       datadir: tmpDir,
@@ -88,11 +102,17 @@ describe('@fabric/core/services/lightning CLN JSON-RPC socket', function () {
   });
 
   it('_makeRPCRequest rejects on JSON-RPC error object', async function () {
-    const server = await createMockClnSocketServer(tmpDir, socketName, () => ({
-      jsonrpc: '2.0',
-      id: 1,
-      error: { code: -1, message: 'Lightning is locked' }
-    }));
+    let server;
+    try {
+      server = await createMockClnSocketServer(tmpDir, socketName, () => ({
+        jsonrpc: '2.0',
+        id: 1,
+        error: { code: -1, message: 'Lightning is locked' }
+      }));
+    } catch (error) {
+      if (skipIfSocketPermissionDenied(this, error)) return;
+      throw error;
+    }
 
     const ln = new Lightning({
       datadir: tmpDir,
@@ -115,10 +135,15 @@ describe('@fabric/core/services/lightning CLN JSON-RPC socket', function () {
     const server = net.createServer((sock) => {
       sock.on('data', () => {});
     });
-    await new Promise((resolve, reject) => {
-      server.once('error', reject);
-      server.listen(socketPath, resolve);
-    });
+    try {
+      await new Promise((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(socketPath, resolve);
+      });
+    } catch (error) {
+      if (skipIfSocketPermissionDenied(this, error)) return;
+      throw error;
+    }
 
     const ln = new Lightning({
       datadir: tmpDir,

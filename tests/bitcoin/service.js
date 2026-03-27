@@ -227,7 +227,7 @@ describe('@fabric/core/services/bitcoin', function () {
 
         btc._buildRPCProbeCandidates = () => ([
           { source: 'fail-first', host: '127.0.0.1', rpcport: 18443, network: 'regtest' },
-          { source: 'succeed-second', host: '127.0.0.1', rpcport: 8332, network: 'mainnet', username: 'u', password: 'p' }
+          { source: 'succeed-second', host: '127.0.0.1', rpcport: 18443, network: 'regtest', username: 'u', password: 'p' }
         ]);
         btc._createRPCClientForCandidate = (candidate) => {
           callCount++;
@@ -235,7 +235,7 @@ describe('@fabric/core/services/bitcoin', function () {
         };
         btc._requestWithRPCClient = async (client, method) => {
           if (client.id === 'first') throw new Error('ECONNREFUSED');
-          if (method === 'getblockchaininfo') return { chain: 'main' };
+          if (method === 'getblockchaininfo') return { chain: 'regtest' };
           if (method === 'getnetworkinfo') return { version: 260000 };
           throw new Error(`unexpected method ${method}`);
         };
@@ -243,8 +243,27 @@ describe('@fabric/core/services/bitcoin', function () {
         const found = await btc._detectExistingBitcoind();
         assert.strictEqual(found, true);
         assert.strictEqual(callCount, 2, 'expected fallback to second candidate');
-        assert.strictEqual(btc.settings.network, 'mainnet');
-        assert.strictEqual(btc.settings.port, 8333);
+        assert.strictEqual(btc.settings.network, 'regtest');
+        assert.strictEqual(btc.settings.port, 18444);
+      });
+
+      it('ignores reachable daemon when chain does not match target network', async function () {
+        const btc = new Bitcoin({ network: 'regtest', mode: 'rpc', host: '127.0.0.1', rpcport: 18443 });
+
+        btc._buildRPCProbeCandidates = () => ([
+          { source: 'mainnet-daemon', host: '127.0.0.1', rpcport: 8332, network: 'mainnet' }
+        ]);
+        btc._createRPCClientForCandidate = () => ({ id: 'mainnet' });
+        btc._requestWithRPCClient = async (_client, method) => {
+          if (method === 'getblockchaininfo') return { chain: 'main' };
+          if (method === 'getnetworkinfo') return { version: 260000 };
+          throw new Error(`unexpected method ${method}`);
+        };
+
+        const found = await btc._detectExistingBitcoind();
+        assert.strictEqual(found, false);
+        assert.strictEqual(btc._usingExternalNode, undefined);
+        assert.strictEqual(btc.settings.network, 'regtest');
       });
 
       it('adds default network fallback probe candidates', function () {
