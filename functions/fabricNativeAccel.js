@@ -8,6 +8,8 @@
  * **Double-SHA256 (body hash):** the native `doubleSha256` path is **opt-in**
  * (`FABRIC_NATIVE_DOUBLE_SHA256=1`) so a broken or ABI-mismatched `fabric.node`
  * cannot segfault the process during normal tests or `Message` construction.
+ * **`FABRIC_SKIP_NATIVE_ADDON=1`:** never `require()` the addon (opt-in may still be true);
+ * used by tests when a stale local `fabric.node` would SIGSEGV on load.
  * Default is pure JS (same output as libwally when the addon works).
  *
  * **Browser / webpack:** do not `require('fs')` at module scope — bundlers execute
@@ -50,6 +52,10 @@ function tryLoadAddon () {
   loadAttempted = true;
   // Never `require()` fabric.node unless opted in — a bad binary can segfault on load.
   if (!nativeDoubleSha256Enabled()) {
+    return;
+  }
+  // Tests / tooling: skip `require()` entirely (e.g. stale `fabric.node` that SIGSEGVs on this Node).
+  if (typeof process !== 'undefined' && process.env && process.env.FABRIC_SKIP_NATIVE_ADDON === '1') {
     return;
   }
   if (!isNode()) {
