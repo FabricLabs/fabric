@@ -46,6 +46,7 @@ describe('functions/fabricNativeAccel', function () {
     const modPath = path.join(__dirname, '..', 'functions', 'fabricNativeAccel.js');
     const script = `
       process.env.FABRIC_NATIVE_DOUBLE_SHA256 = 'true';
+      process.env.FABRIC_SKIP_NATIVE_ADDON = '1';
       const m = require(${JSON.stringify(modPath)});
       const s = m.status();
       if (s.nativeDoubleSha256OptIn !== true) process.exit(1);
