@@ -103,14 +103,12 @@ class Actor extends EventEmitter {
     let result = null;
 
     if (typeof input === 'string' && input.length) {
-      console.log('trying to parse as JSON:', input);
       try {
         result = JSON.parse(input);
       } catch (E) {
-        console.error('Failure in fromJSON:', E);
+        // Fail closed: callers expect null on invalid JSON.
+        result = null;
       }
-    } else {
-      console.trace('Invalid input:', typeof input);
     }
 
     return result;
@@ -258,7 +256,6 @@ class Actor extends EventEmitter {
     ];
 
     monitor.applyPatch(this._state.content, patches);
-    console.log('new state:', this._state.content);
     this.commit();
 
     return this;
@@ -319,17 +316,19 @@ class Actor extends EventEmitter {
   }
 
   /**
-   * Casts the Actor to a generic message, used to uniquely identify the Actor's state.
-   * Fields:
-   * - `type`: 'FabricActorState'
-   * - `object`: state
+   * Casts the Actor to a generic message envelope for state announcements and history.
+   * Shape is stable: `{ type, object }` where `object` is sorted-key state ({@link Actor#toObject}).
+   * {@link Actor#id} derives from a digest of the pretty-printed generic message; extending this
+   * envelope requires a format/version migration across the network.
+   * @param {String} [type='FabricActorState'] Logical message type string.
    * @see {@link https://en.wikipedia.org/wiki/Merkle_tree}
    * @see {@link https://dev.fabric.pub/messages}
-   * @returns {Object} Generic message object.
+   * @returns {Object} `{ type, object }`
    */
   toGenericMessage (type = 'FabricActorState') {
+    const messageType = type || 'FabricActorState';
     return {
-      type: 'FabricActorState',
+      type: messageType,
       object: this.toObject()
     };
   }

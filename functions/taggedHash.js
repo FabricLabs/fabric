@@ -4,10 +4,12 @@
  * Computes tagged hash as specified in BIP-340:
  * tagged_hash(tag, msg) = SHA256(SHA256(tag) || SHA256(tag) || msg)
  *
+ * Uses @noble/hashes for browser compatibility (avoids crypto-browserify digest errors).
+ *
  * @module functions/taggedHash
  */
 
-const crypto = require('crypto');
+const { sha256 } = require('@noble/hashes/sha2.js');
 
 /**
  * Compute BIP-340 tagged hash
@@ -34,7 +36,7 @@ function taggedHash (tag, data) {
   }
 
   // SHA256(tag)
-  const tagHash = crypto.createHash('sha256').update(tag).digest();
+  const tagHash = Buffer.from(sha256(new Uint8Array(tag)));
 
   // SHA256(SHA256(tag) || SHA256(tag) || msg)
   const buffer = Buffer.concat([
@@ -43,7 +45,7 @@ function taggedHash (tag, data) {
     data
   ]);
 
-  return crypto.createHash('sha256').update(buffer).digest();
+  return Buffer.from(sha256(new Uint8Array(buffer)));
 }
 
 module.exports = taggedHash;

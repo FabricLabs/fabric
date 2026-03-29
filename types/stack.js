@@ -8,15 +8,7 @@ const {
 const State = require('./state');
 const { MerkleTree } = require('merkletreejs');
 
-/**
- * Manage stacks of data.
- */
 class Stack extends State {
-  /**
-   * Create a {@link Stack} instance.
-   * @param  {Array}  [list=[]] Genesis state for the {@link Stack} instance.
-   * @return {Stack}            Instance of the {@link Stack}.
-   */
   constructor (list = []) {
     super(list);
 
@@ -52,12 +44,6 @@ class Stack extends State {
     return this['@data'].length;
   }
 
-  /**
-   * Push data onto the stack.  Changes the {@link Stack#frame} and
-   * {@link Stack#id}.
-   * @param  {Mixed} data Treated as a {@link State}.
-   * @return {Number}      Resulting size of the stack.
-   */
   push (data) {
     let state = new State(data);
 

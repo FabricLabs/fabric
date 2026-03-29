@@ -2,6 +2,12 @@
 
 const Fabric = require('../');
 const assert = require('assert');
+const State = require('../types/state');
+
+const SAMPLE_DATA = {
+  content: 'Hello, world!',
+  target: '/messages'
+};
 
 describe('@fabric/core/types/state', function () {
   describe('State', function () {
@@ -9,27 +15,28 @@ describe('@fabric/core/types/state', function () {
       assert.equal(Fabric.State instanceof Function, true);
     });
 
-    xit('provides an accurate "@id" attribute', function () {
-      let state = new Fabric.State(message['@data']);
-
-      assert.ok(state);
-      assert.equal(state.id, message['@id']);
+    it('provides a stable "@id" attribute for equivalent input', function () {
+      const a = new Fabric.State(SAMPLE_DATA);
+      const b = new Fabric.State(SAMPLE_DATA);
+      assert.ok(a.id);
+      assert.strictEqual(a.id, b.id);
     });
 
-    xit('can serialize to a sane element', function () {
-      let state = new Fabric.State(message['@data']);
-
+    it('can serialize to a sane element', function () {
+      const state = new Fabric.State(SAMPLE_DATA);
+      const serialized = state.serialize(SAMPLE_DATA);
       assert.ok(state);
-      assert.equal(state.id, message['@id']);
-      assert.equal(state.serialize(), JSON.stringify(message['@data']));
+      assert.ok(serialized);
+      assert.strictEqual(serialized.type, 'Buffer');
+      assert.ok(Array.isArray(serialized.data));
+      const decoded = Buffer.from(serialized.data).toString('utf8');
+      assert.deepStrictEqual(JSON.parse(decoded), SAMPLE_DATA);
     });
 
-    xit('can deserialize from a string', function () {
-      let state = Fabric.State.fromString(JSON.stringify(message['@data']));
-
+    it('can deserialize from a string into a plain object', function () {
+      const state = State.fromString(JSON.stringify(SAMPLE_DATA));
       assert.ok(state);
-      assert.equal(state.id, message['@id']);
-      assert.equal(state.serialize(), JSON.stringify(message['@data']));
+      assert.deepStrictEqual(state, SAMPLE_DATA);
     });
   });
 });

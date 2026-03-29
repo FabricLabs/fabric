@@ -1,15 +1,20 @@
 # Fabric Examples
 This directory contains example applications that demonstrate how to use Fabric for building peer-to-peer applications.
 
+## Vision and primary path
+The **supported** path for understanding Fabric is the **JavaScript** library in this repo: see **[../VISION.md](../VISION.md)**, **[../QUICKSTART.md](../QUICKSTART.md)**, and **[../DEVELOPERS.md](../DEVELOPERS.md)**. Use **`npm install`** at the repo root and the **`npm run example:*`** scripts below — **no C build required** for those.
+
+**C / WebGPU / native** examples below are **optional** research and binding demos; they do not block the JS release gate (**`npm run ci`**).
+
 ## Prerequisites
+Before running the **JavaScript** npm examples, you need:
+1. **Node.js**: 22.14.x (see `package.json` `engines`)
+2. **`npm install`** from the repository root
 
-Before running the examples, make sure you have:
-1. **Built the Fabric binding**: Run `npm run build:c` from the project root
-2. **Node.js**: Version 22.14.0 or later (as specified in package.json)
-3. **Required libraries**: The examples use the built-in `crypto` and `readline` modules
+For **C** examples only, you also build native bindings per **README-C-EXAMPLES.md** (`make`, etc.).
 
-## Quick Start
-You can run the new Fabric namespace examples using npm scripts:
+## Quick Start (JavaScript)
+Run the curated examples via npm scripts:
 
 ```bash
 # Basic usage examples
@@ -96,7 +101,7 @@ A comprehensive, interactive chat application that demonstrates real-world usage
 **Run it:**
 ```bash
 # From the project root directory
-node examples/fabric-basic-usage.js
+node examples/fabric-chat-app.js
 ```
 
 **Available Commands:**

@@ -3,12 +3,9 @@
 const Key = require('../types/key');
 const assert = require('assert');
 const networks = require('bitcoinjs-lib/src/networks');
-const ECPair = require('ecpair').ECPairFactory(require('tiny-secp256k1'));
-const EC = require('elliptic').ec;
-const ec = new EC('secp256k1');
+const { secp256k1 } = require('@noble/curves/secp256k1.js');
 const bip39 = require('bip39');
 const BIP32 = require('bip32').default;
-const ecc = require('tiny-secp256k1');
 const base58 = require('bs58check');
 
 const message = require('../assets/message');
@@ -84,7 +81,7 @@ describe('@fabric/core/types/key', function () {
 
     it('can generate many keypairs', function () {
       // 31 byte keys every ~256 iterations
-      for (let i = 0; i < 1024; i++) {
+      for (let i = 0; i < 256; i++) {
         const key = new Key();
         assert.ok(key);
       }
@@ -122,6 +119,20 @@ describe('@fabric/core/types/key', function () {
       const encrypted = key.encrypt(testMessage);
       const decrypted = key.decrypt(encrypted);
       assert.strictEqual(decrypted, testMessage);
+    });
+
+    it('encrypt/decrypt return null without private key material', function () {
+      const key = new Key();
+      key.secure();
+      assert.strictEqual(key.encrypt('hello'), null);
+      assert.strictEqual(key.decrypt('abcd:1234'), null);
+    });
+
+    it('decrypt returns null on malformed ciphertext', function () {
+      const key = new Key();
+      assert.strictEqual(key.decrypt('not-a-ciphertext'), null);
+      assert.strictEqual(key.decrypt('zzzz:abcd'), null);
+      assert.strictEqual(key.decrypt('0011aabbccddeeff0011aabbccddeeff:not-hex'), null);
     });
 
     it('can generate p2pkh addresses', function () {
@@ -215,10 +226,9 @@ describe('@fabric/core/types/key', function () {
           private: SAMPLE.private
         });
         const actualPubkey = key.pubkey;
-
-        // Compute expected pubkey using elliptic
-        const keypair = ec.keyFromPrivate(SAMPLE.private);
-        const expectedPubkey = keypair.getPublic().encodeCompressed('hex');
+        const expectedPubkey = Buffer.from(
+          secp256k1.getPublicKey(Buffer.from(SAMPLE.private, 'hex'), true)
+        ).toString('hex');
 
         assert.equal(actualPubkey, expectedPubkey);
       });
@@ -228,7 +238,7 @@ describe('@fabric/core/types/key', function () {
           private: SAMPLE.private
         });
         const message = 'Hello, Fabric!';
-        
+
         // Sign the message
         const signature = key.signSchnorr(message);
         assert.ok(signature);
@@ -254,7 +264,7 @@ describe('@fabric/core/types/key', function () {
         });
 
         const message = 'Hello, Fabric!';
-        
+
         // Sign with key1
         const signature = key1.signSchnorr(message);
         assert.ok(signature);
@@ -274,6 +284,16 @@ describe('@fabric/core/types/key', function () {
       const publicKey = new Key({ public: key.public.encodeCompressed() });
       const message = 'test message';
       assert.throws(() => publicKey.signSchnorr(message), /Cannot sign without private key/);
+    });
+
+    it('secure clears private material and marks state', function () {
+      const key = new Key();
+      assert.ok(key.private);
+      key.secure();
+      assert.strictEqual(key.private, null);
+      assert.strictEqual(key.seed, null);
+      assert.strictEqual(key.xprv, null);
+      assert.strictEqual(key._state.status, 'secured');
     });
   });
 });

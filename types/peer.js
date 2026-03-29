@@ -3,13 +3,25 @@
 // Constants
 const {
   FABRIC_KEY_DERIVATION_PATH,
+  GOSSIP_MAX_HOPS,
+  GOSSIP_MAX_PAYLOAD_CACHE,
+  GOSSIP_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
+  MAX_PEERS,
+  PEERING_OFFER_MAX_HOPS,
+  PEERING_OFFER_MAX_PAYLOAD_CACHE,
+  PEERING_OFFER_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
+  PEER_MAX_CANDIDATES_QUEUE,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
+  P2P_PEER_GOSSIP,
+  P2P_PEERING_OFFER,
+  PEER_MAX_WIRE_HASH_CACHE,
   P2P_ROOT,
   P2P_PING,
   P2P_PONG,
   P2P_PORT,
   P2P_START_CHAIN,
+  P2P_CHAIN_SYNC_REQUEST,
   P2P_INSTRUCTION,
   P2P_BASE_MESSAGE,
   P2P_STATE_COMMITTMENT,
@@ -20,22 +32,42 @@ const {
 // Dependencies
 const net = require('net');
 const crypto = require('crypto');
+const { Level } = require('level');
 const stream = require('stream');
 const manager = require('fast-json-patch');
 const noise = require('noise-protocol-stream');
 const merge = require('lodash.merge');
 
+// L1 document binding (hub / HTLC contentHash)
+const {
+  fabricCanonicalJson,
+  whitelistedDocumentFields,
+  purchaseContentHashHex
+} = require('../functions/publishedDocumentEnvelope');
+
 // Fabric Types
 const Actor = require('./actor');
+const Hash256 = require('./hash256');
 const Identity = require('./identity');
 const Key = require('./key');
 const Machine = require('./machine');
 const Message = require('./message');
 const Service = require('./service');
-const Wallet = require('./wallet');
+// const Wallet = require('./wallet');
 
 // Constants
 const PROLOGUE = 'FABRIC';
+
+/** Safe debug label for a derived Key — never log private material. */
+function peerDebugDerivedPublicSummary (keyInstance) {
+  if (!keyInstance || !keyInstance.settings) return '(unavailable)';
+  const pubHex = typeof keyInstance.settings.public === 'string'
+    ? keyInstance.settings.public.trim()
+    : '';
+  if (!pubHex) return '(no public key)';
+  if (pubHex.length > 28) return `${pubHex.slice(0, 12)}…${pubHex.slice(-10)}`;
+  return pubHex;
+}
 
 /**
  * An in-memory representation of a node in our network.
@@ -66,24 +98,65 @@ class Peer extends Service {
       networking: true, // Ensure networking is enabled by default
       listen: true,
       peers: [],
+      // LevelDB path (Node) or IndexedDB name (browser)
+      // In tests, default to no persistent registry to avoid reconnecting to
+      // a developer machine's stale peer list (which can hang/timeout the suite).
+      peersDb: (process.env.NODE_ENV === 'test') ? null : 'stores/hub/peers',
       port: 7777,
+      reconnectToKnownPeers: true,
+      /**
+       * When true, answers `INVENTORY_REQUEST` (with `object.offerBtc`) using local
+       * `state.documents` / `documentRates` and {@link purchaseContentHashHex} for each item.
+       */
+      serveLocalDocumentInventory: false,
+      /**
+       * After `P2P_SESSION_OPEN` to a new inbound peer, re-send canonical `DocumentPublish` and
+       * pricing gossip for each entry in `state.documents` so late joiners see catalog offers.
+       */
+      announceDocumentsOnPeerConnect: false,
+      /**
+       * When {@link Peer#settings.serveLocalDocumentInventory} is enabled and this node sends no
+       * `INVENTORY_RESPONSE`, forward the original generic wire to other peers (POLICY.md conditional relay).
+       */
+      relayInventoryRequest: false,
+      /**
+       * After handling `INVENTORY_RESPONSE`, forward the same wire to peers other than the sender
+       * (star/mesh routers; default off to avoid leaking replies).
+       */
+      relayInventoryResponse: false,
+      connectTimeout: 5000,
+      /** Limits relay amplification on {@link P2P_PEER_GOSSIP} (hop TTL, payload dedup, per-origin rate). */
+      gossip: {
+        maxHops: GOSSIP_MAX_HOPS,
+        maxRelaysPerOriginPerMinute: GOSSIP_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
+        maxPayloadCache: GOSSIP_MAX_PAYLOAD_CACHE,
+        maxWireHashCache: PEER_MAX_WIRE_HASH_CACHE
+      },
       state: Object.assign({
         actors: {},
         channels: {},
         contracts: {},
         documents: {},
+        documentRates: {},
         messages: {},
         services: {}
       }, config.state),
       upnp: false,
-      key: {}
+      key: {},
+      /**
+       * Inbound wire traffic budgeting (Bitcoin Core–style peer quality).
+       * Credits accrue per rolling window; overflow de-ranks the peer (registry score)
+       * and drops the message. Heavier opcodes cost more credits.
+       */
+      wireTraffic: {
+        windowMs: 60 * 1000,
+        maxCreditsPerWindow: 520,
+        chainSyncCreditCost: 55,
+        bitcoinBlockCreditCost: 3,
+        defaultCreditCost: 1,
+        overLimitPenalty: 22
+      }
     }, config);
-
-    // Log settings at construction
-    if (this.settings.debug || true) {
-      console.log('[FABRIC:PEER:CONSTRUCTOR] networking:', this.settings.networking);
-      console.log('[FABRIC:PEER:CONSTRUCTOR] peers:', this.settings.peers);
-    }
 
     // Network Internals
     this.upnp = null;
@@ -127,10 +200,36 @@ class Peer extends Service {
     this.connections = {};
     this.history = [];
     this.peers = {};
+    // Peers: keyed by public key (id). Persistent registry in _state.peers.
+    // Map connection address (IP:port) -> peer id (public key). Learned on P2P_SESSION_OFFER/OPEN.
+    this._addressToId = {};
     this.mailboxes = {};
     this.memory = {};
     this.handlers = {};
-    this.messages = new Set();
+    /** Wire-envelope dedup (SHA-256 of full buffer); FIFO-capped via {@link Peer#_rememberWireHash}. */
+    this.messages = {};
+    this._wireHashOrder = [];
+    /** Logical gossip payload dedup (excludes signature / hop churn). */
+    this._gossipPayloadSeen = new Map();
+    this._gossipPayloadOrder = [];
+    /** origin address → { count, windowStart } for gossip relay rate limiting. */
+    this._gossipRelayByOrigin = new Map();
+    /** Logical peering-offer payload dedup (ignores per-hop re-signing). */
+    this._peeringPayloadSeen = new Map();
+    this._peeringPayloadOrder = [];
+    /** origin address → { count, windowStart } for peering-offer relay rate limiting. */
+    this._peeringRelayByOrigin = new Map();
+    /** `host:port` → { credits, windowStart, penalized } — inbound wire flood / de-rank (per peer). */
+    this._wireInboundByOrigin = new Map();
+    /** `host:port` keys for {@link P2P_PEERING_OFFER} candidate queue dedup. */
+    this._candidateKeys = new Set();
+    /**
+     * `host:port` strings we opened via {@link Peer#_connect} (outbound dials).
+     * {@link P2P_SESSION_OFFER} must not destroy these when the same peer also opens an inbound
+     * socket (mesh star): otherwise RPC paths that use the listen address (e.g. ChainSyncRequest)
+     * see `peer not connected` while an ephemeral inbound key remains.
+     */
+    this._outboundDialTargets = new Set();
     this.sessions = {};
 
     // Internal Stack Machine
@@ -146,13 +245,208 @@ class Peer extends Service {
 
     this._state = {
       content: this.settings.state,
-      peers: {},
+      peers: {}, // Peer registry keyed by public key (id). Persisted to LevelDB.
       chains: {},
       connections: {},
       status: 'sleeping'
     };
 
     return this;
+  }
+
+  _resolveToAddress (idOrAddress) {
+    if (!idOrAddress || typeof idOrAddress !== 'string') return null;
+    // Direct match on connection address
+    if (this.connections[idOrAddress]) return idOrAddress;
+    // Look up by id: find which address this id is connected from
+    const registry = this._state.peers || {};
+    const byId = registry[idOrAddress];
+    if (byId && byId.address && this.connections[byId.address]) return byId.address;
+    // Check _addressToId reverse: find address that maps to this id
+    for (const [addr, id] of Object.entries(this._addressToId || {})) {
+      if (id === idOrAddress && this.connections[addr]) return addr;
+    }
+    return null;
+  }
+
+  /**
+   * Stable id for gossip *logical* content (ignores `gossipHop` and wire signature changes).
+   * @param {object} msg Generic message (`type`, `object`, …)
+   * @returns {string} hex sha256
+   */
+  _gossipPayloadDedupKey (msg) {
+    const obj = (msg && msg.object && typeof msg.object === 'object') ? { ...msg.object } : {};
+    delete obj.gossipHop;
+    const body = JSON.stringify({ type: msg && msg.type, object: obj });
+    return crypto.createHash('sha256').update(body).digest('hex');
+  }
+
+  _rememberWireHash (hash) {
+    const max = (this.settings.gossip && this.settings.gossip.maxWireHashCache) || PEER_MAX_WIRE_HASH_CACHE;
+    while (this._wireHashOrder.length >= max) {
+      const drop = this._wireHashOrder.shift();
+      delete this.messages[drop];
+    }
+    this.messages[hash] = true;
+    this._wireHashOrder.push(hash);
+  }
+
+  _gossipRememberPayload (key) {
+    const max = (this.settings.gossip && this.settings.gossip.maxPayloadCache) || GOSSIP_MAX_PAYLOAD_CACHE;
+    while (this._gossipPayloadOrder.length >= max) {
+      const drop = this._gossipPayloadOrder.shift();
+      this._gossipPayloadSeen.delete(drop);
+    }
+    this._gossipPayloadSeen.set(key, true);
+    this._gossipPayloadOrder.push(key);
+  }
+
+  /**
+   * @param {string} originName Connection id (e.g. `host:port`)
+   * @returns {boolean}
+   */
+  _gossipRateLimitAllow (originName) {
+    const limit = (this.settings.gossip && this.settings.gossip.maxRelaysPerOriginPerMinute) || GOSSIP_MAX_RELAYS_PER_ORIGIN_PER_MINUTE;
+    const now = Date.now();
+    let slot = this._gossipRelayByOrigin.get(originName);
+    if (!slot || now - slot.windowStart > 60000) {
+      slot = { count: 0, windowStart: now };
+    }
+    if (slot.count >= limit) return false;
+    slot.count++;
+    this._gossipRelayByOrigin.set(originName, slot);
+    return true;
+  }
+
+  /**
+   * Credit cost for inbound wire messages (heavier types consume more of the peer's budget).
+   * @param {string|number} wireType
+   * @returns {number}
+   */
+  _wireInboundCreditCost (wireType) {
+    const w = this.settings.wireTraffic || {};
+    const t = wireType != null ? String(wireType) : '';
+    if (t === 'P2P_CHAIN_SYNC_REQUEST' || t === 'ChainSyncRequest' || wireType === P2P_CHAIN_SYNC_REQUEST) {
+      return Number(w.chainSyncCreditCost) || 55;
+    }
+    if (t === 'BITCOIN_BLOCK' || t === 'BitcoinBlock') {
+      return Number(w.bitcoinBlockCreditCost) || 3;
+    }
+    return Number(w.defaultCreditCost) || 1;
+  }
+
+  /**
+   * Apply rolling-window credits; on overflow, de-rank once per window and reject the message.
+   * @param {string} originName connection key (host:port)
+   * @param {number} creditCost
+   * @returns {boolean} false = drop message
+   */
+  _wireInboundRateAllowPeer (originName, creditCost) {
+    if (!originName) return true;
+    const w = this.settings.wireTraffic || {};
+    const windowMs = Number(w.windowMs) || 60000;
+    const maxCredits = Number(w.maxCreditsPerWindow) || 520;
+    const penalty = Number(w.overLimitPenalty) || 22;
+    const now = Date.now();
+    const cost = Number.isFinite(creditCost) && creditCost > 0 ? creditCost : 1;
+    let slot = this._wireInboundByOrigin.get(originName);
+    if (!slot || (now - slot.windowStart) >= windowMs) {
+      slot = { credits: 0, windowStart: now, penalized: false };
+    }
+    const next = slot.credits + cost;
+    if (next > maxCredits) {
+      if (!slot.penalized) {
+        slot.penalized = true;
+        this._derankPeerForWireTraffic(originName, penalty, 'inbound-rate');
+      }
+      this._wireInboundByOrigin.set(originName, slot);
+      return false;
+    }
+    slot.credits = next;
+    this._wireInboundByOrigin.set(originName, slot);
+    return true;
+  }
+
+  /**
+   * Lower registry {@link Peer#knownPeers} score for a connection (Bitcoin Core misbehavior analogue).
+   * @param {string} originName
+   * @param {number} penalty
+   * @param {string} reason
+   */
+  _derankPeerForWireTraffic (originName, penalty, reason) {
+    const peerId = (this._addressToId && this._addressToId[originName]) || originName;
+    const registry = this._state.peers || {};
+    const reg = registry[peerId] || registry[originName] || {};
+    const cur = Number(reg.score);
+    const base = Number.isFinite(cur) ? cur : 0;
+    const pen = Number.isFinite(penalty) && penalty > 0 ? penalty : 20;
+    const next = Math.max(0, base - pen);
+    this._upsertPeerRegistry(peerId, {
+      id: peerId,
+      address: reg.address || originName,
+      score: next,
+      lastSeen: new Date().toISOString()
+    });
+    this.emit('warning', `[FABRIC:PEER] De-ranked peer (${reason}): ${peerId} score ${base}→${next}`);
+  }
+
+  /**
+   * Stable id for peering-offer *logical* content (ignores `peeringHop` and wire signature changes).
+   * @param {object} msg Generic message (`type`, `object`, …)
+   * @returns {string} hex sha256
+   */
+  _peeringOfferPayloadDedupKey (msg) {
+    const obj = (msg && msg.object && typeof msg.object === 'object') ? { ...msg.object } : {};
+    delete obj.peeringHop;
+    const body = JSON.stringify({ type: msg && msg.type, object: obj });
+    return crypto.createHash('sha256').update(body).digest('hex');
+  }
+
+  _peeringRememberPayload (key) {
+    const max = (this.settings.peering && this.settings.peering.maxPayloadCache) || PEERING_OFFER_MAX_PAYLOAD_CACHE;
+    while (this._peeringPayloadOrder.length >= max) {
+      const drop = this._peeringPayloadOrder.shift();
+      this._peeringPayloadSeen.delete(drop);
+    }
+    this._peeringPayloadSeen.set(key, true);
+    this._peeringPayloadOrder.push(key);
+  }
+
+  /**
+   * @param {string} originName Connection id (e.g. `host:port`)
+   * @returns {boolean}
+   */
+  _peeringRateLimitAllow (originName) {
+    const limit = (this.settings.peering && this.settings.peering.maxRelaysPerOriginPerMinute) || PEERING_OFFER_MAX_RELAYS_PER_ORIGIN_PER_MINUTE;
+    const now = Date.now();
+    let slot = this._peeringRelayByOrigin.get(originName);
+    if (!slot || now - slot.windowStart > 60000) {
+      slot = { count: 0, windowStart: now };
+    }
+    if (slot.count >= limit) return false;
+    slot.count++;
+    this._peeringRelayByOrigin.set(originName, slot);
+    return true;
+  }
+
+  /**
+   * Enqueue a fabric candidate from {@link P2P_PEERING_OFFER}; FIFO-capped and deduped by host:port.
+   * @param {string} host
+   * @param {number} port
+   */
+  _enqueuePeeringCandidate (host, port) {
+    const max = (this.settings.peering && this.settings.peering.maxCandidates) || PEER_MAX_CANDIDATES_QUEUE;
+    const key = `${String(host)}:${Number(port)}`;
+    if (this._candidateKeys.has(key)) return;
+    while (this.candidates.length >= max) {
+      const old = this.candidates.shift();
+      const o = old && (old.object || old);
+      if (o && o.host != null && o.port != null) {
+        this._candidateKeys.delete(`${String(o.host)}:${Number(o.port)}`);
+      }
+    }
+    this._candidateKeys.add(key);
+    this.candidates.push({ host, port: Number(port) });
   }
 
   get id () {
@@ -226,12 +520,114 @@ class Peer extends Service {
   }
 
   get port () {
-    return this.settings.port || 7777;
+    const p = this.settings.port;
+    return (typeof p === 'number' && !Number.isNaN(p)) ? p : 7777;
   }
 
   get publicPeers () {
     const peers = [];
+    const addressToId = this._addressToId || {};
+
+    // Connections are keyed by IP:port. Map each to peer id (public key) when known.
+    for (const address in this.connections) {
+      if (!Object.prototype.hasOwnProperty.call(this.connections, address)) continue;
+      const socket = this.connections[address];
+      const id = addressToId[address] || address;
+
+      peers.push({
+        id,
+        address,
+        status: 'connected',
+        lastMessage: socket._lastMessage || null
+      });
+    }
+
+    // Then, include any known peers that are not currently connected.
+    for (const key in this.peers) {
+      if (!Object.prototype.hasOwnProperty.call(this.peers, key)) continue;
+
+      // Skip if this peer is already represented as a connected peer.
+      if (peers.find((p) => p.id === key || p.address === key)) continue;
+
+      const peer = this.peers[key];
+      const id = peer && peer.id ? peer.id : key;
+      const address = peer && peer.address ? peer.address : key;
+
+      peers.push({
+        id,
+        address,
+        status: 'disconnected'
+      });
+    }
+
     return peers;
+  }
+
+  get knownPeers () {
+    const now = new Date().toISOString();
+    const byId = {};
+    const registry = this._state.peers || {};
+    const addressToId = this._addressToId || {};
+
+    // Start from persisted registry (keyed by id)
+    for (const key in registry) {
+      if (!Object.prototype.hasOwnProperty.call(registry, key)) continue;
+      const reg = registry[key];
+      const id = reg.id || key;
+      byId[id] = {
+        id,
+        address: reg.address || key,
+        status: 'disconnected',
+        score: reg.score != null ? reg.score : 0,
+        firstSeen: reg.firstSeen,
+        lastSeen: reg.lastSeen,
+        nickname: reg.nickname,
+        alias: reg.alias,
+        lastMessage: reg.lastMessage
+      };
+    }
+
+    // Overlay current connections (map address -> id, then update byId)
+    for (const address in this.connections) {
+      if (!Object.prototype.hasOwnProperty.call(this.connections, address)) continue;
+      const socket = this.connections[address];
+      const id = addressToId[address] || address;
+      if (!byId[id]) byId[id] = { id, address, status: 'connected', score: 0 };
+      byId[id].status = 'connected';
+      byId[id].address = address;
+      byId[id].lastMessage = socket._lastMessage || byId[id].lastMessage;
+      if (socket._alias) byId[id].alias = socket._alias;
+    }
+
+    // Include any this.peers not yet in registry
+    for (const key in this.peers) {
+      if (!Object.prototype.hasOwnProperty.call(this.peers, key)) continue;
+      const peer = this.peers[key];
+      const id = (peer && peer.id) || key;
+      if (byId[id]) continue;
+      byId[id] = {
+        id,
+        address: key,
+        status: 'disconnected',
+        score: 0,
+        lastSeen: now
+      };
+    }
+
+    return Object.values(byId);
+  }
+
+  _resolveToAddress (idOrAddress) {
+    if (!idOrAddress) return null;
+    if (this.connections[idOrAddress]) return idOrAddress;
+    const addressToId = this._addressToId || {};
+    for (const addr in addressToId) {
+      if (addressToId[addr] === idOrAddress && this.connections[addr]) return addr;
+    }
+    const registry = this._state.peers || {};
+    const entry = registry[idOrAddress];
+    if (entry && entry.address && this.connections[entry.address]) return entry.address;
+    return null;
   }
 
   beat () {
@@ -253,12 +649,17 @@ class Peer extends Service {
    * @param {Buffer} message Message buffer to send.
    */
   broadcast (message, origin = null) {
-    console.debug('broadcasting:', message);
+    if (this.settings.debug) this.emit('debug', `Broadcasting message (${message && message.length ? message.length : 0} bytes)`);
     for (const id in this.connections) {
       this.emit('debug', `Broadcast [!!!] — evaluating connection: ${id}`);
       if (id === origin) continue;
       this.connections[id]._writeFabric(message);
     }
+  }
+
+  connectTo (address) {
+    this._connect(address);
+    return this;
   }
 
   relayFrom (origin, message, socket = null) {
@@ -308,14 +709,26 @@ class Peer extends Service {
    * @param {String} target Target address.
    */
   _connect (target) {
+    if (!target || typeof target !== 'string') {
+      this.emit('error', '[FABRIC:PEER:_connect] target must be a non-empty string');
+      return;
+    }
+
+    if (this.connections[target]) {
+      this.emit('debug', `[FABRIC:PEER:_connect] Already connected to ${target}; skipping`);
+      return;
+    }
+
     this.emit('debug', `[FABRIC:PEER:_connect] Attempting to connect to: ${target}`);
     const url = new URL(`tcp://${target}`);
     const id = url.username;
 
     if (!url.port) target += `:${P2P_PORT}`;
 
+    this._outboundDialTargets.add(target);
+
     const derived = this.identity.key.derive(FABRIC_KEY_DERIVATION_PATH);
-    this.emit('debug', `Local derived ID: ${JSON.stringify(derived)}`);
+    this.emit('debug', `[FABRIC:PEER:_connect] Local derived key (public hex, truncated): ${peerDebugDerivedPublicSummary(derived)} path=${FABRIC_KEY_DERIVATION_PATH}`);
 
     // Store the user's public key if provided
     if (id) {
@@ -327,9 +740,25 @@ class Peer extends Service {
 
     this._registerActor({ name: target });
     this._registerPeer({ identity: id });
+    this._upsertPeerRegistry(target, { address: target });
 
     // Set up the NOISE socket
     const socket = net.createConnection(url.port || P2P_PORT, url.hostname);
+    // Don't keep the test runner alive just because we're connecting.
+    if (typeof socket.unref === 'function') socket.unref();
+
+    // Bound connection establishment time; otherwise Node's TCP timeout can be long.
+    const connectTimeoutMs = (typeof this.settings.connectTimeout === 'number')
+      ? this.settings.connectTimeout
+      : 5000;
+    socket.setTimeout(connectTimeoutMs);
+    socket.once('timeout', () => {
+      const msg = `Socket timeout: connect ${url.hostname}:${url.port || P2P_PORT} after ${connectTimeoutMs}ms`;
+      this.emit('warning', msg);
+      socket.destroy(new Error(msg));
+    });
+    socket.once('connect', () => socket.setTimeout(0));
+
     const client = noise({
       initiator: true,
       prologue: Buffer.from(PROLOGUE),
@@ -339,7 +768,14 @@ class Peer extends Service {
 
     socket.on('error', (error) => {
       this.emit('debug', `--- debug error from _connect() ---`);
-      this.emit('error', `Socket error: ${error}`);
+      if (error && (error.code === 'EPIPE' || error.code === 'ECONNRESET')) {
+        this.emit('warning', `Suppressing transient outbound socket error (${error.code}) from _connect().`);
+      } else {
+        const msg = `Socket error: ${error}`;
+        // Avoid crashing consumers/tests that haven't registered an 'error' listener.
+        if (this.listenerCount('error') > 0) this.emit('error', msg);
+        else this.emit('warning', msg);
+      }
     });
 
     socket.on('open', (info) => {
@@ -394,13 +830,97 @@ class Peer extends Service {
   _destroyFabric (socket, target) {
     if (socket._keepalive) clearInterval(socket._keepalive);
 
+    if (this._outboundDialTargets) this._outboundDialTargets.delete(target);
+
     delete this.connections[target];
     delete this.peers[target];
+    if (this._addressToId) delete this._addressToId[target];
 
     this.emit('connections:close', {
       address: target,
       name: target
     });
+  }
+
+  /**
+   * Load persistent peer registry from LevelDB.
+   * Uses classic-level in Node, browser-level (IndexedDB) in browser.
+   * @returns {Promise<void>}
+   */
+  async _loadPeerRegistry () {
+    const location = this.settings.peersDb;
+    if (!location) return;
+
+    try {
+      this._peersDb = this._peersDb || new Level(location);
+      const raw = await this._peersDb.get('peers').catch(() => null);
+      const peers = raw ? JSON.parse(raw) : {};
+      if (peers && typeof peers === 'object') {
+        // Migrate legacy address-keyed entries to id-keyed (id is the fixed public key)
+        const migrated = {};
+        for (const key of Object.keys(peers)) {
+          const entry = peers[key];
+          const id = entry && entry.id;
+          if (id) {
+            migrated[id] = merge({ id, address: key }, entry);
+          } else {
+            // No id yet (pre-handshake); keep keyed by address until we learn id
+            migrated[key] = merge({ address: key }, entry);
+          }
+        }
+        this._state.peers = migrated;
+        if (this.settings.debug) this.emit('debug', `[FABRIC:PEER] Loaded peer registry: ${Object.keys(this._state.peers).length} entries`);
+      }
+    } catch (err) {
+      this.emit('debug', `[FABRIC:PEER] No peer registry or load error: ${err && err.message}`);
+      if (!this._state.peers) this._state.peers = {};
+    }
+  }
+
+  /**
+   * Persist peer registry to LevelDB (debounced).
+   */
+  _savePeerRegistry () {
+    const location = this.settings.peersDb;
+    if (!location) return;
+    if (this._state.status === 'STOPPING' || this._state.status === 'STOPPED') return;
+
+    if (this._peerRegistrySaveScheduled) clearTimeout(this._peerRegistrySaveScheduled);
+
+    this._peerRegistrySaveScheduled = setTimeout(() => {
+      this._peerRegistrySaveScheduled = null;
+      if (this._state.status === 'STOPPING' || this._state.status === 'STOPPED') return;
+      this._peersDb = this._peersDb || new Level(location);
+      // Avoid noisy errors from writes scheduled while DB is closing/closed.
+      if (this._peersDb && this._peersDb.status && this._peersDb.status !== 'open') return;
+      const payload = JSON.stringify(this._state.peers || {});
+      this._peersDb.put('peers', payload)
+        .then(() => { if (this.settings.debug) this.emit('debug', '[FABRIC:PEER] Saved peer registry'); })
+        .catch((err) => {
+          const message = err && err.message ? err.message : String(err);
+          if (message.includes('Database is not open')) return;
+          this.emit('error', `Failed to save peer registry: ${message}`);
+        });
+    }, 500);
+  }
+
+  /**
+   * Upsert a peer into the persistent registry (state.peers) and schedule save to LevelDB.
+   * @param {string} address - Peer address (e.g. host:port).
+   * @param {Object} [updates] - Fields to set/merge (id, score, firstSeen, lastSeen, alias, publicKey).
+   */
+  _upsertPeerRegistry (key, updates = {}) {
+    const registry = this._state.peers || {};
+    const now = new Date().toISOString();
+    const canonicalKey = updates.id || key;
+    const existing = registry[canonicalKey] || registry[key];
+    const base = existing ? { ...existing } : { id: canonicalKey, address: key.includes(':') ? key : undefined, score: 0, firstSeen: now, lastSeen: now };
+    const merged = merge(base, updates);
+    if (!merged.lastSeen) merged.lastSeen = now;
+    registry[canonicalKey] = merged;
+    if (key !== canonicalKey && registry[key]) delete registry[key];
+    this._state.peers = registry;
+    this._savePeerRegistry();
   }
 
   /**
@@ -416,7 +936,9 @@ class Peer extends Service {
       this.emit('debug', `Filling peer slot ${i} of ${openCount} (max ${this.settings.constraints.peers.max}) with candidate: ${JSON.stringify(candidate, null, '  ')}`);
 
       try {
-        this._connect(`${candidate.object.host}:${candidate.object.port}`);
+        const host = candidate.object ? candidate.object.host : candidate.host;
+        const port = candidate.object ? candidate.object.port : candidate.port;
+        this._connect(`${host}:${port}`);
       } catch (exception) {
         this.emit('error', `Unable to fill open peer slot ${i}: ${exception}`);
       }
@@ -444,18 +966,42 @@ class Peer extends Service {
       return;
     }
 
-    // Store message for later
-    this.messages[hash] = buffer.toString('hex');
+    this._rememberWireHash(hash);
 
-    const checksum = crypto.createHash('sha256').update(message.body, 'utf8').digest('hex');
-    if (checksum !== message.raw.hash.toString('hex')) throw new Error('Message received with incorrect hash.');
+    // Body integrity: `hash` header is double-SHA256(body). `preimage` is single SHA256(body) for
+    // non-sensitive sends, all-zero for sensitive, or an explicit HTLC secret — preimage is covered
+    // by the Schnorr signature; do not require preimage === SHA256(body) here (HTLC secrets differ).
+    const bodyBuf = message.raw.data || Buffer.alloc(0);
+    const checksum = Hash256.doubleDigest(bodyBuf);
+    const expectedHash = Buffer.isBuffer(message.raw.hash) ? message.raw.hash.toString('hex') : message.raw.hash;
+    if (checksum !== expectedHash) {
+      const from = (origin && origin.name) ? origin.name : 'unknown';
+      const t = message.type || '?';
+      const hint = this.settings.debug
+        ? ` wire=${String(expectedHash).slice(0, 16)}… computed=${String(checksum).slice(0, 16)}…`
+        : '';
+      this.emit('warning', `[FABRIC:PEER] Dropping message (body hash mismatch): from=${from} type=${t}${hint}`);
+      return this;
+    }
 
-    // Verify message signature if we have the peer's public key
-    if (origin && this.peers[origin] && this.peers[origin].publicKey) {
-      const signer = new Key({ public: this.peers[origin].publicKey });
+    // Verify message signature if we have the peer's public key (origin is `{ name }` from sockets)
+    const peerKey = origin && (origin.name != null ? origin.name : origin);
+    const peerRecord = peerKey && this.peers[peerKey];
+    if (peerRecord && peerRecord.publicKey) {
+      const signer = new Key({ public: peerRecord.publicKey });
       if (!message.verifyWithKey(signer)) {
-        this.emit('error', `Invalid message signature from ${origin}`);
+        this.emit('error', `Invalid message signature from ${peerKey}`);
         return;
+      }
+    }
+
+    if (origin && origin.name) {
+      const cost = this._wireInboundCreditCost(message.type);
+      if (!this._wireInboundRateAllowPeer(origin.name, cost)) {
+        if (this.settings.debug) {
+          this.emit('debug', `[FABRIC:PEER] Dropped (wire traffic budget): ${origin.name} type=${message.type}`);
+        }
+        return this;
       }
     }
 
@@ -466,40 +1012,118 @@ class Peer extends Service {
       default:
         this.emit('debug', `Unhandled message type: ${message.type}`);
         break;
+      case 'P2P_RELAY':
+        this.relayFrom(origin.name, message);
+        break;
+      case 'BITCOIN_BLOCK':
+      case 'BitcoinBlock':
+        // Chain-tip gossip: relay so sparse meshes learn Bitcoin network tip (hash/preimage/signature as any AMP message).
+        this.emit('bitcoinBlock', { message, origin, socket });
+        if (origin && origin.name) this.relayFrom(origin.name, message);
+        break;
+      case 'P2P_CHAIN_SYNC_REQUEST':
+      case 'ChainSyncRequest':
+        if (!origin || !origin.name) break;
+        try {
+          const raw = message.data != null
+            ? (typeof message.data === 'string' ? message.data : String(message.data))
+            : '{}';
+          const object = JSON.parse(raw || '{}');
+          this.emit('chainSyncRequest', { message, origin, socket, object });
+        } catch (parseErr) {
+          this.emit('chainSyncRequest', { message, origin, socket, object: {} });
+        }
+        break;
+      case 'DOCUMENT_PUBLISH':
+      case 'DocumentPublish':
+        try {
+          const raw = message.data != null
+            ? (typeof message.data === 'string' ? message.data : String(message.data))
+            : '{}';
+          const parsed = JSON.parse(raw || '{}');
+          const docId = parsed.id;
+          if (!docId) break;
+          const purchaseHash = purchaseContentHashHex(docId, parsed);
+          const payload = {
+            message,
+            origin,
+            socket,
+            documentId: docId,
+            purchaseContentHashHex: purchaseHash,
+            parsed,
+            source: 'canonical'
+          };
+          this.emit('documentPublish', payload);
+          this.emit('DocumentPublish', payload);
+        } catch (exception) {
+          this.emit('warning', `[FABRIC:PEER] DOCUMENT_PUBLISH parse failed: ${exception.message}`);
+        }
+        break;
+      case 'DOCUMENT_REQUEST':
+      case 'DocumentRequest':
+        try {
+          this._handleDocumentRequestWire(message, origin, socket);
+        } catch (exception) {
+          this.emit('warning', `[FABRIC:PEER] DOCUMENT_REQUEST failed: ${exception.message}`);
+        }
+        break;
+      case 'GENERIC_MESSAGE':
       case 'GenericMessage':
+      case 'P2P_BASE_MESSAGE':
       case 'PeerMessage':
+      case 'CHAT_MESSAGE':
       case 'ChatMessage':
         // this.emit('debug', `message ${message}`);
         // this.emit('debug', `message data: ${message.data}`);
         // Parse JSON body
         try {
           const content = JSON.parse(message.data);
-          this._handleGenericMessage(content, origin, socket);
+          this._handleGenericMessage(content, origin, socket, message);
         } catch (exception) {
           this.emit('error', `Broken content body: ${exception}`);
         }
 
         break;
       // Lightning BOLT JSON payload fall-through (if any are sent with JSON bodies)
+      case 'LIGHTNING_WARNING':
       case 'LightningWarning':
+      case 'LIGHTNING_INIT':
       case 'LightningInit':
+      case 'LIGHTNING_ERROR':
       case 'LightningError':
+      case 'LIGHTNING_PING':
       case 'LightningPing':
+      case 'LIGHTNING_PONG':
       case 'LightningPong':
+      case 'LIGHTNING_OPEN_CHANNEL':
       case 'OpenChannel':
+      case 'LIGHTNING_ACCEPT_CHANNEL':
       case 'AcceptChannel':
+      case 'LIGHTNING_FUNDING_CREATED':
       case 'FundingCreated':
+      case 'LIGHTNING_FUNDING_SIGNED':
       case 'FundingSigned':
+      case 'LIGHTNING_CHANNEL_READY':
       case 'ChannelReady':
+      case 'LIGHTNING_SHUTDOWN':
       case 'Shutdown':
+      case 'LIGHTNING_CLOSING_SIGNED':
       case 'ClosingSigned':
+      case 'LIGHTNING_UPDATE_ADD_HTLC':
       case 'UpdateAddHTLC':
+      case 'LIGHTNING_UPDATE_FULFILL_HTLC':
       case 'UpdateFulfillHTLC':
+      case 'LIGHTNING_UPDATE_FAIL_HTLC':
       case 'UpdateFailHTLC':
+      case 'LIGHTNING_COMMITMENT_SIGNED':
       case 'CommitmentSigned':
+      case 'LIGHTNING_REVOKE_AND_ACK':
       case 'RevokeAndAck':
+      case 'LIGHTNING_CHANNEL_ANNOUNCEMENT':
       case 'ChannelAnnouncement':
+      case 'LIGHTNING_NODE_ANNOUNCEMENT':
       case 'NodeAnnouncement':
+      case 'LIGHTNING_CHANNEL_UPDATE':
       case 'ChannelUpdate':
         try {
           const content = JSON.parse(message.data);
@@ -516,7 +1140,7 @@ class Peer extends Service {
     return this;
   }
 
-  _handleGenericMessage (message, origin = null, socket = null) {
+  _handleGenericMessage (message, origin = null, socket = null, wireMessage = null) {
     if (this.settings.debug) this.emit('debug', `Generic message:\n\tFrom: ${JSON.stringify(origin)}\n\tType: ${message.type}\n\tBody:\n\`\`\`\n${JSON.stringify(message.object, null, '  ')}\n\`\`\``);
 
     // Lookup the appropriate Actor for the message's origin
@@ -526,23 +1150,62 @@ class Peer extends Service {
       default:
         this.emit('debug', `Unhandled Generic Message: ${message.type} ${JSON.stringify(message, null, '  ')}`);
         break;
+      case 'INVENTORY_REQUEST':
+        // Upstream Inventory request (typically for documents). Emit an 'inventory'
+        // event so higher-level services (e.g. hub) can respond appropriately.
+        this.emit('inventory', { message, origin, socket });
+        if (this.settings.serveLocalDocumentInventory) {
+          const served = this._respondInventoryFromLocalDocuments(message, origin);
+          const req = message.object || {};
+          if (this.settings.relayInventoryRequest && !served && wireMessage && req.offerBtc === true) {
+            this.relayFrom(origin.name, wireMessage, socket);
+          }
+        }
+        break;
+      case 'INVENTORY_RESPONSE':
+        // Document inventory reply (may include per-item L1 HTLC offers).
+        this.emit('inventoryResponse', { message, origin, socket });
+        if (this.settings.relayInventoryResponse && wireMessage) {
+          this.relayFrom(origin.name, wireMessage, socket);
+        }
+        break;
       case 'P2P_SESSION_OFFER':
+        const peerId = message.actor.id;
+        const connAddress = origin.name;
         if (this.settings.debug) this.emit('debug', `Handling session offer: ${JSON.stringify(message.object)}`);
         if (this.settings.debug) this.emit('debug', `Session offer origin: ${JSON.stringify(origin)}`);
-        if (this.settings.debug) this.emit('debug', `connections: ${JSON.stringify(Object.keys(this.connections))}`);
 
-        // Peer is valid
-        // TODO: remove this assumption (validate above)
-        // TODO: check for existing peer, update instead of replace
-        this.peers[origin.name] = new Actor({
-          id: message.actor.id,
-          name: origin.name,
-          address: origin.name,
-          connections: [ origin.name ]
+        // Same peer reconnecting from new port? Close old connection and replace with new.
+        // Do not tear down our outbound dial to the peer's listen address: concurrent inbound +
+        // outbound to the same Fabric id is normal (e.g. ring + star mesh); dropping the stable
+        // `host:listenPort` socket breaks address-keyed sends on the satellite.
+        const addressToId = this._addressToId || {};
+        for (const [addr, mappedId] of Object.entries(addressToId)) {
+          if (mappedId !== peerId || addr === connAddress) continue;
+          if (this._outboundDialTargets && this._outboundDialTargets.has(addr)) continue;
+          const oldSocket = this.connections[addr];
+          if (oldSocket) {
+            if (oldSocket._keepalive) clearInterval(oldSocket._keepalive);
+            delete this.connections[addr];
+            delete this.peers[addr];
+            delete this._addressToId[addr];
+            if (typeof oldSocket.destroy === 'function') oldSocket.destroy();
+          }
+          break;
+        }
+
+        this.peers[connAddress] = new Actor({
+          id: peerId,
+          name: connAddress,
+          address: connAddress,
+          connections: [ connAddress ]
         });
 
+        this._upsertPeerRegistry(connAddress, { id: peerId, address: connAddress, lastSeen: new Date().toISOString() });
+        this._addressToId[connAddress] = peerId;
+
         // Emit peer event
-        this.emit('peer', this.peers[origin.name]);
+        this.emit('peer', this.peers[connAddress]);
 
         // Send session open event
         const vector = ['P2P_SESSION_OPEN', JSON.stringify({
@@ -557,11 +1220,17 @@ class Peer extends Service {
         const PACKET_SESSION_START = Message.fromVector(vector).signWithKey(this.key);
         const reply = PACKET_SESSION_START.toBuffer();
         if (this.settings.debug) this.emit('debug', `session_start ${PACKET_SESSION_START} ${reply.toString('hex')}`);
-        this.connections[origin.name]._writeFabric(reply, socket);
+        this.connections[connAddress]._writeFabric(reply, socket);
+        if (this.settings.announceDocumentsOnPeerConnect) {
+          this._announceLocalDocumentsToPeer(connAddress);
+        }
         break;
       case 'P2P_SESSION_OPEN':
         if (this.settings.debug) this.emit('debug', `Handling session open: ${JSON.stringify(message.object)}`);
-        this.peers[origin.name] = { id: message.object.counterparty, name: origin.name, address: origin };
+        const openPeerId = message.object.counterparty;
+        this.peers[origin.name] = { id: openPeerId, name: origin.name, address: origin };
+        this._upsertPeerRegistry(origin.name, { id: openPeerId, address: origin.name, lastSeen: new Date().toISOString() });
+        this._addressToId[origin.name] = openPeerId;
         // Don't emit peer event here - it's already emitted in P2P_SESSION_OFFER
         break;
       case 'P2P_CHAT_MESSAGE':
@@ -575,6 +1244,56 @@ class Peer extends Service {
         const state = new Actor(message.object.state);
         this.emit('debug', `state_announce <Generic>${JSON.stringify(message.object || '')} ${state.toGenericMessage()}`);
         break;
+      case P2P_PEER_GOSSIP: {
+        if (!origin || !origin.name) break;
+        const g = this.settings.gossip || {};
+        const maxHops = g.maxHops != null ? g.maxHops : GOSSIP_MAX_HOPS;
+        const payloadKey = this._gossipPayloadDedupKey(message);
+        if (this._gossipPayloadSeen.has(payloadKey)) break;
+        const obj = message.object || {};
+        let hop = obj.gossipHop != null ? Number(obj.gossipHop) : maxHops;
+        if (!Number.isFinite(hop) || hop < 0) hop = maxHops;
+        hop = Math.min(hop, maxHops);
+        if (hop <= 0) break;
+        if (!this._gossipRateLimitAllow(origin.name)) break;
+        this.emit('peeringGossip', { message, origin });
+        this._gossipRememberPayload(payloadKey);
+        const relayBody = Object.assign({}, message, {
+          object: Object.assign({}, obj, { gossipHop: hop - 1 })
+        });
+        const gossipRelay = Message.fromVector(['GENERIC', JSON.stringify(relayBody)]).signWithKey(this.key);
+        this.relayFrom(origin.name, gossipRelay);
+        break;
+      }
+      case P2P_PEERING_OFFER: {
+        if (!origin || !origin.name) break;
+        const p = this.settings.peering || {};
+        const maxHops = p.maxHops != null ? p.maxHops : PEERING_OFFER_MAX_HOPS;
+        const payloadKey = this._peeringOfferPayloadDedupKey(message);
+        if (this._peeringPayloadSeen.has(payloadKey)) break;
+        const obj = message.object || {};
+        let hop = obj.peeringHop != null ? Number(obj.peeringHop) : maxHops;
+        if (!Number.isFinite(hop) || hop < 0) hop = maxHops;
+        hop = Math.min(hop, maxHops);
+        if (hop <= 0) break;
+        if (!this._peeringRateLimitAllow(origin.name)) break;
+        this.emit('peeringOffer', { message, origin });
+        this._peeringRememberPayload(payloadKey);
+        const transport = obj.transport || 'fabric';
+        if (transport === 'fabric' && obj.host && obj.port) {
+          const connCount = Object.keys(this.connections || {}).length;
+          const maxPeers = (this.settings.constraints && this.settings.constraints.peers && this.settings.constraints.peers.max) || MAX_PEERS;
+          if (connCount < maxPeers) {
+            this._enqueuePeeringCandidate(obj.host, obj.port);
+          }
+        }
+        const relayBody = Object.assign({}, message, {
+          object: Object.assign({}, obj, { peeringHop: hop - 1 })
+        });
+        const offerRelay = Message.fromVector(['GENERIC', JSON.stringify(relayBody)]).signWithKey(this.key);
+        this.relayFrom(origin.name, offerRelay);
+        break;
+      }
       case 'P2P_PING':
         const now = (new Date()).toISOString();
         const P2P_PONG = Message.fromVector(['GENERIC', JSON.stringify({
@@ -594,13 +1313,19 @@ class Peer extends Service {
         // Update the peer's score for succesfully responding to a ping
         // TODO: ensure no pong is handled when a ping was not previously sent
         const instance = this.state.actors[actor.id] ? this.state.actors[actor.id] : {};
+        const newScore = (instance.score || 0) + 1;
 
         this.actors[actor.id].adopt([
-          { op: 'replace', path: '/score', value: (instance.score || 0) + 1 }
+          { op: 'replace', path: '/score', value: newScore }
         ]);
 
         this._state.content.actors[actor.id] = this.actors[actor.id].state;
         this.commit();
+
+        const registry = this._state.peers || {};
+        const pongPeerId = (this._addressToId && this._addressToId[origin.name]) || origin.name;
+        const regEntry = registry[pongPeerId] || registry[origin.name];
+        this._upsertPeerRegistry(pongPeerId, { id: pongPeerId, address: origin.name, score: (regEntry && regEntry.score != null ? regEntry.score : 0) + 1, lastSeen: new Date().toISOString() });
 
         if (this.settings.debug) this.emit('debug', `Received pong: ${JSON.stringify(message, null, '  ')}`);
         this.emit('state', this.state);
@@ -609,6 +1334,8 @@ class Peer extends Service {
       case 'P2P_PEER_ALIAS':
         this.emit('debug', `peer_alias ${origin.name} <Generic>${JSON.stringify(message.object || '')}`);
         this.connections[origin.name]._alias = message.object.name;
+        const aliasPeerId = (this._addressToId && this._addressToId[origin.name]) || origin.name;
+        this._upsertPeerRegistry(aliasPeerId, { id: aliasPeerId, address: origin.name, alias: message.object && message.object.name });
         // const alias = Message.fromVector(['PeerAlias', JSON.stringify(message)]);
         // this.relayFrom(origin.name, alias);
         break;
@@ -622,6 +1349,18 @@ class Peer extends Service {
         // this.relayFrom(origin.name, announce);
         break;
       case 'P2P_DOCUMENT_PUBLISH':
+        this.emit('documentPublish', {
+          message,
+          origin,
+          socket,
+          documentId: message.object && message.object.hash,
+          rateSats: message.object && message.object.rate,
+          contentHash: message.object && message.object.contentHash,
+          source: 'pricing'
+        });
+        break;
+      case 'P2P_FILE_SEND':
+        this.emit('file', { message, origin });
         break;
       case 'CONTRACT_PUBLISH':
         // TODO: reject and punish mis-behaving peers
@@ -638,12 +1377,12 @@ class Peer extends Service {
     }
   }
 
-  _handleNOISEHandshake (localPrivateKey, localPublicKey, remotePublicKey) {
-    // const counterparty = new Identity({ public: remotePublicKey.toString('hex') });
-    this.emit('debug', `Peer transport handshake using local key: ${localPrivateKey.toString('hex')}`);
-    this.emit('debug', `Peer transport handshake using local public key: ${localPublicKey.toString('hex')}`);
-    this.emit('debug', `Peer transport handshake with remote public key: ${remotePublicKey.toString('hex')}`);
-    // this.emit('debug', `Peer transport handshake with remote identity: ${counterparty.id}`);
+  _handleNOISEHandshake (_localPrivateKey, localPublicKey, remotePublicKey) {
+    if (this.settings.debug) {
+      // Never log private key material — public keys only for transport diagnostics.
+      this.emit('debug', `Peer transport handshake using local public key: ${localPublicKey.toString('hex')}`);
+      this.emit('debug', `Peer transport handshake with remote public key: ${remotePublicKey.toString('hex')}`);
+    }
   }
 
   _NOISESocketHandler (socket) {
@@ -653,9 +1392,10 @@ class Peer extends Service {
     // Store a unique actor for this inbound connection
     this._registerActor({ name: target });
 
-    // this.emit('debug', `Local NOISE key: ${JSON.stringify(this.identity.key, null, '  ')}`);
     const derived = this.identity.key.derive(FABRIC_KEY_DERIVATION_PATH);
-    this.emit('debug', `Derived NOISE key: ${derived.private.toString('hex')}`);
+    if (this.settings.debug) {
+      this.emit('debug', 'NOISE inbound: session key derived for handshake (private key not logged)');
+    }
 
     // Create NOISE handler
     const handler = noise({
@@ -664,30 +1404,50 @@ class Peer extends Service {
       verify: this._verifyNOISE.bind(this)
     });
 
+    // Handle low-level socket errors for inbound connections
+    socket.on('error', (error) => {
+      if (this.settings.debug) this.emit('debug', `--- debug error from _NOISESocketHandler() ---`);
+      if (error && (error.code === 'EPIPE' || error.code === 'ECONNRESET')) {
+        this.emit('warning', `Suppressing transient inbound socket error (${error.code}) from _NOISESocketHandler().`);
+      } else {
+        this.emit('error', `Inbound socket error: ${error}`);
+      }
+    });
+
     // Set up NOISE event handlers
     handler.encrypt.on('handshake', this._handleNOISEHandshake.bind(this));
     handler.encrypt.on('error', (error) => {
-      this.emit('error', `NOISE encrypt error: ${error}`);
+      if (error && (error.code === 'EPIPE' || error.code === 'ECONNRESET')) {
+        this.emit('warning', `Suppressing transient NOISE encrypt error (${error.code}).`);
+      } else {
+        this.emit('error', `NOISE encrypt error: ${error}`);
+      }
     });
 
     handler.encrypt.on('end', (data) => {
-      this.emit('debug', `Peer encrypt end: ${data}`);
+      if (this.settings.debug) this.emit('debug', `Peer encrypt end: ${data}`);
       // socket.destroy();
       delete this.connections[target];
       this.peers[target].status = 'disconnected';
     });
 
     handler.decrypt.on('error', (error) => {
-      this.emit('error', `NOISE decrypt error: ${error}`);
+      if (error && (error.code === 'EPIPE' || error.code === 'ECONNRESET')) {
+        this.emit('warning', `Suppressing transient NOISE decrypt error (${error.code}).`);
+      } else {
+        this.emit('error', `NOISE decrypt error: ${error}`);
+      }
     });
 
     handler.decrypt.on('close', (data) => {
-      this.emit('debug', `Peer decrypt close: ${data}`);
+      if (this.settings.debug) this.emit('debug', `Peer decrypt close: ${data}`);
     });
 
     handler.decrypt.on('end', (data) => {
-      this.emit('debug', `Peer decrypt end: (${target}) ${data}`);
-      this.emit('debug', `Connections: ${Object.keys(this.connections)}`);
+      if (this.settings.debug) {
+        this.emit('debug', `Peer decrypt end: (${target}) ${data}`);
+        this.emit('debug', `Connections: ${Object.keys(this.connections)}`);
+      }
       socket._destroyFabric();
     });
 
@@ -715,22 +1475,209 @@ class Peer extends Service {
     });
   }
 
-  _publishDocument (hash, rate = 0) {
-    this._state.content.documents[hash] = document;
+  /**
+   * Build hub-compatible document metadata for {@link purchaseContentHashHex}.
+   * @param {String} documentId
+   * @param {String} content UTF-8 body
+   * @returns {Object} Parsed document record (whitelisted fields)
+   */
+  _buildDocumentParsedForPublish (documentId, content) {
+    const buf = Buffer.from(content === null || content === undefined ? '' : String(content), 'utf8');
+    return {
+      id: documentId,
+      name: (documentId && String(documentId).split('/').pop()) || 'document',
+      mime: 'text/plain',
+      revision: 1,
+      contentBase64: buf.toString('base64'),
+      size: buf.length,
+      sha256: crypto.createHash('sha256').update(buf).digest('hex')
+    };
+  }
+
+  /**
+   * Reply to `INVENTORY_REQUEST` with `INVENTORY_RESPONSE` built from local documents and rates.
+   * @param {{ type: string, object?: object }} message generic body from {@link Peer#_handleGenericMessage}
+   * @param {{ name: string }} origin
+   * @returns {boolean} true if an `INVENTORY_RESPONSE` was written to the requester
+   */
+  _respondInventoryFromLocalDocuments (message, origin) {
+    if (!origin || !origin.name) return false;
+    const req = message.object || {};
+    if (req.offerBtc !== true) return false;
+    const docs = this._state.content.documents;
+    if (!docs || typeof docs !== 'object') return false;
+    const rates = this._state.content.documentRates || {};
+    const maxSats = req.maxSats;
+    const items = [];
+    for (const docId of Object.keys(docs)) {
+      const body = docs[docId];
+      const parsed = this._buildDocumentParsedForPublish(docId, body);
+      const contentHash = purchaseContentHashHex(docId, parsed);
+      const rateSats = Object.prototype.hasOwnProperty.call(rates, docId) ? rates[docId] : 0;
+      if (maxSats != null && Number.isFinite(maxSats) && rateSats > maxSats) continue;
+      items.push({ id: docId, rateSats, contentHash, network: 'bitcoin' });
+    }
+    if (!items.length) return false;
+    const conn = this.connections[origin.name];
+    if (!conn || !conn._writeFabric) return false;
+    const payload = {
+      type: 'INVENTORY_RESPONSE',
+      object: { items }
+    };
+    const m = Message.fromVector(['GenericMessage', JSON.stringify(payload)]);
+    m.signWithKey(this.key);
+    conn._writeFabric(m.toBuffer());
+    return true;
+  }
+
+  /**
+   * Send a locally stored document to a connected peer as `P2P_FILE_SEND`.
+   * @param {string} documentId
+   * @param {string} peerAddress connection key in {@link Peer#connections}
+   * @returns {boolean} true if the payload was written
+   */
+  _sendP2pFileSendToPeer (documentId, peerAddress) {
+    const docs = this._state.content.documents;
+    if (!docs || !Object.prototype.hasOwnProperty.call(docs, documentId)) return false;
+    const body = docs[documentId];
+    const bodyStr = (body === null || body === undefined) ? '' : String(body);
+    const conn = peerAddress && this.connections[peerAddress];
+    if (!conn || !conn._writeFabric) return false;
+    const filePayload = {
+      type: 'P2P_FILE_SEND',
+      object: {
+        name: documentId,
+        body: Buffer.from(bodyStr, 'utf8').toString('base64')
+      }
+    };
+    const reply = Message.fromVector(['GenericMessage', JSON.stringify(filePayload)]);
+    reply.signWithKey(this.key);
+    conn._writeFabric(reply.toBuffer());
+    return true;
+  }
+
+  /**
+   * Public helper: push document bytes to a peer (same wire path as {@link Peer#_handleDocumentRequestWire} fulfillment).
+   * @param {string} documentId
+   * @param {string} peerAddress
+   * @returns {boolean}
+   */
+  sendDocumentFileToPeer (documentId, peerAddress) {
+    return this._sendP2pFileSendToPeer(documentId, peerAddress);
+  }
+
+  /**
+   * AMP buffers for one document: canonical `DocumentPublish`, then optional pricing `P2P_DOCUMENT_PUBLISH`.
+   * @param {string} documentId
+   * @param {string} body UTF-8 body
+   * @param {number} rateSats
+   * @returns {Buffer[]}
+   */
+  _buildPublishDocumentWireBuffers (documentId, body, rateSats) {
+    const parsed = this._buildDocumentParsedForPublish(documentId, body);
+    const dataStr = fabricCanonicalJson(whitelistedDocumentFields(documentId, parsed));
+    const canonical = Message.fromVector(['DocumentPublish', dataStr]);
+    canonical.signWithKey(this.key);
+    const buffers = [canonical.toBuffer()];
+    if (rateSats > 0) {
+      const contentHash = purchaseContentHashHex(documentId, parsed);
+      const rateMsg = Message.fromVector(['P2P_DOCUMENT_PUBLISH', JSON.stringify({
+        type: 'P2P_DOCUMENT_PUBLISH',
+        object: {
+          hash: documentId,
+          rate: rateSats,
+          contentHash
+        }
+      })]);
+      rateMsg.signWithKey(this.key);
+      buffers.push(rateMsg.toBuffer());
+    }
+    return buffers;
+  }
+
+  /**
+   * Re-send all local document publishes to one peer (same bytes as {@link Peer#_publishDocument}).
+   * @param {string} peerAddress connection key in {@link Peer#connections}
+   */
+  _announceLocalDocumentsToPeer (peerAddress) {
+    const docs = this._state.content.documents;
+    if (!docs || typeof docs !== 'object') return;
+    const rates = this._state.content.documentRates || {};
+    const conn = peerAddress && this.connections[peerAddress];
+    if (!conn || !conn._writeFabric) return;
+    for (const docId of Object.keys(docs)) {
+      const body = docs[docId];
+      const rateSats = Object.prototype.hasOwnProperty.call(rates, docId) ? rates[docId] : 0;
+      const buffers = this._buildPublishDocumentWireBuffers(docId, body, rateSats);
+      for (const buf of buffers) {
+        conn._writeFabric(buf);
+      }
+    }
+  }
+
+  /**
+   * Store a document locally and gossip to peers.
+   * 1) **Canonical** `DOCUMENT_PUBLISH` wire message (same bytes as hub `documentPublishEnvelope`) for L1 `contentHash`.
+   * 2) If `rateSats > 0`, a **pricing** `GENERIC` `P2P_DOCUMENT_PUBLISH` with `rate` and `contentHash` (sat ask).
+   * @param {String} documentId - Catalog key (e.g. CLI document name).
+   * @param {String} [content=''] - UTF-8 body stored under {@link Peer#state}.documents.
+   * @param {Number} [rateSats=0] - Ask price in satoshis (gossip only; not part of canonical hash).
+   */
+  _publishDocument (documentId, content = '', rateSats = 0) {
+    if (!this._state.content.documents) this._state.content.documents = {};
+    if (!this._state.content.documentRates) this._state.content.documentRates = {};
+    const body = (content === null || content === undefined) ? '' : String(content);
+    this._state.content.documents[documentId] = body;
+    this._state.content.documentRates[documentId] = rateSats;
 
     this.commit();
 
-    const PACKET_DOCUMENT_PUBLISH = Message.fromVector(['P2P_DOCUMENT_PUBLISH', JSON.stringify({
-      type: 'P2P_DOCUMENT_PUBLISH',
-      object: {
-        hash: hash,
-        rate: rate
-      }
-    })]);
+    const buffers = this._buildPublishDocumentWireBuffers(documentId, body, rateSats);
+    for (const buf of buffers) {
+      this.broadcast(buf);
+    }
 
-    const message = PACKET_DOCUMENT_PUBLISH.toBuffer();
-    if (this.settings.debug) this.emit('debug', `Broadcasting document publish: ${message.toString('utf8')}`);
-    this.broadcast(message);
+    if (this.settings.debug) {
+      this.emit('debug', '[FABRIC:PEER] Published canonical DOCUMENT_PUBLISH + pricing gossip (if rate > 0)');
+    }
+  }
+
+  /**
+   * Handle inbound `DOCUMENT_REQUEST`: emit `documentRequest` / `DocumentRequest`, then either
+   * send `P2P_FILE_SEND` to the requester if `state.documents[id]` is present, or relay the
+   * request to other peers (conditional relay).
+   * @param {Message} message
+   * @param {{ name: string }} origin
+   * @param {*} socket
+   */
+  _handleDocumentRequestWire (message, origin, socket) {
+    const raw = message.data != null
+      ? (typeof message.data === 'string' ? message.data : String(message.data))
+      : '{}';
+    const parsed = JSON.parse(raw || '{}');
+    const docId = parsed.document || parsed.id;
+    if (!docId) return;
+
+    const payload = {
+      message,
+      origin,
+      socket,
+      documentId: docId,
+      parsed,
+      source: 'canonical'
+    };
+    this.emit('documentRequest', payload);
+    this.emit('DocumentRequest', payload);
+
+    const docs = this._state.content.documents;
+    if (!docs || !Object.prototype.hasOwnProperty.call(docs, docId)) {
+      this.relayFrom(origin.name, message, socket);
+      return;
+    }
+
+    if (!this._sendP2pFileSendToPeer(docId, origin.name)) {
+      this.emit('warning', `[FABRIC:PEER] DOCUMENT_REQUEST: could not send P2P_FILE_SEND to ${origin && origin.name}`);
+    }
   }
 
   _registerActor (object) {
@@ -860,7 +1807,7 @@ class Peer extends Service {
 
   _writeFabric (msg, stream) {
     const hash = crypto.createHash('sha256').update(msg).digest('hex');
-    this.messages[hash] = msg.toString('hex');
+    this._rememberWireHash(hash);
     this.commit();
     if (!stream || !stream.encrypt) return;
 
@@ -887,8 +1834,10 @@ class Peer extends Service {
    * Start the Peer.
    */
   async start () {
+    await this._loadPeerRegistry();
+
     // Log settings at start
-    if (this.settings.debug || true) {
+    if (this.settings.debug) {
       this.emit('debug', `[FABRIC:PEER:START] networking: ${this.settings.networking}`);
       this.emit('debug', `[FABRIC:PEER:START] peers: ${JSON.stringify(this.settings.peers)}`);
     }
@@ -896,7 +1845,14 @@ class Peer extends Service {
     let address = null;
     this.emit('log', 'Peer starting...');
 
-    if (this.settings.debug || true) {
+    // Ensure initial peers from config are in the registry
+    if (this.settings.peers && Array.isArray(this.settings.peers)) {
+      for (const candidate of this.settings.peers) {
+        this._upsertPeerRegistry(candidate, { address: candidate });
+      }
+    }
+
+    if (this.settings.debug) {
       this.emit('debug', `[FABRIC:PEER] Listening on port: ${this.settings.port}`);
       this.emit('debug', `[FABRIC:PEER] Peer list: ${JSON.stringify(this.settings.peers)}`);
     }
@@ -905,15 +1861,16 @@ class Peer extends Service {
 
     if (this.settings.listen) {
       this.emit('log', 'Listener starting...');
-      console.debug('Starting listener on', this.interface, this.port);
+      if (this.settings.debug) this.emit('debug', `Starting listener on ${this.interface}:${this.port}`);
 
       try {
         address = await this.listen();
-        console.debug('got address:', address)
+        if (this.settings.debug) this.emit('debug', `got address: ${JSON.stringify(address)}`);
         this.listenAddress = address;
         this.emit('log', 'Listener started!');
       } catch (exception) {
-        this.emit('error', 'Could not listen:', exception);
+        // Do not emit('error') here — with no listener Node throws ERR_UNHANDLED_ERROR; callers get the throw below.
+        this.emit('warning', 'Could not listen:', exception);
         throw new Error('Peer failed to listen: ' + (exception && exception.message ? exception.message : exception));
       }
     }
@@ -928,6 +1885,39 @@ class Peer extends Service {
         } catch (error) {
           this.emit('error', `[FABRIC:PEER] Failed to initiate connection to ${candidate}: ${error.message}`);
         }
+      }
+    }
+
+    // Reconnect to known peers from the persistent registry (if not already connected).
+    // Only do this when a persistent registry is configured and the caller hasn't provided
+    // an explicit peer list (prevents duplicate outbound connects and avoids test hangs).
+    if (
+      this.settings.networking !== false &&
+      this.settings.reconnectToKnownPeers !== false &&
+      this.settings.peersDb &&
+      (!this.settings.peers || this.settings.peers.length === 0) &&
+      this._state.peers &&
+      typeof this._state.peers === 'object'
+    ) {
+      const registry = this._state.peers;
+      const toReconnect = Object.keys(registry).filter((addr) => {
+        if (this.connections[addr]) return false;
+        const listenAddr = this.listenAddress || `${this.interface}:${this.port}`;
+        if (addr === listenAddr) return false;
+        return true;
+      });
+      if (toReconnect.length > 0) {
+        this.emit('debug', `[FABRIC:PEER] Reconnecting to ${toReconnect.length} known peers from registry`);
+        toReconnect.forEach((addr, i) => {
+          setTimeout(() => {
+            try {
+              this._connect(addr);
+              this.emit('debug', `[FABRIC:PEER] Reconnect attempt for: ${addr}`);
+            } catch (err) {
+              this.emit('debug', `[FABRIC:PEER] Reconnect failed for ${addr}: ${err && err.message}`);
+            }
+          }, i * 150);
+        });
       }
     }
 
@@ -980,14 +1970,47 @@ class Peer extends Service {
 
     this.emit('debug', 'Closing all connections...');
     for (const id in this.connections) {
-      this.connections[id].destroy();
+      const c = this.connections[id];
+      if (c && typeof c.destroy === 'function') c.destroy();
+    }
+
+    // Cancel pending registry save and close LevelDB
+    if (this._peerRegistrySaveScheduled) clearTimeout(this._peerRegistrySaveScheduled);
+    if (this._peersDb) {
+      try {
+        await this._peersDb.close();
+      } catch (e) { /* ignore */ }
+      this._peersDb = null;
     }
 
     const terminator = async () => {
       return new Promise((resolve, reject) => {
-        if (!this.server.address()) return resolve();
+        // Always attempt to close the server, even if address() returns null
+        // This ensures cleanup even if the server failed to start properly
+        if (!this.server || typeof this.server.close !== 'function') {
+          return resolve();
+        }
+
+        // Check if server is listening
+        const address = this.server.address();
+        if (!address) {
+          // Server not listening, but still try to close to be safe
+          // Some server states might not have address() but still need cleanup
+          try {
+            this.server.close(() => resolve());
+          } catch (error) {
+            // If close fails, it's likely already closed - resolve anyway
+            resolve();
+          }
+          return;
+        }
+
+        // Server is listening, close it properly
         return this.server.close(function serverClosed (error) {
-          if (error) return reject(error);
+          // Ignore errors if server wasn't running or already closed
+          if (error && error.code !== 'ERR_SERVER_NOT_RUNNING') {
+            return reject(error);
+          }
           resolve();
         });
       });
@@ -1012,18 +2035,19 @@ class Peer extends Service {
 
   _disconnect (address) {
     this.emit('debug', `Disconnect request for address: ${address}`);
-    if (!this.connections[address]) return false;
+    const socket = this.connections[address];
+    if (!socket) return false;
 
-    // Halt any heartbeat
-    if (this.connections[address].heartbeat) {
-      clearInterval(this.connections[address].heartbeat);
-    }
-
-    // Destroy the connection
-    // this.connections[address].destroy();
-
-    // Remove connection from map
+    if (socket._keepalive) clearInterval(socket._keepalive);
+    if (socket.heartbeat) clearInterval(socket.heartbeat);
     delete this.connections[address];
+    delete this.peers[address];
+    if (typeof socket.destroy === 'function') socket.destroy();
+
+    this._upsertPeerRegistry(address, { lastSeen: new Date().toISOString() });
+
+    this.emit('connections:close', { address, name: address });
+    return true;
   }
 
   _maintainConnection (address) {
@@ -1076,9 +2100,29 @@ class Peer extends Service {
    */
   async listen () {
     return new Promise((resolve, reject) => {
-      console.debug('Listening on', this.interface, this.port);
+      if (this.settings.debug) this.emit('debug', `Listening on ${this.interface}:${this.port}`);
+
+      // Handle server errors before attempting to listen
+      const errorHandler = (error) => {
+        if (error.code === 'EADDRINUSE') {
+          // Don't emit('error') here - caller gets rejection; emit would cause ERR_UNHANDLED_ERROR if no listener
+          this.server.close(() => reject(error));
+        } else {
+          this.emit('error', `Server socket error: ${error}`);
+          // Don't reject on other errors during listen, let the callback handle it
+        }
+      };
+
+      this.server.once('error', errorHandler);
+
       this.server.listen(this.port, this.interface, (error) => {
-        if (error) return reject(error);
+        // Remove the error handler since we're handling the result here
+        this.server.removeListener('error', errorHandler);
+
+        if (error) {
+          // Don't emit('error') for EADDRINUSE - caller gets rejection; emit would cause ERR_UNHANDLED_ERROR if no listener
+          return reject(error);
+        }
 
         const details = this.server.address();
         const address = `${details.address}:${details.port}`;
@@ -1087,11 +2131,174 @@ class Peer extends Service {
         return resolve(address);
       });
 
+      // Keep a general error handler for runtime errors
       this.server.on('error', (error) => {
-        this.emit('error', `Server socket error: ${error}`);
+        if (error.code !== 'EADDRINUSE') {
+          this.emit('error', `Server socket error: ${error}`);
+        }
       });
     });
   }
 }
 
+class Swarm extends Actor {
+  constructor (config = {}) {
+    super(config);
+
+    this.name = 'Swarm';
+    this.settings = Object.assign({
+      name: 'fabric',
+      seeds: [],
+      peers: [],
+      contract: 0xC0D3F33D
+    }, config);
+
+    this.agent = new Peer(this.settings);
+
+    this.nodes = {};
+    this.peers = {};
+
+    return this;
+  }
+
+  broadcast (msg) {
+    if (this.settings.verbosity >= 5) this.emit('debug', `broadcasting: ${JSON.stringify(msg)}`);
+    this.agent.broadcast(msg);
+  }
+
+  connect (address) {
+    if (this.settings.verbosity >= 4) this.emit('debug', `[FABRIC:SWARM] Connecting to: ${address}`);
+
+    try {
+      this.agent._connect(address);
+    } catch (E) {
+      this.error('Error connecting:', E);
+    }
+  }
+
+  trust (source) {
+    super.trust(source);
+    const swarm = this;
+
+    swarm.agent.on('ready', function (agent) {
+      swarm.emit('agent', agent);
+    });
+
+    swarm.agent.on('message', function (message) {
+      swarm.emit('message', message);
+    });
+
+    swarm.agent.on('state', function (state) {
+      this.emit('debug', `[FABRIC:SWARM] Received state from agent: ${JSON.stringify(state)}`);
+      swarm.emit('state', state);
+    });
+
+    swarm.agent.on('change', function (change) {
+      this.emit('debug', `[FABRIC:SWARM] Received change from agent: ${JSON.stringify(change)}`);
+      swarm.emit('change', change);
+    });
+
+    swarm.agent.on('patches', function (patches) {
+      this.emit('debug', `[FABRIC:SWARM] Received patches from agent: ${JSON.stringify(patches)}`);
+      swarm.emit('patches', patches);
+    });
+
+    swarm.agent.on('peer', function (peer) {
+      this.emit('debug', `[FABRIC:SWARM] Received peer from agent: ${JSON.stringify(peer)}`);
+      swarm._registerPeer(peer);
+    });
+
+    swarm.agent.on('connections:open', function (connection) {
+      swarm.emit('connections:open', connection);
+    });
+
+    swarm.agent.on('connections:close', function (connection) {
+      swarm.emit('connections:close', connection);
+      swarm._fillPeerSlots();
+    });
+
+    swarm.agent.on('collections:post', function (message) {
+      swarm.emit('collections:post', message);
+    });
+
+    swarm.agent.on('socket:data', function (message) {
+      swarm.emit('socket:data', message);
+    });
+
+    swarm.agent.on('ready', function (info) {
+      swarm.log(`swarm is ready (${info.id})`);
+      swarm.emit('ready');
+      swarm._fillPeerSlots();
+    });
+
+    return this;
+  }
+
+  _broadcastTypedMessage (type, msg) {
+    if (!type) return new Error('Message type must be supplied.');
+    this.agent._broadcastTypedMessage(type, msg);
+  }
+
+  _registerPeer (peer) {
+    const swarm = this;
+    if (!swarm.peers[peer.id]) swarm.peers[peer.id] = peer;
+    swarm.emit('peer', peer);
+  }
+
+  _scheduleReconnect (peer) {
+    const swarm = this;
+    this.log('schedule reconnect:', peer);
+
+    if (swarm.peers[peer.id]) {
+      if (swarm.peers[peer.id].timer) return true;
+      swarm.peers[peer.id].timer = setTimeout(function () {
+        clearTimeout(swarm.peers[peer.id].timer);
+        swarm.connect(peer);
+      }, 60000);
+    }
+  }
+
+  _fillPeerSlots () {
+    const swarm = this;
+    const slots = MAX_PEERS - Object.keys(this.nodes).length;
+    const peers = Object.keys(this.peers).map(function (id) {
+      if (swarm.settings.verbosity >= 5) swarm.emit('debug', `[FABRIC:SWARM] _fillPeerSlots() checking: ${JSON.stringify(swarm.peers[id])}`);
+      return swarm.peers[id].address;
+    });
+    const candidates = swarm.settings.peers.filter(function (address) {
+      return !peers.includes(address);
+    });
+
+    if (slots) {
+      for (let i = 0; (i < candidates.length && i < slots); i++) {
+        swarm._scheduleReconnect(candidates[i]);
+      }
+    }
+  }
+
+  async _connectSeedNodes () {
+    if (this.settings.verbosity >= 4) this.emit('debug', `[FABRIC:SWARM] Connecting to seed nodes: ${JSON.stringify(this.settings.seeds)}`);
+    for (const id in this.settings.seeds) {
+      if (this.settings.verbosity >= 5) this.emit('debug', `[FABRIC:SWARM] Iterating on seed: ${this.settings.seeds[id]}`);
+      this.connect(this.settings.seeds[id]);
+    }
+  }
+
+  async start () {
+    if (this.settings.verbosity >= 4) this.emit('debug', '[FABRIC:SWARM] Starting...');
+    await this.agent.start();
+    await this._connectSeedNodes();
+    if (this.settings.verbosity >= 4) this.emit('debug', '[FABRIC:SWARM] Started!');
+    return this;
+  }
+
+  async stop () {
+    if (this.settings.verbosity >= 4) this.emit('debug', '[FABRIC:SWARM] Stopping...');
+    await this.agent.stop();
+    if (this.settings.verbosity >= 4) this.emit('debug', '[FABRIC:SWARM] Stopped!');
+    return this;
+  }
+}
+
 module.exports = Peer;
+module.exports.Swarm = Swarm;

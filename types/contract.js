@@ -73,15 +73,37 @@ class Contract extends Service {
   };
 
   static fromJavaScript (js) {
-    const buildAST = Template.template(js);
-    const ast = buildAST({});
-    return new Contract({ ast });
+    if (typeof js !== 'string') {
+      throw new TypeError('JavaScript source must be a string.');
+    }
+
+    const source = js.trim();
+    const ast = {
+      '@type': 'AST',
+      '@language': 'JavaScript',
+      source
+    };
+
+    return new Contract({
+      ast,
+      state: {
+        name: 'TemplateContract',
+        status: 'PAUSED',
+        actors: [],
+        balances: {},
+        constraints: {},
+        signatures: [],
+        source
+      }
+    });
   }
 
   static fromGraph (graphs) {
     const circuit = {
       stack: [],
-      nodes: []
+      nodes: [],
+      edges: [],
+      unhandled: []
     };
 
     for (let i = 0; i < graphs.length; i++) {
@@ -97,8 +119,25 @@ class Contract extends Service {
         const child = graph.children[j];
         switch (child.type) {
           default:
-            console.warn(`Unhandled type: "${child.type}'" on child:`, child);
+            circuit.unhandled.push({
+              type: child.type,
+              child
+            });
             break;
+          case 'edge_stmt': {
+            const list = Array.isArray(child.edge_list) ? child.edge_list : [];
+            for (let k = 0; k < list.length - 1; k++) {
+              const from = list[k];
+              const to = list[k + 1];
+              if (!from || !to) continue;
+              if (!from.id || !to.id) continue;
+              circuit.edges.push({
+                from: from.id,
+                to: to.id
+              });
+            }
+            break;
+          }
           case 'node_stmt':
             circuit.nodes.push({
               name: child.node_id.id
@@ -187,6 +226,14 @@ class Contract extends Service {
     return this.parseDot(input);
   }
 
+  parseDot (input) {
+    const contract = Contract.fromDot(input);
+    this.settings.graphs = contract.settings.graphs;
+    this.settings.circuit = contract.settings.circuit;
+    this.graphs = contract.graphs;
+    return this;
+  }
+
   /**
    * Start the Contract.
    * @returns {Contract} State "STARTED" iteration of the Contract.
@@ -253,6 +300,9 @@ class Contract extends Service {
   _handleActivity (activity) {
     return new Promise((resolve, reject) => {
       try {
+        if (activity == null || typeof activity !== 'object') {
+          return reject(new TypeError('activity must be a non-null object'));
+        }
         const actor = new Actor(activity);
         return resolve({
           id: actor.id,

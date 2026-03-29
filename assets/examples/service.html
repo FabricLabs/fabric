@@ -22,6 +22,11 @@
             <div id="jump_page">
 
 
+              <a class="source" href="agents.html">
+                examples/agents.js
+              </a>
+
+
               <a class="source" href="app.html">
                 examples/app.js
               </a>
@@ -160,7 +165,9 @@
           <div class='highlight'>
             <pre>
 <span class="hljs-keyword">const</span> url = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;url&#x27;</span>);
-<span class="hljs-keyword">const</span> <span class="hljs-title class_">Stash</span> = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;../types/stash&#x27;</span>);
+
+<span class="hljs-comment">/** Minimal URI → response cache (replaces legacy Stash type). */</span>
+<span class="hljs-keyword">const</span> stash = <span class="hljs-keyword">new</span> <span class="hljs-title class_">Map</span>();
 
 self.<span class="hljs-title function_">addEventListener</span>(<span class="hljs-string">&#x27;message&#x27;</span>, <span class="hljs-keyword">function</span> (<span class="hljs-params">e</span>) {
   e.<span class="hljs-property">source</span>.<span class="hljs-title function_">postMessage</span>(<span class="hljs-string">&#x27;[GUARDIAN]&#x27;</span>, <span class="hljs-string">&#x27;Hello! Your message was: &#x27;</span> + e.<span class="hljs-property">data</span>);
@@ -174,7 +181,6 @@ self.<span class="hljs-title function_">addEventListener</span>(<span class="hlj
   <span class="hljs-keyword">const</span> target = url.<span class="hljs-title function_">parse</span>(path);
   <span class="hljs-keyword">const</span> uri = target.<span class="hljs-property">pathname</span>;
 
-  <span class="hljs-keyword">const</span> stash = <span class="hljs-keyword">new</span> <span class="hljs-title class_">Stash</span>();
   <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;stash:&#x27;</span>, stash);
   <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;target:&#x27;</span>, target);</pre>
           </div>
@@ -195,9 +201,9 @@ self.<span class="hljs-title function_">addEventListener</span>(<span class="hlj
 
         <div class="content">
           <div class='highlight'>
-            <pre>  <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;recovery:&#x27;</span>, <span class="hljs-keyword">await</span> stash.<span class="hljs-title function_">get</span>(<span class="hljs-string">&#x27;/messages&#x27;</span>));
+            <pre>  <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;recovery:&#x27;</span>, stash.<span class="hljs-title function_">get</span>(<span class="hljs-string">&#x27;/messages&#x27;</span>));
 
-  <span class="hljs-keyword">const</span> value = <span class="hljs-keyword">await</span> stash.<span class="hljs-title function_">get</span>(uri);
+  <span class="hljs-keyword">const</span> value = stash.<span class="hljs-title function_">get</span>(uri);
   <span class="hljs-keyword">if</span> (value) {
     <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;was cached:&#x27;</span>, uri, value.<span class="hljs-property">length</span>, <span class="hljs-string">&#x27;bytes&#x27;</span>);
     <span class="hljs-keyword">const</span> request = <span class="hljs-keyword">new</span> <span class="hljs-title class_">Request</span>(uri, {</pre>

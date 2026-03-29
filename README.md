@@ -3,6 +3,17 @@
 [![Coverage Status][badge-coverage]][coverage]
 [![GitHub contributors][badge-contributors]][contributors]
 
+**Status:** `0.1.0-RC1` — run **`npm run ci`** before release tags (full test suite).
+
+| Doc | Purpose |
+|-----|---------|
+| [VISION.md](VISION.md) | Product vision, architecture snapshot, documentation map |
+| [DEVELOPERS.md](DEVELOPERS.md) | Repo layout, tests, core types, storage |
+| [docs/PRODUCTION.md](docs/PRODUCTION.md) | Node version, native deps, downstream alignment |
+| [PRIVACY.md](PRIVACY.md) | Privacy model for operators |
+| [CHANGELOG.md](CHANGELOG.md) | Release notes |
+| [docs/README.md](docs/README.md) | Index of operational and generated docs |
+
 [The `@fabric/core` project][fabric-github] provides an API for building peer-to-peer applications on [Bitcoin][bitcoin].
 
 Fabric is an experimental approach to the secure establishment and execution of
@@ -21,7 +32,7 @@ fabric setup
 
 | 🚨 Stop here! |
 |--------------|
-| The output of the above command will include your SEED, which should never be shared.  Take a moment to write it down safely, without  |
+| The output of `fabric setup` includes your **SEED**. Never share it or store it in plain text in cloud-synced folders. Write it down offline or use a password manager. |
 
 Once complete, you'll have a fully configured Fabric client available by running:
 ```
@@ -47,28 +58,38 @@ you're ready to integrate Fabric into your application.
 ### Compiling from Source
 See also [`BUILD.md`][build-guide] for a full guide, including Bitcoin and Lightning.
 
+See [`BUILD.md`][build-guide] for the native addon (`npm run build:c`), system libraries (libwally-core, secp256k1, noise), and JS-only workflows. C↔JS message wire parity is documented in [`docs/C-JS-PARITY.md`](docs/C-JS-PARITY.md). Ongoing **JavaScript** work is outlined in [`docs/JS-PLAN.md`](docs/JS-PLAN.md).
+
 ```
 git clone git@github.com:FabricLabs/fabric.git
 cd fabric
 git checkout feature/v0.1.0-RC1
-npm install -g
-npm run build
+npm ci
+npm test
+# optional: compile N-API addon
+npm run build:c
 ```
 
+For global CLI install: `npm install -g` (after `npm ci` / `npm install` in the repo).
+
+### Production
+Before tagging or publishing, use [`docs/PRODUCTION-CHECKLIST.md`](docs/PRODUCTION-CHECKLIST.md) (tests, lint gates, audit reports, optional `make:dev` + `check:book-links`). CI on push/PR runs smoke, lint, **tests with coverage** (after `bitcoind` is available), then installs Lightning for downstream tooling.
+
 ## Available Commands
-- `npm run cli` provides a direct command-line interface to the Fabric network.
+- The **`fabric`** binary is the Node harness for the default Blessed TUI (`chat`); optional `fabric.node` accelerates a tiny crypto surface — see [docs/CLI-BINARY.md](docs/CLI-BINARY.md).
+- `npm run cli` runs `scripts/fabric.js` (same entry as `npm run chat`).
 - `npm run dev` serves a developer interface over localhost HTTP.
 - `npm run docs` creates a local HTTP server for browsing documentation.
 - `npm run examples` creates a local HTTP server for interacting with examples.
 - `npm start` creates a local Fabric node.
 
 ## Native Dependencies
-Installing Fabric from npm (`npm i @fabric/core` or
-`npm i FabricLabs/fabric#develop`) will generally compile the following
-dependencies from the local system:
-- `secp256k1`
-- `level`
-- `zeromq`
+Installing from npm may compile native addons (`node-gyp`).  Typical toolchain
+needs: **Node 22.x**, **Python 3** (for `node-gyp`), plus **secp256k1**,
+**libwally-core**, and **noise** libraries for `fabric.node` — see [BUILD.md](BUILD.md).
+
+JS tests do not require `fabric.node`.  Separately, **`level`** and **`zeromq`**
+may compile platform bindings when those packages are installed.
 
 ## API
 The Fabric reference implementation exposes a simple message-passing interface
@@ -135,18 +156,18 @@ Full Fabric nodes connected to the World Wide Web (WWW).  Only SSL (port 443) is
 ### Fabric Projects
 Either Fabric libraries or projects running Fabric, this list encompasses the most interesting work in the ecosystem.
 
-| Name | Description | Status | v0.1.0-RC1 ready
-| ---- | ----------- | ------ | ----------
-| [`@fabric/core`][fabric-github] | Core Library
-| [`@fabric/http`][http-plugin] | Edge Nodes
-| [`hub.fabric.pub`](https://hub.fabric.pub) |
-| [`labs.fabric.pub`](https://labs.fabric.pub) |
-| `sensemaker.io` | | | `FALSE`
-| `verse.pub` | | |
+| Name | Description | Status | v0.1.0-RC1 ready |
+| ---- | ----------- | ------ | ---------------- |
+| [`@fabric/core`][fabric-github] | Core library | Active | In RC |
+| [`@fabric/http`][http-plugin] | HTTP bridge | Active | In RC |
+| [`hub.fabric.pub`](https://hub.fabric.pub) | Public hub | See Edge Nodes | — |
+| [`labs.fabric.pub`](https://labs.fabric.pub) | Labs hub | OFFLINE | — |
+| `sensemaker.io` | — | — | No |
+| `verse.pub` | — | — | — |
 
 ## Learning More
 The best place to get started is in [the #learning channel][learning], a
-collection of empassioned educators eager to help you.
+collection of impassioned educators eager to help you.
 
 Fabric on Twitter: [@FabricProtocol][twitter]
 

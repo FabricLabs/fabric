@@ -21,6 +21,63 @@ describe('@fabric/core/types/store', function () {
       assert.equal(Fabric.Store instanceof Function, true);
     });
 
+    it('getRouteInfo normalizes path and stable index', async function () {
+      const store = new Store({ persistent: false });
+      const a = await store.getRouteInfo('relative');
+      const b = await store.getRouteInfo('/absolute');
+      assert.strictEqual(a.path, '/relative');
+      assert.strictEqual(b.path, '/absolute');
+      assert.strictEqual(typeof a.index, 'string');
+      assert.notStrictEqual(a.index, b.index);
+    });
+
+    it('encodeValue and getDataInfo support string payloads', async function () {
+      const store = new Store({ persistent: false });
+      const hex = await store.encodeValue('hello');
+      assert.strictEqual(typeof hex, 'string');
+      assert.ok(hex.length > 0);
+      const info = await store.getDataInfo('hello');
+      assert.strictEqual(info.type, 'JSONString');
+      assert.strictEqual(info.size, 5);
+      assert.ok(info.hash);
+    });
+
+    it('encryptedSettings attaches codec defaults', function () {
+      const settings = Store.encryptedSettings({
+        path: './stores/test-encrypted-settings',
+        persistent: false
+      });
+      assert.ok(settings.codec);
+      assert.strictEqual(settings.type, 'EncryptedFabricStore');
+    });
+
+    it('openEncrypted returns a Store with encrypted defaults', function () {
+      const store = Store.openEncrypted({ persistent: false });
+      assert.ok(store instanceof Store);
+      assert.ok(store.codec);
+    });
+
+    it('_setEncrypted/_getEncrypted round-trip plain values without codec', async function () {
+      const store = new Store({ persistent: false });
+      await store._setEncrypted('/wallet/secret', 'hello');
+      const out = await store._getEncrypted('/wallet/secret');
+      assert.strictEqual(out, 'hello');
+    });
+
+    it('_setEncrypted/_getEncrypted use codec when available', async function () {
+      const store = new Store({
+        persistent: false,
+        codec: {
+          encode: (value) => Buffer.from(`enc:${value}`, 'utf8'),
+          decode: (buffer) => buffer.toString('utf8')
+        }
+      });
+
+      await store._setEncrypted('/wallet/codec', 'hello');
+      const out = await store._getEncrypted('/wallet/codec');
+      assert.strictEqual(out, 'enc:hello');
+    });
+
     it('can set a key to a string value', async function () {
       let store = new Store({
         persistent: false
@@ -37,8 +94,11 @@ describe('@fabric/core/types/store', function () {
       assert.equal(set, samples.input.hello);
     });
 
-    xit('can recover string data after a restart', async function () {
-      let store = new Store();
+    it('can recover string data after a restart', async function () {
+      let store = new Store({
+        path: './stores/test-store-restart',
+        persistent: true
+      });
       await store.start();
       let set = await store.set('example', samples.input.hello);
       await store.stop();
@@ -55,7 +115,7 @@ describe('@fabric/core/types/store', function () {
       assert.equal(get, samples.input.hello);
     });
 
-    xit('can manage collections', async function () {
+    it('can manage collections', async function () {
       let data = { name: 'widget-alpha' };
       let alt = Object.assign({}, data, { extra: data });
       let store = new Store({
@@ -81,7 +141,7 @@ describe('@fabric/core/types/store', function () {
       //assert.equal(JSON.stringify(entity), JSON.stringify(data));
     });
 
-    xit('can manage large collections', async function () {
+    it('can manage large collections', async function () {
       let data = { name: 'widget-alpha' };
       let alt = Object.assign({}, data, { extra: data });
       let store = new Store({

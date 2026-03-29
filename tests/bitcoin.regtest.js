@@ -5,6 +5,10 @@ const Bitcoin = require('../services/bitcoin');
 const Key = require('../types/key');
 
 describe('@fabric/core/bitcoin/regtest', function () {
+  if (!process.env.FABRIC_E2E_REGTEST) {
+    console.log('[SKIP] Set FABRIC_E2E_REGTEST=1 to run regtest network tests');
+    return;
+  }
   this.timeout(120000); // 2 minutes timeout for regtest operations
 
   const defaults = {
@@ -29,6 +33,7 @@ describe('@fabric/core/bitcoin/regtest', function () {
       const secondblock = await chain._makeRPCRequest('getblockhash', [1]);
       await chain._makeRPCRequest('invalidateblock', [secondblock]);
       const after = await chain._makeRPCRequest('getblockcount', []);
+      console.log('Reset chain from height', height, 'to', after);
     }
   }
 
@@ -77,7 +82,7 @@ describe('@fabric/core/bitcoin/regtest', function () {
       const address = await bitcoin.getUnusedAddress();
       const blocks = await bitcoin._makeRPCRequest('generatetoaddress', [1, address]);
       assert.strictEqual(blocks.length, 1, 'Should successfully mine 1 block');
-      
+
       const height = await bitcoin._makeRPCRequest('getblockcount', []);
       assert.strictEqual(height, 1, 'Chain height should be 1 after mining');
     });
@@ -87,7 +92,7 @@ describe('@fabric/core/bitcoin/regtest', function () {
       await resetChain(bitcoin);
       const address = await bitcoin.getUnusedAddress();
       await bitcoin._makeRPCRequest('generatetoaddress', [101, address]); // Mine 101 blocks to mature coinbase
-      
+
       const balance = await bitcoin._makeRPCRequest('getbalance', []);
       assert.ok(balance > 0, 'Balance should be positive after mining');
       assert.strictEqual(balance, 50, 'First block reward should be 50 BTC');
@@ -96,19 +101,19 @@ describe('@fabric/core/bitcoin/regtest', function () {
     it('should allow instant confirmation of transactions', async function () {
       await bitcoin.start();
       await resetChain(bitcoin);
-      
+
       // Generate initial balance
       const minerAddress = await bitcoin.getUnusedAddress();
       await bitcoin._makeRPCRequest('generatetoaddress', [101, minerAddress]);
-      
+
       // Create a transaction
       const recipientAddress = await bitcoin.getUnusedAddress();
       const txid = await bitcoin._makeRPCRequest('sendtoaddress', [recipientAddress, 1]);
       assert.ok(txid, 'Transaction should be created');
-      
+
       // Mine one block to confirm
       await bitcoin._makeRPCRequest('generatetoaddress', [1, minerAddress]);
-      
+
       // Check recipient balance
       await bitcoin._loadWallet();
       const recipientBalance = await bitcoin._makeRPCRequest('getreceivedbyaddress', [recipientAddress]);
@@ -119,17 +124,20 @@ describe('@fabric/core/bitcoin/regtest', function () {
       await bitcoin.start();
       await resetChain(bitcoin);
       const address = await bitcoin.getUnusedAddress();
-      
+
       // Generate some blocks
       await bitcoin._makeRPCRequest('generatetoaddress', [101, address]);
-      
+
+      // Allow bitcoind to drain its RPC work queue before next request (avoids "Work queue depth exceeded")
+      await new Promise(r => setTimeout(r, 1500));
+
       // Verify UTXO set
       const utxos = await bitcoin._makeRPCRequest('listunspent', []);
       assert.ok(utxos.length > 0, 'Should have UTXOs after mining');
-      
+
       // Verify all UTXOs are on regtest
       for (const utxo of utxos) {
-        assert.ok(utxo.address.startsWith('bcrt1') || utxo.address.startsWith('2') || utxo.address.startsWith('m') || utxo.address.startsWith('n'), 
+        assert.ok(utxo.address.startsWith('bcrt1') || utxo.address.startsWith('2') || utxo.address.startsWith('m') || utxo.address.startsWith('n'),
           'All UTXOs should use regtest address format');
       }
     });

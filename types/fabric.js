@@ -27,7 +27,7 @@ const Script = require('../types/script');
 const Stack = require('../types/stack');
 const State = require('../types/state');
 const Store = require('../types/store');
-// const Swarm = require('../types/swarm');
+// Swarm: require('./peer').Swarm
 // const Transaction = require('./transaction');
 const Vector = require('../types/vector');
 const Wallet = require('../types/wallet');
@@ -118,10 +118,16 @@ class Fabric extends Service {
   static get Stack () { return Stack; }
   static get State () { return State; }
   static get Store () { return Store; }
-  // static get Swarm () { return Swarm; }
+  // static get Swarm () { return require('./peer').Swarm; }
   // static get Transaction () { return Transaction; }
   static get Wallet () { return Wallet; }
   static get Worker () { return Worker; }
+
+  /** @returns {Function} */
+  static get Federation () { return require('./federation'); }
+
+  /** @returns {Function} */
+  static get DistributedExecution () { return require('./distributedExecution'); }
 
   static sha256 (data) {
     return crypto.createHash('sha256').update(data).digest('hex');
@@ -305,7 +311,7 @@ class Fabric extends Service {
   trust (source) {
     let self = this;
 
-    this.warn('[TRUST]', 'trusting:', typeof source);
+    this.log('[TRUST]', 'trusting:', typeof source);
 
     source.on('changes', async function (changes) {
       self.log('source', typeof source, 'emitted:', changes);

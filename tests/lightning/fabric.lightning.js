@@ -36,14 +36,12 @@ const {
 const assert = require('assert');
 
 const Message = require('../../types/message');
-const Bitcoin = require('../../services/bitcoin');
 const Lightning = require('../../services/lightning');
 
 describe('@fabric/core/services/lightning', function () {
   // Store node references for cleanup
   let bitcoinNode = null;
   let lightningNode = null;
-  let bitcoin = null;
   let lightning = null;
 
   before(function () {
@@ -86,7 +84,7 @@ describe('@fabric/core/services/lightning', function () {
   });
 
   describe('Lightning', function () {
-    xit('can create an instance', async function provenance () {
+    it('can create an instance', async function provenance () {
       let lightning = new Lightning({
         name: 'Test'
       });
@@ -94,7 +92,7 @@ describe('@fabric/core/services/lightning', function () {
       assert.ok(lightning);
     });
 
-    xit('can create a message', async function provenance () {
+    it('can create a message', async function provenance () {
       let lightning = new Lightning({
         name: 'Test'
       });
@@ -109,53 +107,23 @@ describe('@fabric/core/services/lightning', function () {
       assert.ok(prediction);
     });
 
-    xit('can create and start a local Lightning node', async function () {
-      this.timeout(30000); // Increase timeout to 30 seconds
+    it('returns null createLocalNode when unmanaged', async function () {
+      lightning = new Lightning({
+        name: 'TestLightningNode',
+        network: 'regtest',
+        managed: false,
+        debug: true,
+        bitcoin: {
+          rpcuser: 'user',
+          rpcpassword: 'pass',
+          host: '127.0.0.1',
+          rpcport: 18443,
+          datadir: './stores/bitcoin-regtest'
+        }
+      });
 
-      try {
-        // First create and start a Bitcoin node
-        bitcoin = new Bitcoin({
-          name: 'TestBitcoinNode',
-          network: 'regtest',
-          fullnode: true,
-          debug: true,
-          port: 20454,  // Use a different port for Lightning tests
-          managed: true  // Ensure managed mode is enabled
-        });
-
-        // Start the Bitcoin node and wait for it to be ready
-        await bitcoin.start();
-
-        // Now create the Lightning node using Bitcoin node's configuration
-        lightning = new Lightning({
-          name: 'TestLightningNode',
-          network: 'regtest',
-          managed: true,
-          debug: true,
-          bitcoin: {
-            username: bitcoin.settings.username,
-            password: bitcoin.settings.password,
-            host: '127.0.0.1',
-            rpcport: bitcoin.settings.rpcport
-          }
-        });
-
-        // Create the Lightning node
-        lightningNode = await lightning.createLocalNode();
-
-        // Verify the Lightning node was created
-        assert.ok(lightningNode, 'Lightning node should be created');
-        assert.ok(lightningNode.pid, 'Lightning node should have a process ID');
-
-        // Wait for Lightning node to start
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        // Verify the Lightning node is running
-        assert.strictEqual(lightningNode.killed, false, 'Lightning node should be running');
-      } catch (error) {
-        console.error('Test failed:', error);
-        throw error; // Re-throw to fail the test
-      }
+      lightningNode = await lightning.createLocalNode();
+      assert.strictEqual(lightningNode, null);
     });
   });
 });

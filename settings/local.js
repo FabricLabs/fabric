@@ -24,7 +24,7 @@ module.exports = {
     OP_TEST: JSON.stringify(OP_TEST)
   },
   // TODO: regtest, playnet, signet, testnet, mainnet (in order)
-  network: 'playnet',
+  network: 'regtest',
   debug: false,
   fullnode: true,
   listen: true,
@@ -34,24 +34,24 @@ module.exports = {
   peering: true,
   // Known Peers
   peers: [
-    '0223cffd5e94da3c8915c6b868f06d15183c1aeffad8ddf58fcb35a428e3158e71@hub.fabric.pub:7777'
+    'hub.fabric.pub:7777',
+    'goliath:7777',
+    'pike:7777',
+    'gamma:7777'
   ],
   // Bitcoin
   bitcoin: {
-    host: 'localhost',
-    port: 8443,
-    username: 'polaruser',
-    password: 'polarpass',
-    secure: false
+    enable: true,
+    managed: true,
+    fullnode: true,
+    // SPV mode: use remote node instead of local bitcoind (no blockchain download)
+    // Set spvNode: '192.168.50.5' or FABRIC_BITCOIN_NODE=192.168.50.5 for mainnet
+    // spvNode: '192.168.50.5'
   },
   // Lightning
   lightning: {
-    host: 'localhost',
-    macaroon: 'GET FROM CREST',
-    mode: 'rest',
-    path: './stores/lightning-playnet/regtest/lightning-rpc',
-    port: 8181,
-    secure: false
+    enable: true,
+    managed: true
   },
   // Subservices
   services: [

@@ -4,7 +4,7 @@
 const merge = require('lodash.merge');
 const { run } = require('minsc');
 const crypto = require('crypto');
-const ecc = require('tiny-secp256k1');
+const ecc = require('./ecc');
 const bitcoin = require('bitcoinjs-lib');
 
 // Fabric Types
@@ -278,7 +278,7 @@ class Federation extends Contract {
         // Ensure signature is a Buffer
         const sigBuffer = Buffer.isBuffer(signature) ? signature : Buffer.from(signature);
 
-        // Verify using tiny-secp256k1's Schnorr implementation
+        // Verify using noble-curves Schnorr (BIP340)
         if (ecc.verifySchnorr(messageHash, xOnlyPubkey, sigBuffer)) {
           validCount++;
           if (validCount >= threshold) {

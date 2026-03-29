@@ -26,14 +26,52 @@ const Generator = require('arbitrary').default.Generator;
 // Dependencies
 // TODO: remove all external dependencies
 const BN = require('bn.js');
-const EC = require('elliptic').ec;
-const ec = new EC('secp256k1');
+const ecc = require('./ecc');
+const { secp256k1, schnorr: nobleSchnorr } = require('@noble/curves/secp256k1.js');
+const SecpPoint = secp256k1.ProjectivePoint || secp256k1.Point;
 
-// @soatok/elliptic-to-noble expects hex strings by default; pass 'bytes' when using Buffers/Uint8Array
-function enc (buf) {
-  return (buf && (Buffer.isBuffer(buf) || buf instanceof Uint8Array)) ? 'bytes' : 'hex';
+function secpPointFromPublicKey (pubkey) {
+  const bytes = Buffer.isBuffer(pubkey) ? pubkey : Buffer.from(pubkey);
+  // noble-curves v1: ProjectivePoint.fromHex(bytes)
+  if (secp256k1.ProjectivePoint && typeof secp256k1.ProjectivePoint.fromHex === 'function') {
+    return secp256k1.ProjectivePoint.fromHex(bytes);
+  }
+  // noble-curves v2: Point.fromBytes(bytes)
+  if (SecpPoint && typeof SecpPoint.fromBytes === 'function') {
+    return SecpPoint.fromBytes(bytes);
+  }
+  // Fallback: v2 Point.fromHex expects a hex string
+  if (SecpPoint && typeof SecpPoint.fromHex === 'function') {
+    return SecpPoint.fromHex(bytes.toString('hex'));
+  }
+  throw new Error('Unsupported secp256k1 Point API');
 }
-const ecc = require('tiny-secp256k1');
+
+function secpPointFromPrivateKey (privkey) {
+  const bytes = Buffer.isBuffer(privkey) ? privkey : Buffer.from(privkey);
+  // noble-curves v1
+  if (secp256k1.ProjectivePoint && typeof secp256k1.ProjectivePoint.fromPrivateKey === 'function') {
+    return secp256k1.ProjectivePoint.fromPrivateKey(bytes);
+  }
+  // noble-curves v2: compute pubkey then parse into Point
+  const pub = secp256k1.getPublicKey(bytes, false);
+  return secpPointFromPublicKey(pub);
+}
+
+function secpPointToRawBytes (point, compressed = true) {
+  if (!point) throw new Error('Missing secp256k1 point');
+  if (typeof point.toRawBytes === 'function') return point.toRawBytes(compressed);
+  if (typeof point.toBytes === 'function') {
+    if (compressed) return point.toBytes(); // v2: compressed SEC1 (33 bytes)
+    if (typeof point.toAffine !== 'function') throw new Error('Point.toAffine() unavailable for uncompressed encoding');
+    const affine = point.toAffine();
+    const x = Buffer.from(affine.x.toString(16).padStart(64, '0'), 'hex');
+    const y = Buffer.from(affine.y.toString(16).padStart(64, '0'), 'hex');
+    return Buffer.concat([Buffer.from([0x04]), x, y]);
+  }
+  throw new Error('Unsupported secp256k1 Point API');
+}
+
 const base58 = require('bs58check');
 const payments = require('bitcoinjs-lib/src/payments');
 
@@ -173,7 +211,7 @@ class Key extends EventEmitter {
         this.xprv = root.toBase58();
         this.xpub = root.neutered().toBase58();
         this.master = root;
-        this.keypair = ec.keyFromPrivate(root.privateKey, enc(root.privateKey));
+        this._point = secpPointFromPrivateKey(root.privateKey);
         this.status = 'seeded';
         break;
       case 'FROM_SEED':
@@ -184,37 +222,39 @@ class Key extends EventEmitter {
         this.xprv = root.toBase58();
         this.xpub = root.neutered().toBase58();
         this.master = root;
-        this.keypair = ec.keyFromPrivate(root.privateKey, enc(root.privateKey));
+        this._point = secpPointFromPrivateKey(root.privateKey);
         break;
       case 'FROM_WIF':
         const decoded = base58.decode(this.settings.wif);
         const version = decoded[0];
         const privateKey = decoded.slice(1, 33);
         const isCompressed = decoded.length === 34 && decoded[33] === 0x01;
-        this.keypair = ec.keyFromPrivate(privateKey, enc(privateKey));
+        this._point = secpPointFromPrivateKey(privateKey);
+        this.private = Buffer.isBuffer(privateKey) ? privateKey : Buffer.from(privateKey);
         if (!isCompressed) this._pubUncompressed = true;
         break;
       case 'FROM_XPRV':
         this.master = this.bip32.fromBase58(this.settings.xprv);
         this.xprv = this.master.toBase58();
         this.xpub = this.master.neutered().toBase58();
-        this.keypair = ec.keyFromPrivate(this.master.privateKey, enc(this.master.privateKey));
+        this._point = secpPointFromPrivateKey(this.master.privateKey);
         break;
       case 'FROM_XPUB':
         this.master = this.bip32.fromBase58(this.settings.xpub);
         this.xpub = this.master.neutered().toBase58();
-        this.keypair = ec.keyFromPublic(this.master.publicKey, enc(this.master.publicKey));
+        this._point = secpPointFromPublicKey(this.master.publicKey);
         break;
       case 'FROM_PRIVATE_KEY':
         // Key is private
         const provision = (this.settings.private instanceof Buffer) ? this.settings.private : Buffer.from(this.settings.private, 'hex');
-        this.keypair = ec.keyFromPrivate(provision, enc(provision));
+        this._point = secpPointFromPrivateKey(provision);
+        this.private = provision;
         break;
       case 'FROM_PUBLIC_KEY':
         const pubkey = this.settings.pubkey || this.settings.public;
         // Key is only public
         const pubkeyBuf = (pubkey instanceof Buffer) ? pubkey : Buffer.from(pubkey, 'hex');
-        this.keypair = ec.keyFromPublic(pubkeyBuf, enc(pubkeyBuf));
+        this._point = secpPointFromPublicKey(pubkeyBuf);
         break;
       case 'FROM_RANDOM':
         this.mnemonic = bip39.generateMnemonic();
@@ -223,16 +263,32 @@ class Key extends EventEmitter {
         this.master = this.bip32.fromSeed(interim);
         this.xprv = this.master.toBase58();
         this.xpub = this.master.neutered().toBase58();
-        this.keypair = ec.keyFromPrivate(this.master.privateKey, enc(this.master.privateKey));
+        this._point = secpPointFromPrivateKey(this.master.privateKey);
         break;
     }
 
-    // Read the pair
-    this.private = (this.keypair.priv) ? this.keypair.getPrivate() : null;
-    // Adapter for @soatok/elliptic-to-noble: getPublic returns hex string, we need encodeCompressed/encode
+    // Read the pair (for modes that use master, set private from master)
+    if (!this.private && this.master && this.master.privateKey) {
+      this.private = this.master.privateKey;
+    }
+    // Adapt noble-curves point to the minimal interface used elsewhere.
     this.public = {
-      encodeCompressed: (e) => this.keypair.getPublic(!this._pubUncompressed, e || 'hex'),
-      encode: (e) => this.keypair.getPublic(false, e || 'hex')
+      encodeCompressed: (e) => Buffer.from(secpPointToRawBytes(this._point, !this._pubUncompressed)).toString(e || 'hex'),
+      encode: (e) => Buffer.from(secpPointToRawBytes(this._point, false)).toString(e || 'hex')
+    };
+    // Adapter for Session/Token: elliptic-style getPrivate/getPublic
+    this.keypair = {
+      getPrivate: (enc) => {
+        if (!this.private) return null;
+        const hex = Buffer.isBuffer(this.private) ? this.private.toString('hex') : String(this.private);
+        if (enc === 'bytes') return Buffer.isBuffer(this.private) ? this.private : Buffer.from(hex, 'hex');
+        if (enc === 'hex') return hex;
+        return new BN(hex, 16);
+      },
+      getPublic: (compressed, enc) => {
+        const bytes = secpPointToRawBytes(this._point, compressed !== false);
+        return (enc || 'hex') === 'hex' ? Buffer.from(bytes).toString('hex') : Buffer.from(bytes);
+      }
     };
 
     // TODO: determine if this makes sense / needs to be private
@@ -258,6 +314,7 @@ class Key extends EventEmitter {
     };
 
     // Object.defineProperty(this, 'keyring', { enumerable: false });
+    Object.defineProperty(this, '_point', { enumerable: false }); // noble ProjectivePoint has BigInt; hide from JSON.stringify
     Object.defineProperty(this, 'keypair', { enumerable: false });
     Object.defineProperty(this, 'private', { enumerable: false });
 
@@ -301,6 +358,9 @@ class Key extends EventEmitter {
     return this.pubkeyhash;
   }
 
+  /**
+   * @deprecated Per-message IVs are generated in {@link Key#encrypt}. Do not rely on this getter.
+   */
   get iv () {
     return crypto.randomBytes(16);
   }
@@ -482,17 +542,21 @@ class Key extends EventEmitter {
   deriveKeyPair (addressID = 0, change = 0) {
     const path = `m/${this.purpose}'/0'/${this.account}'/${change}/${addressID}`;
     const derived = this.master.derivePath(path);
-    const pair = ec.keyFromPrivate(derived.privateKey, enc(derived.privateKey));
-
+    const pubBytes = secp256k1.getPublicKey(derived.privateKey, true);
     return {
-      privateKey: pair.getPrivate('hex'),
-      publicKey: pair.getPublic(true, 'hex')
+      privateKey: derived.privateKey.toString('hex'),
+      publicKey: Buffer.from(pubBytes).toString('hex')
     };
   }
 
   encrypt (value) {
+    if (!this.private) {
+      if (this.settings.debug) console.error('[FABRIC:KEY]', 'Cannot encrypt without private key');
+      return null;
+    }
+
     try {
-      const ivbuff = Buffer.from(this.iv, 'hex');
+      const ivbuff = crypto.randomBytes(16);
       // Derive a 32-byte key from the private key using SHA-256
       const key = crypto.createHash('sha256')
         .update(this.private.toString('hex'))
@@ -502,18 +566,28 @@ class Key extends EventEmitter {
       encrypted += cipher.final('hex');
       return ivbuff.toString('hex') + ':' + encrypted;
     } catch (exception) {
-      console.error('err:', exception);
+      if (this.settings.debug) console.error('[FABRIC:KEY]', 'Encryption failed');
       return null;
     }
   }
 
   decrypt (text) {
     if (!text) return null;
+    if (!this.private) {
+      if (this.settings.debug) console.error('[FABRIC:KEY]', 'Cannot decrypt without private key');
+      return null;
+    }
     if (text instanceof Buffer) text = text.toString('utf8');
 
     try {
+      if (typeof text !== 'string' || !text.includes(':')) return null;
       const parts = text.split(':');
-      const iv = Buffer.from(parts.shift(), 'hex');
+      const ivHex = parts.shift();
+      if (!/^[0-9a-fA-F]{32}$/.test(ivHex || '')) return null;
+      const blobHex = parts.join(':');
+      if (!blobHex || !/^[0-9a-fA-F]+$/.test(blobHex)) return null;
+
+      const iv = Buffer.from(ivHex, 'hex');
       const blob = Buffer.from(parts.join(':'), 'hex');
       // Use the same key derivation as encrypt
       const key = crypto.createHash('sha256')
@@ -524,7 +598,7 @@ class Key extends EventEmitter {
       decrypted += decipher.final('utf8');
       return decrypted;
     } catch (exception) {
-      console.error('err:', exception);
+      if (this.settings.debug) console.error('[FABRIC:KEY]', 'Decryption failed');
       return null;
     }
   }
@@ -575,8 +649,8 @@ class Key extends EventEmitter {
       throw new Error('Invalid private key format');
     }
 
-    // Sign using tiny-secp256k1's Schnorr implementation
-    const signature = ecc.signSchnorr(messageHash, privateKeyBuffer);
+    // Sign using noble-curves Schnorr (BIP340). Zero auxRand for deterministic signatures.
+    const signature = nobleSchnorr.sign(messageHash, privateKeyBuffer, Buffer.alloc(32));
 
     // Ensure we return a Buffer
     return Buffer.isBuffer(signature) ? signature : Buffer.from(signature);
@@ -606,8 +680,8 @@ class Key extends EventEmitter {
       throw new Error('Invalid private key format');
     }
 
-    // Sign using tiny-secp256k1's Schnorr implementation
-    const signature = ecc.signSchnorr(messageHash, privateKeyBuffer);
+    // Sign using noble-curves Schnorr (BIP340). Zero auxRand for deterministic signatures.
+    const signature = nobleSchnorr.sign(messageHash, privateKeyBuffer, Buffer.alloc(32));
 
     // Ensure we return a Buffer
     return Buffer.isBuffer(signature) ? signature : Buffer.from(signature);
@@ -634,8 +708,8 @@ class Key extends EventEmitter {
     // Ensure signature is a Buffer
     const sigBuffer = Buffer.isBuffer(sig) ? sig : Buffer.from(sig);
 
-    // Verify using tiny-secp256k1's Schnorr implementation
-    return ecc.verifySchnorr(messageHash, xOnlyPubkey, sigBuffer);
+    // Verify using noble-curves Schnorr (BIP340)
+    return nobleSchnorr.verify(sigBuffer, messageHash, xOnlyPubkey);
   }
 
   /**
@@ -657,13 +731,18 @@ class Key extends EventEmitter {
     // Ensure signature is a Buffer
     const sigBuffer = Buffer.isBuffer(sig) ? sig : Buffer.from(sig);
 
-    // Verify using tiny-secp256k1's Schnorr implementation
-    return ecc.verifySchnorr(messageHash, xOnlyPubkey, sigBuffer);
+    // Verify using noble-curves Schnorr (BIP340)
+    return nobleSchnorr.verify(sigBuffer, messageHash, xOnlyPubkey);
   }
 
   commit () {
     const reference = { ...this.state };
     const state = new Actor(reference);
+    const commit = {
+      type: 'KeyCommit',
+      hash: state.id,
+      signatures: []
+    };
 
     // Store current state's hash
     this._state.hash = state.id;
@@ -702,8 +781,14 @@ class Key extends EventEmitter {
    * to prevent sensitive data from remaining in memory.
    */
   secure () {
+    // Update state before clearing key material, so commit can still be signed.
+    this._state.status = 'secured';
+    this.commit();
+
     // Clear sensitive key material
-    Buffer.write(this.private, 0, this.private.length);
+    if (Buffer.isBuffer(this.private)) {
+      this.private.fill(0);
+    }
 
     // Null out sensitive properties
     this.private = null;
@@ -713,11 +798,6 @@ class Key extends EventEmitter {
 
     // Clear any derived keys
     this.xprv = null;
-
-    // Update state
-    this._state.status = 'secured';
-
-    this.commit();
 
     return this;
   }
@@ -742,6 +822,9 @@ class Key extends EventEmitter {
 
     if (Buffer.isBuffer(this.private)) {
       privateKeyBuffer = this.private;
+    } else if (this.private && typeof this.private.length === 'number' && this.private.length === 32) {
+      // Uint8Array or other byte-like (e.g. from bs58check.decode)
+      privateKeyBuffer = Buffer.from(this.private);
     } else if (BN.isBN(this.private)) {
       privateKeyBuffer = Buffer.from(this.private.toString(16).padStart(64, '0'), 'hex');
     } else if (typeof this.private === 'string') {

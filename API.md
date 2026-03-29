@@ -19,7 +19,7 @@ service to the network.</p>
 <dd><p>The <a href="#Circuit">Circuit</a> is the mechanism through which <a href="#Fabric">Fabric</a>
 operates, a computable directed graph describing a network of
 <a href="#Peer">Peer</a> components and their interactions (side effects).
-See also <a href="#Swarm">Swarm</a> for deeper inspection of <a href="#Machine">Machine</a>
+See also <a href="Swarm">Swarm</a> for deeper inspection of <a href="#Machine">Machine</a>
 mechanics.</p>
 </dd>
 <dt><a href="#CLI">CLI</a></dt>
@@ -96,15 +96,10 @@ this prototype.  In general, <code>connect</code> and <code>send</code> are the 
 jobs, and by default the <code>fabric</code> property will serve as an I/O stream using
 familiar semantics.</p>
 </dd>
+<dt><a href="#FabricShell">FabricShell</a></dt>
+<dd></dd>
 <dt><a href="#Session">Session</a></dt>
-<dd><p>The <a href="#Session">Session</a> type describes a connection between <a href="#Peer">Peer</a>
-objects, and includes its own lifecycle.</p>
-</dd>
-<dt><a href="#Snapshot">Snapshot</a></dt>
-<dd><p>A type of message to be expected from a <a href="#Service">Service</a>.</p>
-</dd>
-<dt><a href="#Stack">Stack</a></dt>
-<dd><p>Manage stacks of data.</p>
+<dd><p>The <a href="#Session">Session</a> type describes a connection between <a href="#Peer">Peer</a> objects, and includes its own lifecycle.</p>
 </dd>
 <dt><a href="#State">State</a> ⇐ <code>EventEmitter</code></dt>
 <dd><p>The <a href="#State">State</a> is the core of most <a href="User">User</a>-facing interactions.  To
@@ -114,21 +109,13 @@ committing to the outcome.  This workflow keeps app design quite simple!</p>
 <dt><a href="#Store">Store</a></dt>
 <dd><p>Long-term storage.</p>
 </dd>
-<dt><a href="#Swarm">Swarm</a> : <code>String</code></dt>
-<dd><p>Orchestrates a network of peers.</p>
-</dd>
 <dt><a href="#Token">Token</a></dt>
 <dd><p>Implements a capability-based security token.</p>
 </dd>
 <dt><a href="#Tree">Tree</a></dt>
 <dd><p>Class implementing a Merkle Tree.</p>
 </dd>
-<dt><a href="#Value">Value</a></dt>
-<dd><p><a href="Number">Number</a>-like type.</p>
-</dd>
 <dt><a href="#Vector">Vector</a></dt>
-<dd></dd>
-<dt><a href="#Walker">Walker</a></dt>
 <dd></dd>
 <dt><a href="#Wallet">Wallet</a> : <code>Object</code></dt>
 <dd><p>Manage keys and track their balances.</p>
@@ -150,14 +137,95 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 <dt><a href="#ZMQ">ZMQ</a></dt>
 <dd><p>Connect and subscribe to ZeroMQ publishers.</p>
 </dd>
-<dt><del><a href="#HTTPServer">HTTPServer</a></del></dt>
-<dd><p>Deprecated 2021-10-16.</p>
-</dd>
 <dt><del><a href="#Scribe">Scribe</a></del></dt>
 <dd><p>Deprecated 2021-11-06.</p>
 </dd>
-<dt><del><a href="#Stash">Stash</a></del></dt>
-<dd><p>Deprecated 2021-11-06.</p>
+</dl>
+
+## Members
+
+<dl>
+<dt><a href="#gossip">gossip</a></dt>
+<dd><p>Limits relay amplification on <a href="P2P_PEER_GOSSIP">P2P_PEER_GOSSIP</a> (hop TTL, payload dedup, per-origin rate).</p>
+</dd>
+<dt><a href="#wireTraffic">wireTraffic</a></dt>
+<dd><p>Inbound wire traffic budgeting (Bitcoin Core–style peer quality).
+Credits accrue per rolling window; overflow de-ranks the peer (registry score)
+and drops the message. Heavier opcodes cost more credits.</p>
+</dd>
+<dt><a href="#explorerBaseUrl">explorerBaseUrl</a></dt>
+<dd><p>Optional HTTP origin for block/tx/address REST fallback (e.g. a Hub). Null = RPC only.</p>
+</dd>
+<dt><a href="#p2pAddNodes">p2pAddNodes</a> : <code>Array.&lt;string&gt;</code></dt>
+<dd><p>After RPC is ready, call <code>addnode &lt;host:port&gt; add</code> for each entry (outbound P2P only).
+Used for LAN &quot;playnet&quot; regtest sync. Ignored on mainnet unless <a href="#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a> is true.</p>
+</dd>
+<dt><a href="#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></dt>
+<dd><p>When true, <a href="#p2pAddNodes">p2pAddNodes</a> is applied even on mainnet (private deployments only).</p>
+</dd>
+</dl>
+
+## Constants
+
+<dl>
+<dt><a href="#crypto">crypto</a></dt>
+<dd><p>Shared helpers for multi-operator contract execution: canonical payloads,
+beacon epoch signing strings, and federation signature verification.</p>
+<p>Used by Hub Beacon, HTTP manifest routes (<code>@fabric/http</code>), and peers that
+must reject messages outside the agreed program.</p>
+</dd>
+<dt><a href="#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a> : <code>string</code></dt>
+<dd></dd>
+<dt><a href="#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></dt>
+<dd><p><strong>Two parallel type names:</strong></p>
+<ul>
+<li><strong>Wire</strong> (<code>wireType</code>, <a href="Message#type">Message#type</a>): SCREAMING_SNAKE_CASE strings from opcode
+decode (<code>fromBuffer</code>, <code>toVector</code> first element). Matches AMP / <code>constants.js</code> style.</li>
+<li><strong>Friendly</strong> (<a href="#Message+friendlyType">friendlyType</a>, <code>toObject().type</code>): PascalCase (or historical
+labels) for JSON and human-facing APIs — see <a href="#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a>.</li>
+</ul>
+<p>Encode accepts <strong>either</strong> name via merged <a href="Message#types">Message#types</a> (canonical wire + legacy friendly).
+<a href="Message.wireTypeFromFriendly">Message.wireTypeFromFriendly</a> / <a href="Message.friendlyTypeFromWire">Message.friendlyTypeFromWire</a> convert between them.</p>
+<p>Opcode → wire string order matches the historical <code>type</code> switch: when multiple labels share one
+opcode (e.g. P2P vs Lightning), <strong>first listed</strong> in <a href="#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a> wins.</p>
+</dd>
+<dt><a href="#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></dt>
+<dd><p>Wire-level type strings (ALL_CAPS, opcode decode) ↔ JSON-oriented friendly names (PascalCase
+where historically used). <a href="#Message+wireType">wireType</a> / <a href="Message#type">Message#type</a> use wire names;
+<a href="#Message+friendlyType">friendlyType</a> and <a href="Message#toObject">Message#toObject</a> <code>type</code> use friendly names.</p>
+</dd>
+</dl>
+
+## Functions
+
+<dl>
+<dt><a href="#stableStringify">stableStringify(value)</a> ⇒ <code>string</code></dt>
+<dd><p>Deterministic JSON (sorted object keys) for hashing and signing.</p>
+</dd>
+<dt><a href="#jsonSafe">jsonSafe(value)</a> ⇒ <code>*</code></dt>
+<dd><p>Drop <code>undefined</code> and normalize values the same way JSON.parse(JSON.stringify) does.</p>
+</dd>
+<dt><a href="#signingStringForBeaconEpoch">signingStringForBeaconEpoch(epochPayload)</a> ⇒ <code>string</code></dt>
+<dd><p>UTF-8 string that federation members sign for a beacon epoch (same bytes for all validators).</p>
+</dd>
+<dt><a href="#epochCommitmentDigestHex">epochCommitmentDigestHex(epochPayload)</a> ⇒ <code>string</code></dt>
+<dd><p>SHA-256 hex digest of <a href="#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a> (public commitment).</p>
+</dd>
+<dt><a href="#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage(messageBuffer, witness, validatorPubkeys, [threshold])</a> ⇒ <code>boolean</code></dt>
+<dd><p>Verify threshold Schnorr signatures over the <strong>same</strong> message buffer used when signing
+(<code>Key.signSchnorr(messageBuffer)</code>), without requiring a full <a href="#Federation">Federation</a> instance.</p>
+</dd>
+<dt><a href="#parseDistributedManifestV1">parseDistributedManifestV1(raw)</a> ⇒ <code>object</code></dt>
+<dd><p>Setup-phase manifest schema (v1): program identity + allowed traffic + optional federation policy.</p>
+</dd>
+<dt><a href="#isAllZero32">isAllZero32(buf)</a></dt>
+<dd></dd>
+<dt><a href="#friendlyTypeFromWire">friendlyTypeFromWire(wire)</a> ⇒ <code>string</code></dt>
+<dd></dd>
+<dt><a href="#wireTypeFromFriendly">wireTypeFromFriendly(friendly)</a> ⇒ <code>string</code></dt>
+<dd></dd>
+<dt><a href="#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary()</a></dt>
+<dd><p>Safe debug label for a derived Key — never log private material.</p>
 </dd>
 </dl>
 
@@ -187,7 +255,7 @@ Generic Fabric Actor.
         * [.set(path, value)](#Actor+set) ⇒ <code>Object</code>
         * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
         * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
-        * [.toGenericMessage()](#Actor+toGenericMessage) ⇒ <code>Object</code>
+        * [.toGenericMessage([type])](#Actor+toGenericMessage) ⇒ <code>Object</code>
         * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
         * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
         * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
@@ -287,18 +355,23 @@ Casts the Actor to a normalized Buffer.
 **Kind**: instance method of [<code>Actor</code>](#Actor)  
 <a name="Actor+toGenericMessage"></a>
 
-### actor.toGenericMessage() ⇒ <code>Object</code>
-Casts the Actor to a generic message, used to uniquely identify the Actor's state.
-Fields:
-- `type`: 'FabricActorState'
-- `object`: state
+### actor.toGenericMessage([type]) ⇒ <code>Object</code>
+Casts the Actor to a generic message envelope for state announcements and history.
+Shape is stable: `{ type, object }` where `object` is sorted-key state ([toObject](#Actor+toObject)).
+[Actor#id](Actor#id) derives from a digest of the pretty-printed generic message; extending this
+envelope requires a format/version migration across the network.
 
 **Kind**: instance method of [<code>Actor</code>](#Actor)  
-**Returns**: <code>Object</code> - Generic message object.  
+**Returns**: <code>Object</code> - `{ type, object }`  
 **See**
 
 - [https://en.wikipedia.org/wiki/Merkle_tree](https://en.wikipedia.org/wiki/Merkle_tree)
 - [https://dev.fabric.pub/messages](https://dev.fabric.pub/messages)
+
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [type] | <code>String</code> | <code>&#x27;FabricActorState&#x27;</code> | Logical message type string. |
 
 <a name="Actor+toObject"></a>
 
@@ -473,7 +546,7 @@ Opens a [Channel](#Channel) with a [Peer](#Peer).
 The [Circuit](#Circuit) is the mechanism through which [Fabric](#Fabric)
 operates, a computable directed graph describing a network of
 [Peer](#Peer) components and their interactions (side effects).
-See also [Swarm](#Swarm) for deeper inspection of [Machine](#Machine)
+See also [Swarm](Swarm) for deeper inspection of [Machine](#Machine)
 mechanics.
 
 **Kind**: global class  
@@ -722,7 +795,7 @@ Create an instance of an [Entity](Entity).
 Loads [State](#State) into memory.
 
 **Kind**: instance method of [<code>Collection</code>](#Collection)  
-**Emits**: <code>event:message Will emit one {@link Snapshot} message.</code>  
+**Emits**: <code>event:message Will emit one &#x60;CollectionSnapshot&#x60; message (not the removed Snapshot type).</code>  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -834,10 +907,14 @@ Reliable decentralized infrastructure.
 
 * [Fabric](#Fabric)
     * [new Fabric(config)](#new_Fabric_new)
-    * [.register(service)](#Fabric+register)
-    * [.push(value)](#Fabric+push) ⇒ [<code>Stack</code>](#Stack)
-    * [.trust(source)](#Fabric+trust) ⇒ [<code>Fabric</code>](#Fabric)
-    * [.compute()](#Fabric+compute) ⇒ [<code>Fabric</code>](#Fabric)
+    * _instance_
+        * [.register(service)](#Fabric+register)
+        * [.push(value)](#Fabric+push) ⇒ <code>Stack</code>
+        * [.trust(source)](#Fabric+trust) ⇒ [<code>Fabric</code>](#Fabric)
+        * [.compute()](#Fabric+compute) ⇒ [<code>Fabric</code>](#Fabric)
+    * _static_
+        * [.Federation](#Fabric.Federation) ⇒ <code>function</code>
+        * [.DistributedExecution](#Fabric.DistributedExecution) ⇒ <code>function</code>
 
 <a name="new_Fabric_new"></a>
 
@@ -867,7 +944,7 @@ Register an available [Service](#Service) using an ES6 [Class](Class).
 
 <a name="Fabric+push"></a>
 
-### fabric.push(value) ⇒ [<code>Stack</code>](#Stack)
+### fabric.push(value) ⇒ <code>Stack</code>
 Push an instruction onto the stack.
 
 **Kind**: instance method of [<code>Fabric</code>](#Fabric)  
@@ -896,6 +973,14 @@ Process the current stack.
 
 **Kind**: instance method of [<code>Fabric</code>](#Fabric)  
 **Returns**: [<code>Fabric</code>](#Fabric) - Resulting instance of the stack.  
+<a name="Fabric.Federation"></a>
+
+### Fabric.Federation ⇒ <code>function</code>
+**Kind**: static property of [<code>Fabric</code>](#Fabric)  
+<a name="Fabric.DistributedExecution"></a>
+
+### Fabric.DistributedExecution ⇒ <code>function</code>
+**Kind**: static property of [<code>Fabric</code>](#Fabric)  
 <a name="Federation"></a>
 
 ## Federation
@@ -1071,6 +1156,7 @@ Simple interaction with 256-bit spaces.
 
 * [Hash256](#Hash256)
     * [new Hash256(settings)](#new_Hash256_new)
+    * [.doubleDigest(input)](#Hash256.doubleDigest) ⇒ <code>String</code>
     * [.digest(input)](#Hash256.digest) ⇒ <code>String</code>
     * [.reverse()](#Hash256.reverse)
 
@@ -1087,6 +1173,18 @@ If the `settings` is not a string, `input` must be provided.
 | --- | --- | --- |
 | settings | <code>Object</code> |  |
 | settings.input | <code>String</code> | Input string to map as 256-bit hash. |
+
+<a name="Hash256.doubleDigest"></a>
+
+### Hash256.doubleDigest(input) ⇒ <code>String</code>
+Double-SHA256 digest (Bitcoin-style). Matches C message body hash.
+
+**Kind**: static method of [<code>Hash256</code>](#Hash256)  
+**Returns**: <code>String</code> - SHA256(SHA256(input)) as hexadecimal string.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>String</code> \| <code>Buffer</code> | Content to digest. |
 
 <a name="Hash256.digest"></a>
 
@@ -1261,9 +1359,12 @@ Represents a cryptographic key.
 * [Key](#Key)
     * [new Key([settings])](#new_Key_new)
     * _instance_
+        * ~~[.iv](#Key+iv)~~
         * [.verify(msg, sig)](#Key+verify) ⇒ <code>Boolean</code>
         * [.signSchnorr(msg)](#Key+signSchnorr) ⇒ <code>Buffer</code>
+        * [.signSchnorrHash(messageHash)](#Key+signSchnorrHash) ⇒ <code>Buffer</code>
         * [.verifySchnorr(msg, sig)](#Key+verifySchnorr) ⇒ <code>Boolean</code>
+        * [.verifySchnorrHash(messageHash, sig)](#Key+verifySchnorrHash) ⇒ <code>Boolean</code>
         * [.sign(data)](#Key+sign) ⇒ <code>Buffer</code>
         * [.secure()](#Key+secure)
         * [.toWIF()](#Key+toWIF) ⇒ <code>String</code>
@@ -1289,6 +1390,12 @@ create it from a known public key.
 | [settings.wif] | <code>String</code> |  | WIF-encoded private key. |
 | [settings.purpose] | <code>String</code> | <code>44</code> | Constrains derivations to this space. |
 
+<a name="Key+iv"></a>
+
+### ~~key.iv~~
+***Per-message IVs are generated in [Key#encrypt](Key#encrypt). Do not rely on this getter.***
+
+**Kind**: instance property of [<code>Key</code>](#Key)  
 <a name="Key+verify"></a>
 
 ### key.verify(msg, sig) ⇒ <code>Boolean</code>
@@ -1314,6 +1421,19 @@ Signs a message using Schnorr signatures (BIP340).
 | --- | --- | --- |
 | msg | <code>Buffer</code> \| <code>String</code> | The message to sign |
 
+<a name="Key+signSchnorrHash"></a>
+
+### key.signSchnorrHash(messageHash) ⇒ <code>Buffer</code>
+Signs a pre-computed hash using Schnorr signatures (BIP340).
+This is useful when the message has already been hashed (e.g., with a tagged hash).
+
+**Kind**: instance method of [<code>Key</code>](#Key)  
+**Returns**: <code>Buffer</code> - The signature (64 bytes)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| messageHash | <code>Buffer</code> | The pre-computed message hash (32 bytes) |
+
 <a name="Key+verifySchnorr"></a>
 
 ### key.verifySchnorr(msg, sig) ⇒ <code>Boolean</code>
@@ -1326,6 +1446,20 @@ Verifies a Schnorr signature (BIP340).
 | --- | --- | --- |
 | msg | <code>Buffer</code> \| <code>String</code> | The message that was signed |
 | sig | <code>Buffer</code> | The signature to verify |
+
+<a name="Key+verifySchnorrHash"></a>
+
+### key.verifySchnorrHash(messageHash, sig) ⇒ <code>Boolean</code>
+Verifies a Schnorr signature with a pre-computed hash (BIP340).
+This is useful when the message has already been hashed (e.g., with a tagged hash).
+
+**Kind**: instance method of [<code>Key</code>](#Key)  
+**Returns**: <code>Boolean</code> - Whether the signature is valid  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| messageHash | <code>Buffer</code> | The pre-computed message hash (32 bytes) |
+| sig | <code>Buffer</code> | The signature to verify (64 bytes) |
 
 <a name="Key+sign"></a>
 
@@ -1383,7 +1517,7 @@ An ordered stack of pages.
 | Name | Type | Description |
 | --- | --- | --- |
 | memory | <code>Buffer</code> | The ledger's memory (4096 bytes). |
-| stack | [<code>Stack</code>](#Stack) | The ledger's stack. |
+| stack | <code>Stack</code> | The ledger's stack. |
 | tip | <code>Mixed</code> | The most recent page in the ledger. |
 
 
@@ -1459,7 +1593,7 @@ A basic logger that writes logs to the local file system
     * [.set(path, value)](#Actor+set) ⇒ <code>Object</code>
     * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
     * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
-    * [.toGenericMessage()](#Actor+toGenericMessage) ⇒ <code>Object</code>
+    * [.toGenericMessage([type])](#Actor+toGenericMessage) ⇒ <code>Object</code>
     * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
     * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
     * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
@@ -1581,19 +1715,24 @@ Casts the Actor to a normalized Buffer.
 **Overrides**: [<code>toBuffer</code>](#Actor+toBuffer)  
 <a name="Actor+toGenericMessage"></a>
 
-### logger.toGenericMessage() ⇒ <code>Object</code>
-Casts the Actor to a generic message, used to uniquely identify the Actor's state.
-Fields:
-- `type`: 'FabricActorState'
-- `object`: state
+### logger.toGenericMessage([type]) ⇒ <code>Object</code>
+Casts the Actor to a generic message envelope for state announcements and history.
+Shape is stable: `{ type, object }` where `object` is sorted-key state ([toObject](#Actor+toObject)).
+[Actor#id](Actor#id) derives from a digest of the pretty-printed generic message; extending this
+envelope requires a format/version migration across the network.
 
 **Kind**: instance method of [<code>Logger</code>](#Logger)  
 **Overrides**: [<code>toGenericMessage</code>](#Actor+toGenericMessage)  
-**Returns**: <code>Object</code> - Generic message object.  
+**Returns**: <code>Object</code> - `{ type, object }`  
 **See**
 
 - [https://en.wikipedia.org/wiki/Merkle_tree](https://en.wikipedia.org/wiki/Merkle_tree)
 - [https://dev.fabric.pub/messages](https://dev.fabric.pub/messages)
+
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [type] | <code>String</code> | <code>&#x27;FabricActorState&#x27;</code> | Logical message type string. |
 
 <a name="Actor+toObject"></a>
 
@@ -1730,6 +1869,10 @@ selectively disclosing new routes to peers which may have open circuits.
 
 * [Message](#Message) : <code>Object</code>
     * [new Message(message)](#new_Message_new)
+    * [._sensitive](#Message+_sensitive)
+    * [.preimage](#Message+preimage)
+    * [.wireType](#Message+wireType)
+    * [.friendlyType](#Message+friendlyType)
     * [.asRaw()](#Message+asRaw) ⇒ <code>Buffer</code>
     * [.signWithKey(key)](#Message+signWithKey) ⇒ [<code>Message</code>](#Message)
     * [.verify()](#Message+verify) ⇒ <code>Boolean</code>
@@ -1747,6 +1890,33 @@ The `Message` type is standardized in [Fabric](#Fabric) as a [Array](Array), whi
 | --- | --- | --- |
 | message | <code>Object</code> | Message vector.  Will be serialized by [Array#_serialize](Array#_serialize). |
 
+<a name="Message+_sensitive"></a>
+
+### message.\_sensitive
+When true, body preimage field is zeroed on wire (no SHA256(body) commitment).
+
+**Kind**: instance property of [<code>Message</code>](#Message)  
+<a name="Message+preimage"></a>
+
+### message.preimage
+Optional 32-byte preimage on wire:
+- **All zeros:** sensitive payload (no commitment) or legacy; [Message#sensitive](Message#sensitive) uses this.
+- **SHA256(body):** default for non-sensitive messages (single digest; [Message#hash](Message#hash) is double-SHA256(body)).
+- **Other:** explicit HTLC secret or custom (must match what was signed).
+
+**Kind**: instance property of [<code>Message</code>](#Message)  
+<a name="Message+wireType"></a>
+
+### message.wireType
+AMP wire type string (SCREAMING_SNAKE_CASE / opcode-canonical). Same as [Message#type](Message#type).
+
+**Kind**: instance property of [<code>Message</code>](#Message)  
+<a name="Message+friendlyType"></a>
+
+### message.friendlyType
+JSON-oriented type label (historical PascalCase aliases). Use in APIs and `toObject().type`.
+
+**Kind**: instance property of [<code>Message</code>](#Message)  
 <a name="Message+asRaw"></a>
 
 ### message.asRaw() ⇒ <code>Buffer</code>
@@ -1758,6 +1928,8 @@ Returns a [Buffer](Buffer) of the complete message.
 
 ### message.signWithKey(key) ⇒ [<code>Message</code>](#Message)
 Signs the message using a specific key.
+Uses BIP-340 Schnorr signatures with tagged hash "Fabric/Message".
+Signs the complete message (header + body) as per C implementation.
 
 **Kind**: instance method of [<code>Message</code>](#Message)  
 **Returns**: [<code>Message</code>](#Message) - Signed message.  
@@ -1784,6 +1956,8 @@ Verify a message's signature.
 
 ### message.verifyWithKey(key) ⇒ <code>Boolean</code>
 Verify a message's signature with a specific key.
+Uses BIP-340 Schnorr signature verification with tagged hash "Fabric/Message".
+Verifies the complete message (header + body) as per C implementation.
 
 **Kind**: instance method of [<code>Message</code>](#Message)  
 **Returns**: <code>Boolean</code> - `true` if the signature is valid, `false` if not.  
@@ -1815,9 +1989,28 @@ An in-memory representation of a node in our network.
 
 * [Peer](#Peer)
     * [new Peer([config])](#new_Peer_new)
+    * [.messages](#Peer+messages)
+    * [._gossipPayloadSeen](#Peer+_gossipPayloadSeen)
+    * [._gossipRelayByOrigin](#Peer+_gossipRelayByOrigin)
+    * [._peeringPayloadSeen](#Peer+_peeringPayloadSeen)
+    * [._peeringRelayByOrigin](#Peer+_peeringRelayByOrigin)
+    * [._wireInboundByOrigin](#Peer+_wireInboundByOrigin)
+    * [._candidateKeys](#Peer+_candidateKeys)
+    * [._outboundDialTargets](#Peer+_outboundDialTargets)
     * ~~[.address](#Peer+address)~~
+    * [._gossipPayloadDedupKey(msg)](#Peer+_gossipPayloadDedupKey) ⇒ <code>string</code>
+    * [._gossipRateLimitAllow(originName)](#Peer+_gossipRateLimitAllow) ⇒ <code>boolean</code>
+    * [._wireInboundCreditCost(wireType)](#Peer+_wireInboundCreditCost) ⇒ <code>number</code>
+    * [._wireInboundRateAllowPeer(originName, creditCost)](#Peer+_wireInboundRateAllowPeer) ⇒ <code>boolean</code>
+    * [._derankPeerForWireTraffic(originName, penalty, reason)](#Peer+_derankPeerForWireTraffic)
+    * [._peeringOfferPayloadDedupKey(msg)](#Peer+_peeringOfferPayloadDedupKey) ⇒ <code>string</code>
+    * [._peeringRateLimitAllow(originName)](#Peer+_peeringRateLimitAllow) ⇒ <code>boolean</code>
+    * [._enqueuePeeringCandidate(host, port)](#Peer+_enqueuePeeringCandidate)
     * [.broadcast(message)](#Peer+broadcast)
     * [._connect(target)](#Peer+_connect)
+    * [._loadPeerRegistry()](#Peer+_loadPeerRegistry) ⇒ <code>Promise.&lt;void&gt;</code>
+    * [._savePeerRegistry()](#Peer+_savePeerRegistry)
+    * [._upsertPeerRegistry(address, [updates])](#Peer+_upsertPeerRegistry)
     * [._fillPeerSlots()](#Peer+_fillPeerSlots) ⇒ [<code>Peer</code>](#Peer)
     * [._handleFabricMessage(buffer)](#Peer+_handleFabricMessage) ⇒ [<code>Peer</code>](#Peer)
     * [.start()](#Peer+start)
@@ -1838,12 +2031,154 @@ Create an instance of [Peer](#Peer).
 | [config.port] | <code>Number</code> | <code>7777</code> | Port to use for P2P connections. |
 | [config.peers] | <code>Array</code> | <code>[]</code> | List of initial peers. |
 
+<a name="Peer+messages"></a>
+
+### peer.messages
+Wire-envelope dedup (SHA-256 of full buffer); FIFO-capped via [Peer#_rememberWireHash](Peer#_rememberWireHash).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_gossipPayloadSeen"></a>
+
+### peer.\_gossipPayloadSeen
+Logical gossip payload dedup (excludes signature / hop churn).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_gossipRelayByOrigin"></a>
+
+### peer.\_gossipRelayByOrigin
+origin address → { count, windowStart } for gossip relay rate limiting.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_peeringPayloadSeen"></a>
+
+### peer.\_peeringPayloadSeen
+Logical peering-offer payload dedup (ignores per-hop re-signing).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_peeringRelayByOrigin"></a>
+
+### peer.\_peeringRelayByOrigin
+origin address → { count, windowStart } for peering-offer relay rate limiting.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_wireInboundByOrigin"></a>
+
+### peer.\_wireInboundByOrigin
+`host:port` → { credits, windowStart, penalized } — inbound wire flood / de-rank (per peer).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_candidateKeys"></a>
+
+### peer.\_candidateKeys
+`host:port` keys for [P2P_PEERING_OFFER](P2P_PEERING_OFFER) candidate queue dedup.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_outboundDialTargets"></a>
+
+### peer.\_outboundDialTargets
+`host:port` strings we opened via [_connect](#Peer+_connect) (outbound dials).
+[P2P_SESSION_OFFER](P2P_SESSION_OFFER) must not destroy these when the same peer also opens an inbound
+socket (mesh star): otherwise RPC paths that use the listen address (e.g. ChainSyncRequest)
+see `peer not connected` while an ephemeral inbound key remains.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+address"></a>
 
 ### ~~peer.address~~
 ***Deprecated***
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_gossipPayloadDedupKey"></a>
+
+### peer.\_gossipPayloadDedupKey(msg) ⇒ <code>string</code>
+Stable id for gossip *logical* content (ignores `gossipHop` and wire signature changes).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>string</code> - hex sha256  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | <code>object</code> | Generic message (`type`, `object`, …) |
+
+<a name="Peer+_gossipRateLimitAllow"></a>
+
+### peer.\_gossipRateLimitAllow(originName) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| originName | <code>string</code> | Connection id (e.g. `host:port`) |
+
+<a name="Peer+_wireInboundCreditCost"></a>
+
+### peer.\_wireInboundCreditCost(wireType) ⇒ <code>number</code>
+Credit cost for inbound wire messages (heavier types consume more of the peer's budget).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| wireType | <code>string</code> \| <code>number</code> | 
+
+<a name="Peer+_wireInboundRateAllowPeer"></a>
+
+### peer.\_wireInboundRateAllowPeer(originName, creditCost) ⇒ <code>boolean</code>
+Apply rolling-window credits; on overflow, de-rank once per window and reject the message.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>boolean</code> - false = drop message  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| originName | <code>string</code> | connection key (host:port) |
+| creditCost | <code>number</code> |  |
+
+<a name="Peer+_derankPeerForWireTraffic"></a>
+
+### peer.\_derankPeerForWireTraffic(originName, penalty, reason)
+Lower registry [Peer#knownPeers](Peer#knownPeers) score for a connection (Bitcoin Core misbehavior analogue).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| originName | <code>string</code> | 
+| penalty | <code>number</code> | 
+| reason | <code>string</code> | 
+
+<a name="Peer+_peeringOfferPayloadDedupKey"></a>
+
+### peer.\_peeringOfferPayloadDedupKey(msg) ⇒ <code>string</code>
+Stable id for peering-offer *logical* content (ignores `peeringHop` and wire signature changes).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>string</code> - hex sha256  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | <code>object</code> | Generic message (`type`, `object`, …) |
+
+<a name="Peer+_peeringRateLimitAllow"></a>
+
+### peer.\_peeringRateLimitAllow(originName) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| originName | <code>string</code> | Connection id (e.g. `host:port`) |
+
+<a name="Peer+_enqueuePeeringCandidate"></a>
+
+### peer.\_enqueuePeeringCandidate(host, port)
+Enqueue a fabric candidate from [P2P_PEERING_OFFER](P2P_PEERING_OFFER); FIFO-capped and deduped by host:port.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| host | <code>string</code> | 
+| port | <code>number</code> | 
+
 <a name="Peer+broadcast"></a>
 
 ### peer.broadcast(message)
@@ -1865,6 +2200,31 @@ Open a Fabric connection to the target address and initiate the Fabric Protocol.
 | Param | Type | Description |
 | --- | --- | --- |
 | target | <code>String</code> | Target address. |
+
+<a name="Peer+_loadPeerRegistry"></a>
+
+### peer.\_loadPeerRegistry() ⇒ <code>Promise.&lt;void&gt;</code>
+Load persistent peer registry from LevelDB.
+Uses classic-level in Node, browser-level (IndexedDB) in browser.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+<a name="Peer+_savePeerRegistry"></a>
+
+### peer.\_savePeerRegistry()
+Persist peer registry to LevelDB (debounced).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+<a name="Peer+_upsertPeerRegistry"></a>
+
+### peer.\_upsertPeerRegistry(address, [updates])
+Upsert a peer into the persistent registry (state.peers) and schedule save to LevelDB.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| address | <code>string</code> | Peer address (e.g. host:port). |
+| [updates] | <code>Object</code> | Fields to set/merge (id, score, firstSeen, lastSeen, alias, publicKey). |
 
 <a name="Peer+_fillPeerSlots"></a>
 
@@ -2358,28 +2718,37 @@ Sends a message.
 | --- | --- | --- |
 | message | <code>Mixed</code> | Message to send. |
 
+<a name="FabricShell"></a>
+
+## FabricShell
+**Kind**: global class  
+<a name="new_FabricShell_new"></a>
+
+### new FabricShell()
+Browser / CLI application shell: encrypted store, peer node, resources.
+
 <a name="Session"></a>
 
 ## Session
-The [Session](#Session) type describes a connection between [Peer](#Peer)
-objects, and includes its own lifecycle.
+The [Session](#Session) type describes a connection between [Peer](#Peer) objects, and includes its own lifecycle.
 
 **Kind**: global class  
 
 * [Session](#Session)
-    * [new Session(settings)](#new_Session_new)
+    * [new Session([settings])](#new_Session_new)
     * [.start()](#Session+start)
     * [.stop()](#Session+stop)
 
 <a name="new_Session_new"></a>
 
-### new Session(settings)
+### new Session([settings])
 Creates a new [Session](#Session).
 
+**Returns**: [<code>Session</code>](#Session) - The session instance.  
 
-| Param | Type |
-| --- | --- |
-| settings | <code>Object</code> | 
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Configuration. |
 
 <a name="Session+start"></a>
 
@@ -2393,68 +2762,6 @@ Opens the [Session](#Session) for interaction.
 Closes the [Session](#Session), preventing further interaction.
 
 **Kind**: instance method of [<code>Session</code>](#Session)  
-<a name="Snapshot"></a>
-
-## Snapshot
-A type of message to be expected from a [Service](#Service).
-
-**Kind**: global class  
-
-* [Snapshot](#Snapshot)
-    * [new Snapshot(settings)](#new_Snapshot_new)
-    * [.commit()](#Snapshot+commit)
-
-<a name="new_Snapshot_new"></a>
-
-### new Snapshot(settings)
-Creates an instance of a [Snapshot](#Snapshot).
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| settings | <code>Object</code> | Map of settings to configure the [Snapshot](#Snapshot) with. |
-
-<a name="Snapshot+commit"></a>
-
-### snapshot.commit()
-Retrieves the `sha256` fingerprint for the [Snapshot](#Snapshot) state.
-
-**Kind**: instance method of [<code>Snapshot</code>](#Snapshot)  
-<a name="Stack"></a>
-
-## Stack
-Manage stacks of data.
-
-**Kind**: global class  
-
-* [Stack](#Stack)
-    * [new Stack([list])](#new_Stack_new)
-    * [.push(data)](#Stack+push) ⇒ <code>Number</code>
-
-<a name="new_Stack_new"></a>
-
-### new Stack([list])
-Create a [Stack](#Stack) instance.
-
-**Returns**: [<code>Stack</code>](#Stack) - Instance of the [Stack](#Stack).  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| [list] | <code>Array</code> | <code>[]</code> | Genesis state for the [Stack](#Stack) instance. |
-
-<a name="Stack+push"></a>
-
-### stack.push(data) ⇒ <code>Number</code>
-Push data onto the stack.  Changes the [Stack#frame](Stack#frame) and
-[Stack#id](Stack#id).
-
-**Kind**: instance method of [<code>Stack</code>](#Stack)  
-**Returns**: <code>Number</code> - Resulting size of the stack.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| data | <code>Mixed</code> | Treated as a [State](#State). |
-
 <a name="State"></a>
 
 ## State ⇐ <code>EventEmitter</code>
@@ -2609,14 +2916,19 @@ Long-term storage.
 
 * [Store](#Store)
     * [new Store([settings])](#new_Store_new)
-    * [._REGISTER(obj)](#Store+_REGISTER) ⇒ [<code>Vector</code>](#Vector)
-    * [._POST(key, value)](#Store+_POST) ⇒ <code>Promise</code>
-    * [.get(key)](#Store+get) ⇒ <code>Promise</code>
-    * [.set(key, value)](#Store+set)
-    * [.trust(source)](#Store+trust) ⇒ [<code>Store</code>](#Store)
-    * [.del(key)](#Store+del)
-    * [.flush()](#Store+flush)
-    * [.start()](#Store+start) ⇒ <code>Promise</code>
+    * _instance_
+        * [.codec](#Store+codec)
+        * [._REGISTER(obj)](#Store+_REGISTER) ⇒ [<code>Vector</code>](#Vector)
+        * [._POST(key, value)](#Store+_POST) ⇒ <code>Promise</code>
+        * [.get(key)](#Store+get) ⇒ <code>Promise</code>
+        * [.set(key, value)](#Store+set)
+        * [.trust(source)](#Store+trust) ⇒ [<code>Store</code>](#Store)
+        * [.del(key)](#Store+del)
+        * [.flush()](#Store+flush)
+        * [.start()](#Store+start) ⇒ <code>Promise</code>
+    * _static_
+        * [.encryptedSettings([settings])](#Store.encryptedSettings) ⇒ <code>Object</code>
+        * [.openEncrypted([settings])](#Store.openEncrypted) ⇒ [<code>Store</code>](#Store)
 
 <a name="new_Store_new"></a>
 
@@ -2630,6 +2942,14 @@ particularly useful when building a user-facing [Product](Product).
 | --- | --- | --- | --- |
 | [settings] | <code>Object</code> | <code>{}</code> | configuration object. |
 
+<a name="Store+codec"></a>
+
+### store.codec
+Optional [Codec](Codec) for encrypted at-rest values (Level `valueEncoding`).
+Browser and Hub-style apps typically use one [Store](#Store) with `codec` for
+secrets and separate plain stores for cache/tips.
+
+**Kind**: instance property of [<code>Store</code>](#Store)  
 <a name="Store+_REGISTER"></a>
 
 ### store.\_REGISTER(obj) ⇒ [<code>Vector</code>](#Vector)
@@ -2694,7 +3014,7 @@ Implicitly trust an [Event](Event) source.
 <a name="Store+del"></a>
 
 ### store.del(key)
-Remove a [Value](#Value) by [Path](Path).
+Remove a [Value](Value) by [Path](Path).
 
 **Kind**: instance method of [<code>Store</code>](#Store)  
 
@@ -2715,55 +3035,43 @@ Start running the process.
 
 **Kind**: instance method of [<code>Store</code>](#Store)  
 **Returns**: <code>Promise</code> - Resolves on complete.  
-<a name="Swarm"></a>
+<a name="Store.encryptedSettings"></a>
 
-## Swarm : <code>String</code>
-Orchestrates a network of peers.
+### Store.encryptedSettings([settings]) ⇒ <code>Object</code>
+Settings object for a [Store](#Store) with [Codec](Codec) at-rest encryption
+(same defaults as the legacy `Keystore` type). Prefer `openEncrypted` or
+`new Store(Store.encryptedSettings(...))` over ad-hoc Codec wiring.
 
-**Kind**: global class  
+**Kind**: static method of [<code>Store</code>](#Store)  
+**Returns**: <code>Object</code> - Settings merged with `codec` when absent.  
 
-* [Swarm](#Swarm) : <code>String</code>
-    * [new Swarm(config)](#new_Swarm_new)
-    * [.trust(source)](#Swarm+trust)
-    * [.start()](#Swarm+start) ⇒ <code>Promise</code>
-
-<a name="new_Swarm_new"></a>
-
-### new Swarm(config)
-Create an instance of a [Swarm](#Swarm).
-
-**Returns**: [<code>Swarm</code>](#Swarm) - Instance of the Swarm.  
-
-| Param | Type | Description |
+| Param | Type | Default |
 | --- | --- | --- |
-| config | <code>Object</code> | Configuration object. |
+| [settings] | <code>Object</code> | <code>{}</code> | 
 
-<a name="Swarm+trust"></a>
+<a name="Store.openEncrypted"></a>
 
-### swarm.trust(source)
-Explicitly trust an [EventEmitter](EventEmitter) to provide messages using
-the expected [Interface](#Interface), providing [Message](#Message) objects as
-the expected [Type](Type).
+### Store.openEncrypted([settings]) ⇒ [<code>Store</code>](#Store)
+**Kind**: static method of [<code>Store</code>](#Store)  
 
-**Kind**: instance method of [<code>Swarm</code>](#Swarm)  
-
-| Param | Type | Description |
+| Param | Type | Default |
 | --- | --- | --- |
-| source | <code>EventEmitter</code> | [Actor](#Actor) to utilize. |
+| [settings] | <code>Object</code> | <code>{}</code> | 
 
-<a name="Swarm+start"></a>
-
-### swarm.start() ⇒ <code>Promise</code>
-Begin computing.
-
-**Kind**: instance method of [<code>Swarm</code>](#Swarm)  
-**Returns**: <code>Promise</code> - Resolves to instance of [Swarm](#Swarm).  
 <a name="Token"></a>
 
 ## Token
 Implements a capability-based security token.
 
 **Kind**: global class  
+
+* [Token](#Token)
+    * [new Token([settings])](#new_Token_new)
+    * _instance_
+        * [.toSignedString([options])](#Token+toSignedString) ⇒ <code>string</code>
+    * _static_
+        * [.verifySigned(tokenString, verificationKey)](#Token.verifySigned) ⇒ <code>Object</code> \| <code>null</code>
+
 <a name="new_Token_new"></a>
 
 ### new Token([settings])
@@ -2774,6 +3082,32 @@ Create a new Fabric Token.
 | Param | Type | Description |
 | --- | --- | --- |
 | [settings] | <code>Object</code> | Configuration. |
+
+<a name="Token+toSignedString"></a>
+
+### token.toSignedString([options]) ⇒ <code>string</code>
+Create a cryptographically signed token string.
+Format: base64url(payload).base64url(signature)
+Payload: { cap, iss, sub, iat, exp }. Signature: Schnorr over payload JSON.
+
+**Kind**: instance method of [<code>Token</code>](#Token)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [options] | <code>Object</code> |  |  |
+| [options.expiresInSeconds] | <code>number</code> | <code>31536000</code> | Token lifetime (default 1 year). |
+
+<a name="Token.verifySigned"></a>
+
+### Token.verifySigned(tokenString, verificationKey) ⇒ <code>Object</code> \| <code>null</code>
+Verify a signed token string. Returns parsed payload if valid, null otherwise.
+
+**Kind**: static method of [<code>Token</code>](#Token)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| tokenString | <code>string</code> |  |
+| verificationKey | [<code>Key</code>](#Key) | Key used to verify the signature (must match issuer). |
 
 <a name="Tree"></a>
 
@@ -2817,38 +3151,6 @@ Get a list of the [Tree](#Tree)'s leaves.
 
 **Kind**: instance method of [<code>Tree</code>](#Tree)  
 **Returns**: <code>Array</code> - A list of the [Tree](#Tree)'s leaves.  
-<a name="Value"></a>
-
-## Value
-[Number](Number)-like type.
-
-**Kind**: global class  
-
-* [Value](#Value)
-    * [new Value(data)](#new_Value_new)
-    * [.value(input)](#Value+value)
-
-<a name="new_Value_new"></a>
-
-### new Value(data)
-Use the [Value](#Value) type to interact with [Number](Number)-like objects.
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| data | <code>Mixed</code> | Input value. |
-
-<a name="Value+value"></a>
-
-### value.value(input)
-Compute the numeric representation of this input.
-
-**Kind**: instance method of [<code>Value</code>](#Value)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| input | <code>String</code> | Input string to seek for value. |
-
 <a name="Vector"></a>
 
 ## Vector
@@ -2891,52 +3193,6 @@ Render the output to a [String](String).
 | Param | Type | Description |
 | --- | --- | --- |
 | input | <code>Mixed</code> | Arbitrary input. |
-
-<a name="Walker"></a>
-
-## Walker
-**Kind**: global class  
-
-* [Walker](#Walker)
-    * [new Walker(init)](#new_Walker_new)
-    * [._explore(path, [map])](#Walker+_explore) ⇒ <code>Object</code>
-    * [._define(dir, [map])](#Walker+_define) ⇒ <code>Object</code>
-
-<a name="new_Walker_new"></a>
-
-### new Walker(init)
-The Walker explores a directory tree and maps it to memory.
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| init | [<code>Vector</code>](#Vector) | Initial state tree. |
-
-<a name="Walker+_explore"></a>
-
-### walker.\_explore(path, [map]) ⇒ <code>Object</code>
-Explores a directory tree on the local system's disk.
-
-**Kind**: instance method of [<code>Walker</code>](#Walker)  
-**Returns**: <code>Object</code> - [description]  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| path | <code>String</code> |  | [description] |
-| [map] | <code>Object</code> | <code>{}</code> | [description] |
-
-<a name="Walker+_define"></a>
-
-### walker.\_define(dir, [map]) ⇒ <code>Object</code>
-Explores a directory tree on the local system's disk.
-
-**Kind**: instance method of [<code>Walker</code>](#Walker)  
-**Returns**: <code>Object</code> - A hashmap of directory contents.  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| dir | <code>String</code> |  | Path to crawl on local disk. |
-| [map] | <code>Object</code> | <code>{}</code> | Pointer to previous step in stack. |
 
 <a name="Wallet"></a>
 
@@ -3144,10 +3400,15 @@ Manages interaction with the Bitcoin network.
     * [._subscribeToShard(shard)](#Bitcoin+_subscribeToShard)
     * [._connectSPV()](#Bitcoin+_connectSPV)
     * [.connect(addr)](#Bitcoin+connect)
-    * [._makeRPCRequest(method, params)](#Bitcoin+_makeRPCRequest) ⇒ <code>Promise</code>
+    * [._makeRPCRequest(method, params, [opts])](#Bitcoin+_makeRPCRequest) ⇒ <code>Promise</code>
+    * [.getBlockInfo(hashOrHeight)](#Bitcoin+getBlockInfo) ⇒ <code>Promise.&lt;Object&gt;</code>
+    * [.getTransactionInfo(txid)](#Bitcoin+getTransactionInfo) ⇒ <code>Promise.&lt;Object&gt;</code>
+    * [.getAddressInfo(address)](#Bitcoin+getAddressInfo) ⇒ <code>Promise.&lt;Object&gt;</code>
     * [._requestBlockAtHeight(height)](#Bitcoin+_requestBlockAtHeight) ⇒ <code>Object</code>
     * [._createContractProposal(options)](#Bitcoin+_createContractProposal) ⇒ <code>ContractProposal</code>
     * [._buildPSBT(options)](#Bitcoin+_buildPSBT) ⇒ <code>PSBT</code>
+    * [._normalizeP2pPeerAddress(peer)](#Bitcoin+_normalizeP2pPeerAddress) ⇒ <code>string</code> \| <code>null</code>
+    * [.applyP2pAddNodes(peers, [command])](#Bitcoin+applyP2pAddNodes) ⇒ <code>Promise.&lt;Array.&lt;string&gt;&gt;</code>
     * [.start()](#Bitcoin+start)
     * [.stop()](#Bitcoin+stop)
     * [.init()](#Service+init)
@@ -3311,8 +3572,9 @@ Connect to a Fabric [Peer](#Peer).
 
 <a name="Bitcoin+_makeRPCRequest"></a>
 
-### bitcoin.\_makeRPCRequest(method, params) ⇒ <code>Promise</code>
+### bitcoin.\_makeRPCRequest(method, params, [opts]) ⇒ <code>Promise</code>
 Make a single RPC request to the Bitcoin node.
+Retries on "Work queue depth exceeded" (bitcoind temporary backpressure).
 
 **Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
 **Returns**: <code>Promise</code> - A promise that resolves to the RPC response.  
@@ -3321,6 +3583,46 @@ Make a single RPC request to the Bitcoin node.
 | --- | --- | --- |
 | method | <code>String</code> | The RPC method to call. |
 | params | <code>Array</code> | The parameters to pass to the RPC method. |
+| [opts] | <code>Object</code> | Options. retries: max retries for work-queue errors (default 5). |
+
+<a name="Bitcoin+getBlockInfo"></a>
+
+### bitcoin.getBlockInfo(hashOrHeight) ⇒ <code>Promise.&lt;Object&gt;</code>
+Blockchain explorer: fetch block info by hash or height.
+Uses RPC when available; optional HTTP API when `explorerBaseUrl` is set.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - Block info { hash, height, time, txcount, size, ... }.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| hashOrHeight | <code>String</code> \| <code>Number</code> | Block hash (hex) or block height. |
+
+<a name="Bitcoin+getTransactionInfo"></a>
+
+### bitcoin.getTransactionInfo(txid) ⇒ <code>Promise.&lt;Object&gt;</code>
+Blockchain explorer: fetch transaction info by txid.
+Uses RPC when available; optional HTTP API when `explorerBaseUrl` is set.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - Transaction info.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| txid | <code>String</code> | Transaction ID (hex). |
+
+<a name="Bitcoin+getAddressInfo"></a>
+
+### bitcoin.getAddressInfo(address) ⇒ <code>Promise.&lt;Object&gt;</code>
+Blockchain explorer: fetch address info (balance, tx count, recent txs).
+Requires `explorerBaseUrl` (Core has no generic address index over RPC alone).
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - Address info { address, chain_stats, mempool_stats, recent_txs }.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| address | <code>String</code> | Bitcoin address. |
 
 <a name="Bitcoin+_requestBlockAtHeight"></a>
 
@@ -3357,6 +3659,31 @@ Create a Partially-Signed Bitcoin Transaction (PSBT).
 | Param | Type | Description |
 | --- | --- | --- |
 | options | <code>Object</code> | Parameters for the PSBT. |
+
+<a name="Bitcoin+_normalizeP2pPeerAddress"></a>
+
+### bitcoin.\_normalizeP2pPeerAddress(peer) ⇒ <code>string</code> \| <code>null</code>
+Normalize `host` or `host:port` for Bitcoin Core `addnode`.
+IPv6 must use brackets: `[::1]:18444`. If port is omitted, the default P2P port for [settings.network](settings.network) is appended.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type |
+| --- | --- |
+| peer | <code>string</code> | 
+
+<a name="Bitcoin+applyP2pAddNodes"></a>
+
+### bitcoin.applyP2pAddNodes(peers, [command]) ⇒ <code>Promise.&lt;Array.&lt;string&gt;&gt;</code>
+Connect to Bitcoin P2P peers via RPC (`addnode`). Best-effort per peer; failures emit `warning`.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>Promise.&lt;Array.&lt;string&gt;&gt;</code> - Peers successfully passed to `addnode`  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| peers | <code>Array.&lt;string&gt;</code> |  |  |
+| [command] | <code>string</code> | <code>&quot;&#x27;add&#x27;&quot;</code> | add | onetry | remove |
 
 <a name="Bitcoin+start"></a>
 
@@ -3562,10 +3889,14 @@ Manage a Lightning node.
 
 * [Lightning](#Lightning)
     * [new Lightning([settings])](#new_Lightning_new)
-    * [.createChannel(peer, amount)](#Lightning+createChannel)
-    * [.createInvoice(amount)](#Lightning+createInvoice)
-    * [.computeLiquidity()](#Lightning+computeLiquidity) ⇒ <code>Object</code>
-    * [._makeRPCRequest(method, [params])](#Lightning+_makeRPCRequest) ⇒ <code>Object</code> \| <code>String</code>
+    * _instance_
+        * [.createChannel(peer, amount, [pushMsat], [options])](#Lightning+createChannel)
+        * [.createInvoice(amount)](#Lightning+createInvoice)
+        * [.computeLiquidity()](#Lightning+computeLiquidity) ⇒ <code>Object</code>
+        * [._makeRPCRequest(method, [params], [timeoutMs])](#Lightning+_makeRPCRequest) ⇒ <code>Object</code> \| <code>String</code>
+    * _static_
+        * [.CLN_RPC_METHODS](#Lightning.CLN_RPC_METHODS) : <code>ReadonlyArray.&lt;string&gt;</code>
+        * [.defaultListenPortForNetwork([network])](#Lightning.defaultListenPortForNetwork) ⇒ <code>number</code>
 
 <a name="new_Lightning_new"></a>
 
@@ -3579,15 +3910,17 @@ Create an instance of the Lightning [Service](#Service).
 
 <a name="Lightning+createChannel"></a>
 
-### lightning.createChannel(peer, amount)
+### lightning.createChannel(peer, amount, [pushMsat], [options])
 Creates a new Lightning channel.
 
 **Kind**: instance method of [<code>Lightning</code>](#Lightning)  
 
-| Param | Type | Description |
-| --- | --- | --- |
-| peer | <code>String</code> | Public key of the peer to create a channel with. |
-| amount | <code>String</code> | Amount in satoshis to fund the channel. |
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| peer | <code>String</code> |  | Public key of the peer to create a channel with. |
+| amount | <code>String</code> |  | Amount in satoshis to fund the channel. |
+| [pushMsat] | <code>Number</code> \| <code>null</code> | <code></code> | Optional push amount in millisatoshis. |
+| [options] | <code>Object</code> | <code>{}</code> | Optional overrides (e.g. minconf for regtest). |
 
 <a name="Lightning+createInvoice"></a>
 
@@ -3609,16 +3942,34 @@ Computes the total liquidity of the Lightning node.
 **Returns**: <code>Object</code> - Liquidity in BTC.  
 <a name="Lightning+_makeRPCRequest"></a>
 
-### lightning.\_makeRPCRequest(method, [params]) ⇒ <code>Object</code> \| <code>String</code>
+### lightning.\_makeRPCRequest(method, [params], [timeoutMs]) ⇒ <code>Object</code> \| <code>String</code>
 Make an RPC request through the Lightning UNIX socket.
 
 **Kind**: instance method of [<code>Lightning</code>](#Lightning)  
 **Returns**: <code>Object</code> \| <code>String</code> - Respond from the Lightning node.  
 
-| Param | Type | Description |
-| --- | --- | --- |
-| method | <code>String</code> | Name of method to call. |
-| [params] | <code>Array</code> | Array of parameters. |
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| method | <code>String</code> |  | Name of method to call. |
+| [params] | <code>Array</code> |  | Array of parameters. |
+| [timeoutMs] | <code>Number</code> | <code>30000</code> | Optional timeout in ms; default 30000. Prevents hanging when lightningd is busy. |
+
+<a name="Lightning.CLN_RPC_METHODS"></a>
+
+### Lightning.CLN\_RPC\_METHODS : <code>ReadonlyArray.&lt;string&gt;</code>
+Core Lightning JSON-RPC method names invoked by this service (see docs/LIGHTNING_COMPAT.md).
+
+**Kind**: static property of [<code>Lightning</code>](#Lightning)  
+<a name="Lightning.defaultListenPortForNetwork"></a>
+
+### Lightning.defaultListenPortForNetwork([network]) ⇒ <code>number</code>
+Default TCP port lightningd listens on when [settings.port](settings.port) is omitted (BOLT / common conventions).
+
+**Kind**: static method of [<code>Lightning</code>](#Lightning)  
+
+| Param | Type |
+| --- | --- |
+| [network] | <code>string</code> | 
 
 <a name="Redis"></a>
 
@@ -3698,14 +4049,6 @@ Closes the connection to the ZMQ publisher.
 
 **Kind**: instance method of [<code>ZMQ</code>](#ZMQ)  
 **Returns**: [<code>ZMQ</code>](#ZMQ) - Instance of the service.  
-<a name="HTTPServer"></a>
-
-## ~~HTTPServer~~
-***Deprecated***
-
-Deprecated 2021-10-16.
-
-**Kind**: global class  
 <a name="Scribe"></a>
 
 ## ~~Scribe~~
@@ -3751,11 +4094,177 @@ Use an existing Scribe instance as a parent.
 | --- | --- | --- |
 | scribe | [<code>Scribe</code>](#Scribe) | Instance of Scribe to use as parent. |
 
-<a name="Stash"></a>
+<a name="gossip"></a>
 
-## ~~Stash~~
-***Deprecated***
+## gossip
+Limits relay amplification on [P2P_PEER_GOSSIP](P2P_PEER_GOSSIP) (hop TTL, payload dedup, per-origin rate).
 
-Deprecated 2021-11-06.
+**Kind**: global variable  
+<a name="wireTraffic"></a>
 
-**Kind**: global class  
+## wireTraffic
+Inbound wire traffic budgeting (Bitcoin Core–style peer quality).
+Credits accrue per rolling window; overflow de-ranks the peer (registry score)
+and drops the message. Heavier opcodes cost more credits.
+
+**Kind**: global variable  
+<a name="explorerBaseUrl"></a>
+
+## explorerBaseUrl
+Optional HTTP origin for block/tx/address REST fallback (e.g. a Hub). Null = RPC only.
+
+**Kind**: global variable  
+<a name="p2pAddNodes"></a>
+
+## p2pAddNodes : <code>Array.&lt;string&gt;</code>
+After RPC is ready, call `addnode <host:port> add` for each entry (outbound P2P only).
+Used for LAN "playnet" regtest sync. Ignored on mainnet unless [p2pAddNodesAllowMainnet](#p2pAddNodesAllowMainnet) is true.
+
+**Kind**: global variable  
+<a name="p2pAddNodesAllowMainnet"></a>
+
+## p2pAddNodesAllowMainnet
+When true, [p2pAddNodes](#p2pAddNodes) is applied even on mainnet (private deployments only).
+
+**Kind**: global variable  
+<a name="crypto"></a>
+
+## crypto
+Shared helpers for multi-operator contract execution: canonical payloads,
+beacon epoch signing strings, and federation signature verification.
+
+Used by Hub Beacon, HTTP manifest routes (`@fabric/http`), and peers that
+must reject messages outside the agreed program.
+
+**Kind**: global constant  
+<a name="BEACON_EPOCH_SIGNING_KIND"></a>
+
+## BEACON\_EPOCH\_SIGNING\_KIND : <code>string</code>
+**Kind**: global constant  
+<a name="WIRE_TYPE_DECODE_ORDER"></a>
+
+## WIRE\_TYPE\_DECODE\_ORDER
+**Two parallel type names:**
+- **Wire** (`wireType`, [Message#type](Message#type)): SCREAMING_SNAKE_CASE strings from opcode
+  decode (`fromBuffer`, `toVector` first element). Matches AMP / `constants.js` style.
+- **Friendly** ([friendlyType](#Message+friendlyType), `toObject().type`): PascalCase (or historical
+  labels) for JSON and human-facing APIs — see [FRIENDLY_TYPE_BY_WIRE](#FRIENDLY_TYPE_BY_WIRE).
+
+Encode accepts **either** name via merged [Message#types](Message#types) (canonical wire + legacy friendly).
+[Message.wireTypeFromFriendly](Message.wireTypeFromFriendly) / [Message.friendlyTypeFromWire](Message.friendlyTypeFromWire) convert between them.
+
+Opcode → wire string order matches the historical `type` switch: when multiple labels share one
+opcode (e.g. P2P vs Lightning), **first listed** in [WIRE_TYPE_DECODE_ORDER](#WIRE_TYPE_DECODE_ORDER) wins.
+
+**Kind**: global constant  
+<a name="FRIENDLY_TYPE_BY_WIRE"></a>
+
+## FRIENDLY\_TYPE\_BY\_WIRE
+Wire-level type strings (ALL_CAPS, opcode decode) ↔ JSON-oriented friendly names (PascalCase
+where historically used). [wireType](#Message+wireType) / [Message#type](Message#type) use wire names;
+[friendlyType](#Message+friendlyType) and [Message#toObject](Message#toObject) `type` use friendly names.
+
+**Kind**: global constant  
+<a name="stableStringify"></a>
+
+## stableStringify(value) ⇒ <code>string</code>
+Deterministic JSON (sorted object keys) for hashing and signing.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| value | <code>\*</code> | 
+
+<a name="jsonSafe"></a>
+
+## jsonSafe(value) ⇒ <code>\*</code>
+Drop `undefined` and normalize values the same way JSON.parse(JSON.stringify) does.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| value | <code>\*</code> | 
+
+<a name="signingStringForBeaconEpoch"></a>
+
+## signingStringForBeaconEpoch(epochPayload) ⇒ <code>string</code>
+UTF-8 string that federation members sign for a beacon epoch (same bytes for all validators).
+
+**Kind**: global function  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| epochPayload | <code>object</code> | — clock, blockHash, height, balance, balanceSats, timestamp, … |
+
+<a name="epochCommitmentDigestHex"></a>
+
+## epochCommitmentDigestHex(epochPayload) ⇒ <code>string</code>
+SHA-256 hex digest of [signingStringForBeaconEpoch](#signingStringForBeaconEpoch) (public commitment).
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| epochPayload | <code>object</code> | 
+
+<a name="verifyFederationWitnessOnMessage"></a>
+
+## verifyFederationWitnessOnMessage(messageBuffer, witness, validatorPubkeys, [threshold]) ⇒ <code>boolean</code>
+Verify threshold Schnorr signatures over the **same** message buffer used when signing
+(`Key.signSchnorr(messageBuffer)`), without requiring a full [Federation](#Federation) instance.
+
+**Kind**: global function  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| messageBuffer | <code>Buffer</code> |  | — typically `Buffer.from(signingStringForBeaconEpoch(epoch), 'utf8')` |
+| witness | <code>object</code> |  |  |
+| validatorPubkeys | <code>Array.&lt;string&gt;</code> |  | — compressed secp256k1 pubkeys, hex |
+| [threshold] | <code>number</code> | <code>1</code> |  |
+
+<a name="parseDistributedManifestV1"></a>
+
+## parseDistributedManifestV1(raw) ⇒ <code>object</code>
+Setup-phase manifest schema (v1): program identity + allowed traffic + optional federation policy.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| raw | <code>object</code> | 
+
+<a name="isAllZero32"></a>
+
+## isAllZero32(buf)
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| buf | <code>Buffer</code> | 
+
+<a name="friendlyTypeFromWire"></a>
+
+## friendlyTypeFromWire(wire) ⇒ <code>string</code>
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| wire | <code>string</code> | 
+
+<a name="wireTypeFromFriendly"></a>
+
+## wireTypeFromFriendly(friendly) ⇒ <code>string</code>
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| friendly | <code>string</code> | 
+
+<a name="peerDebugDerivedPublicSummary"></a>
+
+## peerDebugDerivedPublicSummary()
+Safe debug label for a derived Key — never log private material.
+
+**Kind**: global function  

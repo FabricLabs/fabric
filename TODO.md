@@ -1,5 +1,8 @@
 # Things to Do
+**Immediate goals** are kept in [`GOALS.md`](GOALS.md) (single source of truth). This file is legacy backlog + short list.
+
 ## Current Goals
+- [ ] Release `@fabric/core#v0.1.0-RC2`
 - [ ] Release `@fabric/core#v0.1.0-RC1`
   - [ ] Document development process
     - [ ] `reports/`

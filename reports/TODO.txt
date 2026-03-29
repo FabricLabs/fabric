@@ -11,7 +11,6 @@
 ./snippets/specification.md:// TODO: migrate script
 ./settings/local.js:// TODO: test env variables with OP_TEST
 ./settings/local.js:  // TODO: regtest, playnet, signet, testnet, mainnet (in order)
-./settings/local.js:  // TODO: test `true`
 ./settings/default.json:      "@comment": "// TODO: remove routes, add by default",
 ./types/witness.js:      // TODO: assign R coordinate
 ./types/witness.js:      // TODO: assign S coordinate
@@ -37,7 +36,6 @@
 ./types/remote.js:        // TODO: should settings override protocol inclusion?
 ./types/remote.js:    // TODO: break out into independent auth module
 ./types/renderer.js:    // TODO: move this to dynamic event handler
-./types/swap.js:// TODO: revert to 1.0.2 to enable
 ./types/stash.js:// TODO: note that generally, requirements are loosely ordered by
 ./types/message.js:      type: Buffer.alloc(4), // TODO: 8, 32
 ./types/message.js:      size: Buffer.alloc(4), // TODO: 8, 32
@@ -74,16 +72,13 @@
 ./types/promise.js:    // TODO: formalize type
 ./types/promise.js:    // TODO: encrypt state
 ./types/promise.js:    // TODO: recover state
-./types/swarm.js:      // TODO: define seed list
-./types/swarm.js:    // TODO: consider renaming this to JOIN
-./types/swarm.js:    // TODO: store timers globally (ConnectionManager?)
-./types/swarm.js:    // TODO: exponential backoff for reconnections
-./types/swarm.js:      // TODO: use `slots` from above
 ./types/store.js:    const secret = value; // TODO: encrypt value
 ./types/store.js:    const decrypted = secret; // TODO: decrypt value
 ./types/store.js:      // TODO: store metadata
 ./types/store.js:    // TODO: check for commit state
 ./types/store.js:    // TODO: use ._GET
+./types/store.js:      // TODO: refactor storage paths
+./types/store.js:      // TODO: document this event
 ./types/store.js:    // TODO: document re-opening of store
 ./types/queue.js:    // TODO: bind state?
 ./types/queue.js:    // TODO: reduce lookups
@@ -113,6 +108,7 @@
 ./types/actor.js:    // TODO: evaluate disabling by default
 ./types/actor.js:    // TODO: use elegant method to strip these properties
 ./types/actor.js:      state: state.id // TODO: include whole state?
+./types/actor.js:      // TODO: test this
 ./types/actor.js:    // TODO: emit global state event here
 ./types/oracle.js:    // TODO: define all resources
 ./types/oracle.js:    // TODO: pre-populate
@@ -121,7 +117,6 @@
 ./types/block.js:    // TODO: implement validators
 ./types/router.js:// TODO: re-define this class for Fabric messages
 ./types/router.js:            // TODO: remove this.fabric.plugins call
-./types/mempool.js:    // TODO: compare target.id and entity.id
 ./types/wallet.js:        // TODO: export this.logs
 ./types/wallet.js:        // TODO: reduce to C mem equivalent
 ./types/wallet.js:    // TODO: bind @fabric/core/services/bitcoin to addresses on wallet...
@@ -150,13 +145,10 @@
 ./types/state.js:    // TODO: document hidden properties
 ./types/state.js:    // TODO: re-enable the below, map security considerations
 ./types/state.js:      // TODO: order?
-./types/keystore.js:          // TODO: recursively cast { type, data } tuples as Buffer
-./types/keystore.js:          // TODO: actor.deserialize();
 ./types/secret.js:    // TODO: check and document upstream pattern
 ./types/cli.js:const pointer = require('json-pointer'); // TODO: move uses to App
 ./types/cli.js:const monitor = require('fast-json-patch'); // TODO: move uses to App
 ./types/cli.js:// TODO: use Jade to render pre-registered components
-./types/cli.js:    // TODO: ZMQ
 ./types/cli.js:    // TODO: enable
 ./types/cli.js:    // TODO: sign
 ./types/cli.js:    // TODO: create payment channel (@fabric/core/types/channel)
@@ -168,14 +160,9 @@
 ./types/cli.js:      // TODO: use peer ID for managed list
 ./types/cli.js:      // TODO: use peer ID for managed list
 ./types/cli.js:    // TODO: clean up workaround (from https://github.com/chjj/blessed/issues/109)
-./types/consensus.js:    // TODO: define class ConsensusProvider
-./types/consensus.js:  // TODO: remove from {@link Consensus}
-./types/consensus.js:      // TODO: compute from chain height
 ./types/peer.js:    // TODO: switch to child pubkey
 ./types/peer.js:              // TODO: consider making this a FabricMessageID
 ./types/peer.js:    // TODO: output stream
-./types/peer.js:        // TODO: remove this assumption (validate above)
-./types/peer.js:        // TODO: check for existing peer, update instead of replace
 ./types/peer.js:        // TODO: ensure no pong is handled when a ping was not previously sent
 ./types/peer.js:        // TODO: reject and punish mis-behaving peers
 ./types/peer.js:        // TODO: reject and punish mis-behaving peers
@@ -194,26 +181,16 @@
 ./types/collection.js:    // TODO: handle duplicates (when desired, i.e., "unique" in settings)
 ./types/collection.js:    // TODO: ensure updates sent on subscriber channels
 ./types/collection.js:    // TODO: test upstream attack vectors
-./types/app.js:    // TODO: replace these with KeyStore
-./types/app.js:    // TODO: debug these in browser
-./types/app.js:    // TODO: debug this in browser
-./types/app.js:      // TODO: decide on resource['@data'] vs. resource (new)
 ./types/environment.js:      // TODO: encrypt inner store with password (`object` property)
 ./types/stack.js:    // TODO: return Transaction
 ./API.md:TODO: move to @fabric/http/types/spa
 ./API.md:TODO: move to @fabric/http/types/spa
 ./SUMMARY.md:* [✅ TODO List][todo]
 ./SUMMARY.md:[todo]: TODO.md
-./fabric-whitepaper.md:### TODO: include content hashes of links as they appear at document compilation time.
 ./contracts/exchange.js:  // TODO: reconcile API wth @fabric/doorman as appears at: https://github.com/FabricLabs/doorman
 ./contracts/node.js:    // TODO: configure with input?
-./contracts/setup.js.bak:  // TODO: discuss w/ @ChronicSmoke
-./contracts/setup.js.bak:  // TODO: use in walletExists
-./contracts/fabric.c:  // TODO: emit the message object
 ./contracts/setup.js:  // TODO: replicate this program in C / ASM
 ./contracts/setup.js:    // TODO: remove from log output...
-./contracts/chat.js:  const chat = new CLI(settings); // TODO: this.settings
-./contracts/chat.js:  // TODO: remove, re-work Peer and Wallet key import in CLI
 ./contracts/chat.js:  // TODO: reconcile API wth @fabric/doorman as appears at: https://github.com/FabricLabs/doorman
 ./tests/fabric.interface.js:      // TODO: remove this case / rework messages
 ./tests/fabric.tree.js:      assert.strictEqual(tree.root.toString('hex'), ''); // TODO: wat?
@@ -226,11 +203,9 @@
 ./tests/fabric.stack.js:      // TODO: move to constants, verify
 ./tests/fabric.stack.js:      // TODO: migrate to Stack
 ./tests/fixtures/lightning.js:// TODO: test same as before
-./DEVELOPERS.md:All agreements in Fabric are represented as well-formed descriptions of **Resources**<sup>[TODO: link here]</sup> — a term we use to describe a standardized service a peer might offer.  Each node in the Fabric network decides which resources they provide (determining which contracts they run), and what prices they accept for participation.  This, in concert with the bidders requesting these resources, forms the "Information Market" discussed in Fabric's whitepaper.
-./DEVELOPERS.md:    // TODO: make optional
+./DEVELOPERS.md:- [ ] Sweep remaining `TODO` markers in repo-specific guides
 ./DEVELOPERS.md:## TODO
 ./DEVELOPERS.md:- [ ] Remove TODOs
-./AUDIT.md:| Technical Debt | TODOs and legacy code | Low | Refactor and clean up |
 ./package.json:    "report:todo": "grep --exclude-dir=.git --exclude-dir=_book --exclude-dir=assets --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs -rEI \"TODO|FIXME\" . > reports/TODO.txt",
 ./package.json:    "review:todo": "npm run report:todo && cat reports/TODO.txt && echo '\nOutstanding TODO items (@fabric/core):' && wc -l reports/TODO.txt && echo '\nIssues List: https://github.com/FabricLabs/fabric/issues\nDisclosures: securiy@fabric.pub\n\n'",
 ./guides/SETTINGS.md:### WARNING: TODO
@@ -239,6 +214,13 @@
 ./examples/swarm.html:          <p>TODO: create entities on seed node
 ./examples/swarm.html:            TODO: receive entities from seed node
 ./examples/swarm.html:            TODO: create entities on swarm instance</p>
+./examples/agents.js:// TODO: ensure utilization of multiple cores
+./examples/agents.js:    // TODO: do something productive here!
+./examples/agents.js:    // TODO: replace this with Actor ID
+./examples/agents.js:// TODO: move these to `functions/`
+./examples/agents.js:  // TODO: document all descriptors
+./examples/agents.js:  // TODO: migrate this to `functions/onParentMessage.js`
+./examples/agents.js:  // TODO: migrate to `functions/`
 ./examples/bitcoin.html:          <p>TODO: import these into core process logic
 ./examples/service.js:      // TODO: revert to OPTIONS (this was a temporary fix for an NGINX bug)
 ./examples/swarm.js:  // TODO: create entities on seed node
@@ -246,21 +228,11 @@
 ./examples/swarm.js:  // TODO: create entities on swarm instance
 ./examples/oracle.html:          <p>TODO: use bottom panel for inline execution (<em>a la</em> “Run this Code &raquo;”)</p>
 ./examples/oracle.js:// TODO: use bottom panel for inline execution (_a la_ "Run this Code &raquo;")
-./examples/examples/swarm.html:              <p>TODO: create entities on seed node
-./examples/examples/swarm.html:TODO: receive entities from seed node
-./examples/examples/swarm.html:TODO: create entities on swarm instance</p>
-./examples/examples/bitcoin.html:              <p>TODO: import these into core process logic
-./examples/examples/oracle.html:              <p>TODO: use bottom panel for inline execution (<em>a la</em> “Run this Code &raquo;”)</p>
-./examples/examples/service.html:              <p>TODO: revert to OPTIONS (this was a temporary fix for an NGINX bug)</p>
-./examples/examples/game.html:              <p>TODO: use fabric call
-./examples/examples/app.html:              <p>TODO: document defer as trust(authority) with Remote class</p>
 ./examples/service.html:          <p>TODO: revert to OPTIONS (this was a temporary fix for an NGINX bug)</p>
 ./examples/game.html:          <p>TODO: use fabric call
 ./examples/app.js:  // TODO: document defer as trust(authority) with Remote class
-./scripts/lightning-demo.js:    // TODO: import configs from Polar
 ./scripts/create-validator-script.sh:# TODO: set pubkey length from actual pubkey length
 ./scripts/example.js:// TODO: generate signature, hash of function definition (the "type")
-./scripts/cli.js:  // TODO: read & test contracts
 ./scripts/schemata.js:      // TODO: here for Eric's review.
 ./scripts/chat.js:  // TODO: remove Wallet-specfic configuration
 ./scripts/chat.js:      // TODO: reconcile API wth @fabric/doorman as appears at: https://github.com/FabricLabs/doorman
@@ -268,8 +240,9 @@
 ./scripts/chat.js:      // TODO: replicate this program in C / ASM
 ./scripts/transfer.js:  // TODO: add support for segwit, taproot
 ./functions/_handleFabricMessage.js:  const message = Message.fromVector([...data]); // TODO: redefine...
-./GOALS.md:- [x] Find all TODO items (run script, check diff)
-./services/bitcoin.js:// TODO: replace with  `secp256k1`
+./build/gyp-mac-tool:            # TODO(thakis): This copies file attributes like mtime, while the
+./build/Makefile:# TODO(evan): move all cross-compilation logic to gyp-time so we don't need
+./GOALS.md:- [x] Find all TODO items (run script, check diff) — `npm run report:todo` → `reports/TODO.txt` (≈300 lines as of 2026-03)
 ./services/bitcoin.js:      // httpPort: 48449, // TODO: disable HTTP entirely!
 ./services/bitcoin.js:      message.amount = message.amount.fixed().toPrecision(8); // TODO: evaluate precision behavior
 ./services/bitcoin.js:    // TODO: ensure all appropriate fields, valid block
@@ -287,5 +260,22 @@
 ./services/bitcoin.js:    // END TODO
 ./services/turntable.js:    // TODO: await REST or GraphQL API?
 ./services/exchange.js:    // TODO: finalize Collection API in #docs-update
+./SECURITY.md:2. For dependency and coverage reports: **`npm run reports`** (install log, coverage, TODO grep — may be slow).
+./SECURITY.md:Report security issues through the contact in [TODO.md](TODO.md) / project README as applicable.
 ./whitepaper.md:TODO
 ./whitepaper.md:TODO: include content hashes of links as they appear at
+./src/nuklear.h:    NK_ASSERT(x >= 0.0f && "TODO support negative floats");
+./src/nuklear.h:      /*  the rectangles easily fit). @TODO a smarter approach would be to only */
+./src/nuklear.h:/*  @TODO: don't expose this structure */
+./src/nuklear.h:      /*  @TODO this should use size from table (not 512MB) */
+./src/nuklear.h:      /*  @TODO the name INDEX could list multiple fonts, */
+./src/nuklear.h:      STBTT_assert(0); /*  @TODO: high-byte mapping for japanese/chinese/korean */
+./src/nuklear.h:   /*  @TODO */
+./src/nuklear.h:            /*  @TODO handle matching point */
+./src/nuklear.h:      /*  @TODO implement hinting */
+./src/nuklear.h:         /*  @TODO These "flex" implementations ignore the flex-depth and resolution, */
+./src/nuklear.h:#define STBTT_GPOS_TODO_assert(x)
+./src/nuklear.h:               /*  @TODO: maybe test against sy1 rather than y_bottom? */
+./src/nuklear.h:/*  tessellate until threshold p is happy... @TODO warped to compensate for non-linear stretching */
+./src/nuklear.h:   /*  @TODO this "flatness" calculation is just made-up nonsense that seems to work well enough */
+./src/nuklear.h:         /*  @TODO handle other encodings */
