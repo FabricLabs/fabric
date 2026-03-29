@@ -379,6 +379,40 @@ describe('@fabric/core/types/peer', function () {
           other.close();
         }
       });
+
+      it('start() binds the next port when the configured port is in use', async function () {
+        const port = await getFreePort();
+        const blocker = net.createServer();
+        await new Promise((resolve, reject) => {
+          blocker.once('error', reject);
+          blocker.listen(port, '127.0.0.1', resolve);
+        });
+
+        const peer = new Peer({
+          ...settings,
+          port,
+          interface: '127.0.0.1',
+          listen: true,
+          peers: [],
+          networking: false,
+          peersDb: null,
+          listenPortAttempts: 20
+        });
+        peers.push(peer);
+
+        try {
+          await peer.start();
+          assert.strictEqual(peer.settings.port, port + 1, 'should use basePort + 1 when base is EADDRINUSE');
+          assert.ok(
+            (peer.listenAddress && peer.listenAddress.endsWith(`:${port + 1}`)) ||
+              String(peer.listenAddress).includes(`:${port + 1}`),
+            `listenAddress should include ${port + 1}, got ${peer.listenAddress}`
+          );
+        } finally {
+          await peer.stop().catch(() => {});
+          await new Promise((resolve) => blocker.close(resolve));
+        }
+      });
     });
 
     describe('_handleFabricMessage', function () {
