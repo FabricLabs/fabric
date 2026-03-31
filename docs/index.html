@@ -71,7 +71,7 @@
         <h2>Quick Start</h2>
         <p>See also <a href="QUICKSTART.md"><code>QUICKSTART.md</code></a> for up-to-date instructions.</p>
         <ol start="0">
-          <li><code>nvm use 22.14.0</code> (install <a href="https://nvm.sh"><code>nvm</code></a> if needed)</li>
+          <li><code>nvm use 24.14.1</code> (install <a href="https://nvm.sh"><code>nvm</code></a> if needed)</li>
           <li>From a clone of this repo: <code>npm install</code> (or <code>npm install -g @fabric/core</code> to put <code>fabric</code> on your <code>PATH</code>)</li>
           <li>(optional) <code>fabric setup</code> to generate a master key and local config</li>
           <li>(optional) <code>fabric keygen</code> to generate a new master key without saving to disk (ephemeral)</li>
@@ -392,6 +392,8 @@ console.log('Signature (hex):', signature.toString('hex'));
             </tr>
           </tbody>
         </table>
+        <h3>Downstream repositories (integration order)</h3>
+        <p>Treat <strong><a href="https://github.com/FabricLabs/hub.fabric.pub">hub.fabric.pub</a></strong> (<code>@fabric/hub</code>) as the canonical Hub; align <strong><code>@fabric/core</code></strong> and <strong><code>@fabric/http</code></strong> on the same branch or tag before bumping Hub. <strong><a href="https://github.com/FabricLabs/sensemaker">Sensemaker</a></strong> subclasses Hub in <code>services/sensemaker.js</code> and pins <code>@fabric/hub</code> from branch <code>feature/sensemaker</code>; production deployment is <strong><a href="https://sensemaker.io">sensemaker.io</a></strong>. Prefer consolidating Hub APIs and WebSocket/RPC behavior in Hub first, then re-point Sensemaker and fix real-time (streaming completions and <code>_handleWebSocketMessage</code> parity with <code>@fabric/http</code> binary <code>JSONCall</code> / <code>Message</code> frames). Optional <strong><code>hub-clean</code></strong> trees are legacy (older Node / <code>package.json</code>); do not fork new work from them.</p>
         <h2>Roadmap &amp; doc backlog</h2>
         <p>Short list of documentation improvements (edit here as items land):</p>
         <ul>
@@ -464,6 +466,7 @@ console.log('Signature (hex):', signature.toString('hex'));
       <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
       <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
       <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
+      <li><a href="global.html#announceDocumentsOnPeerConnect">announceDocumentsOnPeerConnect</a></li>
       <li><a href="global.html#crypto">crypto</a></li>
       <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
       <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
@@ -475,6 +478,9 @@ console.log('Signature (hex):', signature.toString('hex'));
       <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
       <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
       <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
+      <li><a href="global.html#relayInventoryRequest">relayInventoryRequest</a></li>
+      <li><a href="global.html#relayInventoryResponse">relayInventoryResponse</a></li>
+      <li><a href="global.html#serveLocalDocumentInventory">serveLocalDocumentInventory</a></li>
       <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
       <li><a href="global.html#stableStringify">stableStringify</a></li>
       <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>

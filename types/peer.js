@@ -1499,7 +1499,7 @@ class Peer extends Service {
 
   /**
    * Reply to `INVENTORY_REQUEST` with `INVENTORY_RESPONSE` built from local documents and rates.
-   * @param {{ type: string, object?: object }} message generic body from {@link Peer#_handleGenericMessage}
+   * @param {{type: string, object: (Object|undefined)}} message Generic body from {@link Peer#_handleGenericMessage}
    * @param {{ name: string }} origin
    * @returns {boolean} true if an `INVENTORY_RESPONSE` was written to the requester
    */

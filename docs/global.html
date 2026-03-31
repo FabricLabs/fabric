@@ -319,6 +319,73 @@
 
 
 
+        <h4 class="name" id="announceDocumentsOnPeerConnect"><span class="type-signature"></span>announceDocumentsOnPeerConnect<span class="type-signature"></span></h4>
+
+
+
+
+        <div class="description">
+          After `P2P_SESSION_OPEN` to a new inbound peer, re-send canonical `DocumentPublish` and
+          pricing gossip for each entry in `state.documents` so late joiners see catalog offers.
+        </div>
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line119">line 119</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
         <h4 class="name" id="crypto"><span class="type-signature">(constant) </span>crypto<span class="type-signature"></span></h4>
 
 
@@ -501,7 +568,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line102">line 102</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line132">line 132</a>
               </li>
             </ul>
           </dd>
@@ -664,6 +731,207 @@
 
 
 
+        <h4 class="name" id="relayInventoryRequest"><span class="type-signature"></span>relayInventoryRequest<span class="type-signature"></span></h4>
+
+
+
+
+        <div class="description">
+          When Peer#settings.serveLocalDocumentInventory is enabled and this node sends no
+          `INVENTORY_RESPONSE`, forward the original generic wire to other peers (POLICY.md conditional relay).
+        </div>
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line124">line 124</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+        <h4 class="name" id="relayInventoryResponse"><span class="type-signature"></span>relayInventoryResponse<span class="type-signature"></span></h4>
+
+
+
+
+        <div class="description">
+          After handling `INVENTORY_RESPONSE`, forward the same wire to peers other than the sender
+          (star/mesh routers; default off to avoid leaking replies).
+        </div>
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line129">line 129</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+        <h4 class="name" id="serveLocalDocumentInventory"><span class="type-signature"></span>serveLocalDocumentInventory<span class="type-signature"></span></h4>
+
+
+
+
+        <div class="description">
+          When true, answers `INVENTORY_REQUEST` (with `object.offerBtc`) using local
+          `state.documents` / `documentRates` and purchaseContentHashHex for each item.
+        </div>
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line114">line 114</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
         <h4 class="name" id="wireTraffic"><span class="type-signature"></span>wireTraffic<span class="type-signature"></span></h4>
 
 
@@ -712,7 +980,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line123">line 123</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line154">line 154</a>
               </li>
             </ul>
           </dd>
@@ -1565,7 +1833,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line55">line 55</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line62">line 62</a>
               </li>
             </ul>
           </dd>
@@ -2417,6 +2685,7 @@
       <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
       <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
       <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
+      <li><a href="global.html#announceDocumentsOnPeerConnect">announceDocumentsOnPeerConnect</a></li>
       <li><a href="global.html#crypto">crypto</a></li>
       <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
       <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
@@ -2428,6 +2697,9 @@
       <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
       <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
       <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
+      <li><a href="global.html#relayInventoryRequest">relayInventoryRequest</a></li>
+      <li><a href="global.html#relayInventoryResponse">relayInventoryResponse</a></li>
+      <li><a href="global.html#serveLocalDocumentInventory">serveLocalDocumentInventory</a></li>
       <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
       <li><a href="global.html#stableStringify">stableStringify</a></li>
       <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>

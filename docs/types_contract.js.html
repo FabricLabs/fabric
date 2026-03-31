@@ -106,15 +106,37 @@ class Contract extends Service {
   };
 
   static fromJavaScript (js) {
-    const buildAST = Template.template(js);
-    const ast = buildAST({});
-    return new Contract({ ast });
+    if (typeof js !== 'string') {
+      throw new TypeError('JavaScript source must be a string.');
+    }
+
+    const source = js.trim();
+    const ast = {
+      '@type': 'AST',
+      '@language': 'JavaScript',
+      source
+    };
+
+    return new Contract({
+      ast,
+      state: {
+        name: 'TemplateContract',
+        status: 'PAUSED',
+        actors: [],
+        balances: {},
+        constraints: {},
+        signatures: [],
+        source
+      }
+    });
   }
 
   static fromGraph (graphs) {
     const circuit = {
       stack: [],
-      nodes: []
+      nodes: [],
+      edges: [],
+      unhandled: []
     };
 
     for (let i = 0; i &lt; graphs.length; i++) {
@@ -130,8 +152,25 @@ class Contract extends Service {
         const child = graph.children[j];
         switch (child.type) {
           default:
-            console.warn(`Unhandled type: "${child.type}'" on child:`, child);
+            circuit.unhandled.push({
+              type: child.type,
+              child
+            });
             break;
+          case 'edge_stmt': {
+            const list = Array.isArray(child.edge_list) ? child.edge_list : [];
+            for (let k = 0; k &lt; list.length - 1; k++) {
+              const from = list[k];
+              const to = list[k + 1];
+              if (!from || !to) continue;
+              if (!from.id || !to.id) continue;
+              circuit.edges.push({
+                from: from.id,
+                to: to.id
+              });
+            }
+            break;
+          }
           case 'node_stmt':
             circuit.nodes.push({
               name: child.node_id.id
@@ -218,6 +257,14 @@ class Contract extends Service {
 
   parse (input) {
     return this.parseDot(input);
+  }
+
+  parseDot (input) {
+    const contract = Contract.fromDot(input);
+    this.settings.graphs = contract.settings.graphs;
+    this.settings.circuit = contract.settings.circuit;
+    this.graphs = contract.graphs;
+    return this;
   }
 
   /**
@@ -370,6 +417,7 @@ module.exports = Contract;
       <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
       <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
       <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
+      <li><a href="global.html#announceDocumentsOnPeerConnect">announceDocumentsOnPeerConnect</a></li>
       <li><a href="global.html#crypto">crypto</a></li>
       <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
       <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
@@ -381,6 +429,9 @@ module.exports = Contract;
       <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
       <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
       <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
+      <li><a href="global.html#relayInventoryRequest">relayInventoryRequest</a></li>
+      <li><a href="global.html#relayInventoryResponse">relayInventoryResponse</a></li>
+      <li><a href="global.html#serveLocalDocumentInventory">serveLocalDocumentInventory</a></li>
       <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
       <li><a href="global.html#stableStringify">stableStringify</a></li>
       <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>

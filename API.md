@@ -145,6 +145,22 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 ## Members
 
 <dl>
+<dt><a href="#serveLocalDocumentInventory">serveLocalDocumentInventory</a></dt>
+<dd><p>When true, answers <code>INVENTORY_REQUEST</code> (with <code>object.offerBtc</code>) using local
+<code>state.documents</code> / <code>documentRates</code> and <a href="purchaseContentHashHex">purchaseContentHashHex</a> for each item.</p>
+</dd>
+<dt><a href="#announceDocumentsOnPeerConnect">announceDocumentsOnPeerConnect</a></dt>
+<dd><p>After <code>P2P_SESSION_OPEN</code> to a new inbound peer, re-send canonical <code>DocumentPublish</code> and
+pricing gossip for each entry in <code>state.documents</code> so late joiners see catalog offers.</p>
+</dd>
+<dt><a href="#relayInventoryRequest">relayInventoryRequest</a></dt>
+<dd><p>When <a href="Peer#settings.serveLocalDocumentInventory">Peer#settings.serveLocalDocumentInventory</a> is enabled and this node sends no
+<code>INVENTORY_RESPONSE</code>, forward the original generic wire to other peers (POLICY.md conditional relay).</p>
+</dd>
+<dt><a href="#relayInventoryResponse">relayInventoryResponse</a></dt>
+<dd><p>After handling <code>INVENTORY_RESPONSE</code>, forward the same wire to peers other than the sender
+(star/mesh routers; default off to avoid leaking replies).</p>
+</dd>
 <dt><a href="#gossip">gossip</a></dt>
 <dd><p>Limits relay amplification on <a href="P2P_PEER_GOSSIP">P2P_PEER_GOSSIP</a> (hop TTL, payload dedup, per-origin rate).</p>
 </dd>
@@ -2013,6 +2029,14 @@ An in-memory representation of a node in our network.
     * [._upsertPeerRegistry(address, [updates])](#Peer+_upsertPeerRegistry)
     * [._fillPeerSlots()](#Peer+_fillPeerSlots) ⇒ [<code>Peer</code>](#Peer)
     * [._handleFabricMessage(buffer)](#Peer+_handleFabricMessage) ⇒ [<code>Peer</code>](#Peer)
+    * [._buildDocumentParsedForPublish(documentId, content)](#Peer+_buildDocumentParsedForPublish) ⇒ <code>Object</code>
+    * [._respondInventoryFromLocalDocuments(message, origin)](#Peer+_respondInventoryFromLocalDocuments) ⇒ <code>boolean</code>
+    * [._sendP2pFileSendToPeer(documentId, peerAddress)](#Peer+_sendP2pFileSendToPeer) ⇒ <code>boolean</code>
+    * [.sendDocumentFileToPeer(documentId, peerAddress)](#Peer+sendDocumentFileToPeer) ⇒ <code>boolean</code>
+    * [._buildPublishDocumentWireBuffers(documentId, body, rateSats)](#Peer+_buildPublishDocumentWireBuffers) ⇒ <code>Array.&lt;Buffer&gt;</code>
+    * [._announceLocalDocumentsToPeer(peerAddress)](#Peer+_announceLocalDocumentsToPeer)
+    * [._publishDocument(documentId, [content], [rateSats])](#Peer+_publishDocument)
+    * [._handleDocumentRequestWire(message, origin, socket)](#Peer+_handleDocumentRequestWire)
     * [.start()](#Peer+start)
     * [.stop()](#Peer+stop)
     * [.listen()](#Peer+listen) ⇒ [<code>Peer</code>](#Peer)
@@ -2029,6 +2053,7 @@ Create an instance of [Peer](#Peer).
 | [config.listen] | <code>Boolean</code> |  | Whether or not to listen for connections. |
 | [config.upnp] | <code>Boolean</code> |  | Whether or not to use UPNP for automatic configuration. |
 | [config.port] | <code>Number</code> | <code>7777</code> | Port to use for P2P connections. |
+| [config.listenPortAttempts] | <code>Number</code> | <code>20</code> | When the listen port is in use (`EADDRINUSE`),   try the next port up to this many times (same host). |
 | [config.peers] | <code>Array</code> | <code>[]</code> | List of initial peers. |
 
 <a name="Peer+messages"></a>
@@ -2244,6 +2269,111 @@ Handle a Fabric [Message](#Message) buffer.
 | Param | Type |
 | --- | --- |
 | buffer | <code>Buffer</code> | 
+
+<a name="Peer+_buildDocumentParsedForPublish"></a>
+
+### peer.\_buildDocumentParsedForPublish(documentId, content) ⇒ <code>Object</code>
+Build hub-compatible document metadata for [purchaseContentHashHex](purchaseContentHashHex).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>Object</code> - Parsed document record (whitelisted fields)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| documentId | <code>String</code> |  |
+| content | <code>String</code> | UTF-8 body |
+
+<a name="Peer+_respondInventoryFromLocalDocuments"></a>
+
+### peer.\_respondInventoryFromLocalDocuments(message, origin) ⇒ <code>boolean</code>
+Reply to `INVENTORY_REQUEST` with `INVENTORY_RESPONSE` built from local documents and rates.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>boolean</code> - true if an `INVENTORY_RESPONSE` was written to the requester  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| message | <code>Object</code> | Generic body from [Peer#_handleGenericMessage](Peer#_handleGenericMessage) |
+| origin | <code>Object</code> |  |
+
+<a name="Peer+_sendP2pFileSendToPeer"></a>
+
+### peer.\_sendP2pFileSendToPeer(documentId, peerAddress) ⇒ <code>boolean</code>
+Send a locally stored document to a connected peer as `P2P_FILE_SEND`.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>boolean</code> - true if the payload was written  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| documentId | <code>string</code> |  |
+| peerAddress | <code>string</code> | connection key in [Peer#connections](Peer#connections) |
+
+<a name="Peer+sendDocumentFileToPeer"></a>
+
+### peer.sendDocumentFileToPeer(documentId, peerAddress) ⇒ <code>boolean</code>
+Public helper: push document bytes to a peer (same wire path as [_handleDocumentRequestWire](#Peer+_handleDocumentRequestWire) fulfillment).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| documentId | <code>string</code> | 
+| peerAddress | <code>string</code> | 
+
+<a name="Peer+_buildPublishDocumentWireBuffers"></a>
+
+### peer.\_buildPublishDocumentWireBuffers(documentId, body, rateSats) ⇒ <code>Array.&lt;Buffer&gt;</code>
+AMP buffers for one document: canonical `DocumentPublish`, then optional pricing `P2P_DOCUMENT_PUBLISH`.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| documentId | <code>string</code> |  |
+| body | <code>string</code> | UTF-8 body |
+| rateSats | <code>number</code> |  |
+
+<a name="Peer+_announceLocalDocumentsToPeer"></a>
+
+### peer.\_announceLocalDocumentsToPeer(peerAddress)
+Re-send all local document publishes to one peer (same bytes as [_publishDocument](#Peer+_publishDocument)).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| peerAddress | <code>string</code> | connection key in [Peer#connections](Peer#connections) |
+
+<a name="Peer+_publishDocument"></a>
+
+### peer.\_publishDocument(documentId, [content], [rateSats])
+Store a document locally and gossip to peers.
+1) **Canonical** `DOCUMENT_PUBLISH` wire message (same bytes as hub `documentPublishEnvelope`) for L1 `contentHash`.
+2) If `rateSats > 0`, a **pricing** `GENERIC` `P2P_DOCUMENT_PUBLISH` with `rate` and `contentHash` (sat ask).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| documentId | <code>String</code> |  | Catalog key (e.g. CLI document name). |
+| [content] | <code>String</code> | <code>&#x27;&#x27;</code> | UTF-8 body stored under [Peer#state](Peer#state).documents. |
+| [rateSats] | <code>Number</code> | <code>0</code> | Ask price in satoshis (gossip only; not part of canonical hash). |
+
+<a name="Peer+_handleDocumentRequestWire"></a>
+
+### peer.\_handleDocumentRequestWire(message, origin, socket)
+Handle inbound `DOCUMENT_REQUEST`: emit `documentRequest` / `DocumentRequest`, then either
+send `P2P_FILE_SEND` to the requester if `state.documents[id]` is present, or relay the
+request to other peers (conditional relay).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| message | [<code>Message</code>](#Message) | 
+| origin | <code>Object</code> | 
+| socket | <code>\*</code> | 
 
 <a name="Peer+start"></a>
 
@@ -2501,6 +2631,7 @@ familiar semantics.
 
 * [Service](#Service)
     * [new Service([settings])](#new_Service_new)
+    * [._appendWarning(msg)](#Service+_appendWarning) ⇒ [<code>Service</code>](#Service)
     * [.init()](#Service+init)
     * [.tick()](#Service+tick) ⇒ <code>Number</code>
     * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
@@ -2531,6 +2662,16 @@ Create an instance of a Service.
 | [settings.networking] | <code>Boolean</code> | <code>true</code> | Whether or not to connect to the network. |
 | [settings.frequency] | <code>Object</code> |  | Interval frequency in hertz. |
 | [settings.state] | <code>Object</code> |  | Initial state to assign. |
+
+<a name="Service+_appendWarning"></a>
+
+### service.\_appendWarning(msg) ⇒ [<code>Service</code>](#Service)
+**Kind**: instance method of [<code>Service</code>](#Service)  
+**Returns**: [<code>Service</code>](#Service) - This instance.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | <code>String</code> | Warning text (used by [Service#_registerService](Service#_registerService) duplicate guard). |
 
 <a name="Service+init"></a>
 
@@ -3210,6 +3351,7 @@ Manage keys and track their balances.
 * [Wallet](#Wallet) : <code>Object</code>
     * [new Wallet([settings])](#new_Wallet_new)
     * _instance_
+        * [.loadKey(input, [labels])](#Wallet+loadKey) ⇒ <code>Object</code>
         * [.start()](#Wallet+start)
         * [.getAddressForScript(script)](#Wallet+getAddressForScript)
         * [.getAddressFromRedeemScript(redeemScript)](#Wallet+getAddressFromRedeemScript)
@@ -3221,6 +3363,7 @@ Manage keys and track their balances.
     * _static_
         * [.createSeed(passphrase)](#Wallet.createSeed) ⇒ <code>FabricSeed</code>
         * [.fromSeed(seed)](#Wallet.fromSeed) ⇒ [<code>Wallet</code>](#Wallet)
+        * [.purchaseContentHashHex(documentId, parsed)](#Wallet.purchaseContentHashHex) ⇒ <code>string</code>
 
 <a name="new_Wallet_new"></a>
 
@@ -3235,6 +3378,20 @@ Create an instance of a [Wallet](#Wallet).
 | [settings.verbosity] | <code>Number</code> | <code>2</code> | One of: 0 (none), 1 (error), 2 (warning), 3 (notice), 4 (debug), 5 (audit) |
 | [settings.key] | <code>Object</code> |  | Key to restore from. |
 | [settings.key.seed] | <code>String</code> |  | Mnemonic seed for a restored wallet. |
+
+<a name="Wallet+loadKey"></a>
+
+### wallet.loadKey(input, [labels]) ⇒ <code>Object</code>
+Register a key with optional labels.
+Accepts a Key instance, pubkey hex string, or object-like key input.
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+**Returns**: <code>Object</code> - Stored key descriptor.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| input | [<code>Key</code>](#Key) \| <code>String</code> \| <code>Object</code> |  | Key material to load. |
+| [labels] | <code>Array.&lt;String&gt;</code> | <code>[]</code> | Optional labels. |
 
 <a name="Wallet+start"></a>
 
@@ -3344,6 +3501,18 @@ Create a new [Wallet](#Wallet) from a seed object.
 | --- | --- | --- |
 | seed | <code>FabricSeed</code> | Fabric seed. |
 
+<a name="Wallet.purchaseContentHashHex"></a>
+
+### Wallet.purchaseContentHashHex(documentId, parsed) ⇒ <code>string</code>
+L1 / hub document purchase binding: same 64-char hex as hub `CreatePurchaseInvoice` / HTLC `contentHash`.
+
+**Kind**: static method of [<code>Wallet</code>](#Wallet)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| documentId | <code>string</code> |  |
+| parsed | <code>object</code> | Whitelisted document fields (see [_buildDocumentParsedForPublish](#Peer+_buildDocumentParsedForPublish)). |
+
 <a name="Worker"></a>
 
 ## Worker
@@ -3411,6 +3580,7 @@ Manages interaction with the Bitcoin network.
     * [.applyP2pAddNodes(peers, [command])](#Bitcoin+applyP2pAddNodes) ⇒ <code>Promise.&lt;Array.&lt;string&gt;&gt;</code>
     * [.start()](#Bitcoin+start)
     * [.stop()](#Bitcoin+stop)
+    * [._appendWarning(msg)](#Service+_appendWarning) ⇒ [<code>Service</code>](#Service)
     * [.init()](#Service+init)
     * [.tick()](#Service+tick) ⇒ <code>Number</code>
     * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
@@ -3698,6 +3868,17 @@ Start the Bitcoin service, including the initiation of outbound requests.
 Stop the Bitcoin service.
 
 **Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+<a name="Service+_appendWarning"></a>
+
+### bitcoin.\_appendWarning(msg) ⇒ [<code>Service</code>](#Service)
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>\_appendWarning</code>](#Service+_appendWarning)  
+**Returns**: [<code>Service</code>](#Service) - This instance.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | <code>String</code> | Warning text (used by [Service#_registerService](Service#_registerService) duplicate guard). |
+
 <a name="Service+init"></a>
 
 ### bitcoin.init()
@@ -4094,6 +4275,34 @@ Use an existing Scribe instance as a parent.
 | --- | --- | --- |
 | scribe | [<code>Scribe</code>](#Scribe) | Instance of Scribe to use as parent. |
 
+<a name="serveLocalDocumentInventory"></a>
+
+## serveLocalDocumentInventory
+When true, answers `INVENTORY_REQUEST` (with `object.offerBtc`) using local
+`state.documents` / `documentRates` and [purchaseContentHashHex](purchaseContentHashHex) for each item.
+
+**Kind**: global variable  
+<a name="announceDocumentsOnPeerConnect"></a>
+
+## announceDocumentsOnPeerConnect
+After `P2P_SESSION_OPEN` to a new inbound peer, re-send canonical `DocumentPublish` and
+pricing gossip for each entry in `state.documents` so late joiners see catalog offers.
+
+**Kind**: global variable  
+<a name="relayInventoryRequest"></a>
+
+## relayInventoryRequest
+When [Peer#settings.serveLocalDocumentInventory](Peer#settings.serveLocalDocumentInventory) is enabled and this node sends no
+`INVENTORY_RESPONSE`, forward the original generic wire to other peers (POLICY.md conditional relay).
+
+**Kind**: global variable  
+<a name="relayInventoryResponse"></a>
+
+## relayInventoryResponse
+After handling `INVENTORY_RESPONSE`, forward the same wire to peers other than the sender
+(star/mesh routers; default off to avoid leaking replies).
+
+**Kind**: global variable  
 <a name="gossip"></a>
 
 ## gossip
