@@ -1,70 +1,62 @@
 <!DOCTYPE html>
 <html lang="en">
-
-<head>
-  <meta charset="utf-8">
-  <title>Class: Key &middot; Docs</title>
-  <script src="scripts/prettify/prettify.js"> </script>
-  <script src="scripts/prettify/lang-css.js"> </script>
-  <!--[if lt IE 9]>
+  <head>
+    <meta charset="utf-8">
+    <title>Class: Key &middot; Docs</title>
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
       <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
     <![endif]-->
-  <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
-  <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
-  <script>
-    window.dataLayer = window.dataLayer || [];
-
-    function gtag() {
-      dataLayer.push(arguments);
-    }
-    gtag('js', new Date());
-    gtag('config', 'G-09Y57FL980');
-  </script>
-</head>
-
-<body>
-  <div id="main">
-    <h1 class="page-title">Class: Key</h1>
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-09Y57FL980');
+    </script>
+  </head>
+  <body>
+    <div id="main"><h1 class="page-title">Class: Key</h1>
 
 
 
 
-    <section>
+<section>
 
-      <header>
-
+<header>
+    
         <h2><span class="attribs"><span class="type-signature"></span></span>Key<span class="signature">(settings<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h2>
+        
+            <div class="class-description">Represents a cryptographic key.</div>
+        
+    
+</header>
 
-        <div class="class-description">Represents a cryptographic key.</div>
+<article>
+    <div class="container-overview">
+    
+        
 
+    
+    <h2>Constructor</h2>
+    
 
-      </header>
+    
+    <h4 class="name" id="Key"><span class="type-signature"></span>new Key<span class="signature">(settings<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h4>
+    
 
-      <article>
-        <div class="container-overview">
-
-
-
-
-          <h2>Constructor</h2>
-
-
-
-          <h4 class="name" id="Key"><span class="type-signature"></span>new Key<span class="signature">(settings<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h4>
-
-
-
-
-
-
-          <div class="description">
-            Create an instance of a Fabric Key, either restoring from some known
-            values or from prior knowledge. For instance, you can call `new Key()`
-            to create a fresh keypair, or `new Key({ public: 'deadbeef...' })` to
-            create it from a known public key.
-          </div>
+    
 
 
+
+<div class="description">
+    Create an instance of a Fabric Key, either restoring from some known
+values or from prior knowledge.  For instance, you can call `new Key()`
+to create a fresh keypair, or `new Key({ public: 'deadbeef...' })` to
+create it from a known public key.
+</div>
 
 
 
@@ -72,420 +64,407 @@
 
 
 
-          <h5>Parameters:</h5>
 
 
-          <table class="params">
-            <thead>
-              <tr>
+    <h5>Parameters:</h5>
+    
 
-                <th>Name</th>
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
 
+        <th>Type</th>
 
-                <th>Type</th>
+        
+        <th>Attributes</th>
+        
 
+        
 
-                <th>Attributes</th>
+        <th class="last">Description</th>
+    </tr>
+    </thead>
 
+    <tbody>
+    
 
-
-
-                <th class="last">Description</th>
-              </tr>
-            </thead>
-
-            <tbody>
-
-
-              <tr>
-
+        <tr>
+            
                 <td class="name"><code>settings</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
 
 
-                <td class="type">
+            
+            </td>
 
-
-                  <span class="param-type">Object</span>
-
-
-
-                </td>
-
-
+            
                 <td class="attributes">
+                
+                    &lt;optional><br>
+                
 
-                  &lt;optional><br>
+                
 
-
-
-
-
+                
                 </td>
+            
 
+            
 
+            <td class="description last">Initialization for the key.
+                <h6>Properties</h6>
+                
 
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
 
-                <td class="description last">Initialization for the key.
-                  <h6>Properties</h6>
+        <th>Type</th>
 
+        
+        <th>Attributes</th>
+        
 
-                  <table class="params">
-                    <thead>
-                      <tr>
+        
+        <th>Default</th>
+        
 
-                        <th>Name</th>
+        <th class="last">Description</th>
+    </tr>
+    </thead>
 
+    <tbody>
+    
 
-                        <th>Type</th>
+        <tr>
+            
+                <td class="name"><code>network</code></td>
+            
 
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
 
-                        <th>Attributes</th>
 
+            
+            </td>
 
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
 
-                        <th>Default</th>
+                
 
-
-                        <th class="last">Description</th>
-                      </tr>
-                    </thead>
-
-                    <tbody>
-
-
-                      <tr>
-
-                        <td class="name"><code>network</code></td>
-
-
-                        <td class="type">
-
-
-                          <span class="param-type">String</span>
-
-
-
-                        </td>
-
-
-                        <td class="attributes">
-
-                          &lt;optional><br>
-
-
-
-
-
-                        </td>
-
-
-
-                        <td class="default">
-
-                        </td>
-
-
-                        <td class="description last">Network string.</td>
-                      </tr>
-
-
-
-                      <tr>
-
-                        <td class="name"><code>seed</code></td>
-
-
-                        <td class="type">
-
-
-                          <span class="param-type">String</span>
-
-
-
-                        </td>
-
-
-                        <td class="attributes">
-
-                          &lt;optional><br>
-
-
-
-
-
-                        </td>
-
-
-
-                        <td class="default">
-
-                        </td>
-
-
-                        <td class="description last">Mnemonic seed for initializing the key.</td>
-                      </tr>
-
-
-
-                      <tr>
-
-                        <td class="name"><code>public</code></td>
-
-
-                        <td class="type">
-
-
-                          <span class="param-type">String</span>
-
-
-
-                        </td>
-
-
-                        <td class="attributes">
-
-                          &lt;optional><br>
-
-
-
-
-
-                        </td>
-
-
-
-                        <td class="default">
-
-                        </td>
-
-
-                        <td class="description last">Public key in hex.</td>
-                      </tr>
-
-
-
-                      <tr>
-
-                        <td class="name"><code>private</code></td>
-
-
-                        <td class="type">
-
-
-                          <span class="param-type">String</span>
-
-
-
-                        </td>
-
-
-                        <td class="attributes">
-
-                          &lt;optional><br>
-
-
-
-
-
-                        </td>
-
-
-
-                        <td class="default">
-
-                        </td>
-
-
-                        <td class="description last">Private key in hex.</td>
-                      </tr>
-
-
-
-                      <tr>
-
-                        <td class="name"><code>wif</code></td>
-
-
-                        <td class="type">
-
-
-                          <span class="param-type">String</span>
-
-
-
-                        </td>
-
-
-                        <td class="attributes">
-
-                          &lt;optional><br>
-
-
-
-
-
-                        </td>
-
-
-
-                        <td class="default">
-
-                        </td>
-
-
-                        <td class="description last">WIF-encoded private key.</td>
-                      </tr>
-
-
-
-                      <tr>
-
-                        <td class="name"><code>purpose</code></td>
-
-
-                        <td class="type">
-
-
-                          <span class="param-type">String</span>
-
-
-
-                        </td>
-
-
-                        <td class="attributes">
-
-                          &lt;optional><br>
-
-
-
-
-
-                        </td>
-
-
-
-                        <td class="default">
-
-                          44
-
-                        </td>
-
-
-                        <td class="description last">Constrains derivations to this space.</td>
-                      </tr>
-
-
-                    </tbody>
-                  </table>
-
+                
                 </td>
-              </tr>
+            
 
+            
+                <td class="default">
+                
+                </td>
+            
 
-            </tbody>
-          </table>
+            <td class="description last">Network string.</td>
+        </tr>
 
+    
 
+        <tr>
+            
+                <td class="name"><code>seed</code></td>
+            
 
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
 
 
+            
+            </td>
 
-          <dl class="details">
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
 
+                
 
+                
+                </td>
+            
 
+            
+                <td class="default">
+                
+                </td>
+            
 
+            <td class="description last">Mnemonic seed for initializing the key.</td>
+        </tr>
 
+    
 
+        <tr>
+            
+                <td class="name"><code>public</code></td>
+            
 
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
 
 
+            
+            </td>
 
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
 
+                
 
+                
+                </td>
+            
 
+            
+                <td class="default">
+                
+                </td>
+            
 
+            <td class="description last">Public key in hex.</td>
+        </tr>
 
+    
 
+        <tr>
+            
+                <td class="name"><code>private</code></td>
+            
 
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
 
 
+            
+            </td>
 
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
 
+                
 
+                
+                </td>
+            
 
+            
+                <td class="default">
+                
+                </td>
+            
 
+            <td class="description last">Private key in hex.</td>
+        </tr>
 
+    
 
-            <dt class="tag-source">Source:</dt>
-            <dd class="tag-source">
-              <ul class="dummy">
-                <li>
-                  <a href="types_key.js.html">types/key.js</a>, <a href="types_key.js.html#line103">line 103</a>
-                </li>
-              </ul>
-            </dd>
+        <tr>
+            
+                <td class="name"><code>wif</code></td>
+            
 
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
 
 
+            
+            </td>
 
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
 
+                
 
+                
+                </td>
+            
 
-          </dl>
+            
+                <td class="default">
+                
+                </td>
+            
 
+            <td class="description last">WIF-encoded private key.</td>
+        </tr>
 
+    
 
+        <tr>
+            
+                <td class="name"><code>purpose</code></td>
+            
 
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
 
 
+            
+            </td>
 
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
 
+                
 
+                
+                </td>
+            
 
+            
+                <td class="default">
+                
+                    44
+                
+                </td>
+            
 
+            <td class="description last">Constrains derivations to this space.</td>
+        </tr>
 
+    
+    </tbody>
+</table>
 
+            </td>
+        </tr>
 
+    
+    </tbody>
+</table>
 
 
 
 
 
 
+<dl class="details">
 
-        </div>
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="types_key.js.html">types/key.js</a>, <a href="types_key.js.html#line103">line 103</a>
+    </li></ul></dd>
+    
 
+    
 
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+    </div>
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
         <h3 class="subsection-title">Members</h3>
 
-
-
-        <h4 class="name" id="iv"><span class="type-signature"></span>iv<span class="type-signature"></span></h4>
-
-
-
-
-
-
-
-
-
-
-        <dl class="details">
+        
+            
+<h4 class="name" id="iv"><span class="type-signature"></span>iv<span class="type-signature"></span></h4>
 
 
 
@@ -496,75 +475,83 @@
 
 
 
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+        <dt class="important tag-deprecated">Deprecated:</dt><dd><ul class="dummy"><li>Per-message IVs are generated in Key#encrypt. Do not rely on this getter.</li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="types_key.js.html">types/key.js</a>, <a href="types_key.js.html#line375">line 375</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
 
 
 
 
 
 
-          <dt class="important tag-deprecated">Deprecated:</dt>
-          <dd>
-            <ul class="dummy">
-              <li>Per-message IVs are generated in Key#encrypt. Do not rely on this getter.</li>
-            </ul>
-          </dd>
+        
+    
 
-
-
-
-
-
-
-
-
-
-
-          <dt class="tag-source">Source:</dt>
-          <dd class="tag-source">
-            <ul class="dummy">
-              <li>
-                <a href="types_key.js.html">types/key.js</a>, <a href="types_key.js.html#line375">line 375</a>
-              </li>
-            </ul>
-          </dd>
-
-
-
-
-
-
-
-        </dl>
-
-
-
-
-
-
-
-
-
-
+    
         <h3 class="subsection-title">Methods</h3>
 
+        
+            
 
+    
 
+    
+    <h4 class="name" id="secure"><span class="type-signature"></span>secure<span class="signature">()</span><span class="type-signature"></span></h4>
+    
 
+    
 
 
 
-        <h4 class="name" id="secure"><span class="type-signature"></span>secure<span class="signature">()</span><span class="type-signature"></span></h4>
+<div class="description">
+    Secures the key by clearing sensitive information from memory.
+This method should be called when the key is no longer needed
+to prevent sensitive data from remaining in memory.
+</div>
 
 
 
 
 
 
-        <div class="description">
-          Secures the key by clearing sensitive information from memory.
-          This method should be called when the key is no longer needed
-          to prevent sensitive data from remaining in memory.
-        </div>
 
 
 
@@ -572,23 +559,45 @@
 
 
 
+<dl class="details">
 
+    
 
+    
 
+    
 
+    
 
+    
 
-        <dl class="details">
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="types_key.js.html">types/key.js</a>, <a href="types_key.js.html#line776">line 776</a>
+    </li></ul></dd>
+    
 
+    
 
+    
 
+    
+</dl>
 
 
 
@@ -605,25 +614,26 @@
 
 
 
-          <dt class="tag-source">Source:</dt>
-          <dd class="tag-source">
-            <ul class="dummy">
-              <li>
-                <a href="types_key.js.html">types/key.js</a>, <a href="types_key.js.html#line776">line 776</a>
-              </li>
-            </ul>
-          </dd>
 
 
 
 
+        
+            
 
+    
 
+    
+    <h4 class="name" id="sign"><span class="type-signature"></span>sign<span class="signature">(data)</span><span class="type-signature"> &rarr; {Buffer}</span></h4>
+    
 
-        </dl>
+    
 
 
 
+<div class="description">
+    Sign a buffer of data using BIP 340: https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki
+</div>
 
 
 
@@ -633,99 +643,156 @@
 
 
 
+    <h5>Parameters:</h5>
+    
 
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
 
+        <th>Type</th>
 
+        
 
+        
 
+        <th class="last">Description</th>
+    </tr>
+    </thead>
 
+    <tbody>
+    
 
+        <tr>
+            
+                <td class="name"><code>data</code></td>
+            
 
+            <td class="type">
+            
+                
+<span class="param-type">Buffer</span>
 
 
+            
+            </td>
 
+            
 
+            
 
+            <td class="description last">Buffer of data to sign.</td>
+        </tr>
 
-        <h4 class="name" id="sign"><span class="type-signature"></span>sign<span class="signature">(data)</span><span class="type-signature"> &rarr; {Buffer}</span></h4>
+    
+    </tbody>
+</table>
 
 
 
 
 
 
-        <div class="description">
-          Sign a buffer of data using BIP 340: https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki
-        </div>
+<dl class="details">
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
-        <h5>Parameters:</h5>
+    
 
+    
 
-        <table class="params">
-          <thead>
-            <tr>
+    
 
-              <th>Name</th>
+    
 
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="types_key.js.html">types/key.js</a>, <a href="types_key.js.html#line755">line 755</a>
+    </li></ul></dd>
+    
 
-              <th>Type</th>
+    
 
+    
 
+    
+</dl>
 
 
 
-              <th class="last">Description</th>
-            </tr>
-          </thead>
 
-          <tbody>
 
 
-            <tr>
 
-              <td class="name"><code>data</code></td>
 
 
-              <td class="type">
 
 
-                <span class="param-type">Buffer</span>
 
 
 
-              </td>
 
+<h5>Returns:</h5>
 
+        
+<div class="param-desc">
+    Resulting signature (64 bytes).
+</div>
 
 
 
-              <td class="description last">Buffer of data to sign.</td>
-            </tr>
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Buffer</span>
 
 
-          </tbody>
-        </table>
+    </dd>
+</dl>
 
+    
 
 
 
 
 
-        <dl class="details">
+        
+            
 
+    
 
+    
+    <h4 class="name" id="signSchnorr"><span class="type-signature"></span>signSchnorr<span class="signature">(msg)</span><span class="type-signature"> &rarr; {Buffer}</span></h4>
+    
 
+    
 
 
 
+<div class="description">
+    Signs a message using Schnorr signatures (BIP340).
+</div>
 
 
 
@@ -735,673 +802,646 @@
 
 
 
+    <h5>Parameters:</h5>
+    
 
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
 
+        <th>Type</th>
 
+        
 
+        
 
+        <th class="last">Description</th>
+    </tr>
+    </thead>
 
+    <tbody>
+    
 
+        <tr>
+            
+                <td class="name"><code>msg</code></td>
+            
 
+            <td class="type">
+            
+                
+<span class="param-type">Buffer</span>
+|
 
+<span class="param-type">String</span>
 
 
-          <dt class="tag-source">Source:</dt>
-          <dd class="tag-source">
-            <ul class="dummy">
-              <li>
-                <a href="types_key.js.html">types/key.js</a>, <a href="types_key.js.html#line755">line 755</a>
-              </li>
-            </ul>
-          </dd>
+            
+            </td>
 
+            
 
+            
 
+            <td class="description last">The message to sign</td>
+        </tr>
 
+    
+    </tbody>
+</table>
 
 
 
-        </dl>
 
 
 
+<dl class="details">
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
-        <h5>Returns:</h5>
+    
 
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="types_key.js.html">types/key.js</a>, <a href="types_key.js.html#line641">line 641</a>
+    </li></ul></dd>
+    
 
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    The signature
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Buffer</span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="signSchnorrHash"><span class="type-signature"></span>signSchnorrHash<span class="signature">(messageHash)</span><span class="type-signature"> &rarr; {Buffer}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    Signs a pre-computed hash using Schnorr signatures (BIP340).
+This is useful when the message has already been hashed (e.g., with a tagged hash).
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>messageHash</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Buffer</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">The pre-computed message hash (32 bytes)</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="types_key.js.html">types/key.js</a>, <a href="types_key.js.html#line667">line 667</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    The signature (64 bytes)
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Buffer</span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="toWIF"><span class="type-signature"></span>toWIF<span class="signature">()</span><span class="type-signature"> &rarr; {String}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    Exports the private key in Wallet Import Format (WIF)
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="types_key.js.html">types/key.js</a>, <a href="types_key.js.html#line812">line 812</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Throws:</h5>
+
+        
+
+<dl>
+    <dt>
         <div class="param-desc">
-          Resulting signature (64 bytes).
+        If the key doesn't have a private component
         </div>
-
-
-
+    </dt>
+    <dd></dd>
+    <dt>
         <dl>
-          <dt>
-            Type
-          </dt>
-          <dd>
-
-            <span class="param-type">Buffer</span>
-
-
-          </dd>
-        </dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-        <h4 class="name" id="signSchnorr"><span class="type-signature"></span>signSchnorr<span class="signature">(msg)</span><span class="type-signature"> &rarr; {Buffer}</span></h4>
-
-
-
-
-
-
-        <div class="description">
-          Signs a message using Schnorr signatures (BIP340).
-        </div>
-
-
-
-
-
-
-
-
-
-        <h5>Parameters:</h5>
-
-
-        <table class="params">
-          <thead>
-            <tr>
-
-              <th>Name</th>
-
-
-              <th>Type</th>
-
-
-
-
-
-              <th class="last">Description</th>
-            </tr>
-          </thead>
-
-          <tbody>
-
-
-            <tr>
-
-              <td class="name"><code>msg</code></td>
-
-
-              <td class="type">
-
-
-                <span class="param-type">Buffer</span>
-                |
-
-                <span class="param-type">String</span>
-
-
-
-              </td>
-
-
-
-
-
-              <td class="description last">The message to sign</td>
-            </tr>
-
-
-          </tbody>
-        </table>
-
-
-
-
-
-
-        <dl class="details">
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-          <dt class="tag-source">Source:</dt>
-          <dd class="tag-source">
-            <ul class="dummy">
-              <li>
-                <a href="types_key.js.html">types/key.js</a>, <a href="types_key.js.html#line641">line 641</a>
-              </li>
-            </ul>
-          </dd>
-
-
-
-
-
-
-
-        </dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        <h5>Returns:</h5>
-
-
-        <div class="param-desc">
-          The signature
-        </div>
-
-
-
-        <dl>
-          <dt>
-            Type
-          </dt>
-          <dd>
-
-            <span class="param-type">Buffer</span>
-
-
-          </dd>
-        </dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-        <h4 class="name" id="signSchnorrHash"><span class="type-signature"></span>signSchnorrHash<span class="signature">(messageHash)</span><span class="type-signature"> &rarr; {Buffer}</span></h4>
-
-
-
-
-
-
-        <div class="description">
-          Signs a pre-computed hash using Schnorr signatures (BIP340).
-          This is useful when the message has already been hashed (e.g., with a tagged hash).
-        </div>
-
-
-
-
-
-
-
-
-
-        <h5>Parameters:</h5>
-
-
-        <table class="params">
-          <thead>
-            <tr>
-
-              <th>Name</th>
-
-
-              <th>Type</th>
-
-
-
-
-
-              <th class="last">Description</th>
-            </tr>
-          </thead>
-
-          <tbody>
-
-
-            <tr>
-
-              <td class="name"><code>messageHash</code></td>
-
-
-              <td class="type">
-
-
-                <span class="param-type">Buffer</span>
-
-
-
-              </td>
-
-
-
-
-
-              <td class="description last">The pre-computed message hash (32 bytes)</td>
-            </tr>
-
-
-          </tbody>
-        </table>
-
-
-
-
-
-
-        <dl class="details">
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-          <dt class="tag-source">Source:</dt>
-          <dd class="tag-source">
-            <ul class="dummy">
-              <li>
-                <a href="types_key.js.html">types/key.js</a>, <a href="types_key.js.html#line667">line 667</a>
-              </li>
-            </ul>
-          </dd>
-
-
-
-
-
-
-
-        </dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        <h5>Returns:</h5>
-
-
-        <div class="param-desc">
-          The signature (64 bytes)
-        </div>
-
-
-
-        <dl>
-          <dt>
-            Type
-          </dt>
-          <dd>
-
-            <span class="param-type">Buffer</span>
-
-
-          </dd>
-        </dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-        <h4 class="name" id="toWIF"><span class="type-signature"></span>toWIF<span class="signature">()</span><span class="type-signature"> &rarr; {String}</span></h4>
-
-
-
-
-
-
-        <div class="description">
-          Exports the private key in Wallet Import Format (WIF)
-        </div>
-
-
-
-
-
-
-
-
-
-
-
-
-
-        <dl class="details">
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-          <dt class="tag-source">Source:</dt>
-          <dd class="tag-source">
-            <ul class="dummy">
-              <li>
-                <a href="types_key.js.html">types/key.js</a>, <a href="types_key.js.html#line812">line 812</a>
-              </li>
-            </ul>
-          </dd>
-
-
-
-
-
-
-
-        </dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-        <h5>Throws:</h5>
-
-
-
-        <dl>
-          <dt>
-            <div class="param-desc">
-              If the key doesn't have a private component
-            </div>
-          </dt>
-          <dd></dd>
-          <dt>
-            <dl>
-              <dt>
+            <dt>
                 Type
-              </dt>
-              <dd>
+            </dt>
+            <dd>
+                
+<span class="param-type">Error</span>
 
-                <span class="param-type">Error</span>
 
-
-              </dd>
-            </dl>
-          </dt>
-          <dd></dd>
+            </dd>
         </dl>
+    </dt>
+    <dd></dd>
+</dl>
 
 
+    
 
 
+<h5>Returns:</h5>
 
-        <h5>Returns:</h5>
+        
+<div class="param-desc">
+    The private key encoded in WIF format
+</div>
 
 
-        <div class="param-desc">
-          The private key encoded in WIF format
-        </div>
 
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">String</span>
 
 
-        <dl>
-          <dt>
-            Type
-          </dt>
-          <dd>
+    </dd>
+</dl>
 
-            <span class="param-type">String</span>
+    
 
 
-          </dd>
-        </dl>
 
 
 
+        
+            
 
+    
 
+    
+    <h4 class="name" id="verify"><span class="type-signature"></span>verify<span class="signature">(msg, sig)</span><span class="type-signature"> &rarr; {Boolean}</span></h4>
+    
 
+    
 
 
 
+<div class="description">
+    Verify a message's signature.
+</div>
 
 
 
 
-        <h4 class="name" id="verify"><span class="type-signature"></span>verify<span class="signature">(msg, sig)</span><span class="type-signature"> &rarr; {Boolean}</span></h4>
 
 
 
 
 
+    <h5>Parameters:</h5>
+    
 
-        <div class="description">
-          Verify a message's signature.
-        </div>
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
 
+        <th>Type</th>
 
+        
 
+        
 
+        <th class="last">Description</th>
+    </tr>
+    </thead>
 
+    <tbody>
+    
 
+        <tr>
+            
+                <td class="name"><code>msg</code></td>
+            
 
+            <td class="type">
+            
+                
+<span class="param-type">Buffer</span>
+|
 
+<span class="param-type">String</span>
 
-        <h5>Parameters:</h5>
 
+            
+            </td>
 
-        <table class="params">
-          <thead>
-            <tr>
+            
 
-              <th>Name</th>
+            
 
+            <td class="description last">The message that was signed</td>
+        </tr>
 
-              <th>Type</th>
+    
 
+        <tr>
+            
+                <td class="name"><code>sig</code></td>
+            
 
+            <td class="type">
+            
+                
+<span class="param-type">Buffer</span>
+|
 
+<span class="param-type">String</span>
 
 
-              <th class="last">Description</th>
-            </tr>
-          </thead>
+            
+            </td>
 
-          <tbody>
+            
 
+            
 
-            <tr>
+            <td class="description last">The signature to verify</td>
+        </tr>
 
-              <td class="name"><code>msg</code></td>
+    
+    </tbody>
+</table>
 
 
-              <td class="type">
 
 
-                <span class="param-type">Buffer</span>
-                |
 
-                <span class="param-type">String</span>
 
+<dl class="details">
 
+    
 
-              </td>
+    
 
+    
 
+    
 
+    
 
+    
 
-              <td class="description last">The message that was signed</td>
-            </tr>
+    
 
+    
 
+    
 
-            <tr>
+    
 
-              <td class="name"><code>sig</code></td>
+    
 
+    
 
-              <td class="type">
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="types_key.js.html">types/key.js</a>, <a href="types_key.js.html#line632">line 632</a>
+    </li></ul></dd>
+    
 
+    
 
-                <span class="param-type">Buffer</span>
-                |
+    
 
-                <span class="param-type">String</span>
+    
+</dl>
 
 
 
-              </td>
 
 
 
 
 
-              <td class="description last">The signature to verify</td>
-            </tr>
 
 
-          </tbody>
-        </table>
 
 
 
 
 
+<h5>Returns:</h5>
 
-        <dl class="details">
+        
+<div class="param-desc">
+    Whether the signature is valid
+</div>
 
 
 
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Boolean</span>
 
 
+    </dd>
+</dl>
 
+    
 
 
 
 
 
+        
+            
 
+    
 
+    
+    <h4 class="name" id="verifySchnorr"><span class="type-signature"></span>verifySchnorr<span class="signature">(msg, sig)</span><span class="type-signature"> &rarr; {Boolean}</span></h4>
+    
 
+    
 
 
 
+<div class="description">
+    Verifies a Schnorr signature (BIP340).
+</div>
 
 
 
@@ -1411,80 +1451,128 @@
 
 
 
-          <dt class="tag-source">Source:</dt>
-          <dd class="tag-source">
-            <ul class="dummy">
-              <li>
-                <a href="types_key.js.html">types/key.js</a>, <a href="types_key.js.html#line632">line 632</a>
-              </li>
-            </ul>
-          </dd>
+    <h5>Parameters:</h5>
+    
 
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
 
+        <th>Type</th>
 
+        
 
+        
 
+        <th class="last">Description</th>
+    </tr>
+    </thead>
 
+    <tbody>
+    
 
-        </dl>
+        <tr>
+            
+                <td class="name"><code>msg</code></td>
+            
 
+            <td class="type">
+            
+                
+<span class="param-type">Buffer</span>
+|
 
+<span class="param-type">String</span>
 
 
+            
+            </td>
 
+            
 
+            
 
+            <td class="description last">The message that was signed</td>
+        </tr>
 
+    
 
+        <tr>
+            
+                <td class="name"><code>sig</code></td>
+            
 
+            <td class="type">
+            
+                
+<span class="param-type">Buffer</span>
 
 
+            
+            </td>
 
+            
 
+            
 
-        <h5>Returns:</h5>
+            <td class="description last">The signature to verify</td>
+        </tr>
 
+    
+    </tbody>
+</table>
 
-        <div class="param-desc">
-          Whether the signature is valid
-        </div>
 
 
 
-        <dl>
-          <dt>
-            Type
-          </dt>
-          <dd>
 
-            <span class="param-type">Boolean</span>
 
+<dl class="details">
 
-          </dd>
-        </dl>
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="types_key.js.html">types/key.js</a>, <a href="types_key.js.html#line689">line 689</a>
+    </li></ul></dd>
+    
 
-        <h4 class="name" id="verifySchnorr"><span class="type-signature"></span>verifySchnorr<span class="signature">(msg, sig)</span><span class="type-signature"> &rarr; {Boolean}</span></h4>
+    
 
+    
 
+    
+</dl>
 
 
 
 
-        <div class="description">
-          Verifies a Schnorr signature (BIP340).
-        </div>
 
 
 
@@ -1494,120 +1582,180 @@
 
 
 
-        <h5>Parameters:</h5>
 
 
-        <table class="params">
-          <thead>
-            <tr>
+<h5>Returns:</h5>
 
-              <th>Name</th>
+        
+<div class="param-desc">
+    Whether the signature is valid
+</div>
 
 
-              <th>Type</th>
 
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Boolean</span>
 
 
+    </dd>
+</dl>
 
+    
 
-              <th class="last">Description</th>
-            </tr>
-          </thead>
 
-          <tbody>
 
 
-            <tr>
 
-              <td class="name"><code>msg</code></td>
+        
+            
 
+    
 
-              <td class="type">
+    
+    <h4 class="name" id="verifySchnorrHash"><span class="type-signature"></span>verifySchnorrHash<span class="signature">(messageHash, sig)</span><span class="type-signature"> &rarr; {Boolean}</span></h4>
+    
 
+    
 
-                <span class="param-type">Buffer</span>
-                |
 
-                <span class="param-type">String</span>
 
+<div class="description">
+    Verifies a Schnorr signature with a pre-computed hash (BIP340).
+This is useful when the message has already been hashed (e.g., with a tagged hash).
+</div>
 
 
-              </td>
 
 
 
 
 
-              <td class="description last">The message that was signed</td>
-            </tr>
 
 
+    <h5>Parameters:</h5>
+    
 
-            <tr>
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
 
-              <td class="name"><code>sig</code></td>
+        <th>Type</th>
 
+        
 
-              <td class="type">
+        
 
+        <th class="last">Description</th>
+    </tr>
+    </thead>
 
-                <span class="param-type">Buffer</span>
+    <tbody>
+    
 
+        <tr>
+            
+                <td class="name"><code>messageHash</code></td>
+            
 
+            <td class="type">
+            
+                
+<span class="param-type">Buffer</span>
 
-              </td>
 
+            
+            </td>
 
+            
 
+            
 
+            <td class="description last">The pre-computed message hash (32 bytes)</td>
+        </tr>
 
-              <td class="description last">The signature to verify</td>
-            </tr>
+    
 
+        <tr>
+            
+                <td class="name"><code>sig</code></td>
+            
 
-          </tbody>
-        </table>
+            <td class="type">
+            
+                
+<span class="param-type">Buffer</span>
 
 
+            
+            </td>
 
+            
 
+            
 
+            <td class="description last">The signature to verify (64 bytes)</td>
+        </tr>
 
-        <dl class="details">
+    
+    </tbody>
+</table>
 
 
 
 
 
 
+<dl class="details">
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
 
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="types_key.js.html">types/key.js</a>, <a href="types_key.js.html#line715">line 715</a>
+    </li></ul></dd>
+    
 
+    
 
+    
 
+    
+</dl>
 
 
 
 
-          <dt class="tag-source">Source:</dt>
-          <dd class="tag-source">
-            <ul class="dummy">
-              <li>
-                <a href="types_key.js.html">types/key.js</a>, <a href="types_key.js.html#line689">line 689</a>
-              </li>
-            </ul>
-          </dd>
 
 
 
@@ -1615,42 +1763,54 @@
 
 
 
-        </dl>
 
 
 
 
+<h5>Returns:</h5>
 
+        
+<div class="param-desc">
+    Whether the signature is valid
+</div>
 
 
 
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Boolean</span>
 
 
+    </dd>
+</dl>
 
+    
 
 
 
 
-        <h5>Returns:</h5>
 
+        
+            
 
-        <div class="param-desc">
-          Whether the signature is valid
-        </div>
+    
 
+    
+    <h4 class="name" id=".fromWIF"><span class="type-signature">(static) </span>fromWIF<span class="signature">(wif, options<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {<a href="Key.html">Key</a>}</span></h4>
+    
 
+    
 
-        <dl>
-          <dt>
-            Type
-          </dt>
-          <dd>
 
-            <span class="param-type">Boolean</span>
 
+<div class="description">
+    Create a Key instance from a WIF-encoded private key.
+</div>
 
-          </dd>
-        </dl>
 
 
 
@@ -1659,462 +1819,202 @@
 
 
 
+    <h5>Parameters:</h5>
+    
 
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
 
+        <th>Type</th>
 
+        
+        <th>Attributes</th>
+        
 
+        
 
-        <h4 class="name" id="verifySchnorrHash"><span class="type-signature"></span>verifySchnorrHash<span class="signature">(messageHash, sig)</span><span class="type-signature"> &rarr; {Boolean}</span></h4>
+        <th class="last">Description</th>
+    </tr>
+    </thead>
 
+    <tbody>
+    
 
+        <tr>
+            
+                <td class="name"><code>wif</code></td>
+            
 
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
 
 
+            
+            </td>
 
-        <div class="description">
-          Verifies a Schnorr signature with a pre-computed hash (BIP340).
-          This is useful when the message has already been hashed (e.g., with a tagged hash).
-        </div>
+            
+                <td class="attributes">
+                
 
+                
 
+                
+                </td>
+            
 
+            
 
+            <td class="description last">The WIF-encoded private key</td>
+        </tr>
 
+    
 
+        <tr>
+            
+                <td class="name"><code>options</code></td>
+            
 
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
 
 
-        <h5>Parameters:</h5>
+            
+            </td>
 
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
 
-        <table class="params">
-          <thead>
-            <tr>
+                
 
-              <th>Name</th>
+                
+                </td>
+            
 
+            
 
-              <th>Type</th>
+            <td class="description last">Additional options for key creation</td>
+        </tr>
 
+    
+    </tbody>
+</table>
 
 
 
 
-              <th class="last">Description</th>
-            </tr>
-          </thead>
 
-          <tbody>
 
+<dl class="details">
 
-            <tr>
+    
 
-              <td class="name"><code>messageHash</code></td>
+    
 
+    
 
-              <td class="type">
+    
 
+    
 
-                <span class="param-type">Buffer</span>
+    
 
+    
 
+    
 
-              </td>
+    
 
+    
 
+    
 
+    
 
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="types_key.js.html">types/key.js</a>, <a href="types_key.js.html#line341">line 341</a>
+    </li></ul></dd>
+    
 
-              <td class="description last">The pre-computed message hash (32 bytes)</td>
-            </tr>
+    
 
+    
 
+    
+</dl>
 
-            <tr>
 
-              <td class="name"><code>sig</code></td>
 
 
-              <td class="type">
 
 
-                <span class="param-type">Buffer</span>
 
 
 
-              </td>
 
 
 
 
 
-              <td class="description last">The signature to verify (64 bytes)</td>
-            </tr>
 
+<h5>Returns:</h5>
 
-          </tbody>
-        </table>
+        
+<div class="param-desc">
+    A new Key instance
+</div>
 
 
 
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type"><a href="Key.html">Key</a></span>
 
 
+    </dd>
+</dl>
 
-        <dl class="details">
+    
 
 
 
 
 
+        
+    
 
+    
 
+    
+</article>
 
+</section>
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-          <dt class="tag-source">Source:</dt>
-          <dd class="tag-source">
-            <ul class="dummy">
-              <li>
-                <a href="types_key.js.html">types/key.js</a>, <a href="types_key.js.html#line715">line 715</a>
-              </li>
-            </ul>
-          </dd>
-
-
-
-
-
-
-
-        </dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        <h5>Returns:</h5>
-
-
-        <div class="param-desc">
-          Whether the signature is valid
-        </div>
-
-
-
-        <dl>
-          <dt>
-            Type
-          </dt>
-          <dd>
-
-            <span class="param-type">Boolean</span>
-
-
-          </dd>
-        </dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-        <h4 class="name" id=".fromWIF"><span class="type-signature">(static) </span>fromWIF<span class="signature">(wif, options<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {<a href="Key.html">Key</a>}</span></h4>
-
-
-
-
-
-
-        <div class="description">
-          Create a Key instance from a WIF-encoded private key.
-        </div>
-
-
-
-
-
-
-
-
-
-        <h5>Parameters:</h5>
-
-
-        <table class="params">
-          <thead>
-            <tr>
-
-              <th>Name</th>
-
-
-              <th>Type</th>
-
-
-              <th>Attributes</th>
-
-
-
-
-              <th class="last">Description</th>
-            </tr>
-          </thead>
-
-          <tbody>
-
-
-            <tr>
-
-              <td class="name"><code>wif</code></td>
-
-
-              <td class="type">
-
-
-                <span class="param-type">String</span>
-
-
-
-              </td>
-
-
-              <td class="attributes">
-
-
-
-
-
-              </td>
-
-
-
-
-              <td class="description last">The WIF-encoded private key</td>
-            </tr>
-
-
-
-            <tr>
-
-              <td class="name"><code>options</code></td>
-
-
-              <td class="type">
-
-
-                <span class="param-type">Object</span>
-
-
-
-              </td>
-
-
-              <td class="attributes">
-
-                &lt;optional><br>
-
-
-
-
-
-              </td>
-
-
-
-
-              <td class="description last">Additional options for key creation</td>
-            </tr>
-
-
-          </tbody>
-        </table>
-
-
-
-
-
-
-        <dl class="details">
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-          <dt class="tag-source">Source:</dt>
-          <dd class="tag-source">
-            <ul class="dummy">
-              <li>
-                <a href="types_key.js.html">types/key.js</a>, <a href="types_key.js.html#line341">line 341</a>
-              </li>
-            </ul>
-          </dd>
-
-
-
-
-
-
-
-        </dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        <h5>Returns:</h5>
-
-
-        <div class="param-desc">
-          A new Key instance
-        </div>
-
-
-
-        <dl>
-          <dt>
-            Type
-          </dt>
-          <dd>
-
-            <span class="param-type"><a href="Key.html">Key</a></span>
-
-
-          </dd>
-        </dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-      </article>
-
-    </section>
-
-
-
-  </div>
-  <nav>
-    <h2><a href="index.html">Home</a></h2>
-    <h3>Classes</h3>
-    <ul>
-      <li><a href="Actor.html">Actor</a></li>
-      <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="CLI.html">CLI</a></li>
-      <li><a href="Chain.html">Chain</a></li>
-      <li><a href="Channel.html">Channel</a></li>
-      <li><a href="Circuit.html">Circuit</a></li>
-      <li><a href="Collection.html">Collection</a></li>
-      <li><a href="Environment.html">Environment</a></li>
-      <li><a href="Fabric.html">Fabric</a></li>
-      <li><a href="FabricShell.html">FabricShell</a></li>
-      <li><a href="Federation.html">Federation</a></li>
-      <li><a href="Filesystem.html">Filesystem</a></li>
-      <li><a href="HKDF.html">HKDF</a></li>
-      <li><a href="Hash256.html">Hash256</a></li>
-      <li><a href="Identity.html">Identity</a></li>
-      <li><a href="Interface.html">Interface</a></li>
-      <li><a href="Key.html">Key</a></li>
-      <li><a href="Ledger.html">Ledger</a></li>
-      <li><a href="Lightning.html">Lightning</a></li>
-      <li><a href="Logger.html">Logger</a></li>
-      <li><a href="Machine.html">Machine</a></li>
-      <li><a href="Message.html">Message</a></li>
-      <li><a href="Peer.html">Peer</a></li>
-      <li><a href="Reader.html">Reader</a></li>
-      <li><a href="Redis.html">Redis</a></li>
-      <li><a href="Remote.html">Remote</a></li>
-      <li><a href="Resource.html">Resource</a></li>
-      <li><a href="Scribe.html">Scribe</a></li>
-      <li><a href="Script.html">Script</a></li>
-      <li><a href="Service.html">Service</a></li>
-      <li><a href="Session.html">Session</a></li>
-      <li><a href="State.html">State</a></li>
-      <li><a href="Store.html">Store</a></li>
-      <li><a href="Token.html">Token</a></li>
-      <li><a href="Tree.html">Tree</a></li>
-      <li><a href="Vector.html">Vector</a></li>
-      <li><a href="Wallet.html">Wallet</a></li>
-      <li><a href="Worker.html">Worker</a></li>
-      <li><a href="ZMQ.html">ZMQ</a></li>
-    </ul>
-  </nav>
-  <br class="clear" />
-  <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>
-  <script type="text/javascript">
-    prettyPrint();
-  </script>
-  <script src="scripts/linenumber.js"></script>
-</body>
-
+</div>
+    <nav><h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="Actor.html">Actor</a></li><li><a href="Bitcoin.html">Bitcoin</a></li><li><a href="Chain.html">Chain</a></li><li><a href="Channel.html">Channel</a></li><li><a href="Circuit.html">Circuit</a></li><li><a href="Collection.html">Collection</a></li><li><a href="Environment.html">Environment</a></li><li><a href="Fabric.html">Fabric</a></li><li><a href="Federation.html">Federation</a></li><li><a href="Filesystem.html">Filesystem</a></li><li><a href="HKDF.html">HKDF</a></li><li><a href="Hash256.html">Hash256</a></li><li><a href="Identity.html">Identity</a></li><li><a href="Interface.html">Interface</a></li><li><a href="Key.html">Key</a></li><li><a href="Ledger.html">Ledger</a></li><li><a href="Lightning.html">Lightning</a></li><li><a href="Logger.html">Logger</a></li><li><a href="Machine.html">Machine</a></li><li><a href="Message.html">Message</a></li><li><a href="Peer.html">Peer</a></li><li><a href="Reader.html">Reader</a></li><li><a href="Redis.html">Redis</a></li><li><a href="Remote.html">Remote</a></li><li><a href="Resource.html">Resource</a></li><li><a href="Scribe.html">Scribe</a></li><li><a href="Script.html">Script</a></li><li><a href="Service.html">Service</a></li><li><a href="Session.html">Session</a></li><li><a href="State.html">State</a></li><li><a href="Store.html">Store</a></li><li><a href="Token.html">Token</a></li><li><a href="Tree.html">Tree</a></li><li><a href="Vector.html">Vector</a></li><li><a href="Wallet.html">Wallet</a></li><li><a href="Worker.html">Worker</a></li><li><a href="ZMQ.html">ZMQ</a></li></ul></nav>
+    <br class="clear" />
+    <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>
+    <script type="text/javascript">
+      prettyPrint();
+    </script>
+    <script src="scripts/linenumber.js"></script>
+  </body>
 </html>
