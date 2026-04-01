@@ -65,7 +65,10 @@ const {
 
 const HEADER_SIG_SIZE = 64;
 
-/** @param {Buffer} buf */
+/**
+ * @private
+ * @param {Buffer} buf
+ */
 function isAllZero32 (buf) {
   if (!buf || buf.length !== 32) return true;
   return buf.equals(Buffer.alloc(32));
@@ -97,6 +100,7 @@ const taggedHash = require('../functions/taggedHash');
  * Opcode → wire string order matches the historical `type` switch: when multiple labels share one
  * opcode (e.g. P2P vs Lightning), **first listed** in {@link WIRE_TYPE_DECODE_ORDER} wins.
  */
+/** @private */
 const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [BITCOIN_BLOCK_TYPE, 'BITCOIN_BLOCK'],
   [BITCOIN_BLOCK_HASH_TYPE, 'BITCOIN_BLOCK_HASH'],
@@ -238,6 +242,7 @@ const LEGACY_MESSAGE_TYPE_ALIASES = Object.freeze({
  * where historically used). {@link Message#wireType} / {@link Message#type} use wire names;
  * {@link Message#friendlyType} and {@link Message#toObject} `type` use friendly names.
  */
+/** @private */
 const FRIENDLY_TYPE_BY_WIRE = Object.freeze((() => {
   const tmp = {};
   for (const friendly of Object.keys(LEGACY_MESSAGE_TYPE_ALIASES)) {
@@ -262,6 +267,7 @@ const FRIENDLY_TO_WIRE_TYPE = Object.freeze((() => {
 })());
 
 /**
+ * @private
  * @param {string} wire
  * @returns {string}
  */
@@ -271,6 +277,7 @@ function friendlyTypeFromWire (wire) {
 }
 
 /**
+ * @private
  * @param {string} friendly
  * @returns {string}
  */

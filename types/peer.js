@@ -58,7 +58,10 @@ const Service = require('./service');
 // Constants
 const PROLOGUE = 'FABRIC';
 
-/** Safe debug label for a derived Key — never log private material. */
+/**
+ * Safe debug label for a derived Key — never log private material.
+ * @private
+ */
 function peerDebugDerivedPublicSummary (keyInstance) {
   if (!keyInstance || !keyInstance.settings) return '(unavailable)';
   const pubHex = typeof keyInstance.settings.public === 'string'
@@ -107,28 +110,16 @@ class Peer extends Service {
       port: 7777,
       listenPortAttempts: 20,
       reconnectToKnownPeers: true,
-      /**
-       * When true, answers `INVENTORY_REQUEST` (with `object.offerBtc`) using local
-       * `state.documents` / `documentRates` and {@link purchaseContentHashHex} for each item.
-       */
+      // When true, answers INVENTORY_REQUEST (offerBtc) using local documents/rates.
       serveLocalDocumentInventory: false,
-      /**
-       * After `P2P_SESSION_OPEN` to a new inbound peer, re-send canonical `DocumentPublish` and
-       * pricing gossip for each entry in `state.documents` so late joiners see catalog offers.
-       */
+      // Re-send canonical DocumentPublish + pricing to new inbound peers.
       announceDocumentsOnPeerConnect: false,
-      /**
-       * When {@link Peer#settings.serveLocalDocumentInventory} is enabled and this node sends no
-       * `INVENTORY_RESPONSE`, forward the original generic wire to other peers (POLICY.md conditional relay).
-       */
+      // If local inventory doesn't answer, optionally relay INVENTORY_REQUEST.
       relayInventoryRequest: false,
-      /**
-       * After handling `INVENTORY_RESPONSE`, forward the same wire to peers other than the sender
-       * (star/mesh routers; default off to avoid leaking replies).
-       */
+      // Optionally relay INVENTORY_RESPONSE to peers other than the sender.
       relayInventoryResponse: false,
       connectTimeout: 5000,
-      /** Limits relay amplification on {@link P2P_PEER_GOSSIP} (hop TTL, payload dedup, per-origin rate). */
+      // Relay amplification controls for P2P_PEER_GOSSIP.
       gossip: {
         maxHops: GOSSIP_MAX_HOPS,
         maxRelaysPerOriginPerMinute: GOSSIP_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
@@ -146,11 +137,7 @@ class Peer extends Service {
       }, config.state),
       upnp: false,
       key: {},
-      /**
-       * Inbound wire traffic budgeting (Bitcoin Core–style peer quality).
-       * Credits accrue per rolling window; overflow de-ranks the peer (registry score)
-       * and drops the message. Heavier opcodes cost more credits.
-       */
+      // Inbound wire traffic budgeting (Bitcoin Core-style peer quality).
       wireTraffic: {
         windowMs: 60 * 1000,
         maxCreditsPerWindow: 520,

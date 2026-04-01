@@ -98,7 +98,10 @@ const {
 
 const HEADER_SIG_SIZE = 64;
 
-/** @param {Buffer} buf */
+/**
+ * @private
+ * @param {Buffer} buf
+ */
 function isAllZero32 (buf) {
   if (!buf || buf.length !== 32) return true;
   return buf.equals(Buffer.alloc(32));
@@ -130,6 +133,7 @@ const taggedHash = require('../functions/taggedHash');
  * Opcode → wire string order matches the historical `type` switch: when multiple labels share one
  * opcode (e.g. P2P vs Lightning), **first listed** in {@link WIRE_TYPE_DECODE_ORDER} wins.
  */
+/** @private */
 const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [BITCOIN_BLOCK_TYPE, 'BITCOIN_BLOCK'],
   [BITCOIN_BLOCK_HASH_TYPE, 'BITCOIN_BLOCK_HASH'],
@@ -271,6 +275,7 @@ const LEGACY_MESSAGE_TYPE_ALIASES = Object.freeze({
  * where historically used). {@link Message#wireType} / {@link Message#type} use wire names;
  * {@link Message#friendlyType} and {@link Message#toObject} `type` use friendly names.
  */
+/** @private */
 const FRIENDLY_TYPE_BY_WIRE = Object.freeze((() => {
   const tmp = {};
   for (const friendly of Object.keys(LEGACY_MESSAGE_TYPE_ALIASES)) {
@@ -295,6 +300,7 @@ const FRIENDLY_TO_WIRE_TYPE = Object.freeze((() => {
 })());
 
 /**
+ * @private
  * @param {string} wire
  * @returns {string}
  */
@@ -304,6 +310,7 @@ function friendlyTypeFromWire (wire) {
 }
 
 /**
+ * @private
  * @param {string} friendly
  * @returns {string}
  */
@@ -995,32 +1002,6 @@ module.exports = Message;
       <li><a href="Wallet.html">Wallet</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
-    </ul>
-    <h3>Global</h3>
-    <ul>
-      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
-      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
-      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
-      <li><a href="global.html#announceDocumentsOnPeerConnect">announceDocumentsOnPeerConnect</a></li>
-      <li><a href="global.html#crypto">crypto</a></li>
-      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
-      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
-      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
-      <li><a href="global.html#gossip">gossip</a></li>
-      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
-      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
-      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
-      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
-      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
-      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
-      <li><a href="global.html#relayInventoryRequest">relayInventoryRequest</a></li>
-      <li><a href="global.html#relayInventoryResponse">relayInventoryResponse</a></li>
-      <li><a href="global.html#serveLocalDocumentInventory">serveLocalDocumentInventory</a></li>
-      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
-      <li><a href="global.html#stableStringify">stableStringify</a></li>
-      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
-      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
-      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
     </ul>
   </nav>
   <br class="clear" />

@@ -30,6 +30,17 @@ const ecc = require('./ecc');
 const { secp256k1, schnorr: nobleSchnorr } = require('@noble/curves/secp256k1.js');
 const SecpPoint = secp256k1.ProjectivePoint || secp256k1.Point;
 
+function privateKeyToBuffer (privkey) {
+  if (Buffer.isBuffer(privkey)) return privkey;
+  if (privkey && typeof privkey.length === 'number' && privkey.length === 32) {
+    // Uint8Array or byte-like input from upgraded deps (bip32/ecpair).
+    return Buffer.from(privkey);
+  }
+  if (BN.isBN(privkey)) return Buffer.from(privkey.toString(16).padStart(64, '0'), 'hex');
+  if (typeof privkey === 'string') return Buffer.from(privkey.padStart(64, '0'), 'hex');
+  throw new Error('Invalid private key format');
+}
+
 function secpPointFromPublicKey (pubkey) {
   const bytes = Buffer.isBuffer(pubkey) ? pubkey : Buffer.from(pubkey);
   // noble-curves v1: ProjectivePoint.fromHex(bytes)
@@ -48,7 +59,7 @@ function secpPointFromPublicKey (pubkey) {
 }
 
 function secpPointFromPrivateKey (privkey) {
-  const bytes = Buffer.isBuffer(privkey) ? privkey : Buffer.from(privkey);
+  const bytes = privateKeyToBuffer(privkey);
   // noble-curves v1
   if (secp256k1.ProjectivePoint && typeof secp256k1.ProjectivePoint.fromPrivateKey === 'function') {
     return secp256k1.ProjectivePoint.fromPrivateKey(bytes);
@@ -269,7 +280,7 @@ class Key extends EventEmitter {
 
     // Read the pair (for modes that use master, set private from master)
     if (!this.private && this.master && this.master.privateKey) {
-      this.private = this.master.privateKey;
+      this.private = privateKeyToBuffer(this.master.privateKey);
     }
     // Adapt noble-curves point to the minimal interface used elsewhere.
     this.public = {
@@ -638,16 +649,7 @@ class Key extends EventEmitter {
     const messageHash = crypto.createHash('sha256').update(messageBuffer).digest();
 
     // Get private key as 32-byte buffer
-    let privateKeyBuffer;
-    if (Buffer.isBuffer(this.private)) {
-      privateKeyBuffer = this.private;
-    } else if (BN.isBN(this.private)) {
-      privateKeyBuffer = Buffer.from(this.private.toString(16).padStart(64, '0'), 'hex');
-    } else if (typeof this.private === 'string') {
-      privateKeyBuffer = Buffer.from(this.private.padStart(64, '0'), 'hex');
-    } else {
-      throw new Error('Invalid private key format');
-    }
+    const privateKeyBuffer = privateKeyToBuffer(this.private);
 
     // Sign using noble-curves Schnorr (BIP340). Zero auxRand for deterministic signatures.
     const signature = nobleSchnorr.sign(messageHash, privateKeyBuffer, Buffer.alloc(32));
@@ -669,16 +671,7 @@ class Key extends EventEmitter {
     }
 
     // Get private key as 32-byte buffer
-    let privateKeyBuffer;
-    if (Buffer.isBuffer(this.private)) {
-      privateKeyBuffer = this.private;
-    } else if (BN.isBN(this.private)) {
-      privateKeyBuffer = Buffer.from(this.private.toString(16).padStart(64, '0'), 'hex');
-    } else if (typeof this.private === 'string') {
-      privateKeyBuffer = Buffer.from(this.private.padStart(64, '0'), 'hex');
-    } else {
-      throw new Error('Invalid private key format');
-    }
+    const privateKeyBuffer = privateKeyToBuffer(this.private);
 
     // Sign using noble-curves Schnorr (BIP340). Zero auxRand for deterministic signatures.
     const signature = nobleSchnorr.sign(messageHash, privateKeyBuffer, Buffer.alloc(32));
@@ -818,20 +811,7 @@ class Key extends EventEmitter {
    */
   toWIF () {
     if (!this.private) throw new Error('Cannot export WIF without private key');
-    let privateKeyBuffer;
-
-    if (Buffer.isBuffer(this.private)) {
-      privateKeyBuffer = this.private;
-    } else if (this.private && typeof this.private.length === 'number' && this.private.length === 32) {
-      // Uint8Array or other byte-like (e.g. from bs58check.decode)
-      privateKeyBuffer = Buffer.from(this.private);
-    } else if (BN.isBN(this.private)) {
-      privateKeyBuffer = Buffer.from(this.private.toString(16).padStart(64, '0'), 'hex');
-    } else if (typeof this.private === 'string') {
-      privateKeyBuffer = Buffer.from(this.private.padStart(64, '0'), 'hex');
-    } else {
-      throw new Error('Invalid private key format');
-    }
+    const privateKeyBuffer = privateKeyToBuffer(this.private);
 
     const network = this.settings.network === 'regtest'
       ? this.settings.networks.testnet

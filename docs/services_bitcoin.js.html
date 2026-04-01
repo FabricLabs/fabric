@@ -123,7 +123,7 @@ class Bitcoin extends Service {
       spv: {
         port: 18332
       },
-      /** Optional HTTP origin for block/tx/address REST fallback (e.g. a Hub). Null = RPC only. */
+      // Optional HTTP origin for block/tx/address REST fallback (e.g. a Hub). Null = RPC only.
       explorerBaseUrl: null,
       zmq: {
         host: 'localhost',
@@ -151,13 +151,10 @@ class Bitcoin extends Service {
       servers: [],
       targets: [],
       peers: [],
-      /**
-       * After RPC is ready, call `addnode &lt;host:port> add` for each entry (outbound P2P only).
-       * Used for LAN "playnet" regtest sync. Ignored on mainnet unless {@link p2pAddNodesAllowMainnet} is true.
-       * @type {string[]}
-       */
+      // After RPC is ready, call `addnode &lt;host:port> add` for each entry (outbound P2P only).
+      // Used for LAN "playnet" regtest sync. Ignored on mainnet unless p2pAddNodesAllowMainnet is true.
       p2pAddNodes: [],
-      /** When true, {@link p2pAddNodes} is applied even on mainnet (private deployments only). */
+      // When true, p2pAddNodes is applied even on mainnet (private deployments only).
       p2pAddNodesAllowMainnet: false,
       host: '127.0.0.1',
       port: 8333, // P2P port
@@ -1023,7 +1020,7 @@ class Bitcoin extends Service {
   async _dumpPrivateKey (address) {
     const wif = await this._makeRPCRequest('dumpprivkey', [address]);
     const pair = ECPair.fromWIF(wif, this.networks[this.settings.network]);
-    return pair.privateKey;
+    return Buffer.isBuffer(pair.privateKey) ? pair.privateKey : Buffer.from(pair.privateKey);
   }
 
   async _loadPrivateKey (key) {
@@ -2822,32 +2819,6 @@ module.exports = Bitcoin;
       <li><a href="Wallet.html">Wallet</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
-    </ul>
-    <h3>Global</h3>
-    <ul>
-      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
-      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
-      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
-      <li><a href="global.html#announceDocumentsOnPeerConnect">announceDocumentsOnPeerConnect</a></li>
-      <li><a href="global.html#crypto">crypto</a></li>
-      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
-      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
-      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
-      <li><a href="global.html#gossip">gossip</a></li>
-      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
-      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
-      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
-      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
-      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
-      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
-      <li><a href="global.html#relayInventoryRequest">relayInventoryRequest</a></li>
-      <li><a href="global.html#relayInventoryResponse">relayInventoryResponse</a></li>
-      <li><a href="global.html#serveLocalDocumentInventory">serveLocalDocumentInventory</a></li>
-      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
-      <li><a href="global.html#stableStringify">stableStringify</a></li>
-      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
-      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
-      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
     </ul>
   </nav>
   <br class="clear" />
