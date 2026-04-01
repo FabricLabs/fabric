@@ -220,6 +220,44 @@ describe('@fabric/core/types/peer', function () {
         });
         peer._connect('127.0.0.1:9999');
       });
+
+      it('emits derived key debug summaries for missing/short/long public keys', function () {
+        const originalCreateConnection = net.createConnection;
+        net.createConnection = function () {
+          throw new Error('stop-after-debug');
+        };
+
+        const peer = new Peer({ listen: false, peersDb: null, debug: true });
+        const seen = [];
+        peer.on('debug', (msg) => {
+          if (String(msg).includes('Local derived key')) seen.push(String(msg));
+        });
+
+        const cases = [
+          null,
+          { settings: {} },
+          { settings: { public: 'abcd' } },
+          { settings: { public: 'a'.repeat(66) } }
+        ];
+
+        try {
+          for (const derived of cases) {
+            peer.identity.key.derive = () => derived;
+            try {
+              peer._connect('127.0.0.1:9001');
+            } catch (e) {
+              assert.ok(/stop-after-debug/.test(e.message));
+            }
+          }
+        } finally {
+          net.createConnection = originalCreateConnection;
+        }
+
+        assert.ok(seen.some((m) => m.includes('(unavailable)')));
+        assert.ok(seen.some((m) => m.includes('(no public key)')));
+        assert.ok(seen.some((m) => m.includes('abcd')));
+        assert.ok(seen.some((m) => m.includes('…')));
+      });
     });
 
     describe('_disconnect', function () {

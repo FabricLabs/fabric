@@ -9,7 +9,7 @@ For production deploys and native dependencies, see [`docs/PRODUCTION.md`](docs/
 0. Meet the prerequisites (above)
 1. Install Fabric Core: `npm i -g @fabric/core`
 2. Run `fabric setup`
-3. Run `fabric chat`
+3. Run `fabric` (or `fabric shell`)
 
 _**Note:** for development releases, use `npm i -g FabricLabs/fabric#develop` instead._
 
