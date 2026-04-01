@@ -1,0 +1,12 @@
+node_modules/
+coverage/
+reports/
+docs/
+_book/
+stores/
+logs/
+.github/
+.cursor/
+.vscode/
+*.log
+.env*

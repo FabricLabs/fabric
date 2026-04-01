@@ -10,7 +10,7 @@
  *     native `fabric.node` is not inside the pkg blob; load optional acceleration from disk
  *     (`FABRIC_ADDON_PATH`) or ship without it (pure JS fallbacks).
  *
- * Terminal UI: default command is `chat` → {@link ../contracts/chat} → {@link ../types/cli} (Blessed TUI).
+ * Terminal UI: default command is `shell`/`chat` → {@link ../contracts/shell} → {@link ../types/cli} (Blessed TUI).
  *
  * Optional C acceleration (narrow API): {@link ../functions/fabricNativeAccel}
  */
@@ -44,7 +44,7 @@ const Environment = require('../types/environment');
 
 // Contracts
 const OP_START = require('../contracts/node');
-const OP_CHAT = require('../contracts/chat');
+const OP_SHELL = require('../contracts/shell');
 const OP_EXCHANGE = require('../contracts/exchange');
 const OP_MOUNT = require('../contracts/mount');
 const OP_SETUP = require('../contracts/setup');
@@ -53,7 +53,8 @@ const OP_TEST = require('../contracts/test');
 
 const COMMANDS = {
   START: OP_START,
-  CHAT: OP_CHAT,
+  SHELL: OP_SHELL,
+  CHAT: OP_SHELL,
   EXCHANGE: OP_EXCHANGE,
   MOUNT: OP_MOUNT,
   SETUP: OP_SETUP,
@@ -85,8 +86,12 @@ async function main (input = {}) {
     .description('Initiate peer bootstrapping.')
     .action(COMMANDS.START.bind({ environment }));
 
-  program.command('chat', { isDefault: true })
-    .description('Open P2P chat (Blessed TUI).')
+  program.command('shell', { isDefault: true })
+    .description('Open the interactive Fabric shell (Blessed TUI).')
+    .action(COMMANDS.SHELL.bind({ environment }));
+
+  program.command('chat')
+    .description('Alias for `fabric shell`.')
     .action(COMMANDS.CHAT.bind({ environment }));
 
   program.command('exchange')

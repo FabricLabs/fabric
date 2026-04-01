@@ -1246,6 +1246,7 @@ class Service extends Actor {
 
 /**
  * Browser / CLI application shell: encrypted store, peer node, resources.
+ * @private
  * @class FabricShell
  */
 class FabricShell extends Service {

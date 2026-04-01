@@ -90,7 +90,7 @@ class Bitcoin extends Service {
       spv: {
         port: 18332
       },
-      /** Optional HTTP origin for block/tx/address REST fallback (e.g. a Hub). Null = RPC only. */
+      // Optional HTTP origin for block/tx/address REST fallback (e.g. a Hub). Null = RPC only.
       explorerBaseUrl: null,
       zmq: {
         host: 'localhost',
@@ -118,13 +118,10 @@ class Bitcoin extends Service {
       servers: [],
       targets: [],
       peers: [],
-      /**
-       * After RPC is ready, call `addnode <host:port> add` for each entry (outbound P2P only).
-       * Used for LAN "playnet" regtest sync. Ignored on mainnet unless {@link p2pAddNodesAllowMainnet} is true.
-       * @type {string[]}
-       */
+      // After RPC is ready, call `addnode <host:port> add` for each entry (outbound P2P only).
+      // Used for LAN "playnet" regtest sync. Ignored on mainnet unless p2pAddNodesAllowMainnet is true.
       p2pAddNodes: [],
-      /** When true, {@link p2pAddNodes} is applied even on mainnet (private deployments only). */
+      // When true, p2pAddNodes is applied even on mainnet (private deployments only).
       p2pAddNodesAllowMainnet: false,
       host: '127.0.0.1',
       port: 8333, // P2P port
@@ -990,7 +987,7 @@ class Bitcoin extends Service {
   async _dumpPrivateKey (address) {
     const wif = await this._makeRPCRequest('dumpprivkey', [address]);
     const pair = ECPair.fromWIF(wif, this.networks[this.settings.network]);
-    return pair.privateKey;
+    return Buffer.isBuffer(pair.privateKey) ? pair.privateKey : Buffer.from(pair.privateKey);
   }
 
   async _loadPrivateKey (key) {

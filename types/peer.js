@@ -58,7 +58,10 @@ const Service = require('./service');
 // Constants
 const PROLOGUE = 'FABRIC';
 
-/** Safe debug label for a derived Key — never log private material. */
+/**
+ * Safe debug label for a derived Key — never log private material.
+ * @private
+ */
 function peerDebugDerivedPublicSummary (keyInstance) {
   if (!keyInstance || !keyInstance.settings) return '(unavailable)';
   const pubHex = typeof keyInstance.settings.public === 'string'
@@ -79,6 +82,8 @@ class Peer extends Service {
    * @param {Boolean} [config.listen] Whether or not to listen for connections.
    * @param {Boolean} [config.upnp] Whether or not to use UPNP for automatic configuration.
    * @param {Number} [config.port=7777] Port to use for P2P connections.
+   * @param {Number} [config.listenPortAttempts=20] When the listen port is in use (`EADDRINUSE`),
+   *   try the next port up to this many times (same host).
    * @param {Array} [config.peers=[]] List of initial peers.
    */
   constructor (config = {}) {
@@ -103,29 +108,18 @@ class Peer extends Service {
       // a developer machine's stale peer list (which can hang/timeout the suite).
       peersDb: (process.env.NODE_ENV === 'test') ? null : 'stores/hub/peers',
       port: 7777,
+      listenPortAttempts: 20,
       reconnectToKnownPeers: true,
-      /**
-       * When true, answers `INVENTORY_REQUEST` (with `object.offerBtc`) using local
-       * `state.documents` / `documentRates` and {@link purchaseContentHashHex} for each item.
-       */
+      // When true, answers INVENTORY_REQUEST (offerBtc) using local documents/rates.
       serveLocalDocumentInventory: false,
-      /**
-       * After `P2P_SESSION_OPEN` to a new inbound peer, re-send canonical `DocumentPublish` and
-       * pricing gossip for each entry in `state.documents` so late joiners see catalog offers.
-       */
+      // Re-send canonical DocumentPublish + pricing to new inbound peers.
       announceDocumentsOnPeerConnect: false,
-      /**
-       * When {@link Peer#settings.serveLocalDocumentInventory} is enabled and this node sends no
-       * `INVENTORY_RESPONSE`, forward the original generic wire to other peers (POLICY.md conditional relay).
-       */
+      // If local inventory doesn't answer, optionally relay INVENTORY_REQUEST.
       relayInventoryRequest: false,
-      /**
-       * After handling `INVENTORY_RESPONSE`, forward the same wire to peers other than the sender
-       * (star/mesh routers; default off to avoid leaking replies).
-       */
+      // Optionally relay INVENTORY_RESPONSE to peers other than the sender.
       relayInventoryResponse: false,
       connectTimeout: 5000,
-      /** Limits relay amplification on {@link P2P_PEER_GOSSIP} (hop TTL, payload dedup, per-origin rate). */
+      // Relay amplification controls for P2P_PEER_GOSSIP.
       gossip: {
         maxHops: GOSSIP_MAX_HOPS,
         maxRelaysPerOriginPerMinute: GOSSIP_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
@@ -143,11 +137,7 @@ class Peer extends Service {
       }, config.state),
       upnp: false,
       key: {},
-      /**
-       * Inbound wire traffic budgeting (Bitcoin Core–style peer quality).
-       * Credits accrue per rolling window; overflow de-ranks the peer (registry score)
-       * and drops the message. Heavier opcodes cost more credits.
-       */
+      // Inbound wire traffic budgeting (Bitcoin Core-style peer quality).
       wireTraffic: {
         windowMs: 60 * 1000,
         maxCreditsPerWindow: 520,
@@ -1496,7 +1486,7 @@ class Peer extends Service {
 
   /**
    * Reply to `INVENTORY_REQUEST` with `INVENTORY_RESPONSE` built from local documents and rates.
-   * @param {{ type: string, object?: object }} message generic body from {@link Peer#_handleGenericMessage}
+   * @param {{type: string, object: (Object|undefined)}} message Generic body from {@link Peer#_handleGenericMessage}
    * @param {{ name: string }} origin
    * @returns {boolean} true if an `INVENTORY_RESPONSE` was written to the requester
    */
@@ -1857,22 +1847,49 @@ class Peer extends Service {
       this.emit('debug', `[FABRIC:PEER] Peer list: ${JSON.stringify(this.settings.peers)}`);
     }
 
-    this._registerActor({ name: `${this.interface}:${this.port}` });
-
     if (this.settings.listen) {
       this.emit('log', 'Listener starting...');
-      if (this.settings.debug) this.emit('debug', `Starting listener on ${this.interface}:${this.port}`);
 
-      try {
-        address = await this.listen();
-        if (this.settings.debug) this.emit('debug', `got address: ${JSON.stringify(address)}`);
-        this.listenAddress = address;
-        this.emit('log', 'Listener started!');
-      } catch (exception) {
-        // Do not emit('error') here — with no listener Node throws ERR_UNHANDLED_ERROR; callers get the throw below.
-        this.emit('warning', 'Could not listen:', exception);
-        throw new Error('Peer failed to listen: ' + (exception && exception.message ? exception.message : exception));
+      const maxAttemptsRaw = this.settings.listenPortAttempts;
+      const maxAttempts = (typeof maxAttemptsRaw === 'number' && maxAttemptsRaw > 0)
+        ? Math.min(256, Math.floor(maxAttemptsRaw))
+        : 20;
+      const basePort = (typeof this.settings.port === 'number' && !Number.isNaN(this.settings.port))
+        ? this.settings.port
+        : 7777;
+
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        this.settings.port = basePort + attempt;
+        if (this.public && typeof this.public === 'object') this.public.port = this.settings.port;
+
+        if (this.settings.debug) {
+          this.emit('debug', `Starting listener on ${this.interface}:${this.settings.port} (attempt ${attempt + 1}/${maxAttempts})`);
+        }
+
+        try {
+          address = await this.listen();
+          if (this.settings.debug) this.emit('debug', `got address: ${JSON.stringify(address)}`);
+          this.listenAddress = address;
+          if (attempt > 0) {
+            this.emit('log', `[FABRIC:PEER] Port ${basePort} was busy; listening on ${this.settings.port} instead.`);
+          }
+          this.emit('log', 'Listener started!');
+          break;
+        } catch (exception) {
+          const inUse = exception && exception.code === 'EADDRINUSE';
+          if (inUse && attempt < maxAttempts - 1) {
+            this.emit('warning', `[FABRIC:PEER] Port ${this.settings.port} in use, trying ${this.settings.port + 1}...`);
+            continue;
+          }
+          // Do not emit('error') here — with no listener Node throws ERR_UNHANDLED_ERROR; callers get the throw below.
+          this.emit('warning', 'Could not listen:', exception);
+          throw new Error('Peer failed to listen: ' + (exception && exception.message ? exception.message : exception));
+        }
       }
+
+      this._registerActor({ name: `${this.interface}:${this.port}` });
+    } else {
+      this._registerActor({ name: `${this.interface}:${this.port}` });
     }
 
     if (this.settings.networking && this.settings.peers && this.settings.peers.length) {
@@ -2131,12 +2148,15 @@ class Peer extends Service {
         return resolve(address);
       });
 
-      // Keep a general error handler for runtime errors
-      this.server.on('error', (error) => {
-        if (error.code !== 'EADDRINUSE') {
-          this.emit('error', `Server socket error: ${error}`);
-        }
-      });
+      // Runtime errors after listen succeeds; attach once so port-retry does not stack handlers.
+      if (!this._peerServerRuntimeErrorBound) {
+        this._peerServerRuntimeErrorBound = true;
+        this.server.on('error', (error) => {
+          if (error.code !== 'EADDRINUSE') {
+            this.emit('error', `Server socket error: ${error}`);
+          }
+        });
+      }
     });
   }
 }

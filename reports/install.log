@@ -4,9 +4,9 @@ $ npm i
 > node -e ""
 
 
-added 832 packages, and audited 833 packages in 9s
+added 649 packages, and audited 650 packages in 15s
 
-201 packages are looking for funding
+111 packages are looking for funding
   run `npm fund` for details
 
 found 0 vulnerabilities

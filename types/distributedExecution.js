@@ -7,14 +7,15 @@
  * Used by Hub Beacon, HTTP manifest routes (`@fabric/http`), and peers that
  * must reject messages outside the agreed program.
  */
+/** @private */
 const crypto = require('crypto');
 const Key = require('./key');
 
-/** @type {string} */
 const BEACON_EPOCH_SIGNING_KIND = 'BeaconEpoch';
 
 /**
  * Deterministic JSON (sorted object keys) for hashing and signing.
+ * @private
  * @param {*} value
  * @returns {string}
  */
@@ -31,6 +32,7 @@ function stableStringify (value) {
 
 /**
  * Drop `undefined` and normalize values the same way JSON.parse(JSON.stringify) does.
+ * @private
  * @param {*} value
  * @returns {*}
  */
@@ -40,6 +42,7 @@ function jsonSafe (value) {
 
 /**
  * UTF-8 string that federation members sign for a beacon epoch (same bytes for all validators).
+ * @private
  * @param {object} epochPayload — clock, blockHash, height, balance, balanceSats, timestamp, …
  * @returns {string}
  */
@@ -54,6 +57,7 @@ function signingStringForBeaconEpoch (epochPayload) {
 
 /**
  * SHA-256 hex digest of {@link signingStringForBeaconEpoch} (public commitment).
+ * @private
  * @param {object} epochPayload
  * @returns {string}
  */
@@ -65,6 +69,7 @@ function epochCommitmentDigestHex (epochPayload) {
 /**
  * Verify threshold Schnorr signatures over the **same** message buffer used when signing
  * (`Key.signSchnorr(messageBuffer)`), without requiring a full {@link Federation} instance.
+ * @private
  *
  * @param {Buffer} messageBuffer — typically `Buffer.from(signingStringForBeaconEpoch(epoch), 'utf8')`
  * @param {object} witness
@@ -96,6 +101,7 @@ function verifyFederationWitnessOnMessage (messageBuffer, witness, validatorPubk
 
 /**
  * Setup-phase manifest schema (v1): program identity + allowed traffic + optional federation policy.
+ * @private
  * @param {object} raw
  * @returns {object}
  */

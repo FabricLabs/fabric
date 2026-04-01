@@ -22,10 +22,6 @@ operates, a computable directed graph describing a network of
 See also <a href="Swarm">Swarm</a> for deeper inspection of <a href="#Machine">Machine</a>
 mechanics.</p>
 </dd>
-<dt><a href="#CLI">CLI</a></dt>
-<dd><p>Provides a Command Line Interface (CLI) for interacting with
-the Fabric network using a terminal emulator.</p>
-</dd>
 <dt><a href="#Collection">Collection</a></dt>
 <dd><p>The <a href="#Collection">Collection</a> type maintains an ordered list of <a href="#State">State</a> items.</p>
 </dd>
@@ -96,8 +92,6 @@ this prototype.  In general, <code>connect</code> and <code>send</code> are the 
 jobs, and by default the <code>fabric</code> property will serve as an I/O stream using
 familiar semantics.</p>
 </dd>
-<dt><a href="#FabricShell">FabricShell</a></dt>
-<dd></dd>
 <dt><a href="#Session">Session</a></dt>
 <dd><p>The <a href="#Session">Session</a> type describes a connection between <a href="#Peer">Peer</a> objects, and includes its own lifecycle.</p>
 </dd>
@@ -139,93 +133,6 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 </dd>
 <dt><del><a href="#Scribe">Scribe</a></del></dt>
 <dd><p>Deprecated 2021-11-06.</p>
-</dd>
-</dl>
-
-## Members
-
-<dl>
-<dt><a href="#gossip">gossip</a></dt>
-<dd><p>Limits relay amplification on <a href="P2P_PEER_GOSSIP">P2P_PEER_GOSSIP</a> (hop TTL, payload dedup, per-origin rate).</p>
-</dd>
-<dt><a href="#wireTraffic">wireTraffic</a></dt>
-<dd><p>Inbound wire traffic budgeting (Bitcoin Core–style peer quality).
-Credits accrue per rolling window; overflow de-ranks the peer (registry score)
-and drops the message. Heavier opcodes cost more credits.</p>
-</dd>
-<dt><a href="#explorerBaseUrl">explorerBaseUrl</a></dt>
-<dd><p>Optional HTTP origin for block/tx/address REST fallback (e.g. a Hub). Null = RPC only.</p>
-</dd>
-<dt><a href="#p2pAddNodes">p2pAddNodes</a> : <code>Array.&lt;string&gt;</code></dt>
-<dd><p>After RPC is ready, call <code>addnode &lt;host:port&gt; add</code> for each entry (outbound P2P only).
-Used for LAN &quot;playnet&quot; regtest sync. Ignored on mainnet unless <a href="#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a> is true.</p>
-</dd>
-<dt><a href="#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></dt>
-<dd><p>When true, <a href="#p2pAddNodes">p2pAddNodes</a> is applied even on mainnet (private deployments only).</p>
-</dd>
-</dl>
-
-## Constants
-
-<dl>
-<dt><a href="#crypto">crypto</a></dt>
-<dd><p>Shared helpers for multi-operator contract execution: canonical payloads,
-beacon epoch signing strings, and federation signature verification.</p>
-<p>Used by Hub Beacon, HTTP manifest routes (<code>@fabric/http</code>), and peers that
-must reject messages outside the agreed program.</p>
-</dd>
-<dt><a href="#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a> : <code>string</code></dt>
-<dd></dd>
-<dt><a href="#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></dt>
-<dd><p><strong>Two parallel type names:</strong></p>
-<ul>
-<li><strong>Wire</strong> (<code>wireType</code>, <a href="Message#type">Message#type</a>): SCREAMING_SNAKE_CASE strings from opcode
-decode (<code>fromBuffer</code>, <code>toVector</code> first element). Matches AMP / <code>constants.js</code> style.</li>
-<li><strong>Friendly</strong> (<a href="#Message+friendlyType">friendlyType</a>, <code>toObject().type</code>): PascalCase (or historical
-labels) for JSON and human-facing APIs — see <a href="#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a>.</li>
-</ul>
-<p>Encode accepts <strong>either</strong> name via merged <a href="Message#types">Message#types</a> (canonical wire + legacy friendly).
-<a href="Message.wireTypeFromFriendly">Message.wireTypeFromFriendly</a> / <a href="Message.friendlyTypeFromWire">Message.friendlyTypeFromWire</a> convert between them.</p>
-<p>Opcode → wire string order matches the historical <code>type</code> switch: when multiple labels share one
-opcode (e.g. P2P vs Lightning), <strong>first listed</strong> in <a href="#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a> wins.</p>
-</dd>
-<dt><a href="#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></dt>
-<dd><p>Wire-level type strings (ALL_CAPS, opcode decode) ↔ JSON-oriented friendly names (PascalCase
-where historically used). <a href="#Message+wireType">wireType</a> / <a href="Message#type">Message#type</a> use wire names;
-<a href="#Message+friendlyType">friendlyType</a> and <a href="Message#toObject">Message#toObject</a> <code>type</code> use friendly names.</p>
-</dd>
-</dl>
-
-## Functions
-
-<dl>
-<dt><a href="#stableStringify">stableStringify(value)</a> ⇒ <code>string</code></dt>
-<dd><p>Deterministic JSON (sorted object keys) for hashing and signing.</p>
-</dd>
-<dt><a href="#jsonSafe">jsonSafe(value)</a> ⇒ <code>*</code></dt>
-<dd><p>Drop <code>undefined</code> and normalize values the same way JSON.parse(JSON.stringify) does.</p>
-</dd>
-<dt><a href="#signingStringForBeaconEpoch">signingStringForBeaconEpoch(epochPayload)</a> ⇒ <code>string</code></dt>
-<dd><p>UTF-8 string that federation members sign for a beacon epoch (same bytes for all validators).</p>
-</dd>
-<dt><a href="#epochCommitmentDigestHex">epochCommitmentDigestHex(epochPayload)</a> ⇒ <code>string</code></dt>
-<dd><p>SHA-256 hex digest of <a href="#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a> (public commitment).</p>
-</dd>
-<dt><a href="#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage(messageBuffer, witness, validatorPubkeys, [threshold])</a> ⇒ <code>boolean</code></dt>
-<dd><p>Verify threshold Schnorr signatures over the <strong>same</strong> message buffer used when signing
-(<code>Key.signSchnorr(messageBuffer)</code>), without requiring a full <a href="#Federation">Federation</a> instance.</p>
-</dd>
-<dt><a href="#parseDistributedManifestV1">parseDistributedManifestV1(raw)</a> ⇒ <code>object</code></dt>
-<dd><p>Setup-phase manifest schema (v1): program identity + allowed traffic + optional federation policy.</p>
-</dd>
-<dt><a href="#isAllZero32">isAllZero32(buf)</a></dt>
-<dd></dd>
-<dt><a href="#friendlyTypeFromWire">friendlyTypeFromWire(wire)</a> ⇒ <code>string</code></dt>
-<dd></dd>
-<dt><a href="#wireTypeFromFriendly">wireTypeFromFriendly(friendly)</a> ⇒ <code>string</code></dt>
-<dd></dd>
-<dt><a href="#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary()</a></dt>
-<dd><p>Safe debug label for a derived Key — never log private material.</p>
 </dd>
 </dl>
 
@@ -550,54 +457,6 @@ See also [Swarm](Swarm) for deeper inspection of [Machine](#Machine)
 mechanics.
 
 **Kind**: global class  
-<a name="CLI"></a>
-
-## CLI
-Provides a Command Line Interface (CLI) for interacting with
-the Fabric network using a terminal emulator.
-
-**Kind**: global class  
-
-* [CLI](#CLI)
-    * [new CLI([settings])](#new_CLI_new)
-    * [.start()](#CLI+start)
-    * [.stop()](#CLI+stop)
-    * [._handleGrantCommand(params)](#CLI+_handleGrantCommand)
-
-<a name="new_CLI_new"></a>
-
-### new CLI([settings])
-Create a terminal-based interface for a [User](User).
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [settings] | <code>Object</code> | Configuration values. |
-| [settings.currencies] | <code>Array</code> | List of currencies to support. |
-
-<a name="CLI+start"></a>
-
-### clI.start()
-Starts (and renders) the CLI.
-
-**Kind**: instance method of [<code>CLI</code>](#CLI)  
-<a name="CLI+stop"></a>
-
-### clI.stop()
-Disconnect all interfaces and exit the process.
-
-**Kind**: instance method of [<code>CLI</code>](#CLI)  
-<a name="CLI+_handleGrantCommand"></a>
-
-### clI.\_handleGrantCommand(params)
-Creates a token for the target signer with a provided role and some optional data.
-
-**Kind**: instance method of [<code>CLI</code>](#CLI)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| params | <code>Array</code> | Parameters array. |
-
 <a name="Collection"></a>
 
 ## Collection
@@ -2013,6 +1872,14 @@ An in-memory representation of a node in our network.
     * [._upsertPeerRegistry(address, [updates])](#Peer+_upsertPeerRegistry)
     * [._fillPeerSlots()](#Peer+_fillPeerSlots) ⇒ [<code>Peer</code>](#Peer)
     * [._handleFabricMessage(buffer)](#Peer+_handleFabricMessage) ⇒ [<code>Peer</code>](#Peer)
+    * [._buildDocumentParsedForPublish(documentId, content)](#Peer+_buildDocumentParsedForPublish) ⇒ <code>Object</code>
+    * [._respondInventoryFromLocalDocuments(message, origin)](#Peer+_respondInventoryFromLocalDocuments) ⇒ <code>boolean</code>
+    * [._sendP2pFileSendToPeer(documentId, peerAddress)](#Peer+_sendP2pFileSendToPeer) ⇒ <code>boolean</code>
+    * [.sendDocumentFileToPeer(documentId, peerAddress)](#Peer+sendDocumentFileToPeer) ⇒ <code>boolean</code>
+    * [._buildPublishDocumentWireBuffers(documentId, body, rateSats)](#Peer+_buildPublishDocumentWireBuffers) ⇒ <code>Array.&lt;Buffer&gt;</code>
+    * [._announceLocalDocumentsToPeer(peerAddress)](#Peer+_announceLocalDocumentsToPeer)
+    * [._publishDocument(documentId, [content], [rateSats])](#Peer+_publishDocument)
+    * [._handleDocumentRequestWire(message, origin, socket)](#Peer+_handleDocumentRequestWire)
     * [.start()](#Peer+start)
     * [.stop()](#Peer+stop)
     * [.listen()](#Peer+listen) ⇒ [<code>Peer</code>](#Peer)
@@ -2029,6 +1896,7 @@ Create an instance of [Peer](#Peer).
 | [config.listen] | <code>Boolean</code> |  | Whether or not to listen for connections. |
 | [config.upnp] | <code>Boolean</code> |  | Whether or not to use UPNP for automatic configuration. |
 | [config.port] | <code>Number</code> | <code>7777</code> | Port to use for P2P connections. |
+| [config.listenPortAttempts] | <code>Number</code> | <code>20</code> | When the listen port is in use (`EADDRINUSE`),   try the next port up to this many times (same host). |
 | [config.peers] | <code>Array</code> | <code>[]</code> | List of initial peers. |
 
 <a name="Peer+messages"></a>
@@ -2244,6 +2112,111 @@ Handle a Fabric [Message](#Message) buffer.
 | Param | Type |
 | --- | --- |
 | buffer | <code>Buffer</code> | 
+
+<a name="Peer+_buildDocumentParsedForPublish"></a>
+
+### peer.\_buildDocumentParsedForPublish(documentId, content) ⇒ <code>Object</code>
+Build hub-compatible document metadata for [purchaseContentHashHex](purchaseContentHashHex).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>Object</code> - Parsed document record (whitelisted fields)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| documentId | <code>String</code> |  |
+| content | <code>String</code> | UTF-8 body |
+
+<a name="Peer+_respondInventoryFromLocalDocuments"></a>
+
+### peer.\_respondInventoryFromLocalDocuments(message, origin) ⇒ <code>boolean</code>
+Reply to `INVENTORY_REQUEST` with `INVENTORY_RESPONSE` built from local documents and rates.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>boolean</code> - true if an `INVENTORY_RESPONSE` was written to the requester  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| message | <code>Object</code> | Generic body from [Peer#_handleGenericMessage](Peer#_handleGenericMessage) |
+| origin | <code>Object</code> |  |
+
+<a name="Peer+_sendP2pFileSendToPeer"></a>
+
+### peer.\_sendP2pFileSendToPeer(documentId, peerAddress) ⇒ <code>boolean</code>
+Send a locally stored document to a connected peer as `P2P_FILE_SEND`.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>boolean</code> - true if the payload was written  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| documentId | <code>string</code> |  |
+| peerAddress | <code>string</code> | connection key in [Peer#connections](Peer#connections) |
+
+<a name="Peer+sendDocumentFileToPeer"></a>
+
+### peer.sendDocumentFileToPeer(documentId, peerAddress) ⇒ <code>boolean</code>
+Public helper: push document bytes to a peer (same wire path as [_handleDocumentRequestWire](#Peer+_handleDocumentRequestWire) fulfillment).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| documentId | <code>string</code> | 
+| peerAddress | <code>string</code> | 
+
+<a name="Peer+_buildPublishDocumentWireBuffers"></a>
+
+### peer.\_buildPublishDocumentWireBuffers(documentId, body, rateSats) ⇒ <code>Array.&lt;Buffer&gt;</code>
+AMP buffers for one document: canonical `DocumentPublish`, then optional pricing `P2P_DOCUMENT_PUBLISH`.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| documentId | <code>string</code> |  |
+| body | <code>string</code> | UTF-8 body |
+| rateSats | <code>number</code> |  |
+
+<a name="Peer+_announceLocalDocumentsToPeer"></a>
+
+### peer.\_announceLocalDocumentsToPeer(peerAddress)
+Re-send all local document publishes to one peer (same bytes as [_publishDocument](#Peer+_publishDocument)).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| peerAddress | <code>string</code> | connection key in [Peer#connections](Peer#connections) |
+
+<a name="Peer+_publishDocument"></a>
+
+### peer.\_publishDocument(documentId, [content], [rateSats])
+Store a document locally and gossip to peers.
+1) **Canonical** `DOCUMENT_PUBLISH` wire message (same bytes as hub `documentPublishEnvelope`) for L1 `contentHash`.
+2) If `rateSats > 0`, a **pricing** `GENERIC` `P2P_DOCUMENT_PUBLISH` with `rate` and `contentHash` (sat ask).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| documentId | <code>String</code> |  | Catalog key (e.g. CLI document name). |
+| [content] | <code>String</code> | <code>&#x27;&#x27;</code> | UTF-8 body stored under [Peer#state](Peer#state).documents. |
+| [rateSats] | <code>Number</code> | <code>0</code> | Ask price in satoshis (gossip only; not part of canonical hash). |
+
+<a name="Peer+_handleDocumentRequestWire"></a>
+
+### peer.\_handleDocumentRequestWire(message, origin, socket)
+Handle inbound `DOCUMENT_REQUEST`: emit `documentRequest` / `DocumentRequest`, then either
+send `P2P_FILE_SEND` to the requester if `state.documents[id]` is present, or relay the
+request to other peers (conditional relay).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| message | [<code>Message</code>](#Message) | 
+| origin | <code>Object</code> | 
+| socket | <code>\*</code> | 
 
 <a name="Peer+start"></a>
 
@@ -2501,6 +2474,7 @@ familiar semantics.
 
 * [Service](#Service)
     * [new Service([settings])](#new_Service_new)
+    * [._appendWarning(msg)](#Service+_appendWarning) ⇒ [<code>Service</code>](#Service)
     * [.init()](#Service+init)
     * [.tick()](#Service+tick) ⇒ <code>Number</code>
     * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
@@ -2531,6 +2505,16 @@ Create an instance of a Service.
 | [settings.networking] | <code>Boolean</code> | <code>true</code> | Whether or not to connect to the network. |
 | [settings.frequency] | <code>Object</code> |  | Interval frequency in hertz. |
 | [settings.state] | <code>Object</code> |  | Initial state to assign. |
+
+<a name="Service+_appendWarning"></a>
+
+### service.\_appendWarning(msg) ⇒ [<code>Service</code>](#Service)
+**Kind**: instance method of [<code>Service</code>](#Service)  
+**Returns**: [<code>Service</code>](#Service) - This instance.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | <code>String</code> | Warning text (used by [Service#_registerService](Service#_registerService) duplicate guard). |
 
 <a name="Service+init"></a>
 
@@ -2717,15 +2701,6 @@ Sends a message.
 | Param | Type | Description |
 | --- | --- | --- |
 | message | <code>Mixed</code> | Message to send. |
-
-<a name="FabricShell"></a>
-
-## FabricShell
-**Kind**: global class  
-<a name="new_FabricShell_new"></a>
-
-### new FabricShell()
-Browser / CLI application shell: encrypted store, peer node, resources.
 
 <a name="Session"></a>
 
@@ -3210,6 +3185,7 @@ Manage keys and track their balances.
 * [Wallet](#Wallet) : <code>Object</code>
     * [new Wallet([settings])](#new_Wallet_new)
     * _instance_
+        * [.loadKey(input, [labels])](#Wallet+loadKey) ⇒ <code>Object</code>
         * [.start()](#Wallet+start)
         * [.getAddressForScript(script)](#Wallet+getAddressForScript)
         * [.getAddressFromRedeemScript(redeemScript)](#Wallet+getAddressFromRedeemScript)
@@ -3221,6 +3197,7 @@ Manage keys and track their balances.
     * _static_
         * [.createSeed(passphrase)](#Wallet.createSeed) ⇒ <code>FabricSeed</code>
         * [.fromSeed(seed)](#Wallet.fromSeed) ⇒ [<code>Wallet</code>](#Wallet)
+        * [.purchaseContentHashHex(documentId, parsed)](#Wallet.purchaseContentHashHex) ⇒ <code>string</code>
 
 <a name="new_Wallet_new"></a>
 
@@ -3235,6 +3212,20 @@ Create an instance of a [Wallet](#Wallet).
 | [settings.verbosity] | <code>Number</code> | <code>2</code> | One of: 0 (none), 1 (error), 2 (warning), 3 (notice), 4 (debug), 5 (audit) |
 | [settings.key] | <code>Object</code> |  | Key to restore from. |
 | [settings.key.seed] | <code>String</code> |  | Mnemonic seed for a restored wallet. |
+
+<a name="Wallet+loadKey"></a>
+
+### wallet.loadKey(input, [labels]) ⇒ <code>Object</code>
+Register a key with optional labels.
+Accepts a Key instance, pubkey hex string, or object-like key input.
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+**Returns**: <code>Object</code> - Stored key descriptor.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| input | [<code>Key</code>](#Key) \| <code>String</code> \| <code>Object</code> |  | Key material to load. |
+| [labels] | <code>Array.&lt;String&gt;</code> | <code>[]</code> | Optional labels. |
 
 <a name="Wallet+start"></a>
 
@@ -3344,6 +3335,18 @@ Create a new [Wallet](#Wallet) from a seed object.
 | --- | --- | --- |
 | seed | <code>FabricSeed</code> | Fabric seed. |
 
+<a name="Wallet.purchaseContentHashHex"></a>
+
+### Wallet.purchaseContentHashHex(documentId, parsed) ⇒ <code>string</code>
+L1 / hub document purchase binding: same 64-char hex as hub `CreatePurchaseInvoice` / HTLC `contentHash`.
+
+**Kind**: static method of [<code>Wallet</code>](#Wallet)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| documentId | <code>string</code> |  |
+| parsed | <code>object</code> | Whitelisted document fields (see [_buildDocumentParsedForPublish](#Peer+_buildDocumentParsedForPublish)). |
+
 <a name="Worker"></a>
 
 ## Worker
@@ -3411,6 +3414,7 @@ Manages interaction with the Bitcoin network.
     * [.applyP2pAddNodes(peers, [command])](#Bitcoin+applyP2pAddNodes) ⇒ <code>Promise.&lt;Array.&lt;string&gt;&gt;</code>
     * [.start()](#Bitcoin+start)
     * [.stop()](#Bitcoin+stop)
+    * [._appendWarning(msg)](#Service+_appendWarning) ⇒ [<code>Service</code>](#Service)
     * [.init()](#Service+init)
     * [.tick()](#Service+tick) ⇒ <code>Number</code>
     * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
@@ -3698,6 +3702,17 @@ Start the Bitcoin service, including the initiation of outbound requests.
 Stop the Bitcoin service.
 
 **Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+<a name="Service+_appendWarning"></a>
+
+### bitcoin.\_appendWarning(msg) ⇒ [<code>Service</code>](#Service)
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>\_appendWarning</code>](#Service+_appendWarning)  
+**Returns**: [<code>Service</code>](#Service) - This instance.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | <code>String</code> | Warning text (used by [Service#_registerService](Service#_registerService) duplicate guard). |
+
 <a name="Service+init"></a>
 
 ### bitcoin.init()
@@ -4094,177 +4109,3 @@ Use an existing Scribe instance as a parent.
 | --- | --- | --- |
 | scribe | [<code>Scribe</code>](#Scribe) | Instance of Scribe to use as parent. |
 
-<a name="gossip"></a>
-
-## gossip
-Limits relay amplification on [P2P_PEER_GOSSIP](P2P_PEER_GOSSIP) (hop TTL, payload dedup, per-origin rate).
-
-**Kind**: global variable  
-<a name="wireTraffic"></a>
-
-## wireTraffic
-Inbound wire traffic budgeting (Bitcoin Core–style peer quality).
-Credits accrue per rolling window; overflow de-ranks the peer (registry score)
-and drops the message. Heavier opcodes cost more credits.
-
-**Kind**: global variable  
-<a name="explorerBaseUrl"></a>
-
-## explorerBaseUrl
-Optional HTTP origin for block/tx/address REST fallback (e.g. a Hub). Null = RPC only.
-
-**Kind**: global variable  
-<a name="p2pAddNodes"></a>
-
-## p2pAddNodes : <code>Array.&lt;string&gt;</code>
-After RPC is ready, call `addnode <host:port> add` for each entry (outbound P2P only).
-Used for LAN "playnet" regtest sync. Ignored on mainnet unless [p2pAddNodesAllowMainnet](#p2pAddNodesAllowMainnet) is true.
-
-**Kind**: global variable  
-<a name="p2pAddNodesAllowMainnet"></a>
-
-## p2pAddNodesAllowMainnet
-When true, [p2pAddNodes](#p2pAddNodes) is applied even on mainnet (private deployments only).
-
-**Kind**: global variable  
-<a name="crypto"></a>
-
-## crypto
-Shared helpers for multi-operator contract execution: canonical payloads,
-beacon epoch signing strings, and federation signature verification.
-
-Used by Hub Beacon, HTTP manifest routes (`@fabric/http`), and peers that
-must reject messages outside the agreed program.
-
-**Kind**: global constant  
-<a name="BEACON_EPOCH_SIGNING_KIND"></a>
-
-## BEACON\_EPOCH\_SIGNING\_KIND : <code>string</code>
-**Kind**: global constant  
-<a name="WIRE_TYPE_DECODE_ORDER"></a>
-
-## WIRE\_TYPE\_DECODE\_ORDER
-**Two parallel type names:**
-- **Wire** (`wireType`, [Message#type](Message#type)): SCREAMING_SNAKE_CASE strings from opcode
-  decode (`fromBuffer`, `toVector` first element). Matches AMP / `constants.js` style.
-- **Friendly** ([friendlyType](#Message+friendlyType), `toObject().type`): PascalCase (or historical
-  labels) for JSON and human-facing APIs — see [FRIENDLY_TYPE_BY_WIRE](#FRIENDLY_TYPE_BY_WIRE).
-
-Encode accepts **either** name via merged [Message#types](Message#types) (canonical wire + legacy friendly).
-[Message.wireTypeFromFriendly](Message.wireTypeFromFriendly) / [Message.friendlyTypeFromWire](Message.friendlyTypeFromWire) convert between them.
-
-Opcode → wire string order matches the historical `type` switch: when multiple labels share one
-opcode (e.g. P2P vs Lightning), **first listed** in [WIRE_TYPE_DECODE_ORDER](#WIRE_TYPE_DECODE_ORDER) wins.
-
-**Kind**: global constant  
-<a name="FRIENDLY_TYPE_BY_WIRE"></a>
-
-## FRIENDLY\_TYPE\_BY\_WIRE
-Wire-level type strings (ALL_CAPS, opcode decode) ↔ JSON-oriented friendly names (PascalCase
-where historically used). [wireType](#Message+wireType) / [Message#type](Message#type) use wire names;
-[friendlyType](#Message+friendlyType) and [Message#toObject](Message#toObject) `type` use friendly names.
-
-**Kind**: global constant  
-<a name="stableStringify"></a>
-
-## stableStringify(value) ⇒ <code>string</code>
-Deterministic JSON (sorted object keys) for hashing and signing.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| value | <code>\*</code> | 
-
-<a name="jsonSafe"></a>
-
-## jsonSafe(value) ⇒ <code>\*</code>
-Drop `undefined` and normalize values the same way JSON.parse(JSON.stringify) does.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| value | <code>\*</code> | 
-
-<a name="signingStringForBeaconEpoch"></a>
-
-## signingStringForBeaconEpoch(epochPayload) ⇒ <code>string</code>
-UTF-8 string that federation members sign for a beacon epoch (same bytes for all validators).
-
-**Kind**: global function  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| epochPayload | <code>object</code> | — clock, blockHash, height, balance, balanceSats, timestamp, … |
-
-<a name="epochCommitmentDigestHex"></a>
-
-## epochCommitmentDigestHex(epochPayload) ⇒ <code>string</code>
-SHA-256 hex digest of [signingStringForBeaconEpoch](#signingStringForBeaconEpoch) (public commitment).
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| epochPayload | <code>object</code> | 
-
-<a name="verifyFederationWitnessOnMessage"></a>
-
-## verifyFederationWitnessOnMessage(messageBuffer, witness, validatorPubkeys, [threshold]) ⇒ <code>boolean</code>
-Verify threshold Schnorr signatures over the **same** message buffer used when signing
-(`Key.signSchnorr(messageBuffer)`), without requiring a full [Federation](#Federation) instance.
-
-**Kind**: global function  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| messageBuffer | <code>Buffer</code> |  | — typically `Buffer.from(signingStringForBeaconEpoch(epoch), 'utf8')` |
-| witness | <code>object</code> |  |  |
-| validatorPubkeys | <code>Array.&lt;string&gt;</code> |  | — compressed secp256k1 pubkeys, hex |
-| [threshold] | <code>number</code> | <code>1</code> |  |
-
-<a name="parseDistributedManifestV1"></a>
-
-## parseDistributedManifestV1(raw) ⇒ <code>object</code>
-Setup-phase manifest schema (v1): program identity + allowed traffic + optional federation policy.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| raw | <code>object</code> | 
-
-<a name="isAllZero32"></a>
-
-## isAllZero32(buf)
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| buf | <code>Buffer</code> | 
-
-<a name="friendlyTypeFromWire"></a>
-
-## friendlyTypeFromWire(wire) ⇒ <code>string</code>
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| wire | <code>string</code> | 
-
-<a name="wireTypeFromFriendly"></a>
-
-## wireTypeFromFriendly(friendly) ⇒ <code>string</code>
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| friendly | <code>string</code> | 
-
-<a name="peerDebugDerivedPublicSummary"></a>
-
-## peerDebugDerivedPublicSummary()
-Safe debug label for a derived Key — never log private material.
-
-**Kind**: global function  
