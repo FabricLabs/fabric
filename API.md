@@ -22,10 +22,6 @@ operates, a computable directed graph describing a network of
 See also <a href="Swarm">Swarm</a> for deeper inspection of <a href="#Machine">Machine</a>
 mechanics.</p>
 </dd>
-<dt><a href="#CLI">CLI</a></dt>
-<dd><p>Provides a Command Line Interface (CLI) for interacting with
-the Fabric network using a terminal emulator.</p>
-</dd>
 <dt><a href="#Collection">Collection</a></dt>
 <dd><p>The <a href="#Collection">Collection</a> type maintains an ordered list of <a href="#State">State</a> items.</p>
 </dd>
@@ -96,8 +92,6 @@ this prototype.  In general, <code>connect</code> and <code>send</code> are the 
 jobs, and by default the <code>fabric</code> property will serve as an I/O stream using
 familiar semantics.</p>
 </dd>
-<dt><a href="#FabricShell">FabricShell</a></dt>
-<dd></dd>
 <dt><a href="#Session">Session</a></dt>
 <dd><p>The <a href="#Session">Session</a> type describes a connection between <a href="#Peer">Peer</a> objects, and includes its own lifecycle.</p>
 </dd>
@@ -463,54 +457,6 @@ See also [Swarm](Swarm) for deeper inspection of [Machine](#Machine)
 mechanics.
 
 **Kind**: global class  
-<a name="CLI"></a>
-
-## CLI
-Provides a Command Line Interface (CLI) for interacting with
-the Fabric network using a terminal emulator.
-
-**Kind**: global class  
-
-* [CLI](#CLI)
-    * [new CLI([settings])](#new_CLI_new)
-    * [.start()](#CLI+start)
-    * [.stop()](#CLI+stop)
-    * [._handleGrantCommand(params)](#CLI+_handleGrantCommand)
-
-<a name="new_CLI_new"></a>
-
-### new CLI([settings])
-Create a terminal-based interface for a [User](User).
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [settings] | <code>Object</code> | Configuration values. |
-| [settings.currencies] | <code>Array</code> | List of currencies to support. |
-
-<a name="CLI+start"></a>
-
-### clI.start()
-Starts (and renders) the CLI.
-
-**Kind**: instance method of [<code>CLI</code>](#CLI)  
-<a name="CLI+stop"></a>
-
-### clI.stop()
-Disconnect all interfaces and exit the process.
-
-**Kind**: instance method of [<code>CLI</code>](#CLI)  
-<a name="CLI+_handleGrantCommand"></a>
-
-### clI.\_handleGrantCommand(params)
-Creates a token for the target signer with a provided role and some optional data.
-
-**Kind**: instance method of [<code>CLI</code>](#CLI)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| params | <code>Array</code> | Parameters array. |
-
 <a name="Collection"></a>
 
 ## Collection
@@ -2755,15 +2701,6 @@ Sends a message.
 | Param | Type | Description |
 | --- | --- | --- |
 | message | <code>Mixed</code> | Message to send. |
-
-<a name="FabricShell"></a>
-
-## FabricShell
-**Kind**: global class  
-<a name="new_FabricShell_new"></a>
-
-### new FabricShell()
-Browser / CLI application shell: encrypted store, peer node, resources.
 
 <a name="Session"></a>
 
