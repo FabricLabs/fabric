@@ -287,16 +287,34 @@ function wireTypeFromFriendly (friendly) {
 }
 
 /**
- * The {@link Message} type defines the Application Messaging Protocol, or AMP.
- * Each {@link Actor} in the network receives and broadcasts messages,
- * selectively disclosing new routes to peers which may have open circuits.
- * @type {Object}
+ * @classdesc <strong>Application Messaging Protocol (AMP)</strong> — binary envelope for what {@link Peer},
+ * {@link Service}, and bridges actually exchange. Extends {@link Actor} for construction and state helpers, but on the wire
+ * you think in <strong>opcodes</strong>, <strong>headers</strong> (parent, author as x-only pubkey, hash, preimage,
+ * 64-byte Schnorr signature), and <strong>payload</strong>.
+ *
+ * <p><strong>Signing</strong> — {@link Message#signWithKey} / {@link Message#verifyWithKey} use BIP-340 Schnorr on tagged
+ * hash <code>Fabric/Message</code> over header (signature field zeroed) + body. This is <strong>not</strong> Bitcoin Signed
+ * Message (ECDSA + Core prefix).</p>
+ *
+ * <p><strong>Type names</strong> — {@link Message#wireType} / {@link Message#type} use SCREAMING_SNAKE wire labels from
+ * opcode decode; {@link Message#friendlyType} and {@link Message#toObject}'s <code>type</code> use PascalCase (or legacy)
+ * JSON names. {@link Message.wireTypeFromFriendly} / {@link Message.friendlyTypeFromWire} bridge the two. See file header
+ * maps (<code>WIRE_TYPE_DECODE_ORDER</code>, <code>LEGACY_MESSAGE_TYPE_ALIASES</code>) when aligning <strong>@fabric/http</strong>
+ * or Hub.</p>
+ *
+ * <p><strong>Narrative</strong> — See <strong>DEVELOPERS.md</strong> (<em>Actor and Message</em>) and {@link Actor}
+ * <code>@fileoverview</code>; home HTML is generated from DEVELOPERS.md, while this page comes from
+ * <code>types/message.js</code>.</p>
+ * @class Message
+ * @extends Actor
  */
 class Message extends Actor {
   /**
-   * The `Message` type is standardized in {@link Fabric} as a {@link Array}, which can be added to any other vector to compute a resulting state.
-   * @param  {Object} message Message vector.  Will be serialized by {@link Array#_serialize}.
-   * @return {Message} Instance of the message.
+   * Build a message from an object. Prefer <code>type</code>/<code>data</code>; <code>@type</code> / <code>@data</code>
+   * are accepted for backward compatibility.
+   * @param {Object} [input={}] Initial fields: <code>type</code> or <code>@type</code>, <code>data</code> or
+   * <code>@data</code>, optional <code>signer</code>, <code>sensitive</code>, <code>preimage</code>.
+   * @return {Message} Instance ready for {@link Message#asRaw}, {@link Message#signWithKey}, etc.
    */
   constructor (input = {}) {
     super(input);

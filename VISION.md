@@ -48,7 +48,7 @@ These are **not** the default path for new contributors:
 | **Changelog** | **CHANGELOG.md** |
 
 ## Implementation priorities (forward motion)
-1. **Keep the JS path honest** — examples and README commands match **package.json** scripts and **Node 22.x**.
+1. **Keep the JS path honest** — examples and README commands match **package.json** scripts and **`engines`** / **`.nvmrc`** (currently **Node 24.14.1**).
 2. **Tighten protocol ↔ code** — **FABRIC_MESSAGE_TYPE_CONSOLIDATION.md** and **constants** stay in sync; fewer one-off message types over time.
 3. **Shrink doc surface** — label one-off reports via **[docs/NON_CANONICAL.md](docs/NON_CANONICAL.md)**; point readers here + **docs/README.md** instead of adding new root-level “completion” files.
 4. **Hub + HTTP** — coordinate releases with **hub.fabric.pub** / **@fabric/http** (see **DEVELOPERS.md**).

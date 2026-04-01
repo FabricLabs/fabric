@@ -1,8 +1,13 @@
 'use strict';
 
-const Actor = require('@fabric/core/types/actor');
+const Contract = require('./contract');
 
-class Bond extends Actor {
+/**
+ * On-chain or logical bond / stake terms layered on {@link Contract}.
+ * @class Bond
+ * @extends Contract
+ */
+class Bond extends Contract {
   constructor (settings = {}) {
     super(settings);
 
@@ -10,7 +15,7 @@ class Bond extends Actor {
       amount: null,
       expiry: null,
       issuer: null
-    }, this.settings, settings);
+    }, this.settings);
 
     return this;
   }
@@ -20,7 +25,7 @@ class Bond extends Actor {
       type, time,
       content: Buffer.alloc(4) // TODO: Bitcoin encoded values?
     };
-  };
+  }
 }
 
 module.exports = Bond;

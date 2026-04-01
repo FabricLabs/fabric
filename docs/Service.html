@@ -33,16 +33,11 @@
 
       <header>
 
-        <h2><span class="attribs"><span class="type-signature">(protected) </span></span>Service<span class="signature">(settings<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h2>
+        <h2><span class="attribs"><span class="type-signature">(protected) </span></span>Service<span class="signature">()</span><span class="type-signature"></span></h2>
 
-        <div class="class-description">The "Service" is a simple model for processing messages in a distributed
-          system. <a href="Service.html">Service</a> instances are public interfaces for outside systems,
-          and typically advertise their presence to the network.
-
-          To implement a Service, you will typically need to implement all methods from
-          this prototype. In general, `connect` and `send` are the highest-priority
-          jobs, and by default the `fabric` property will serve as an I/O stream using
-          familiar semantics.</div>
+        <div class="class-description">Long-lived application surface extending <a href="Actor.html">Actor</a>. Integrates external systems and the Fabric
+          network: peers consume and produce <a href="Message.html">Message</a> (AMP) instances, not ad-hoc JSON. Subclasses implement routing,
+          resources, and lifecycle (<code>start</code>/<code>stop</code> patterns — see <strong>AGENTS.md</strong>). The CLI/browser shell is Service.FabricShell.</div>
 
 
       </header>
@@ -57,227 +52,19 @@
 
 
 
-          <h4 class="name" id="Service"><span class="type-signature">(protected) </span>new Service<span class="signature">(settings<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h4>
+          <h4 class="name" id="Service"><span class="type-signature">(protected) </span>new Service<span class="signature">()</span><span class="type-signature"></span></h4>
 
 
 
 
 
 
-          <div class="description">
-            Create an instance of a Service.
-          </div>
 
 
 
 
 
 
-
-
-
-          <h5>Parameters:</h5>
-
-
-          <table class="params">
-            <thead>
-              <tr>
-
-                <th>Name</th>
-
-
-                <th>Type</th>
-
-
-                <th>Attributes</th>
-
-
-
-
-                <th class="last">Description</th>
-              </tr>
-            </thead>
-
-            <tbody>
-
-
-              <tr>
-
-                <td class="name"><code>settings</code></td>
-
-
-                <td class="type">
-
-
-                  <span class="param-type">Object</span>
-
-
-
-                </td>
-
-
-                <td class="attributes">
-
-                  &lt;optional><br>
-
-
-
-
-
-                </td>
-
-
-
-
-                <td class="description last">Configuration for this service.
-                  <h6>Properties</h6>
-
-
-                  <table class="params">
-                    <thead>
-                      <tr>
-
-                        <th>Name</th>
-
-
-                        <th>Type</th>
-
-
-                        <th>Attributes</th>
-
-
-
-                        <th>Default</th>
-
-
-                        <th class="last">Description</th>
-                      </tr>
-                    </thead>
-
-                    <tbody>
-
-
-                      <tr>
-
-                        <td class="name"><code>networking</code></td>
-
-
-                        <td class="type">
-
-
-                          <span class="param-type">Boolean</span>
-
-
-
-                        </td>
-
-
-                        <td class="attributes">
-
-                          &lt;optional><br>
-
-
-
-
-
-                        </td>
-
-
-
-                        <td class="default">
-
-                          true
-
-                        </td>
-
-
-                        <td class="description last">Whether or not to connect to the network.</td>
-                      </tr>
-
-
-
-                      <tr>
-
-                        <td class="name"><code>frequency</code></td>
-
-
-                        <td class="type">
-
-
-                          <span class="param-type">Object</span>
-
-
-
-                        </td>
-
-
-                        <td class="attributes">
-
-                          &lt;optional><br>
-
-
-
-
-
-                        </td>
-
-
-
-                        <td class="default">
-
-                        </td>
-
-
-                        <td class="description last">Interval frequency in hertz.</td>
-                      </tr>
-
-
-
-                      <tr>
-
-                        <td class="name"><code>state</code></td>
-
-
-                        <td class="type">
-
-
-                          <span class="param-type">Object</span>
-
-
-
-                        </td>
-
-
-                        <td class="attributes">
-
-                          &lt;optional><br>
-
-
-
-
-
-                        </td>
-
-
-
-                        <td class="default">
-
-                        </td>
-
-
-                        <td class="description last">Initial state to assign.</td>
-                      </tr>
-
-
-                    </tbody>
-                  </table>
-
-                </td>
-              </tr>
-
-
-            </tbody>
-          </table>
 
 
 
@@ -362,7 +149,7 @@
             <dd class="tag-source">
               <ul class="dummy">
                 <li>
-                  <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line42">line 42</a>
+                  <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line30">line 30</a>
                 </li>
               </ul>
             </dd>
@@ -396,6 +183,17 @@
 
 
         </div>
+
+
+        <h3 class="subsection-title">Extends</h3>
+
+
+
+
+        <ul>
+          <li><a href="Actor.html">Actor</a></li>
+        </ul>
+
 
 
 
@@ -523,7 +321,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line736">line 736</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line733">line 733</a>
               </li>
             </ul>
           </dd>
@@ -776,7 +574,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line770">line 770</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line767">line 767</a>
               </li>
             </ul>
           </dd>
@@ -935,7 +733,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line270">line 270</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line267">line 267</a>
               </li>
             </ul>
           </dd>
@@ -978,6 +776,178 @@
           <dd>
 
             <span class="param-type"><a href="Service.html">Service</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="_readObject"><span class="type-signature"></span>_readObject<span class="signature">(input)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Parse an Object into a corresponding Fabric state.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>input</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Object to read as input.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+          <dt class="inherited-from">Inherited From:</dt>
+          <dd class="inherited-from">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#_readObject">Actor#_readObject</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line502">line 502</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Fabric state.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
 
 
           </dd>
@@ -1098,7 +1068,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line1027">line 1027</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line1024">line 1024</a>
               </li>
             </ul>
           </dd>
@@ -1261,7 +1231,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line1162">line 1162</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line1159">line 1159</a>
               </li>
             </ul>
           </dd>
@@ -1286,6 +1256,178 @@
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="adopt"><span class="type-signature"></span>adopt<span class="signature">(changes)</span><span class="type-signature"> &rarr; {<a href="Actor.html">Actor</a>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Explicitly adopt a set of JSONPatch-encoded changes.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>changes</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Array</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">List of JSONPatch operations to apply.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+          <dt class="inherited-from">Inherited From:</dt>
+          <dd class="inherited-from">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#adopt">Actor#adopt</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line212">line 212</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Instance of the Actor.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="Actor.html">Actor</a></span>
+
+
+          </dd>
+        </dl>
 
 
 
@@ -1353,7 +1495,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line301">line 301</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line298">line 298</a>
               </li>
             </ul>
           </dd>
@@ -1397,6 +1539,129 @@
           <dd>
 
             <span class="param-type"><a href="Service.html">Service</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="commit"><span class="type-signature"></span>commit<span class="signature">()</span><span class="type-signature"> &rarr; {String}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Resolve the current state to a commitment.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#commit">Actor#commit</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line227">line 227</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          32-byte ID
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">String</span>
 
 
           </dd>
@@ -1525,7 +1790,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line843">line 843</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line840">line 840</a>
               </li>
             </ul>
           </dd>
@@ -1568,6 +1833,129 @@
           <dd>
 
             <span class="param-type">Promise</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="export"><span class="type-signature"></span>export<span class="signature">()</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Export the Actor's state to a standard Object.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+          <dt class="inherited-from">Inherited From:</dt>
+          <dd class="inherited-from">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#export">Actor#export</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line262">line 262</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Standard object.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
 
 
           </dd>
@@ -1666,6 +2054,15 @@
 
 
 
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#get">Actor#get</a>
+              </li>
+            </ul>
+          </dd>
+
 
 
 
@@ -1688,7 +2085,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line345">line 345</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line342">line 342</a>
               </li>
             </ul>
           </dd>
@@ -1852,7 +2249,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line496">line 496</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line493">line 493</a>
               </li>
             </ul>
           </dd>
@@ -1967,7 +2364,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line284">line 284</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line281">line 281</a>
               </li>
             </ul>
           </dd>
@@ -2128,7 +2525,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line515">line 515</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line512">line 512</a>
               </li>
             </ul>
           </dd>
@@ -2171,6 +2568,129 @@
           <dd>
 
             <span class="param-type">Boolean</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="pause"><span class="type-signature"></span>pause<span class="signature">()</span><span class="type-signature"> &rarr; {<a href="Actor.html">Actor</a>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Toggles `status` property to paused.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+          <dt class="inherited-from">Inherited From:</dt>
+          <dd class="inherited-from">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#pause">Actor#pause</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line398">line 398</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Instance of the Actor.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="Actor.html">Actor</a></span>
 
 
           </dd>
@@ -2291,7 +2811,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line582">line 582</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line579">line 579</a>
               </li>
             </ul>
           </dd>
@@ -2477,7 +2997,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line926">line 926</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line923">line 923</a>
               </li>
             </ul>
           </dd>
@@ -2520,6 +3040,125 @@
           <dd>
 
             <span class="param-type"><a href="Service.html">Service</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="serialize"><span class="type-signature"></span>serialize<span class="signature">()</span><span class="type-signature"> &rarr; {String}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Serialize the Actor's current state into a JSON-formatted string.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+          <dt class="inherited-from">Inherited From:</dt>
+          <dd class="inherited-from">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#serialize">Actor#serialize</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line413">line 413</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">String</span>
 
 
           </dd>
@@ -2618,6 +3257,15 @@
 
 
 
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#set">Actor#set</a>
+              </li>
+            </ul>
+          </dd>
+
 
 
 
@@ -2640,7 +3288,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line360">line 360</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line357">line 357</a>
               </li>
             </ul>
           </dd>
@@ -2679,6 +3327,125 @@
           <dd>
 
             <span class="param-type">Mixed</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="sign"><span class="type-signature"></span>sign<span class="signature">()</span><span class="type-signature"> &rarr; {<a href="Actor.html">Actor</a>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Signs the Actor.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+          <dt class="inherited-from">Inherited From:</dt>
+          <dd class="inherited-from">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#sign">Actor#sign</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line436">line 436</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="Actor.html">Actor</a></span>
 
 
           </dd>
@@ -2751,7 +3518,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line617">line 617</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line614">line 614</a>
               </li>
             </ul>
           </dd>
@@ -2776,6 +3543,190 @@
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="stream"><span class="type-signature"></span>stream<span class="signature">(pipe<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {TransformStream}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Returns a new output stream for the Actor.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>pipe</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">TransformStream</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">Pipe to stream to.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+          <dt class="inherited-from">Inherited From:</dt>
+          <dd class="inherited-from">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#stream">Actor#stream</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line319">line 319</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          New output stream for the Actor.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">TransformStream</span>
+
+
+          </dd>
+        </dl>
 
 
 
@@ -2843,7 +3794,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line292">line 292</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line289">line 289</a>
               </li>
             </ul>
           </dd>
@@ -2882,6 +3833,448 @@
           <dd>
 
             <span class="param-type">Number</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="toBuffer"><span class="type-signature"></span>toBuffer<span class="signature">()</span><span class="type-signature"> &rarr; {Buffer}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Casts the Actor to a normalized Buffer.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+          <dt class="inherited-from">Inherited From:</dt>
+          <dd class="inherited-from">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#toBuffer">Actor#toBuffer</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line347">line 347</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Buffer</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="toGenericMessage"><span class="type-signature"></span>toGenericMessage<span class="signature">(type<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Casts the Actor to a generic message envelope for state announcements and history.
+          Shape is stable: `{ type, object }` where `object` is sorted-key state (<a href="Actor.html#toObject">Actor#toObject</a>).
+          Actor#id derives from a digest of the pretty-printed generic message; extending this
+          envelope requires a format/version migration across the network.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+              <th>Default</th>
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>type</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+                'FabricActorState'
+
+              </td>
+
+
+              <td class="description last">Logical message type string.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+          <dt class="inherited-from">Inherited From:</dt>
+          <dd class="inherited-from">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#toGenericMessage">Actor#toGenericMessage</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line361">line 361</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+          <dt class="tag-see">See:</dt>
+          <dd class="tag-see">
+            <ul>
+              <li><a href="https://en.wikipedia.org/wiki/Merkle_tree">https://en.wikipedia.org/wiki/Merkle_tree</a></li>
+
+              <li><a href="https://dev.fabric.pub/messages">https://dev.fabric.pub/messages</a></li>
+            </ul>
+          </dd>
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          `{ type, object }`
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="toObject"><span class="type-signature"></span>toObject<span class="signature">()</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Returns the Actor's current state as an Object.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+          <dt class="inherited-from">Inherited From:</dt>
+          <dd class="inherited-from">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#toObject">Actor#toObject</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line380">line 380</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
 
 
           </dd>
@@ -3002,7 +4395,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line377">line 377</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line374">line 374</a>
               </li>
             </ul>
           </dd>
@@ -3045,6 +4438,321 @@
           <dd>
 
             <span class="param-type"><a href="Service.html">Service</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="unpause"><span class="type-signature"></span>unpause<span class="signature">()</span><span class="type-signature"> &rarr; {<a href="Actor.html">Actor</a>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Toggles `status` property to unpaused.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+          <dt class="inherited-from">Inherited From:</dt>
+          <dd class="inherited-from">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#unpause">Actor#unpause</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line447">line 447</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Instance of the Actor.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="Actor.html">Actor</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="value"><span class="type-signature"></span>value<span class="signature">(format<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Get the inner value of the Actor with an optional cast type.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+              <th>Default</th>
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>format</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+                object
+
+              </td>
+
+
+              <td class="description last">Cast the value to one of: `buffer, hex, json, string`</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+          <dt class="inherited-from">Inherited From:</dt>
+          <dd class="inherited-from">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#value">Actor#value</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line465">line 465</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Inner value of the Actor as an Object, or cast to the requested `format`.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
 
 
           </dd>
@@ -3188,7 +4896,5088 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line538">line 538</a>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line535">line 535</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Instance of EventEmitter.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">EventEmitter</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2><span class="attribs"><span class="type-signature"></span></span>Service<span class="signature">(settings<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+
+
+
+
+          <h4 class="name" id="Service"><span class="type-signature"></span>new Service<span class="signature">(settings<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h4>
+
+
+
+
+
+
+          <div class="description">
+            Create an instance of a Service.
+          </div>
+
+
+
+
+
+
+
+
+
+          <h5>Parameters:</h5>
+
+
+          <table class="params">
+            <thead>
+              <tr>
+
+                <th>Name</th>
+
+
+                <th>Type</th>
+
+
+                <th>Attributes</th>
+
+
+
+
+                <th class="last">Description</th>
+              </tr>
+            </thead>
+
+            <tbody>
+
+
+              <tr>
+
+                <td class="name"><code>settings</code></td>
+
+
+                <td class="type">
+
+
+                  <span class="param-type">Object</span>
+
+
+
+                </td>
+
+
+                <td class="attributes">
+
+                  &lt;optional><br>
+
+
+
+
+
+                </td>
+
+
+
+
+                <td class="description last">Configuration for this service.
+                  <h6>Properties</h6>
+
+
+                  <table class="params">
+                    <thead>
+                      <tr>
+
+                        <th>Name</th>
+
+
+                        <th>Type</th>
+
+
+                        <th>Attributes</th>
+
+
+
+                        <th>Default</th>
+
+
+                        <th class="last">Description</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+
+
+                      <tr>
+
+                        <td class="name"><code>networking</code></td>
+
+
+                        <td class="type">
+
+
+                          <span class="param-type">Boolean</span>
+
+
+
+                        </td>
+
+
+                        <td class="attributes">
+
+                          &lt;optional><br>
+
+
+
+
+
+                        </td>
+
+
+
+                        <td class="default">
+
+                          true
+
+                        </td>
+
+
+                        <td class="description last">Whether or not to connect to the network.</td>
+                      </tr>
+
+
+
+                      <tr>
+
+                        <td class="name"><code>frequency</code></td>
+
+
+                        <td class="type">
+
+
+                          <span class="param-type">Object</span>
+
+
+
+                        </td>
+
+
+                        <td class="attributes">
+
+                          &lt;optional><br>
+
+
+
+
+
+                        </td>
+
+
+
+                        <td class="default">
+
+                        </td>
+
+
+                        <td class="description last">Interval frequency in hertz.</td>
+                      </tr>
+
+
+
+                      <tr>
+
+                        <td class="name"><code>state</code></td>
+
+
+                        <td class="type">
+
+
+                          <span class="param-type">Object</span>
+
+
+
+                        </td>
+
+
+                        <td class="attributes">
+
+                          &lt;optional><br>
+
+
+
+
+
+                        </td>
+
+
+
+                        <td class="default">
+
+                        </td>
+
+
+                        <td class="description last">Initial state to assign.</td>
+                      </tr>
+
+
+                    </tbody>
+                  </table>
+
+                </td>
+              </tr>
+
+
+            </tbody>
+          </table>
+
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line47">line 47</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h3 class="subsection-title">Methods</h3>
+
+
+
+
+
+
+
+        <h4 class="name" id="_GET"><span class="type-signature">(async) </span>_GET<span class="signature">(path)</span><span class="type-signature"> &rarr; {Promise}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Retrieve a value from the Service's state.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>path</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Path of the value to retrieve.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line733">line 733</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Resolves with the result.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Promise</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="_PUT"><span class="type-signature">(async) </span>_PUT<span class="signature">(path, value, commit<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Promise}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Store a value in the Service's state.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+              <th>Default</th>
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>path</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+              </td>
+
+
+              <td class="description last">Path to store the value at.</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>value</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+              </td>
+
+
+              <td class="description last">Document to store.</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>commit</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Boolean</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+                false
+
+              </td>
+
+
+              <td class="description last">Sign the resulting state.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line767">line 767</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Resolves with with stored document.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Promise</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="_appendWarning"><span class="type-signature"></span>_appendWarning<span class="signature">(msg)</span><span class="type-signature"> &rarr; {<a href="Service.html">Service</a>}</span></h4>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>msg</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Warning text (used by Service#_registerService duplicate guard).</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line267">line 267</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          This instance.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="Service.html">Service</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="_readObject"><span class="type-signature"></span>_readObject<span class="signature">(input)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Parse an Object into a corresponding Fabric state.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>input</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Object to read as input.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+          <dt class="inherited-from">Inherited From:</dt>
+          <dd class="inherited-from">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#_readObject">Actor#_readObject</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line502">line 502</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Fabric state.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="_registerActor"><span class="type-signature">(async) </span>_registerActor<span class="signature">(actor)</span><span class="type-signature"> &rarr; {Promise}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Register an <a href="Actor.html">Actor</a> with the <a href="Service.html">Service</a>.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>actor</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Instance of the <a href="Actor.html">Actor</a>.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line1024">line 1024</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Resolves upon successful registration.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Promise</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="_send"><span class="type-signature">(async) </span>_send<span class="signature">(message)</span><span class="type-signature"></span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Sends a message.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>message</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Mixed</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Message to send.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line1159">line 1159</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="adopt"><span class="type-signature"></span>adopt<span class="signature">(changes)</span><span class="type-signature"> &rarr; {<a href="Actor.html">Actor</a>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Explicitly adopt a set of JSONPatch-encoded changes.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>changes</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Array</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">List of JSONPatch operations to apply.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+          <dt class="inherited-from">Inherited From:</dt>
+          <dd class="inherited-from">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#adopt">Actor#adopt</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line212">line 212</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Instance of the Actor.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="Actor.html">Actor</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="beat"><span class="type-signature"></span>beat<span class="signature">()</span><span class="type-signature"> &rarr; {<a href="Service.html">Service</a>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Compute latest state.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line298">line 298</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+        <h5>Fires:</h5>
+        <ul>
+          <li>Message#event:beat</li>
+        </ul>
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="Service.html">Service</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="commit"><span class="type-signature"></span>commit<span class="signature">()</span><span class="type-signature"> &rarr; {String}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Resolve the current state to a commitment.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#commit">Actor#commit</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line227">line 227</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          32-byte ID
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">String</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="connect"><span class="type-signature">(async) </span>connect<span class="signature">(notify)</span><span class="type-signature"> &rarr; {Promise}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Attach to network.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+              <th>Default</th>
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>notify</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Boolean</span>
+
+
+
+              </td>
+
+
+
+
+              <td class="default">
+
+                true
+
+              </td>
+
+
+              <td class="description last">Commit to changes.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line840">line 840</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Resolves to <a href="Fabric.html">Fabric</a>.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Promise</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="export"><span class="type-signature"></span>export<span class="signature">()</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Export the Actor's state to a standard Object.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+          <dt class="inherited-from">Inherited From:</dt>
+          <dd class="inherited-from">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#export">Actor#export</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line262">line 262</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Standard object.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="get"><span class="type-signature"></span>get<span class="signature">(path)</span><span class="type-signature"> &rarr; {Mixed}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Retrieve a key from the <a href="State.html">State</a>.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>path</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type"><a href="Path.html">Path</a></span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Key to retrieve.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#get">Actor#get</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line342">line 342</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Returns the target value if found, otherwise null.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Mixed</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="handler"><span class="type-signature"></span>handler<span class="signature">(message)</span><span class="type-signature"> &rarr; {<a href="Service.html">Service</a>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Default route handler for an incoming message. Follows the Activity
+          Streams 2.0 spec: https://www.w3.org/TR/activitystreams-core/
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>message</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Activity</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Message object.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line493">line 493</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Chainable method.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="Service.html">Service</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="init"><span class="type-signature"></span>init<span class="signature">()</span><span class="type-signature"></span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Called by Web Components.
+          TODO: move to @fabric/http/types/spa
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line281">line 281</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="lock"><span class="type-signature"></span>lock<span class="signature">(duration<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Boolean}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Attempt to acquire a lock for `duration` seconds.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+              <th>Default</th>
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>duration</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Number</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+                1000
+
+              </td>
+
+
+              <td class="description last">Number of milliseconds to hold lock.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line512">line 512</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          true if locked, false if unable to lock.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Boolean</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="pause"><span class="type-signature"></span>pause<span class="signature">()</span><span class="type-signature"> &rarr; {<a href="Actor.html">Actor</a>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Toggles `status` property to paused.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+          <dt class="inherited-from">Inherited From:</dt>
+          <dd class="inherited-from">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#pause">Actor#pause</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line398">line 398</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Instance of the Actor.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="Actor.html">Actor</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="route"><span class="type-signature">(async) </span>route<span class="signature">(msg)</span><span class="type-signature"> &rarr; {Promise}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Resolve a <a href="State.html">State</a> from a particular <a href="Message.html">Message</a> object.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>msg</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type"><a href="Message.html">Message</a></span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Explicit Fabric <a href="Message.html">Message</a>.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line579">line 579</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Resolves with resulting <a href="State.html">State</a>.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Promise</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="send"><span class="type-signature">(async) </span>send<span class="signature">(channel, message)</span><span class="type-signature"> &rarr; {<a href="Service.html">Service</a>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Send a message to a channel.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>channel</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Channel name to which the message will be sent.</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>message</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Content of the message to send.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line923">line 923</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Chainable method.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="Service.html">Service</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="serialize"><span class="type-signature"></span>serialize<span class="signature">()</span><span class="type-signature"> &rarr; {String}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Serialize the Actor's current state into a JSON-formatted string.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+          <dt class="inherited-from">Inherited From:</dt>
+          <dd class="inherited-from">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#serialize">Actor#serialize</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line413">line 413</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">String</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="set"><span class="type-signature"></span>set<span class="signature">(path)</span><span class="type-signature"> &rarr; {Mixed}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Set a key in the <a href="State.html">State</a> to a particular value.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>path</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type"><a href="Path.html">Path</a></span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Key to retrieve.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+          <dt class="tag-overrides">Overrides:</dt>
+          <dd class="tag-overrides">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#set">Actor#set</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line357">line 357</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Mixed</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="sign"><span class="type-signature"></span>sign<span class="signature">()</span><span class="type-signature"> &rarr; {<a href="Actor.html">Actor</a>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Signs the Actor.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+          <dt class="inherited-from">Inherited From:</dt>
+          <dd class="inherited-from">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#sign">Actor#sign</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line436">line 436</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="Actor.html">Actor</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="start"><span class="type-signature">(async) </span>start<span class="signature">()</span><span class="type-signature"></span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Start the service, including the initiation of an outbound connection
+          to any peers designated in the service's configuration.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line614">line 614</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="stream"><span class="type-signature"></span>stream<span class="signature">(pipe<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {TransformStream}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Returns a new output stream for the Actor.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>pipe</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">TransformStream</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+
+              <td class="description last">Pipe to stream to.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+          <dt class="inherited-from">Inherited From:</dt>
+          <dd class="inherited-from">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#stream">Actor#stream</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line319">line 319</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          New output stream for the Actor.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">TransformStream</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="tick"><span class="type-signature"></span>tick<span class="signature">()</span><span class="type-signature"> &rarr; {Number}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Move forward one clock cycle.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line289">line 289</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Number</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="toBuffer"><span class="type-signature"></span>toBuffer<span class="signature">()</span><span class="type-signature"> &rarr; {Buffer}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Casts the Actor to a normalized Buffer.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+          <dt class="inherited-from">Inherited From:</dt>
+          <dd class="inherited-from">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#toBuffer">Actor#toBuffer</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line347">line 347</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Buffer</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="toGenericMessage"><span class="type-signature"></span>toGenericMessage<span class="signature">(type<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Casts the Actor to a generic message envelope for state announcements and history.
+          Shape is stable: `{ type, object }` where `object` is sorted-key state (<a href="Actor.html#toObject">Actor#toObject</a>).
+          Actor#id derives from a digest of the pretty-printed generic message; extending this
+          envelope requires a format/version migration across the network.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+              <th>Default</th>
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>type</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+                'FabricActorState'
+
+              </td>
+
+
+              <td class="description last">Logical message type string.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+          <dt class="inherited-from">Inherited From:</dt>
+          <dd class="inherited-from">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#toGenericMessage">Actor#toGenericMessage</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line361">line 361</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+          <dt class="tag-see">See:</dt>
+          <dd class="tag-see">
+            <ul>
+              <li><a href="https://en.wikipedia.org/wiki/Merkle_tree">https://en.wikipedia.org/wiki/Merkle_tree</a></li>
+
+              <li><a href="https://dev.fabric.pub/messages">https://dev.fabric.pub/messages</a></li>
+            </ul>
+          </dd>
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          `{ type, object }`
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="toObject"><span class="type-signature"></span>toObject<span class="signature">()</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Returns the Actor's current state as an Object.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+          <dt class="inherited-from">Inherited From:</dt>
+          <dd class="inherited-from">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#toObject">Actor#toObject</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line380">line 380</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="trust"><span class="type-signature"></span>trust<span class="signature">(source)</span><span class="type-signature"> &rarr; {<a href="Service.html">Service</a>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Explicitly trust all events from a known source.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>source</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">EventEmitter</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Emitter of events.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line374">line 374</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Instance of Service after binding events.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="Service.html">Service</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="unpause"><span class="type-signature"></span>unpause<span class="signature">()</span><span class="type-signature"> &rarr; {<a href="Actor.html">Actor</a>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Toggles `status` property to unpaused.
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+          <dt class="inherited-from">Inherited From:</dt>
+          <dd class="inherited-from">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#unpause">Actor#unpause</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line447">line 447</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Instance of the Actor.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type"><a href="Actor.html">Actor</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="value"><span class="type-signature"></span>value<span class="signature">(format<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Get the inner value of the Actor with an optional cast type.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+              <th>Default</th>
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>format</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+                object
+
+              </td>
+
+
+              <td class="description last">Cast the value to one of: `buffer, hex, json, string`</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+          <dt class="inherited-from">Inherited From:</dt>
+          <dd class="inherited-from">
+            <ul class="dummy">
+              <li>
+                <a href="Actor.html#value">Actor#value</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line465">line 465</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Inner value of the Actor as an Object, or cast to the requested `format`.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="when"><span class="type-signature"></span>when<span class="signature">(event, method)</span><span class="type-signature"> &rarr; {EventEmitter}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Bind a method to an event, with current state as the immutable context.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>event</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Name of the event upon which to execute `method` as a function.</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>method</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">function</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Function to execute when named Event `event` is encountered.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_service.js.html">types/service.js</a>, <a href="types_service.js.html#line535">line 535</a>
               </li>
             </ul>
           </dd>
@@ -3261,10 +10050,14 @@
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="Bond.html">Bond</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
@@ -3284,12 +10077,14 @@
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
+      <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
@@ -3297,6 +10092,7 @@
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
+    <h3><a href="global.html">Global</a></h3>
   </nav>
   <br class="clear" />
   <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>

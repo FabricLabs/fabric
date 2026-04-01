@@ -2,6 +2,12 @@
 
 const fs = require('fs');
 
+/**
+ * Minimal host-path file accessor. Roadmap: align with virtual-node / overlay filesystem
+ * work (namespaces, lazy mounts, remote-backed paths) once that stack lands — no behavioral
+ * change here until then.
+ * @class Disk
+ */
 class Disk {
   constructor (root) {
     this.type = 'Disk';

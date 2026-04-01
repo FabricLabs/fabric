@@ -14,15 +14,17 @@ const Stack = require('./stack');
 const State = require('./state');
 
 /**
- * Long-term storage.
+ * @classdesc Level-backed persistence extending {@link Actor}. Use optional {@link Codec} in <code>settings.codec</code> for
+ * encrypted values; {@link Store.openEncrypted} matches Hub/shell keystore defaults. Commit/history behavior follows {@link Actor}.
+ * @class Store
+ * @extends Actor
  * @property {Mixed} settings Current configuration.
  */
 class Store extends Actor {
   /**
-   * Create an instance of a {@link Store} to manage long-term storage, which is
-   * particularly useful when building a user-facing {@link Product}.
-   * @param  {Object} [settings={}] configuration object.
-   * @return {Store}              Instance of the Store, ready to start.
+   * Create an instance of a {@link Store} to manage long-term storage (LevelDB by default).
+   * @param  {Object} [settings={}] configuration object (<code>path</code>, <code>codec</code>, <code>persistent</code>, …).
+   * @return {Store} Instance of the Store, ready to start.
    */
   constructor (settings = {}) {
     super(settings);

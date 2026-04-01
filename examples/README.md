@@ -8,7 +8,7 @@ The **supported** path for understanding Fabric is the **JavaScript** library in
 
 ## Prerequisites
 Before running the **JavaScript** npm examples, you need:
-1. **Node.js**: 22.14.x (see `package.json` `engines`)
+1. **Node.js**: 24.14.1 (see `package.json` `engines` and `.nvmrc`)
 2. **`npm install`** from the repository root
 
 For **C** examples only, you also build native bindings per **README-C-EXAMPLES.md** (`make`, etc.).

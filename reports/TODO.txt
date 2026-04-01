@@ -20,7 +20,6 @@
 ./types/interface.js:      // TODO: document why @input is removed
 ./types/interface.js:    // TODO: apply `transaction.operations` to Interface state
 ./types/filesystem.js:    // TODO: only sync changed files
-./types/scribe.js:    // TODO: enable
 ./types/key.js:// TODO: remove
 ./types/key.js:// TODO: remove all external dependencies
 ./types/key.js:        // TODO: allow setting of raw seed (deprecates passing a mnemonic in the `seed` property)
@@ -36,13 +35,9 @@
 ./types/remote.js:        // TODO: should settings override protocol inclusion?
 ./types/remote.js:    // TODO: break out into independent auth module
 ./types/renderer.js:    // TODO: move this to dynamic event handler
-./types/stash.js:// TODO: note that generally, requirements are loosely ordered by
 ./types/message.js:      type: Buffer.alloc(4), // TODO: 8, 32
 ./types/message.js:      size: Buffer.alloc(4), // TODO: 8, 32
 ./types/message.js:    // TODO: Node 12
-./types/message.js:      // TODO: document Generic type
-./types/message.js:      // TODO: restore this type
-./types/message.js:      // TODO: restore above StateRoot type
 ./types/session.js:  // TODO: implement
 ./types/session.js:  // TODO: implement
 ./types/resource.js:      list: `/${this.names[1].toLowerCase()}`, // TODO: unpin, offer larger name list
@@ -72,8 +67,6 @@
 ./types/promise.js:    // TODO: formalize type
 ./types/promise.js:    // TODO: encrypt state
 ./types/promise.js:    // TODO: recover state
-./types/store.js:    const secret = value; // TODO: encrypt value
-./types/store.js:    const decrypted = secret; // TODO: decrypt value
 ./types/store.js:      // TODO: store metadata
 ./types/store.js:    // TODO: check for commit state
 ./types/store.js:    // TODO: use ._GET
@@ -89,8 +82,6 @@
 ./types/compiler.js:// TODO: have Lexer review
 ./types/compiler.js:// TODO: render the following:
 ./types/compiler.js:  // TODO: @melnx to refactor into f(x) => y
-./types/vector.js:  // TODO: standardize on a serialization format
-./types/vector.js:    // TODO: standardize on a serialization format
 ./types/token.js:    // TODO: determine rounding preference (secwise)
 ./types/token.js:    // TODO: determine rounding preference (secwise)
 ./types/token.js:    // TODO: reconcile with JWT spec
@@ -125,7 +116,6 @@
 ./types/wallet.js:    // TODO: store in this.messages
 ./types/wallet.js:        // TODO: validate destination is this wallet
 ./types/wallet.js:      // TODO: process transaction
-./types/wallet.js:    // TODO: check that `txid` is a proper TXID
 ./types/wallet.js:      // TODO: test these outputs
 ./types/wallet.js:    // TODO: use coin selection
 ./types/wallet.js:    // TODO: use the MTX to select outputs
@@ -185,29 +175,30 @@
 ./types/stack.js:    // TODO: return Transaction
 ./API.md:TODO: move to @fabric/http/types/spa
 ./API.md:TODO: move to @fabric/http/types/spa
+./API.md:TODO: move to @fabric/http/types/spa
+./API.md:TODO: move to @fabric/http/types/spa
+./API.md:TODO: move to @fabric/http/types/spa
+./API.md:TODO: move to @fabric/http/types/spa
+./API.md:TODO: move to @fabric/http/types/spa
 ./SUMMARY.md:* [✅ TODO List][todo]
 ./SUMMARY.md:[todo]: TODO.md
 ./contracts/exchange.js:  // TODO: reconcile API wth @fabric/doorman as appears at: https://github.com/FabricLabs/doorman
 ./contracts/node.js:    // TODO: configure with input?
 ./contracts/setup.js:  // TODO: replicate this program in C / ASM
 ./contracts/setup.js:    // TODO: remove from log output...
-./contracts/chat.js:  // TODO: reconcile API wth @fabric/doorman as appears at: https://github.com/FabricLabs/doorman
 ./tests/fabric.interface.js:      // TODO: remove this case / rework messages
 ./tests/fabric.tree.js:      assert.strictEqual(tree.root.toString('hex'), ''); // TODO: wat?
 ./tests/fabric.tree.js:      assert.strictEqual(tree.root.toString('hex'), '906b5aaf65ae98f8c98848de5e81ba865659f16fd53aefa4c78b34176f068079'); // TODO: wat?
-./tests/fabric.core.js:// TODO: write parser for comments
-./tests/fabric.core.js:  // TODO: implement polyfill for browserland
 ./tests/fabric.machine.js:      // TODO: use Fabric itself
 ./tests/fabric.machine.js:      // TODO: use Fabric instead of Machine
 ./tests/fabric.router.js:// TODO: test class/function middleware
 ./tests/fabric.stack.js:      // TODO: move to constants, verify
-./tests/fabric.stack.js:      // TODO: migrate to Stack
 ./tests/fixtures/lightning.js:// TODO: test same as before
 ./DEVELOPERS.md:- [ ] Sweep remaining `TODO` markers in repo-specific guides
 ./DEVELOPERS.md:## TODO
 ./DEVELOPERS.md:- [ ] Remove TODOs
 ./package.json:    "report:todo": "grep --exclude-dir=.git --exclude-dir=_book --exclude-dir=assets --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs -rEI \"TODO|FIXME\" . > reports/TODO.txt",
-./package.json:    "review:todo": "npm run report:todo && cat reports/TODO.txt && echo '\nOutstanding TODO items (@fabric/core):' && wc -l reports/TODO.txt && echo '\nIssues List: https://github.com/FabricLabs/fabric/issues\nDisclosures: securiy@fabric.pub\n\n'",
+./package.json:    "review:todo": "npm run report:todo && cat reports/TODO.txt && echo '\nOutstanding TODO items (@fabric/core):' && wc -l reports/TODO.txt && echo '\nIssues List: https://github.com/FabricLabs/fabric/issues\nDisclosures: security@fabric.pub\n\n'",
 ./guides/SETTINGS.md:### WARNING: TODO
 ./examples/bitcoin.js:  // TODO: import these into core process logic
 ./examples/game.js:    // TODO: use fabric call
@@ -240,9 +231,7 @@
 ./scripts/chat.js:      // TODO: replicate this program in C / ASM
 ./scripts/transfer.js:  // TODO: add support for segwit, taproot
 ./functions/_handleFabricMessage.js:  const message = Message.fromVector([...data]); // TODO: redefine...
-./build/gyp-mac-tool:            # TODO(thakis): This copies file attributes like mtime, while the
-./build/Makefile:# TODO(evan): move all cross-compilation logic to gyp-time so we don't need
-./GOALS.md:- [x] Find all TODO items (run script, check diff) — `npm run report:todo` → `reports/TODO.txt` (≈300 lines as of 2026-03)
+./GOALS.md:- [x] Find all TODO items (run script, check diff) — `npm run report:todo` → `reports/TODO.txt`
 ./services/bitcoin.js:      // httpPort: 48449, // TODO: disable HTTP entirely!
 ./services/bitcoin.js:      message.amount = message.amount.fixed().toPrecision(8); // TODO: evaluate precision behavior
 ./services/bitcoin.js:    // TODO: ensure all appropriate fields, valid block

@@ -1,82 +1,124 @@
 digraph FabricClasses {
-  label = "Fabric Class Inheritances"
-  rankdir = "TB"
+  label = "Fabric class inheritances (@fabric/core — generated)"
+  rankdir = "LR"
 
-  subgraph cluster_generics {
-    label = "Generics"
+  // Regenerate: node scripts/classtree.js --write
+
+  subgraph cluster_builtins {
+    label = "Built-in / external bases"
+    graph[style=dashed]
     "Object"
     "EventEmitter"
+    "Buffer"
+    "String"
+    "HTTP"
   }
 
-  subgraph cluster_core {
-    label = "Public API"
-    "Actor"
-    "Block"
-    "Bitcoin"
-    "Chain"
-    "Channel"
-    "Contract"
-    "Environment"
-    "Key"
-    "Lightning"
-    "Message"
-    "Peer"
-    "Reader"
-    "Service"
-    "Signer"
-    "Transaction"
-    "Tree"
-    "Wallet"
-  }
-
-  subgraph cluster_candidates {
-    label = "Candidates"
-    "App"
-    "CLI"
-  }
-
-  subgraph cluster_legacy {
-    label = "Legacy"
-    "Entity"
-  }
-
-  "Actor" -> {
-    "Block"
-    "Chain"
-    "Message"
-    "Service"
-    "Signer"
-    "Transaction"
-    "Tree"
-  }
-
-  "App" -> {
-    "CLI"
-  }
-
-  "Contract" -> {
-    "Crowdfund"
-    "Distribution"
-    "Federation"
-  }
-
-  "Entity" -> "Environment"
+  "Buffer" -> "Signature"
   "EventEmitter" -> {
     "Actor"
     "Entity"
+    "Key"
     "Reader"
+    "Vector"
   }
-
-  "Object" -> "EventEmitter"
-  "Object" -> "Key"
-
+  "Object" -> {
+    "Bech32"
+    "Buffer"
+    "Codec"
+    "Compiler"
+    "Disk"
+    "EncryptedPromise"
+    "EventEmitter"
+    "HKDF"
+    "HTTP"
+    "Hash256"
+    "Network"
+    "Observer"
+    "Renderer"
+    "String"
+    "Token"
+    "TypeTree"
+    "Witness"
+  }
+  "String" -> "Path"
+  "Actor" -> {
+    "BitcoinBlock"
+    "BitcoinTransaction"
+    "Block"
+    "Chain"
+    "Circuit"
+    "Filesystem"
+    "History"
+    "Identity"
+    "Label"
+    "Logger"
+    "Machine"
+    "Message"
+    "Queue"
+    "Remote"
+    "Service"
+    "State"
+    "Store"
+    "Swarm"
+    "Transaction"
+    "Tree"
+  }
+  "Circuit" -> {
+    "Program"
+    "RoundRobin"
+  }
+  "Contract" -> {
+    "Bond"
+    "Distribution"
+    "Federation"
+  }
+  "EncryptedPromise" -> "Secret"
+  "Entity" -> {
+    "Capability"
+    "Environment"
+    "Session"
+    "Transition"
+  }
+  "Fabric" -> "Validator"
+  "FabricShell" -> "CLI"
+  "HTTP" -> "Authority"
+  "Message" -> "LightningMessage"
   "Service" -> {
-    "App"
     "Bitcoin"
-    "Channel"
+    "Component"
     "Contract"
+    "Exchange"
+    "Fabric"
+    "FabricShell"
+    "Interface"
     "Lightning"
+    "Local"
+    "Node"
     "Peer"
+    "Redis"
+    "Text"
+    "Turntable"
     "Wallet"
+    "Worker"
+    "ZMQ"
+  }
+  "Stack" -> {
+    "Collection"
+    "Script"
+  }
+  "State" -> {
+    "Challenge"
+    "Channel"
+    "Document"
+    "Instruction"
+    "Ledger"
+    "Router"
+    "Stack"
+  }
+  "Store" -> {
+    "Datastore"
+    "Oracle"
+    "Resource"
   }
 }

@@ -56,6 +56,7 @@
           <li><a href="#vision">Vision</a></li>
           <li><a href="#quick-start">Quick start</a></li>
           <li><a href="#repository-layout">Repository layout</a></li>
+          <li><a href="#actor-and-message">Actor and Message</a></li>
           <li><a href="#development-workflow">Development workflow</a></li>
           <li><a href="#bitcoin-service-servicesbitcoin">Bitcoin service</a></li>
           <li><a href="#message-types-typesmessage">Message types</a></li>
@@ -117,9 +118,30 @@
             </tr>
           </tbody>
         </table>
+        <h2>Actor and Message</h2>
+        <p><strong>Regeneration:</strong> The same substance lives in JSDoc on <strong><code>types/actor.js</code></strong> (<code>@fileoverview</code> + class) and <strong><code>types/message.js</code></strong> (<code>@classdesc</code> + constructor). After <code>npm run make:docs</code>, <strong>Actor.html</strong> / <strong>Message.html</strong> stay populated even if this Markdown is edited elsewhere; keep wording aligned when you change the model.</p>
+        <p>These two types are the spine of <strong><code>@fabric/core</code></strong>: almost everything user-facing either <strong>is</strong> an Actor, <strong>extends</strong> it, or <strong>serializes</strong> to a Message on the wire.</p>
+        <h3>Actor (<code>types/actor.js</code>)</h3>
+        <ul>
+          <li><strong>Role:</strong> Stateful entity with JSON content under <code>_state.content</code>, observed with <strong>JSON Patch</strong> (<code>fast-json-patch</code>). <strong><code>commit()</code></strong> turns pending observer diffs into history entries and emits <strong><code>commit</code></strong> plus a structured <strong><code>message</code></strong> event (<code>type: 'ActorMessage'</code>, <code>data.type: 'Changes'</code>).</li>
+          <li><strong>Identity:</strong> <strong><code>id</code></strong> is <strong><code>Hash256</code></strong> of the <strong><code>preimage</code></strong>, where <strong><code>preimage</code></strong> is itself a <strong><code>Hash256</code></strong> of the UTF-8 pretty-printed <strong><code>toGenericMessage()</code></strong> — a stable <code>{ type, object }</code> envelope with <strong>sorted keys</strong> (<code>toObject()</code> / <code>_sortKeys</code>). Treat <strong><code>id</code></strong> as a <strong>content address</strong> for that actor state shape, not as “a random node id”.</li>
+          <li><strong>Patterns:</strong> Subclasses override or wrap state; use <strong><code>adopt(patches)</code></strong>, <strong><code>set(path, value)</code></strong>, <strong><code>get(path)</code></strong> for JSON Pointer access. Prefer <strong><code>commit()</code></strong> when you need an auditable step for sync or P2P.</li>
+        </ul>
+        <h3>Message (<code>types/message.js</code>) — extends Actor</h3>
+        <ul>
+          <li><strong>Role:</strong> <strong>Application Messaging Protocol (AMP)</strong> — the on-wire unit peers and services exchange. Carries <strong>magic/version</strong>, <strong>parent</strong>, <strong>author</strong> (x-only pubkey), <strong>opcode</strong> (<code>raw.type</code>), <strong>body hash</strong>, <strong>preimage</strong> (HTLC / sensitive / zeroed), and <strong>64-byte Schnorr signature</strong> (BIP-340, tagged <strong><code>Fabric/Message</code></strong> over header+body, signature field zeroed for hashing — see <strong><code>signWithKey</code></strong> / <strong><code>verifyWithKey</code></strong>).</li>
+          <li><strong>Two naming layers:</strong> <strong><code>wireType</code></strong> (e.g. <code>P2P_GENERIC</code>, <code>P2P_MESSAGE_RECEIPT</code>) vs <strong><code>friendlyType</code></strong> / <strong><code>toObject().type</code></strong> (e.g. <code>Generic</code>, PascalCase legacy labels). <strong><code>Message.encode</code></strong> accepts either via merged <strong><code>types</code></strong> maps; use <strong><code>Message.wireTypeFromFriendly</code></strong> / <strong><code>Message.friendlyTypeFromWire</code></strong> when bridging JSON APIs and binary peers.</li>
+          <li><strong>Relation to Actor:</strong> A Message <strong>is</strong> an Actor for construction and tooling, but on the network you think in <strong>opcodes</strong>, <strong>receipts</strong>, and <strong>verified envelopes</strong> — not only JSON.</li>
+        </ul>
+        <h3>Practical checklist for contributors</h3>
+        <ol>
+          <li><strong>Hub / <code>@fabric/http</code> / extension:</strong> Keep <strong>opcode constants</strong> and <strong>friendly aliases</strong> aligned when you add or rename a type.</li>
+          <li><strong>Signing:</strong> <strong>Fabric <code>Message</code></strong> uses <strong>Schnorr</strong> on a <strong>tagged</strong> hash; <strong>Bitcoin Signed Message</strong> (Core RPC) is <strong>ECDSA + legacy prefix</strong> — different animals; do not conflate them in UX copy or crypto paths.</li>
+          <li><strong>Docs:</strong> After JSDoc changes to <strong><code>types/message.js</code></strong> or <strong><code>types/actor.js</code></strong>, run <strong><code>npm run make:api</code></strong> and <strong><code>npm run make:docs</code></strong>.</li>
+        </ol>
         <h2>Development workflow</h2>
         <ul>
-          <li><strong>Node:</strong> engines field in <code>package.json</code> is authoritative (currently Node 22.x).</li>
+          <li><strong>Node:</strong> <strong><code>package.json</code></strong> <strong><code>engines</code></strong> and <strong><code>.nvmrc</code></strong> are authoritative (currently <strong>24.14.1</strong>).</li>
           <li><strong>Unit tests:</strong> <code>npm test</code> — runs Mocha recursively under <code>tests/</code>.</li>
           <li><strong>Lint:</strong> <code>npm run lint</code> / <code>npm run lint:fix</code> (Semistandard).</li>
           <li><strong>API reference:</strong> <code>npm run make:api</code> writes <code>API.md</code> from JSDoc (see <code>scripts/list-jsdoc-type-files.js</code> for which <code>types/*.js</code> files are included).</li>
@@ -140,8 +162,8 @@
           </thead>
           <tbody>
             <tr>
-              <td>Node <strong>22.14.x</strong>, <code>npm ci</code>, <strong><code>npm run ci</code></strong></td>
-              <td><a href="docs/PRODUCTION.md"><code>docs/PRODUCTION.md</code></a></td>
+              <td>Node <strong>24.14.1</strong>, <code>npm ci</code>, <strong><code>npm run ci</code></strong></td>
+              <td><a href="PRODUCTION.md"><code>PRODUCTION.md</code></a></td>
             </tr>
             <tr>
               <td>Completion / privacy / security matrix</td>
@@ -174,11 +196,11 @@
           <tbody>
             <tr>
               <td><strong><code>Actor</code></strong></td>
-              <td>Base identity + vector clock + <code>commit()</code>; most user-facing types extend it.</td>
+              <td>Base state + JSON Patch + <code>commit()</code> + content-derived <strong><code>id</code></strong>; most domain types extend it.</td>
             </tr>
             <tr>
               <td><strong><code>Message</code></strong></td>
-              <td>Wire envelope for P2P and services; opcode-driven dispatch.</td>
+              <td><strong>Extends Actor</strong>; AMP wire envelope (opcodes, Schnorr <strong><code>Fabric/Message</code></strong>); P2P/service traffic.</td>
             </tr>
             <tr>
               <td><strong><code>Peer</code></strong></td>
@@ -194,11 +216,23 @@
             </tr>
             <tr>
               <td><strong><code>Entity</code></strong></td>
-              <td>Generic structured document; <strong><code>Entity.Transition</code></strong> for JSON Patch diffs.</td>
+              <td><strong><code>EventEmitter</code></strong> (not Actor): structured <code>@type</code>/<code>@data</code>, <code>id</code> = SHA256(<code>toJSON</code>); <strong><code>Entity.Transition</code></strong> for JSON Patch between entities.</td>
             </tr>
             <tr>
               <td><strong><code>Key</code> / <code>Identity</code></strong></td>
-              <td>Schnorr/secp256k1 keys and BIP32/BIP39 identity.</td>
+              <td>Keys + BIP32/BIP39; <strong><code>Identity</code></strong> overrides <strong><code>Actor#id</code></strong> with <code>toString()</code> — not the same content-address as base <strong><code>Actor</code></strong>.</td>
+            </tr>
+            <tr>
+              <td><strong><code>State</code> → <code>Vector</code> / <code>Channel</code> / …</strong></td>
+              <td><strong><code>State</code></strong> extends <strong><code>Actor</code></strong> and includes logging, <code>start</code>/<code>stop</code>, and <code>sha256</code> helpers (formerly a separate <strong><code>Scribe</code></strong> type). <strong><code>Vector</code></strong> holds scripts/stacks for <strong><code>Machine</code></strong>; <strong><code>Channel</code></strong> models balances with a counterparty.</td>
+            </tr>
+            <tr>
+              <td><strong><code>Machine</code></strong></td>
+              <td>Deterministic VM-style runner (script, memory, <strong><code>Key</code></strong> entropy); not P2P <strong><code>Message</code></strong> dispatch.</td>
+            </tr>
+            <tr>
+              <td><strong><code>Remote</code></strong></td>
+              <td>Minimal <strong><code>WebSocket</code></strong> client (<code>wss://…</code>) for hub-style hosts; richer HTTP belongs in <strong><code>@fabric/http</code></strong>.</td>
             </tr>
             <tr>
               <td><strong><code>Chain</code> / <code>Block</code></strong></td>
@@ -416,6 +450,224 @@ console.log('Signature (hex):', signature.toString('hex'));
 
 
 
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/actor.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">Base <strong>Actor</strong> type for Fabric: JSON-shaped state, JSON Patch commits, and a
+            content-derived <strong>id</strong>.
+
+            <p><strong>State</strong> — <code>_state.content</code> is observed with <code>fast-json-patch</code>.
+              <a href="Actor.html#commit">Actor#commit</a> turns observer diffs into Actor#history entries and emits <code>commit</code> plus
+              <code>message</code> with <code>type: 'ActorMessage'</code> / <code>data.type: 'Changes'</code>.
+            </p>
+
+            <p><strong>Identity</strong> — Actor#id is a SHA256 digest (hex) of the 32-byte preimage buffer;
+              Actor#preimage is SHA256(UTF-8) of the pretty-printed <a href="Actor.html#toGenericMessage">Actor#toGenericMessage</a>
+              <code>{ type, object }</code> with sorted keys (<a href="Actor.html#toObject">Actor#toObject</a>). Implementation uses Hash256.compute.
+              Treat <code>id</code> as a <strong>content address</strong> for that state shape, not an arbitrary application string hash.
+            </p>
+
+            <p><strong>Relationship to <a href="Message.html">Message</a></strong> — <code>Message</code> extends <code>Actor</code> and implements
+              <strong>AMP</strong> (wire headers, opcodes, Schnorr <code>Fabric/Message</code>). Downstream apps that only need a stable
+              storage key should not label that key <code>Actor#id</code> unless it is produced by this type.
+            </p>
+
+            <p>Narrative docs: <strong>DEVELOPERS.md</strong> (section <em>Actor and Message</em>) and this file’s class JSDoc are
+              kept in sync; <code>npm run make:docs</code> embeds DEVELOPERS.md as the HTML home page, while Actor.html is generated
+              from here.</p>
+          </div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/datastore.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">Ledger-adjacent <a href="Store.html">Store</a> extension. Consolidation with <a href="Store.html">Store</a>
+            is planned (single persistence surface + optional ledger facet); left as-is until that
+            design is scheduled.</div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_datastore.js.html">types/datastore.js</a>, <a href="types_datastore.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
   </div>
   <nav>
     <h2><a href="index.html">Home</a></h2>
@@ -423,10 +675,14 @@ console.log('Signature (hex):', signature.toString('hex'));
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="Bond.html">Bond</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
@@ -446,12 +702,14 @@ console.log('Signature (hex):', signature.toString('hex'));
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
+      <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
@@ -459,6 +717,7 @@ console.log('Signature (hex):', signature.toString('hex'));
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
+    <h3><a href="global.html">Global</a></h3>
   </nav>
   <br class="clear" />
   <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>

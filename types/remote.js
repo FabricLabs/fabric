@@ -18,19 +18,17 @@ const Actor = require('./actor');
 const Message = require('./message');
 
 /**
- * Interact with a remote {@link Resource}.  This is currently the only
- * HTTP-related code that should remain in @fabric/core — all else must
- * be moved to @fabric/http before final release!
- * @type {Remote}
+ * @classdesc <strong>WebSocket client</strong> to a remote Fabric/Hub-style host (extends {@link Actor}). Per comment in
+ * source, prefer moving richer HTTP to <code>@fabric/http</code>; this type stays for minimal {@link Message}-oriented
+ * bridging. Uses browser/Node <code>WebSocket</code> with JSON {@link Message} payloads where applicable.
+ * @class Remote
+ * @extends Actor
  * @property {Object} config
  * @property {Boolean} secure
  */
 class Remote extends Actor {
   /**
-   * An in-memory representation of a node in our network.
-   * @param       {Object} target - Target object.
-   * @param       {String} target.host - Named host, e.g. "localhost".
-   * @param       {String} target.secure - Require TLS session.
+   * @param {Object} [config={}] <code>host</code>, <code>port</code>, <code>secure</code>, backoff, optional macaroon, …
    * @constructor
    */
   constructor (config = {}) {
@@ -51,7 +49,7 @@ class Remote extends Actor {
     this.secure = this.settings.secure;
     this.socket = null;
 
-    this.endpoint = `${(this.secure) ? 'wss' : 'ws'}:${this.host}:${this.port}/`;
+    this.endpoint = `${this.secure ? 'wss' : 'ws'}://${this.host}:${this.port}/`;
 
     this._nextReconnect = 0;
     this._reconnectAttempts = 0;

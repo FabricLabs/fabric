@@ -5,6 +5,14 @@ const { EventEmitter } = require('events');
 const monitor = require('fast-json-patch');
 const Witness = require('./witness');
 
+/**
+ * @classdesc <strong>Structured document</strong> type: extends {@link EventEmitter} (not {@link Actor}) with
+ * <code>@type</code> / <code>@data</code> shape, JSON serialization, and <code>id</code> = SHA256(<code>toJSON()</code>).
+ * <strong>Different model from {@link Actor#id}</strong> (sorted generic envelope). <code>Entity.Transition</code> (JSON Patch
+ * between entity states) is the supported migration path — see <strong>DEVELOPERS.md</strong> (<em>Consolidated prototypes</em>).
+ * @class Entity
+ * @extends EventEmitter
+ */
 class Entity extends EventEmitter {
   constructor (data = {}) {
     super(data);
@@ -175,6 +183,14 @@ class Entity extends EventEmitter {
   }
 }
 
+/**
+ * @classdesc JSON Patch <strong>diff</strong> between two {@link Entity} snapshots (<code>origin</code>,
+ * <code>target</code>, <code>changes</code>). Built via {@link Transition.between}, {@link Transition#fromTarget}, or manual
+ * <code>changes</code>; uses <code>fast-json-patch</code> observe/generate.
+ * @memberof Entity
+ * @class Transition
+ * @extends Entity
+ */
 class Transition extends Entity {
   constructor (settings = {}) {
     super(settings);

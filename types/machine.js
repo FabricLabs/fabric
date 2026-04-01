@@ -15,9 +15,40 @@ const State = require('./state');
 const Key = require('./key');
 
 /**
- * General-purpose state machine with {@link Vector}-based instructions.
+ * @classdesc Deterministic <strong>virtual machine</strong> layer extending {@link Actor}: script/stack, fixed memory buffer,
+ * clock, and a {@link Key}-backed generator for reproducible “random” bits (<code>sip</code>). Consumes {@link State}-signed
+ * instruction entries from {@link Fabric#push} — not the same as P2P {@link Message} dispatch (see
+ * <code>types/message.js</code>).
+ * @class Machine
+ * @extends Actor
  */
 class Machine extends Actor {
+  /**
+   * Parse a JSON object of Buffer-like entries into an array of {@link Buffer}s (legacy wire / script helper).
+   * @param {string} [input='']
+   * @returns {Buffer[]}
+   */
+  static fromObjectString (input = '') {
+    if (!input) throw new Error('Must provide input.');
+    if (typeof input !== 'string') input = JSON.stringify(input);
+    const result = [];
+    const object = JSON.parse(input);
+
+    for (const i in object) {
+      let element = object[i];
+
+      if (element instanceof Array) {
+        element = Buffer.from(element);
+      } else {
+        element = Buffer.from(element.data);
+      }
+
+      result.push(element);
+    }
+
+    return result;
+  }
+
   /**
    * Create a Machine.
    * @param {Object} settings Run-time configuration.
@@ -79,7 +110,6 @@ class Machine extends Actor {
   }
 
   get tip () {
-    this.log(`tip requested: ${val}`);
     this.log(`tip requested, history: ${JSON.stringify(this.history)}`);
     return this.history[this.history.length - 1] || null;
   }

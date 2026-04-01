@@ -1,8 +1,8 @@
 'use strict';
 
-const Scribe = require('./scribe');
+const State = require('./state');
 
-class Instruction extends Scribe {
+class Instruction extends State {
   constructor (config) {
     super(config);
     this.config = Object.assign({}, config);

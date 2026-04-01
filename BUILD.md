@@ -26,7 +26,7 @@ Outputs under `build/Release/fabric.node` (ignored by git — see `.gitignore`).
 ### Dependencies
 | Component | Linux (typical) | macOS (Homebrew) |
 |-----------|-----------------|------------------|
-| **Node** | 22.x (see `.nvmrc` / `package.json` `engines`) | same |
+| **Node** | 24.14.1 (see `.nvmrc` / `package.json` `engines`) | same |
 | **Build** | `build-essential`, Python 3.x (for `node-gyp`) | Xcode CLT |
 | **secp256k1** | `libsecp256k1-dev` where available, or install to `/usr/local` | `brew install secp256k1` |
 | **libwally-core** | Build from [libwally-core](https://github.com/ElementsProject/libwally-core) or distro packages if present | `brew install libwally-core` |

@@ -7,8 +7,12 @@ const State = require('./state');
 const Store = require('./store');
 
 /**
- * Generic interface for collections of digital objects.
- * @param       {Object} definition Initial parameters
+ * @classdesc Declarative <strong>application resource</strong> (routes, components, roles) persisted via {@link Store}. Pairs with
+ * a {@link Service} implementation that honors the definition — see <strong>DEVELOPERS.md</strong> (<em>Resources</em> / ARCs). Extends {@link Store}
+ * so commits and encryption options match the rest of the stack.
+ * @class Resource
+ * @extends Store
+ * @param {Object} [definition={}] Initial definition (<code>name</code>, <code>routes</code>, <code>components</code>, …).
  * @constructor
  */
 class Resource extends Store {

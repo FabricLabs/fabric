@@ -7,9 +7,11 @@ import crypto from 'crypto';
 import Actor from '../types/actor.js';
 // import Application from '../types/application.js';
 import Block from '../types/block.js';
+import Bond from '../types/bond.js';
 import Chain from '../types/chain.js';
 import Circuit from '../types/circuit.js';
 import Collection from '../types/collection.js';
+import RoundRobin from '../types/roundRobin.js';
 import Entity from '../types/entity.js';
 import Key from '../types/key.js';
 import Ledger from '../types/ledger.js';
@@ -22,11 +24,11 @@ import Program from '../types/program.js';
 import Remote from '../types/remote.js';
 import Resource from '../types/resource.js';
 import Service from '../types/service.js';
-import Scribe from '../types/scribe.js';
 import Script from '../types/script.js';
 import Stack from '../types/stack.js';
 import State from '../types/state.js';
 import Store from '../types/store.js';
+import Text from '../services/text.js';
 import Vector from '../types/vector.js';
 import Wallet from '../types/wallet.js';
 import Worker from '../types/worker.js';
@@ -98,6 +100,7 @@ class Fabric extends Service {
   static get Chain () { return Chain; }
   static get Circuit () { return Circuit; }
   static get Collection () { return Collection; }
+  static get RoundRobin () { return RoundRobin; }
   static get Entity () { return Entity; }
   static get Key () { return Key; }
   static get Ledger () { return Ledger; }
@@ -110,11 +113,13 @@ class Fabric extends Service {
   static get Remote () { return Remote; }
   static get Resource () { return Resource; }
   static get Service () { return Service; }
-  static get Scribe () { return Scribe; }
+  /** @deprecated Use {@link State}. Alias for backward compatibility. */
+  static get Scribe () { return State; }
   static get Script () { return Script; }
   static get Stack () { return Stack; }
   static get State () { return State; }
   static get Store () { return Store; }
+  static get Text () { return Text; }
   static get Vector () { return Vector; }
   static get Wallet () { return Wallet; }
   static get Worker () { return Worker; }
@@ -217,8 +222,9 @@ class Fabric extends Service {
   }
 
   push (value) {
-    let name = value.constructor.name;
-    if (name !== 'Vector') value = new Vector(value)._sign();
+    if (!(value instanceof State) && !(value instanceof Vector)) {
+      value = new State(value)._sign();
+    }
     this.machine.script.push(value);
     return this.machine.script;
   }
@@ -230,4 +236,4 @@ class Fabric extends Service {
   }
 }
 
-export default Fabric; 
+export default Fabric;

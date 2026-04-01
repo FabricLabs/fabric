@@ -6,7 +6,13 @@ const Hash256 = require('./hash256');
 const Key = require('./key');
 
 /**
- * Manage a network identity.
+ * @classdesc <strong>BIP32/BIP39 identity</strong> wrapping {@link Key}: mnemonic / xprv / passphrase, derivation
+ * <code>m/44'/7778'/account'/0/index</code> (see <code>derivation</code> getter). <strong>Important:</strong> this class
+ * overrides {@link Actor#id} with <code>toString()</code> (human-facing / Bech32-style identity), <strong>not</strong> the
+ * content-addressed <code>Actor#id</code> / <code>preimage</code> chain from {@link Actor#toGenericMessage}. Use
+ * <code>pubkey</code>, <code>pubkeyhash</code>, or explicit hashing when you need stable bytes.
+ * @class Identity
+ * @extends Actor
  */
 class Identity extends Actor {
   /**

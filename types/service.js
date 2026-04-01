@@ -28,14 +28,11 @@ const Resource = require('./resource');
 const Store = require('./store');
 
 /**
- * The "Service" is a simple model for processing messages in a distributed
- * system.  {@link Service} instances are public interfaces for outside systems,
- * and typically advertise their presence to the network.
- *
- * To implement a Service, you will typically need to implement all methods from
- * this prototype.  In general, `connect` and `send` are the highest-priority
- * jobs, and by default the `fabric` property will serve as an I/O stream using
- * familiar semantics.
+ * @classdesc Long-lived application surface extending {@link Actor}. Integrates external systems and the Fabric
+ * network: peers consume and produce {@link Message} (AMP) instances, not ad-hoc JSON. Subclasses implement routing,
+ * resources, and lifecycle (<code>start</code>/<code>stop</code> patterns — see <strong>AGENTS.md</strong>). The CLI/browser shell is {@link Service.FabricShell}.
+ * @class Service
+ * @extends Actor
  * @access protected
  * @property map The "map" is a hashtable of "key" => "value" pairs.
  */
@@ -48,7 +45,7 @@ class Service extends Actor {
    * @param {Object} [settings.state] Initial state to assign.
    */
   constructor (settings = {}) {
-    // Initialize Scribe, our logging tool
+    // State (extends Actor) carries logging / lifecycle helpers formerly on Scribe
     super(settings);
 
     this.name = this.constructor.name;

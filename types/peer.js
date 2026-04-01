@@ -73,7 +73,11 @@ function peerDebugDerivedPublicSummary (keyInstance) {
 }
 
 /**
- * An in-memory representation of a node in our network.
+ * @classdesc P2P node: TCP/NOISE sessions, gossip, and relay of {@link Message} (AMP) frames. Extends {@link Service}
+ * (hence {@link Actor}). Opcode and receipt semantics must stay aligned with <strong>@fabric/http</strong> and Hub when you add types —
+ * see {@link Message} wire vs friendly names and <code>constants</code> opcodes.
+ * @class Peer
+ * @extends Service
  */
 class Peer extends Service {
   /**

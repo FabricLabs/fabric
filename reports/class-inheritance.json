@@ -1,0 +1,936 @@
+{
+  "generatedAt": "2026-04-01T19:43:24.093Z",
+  "scanRoots": [
+    "types",
+    "services",
+    "contracts"
+  ],
+  "inherits": {
+    "Actor": "EventEmitter",
+    "Authority": "HTTP",
+    "Bech32": null,
+    "BitcoinBlock": "Actor",
+    "BitcoinTransaction": "Actor",
+    "Block": "Actor",
+    "Bond": "Contract",
+    "Capability": "Entity",
+    "Chain": "Actor",
+    "Challenge": "State",
+    "Channel": "State",
+    "Circuit": "Actor",
+    "CLI": "FabricShell",
+    "Codec": null,
+    "Collection": "Stack",
+    "Compiler": null,
+    "Component": "Service",
+    "Contract": "Service",
+    "Datastore": "Store",
+    "Disk": null,
+    "Document": "State",
+    "Entity": "EventEmitter",
+    "Transition": "Entity",
+    "Environment": "Entity",
+    "Fabric": "Service",
+    "Federation": "Contract",
+    "Filesystem": "Actor",
+    "Hash256": null,
+    "History": "Actor",
+    "HKDF": null,
+    "Identity": "Actor",
+    "Instruction": "State",
+    "Interface": "Service",
+    "Key": "EventEmitter",
+    "Label": "Actor",
+    "Ledger": "State",
+    "LightningMessage": "Message",
+    "Logger": "Actor",
+    "Machine": "Actor",
+    "Message": "Actor",
+    "Network": null,
+    "Node": "Service",
+    "Observer": null,
+    "Oracle": "Store",
+    "Path": "String",
+    "Peer": "Service",
+    "Swarm": "Actor",
+    "Program": "Circuit",
+    "EncryptedPromise": null,
+    "Queue": "Actor",
+    "Reader": "EventEmitter",
+    "Remote": "Actor",
+    "Renderer": null,
+    "Resource": "Store",
+    "RoundRobin": "Circuit",
+    "Router": "State",
+    "Script": "Stack",
+    "Secret": "EncryptedPromise",
+    "Service": "Actor",
+    "FabricShell": "Service",
+    "Session": "Entity",
+    "Signature": "Buffer",
+    "Stack": "State",
+    "State": "Actor",
+    "Store": "Actor",
+    "Token": null,
+    "Transaction": "Actor",
+    "Tree": "Actor",
+    "TypeTree": null,
+    "Validator": "Fabric",
+    "Vector": "EventEmitter",
+    "Wallet": "Service",
+    "Witness": null,
+    "Worker": "Service",
+    "Bitcoin": "Service",
+    "Exchange": "Service",
+    "Lightning": "Service",
+    "Local": "Service",
+    "Redis": "Service",
+    "Text": "Service",
+    "Turntable": "Service",
+    "ZMQ": "Service",
+    "Distribution": "Contract",
+    "EventEmitter": null,
+    "Buffer": null,
+    "String": null,
+    "HTTP": null
+  },
+  "tree": {
+    "Bech32": {},
+    "Codec": {},
+    "Compiler": {},
+    "Disk": {},
+    "Hash256": {},
+    "HKDF": {},
+    "Network": {},
+    "Observer": {},
+    "EncryptedPromise": {
+      "Secret": {}
+    },
+    "Renderer": {},
+    "Token": {},
+    "TypeTree": {},
+    "Witness": {},
+    "EventEmitter": {
+      "Actor": {
+        "BitcoinBlock": {},
+        "BitcoinTransaction": {},
+        "Block": {},
+        "Chain": {},
+        "Circuit": {
+          "Program": {},
+          "RoundRobin": {}
+        },
+        "Filesystem": {},
+        "History": {},
+        "Identity": {},
+        "Label": {},
+        "Logger": {},
+        "Machine": {},
+        "Message": {
+          "LightningMessage": {}
+        },
+        "Swarm": {},
+        "Queue": {},
+        "Remote": {},
+        "Service": {
+          "Component": {},
+          "Contract": {
+            "Bond": {},
+            "Federation": {},
+            "Distribution": {}
+          },
+          "Fabric": {
+            "Validator": {}
+          },
+          "Interface": {},
+          "Node": {},
+          "Peer": {},
+          "FabricShell": {
+            "CLI": {}
+          },
+          "Wallet": {},
+          "Worker": {},
+          "Bitcoin": {},
+          "Exchange": {},
+          "Lightning": {},
+          "Local": {},
+          "Redis": {},
+          "Text": {},
+          "Turntable": {},
+          "ZMQ": {}
+        },
+        "State": {
+          "Challenge": {},
+          "Channel": {},
+          "Document": {},
+          "Instruction": {},
+          "Ledger": {},
+          "Router": {},
+          "Stack": {
+            "Collection": {},
+            "Script": {}
+          }
+        },
+        "Store": {
+          "Datastore": {},
+          "Oracle": {},
+          "Resource": {}
+        },
+        "Transaction": {},
+        "Tree": {}
+      },
+      "Entity": {
+        "Capability": {},
+        "Transition": {},
+        "Environment": {},
+        "Session": {}
+      },
+      "Key": {},
+      "Reader": {},
+      "Vector": {}
+    },
+    "Buffer": {
+      "Signature": {}
+    },
+    "String": {
+      "Path": {}
+    },
+    "HTTP": {
+      "Authority": {}
+    }
+  },
+  "byFile": [
+    {
+      "file": "types/actor.js",
+      "classes": [
+        {
+          "name": "Actor",
+          "extends": "EventEmitter"
+        }
+      ]
+    },
+    {
+      "file": "types/authority.js",
+      "classes": [
+        {
+          "name": "Authority",
+          "extends": "HTTP"
+        }
+      ]
+    },
+    {
+      "file": "types/bech32.js",
+      "classes": [
+        {
+          "name": "Bech32",
+          "extends": null
+        }
+      ]
+    },
+    {
+      "file": "types/bitcoin/block.js",
+      "classes": [
+        {
+          "name": "BitcoinBlock",
+          "extends": "Actor"
+        }
+      ]
+    },
+    {
+      "file": "types/bitcoin/transaction.js",
+      "classes": [
+        {
+          "name": "BitcoinTransaction",
+          "extends": "Actor"
+        }
+      ]
+    },
+    {
+      "file": "types/block.js",
+      "classes": [
+        {
+          "name": "Block",
+          "extends": "Actor"
+        }
+      ]
+    },
+    {
+      "file": "types/bond.js",
+      "classes": [
+        {
+          "name": "Bond",
+          "extends": "Contract"
+        }
+      ]
+    },
+    {
+      "file": "types/capability.js",
+      "classes": [
+        {
+          "name": "Capability",
+          "extends": "Entity"
+        }
+      ]
+    },
+    {
+      "file": "types/chain.js",
+      "classes": [
+        {
+          "name": "Chain",
+          "extends": "Actor"
+        }
+      ]
+    },
+    {
+      "file": "types/challenge.js",
+      "classes": [
+        {
+          "name": "Challenge",
+          "extends": "State"
+        }
+      ]
+    },
+    {
+      "file": "types/channel.js",
+      "classes": [
+        {
+          "name": "Channel",
+          "extends": "State"
+        }
+      ]
+    },
+    {
+      "file": "types/circuit.js",
+      "classes": [
+        {
+          "name": "Circuit",
+          "extends": "Actor"
+        }
+      ]
+    },
+    {
+      "file": "types/cli.js",
+      "classes": [
+        {
+          "name": "CLI",
+          "extends": "FabricShell"
+        }
+      ]
+    },
+    {
+      "file": "types/codec.js",
+      "classes": [
+        {
+          "name": "Codec",
+          "extends": null
+        }
+      ]
+    },
+    {
+      "file": "types/collection.js",
+      "classes": [
+        {
+          "name": "Collection",
+          "extends": "Stack"
+        }
+      ]
+    },
+    {
+      "file": "types/compiler.js",
+      "classes": [
+        {
+          "name": "Compiler",
+          "extends": null
+        }
+      ]
+    },
+    {
+      "file": "types/component.js",
+      "classes": [
+        {
+          "name": "Component",
+          "extends": "Service"
+        }
+      ]
+    },
+    {
+      "file": "types/contract.js",
+      "classes": [
+        {
+          "name": "Contract",
+          "extends": "Service"
+        }
+      ]
+    },
+    {
+      "file": "types/datastore.js",
+      "classes": [
+        {
+          "name": "Datastore",
+          "extends": "Store"
+        }
+      ]
+    },
+    {
+      "file": "types/disk.js",
+      "classes": [
+        {
+          "name": "Disk",
+          "extends": null
+        }
+      ]
+    },
+    {
+      "file": "types/document.js",
+      "classes": [
+        {
+          "name": "Document",
+          "extends": "State"
+        }
+      ]
+    },
+    {
+      "file": "types/entity.js",
+      "classes": [
+        {
+          "name": "Entity",
+          "extends": "EventEmitter"
+        },
+        {
+          "name": "Transition",
+          "extends": "Entity"
+        }
+      ]
+    },
+    {
+      "file": "types/environment.js",
+      "classes": [
+        {
+          "name": "Environment",
+          "extends": "Entity"
+        }
+      ]
+    },
+    {
+      "file": "types/fabric.js",
+      "classes": [
+        {
+          "name": "Fabric",
+          "extends": "Service"
+        }
+      ]
+    },
+    {
+      "file": "types/federation.js",
+      "classes": [
+        {
+          "name": "Federation",
+          "extends": "Contract"
+        }
+      ]
+    },
+    {
+      "file": "types/filesystem.js",
+      "classes": [
+        {
+          "name": "Filesystem",
+          "extends": "Actor"
+        }
+      ]
+    },
+    {
+      "file": "types/hash256.js",
+      "classes": [
+        {
+          "name": "Hash256",
+          "extends": null
+        }
+      ]
+    },
+    {
+      "file": "types/history.js",
+      "classes": [
+        {
+          "name": "History",
+          "extends": "Actor"
+        }
+      ]
+    },
+    {
+      "file": "types/hkdf.js",
+      "classes": [
+        {
+          "name": "HKDF",
+          "extends": null
+        }
+      ]
+    },
+    {
+      "file": "types/identity.js",
+      "classes": [
+        {
+          "name": "Identity",
+          "extends": "Actor"
+        }
+      ]
+    },
+    {
+      "file": "types/instruction.js",
+      "classes": [
+        {
+          "name": "Instruction",
+          "extends": "State"
+        }
+      ]
+    },
+    {
+      "file": "types/interface.js",
+      "classes": [
+        {
+          "name": "Interface",
+          "extends": "Service"
+        }
+      ]
+    },
+    {
+      "file": "types/key.js",
+      "classes": [
+        {
+          "name": "Key",
+          "extends": "EventEmitter"
+        }
+      ]
+    },
+    {
+      "file": "types/label.js",
+      "classes": [
+        {
+          "name": "Label",
+          "extends": "Actor"
+        }
+      ]
+    },
+    {
+      "file": "types/ledger.js",
+      "classes": [
+        {
+          "name": "Ledger",
+          "extends": "State"
+        }
+      ]
+    },
+    {
+      "file": "types/lightning/message.js",
+      "classes": [
+        {
+          "name": "LightningMessage",
+          "extends": "Message"
+        }
+      ]
+    },
+    {
+      "file": "types/logger.js",
+      "classes": [
+        {
+          "name": "Logger",
+          "extends": "Actor"
+        }
+      ]
+    },
+    {
+      "file": "types/machine.js",
+      "classes": [
+        {
+          "name": "Machine",
+          "extends": "Actor"
+        }
+      ]
+    },
+    {
+      "file": "types/message.js",
+      "classes": [
+        {
+          "name": "Message",
+          "extends": "Actor"
+        }
+      ]
+    },
+    {
+      "file": "types/network.js",
+      "classes": [
+        {
+          "name": "Network",
+          "extends": null
+        }
+      ]
+    },
+    {
+      "file": "types/node.js",
+      "classes": [
+        {
+          "name": "Node",
+          "extends": "Service"
+        }
+      ]
+    },
+    {
+      "file": "types/observer.js",
+      "classes": [
+        {
+          "name": "Observer",
+          "extends": null
+        }
+      ]
+    },
+    {
+      "file": "types/oracle.js",
+      "classes": [
+        {
+          "name": "Oracle",
+          "extends": "Store"
+        }
+      ]
+    },
+    {
+      "file": "types/path.js",
+      "classes": [
+        {
+          "name": "Path",
+          "extends": "String"
+        }
+      ]
+    },
+    {
+      "file": "types/peer.js",
+      "classes": [
+        {
+          "name": "Peer",
+          "extends": "Service"
+        },
+        {
+          "name": "Swarm",
+          "extends": "Actor"
+        }
+      ]
+    },
+    {
+      "file": "types/program.js",
+      "classes": [
+        {
+          "name": "Program",
+          "extends": "Circuit"
+        }
+      ]
+    },
+    {
+      "file": "types/promise.js",
+      "classes": [
+        {
+          "name": "EncryptedPromise",
+          "extends": null
+        }
+      ]
+    },
+    {
+      "file": "types/queue.js",
+      "classes": [
+        {
+          "name": "Queue",
+          "extends": "Actor"
+        }
+      ]
+    },
+    {
+      "file": "types/reader.js",
+      "classes": [
+        {
+          "name": "Reader",
+          "extends": "EventEmitter"
+        }
+      ]
+    },
+    {
+      "file": "types/remote.js",
+      "classes": [
+        {
+          "name": "Remote",
+          "extends": "Actor"
+        }
+      ]
+    },
+    {
+      "file": "types/renderer.js",
+      "classes": [
+        {
+          "name": "Renderer",
+          "extends": null
+        }
+      ]
+    },
+    {
+      "file": "types/resource.js",
+      "classes": [
+        {
+          "name": "Resource",
+          "extends": "Store"
+        }
+      ]
+    },
+    {
+      "file": "types/roundRobin.js",
+      "classes": [
+        {
+          "name": "RoundRobin",
+          "extends": "Circuit"
+        }
+      ]
+    },
+    {
+      "file": "types/router.js",
+      "classes": [
+        {
+          "name": "Router",
+          "extends": "State"
+        }
+      ]
+    },
+    {
+      "file": "types/script.js",
+      "classes": [
+        {
+          "name": "Script",
+          "extends": "Stack"
+        }
+      ]
+    },
+    {
+      "file": "types/secret.js",
+      "classes": [
+        {
+          "name": "Secret",
+          "extends": "EncryptedPromise"
+        }
+      ]
+    },
+    {
+      "file": "types/service.js",
+      "classes": [
+        {
+          "name": "Service",
+          "extends": "Actor"
+        },
+        {
+          "name": "FabricShell",
+          "extends": "Service"
+        }
+      ]
+    },
+    {
+      "file": "types/session.js",
+      "classes": [
+        {
+          "name": "Session",
+          "extends": "Entity"
+        }
+      ]
+    },
+    {
+      "file": "types/signature.js",
+      "classes": [
+        {
+          "name": "Signature",
+          "extends": "Buffer"
+        }
+      ]
+    },
+    {
+      "file": "types/stack.js",
+      "classes": [
+        {
+          "name": "Stack",
+          "extends": "State"
+        }
+      ]
+    },
+    {
+      "file": "types/state.js",
+      "classes": [
+        {
+          "name": "State",
+          "extends": "Actor"
+        }
+      ]
+    },
+    {
+      "file": "types/store.js",
+      "classes": [
+        {
+          "name": "Store",
+          "extends": "Actor"
+        }
+      ]
+    },
+    {
+      "file": "types/token.js",
+      "classes": [
+        {
+          "name": "Token",
+          "extends": null
+        }
+      ]
+    },
+    {
+      "file": "types/transaction.js",
+      "classes": [
+        {
+          "name": "Transaction",
+          "extends": "Actor"
+        }
+      ]
+    },
+    {
+      "file": "types/tree.js",
+      "classes": [
+        {
+          "name": "Tree",
+          "extends": "Actor"
+        }
+      ]
+    },
+    {
+      "file": "types/typetree.js",
+      "classes": [
+        {
+          "name": "TypeTree",
+          "extends": null
+        }
+      ]
+    },
+    {
+      "file": "types/validator.js",
+      "classes": [
+        {
+          "name": "Validator",
+          "extends": "Fabric"
+        }
+      ]
+    },
+    {
+      "file": "types/vector.js",
+      "classes": [
+        {
+          "name": "Vector",
+          "extends": "EventEmitter"
+        }
+      ]
+    },
+    {
+      "file": "types/wallet.js",
+      "classes": [
+        {
+          "name": "Wallet",
+          "extends": "Service"
+        }
+      ]
+    },
+    {
+      "file": "types/witness.js",
+      "classes": [
+        {
+          "name": "Witness",
+          "extends": null
+        }
+      ]
+    },
+    {
+      "file": "types/worker.js",
+      "classes": [
+        {
+          "name": "Worker",
+          "extends": "Service"
+        }
+      ]
+    },
+    {
+      "file": "services/bitcoin.js",
+      "classes": [
+        {
+          "name": "Bitcoin",
+          "extends": "Service"
+        }
+      ]
+    },
+    {
+      "file": "services/exchange.js",
+      "classes": [
+        {
+          "name": "Exchange",
+          "extends": "Service"
+        }
+      ]
+    },
+    {
+      "file": "services/lightning.js",
+      "classes": [
+        {
+          "name": "Lightning",
+          "extends": "Service"
+        }
+      ]
+    },
+    {
+      "file": "services/local.js",
+      "classes": [
+        {
+          "name": "Local",
+          "extends": "Service"
+        }
+      ]
+    },
+    {
+      "file": "services/redis.js",
+      "classes": [
+        {
+          "name": "Redis",
+          "extends": "Service"
+        }
+      ]
+    },
+    {
+      "file": "services/text.js",
+      "classes": [
+        {
+          "name": "Text",
+          "extends": "Service"
+        }
+      ]
+    },
+    {
+      "file": "services/turntable.js",
+      "classes": [
+        {
+          "name": "Turntable",
+          "extends": "Service"
+        }
+      ]
+    },
+    {
+      "file": "services/zmq.js",
+      "classes": [
+        {
+          "name": "ZMQ",
+          "extends": "Service"
+        }
+      ]
+    },
+    {
+      "file": "contracts/distribution.js",
+      "classes": [
+        {
+          "name": "Distribution",
+          "extends": "Contract"
+        }
+      ]
+    }
+  ]
+}

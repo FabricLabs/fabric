@@ -5,6 +5,7 @@ There is a lot to cover when building decentralized applications on Fabric, so g
 - [Vision](#vision)
 - [Quick start](#quick-start)
 - [Repository layout](#repository-layout)
+- [Actor and Message](#actor-and-message)
 - [Development workflow](#development-workflow)
 - [Bitcoin service](#bitcoin-service-servicesbitcoin)
 - [Message types](#message-types-typesmessage)
@@ -40,8 +41,28 @@ Working from a **git checkout** (not the global package) is best when you are ch
 | `settings/` | Default and environment-specific config; `settings/deprecations.js` holds legacy aliases. |
 | `assets/` | **Generated** browser bundles; rebuild with `npm run build` after type changes. |
 
+## Actor and Message
+**Regeneration:** The same substance lives in JSDoc on **`types/actor.js`** (`@fileoverview` + class) and **`types/message.js`** (`@classdesc` + constructor). After `npm run make:docs`, **Actor.html** / **Message.html** stay populated even if this Markdown is edited elsewhere; keep wording aligned when you change the model.
+
+These two types are the spine of **`@fabric/core`**: almost everything user-facing either **is** an Actor, **extends** it, or **serializes** to a Message on the wire.
+
+### Actor (`types/actor.js`)
+- **Role:** Stateful entity with JSON content under `_state.content`, observed with **JSON Patch** (`fast-json-patch`). **`commit()`** turns pending observer diffs into history entries and emits **`commit`** plus a structured **`message`** event (`type: 'ActorMessage'`, `data.type: 'Changes'`).
+- **Identity:** **`id`** is **`Hash256`** of the **`preimage`**, where **`preimage`** is itself a **`Hash256`** of the UTF-8 pretty-printed **`toGenericMessage()`** — a stable `{ type, object }` envelope with **sorted keys** (`toObject()` / `_sortKeys`). Treat **`id`** as a **content address** for that actor state shape, not as “a random node id”.
+- **Patterns:** Subclasses override or wrap state; use **`adopt(patches)`**, **`set(path, value)`**, **`get(path)`** for JSON Pointer access. Prefer **`commit()`** when you need an auditable step for sync or P2P.
+
+### Message (`types/message.js`) — extends Actor
+- **Role:** **Application Messaging Protocol (AMP)** — the on-wire unit peers and services exchange. Carries **magic/version**, **parent**, **author** (x-only pubkey), **opcode** (`raw.type`), **body hash**, **preimage** (HTLC / sensitive / zeroed), and **64-byte Schnorr signature** (BIP-340, tagged **`Fabric/Message`** over header+body, signature field zeroed for hashing — see **`signWithKey`** / **`verifyWithKey`**).
+- **Two naming layers:** **`wireType`** (e.g. `P2P_GENERIC`, `P2P_MESSAGE_RECEIPT`) vs **`friendlyType`** / **`toObject().type`** (e.g. `Generic`, PascalCase legacy labels). **`Message.encode`** accepts either via merged **`types`** maps; use **`Message.wireTypeFromFriendly`** / **`Message.friendlyTypeFromWire`** when bridging JSON APIs and binary peers.
+- **Relation to Actor:** A Message **is** an Actor for construction and tooling, but on the network you think in **opcodes**, **receipts**, and **verified envelopes** — not only JSON.
+
+### Practical checklist for contributors
+1. **Hub / `@fabric/http` / extension:** Keep **opcode constants** and **friendly aliases** aligned when you add or rename a type.
+2. **Signing:** **Fabric `Message`** uses **Schnorr** on a **tagged** hash; **Bitcoin Signed Message** (Core RPC) is **ECDSA + legacy prefix** — different animals; do not conflate them in UX copy or crypto paths.
+3. **Docs:** After JSDoc changes to **`types/message.js`** or **`types/actor.js`**, run **`npm run make:api`** and **`npm run make:docs`**.
+
 ## Development workflow
-- **Node:** engines field in `package.json` is authoritative (currently Node 22.x).
+- **Node:** **`package.json`** **`engines`** and **`.nvmrc`** are authoritative (currently **24.14.1**).
 - **Unit tests:** `npm test` — runs Mocha recursively under `tests/`.
 - **Lint:** `npm run lint` / `npm run lint:fix` (Semistandard).
 - **API reference:** `npm run make:api` writes `API.md` from JSDoc (see `scripts/list-jsdoc-type-files.js` for which `types/*.js` files are included).
@@ -57,7 +78,7 @@ Use this repo as a **library** or run the **`fabric`** CLI in environments you c
 
 | Step | Where |
 |------|--------|
-| Node **22.14.x**, `npm ci`, **`npm run ci`** | [`docs/PRODUCTION.md`](docs/PRODUCTION.md) |
+| Node **24.14.1**, `npm ci`, **`npm run ci`** | [`PRODUCTION.md`](PRODUCTION.md) |
 | Completion / privacy / security matrix | [`docs/PRODUCTION-CHECKLIST.md`](docs/PRODUCTION-CHECKLIST.md), [`PRIVACY.md`](PRIVACY.md), [`SECURITY.md`](SECURITY.md) |
 | Version tag, changelog, Hub & fabric-http bumps | [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) |
 | Operator privacy model | [`PRIVACY.md`](PRIVACY.md) |
@@ -70,13 +91,16 @@ These live under `types/*.js` (CommonJS). The **`Fabric`** facade (`types/fabric
 
 | Type | Role |
 |------|------|
-| **`Actor`** | Base identity + vector clock + `commit()`; most user-facing types extend it. |
-| **`Message`** | Wire envelope for P2P and services; opcode-driven dispatch. |
+| **`Actor`** | Base state + JSON Patch + `commit()` + content-derived **`id`**; most domain types extend it. |
+| **`Message`** | **Extends Actor**; AMP wire envelope (opcodes, Schnorr **`Fabric/Message`**); P2P/service traffic. |
 | **`Peer`** | TCP/NOISE P2P node, relay, registry; **`Peer.Swarm`** multi-peer orchestration. |
 | **`Service`** | Long-lived app surface, resources; **`Service.FabricShell`** is the browser/CLI application shell (`CLI` extends it). |
 | **`Store`** | LevelDB persistence; **`Store.openEncrypted`** for at-rest crypto. |
-| **`Entity`** | Generic structured document; **`Entity.Transition`** for JSON Patch diffs. |
-| **`Key` / `Identity`** | Schnorr/secp256k1 keys and BIP32/BIP39 identity. |
+| **`Entity`** | **`EventEmitter`** (not Actor): structured `@type`/`@data`, `id` = SHA256(`toJSON`); **`Entity.Transition`** for JSON Patch between entities. |
+| **`Key` / `Identity`** | Keys + BIP32/BIP39; **`Identity`** overrides **`Actor#id`** with `toString()` — not the same content-address as base **`Actor`**. |
+| **`State` → `Vector` / `Channel` / …** | **`State`** extends **`Actor`** and includes logging, `start`/`stop`, and `sha256` helpers (formerly a separate **`Scribe`** type). **`Vector`** holds scripts/stacks for **`Machine`**; **`Channel`** models balances with a counterparty. |
+| **`Machine`** | Deterministic VM-style runner (script, memory, **`Key`** entropy); not P2P **`Message`** dispatch. |
+| **`Remote`** | Minimal **`WebSocket`** client (`wss://…`) for hub-style hosts; richer HTTP belongs in **`@fabric/http`**. |
 | **`Chain` / `Block`** | Local chain views and block helpers (network-specific services extend these). |
 
 Regenerate **`API.md`** with `npm run make:api` after JSDoc changes. Experimental or legacy-only files may be omitted via **`scripts/list-jsdoc-type-files.js`**.

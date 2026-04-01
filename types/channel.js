@@ -7,25 +7,23 @@ const {
 const BN = require('bn.js');
 const Key = require('./key');
 const Entity = require('./entity');
-const Scribe = require('./scribe');
+const State = require('./state');
 const Secret = require('./secret');
 
 // (legacy Consensus type removed)
 // const Layer = require('./layer');
 
 /**
- * The {@link Channel} is a encrypted connection with a member of your
- * {@link Peer} group, with some amount of $BTC bonded and paid for each
- * correctly-validated message.
- *
- * Channels in Fabric are powerful tools for application development, as they
- * can empower users with income opportunities in exchange for delivering
- * service to the network.
+ * @classdesc <strong>Payment / capacity channel</strong> between peers: balances (<code>incoming</code> /
+ * <code>outgoing</code>), counterparty handle, optional asset caps (<code>MAX_CHANNEL_VALUE</code>). Extends
+ * {@link State} → {@link Actor}. Wording below is product-oriented;
+ * wire safety still depends on the Lightning/Bitcoin services you attach, not this object alone.
+ * @class Channel
+ * @extends State
  */
-class Channel extends Scribe {
+class Channel extends State {
   /**
-   * Creates a channel between two peers.
-   * of many transactions over time, to be settled on-chain later.
+   * Creates a channel between two peers (bidirectional by default; <code>settings.mode</code>, <code>settings.asset</code>, …).
    * @param {Object} [settings] Configuration for the channel.
    */
   constructor (settings) {
