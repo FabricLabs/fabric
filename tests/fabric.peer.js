@@ -401,6 +401,89 @@ describe('@fabric/core/types/peer', function () {
     });
 
     describe('listen', function () {
+      it('start() rejects on non-EADDRINUSE listen failures', async function () {
+        const peer = new Peer({
+          ...settings,
+          port: await getFreePort(),
+          interface: '127.0.0.1',
+          listen: true,
+          peers: [],
+          networking: false,
+          peersDb: null
+        });
+        peers.push(peer);
+
+        peer.listen = async function () {
+          const err = new Error('synthetic listen failure');
+          err.code = 'ECONNRESET';
+          throw err;
+        };
+
+        let warningSeen = false;
+        peer.on('warning', (msg) => {
+          if (String(msg).includes('Could not listen')) warningSeen = true;
+        });
+
+        await assert.rejects(
+          peer.start(),
+          /Peer failed to listen: synthetic listen failure/
+        );
+        assert.strictEqual(warningSeen, true, 'expected warning on non-EADDRINUSE listen failure');
+      });
+
+      it('start() registers actor when listen is disabled', async function () {
+        const port = await getFreePort();
+        const peer = new Peer({
+          ...settings,
+          interface: '127.0.0.1',
+          port,
+          listen: false,
+          peers: [],
+          networking: false,
+          peersDb: null
+        });
+        peers.push(peer);
+
+        let actorName = null;
+        const originalRegisterActor = peer._registerActor.bind(peer);
+        peer._registerActor = function (actor) {
+          actorName = actor && actor.name;
+          return originalRegisterActor(actor);
+        };
+
+        await peer.start();
+        assert.strictEqual(actorName, `127.0.0.1:${port}`);
+      });
+
+      it('start() retries with default attempts when listenPortAttempts is invalid', async function () {
+        const port = await getFreePort();
+        const blocker = net.createServer();
+        await new Promise((resolve, reject) => {
+          blocker.once('error', reject);
+          blocker.listen(port, '127.0.0.1', resolve);
+        });
+
+        const peer = new Peer({
+          ...settings,
+          port,
+          interface: '127.0.0.1',
+          listen: true,
+          peers: [],
+          networking: false,
+          peersDb: null,
+          listenPortAttempts: 0 // invalid -> should fall back to default (20)
+        });
+        peers.push(peer);
+
+        try {
+          await peer.start();
+          assert.strictEqual(peer.settings.port, port + 1);
+        } finally {
+          await peer.stop().catch(() => {});
+          await new Promise((resolve) => blocker.close(resolve));
+        }
+      });
+
       it('rejects when port in use (EADDRINUSE)', async function () {
         const port = await getFreePort();
         const other = net.createServer();
