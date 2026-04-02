@@ -1218,10 +1218,10 @@ async function main (input = {}) {
       master.setExternalStatus(snapshot);
 
       const status = master.status();
-      const aliceChannels = Array.isArray(status.aliceChannels) ? status.aliceChannels : [];
-      const masterChannels = Array.isArray(status.masterChannels) ? status.masterChannels : [];
-      const aliceFunds = status.aliceFunds || {};
-      const masterFunds = status.masterFunds || {};
+      const aliceChannels = Array.isArray(snapshot.aliceChannels) ? snapshot.aliceChannels : [];
+      const masterChannels = Array.isArray(snapshot.masterChannels) ? snapshot.masterChannels : [];
+      const aliceFunds = snapshot.aliceFunds || {};
+      const masterFunds = snapshot.masterFunds || {};
       const workerSummary = status.workers.map((worker) => {
         const state = worker.state || {};
         return `w${worker.index}:done=${worker.processed},err=${worker.errors},${worker.busy ? 'busy' : 'idle'},state.jobs=${state.queueProcessed || 0},state.depth=${state.depth || 0},state.last=${state.lastPayload || '-'}`;
