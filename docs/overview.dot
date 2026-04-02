@@ -1,0 +1,46 @@
+digraph FabricDesignOverview {
+  rankdir = BT
+
+  subgraph cluster_network {
+    label = "Verifier Cycle"
+
+    subgraph cluster_bitcoin {
+      label = "Bitcoin Blockchain"
+      node [shape=record]
+      blockchain [label="<b0> block 0 | <b1> block 1 | <bs> block ... | <bn> block n"]
+    }
+
+    subgraph cluster_circuits {
+      label = "Verifier Circuit"
+
+      subgraph cluster_lightning {
+        label = "Off-chain UTXOs"
+        node [shape=record]
+        state [label="<l0> state 0 | <l1> state 1 | <ls> state ... | <ln> state n"]
+      }
+
+      subgraph cluster_fabric {
+        label = "Verifier Circuits"
+        node [shape=record]
+        fabric [label="<v0> state 0 | <v1> state 1 | <vs> state ... | <vn> state n"]
+      }
+  
+      subgraph cluster_channels {
+        label = "Channel Clusters"
+
+        "Contract Definition" ->
+        "Circuit Generator" ->{
+          "alice:bob:c0"
+          "alice:bob:c1"
+          "alice:bob:c2"
+          "alice:bob:cn"
+        }
+      }
+    }
+
+    blockchain:b0 -> state:l0 -> fabric:v0 [label = " initial state"]
+    fabric:v1 -> state:ls [label = " Byzantine State"]
+    state:ls -> blockchain:bn [label = " justice"]
+    fabric:vn -> state:ln -> blockchain:bn [label = " final state"]
+  }
+}

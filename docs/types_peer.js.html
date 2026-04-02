@@ -71,13 +71,6 @@ const manager = require('fast-json-patch');
 const noise = require('noise-protocol-stream');
 const merge = require('lodash.merge');
 
-// L1 document binding (hub / HTLC contentHash)
-const {
-  fabricCanonicalJson,
-  whitelistedDocumentFields,
-  purchaseContentHashHex
-} = require('../functions/publishedDocumentEnvelope');
-
 // Fabric Types
 const Actor = require('./actor');
 const Hash256 = require('./hash256');
@@ -91,10 +84,7 @@ const Service = require('./service');
 // Constants
 const PROLOGUE = 'FABRIC';
 
-/**
- * Safe debug label for a derived Key — never log private material.
- * @private
- */
+/** Safe debug label for a derived Key — never log private material. */
 function peerDebugDerivedPublicSummary (keyInstance) {
   if (!keyInstance || !keyInstance.settings) return '(unavailable)';
   const pubHex = typeof keyInstance.settings.public === 'string'
@@ -106,11 +96,7 @@ function peerDebugDerivedPublicSummary (keyInstance) {
 }
 
 /**
- * @classdesc P2P node: TCP/NOISE sessions, gossip, and relay of {@link Message} (AMP) frames. Extends {@link Service}
- * (hence {@link Actor}). Opcode and receipt semantics must stay aligned with &lt;strong>@fabric/http&lt;/strong> and Hub when you add types —
- * see {@link Message} wire vs friendly names and &lt;code>constants&lt;/code> opcodes.
- * @class Peer
- * @extends Service
+ * An in-memory representation of a node in our network.
  */
 class Peer extends Service {
   /**
@@ -119,8 +105,6 @@ class Peer extends Service {
    * @param {Boolean} [config.listen] Whether or not to listen for connections.
    * @param {Boolean} [config.upnp] Whether or not to use UPNP for automatic configuration.
    * @param {Number} [config.port=7777] Port to use for P2P connections.
-   * @param {Number} [config.listenPortAttempts=20] When the listen port is in use (`EADDRINUSE`),
-   *   try the next port up to this many times (same host).
    * @param {Array} [config.peers=[]] List of initial peers.
    */
   constructor (config = {}) {
@@ -145,18 +129,9 @@ class Peer extends Service {
       // a developer machine's stale peer list (which can hang/timeout the suite).
       peersDb: (process.env.NODE_ENV === 'test') ? null : 'stores/hub/peers',
       port: 7777,
-      listenPortAttempts: 20,
       reconnectToKnownPeers: true,
-      // When true, answers INVENTORY_REQUEST (offerBtc) using local documents/rates.
-      serveLocalDocumentInventory: false,
-      // Re-send canonical DocumentPublish + pricing to new inbound peers.
-      announceDocumentsOnPeerConnect: false,
-      // If local inventory doesn't answer, optionally relay INVENTORY_REQUEST.
-      relayInventoryRequest: false,
-      // Optionally relay INVENTORY_RESPONSE to peers other than the sender.
-      relayInventoryResponse: false,
       connectTimeout: 5000,
-      // Relay amplification controls for P2P_PEER_GOSSIP.
+      /** Limits relay amplification on {@link P2P_PEER_GOSSIP} (hop TTL, payload dedup, per-origin rate). */
       gossip: {
         maxHops: GOSSIP_MAX_HOPS,
         maxRelaysPerOriginPerMinute: GOSSIP_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
@@ -168,13 +143,16 @@ class Peer extends Service {
         channels: {},
         contracts: {},
         documents: {},
-        documentRates: {},
         messages: {},
         services: {}
       }, config.state),
       upnp: false,
       key: {},
-      // Inbound wire traffic budgeting (Bitcoin Core-style peer quality).
+      /**
+       * Inbound wire traffic budgeting (Bitcoin Core–style peer quality).
+       * Credits accrue per rolling window; overflow de-ranks the peer (registry score)
+       * and drops the message. Heavier opcodes cost more credits.
+       */
       wireTraffic: {
         windowMs: 60 * 1000,
         maxCreditsPerWindow: 520,
@@ -1061,39 +1039,6 @@ class Peer extends Service {
           this.emit('chainSyncRequest', { message, origin, socket, object: {} });
         }
         break;
-      case 'DOCUMENT_PUBLISH':
-      case 'DocumentPublish':
-        try {
-          const raw = message.data != null
-            ? (typeof message.data === 'string' ? message.data : String(message.data))
-            : '{}';
-          const parsed = JSON.parse(raw || '{}');
-          const docId = parsed.id;
-          if (!docId) break;
-          const purchaseHash = purchaseContentHashHex(docId, parsed);
-          const payload = {
-            message,
-            origin,
-            socket,
-            documentId: docId,
-            purchaseContentHashHex: purchaseHash,
-            parsed,
-            source: 'canonical'
-          };
-          this.emit('documentPublish', payload);
-          this.emit('DocumentPublish', payload);
-        } catch (exception) {
-          this.emit('warning', `[FABRIC:PEER] DOCUMENT_PUBLISH parse failed: ${exception.message}`);
-        }
-        break;
-      case 'DOCUMENT_REQUEST':
-      case 'DocumentRequest':
-        try {
-          this._handleDocumentRequestWire(message, origin, socket);
-        } catch (exception) {
-          this.emit('warning', `[FABRIC:PEER] DOCUMENT_REQUEST failed: ${exception.message}`);
-        }
-        break;
       case 'GENERIC_MESSAGE':
       case 'GenericMessage':
       case 'P2P_BASE_MESSAGE':
@@ -1105,7 +1050,7 @@ class Peer extends Service {
         // Parse JSON body
         try {
           const content = JSON.parse(message.data);
-          this._handleGenericMessage(content, origin, socket, message);
+          this._handleGenericMessage(content, origin, socket);
         } catch (exception) {
           this.emit('error', `Broken content body: ${exception}`);
         }
@@ -1167,7 +1112,7 @@ class Peer extends Service {
     return this;
   }
 
-  _handleGenericMessage (message, origin = null, socket = null, wireMessage = null) {
+  _handleGenericMessage (message, origin = null, socket = null) {
     if (this.settings.debug) this.emit('debug', `Generic message:\n\tFrom: ${JSON.stringify(origin)}\n\tType: ${message.type}\n\tBody:\n\`\`\`\n${JSON.stringify(message.object, null, '  ')}\n\`\`\``);
 
     // Lookup the appropriate Actor for the message's origin
@@ -1181,20 +1126,10 @@ class Peer extends Service {
         // Upstream Inventory request (typically for documents). Emit an 'inventory'
         // event so higher-level services (e.g. hub) can respond appropriately.
         this.emit('inventory', { message, origin, socket });
-        if (this.settings.serveLocalDocumentInventory) {
-          const served = this._respondInventoryFromLocalDocuments(message, origin);
-          const req = message.object || {};
-          if (this.settings.relayInventoryRequest &amp;&amp; !served &amp;&amp; wireMessage &amp;&amp; req.offerBtc === true) {
-            this.relayFrom(origin.name, wireMessage, socket);
-          }
-        }
         break;
       case 'INVENTORY_RESPONSE':
         // Document inventory reply (may include per-item L1 HTLC offers).
         this.emit('inventoryResponse', { message, origin, socket });
-        if (this.settings.relayInventoryResponse &amp;&amp; wireMessage) {
-          this.relayFrom(origin.name, wireMessage, socket);
-        }
         break;
       case 'P2P_SESSION_OFFER':
         const peerId = message.actor.id;
@@ -1248,9 +1183,6 @@ class Peer extends Service {
         const reply = PACKET_SESSION_START.toBuffer();
         if (this.settings.debug) this.emit('debug', `session_start ${PACKET_SESSION_START} ${reply.toString('hex')}`);
         this.connections[connAddress]._writeFabric(reply, socket);
-        if (this.settings.announceDocumentsOnPeerConnect) {
-          this._announceLocalDocumentsToPeer(connAddress);
-        }
         break;
       case 'P2P_SESSION_OPEN':
         if (this.settings.debug) this.emit('debug', `Handling session open: ${JSON.stringify(message.object)}`);
@@ -1376,15 +1308,6 @@ class Peer extends Service {
         // this.relayFrom(origin.name, announce);
         break;
       case 'P2P_DOCUMENT_PUBLISH':
-        this.emit('documentPublish', {
-          message,
-          origin,
-          socket,
-          documentId: message.object &amp;&amp; message.object.hash,
-          rateSats: message.object &amp;&amp; message.object.rate,
-          contentHash: message.object &amp;&amp; message.object.contentHash,
-          source: 'pricing'
-        });
         break;
       case 'P2P_FILE_SEND':
         this.emit('file', { message, origin });
@@ -1502,209 +1425,22 @@ class Peer extends Service {
     });
   }
 
-  /**
-   * Build hub-compatible document metadata for {@link purchaseContentHashHex}.
-   * @param {String} documentId
-   * @param {String} content UTF-8 body
-   * @returns {Object} Parsed document record (whitelisted fields)
-   */
-  _buildDocumentParsedForPublish (documentId, content) {
-    const buf = Buffer.from(content === null || content === undefined ? '' : String(content), 'utf8');
-    return {
-      id: documentId,
-      name: (documentId &amp;&amp; String(documentId).split('/').pop()) || 'document',
-      mime: 'text/plain',
-      revision: 1,
-      contentBase64: buf.toString('base64'),
-      size: buf.length,
-      sha256: crypto.createHash('sha256').update(buf).digest('hex')
-    };
-  }
-
-  /**
-   * Reply to `INVENTORY_REQUEST` with `INVENTORY_RESPONSE` built from local documents and rates.
-   * @param {{type: string, object: (Object|undefined)}} message Generic body from {@link Peer#_handleGenericMessage}
-   * @param {{ name: string }} origin
-   * @returns {boolean} true if an `INVENTORY_RESPONSE` was written to the requester
-   */
-  _respondInventoryFromLocalDocuments (message, origin) {
-    if (!origin || !origin.name) return false;
-    const req = message.object || {};
-    if (req.offerBtc !== true) return false;
-    const docs = this._state.content.documents;
-    if (!docs || typeof docs !== 'object') return false;
-    const rates = this._state.content.documentRates || {};
-    const maxSats = req.maxSats;
-    const items = [];
-    for (const docId of Object.keys(docs)) {
-      const body = docs[docId];
-      const parsed = this._buildDocumentParsedForPublish(docId, body);
-      const contentHash = purchaseContentHashHex(docId, parsed);
-      const rateSats = Object.prototype.hasOwnProperty.call(rates, docId) ? rates[docId] : 0;
-      if (maxSats != null &amp;&amp; Number.isFinite(maxSats) &amp;&amp; rateSats > maxSats) continue;
-      items.push({ id: docId, rateSats, contentHash, network: 'bitcoin' });
-    }
-    if (!items.length) return false;
-    const conn = this.connections[origin.name];
-    if (!conn || !conn._writeFabric) return false;
-    const payload = {
-      type: 'INVENTORY_RESPONSE',
-      object: { items }
-    };
-    const m = Message.fromVector(['GenericMessage', JSON.stringify(payload)]);
-    m.signWithKey(this.key);
-    conn._writeFabric(m.toBuffer());
-    return true;
-  }
-
-  /**
-   * Send a locally stored document to a connected peer as `P2P_FILE_SEND`.
-   * @param {string} documentId
-   * @param {string} peerAddress connection key in {@link Peer#connections}
-   * @returns {boolean} true if the payload was written
-   */
-  _sendP2pFileSendToPeer (documentId, peerAddress) {
-    const docs = this._state.content.documents;
-    if (!docs || !Object.prototype.hasOwnProperty.call(docs, documentId)) return false;
-    const body = docs[documentId];
-    const bodyStr = (body === null || body === undefined) ? '' : String(body);
-    const conn = peerAddress &amp;&amp; this.connections[peerAddress];
-    if (!conn || !conn._writeFabric) return false;
-    const filePayload = {
-      type: 'P2P_FILE_SEND',
-      object: {
-        name: documentId,
-        body: Buffer.from(bodyStr, 'utf8').toString('base64')
-      }
-    };
-    const reply = Message.fromVector(['GenericMessage', JSON.stringify(filePayload)]);
-    reply.signWithKey(this.key);
-    conn._writeFabric(reply.toBuffer());
-    return true;
-  }
-
-  /**
-   * Public helper: push document bytes to a peer (same wire path as {@link Peer#_handleDocumentRequestWire} fulfillment).
-   * @param {string} documentId
-   * @param {string} peerAddress
-   * @returns {boolean}
-   */
-  sendDocumentFileToPeer (documentId, peerAddress) {
-    return this._sendP2pFileSendToPeer(documentId, peerAddress);
-  }
-
-  /**
-   * AMP buffers for one document: canonical `DocumentPublish`, then optional pricing `P2P_DOCUMENT_PUBLISH`.
-   * @param {string} documentId
-   * @param {string} body UTF-8 body
-   * @param {number} rateSats
-   * @returns {Buffer[]}
-   */
-  _buildPublishDocumentWireBuffers (documentId, body, rateSats) {
-    const parsed = this._buildDocumentParsedForPublish(documentId, body);
-    const dataStr = fabricCanonicalJson(whitelistedDocumentFields(documentId, parsed));
-    const canonical = Message.fromVector(['DocumentPublish', dataStr]);
-    canonical.signWithKey(this.key);
-    const buffers = [canonical.toBuffer()];
-    if (rateSats > 0) {
-      const contentHash = purchaseContentHashHex(documentId, parsed);
-      const rateMsg = Message.fromVector(['P2P_DOCUMENT_PUBLISH', JSON.stringify({
-        type: 'P2P_DOCUMENT_PUBLISH',
-        object: {
-          hash: documentId,
-          rate: rateSats,
-          contentHash
-        }
-      })]);
-      rateMsg.signWithKey(this.key);
-      buffers.push(rateMsg.toBuffer());
-    }
-    return buffers;
-  }
-
-  /**
-   * Re-send all local document publishes to one peer (same bytes as {@link Peer#_publishDocument}).
-   * @param {string} peerAddress connection key in {@link Peer#connections}
-   */
-  _announceLocalDocumentsToPeer (peerAddress) {
-    const docs = this._state.content.documents;
-    if (!docs || typeof docs !== 'object') return;
-    const rates = this._state.content.documentRates || {};
-    const conn = peerAddress &amp;&amp; this.connections[peerAddress];
-    if (!conn || !conn._writeFabric) return;
-    for (const docId of Object.keys(docs)) {
-      const body = docs[docId];
-      const rateSats = Object.prototype.hasOwnProperty.call(rates, docId) ? rates[docId] : 0;
-      const buffers = this._buildPublishDocumentWireBuffers(docId, body, rateSats);
-      for (const buf of buffers) {
-        conn._writeFabric(buf);
-      }
-    }
-  }
-
-  /**
-   * Store a document locally and gossip to peers.
-   * 1) **Canonical** `DOCUMENT_PUBLISH` wire message (same bytes as hub `documentPublishEnvelope`) for L1 `contentHash`.
-   * 2) If `rateSats > 0`, a **pricing** `GENERIC` `P2P_DOCUMENT_PUBLISH` with `rate` and `contentHash` (sat ask).
-   * @param {String} documentId - Catalog key (e.g. CLI document name).
-   * @param {String} [content=''] - UTF-8 body stored under {@link Peer#state}.documents.
-   * @param {Number} [rateSats=0] - Ask price in satoshis (gossip only; not part of canonical hash).
-   */
-  _publishDocument (documentId, content = '', rateSats = 0) {
-    if (!this._state.content.documents) this._state.content.documents = {};
-    if (!this._state.content.documentRates) this._state.content.documentRates = {};
-    const body = (content === null || content === undefined) ? '' : String(content);
-    this._state.content.documents[documentId] = body;
-    this._state.content.documentRates[documentId] = rateSats;
+  _publishDocument (hash, rate = 0) {
+    this._state.content.documents[hash] = document;
 
     this.commit();
 
-    const buffers = this._buildPublishDocumentWireBuffers(documentId, body, rateSats);
-    for (const buf of buffers) {
-      this.broadcast(buf);
-    }
+    const PACKET_DOCUMENT_PUBLISH = Message.fromVector(['P2P_DOCUMENT_PUBLISH', JSON.stringify({
+      type: 'P2P_DOCUMENT_PUBLISH',
+      object: {
+        hash: hash,
+        rate: rate
+      }
+    })]);
 
-    if (this.settings.debug) {
-      this.emit('debug', '[FABRIC:PEER] Published canonical DOCUMENT_PUBLISH + pricing gossip (if rate > 0)');
-    }
-  }
-
-  /**
-   * Handle inbound `DOCUMENT_REQUEST`: emit `documentRequest` / `DocumentRequest`, then either
-   * send `P2P_FILE_SEND` to the requester if `state.documents[id]` is present, or relay the
-   * request to other peers (conditional relay).
-   * @param {Message} message
-   * @param {{ name: string }} origin
-   * @param {*} socket
-   */
-  _handleDocumentRequestWire (message, origin, socket) {
-    const raw = message.data != null
-      ? (typeof message.data === 'string' ? message.data : String(message.data))
-      : '{}';
-    const parsed = JSON.parse(raw || '{}');
-    const docId = parsed.document || parsed.id;
-    if (!docId) return;
-
-    const payload = {
-      message,
-      origin,
-      socket,
-      documentId: docId,
-      parsed,
-      source: 'canonical'
-    };
-    this.emit('documentRequest', payload);
-    this.emit('DocumentRequest', payload);
-
-    const docs = this._state.content.documents;
-    if (!docs || !Object.prototype.hasOwnProperty.call(docs, docId)) {
-      this.relayFrom(origin.name, message, socket);
-      return;
-    }
-
-    if (!this._sendP2pFileSendToPeer(docId, origin.name)) {
-      this.emit('warning', `[FABRIC:PEER] DOCUMENT_REQUEST: could not send P2P_FILE_SEND to ${origin &amp;&amp; origin.name}`);
-    }
+    const message = PACKET_DOCUMENT_PUBLISH.toBuffer();
+    if (this.settings.debug) this.emit('debug', `Broadcasting document publish: ${message.toString('utf8')}`);
+    this.broadcast(message);
   }
 
   _registerActor (object) {
@@ -1884,49 +1620,22 @@ class Peer extends Service {
       this.emit('debug', `[FABRIC:PEER] Peer list: ${JSON.stringify(this.settings.peers)}`);
     }
 
+    this._registerActor({ name: `${this.interface}:${this.port}` });
+
     if (this.settings.listen) {
       this.emit('log', 'Listener starting...');
+      if (this.settings.debug) console.debug('Starting listener on', this.interface, this.port);
 
-      const maxAttemptsRaw = this.settings.listenPortAttempts;
-      const maxAttempts = (typeof maxAttemptsRaw === 'number' &amp;&amp; maxAttemptsRaw > 0)
-        ? Math.min(256, Math.floor(maxAttemptsRaw))
-        : 20;
-      const basePort = (typeof this.settings.port === 'number' &amp;&amp; !Number.isNaN(this.settings.port))
-        ? this.settings.port
-        : 7777;
-
-      for (let attempt = 0; attempt &lt; maxAttempts; attempt++) {
-        this.settings.port = basePort + attempt;
-        if (this.public &amp;&amp; typeof this.public === 'object') this.public.port = this.settings.port;
-
-        if (this.settings.debug) {
-          this.emit('debug', `Starting listener on ${this.interface}:${this.settings.port} (attempt ${attempt + 1}/${maxAttempts})`);
-        }
-
-        try {
-          address = await this.listen();
-          if (this.settings.debug) this.emit('debug', `got address: ${JSON.stringify(address)}`);
-          this.listenAddress = address;
-          if (attempt > 0) {
-            this.emit('log', `[FABRIC:PEER] Port ${basePort} was busy; listening on ${this.settings.port} instead.`);
-          }
-          this.emit('log', 'Listener started!');
-          break;
-        } catch (exception) {
-          const inUse = exception &amp;&amp; exception.code === 'EADDRINUSE';
-          if (inUse &amp;&amp; attempt &lt; maxAttempts - 1) {
-            this.emit('warning', `[FABRIC:PEER] Port ${this.settings.port} in use, trying ${this.settings.port + 1}...`);
-            continue;
-          }
-          // Do not emit('error') here — with no listener Node throws ERR_UNHANDLED_ERROR; callers get the throw below.
-          this.emit('warning', 'Could not listen:', exception);
-          throw new Error('Peer failed to listen: ' + (exception &amp;&amp; exception.message ? exception.message : exception));
-        }
+      try {
+        address = await this.listen();
+        if (this.settings.debug) console.debug('got address:', address);
+        this.listenAddress = address;
+        this.emit('log', 'Listener started!');
+      } catch (exception) {
+        // Do not emit('error') here — with no listener Node throws ERR_UNHANDLED_ERROR; callers get the throw below.
+        this.emit('warning', 'Could not listen:', exception);
+        throw new Error('Peer failed to listen: ' + (exception &amp;&amp; exception.message ? exception.message : exception));
       }
-
-      this._registerActor({ name: `${this.interface}:${this.port}` });
-    } else {
-      this._registerActor({ name: `${this.interface}:${this.port}` });
     }
 
     if (this.settings.networking &amp;&amp; this.settings.peers &amp;&amp; this.settings.peers.length) {
@@ -2154,7 +1863,7 @@ class Peer extends Service {
    */
   async listen () {
     return new Promise((resolve, reject) => {
-      if (this.settings.debug) this.emit('debug', `Listening on ${this.interface}:${this.port}`);
+      if (this.settings.debug) console.debug('Listening on', this.interface, this.port);
 
       // Handle server errors before attempting to listen
       const errorHandler = (error) => {
@@ -2185,15 +1894,12 @@ class Peer extends Service {
         return resolve(address);
       });
 
-      // Runtime errors after listen succeeds; attach once so port-retry does not stack handlers.
-      if (!this._peerServerRuntimeErrorBound) {
-        this._peerServerRuntimeErrorBound = true;
-        this.server.on('error', (error) => {
-          if (error.code !== 'EADDRINUSE') {
-            this.emit('error', `Server socket error: ${error}`);
-          }
-        });
-      }
+      // Keep a general error handler for runtime errors
+      this.server.on('error', (error) => {
+        if (error.code !== 'EADDRINUSE') {
+          this.emit('error', `Server socket error: ${error}`);
+        }
+      });
     });
   }
 }
@@ -2219,12 +1925,12 @@ class Swarm extends Actor {
   }
 
   broadcast (msg) {
-    if (this.settings.verbosity >= 5) this.emit('debug', `broadcasting: ${JSON.stringify(msg)}`);
+    if (this.settings.verbosity >= 5) console.log('broadcasting:', msg);
     this.agent.broadcast(msg);
   }
 
   connect (address) {
-    if (this.settings.verbosity >= 4) this.emit('debug', `[FABRIC:SWARM] Connecting to: ${address}`);
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', `Connecting to: ${address}`);
 
     try {
       this.agent._connect(address);
@@ -2246,22 +1952,22 @@ class Swarm extends Actor {
     });
 
     swarm.agent.on('state', function (state) {
-      this.emit('debug', `[FABRIC:SWARM] Received state from agent: ${JSON.stringify(state)}`);
+      console.log('[FABRIC:SWARM]', 'Received state from agent:', state);
       swarm.emit('state', state);
     });
 
     swarm.agent.on('change', function (change) {
-      this.emit('debug', `[FABRIC:SWARM] Received change from agent: ${JSON.stringify(change)}`);
+      console.log('[FABRIC:SWARM]', 'Received change from agent:', change);
       swarm.emit('change', change);
     });
 
     swarm.agent.on('patches', function (patches) {
-      this.emit('debug', `[FABRIC:SWARM] Received patches from agent: ${JSON.stringify(patches)}`);
+      console.log('[FABRIC:SWARM]', 'Received patches from agent:', patches);
       swarm.emit('patches', patches);
     });
 
     swarm.agent.on('peer', function (peer) {
-      this.emit('debug', `[FABRIC:SWARM] Received peer from agent: ${JSON.stringify(peer)}`);
+      console.log('[FABRIC:SWARM]', 'Received peer from agent:', peer);
       swarm._registerPeer(peer);
     });
 
@@ -2319,7 +2025,7 @@ class Swarm extends Actor {
     const swarm = this;
     const slots = MAX_PEERS - Object.keys(this.nodes).length;
     const peers = Object.keys(this.peers).map(function (id) {
-      if (swarm.settings.verbosity >= 5) swarm.emit('debug', `[FABRIC:SWARM] _fillPeerSlots() checking: ${JSON.stringify(swarm.peers[id])}`);
+      if (swarm.settings.verbosity >= 5) console.log('[FABRIC:SWARM]', '_fillPeerSlots()', 'Checking:', swarm.peers[id]);
       return swarm.peers[id].address;
     });
     const candidates = swarm.settings.peers.filter(function (address) {
@@ -2334,25 +2040,25 @@ class Swarm extends Actor {
   }
 
   async _connectSeedNodes () {
-    if (this.settings.verbosity >= 4) this.emit('debug', `[FABRIC:SWARM] Connecting to seed nodes: ${JSON.stringify(this.settings.seeds)}`);
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', 'Connecting to seed nodes...', this.settings.seeds);
     for (const id in this.settings.seeds) {
-      if (this.settings.verbosity >= 5) this.emit('debug', `[FABRIC:SWARM] Iterating on seed: ${this.settings.seeds[id]}`);
+      if (this.settings.verbosity >= 5) console.log('[FABRIC:SWARM]', 'Iterating on seed:', this.settings.seeds[id]);
       this.connect(this.settings.seeds[id]);
     }
   }
 
   async start () {
-    if (this.settings.verbosity >= 4) this.emit('debug', '[FABRIC:SWARM] Starting...');
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', 'Starting...');
     await this.agent.start();
     await this._connectSeedNodes();
-    if (this.settings.verbosity >= 4) this.emit('debug', '[FABRIC:SWARM] Started!');
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', 'Started!');
     return this;
   }
 
   async stop () {
-    if (this.settings.verbosity >= 4) this.emit('debug', '[FABRIC:SWARM] Stopping...');
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', 'Stopping...');
     await this.agent.stop();
-    if (this.settings.verbosity >= 4) this.emit('debug', '[FABRIC:SWARM] Stopped!');
+    if (this.settings.verbosity >= 4) console.log('[FABRIC:SWARM]', 'Stopped!');
     return this;
   }
 }
@@ -2372,16 +2078,14 @@ module.exports.Swarm = Swarm;
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="Bond.html">Bond</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="Collection.html">Collection</a></li>
-      <li><a href="Disk.html">Disk</a></li>
-      <li><a href="Entity.html">Entity</a></li>
-      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
@@ -2399,14 +2103,12 @@ module.exports.Swarm = Swarm;
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
-      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
-      <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
@@ -2414,7 +2116,28 @@ module.exports.Swarm = Swarm;
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
-    <h3><a href="global.html">Global</a></h3>
+    <h3>Global</h3>
+    <ul>
+      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
+      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
+      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
+      <li><a href="global.html#crypto">crypto</a></li>
+      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
+      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
+      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
+      <li><a href="global.html#gossip">gossip</a></li>
+      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
+      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
+      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
+      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
+      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
+      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
+      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
+      <li><a href="global.html#stableStringify">stableStringify</a></li>
+      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
+      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
+      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
+    </ul>
   </nav>
   <br class="clear" />
   <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>
