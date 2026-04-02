@@ -1,0 +1,105 @@
+'use strict';
+
+/**
+ * Shared helpers for opt-in fuzz-style tests (random inputs on parser / wire / UI surfaces).
+ * Iteration count: {@link process.env.FABRIC_FUZZ_ITERATIONS} (positive integer) or default.
+ *
+ * Target runtime: Node 24.14.1 (see package.json engines).
+ */
+
+const crypto = require('crypto');
+const { HEADER_SIZE, MAX_MESSAGE_SIZE, PERSISTED_JSON_MAX_CHARS } = require('../../constants');
+
+/**
+ * @param {number} [defaultN]
+ * @returns {number}
+ */
+function fuzzIterations (defaultN = 400) {
+  const n = Number(process.env.FABRIC_FUZZ_ITERATIONS);
+  if (Number.isFinite(n) && n > 0) return Math.min(Math.floor(n), 50000);
+  return defaultN;
+}
+
+/**
+ * @param {number} maxLen inclusive upper bound on length
+ * @returns {Buffer}
+ */
+function randomBuffer (maxLen) {
+  const len = crypto.randomInt(0, maxLen + 1);
+  return crypto.randomBytes(len);
+}
+
+/** Random AMP-sized frame: 0 … HEADER_SIZE + MAX_MESSAGE_SIZE bytes. */
+function randomAmpFrame () {
+  const maxTotal = HEADER_SIZE + MAX_MESSAGE_SIZE;
+  const total = crypto.randomInt(0, maxTotal + 1);
+  return crypto.randomBytes(total);
+}
+
+/**
+ * @param {number} maxChars
+ * @returns {string}
+ */
+function randomUtf8String (maxChars) {
+  const n = crypto.randomInt(0, maxChars + 1);
+  if (n === 0) return '';
+  const raw = crypto.randomBytes(Math.min(n * 4, 65536));
+  return raw.toString('utf8').slice(0, n);
+}
+
+/** Sometimes longer than wire/persisted limits to exercise rejection paths. */
+function randomWireLikeString () {
+  const roll = crypto.randomInt(0, 10);
+  const cap = roll === 0
+    ? MAX_MESSAGE_SIZE + crypto.randomInt(1, 500)
+    : MAX_MESSAGE_SIZE;
+  return randomUtf8String(cap);
+}
+
+function randomPersistedLikeString () {
+  const roll = crypto.randomInt(0, 20);
+  const cap = roll === 0
+    ? PERSISTED_JSON_MAX_CHARS + crypto.randomInt(1, 2000)
+    : Math.min(PERSISTED_JSON_MAX_CHARS, 50000);
+  return randomUtf8String(cap);
+}
+
+/**
+ * Small random tree (bounded node count — avoid exponential blow-up).
+ * @param {number} maxDepth
+ * @param {number} [budget]
+ * @returns {*}
+ */
+function randomAcyclicObject (maxDepth, budget = 40) {
+  if (budget <= 0 || maxDepth <= 0) {
+    const k = crypto.randomInt(0, 6);
+    if (k === 0) return null;
+    if (k === 1) return true;
+    if (k === 2) return false;
+    if (k === 3) return crypto.randomInt(-1e9, 1e9);
+    if (k === 4) return randomUtf8String(24);
+    return [];
+  }
+  const o = {};
+  const n = crypto.randomInt(0, Math.min(4, budget + 1));
+  let b = budget - 1;
+  for (let i = 0; i < n; i++) {
+    const spend = Math.max(1, Math.floor(b / (n - i)));
+    b -= spend;
+    o[`k${i}_${crypto.randomInt(0, 1000)}`] = randomAcyclicObject(maxDepth - 1, spend);
+  }
+  return o;
+}
+
+module.exports = {
+  HEADER_SIZE,
+  MAX_MESSAGE_SIZE,
+  PERSISTED_JSON_MAX_CHARS,
+  fuzzIterations,
+  randomBuffer,
+  randomAmpFrame,
+  randomUtf8String,
+  randomWireLikeString,
+  randomPersistedLikeString,
+  randomAcyclicObject
+};

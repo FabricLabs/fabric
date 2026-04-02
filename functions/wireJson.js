@@ -117,12 +117,22 @@ function blessedParamsFromJadeAttrs (astAttrs) {
   if (!astAttrs) return { attrs, params };
   for (const a in astAttrs) {
     const attr = astAttrs[a];
-    attrs.push(attr.name + '=' + attr.val);
-    if (attr.val[0] === "'") {
-      const content = attr.val.substring(1, attr.val.length - 1);
-      params[attr.name] = content[0] === '{' ? parsePersistedJson(content) : content;
+    if (!attr || attr.name == null) continue;
+    const name = String(attr.name);
+    const valRaw = attr.val == null ? '' : attr.val;
+    const valStr = typeof valRaw === 'string' ? valRaw : String(valRaw);
+    attrs.push(name + '=' + valStr);
+    if (valStr[0] === "'") {
+      const content = valStr.substring(1, valStr.length - 1);
+      if (content[0] === '{') {
+        const pr = tryParsePersistedJson(content);
+        params[name] = pr.ok ? pr.value : content;
+      } else {
+        params[name] = content;
+      }
     } else {
-      params[attr.name] = parsePersistedJson(attr.val);
+      const pr = tryParsePersistedJson(valStr);
+      params[name] = pr.ok ? pr.value : valStr;
     }
   }
   return { attrs, params };
