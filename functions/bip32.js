@@ -209,7 +209,7 @@ function fromSeed (seed, network = DEFAULT_NETWORK) {
 }
 
 function fromBase58 (str) {
-    const raw = decodeCheck(str);
+  const raw = decodeCheck(str);
   if (raw.length !== 78) throw new Error('Invalid extended key length');
   const version = raw.readUInt32BE(0);
   const net = networkFromVersions(version);

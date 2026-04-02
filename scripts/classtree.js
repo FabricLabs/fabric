@@ -187,7 +187,6 @@ function main () {
   const tree = buildSubtree(inherits, null);
 
   const payload = {
-    generatedAt: new Date().toISOString(),
     scanRoots: DEFAULT_SCAN_DIRS,
     inherits,
     tree,
@@ -204,7 +203,6 @@ function main () {
   }
 
   const summary = {
-    generatedAt: payload.generatedAt,
     classCount: Object.keys(inherits).length,
     scanRoots: DEFAULT_SCAN_DIRS,
     tree

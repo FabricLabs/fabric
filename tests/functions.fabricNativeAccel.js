@@ -64,6 +64,25 @@ describe('functions/fabricNativeAccel', function () {
     assert.strictEqual(j.nativeBech32OptIn, true);
   });
 
+  it('segwitAddrEncode and segwitAddrDecode return null when native bech32 is off', function () {
+    assert.strictEqual(fabricNativeAccel.segwitAddrEncode('bc', 0, Buffer.alloc(0)), null);
+    assert.strictEqual(
+      fabricNativeAccel.segwitAddrDecode('bc', 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4'),
+      null
+    );
+  });
+
+  it('bech32Encode and bech32Decode throw when native bech32 is unavailable', function () {
+    assert.throws(
+      () => fabricNativeAccel.bech32Encode('bc', Buffer.alloc(0), 'bech32'),
+      /native bech32 not available/
+    );
+    assert.throws(
+      () => fabricNativeAccel.bech32Decode('bc1invalid'),
+      /native bech32 not available/
+    );
+  });
+
   it('status in fresh subprocess with FABRIC_NATIVE_DOUBLE_SHA256=true reports opt-in', function () {
     const modPath = path.join(__dirname, '..', 'functions', 'fabricNativeAccel.js');
     const script = `

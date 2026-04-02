@@ -8,3 +8,5 @@ reviews:
       - "feature/v0\\.1\\.0-RC1"
   path_filters:
     - "!docs/**"
+    - "!assets/**"
+    - "!_book/**"
