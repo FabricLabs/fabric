@@ -221,7 +221,13 @@ class Machine extends Actor {
 
   async start () {
     this.status = 'STARTING';
-    this._governor = setInterval(this.compute.bind(this), this.settings.frequency * 1000);
+    const f = this.settings.frequency;
+    const fromFreq = (typeof f === 'number' && Number.isFinite(f)) ? f * 1000 : NaN;
+    const intervalSec = (typeof this.settings.interval === 'number' && Number.isFinite(this.settings.interval))
+      ? this.settings.interval
+      : 60;
+    const ms = Number.isFinite(fromFreq) && fromFreq > 0 ? fromFreq : Math.max(1, intervalSec * 1000);
+    this._governor = setInterval(this.compute.bind(this), ms);
     this.status = 'STARTED';
     return this;
   }

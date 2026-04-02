@@ -31,7 +31,15 @@ class Interface extends Service {
     this.ticker = new BN();
     this.identity = new BN(1);
     this.tags = ['pre-release'];
-    this.settings = merge({
+    // Preserve Service defaults (e.g. frequency) — do not replace this.settings with only interface keys.
+    this.settings = merge(this.settings, {
+      prefix: '/',
+      script: '(1)',
+      type: 'javascript'
+    });
+
+    // Circuit expects a narrow config; full Service `state` breaks its javascript-state-machine graph.
+    const layerSettings = merge({
       prefix: '/',
       script: '(1)',
       type: 'javascript'
@@ -39,9 +47,9 @@ class Interface extends Service {
 
     // define singletons
     // TODO: remove these... ~E
-    this.circuit = new Circuit(this.settings);
+    this.circuit = new Circuit(layerSettings);
     this.machine = new Machine(this.settings);
-    this.secret = new Secret(this.settings);
+    this.secret = new Secret(layerSettings);
 
     // Shared State
     // TODO: use Layer

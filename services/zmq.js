@@ -43,43 +43,49 @@ class ZMQ extends Service {
     return this;
   }
 
+  /** Avoid process crash when nothing listens for `error` (Node EventEmitter default). */
+  _emitErrorSafe (err) {
+    if (this.listenerCount('error') > 0) this.emit('error', err);
+    else this.emit('warning', `[ZMQ] ${err && err.message ? err.message : err}`);
+  }
+
   async connect () {
     this._state.status = 'CONNECTING';
     this.socket = zeromq.socket('sub');
 
     // Add connection event handlers
     this.socket.on('connect', () => {
-      console.log(`[ZMQ] Connected to ${this.settings.host}:${this.settings.port}`);
+      this.emit('debug', `[ZMQ] Connected to ${this.settings.host}:${this.settings.port}`);
       this._state.status = 'CONNECTED';
       this._state.reconnectAttempts = 0;  // Reset reconnection attempts on successful connect
     });
 
     this.socket.on('disconnect', () => {
-      console.log(`[ZMQ] Disconnected from ${this.settings.host}:${this.settings.port}`);
+      this.emit('debug', `[ZMQ] Disconnected from ${this.settings.host}:${this.settings.port}`);
       this._state.status = 'DISCONNECTED';
     });
 
     this.socket.on('error', (error) => {
-      console.error('[ZMQ] Error:', error);
+      this._emitErrorSafe(error);
     });
 
     this.socket.on('close', async (msg) => {
-      console.error('[ZMQ] Socket closed:', msg);
+      this.emit('debug', `[ZMQ] Socket closed: ${msg}`);
       // Only attempt reconnection if we haven't stopped the service intentionally
       if (this._state.status !== 'STOPPED' && this._state.status !== 'STOPPING') {
         if (this._state.reconnectAttempts < this.settings.maxReconnectAttempts) {
           this._state.reconnectAttempts++;
-          console.log(`[ZMQ] Attempting to reconnect (${this._state.reconnectAttempts}/${this.settings.maxReconnectAttempts})...`);
+          this.emit('debug', `[ZMQ] Attempting to reconnect (${this._state.reconnectAttempts}/${this.settings.maxReconnectAttempts})...`);
           setTimeout(async () => {
             try {
               await this.start();
             } catch (err) {
-              console.error('[ZMQ] Reconnection failed:', err);
+              this._emitErrorSafe(err);
             }
           }, this.settings.reconnectInterval);
         } else {
-          console.error('[ZMQ] Max reconnection attempts reached. Giving up.');
-          this.emit('error', new Error('Max reconnection attempts reached'));
+          this.emit('warning', '[ZMQ] Max reconnection attempts reached. Giving up.');
+          this._emitErrorSafe(new Error('Max reconnection attempts reached'));
         }
       }
     });
