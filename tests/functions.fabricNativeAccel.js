@@ -47,6 +47,18 @@ describe('functions/fabricNativeAccel', function () {
     assert.ok(Object.prototype.hasOwnProperty.call(s, 'path'));
   });
 
+  it('nativeBech32Enabled reflects FABRIC_NATIVE_BECH32', function () {
+    assert.strictEqual(fabricNativeAccel.nativeBech32Enabled(), false);
+    process.env.FABRIC_NATIVE_BECH32 = 'true';
+    assert.strictEqual(fabricNativeAccel.nativeBech32Enabled(), true);
+    process.env.FABRIC_NATIVE_BECH32 = '0';
+    assert.strictEqual(fabricNativeAccel.nativeBech32Enabled(), false);
+  });
+
+  it('isNativeBech32Callable is false without opt-in', function () {
+    assert.strictEqual(fabricNativeAccel.isNativeBech32Callable(), false);
+  });
+
   it('doubleSha256Buffer throws on non-Buffer', function () {
     assert.throws(() => fabricNativeAccel.doubleSha256Buffer('x'), /expects Buffer/);
   });

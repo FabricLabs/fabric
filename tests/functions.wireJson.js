@@ -63,6 +63,15 @@ describe('functions/wireJson', function () {
     assert.strictEqual(pr2.value.a, 1);
   });
 
+  it('tryParseWireJsonBody coerces non-string raw like wire handlers', function () {
+    const pr = tryParseWireJsonBody(null);
+    assert.strictEqual(pr.ok, true);
+    assert.deepStrictEqual(pr.value, {});
+    const prN = tryParseWireJsonBody(42);
+    assert.strictEqual(prN.ok, true);
+    assert.strictEqual(prN.value, 42);
+  });
+
   it('tryParsePersistedJson and parsePersistedJson match persisted bound', function () {
     const pr = tryParsePersistedJson('{"x":true}');
     assert.strictEqual(pr.ok, true);
@@ -74,6 +83,7 @@ describe('functions/wireJson', function () {
     assert.strictEqual(utf8FromPersistedRaw(null), '');
     assert.strictEqual(utf8FromPersistedRaw(Buffer.from('ab', 'utf8')), 'ab');
     assert.strictEqual(utf8FromPersistedRaw('cd'), 'cd');
+    assert.strictEqual(utf8FromPersistedRaw(99), '99');
   });
 
   it('blessedParamsFromJadeAttrs returns empty for missing attrs', function () {
@@ -91,6 +101,13 @@ describe('functions/wireJson', function () {
     assert.strictEqual(params.foo.a, 1);
   });
 
+  it('blessedParamsFromJadeAttrs quoted empty string and valid JSON object in quotes', function () {
+    const e = blessedParamsFromJadeAttrs([{ name: 'e', val: "''" }]);
+    assert.strictEqual(e.params.e, '');
+    const obj = blessedParamsFromJadeAttrs([{ name: 'j', val: "'{}'" }]);
+    assert.deepStrictEqual(obj.params.j, {});
+  });
+
   it('tryParseJsonBounded rejects non-string and invalid maxChars', function () {
     const a = tryParseJsonBounded(null, 10);
     assert.strictEqual(a.ok, false);
@@ -99,6 +116,9 @@ describe('functions/wireJson', function () {
     assert.strictEqual(b.ok, false);
     const c = tryParseJsonBounded('{}', -1);
     assert.strictEqual(c.ok, false);
+    const inf = tryParseJsonBounded('{}', Infinity);
+    assert.strictEqual(inf.ok, false);
+    assert.ok(/maxChars/.test(inf.error.message));
   });
 
   it('blessedParamsFromJadeAttrs uses unquoted path when quotes are unbalanced', function () {

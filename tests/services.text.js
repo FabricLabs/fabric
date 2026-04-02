@@ -23,6 +23,16 @@ describe('services/text', function () {
     assert.strictEqual(Text.toRelativeTime(t), 'just now');
   });
 
+  it('toRelativeTime covers hours, minutes, seconds, weeks, months, years', function () {
+    const past = (ms) => new Date(Date.now() - ms);
+    assert.strictEqual(Text.toRelativeTime(past(45 * 1000)), '45 seconds ago');
+    assert.strictEqual(Text.toRelativeTime(past(6 * 60 * 1000)), '6 minutes ago');
+    assert.strictEqual(Text.toRelativeTime(past(4 * 3600 * 1000)), '4 hours ago');
+    assert.strictEqual(Text.toRelativeTime(past(14 * 86400 * 1000)), '2 weeks ago');
+    assert.strictEqual(Text.toRelativeTime(past(120 * 86400 * 1000)), '4 months ago');
+    assert.strictEqual(Text.toRelativeTime(past(800 * 86400 * 1000)), '2 years ago');
+  });
+
   it('oxfordJoin delegates', function () {
     assert.strictEqual(Text.oxfordJoin(['a', 'b']), 'a and b');
     assert.strictEqual(Text.oxfordJoin(['a', 'b', 'c']), 'a, b, and c');

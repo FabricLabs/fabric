@@ -132,7 +132,11 @@ function status () {
     nativeDoubleSha256OptIn: nativeDoubleSha256Enabled(),
     nativeBech32OptIn: nativeBech32Enabled(),
     path: pathStr,
-    error: !addon && loadError ? loadError.message : undefined
+    error: !addon && loadError
+      ? (loadError instanceof Error && loadError.message
+        ? loadError.message
+        : String(loadError))
+      : undefined
   };
 }
 
