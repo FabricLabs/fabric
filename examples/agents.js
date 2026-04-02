@@ -1,5 +1,13 @@
 'use strict';
 
+/**
+ * Multi-core {@link Service} distributor with optional managed Bitcoin (regtest) + dual Lightning nodes.
+ *
+ * **Smoke (no bitcoind):** `FABRIC_AGENTS_SKIP_CHAIN=1 node examples/agents.js` (or `npm run example:agents:smoke`).
+ * **Worker delay:** `FABRIC_AGENTS_WORK_MS` (ms); default `1200`, or `25` when `SKIP_CHAIN` is set.
+ * **Keys:** `FABRIC_MNEMONIC` optional; skip-chain mode falls back to {@link FIXTURE_SEED} when unset.
+ */
+
 // Dependencies
 const crypto = require('crypto');
 const fs = require('fs');
@@ -8,6 +16,7 @@ const path = require('path');
 const process = require('process');
 const { encodeCheck, decodeCheck } = require('../functions/base58');
 const { Worker, isMainThread, parentPort, workerData } = require('worker_threads');
+const { FIXTURE_SEED } = require('../constants');
 // TODO: ensure utilization of multiple cores
 
 // Fabric Types
@@ -22,7 +31,15 @@ const Bitcoin = require('../services/bitcoin');
 const Lightning = require('../services/lightning');
 
 // Configuration
-const numberOfCores = 2 || os.cpus().length;
+const _cpuCount = Math.max(1, os.cpus().length);
+/** Full example uses all CPUs; skip-chain smoke caps workers so CI / laptops do not spawn dozens of threads. */
+const numberOfCores = process.env.FABRIC_AGENTS_SKIP_CHAIN === '1'
+  ? Math.min(4, _cpuCount)
+  : _cpuCount;
+const workDelayMsEnv = Number(process.env.FABRIC_AGENTS_WORK_MS);
+const AGENT_WORK_DELAY_MS = (Number.isFinite(workDelayMsEnv) && workDelayMsEnv >= 0)
+  ? workDelayMsEnv
+  : (process.env.FABRIC_AGENTS_SKIP_CHAIN === '1' ? 25 : 1200);
 const DEFAULT_MAX_QUEUE = 100;
 const BITCOIN_NETWORK = 'regtest';
 const PRODUCER_INTERVAL_MS = 200;
@@ -59,7 +76,7 @@ const work = function (payload = {}) {
         entity: entityID,
         state: { ...newState, id: entityID }
       });
-    }, 1200);
+    }, AGENT_WORK_DELAY_MS);
   });
 };
 
@@ -853,6 +870,27 @@ async function main (input = {}) {
     passphrase: 'alice'
   });
 
+  if (process.env.FABRIC_AGENTS_SKIP_CHAIN === '1') {
+    const skipKey = Object.assign({ network: BITCOIN_NETWORK },
+      FABRIC_MNEMONIC ? { mnemonic: FABRIC_MNEMONIC } : { mnemonic: FIXTURE_SEED });
+    console.log('[DEVELOP] FABRIC_AGENTS_SKIP_CHAIN=1 — distributor + workers only (no Bitcoin / Lightning).');
+    const skipMaster = new Distributor(Object.assign({}, input, { key: skipKey }));
+    await skipMaster.start();
+    for (let i = 0; i < numberOfCores; i++) {
+      skipMaster.requestWork({ index: i }, 0);
+    }
+    skipMaster.requestWork({ index: 'priority' }, 1);
+    const idleDeadline = Math.max(25000, 3000 + numberOfCores * 2000);
+    const drained = await skipMaster.waitForIdle(idleDeadline);
+    if (!drained) {
+      throw new Error(`Skip-chain smoke: queue did not drain within ${idleDeadline}ms`);
+    }
+    console.log('[DEVELOP] Skip-chain smoke: initial queue drained OK.');
+    await skipMaster.stop();
+    console.log('[DEVELOP] Skip-chain smoke: complete.');
+    return;
+  }
+
   const withTimeout = async (promise, label, timeoutMs = 6000) => {
     return Promise.race([
       promise,
@@ -988,7 +1026,13 @@ async function main (input = {}) {
     console.debug('[DEVELOP]', 'Bitcoin emitted log:', log);
   });
 
-  await bitcoin.start();
+  try {
+    await bitcoin.start();
+  } catch (error) {
+    console.error('[DEVELOP] Bitcoin service failed to start:', error.message);
+    console.error('[DEVELOP] Hint: use a working regtest bitcoind on port 18443, or distributor-only smoke: FABRIC_AGENTS_SKIP_CHAIN=1 node examples/agents.js');
+    throw error;
+  }
 
   const miningAddress = await bitcoin.getUnusedAddress();
   let spendableUTXOs = [];

@@ -1,0 +1,20 @@
+$ npm i
+
+> @fabric/core@0.1.0-RC1 preinstall
+> node -e ""
+
+
+> @fabric/core@0.1.0-RC1 postinstall
+> patch-package && node scripts/fix-wif-bs58check-noble.js
+
+patch-package 8.0.1
+Applying patches...
+bitcoinjs-lib@6.1.7 ✔
+bs58check@3.0.1 ✔
+
+added 635 packages, and audited 636 packages in 1m
+
+115 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities

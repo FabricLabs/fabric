@@ -29,6 +29,8 @@ function makeWireBuffer () {
 }
 
 const WIRE_BUF = makeWireBuffer();
+/** Monotonic tweak byte so {@link Peer#_handleFabricMessage} sees a fresh wire hash each iteration (dedup cache otherwise short-circuits). */
+let _peerBenchWireSeq = 0;
 const WIRE_JSON_OK = '{"type":"PING","object":{}}';
 const PERSISTED_JSON_OK = JSON.stringify({ peers: { a: { score: 900, host: '127.0.0.1' } } });
 const CANONICAL_OBJ = { z: 1, a: { b: 2, c: [3, 4] }, m: 'hello' };
@@ -126,7 +128,10 @@ function getScenarios () {
       name: 'peer._handleFabricMessage (hash mismatch exit)',
       baseIterations: 4000,
       fn () {
-        peerSingleton()._handleFabricMessage(WIRE_BUF, { name: '127.0.0.1:19999' }, null);
+        const buf = Buffer.from(WIRE_BUF);
+        _peerBenchWireSeq = (_peerBenchWireSeq + 1) & 0xff;
+        buf[buf.length - 1] = (buf[buf.length - 1] ^ _peerBenchWireSeq) & 0xff;
+        peerSingleton()._handleFabricMessage(buf, { name: '127.0.0.1:19999' }, null);
       }
     },
     {
