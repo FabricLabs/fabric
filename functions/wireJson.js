@@ -107,7 +107,7 @@ function parseJsonBounded (raw, maxChars) {
 }
 
 /**
- * Jade-parser {@link Tag} attrs → blessed() params (JSON attrs use {@link parsePersistedJson}).
+ * Jade-parser {@link Tag} attrs → blessed() params (JSON-like vals use {@link tryParsePersistedJson}; on failure, keeps raw string).
  * @param {Array<{ name: string, val: string }>|undefined} astAttrs
  * @returns {{ attrs: string[], params: Object }}
  */
