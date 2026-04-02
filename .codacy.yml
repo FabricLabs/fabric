@@ -1,0 +1,7 @@
+# Codacy — reduce noise on generated / static trees (see PR checks on FabricLabs/fabric).
+# https://docs.codacy.com/repositories-configure/codacy-configuration-file/
+---
+exclude_paths:
+  - "docs/**"
+  - "assets/**"
+  - "_book/**"
