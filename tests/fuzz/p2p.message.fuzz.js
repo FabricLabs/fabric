@@ -49,7 +49,7 @@ describe('fuzz: Message wire decode', function () {
       } catch (e) {
         assert.ok(e instanceof Error);
         assert.ok(
-          /preimage|Message raw/.test(e.message),
+          /raw\.preimage must be a 32-byte Buffer/.test(e.message),
           `unexpected throw: ${e.message}`
         );
       }

@@ -21,7 +21,7 @@ Read **[VISION.md](VISION.md)** first for what Fabric is building, how **`@fabri
 ## Quick Start
 See also [`QUICKSTART.md`][quickstart-guide] for up-to-date instructions.
 
-0. `nvm use 22.14.0` (install [`nvm`][nvm-official] if needed)
+0. `nvm use 24.14.1` (install [`nvm`][nvm-official] if needed)
 1. From a clone of this repo: `npm install` (or `npm install -g @fabric/core` to put `fabric` on your `PATH`)
 2. (optional) `fabric setup` to generate a master key and local config
 3. (optional) `fabric keygen` to generate a new master key without saving to disk (ephemeral)
@@ -41,7 +41,7 @@ Working from a **git checkout** (not the global package) is best when you are ch
 | `assets/` | **Generated** browser bundles; rebuild with `npm run build` after type changes. |
 
 ## Development workflow
-- **Node:** engines field in `package.json` is authoritative (currently Node 22.x).
+- **Node:** engines field in `package.json` is authoritative (currently Node 24.14.1).
 - **Unit tests:** `npm test` — runs Mocha recursively under `tests/`.
 - **Lint:** `npm run lint` / `npm run lint:fix` (Semistandard).
 - **API reference:** `npm run make:api` writes `API.md` from JSDoc (see `scripts/list-jsdoc-type-files.js` for which `types/*.js` files are included).
@@ -57,7 +57,7 @@ Use this repo as a **library** or run the **`fabric`** CLI in environments you c
 
 | Step | Where |
 |------|--------|
-| Node **22.14.x**, `npm ci`, **`npm run ci`** | [`docs/PRODUCTION.md`](docs/PRODUCTION.md) |
+| Node **24.14.x**, `npm ci`, **`npm run ci`** | [`docs/PRODUCTION.md`](docs/PRODUCTION.md) |
 | Completion / privacy / security matrix | [`docs/PRODUCTION-CHECKLIST.md`](docs/PRODUCTION-CHECKLIST.md), [`PRIVACY.md`](PRIVACY.md), [`SECURITY.md`](SECURITY.md) |
 | Version tag, changelog, Hub & fabric-http bumps | [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) |
 | Operator privacy model | [`PRIVACY.md`](PRIVACY.md) |

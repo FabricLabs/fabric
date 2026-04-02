@@ -64,11 +64,19 @@ describe('fuzz: wire JSON parsers', function () {
   it('edge max sizes', function () {
     const okWire = tryParseWireJson('{}');
     assert.strictEqual(okWire.ok, true);
-    const over = 'z'.repeat(MAX_MESSAGE_SIZE + 1);
-    assert.strictEqual(tryParseWireJson(over).ok, false);
+    const overWire = '{"p":"' + 'z'.repeat(MAX_MESSAGE_SIZE) + '"}';
+    assert.ok(overWire.length > MAX_MESSAGE_SIZE);
+    const prW = tryParseWireJson(overWire);
+    assert.strictEqual(prW.ok, false);
+    assert.ok(/exceeds maxChars/i.test(prW.error.message));
+
     const okP = tryParsePersistedJson('[]');
     assert.strictEqual(okP.ok, true);
-    const overP = 'z'.repeat(PERSISTED_JSON_MAX_CHARS + 1);
-    assert.strictEqual(tryParsePersistedJson(overP).ok, false);
+    const inner = 'y'.repeat(PERSISTED_JSON_MAX_CHARS);
+    const overP = '{"p":"' + inner + '"}';
+    assert.ok(overP.length > PERSISTED_JSON_MAX_CHARS);
+    const prP = tryParsePersistedJson(overP);
+    assert.strictEqual(prP.ok, false);
+    assert.ok(/exceeds maxChars/i.test(prP.error.message));
   });
 });

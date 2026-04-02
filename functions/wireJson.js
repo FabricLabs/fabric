@@ -113,7 +113,7 @@ function parseJsonBounded (raw, maxChars) {
  */
 function blessedParamsFromJadeAttrs (astAttrs) {
   const attrs = [];
-  const params = {};
+  const params = Object.create(null);
   if (!astAttrs) return { attrs, params };
   for (const a in astAttrs) {
     const attr = astAttrs[a];
@@ -122,8 +122,8 @@ function blessedParamsFromJadeAttrs (astAttrs) {
     const valRaw = attr.val == null ? '' : attr.val;
     const valStr = typeof valRaw === 'string' ? valRaw : String(valRaw);
     attrs.push(name + '=' + valStr);
-    if (valStr[0] === "'") {
-      const content = valStr.substring(1, valStr.length - 1);
+    if (valStr.length >= 2 && valStr[0] === "'" && valStr[valStr.length - 1] === "'") {
+      const content = valStr.slice(1, -1);
       if (content[0] === '{') {
         const pr = tryParsePersistedJson(content);
         params[name] = pr.ok ? pr.value : content;

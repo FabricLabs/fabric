@@ -11,6 +11,23 @@ function doubleSha256Js (buf) {
 }
 
 describe('functions/fabricNativeAccel', function () {
+  let prevNativeBech32;
+  let prevNativeDoubleSha256;
+
+  beforeEach(function () {
+    prevNativeBech32 = process.env.FABRIC_NATIVE_BECH32;
+    prevNativeDoubleSha256 = process.env.FABRIC_NATIVE_DOUBLE_SHA256;
+    delete process.env.FABRIC_NATIVE_BECH32;
+    delete process.env.FABRIC_NATIVE_DOUBLE_SHA256;
+  });
+
+  afterEach(function () {
+    if (prevNativeBech32 === undefined) delete process.env.FABRIC_NATIVE_BECH32;
+    else process.env.FABRIC_NATIVE_BECH32 = prevNativeBech32;
+    if (prevNativeDoubleSha256 === undefined) delete process.env.FABRIC_NATIVE_DOUBLE_SHA256;
+    else process.env.FABRIC_NATIVE_DOUBLE_SHA256 = prevNativeDoubleSha256;
+  });
+
   it('exports stable metadata', function () {
     assert.deepStrictEqual([...fabricNativeAccel.SUPPORTED_ADDON_EXPORTS], [
       'doubleSha256',

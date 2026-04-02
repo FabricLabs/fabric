@@ -34,6 +34,7 @@ describe('fuzz: blessedParamsFromJadeAttrs', function () {
   it('accepts undefined / empty', function () {
     const a = blessedParamsFromJadeAttrs(undefined);
     assert.deepStrictEqual(a.attrs, []);
-    assert.deepStrictEqual(a.params, {});
+    assert.strictEqual(Object.getPrototypeOf(a.params), null);
+    assert.deepStrictEqual(Object.keys(a.params), []);
   });
 });

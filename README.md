@@ -81,11 +81,11 @@ Before tagging or publishing, use [`docs/PRODUCTION-CHECKLIST.md`](docs/PRODUCTI
 - `npm run dev` serves a developer interface over localhost HTTP.
 - `npm run docs` creates a local HTTP server for browsing documentation.
 - `npm run examples` creates a local HTTP server for interacting with examples.
-- `npm start` creates a local Fabric node.
+- `npm start` launches the Fabric shell locally (same as `npm run chat`).
 
 ## Native Dependencies
 Installing from npm may compile native addons (`node-gyp`).  Typical toolchain
-needs: **Node 22.x**, **Python 3** (for `node-gyp`), plus **secp256k1**,
+needs: **Node 24.14.x** (see `package.json` `engines`), **Python 3** (for `node-gyp`), plus **secp256k1**,
 **libwally-core**, and **noise** libraries for `fabric.node` — see [BUILD.md](BUILD.md).
 
 JS tests do not require `fabric.node`.  Separately, **`level`** and **`zeromq`**

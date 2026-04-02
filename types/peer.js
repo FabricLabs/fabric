@@ -1079,6 +1079,7 @@ class Peer extends Service {
         this.emit('debug', `Unhandled message type: ${message.type}`);
         break;
       case 'P2P_RELAY':
+        if (!origin || origin.name == null) break;
         this.relayFrom(origin.name, message);
         break;
       case 'BITCOIN_BLOCK':

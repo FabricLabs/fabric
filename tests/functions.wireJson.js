@@ -79,7 +79,8 @@ describe('functions/wireJson', function () {
   it('blessedParamsFromJadeAttrs returns empty for missing attrs', function () {
     const { attrs, params } = blessedParamsFromJadeAttrs(undefined);
     assert.deepStrictEqual(attrs, []);
-    assert.deepStrictEqual(params, {});
+    assert.strictEqual(Object.getPrototypeOf(params), null);
+    assert.deepStrictEqual(Object.keys(params), []);
   });
 
   it('blessedParamsFromJadeAttrs parses quoted JSON object attrs', function () {
@@ -88,5 +89,51 @@ describe('functions/wireJson', function () {
     ]);
     assert.strictEqual(attrs.length, 1);
     assert.strictEqual(params.foo.a, 1);
+  });
+
+  it('tryParseJsonBounded rejects non-string and invalid maxChars', function () {
+    const a = tryParseJsonBounded(null, 10);
+    assert.strictEqual(a.ok, false);
+    assert.ok(a.error instanceof TypeError);
+    const b = tryParseJsonBounded('{}', NaN);
+    assert.strictEqual(b.ok, false);
+    const c = tryParseJsonBounded('{}', -1);
+    assert.strictEqual(c.ok, false);
+  });
+
+  it('blessedParamsFromJadeAttrs uses unquoted path when quotes are unbalanced', function () {
+    const { params } = blessedParamsFromJadeAttrs([{ name: 'x', val: '\'truncated' }]);
+    const pr = tryParsePersistedJson('\'truncated');
+    assert.strictEqual(pr.ok, false);
+    assert.strictEqual(params.x, '\'truncated');
+  });
+
+  it('blessedParamsFromJadeAttrs params object has null prototype (safe __proto__ key)', function () {
+    const { params } = blessedParamsFromJadeAttrs([{ name: '__proto__', val: '"polluted"' }]);
+    assert.strictEqual(Object.getPrototypeOf(params), null);
+    assert.strictEqual(params.__proto__, 'polluted');
+  });
+
+  it('blessedParamsFromJadeAttrs skips bad entries and coerces val', function () {
+    const sparse = [];
+    sparse[0] = { name: 'a', val: '42' };
+    sparse[2] = { name: 'b', val: 7 };
+    const r0 = blessedParamsFromJadeAttrs(sparse);
+    assert.strictEqual(r0.params.a, 42);
+    assert.strictEqual(r0.params.b, 7);
+    assert.strictEqual(r0.attrs.length, 2);
+
+    const r1 = blessedParamsFromJadeAttrs([
+      null,
+      { name: null, val: 'x' },
+      { name: 'q', val: '\'plain\'' }
+    ]);
+    assert.ok(!Object.prototype.hasOwnProperty.call(r1.params, 'null'));
+    assert.strictEqual(r1.params.q, 'plain');
+
+    const r2 = blessedParamsFromJadeAttrs([
+      { name: 'bad', val: '\'{not json}\'' }
+    ]);
+    assert.strictEqual(r2.params.bad, '{not json}');
   });
 });
