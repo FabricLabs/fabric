@@ -10,8 +10,6 @@ Fabric Agents are long-running services that can:
 - expose deterministic behavior through service lifecycle methods
 - coordinate compute work and value transfer between nodes
 
-Peer and bridge traffic is carried as **`Message`** instances (**AMP** — see **`types/message.js`**): typed opcodes, verifiable headers, and **BIP-340 Schnorr** over the **`Fabric/Message`** tagged hash. When you model state that must sync or audit across nodes, align with **`Actor`**: JSON-shaped content, **`commit()`** for patch history, and **`id`** from the canonical **`toGenericMessage()`** envelope — not ad-hoc string hashes. **Bitcoin Signed Message** and similar wallet-RPC formats are **not** Fabric **`Message`** signing; keep those code paths and user-facing labels distinct.
-
 ## Scope
 This specification applies to:
 

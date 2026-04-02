@@ -3,6 +3,17 @@
 [![Coverage Status][badge-coverage]][coverage]
 [![GitHub contributors][badge-contributors]][contributors]
 
+**Status:** `0.1.0-RC1` — run **`npm run ci`** before release tags (full test suite).
+
+| Doc | Purpose |
+|-----|---------|
+| [VISION.md](VISION.md) | Product vision, architecture snapshot, documentation map |
+| [DEVELOPERS.md](DEVELOPERS.md) | Repo layout, tests, core types, storage |
+| [docs/PRODUCTION.md](docs/PRODUCTION.md) | Node version, native deps, downstream alignment |
+| [PRIVACY.md](PRIVACY.md) | Privacy model for operators |
+| [CHANGELOG.md](CHANGELOG.md) | Release notes |
+| [docs/README.md](docs/README.md) | Index of operational and generated docs |
+
 [The `@fabric/core` project][fabric-github] provides an API for building peer-to-peer applications on [Bitcoin][bitcoin].
 
 Fabric is an experimental approach to the secure establishment and execution of
@@ -10,15 +21,6 @@ peer-to-peer agreements ("contracts") using Bitcoin as a bonding mechanism. The
 `@fabric/core` project provides a robust set of implementations as JavaScript
 classes, enabling the rapid prototyping and testing of Bitcoin-based
 applications for downstream developers.
-
-**Status:** `0.1.0-RC1` — run **`npm run ci`** before release tags (full test suite).
-
-| Doc | Purpose |
-|-----|---------|
-| [VISION.md](VISION.md) | Product vision, architecture snapshot, documentation map |
-| [DEVELOPERS.md](DEVELOPERS.md) | Repo layout, tests, core types, storage |
-| [PRIVACY.md](PRIVACY.md) | Privacy model for operators |
-| [CHANGELOG.md](CHANGELOG.md) | Release notes |
 
 ## Quick Start
 `npm i -g FabricLabs/fabric#master`
@@ -75,15 +77,15 @@ Before tagging or publishing, use [`docs/PRODUCTION-CHECKLIST.md`](docs/PRODUCTI
 
 ## Available Commands
 - The **`fabric`** binary is the Node harness for the default Blessed TUI (`chat`); optional `fabric.node` accelerates a tiny crypto surface — see [docs/CLI-BINARY.md](docs/CLI-BINARY.md).
-- `npm run cli` runs `scripts/fabric.js` (same entry as `npm run chat` / `fabric shell`).
+- `npm run cli` runs `scripts/fabric.js` (same entry as `npm run chat`).
 - `npm run dev` serves a developer interface over localhost HTTP.
 - `npm run docs` creates a local HTTP server for browsing documentation.
 - `npm run examples` creates a local HTTP server for interacting with examples.
-- `npm start` opens the same interactive shell as `fabric` (`fabric shell`).
+- `npm start` creates a local Fabric node.
 
 ## Native Dependencies
 Installing from npm may compile native addons (`node-gyp`).  Typical toolchain
-needs: **Node 24.14.1** (see **`package.json`** **`engines`** / **`.nvmrc`**), **Python 3** (for `node-gyp`), plus **secp256k1**,
+needs: **Node 22.x**, **Python 3** (for `node-gyp`), plus **secp256k1**,
 **libwally-core**, and **noise** libraries for `fabric.node` — see [BUILD.md](BUILD.md).
 
 JS tests do not require `fabric.node`.  Separately, **`level`** and **`zeromq`**
