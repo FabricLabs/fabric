@@ -10,25 +10,12 @@
 /** @private */
 const crypto = require('crypto');
 const Key = require('./key');
+const fabricCanonicalJson = require('../functions/fabricCanonicalJson');
 
 const BEACON_EPOCH_SIGNING_KIND = 'BeaconEpoch';
 
-/**
- * Deterministic JSON (sorted object keys) for hashing and signing.
- * @private
- * @param {*} value
- * @returns {string}
- */
-function stableStringify (value) {
-  if (value === null || typeof value !== 'object') {
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return '[' + value.map((v) => stableStringify(v)).join(',') + ']';
-  }
-  const keys = Object.keys(value).sort();
-  return '{' + keys.map((k) => JSON.stringify(k) + ':' + stableStringify(value[k])).join(',') + '}';
-}
+/** @deprecated Use {@link module:functions/fabricCanonicalJson} — alias kept for API stability */
+const stableStringify = fabricCanonicalJson;
 
 /**
  * Drop `undefined` and normalize values the same way JSON.parse(JSON.stringify) does.
@@ -48,7 +35,7 @@ function jsonSafe (value) {
  */
 function signingStringForBeaconEpoch (epochPayload) {
   const safe = jsonSafe(epochPayload);
-  return stableStringify({
+  return fabricCanonicalJson({
     version: 1,
     kind: BEACON_EPOCH_SIGNING_KIND,
     epoch: safe

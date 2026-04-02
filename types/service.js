@@ -2,6 +2,7 @@
 
 const PATCHES_ENABLED = true;
 const OP_TRACE = require('../contracts/trace');
+const { tryParsePersistedJson, tryParseWireJson, utf8FromPersistedRaw } = require('../functions/wireJson');
 
 // Dependencies
 const crypto = require('crypto');
@@ -142,17 +143,18 @@ class Service extends Actor {
       _ttl: new Map(),
       get: async (key) => {
         const now = Date.now();
-        const ttl = this.cache._ttl.get(key);
-        if (ttl && ttl < now) {
+        const expiresAt = this.cache._ttl.get(key);
+        if (expiresAt !== undefined && expiresAt < now) {
           this.cache._data.delete(key);
           this.cache._ttl.delete(key);
           return null;
         }
         return this.cache._data.get(key);
       },
-      set: async (key, value, ttl = 60000) => {
+      /** @param {string} key @param {*} value @param {number} [ttlMs=60000] time-to-live in milliseconds */
+      set: async (key, value, ttlMs = 60000) => {
         this.cache._data.set(key, value);
-        this.cache._ttl.set(key, Date.now() + ttl);
+        this.cache._ttl.set(key, Date.now() + ttlMs);
       }
     };
 
@@ -318,8 +320,12 @@ class Service extends Actor {
     let data = beat.data;
 
     try {
-      const parsed = JSON.parse(data);
-      data = JSON.stringify(parsed, null, '  ');
+      const pr = tryParseWireJson(typeof data === 'string' ? data : String(data ?? ''));
+      if (pr.ok) {
+        data = JSON.stringify(pr.value, null, '  ');
+      } else {
+        this.emit('error', `Exception parsing beat: ${pr.error.message}`);
+      }
     } catch (exception) {
       this.emit('error', `Exception parsing beat: ${exception}`);
     }
@@ -851,7 +857,9 @@ class Service extends Actor {
     if (this.store) {
       try {
         const prior = await this.store.get('/');
-        this.state = JSON.parse(prior);
+        const pr = tryParsePersistedJson(utf8FromPersistedRaw(prior));
+        if (pr.ok) this.state = pr.value;
+        else this.emit('warning', `[FABRIC:SERVICE] Could not restore state: ${pr.error.message}`);
       } catch (exception) {
         this.emit('warning', `[FABRIC:SERVICE] Could not restore state: ${exception}`);
       }

@@ -33,6 +33,7 @@ const Key = require('./key');
 
 // Functions
 const truncateMiddle = require('../functions/truncateMiddle');
+const { tryParsePersistedJson, tryParseWireJson, messageDataToString } = require('../functions/wireJson');
 
 // Services
 const Bitcoin = require('../services/bitcoin');
@@ -282,7 +283,14 @@ class CLI extends FabricShell {
 
   _loadPeer () {
     const file = this.fs.readFile('STATE');
-    const state = (file) ? JSON.parse(file) : {};
+    let state = {};
+    if (file) {
+      const text = typeof file === 'string' ? file : String(file);
+      const pr = tryParsePersistedJson(text);
+      if (pr.ok && pr.value !== null && typeof pr.value === 'object' && !Array.isArray(pr.value)) {
+        state = pr.value;
+      }
+    }
 
     // Create and assign Peer instance as the `node` property
     this.node = new Peer({
@@ -396,6 +404,7 @@ class CLI extends FabricShell {
     this._registerCommand('import', this._handleImportCommand);
     this._registerCommand('join', this._handleJoinRequest);
     this._registerCommand('sync', this._handleChainSyncRequest);
+    this._registerCommand('flushchain', this._handleFlushChainCli);
     this._registerCommand('send', this._handleSendRequest);
     this._registerCommand('fund', this._handleFundRequest);
     this._registerCommand('state', this._handleStateRequest);
@@ -1341,15 +1350,30 @@ class CLI extends FabricShell {
 
   async _handlePeerMessage (message) {
     switch (message.type) {
-      case 'ChatMessage':
-        try {
-          const parsed = JSON.parse(message.data);
-          const truncatedId = truncateMiddle(parsed.actor.username || parsed.actor, 10, '…', 5);
-          this._appendMessage(`[@${truncatedId}]: ${parsed.object.content}`);
-        } catch (exception) {
-          this._appendError(`Could not parse <ChatMessage> data (should be JSON): ${message.data}`);
+      case 'ChatMessage': {
+        const rawChat = messageDataToString(message.data);
+        const prChat = tryParseWireJson(rawChat === '' ? '{}' : rawChat);
+        if (!prChat.ok) {
+          this._appendError(`Could not parse <ChatMessage> data: ${prChat.error.message}`);
+          break;
         }
+        const parsed = prChat.value;
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          this._appendError('Could not parse <ChatMessage> data: expected object');
+          break;
+        }
+        const actor = parsed.actor;
+        const obj = parsed.object;
+        const truncatedId = truncateMiddle(
+          actor && (actor.username || actor),
+          10,
+          '…',
+          5
+        );
+        const content = obj && obj.content != null ? String(obj.content) : '';
+        this._appendMessage(`[@${truncatedId}]: ${content}`);
         break;
+      }
       case 'BlockCandidate':
         this._appendMessage(`Received Candidate Block from peer: <${message.type}> ${message.data}`);
         this.bitcoin.append(message.data);
@@ -1557,6 +1581,46 @@ class CLI extends FabricShell {
     this.node.relayFrom(this.node.id, message);
 
     return false;
+  }
+
+  /**
+   * Operator: send `P2P_FLUSH_CHAIN` to Fabric peers whose registry score is strictly greater than
+   * {@link Peer#settings.flushChainMinTrustedScore} (default 800). Federation / playnet testing.
+   */
+  _handleFlushChainCli (params) {
+    const hex = params[1];
+    if (!hex || !/^[0-9a-fA-F]{64}$/.test(String(hex).trim())) {
+      return this._appendError('Usage: flushchain <snapshotBlockHash-hex-64> [label] — sends P2P_FLUSH_CHAIN to peers with score > flushChainMinTrustedScore (default 800).');
+    }
+    const snapshotBlockHash = String(hex).trim().toLowerCase();
+    const label = params[2] ? String(params[2]) : undefined;
+    const network = (this.settings.bitcoin && this.settings.bitcoin.network) || this.settings.network;
+    const body = { snapshotBlockHash, network };
+    if (label) body.label = label;
+    const n = this.node.sendFlushChainToTrustedPeers(body);
+    this._appendMessage(`FLUSH_CHAIN sent to ${n} trusted peer connection(s) (score > ${this.node.settings.flushChainMinTrustedScore}).`);
+    return false;
+  }
+
+  async _handlePeerFlushChain (payload) {
+    const object = payload && payload.object;
+    if (!object || !object.snapshotBlockHash) return;
+    if (!this.settings.bitcoin || !this.settings.bitcoin.enable || !this.bitcoin) {
+      return this._appendWarning('[FLUSH_CHAIN] Bitcoin service disabled; not rewinding chain.');
+    }
+    const localNet = this.settings.bitcoin.network || this.settings.network;
+    if (object.network && localNet && object.network !== localNet) {
+      if (this.settings.debug) {
+        this._appendDebug(`[FLUSH_CHAIN] skipped: message network ${object.network} !== local ${localNet}`);
+      }
+      return;
+    }
+    try {
+      const r = await this.bitcoin.flushChainToSnapshot(object.snapshotBlockHash);
+      this._appendMessage(`[FLUSH_CHAIN] bitcoind rewound to snapshot: ${JSON.stringify(r)}`);
+    } catch (err) {
+      this._appendError(`[FLUSH_CHAIN] ${err.message || err}`);
+    }
   }
 
   async spend (to, amount) {

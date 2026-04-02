@@ -15,6 +15,7 @@ const Actor = require('./actor');
 
 // Local Services
 const json = require('../functions/json');
+const { tryParsePersistedJson, parsePersistedJson } = require('../functions/wireJson');
 
 /**
  * @classdesc <strong>Named snapshot</strong> of application data extending {@link Actor} — <code>@type</code>,
@@ -188,11 +189,9 @@ class State extends Actor {
     let result = null;
 
     if (typeof input === 'string') {
-      try {
-        result = JSON.parse(input);
-      } catch (E) {
-        console.error('Failure in fromJSON:', E);
-      }
+      const pr = tryParsePersistedJson(input);
+      if (pr.ok) result = pr.value;
+      else console.error('Failure in fromJSON:', pr.error);
     }
 
     return result;
@@ -448,7 +447,7 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
       }
     }
 
-    return JSON.parse(json(result));
+    return parsePersistedJson(json(result));
   }
 
   /**

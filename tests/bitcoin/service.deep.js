@@ -437,11 +437,8 @@ describe('@fabric/core/services/bitcoin (deep coverage)', function () {
   describe('keys and unload', function () {
     it('_dumpKeyPair and _dumpPrivateKey parse WIF', async function () {
       const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
-      const ecc = require('../../types/ecc');
-      const ECPairFactory = require('ecpair').default;
-      const ECPair = ECPairFactory(ecc);
-      const pair = ECPair.makeRandom({ network: require('bitcoinjs-lib').networks.regtest });
-      const wif = pair.toWIF();
+      const Key = require('../../types/key');
+      const wif = new Key({ network: 'regtest' }).toWIF();
       btc._makeRPCRequest = async () => wif;
       const kp = await btc._dumpKeyPair('addr');
       assert.ok(kp.publicKey);

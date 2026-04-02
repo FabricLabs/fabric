@@ -11,6 +11,7 @@ import Bond from '../types/bond.js';
 import Chain from '../types/chain.js';
 import Circuit from '../types/circuit.js';
 import Collection from '../types/collection.js';
+import Contract from '../types/contract.js';
 import RoundRobin from '../types/roundRobin.js';
 import Entity from '../types/entity.js';
 import Key from '../types/key.js';
@@ -100,6 +101,7 @@ class Fabric extends Service {
   static get Chain () { return Chain; }
   static get Circuit () { return Circuit; }
   static get Collection () { return Collection; }
+  static get Contract () { return Contract; }
   static get RoundRobin () { return RoundRobin; }
   static get Entity () { return Entity; }
   static get Key () { return Key; }

@@ -10,7 +10,7 @@ const Bond = require('../types/bond');
 const Chain = require('../types/chain');
 const Circuit = require('../types/circuit');
 const Collection = require('../types/collection');
-// const Contract = require('./contract');
+const Contract = require('./contract');
 // const Disk = require('./disk');
 const Entity = require('../types/entity');
 const Hash256 = require('../types/hash256');
@@ -106,7 +106,7 @@ class Fabric extends Service {
   static get Circuit () { return Circuit; }
   static get Collection () { return Collection; }
   static get RoundRobin () { return RoundRobin; }
-  // static get Contract () { return Contract; }
+  static get Contract () { return Contract; }
   // static get Disk () { return Disk; }
   static get Entity () { return Entity; }
   static get Hash256 () { return Hash256; }

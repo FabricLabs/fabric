@@ -20,6 +20,7 @@ const {
 const Entity = require('./entity');
 const Hash256 = require('./hash256');
 const Machine = require('./machine');
+const { blessedParamsFromJadeAttrs } = require('../functions/wireJson');
 // const Ethereum = require('../services/ethereum');
 
 // TODO: have Lexer review
@@ -88,12 +89,12 @@ class Compiler {
   }
 
   static _fromMinsc (body) {
-    if (!(body instanceof Buffer)) throw new Error('JavaScript must be passed as a buffer.');
+    if (!(body instanceof Buffer)) throw new Error('Miniscript must be passed as a buffer.');
     return new Compiler({ body, type: 'minsc' });
   }
 
   static _fromSolidity (body) {
-    if (!(body instanceof Buffer)) throw new Error('JavaScript must be passed as a buffer.');
+    if (!(body instanceof Buffer)) throw new Error('Solidity must be passed as a buffer.');
     return new Compiler({ body, type: 'solidity' });
   }
 
@@ -202,23 +203,7 @@ class Compiler {
       let space = ' '.repeat(depth * 2);
       // result += depth;
 
-      let attrs = [];
-      let params = {};
-      for (let a in ast.attrs) {
-        let attr = ast.attrs[a];
-        attrs.push(attr.name + '=' + attr.val);
-
-        if (attr.val[0] === "'") {
-          let content = attr.val.substring(1, attr.val.length - 1);
-          if (content[0] === '{') {
-            params[attr.name] = JSON.parse(content);
-          } else {
-            params[attr.name] = content;
-          }
-        } else {
-          params[attr.name] = JSON.parse(attr.val);
-        }
-      }
+      const { attrs, params } = blessedParamsFromJadeAttrs(ast.attrs);
 
       params.parent = screen;
 

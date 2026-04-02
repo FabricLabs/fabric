@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Hub — Playnet FLUSH_CHAIN (embed)</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; }
+    .panel { max-width: 36rem; border: 1px solid #ccc; border-radius: 8px; padding: 1rem 1.25rem; }
+    label { display: block; margin-top: 0.75rem; font-weight: 600; }
+    input[type="text"] { width: 100%; box-sizing: border-box; margin-top: 0.25rem; padding: 0.4rem 0.5rem; }
+    button { margin-top: 1rem; padding: 0.5rem 1rem; cursor: pointer; }
+    .hint { font-size: 0.85rem; color: #444; margin-top: 0.5rem; }
+    pre { background: #f4f4f4; padding: 0.5rem; overflow: auto; font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <h2>Playnet / federation — chain flush</h2>
+    <p>
+      Sends Fabric wire message <code>P2P_FLUSH_CHAIN</code> (opcode <code>0x56</code>) with a JSON body
+      <code>{ snapshotBlockHash, network, label? }</code> to every connected Fabric peer whose
+      <strong>registry score is strictly greater than 800</strong> (see <code>Peer.settings.flushChainMinTrustedScore</code>).
+      Each recipient validates the sender the same way, rewinds its bitcoind to <code>snapshotBlockHash</code> via
+      <code>invalidateblock</code>, and relays again only to highly trusted peers.
+    </p>
+    <label for="snap">Known-good tip (<code>getbestblockhash</code> after reset)</label>
+    <input id="snap" type="text" placeholder="64-character hex block hash" autocomplete="off" />
+    <label for="net">Network (optional, must match node)</label>
+    <input id="net" type="text" value="playnet" />
+    <label for="label">Label (optional, for logs)</label>
+    <input id="label" type="text" placeholder="e.g. federation-round-3-baseline" />
+    <button type="button" id="go">Send FLUSH_CHAIN to trusted peers</button>
+    <p class="hint">
+      Wire this button to your Hub process: call
+      <code>fabricPeer.sendFlushChainToTrustedPeers({ snapshotBlockHash, network, label })</code>
+      on your <code>Peer</code> from <code>@fabric/core</code>. This file is static HTML only.
+    </p>
+    <pre id="out"></pre>
+  </div>
+  <script>
+    document.getElementById('go').addEventListener('click', function () {
+      const snap = document.getElementById('snap').value.trim();
+      const net = document.getElementById('net').value.trim() || 'playnet';
+      const label = document.getElementById('label').value.trim();
+      const out = document.getElementById('out');
+      if (!/^[0-9a-fA-F]{64}$/.test(snap)) {
+        out.textContent = 'snapshotBlockHash must be 64 hex characters.';
+        return;
+      }
+      const body = { snapshotBlockHash: snap.toLowerCase(), network: net };
+      if (label) body.label = label;
+      out.textContent = 'Example server handler payload (JSON):\n' + JSON.stringify(body, null, 2);
+    });
+  </script>
+</body>
+</html>

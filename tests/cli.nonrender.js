@@ -4,6 +4,9 @@ const assert = require('assert');
 const CLI = require('../types/cli');
 
 describe('@fabric/core/types/cli (non-render guards)', function () {
+  // Constructing CLI pulls a large module graph; under full-suite CPU contention this can exceed the default timeout.
+  this.timeout(30000);
+
   it('defaults to regtest with isolated datadir', function () {
     const cli = new CLI({ render: false });
     assert.strictEqual(cli.settings.bitcoin.network, 'regtest');

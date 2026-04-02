@@ -1,0 +1,33 @@
+diff --git a/node_modules/bitcoinjs-lib/src/crypto.js b/node_modules/bitcoinjs-lib/src/crypto.js
+index a7a5936..447b229 100644
+--- a/node_modules/bitcoinjs-lib/src/crypto.js
++++ b/node_modules/bitcoinjs-lib/src/crypto.js
+@@ -15,15 +15,14 @@ exports.taggedHash =
+  *
+  * @packageDocumentation
+  */
+-const ripemd160_1 = require('@noble/hashes/ripemd160');
+-const sha1_1 = require('@noble/hashes/sha1');
+-const sha256_1 = require('@noble/hashes/sha256');
++const legacy_1 = require('@noble/hashes/legacy.js');
++const sha256_1 = require('@noble/hashes/sha2.js');
+ function ripemd160(buffer) {
+-  return Buffer.from((0, ripemd160_1.ripemd160)(Uint8Array.from(buffer)));
++  return Buffer.from((0, legacy_1.ripemd160)(Uint8Array.from(buffer)));
+ }
+ exports.ripemd160 = ripemd160;
+ function sha1(buffer) {
+-  return Buffer.from((0, sha1_1.sha1)(Uint8Array.from(buffer)));
++  return Buffer.from((0, legacy_1.sha1)(Uint8Array.from(buffer)));
+ }
+ exports.sha1 = sha1;
+ function sha256(buffer) {
+@@ -32,7 +31,7 @@ function sha256(buffer) {
+ exports.sha256 = sha256;
+ function hash160(buffer) {
+   return Buffer.from(
+-    (0, ripemd160_1.ripemd160)((0, sha256_1.sha256)(Uint8Array.from(buffer))),
++    (0, legacy_1.ripemd160)((0, sha256_1.sha256)(Uint8Array.from(buffer))),
+   );
+ }
+ exports.hash160 = hash160;

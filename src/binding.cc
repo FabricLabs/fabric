@@ -11,6 +11,7 @@ extern "C"
 #include "errors.h"
 #include "bip340.h"
 #include "taproot.h"
+#include "segwit_addr.h"
 }
 
 // Initialize the Fabric addon
@@ -730,6 +731,82 @@ Napi::Object Init(Napi::Env env, Napi::Object exports)
       return env.Undefined();
     }
     return Napi::Buffer<uint8_t>::Copy(env, out32, 32);
+  }));
+
+  // Pieter Wuille reference Bech32 / Bech32m / native segwit (ref/c/segwit_addr.c — sipa/bech32)
+  exports.Set("bech32Encode", Napi::Function::New(env, [](const Napi::CallbackInfo &info) -> Napi::Value {
+    Napi::Env env = info.Env();
+    if (info.Length() < 3 || !info[0].IsString() || !info[1].IsBuffer() || !info[2].IsNumber()) {
+      Napi::TypeError::New(env, "bech32Encode: expected (hrp: string, words: Buffer, enc: 0|1)").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    std::string hrp = info[0].As<Napi::String>().Utf8Value();
+    Napi::Buffer<uint8_t> words = info[1].As<Napi::Buffer<uint8_t>>();
+    uint32_t encn = info[2].As<Napi::Number>().Uint32Value();
+    bech32_encoding enc = (encn == 1) ? BECH32_ENCODING_BECH32M : BECH32_ENCODING_BECH32;
+    char out[200];
+    if (!bech32_encode(out, hrp.c_str(), words.Data(), words.Length(), enc)) {
+      Napi::Error::New(env, "bech32Encode: invalid input").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    return Napi::String::New(env, out);
+  }));
+
+  exports.Set("bech32Decode", Napi::Function::New(env, [](const Napi::CallbackInfo &info) -> Napi::Value {
+    Napi::Env env = info.Env();
+    if (info.Length() < 1 || !info[0].IsString()) {
+      Napi::TypeError::New(env, "bech32Decode: expected string").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    std::string input = info[0].As<Napi::String>().Utf8Value();
+    char hrp[90];
+    uint8_t data[90];
+    size_t data_len = 0;
+    bech32_encoding enc = bech32_decode(hrp, data, &data_len, input.c_str());
+    if (enc == BECH32_ENCODING_NONE) {
+      return env.Null();
+    }
+    Napi::Object o = Napi::Object::New(env);
+    o.Set("hrp", Napi::String::New(env, hrp));
+    o.Set("words", Napi::Buffer<uint8_t>::Copy(env, data, data_len));
+    o.Set("spec", Napi::String::New(env, enc == BECH32_ENCODING_BECH32M ? "bech32m" : "bech32"));
+    return o;
+  }));
+
+  exports.Set("segwitAddrEncode", Napi::Function::New(env, [](const Napi::CallbackInfo &info) -> Napi::Value {
+    Napi::Env env = info.Env();
+    if (info.Length() < 3 || !info[0].IsString() || !info[1].IsNumber() || !info[2].IsBuffer()) {
+      Napi::TypeError::New(env, "segwitAddrEncode: expected (hrp: string, version: number, program: Buffer)").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    std::string hrp = info[0].As<Napi::String>().Utf8Value();
+    int ver = info[1].As<Napi::Number>().Int32Value();
+    Napi::Buffer<uint8_t> prog = info[2].As<Napi::Buffer<uint8_t>>();
+    char out[200];
+    if (!segwit_addr_encode(out, hrp.c_str(), ver, prog.Data(), prog.Length())) {
+      return env.Null();
+    }
+    return Napi::String::New(env, out);
+  }));
+
+  exports.Set("segwitAddrDecode", Napi::Function::New(env, [](const Napi::CallbackInfo &info) -> Napi::Value {
+    Napi::Env env = info.Env();
+    if (info.Length() < 2 || !info[0].IsString() || !info[1].IsString()) {
+      Napi::TypeError::New(env, "segwitAddrDecode: expected (hrp: string, addr: string)").ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+    std::string hrp = info[0].As<Napi::String>().Utf8Value();
+    std::string addr = info[1].As<Napi::String>().Utf8Value();
+    int witver;
+    uint8_t witdata[40];
+    size_t witlen = 0;
+    if (!segwit_addr_decode(&witver, witdata, &witlen, hrp.c_str(), addr.c_str())) {
+      return env.Null();
+    }
+    Napi::Object o = Napi::Object::New(env);
+    o.Set("version", Napi::Number::New(env, witver));
+    o.Set("program", Napi::Buffer<uint8_t>::Copy(env, witdata, witlen));
+    return o;
   }));
 
   // Narrow acceleration surface for JS harness: double-SHA256 (wire body hash)

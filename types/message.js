@@ -23,6 +23,7 @@ const {
   P2P_INSTRUCTION,
   P2P_BASE_MESSAGE,
   P2P_CHAIN_SYNC_REQUEST,
+  P2P_FLUSH_CHAIN,
   P2P_STATE_ROOT,
   P2P_STATE_COMMITTMENT,
   P2P_STATE_CHANGE,
@@ -62,6 +63,8 @@ const {
   LIGHTNING_NODE_ANNOUNCEMENT,
   LIGHTNING_CHANNEL_UPDATE
 } = require('../constants');
+
+const { tryParseWireJson } = require('../functions/wireJson');
 
 const HEADER_SIG_SIZE = 64;
 
@@ -117,6 +120,7 @@ const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [P2P_PONG, 'P2P_PONG'],
   [P2P_GENERIC, 'P2P_GENERIC'],
   [P2P_CHAIN_SYNC_REQUEST, 'P2P_CHAIN_SYNC_REQUEST'],
+  [P2P_FLUSH_CHAIN, 'P2P_FLUSH_CHAIN'],
   [P2P_IDENT_REQUEST, 'P2P_IDENT_REQUEST'],
   [P2P_IDENT_RESPONSE, 'P2P_IDENT_RESPONSE'],
   [P2P_BASE_MESSAGE, 'P2P_BASE_MESSAGE'],
@@ -197,6 +201,7 @@ const LEGACY_MESSAGE_TYPE_ALIASES = Object.freeze({
   IdentityRequest: P2P_IDENT_REQUEST,
   IdentityResponse: P2P_IDENT_RESPONSE,
   ChainSyncRequest: P2P_CHAIN_SYNC_REQUEST,
+  FlushChain: P2P_FLUSH_CHAIN,
   Ping: P2P_PING,
   Pong: P2P_PONG,
   DocumentRequest: DOCUMENT_REQUEST_TYPE,
@@ -864,9 +869,11 @@ Object.defineProperty(Message.prototype, 'type', {
     // Default to GENERIC_MESSAGE or JSON_BLOB based on content
     if (!code) {
       this.emit('warning', `Unknown message type: ${value}`);
-      // Check if data is valid JSON
+      // Check if data is valid JSON (bounded — same limit as AMP bodies)
       try {
-        if (this.data && JSON.parse(this.data)) {
+        const raw = typeof this.data === 'string' ? this.data : String(this.data ?? '');
+        const pr = tryParseWireJson(raw);
+        if (pr.ok && pr.value) {
           code = this.types['JSON_BLOB'] || this.types['JSONBlob'];
           value = 'JSON_BLOB';
         } else {

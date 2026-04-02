@@ -2,24 +2,16 @@
 
 // Shared noble-curves-based secp256k1 shim implementing the tiny-secp256k1-style interface
 const { secp256k1, schnorr: schnorrModule } = require('@noble/curves/secp256k1.js');
+const { toUint8Flexible } = require('../functions/bytes');
 const SecpPoint = secp256k1.ProjectivePoint || secp256k1.Point;
 
 // noble-curves v1 exposes secp256k1.CURVE.n; v2 exposes secp256k1.Point.Fn.ORDER
 const CURVE_N = (secp256k1.CURVE && secp256k1.CURVE.n) ||
   (secp256k1.Point && secp256k1.Point.Fn && secp256k1.Point.Fn.ORDER);
 
-// Ensure we always hand noble Uint8Array instances (not Buffer) in browser bundles.
-function toU8 (bytes) {
-  if (bytes instanceof Uint8Array) return bytes;
-  if (typeof Buffer !== 'undefined' && Buffer.isBuffer && Buffer.isBuffer(bytes)) {
-    return new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  }
-  return Uint8Array.from(bytes);
-}
-
 function fromBytes (bytes) {
   if (!SecpPoint) throw new Error('Unsupported noble secp256k1 Point API');
-  const u8 = toU8(bytes);
+  const u8 = toUint8Flexible(bytes, 65);
   if (typeof SecpPoint.fromBytes === 'function') return SecpPoint.fromBytes(u8);
   if (typeof SecpPoint.fromHex === 'function') {
     const hex = Buffer.from(u8).toString('hex');
@@ -80,7 +72,7 @@ const ecc = {
     const bytes = Buffer.isBuffer(p) ? p : Buffer.from(p);
     try {
       if (secp256k1.utils && typeof secp256k1.utils.isValidPublicKey === 'function') {
-        return secp256k1.utils.isValidPublicKey(toU8(bytes));
+        return secp256k1.utils.isValidPublicKey(toUint8Flexible(bytes, 65));
       }
       fromBytes(bytes);
       return true;
@@ -94,7 +86,7 @@ const ecc = {
     if (!d) return null;
     const bytes = Buffer.isBuffer(d) ? d : Buffer.from(d);
     try {
-      const pub = secp256k1.getPublicKey(toU8(bytes), compressed);
+      const pub = secp256k1.getPublicKey(toUint8Flexible(bytes, 32), compressed);
       return Buffer.from(pub);
     } catch (e) {
       return null;
@@ -211,7 +203,7 @@ const ecc = {
       throw new Error('sign expects 32-byte message hash and private key');
     }
     // noble-curves v2 prehashes (sha256) by default; for tiny-secp compatibility we sign raw 32-byte hashes.
-    const sig = secp256k1.sign(toU8(m), toU8(d), { prehash: false });
+    const sig = secp256k1.sign(toUint8Flexible(m, 32), toUint8Flexible(d, 32), { prehash: false });
     // noble-curves v1 returns Signature; v2 returns Uint8Array(64)
     if (sig && typeof sig.toCompactRawBytes === 'function') {
       return Buffer.from(sig.toCompactRawBytes());
@@ -226,7 +218,7 @@ const ecc = {
     if (m.length !== 32) return false;
     try {
       // noble-curves v2 prehashes (sha256) by default; verify raw 32-byte hashes.
-      return secp256k1.verify(toU8(s), toU8(m), toU8(p), { prehash: false });
+      return secp256k1.verify(toUint8Flexible(s, 64), toUint8Flexible(m, 32), toUint8Flexible(p, 65), { prehash: false });
     } catch (e) {
       return false;
     }
@@ -240,7 +232,7 @@ const ecc = {
     const aux = (auxRand != null && (Buffer.isBuffer(auxRand) || auxRand.length === 32))
       ? (Buffer.isBuffer(auxRand) ? auxRand : Buffer.from(auxRand))
       : Buffer.alloc(32);
-    return Buffer.from(schnorrModule.sign(toU8(m), toU8(d), toU8(aux)));
+    return Buffer.from(schnorrModule.sign(toUint8Flexible(m, 32), toUint8Flexible(d, 32), toUint8Flexible(aux, 32)));
   },
   verifySchnorr (msgHash, xOnlyPubkey, sig) {
     const m = Buffer.isBuffer(msgHash) ? msgHash : Buffer.from(msgHash);
@@ -248,7 +240,7 @@ const ecc = {
     const s = Buffer.isBuffer(sig) ? sig : Buffer.from(sig);
     if (m.length !== 32 || px.length !== 32 || s.length !== 64) return false;
     try {
-      return schnorrModule.verify(toU8(s), toU8(m), toU8(px));
+      return schnorrModule.verify(toUint8Flexible(s, 64), toUint8Flexible(m, 32), toUint8Flexible(px, 32));
     } catch (e) {
       return false;
     }
@@ -423,9 +415,13 @@ function debugEccSelfTest () {
 }
 
 if (typeof window !== 'undefined') {
-  // Avoid running multiple times if the module is re-evaluated.
+  // Skip under JSDOM (e.g. Sensemaker webpack bundler sets global.window); self-test is for real browsers.
+  // Use window.navigator — Node may set global.window without a global `navigator`.
+  const nav = typeof window.navigator !== 'undefined' ? window.navigator : null;
+  const ua = nav && nav.userAgent ? nav.userAgent : '';
+  const skipJsdom = /jsdom/i.test(ua);
   const globalScope = typeof globalThis !== 'undefined' ? globalThis : window;
-  if (!globalScope.__FABRIC_ECC_SELFTESTED__) {
+  if (!skipJsdom && !globalScope.__FABRIC_ECC_SELFTESTED__) {
     globalScope.__FABRIC_ECC_SELFTESTED__ = true;
     debugEccSelfTest();
   }

@@ -12,7 +12,13 @@ function doubleSha256Js (buf) {
 
 describe('functions/fabricNativeAccel', function () {
   it('exports stable metadata', function () {
-    assert.deepStrictEqual([...fabricNativeAccel.SUPPORTED_ADDON_EXPORTS], ['doubleSha256']);
+    assert.deepStrictEqual([...fabricNativeAccel.SUPPORTED_ADDON_EXPORTS], [
+      'doubleSha256',
+      'bech32Encode',
+      'bech32Decode',
+      'segwitAddrEncode',
+      'segwitAddrDecode'
+    ]);
   });
 
   it('status() reports opt-in flag and shape', function () {
@@ -20,6 +26,7 @@ describe('functions/fabricNativeAccel', function () {
     assert.strictEqual(typeof s.available, 'boolean');
     assert.ok(Array.isArray(s.methods));
     assert.strictEqual(s.nativeDoubleSha256OptIn, false);
+    assert.strictEqual(s.nativeBech32OptIn, false);
     assert.ok(Object.prototype.hasOwnProperty.call(s, 'path'));
   });
 
@@ -40,6 +47,21 @@ describe('functions/fabricNativeAccel', function () {
     const hex = fabricNativeAccel.doubleSha256Hex(buf);
     assert.strictEqual(hex, fabricNativeAccel.doubleSha256Buffer(buf).toString('hex'));
     assert.strictEqual(hex, doubleSha256Js(buf).toString('hex'));
+  });
+
+  it('status in fresh subprocess with FABRIC_NATIVE_BECH32=1 reports bech32 opt-in', function () {
+    const modPath = path.join(__dirname, '..', 'functions', 'fabricNativeAccel.js');
+    const script = `
+      process.env.FABRIC_NATIVE_BECH32 = '1';
+      process.env.FABRIC_SKIP_NATIVE_ADDON = '1';
+      const m = require(${JSON.stringify(modPath)});
+      const s = m.status();
+      if (s.nativeBech32OptIn !== true) process.exit(1);
+      process.stdout.write(JSON.stringify({ nativeBech32OptIn: s.nativeBech32OptIn }));
+    `;
+    const out = execFileSync(process.execPath, ['-e', script], { encoding: 'utf8' });
+    const j = JSON.parse(out);
+    assert.strictEqual(j.nativeBech32OptIn, true);
   });
 
   it('status in fresh subprocess with FABRIC_NATIVE_DOUBLE_SHA256=true reports opt-in', function () {

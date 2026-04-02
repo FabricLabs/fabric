@@ -14,7 +14,7 @@ arbitrary app string hash. <strong>Wire traffic</strong> — see <a href="#Messa
 </dd>
 <dt><a href="#Actor">Actor</a></dt>
 <dd></dd>
-<dt><a href="#Bond">Bond</a> ⇐ <code>Contract</code></dt>
+<dt><a href="#Bond">Bond</a> ⇐ <code><a href="#Contract">Contract</a></code></dt>
 <dd></dd>
 <dt><a href="#Chain">Chain</a></dt>
 <dd><p>Chain.</p>
@@ -37,6 +37,8 @@ mechanics.</p>
 <dt><a href="#Collection">Collection</a></dt>
 <dd><p>The <a href="#Collection">Collection</a> type maintains an ordered list of <a href="#State">State</a> items.</p>
 </dd>
+<dt><a href="#Contract">Contract</a> ⇐ <code><a href="#Service">Service</a></code></dt>
+<dd></dd>
 <dt><a href="#Disk">Disk</a></dt>
 <dd></dd>
 <dt><a href="#Entity">Entity</a> ⇐ <code>EventEmitter</code></dt>
@@ -664,19 +666,36 @@ Get a number of random bytes from the runtime environment.
 
 <a name="Bond"></a>
 
-## Bond ⇐ <code>Contract</code>
+## Bond ⇐ [<code>Contract</code>](#Contract)
 **Kind**: global class  
-**Extends**: <code>Contract</code>  
+**Extends**: [<code>Contract</code>](#Contract)  
 
-* [Bond](#Bond) ⇐ <code>Contract</code>
+* [Bond](#Bond) ⇐ [<code>Contract</code>](#Contract)
     * [new Bond()](#new_Bond_new)
     * [.deploy()](#Contract+deploy) ⇒ <code>String</code>
-    * [.start()](#Contract+start) ⇒ <code>Contract</code>
+    * [.start()](#Contract+start) ⇒ [<code>Contract</code>](#Contract)
+    * [._appendWarning(msg)](#Service+_appendWarning) ⇒ [<code>Service</code>](#Service)
+    * [.init()](#Service+init)
+    * [.tick()](#Service+tick) ⇒ <code>Number</code>
+    * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
+    * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
+    * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
+    * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
+    * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
+    * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
+    * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
+    * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
+    * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
+    * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
+    * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
+    * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
+    * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
+    * [._send(message)](#Service+_send)
 
 <a name="new_Bond_new"></a>
 
 ### new Bond()
-On-chain or logical bond / stake terms layered on [Contract](Contract).
+On-chain or logical bond / stake terms layered on [Contract](#Contract).
 
 <a name="Contract+deploy"></a>
 
@@ -687,11 +706,200 @@ Deploys the contract.
 **Returns**: <code>String</code> - Message ID.  
 <a name="Contract+start"></a>
 
-### bond.start() ⇒ <code>Contract</code>
+### bond.start() ⇒ [<code>Contract</code>](#Contract)
 Start the Contract.
 
 **Kind**: instance method of [<code>Bond</code>](#Bond)  
-**Returns**: <code>Contract</code> - State "STARTED" iteration of the Contract.  
+**Returns**: [<code>Contract</code>](#Contract) - State "STARTED" iteration of the Contract.  
+<a name="Service+_appendWarning"></a>
+
+### bond.\_appendWarning(msg) ⇒ [<code>Service</code>](#Service)
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+**Returns**: [<code>Service</code>](#Service) - This instance.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | <code>String</code> | Warning text (used by [Service#_registerService](Service#_registerService) duplicate guard). |
+
+<a name="Service+init"></a>
+
+### bond.init()
+Called by Web Components.
+TODO: move to @fabric/http/types/spa
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+<a name="Service+tick"></a>
+
+### bond.tick() ⇒ <code>Number</code>
+Move forward one clock cycle.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+<a name="Service+beat"></a>
+
+### bond.beat() ⇒ [<code>Service</code>](#Service)
+Compute latest state.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+**Emits**: <code>Message#event:beat</code>  
+<a name="Service+get"></a>
+
+### bond.get(path) ⇒ <code>Mixed</code>
+Retrieve a key from the [State](#State).
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+**Returns**: <code>Mixed</code> - Returns the target value if found, otherwise null.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>Path</code> | Key to retrieve. |
+
+<a name="Service+set"></a>
+
+### bond.set(path) ⇒ <code>Mixed</code>
+Set a key in the [State](#State) to a particular value.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>Path</code> | Key to retrieve. |
+
+<a name="Service+trust"></a>
+
+### bond.trust(source) ⇒ [<code>Service</code>](#Service)
+Explicitly trust all events from a known source.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+**Returns**: [<code>Service</code>](#Service) - Instance of Service after binding events.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| source | <code>EventEmitter</code> | Emitter of events. |
+
+<a name="Service+handler"></a>
+
+### bond.handler(message) ⇒ [<code>Service</code>](#Service)
+Default route handler for an incoming message.  Follows the Activity
+Streams 2.0 spec: https://www.w3.org/TR/activitystreams-core/
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+**Returns**: [<code>Service</code>](#Service) - Chainable method.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| message | <code>Activity</code> | Message object. |
+
+<a name="Service+lock"></a>
+
+### bond.lock([duration]) ⇒ <code>Boolean</code>
+Attempt to acquire a lock for `duration` seconds.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+**Returns**: <code>Boolean</code> - true if locked, false if unable to lock.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [duration] | <code>Number</code> | <code>1000</code> | Number of milliseconds to hold lock. |
+
+<a name="Service+when"></a>
+
+### bond.when(event, method) ⇒ <code>EventEmitter</code>
+Bind a method to an event, with current state as the immutable context.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+**Returns**: <code>EventEmitter</code> - Instance of EventEmitter.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| event | <code>String</code> | Name of the event upon which to execute `method` as a function. |
+| method | <code>function</code> | Function to execute when named [Event](Event) `event` is encountered. |
+
+<a name="Service+route"></a>
+
+### bond.route(msg) ⇒ <code>Promise</code>
+Resolve a [State](#State) from a particular [Message](#Message) object.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+**Returns**: <code>Promise</code> - Resolves with resulting [State](#State).  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | [<code>Message</code>](#Message) | Explicit Fabric [Message](#Message). |
+
+<a name="Service+_GET"></a>
+
+### bond.\_GET(path) ⇒ <code>Promise</code>
+Retrieve a value from the Service's state.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+**Returns**: <code>Promise</code> - Resolves with the result.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | Path of the value to retrieve. |
+
+<a name="Service+_PUT"></a>
+
+### bond.\_PUT(path, value, [commit]) ⇒ <code>Promise</code>
+Store a value in the Service's state.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+**Returns**: <code>Promise</code> - Resolves with with stored document.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| path | <code>String</code> |  | Path to store the value at. |
+| value | <code>Object</code> |  | Document to store. |
+| [commit] | <code>Boolean</code> | <code>false</code> | Sign the resulting state. |
+
+<a name="Service+connect"></a>
+
+### bond.connect(notify) ⇒ <code>Promise</code>
+Attach to network.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+**Returns**: <code>Promise</code> - Resolves to [Fabric](#Fabric).  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| notify | <code>Boolean</code> | <code>true</code> | Commit to changes. |
+
+<a name="Service+send"></a>
+
+### bond.send(channel, message) ⇒ [<code>Service</code>](#Service)
+Send a message to a channel.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+**Returns**: [<code>Service</code>](#Service) - Chainable method.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| channel | <code>String</code> | Channel name to which the message will be sent. |
+| message | <code>String</code> | Content of the message to send. |
+
+<a name="Service+_registerActor"></a>
+
+### bond.\_registerActor(actor) ⇒ <code>Promise</code>
+Register an [Actor](#Actor) with the [Service](#Service).
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+**Returns**: <code>Promise</code> - Resolves upon successful registration.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| actor | <code>Object</code> | Instance of the [Actor](#Actor). |
+
+<a name="Service+_send"></a>
+
+### bond.\_send(message)
+Sends a message.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| message | <code>Mixed</code> | Message to send. |
+
 <a name="Chain"></a>
 
 ## Chain
@@ -1501,6 +1709,244 @@ Loads [State](#State) into memory.
 | --- | --- | --- |
 | state | [<code>State</code>](#State) | State to import. |
 | commit | <code>Boolean</code> | Whether or not to commit the result. |
+
+<a name="Contract"></a>
+
+## Contract ⇐ [<code>Service</code>](#Service)
+**Kind**: global class  
+**Extends**: [<code>Service</code>](#Service)  
+
+* [Contract](#Contract) ⇐ [<code>Service</code>](#Service)
+    * [new Contract()](#new_Contract_new)
+    * [.deploy()](#Contract+deploy) ⇒ <code>String</code>
+    * [.start()](#Contract+start) ⇒ [<code>Contract</code>](#Contract)
+    * [._appendWarning(msg)](#Service+_appendWarning) ⇒ [<code>Service</code>](#Service)
+    * [.init()](#Service+init)
+    * [.tick()](#Service+tick) ⇒ <code>Number</code>
+    * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
+    * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
+    * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
+    * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
+    * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
+    * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
+    * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
+    * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
+    * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
+    * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
+    * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
+    * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
+    * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
+    * [._send(message)](#Service+_send)
+
+<a name="new_Contract_new"></a>
+
+### new Contract()
+Service-backed agreement template: DOT graphs, a derived circuit structure, deploy/genesis/publish flows,
+and JSON-Patch–observed commits. Specialized by [Bond](#Bond), [Federation](#Federation), and [Distribution](Distribution).
+
+<a name="Contract+deploy"></a>
+
+### contract.deploy() ⇒ <code>String</code>
+Deploys the contract.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>String</code> - Message ID.  
+<a name="Contract+start"></a>
+
+### contract.start() ⇒ [<code>Contract</code>](#Contract)
+Start the Contract.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+**Overrides**: [<code>start</code>](#Service+start)  
+**Returns**: [<code>Contract</code>](#Contract) - State "STARTED" iteration of the Contract.  
+<a name="Service+_appendWarning"></a>
+
+### contract.\_appendWarning(msg) ⇒ [<code>Service</code>](#Service)
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+**Returns**: [<code>Service</code>](#Service) - This instance.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | <code>String</code> | Warning text (used by [Service#_registerService](Service#_registerService) duplicate guard). |
+
+<a name="Service+init"></a>
+
+### contract.init()
+Called by Web Components.
+TODO: move to @fabric/http/types/spa
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+<a name="Service+tick"></a>
+
+### contract.tick() ⇒ <code>Number</code>
+Move forward one clock cycle.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+<a name="Service+beat"></a>
+
+### contract.beat() ⇒ [<code>Service</code>](#Service)
+Compute latest state.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+**Emits**: <code>Message#event:beat</code>  
+<a name="Service+get"></a>
+
+### contract.get(path) ⇒ <code>Mixed</code>
+Retrieve a key from the [State](#State).
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>Mixed</code> - Returns the target value if found, otherwise null.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>Path</code> | Key to retrieve. |
+
+<a name="Service+set"></a>
+
+### contract.set(path) ⇒ <code>Mixed</code>
+Set a key in the [State](#State) to a particular value.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>Path</code> | Key to retrieve. |
+
+<a name="Service+trust"></a>
+
+### contract.trust(source) ⇒ [<code>Service</code>](#Service)
+Explicitly trust all events from a known source.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+**Returns**: [<code>Service</code>](#Service) - Instance of Service after binding events.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| source | <code>EventEmitter</code> | Emitter of events. |
+
+<a name="Service+handler"></a>
+
+### contract.handler(message) ⇒ [<code>Service</code>](#Service)
+Default route handler for an incoming message.  Follows the Activity
+Streams 2.0 spec: https://www.w3.org/TR/activitystreams-core/
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+**Returns**: [<code>Service</code>](#Service) - Chainable method.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| message | <code>Activity</code> | Message object. |
+
+<a name="Service+lock"></a>
+
+### contract.lock([duration]) ⇒ <code>Boolean</code>
+Attempt to acquire a lock for `duration` seconds.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>Boolean</code> - true if locked, false if unable to lock.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [duration] | <code>Number</code> | <code>1000</code> | Number of milliseconds to hold lock. |
+
+<a name="Service+when"></a>
+
+### contract.when(event, method) ⇒ <code>EventEmitter</code>
+Bind a method to an event, with current state as the immutable context.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>EventEmitter</code> - Instance of EventEmitter.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| event | <code>String</code> | Name of the event upon which to execute `method` as a function. |
+| method | <code>function</code> | Function to execute when named [Event](Event) `event` is encountered. |
+
+<a name="Service+route"></a>
+
+### contract.route(msg) ⇒ <code>Promise</code>
+Resolve a [State](#State) from a particular [Message](#Message) object.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>Promise</code> - Resolves with resulting [State](#State).  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | [<code>Message</code>](#Message) | Explicit Fabric [Message](#Message). |
+
+<a name="Service+_GET"></a>
+
+### contract.\_GET(path) ⇒ <code>Promise</code>
+Retrieve a value from the Service's state.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>Promise</code> - Resolves with the result.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | Path of the value to retrieve. |
+
+<a name="Service+_PUT"></a>
+
+### contract.\_PUT(path, value, [commit]) ⇒ <code>Promise</code>
+Store a value in the Service's state.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>Promise</code> - Resolves with with stored document.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| path | <code>String</code> |  | Path to store the value at. |
+| value | <code>Object</code> |  | Document to store. |
+| [commit] | <code>Boolean</code> | <code>false</code> | Sign the resulting state. |
+
+<a name="Service+connect"></a>
+
+### contract.connect(notify) ⇒ <code>Promise</code>
+Attach to network.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>Promise</code> - Resolves to [Fabric](#Fabric).  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| notify | <code>Boolean</code> | <code>true</code> | Commit to changes. |
+
+<a name="Service+send"></a>
+
+### contract.send(channel, message) ⇒ [<code>Service</code>](#Service)
+Send a message to a channel.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+**Returns**: [<code>Service</code>](#Service) - Chainable method.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| channel | <code>String</code> | Channel name to which the message will be sent. |
+| message | <code>String</code> | Content of the message to send. |
+
+<a name="Service+_registerActor"></a>
+
+### contract.\_registerActor(actor) ⇒ <code>Promise</code>
+Register an [Actor](#Actor) with the [Service](#Service).
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>Promise</code> - Resolves upon successful registration.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| actor | <code>Object</code> | Instance of the [Actor](#Actor). |
+
+<a name="Service+_send"></a>
+
+### contract.\_send(message)
+Sends a message.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| message | <code>Mixed</code> | Message to send. |
 
 <a name="Disk"></a>
 
@@ -7401,7 +7847,7 @@ Parse an Object into a corresponding Fabric state.
 <a name="new_Script_new"></a>
 
 ### new Script(config)
-Compose a [Script](#Script) for inclusion within a [Contract](Contract).
+Compose a [Script](#Script) for inclusion within a [Contract](#Contract).
 
 **Returns**: [<code>Script</code>](#Script) - Instance of the [Script](#Script), ready for use.  
 
@@ -10466,42 +10912,50 @@ Closes the connection to the Redis server.
 
 * [Text](#Text) ⇐ [<code>Service</code>](#Service)
     * [new Text()](#new_Text_new)
-    * [._appendWarning(msg)](#Service+_appendWarning) ⇒ [<code>Service</code>](#Service)
-    * [.init()](#Service+init)
-    * [.tick()](#Service+tick) ⇒ <code>Number</code>
-    * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
-    * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
-    * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
-    * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
-    * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
-    * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
-    * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
-    * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
-    * [.start()](#Service+start)
-    * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
-    * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
-    * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
-    * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
-    * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
-    * [._send(message)](#Service+_send)
-    * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
-    * [.commit()](#Actor+commit) ⇒ <code>String</code>
-    * [.export()](#Actor+export) ⇒ <code>Object</code>
-    * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
-    * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
-    * [.toGenericMessage([type])](#Actor+toGenericMessage) ⇒ <code>Object</code>
-    * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
-    * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
-    * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
-    * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
-    * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
-    * [.value([format])](#Actor+value) ⇒ <code>Object</code>
-    * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
+    * _instance_
+        * [._appendWarning(msg)](#Service+_appendWarning) ⇒ [<code>Service</code>](#Service)
+        * [.init()](#Service+init)
+        * [.tick()](#Service+tick) ⇒ <code>Number</code>
+        * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
+        * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
+        * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
+        * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
+        * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
+        * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
+        * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
+        * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
+        * [.start()](#Service+start)
+        * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
+        * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
+        * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
+        * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
+        * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
+        * [._send(message)](#Service+_send)
+        * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
+        * [.commit()](#Actor+commit) ⇒ <code>String</code>
+        * [.export()](#Actor+export) ⇒ <code>Object</code>
+        * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
+        * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
+        * [.toGenericMessage([type])](#Actor+toGenericMessage) ⇒ <code>Object</code>
+        * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
+        * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
+        * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
+        * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
+        * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
+        * [.value([format])](#Actor+value) ⇒ <code>Object</code>
+        * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
+    * _static_
+        * [.tokenize(string)](#Text.tokenize) ⇒ <code>Array.&lt;string&gt;</code>
+        * [.truncateMiddle(fullStr, strLen, [separator])](#Text.truncateMiddle) ⇒ <code>string</code>
+        * [.toRelativeTime(date)](#Text.toRelativeTime) ⇒ <code>string</code>
+        * [.oxfordJoin(list)](#Text.oxfordJoin) ⇒ <code>string</code>
 
 <a name="new_Text_new"></a>
 
 ### new Text()
 Text-oriented [Service](#Service) stub (legacy name was <code>TXT</code>).
+Static helpers mirror small utilities used in Sensemaker (tokenize, middle truncation,
+relative time strings) and core helpers ([module:functions/oxfordJoin](module:functions/oxfordJoin)).
 
 <a name="Service+_appendWarning"></a>
 
@@ -10818,6 +11272,52 @@ Parse an Object into a corresponding Fabric state.
 | Param | Type | Description |
 | --- | --- | --- |
 | input | <code>Object</code> | Object to read as input. |
+
+<a name="Text.tokenize"></a>
+
+### Text.tokenize(string) ⇒ <code>Array.&lt;string&gt;</code>
+Split on runs of whitespace (Sensemaker-style tokenization).
+
+**Kind**: static method of [<code>Text</code>](#Text)  
+
+| Param | Type |
+| --- | --- |
+| string | <code>string</code> | 
+
+<a name="Text.truncateMiddle"></a>
+
+### Text.truncateMiddle(fullStr, strLen, [separator]) ⇒ <code>string</code>
+Shorten a string in the middle if longer than <code>strLen</code>.
+
+**Kind**: static method of [<code>Text</code>](#Text)  
+
+| Param | Type |
+| --- | --- |
+| fullStr | <code>string</code> | 
+| strLen | <code>number</code> | 
+| [separator] | <code>string</code> | 
+
+<a name="Text.toRelativeTime"></a>
+
+### Text.toRelativeTime(date) ⇒ <code>string</code>
+Human-readable relative time (e.g. <code>3 days ago</code>), ported from Sensemaker.
+
+**Kind**: static method of [<code>Text</code>](#Text)  
+
+| Param | Type |
+| --- | --- |
+| date | <code>Date</code> \| <code>string</code> \| <code>number</code> | 
+
+<a name="Text.oxfordJoin"></a>
+
+### Text.oxfordJoin(list) ⇒ <code>string</code>
+Join a list with an Oxford comma (delegates to [module:functions/oxfordJoin](module:functions/oxfordJoin)).
+
+**Kind**: static method of [<code>Text</code>](#Text)  
+
+| Param | Type |
+| --- | --- |
+| list | <code>Array.&lt;string&gt;</code> | 
 
 <a name="ZMQ"></a>
 
@@ -10875,42 +11375,50 @@ Deprecated 2021-11-06 — use [FabricState](FabricState) (<code>types/state</cod
 
 * ~~[Text](#Text)~~
     * [new Text()](#new_Text_new)
-    * [._appendWarning(msg)](#Service+_appendWarning) ⇒ [<code>Service</code>](#Service)
-    * [.init()](#Service+init)
-    * [.tick()](#Service+tick) ⇒ <code>Number</code>
-    * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
-    * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
-    * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
-    * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
-    * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
-    * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
-    * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
-    * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
-    * [.start()](#Service+start)
-    * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
-    * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
-    * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
-    * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
-    * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
-    * [._send(message)](#Service+_send)
-    * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
-    * [.commit()](#Actor+commit) ⇒ <code>String</code>
-    * [.export()](#Actor+export) ⇒ <code>Object</code>
-    * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
-    * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
-    * [.toGenericMessage([type])](#Actor+toGenericMessage) ⇒ <code>Object</code>
-    * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
-    * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
-    * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
-    * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
-    * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
-    * [.value([format])](#Actor+value) ⇒ <code>Object</code>
-    * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
+    * _instance_
+        * [._appendWarning(msg)](#Service+_appendWarning) ⇒ [<code>Service</code>](#Service)
+        * [.init()](#Service+init)
+        * [.tick()](#Service+tick) ⇒ <code>Number</code>
+        * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
+        * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
+        * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
+        * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
+        * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
+        * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
+        * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
+        * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
+        * [.start()](#Service+start)
+        * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
+        * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
+        * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
+        * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
+        * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
+        * [._send(message)](#Service+_send)
+        * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
+        * [.commit()](#Actor+commit) ⇒ <code>String</code>
+        * [.export()](#Actor+export) ⇒ <code>Object</code>
+        * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
+        * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
+        * [.toGenericMessage([type])](#Actor+toGenericMessage) ⇒ <code>Object</code>
+        * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
+        * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
+        * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
+        * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
+        * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
+        * [.value([format])](#Actor+value) ⇒ <code>Object</code>
+        * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
+    * _static_
+        * [.tokenize(string)](#Text.tokenize) ⇒ <code>Array.&lt;string&gt;</code>
+        * [.truncateMiddle(fullStr, strLen, [separator])](#Text.truncateMiddle) ⇒ <code>string</code>
+        * [.toRelativeTime(date)](#Text.toRelativeTime) ⇒ <code>string</code>
+        * [.oxfordJoin(list)](#Text.oxfordJoin) ⇒ <code>string</code>
 
 <a name="new_Text_new"></a>
 
 ### new Text()
 Text-oriented [Service](#Service) stub (legacy name was <code>TXT</code>).
+Static helpers mirror small utilities used in Sensemaker (tokenize, middle truncation,
+relative time strings) and core helpers ([module:functions/oxfordJoin](module:functions/oxfordJoin)).
 
 <a name="Service+_appendWarning"></a>
 
@@ -11227,4 +11735,50 @@ Parse an Object into a corresponding Fabric state.
 | Param | Type | Description |
 | --- | --- | --- |
 | input | <code>Object</code> | Object to read as input. |
+
+<a name="Text.tokenize"></a>
+
+### Text.tokenize(string) ⇒ <code>Array.&lt;string&gt;</code>
+Split on runs of whitespace (Sensemaker-style tokenization).
+
+**Kind**: static method of [<code>Text</code>](#Text)  
+
+| Param | Type |
+| --- | --- |
+| string | <code>string</code> | 
+
+<a name="Text.truncateMiddle"></a>
+
+### Text.truncateMiddle(fullStr, strLen, [separator]) ⇒ <code>string</code>
+Shorten a string in the middle if longer than <code>strLen</code>.
+
+**Kind**: static method of [<code>Text</code>](#Text)  
+
+| Param | Type |
+| --- | --- |
+| fullStr | <code>string</code> | 
+| strLen | <code>number</code> | 
+| [separator] | <code>string</code> | 
+
+<a name="Text.toRelativeTime"></a>
+
+### Text.toRelativeTime(date) ⇒ <code>string</code>
+Human-readable relative time (e.g. <code>3 days ago</code>), ported from Sensemaker.
+
+**Kind**: static method of [<code>Text</code>](#Text)  
+
+| Param | Type |
+| --- | --- |
+| date | <code>Date</code> \| <code>string</code> \| <code>number</code> | 
+
+<a name="Text.oxfordJoin"></a>
+
+### Text.oxfordJoin(list) ⇒ <code>string</code>
+Join a list with an Oxford comma (delegates to [module:functions/oxfordJoin](module:functions/oxfordJoin)).
+
+**Kind**: static method of [<code>Text</code>](#Text)  
+
+| Param | Type |
+| --- | --- |
+| list | <code>Array.&lt;string&gt;</code> | 
 

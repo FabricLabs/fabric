@@ -63,6 +63,9 @@ describe('@fabric/core/services/bitcoin', function () {
     });
 
     describe('validateAddress', function () {
+      // Key/network init can exceed default timeout under full-suite load.
+      this.timeout(30000);
+
       it('accepts a known-valid regtest address in fabric mode', function () {
         const btc = new Bitcoin({ network: 'regtest', mode: 'fabric' });
 
@@ -1244,12 +1247,11 @@ describe('@fabric/core/services/bitcoin', function () {
       });
 
       it('_createPayment builds p2wpkh payment for network', function () {
-        const ecc = require('../../types/ecc');
-        const ECPairFactory = require('ecpair').default;
-        const ECPair = ECPairFactory(ecc);
-        const pair = ECPair.makeRandom({ network: require('bitcoinjs-lib').networks.regtest });
+        const Key = require('../../types/key');
+        const k = new Key({ network: 'regtest' });
+        const pubkey = Buffer.from(k.public.encodeCompressed('hex'), 'hex');
         const btc = new Bitcoin({ network: 'regtest', mode: 'fabric' });
-        const pay = btc._createPayment({ pubkey: pair.publicKey });
+        const pay = btc._createPayment({ pubkey });
         assert.ok(pay.output && pay.output.length > 0);
       });
     });

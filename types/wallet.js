@@ -7,9 +7,10 @@ const networks = require('bitcoinjs-lib/src/networks');
 
 // Mnemonics
 const ecc = require('./ecc');
-const BIP32 = require('bip32').default;
+const BIP32 = require('../functions/bip32').default;
+const { DEFAULT_NETWORK: BIP32_DEFAULT_NETWORK } = require('../functions/bip32');
 const bip32 = new BIP32(ecc);
-const bip39 = require('bip39');
+const bip39 = require('../functions/bip39');
 
 // Types
 const Key = require('./key');
@@ -158,7 +159,7 @@ class Wallet extends Service {
   static createSeed (passphrase = '') {
     const mnemonic = bip39.generateMnemonic();
     const seed = bip39.mnemonicToSeedSync(mnemonic);
-    const root = bip32.fromSeed(seed);
+    const root = bip32.fromSeed(seed, BIP32_DEFAULT_NETWORK);
     return {
       phrase: mnemonic,
       master: root.privateKey.toString('hex'),

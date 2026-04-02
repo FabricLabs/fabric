@@ -22,11 +22,9 @@ const fetch = require('cross-fetch');
 
 // crypto support libraries
 // Use noble-curves-backed ECC shim instead of tiny-secp256k1
-const ECPairFactory = require('ecpair').default;
 const ecc = require('../types/ecc');
 const bip65 = require('bip65');
 const bip68 = require('bip68');
-const ECPair = ECPairFactory(ecc);
 const bitcoin = require('bitcoinjs-lib');
 
 // Initialize bitcoinjs-lib with the ECC library
@@ -127,7 +125,11 @@ class Bitcoin extends Service {
       port: 8333, // P2P port
       rpcport: 8332, // RPC port
       interval: 60000, // 10 * 60 * 1000, // every 10 minutes, write a checkpoint
-      verbosity: 2
+      verbosity: 2,
+      /** When true, flushChainToSnapshot is allowed on mainnet (dangerous). */
+      flushChainAllowUnsafeNetworks: false,
+      /** Safety cap for repeated `invalidateblock` steps when rewinding to a snapshot tip. */
+      flushChainMaxSteps: 100000
     }, settings);
 
     const netNorm = this._normalizeChainName(this.settings.network || 'mainnet');
@@ -978,16 +980,27 @@ class Bitcoin extends Service {
     return 1;
   }
 
+  _keyNetworkNameForWif () {
+    const n = this.settings.network;
+    return n === 'signet' ? 'testnet' : n;
+  }
+
   async _dumpKeyPair (address) {
     const wif = await this._makeRPCRequest('dumpprivkey', [address]);
-    const pair = ECPair.fromWIF(wif, this.networks[this.settings.network]);
-    return pair;
+    const k = Key.fromWIF(wif, { network: this._keyNetworkNameForWif() });
+    const priv = k.private;
+    const pubHex = k.public.encodeCompressed('hex');
+    return {
+      privateKey: Buffer.isBuffer(priv) ? priv : Buffer.from(priv, 'hex'),
+      publicKey: Buffer.from(pubHex, 'hex')
+    };
   }
 
   async _dumpPrivateKey (address) {
     const wif = await this._makeRPCRequest('dumpprivkey', [address]);
-    const pair = ECPair.fromWIF(wif, this.networks[this.settings.network]);
-    return Buffer.isBuffer(pair.privateKey) ? pair.privateKey : Buffer.from(pair.privateKey);
+    const k = Key.fromWIF(wif, { network: this._keyNetworkNameForWif() });
+    const priv = k.private;
+    return Buffer.isBuffer(priv) ? priv : Buffer.from(priv, 'hex');
   }
 
   async _loadPrivateKey (key) {
@@ -1645,6 +1658,45 @@ class Bitcoin extends Service {
       if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] Error requesting best block hash: ${error.message}`);
       throw error;
     }
+  }
+
+  /**
+   * Rewind the attached Bitcoin Core node to a known-good tip by repeatedly calling `invalidateblock`
+   * on the current best block until `getbestblockhash` matches `snapshotBlockHash`.
+   * Allowed on regtest, playnet, signet, testnet, testnet4 unless settings.flushChainAllowUnsafeNetworks.
+   * @param {string} snapshotBlockHash - 64-char hex block hash to keep as the active tip.
+   * @returns {Promise<{ ok: boolean, steps: number, snapshotBlockHash: string }>}
+   */
+  async flushChainToSnapshot (snapshotBlockHash) {
+    const hex = String(snapshotBlockHash || '').trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(hex)) {
+      throw new Error('flushChainToSnapshot: snapshotBlockHash must be 64 hex characters');
+    }
+    const net = this._normalizeChainName(this.settings.network || 'mainnet');
+    const allowed =
+      net === 'regtest' ||
+      net === 'playnet' ||
+      net === 'signet' ||
+      net === 'testnet' ||
+      net === 'testnet4';
+    if (!allowed && !this.settings.flushChainAllowUnsafeNetworks) {
+      throw new Error(`flushChainToSnapshot: not allowed for network "${net}" (set flushChainAllowUnsafeNetworks to override)`);
+    }
+    const maxSteps = (typeof this.settings.flushChainMaxSteps === 'number' && this.settings.flushChainMaxSteps > 0)
+      ? this.settings.flushChainMaxSteps
+      : 100000;
+    let steps = 0;
+    while (steps < maxSteps) {
+      const best = await this._makeRPCRequest('getbestblockhash', []);
+      if (best === hex) {
+        const out = { ok: true, steps, snapshotBlockHash: hex };
+        this.emit('message', { type: 'BitcoinFlushChain', data: out });
+        return out;
+      }
+      await this._makeRPCRequest('invalidateblock', [best]);
+      steps++;
+    }
+    throw new Error(`flushChainToSnapshot: exceeded flushChainMaxSteps=${maxSteps} before reaching snapshot`);
   }
 
   async _requestBlockHeader (hash) {

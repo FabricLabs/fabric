@@ -22,6 +22,7 @@ describe('@fabric/core/types/fabric', function () {
     assert.strictEqual(Fabric.Hash256, require('../types/hash256'));
     assert.strictEqual(Fabric.Wallet, require('../types/wallet'));
     assert.strictEqual(Fabric.Bond, require('../types/bond'));
+    assert.strictEqual(Fabric.Contract, require('../types/contract'));
     assert.strictEqual(Fabric.Text, require('../services/text'));
     assert.strictEqual(Fabric.RoundRobin, require('../types/roundRobin'));
   });

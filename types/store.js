@@ -1,5 +1,7 @@
 'use strict';
 
+const { tryParsePersistedJson } = require('../functions/wireJson');
+
 // Dependencies
 const { Level } = require('level');
 const crypto = require('crypto');
@@ -295,15 +297,12 @@ class Store extends Actor {
       if (this.settings.verbosity >= 3) console.warn('Creating new collection:', E);
     }
 
-    if (entity) {
-      try {
-        if (typeof entity === 'string') {
-          entity = JSON.parse(entity);
-        }
-      } catch (E) {
-        if (this.settings.verbosity >= 4 || this.settings.debug) {
-          console.warn(`Couldn't parse: ${entity}`, E);
-        }
+    if (entity && (typeof entity === 'string' || Buffer.isBuffer(entity))) {
+      const text = typeof entity === 'string' ? entity : entity.toString('utf8');
+      const pr = tryParsePersistedJson(text);
+      if (pr.ok) entity = pr.value;
+      else if (this.settings.verbosity >= 4 || this.settings.debug) {
+        console.warn(`Couldn't parse entity JSON: ${pr.error.message}`);
       }
     }
 

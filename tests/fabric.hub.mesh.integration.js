@@ -96,6 +96,16 @@ async function waitForHubConnections (hub, n, timeoutMs = 15000) {
   throw new Error(`Hub expected ${n} inbound connections, got ${Object.keys(hub.connections).length}`);
 }
 
+/** Avoid fixed sleeps: under full `npm test` load, mesh + NOISE can exceed sub-second delays. */
+async function waitUntil (predicate, timeoutMs = 15000, intervalMs = 40) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (predicate()) return;
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  throw new Error(`Timeout after ${timeoutMs}ms waiting for condition`);
+}
+
 function remoteHubAddress (member) {
   const keys = Object.keys(member.connections);
   assert.ok(keys.length >= 1, 'member must have an outbound connection to the hub');
@@ -199,7 +209,11 @@ describe('@fabric/core Hub mesh integration', function () {
     await waitForHubConnections(hub, 1);
 
     hub._publishDocument(docId, body.toString('utf8'), askSats);
-    await new Promise((r) => setTimeout(r, 350));
+    await waitUntil(() => {
+      const c = alicePublishes.filter((e) => e.source === 'canonical').length;
+      const p = alicePublishes.filter((e) => e.source === 'pricing').length;
+      return c >= 1 && p >= 1;
+    });
 
     const aliceCanonical = alicePublishes.filter((e) => e.source === 'canonical');
     const alicePricing = alicePublishes.filter((e) => e.source === 'pricing');
@@ -214,7 +228,7 @@ describe('@fabric/core Hub mesh integration', function () {
       type: 'INVENTORY_REQUEST',
       object: { offerBtc: true, maxSats: 500_000, reason: 'verify_l1_hash_before_spend' }
     });
-    await new Promise((r) => setTimeout(r, 400));
+    await waitUntil(() => aliceInventory.length >= 1 && aliceFiles.length >= 1);
 
     assert.strictEqual(aliceInventory.length, 1);
     assert.strictEqual(aliceInventory[0].message.object.items[0].contentHash, contentHash);
@@ -245,7 +259,7 @@ describe('@fabric/core Hub mesh integration', function () {
       type: 'INVENTORY_REQUEST',
       object: { offerBtc: true, maxSats: 1_000_000, joiner: 'late' }
     });
-    await new Promise((r) => setTimeout(r, 400));
+    await waitUntil(() => bobInventory.length >= 1 && bobFiles.length >= 1);
 
     assert.strictEqual(bobInventory.length, 1);
     assert.strictEqual(bobInventory[0].message.object.items[0].contentHash, contentHash);

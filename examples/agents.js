@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const process = require('process');
-const bs58check = require('bs58check');
+const { encodeCheck, decodeCheck } = require('../functions/base58');
 const { Worker, isMainThread, parentPort, workerData } = require('worker_threads');
 // TODO: ensure utilization of multiple cores
 
@@ -431,7 +431,7 @@ async function ensureWalletHasXpub (bitcoin, xpub, label = 'master-xpub') {
 
 function normalizeXpubForNetwork (xpub, network = 'mainnet') {
   if (!xpub) return xpub;
-  const decoded = bs58check.decode(xpub);
+  const decoded = decodeCheck(xpub);
   const bytes = Buffer.from(decoded);
   if (bytes.length < 4) return xpub;
 
@@ -447,7 +447,7 @@ function normalizeXpubForNetwork (xpub, network = 'mainnet') {
   if (current.equals(target)) return xpub;
 
   const remapped = Buffer.concat([target, bytes.subarray(4)]);
-  return bs58check.encode(remapped);
+  return encodeCheck(remapped);
 }
 
 function runWorkerLoop () {

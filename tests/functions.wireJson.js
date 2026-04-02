@@ -1,0 +1,92 @@
+'use strict';
+
+const assert = require('assert');
+const { MAX_MESSAGE_SIZE } = require('../constants');
+const {
+  messageDataToString,
+  tryParseJsonBounded,
+  tryParseWireJson,
+  tryParseWireJsonBody,
+  tryParsePersistedJson,
+  utf8FromPersistedRaw,
+  parseJsonBounded,
+  parsePersistedJson,
+  blessedParamsFromJadeAttrs
+} = require('../functions/wireJson');
+
+describe('functions/wireJson', function () {
+  it('messageDataToString normalizes null and non-strings', function () {
+    assert.strictEqual(messageDataToString(null), '{}');
+    assert.strictEqual(messageDataToString(undefined), '{}');
+    assert.strictEqual(messageDataToString('{"a":1}'), '{"a":1}');
+    assert.strictEqual(messageDataToString(Buffer.from('{}')), '{}');
+  });
+
+  it('tryParseWireJson accepts valid JSON within bound', function () {
+    const pr = tryParseWireJson('{"type":"X","object":{}}');
+    assert.strictEqual(pr.ok, true);
+    assert.strictEqual(pr.value.type, 'X');
+  });
+
+  it('tryParseWireJson rejects oversize payloads', function () {
+    const huge = 'x'.repeat(MAX_MESSAGE_SIZE + 1);
+    const pr = tryParseWireJson(huge);
+    assert.strictEqual(pr.ok, false);
+    assert.ok(/exceeds maxChars/.test(pr.error.message));
+  });
+
+  it('tryParseJsonBounded uses caller maxChars', function () {
+    const pr = tryParseJsonBounded('{}', 10);
+    assert.strictEqual(pr.ok, true);
+    const big = 'y'.repeat(11);
+    const pr2 = tryParseJsonBounded(`{"a":"${big}"}`, 10);
+    assert.strictEqual(pr2.ok, false);
+  });
+
+  it('tryParseWireJson fails closed on invalid JSON', function () {
+    const pr = tryParseWireJson('{not json');
+    assert.strictEqual(pr.ok, false);
+  });
+
+  it('parseJsonBounded throws like JSON.parse when invalid or oversize', function () {
+    assert.strictEqual(parseJsonBounded('[]', 10).length, 0);
+    assert.throws(() => parseJsonBounded('x'.repeat(11), 10), /exceeds maxChars/);
+    assert.throws(() => parseJsonBounded('{', 100), SyntaxError);
+  });
+
+  it('tryParseWireJsonBody treats empty as {}', function () {
+    const pr = tryParseWireJsonBody('');
+    assert.strictEqual(pr.ok, true);
+    assert.deepStrictEqual(pr.value, {});
+    const pr2 = tryParseWireJsonBody('{"a":1}');
+    assert.strictEqual(pr2.ok, true);
+    assert.strictEqual(pr2.value.a, 1);
+  });
+
+  it('tryParsePersistedJson and parsePersistedJson match persisted bound', function () {
+    const pr = tryParsePersistedJson('{"x":true}');
+    assert.strictEqual(pr.ok, true);
+    assert.strictEqual(pr.value.x, true);
+    assert.strictEqual(parsePersistedJson('[1]')[0], 1);
+  });
+
+  it('utf8FromPersistedRaw normalizes Buffer and null', function () {
+    assert.strictEqual(utf8FromPersistedRaw(null), '');
+    assert.strictEqual(utf8FromPersistedRaw(Buffer.from('ab', 'utf8')), 'ab');
+    assert.strictEqual(utf8FromPersistedRaw('cd'), 'cd');
+  });
+
+  it('blessedParamsFromJadeAttrs returns empty for missing attrs', function () {
+    const { attrs, params } = blessedParamsFromJadeAttrs(undefined);
+    assert.deepStrictEqual(attrs, []);
+    assert.deepStrictEqual(params, {});
+  });
+
+  it('blessedParamsFromJadeAttrs parses quoted JSON object attrs', function () {
+    const { attrs, params } = blessedParamsFromJadeAttrs([
+      { name: 'foo', val: '\'{"a":1}\'' }
+    ]);
+    assert.strictEqual(attrs.length, 1);
+    assert.strictEqual(params.foo.a, 1);
+  });
+});

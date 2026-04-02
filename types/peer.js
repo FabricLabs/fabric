@@ -22,6 +22,7 @@ const {
   P2P_PORT,
   P2P_START_CHAIN,
   P2P_CHAIN_SYNC_REQUEST,
+  P2P_FLUSH_CHAIN,
   P2P_INSTRUCTION,
   P2P_BASE_MESSAGE,
   P2P_STATE_COMMITTMENT,
@@ -44,6 +45,7 @@ const {
   whitelistedDocumentFields,
   purchaseContentHashHex
 } = require('../functions/publishedDocumentEnvelope');
+const { messageDataToString, tryParsePersistedJson, tryParseWireJsonBody, utf8FromPersistedRaw } = require('../functions/wireJson');
 
 // Fabric Types
 const Actor = require('./actor');
@@ -146,10 +148,13 @@ class Peer extends Service {
         windowMs: 60 * 1000,
         maxCreditsPerWindow: 520,
         chainSyncCreditCost: 55,
+        flushChainCreditCost: 120,
         bitcoinBlockCreditCost: 3,
         defaultCreditCost: 1,
         overLimitPenalty: 22
-      }
+      },
+      /** Inbound {@link P2P_FLUSH_CHAIN}: require sender registry score strictly greater than this (same threshold for relay targets). */
+      flushChainMinTrustedScore: 800
     }, config);
 
     // Network Internals
@@ -663,6 +668,65 @@ class Peer extends Service {
     }
   }
 
+  /**
+   * Relay an AMP message only to connected peers whose persistent registry score is strictly greater than
+   * {@link Peer#settings.flushChainMinTrustedScore} (default 800). Used for `P2P_FLUSH_CHAIN`.
+   * @param {string|null} origin - Connection key to skip (inbound sender), or null when originating locally.
+   * @param {Message|Buffer} message
+   * @param {number} [minScoreExclusive] - Override trust threshold (relay if peer score &gt; this value).
+   */
+  relayFromTrustedPeers (origin, message, minScoreExclusive = null) {
+    const threshold = (minScoreExclusive != null && Number.isFinite(Number(minScoreExclusive)))
+      ? Number(minScoreExclusive)
+      : (Number(this.settings.flushChainMinTrustedScore) || 800);
+    const buf = Buffer.isBuffer(message) ? message : message.toBuffer();
+    for (const id in this.connections) {
+      if (origin && id === origin) continue;
+      const score = this._registryScoreForConnectionAddress(id);
+      if (!(score > threshold)) continue;
+      this.connections[id]._writeFabric(buf);
+    }
+  }
+
+  /**
+   * Best-effort registry score for a live connection key (`host:port`), using mapped Fabric id when known.
+   * @param {string} connAddress
+   * @returns {number}
+   */
+  _registryScoreForConnectionAddress (connAddress) {
+    const reg = this._state.peers || {};
+    const mappedId = this._addressToId && this._addressToId[connAddress];
+    let best = 0;
+    for (const key of [mappedId, connAddress]) {
+      if (!key) continue;
+      const e = reg[key];
+      if (!e) continue;
+      const s = Number(e.score);
+      if (Number.isFinite(s) && s > best) best = s;
+    }
+    return best;
+  }
+
+  /**
+   * Sign and send `P2P_FLUSH_CHAIN` to all connected peers with registry score &gt; threshold.
+   * Body JSON: `{ snapshotBlockHash, network?, label? }`.
+   * @param {Object} object
+   * @returns {number} number of sockets written
+   */
+  sendFlushChainToTrustedPeers (object) {
+    const body = JSON.stringify(object && typeof object === 'object' ? object : {});
+    const msg = Message.fromVector(['P2P_FLUSH_CHAIN', body]).signWithKey(this.key);
+    const buf = msg.toBuffer();
+    const threshold = Number(this.settings.flushChainMinTrustedScore) || 800;
+    let n = 0;
+    for (const id in this.connections) {
+      if (!(this._registryScoreForConnectionAddress(id) > threshold)) continue;
+      this.connections[id]._writeFabric(buf);
+      n++;
+    }
+    return n;
+  }
+
   subscribe (path) {
 
   }
@@ -848,7 +912,15 @@ class Peer extends Service {
     try {
       this._peersDb = this._peersDb || new Level(location);
       const raw = await this._peersDb.get('peers').catch(() => null);
-      const peers = raw ? JSON.parse(raw) : {};
+      let peers = {};
+      if (raw != null && raw !== '') {
+        const pr = tryParsePersistedJson(utf8FromPersistedRaw(raw));
+        if (pr.ok && pr.value !== null && typeof pr.value === 'object' && !Array.isArray(pr.value)) {
+          peers = pr.value;
+        } else if (!pr.ok) {
+          this.emit('debug', `[FABRIC:PEER] Peer registry JSON invalid or oversized: ${pr.error.message}`);
+        }
+      }
       if (peers && typeof peers === 'object') {
         // Migrate legacy address-keyed entries to id-keyed (id is the fixed public key)
         const migrated = {};
@@ -1018,23 +1090,57 @@ class Peer extends Service {
       case 'P2P_CHAIN_SYNC_REQUEST':
       case 'ChainSyncRequest':
         if (!origin || !origin.name) break;
-        try {
-          const raw = message.data != null
-            ? (typeof message.data === 'string' ? message.data : String(message.data))
-            : '{}';
-          const object = JSON.parse(raw || '{}');
+        {
+          const raw = messageDataToString(message.data);
+          const pr = tryParseWireJsonBody(raw);
+          const object = pr.ok ? pr.value : {};
           this.emit('chainSyncRequest', { message, origin, socket, object });
-        } catch (parseErr) {
-          this.emit('chainSyncRequest', { message, origin, socket, object: {} });
         }
         break;
+      case 'P2P_FLUSH_CHAIN':
+      case 'FlushChain': {
+        if (!origin || !origin.name) break;
+        const rec = this.peers[origin.name];
+        if (!rec || !rec.publicKey) {
+          this.emit('warning', `[FABRIC:PEER] FLUSH_CHAIN ignored: no verified peer key for ${origin.name}`);
+          break;
+        }
+        const threshold = Number(this.settings.flushChainMinTrustedScore) || 800;
+        const score = this._registryScoreForConnectionAddress(origin.name);
+        if (!(score > threshold)) {
+          if (this.settings.debug) {
+            this.emit('debug', `[FABRIC:PEER] FLUSH_CHAIN ignored: sender score ${score} not > ${threshold}`);
+          }
+          break;
+        }
+        const rawFc = messageDataToString(message.data);
+        const prFc = tryParseWireJsonBody(rawFc);
+        if (!prFc.ok) {
+          this.emit('warning', `[FABRIC:PEER] FLUSH_CHAIN JSON parse failed: ${prFc.error.message}`);
+          break;
+        }
+        const object = prFc.value;
+        const snap = object && object.snapshotBlockHash != null ? String(object.snapshotBlockHash).trim() : '';
+        if (!/^[0-9a-fA-F]{64}$/.test(snap)) {
+          this.emit('warning', '[FABRIC:PEER] FLUSH_CHAIN missing or invalid snapshotBlockHash (expect 64 hex)');
+          break;
+        }
+        object.snapshotBlockHash = snap.toLowerCase();
+        this.emit('flushChain', { message, origin, socket, object });
+        this.relayFromTrustedPeers(origin.name, message, threshold);
+        break;
+      }
       case 'DOCUMENT_PUBLISH':
       case 'DocumentPublish':
         try {
-          const raw = message.data != null
-            ? (typeof message.data === 'string' ? message.data : String(message.data))
-            : '{}';
-          const parsed = JSON.parse(raw || '{}');
+          const rawDp = messageDataToString(message.data);
+          const prDp = tryParseWireJsonBody(rawDp);
+          if (!prDp.ok) {
+            this.emit('warning', `[FABRIC:PEER] DOCUMENT_PUBLISH parse failed: ${prDp.error.message}`);
+            break;
+          }
+          const parsed = prDp.value;
+          if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) break;
           const docId = parsed.id;
           if (!docId) break;
           const purchaseHash = purchaseContentHashHex(docId, parsed);
@@ -1069,12 +1175,15 @@ class Peer extends Service {
       case 'ChatMessage':
         // this.emit('debug', `message ${message}`);
         // this.emit('debug', `message data: ${message.data}`);
-        // Parse JSON body
-        try {
-          const content = JSON.parse(message.data);
-          this._handleGenericMessage(content, origin, socket, message);
-        } catch (exception) {
-          this.emit('error', `Broken content body: ${exception}`);
+        // Parse JSON body (bounded — see functions/wireJson)
+        {
+          const rawGm = messageDataToString(message.data);
+          const prGm = tryParseWireJsonBody(rawGm);
+          if (!prGm.ok) {
+            this.emit('error', `Broken content body: ${prGm.error.message}`);
+          } else {
+            this._handleGenericMessage(prGm.value, origin, socket, message);
+          }
         }
 
         break;
@@ -1119,12 +1228,14 @@ class Peer extends Service {
       case 'NodeAnnouncement':
       case 'LIGHTNING_CHANNEL_UPDATE':
       case 'ChannelUpdate':
-        try {
-          const content = JSON.parse(message.data);
-          this.emit('lightning', { type: message.type, content, origin });
-        } catch (e) {
-          // If not JSON, emit raw buffer payload for lightning listeners
-          this.emit('lightning', { type: message.type, raw: message.data, origin });
+        {
+          const rawLn = messageDataToString(message.data);
+          const prLn = tryParseWireJsonBody(rawLn);
+          if (prLn.ok) {
+            this.emit('lightning', { type: message.type, content: prLn.value, origin });
+          } else {
+            this.emit('lightning', { type: message.type, raw: message.data, origin });
+          }
         }
         break;
     }
@@ -1645,10 +1756,11 @@ class Peer extends Service {
    * @param {*} socket
    */
   _handleDocumentRequestWire (message, origin, socket) {
-    const raw = message.data != null
-      ? (typeof message.data === 'string' ? message.data : String(message.data))
-      : '{}';
-    const parsed = JSON.parse(raw || '{}');
+    const rawDr = messageDataToString(message.data);
+    const prDr = tryParseWireJsonBody(rawDr);
+    if (!prDr.ok) return;
+    const parsed = prDr.value;
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return;
     const docId = parsed.document || parsed.id;
     if (!docId) return;
 

@@ -50,6 +50,18 @@ describe('@fabric/core/types/token', function () {
       assert.ok(combined);
     });
 
+    it('sign/verify round-trips Schnorr over capability hash (Key + noble)', function () {
+      const issuer = new Key();
+      const token = new Token({
+        capability: 'OP_CUSTOM',
+        issuer,
+        subject: 'x'
+      });
+      token.sign();
+      assert.ok(Buffer.isBuffer(token.signature));
+      assert.strictEqual(token.verify(), true);
+    });
+
     it('can create and verify a signed token', async function () {
       const issuer = new Key();
       const token = new Token({

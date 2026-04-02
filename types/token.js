@@ -2,7 +2,7 @@
 
 // Dependencies
 const bitcoin = require('bitcoinjs-lib');
-const schnorr = require('bip-schnorr');
+const { tryParseWireJson } = require('../functions/wireJson');
 
 // Fabric Types
 const Key = require('./key');
@@ -117,9 +117,11 @@ class Token {
     if (parts.length !== 2) return null;
     try {
       const payloadStr = Token.base64UrlDecode(parts[0]);
-      const payload = JSON.parse(payloadStr);
+      const pr = tryParseWireJson(payloadStr);
+      if (!pr.ok) return null;
+      const payload = pr.value;
       const sig = Token.base64UrlDecodeToBuffer(parts[1]);
-      if (!payload || !payload.iss || payload.exp == null) return null;
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload) || !payload.iss || payload.exp == null) return null;
       if (Date.now() / 1000 > payload.exp) return null;
       const ourIss = verificationKey.public ? verificationKey.public.encodeCompressed('hex') : verificationKey.keypair.getPublic(true, 'hex');
       if (payload.iss !== ourIss) return null;
@@ -187,15 +189,20 @@ class Token {
   }
 
   sign () {
-    // Sign the capability using the private key
-    const hash = bitcoin.crypto.sha256(this.capability);
-    this.signature = schnorr.sign(this.issuer.privateKey, hash);
+    const hash = bitcoin.crypto.sha256(Buffer.from(this.capability, 'utf8'));
+    if (!this.issuer || typeof this.issuer.signSchnorrHash !== 'function') {
+      throw new Error('Token.sign requires issuer Key with private material');
+    }
+    this.signature = this.issuer.signSchnorrHash(hash);
   }
 
   verify () {
-    // Verify the signature using the public key
-    const hash = bitcoin.crypto.sha256(this.capability);
-    return schnorr.verify(this.issuer.publicKey, hash, this.signature);
+    const hash = bitcoin.crypto.sha256(Buffer.from(this.capability, 'utf8'));
+    if (!this.issuer || typeof this.issuer.verifySchnorrHash !== 'function') {
+      return false;
+    }
+    if (!this.signature) return false;
+    return this.issuer.verifySchnorrHash(hash, this.signature);
   }
 
   add (other) {

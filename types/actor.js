@@ -35,6 +35,7 @@ const Hash256 = require('./hash256');
 
 // Fabric Functions
 const _sortKeys = require('../functions/_sortKeys');
+const { tryParsePersistedJson } = require('../functions/wireJson');
 
 /**
  * @classdesc Base <strong>Actor</strong>: JSON-shaped <code>_state.content</code> observed with
@@ -136,12 +137,8 @@ class Actor extends EventEmitter {
     let result = null;
 
     if (typeof input === 'string' && input.length) {
-      try {
-        result = JSON.parse(input);
-      } catch (E) {
-        // Fail closed: callers expect null on invalid JSON.
-        result = null;
-      }
+      const pr = tryParsePersistedJson(input);
+      result = pr.ok ? pr.value : null;
     }
 
     return result;

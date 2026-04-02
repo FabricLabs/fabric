@@ -9,12 +9,12 @@ npm test
 No native compile is required for the core JS unit/integration tests in this repo.
 
 ## `fabric` CLI binary
-The **`fabric`** npm binary is the **Node harness** (`scripts/fabric.js`) for the Blessed TUI (`chat` default). Optional **`fabric.node`** accelerates a tiny API surface (e.g. `doubleSha256`); see [`docs/CLI-BINARY.md`](docs/CLI-BINARY.md) and `functions/fabricNativeAccel.js`.
+The **`fabric`** npm binary is the **Node harness** (`scripts/fabric.js`) for the Blessed TUI (`chat` default). Optional **`fabric.node`** accelerates a tiny API surface: **`doubleSha256`** (opt-in `FABRIC_NATIVE_DOUBLE_SHA256=1`) and **Bech32 / native segwit** via vendored **`native/sipa/segwit_addr.c`** (opt-in `FABRIC_NATIVE_BECH32=1`). See [`docs/CLI-BINARY.md`](docs/CLI-BINARY.md) and `functions/fabricNativeAccel.js`.
 
 Bundled executable: `npm run make:binary` (pkg).
 
 ## Native addon (`fabric.node`)
-The Node N-API addon implements peer/message helpers and Bitcoin-related bindings (`binding.gyp`). Build when you need C parity features or JS access to `binding.cc` exports.
+The Node N-API addon implements peer/message helpers and Bitcoin-related bindings (`binding.gyp`), and compiles Pieter Wuille’s **`segwit_addr.c`** (Bech32 / Bech32m / segwit address helpers) from `native/sipa/`. Build when you need C parity features or JS access to `binding.cc` exports.
 
 ```bash
 npm ci

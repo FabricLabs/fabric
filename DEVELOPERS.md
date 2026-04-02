@@ -68,7 +68,7 @@ These two types are the spine of **`@fabric/core`**: almost everything user-faci
 - **API reference:** `npm run make:api` writes `API.md` from JSDoc (see `scripts/list-jsdoc-type-files.js` for which `types/*.js` files are included).
 - **HTML docs:** `npm run make:docs` (runs `make:api` first, then **`scripts/clean-jsdoc-html.js`** — removes all **`docs/**/*.html`** and JSDoc template dirs **`docs/fonts`**, **`docs/scripts`**, **`docs/styles`**, **`docs/public`** so stale pages and duplicate assets do not accumulate, then JSDoc writes under `docs/`).
 - **Historical / one-off Markdown:** see **`docs/NON_CANONICAL.md`** — root-level “completion” and analysis files are not the same tier as **VISION.md** or **`docs/README.md`**.
-- **Native addon (`fabric.node`):** it is **not** `require()`’d unless **`FABRIC_NATIVE_DOUBLE_SHA256=1`**; message body double-SHA256 uses **@noble/hashes** by default. Enable that env var when exercising the C **`doubleSha256`** export.
+- **Native addon (`fabric.node`):** it is **not** `require()`’d unless **`FABRIC_NATIVE_DOUBLE_SHA256=1`** and/or **`FABRIC_NATIVE_BECH32=1`** (see `functions/fabricNativeAccel.js`). Message body double-SHA256 uses **@noble/hashes** by default. Bech32 / segwit use vendored JS or pure JS unless **`FABRIC_NATIVE_BECH32=1`** and the addon was built with **`native/sipa/segwit_addr.c`** (Pieter Wuille’s C reference from [sipa/bech32](https://github.com/sipa/bech32) `ref/c/`).
 - **Local packages:** when `fabric`, `fabric-http`, and Hub are sibling repos, `npm install ../fabric ../fabric-http --no-save` keeps Message opcodes and servers aligned.
 
 Agent-oriented services (lifecycle, workers, payments) are summarized in [`AGENTS.md`](AGENTS.md).
@@ -95,6 +95,7 @@ These live under `types/*.js` (CommonJS). The **`Fabric`** facade (`types/fabric
 | **`Message`** | **Extends Actor**; AMP wire envelope (opcodes, Schnorr **`Fabric/Message`**); P2P/service traffic. |
 | **`Peer`** | TCP/NOISE P2P node, relay, registry; **`Peer.Swarm`** multi-peer orchestration. |
 | **`Service`** | Long-lived app surface, resources; **`Service.FabricShell`** is the browser/CLI application shell (`CLI` extends it). |
+| **`Contract`** | **Extends `Service`**. Parses DOT into a circuit, **`deploy`** / genesis / publish **`Message`** flows, **`commit`** / **`run`**. Subclasses: **`Bond`**, **`Federation`**, **`Distribution`**. |
 | **`Store`** | LevelDB persistence; **`Store.openEncrypted`** for at-rest crypto. |
 | **`Entity`** | **`EventEmitter`** (not Actor): structured `@type`/`@data`, `id` = SHA256(`toJSON`); **`Entity.Transition`** for JSON Patch between entities. |
 | **`Key` / `Identity`** | Keys + BIP32/BIP39; **`Identity`** overrides **`Actor#id`** with `toString()` — not the same content-address as base **`Actor`**. |

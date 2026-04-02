@@ -4,6 +4,7 @@
 const {
   FIXTURE_SEED
 } = require('../constants');
+const { tryParsePersistedJson } = require('../functions/wireJson');
 
 // Dependencies
 const fs = require('fs');
@@ -572,7 +573,10 @@ class Environment extends Entity {
       const data = this.readWallet();
 
       try {
-        const input = JSON.parse(data);
+        const text = typeof data === 'string' ? data : String(data ?? '');
+        const pr = tryParsePersistedJson(text);
+        if (!pr.ok) throw pr.error;
+        const input = pr.value;
 
         if (!input.object || !input.object.xprv) {
           throw new Error(`Corrupt or out-of-date wallet: ${this.settings.path}`);

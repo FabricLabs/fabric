@@ -6,6 +6,7 @@ const {
 } = require('../constants');
 
 // Dependencies
+const { parsePersistedJson } = require('../functions/wireJson');
 const monitor = require('fast-json-patch');
 const BN = require('bn.js');
 
@@ -32,7 +33,7 @@ class Machine extends Actor {
     if (!input) throw new Error('Must provide input.');
     if (typeof input !== 'string') input = JSON.stringify(input);
     const result = [];
-    const object = JSON.parse(input);
+    const object = parsePersistedJson(input);
 
     for (const i in object) {
       let element = object[i];
