@@ -942,4 +942,85 @@ describe('@fabric/core/services/bitcoin (deep coverage)', function () {
       );
     });
   });
+
+  describe('flushChainToSnapshot', function () {
+    const SNAP = 'c'.repeat(64);
+    const MID = 'b'.repeat(64);
+    const TIP = 'a'.repeat(64);
+    const FOREIGN = 'f'.repeat(64);
+
+    it('preflight rejects snapshot hash not on the active chain', async function () {
+      const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
+      btc._makeRPCRequest = async function (method, params) {
+        if (method === 'getbestblockhash') return TIP;
+        if (method === 'getblockheader') {
+          const h = params[0];
+          if (h === TIP) return { previousblockhash: MID };
+          if (h === MID) return { previousblockhash: SNAP };
+          if (h === SNAP) return {};
+          throw new Error('unknown header');
+        }
+        throw new Error(method);
+      };
+      await assert.rejects(
+        () => btc.flushChainToSnapshot(FOREIGN),
+        /not an ancestor/
+      );
+    });
+
+    it('rewinds tip until best matches snapshot when preflight passes', async function () {
+      const btc = new Bitcoin({ network: 'regtest', mode: 'rpc', flushChainMaxSteps: 20 });
+      let tip = TIP;
+      btc._makeRPCRequest = async function (method, params) {
+        if (method === 'getbestblockhash') return tip;
+        if (method === 'getblockheader') {
+          const h = params[0];
+          if (h === TIP) return { previousblockhash: MID };
+          if (h === MID) return { previousblockhash: SNAP };
+          if (h === SNAP) return {};
+          throw new Error('unknown header');
+        }
+        if (method === 'invalidateblock') {
+          if (params[0] === TIP) tip = MID;
+          else if (params[0] === MID) tip = SNAP;
+          else throw new Error('unexpected invalidate');
+          return null;
+        }
+        throw new Error(method);
+      };
+      const out = await btc.flushChainToSnapshot(SNAP);
+      assert.strictEqual(out.ok, true);
+      assert.strictEqual(out.steps, 2);
+      assert.strictEqual(tip, SNAP);
+    });
+
+    it('serializes concurrent flushChainToSnapshot calls', async function () {
+      const btc = new Bitcoin({ network: 'regtest', mode: 'rpc', flushChainMaxSteps: 20 });
+      let tip = TIP;
+      let invalidateOverlap = 0;
+      let insideInvalidate = 0;
+      btc._makeRPCRequest = async function (method, params) {
+        if (method === 'getbestblockhash') return tip;
+        if (method === 'getblockheader') {
+          const h = params[0];
+          if (h === TIP) return { previousblockhash: MID };
+          if (h === MID) return { previousblockhash: SNAP };
+          if (h === SNAP) return {};
+          return {};
+        }
+        if (method === 'invalidateblock') {
+          insideInvalidate++;
+          if (insideInvalidate > 1) invalidateOverlap++;
+          await new Promise((r) => setImmediate(r));
+          if (params[0] === TIP) tip = MID;
+          else if (params[0] === MID) tip = SNAP;
+          insideInvalidate--;
+          return null;
+        }
+        throw new Error(method);
+      };
+      await Promise.all([btc.flushChainToSnapshot(SNAP), btc.flushChainToSnapshot(SNAP)]);
+      assert.strictEqual(invalidateOverlap, 0);
+    });
+  });
 });

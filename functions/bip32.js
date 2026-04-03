@@ -108,7 +108,7 @@ class HDNode {
 
   derive (index) {
     const i = typeof index === 'number' ? index : Number(index);
-    if (!Number.isFinite(i) || i < 0 || i > 0xffffffff) throw new Error('Invalid index');
+    if (!Number.isInteger(i) || i < 0 || i > 0xffffffff) throw new Error('Invalid index');
     const hardened = i >= HARDENED_OFFSET;
 
     if (this.privateKey) {
@@ -165,13 +165,20 @@ class HDNode {
   derivePath (path) {
     const parts = path.split('/');
     if (parts[0] !== 'm') throw new Error(`Invalid path: ${path}`);
+    if (this.depth !== 0) {
+      throw new Error(`Invalid path: absolute path "${path}" must be derived from the master (depth 0) node`);
+    }
     let node = this;
     for (let p = 1; p < parts.length; p++) {
       let seg = parts[p];
+      if (!seg) throw new Error(`Invalid path segment: empty in ${path}`);
       const hardened = seg.endsWith("'") || seg.endsWith('h');
       if (hardened) seg = seg.slice(0, -1);
-      const index = parseInt(seg, 10);
-      if (!Number.isFinite(index)) throw new Error(`Invalid path segment: ${parts[p]}`);
+      if (!/^\d+$/.test(seg)) throw new Error(`Invalid path segment: ${parts[p]}`);
+      const index = Number(seg);
+      if (!Number.isInteger(index) || index < 0 || index > 0x7fffffff) {
+        throw new Error(`Invalid path segment: ${parts[p]}`);
+      }
       node = node.derive(hardened ? index + HARDENED_OFFSET : index);
     }
     return node;
@@ -229,7 +236,12 @@ function fromBase58 (str) {
     if (keyData[0] !== 0x02 && keyData[0] !== 0x03) {
       throw new Error('Invalid public key prefix');
     }
-    const publicKey = keyData;
+    let publicKey;
+    try {
+      publicKey = Buffer.from(Point.fromBytes(toUint8Strict(keyData)).toBytes(true));
+    } catch (e) {
+      throw new Error('Invalid public key');
+    }
     return new HDNode(net, depth, parentFingerprint, index, chainCode, null, publicKey);
   }
   throw new Error('Unknown extended key version');

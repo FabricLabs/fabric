@@ -1670,6 +1670,18 @@ class Bitcoin extends Service {
    * @returns {Promise<{ ok: boolean, steps: number, snapshotBlockHash: string }>}
    */
   async flushChainToSnapshot (snapshotBlockHash) {
+    const run = () => this._flushChainToSnapshotBody(snapshotBlockHash);
+    const p = (this._flushChainQueue || Promise.resolve())
+      .catch(() => {})
+      .then(run);
+    this._flushChainQueue = p.catch(() => {});
+    return p;
+  }
+
+  /**
+   * @private
+   */
+  async _flushChainToSnapshotBody (snapshotBlockHash) {
     const hex = String(snapshotBlockHash || '').trim().toLowerCase();
     if (!/^[0-9a-f]{64}$/.test(hex)) {
       throw new Error('flushChainToSnapshot: snapshotBlockHash must be 64 hex characters');
@@ -1687,9 +1699,28 @@ class Bitcoin extends Service {
     const maxSteps = (typeof this.settings.flushChainMaxSteps === 'number' && this.settings.flushChainMaxSteps > 0)
       ? this.settings.flushChainMaxSteps
       : 100000;
+
+    let cursor = String(await this._makeRPCRequest('getbestblockhash', [])).trim().toLowerCase();
+    let reachable = false;
+    for (let i = 0; i < maxSteps; i++) {
+      if (cursor === hex) {
+        reachable = true;
+        break;
+      }
+      const header = await this._makeRPCRequest('getblockheader', [cursor]);
+      const prev = header && header.previousblockhash
+        ? String(header.previousblockhash).trim().toLowerCase()
+        : null;
+      if (!prev) break;
+      cursor = prev;
+    }
+    if (!reachable) {
+      throw new Error('flushChainToSnapshot: snapshot is not an ancestor of the active tip');
+    }
+
     let steps = 0;
     while (steps < maxSteps) {
-      const best = await this._makeRPCRequest('getbestblockhash', []);
+      const best = String(await this._makeRPCRequest('getbestblockhash', [])).trim().toLowerCase();
       if (best === hex) {
         const out = { ok: true, steps, snapshotBlockHash: hex };
         this.emit('message', { type: 'BitcoinFlushChain', data: out });

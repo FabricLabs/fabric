@@ -31,16 +31,39 @@ function _enforceMax (u8, maxLength, label) {
   }
 }
 
+function _isByte (v) {
+  return Number.isInteger(v) && v >= 0 && v <= 255;
+}
+
+function _bytesFromIterable (iterable, maxLength) {
+  const out = [];
+  let i = 0;
+  for (const v of iterable) {
+    if (!_isByte(v)) {
+      throw new TypeError('toUint8Flexible: expected integer byte 0–255');
+    }
+    out.push(v);
+    i++;
+    if (maxLength != null && Number.isFinite(maxLength) && i > maxLength) {
+      throw new RangeError(`toUint8Flexible: length exceeds maxLength ${maxLength}`);
+    }
+  }
+  return new Uint8Array(out);
+}
+
 /**
  * Noble / secp256k1 call sites that must accept browser-friendly inputs already vetted
  * by callers (e.g. key material as Buffer, hex-decoded bytes, or typed arrays).
- * Optional **`maxLength`** bounds `Uint8Array.from` allocation when `bytes` is an array-like
- * (DoS hardening). `Buffer` / `Uint8Array` are checked after view creation.
- * @param {Buffer|Uint8Array|ArrayLike<number>} bytes
+ * Optional **`maxLength`** bounds allocation for array-likes and iterables (DoS hardening).
+ * Rejects strings (use explicit encoding) and non-byte values (no silent modular wrap).
+ * @param {Buffer|Uint8Array|ArrayLike<number>|Iterable<number>} bytes
  * @param {number} [maxLength] — when set, reject views longer than this
  * @returns {Uint8Array}
  */
 function toUint8Flexible (bytes, maxLength) {
+  if (typeof bytes === 'string') {
+    throw new TypeError('toUint8Flexible: string input is not allowed; decode to bytes explicitly');
+  }
   if (typeof Buffer !== 'undefined' && Buffer.isBuffer && Buffer.isBuffer(bytes)) {
     const u8 = new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     _enforceMax(u8, maxLength, 'toUint8Flexible');
@@ -50,13 +73,27 @@ function toUint8Flexible (bytes, maxLength) {
     _enforceMax(bytes, maxLength, 'toUint8Flexible');
     return bytes;
   }
-  const len = bytes != null && typeof bytes.length === 'number' ? bytes.length : null;
-  if (maxLength != null && Number.isFinite(maxLength) && len != null && len > maxLength) {
-    throw new RangeError(`toUint8Flexible: array-like length ${len} exceeds maxLength ${maxLength}`);
+  const len = bytes != null && typeof bytes.length === 'number' && Number.isFinite(bytes.length)
+    ? bytes.length
+    : null;
+  if (len != null) {
+    if (maxLength != null && Number.isFinite(maxLength) && len > maxLength) {
+      throw new RangeError(`toUint8Flexible: array-like length ${len} exceeds maxLength ${maxLength}`);
+    }
+    const out = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      const v = bytes[i];
+      if (!_isByte(v)) {
+        throw new TypeError(`toUint8Flexible: expected integer byte 0–255 at index ${i}`);
+      }
+      out[i] = v;
+    }
+    return out;
   }
-  const out = Uint8Array.from(bytes);
-  _enforceMax(out, maxLength, 'toUint8Flexible');
-  return out;
+  if (bytes != null && typeof bytes[Symbol.iterator] === 'function') {
+    return _bytesFromIterable(bytes, maxLength);
+  }
+  throw new TypeError('toUint8Flexible: expected Buffer, Uint8Array, array-like, or iterable of bytes');
 }
 
 module.exports = {

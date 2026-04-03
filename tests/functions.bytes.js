@@ -21,6 +21,21 @@ describe('functions/bytes', function () {
     assert.deepStrictEqual([...toUint8Flexible([10, 20])], [10, 20]);
   });
 
+  it('toUint8Flexible rejects strings and non-byte array elements', function () {
+    assert.throws(() => toUint8Flexible('ab'), /string input/);
+    assert.throws(() => toUint8Flexible([0, 300]), /integer byte/);
+    assert.throws(() => toUint8Flexible({ length: 2, 0: 1, 1: -1 }), /integer byte/);
+  });
+
+  it('toUint8Flexible enforces maxLength for bounded iterables', function () {
+    function * gen () {
+      yield 1;
+      yield 2;
+      yield 3;
+    }
+    assert.throws(() => toUint8Flexible(gen(), 2), /exceeds maxLength/);
+  });
+
   it('toUint8Flexible enforces maxLength for buffers and array-likes', function () {
     assert.throws(() => toUint8Flexible(Buffer.alloc(5), 4), /exceeds maxLength/);
     assert.throws(() => toUint8Flexible(new Uint8Array(5), 4), /exceeds maxLength/);

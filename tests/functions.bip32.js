@@ -81,4 +81,31 @@ describe('@fabric/core/functions/bip32', function () {
     assert.ok(!c0.publicKey.equals(c1.publicKey));
     assert.throws(() => xpub.derive(0x80000000), /hardened child from public parent/);
   });
+
+  it('derive rejects non-integer child index', function () {
+    const root = fromSeed(SEED_A);
+    assert.throws(() => root.derive(1.5), /Invalid index/);
+  });
+
+  it('derivePath requires master node for absolute paths', function () {
+    const root = fromSeed(SEED_A);
+    const child = root.derive(0);
+    assert.throws(() => child.derivePath('m/0'), /master/);
+  });
+
+  it('derivePath rejects loose path segment parsing', function () {
+    const root = fromSeed(SEED_A);
+    assert.throws(() => root.derivePath('m/0x1'), /Invalid path segment/);
+    assert.throws(() => root.derivePath('m/01oops'), /Invalid path segment/);
+  });
+
+  it('fromBase58 rejects xpub with invalid secp256k1 point', function () {
+    const xpub = fromSeed(SEED_C).neutered();
+    const raw = decodeCheck(xpub.toBase58());
+    const bogus = Buffer.alloc(33, 0);
+    bogus.writeUInt8(0x02, 0);
+    bogus.copy(raw, 45);
+    const bad = encodeCheck(raw);
+    assert.throws(() => fromBase58(bad), /Invalid public key/);
+  });
 });
