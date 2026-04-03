@@ -17,6 +17,20 @@ describe('@fabric/core/functions/bip32', function () {
     assert.throws(() => fromSeed(Buffer.alloc(65)), /16–64/);
   });
 
+  it('fromSeed rejects non-byte inputs (no string coercion)', function () {
+    assert.throws(() => fromSeed('000102030405060708090a0b0c0d0e0f'), /Buffer or Uint8Array/);
+  });
+
+  it('fromBase58 rejects depth-0 keys with non-zero parent fingerprint or child index', function () {
+    const root = fromSeed(SEED_A);
+    const raw = decodeCheck(root.toBase58());
+    raw.writeUInt32BE(0x01020304, 5);
+    assert.throws(() => fromBase58(encodeCheck(raw)), /parent fingerprint must be zero/);
+    const raw2 = decodeCheck(root.toBase58());
+    raw2.writeUInt32BE(1, 9);
+    assert.throws(() => fromBase58(encodeCheck(raw2)), /child number must be zero/);
+  });
+
   it('fromBase58 round-trips a derived node', function () {
     const root = fromSeed(SEED_A);
     const child = root.derive(0);

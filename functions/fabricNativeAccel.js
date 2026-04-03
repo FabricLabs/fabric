@@ -16,9 +16,9 @@
  * **`FABRIC_SKIP_NATIVE_ADDON=1`:** never `require()` the addon (used when a stale
  * `fabric.node` would SIGSEGV on load).
  *
- * **`FABRIC_ADDON_PATH_STRICT=1`:** when **`FABRIC_ADDON_PATH`** is set, try **only** that path
- * (do not fall back to `build/Release/fabric.node`). Used by tests and tooling so a mock or
- * intentionally broken addon is not overridden by a real build artifact.
+ * **`FABRIC_ADDON_PATH_STRICT=1`:** with **`FABRIC_ADDON_PATH`** set, try **only** that path
+ * (do not fall back to `build/Release/fabric.node`). If STRICT is set without a path, it is ignored
+ * so native accel can still load `build/Release/fabric.node`. Used by tests and tooling.
  *
  * **Browser / webpack:** Node-only requires live inside `tryLoadAddon` after an
  * `isNode()` guard.
@@ -70,8 +70,11 @@ function nativeAddonLoadRequested () {
 
 function addonPathCandidates (pathMod) {
   const env = typeof process !== 'undefined' && process.env ? process.env.FABRIC_ADDON_PATH : undefined;
-  const strict = typeof process !== 'undefined' && process.env &&
+  const strictFlag = typeof process !== 'undefined' && process.env &&
     (process.env.FABRIC_ADDON_PATH_STRICT === '1' || process.env.FABRIC_ADDON_PATH_STRICT === 'true');
+  // Strict mode only applies when an explicit override path is set; otherwise STRICT alone would
+  // skip build/Release and silently disable native accel (no candidates).
+  const strict = strictFlag && !!String(env || '').trim();
   const list = [];
   if (env) list.push(env);
   if (!strict) {

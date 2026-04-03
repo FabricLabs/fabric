@@ -203,7 +203,11 @@ class HDNode {
 }
 
 function fromSeed (seed, network = DEFAULT_NETWORK) {
-  const s = Buffer.isBuffer(seed) ? seed : Buffer.from(seed);
+  if (seed == null) throw new Error('Seed is required');
+  let s;
+  if (Buffer.isBuffer(seed)) s = seed;
+  else if (seed instanceof Uint8Array) s = Buffer.from(seed);
+  else throw new Error('Seed must be a Buffer or Uint8Array');
   if (s.length < 16 || s.length > 64) throw new Error('Seed must be 16–64 bytes');
   const I = Buffer.from(hmac(sha512, MASTER_SECRET, toUint8Strict(s)));
   const IL = I.subarray(0, 32);
@@ -225,6 +229,11 @@ function fromBase58 (str) {
   const index = raw.readUInt32BE(9);
   const chainCode = raw.subarray(13, 45);
   const keyData = raw.subarray(45, 78);
+
+  if (depth === 0) {
+    if (parentFingerprint !== 0) throw new Error('Invalid master key: parent fingerprint must be zero');
+    if (index !== 0) throw new Error('Invalid master key: child number must be zero');
+  }
 
   if (version === net.bip32.private) {
     if (keyData[0] !== 0) throw new Error('Invalid private key prefix');

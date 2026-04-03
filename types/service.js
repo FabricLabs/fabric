@@ -858,8 +858,21 @@ class Service extends Actor {
       try {
         const prior = await this.store.get('/');
         const pr = tryParsePersistedJson(utf8FromPersistedRaw(prior));
-        if (pr.ok) this.state = pr.value;
-        else this.emit('warning', `[FABRIC:SERVICE] Could not restore state: ${pr.error.message}`);
+        if (pr.ok && pr.value != null && typeof pr.value === 'object' && !Array.isArray(pr.value)) {
+          const v = pr.value;
+          if (v.content != null && typeof v.content === 'object' && !Array.isArray(v.content)) {
+            this._state.content = Object.assign({}, this._state.content, v.content);
+            if (typeof v.status === 'string') this._state.status = v.status;
+            if (Number.isFinite(Number(v.clock))) this._state.clock = Number(v.clock);
+            if (v.version != null) this._state.version = v.version;
+          } else {
+            this._state.content = Object.assign({}, this._state.content, v);
+          }
+        } else if (pr.ok) {
+          this.emit('warning', '[FABRIC:SERVICE] Ignoring restored state: expected a plain object');
+        } else {
+          this.emit('warning', `[FABRIC:SERVICE] Could not restore state: ${pr.error.message}`);
+        }
       } catch (exception) {
         this.emit('warning', `[FABRIC:SERVICE] Could not restore state: ${exception}`);
       }

@@ -6,6 +6,7 @@ const {
   mnemonicToSeed,
   mnemonicToSeedSync,
   entropyToMnemonic,
+  mnemonicToEntropy,
   generateMnemonic,
   validateMnemonic,
   defaultWordlist
@@ -48,5 +49,19 @@ describe('@fabric/core/functions/bip39', function () {
     words[words.length - 1] = replacement;
     const mutated = words.join(' ');
     assert.strictEqual(validateMnemonic(mutated), false);
+  });
+
+  it('rejects mnemonic lengths other than 12/15/18/21/24 words', function () {
+    const thirteen = `${VALID_12} abandon`;
+    assert.strictEqual(validateMnemonic(thirteen), false);
+    assert.throws(() => mnemonicToEntropy(thirteen), /12, 15, 18, 21, or 24/);
+  });
+
+  it('rejects custom wordlists that are not 2048 unique non-empty strings', function () {
+    const ent = crypto.randomBytes(16);
+    assert.throws(() => entropyToMnemonic(ent, []), /2048/);
+    const dup = defaultWordlist.slice();
+    dup[200] = dup[0];
+    assert.throws(() => entropyToMnemonic(ent, dup), /duplicate/);
   });
 });

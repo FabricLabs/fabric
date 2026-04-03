@@ -12,6 +12,32 @@ const { pbkdf2, pbkdf2Async } = require('@noble/hashes/pbkdf2.js');
 
 const DEFAULT_WORDLIST = require('../settings/bip39-english.json');
 
+/** BIP-39 allows exactly these mnemonic lengths (words). */
+const MNEMONIC_WORD_COUNTS = Object.freeze([12, 15, 18, 21, 24]);
+
+function assertWordlistInvariants (wordlist, name = 'wordlist') {
+  if (!Array.isArray(wordlist) || wordlist.length !== 2048) {
+    throw new Error(`${name} must be an array of exactly 2048 words`);
+  }
+  const seen = new Set();
+  for (let i = 0; i < wordlist.length; i++) {
+    const w = wordlist[i];
+    if (typeof w !== 'string' || w.length === 0) {
+      throw new Error(`${name}[${i}] must be a non-empty string`);
+    }
+    if (seen.has(w)) throw new Error(`${name} contains duplicate word: ${w}`);
+    seen.add(w);
+  }
+}
+
+assertWordlistInvariants(DEFAULT_WORDLIST, 'settings/bip39-english.json');
+
+function resolveWordlist (wordlist) {
+  const wl = wordlist || DEFAULT_WORDLIST;
+  if (wl !== DEFAULT_WORDLIST) assertWordlistInvariants(wl);
+  return wl;
+}
+
 function normalize (str) {
   const words = (str || '').normalize('NFKD').trim().toLowerCase().split(/\s+/).filter(Boolean);
   return words.join(' ');
@@ -73,6 +99,7 @@ function binaryToWord (bits, wordlist) {
  * @returns {string}
  */
 function entropyToMnemonic (entropy, wordlist = DEFAULT_WORDLIST) {
+  const wl = resolveWordlist(wordlist);
   if (!Buffer.isBuffer(entropy)) entropy = Buffer.from(entropy);
   if (entropy.length < 16 || entropy.length > 32 || entropy.length % 4 !== 0) {
     throw new Error('Entropy length must be 16–32 bytes and a multiple of 4');
@@ -85,7 +112,7 @@ function entropyToMnemonic (entropy, wordlist = DEFAULT_WORDLIST) {
   bits.push(...checksum);
   const chunks = [];
   for (let i = 0; i < bits.length; i += 11) {
-    chunks.push(binaryToWord(bits.slice(i, i + 11), wordlist));
+    chunks.push(binaryToWord(bits.slice(i, i + 11), wl));
   }
   return chunks.join(' ');
 }
@@ -96,6 +123,7 @@ function entropyToMnemonic (entropy, wordlist = DEFAULT_WORDLIST) {
  * @returns {string}
  */
 function generateMnemonic (strength = 128, wordlist = DEFAULT_WORDLIST) {
+  resolveWordlist(wordlist);
   if (strength % 32 !== 0 || strength < 128 || strength > 256) {
     throw new Error('Strength must be 128–256 in steps of 32');
   }
@@ -109,14 +137,15 @@ function generateMnemonic (strength = 128, wordlist = DEFAULT_WORDLIST) {
  * @returns {boolean}
  */
 function validateMnemonic (mnemonic, wordlist = DEFAULT_WORDLIST) {
+  const wl = resolveWordlist(wordlist);
   const n = normalize(mnemonic);
   if (!n) return false;
   const words = n.split(' ');
-  if (words.length % 3 !== 0 || words.length < 12 || words.length > 24) return false;
-  const set = new Set(wordlist);
+  if (!MNEMONIC_WORD_COUNTS.includes(words.length)) return false;
+  const set = new Set(wl);
   if (!words.every((w) => set.has(w))) return false;
   try {
-    mnemonicToEntropy(n, wordlist);
+    mnemonicToEntropy(n, wl);
     return true;
   } catch {
     return false;
@@ -129,11 +158,14 @@ function validateMnemonic (mnemonic, wordlist = DEFAULT_WORDLIST) {
  * @returns {Buffer}
  */
 function mnemonicToEntropy (mnemonic, wordlist = DEFAULT_WORDLIST) {
+  const wl = resolveWordlist(wordlist);
   const words = normalize(mnemonic).split(' ');
-  if (words.length % 3 !== 0) throw new Error('Invalid mnemonic length');
+  if (!MNEMONIC_WORD_COUNTS.includes(words.length)) {
+    throw new Error('Invalid mnemonic length (use 12, 15, 18, 21, or 24 words)');
+  }
   const bits = [];
   for (const w of words) {
-    const idx = wordlist.indexOf(w);
+    const idx = wl.indexOf(w);
     if (idx < 0) throw new Error(`Unknown word: ${w}`);
     for (let i = 10; i >= 0; i--) bits.push((idx >> i) & 1);
   }

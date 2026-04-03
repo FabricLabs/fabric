@@ -61,7 +61,6 @@ class Channel extends State {
       'provider': { enumerable: false },
       'settings': { enumerable: false },
       // 'size': { enumerable: false },
-      'state': { enumerable: false },
     });
 
     this['@id'] = this.id;
@@ -109,6 +108,7 @@ class Channel extends State {
   }
 
   commit () {
+    super.commit();
     const commit = new Entity(this._state);
     this.emit('commit', commit);
     return commit;
