@@ -81,6 +81,67 @@ describe('@fabric/core/types/state', function () {
       assert.strictEqual(s.trust(src), s);
     });
 
+    it('trust forwards transaction events to log hooks', function (done) {
+      const s = new State({ verbosity: 0, content: {}, target: '/' });
+      const src = new EventEmitter();
+      s.trust(src);
+      s.once('info', (parts) => {
+        assert.ok(parts.some((p) => String(p).includes('TRANSACTION')));
+        done();
+      });
+      src.emit('transaction', { id: 'tx1' });
+    });
+
+    it('inherits appends peer namespace to tags', function () {
+      const a = new State({ namespace: 'peer/ns', tags: [], content: {}, target: '/' });
+      const b = new State({ tags: [], content: {}, target: '/' });
+      assert.strictEqual(b.inherits(a), 1);
+      assert.deepStrictEqual(b.settings.tags, ['peer/ns']);
+    });
+
+    it('fromJSON logs parse failures and returns null', function () {
+      const prev = console.error;
+      let called = false;
+      console.error = (...args) => {
+        called = true;
+        assert.ok(args.some((x) => String(x).includes('Failure')));
+      };
+      try {
+        assert.strictEqual(State.fromJSON('{"bad":'), null);
+        assert.strictEqual(called, true);
+      } finally {
+        console.error = prev;
+      }
+    });
+
+    it('error warn debug hit console when verbose', function () {
+      const errs = [];
+      const warns = [];
+      const deb = [];
+      const prevE = console.error;
+      const prevW = console.warn;
+      const prevD = console.debug;
+      console.error = (...a) => errs.push(a.join(' '));
+      console.warn = (...a) => warns.push(a.join(' '));
+      console.debug = (...a) => deb.push(a.join(' '));
+      try {
+        const s = new State({ verbose: true, content: {}, target: '/' });
+        s.on('error', () => {});
+        s.on('warning', () => {});
+        s.on('debug', () => {});
+        s.error('e1');
+        s.warn('w1');
+        s.debug('d1');
+        assert.ok(errs.some((x) => x.includes('e1')));
+        assert.ok(warns.some((x) => x.includes('w1')));
+        assert.ok(deb.some((x) => x.includes('d1')));
+      } finally {
+        console.error = prevE;
+        console.warn = prevW;
+        console.debug = prevD;
+      }
+    });
+
     it('sha256 helper returns hex digest', function () {
       const s = new State({ content: {}, target: '/' });
       assert.strictEqual(s.sha256('abc'), require('crypto').createHash('sha256').update('abc').digest('hex'));

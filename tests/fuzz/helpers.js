@@ -8,6 +8,7 @@
  */
 
 const crypto = require('crypto');
+const net = require('net');
 const { HEADER_SIZE, MAX_MESSAGE_SIZE, PERSISTED_JSON_MAX_CHARS } = require('../../constants');
 
 /**
@@ -18,6 +19,37 @@ function fuzzIterations (defaultN = 400) {
   const n = Number(process.env.FABRIC_FUZZ_ITERATIONS);
   if (Number.isFinite(n) && n > 0) return Math.min(Math.floor(n), 50000);
   return defaultN;
+}
+
+/**
+ * Iterations for live peer chaos (TCP + NOISE); capped to keep CI reasonable.
+ * Override with {@link process.env.FABRIC_FUZZ_PEER_CHAOS_ITERATIONS}.
+ * @param {number} [defaultN]
+ * @returns {number}
+ */
+function fuzzPeerChaosIterations (defaultN = 80) {
+  const raw = Number(process.env.FABRIC_FUZZ_PEER_CHAOS_ITERATIONS);
+  if (Number.isFinite(raw) && raw > 0) return Math.min(Math.floor(raw), 500);
+  return Math.min(fuzzIterations(defaultN), 250);
+}
+
+/**
+ * @returns {Promise<number>}
+ */
+async function getFreePort () {
+  return await new Promise((resolve, reject) => {
+    const s = net.createServer();
+    s.unref();
+    s.once('error', reject);
+    s.listen(0, '127.0.0.1', () => {
+      const addr = s.address();
+      const port = addr && typeof addr === 'object' ? addr.port : null;
+      s.close(() => {
+        if (!port) return reject(new Error('Could not allocate a free port'));
+        resolve(port);
+      });
+    });
+  });
 }
 
 /**
@@ -104,6 +136,8 @@ module.exports = {
   MAX_MESSAGE_SIZE,
   PERSISTED_JSON_MAX_CHARS,
   fuzzIterations,
+  fuzzPeerChaosIterations,
+  getFreePort,
   randomBuffer,
   randomAmpFrame,
   randomUtf8String,

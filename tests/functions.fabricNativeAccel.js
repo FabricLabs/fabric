@@ -2,6 +2,8 @@
 
 const assert = require('assert');
 const crypto = require('crypto');
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const fabricNativeAccel = require('../functions/fabricNativeAccel');
@@ -126,5 +128,30 @@ describe('functions/fabricNativeAccel', function () {
     const j = JSON.parse(out);
     assert.strictEqual(j.optIn, true);
     assert.strictEqual(typeof j.available, 'boolean');
+  });
+
+  it('status surfaces addon load failure when FABRIC_ADDON_PATH is unloadable', function () {
+    const realAddon = path.join(__dirname, '..', 'build', 'Release', 'fabric.node');
+    if (fs.existsSync(realAddon)) {
+      this.skip();
+    }
+    const modPath = path.join(__dirname, '..', 'functions', 'fabricNativeAccel.js');
+    const bad = path.join(os.tmpdir(), `fabric-bad-addon-${Date.now()}.node`);
+    fs.writeFileSync(bad, 'not a valid native addon\n');
+    try {
+      const script = `
+        process.env.FABRIC_NATIVE_DOUBLE_SHA256 = '1';
+        process.env.FABRIC_ADDON_PATH = ${JSON.stringify(bad)};
+        const m = require(${JSON.stringify(modPath)});
+        const s = m.status();
+        if (!s.error) process.exit(2);
+        process.stdout.write(JSON.stringify({ error: s.error }));
+      `;
+      const out = execFileSync(process.execPath, ['-e', script], { encoding: 'utf8' });
+      const j = JSON.parse(out);
+      assert.ok(typeof j.error === 'string' && j.error.length > 0);
+    } finally {
+      try { fs.unlinkSync(bad); } catch { /* ignore */ }
+    }
   });
 });

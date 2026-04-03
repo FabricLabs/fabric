@@ -58,4 +58,15 @@ describe('@fabric/core/functions/bip32', function () {
     assert.strictEqual(n.isNeutered, true);
     assert.strictEqual(n.privateKey, null);
   });
+
+  it('neutered node derives non-hardened public children (xpub path)', function () {
+    const root = fromSeed(crypto.randomBytes(32));
+    const xpub = root.neutered();
+    const c0 = xpub.derive(0);
+    const c1 = xpub.derive(1);
+    assert.ok(c0.publicKey);
+    assert.strictEqual(c0.privateKey, null);
+    assert.ok(!c0.publicKey.equals(c1.publicKey));
+    assert.throws(() => xpub.derive(0x80000000), /hardened child from public parent/);
+  });
 });

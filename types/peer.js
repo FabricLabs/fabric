@@ -253,21 +253,6 @@ class Peer extends Service {
     return this;
   }
 
-  _resolveToAddress (idOrAddress) {
-    if (!idOrAddress || typeof idOrAddress !== 'string') return null;
-    // Direct match on connection address
-    if (this.connections[idOrAddress]) return idOrAddress;
-    // Look up by id: find which address this id is connected from
-    const registry = this._state.peers || {};
-    const byId = registry[idOrAddress];
-    if (byId && byId.address && this.connections[byId.address]) return byId.address;
-    // Check _addressToId reverse: find address that maps to this id
-    for (const [addr, id] of Object.entries(this._addressToId || {})) {
-      if (id === idOrAddress && this.connections[addr]) return addr;
-    }
-    return null;
-  }
-
   /**
    * Stable id for gossip *logical* content (ignores `gossipHop` and wire signature changes).
    * @param {object} msg Generic message (`type`, `object`, …)
@@ -620,7 +605,7 @@ class Peer extends Service {
   }
 
   _resolveToAddress (idOrAddress) {
-    if (!idOrAddress) return null;
+    if (!idOrAddress || typeof idOrAddress !== 'string') return null;
     if (this.connections[idOrAddress]) return idOrAddress;
     const addressToId = this._addressToId || {};
     for (const addr in addressToId) {

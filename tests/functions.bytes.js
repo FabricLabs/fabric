@@ -27,4 +27,11 @@ describe('functions/bytes', function () {
     const fake = { length: 999999, 0: 0 };
     assert.throws(() => toUint8Flexible(fake, 8), /array-like length/);
   });
+
+  it('toUint8Flexible returns a Uint8Array view for Buffer under maxLength', function () {
+    const b = Buffer.from([9, 10, 11]);
+    const u = toUint8Flexible(b, 100);
+    assert.ok(u instanceof Uint8Array);
+    assert.deepStrictEqual([...u], [9, 10, 11]);
+  });
 });

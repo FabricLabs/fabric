@@ -120,6 +120,17 @@ describe('functions/bech32', function () {
     assert.strictEqual(r.status, 0, r.stderr || r.stdout || 'native bech32 subprocess failed');
   });
 
+  it('fromWords rejects invalid 5-to-8 padding (convertBits strict path)', function () {
+    assert.throws(() => fromWords(Array(10).fill(31)), /invalid padding/);
+  });
+
+  it('decodeSegwitAddress pure path rejects witness/version mismatch', function () {
+    const program = Buffer.alloc(20, 1);
+    const addr = encodeSegwitAddress('tb', 0, program);
+    assert.ok(addr);
+    assert.strictEqual(decodeSegwitAddress('bc', addr), null);
+  });
+
   it('FABRIC_PURE_BECH32=1 uses bundled pure codec (fresh process)', function () {
     const { spawnSync } = require('child_process');
     const bech32Path = path.join(__dirname, '../functions/bech32.js');
