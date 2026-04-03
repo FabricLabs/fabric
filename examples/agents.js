@@ -902,11 +902,9 @@ async function main (input = {}) {
       }
       skipMaster.requestWork({ index: 'priority' }, 1);
       const queuedJobs = numberOfCores + 1;
-      const minWaves = 2;
-      const idleDeadline = Math.max(
-        25000,
-        3000 + minWaves * queuedJobs * Math.max(AGENT_WORK_DELAY_MS, 1)
-      );
+      const waves = Math.ceil(queuedJobs / Math.max(1, numberOfCores));
+      const delayMs = Math.max(AGENT_WORK_DELAY_MS, 1);
+      const idleDeadline = Math.max(25000, 3000 + waves * delayMs + 2000);
       const drained = await skipMaster.waitForIdle(idleDeadline);
       if (!drained) {
         throw new Error(`Skip-chain smoke: queue did not drain within ${idleDeadline}ms`);

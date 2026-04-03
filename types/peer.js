@@ -1403,9 +1403,17 @@ class Peer extends Service {
 
         this.connections[origin.name]._writeFabric(P2P_PONG.toBuffer());
         break;
-      case 'P2P_PONG':
-        // Update the peer's score for succesfully responding to a ping
-        // TODO: ensure no pong is handled when a ping was not previously sent
+      case 'P2P_PONG': {
+        const conn = origin && origin.name ? this.connections[origin.name] : null;
+        const outstanding = conn && (conn._fabricPingOutstanding | 0);
+        if (!outstanding) {
+          if (this.settings.debug) {
+            this.emit('debug', `[FABRIC:PEER] Ignoring P2P_PONG from ${origin && origin.name}: no outbound ping pending`);
+          }
+          break;
+        }
+        conn._fabricPingOutstanding = outstanding - 1;
+
         const instance = this.state.actors[actor.id] ? this.state.actors[actor.id] : {};
         const newScore = (instance.score || 0) + 1;
 
@@ -1425,6 +1433,7 @@ class Peer extends Service {
         this.emit('state', this.state);
 
         break;
+      }
       case 'P2P_PEER_ALIAS':
         this.emit('debug', `peer_alias ${origin.name} <Generic>${JSON.stringify(message.object || '')}`);
         this.connections[origin.name]._alias = message.object.name;
@@ -1559,6 +1568,7 @@ class Peer extends Service {
 
     // Store socket in collection
     this.connections[target] = socket;
+    this._startFabricPingKeepalive(socket, handler.encrypt);
 
     // Begin NOISE stream
     handler.encrypt.pipe(socket).pipe(handler.decrypt);
@@ -1807,14 +1817,15 @@ class Peer extends Service {
     return this;
   }
 
-  _registerNOISEClient (name, socket, client) {
-    // Assign socket properties
-    // Failure counter
-    socket._failureCount = 0;
-    socket._lastMessage = null;
-    socket._messageLog = [];
-
-    // Enable keepalive
+  /**
+   * Periodic P2P_PING and track expected P2P_PONG replies so registry score cannot be
+   * self-inflated by unsolicited pongs (see FLUSH_CHAIN trust gate).
+   * @param {*} socket — connection object (stores `_fabricPingOutstanding`, `_keepalive`)
+   * @param {*} encryptWrite — NOISE encrypt stream with `.write(Buffer)` (`client.encrypt` / `handler.encrypt`)
+   */
+  _startFabricPingKeepalive (socket, encryptWrite) {
+    if (socket._keepalive) clearInterval(socket._keepalive);
+    socket._fabricPingOutstanding = 0;
     socket._keepalive = setInterval(() => {
       const now = (new Date()).toISOString();
       const P2P_PING = Message.fromVector(['GENERIC', JSON.stringify({
@@ -1828,9 +1839,11 @@ class Peer extends Service {
         }
       })]);
 
+      socket._fabricPingOutstanding = (socket._fabricPingOutstanding || 0) + 1;
       try {
-        client.encrypt.write(P2P_PING.toBuffer());
+        encryptWrite.write(P2P_PING.toBuffer());
       } catch (exception) {
+        socket._fabricPingOutstanding = Math.max(0, (socket._fabricPingOutstanding || 0) - 1);
         if (exception && (exception.code === 'EPIPE' || exception.code === 'ECONNRESET')) {
           this.emit('warning', `Suppressing transient write error (${exception.code}) during ping.`);
         } else {
@@ -1838,6 +1851,16 @@ class Peer extends Service {
         }
       }
     }, 60000);
+  }
+
+  _registerNOISEClient (name, socket, client) {
+    // Assign socket properties
+    // Failure counter
+    socket._failureCount = 0;
+    socket._lastMessage = null;
+    socket._messageLog = [];
+
+    this._startFabricPingKeepalive(socket, client.encrypt);
 
     // TODO: reconcile APIs for these methods
     // Map destroy function

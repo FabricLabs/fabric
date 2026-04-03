@@ -940,6 +940,7 @@ Object.defineProperty(Message.prototype, 'sensitive', {
 
 Message.friendlyTypeFromWire = friendlyTypeFromWire;
 Message.wireTypeFromFriendly = wireTypeFromFriendly;
+Message.WIRE_TYPE_DECODE_ORDER = WIRE_TYPE_DECODE_ORDER;
 Message.FRIENDLY_TYPE_BY_WIRE = FRIENDLY_TYPE_BY_WIRE;
 Message.FRIENDLY_TO_WIRE_TYPE = FRIENDLY_TO_WIRE_TYPE;
 

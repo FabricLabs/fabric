@@ -689,10 +689,10 @@ class Bitcoin extends Service {
     if (!message.amount) throw new Error('Message must provide an amount.');
     if (!message.destination) throw new Error('Message must provide a destination.');
 
-    if (message.amount instanceof String) {
-      const parsed = Number(message.amount.valueOf());
+    if (typeof message.amount === 'string' || message.amount instanceof String) {
+      const parsed = Number(message.amount instanceof String ? message.amount.valueOf() : message.amount);
       if (!Number.isFinite(parsed)) throw new Error('Message amount must be numeric.');
-      message.amount = parsed.toFixed(8); // normalize boxed string amounts to fixed BTC precision
+      message.amount = parsed.toFixed(8); // normalize string amounts to fixed BTC precision
     }
 
     const actor = new Actor(message);
@@ -997,8 +997,10 @@ class Bitcoin extends Service {
   }
 
   _keyNetworkNameForWif () {
-    const n = this.settings.network;
-    return n === 'signet' ? 'testnet' : n;
+    const n = this._normalizeChainName(this.settings.network || 'mainnet');
+    if (n === 'signet' || n === 'testnet4') return 'testnet';
+    if (n === 'mainnet' || n === 'testnet' || n === 'regtest') return n;
+    return 'mainnet';
   }
 
   async _dumpKeyPair (address) {

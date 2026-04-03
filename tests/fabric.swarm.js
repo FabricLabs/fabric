@@ -53,19 +53,39 @@ describe('@fabric/core/types/peer (Swarm)', function () {
     it('_scheduleReconnect invokes connect after timeout for registered peer ids', function (done) {
       const swarm = new Swarm({ seeds: [], peers: [] });
       swarm.peers.pid = { id: 'pid', address: '127.0.0.1:55' };
-      swarm.connect = (peer) => {
-        assert.strictEqual(peer.address, '127.0.0.1:55');
-        done();
-      };
       const orig = global.setTimeout;
+      const restore = () => { global.setTimeout = orig; };
+      swarm.connect = (peer) => {
+        try {
+          assert.strictEqual(peer.address, '127.0.0.1:55');
+          done();
+        } catch (err) {
+          done(err);
+        } finally {
+          restore();
+        }
+      };
       global.setTimeout = function (fn, delay) {
-        assert.strictEqual(delay, 60000);
+        try {
+          assert.strictEqual(delay, 60000);
+        } catch (e) {
+          restore();
+          throw e;
+        }
         return orig(() => {
-          global.setTimeout = orig;
-          fn();
+          try {
+            fn();
+          } finally {
+            restore();
+          }
         }, 1);
       };
-      swarm._scheduleReconnect({ id: 'pid', address: '127.0.0.1:55' });
+      try {
+        swarm._scheduleReconnect({ id: 'pid', address: '127.0.0.1:55' });
+      } catch (err) {
+        restore();
+        done(err);
+      }
     });
 
     it('_scheduleReconnect returns true when a timer is already pending', function () {
@@ -77,8 +97,12 @@ describe('@fabric/core/types/peer (Swarm)', function () {
         calls++;
         return 0;
       };
-      const r = swarm._scheduleReconnect({ id: 'pid', address: 'a' });
-      global.setTimeout = orig;
+      let r;
+      try {
+        r = swarm._scheduleReconnect({ id: 'pid', address: 'a' });
+      } finally {
+        global.setTimeout = orig;
+      }
       clearTimeout(swarm.peers.pid.timer);
       assert.strictEqual(calls, 0);
       assert.strictEqual(r, true);

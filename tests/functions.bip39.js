@@ -21,6 +21,12 @@ describe('@fabric/core/functions/bip39', function () {
     assert.ok(a.equals(b));
   });
 
+  it('passphrase uses NFKD only (case and spacing preserved per BIP-39)', async function () {
+    const upper = await mnemonicToSeed(VALID_12, 'My Pass');
+    const lower = await mnemonicToSeed(VALID_12, 'my pass');
+    assert.ok(!upper.equals(lower));
+  });
+
   it('entropyToMnemonic accepts Uint8Array entropy', function () {
     const ent = crypto.randomBytes(16);
     const fromBuf = entropyToMnemonic(ent);

@@ -14,6 +14,16 @@ const {
   decodeSegwitAddress
 } = require('../functions/bech32');
 
+const { spawnSync } = require('child_process');
+
+function bech32SubprocessOpts () {
+  const env = { ...process.env };
+  for (const k of Object.keys(env)) {
+    if (k.startsWith('FABRIC_')) delete env[k];
+  }
+  return { encoding: 'utf8', timeout: 30000, env };
+}
+
 describe('functions/base58', function () {
   it('encodes empty as empty string', function () {
     assert.strictEqual(base58.encode(Buffer.alloc(0)), '');
@@ -115,8 +125,7 @@ describe('functions/bech32', function () {
       if (d.spec !== 'bech32m' || !b.fromWords(d.words).equals(payload)) process.exit(4);
       process.exit(0);
     `;
-    const { spawnSync } = require('child_process');
-    const r = spawnSync(process.execPath, ['-e', script], { encoding: 'utf8' });
+    const r = spawnSync(process.execPath, ['-e', script], bech32SubprocessOpts());
     assert.strictEqual(r.status, 0, r.stderr || r.stdout || 'native bech32 subprocess failed');
   });
 
@@ -132,7 +141,6 @@ describe('functions/bech32', function () {
   });
 
   it('FABRIC_PURE_BECH32=1 uses bundled pure codec (fresh process)', function () {
-    const { spawnSync } = require('child_process');
     const bech32Path = path.join(__dirname, '../functions/bech32.js');
     const r = spawnSync(process.execPath, [
       '-e',
@@ -146,12 +154,11 @@ describe('functions/bech32', function () {
       const w = b.toWords(payload);
       const s = b.encode('id', w, 'bech32m');
       if (b.decode(s).spec !== 'bech32m') process.exit(3);`
-    ], { encoding: 'utf8' });
+    ], bech32SubprocessOpts());
     assert.strictEqual(r.status, 0, r.stderr || r.stdout || '');
   });
 
   it('FABRIC_PURE_BECH32=1 decode throws on bad checksum (decodePure path)', function () {
-    const { spawnSync } = require('child_process');
     const bech32Path = path.join(__dirname, '../functions/bech32.js');
     const r = spawnSync(process.execPath, [
       '-e',
@@ -164,7 +171,7 @@ describe('functions/bech32', function () {
       } catch (e) {
         if (!/Invalid bech32 checksum/.test(e.message)) process.exit(3);
       }`
-    ], { encoding: 'utf8' });
+    ], bech32SubprocessOpts());
     assert.strictEqual(r.status, 0, r.stderr || r.stdout || '');
   });
 

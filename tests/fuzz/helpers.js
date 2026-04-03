@@ -41,7 +41,7 @@ async function getFreePort () {
     const s = net.createServer();
     s.unref();
     s.once('error', reject);
-    s.listen(0, '127.0.0.1', () => {
+    s.listen({ host: '127.0.0.1', port: 0, reuseAddress: true }, () => {
       const addr = s.address();
       const port = addr && typeof addr === 'object' ? addr.port : null;
       s.close(() => {

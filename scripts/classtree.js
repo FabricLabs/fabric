@@ -88,8 +88,13 @@ function buildMap (roots) {
           );
         }
         if (!prev) firstSeen.set(name, { file: rel, extends: ext });
-        if (inherits[name] !== undefined && inherits[name] !== ext) {
-          console.warn(`[classtree] duplicate class ${name}: was ${inherits[name]}, now ${ext} (${rel})`);
+        if (inherits[name] !== undefined) {
+          if (inherits[name] !== ext) {
+            console.warn(`[classtree] duplicate class ${name}: was ${inherits[name]}, now ${ext} (${rel})`);
+          } else {
+            console.warn(`[classtree] duplicate class ${name}: same parent ${ext} (${rel}) — keeping first`);
+          }
+          continue;
         }
         inherits[name] = ext;
       }
@@ -109,15 +114,33 @@ function buildSubtree (inherits, parent) {
   return subtree;
 }
 
-function collectEdges (inherits) {
-  const edges = [];
+/** Roots: null parent or parent not present in the scanned map (orphan / external base). */
+function buildForest (inherits) {
+  const tree = {};
+  for (const name of Object.keys(inherits)) {
+    const p = inherits[name];
+    if (p != null && Object.prototype.hasOwnProperty.call(inherits, p)) continue;
+    tree[name] = buildSubtree(inherits, name);
+  }
+  return tree;
+}
+
+function warnUnresolvedParents (inherits) {
   const classes = new Set(Object.keys(inherits));
   for (const [child, parent] of Object.entries(inherits)) {
-    const p = parent == null ? 'Object' : parent;
-    edges.push([p, child]);
+    const p = parent;
+    if (p == null) continue;
     if (!classes.has(p) && !BUILTIN_BASES.has(p) && !EXTERNAL_SUPERCLASSES.has(p)) {
       console.warn(`[classtree] external or missing superclass: ${p} (child ${child})`);
     }
+  }
+}
+
+function collectEdges (inherits) {
+  const edges = [];
+  for (const [child, parent] of Object.entries(inherits)) {
+    const p = parent == null ? 'Object' : parent;
+    edges.push([p, child]);
   }
   return edges;
 }
@@ -195,7 +218,8 @@ function main () {
     if (inherits[x] === undefined) inherits[x] = null;
   }
 
-  const tree = buildSubtree(inherits, null);
+  warnUnresolvedParents(inherits);
+  const tree = buildForest(inherits);
 
   const payload = {
     scanRoots: DEFAULT_SCAN_DIRS,

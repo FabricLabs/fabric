@@ -13,7 +13,7 @@ const { pbkdf2, pbkdf2Async } = require('@noble/hashes/pbkdf2.js');
 const DEFAULT_WORDLIST = require('../settings/bip39-english.json');
 
 function normalize (str) {
-  const words = (str || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const words = (str || '').normalize('NFKD').trim().toLowerCase().split(/\s+/).filter(Boolean);
   return words.join(' ');
 }
 
@@ -23,9 +23,10 @@ function salt (passphrase) {
 
 function seedInputs (mnemonic, passphrase) {
   const m = normalize(mnemonic);
+  const passNorm = (passphrase || '').normalize('NFKD');
   return {
     pwd: Buffer.from(m, 'utf8'),
-    saltBuf: Buffer.from(salt(normalize(passphrase)), 'utf8')
+    saltBuf: Buffer.from(salt(passNorm), 'utf8')
   };
 }
 
