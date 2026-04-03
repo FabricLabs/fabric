@@ -12,6 +12,7 @@ _Used as a string separator when reading this file. :)_
 src/*
 !src/binding.cc
 !src/bip340.c
+!src/bip340.h
 !src/cli.c
 !src/cli.h
 !src/cli_main.c
@@ -32,6 +33,7 @@ src/*
 !src/secure_random.c
 !src/secure_random.h
 !src/taproot.c
+!src/taproot.h
 !src/threads.c
 !src/threads.h
 !src/timing_protection.h
