@@ -20,7 +20,6 @@
 ./types/interface.js:      // TODO: document why @input is removed
 ./types/interface.js:    // TODO: apply `transaction.operations` to Interface state
 ./types/filesystem.js:    // TODO: only sync changed files
-./types/key.js:// TODO: remove
 ./types/key.js:// TODO: remove all external dependencies
 ./types/key.js:        // TODO: allow setting of raw seed (deprecates passing a mnemonic in the `seed` property)
 ./types/key.js:        // TODO: set property `seed` as the actual derived seed, not the seed phrase
@@ -180,6 +179,10 @@
 ./API.md:TODO: move to @fabric/http/types/spa
 ./API.md:TODO: move to @fabric/http/types/spa
 ./API.md:TODO: move to @fabric/http/types/spa
+./API.md:TODO: move to @fabric/http/types/spa
+./API.md:TODO: move to @fabric/http/types/spa
+./API.md:TODO: move to @fabric/http/types/spa
+./API.md:TODO: move to @fabric/http/types/spa
 ./SUMMARY.md:* [✅ TODO List][todo]
 ./SUMMARY.md:[todo]: TODO.md
 ./contracts/exchange.js:  // TODO: reconcile API wth @fabric/doorman as appears at: https://github.com/FabricLabs/doorman
@@ -197,6 +200,13 @@
 ./DEVELOPERS.md:- [ ] Sweep remaining `TODO` markers in repo-specific guides
 ./DEVELOPERS.md:## TODO
 ./DEVELOPERS.md:- [ ] Remove TODOs
+./.tmp-pr176.html:|**Reports &amp; generated data** &lt;br&gt; `reports/*`, `reports/class-inheritance.json`, `reports/AUDIT.json`, `reports/TODO.txt`|Generated audit, class-inheritance, and updated TODO reports; updated reporting outputs.|
+./.tmp-pr176.html:<td><strong>Reports &amp; generated data</strong> <br> <code class="notranslate">reports/*</code>, <code class="notranslate">reports/class-inheritance.json</code>, <code class="notranslate">reports/AUDIT.json</code>, <code class="notranslate">reports/TODO.txt</code></td>
+./.tmp-pr176.html:<td>Generated audit, class-inheritance, and updated TODO reports; updated reporting outputs.</td>
+./.tmp-pr176.html:* `reports/TODO.txt`
+./.tmp-pr176.html:<li><code class="notranslate">reports/TODO.txt</code></li>
+./.tmp-pr176.html:              <span class="blob-code-inner blob-code-marker-deletion">      message.amount = message.amount.fixed().toPrecision(8); // TODO: evaluate precision behavior</span>
+./.tmp-pr176.html:            <td class="border-0 px-2 py-1 blob-code-inner blob-code-deletion js-blob-code-deletion blob-code-marker-deletion">      <span class="pl-s1">message</span><span class="pl-kos">.</span><span class="pl-c1">amount</span> <span class="pl-c1">=</span> <span class="pl-s1">message</span><span class="pl-kos">.</span><span class="pl-c1">amount</span><span class="pl-kos">.</span><span class="pl-en">fixed</span><span class="pl-kos">(</span><span class="pl-kos">)</span><span class="pl-kos">.</span><span class="pl-en">toPrecision</span><span class="pl-kos">(</span><span class="pl-c1">8</span><span class="pl-kos">)</span><span class="pl-kos">;</span> <span class="pl-c">// TODO: evaluate precision behavior</span></td>
 ./package.json:    "report:todo": "grep --exclude-dir=.git --exclude-dir=_book --exclude-dir=assets --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs -rEI \"TODO|FIXME\" . > reports/TODO.txt",
 ./package.json:    "review:todo": "npm run report:todo && cat reports/TODO.txt && echo '\nOutstanding TODO items (@fabric/core):' && wc -l reports/TODO.txt && echo '\nIssues List: https://github.com/FabricLabs/fabric/issues\nDisclosures: security@fabric.pub\n\n'",
 ./guides/SETTINGS.md:### WARNING: TODO
@@ -231,9 +241,10 @@
 ./scripts/chat.js:      // TODO: replicate this program in C / ASM
 ./scripts/transfer.js:  // TODO: add support for segwit, taproot
 ./functions/_handleFabricMessage.js:  const message = Message.fromVector([...data]); // TODO: redefine...
+./build/gyp-mac-tool:            # TODO(thakis): This copies file attributes like mtime, while the
+./build/Makefile:# TODO(evan): move all cross-compilation logic to gyp-time so we don't need
 ./GOALS.md:- [x] Find all TODO items (run script, check diff) — `npm run report:todo` → `reports/TODO.txt`
 ./services/bitcoin.js:      // httpPort: 48449, // TODO: disable HTTP entirely!
-./services/bitcoin.js:      message.amount = message.amount.fixed().toPrecision(8); // TODO: evaluate precision behavior
 ./services/bitcoin.js:    // TODO: ensure all appropriate fields, valid block
 ./services/bitcoin.js:    // TODO: verify local hash (see below)
 ./services/bitcoin.js:      // TODO: verify block hash!!!
