@@ -104,7 +104,9 @@ describe('@fabric/core/services/bitcoin', function () {
       it('normalizes RPC host values safely', function () {
         const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
         assert.strictEqual(btc._normalizeRPCHost('localhost:18443'), 'localhost');
+        assert.strictEqual(btc._normalizeRPCHost('127.0.0.1:18443'), '127.0.0.1');
         assert.strictEqual(btc._normalizeRPCHost('127.0.0.1'), '127.0.0.1');
+        assert.strictEqual(btc._normalizeRPCHost('::1'), '::1');
         assert.strictEqual(btc._normalizeRPCHost('  localhost  '), 'localhost');
         assert.strictEqual(btc._normalizeRPCHost(''), '127.0.0.1');
         assert.strictEqual(btc._normalizeRPCHost(null), '127.0.0.1');

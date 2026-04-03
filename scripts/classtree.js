@@ -69,6 +69,8 @@ function extractClasses (filePath) {
 function buildMap (roots) {
   const inherits = {};
   const byFile = [];
+  /** @type {Map<string, { file: string, extends: string|null }>} */
+  const firstSeen = new Map();
 
   for (const rootName of roots) {
     const abs = path.join(REPO_ROOT, rootName);
@@ -78,6 +80,14 @@ function buildMap (roots) {
       const rel = path.relative(REPO_ROOT, file).split(path.sep).join('/');
       byFile.push({ file: rel, classes: decls });
       for (const { name, extends: ext } of decls) {
+        const prev = firstSeen.get(name);
+        if (prev && prev.file !== rel) {
+          console.warn(
+            `[classtree] duplicate class name "${name}": also in ${rel} (extends ${ext}) ` +
+            `— first seen in ${prev.file} (extends ${prev.ext})`
+          );
+        }
+        if (!prev) firstSeen.set(name, { file: rel, extends: ext });
         if (inherits[name] !== undefined && inherits[name] !== ext) {
           console.warn(`[classtree] duplicate class ${name}: was ${inherits[name]}, now ${ext} (${rel})`);
         }

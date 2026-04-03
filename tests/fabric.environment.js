@@ -287,6 +287,18 @@ describe('@fabric/core/types/environment', function () {
         const e = new Environment();
         assert.strictEqual(e._extractRPCPort('[::1]:8332'), 8332);
       });
+
+      it('_normalizeRPCHost leaves bare IPv6 literals intact (no false host:port)', function () {
+        const e = new Environment();
+        assert.strictEqual(e._normalizeRPCHost('::1'), '::1');
+        assert.strictEqual(e._normalizeRPCHost('2001:db8::1'), '2001:db8::1');
+      });
+
+      it('_extractRPCPort does not parse port from bare IPv6', function () {
+        const e = new Environment();
+        assert.strictEqual(e._extractRPCPort('::1'), null);
+        assert.strictEqual(e._extractRPCPort('2001:db8::1'), null);
+      });
     });
   });
 });

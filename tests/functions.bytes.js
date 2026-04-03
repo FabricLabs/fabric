@@ -48,5 +48,8 @@ describe('functions/bytes', function () {
     const u = toUint8Flexible(b, 100);
     assert.ok(u instanceof Uint8Array);
     assert.deepStrictEqual([...u], [9, 10, 11]);
+    assert.strictEqual(u.buffer, b.buffer);
+    assert.strictEqual(u.byteOffset, b.byteOffset);
+    assert.strictEqual(u.byteLength, b.byteLength);
   });
 });

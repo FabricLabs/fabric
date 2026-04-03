@@ -95,11 +95,16 @@ function randomWireLikeString () {
 }
 
 function randomPersistedLikeString () {
-  const roll = crypto.randomInt(0, 20);
+  const roll = crypto.randomInt(0, 22);
   if (roll === 0) {
     const cap = PERSISTED_JSON_MAX_CHARS + crypto.randomInt(1, 2000);
     const byteBudget = Math.min(cap * 4 + 4096, PERSISTED_JSON_MAX_CHARS * 4 + 8192);
     return randomUtf8String(cap, byteBudget, PERSISTED_JSON_MAX_CHARS + 1);
+  }
+  if (roll === 1) {
+    const cap = PERSISTED_JSON_MAX_CHARS;
+    const byteBudget = Math.min(cap * 4 + 1024, 1024 * 1024);
+    return randomUtf8String(cap, byteBudget, cap);
   }
   const cap = Math.min(PERSISTED_JSON_MAX_CHARS, 50000);
   return randomUtf8String(cap);

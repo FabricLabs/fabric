@@ -1,5 +1,8 @@
 'use strict';
 
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const Fabric = require('../');
 const assert = require('assert');
 const EventEmitter = require('events');
@@ -41,11 +44,16 @@ describe('@fabric/core/types/state', function () {
     });
 
     it('start open commit stop lifecycle (formerly Scribe)', async function () {
-      const s = new State({ path: './stores/test-state-scribe', verbosity: 0, content: {}, target: '/' });
-      await s.start();
-      assert.strictEqual(s.status, 'started');
-      await s.stop();
-      assert.strictEqual(s.status, 'stopped');
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-state-scribe-'));
+      try {
+        const s = new State({ path: dir, verbosity: 0, content: {}, target: '/' });
+        await s.start();
+        assert.strictEqual(s.status, 'started');
+        await s.stop();
+        assert.strictEqual(s.status, 'stopped');
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
     });
 
     it('log emits info', function (done) {

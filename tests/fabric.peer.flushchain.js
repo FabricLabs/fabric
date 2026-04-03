@@ -95,7 +95,8 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     assert.strictEqual(peer._wireInboundRateAllowPeer('127.0.0.1:1', 4), true);
     assert.strictEqual(peer._wireInboundRateAllowPeer('127.0.0.1:1', 4), true);
     assert.strictEqual(peer._wireInboundRateAllowPeer('127.0.0.1:1', 4), false);
-    assert.ok(warns.some((w) => w.includes('De-ranked') && w.includes('inbound-rate')));
+    const derankMsgs = warns.filter((w) => w.includes('De-ranked') && w.includes('inbound-rate'));
+    assert.strictEqual(derankMsgs.length, 1, 'expected exactly one de-rank per rolling window');
     assert.strictEqual(peer._wireInboundRateAllowPeer('127.0.0.1:1', 1), false);
   });
 

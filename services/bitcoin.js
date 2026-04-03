@@ -404,14 +404,28 @@ class Bitcoin extends Service {
     }
   }
 
+  _rpcHostHasSingleNumericPortSuffix (host) {
+    const s = String(host).trim();
+    if (s.startsWith('[')) return false;
+    const first = s.indexOf(':');
+    const last = s.lastIndexOf(':');
+    if (first === -1 || first !== last) return false;
+    return /^\d+$/.test(s.slice(last + 1));
+  }
+
   _normalizeRPCHost (value) {
     if (!value) return '127.0.0.1';
     const host = String(value).trim();
     if (!host) return '127.0.0.1';
 
-    // bitcoin.conf may specify rpcbind/rpcconnect as host:port.
-    if (host.includes(':') && !host.startsWith('[') && host.split(':').length === 2) {
-      return host.split(':')[0];
+    if (host.startsWith('[')) {
+      const close = host.indexOf(']');
+      if (close !== -1) return host.slice(0, close + 1);
+      return host;
+    }
+
+    if (this._rpcHostHasSingleNumericPortSuffix(host)) {
+      return host.slice(0, host.lastIndexOf(':'));
     }
 
     return host;

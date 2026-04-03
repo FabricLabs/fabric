@@ -272,6 +272,21 @@ class Environment extends Entity {
     return value;
   }
 
+  /**
+   * True when `host` is `name:port` with exactly one colon and a numeric port (IPv4 or hostname).
+   * Bare IPv6 literals (`::1`, `2001:db8::1`) have multiple colons — do not treat as host:port.
+   * @param {string} host
+   * @returns {boolean}
+   */
+  _hasSingleNumericPortSuffix (host) {
+    const s = String(host).trim();
+    const first = s.indexOf(':');
+    const last = s.lastIndexOf(':');
+    if (first === -1 || first !== last) return false;
+    const tail = s.slice(last + 1);
+    return /^\d+$/.test(tail);
+  }
+
   _normalizeRPCHost (value) {
     if (!value) return '127.0.0.1';
     const host = String(value).trim();
@@ -284,9 +299,9 @@ class Environment extends Entity {
       return host;
     }
 
-    // bitcoin.conf can express rpcbind/rpcconnect as IPv4 host:port.
-    if (host.includes(':') && host.split(':').length === 2) {
-      return host.split(':')[0];
+    // bitcoin.conf: `host:port` only when a single colon separates a numeric port (not bare IPv6).
+    if (this._hasSingleNumericPortSuffix(host)) {
+      return host.slice(0, host.lastIndexOf(':'));
     }
 
     return host;
@@ -303,9 +318,8 @@ class Environment extends Entity {
       const m = /^:(\d+)$/.exec(tail);
       return m ? Number(m[1]) : null;
     }
-    const parts = endpoint.split(':');
-    const maybePort = Number(parts[parts.length - 1]);
-    return Number.isFinite(maybePort) ? maybePort : null;
+    if (!this._hasSingleNumericPortSuffix(endpoint)) return null;
+    return Number(endpoint.slice(endpoint.lastIndexOf(':') + 1));
   }
 
   _defaultRPCPortForNetwork (network = 'mainnet') {

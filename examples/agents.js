@@ -606,60 +606,67 @@ class Distributor extends Service {
     this.emit('debug', 'Starting Distributor...');
     this._state.status = 'STARTING';
 
-    for (let i = 0; i < numberOfCores; i++) {
-      const core = new Worker(__filename, {
-        workerData: {
-          workerIndex: i,
-          initialState: {
-            queueProcessed: 0,
-            lastPayload: null
-          },
-          functionSource: (this.settings.function && this.settings.function.toString)
-            ? this.settings.function.toString()
-            : null
-        }
-      });
+    try {
+      for (let i = 0; i < numberOfCores; i++) {
+        const core = new Worker(__filename, {
+          workerData: {
+            workerIndex: i,
+            initialState: {
+              queueProcessed: 0,
+              lastPayload: null
+            },
+            functionSource: (this.settings.function && this.settings.function.toString)
+              ? this.settings.function.toString()
+              : null
+          }
+        });
 
-      core.__index = i;
-      core.__busy = false;
-      core.__processed = 0;
-      core.__errors = 0;
-      core.__lastJobID = null;
-      core.__state = {};
-      this._state.cores.push(core);
+        core.__index = i;
+        core.__busy = false;
+        core.__processed = 0;
+        core.__errors = 0;
+        core.__lastJobID = null;
+        core.__state = {};
+        this._state.cores.push(core);
 
-      core.on('message', (message) => {
-        this.emit('debug', 'Core message:', message);
+        core.on('message', (message) => {
+          this.emit('debug', 'Core message:', message);
 
-        if (message && message.type === 'done') {
-          core.__processed++;
-          core.__lastJobID = message.id || null;
-          core.__state = message.state || core.__state;
-          this._state.content.completed++;
-          this._snapshotGlobalState('worker-done');
-          core.__busy = false;
-          this._dispatchWork();
-        }
+          if (message && message.type === 'done') {
+            core.__processed++;
+            core.__lastJobID = message.id || null;
+            core.__state = message.state || core.__state;
+            this._state.content.completed++;
+            this._snapshotGlobalState('worker-done');
+            core.__busy = false;
+            this._dispatchWork();
+          }
 
-        if (message && message.type === 'error') {
-          core.__errors++;
-          core.__lastJobID = message.id || null;
-          core.__state = message.state || core.__state;
-          this._state.content.failed++;
-          this._snapshotGlobalState('worker-error');
-          core.__busy = false;
-          this._dispatchWork();
-        }
-      });
+          if (message && message.type === 'error') {
+            core.__errors++;
+            core.__lastJobID = message.id || null;
+            core.__state = message.state || core.__state;
+            this._state.content.failed++;
+            this._snapshotGlobalState('worker-error');
+            core.__busy = false;
+            this._dispatchWork();
+          }
+        });
 
-      core.on('error', (error) => {
-        this.emit('error', 'Core error:', error);
-      });
+        core.on('error', (error) => {
+          this.emit('error', 'Core error:', error);
+        });
 
-      core.on('exit', (code, signal) => {
-        this.emit('debug', 'Core exited:', code, signal);
-        core.__busy = true;
-      });
+        core.on('exit', (code, signal) => {
+          this.emit('debug', 'Core exited:', code, signal);
+          core.__busy = true;
+        });
+      }
+    } catch (error) {
+      const cores = this._state.cores.splice(0, this._state.cores.length);
+      await Promise.all(cores.map((c) => c.terminate().catch(() => {})));
+      this._state.status = 'PAUSED';
+      throw error;
     }
 
     this.emit('debug', `Distributor started.  Fund this address: ${this.address}`);
