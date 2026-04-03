@@ -13,8 +13,9 @@
  * older and lacks these exports, {@link #isNativeBech32Callable} is false and
  * `functions/bech32` falls back to the JS reference.
  *
- * **`FABRIC_SKIP_NATIVE_ADDON=1`:** never `require()` the addon (used when a stale
- * `fabric.node` would SIGSEGV on load).
+ * **`FABRIC_SKIP_NATIVE_ADDON=1`:** do not `require()` the default **`build/Release/fabric.node`**
+ * candidate (avoids a stale binary that might SIGSEGV). **`FABRIC_ADDON_PATH`** is still loaded
+ * when set, so tests and tooling can pin a safe JS mock or known-good addon.
  *
  * **`FABRIC_ADDON_PATH_STRICT=1`:** with **`FABRIC_ADDON_PATH`** set, try **only** that path
  * (do not fall back to `build/Release/fabric.node`). If STRICT is set without a path, it is ignored
@@ -68,19 +69,37 @@ function nativeAddonLoadRequested () {
   return nativeDoubleSha256Enabled() || nativeBech32Enabled();
 }
 
-function addonPathCandidates (pathMod) {
-  const env = typeof process !== 'undefined' && process.env ? process.env.FABRIC_ADDON_PATH : undefined;
+function addonPathCandidates (pathMod, skipBuiltinRelease = false) {
+  const raw = typeof process !== 'undefined' && process.env ? process.env.FABRIC_ADDON_PATH : undefined;
+  const env = raw != null ? String(raw).trim() : '';
   const strictFlag = typeof process !== 'undefined' && process.env &&
     (process.env.FABRIC_ADDON_PATH_STRICT === '1' || process.env.FABRIC_ADDON_PATH_STRICT === 'true');
   // Strict mode only applies when an explicit override path is set; otherwise STRICT alone would
   // skip build/Release and silently disable native accel (no candidates).
-  const strict = strictFlag && !!String(env || '').trim();
+  const strict = strictFlag && env.length > 0;
   const list = [];
   if (env) list.push(env);
-  if (!strict) {
+  if (!strict && !skipBuiltinRelease) {
     list.push(pathMod.join(__dirname, '..', 'build', 'Release', 'fabric.node'));
   }
   return list;
+}
+
+/**
+ * @param {unknown} err
+ * @returns {string|undefined}
+ */
+function formatAddonLoadError (err) {
+  if (err == null) return undefined;
+  if (err instanceof Error) {
+    const msg = typeof err.message === 'string' ? err.message.trim() : '';
+    if (msg.length) return err.message;
+    const asString = String(err).trim();
+    if (asString.length) return String(err);
+    return err.name && err.name !== 'Error' ? err.name : 'Native addon failed to load';
+  }
+  const s = String(err);
+  return s.length ? s : 'Native addon failed to load';
 }
 
 function tryLoadAddon () {
@@ -89,25 +108,31 @@ function tryLoadAddon () {
   if (!nativeAddonLoadRequested()) {
     return;
   }
-  if (typeof process !== 'undefined' && process.env && process.env.FABRIC_SKIP_NATIVE_ADDON === '1') {
-    return;
-  }
   if (!isNode()) {
     return;
   }
+  const skipBuiltinRelease = typeof process !== 'undefined' && process.env &&
+    process.env.FABRIC_SKIP_NATIVE_ADDON === '1';
   const fs = require('fs');
   const pathMod = require('path');
-  for (const p of addonPathCandidates(pathMod)) {
+  let lastLoadError = null;
+  for (const p of addonPathCandidates(pathMod, skipBuiltinRelease)) {
     try {
-      if (!p || !fs.existsSync(p)) continue;
+      if (!p) continue;
+      if (!fs.existsSync(p)) {
+        lastLoadError = new Error(`Native addon not found: ${p}`);
+        continue;
+      }
       addon = require(p);
       loadError = null;
       return;
     } catch (err) {
-      loadError = err;
+      lastLoadError = err;
       addon = null;
     }
   }
+  addon = null;
+  loadError = lastLoadError;
 }
 
 function isNativeBech32Callable () {
@@ -146,11 +171,7 @@ function status () {
     nativeDoubleSha256OptIn: nativeDoubleSha256Enabled(),
     nativeBech32OptIn: nativeBech32Enabled(),
     path: pathStr,
-    error: !addon && loadError
-      ? (loadError instanceof Error && loadError.message
-        ? loadError.message
-        : String(loadError))
-      : undefined
+    error: !addon && loadError ? formatAddonLoadError(loadError) : undefined
   };
 }
 
