@@ -93,7 +93,9 @@
     "example:basic": "node examples/fabric-basic-usage.js",
     "example:chat": "node examples/fabric-chat-app.js",
     "example:demo": "node examples/fabric-demo.js",
-    "example:agents:smoke": "FABRIC_AGENTS_SKIP_CHAIN=1 node examples/agents.js",
+    "example:agents:smoke": "node examples/agents.js --smoke",
+    "example:agents:distributor": "node examples/agents.js --distributor-only",
+    "example:agents:bitcoin": "node examples/agents.js --bitcoin-only",
     "tidy": "js-beautify --indent-size 2 -r _book/**.html",
     "watch:book": "honkit serve --port 8000 # NOTE: /docs and /examples may not be available."
   },

@@ -12,6 +12,7 @@ const OP_TRACE = require('../contracts/trace');
 const crypto = require('crypto');
 const children = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 // External Dependencies
@@ -434,6 +435,7 @@ class Bitcoin extends Service {
   _buildRPCProbeCandidates () {
     const candidates = [];
     const seen = new Set();
+    const cookiePathsTried = new Set();
 
     const pushCandidate = (candidate) => {
       if (!candidate || !candidate.host || !candidate.rpcport) return;
@@ -454,6 +456,41 @@ class Bitcoin extends Service {
       seen.add(key);
       candidates.push(normalized);
     };
+
+    // Prefer cookie-auth regtest probes first (reuse local bitcoind; avoid double-bind on :18443).
+    if (String(this.settings.network || '').toLowerCase() === 'regtest') {
+      const rpcport = Number(this.settings.rpcport) || this._getDefaultRPCPort('regtest');
+      const host = this._normalizeRPCHost(this.settings.host || '127.0.0.1');
+      const cookiePaths = [];
+      if (process.env.FABRIC_BITCOIN_COOKIE_FILE) {
+        cookiePaths.push(String(process.env.FABRIC_BITCOIN_COOKIE_FILE).trim());
+      }
+      cookiePaths.push(path.resolve(process.cwd(), 'stores/bitcoin-regtest/regtest/.cookie'));
+      if (process.platform === 'darwin') {
+        cookiePaths.push(path.join(os.homedir(), 'Library/Application Support/Electron/stores/bitcoin-regtest/regtest/.cookie'));
+      }
+      for (const cookiePath of cookiePaths) {
+        if (!cookiePath || cookiePathsTried.has(cookiePath)) continue;
+        cookiePathsTried.add(cookiePath);
+        try {
+          if (!fs.existsSync(cookiePath)) continue;
+          const raw = fs.readFileSync(cookiePath, 'utf8').trim();
+          const colon = raw.indexOf(':');
+          if (colon === -1) continue;
+          pushCandidate({
+            source: `cookie:${path.basename(path.dirname(cookiePath))}`,
+            host,
+            rpcport,
+            network: 'regtest',
+            username: raw.slice(0, colon),
+            password: raw.slice(colon + 1),
+            secure: false
+          });
+        } catch (e) {
+          /* ignore missing/unreadable cookie */
+        }
+      }
+    }
 
     if (Array.isArray(this.settings.rpcProbeCandidates)) {
       for (const candidate of this.settings.rpcProbeCandidates) {

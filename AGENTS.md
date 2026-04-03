@@ -74,8 +74,19 @@ The example demonstrates common agent elements from this specification:
 - handles `message`, `error`, and `exit` events
 - provides `start()` and `stop()` lifecycle methods
 
+### Running `examples/agents.js`
+- **Help:** `node examples/agents.js --help`
+- **CI / quick smoke:** `npm run example:agents:smoke` or `node examples/agents.js --smoke` (distributor + workers, no daemons)
+- **Distributor demo (long-running):** `npm run example:agents:distributor` — producer loop until Ctrl+C
+- **Regtest Bitcoin + distributor (no Lightning):** `npm run example:agents:bitcoin` — lighter “real” stack
+- **Full stack:** `node examples/agents.js` — managed bitcoind + two CLN nodes + distributor + Lightning payments for priority queue
+
+Use `--work-ms=<n>` or `FABRIC_AGENTS_WORK_MS` for per-job delay; `FABRIC_AGENTS_BOOT_IDLE_MS` caps the initial drain wait on the full and bitcoin-only paths.
+
+**Reusing a local regtest `bitcoind` on port 18443:** the Bitcoin service probes cookie auth at `./stores/bitcoin-regtest/regtest/.cookie` and, on macOS, `~/Library/Application Support/Electron/stores/bitcoin-regtest/regtest/.cookie`. Set **`FABRIC_BITCOIN_COOKIE_FILE`** to your `.cookie` path if the node lives elsewhere. That avoids spawning a second `bitcoind` and hitting RPC bind errors.
+
 ### agents.js: Bitcoin + Lightning integration
-The example runs a Bitcoin regtest node, Master Lightning node, and Alice Lightning node. Flow:
+The full example runs a Bitcoin regtest node, Master Lightning node, and Alice Lightning node. Flow:
 
 1. **Bitcoin** — Start, mine 101 blocks if no spendable UTXOs, then mine one block every 10s.
 2. **Master Lightning** — Start, deposit 50% of spendable BTC if needed, confirm with 6 blocks.

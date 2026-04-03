@@ -3,10 +3,58 @@
 /**
  * Multi-core {@link Service} distributor with optional managed Bitcoin (regtest) + dual Lightning nodes.
  *
- * **Smoke (no bitcoind):** `FABRIC_AGENTS_SKIP_CHAIN=1 node examples/agents.js` (or `npm run example:agents:smoke`).
- * **Worker delay:** `FABRIC_AGENTS_WORK_MS` (ms); default `1200`, or `25` when `SKIP_CHAIN` is set.
- * **Keys:** `FABRIC_MNEMONIC` optional; skip-chain mode falls back to {@link FIXTURE_SEED} when unset.
+ * ## CLI (preferred)
+ *
+ * | Flag | Purpose |
+ * |------|---------|
+ * | `--help`, `-h` | Usage and environment reference |
+ * | `--smoke` | One-shot distributor smoke (drain queue, exit 0); same idea as skip-chain |
+ * | `--distributor-only` | Distributor + workers + producer loop until SIGINT/ SIGTERM (no Bitcoin / Lightning) |
+ * | `--bitcoin-only` | Regtest Bitcoin + distributor + producer; no Lightning (lighter “real” stack) |
+ * | `--work-ms=<n>` | Worker simulated job duration (also `FABRIC_AGENTS_WORK_MS`) |
+ *
+ * ## Environment
+ *
+ * - **`FABRIC_AGENTS_SKIP_CHAIN=1`** — CI-style smoke (exit after queue drains); overridden by `--distributor-only` / `--bitcoin-only`.
+ * - **`FABRIC_AGENTS_WORK_MS`** — per-job delay inside workers (default `1200` full stack, `25` when skip-chain).
+ * - **`FABRIC_AGENTS_BOOT_IDLE_MS`** — max wait (ms) for initial queue drain after startup (default `120000`).
+ * - **`FABRIC_AGENTS_WORK_SHA256_ITERS`** — optional CPU work per job (SHA-256 loop, capped at 2M) for load testing.
+ * - **`FABRIC_MNEMONIC`** — optional; smoke / distributor-only use {@link FIXTURE_SEED} when unset.
+ * - **`FABRIC_CLEAN_ALICE=1`** — remove Alice CLN datadir before start (stale socket recovery).
+ * - **`FABRIC_BITCOIN_COOKIE_FILE`** — path to `bitcoind` `.cookie` when reusing a regtest node on `:18443` outside `./stores/bitcoin-regtest` (see {@link Bitcoin} RPC probe).
+ *
+ * ## npm scripts
+ *
+ * - `npm run example:agents:smoke` — `FABRIC_AGENTS_SKIP_CHAIN=1 node examples/agents.js`
+ * - `npm run example:agents:distributor` — long-running distributor-only demo
+ * - `npm run example:agents:bitcoin` — Bitcoin regtest + distributor (no Lightning)
  */
+
+// Parse argv before constants that read `process.env` (e.g. `FABRIC_AGENTS_WORK_MS`).
+// Use globalThis: local `const process = require('process')` below is still in TDZ during this IIFE.
+const AGENTS_CLI = (function parseAgentsCli () {
+  const flags = {
+    help: false,
+    smoke: false,
+    distributorOnly: false,
+    bitcoinOnly: false
+  };
+  const proc = globalThis.process;
+  const argv = proc.argv.slice(2);
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--help' || a === '-h') flags.help = true;
+    else if (a === '--smoke') flags.smoke = true;
+    else if (a === '--distributor-only') flags.distributorOnly = true;
+    else if (a === '--bitcoin-only') flags.bitcoinOnly = true;
+    else if (a === '--work-ms' && argv[i + 1]) {
+      proc.env.FABRIC_AGENTS_WORK_MS = String(argv[++i]);
+    } else if (/^--work-ms=/.test(a)) {
+      proc.env.FABRIC_AGENTS_WORK_MS = a.replace(/^--work-ms=/, '');
+    }
+  }
+  return flags;
+})();
 
 // Dependencies
 const crypto = require('crypto');
@@ -41,6 +89,10 @@ const AGENT_WORK_DELAY_MS = (Number.isFinite(workDelayMsEnv) && workDelayMsEnv >
   : (process.env.FABRIC_AGENTS_SKIP_CHAIN === '1' ? 25 : 1200);
 const DEFAULT_MAX_QUEUE = 100;
 const BITCOIN_NETWORK = 'regtest';
+const bootIdleMsEnv = Number(process.env.FABRIC_AGENTS_BOOT_IDLE_MS);
+const FABRIC_AGENTS_BOOT_IDLE_MS = (Number.isFinite(bootIdleMsEnv) && bootIdleMsEnv > 0)
+  ? bootIdleMsEnv
+  : 120000;
 const PRODUCER_INTERVAL_MS = 200;
 const PRODUCER_BATCH_SIZE = Math.max(2, Math.ceil(numberOfCores / 2));
 const INITIAL_SPENDABLE_BLOCKS = 101;
@@ -52,19 +104,26 @@ const ALICE_LIGHTNING_PORT = 19735;
 const MIN_CHANNEL_FUNDING_SATS = 10000;
 const MAX_ALICE_DEPOSIT_BTC = 1;
 
+const workShaEnv = Number(process.env.FABRIC_AGENTS_WORK_SHA256_ITERS);
+const WORK_SHA256_ITERS = (Number.isFinite(workShaEnv) && workShaEnv > 0)
+  ? Math.min(Math.floor(workShaEnv), 2_000_000)
+  : 0;
+
 // Work Function
 const work = function (payload = {}) {
   this.queueProcessed = (this.queueProcessed || 0) + 1;
   this.lastPayload = payload.index;
 
   console.debug(`[WORKER:INNER] Worker #${this.workerIndex} Starting work...`, payload.index);
-  // console.log('[WORKER:INNER] Starting work...', payload);
   return new Promise((resolve) => {
-    // TODO: do something productive here!
-    // console.debug(`[WORKER:INNER] [${payload.index}] Doing something productive...`, payload.state.parentStateID);
-    // console.debug('[WORKER:INNER] Doing something productive...', payload, payload.state.parentStateID);
+    if (WORK_SHA256_ITERS > 0) {
+      let buf = crypto.randomBytes(32);
+      for (let i = 0; i < WORK_SHA256_ITERS; i++) {
+        buf = crypto.createHash('sha256').update(buf).update(Buffer.from(String(i % 65536))).digest();
+      }
+      this.lastWorkDigest = buf.toString('hex', 0, 8);
+    }
     const newState = { ...payload.state, workerIndex: this.workerIndex, incrementor: this.queueProcessed };
-    // TODO: replace this with Actor ID
     const entityID = `${newState.workerIndex}:${newState.incrementor}:${payload.index}`;
     setTimeout(() => {
       console.log('[WORKER:INNER] Work complete:', payload);
@@ -142,7 +201,26 @@ async function mineBlocksToAddress (bitcoin, address, count = 1) {
 }
 
 async function listSpendableUTXOs (bitcoin) {
-  const utxos = await bitcoin._makeRPCRequest('listunspent', [1]);
+  let utxos;
+  try {
+    utxos = await bitcoin._makeWalletRequest('listunspent', [1], bitcoin.walletName);
+  } catch (error) {
+    const msg = String((error && error.message) || error);
+    if (msg.includes('not found') || msg.includes('does not exist')) {
+      try {
+        utxos = await bitcoin._makeRPCRequest('listunspent', [1]);
+      } catch (e2) {
+        const m2 = String((e2 && e2.message) || e2);
+        if (m2.includes('Multiple wallets')) {
+          console.warn('[DEVELOP] listunspent needs a wallet context; using Fabric wallet only.');
+          return [];
+        }
+        throw e2;
+      }
+    } else {
+      throw error;
+    }
+  }
   if (!Array.isArray(utxos)) return [];
   return utxos.filter((utxo) => {
     return utxo && utxo.spendable !== false && Number(utxo.amount || 0) > 0;
@@ -350,6 +428,259 @@ async function getLightningStatusSnapshot (lightning, aliceLightning) {
     aliceChannels: Array.isArray(aliceFunds.channels) ? aliceFunds.channels : [],
     updatedAt: new Date().toISOString()
   };
+}
+
+function printAgentsHelp () {
+  console.log(`
+Fabric agents example — multi-core work distributor (+ optional regtest Bitcoin / Lightning)
+
+Usage:
+  node examples/agents.js [options]
+
+Options:
+  --help, -h           Show this message
+  --smoke              Drain the queue once and exit (distributor smoke test)
+  --distributor-only   Distributor + periodic work until SIGINT (no Bitcoin / Lightning)
+  --bitcoin-only       Managed regtest bitcoind + distributor until SIGINT (no Lightning)
+  --work-ms=<n>        Per-job worker delay in ms (same as FABRIC_AGENTS_WORK_MS)
+
+Environment:
+  FABRIC_AGENTS_SKIP_CHAIN=1   CI-style smoke (exit after drain); ignored if --distributor-only / --bitcoin-only
+  FABRIC_AGENTS_WORK_MS        Worker simulated job duration
+  FABRIC_AGENTS_BOOT_IDLE_MS   Max ms to wait for initial queue drain (default 120000)
+  FABRIC_AGENTS_WORK_SHA256_ITERS  Optional SHA-256 iterations per job (load test; cap 2M)
+  FABRIC_MNEMONIC              Optional BIP-39 mnemonic for keys
+  FABRIC_CLEAN_ALICE=1         Delete Alice Lightning datadir before start (full stack only)
+
+npm run example:agents:smoke
+npm run example:agents:distributor
+npm run example:agents:bitcoin
+`);
+}
+
+/**
+ * @param {{ master: Distributor, lightning?: object, aliceLightning?: object }} opts
+ * @returns {{ producerTimer: NodeJS.Timeout, statusTimer: NodeJS.Timeout }}
+ */
+function scheduleAgentProducers ({ master, lightning, aliceLightning }) {
+  let producerSequence = 0;
+  const producerTimer = setInterval(() => {
+    for (let i = 0; i < PRODUCER_BATCH_SIZE; i++) {
+      try {
+        master.requestWork({ index: `work-${producerSequence++}` }, 0);
+      } catch (error) {
+        console.warn('[STATUS]', 'Queue submit skipped:', error.message);
+        break;
+      }
+    }
+  }, PRODUCER_INTERVAL_MS);
+
+  const statusTimer = setInterval(() => {
+    Promise.resolve().then(async () => {
+      let snapshot = {
+        masterFunds: {},
+        aliceFunds: {},
+        masterChannels: [],
+        aliceChannels: [],
+        updatedAt: null
+      };
+      if (lightning && aliceLightning) {
+        snapshot = await getLightningStatusSnapshot(lightning, aliceLightning);
+      }
+      master.setExternalStatus(snapshot);
+
+      const status = master.status();
+      const aliceChannels = Array.isArray(snapshot.aliceChannels) ? snapshot.aliceChannels : [];
+      const masterChannels = Array.isArray(snapshot.masterChannels) ? snapshot.masterChannels : [];
+      const aliceFunds = snapshot.aliceFunds || {};
+      const masterFunds = snapshot.masterFunds || {};
+      const workerSummary = status.workers.map((worker) => {
+        const state = worker.state || {};
+        return `w${worker.index}:done=${worker.processed},err=${worker.errors},${worker.busy ? 'busy' : 'idle'},state.jobs=${state.queueProcessed || 0},state.depth=${state.depth || 0},state.last=${state.lastPayload || '-'}`;
+      }).join(' | ');
+
+      console.log(
+        `[MASTER] [STATUS] queue=${status.queueDepth} completed=${status.completed} failed=${status.failed} processed=${status.processed} busy=${status.workersBusy}/${status.workersTotal} ${workerSummary}`
+      );
+
+      if (lightning && aliceLightning) {
+        console.log(
+          `[ALICE] [STATUS:LIGHTNING] channels=${aliceChannels.length} funds=${aliceFunds.total_msat || aliceFunds.total || '-'}`
+        );
+        console.log(
+          `[MASTER] [STATUS:LIGHTNING] channels=${masterChannels.length} funds=${masterFunds.total_msat || masterFunds.total || '-'}`
+        );
+      }
+
+      console.log(
+        `[MASTER] [MERKLE] depth=${status.stateDepth} root=${status.historyRoot || '-'} tip=${status.stateTip || '-'} parent=${status.stateParent || '-'}`
+      );
+    }).catch((error) => {
+      console.warn('[STATUS]', 'Status tick failed:', error.message);
+    });
+  }, 5000);
+
+  return { producerTimer, statusTimer };
+}
+
+/**
+ * Long-running distributor + workers only (no Bitcoin / Lightning).
+ * @param {object} [input]
+ */
+async function runDistributorOnlyDemo (input = {}) {
+  const skipKey = Object.assign({ network: BITCOIN_NETWORK },
+    FABRIC_MNEMONIC ? { mnemonic: FABRIC_MNEMONIC } : { mnemonic: FIXTURE_SEED });
+  console.log('[DEVELOP] --distributor-only — Fabric distributor + workers (Ctrl+C to stop).');
+
+  let producerTimer = null;
+  let statusTimer = null;
+  const master = new Distributor(Object.assign({}, input, { key: skipKey }));
+
+  const shutdown = async (signal) => {
+    console.log(`[DEVELOP] Received ${signal}, shutting down...`);
+    if (producerTimer) clearInterval(producerTimer);
+    if (statusTimer) clearInterval(statusTimer);
+    try {
+      await master.stop();
+    } catch (error) {
+      console.error('[DEVELOP] Distributor shutdown error:', error && error.message ? error.message : error);
+    }
+    process.exit(0);
+  };
+  process.once('SIGINT', () => { void shutdown('SIGINT'); });
+  process.once('SIGTERM', () => { void shutdown('SIGTERM'); });
+
+  await master.start();
+  for (let i = 0; i < numberOfCores; i++) {
+    master.requestWork({ index: i }, 0);
+  }
+  master.requestWork({ index: 'priority' }, 1);
+  const queuedJobs = numberOfCores + 1;
+  const waves = Math.ceil(queuedJobs / Math.max(1, numberOfCores));
+  const delayMs = Math.max(AGENT_WORK_DELAY_MS, 1);
+  const idleDeadline = Math.max(25000, 3000 + waves * delayMs + 2000);
+  const drained = await master.waitForIdle(idleDeadline);
+  if (!drained) {
+    throw new Error(`Bootstrap queue did not drain within ${idleDeadline}ms`);
+  }
+  console.log('[DEVELOP] Initial queue drained; starting producer loop.');
+
+  const timers = scheduleAgentProducers({ master, lightning: null, aliceLightning: null });
+  producerTimer = timers.producerTimer;
+  statusTimer = timers.statusTimer;
+
+  console.log('[DEVELOP] Distributor-only demo running.');
+  await new Promise(() => {});
+}
+
+/**
+ * Managed regtest Bitcoin + distributor until SIGINT (no Lightning).
+ * @param {object} [input]
+ */
+async function runBitcoinOnlyDemo (input = {}) {
+  const staticKey = Object.assign({ network: BITCOIN_NETWORK }, FABRIC_MNEMONIC ? { mnemonic: FABRIC_MNEMONIC } : {});
+
+  let producerTimer = null;
+  let statusTimer = null;
+  let blockTimer = null;
+  let bitcoin = null;
+  const master = new Distributor(Object.assign({}, input, { key: staticKey || input.key || null }));
+
+  const shutdown = async (signal) => {
+    console.log(`[DEVELOP] Received ${signal}, shutting down...`);
+    if (producerTimer) clearInterval(producerTimer);
+    if (statusTimer) clearInterval(statusTimer);
+    if (blockTimer) clearInterval(blockTimer);
+    try {
+      await master.stop();
+    } catch (error) {
+      console.error('[DEVELOP] Distributor shutdown error:', error && error.message ? error.message : error);
+    }
+    if (bitcoin) {
+      try {
+        await bitcoin.stop();
+      } catch (error) {
+        console.error('[DEVELOP] Bitcoin shutdown error:', error && error.message ? error.message : error);
+      }
+      try {
+        if (bitcoin._nodeProcess && bitcoin._nodeProcess.exitCode === null) {
+          bitcoin._nodeProcess.kill('SIGKILL');
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    process.exit(0);
+  };
+  process.once('SIGINT', () => { void shutdown('SIGINT'); });
+  process.once('SIGTERM', () => { void shutdown('SIGTERM'); });
+
+  bitcoin = new Bitcoin({
+    network: BITCOIN_NETWORK,
+    mode: 'rpc',
+    managed: true,
+    rpcport: 18443,
+    zmq: null,
+    key: staticKey
+  });
+  bitcoin.on('error', (error) => {
+    console.error('[DEVELOP]', 'Bitcoin emitted error:', error);
+  });
+  bitcoin.on('warning', (warning) => {
+    console.warn('[DEVELOP]', 'Bitcoin emitted warning:', warning);
+  });
+
+  console.log('[DEVELOP] --bitcoin-only — starting managed regtest bitcoind...');
+  try {
+    await bitcoin.start();
+  } catch (error) {
+    console.error('[DEVELOP] Bitcoin service failed to start:', error.message);
+    console.error('[DEVELOP] Hint: free port 18443, or use --distributor-only / FABRIC_AGENTS_SKIP_CHAIN=1');
+    throw error;
+  }
+
+  const miningAddress = await bitcoin.getUnusedAddress();
+  let spendableUTXOs = [];
+  try {
+    spendableUTXOs = await listSpendableUTXOs(bitcoin);
+  } catch (error) {
+    console.warn('[DEVELOP] Could not list spendable UTXOs yet:', error.message);
+  }
+
+  if (!spendableUTXOs.length) {
+    console.log(`[DEVELOP] Mining initial ${INITIAL_SPENDABLE_BLOCKS} regtest blocks to ${miningAddress}...`);
+    await mineBlocksToAddress(bitcoin, miningAddress, INITIAL_SPENDABLE_BLOCKS);
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  } else {
+    console.log('[DEVELOP] Spendable UTXOs present; skipping bootstrap mining.');
+  }
+
+  blockTimer = setInterval(async () => {
+    try {
+      const hashes = await mineBlocksToAddress(bitcoin, miningAddress, 1);
+      const hash = (hashes && hashes[0]) ? hashes[0] : null;
+      console.log(`[DEVELOP] Mined regtest block: ${hash}`);
+    } catch (error) {
+      console.error('[DEVELOP] Failed to mine periodic block:', error.message);
+    }
+  }, BLOCK_INTERVAL_MS);
+
+  await master.start();
+  for (let i = 0; i < numberOfCores; i++) {
+    master.requestWork({ index: i }, 0);
+  }
+  master.requestWork({ index: 'priority' }, 1);
+  const bootDrained = await master.waitForIdle(FABRIC_AGENTS_BOOT_IDLE_MS);
+  if (!bootDrained) {
+    console.warn(`[DEVELOP] Initial queue still busy after ${FABRIC_AGENTS_BOOT_IDLE_MS}ms; continuing with producer.`);
+  }
+
+  const timers = scheduleAgentProducers({ master, lightning: null, aliceLightning: null });
+  producerTimer = timers.producerTimer;
+  statusTimer = timers.statusTimer;
+
+  console.log('[DEVELOP] Bitcoin + distributor demo running (no Lightning). Ctrl+C to stop.');
+  await new Promise(() => {});
 }
 
 async function payRequestedAmount (lightning, aliceLightning, request = {}) {
@@ -794,6 +1125,7 @@ class Distributor extends Service {
           parentStateID: this._state.id
         });
       } catch (error) {
+        queue.unshift(job);
         core.__busy = false;
         this.emit('error', 'Failed to dispatch job:', error.message);
       }
@@ -874,6 +1206,24 @@ async function main (input = {}) {
     return;
   }
 
+  if (AGENTS_CLI.help) {
+    printAgentsHelp();
+    return 'no-complete-log';
+  }
+
+  if (AGENTS_CLI.distributorOnly) {
+    await runDistributorOnlyDemo(input);
+    return;
+  }
+
+  if (AGENTS_CLI.bitcoinOnly) {
+    await runBitcoinOnlyDemo(input);
+    return;
+  }
+
+  const skipChainEnv = process.env.FABRIC_AGENTS_SKIP_CHAIN === '1';
+  const smokeExit = (AGENTS_CLI.smoke || skipChainEnv) && !AGENTS_CLI.distributorOnly && !AGENTS_CLI.bitcoinOnly;
+
   let shuttingDown = false;
   let producerTimer = null;
   let statusTimer = null;
@@ -890,10 +1240,10 @@ async function main (input = {}) {
     passphrase: 'alice'
   });
 
-  if (process.env.FABRIC_AGENTS_SKIP_CHAIN === '1') {
+  if (smokeExit) {
     const skipKey = Object.assign({ network: BITCOIN_NETWORK },
       FABRIC_MNEMONIC ? { mnemonic: FABRIC_MNEMONIC } : { mnemonic: FIXTURE_SEED });
-    console.log('[DEVELOP] FABRIC_AGENTS_SKIP_CHAIN=1 — distributor + workers only (no Bitcoin / Lightning).');
+    console.log('[DEVELOP] Smoke mode — distributor + workers only (no Bitcoin / Lightning). Use --smoke or FABRIC_AGENTS_SKIP_CHAIN=1.');
     const skipMaster = new Distributor(Object.assign({}, input, { key: skipKey }));
     try {
       await skipMaster.start();
@@ -1230,61 +1580,22 @@ async function main (input = {}) {
     master.requestWork({ index: i }, 0);
   }
   master.requestWork({ index: 'priority' }, 1);
-  await master.waitForIdle();
+  const bootDrained = await master.waitForIdle(FABRIC_AGENTS_BOOT_IDLE_MS);
+  if (!bootDrained) {
+    console.warn(`[DEVELOP] Initial queue still busy after ${FABRIC_AGENTS_BOOT_IDLE_MS}ms; continuing with producer.`);
+  }
 
-  let producerSequence = 0;
-  producerTimer = setInterval(() => {
-    for (let i = 0; i < PRODUCER_BATCH_SIZE; i++) {
-      try {
-        master.requestWork({ index: `work-${producerSequence++}` }, 0);
-      } catch (error) {
-        console.warn('[STATUS]', 'Queue submit skipped:', error.message);
-        break;
-      }
-    }
-  }, PRODUCER_INTERVAL_MS);
-
-  statusTimer = setInterval(() => {
-    Promise.resolve().then(async () => {
-      const snapshot = await getLightningStatusSnapshot(lightning, aliceLightning);
-      master.setExternalStatus(snapshot);
-
-      const status = master.status();
-      const aliceChannels = Array.isArray(snapshot.aliceChannels) ? snapshot.aliceChannels : [];
-      const masterChannels = Array.isArray(snapshot.masterChannels) ? snapshot.masterChannels : [];
-      const aliceFunds = snapshot.aliceFunds || {};
-      const masterFunds = snapshot.masterFunds || {};
-      const workerSummary = status.workers.map((worker) => {
-        const state = worker.state || {};
-        return `w${worker.index}:done=${worker.processed},err=${worker.errors},${worker.busy ? 'busy' : 'idle'},state.jobs=${state.queueProcessed || 0},state.depth=${state.depth || 0},state.last=${state.lastPayload || '-'}`;
-      }).join(' | ');
-
-      console.log(
-        `[MASTER] [STATUS] queue=${status.queueDepth} completed=${status.completed} failed=${status.failed} processed=${status.processed} busy=${status.workersBusy}/${status.workersTotal} ${workerSummary}`
-      );
-
-      console.log(
-        `[ALICE] [STATUS:LIGHTNING] channels=${aliceChannels.length} funds=${aliceFunds.total_msat || aliceFunds.total || '-'}`
-      );
-
-      console.log(
-        `[MASTER] [STATUS:LIGHTNING] channels=${masterChannels.length} funds=${masterFunds.total_msat || masterFunds.total || '-'}`
-      );
-
-      console.log(
-        `[MASTER] [MERKLE] depth=${status.stateDepth} root=${status.historyRoot || '-'} tip=${status.stateTip || '-'} parent=${status.stateParent || '-'}`
-      );
-    }).catch((error) => {
-      console.warn('[STATUS]', 'Could not refresh Lightning status snapshot:', error.message);
-    });
-  }, 5000);
+  const timers = scheduleAgentProducers({ master, lightning, aliceLightning });
+  producerTimer = timers.producerTimer;
+  statusTimer = timers.statusTimer;
 }
 
 if (isMainThread) {
   main(configuration).catch((error) => {
     console.error(error);
     process.exit(1);
-  }).then(() => {
+  }).then((exitNote) => {
+    if (exitNote === 'no-complete-log') return;
     console.log('[DEVELOP]', 'Main thread complete');
   });
 } else {
