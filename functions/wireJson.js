@@ -6,6 +6,7 @@
  *
  * Body size is already capped when messages are constructed, but this guards against
  * regressions or non-AMP callers passing huge strings before `JSON.parse`.
+ * Wire parsing uses a UTF-8 byte cap ({@link MAX_MESSAGE_SIZE}); persisted parsing uses a UTF-16 code-unit cap ({@link PERSISTED_JSON_MAX_CHARS}).
  *
  * @module functions/wireJson
  */
@@ -23,20 +24,24 @@ function messageDataToString (data) {
 }
 
 /**
- * Parse JSON with an explicit UTF-16 length bound (wire, LevelDB, local files).
+ * Parse JSON with an explicit size bound (wire, LevelDB, local files).
  * @param {string} raw
- * @param {number} maxChars — reject when `raw.length > maxChars`
+ * @param {number} maxChars — reject when measured size exceeds this (see `opts.measure`)
+ * @param {{ measure?: 'utf16' | 'utf8' }} [opts] — wire AMP bodies use UTF-8 bytes vs {@link MAX_MESSAGE_SIZE}; persisted paths use UTF-16 code units (default).
  * @returns {{ ok: true, value: * } | { ok: false, error: Error }}
  */
-function tryParseJsonBounded (raw, maxChars) {
+function tryParseJsonBounded (raw, maxChars, opts) {
   if (typeof raw !== 'string') {
     return { ok: false, error: new TypeError('bounded JSON: expected string') };
   }
   if (!Number.isFinite(maxChars) || maxChars < 0) {
     return { ok: false, error: new TypeError('bounded JSON: maxChars must be a non-negative finite number') };
   }
-  if (raw.length > maxChars) {
-    return { ok: false, error: new RangeError(`bounded JSON: length ${raw.length} exceeds maxChars ${maxChars}`) };
+  const measure = opts && opts.measure === 'utf8' ? 'utf8' : 'utf16';
+  const size = measure === 'utf8' ? Buffer.byteLength(raw, 'utf8') : raw.length;
+  if (size > maxChars) {
+    const label = measure === 'utf8' ? 'UTF-8 byte length' : 'length';
+    return { ok: false, error: new RangeError(`bounded JSON: ${label} ${size} exceeds max ${maxChars}`) };
   }
   try {
     return { ok: true, value: JSON.parse(raw) };
@@ -52,7 +57,7 @@ function tryParseJsonBounded (raw, maxChars) {
  * @returns {{ ok: true, value: * } | { ok: false, error: Error }}
  */
 function tryParseWireJson (raw) {
-  return tryParseJsonBounded(raw, MAX_MESSAGE_SIZE);
+  return tryParseJsonBounded(raw, MAX_MESSAGE_SIZE, { measure: 'utf8' });
 }
 
 /**

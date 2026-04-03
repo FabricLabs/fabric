@@ -184,26 +184,29 @@ describe('@fabric/core/types/environment', function () {
 
       it('_readBitcoinConf parses regtest RPC, flags, and comments', function () {
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-btc-conf-'));
-        const confPath = path.join(dir, 'bitcoin.conf');
-        fs.writeFileSync(confPath, [
-          '# rpc',
-          '; also comment',
-          '',
-          'regtest=1',
-          'server=1',
-          'rpcuser=testuser',
-          'rpcpassword=secret',
-          'txindex'
-        ].join('\n'), 'utf8');
-        const e = new Environment();
-        const cfg = e._readBitcoinConf(confPath);
-        assert.strictEqual(cfg.found, true);
-        assert.strictEqual(cfg.network.active, 'regtest');
-        assert.strictEqual(cfg.rpc.rpcport, 18443);
-        assert.strictEqual(cfg.rpc.rpcuser, 'testuser');
-        assert.strictEqual(cfg.rpc.rpcpassword, 'secret');
-        assert.strictEqual(cfg.general.txindex, true);
-        fs.rmSync(dir, { recursive: true, force: true });
+        try {
+          const confPath = path.join(dir, 'bitcoin.conf');
+          fs.writeFileSync(confPath, [
+            '# rpc',
+            '; also comment',
+            '',
+            'regtest=1',
+            'server=1',
+            'rpcuser=testuser',
+            'rpcpassword=secret',
+            'txindex'
+          ].join('\n'), 'utf8');
+          const e = new Environment();
+          const cfg = e._readBitcoinConf(confPath);
+          assert.strictEqual(cfg.found, true);
+          assert.strictEqual(cfg.network.active, 'regtest');
+          assert.strictEqual(cfg.rpc.rpcport, 18443);
+          assert.strictEqual(cfg.rpc.rpcuser, 'testuser');
+          assert.strictEqual(cfg.rpc.rpcpassword, 'secret');
+          assert.strictEqual(cfg.general.txindex, true);
+        } finally {
+          fs.rmSync(dir, { recursive: true, force: true });
+        }
       });
 
       it('_readBitcoinConf returns found false for a missing path', function () {
@@ -219,17 +222,20 @@ describe('@fabric/core/types/environment', function () {
 
       it('bitcoinSettings reflects parsed bitcoinConfig', function () {
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-btc-conf-'));
-        const confPath = path.join(dir, 'bitcoin.conf');
-        fs.writeFileSync(confPath, 'signet=1\nrpcuser=a\nrpcpassword=b\n', 'utf8');
-        const e = new Environment();
-        e.bitcoinConfig = e._readBitcoinConf(confPath);
-        const s = e.bitcoinSettings;
-        assert.strictEqual(s.network, 'signet');
-        assert.strictEqual(s.rpcport, 38332);
-        assert.strictEqual(s.username, 'a');
-        assert.strictEqual(s.password, 'b');
-        assert.ok(/http:\/\/127\.0\.0\.1:38332/.test(s.authority));
-        fs.rmSync(dir, { recursive: true, force: true });
+        try {
+          const confPath = path.join(dir, 'bitcoin.conf');
+          fs.writeFileSync(confPath, 'signet=1\nrpcuser=a\nrpcpassword=b\n', 'utf8');
+          const e = new Environment();
+          e.bitcoinConfig = e._readBitcoinConf(confPath);
+          const s = e.bitcoinSettings;
+          assert.strictEqual(s.network, 'signet');
+          assert.strictEqual(s.rpcport, 38332);
+          assert.strictEqual(s.username, 'a');
+          assert.strictEqual(s.password, 'b');
+          assert.ok(/http:\/\/127\.0\.0\.1:38332/.test(s.authority));
+        } finally {
+          fs.rmSync(dir, { recursive: true, force: true });
+        }
       });
 
       it('getBitcoinRPCCandidates honors explicit host and port in baseSettings', function () {
@@ -244,31 +250,42 @@ describe('@fabric/core/types/environment', function () {
 
       it('getBitcoinRPCCandidates includes bitcoin.conf source when bitcoinConfig is set', function () {
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-btc-conf-'));
-        const confPath = path.join(dir, 'bitcoin.conf');
-        fs.writeFileSync(confPath, 'regtest=1\nrpcuser=u\nrpcpassword=p\n', 'utf8');
-        const e = new Environment();
-        e.bitcoinConfig = e._readBitcoinConf(confPath);
-        const list = e.getBitcoinRPCCandidates({});
-        assert.ok(list.some((c) => c.source === 'bitcoin.conf'));
-        fs.rmSync(dir, { recursive: true, force: true });
+        try {
+          const confPath = path.join(dir, 'bitcoin.conf');
+          fs.writeFileSync(confPath, 'regtest=1\nrpcuser=u\nrpcpassword=p\n', 'utf8');
+          const e = new Environment();
+          e.bitcoinConfig = e._readBitcoinConf(confPath);
+          const list = e.getBitcoinRPCCandidates({});
+          assert.ok(list.some((c) => c.source === 'bitcoin.conf'));
+        } finally {
+          fs.rmSync(dir, { recursive: true, force: true });
+        }
       });
 
       it('_readAuthCookie reads username:password from .cookie', function () {
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-btc-cookie-'));
-        const reg = path.join(dir, 'regtest');
-        fs.mkdirSync(reg, { recursive: true });
-        fs.writeFileSync(path.join(reg, '.cookie'), '__cookie__:deadbeef\n', 'utf8');
-        const e = new Environment();
-        const auth = e._readAuthCookie(dir, 'regtest');
-        assert.ok(auth);
-        assert.strictEqual(auth.username, '__cookie__');
-        assert.strictEqual(auth.password, 'deadbeef');
-        fs.rmSync(dir, { recursive: true, force: true });
+        try {
+          const reg = path.join(dir, 'regtest');
+          fs.mkdirSync(reg, { recursive: true });
+          fs.writeFileSync(path.join(reg, '.cookie'), '__cookie__:deadbeef\n', 'utf8');
+          const e = new Environment();
+          const auth = e._readAuthCookie(dir, 'regtest');
+          assert.ok(auth);
+          assert.strictEqual(auth.username, '__cookie__');
+          assert.strictEqual(auth.password, 'deadbeef');
+        } finally {
+          fs.rmSync(dir, { recursive: true, force: true });
+        }
       });
 
-      it('_normalizeRPCHost preserves bracketed IPv6 literals', function () {
+      it('_normalizeRPCHost strips port after bracketed IPv6', function () {
         const e = new Environment();
-        assert.strictEqual(e._normalizeRPCHost('[::1]:8332'), '[::1]:8332');
+        assert.strictEqual(e._normalizeRPCHost('[::1]:8332'), '[::1]');
+      });
+
+      it('_extractRPCPort reads port after bracketed IPv6', function () {
+        const e = new Environment();
+        assert.strictEqual(e._extractRPCPort('[::1]:8332'), 8332);
       });
     });
   });

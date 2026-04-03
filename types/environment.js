@@ -277,8 +277,15 @@ class Environment extends Entity {
     const host = String(value).trim();
     if (!host) return '127.0.0.1';
 
-    // bitcoin.conf can express rpcbind/rpcconnect as host:port.
-    if (host.includes(':') && !host.startsWith('[') && host.split(':').length === 2) {
+    // Bracketed IPv6 (e.g. rpcconnect=[::1]:8332): host only, port via _extractRPCPort.
+    if (host.startsWith('[')) {
+      const close = host.indexOf(']');
+      if (close !== -1) return host.slice(0, close + 1);
+      return host;
+    }
+
+    // bitcoin.conf can express rpcbind/rpcconnect as IPv4 host:port.
+    if (host.includes(':') && host.split(':').length === 2) {
       return host.split(':')[0];
     }
 
@@ -289,6 +296,13 @@ class Environment extends Entity {
     if (!value) return null;
     const endpoint = String(value).trim();
     if (!endpoint.includes(':')) return null;
+    if (endpoint.startsWith('[')) {
+      const close = endpoint.indexOf(']');
+      if (close === -1) return null;
+      const tail = endpoint.slice(close + 1);
+      const m = /^:(\d+)$/.exec(tail);
+      return m ? Number(m[1]) : null;
+    }
     const parts = endpoint.split(':');
     const maybePort = Number(parts[parts.length - 1]);
     return Number.isFinite(maybePort) ? maybePort : null;

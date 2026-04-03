@@ -172,6 +172,7 @@ function doubleSha256Hex (buf) {
  * @returns {string}
  */
 function bech32Encode (hrp, words, spec) {
+  // Throws when native is off so {@link functions/bech32} can catch and use pure-JS encode.
   if (!isNativeBech32Callable()) {
     throw new Error('native bech32 not available (set FABRIC_NATIVE_BECH32=1 and build fabric.node with sipa segwit_addr.c)');
   }
@@ -185,6 +186,7 @@ function bech32Encode (hrp, words, spec) {
  * @returns {{ hrp: string, words: number[], spec: 'bech32'|'bech32m' }}
  */
 function bech32Decode (str) {
+  // Same throw-vs-fallback contract as {@link bech32Encode}.
   if (!isNativeBech32Callable()) {
     throw new Error('native bech32 not available');
   }
@@ -206,6 +208,7 @@ function bech32Decode (str) {
  * @returns {string|null}
  */
 function segwitAddrEncode (hrp, version, program) {
+  // Returns null without native — no JS segwit in this module; callers use {@link functions/sipa/segwit_addr}.
   if (!isNativeBech32Callable()) return null;
   const buf = Buffer.isBuffer(program) ? program : Buffer.from(program);
   return addon.segwitAddrEncode(hrp, version, buf);
@@ -217,6 +220,7 @@ function segwitAddrEncode (hrp, version, program) {
  * @returns {{ version: number, program: Buffer }|null}
  */
 function segwitAddrDecode (hrp, addr) {
+  // Mirrors segwitAddrEncode: null means “use JS reference implementation.”
   if (!isNativeBech32Callable()) return null;
   const r = addon.segwitAddrDecode(hrp, addr);
   if (!r) return null;

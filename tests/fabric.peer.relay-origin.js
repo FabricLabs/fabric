@@ -19,9 +19,20 @@ describe('Peer P2P_RELAY origin guard', function () {
     relay.signWithKey(k);
     const buf = relay.toBuffer();
 
-    assert.doesNotThrow(() => peer._handleFabricMessage(buf, null, null));
-    assert.doesNotThrow(() => peer._handleFabricMessage(buf, undefined, null));
-    assert.doesNotThrow(() => peer._handleFabricMessage(buf, {}, null));
-    assert.doesNotThrow(() => peer._handleFabricMessage(buf, { name: undefined }, null));
+    const origRelay = peer.relayFrom;
+    let relayCalls = 0;
+    peer.relayFrom = function relayFromStub () {
+      relayCalls++;
+      return origRelay.apply(this, arguments);
+    };
+    try {
+      assert.doesNotThrow(() => peer._handleFabricMessage(buf, null, null));
+      assert.doesNotThrow(() => peer._handleFabricMessage(buf, undefined, null));
+      assert.doesNotThrow(() => peer._handleFabricMessage(buf, {}, null));
+      assert.doesNotThrow(() => peer._handleFabricMessage(buf, { name: undefined }, null));
+      assert.strictEqual(relayCalls, 0, 'invalid origins must not invoke relayFrom');
+    } finally {
+      peer.relayFrom = origRelay;
+    }
   });
 });

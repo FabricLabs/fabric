@@ -28,11 +28,20 @@ describe('functions/wireJson', function () {
     assert.strictEqual(pr.value.type, 'X');
   });
 
-  it('tryParseWireJson rejects oversize payloads', function () {
+  it('tryParseWireJson rejects oversize payloads (UTF-8 bytes)', function () {
     const huge = 'x'.repeat(MAX_MESSAGE_SIZE + 1);
     const pr = tryParseWireJson(huge);
     assert.strictEqual(pr.ok, false);
-    assert.ok(/exceeds maxChars/.test(pr.error.message));
+    assert.ok(/UTF-8 byte length|exceeds max/.test(pr.error.message));
+  });
+
+  it('tryParseWireJson rejects when UTF-8 bytes exceed bound even if code-unit length is smaller', function () {
+    const unit = '𐀀';
+    const n = Math.ceil((MAX_MESSAGE_SIZE + 1) / 4);
+    const raw = unit.repeat(n);
+    const pr = tryParseWireJson(raw);
+    assert.strictEqual(pr.ok, false);
+    assert.ok(/UTF-8 byte length/.test(pr.error.message));
   });
 
   it('tryParseJsonBounded uses caller maxChars', function () {
@@ -50,7 +59,7 @@ describe('functions/wireJson', function () {
 
   it('parseJsonBounded throws like JSON.parse when invalid or oversize', function () {
     assert.strictEqual(parseJsonBounded('[]', 10).length, 0);
-    assert.throws(() => parseJsonBounded('x'.repeat(11), 10), /exceeds maxChars/);
+    assert.throws(() => parseJsonBounded('x'.repeat(11), 10), /exceeds max/);
     assert.throws(() => parseJsonBounded('{', 100), SyntaxError);
   });
 

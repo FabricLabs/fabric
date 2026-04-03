@@ -17,13 +17,16 @@ describe('@fabric/core/types/bech32', function () {
   it('toString matches functions/bech32 encode(..., bech32m) for the same payload', function () {
     const payload = Buffer.alloc(32, 2);
     const b = new Bech32({ hrp: 'bc', content: payload });
-    const expected = encode('bc', toWords(payload), 'bech32m');
-    assert.strictEqual(b.toString(), expected);
+    assert.strictEqual(b.toString(), encode('bc', toWords(payload), 'bech32m'));
+    assert.strictEqual(
+      b.toString(),
+      'bc1qgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqq2st3m'
+    );
   });
 
   it('words accepts hex string content', function () {
-    const b = new Bech32({ hrp: 'ab', content: 'aabbcc' });
-    assert.ok(Array.isArray(b.words));
-    assert.ok(b.words.length > 0);
+    const hex = 'aabbcc';
+    const b = new Bech32({ hrp: 'ab', content: hex });
+    assert.deepStrictEqual(b.words, toWords(Buffer.from(hex, 'hex')));
   });
 });
