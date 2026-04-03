@@ -4,6 +4,11 @@ const assert = require('assert');
 const Text = require('../services/text');
 
 describe('services/text', function () {
+  it('constructs a service instance', function () {
+    const t = new Text({});
+    assert.ok(t instanceof Text);
+  });
+
   it('tokenize splits on whitespace', function () {
     assert.deepStrictEqual(Text.tokenize('a  b\nc'), ['a', '', 'b', 'c']);
     assert.deepStrictEqual(Text.tokenize(''), ['']);

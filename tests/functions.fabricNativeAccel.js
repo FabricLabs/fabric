@@ -8,6 +8,9 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const fabricNativeAccel = require('../functions/fabricNativeAccel');
 const modPath = path.join(__dirname, '..', 'functions', 'fabricNativeAccel.js');
+const mockAddonPath = path.join(__dirname, '..', 'fixtures', 'native', 'fabricNativeAccelMockAddon.js');
+const badShaAddonPath = path.join(__dirname, '..', 'fixtures', 'native', 'fabricNativeAccelBadDoubleSha.js');
+const throwEmptyAddonPath = path.join(__dirname, '..', 'fixtures', 'native', 'fabricNativeAccelThrowEmpty.js');
 
 function doubleSha256Js (buf) {
   return crypto.createHash('sha256').update(crypto.createHash('sha256').update(buf).digest()).digest();
@@ -149,6 +152,112 @@ describe('functions/fabricNativeAccel', function () {
       assert.ok(typeof j.error === 'string' && j.error.length > 0);
     } finally {
       try { fs.unlinkSync(bad); } catch { /* ignore */ }
+    }
+  });
+
+  it('status error stringifies load failures with empty Error.message', function () {
+    const realAddon = path.join(__dirname, '..', 'build', 'Release', 'fabric.node');
+    if (fs.existsSync(realAddon)) {
+      // tryLoadAddon falls through to default fabric.node after FABRIC_ADDON_PATH fails;
+      // skip when a real addon is present so the first candidate’s empty Error is not final.
+      this.skip();
+    }
+    const j = runStatusSubprocess(
+      `process.env.FABRIC_NATIVE_DOUBLE_SHA256 = '1'; process.env.FABRIC_ADDON_PATH = ${JSON.stringify(throwEmptyAddonPath)};`,
+      'if (!s.error) process.exit(2);',
+      '{ error: s.error }'
+    );
+    assert.ok(typeof j.error === 'string' && j.error.length > 0);
+  });
+
+  it('mock JS addon satisfies doubleSha256 native path when opted in', function () {
+    const script = `
+      process.env.FABRIC_NATIVE_DOUBLE_SHA256 = '1';
+      process.env.FABRIC_ADDON_PATH = ${JSON.stringify(mockAddonPath)};
+      const m = require(${JSON.stringify(modPath)});
+      const crypto = require('crypto');
+      const buf = Buffer.from('native-mock-ds256', 'utf8');
+      const got = m.doubleSha256Buffer(buf);
+      const want = crypto.createHash('sha256').update(crypto.createHash('sha256').update(buf).digest()).digest();
+      if (!got.equals(want)) process.exit(2);
+      process.stdout.write('ok');
+    `;
+    execFileSync(process.execPath, ['-e', script], { encoding: 'utf8' });
+  });
+
+  it('falls back to JS when native doubleSha256 returns wrong length', function () {
+    const script = `
+      process.env.FABRIC_NATIVE_DOUBLE_SHA256 = '1';
+      process.env.FABRIC_ADDON_PATH = ${JSON.stringify(badShaAddonPath)};
+      const m = require(${JSON.stringify(modPath)});
+      const crypto = require('crypto');
+      const buf = Buffer.from('bad-len-addon', 'utf8');
+      const got = m.doubleSha256Buffer(buf);
+      const want = crypto.createHash('sha256').update(crypto.createHash('sha256').update(buf).digest()).digest();
+      if (!got.equals(want)) process.exit(2);
+      process.stdout.write('ok');
+    `;
+    execFileSync(process.execPath, ['-e', script], { encoding: 'utf8' });
+  });
+
+  it('mock JS addon covers native bech32 and segwit wrappers', function () {
+    const script = `
+      process.env.FABRIC_NATIVE_BECH32 = '1';
+      process.env.FABRIC_ADDON_PATH = ${JSON.stringify(mockAddonPath)};
+      const m = require(${JSON.stringify(modPath)});
+      const enc = m.bech32Encode('id', Buffer.from([0, 1, 2]), 'bech32m');
+      const dec = m.bech32Decode(enc);
+      if (dec.spec !== 'bech32m') process.exit(2);
+      const program = Buffer.alloc(20, 3);
+      const addr = m.segwitAddrEncode('tb', 0, program);
+      if (!addr) process.exit(3);
+      const back = m.segwitAddrDecode('tb', addr);
+      if (!back || !back.program.equals(program)) process.exit(4);
+      process.stdout.write('ok');
+    `;
+    execFileSync(process.execPath, ['-e', script], { encoding: 'utf8' });
+  });
+
+  it('bech32Decode throws when native addon returns null', function () {
+    const decodeNullAddon = path.join(os.tmpdir(), `fabric-mock-decode-null-${Date.now()}.js`);
+    fs.writeFileSync(
+      decodeNullAddon,
+      `'use strict';\nconst base = require(${JSON.stringify(mockAddonPath)});\nmodule.exports = Object.assign({}, base, { bech32Decode: () => null });\n`
+    );
+    try {
+      const script = `
+        process.env.FABRIC_NATIVE_BECH32 = '1';
+        process.env.FABRIC_ADDON_PATH = ${JSON.stringify(decodeNullAddon)};
+        const m = require(${JSON.stringify(modPath)});
+        try {
+          m.bech32Decode('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4');
+          process.exit(2);
+        } catch (e) {
+          if (!/Invalid bech32 checksum/.test(e.message)) process.exit(3);
+        }
+      `;
+      execFileSync(process.execPath, ['-e', script], { encoding: 'utf8' });
+    } finally {
+      try { fs.unlinkSync(decodeNullAddon); } catch { /* ignore */ }
+    }
+  });
+
+  it('segwitAddrDecode returns null when native addon returns null', function () {
+    const segwitNullAddon = path.join(os.tmpdir(), `fabric-mock-segwit-null-${Date.now()}.js`);
+    fs.writeFileSync(
+      segwitNullAddon,
+      `'use strict';\nconst base = require(${JSON.stringify(mockAddonPath)});\nmodule.exports = Object.assign({}, base, { segwitAddrDecode: () => null });\n`
+    );
+    try {
+      const script = `
+        process.env.FABRIC_NATIVE_BECH32 = '1';
+        process.env.FABRIC_ADDON_PATH = ${JSON.stringify(segwitNullAddon)};
+        const m = require(${JSON.stringify(modPath)});
+        if (m.segwitAddrDecode('bc', 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4') !== null) process.exit(2);
+      `;
+      execFileSync(process.execPath, ['-e', script], { encoding: 'utf8' });
+    } finally {
+      try { fs.unlinkSync(segwitNullAddon); } catch { /* ignore */ }
     }
   });
 });

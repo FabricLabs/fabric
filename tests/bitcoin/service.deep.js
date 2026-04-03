@@ -994,6 +994,43 @@ describe('@fabric/core/services/bitcoin (deep coverage)', function () {
       assert.strictEqual(tip, SNAP);
     });
 
+    it('rejects flushChainToSnapshot on mainnet without override', async function () {
+      const btc = new Bitcoin({ network: 'mainnet', mode: 'rpc' });
+      await assert.rejects(
+        () => btc.flushChainToSnapshot('a'.repeat(64)),
+        /not allowed for network/
+      );
+    });
+
+    it('rejects non-hex snapshotBlockHash', async function () {
+      const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
+      await assert.rejects(
+        () => btc.flushChainToSnapshot('zzzz'),
+        /64 hex/
+      );
+    });
+
+    it('throws when invalidate loop exceeds flushChainMaxSteps', async function () {
+      const SNAP = 'c'.repeat(64);
+      const TIP = 'a'.repeat(64);
+      const btc = new Bitcoin({ network: 'regtest', mode: 'rpc', flushChainMaxSteps: 3 });
+      btc._makeRPCRequest = async function (method, params) {
+        if (method === 'getbestblockhash') return TIP;
+        if (method === 'getblockheader') {
+          const h = params[0];
+          if (h === TIP) return { previousblockhash: SNAP };
+          if (h === SNAP) return {};
+          return {};
+        }
+        if (method === 'invalidateblock') return null;
+        throw new Error(method);
+      };
+      await assert.rejects(
+        () => btc.flushChainToSnapshot(SNAP),
+        /exceeded flushChainMaxSteps/
+      );
+    });
+
     it('serializes concurrent flushChainToSnapshot calls', async function () {
       const btc = new Bitcoin({ network: 'regtest', mode: 'rpc', flushChainMaxSteps: 20 });
       let tip = TIP;

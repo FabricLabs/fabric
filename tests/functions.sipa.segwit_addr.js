@@ -53,4 +53,9 @@ describe('@fabric/core/functions/sipa/segwit_addr', function () {
     const addr = bech32.encode('bc', tooLongProgramWords, bech32.encodings.BECH32M);
     assert.strictEqual(segwitAddr.decode('bc', addr), null);
   });
+
+  it('encode returns null when convertbits rejects out-of-range program bytes', function () {
+    assert.strictEqual(segwitAddr.encode('bc', 0, [300]), null);
+    assert.strictEqual(segwitAddr.encode('bc', 0, [-1]), null);
+  });
 });

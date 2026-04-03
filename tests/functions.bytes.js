@@ -43,6 +43,18 @@ describe('functions/bytes', function () {
     assert.throws(() => toUint8Flexible(fake, 8), /array-like length/);
   });
 
+  it('toUint8Flexible accepts iterables of bytes and rejects bad elements', function () {
+    const genOk = function * () { yield 1; yield 2; };
+    assert.deepStrictEqual([...toUint8Flexible(genOk(), 10)], [1, 2]);
+    const genBad = function * () { yield 300; };
+    assert.throws(() => toUint8Flexible(genBad(), 10), /expected integer byte/);
+    assert.throws(() => toUint8Flexible(genOk(), 1), /exceeds maxLength/);
+  });
+
+  it('toUint8Flexible rejects unsupported types', function () {
+    assert.throws(() => toUint8Flexible({}), /expected Buffer/);
+  });
+
   it('toUint8Flexible returns a Uint8Array view for Buffer under maxLength', function () {
     const b = Buffer.from([9, 10, 11]);
     const u = toUint8Flexible(b, 100);

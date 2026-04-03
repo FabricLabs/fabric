@@ -256,6 +256,21 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     assert.ok(warns.some((w) => w.includes('invalid snapshotBlockHash')));
   });
 
+  it('_handleFabricMessage handles FlushChain friendly wire name like P2P_FLUSH_CHAIN', function () {
+    const peer = createPeer({ flushChainMinTrustedScore: 800 });
+    peers.push(peer);
+    peer.peers['127.0.0.1:14'] = { publicKey: peer.key.pubkey };
+    peer._state.peers = { t2: { id: 't2', address: '127.0.0.1:14', score: 900 } };
+    peer._addressToId['127.0.0.1:14'] = 't2';
+    const events = [];
+    peer.on('flushChain', (ev) => events.push(ev));
+    const msg = Message.fromVector(['FlushChain', JSON.stringify({ snapshotBlockHash: 'c'.repeat(64) })]);
+    msg.signWithKey(peer.key);
+    peer._handleFabricMessage(msg.toBuffer(), { name: '127.0.0.1:14' }, null);
+    assert.strictEqual(events.length, 1);
+    assert.strictEqual(events[0].object.snapshotBlockHash, 'c'.repeat(64));
+  });
+
   it('_handleFabricMessage emits flushChain and relays trusted peers on valid FLUSH_CHAIN', function () {
     const peer = createPeer({ flushChainMinTrustedScore: 800 });
     peers.push(peer);

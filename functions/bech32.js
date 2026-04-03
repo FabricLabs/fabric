@@ -233,11 +233,7 @@ function encodeSegwitAddress (hrp, version, program) {
   const enc = version > 0 ? 'bech32m' : 'bech32';
   const conv = convertBits(Array.from(buf), 8, 5, true);
   if (!conv) return null;
-  try {
-    return encodePure(hrp, [version].concat(conv), enc);
-  } catch {
-    return null;
-  }
+  return encodePure(hrp, [version].concat(conv), enc);
 }
 
 /**

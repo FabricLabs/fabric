@@ -149,4 +149,35 @@ describe('functions/bech32', function () {
     ], { encoding: 'utf8' });
     assert.strictEqual(r.status, 0, r.stderr || r.stdout || '');
   });
+
+  it('FABRIC_PURE_BECH32=1 decode throws on bad checksum (decodePure path)', function () {
+    const { spawnSync } = require('child_process');
+    const bech32Path = path.join(__dirname, '../functions/bech32.js');
+    const r = spawnSync(process.execPath, [
+      '-e',
+      `process.env.FABRIC_PURE_BECH32='1';
+      const b = require(${JSON.stringify(bech32Path)});
+      const bad = 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t5';
+      try {
+        b.decode(bad);
+        process.exit(2);
+      } catch (e) {
+        if (!/Invalid bech32 checksum/.test(e.message)) process.exit(3);
+      }`
+    ], { encoding: 'utf8' });
+    assert.strictEqual(r.status, 0, r.stderr || r.stdout || '');
+  });
+
+  it('FABRIC_PURE_BECH32=1 decodeSegwitAddress returns null on mixed-case addr (decodePure throw)', function () {
+    const { spawnSync } = require('child_process');
+    const bech32Path = path.join(__dirname, '../functions/bech32.js');
+    const r = spawnSync(process.execPath, [
+      '-e',
+      `process.env.FABRIC_PURE_BECH32='1';
+      const b = require(${JSON.stringify(bech32Path)});
+      const mixed = 'Bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4';
+      if (b.decodeSegwitAddress('bc', mixed) !== null) process.exit(2);`
+    ], { encoding: 'utf8' });
+    assert.strictEqual(r.status, 0, r.stderr || r.stdout || '');
+  });
 });

@@ -49,5 +49,60 @@ describe('@fabric/core/types/peer (Swarm)', function () {
       await swarm.stop();
       assert.ok(swarm);
     });
+
+    it('_scheduleReconnect invokes connect after timeout for registered peer ids', function (done) {
+      const swarm = new Swarm({ seeds: [], peers: [] });
+      swarm.peers.pid = { id: 'pid', address: '127.0.0.1:55' };
+      swarm.connect = (peer) => {
+        assert.strictEqual(peer.address, '127.0.0.1:55');
+        done();
+      };
+      const orig = global.setTimeout;
+      global.setTimeout = function (fn, delay) {
+        assert.strictEqual(delay, 60000);
+        return orig(() => {
+          global.setTimeout = orig;
+          fn();
+        }, 1);
+      };
+      swarm._scheduleReconnect({ id: 'pid', address: '127.0.0.1:55' });
+    });
+
+    it('_scheduleReconnect returns true when a timer is already pending', function () {
+      const swarm = new Swarm({ seeds: [], peers: [] });
+      swarm.peers.pid = { id: 'pid', address: 'a', timer: setTimeout(() => {}, 9999) };
+      let calls = 0;
+      const orig = global.setTimeout;
+      global.setTimeout = function () {
+        calls++;
+        return 0;
+      };
+      const r = swarm._scheduleReconnect({ id: 'pid', address: 'a' });
+      global.setTimeout = orig;
+      clearTimeout(swarm.peers.pid.timer);
+      assert.strictEqual(calls, 0);
+      assert.strictEqual(r, true);
+    });
+
+    it('_fillPeerSlots calls _scheduleReconnect for configured peer addresses', function () {
+      const swarm = new Swarm({ seeds: [], peers: ['127.0.0.1:99'] });
+      let n = 0;
+      swarm._scheduleReconnect = () => { n++; };
+      swarm.nodes = {};
+      swarm.peers = {};
+      swarm._fillPeerSlots();
+      assert.strictEqual(n, 1);
+    });
+
+    it('start/stop emit verbosity-gated debug logs', async function () {
+      const swarm = new Swarm({ listen: false, seeds: { s1: '127.0.0.1:2' }, peers: [], verbosity: 5 });
+      swarms.push(swarm);
+      swarm.connect = function () {};
+      const lines = [];
+      swarm.on('debug', (m) => lines.push(String(m)));
+      await swarm.start();
+      await swarm.stop();
+      assert.ok(lines.some((l) => l.includes('SWARM')));
+    });
   });
 });

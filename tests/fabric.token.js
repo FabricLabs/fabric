@@ -101,6 +101,20 @@ describe('@fabric/core/types/token', function () {
       assert.strictEqual(Token.verifySigned('a.b.c', issuer), null);
     });
 
+    it('verifySigned returns null when signature segment is invalid base64url', function () {
+      const issuer = new Key();
+      const token = new Token({ capability: 'C', issuer, subject: 's' });
+      const signed = token.toSignedString();
+      const [payload] = signed.split('.');
+      assert.strictEqual(Token.verifySigned(`${payload}.!!!`, issuer), null);
+    });
+
+    it('sign throws and verify returns false without Schnorr-capable issuer', function () {
+      const bare = new Token({ capability: 'X', issuer: {}, subject: 'y' });
+      assert.throws(() => bare.sign(), /requires issuer Key/);
+      assert.strictEqual(bare.verify(), false);
+    });
+
     it('toString yields three JWT-like segments', function () {
       const issuer = new Key();
       const token = new Token({ capability: 'OP_X', issuer, subject: 'subj' });

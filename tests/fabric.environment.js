@@ -299,6 +299,16 @@ describe('@fabric/core/types/environment', function () {
         assert.strictEqual(e._extractRPCPort('::1'), null);
         assert.strictEqual(e._extractRPCPort('2001:db8::1'), null);
       });
+
+      it('_normalizeRPCHost keeps unterminated bracketed IPv6 prefix', function () {
+        const e = new Environment();
+        assert.strictEqual(e._normalizeRPCHost('[::1'), '[::1');
+      });
+
+      it('_extractRPCPort returns null for bracketed host without closing bracket', function () {
+        const e = new Environment();
+        assert.strictEqual(e._extractRPCPort('[::1:8332'), null);
+      });
     });
   });
 });
