@@ -5,6 +5,23 @@ const Message = require('../types/message');
 const Peer = require('../types/peer');
 
 describe('Peer P2P_FLUSH_CHAIN', function () {
+  it('_wireInboundCreditCost uses flushChainCreditCost for FLUSH_CHAIN wire types', function () {
+    const peer = new Peer({ listen: false, networking: false, peersDb: null, upnp: false, peers: [] });
+    assert.strictEqual(peer._wireInboundCreditCost('P2P_FLUSH_CHAIN'), 120);
+    assert.strictEqual(peer._wireInboundCreditCost('FlushChain'), 120);
+    const { P2P_FLUSH_CHAIN: FLUSH } = require('../constants');
+    assert.strictEqual(peer._wireInboundCreditCost(FLUSH), 120);
+    const custom = new Peer({
+      listen: false,
+      networking: false,
+      peersDb: null,
+      upnp: false,
+      peers: [],
+      wireTraffic: { flushChainCreditCost: 200 }
+    });
+    assert.strictEqual(custom._wireInboundCreditCost('P2P_FLUSH_CHAIN'), 200);
+  });
+
   it('sendFlushChainToTrustedPeers writes only to connections above score threshold', function () {
     const writes = [];
     const peer = new Peer({ listen: false, networking: false, peersDb: null, upnp: false, peers: [] });
