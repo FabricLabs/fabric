@@ -25,6 +25,9 @@ function assertWordlistInvariants (wordlist, name = 'wordlist') {
     if (typeof w !== 'string' || w.length === 0) {
       throw new Error(`${name}[${i}] must be a non-empty string`);
     }
+    if (/\s/.test(w)) {
+      throw new Error(`${name}[${i}] must be a single word (no whitespace)`);
+    }
     if (seen.has(w)) throw new Error(`${name} contains duplicate word: ${w}`);
     seen.add(w);
   }
@@ -49,6 +52,7 @@ function salt (passphrase) {
 
 function seedInputs (mnemonic, passphrase) {
   const m = normalize(mnemonic);
+  // BIP-39: normalize passphrase with NFKD (mnemonic words are normalized in normalize()).
   const passNorm = (passphrase || '').normalize('NFKD');
   return {
     pwd: Buffer.from(m, 'utf8'),

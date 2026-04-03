@@ -17,8 +17,6 @@
     "node": "24.14.1"
   },
   "scripts": {
-    "preinstall": "node -e \"\"",
-    "postinstall": "node scripts/fix-noble-hashes-compat.js",
     "audit": "npm audit --json > reports/AUDIT.json",
     "book": "npm run dev",
     "build:book": "npm run make:book && npm run tidy",

@@ -64,4 +64,11 @@ describe('@fabric/core/functions/bip39', function () {
     dup[200] = dup[0];
     assert.throws(() => entropyToMnemonic(ent, dup), /duplicate/);
   });
+
+  it('rejects wordlist entries that contain whitespace', function () {
+    const ent = crypto.randomBytes(16);
+    const bad = defaultWordlist.slice();
+    bad[10] = 'two words';
+    assert.throws(() => entropyToMnemonic(ent, bad), /whitespace/);
+  });
 });

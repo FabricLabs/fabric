@@ -1412,7 +1412,7 @@ class Peer extends Service {
           }
           break;
         }
-        conn._fabricPingOutstanding = outstanding - 1;
+        conn._fabricPingOutstanding = 0;
 
         const instance = this.state.actors[actor.id] ? this.state.actors[actor.id] : {};
         const newScore = (instance.score || 0) + 1;
@@ -1839,11 +1839,14 @@ class Peer extends Service {
         }
       })]);
 
-      socket._fabricPingOutstanding = (socket._fabricPingOutstanding || 0) + 1;
+      // At most one unanswered PING per connection so burst P2P_PONG cannot inflate registry score
+      // (FLUSH_CHAIN trust gate uses _registryScoreForConnectionAddress).
+      if ((socket._fabricPingOutstanding | 0) >= 1) return;
+      socket._fabricPingOutstanding = 1;
       try {
         encryptWrite.write(P2P_PING.toBuffer());
       } catch (exception) {
-        socket._fabricPingOutstanding = Math.max(0, (socket._fabricPingOutstanding || 0) - 1);
+        socket._fabricPingOutstanding = 0;
         if (exception && (exception.code === 'EPIPE' || exception.code === 'ECONNRESET')) {
           this.emit('warning', `Suppressing transient write error (${exception.code}) during ping.`);
         } else {

@@ -377,8 +377,9 @@ class Service extends Actor {
    * @param  {EventEmitter} source Emitter of events.
    * @return {Service} Instance of Service after binding events.
    */
-  trust (source, name = source.constructor.name) {
+  trust (source, name) {
     if (!(source instanceof EventEmitter)) throw new Error('Source is not an EventEmitter.');
+    const label = name != null && name !== '' ? String(name) : source.constructor.name;
 
     // Constants
     const self = this;
@@ -403,18 +404,18 @@ class Service extends Actor {
 
     return {
       _handleActor: source.on('actor', async function (actor) {
-        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted actor: ${JSON.stringify(actor, null, '  ')}`);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${label}" emitted actor: ${JSON.stringify(actor, null, '  ')}`);
       }),
       _handleAlert: source.on('alert', async function (alert) {
-        self.alert(`[FABRIC:SERVICE] [ALERT] [!!!] ${name} alerted: ${alert}`);
+        self.alert(`[FABRIC:SERVICE] [ALERT] [!!!] ${label} alerted: ${alert}`);
       }),
       _handleBeat: source.on('beat', async function (beat) {
-        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted beat: ${JSON.stringify(beat, null, '  ')}`);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${label}" emitted beat: ${JSON.stringify(beat, null, '  ')}`);
 
         const ops = [
           { op: 'add', path: `/actors`, value: {} },
           { op: 'add', path: `/services`, value: {} },
-          { op: 'replace', path: `/services/${name}`, value: beat.state }
+          { op: 'replace', path: `/services/${label}`, value: beat.state }
         ];
 
         /*
@@ -427,37 +428,37 @@ class Service extends Actor {
         */
       }),
       _handleChanges: source.on('changes', async function (changes) {
-        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted changes: ${changes}`);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${label}" emitted changes: ${changes}`);
       }),
       _handleChannel: source.on('channel', async function (channel) {
-        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted channel: ${JSON.stringify(channel, null, '  ')}`);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${label}" emitted channel: ${JSON.stringify(channel, null, '  ')}`);
       }),
       _handleCommit: source.on('commit', async function (commit) {
-        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" committed: ${JSON.stringify(commit, null, '  ')}`);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${label}" committed: ${JSON.stringify(commit, null, '  ')}`);
       }),
       _handleError: source.on('error', async function _handleTrustedError (error) {
-        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted error: ${error}`);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${label}" emitted error: ${error}`);
       }),
       _handleLog: source.on('log', async function _handleTrustedLog (log) {
-        if (self.settings.debug) self.emit('log', `[FABRIC:SERVICE] Source "${name}" emitted log: ${log}`);
+        if (self.settings.debug) self.emit('log', `[FABRIC:SERVICE] Source "${label}" emitted log: ${log}`);
       }),
       _handleMessage: source.on('message', async function (message) {
-        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted message: ${JSON.stringify(message.toObject ? message.toObject() : message, null, '  ')}`);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${label}" emitted message: ${JSON.stringify(message.toObject ? message.toObject() : message, null, '  ')}`);
         await self._handleTrustedMessage(message);
       }),
       _handlePatches: source.on('patches', async function (patches) {
-        self.emit('debug', `[FABRIC:SERVICE] [${name}] Service State: ${JSON.stringify(source.state, null, '  ')}`);
-        self.emit('debug', `[FABRIC:SERVICE] [${name}] Patches: ${JSON.stringify(patches)}`);
+        self.emit('debug', `[FABRIC:SERVICE] [${label}] Service State: ${JSON.stringify(source.state, null, '  ')}`);
+        self.emit('debug', `[FABRIC:SERVICE] [${label}] Patches: ${JSON.stringify(patches)}`);
         self.emit('patches', patches);
       }),
       _handleReady: source.on('ready', async function _handleTrustedReady (info) {
-        self.emit('log', `[FABRIC:SERVICE] Source "${name}" emitted ready: ${JSON.stringify(info)}`);
+        self.emit('log', `[FABRIC:SERVICE] Source "${label}" emitted ready: ${JSON.stringify(info)}`);
       }),
       _handleTip: source.on('tip', async function (hash) {
-        self.alert(`[FABRIC:SERVICE] New ${name} chaintip: ${hash}`);
+        self.alert(`[FABRIC:SERVICE] New ${label} chaintip: ${hash}`);
       }),
       _handleWarning: source.on('warning', async function _handleTrustedWarning (warning) {
-        if (self.settings?.verbosity >= 2) self.emit('warning', `[FABRIC:SERVICE] Source "${name}" emitted warning: ${warning}`);
+        if (self.settings?.verbosity >= 2) self.emit('warning', `[FABRIC:SERVICE] Source "${label}" emitted warning: ${warning}`);
       })
     };
   }

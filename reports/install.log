@@ -1,14 +1,24 @@
 $ npm i
 
-> @fabric/core@0.1.0-RC1 preinstall
-> node -e ""
+> @fabric/core@0.1.0-RC1 install
+> node-gyp rebuild
 
 
-> @fabric/core@0.1.0-RC1 postinstall
-> node scripts/fix-noble-hashes-compat.js
+  CXX(target) Release/obj.target/fabric/src/binding.o
+  CC(target) Release/obj.target/fabric/native/sipa/segwit_addr.o
+  CC(target) Release/obj.target/fabric/src/peer.o
+  CC(target) Release/obj.target/fabric/src/message.o
+  CC(target) Release/obj.target/fabric/src/errors.o
+  CC(target) Release/obj.target/fabric/src/threads.o
+  CC(target) Release/obj.target/fabric/src/scoring.o
+  CC(target) Release/obj.target/fabric/src/validation.o
+  CC(target) Release/obj.target/fabric/src/secure_memory.o
+  CC(target) Release/obj.target/fabric/src/secure_random.o
+  CC(target) Release/obj.target/fabric/src/bip340.o
+  CC(target) Release/obj.target/fabric/src/taproot.o
+  SOLINK_MODULE(target) Release/fabric.node
 
-
-added 620 packages, and audited 621 packages in 38s
+added 620 packages, and audited 621 packages in 5m
 
 108 packages are looking for funding
   run `npm fund` for details

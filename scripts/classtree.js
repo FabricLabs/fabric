@@ -208,37 +208,37 @@ function edgesToDot (inherits) {
 
 function main () {
   const write = process.argv.includes('--write');
-  const { inherits, byFile } = buildMap(DEFAULT_SCAN_DIRS);
+  const { inherits: scannedInherits, byFile } = buildMap(DEFAULT_SCAN_DIRS);
 
-  for (const b of BUILTIN_BASES) {
-    if (b === 'Object') continue;
-    if (inherits[b] === undefined) inherits[b] = null;
-  }
-  for (const x of EXTERNAL_SUPERCLASSES) {
-    if (inherits[x] === undefined) inherits[x] = null;
-  }
-
-  warnUnresolvedParents(inherits);
-  const tree = buildForest(inherits);
+  warnUnresolvedParents(scannedInherits);
+  const tree = buildForest(scannedInherits);
 
   const payload = {
     scanRoots: DEFAULT_SCAN_DIRS,
-    inherits,
+    inherits: scannedInherits,
     tree,
     byFile
   };
 
   if (write) {
+    const dotInherits = { ...scannedInherits };
+    for (const b of BUILTIN_BASES) {
+      if (b === 'Object') continue;
+      if (dotInherits[b] === undefined) dotInherits[b] = null;
+    }
+    for (const x of EXTERNAL_SUPERCLASSES) {
+      if (dotInherits[x] === undefined) dotInherits[x] = null;
+    }
     fs.mkdirSync(path.dirname(JSON_REPORT), { recursive: true });
     fs.writeFileSync(JSON_REPORT, JSON.stringify(payload, null, 2), 'utf8');
     fs.mkdirSync(path.dirname(DOT_PATH), { recursive: true });
-    fs.writeFileSync(DOT_PATH, edgesToDot(inherits), 'utf8');
+    fs.writeFileSync(DOT_PATH, edgesToDot(dotInherits), 'utf8');
     console.log('[classtree] wrote', path.relative(REPO_ROOT, DOT_PATH));
     console.log('[classtree] wrote', path.relative(REPO_ROOT, JSON_REPORT));
   }
 
   const summary = {
-    classCount: Object.keys(inherits).length,
+    classCount: Object.keys(scannedInherits).length,
     scanRoots: DEFAULT_SCAN_DIRS,
     tree
   };
