@@ -18,7 +18,7 @@
   },
   "scripts": {
     "preinstall": "node -e \"\"",
-    "postinstall": "patch-package && node scripts/fix-wif-bs58check-noble.js",
+    "postinstall": "node scripts/fix-noble-hashes-compat.js",
     "audit": "npm audit --json > reports/AUDIT.json",
     "book": "npm run dev",
     "build:book": "npm run make:book && npm run tidy",
@@ -26,7 +26,7 @@
     "chat": "node scripts/fabric.js shell",
     "ci": "npm run smoke && npm run lint:types && npm run lint:pkg && npm test",
     "smoke": "node -e \"require('./types/fabric'); require('./types/distributedExecution'); require('./types/message'); require('./types/peer'); require('./types/hash256'); require('./functions/bytes'); require('./functions/fabricCanonicalJson'); require('./functions/wireJson'); require('./functions/fabricNativeAccel'); console.log('smoke ok');\"",
-    "lint:pkg": "eslint scripts/fabric.js scripts/cli.js scripts/gen-quality-reports.js scripts/check-book-links.js scripts/coverage-baseline.js scripts/clean-jsdoc-html.js scripts/classtree.js scripts/report-noble-hashes.js scripts/fix-wif-bs58check-noble.js scripts/benchmark-lib.js scripts/benchmark-report.js functions/bytes.js functions/fabricCanonicalJson.js functions/wireJson.js functions/fabricNativeAccel.js functions/base58.js functions/bech32.js functions/sipa/bech32.js functions/sipa/segwit_addr.js functions/bip39.js functions/bip32.js",
+    "lint:pkg": "eslint scripts/fabric.js scripts/cli.js scripts/gen-quality-reports.js scripts/check-book-links.js scripts/coverage-baseline.js scripts/clean-jsdoc-html.js scripts/classtree.js scripts/report-noble-hashes.js scripts/fix-noble-hashes-compat.js scripts/benchmark-lib.js scripts/benchmark-report.js functions/bytes.js functions/fabricCanonicalJson.js functions/wireJson.js functions/fabricNativeAccel.js functions/base58.js functions/bech32.js functions/sipa/bech32.js functions/sipa/segwit_addr.js functions/bip39.js functions/bip32.js",
     "exchange": "node scripts/fabric.js exchange",
     "fabric:start": "node scripts/fabric.js start",
     "clean:all": "rm -rf node_modules package-lock.json",
@@ -80,7 +80,7 @@
     "test:app": "npm run make:service && npm run make:app && NODE_ENV=test mocha tests/fabric.app.js",
     "test:bitcoin": "mocha tests/bitcoin.core.js",
     "test:wasm": "emcc contracts/test.c -o assets/wasm.html",
-    "test": "NODE_ENV=test mocha --require ./tests/mocha-env.js --recursive tests --ignore tests/fuzz/** --ignore tests/benchmark/**",
+    "test": "NODE_ENV=test mocha --require ./tests/mocha-env.js --recursive tests --ignore tests/fuzz/**",
     "test:fuzz": "NODE_ENV=test mocha --require ./tests/mocha-env.js --recursive tests/fuzz",
     "test:benchmark": "NODE_ENV=test mocha --require ./tests/mocha-env.js tests/benchmark/benchmark.smoke.js",
     "benchmark": "node scripts/benchmark-report.js",
@@ -171,8 +171,7 @@
     "jsdoc-to-markdown": "=9.1.3",
     "json-to-dot": "=1.1.0",
     "mocha": "=12.0.0-beta-10",
-    "node-gyp": "=12.2.0",
-    "patch-package": "=8.0.1"
+    "node-gyp": "=12.2.0"
   },
   "c8": {
     "exclude": [
@@ -180,9 +179,19 @@
       "contracts",
       "currencies",
       "functions/**",
+      "!functions/base58.js",
+      "!functions/bech32.js",
+      "!functions/bip32.js",
+      "!functions/bip39.js",
+      "!functions/bytes.js",
+      "!functions/fabricCanonicalJson.js",
       "!functions/fabricNativeAccel.js",
+      "!functions/publishedDocumentEnvelope.js",
+      "!functions/sipa/bech32.js",
+      "!functions/sipa/segwit_addr.js",
       "!functions/taggedHash.js",
       "!functions/truncateMiddle.js",
+      "!functions/wireJson.js",
       "tests",
       "data",
       "types/cli.js"

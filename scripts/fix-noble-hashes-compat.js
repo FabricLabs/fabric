@@ -1,0 +1,51 @@
+'use strict';
+
+/**
+ * bitcoinjs-lib@6.1.7 and bs58check@3 still require @noble/hashes subpaths removed in @noble/hashes@2.
+ * Replaces them with legacy.js / sha2.js after npm install (replaces former patch-package patches).
+ */
+
+const fs = require('fs');
+const path = require('path');
+
+const root = path.resolve(__dirname, '..');
+
+function patchIfChanged (absPath, transform) {
+  if (!fs.existsSync(absPath)) return;
+  const s0 = fs.readFileSync(absPath, 'utf8');
+  const s1 = transform(s0);
+  if (s1 !== s0) fs.writeFileSync(absPath, s1);
+}
+
+function patchBitcoinjsCrypto (s) {
+  if (!s.includes("require('@noble/hashes/ripemd160')") && !s.includes('require("@noble/hashes/ripemd160")')) {
+    return s;
+  }
+  return s
+    .replace(
+      /const ripemd160_1 = require\(['"]@noble\/hashes\/ripemd160['"]\);\r?\nconst sha1_1 = require\(['"]@noble\/hashes\/sha1['"]\);\r?\nconst sha256_1 = require\(['"]@noble\/hashes\/sha256['"]\);/,
+      "const legacy_1 = require('@noble/hashes/legacy.js');\nconst sha256_1 = require('@noble/hashes/sha2.js');"
+    )
+    .replace(/\(0, ripemd160_1\.ripemd160\)/g, '(0, legacy_1.ripemd160)')
+    .replace(/\(0, sha1_1\.sha1\)/g, '(0, legacy_1.sha1)');
+}
+
+function patchBs58checkSha256Path (s) {
+  return s.replace(/@noble\/hashes\/sha256/g, '@noble/hashes/sha2.js');
+}
+
+const jobs = [
+  ['node_modules/bitcoinjs-lib/src/crypto.js', patchBitcoinjsCrypto],
+  ['node_modules/bs58check/index.js', patchBs58checkSha256Path],
+  'node_modules/wif/node_modules/bs58check/src/cjs/index.cjs',
+  'node_modules/wif/node_modules/bs58check/src/esm/index.js'
+];
+
+for (const job of jobs) {
+  if (typeof job === 'string') {
+    patchIfChanged(path.join(root, job), patchBs58checkSha256Path);
+  } else {
+    const [rel, fn] = job;
+    patchIfChanged(path.join(root, rel), fn);
+  }
+}

@@ -29,7 +29,7 @@ function makeWireBuffer () {
 }
 
 const WIRE_BUF = makeWireBuffer();
-/** Monotonic tweak byte so {@link Peer#_handleFabricMessage} sees a fresh wire hash each iteration (dedup cache otherwise short-circuits). */
+/** Monotonic counter written into the last 4 header bytes so each wire buffer has a unique full-buffer SHA-256 (see {@link Peer#_handleFabricMessage} dedup + body-hash mismatch path). */
 let _peerBenchWireSeq = 0;
 const WIRE_JSON_OK = '{"type":"PING","object":{}}';
 const PERSISTED_JSON_OK = JSON.stringify({ peers: { a: { score: 900, host: '127.0.0.1' } } });
@@ -128,10 +128,15 @@ function getScenarios () {
       name: 'peer._handleFabricMessage (hash mismatch exit)',
       baseIterations: 4000,
       fn () {
+        const peer = peerSingleton();
+        while (peer._wireHashOrder.length) {
+          const h = peer._wireHashOrder.shift();
+          delete peer.messages[h];
+        }
         const buf = Buffer.from(WIRE_BUF);
-        _peerBenchWireSeq = (_peerBenchWireSeq + 1) & 0xff;
-        buf[buf.length - 1] = (buf[buf.length - 1] ^ _peerBenchWireSeq) & 0xff;
-        peerSingleton()._handleFabricMessage(buf, { name: '127.0.0.1:19999' }, null);
+        _peerBenchWireSeq = (_peerBenchWireSeq + 1) >>> 0;
+        buf.writeUInt32LE(_peerBenchWireSeq, HEADER_SIZE - 4);
+        peer._handleFabricMessage(buf, { name: '127.0.0.1:19999' }, null);
       }
     },
     {
