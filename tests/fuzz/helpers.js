@@ -90,7 +90,8 @@ function randomWireLikeString () {
   const cap = roll === 0
     ? MAX_MESSAGE_SIZE + crypto.randomInt(1, 500)
     : MAX_MESSAGE_SIZE;
-  return randomUtf8String(cap);
+  const byteBudget = Math.min(cap * 4 + 1024, 1024 * 1024);
+  return randomUtf8String(cap, byteBudget);
 }
 
 function randomPersistedLikeString () {

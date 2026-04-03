@@ -487,6 +487,7 @@ class CLI extends FabricShell {
     this.node.on('peer', this._handlePeer.bind(this));
     this.node.on('peer:candidate', this._handlePeerCandidate.bind(this));
     this.node.on('session:update', this._handleSessionUpdate.bind(this));
+    this.node.on('flushChain', this._handlePeerFlushChain.bind(this));
 
     // ## Document Exchange
     this.node.on('DocumentPublish', this._handlePeerDocumentPublish.bind(this));

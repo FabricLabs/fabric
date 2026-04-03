@@ -3,55 +3,64 @@
 const assert = require('assert');
 const Message = require('../types/message');
 const Peer = require('../types/peer');
-const { P2P_CHAIN_SYNC_REQUEST } = require('../constants');
+const { P2P_CHAIN_SYNC_REQUEST, P2P_FLUSH_CHAIN } = require('../constants');
+
+const BASE_SETTINGS = {
+  listen: false,
+  networking: false,
+  peersDb: null,
+  upnp: false,
+  peers: []
+};
+
+function createPeer (overrides = {}) {
+  return new Peer(Object.assign({}, BASE_SETTINGS, overrides));
+}
 
 describe('Peer P2P_FLUSH_CHAIN', function () {
+  const peers = [];
+
+  afterEach(async function () {
+    while (peers.length) {
+      const peer = peers.pop();
+      if (!peer || typeof peer.stop !== 'function') continue;
+      try {
+        await peer.stop();
+      } catch {}
+    }
+  });
+
   it('_wireInboundCreditCost uses flushChainCreditCost for FLUSH_CHAIN wire types', function () {
-    const peer = new Peer({ listen: false, networking: false, peersDb: null, upnp: false, peers: [] });
+    const peer = createPeer();
+    peers.push(peer);
     assert.strictEqual(peer._wireInboundCreditCost('P2P_FLUSH_CHAIN'), 120);
     assert.strictEqual(peer._wireInboundCreditCost('FlushChain'), 120);
-    const { P2P_FLUSH_CHAIN: FLUSH } = require('../constants');
-    assert.strictEqual(peer._wireInboundCreditCost(FLUSH), 120);
-    const custom = new Peer({
-      listen: false,
-      networking: false,
-      peersDb: null,
-      upnp: false,
-      peers: [],
-      wireTraffic: { flushChainCreditCost: 200 }
-    });
+    assert.strictEqual(peer._wireInboundCreditCost(P2P_FLUSH_CHAIN), 120);
+    const custom = createPeer({ wireTraffic: { flushChainCreditCost: 200 } });
+    peers.push(custom);
     assert.strictEqual(custom._wireInboundCreditCost('P2P_FLUSH_CHAIN'), 200);
   });
 
   it('_wireInboundCreditCost maps chain sync and Bitcoin block wire types', function () {
-    const peer = new Peer({ listen: false, networking: false, peersDb: null, upnp: false, peers: [] });
+    const peer = createPeer();
+    peers.push(peer);
     assert.strictEqual(peer._wireInboundCreditCost('P2P_CHAIN_SYNC_REQUEST'), 55);
     assert.strictEqual(peer._wireInboundCreditCost('ChainSyncRequest'), 55);
     assert.strictEqual(peer._wireInboundCreditCost(P2P_CHAIN_SYNC_REQUEST), 55);
     assert.strictEqual(peer._wireInboundCreditCost('BITCOIN_BLOCK'), 3);
     assert.strictEqual(peer._wireInboundCreditCost('BitcoinBlock'), 3);
-    const custom = new Peer({
-      listen: false,
-      networking: false,
-      peersDb: null,
-      upnp: false,
-      peers: [],
+    const custom = createPeer({
       wireTraffic: { chainSyncCreditCost: 99, bitcoinBlockCreditCost: 7, defaultCreditCost: 2 }
     });
+    peers.push(custom);
     assert.strictEqual(custom._wireInboundCreditCost('P2P_CHAIN_SYNC_REQUEST'), 99);
     assert.strictEqual(custom._wireInboundCreditCost('BITCOIN_BLOCK'), 7);
     assert.strictEqual(custom._wireInboundCreditCost('Other'), 2);
   });
 
   it('_rememberWireHash evicts oldest entries at gossip.maxWireHashCache', function () {
-    const peer = new Peer({
-      listen: false,
-      networking: false,
-      peersDb: null,
-      upnp: false,
-      peers: [],
-      gossip: { maxWireHashCache: 2 }
-    });
+    const peer = createPeer({ gossip: { maxWireHashCache: 2 } });
+    peers.push(peer);
     peer._rememberWireHash('aa');
     peer._rememberWireHash('bb');
     peer._rememberWireHash('cc');
@@ -61,28 +70,16 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
   });
 
   it('_gossipRememberPayload and _peeringRememberPayload evict at configured caps', function () {
-    const a = new Peer({
-      listen: false,
-      networking: false,
-      peersDb: null,
-      upnp: false,
-      peers: [],
-      gossip: { maxPayloadCache: 2 }
-    });
+    const a = createPeer({ gossip: { maxPayloadCache: 2 } });
+    peers.push(a);
     a._gossipRememberPayload('g1');
     a._gossipRememberPayload('g2');
     a._gossipRememberPayload('g3');
     assert.strictEqual(a._gossipPayloadSeen.has('g1'), false);
     assert.strictEqual(a._gossipPayloadSeen.has('g3'), true);
 
-    const b = new Peer({
-      listen: false,
-      networking: false,
-      peersDb: null,
-      upnp: false,
-      peers: [],
-      peering: { maxPayloadCache: 2 }
-    });
+    const b = createPeer({ peering: { maxPayloadCache: 2 } });
+    peers.push(b);
     b._peeringRememberPayload('p1');
     b._peeringRememberPayload('p2');
     b._peeringRememberPayload('p3');
@@ -91,14 +88,8 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
   });
 
   it('_wireInboundRateAllowPeer de-ranks once when credits exceed the window cap', function () {
-    const peer = new Peer({
-      listen: false,
-      networking: false,
-      peersDb: null,
-      upnp: false,
-      peers: [],
-      wireTraffic: { maxCreditsPerWindow: 8, windowMs: 600000, overLimitPenalty: 11 }
-    });
+    const peer = createPeer({ wireTraffic: { maxCreditsPerWindow: 8, windowMs: 600000, overLimitPenalty: 11 } });
+    peers.push(peer);
     const warns = [];
     peer.on('warning', (w) => warns.push(String(w)));
     assert.strictEqual(peer._wireInboundRateAllowPeer('127.0.0.1:1', 4), true);
@@ -109,7 +100,8 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
   });
 
   it('publicPeers lists connected sockets and disconnected registry entries', function () {
-    const peer = new Peer({ listen: false, networking: false, peersDb: null, upnp: false, peers: [] });
+    const peer = createPeer();
+    peers.push(peer);
     peer.connections['127.0.0.1:1'] = { _lastMessage: 'lm' };
     peer._addressToId['127.0.0.1:1'] = 'pk1';
     peer.peers = { orphan: { id: 'orphan', address: '10.0.0.1:9' } };
@@ -125,7 +117,8 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
   });
 
   it('knownPeers overlays connections with aliases and fills gaps from this.peers', function () {
-    const peer = new Peer({ listen: false, networking: false, peersDb: null, upnp: false, peers: [] });
+    const peer = createPeer();
+    peers.push(peer);
     peer._state.peers = { reg1: { id: 'reg1', address: '192.168.0.1:1', score: 5 } };
     peer.connections['192.168.0.2:2'] = { _lastMessage: 'x', _alias: 'alice' };
     peer._addressToId['192.168.0.2:2'] = 'reg1';
@@ -141,7 +134,8 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
 
   it('sendFlushChainToTrustedPeers writes only to connections above score threshold', function () {
     const writes = [];
-    const peer = new Peer({ listen: false, networking: false, peersDb: null, upnp: false, peers: [] });
+    const peer = createPeer();
+    peers.push(peer);
     peer.connections['127.0.0.1:1'] = {
       _writeFabric: (buf) => { writes.push({ id: '127.0.0.1:1', len: buf.length }); }
     };
@@ -162,7 +156,8 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
 
   it('relayFromTrustedPeers skips low-score peers and origin', function () {
     const writes = [];
-    const peer = new Peer({ listen: false, networking: false, peersDb: null, upnp: false, peers: [] });
+    const peer = createPeer();
+    peers.push(peer);
     peer.connections['127.0.0.1:1'] = { _writeFabric: () => writes.push('1') };
     peer.connections['127.0.0.1:2'] = { _writeFabric: () => writes.push('2') };
     peer._state.peers = {
@@ -171,8 +166,26 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     };
     peer._addressToId['127.0.0.1:1'] = 'a';
     peer._addressToId['127.0.0.1:2'] = 'b';
-    const msg = Message.fromVector(['P2P_FLUSH_CHAIN', JSON.stringify({ snapshotBlockHash: 'f'.repeat(64) })]);
+    const msg = Message.fromVector([P2P_FLUSH_CHAIN, JSON.stringify({ snapshotBlockHash: 'f'.repeat(64) })]);
     peer.relayFromTrustedPeers('127.0.0.1:1', msg, 800);
+    assert.deepStrictEqual(writes, ['2']);
+  });
+
+  it('trusted relay uses strict greater-than threshold (score == threshold is excluded)', function () {
+    const writes = [];
+    const peer = createPeer();
+    peers.push(peer);
+    peer.connections['127.0.0.1:1'] = { _writeFabric: () => writes.push('1') };
+    peer.connections['127.0.0.1:2'] = { _writeFabric: () => writes.push('2') };
+    peer._state.peers = {
+      a: { id: 'a', score: 800 },
+      b: { id: 'b', score: 801 }
+    };
+    peer._addressToId['127.0.0.1:1'] = 'a';
+    peer._addressToId['127.0.0.1:2'] = 'b';
+
+    const msg = Message.fromVector([P2P_FLUSH_CHAIN, JSON.stringify({ snapshotBlockHash: 'f'.repeat(64) })]);
+    peer.relayFromTrustedPeers(null, msg, 800);
     assert.deepStrictEqual(writes, ['2']);
   });
 });

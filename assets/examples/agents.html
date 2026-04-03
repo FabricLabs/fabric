@@ -162,7 +162,15 @@
 
         <div class="content">
           <div class='highlight'>
-            <pre><span class="hljs-meta">&#x27;use strict&#x27;</span>;</pre>
+            <pre><span class="hljs-meta">&#x27;use strict&#x27;</span>;
+
+<span class="hljs-comment">/**
+ * Multi-core {<span class="hljs-doctag">@link</span> Service} distributor with optional managed Bitcoin (regtest) + dual Lightning nodes.
+ *
+ * **Smoke (no bitcoind):** `FABRIC_AGENTS_SKIP_CHAIN=1 node examples/agents.js` (or `npm run example:agents:smoke`).
+ * **Worker delay:** `FABRIC_AGENTS_WORK_MS` (ms); default `1200`, or `25` when `SKIP_CHAIN` is set.
+ * **Keys:** `FABRIC_MNEMONIC` optional; skip-chain mode falls back to {<span class="hljs-doctag">@link</span> FIXTURE_SEED} when unset.
+ */</span></pre>
           </div>
         </div>
 
@@ -186,8 +194,9 @@
 <span class="hljs-keyword">const</span> os = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;os&#x27;</span>);
 <span class="hljs-keyword">const</span> path = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;path&#x27;</span>);
 <span class="hljs-keyword">const</span> process = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;process&#x27;</span>);
-<span class="hljs-keyword">const</span> bs58check = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;bs58check&#x27;</span>);
-<span class="hljs-keyword">const</span> { <span class="hljs-title class_">Worker</span>, isMainThread, parentPort, workerData } = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;worker_threads&#x27;</span>);</pre>
+<span class="hljs-keyword">const</span> { encodeCheck, decodeCheck } = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;../functions/base58&#x27;</span>);
+<span class="hljs-keyword">const</span> { <span class="hljs-title class_">Worker</span>, isMainThread, parentPort, workerData } = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;worker_threads&#x27;</span>);
+<span class="hljs-keyword">const</span> { <span class="hljs-variable constant_">FIXTURE_SEED</span> } = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;../constants&#x27;</span>);</pre>
           </div>
         </div>
 
@@ -262,7 +271,15 @@
 
         <div class="content">
           <div class='highlight'>
-            <pre><span class="hljs-keyword">const</span> numberOfCores = <span class="hljs-number">2</span> || os.<span class="hljs-title function_">cpus</span>().<span class="hljs-property">length</span>;
+            <pre><span class="hljs-keyword">const</span> _cpuCount = <span class="hljs-title class_">Math</span>.<span class="hljs-title function_">max</span>(<span class="hljs-number">1</span>, os.<span class="hljs-title function_">cpus</span>().<span class="hljs-property">length</span>);
+<span class="hljs-comment">/** Full example uses all CPUs; skip-chain smoke caps workers so CI / laptops do not spawn dozens of threads. */</span>
+<span class="hljs-keyword">const</span> numberOfCores = process.<span class="hljs-property">env</span>.<span class="hljs-property">FABRIC_AGENTS_SKIP_CHAIN</span> === <span class="hljs-string">&#x27;1&#x27;</span>
+  ? <span class="hljs-title class_">Math</span>.<span class="hljs-title function_">min</span>(<span class="hljs-number">4</span>, _cpuCount)
+  : _cpuCount;
+<span class="hljs-keyword">const</span> workDelayMsEnv = <span class="hljs-title class_">Number</span>(process.<span class="hljs-property">env</span>.<span class="hljs-property">FABRIC_AGENTS_WORK_MS</span>);
+<span class="hljs-keyword">const</span> <span class="hljs-variable constant_">AGENT_WORK_DELAY_MS</span> = (<span class="hljs-title class_">Number</span>.<span class="hljs-built_in">isFinite</span>(workDelayMsEnv) &amp;&amp; workDelayMsEnv &gt;= <span class="hljs-number">0</span>)
+  ? workDelayMsEnv
+  : (process.<span class="hljs-property">env</span>.<span class="hljs-property">FABRIC_AGENTS_SKIP_CHAIN</span> === <span class="hljs-string">&#x27;1&#x27;</span> ? <span class="hljs-number">25</span> : <span class="hljs-number">1200</span>);
 <span class="hljs-keyword">const</span> <span class="hljs-variable constant_">DEFAULT_MAX_QUEUE</span> = <span class="hljs-number">100</span>;
 <span class="hljs-keyword">const</span> <span class="hljs-variable constant_">BITCOIN_NETWORK</span> = <span class="hljs-string">&#x27;regtest&#x27;</span>;
 <span class="hljs-keyword">const</span> <span class="hljs-variable constant_">PRODUCER_INTERVAL_MS</span> = <span class="hljs-number">200</span>;
@@ -366,7 +383,7 @@
         <span class="hljs-attr">entity</span>: entityID,
         <span class="hljs-attr">state</span>: { ...newState, <span class="hljs-attr">id</span>: entityID }
       });
-    }, <span class="hljs-number">1200</span>);
+    }, <span class="hljs-variable constant_">AGENT_WORK_DELAY_MS</span>);
   });
 };</pre>
           </div>
@@ -675,6 +692,30 @@
   }
 }
 
+<span class="hljs-keyword">async</span> <span class="hljs-keyword">function</span> <span class="hljs-title function_">getLightningStatusSnapshot</span> (lightning, aliceLightning) {
+  <span class="hljs-keyword">const</span> safeFunds = <span class="hljs-keyword">async</span> (instance) =&gt; {
+    <span class="hljs-keyword">try</span> {
+      <span class="hljs-keyword">const</span> funds = <span class="hljs-keyword">await</span> instance.<span class="hljs-title function_">listFunds</span>();
+      <span class="hljs-keyword">return</span> funds || {};
+    } <span class="hljs-keyword">catch</span> (error) {
+      <span class="hljs-keyword">return</span> {};
+    }
+  };
+
+  <span class="hljs-keyword">const</span> [masterFunds, aliceFunds] = <span class="hljs-keyword">await</span> <span class="hljs-title class_">Promise</span>.<span class="hljs-title function_">all</span>([
+    <span class="hljs-title function_">safeFunds</span>(lightning),
+    <span class="hljs-title function_">safeFunds</span>(aliceLightning)
+  ]);
+
+  <span class="hljs-keyword">return</span> {
+    masterFunds,
+    aliceFunds,
+    <span class="hljs-attr">masterChannels</span>: <span class="hljs-title class_">Array</span>.<span class="hljs-title function_">isArray</span>(masterFunds.<span class="hljs-property">channels</span>) ? masterFunds.<span class="hljs-property">channels</span> : [],
+    <span class="hljs-attr">aliceChannels</span>: <span class="hljs-title class_">Array</span>.<span class="hljs-title function_">isArray</span>(aliceFunds.<span class="hljs-property">channels</span>) ? aliceFunds.<span class="hljs-property">channels</span> : [],
+    <span class="hljs-attr">updatedAt</span>: <span class="hljs-keyword">new</span> <span class="hljs-title class_">Date</span>().<span class="hljs-title function_">toISOString</span>()
+  };
+}
+
 <span class="hljs-keyword">async</span> <span class="hljs-keyword">function</span> <span class="hljs-title function_">payRequestedAmount</span> (lightning, aliceLightning, request = {}) {
   <span class="hljs-keyword">const</span> sats = <span class="hljs-title class_">Math</span>.<span class="hljs-title function_">max</span>(<span class="hljs-number">1</span>, <span class="hljs-title class_">Number</span>(request.<span class="hljs-property">amount</span>) || <span class="hljs-number">1</span>);
   <span class="hljs-keyword">const</span> amountMsat = sats * <span class="hljs-number">1000</span>;
@@ -829,7 +870,7 @@
 
 <span class="hljs-keyword">function</span> <span class="hljs-title function_">normalizeXpubForNetwork</span> (xpub, network = <span class="hljs-string">&#x27;mainnet&#x27;</span>) {
   <span class="hljs-keyword">if</span> (!xpub) <span class="hljs-keyword">return</span> xpub;
-  <span class="hljs-keyword">const</span> decoded = bs58check.<span class="hljs-title function_">decode</span>(xpub);
+  <span class="hljs-keyword">const</span> decoded = <span class="hljs-title function_">decodeCheck</span>(xpub);
   <span class="hljs-keyword">const</span> bytes = <span class="hljs-title class_">Buffer</span>.<span class="hljs-title function_">from</span>(decoded);
   <span class="hljs-keyword">if</span> (bytes.<span class="hljs-property">length</span> &lt; <span class="hljs-number">4</span>) <span class="hljs-keyword">return</span> xpub;</pre>
           </div>
@@ -861,7 +902,7 @@
   <span class="hljs-keyword">if</span> (current.<span class="hljs-title function_">equals</span>(target)) <span class="hljs-keyword">return</span> xpub;
 
   <span class="hljs-keyword">const</span> remapped = <span class="hljs-title class_">Buffer</span>.<span class="hljs-title function_">concat</span>([target, bytes.<span class="hljs-title function_">subarray</span>(<span class="hljs-number">4</span>)]);
-  <span class="hljs-keyword">return</span> bs58check.<span class="hljs-title function_">encode</span>(remapped);
+  <span class="hljs-keyword">return</span> <span class="hljs-title function_">encodeCheck</span>(remapped);
 }
 
 <span class="hljs-keyword">function</span> <span class="hljs-title function_">runWorkerLoop</span> () {
@@ -1000,7 +1041,14 @@
         <span class="hljs-attr">completed</span>: <span class="hljs-number">0</span>,
         <span class="hljs-attr">failed</span>: <span class="hljs-number">0</span>,
         <span class="hljs-attr">nextWorkerIndex</span>: <span class="hljs-number">0</span>,
-        <span class="hljs-attr">stateTip</span>: <span class="hljs-literal">null</span>
+        <span class="hljs-attr">stateTip</span>: <span class="hljs-literal">null</span>,
+        <span class="hljs-attr">externalStatus</span>: {
+          <span class="hljs-attr">masterFunds</span>: {},
+          <span class="hljs-attr">aliceFunds</span>: {},
+          <span class="hljs-attr">masterChannels</span>: [],
+          <span class="hljs-attr">aliceChannels</span>: [],
+          <span class="hljs-attr">updatedAt</span>: <span class="hljs-literal">null</span>
+        }
       },
       <span class="hljs-attr">cores</span>: [],
       <span class="hljs-attr">status</span>: <span class="hljs-string">&#x27;PAUSED&#x27;</span>,
@@ -1298,6 +1346,17 @@
     }
   }
 
+  setExternalStatus (snapshot = {}) {
+    <span class="hljs-variable language_">this</span>.<span class="hljs-property">_state</span>.<span class="hljs-property">content</span>.<span class="hljs-property">externalStatus</span> = <span class="hljs-title class_">Object</span>.<span class="hljs-title function_">assign</span>({
+      <span class="hljs-attr">masterFunds</span>: {},
+      <span class="hljs-attr">aliceFunds</span>: {},
+      <span class="hljs-attr">masterChannels</span>: [],
+      <span class="hljs-attr">aliceChannels</span>: [],
+      <span class="hljs-attr">updatedAt</span>: <span class="hljs-literal">null</span>
+    }, snapshot);
+    <span class="hljs-keyword">return</span> <span class="hljs-variable language_">this</span>;
+  }
+
   status () {
     <span class="hljs-keyword">const</span> workers = <span class="hljs-variable language_">this</span>.<span class="hljs-property">_state</span>.<span class="hljs-property">cores</span>.<span class="hljs-title function_">map</span>(<span class="hljs-function">(<span class="hljs-params">core</span>) =&gt;</span> ({
       <span class="hljs-attr">index</span>: core.<span class="hljs-property">__index</span>,
@@ -1309,6 +1368,7 @@
     }));
 
     <span class="hljs-keyword">const</span> historyRoot = <span class="hljs-variable language_">this</span>.<span class="hljs-title function_">_computeHistoryRoot</span>();
+    <span class="hljs-keyword">const</span> externalStatus = <span class="hljs-variable language_">this</span>.<span class="hljs-property">_state</span>.<span class="hljs-property">content</span>.<span class="hljs-property">externalStatus</span> || {};
 
     <span class="hljs-keyword">return</span> {
       <span class="hljs-attr">status</span>: <span class="hljs-variable language_">this</span>.<span class="hljs-property">_state</span>.<span class="hljs-property">status</span>,
@@ -1322,7 +1382,12 @@
       historyRoot,
       <span class="hljs-attr">workersBusy</span>: workers.<span class="hljs-title function_">filter</span>(<span class="hljs-function">(<span class="hljs-params">x</span>) =&gt;</span> x.<span class="hljs-property">busy</span>).<span class="hljs-property">length</span>,
       <span class="hljs-attr">workersTotal</span>: workers.<span class="hljs-property">length</span>,
-      workers
+      workers,
+      <span class="hljs-attr">masterFunds</span>: externalStatus.<span class="hljs-property">masterFunds</span> || {},
+      <span class="hljs-attr">aliceFunds</span>: externalStatus.<span class="hljs-property">aliceFunds</span> || {},
+      <span class="hljs-attr">masterChannels</span>: <span class="hljs-title class_">Array</span>.<span class="hljs-title function_">isArray</span>(externalStatus.<span class="hljs-property">masterChannels</span>) ? externalStatus.<span class="hljs-property">masterChannels</span> : [],
+      <span class="hljs-attr">aliceChannels</span>: <span class="hljs-title class_">Array</span>.<span class="hljs-title function_">isArray</span>(externalStatus.<span class="hljs-property">aliceChannels</span>) ? externalStatus.<span class="hljs-property">aliceChannels</span> : [],
+      <span class="hljs-attr">externalStatusUpdatedAt</span>: externalStatus.<span class="hljs-property">updatedAt</span> || <span class="hljs-literal">null</span>
     };
   }
 
@@ -1356,6 +1421,27 @@
   <span class="hljs-keyword">const</span> aliceKey = <span class="hljs-title class_">Object</span>.<span class="hljs-title function_">assign</span>({}, staticKey, {
     <span class="hljs-attr">passphrase</span>: <span class="hljs-string">&#x27;alice&#x27;</span>
   });
+
+  <span class="hljs-keyword">if</span> (process.<span class="hljs-property">env</span>.<span class="hljs-property">FABRIC_AGENTS_SKIP_CHAIN</span> === <span class="hljs-string">&#x27;1&#x27;</span>) {
+    <span class="hljs-keyword">const</span> skipKey = <span class="hljs-title class_">Object</span>.<span class="hljs-title function_">assign</span>({ <span class="hljs-attr">network</span>: <span class="hljs-variable constant_">BITCOIN_NETWORK</span> },
+      <span class="hljs-variable constant_">FABRIC_MNEMONIC</span> ? { <span class="hljs-attr">mnemonic</span>: <span class="hljs-variable constant_">FABRIC_MNEMONIC</span> } : { <span class="hljs-attr">mnemonic</span>: <span class="hljs-variable constant_">FIXTURE_SEED</span> });
+    <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;[DEVELOP] FABRIC_AGENTS_SKIP_CHAIN=1 — distributor + workers only (no Bitcoin / Lightning).&#x27;</span>);
+    <span class="hljs-keyword">const</span> skipMaster = <span class="hljs-keyword">new</span> <span class="hljs-title class_">Distributor</span>(<span class="hljs-title class_">Object</span>.<span class="hljs-title function_">assign</span>({}, input, { <span class="hljs-attr">key</span>: skipKey }));
+    <span class="hljs-keyword">await</span> skipMaster.<span class="hljs-title function_">start</span>();
+    <span class="hljs-keyword">for</span> (<span class="hljs-keyword">let</span> i = <span class="hljs-number">0</span>; i &lt; numberOfCores; i++) {
+      skipMaster.<span class="hljs-title function_">requestWork</span>({ <span class="hljs-attr">index</span>: i }, <span class="hljs-number">0</span>);
+    }
+    skipMaster.<span class="hljs-title function_">requestWork</span>({ <span class="hljs-attr">index</span>: <span class="hljs-string">&#x27;priority&#x27;</span> }, <span class="hljs-number">1</span>);
+    <span class="hljs-keyword">const</span> idleDeadline = <span class="hljs-title class_">Math</span>.<span class="hljs-title function_">max</span>(<span class="hljs-number">25000</span>, <span class="hljs-number">3000</span> + numberOfCores * <span class="hljs-number">2000</span>);
+    <span class="hljs-keyword">const</span> drained = <span class="hljs-keyword">await</span> skipMaster.<span class="hljs-title function_">waitForIdle</span>(idleDeadline);
+    <span class="hljs-keyword">if</span> (!drained) {
+      <span class="hljs-keyword">throw</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">Error</span>(<span class="hljs-string">`Skip-chain smoke: queue did not drain within <span class="hljs-subst">${idleDeadline}</span>ms`</span>);
+    }
+    <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;[DEVELOP] Skip-chain smoke: initial queue drained OK.&#x27;</span>);
+    <span class="hljs-keyword">await</span> skipMaster.<span class="hljs-title function_">stop</span>();
+    <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;[DEVELOP] Skip-chain smoke: complete.&#x27;</span>);
+    <span class="hljs-keyword">return</span>;
+  }
 
   <span class="hljs-keyword">const</span> withTimeout = <span class="hljs-keyword">async</span> (promise, label, timeoutMs = <span class="hljs-number">6000</span>) =&gt; {
     <span class="hljs-keyword">return</span> <span class="hljs-title class_">Promise</span>.<span class="hljs-title function_">race</span>([
@@ -1508,7 +1594,13 @@
     <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">debug</span>(<span class="hljs-string">&#x27;[DEVELOP]&#x27;</span>, <span class="hljs-string">&#x27;Bitcoin emitted log:&#x27;</span>, log);
   });
 
-  <span class="hljs-keyword">await</span> bitcoin.<span class="hljs-title function_">start</span>();
+  <span class="hljs-keyword">try</span> {
+    <span class="hljs-keyword">await</span> bitcoin.<span class="hljs-title function_">start</span>();
+  } <span class="hljs-keyword">catch</span> (error) {
+    <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">error</span>(<span class="hljs-string">&#x27;[DEVELOP] Bitcoin service failed to start:&#x27;</span>, error.<span class="hljs-property">message</span>);
+    <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">error</span>(<span class="hljs-string">&#x27;[DEVELOP] Hint: use a working regtest bitcoind on port 18443, or distributor-only smoke: FABRIC_AGENTS_SKIP_CHAIN=1 node examples/agents.js&#x27;</span>);
+    <span class="hljs-keyword">throw</span> error;
+  }
 
   <span class="hljs-keyword">const</span> miningAddress = <span class="hljs-keyword">await</span> bitcoin.<span class="hljs-title function_">getUnusedAddress</span>();
   <span class="hljs-keyword">let</span> spendableUTXOs = [];
@@ -1737,27 +1829,38 @@
   }, <span class="hljs-variable constant_">PRODUCER_INTERVAL_MS</span>);
 
   statusTimer = <span class="hljs-built_in">setInterval</span>(<span class="hljs-function">() =&gt;</span> {
-    <span class="hljs-keyword">const</span> status = master.<span class="hljs-title function_">status</span>();
-    <span class="hljs-keyword">const</span> workerSummary = status.<span class="hljs-property">workers</span>.<span class="hljs-title function_">map</span>(<span class="hljs-function">(<span class="hljs-params">worker</span>) =&gt;</span> {
-      <span class="hljs-keyword">const</span> state = worker.<span class="hljs-property">state</span> || {};
-      <span class="hljs-keyword">return</span> <span class="hljs-string">`w<span class="hljs-subst">${worker.index}</span>:done=<span class="hljs-subst">${worker.processed}</span>,err=<span class="hljs-subst">${worker.errors}</span>,<span class="hljs-subst">${worker.busy ? <span class="hljs-string">&#x27;busy&#x27;</span> : <span class="hljs-string">&#x27;idle&#x27;</span>}</span>,state.jobs=<span class="hljs-subst">${state.queueProcessed || <span class="hljs-number">0</span>}</span>,state.depth=<span class="hljs-subst">${state.depth || <span class="hljs-number">0</span>}</span>,state.last=<span class="hljs-subst">${state.lastPayload || <span class="hljs-string">&#x27;-&#x27;</span>}</span>`</span>;
-    }).<span class="hljs-title function_">join</span>(<span class="hljs-string">&#x27; | &#x27;</span>);
+    <span class="hljs-title class_">Promise</span>.<span class="hljs-title function_">resolve</span>().<span class="hljs-title function_">then</span>(<span class="hljs-keyword">async</span> () =&gt; {
+      <span class="hljs-keyword">const</span> snapshot = <span class="hljs-keyword">await</span> <span class="hljs-title function_">getLightningStatusSnapshot</span>(lightning, aliceLightning);
+      master.<span class="hljs-title function_">setExternalStatus</span>(snapshot);
 
-    <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(
-      <span class="hljs-string">`[MASTER] [STATUS] queue=<span class="hljs-subst">${status.queueDepth}</span> completed=<span class="hljs-subst">${status.completed}</span> failed=<span class="hljs-subst">${status.failed}</span> processed=<span class="hljs-subst">${status.processed}</span> busy=<span class="hljs-subst">${status.workersBusy}</span>/<span class="hljs-subst">${status.workersTotal}</span> <span class="hljs-subst">${workerSummary}</span>`</span>
-    );
+      <span class="hljs-keyword">const</span> status = master.<span class="hljs-title function_">status</span>();
+      <span class="hljs-keyword">const</span> aliceChannels = <span class="hljs-title class_">Array</span>.<span class="hljs-title function_">isArray</span>(snapshot.<span class="hljs-property">aliceChannels</span>) ? snapshot.<span class="hljs-property">aliceChannels</span> : [];
+      <span class="hljs-keyword">const</span> masterChannels = <span class="hljs-title class_">Array</span>.<span class="hljs-title function_">isArray</span>(snapshot.<span class="hljs-property">masterChannels</span>) ? snapshot.<span class="hljs-property">masterChannels</span> : [];
+      <span class="hljs-keyword">const</span> aliceFunds = snapshot.<span class="hljs-property">aliceFunds</span> || {};
+      <span class="hljs-keyword">const</span> masterFunds = snapshot.<span class="hljs-property">masterFunds</span> || {};
+      <span class="hljs-keyword">const</span> workerSummary = status.<span class="hljs-property">workers</span>.<span class="hljs-title function_">map</span>(<span class="hljs-function">(<span class="hljs-params">worker</span>) =&gt;</span> {
+        <span class="hljs-keyword">const</span> state = worker.<span class="hljs-property">state</span> || {};
+        <span class="hljs-keyword">return</span> <span class="hljs-string">`w<span class="hljs-subst">${worker.index}</span>:done=<span class="hljs-subst">${worker.processed}</span>,err=<span class="hljs-subst">${worker.errors}</span>,<span class="hljs-subst">${worker.busy ? <span class="hljs-string">&#x27;busy&#x27;</span> : <span class="hljs-string">&#x27;idle&#x27;</span>}</span>,state.jobs=<span class="hljs-subst">${state.queueProcessed || <span class="hljs-number">0</span>}</span>,state.depth=<span class="hljs-subst">${state.depth || <span class="hljs-number">0</span>}</span>,state.last=<span class="hljs-subst">${state.lastPayload || <span class="hljs-string">&#x27;-&#x27;</span>}</span>`</span>;
+      }).<span class="hljs-title function_">join</span>(<span class="hljs-string">&#x27; | &#x27;</span>);
 
-    <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(
-      <span class="hljs-string">`[ALICE] [STATUS:LIGHTNING] channels=<span class="hljs-subst">${status.aliceChannels.length}</span> funds=<span class="hljs-subst">${status.aliceFunds.total_msat || status.aliceFunds.total || <span class="hljs-string">&#x27;-&#x27;</span>}</span>`</span>
-    );
+      <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(
+        <span class="hljs-string">`[MASTER] [STATUS] queue=<span class="hljs-subst">${status.queueDepth}</span> completed=<span class="hljs-subst">${status.completed}</span> failed=<span class="hljs-subst">${status.failed}</span> processed=<span class="hljs-subst">${status.processed}</span> busy=<span class="hljs-subst">${status.workersBusy}</span>/<span class="hljs-subst">${status.workersTotal}</span> <span class="hljs-subst">${workerSummary}</span>`</span>
+      );
 
-    <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(
-      <span class="hljs-string">`[MASTER] [STATUS:LIGHTNING] channels=<span class="hljs-subst">${status.masterChannels.length}</span> funds=<span class="hljs-subst">${status.masterFunds.total_msat || status.masterFunds.total || <span class="hljs-string">&#x27;-&#x27;</span>}</span>`</span>
-    );
+      <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(
+        <span class="hljs-string">`[ALICE] [STATUS:LIGHTNING] channels=<span class="hljs-subst">${aliceChannels.length}</span> funds=<span class="hljs-subst">${aliceFunds.total_msat || aliceFunds.total || <span class="hljs-string">&#x27;-&#x27;</span>}</span>`</span>
+      );
 
-    <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(
-      <span class="hljs-string">`[MASTER] [MERKLE] depth=<span class="hljs-subst">${status.stateDepth}</span> root=<span class="hljs-subst">${status.historyRoot || <span class="hljs-string">&#x27;-&#x27;</span>}</span> tip=<span class="hljs-subst">${status.stateTip || <span class="hljs-string">&#x27;-&#x27;</span>}</span> parent=<span class="hljs-subst">${status.stateParent || <span class="hljs-string">&#x27;-&#x27;</span>}</span>`</span>
-    );
+      <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(
+        <span class="hljs-string">`[MASTER] [STATUS:LIGHTNING] channels=<span class="hljs-subst">${masterChannels.length}</span> funds=<span class="hljs-subst">${masterFunds.total_msat || masterFunds.total || <span class="hljs-string">&#x27;-&#x27;</span>}</span>`</span>
+      );
+
+      <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(
+        <span class="hljs-string">`[MASTER] [MERKLE] depth=<span class="hljs-subst">${status.stateDepth}</span> root=<span class="hljs-subst">${status.historyRoot || <span class="hljs-string">&#x27;-&#x27;</span>}</span> tip=<span class="hljs-subst">${status.stateTip || <span class="hljs-string">&#x27;-&#x27;</span>}</span> parent=<span class="hljs-subst">${status.stateParent || <span class="hljs-string">&#x27;-&#x27;</span>}</span>`</span>
+      );
+    }).<span class="hljs-title function_">catch</span>(<span class="hljs-function">(<span class="hljs-params">error</span>) =&gt;</span> {
+      <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">warn</span>(<span class="hljs-string">&#x27;[STATUS]&#x27;</span>, <span class="hljs-string">&#x27;Could not refresh Lightning status snapshot:&#x27;</span>, error.<span class="hljs-property">message</span>);
+    });
   }, <span class="hljs-number">5000</span>);
 }
 

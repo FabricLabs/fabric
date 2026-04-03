@@ -4,6 +4,21 @@ const assert = require('assert');
 const b = require('../functions/sipa/bech32');
 
 describe('@fabric/core/functions/sipa/bech32', function () {
+  it('encode/decode round-trips data for bech32 and bech32m', function () {
+    const data = [0, 1, 2, 3, 4, 5, 6, 7];
+    const s0 = b.encode('tb', data, b.encodings.BECH32);
+    const d0 = b.decode(s0, b.encodings.BECH32);
+    assert.ok(d0);
+    assert.strictEqual(d0.hrp, 'tb');
+    assert.deepStrictEqual(d0.data, data);
+
+    const s1 = b.encode('tb', data, b.encodings.BECH32M);
+    const d1 = b.decode(s1, b.encodings.BECH32M);
+    assert.ok(d1);
+    assert.strictEqual(d1.hrp, 'tb');
+    assert.deepStrictEqual(d1.data, data);
+  });
+
   it('decode rejects mixed-case bech32 strings', function () {
     const s = b.encode('test', [0, 0, 0, 0, 0, 0, 0, 0], b.encodings.BECH32);
     const mixed = s.slice(0, 6) + s[6].toUpperCase() + s.slice(7);

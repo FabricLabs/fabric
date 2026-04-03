@@ -12,11 +12,12 @@ const {
 } = require('../functions/bip39');
 
 describe('@fabric/core/functions/bip39', function () {
+  const VALID_12 = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
+
   it('mnemonicToSeed (async) matches mnemonicToSeedSync', async function () {
-    const m = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
     const pass = 'TREZOR';
-    const a = await mnemonicToSeed(m, pass);
-    const b = mnemonicToSeedSync(m, pass);
+    const a = await mnemonicToSeed(VALID_12, pass);
+    const b = mnemonicToSeedSync(VALID_12, pass);
     assert.ok(a.equals(b));
   });
 
@@ -29,11 +30,17 @@ describe('@fabric/core/functions/bip39', function () {
 
   it('generateMnemonic rejects invalid strength', function () {
     assert.throws(() => generateMnemonic(127), /128–256/);
-    assert.throws(() => generateMnemonic(384), /128–256/);
+    assert.throws(() => generateMnemonic(129), /128–256/);
+    assert.throws(() => generateMnemonic(257), /128–256/);
   });
 
   it('validateMnemonic returns false on checksum failure', function () {
-    const words = defaultWordlist.slice(0, 12).join(' ');
-    assert.strictEqual(validateMnemonic(words), false);
+    const words = VALID_12.split(' ');
+    const baseline = words[words.length - 1];
+    const idx = defaultWordlist.indexOf(baseline);
+    const replacement = defaultWordlist[(idx + 1) % defaultWordlist.length];
+    words[words.length - 1] = replacement;
+    const mutated = words.join(' ');
+    assert.strictEqual(validateMnemonic(mutated), false);
   });
 });
