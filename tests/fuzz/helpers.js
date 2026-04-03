@@ -39,10 +39,12 @@ function randomAmpFrame () {
 /**
  * @param {number} maxChars — max UTF-16 code units in result
  * @param {number} [maxByteBudget] — cap on random bytes read (default min(n*4, 65536))
+ * @param {number} [minChars=0] — inclusive lower bound on length (for forcing oversize persisted strings)
  * @returns {string}
  */
-function randomUtf8String (maxChars, maxByteBudget) {
-  const n = crypto.randomInt(0, maxChars + 1);
+function randomUtf8String (maxChars, maxByteBudget, minChars = 0) {
+  const lo = Math.max(0, Math.min(minChars | 0, maxChars));
+  const n = crypto.randomInt(lo, maxChars + 1);
   if (n === 0) return '';
   const defaultCap = Math.min(n * 4, 65536);
   const byteCap = maxByteBudget != null ? Math.max(1, maxByteBudget) : defaultCap;
@@ -56,17 +58,18 @@ function randomWireLikeString () {
   const cap = roll === 0
     ? MAX_MESSAGE_SIZE + crypto.randomInt(1, 500)
     : MAX_MESSAGE_SIZE;
-  const byteBudget = cap > 16384 ? Math.min(cap * 4 + 4096, (MAX_MESSAGE_SIZE + 500) * 4) : undefined;
-  return randomUtf8String(cap, byteBudget);
+  return randomUtf8String(cap);
 }
 
 function randomPersistedLikeString () {
   const roll = crypto.randomInt(0, 20);
-  const cap = roll === 0
-    ? PERSISTED_JSON_MAX_CHARS + crypto.randomInt(1, 2000)
-    : Math.min(PERSISTED_JSON_MAX_CHARS, 50000);
-  const byteBudget = cap > 65536 ? Math.min(cap * 4 + 4096, PERSISTED_JSON_MAX_CHARS * 4 + 8192) : undefined;
-  return randomUtf8String(cap, byteBudget);
+  if (roll === 0) {
+    const cap = PERSISTED_JSON_MAX_CHARS + crypto.randomInt(1, 2000);
+    const byteBudget = Math.min(cap * 4 + 4096, PERSISTED_JSON_MAX_CHARS * 4 + 8192);
+    return randomUtf8String(cap, byteBudget, PERSISTED_JSON_MAX_CHARS + 1);
+  }
+  const cap = Math.min(PERSISTED_JSON_MAX_CHARS, 50000);
+  return randomUtf8String(cap);
 }
 
 /**

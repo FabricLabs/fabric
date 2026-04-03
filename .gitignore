@@ -59,6 +59,9 @@ reports/coverage-btc-tmp/
 reports/credits.json
 reports/licenses.json
 reports/benchmark-latest.json
+reports/AUDIT.json
+reports/class-inheritance.json
+reports/npm-audit.json
 
 ### node-waf configuration
 .lock-wscript
