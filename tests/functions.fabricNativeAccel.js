@@ -135,17 +135,11 @@ describe('functions/fabricNativeAccel', function () {
   });
 
   it('status surfaces addon load failure when FABRIC_ADDON_PATH is unloadable', function () {
-    const realAddon = path.join(__dirname, '..', 'build', 'Release', 'fabric.node');
-    if (fs.existsSync(realAddon)) {
-      // This scenario asserts "unloadable addon path" behavior; skip when a real
-      // compiled addon is present to avoid environment-coupled false failures.
-      this.skip();
-    }
     const bad = path.join(os.tmpdir(), `fabric-bad-addon-${Date.now()}.node`);
     fs.writeFileSync(bad, 'not a valid native addon\n');
     try {
       const j = runStatusSubprocess(
-        `process.env.FABRIC_NATIVE_DOUBLE_SHA256 = '1'; process.env.FABRIC_ADDON_PATH = ${JSON.stringify(bad)};`,
+        `process.env.FABRIC_NATIVE_DOUBLE_SHA256 = '1'; process.env.FABRIC_ADDON_PATH_STRICT = '1'; process.env.FABRIC_ADDON_PATH = ${JSON.stringify(bad)};`,
         'if (!s.error) process.exit(2);',
         '{ error: s.error }'
       );
@@ -156,14 +150,8 @@ describe('functions/fabricNativeAccel', function () {
   });
 
   it('status error stringifies load failures with empty Error.message', function () {
-    const realAddon = path.join(__dirname, '..', 'build', 'Release', 'fabric.node');
-    if (fs.existsSync(realAddon)) {
-      // tryLoadAddon falls through to default fabric.node after FABRIC_ADDON_PATH fails;
-      // skip when a real addon is present so the first candidate’s empty Error is not final.
-      this.skip();
-    }
     const j = runStatusSubprocess(
-      `process.env.FABRIC_NATIVE_DOUBLE_SHA256 = '1'; process.env.FABRIC_ADDON_PATH = ${JSON.stringify(throwEmptyAddonPath)};`,
+      `process.env.FABRIC_NATIVE_DOUBLE_SHA256 = '1'; process.env.FABRIC_ADDON_PATH_STRICT = '1'; process.env.FABRIC_ADDON_PATH = ${JSON.stringify(throwEmptyAddonPath)};`,
       'if (!s.error) process.exit(2);',
       '{ error: s.error }'
     );
@@ -173,6 +161,7 @@ describe('functions/fabricNativeAccel', function () {
   it('mock JS addon satisfies doubleSha256 native path when opted in', function () {
     const script = `
       process.env.FABRIC_NATIVE_DOUBLE_SHA256 = '1';
+      process.env.FABRIC_ADDON_PATH_STRICT = '1';
       process.env.FABRIC_ADDON_PATH = ${JSON.stringify(mockAddonPath)};
       const m = require(${JSON.stringify(modPath)});
       const crypto = require('crypto');
@@ -188,6 +177,7 @@ describe('functions/fabricNativeAccel', function () {
   it('falls back to JS when native doubleSha256 returns wrong length', function () {
     const script = `
       process.env.FABRIC_NATIVE_DOUBLE_SHA256 = '1';
+      process.env.FABRIC_ADDON_PATH_STRICT = '1';
       process.env.FABRIC_ADDON_PATH = ${JSON.stringify(badShaAddonPath)};
       const m = require(${JSON.stringify(modPath)});
       const crypto = require('crypto');
@@ -203,6 +193,7 @@ describe('functions/fabricNativeAccel', function () {
   it('mock JS addon covers native bech32 and segwit wrappers', function () {
     const script = `
       process.env.FABRIC_NATIVE_BECH32 = '1';
+      process.env.FABRIC_ADDON_PATH_STRICT = '1';
       process.env.FABRIC_ADDON_PATH = ${JSON.stringify(mockAddonPath)};
       const m = require(${JSON.stringify(modPath)});
       const enc = m.bech32Encode('id', Buffer.from([0, 1, 2]), 'bech32m');
@@ -227,6 +218,7 @@ describe('functions/fabricNativeAccel', function () {
     try {
       const script = `
         process.env.FABRIC_NATIVE_BECH32 = '1';
+        process.env.FABRIC_ADDON_PATH_STRICT = '1';
         process.env.FABRIC_ADDON_PATH = ${JSON.stringify(decodeNullAddon)};
         const m = require(${JSON.stringify(modPath)});
         try {
@@ -251,6 +243,7 @@ describe('functions/fabricNativeAccel', function () {
     try {
       const script = `
         process.env.FABRIC_NATIVE_BECH32 = '1';
+        process.env.FABRIC_ADDON_PATH_STRICT = '1';
         process.env.FABRIC_ADDON_PATH = ${JSON.stringify(segwitNullAddon)};
         const m = require(${JSON.stringify(modPath)});
         if (m.segwitAddrDecode('bc', 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4') !== null) process.exit(2);

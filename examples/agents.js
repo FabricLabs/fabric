@@ -24,7 +24,6 @@ const Service = require('../types/service');
 const Entity = require('../types/entity');
 const State = require('../types/state');
 const Tree = require('../types/tree');
-const Wallet = require('../types/wallet');
 
 // Services
 const Bitcoin = require('../services/bitcoin');
@@ -96,7 +95,7 @@ const configuration = {
 function cloneState (value) {
   try {
     return JSON.parse(JSON.stringify(value || {}));
-  } catch (error) {
+  } catch {
     return {};
   }
 }
@@ -106,7 +105,7 @@ function compileWorkerFunction (source) {
   try {
     // Example-only trusted code path to preserve settings.function behavior.
     return new Function(`return (${source});`)();
-  } catch (error) {
+  } catch {
     return null;
   }
 }
@@ -334,7 +333,7 @@ async function getLightningStatusSnapshot (lightning, aliceLightning) {
     try {
       const funds = await instance.listFunds();
       return funds || {};
-    } catch (error) {
+    } catch {
       return {};
     }
   };
@@ -364,7 +363,7 @@ async function payRequestedAmount (lightning, aliceLightning, request = {}) {
   return { sats, invoice, payment };
 }
 
-async function ensureWalletHasXpub (bitcoin, xpub, label = 'master-xpub') {
+async function ensureWalletHasXpub (bitcoin, xpub, _label = 'master-xpub') {
   if (!bitcoin || !xpub) throw new Error('Bitcoin instance and xpub are required.');
 
   const normalizedXpub = normalizeXpubForNetwork(xpub, bitcoin.settings.network);
@@ -374,7 +373,7 @@ async function ensureWalletHasXpub (bitcoin, xpub, label = 'master-xpub') {
   let walletInfo = null;
   try {
     walletInfo = await bitcoin._makeWalletRequest('getwalletinfo', [], bitcoin.walletName);
-  } catch (error) {
+  } catch {
     // Continue with default wallet target.
   }
 
@@ -659,7 +658,19 @@ class Distributor extends Service {
 
         core.on('exit', (code, signal) => {
           this.emit('debug', 'Core exited:', code, signal);
-          core.__busy = true;
+          const idx = this._state.cores.indexOf(core);
+          if (idx !== -1) this._state.cores.splice(idx, 1);
+          if (core.__busy) {
+            this._state.content.failed = (this._state.content.failed || 0) + 1;
+            const detail = `code=${code} signal=${signal} lastJobID=${core.__lastJobID}`;
+            this.emit('error', `Core exited while busy (job may be lost): ${detail}`);
+          }
+          try {
+            core.terminate();
+          } catch {
+            /* ignore */
+          }
+          this._dispatchWork();
         });
       }
     } catch (error) {
@@ -890,7 +901,12 @@ async function main (input = {}) {
         skipMaster.requestWork({ index: i }, 0);
       }
       skipMaster.requestWork({ index: 'priority' }, 1);
-      const idleDeadline = Math.max(25000, 3000 + numberOfCores * 2000);
+      const queuedJobs = numberOfCores + 1;
+      const minWaves = 2;
+      const idleDeadline = Math.max(
+        25000,
+        3000 + minWaves * queuedJobs * Math.max(AGENT_WORK_DELAY_MS, 1)
+      );
       const drained = await skipMaster.waitForIdle(idleDeadline);
       if (!drained) {
         throw new Error(`Skip-chain smoke: queue did not drain within ${idleDeadline}ms`);
@@ -1150,6 +1166,8 @@ async function main (input = {}) {
   }
 
   await ensureAliceLightningFunds(bitcoin, aliceLightning, miningAddress);
+  await ensureAliceChannel(lightning, aliceLightning);
+  await logChannelSnapshot(lightning, aliceLightning);
 
   blockTimer = setInterval(async () => {
     try {

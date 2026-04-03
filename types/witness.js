@@ -15,7 +15,7 @@ class Witness {
     this.buffer = Buffer.alloc(32 * 256);
     this._state = {
       data: this.settings.data
-    }
+    };
 
     if (settings && settings.keypair) {
       if (settings.keypair.private) {
@@ -79,7 +79,7 @@ class Witness {
     return {
       private: this.keypair.privateKey,
       public: this.keypair.publicKey
-    }
+    };
   }
 
   _usePrivateKey (key) {

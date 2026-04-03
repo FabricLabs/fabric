@@ -110,7 +110,7 @@ class Channel extends State {
 
   commit () {
     const commit = new Entity(this._state);
-    this.emit('commit', commit)
+    this.emit('commit', commit);
     return commit;
   }
 

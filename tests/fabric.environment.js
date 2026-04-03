@@ -26,14 +26,14 @@ describe('@fabric/core/types/environment', function () {
     it('can start and stop smoothly', async function () {
       const environment = new Environment();
       await environment.start();
-      await environment.stop()
+      await environment.stop();
       assert.ok(environment);
     });
 
     it('can instantiate from a seed', async function () {
       const environment = new Environment({ xpub: FIXTURE_SEED });
       await environment.start();
-      await environment.stop()
+      await environment.stop();
       assert.ok(environment);
       // assert.strictEqual(environment.xprv, FIXTURE_XPRV);
       // assert.strictEqual(environment.xpub, FIXTURE_XPUB);
@@ -42,7 +42,7 @@ describe('@fabric/core/types/environment', function () {
     it('can instantiate from an xpub', async function () {
       const environment = new Environment({ xpub: FIXTURE_XPUB });
       await environment.start();
-      await environment.stop()
+      await environment.stop();
       assert.ok(environment);
       // assert.strictEqual(environment.xprv, undefined);
       // assert.strictEqual(environment.xpub, FIXTURE_XPUB);
@@ -51,7 +51,7 @@ describe('@fabric/core/types/environment', function () {
     it('can instantiate from an xprv', async function () {
       const environment = new Environment({ xprv: FIXTURE_XPRV });
       await environment.start();
-      await environment.stop()
+      await environment.stop();
       assert.ok(environment);
       assert.strictEqual(environment.xprv, FIXTURE_XPRV);
       // assert.strictEqual(environment.xub, FIXTURE_XPUB);

@@ -15,4 +15,4 @@ module.exports = function oxfordJoin (list) {
 
   // For more than two items, use Oxford comma style
   return list.slice(0, -1).join(', ') + ', and ' + list.slice(-1);
-}
+};

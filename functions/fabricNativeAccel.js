@@ -16,6 +16,10 @@
  * **`FABRIC_SKIP_NATIVE_ADDON=1`:** never `require()` the addon (used when a stale
  * `fabric.node` would SIGSEGV on load).
  *
+ * **`FABRIC_ADDON_PATH_STRICT=1`:** when **`FABRIC_ADDON_PATH`** is set, try **only** that path
+ * (do not fall back to `build/Release/fabric.node`). Used by tests and tooling so a mock or
+ * intentionally broken addon is not overridden by a real build artifact.
+ *
  * **Browser / webpack:** Node-only requires live inside `tryLoadAddon` after an
  * `isNode()` guard.
  *
@@ -66,9 +70,13 @@ function nativeAddonLoadRequested () {
 
 function addonPathCandidates (pathMod) {
   const env = typeof process !== 'undefined' && process.env ? process.env.FABRIC_ADDON_PATH : undefined;
+  const strict = typeof process !== 'undefined' && process.env &&
+    (process.env.FABRIC_ADDON_PATH_STRICT === '1' || process.env.FABRIC_ADDON_PATH_STRICT === 'true');
   const list = [];
   if (env) list.push(env);
-  list.push(pathMod.join(__dirname, '..', 'build', 'Release', 'fabric.node'));
+  if (!strict) {
+    list.push(pathMod.join(__dirname, '..', 'build', 'Release', 'fabric.node'));
+  }
   return list;
 }
 

@@ -136,7 +136,7 @@ class Identity extends Actor {
 
   _signAsSchnorr (input) {
     if (!input) input = this.pubkeyhash;
-    this._signature = this.key.sign(input)
+    this._signature = this.key.sign(input);
     return this;
   }
 

@@ -817,7 +817,7 @@ class CLI extends FabricShell {
     } else {
       // When not rendering, send output through stdout once so callers can capture it.
       // Avoid duplicating blessed output here to keep the TUI stable.
-      // eslint-disable-next-line no-console
+       
       console.log(message);
     }
   }
@@ -2082,7 +2082,7 @@ class CLI extends FabricShell {
 
     switch (params[1]) {
       default:
-        text = `{bold}Fabric CLI Help{/bold}\nThe Fabric CLI offers a simple command-based interface to a Fabric-speaking Network.  You can use \`/connect <address>\` to establish a connection to a known peer, or any of the available commands.\n\n{bold}Panels{/bold}: F1 Home | F2 Console | F3 Network | F4 Wallet | F5 Contracts | F6 Blockchain\n\n{bold}Available Commands{/bold}:\n\n${Object.keys(this.commands).map(x => `  ${x}`).join('\n')}\n\n{bold}Usage{/bold}:\n  Type any command with a forward slash, e.g. /help, /peers, /connect localhost:7777\n\n{bold}Examples{/bold}:\n  /help          - Show this help message\n  /block 850000  - Browse block by height (F6 panel)\n  /tx <txid>     - Look up transaction\n  /address <addr> - Look up address\n  /peers         - List connected peers\n  /connect <addr> - Connect to a peer\n  /identity      - Show your identity\n  /wallet        - Show wallet information\n  /bitcoin       - Show Bitcoin service status\n  /quit          - Exit the application`
+        text = `{bold}Fabric CLI Help{/bold}\nThe Fabric CLI offers a simple command-based interface to a Fabric-speaking Network.  You can use \`/connect <address>\` to establish a connection to a known peer, or any of the available commands.\n\n{bold}Panels{/bold}: F1 Home | F2 Console | F3 Network | F4 Wallet | F5 Contracts | F6 Blockchain\n\n{bold}Available Commands{/bold}:\n\n${Object.keys(this.commands).map(x => `  ${x}`).join('\n')}\n\n{bold}Usage{/bold}:\n  Type any command with a forward slash, e.g. /help, /peers, /connect localhost:7777\n\n{bold}Examples{/bold}:\n  /help          - Show this help message\n  /block 850000  - Browse block by height (F6 panel)\n  /tx <txid>     - Look up transaction\n  /address <addr> - Look up address\n  /peers         - List connected peers\n  /connect <addr> - Connect to a peer\n  /identity      - Show your identity\n  /wallet        - Show wallet information\n  /bitcoin       - Show Bitcoin service status\n  /quit          - Exit the application`;
         break;
     }
 
@@ -2626,26 +2626,26 @@ class CLI extends FabricShell {
       default:
         break;
       case 'home':
-        this.screen.append(this.elements['home'])
+        this.screen.append(this.elements['home']);
         break;
       case 'help':
-        this.screen.append(this.elements['help'])
+        this.screen.append(this.elements['help']);
         break;
       case 'contracts':
-        this.screen.append(this.elements['contracts'])
+        this.screen.append(this.elements['contracts']);
         break;
       case 'messages':
         // this.screen.append(this.elements['logBox'])
         break;
       case 'network':
-        this.screen.append(this.elements['network'])
+        this.screen.append(this.elements['network']);
         break;
       case 'wallet':
-        this.screen.append(this.elements['walletBox'])
+        this.screen.append(this.elements['walletBox']);
         break;
       case 'blockchain':
-        this.screen.append(this.elements['blockchainBox'])
-        this._refreshBlockchainPanel()
+        this.screen.append(this.elements['blockchainBox']);
+        this._refreshBlockchainPanel();
         break;
     }
   }
@@ -3234,7 +3234,7 @@ class CLI extends FabricShell {
       delete self.elements['prompt'].__listener;
       delete self.elements['prompt'].__done;
 
-      self.elements['prompt'].screen.focusPop(self.elements['prompt'])
+      self.elements['prompt'].screen.focusPop(self.elements['prompt']);
 
       self.elements['prompt'].addListener('keypress', oldListener);
       self.elements['prompt'].addListener('blur', oldBlur);

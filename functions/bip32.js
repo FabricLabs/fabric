@@ -239,7 +239,7 @@ function fromBase58 (str) {
     let publicKey;
     try {
       publicKey = Buffer.from(Point.fromBytes(toUint8Strict(keyData)).toBytes(true));
-    } catch (e) {
+    } catch {
       throw new Error('Invalid public key');
     }
     return new HDNode(net, depth, parentFingerprint, index, chainCode, null, publicKey);

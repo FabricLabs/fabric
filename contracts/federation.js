@@ -6,4 +6,4 @@ module.exports = function OP_ADVANCE_BLOCK (input) {
   return {
     input: actor
   };
-}
+};

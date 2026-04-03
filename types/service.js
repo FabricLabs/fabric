@@ -378,7 +378,7 @@ class Service extends Actor {
    * @return {Service} Instance of Service after binding events.
    */
   trust (source, name = source.constructor.name) {
-    if (!(source instanceof EventEmitter)) throw new Error('Source is not an EventEmitter.')
+    if (!(source instanceof EventEmitter)) throw new Error('Source is not an EventEmitter.');
 
     // Constants
     const self = this;

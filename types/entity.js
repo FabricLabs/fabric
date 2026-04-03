@@ -60,7 +60,7 @@ class Entity extends EventEmitter {
     let entity = this;
     return function buffer () {
       return Buffer.from(entity.toJSON(), 'utf8');
-    }
+    };
   }
 
   get id () {

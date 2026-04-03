@@ -499,7 +499,7 @@ class Peer extends Service {
           }
         }
       }
-    }
+    };
   }
 
   get interface () {
@@ -2136,7 +2136,7 @@ class Peer extends Service {
           resolve();
         });
       });
-    }
+    };
 
     this.emit('debug', 'Closing network...');
     await terminator();
