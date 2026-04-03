@@ -21,15 +21,21 @@ function salt (passphrase) {
   return 'mnemonic' + (passphrase || '');
 }
 
+function seedInputs (mnemonic, passphrase) {
+  const m = normalize(mnemonic);
+  return {
+    pwd: Buffer.from(m, 'utf8'),
+    saltBuf: Buffer.from(salt(normalize(passphrase)), 'utf8')
+  };
+}
+
 /**
  * @param {string} mnemonic
  * @param {string} [passphrase]
  * @returns {Buffer}
  */
 function mnemonicToSeedSync (mnemonic, passphrase = '') {
-  const m = normalize(mnemonic);
-  const pwd = Buffer.from(m, 'utf8');
-  const saltBuf = Buffer.from(salt(normalize(passphrase)), 'utf8');
+  const { pwd, saltBuf } = seedInputs(mnemonic, passphrase);
   const out = pbkdf2(sha512, pwd, saltBuf, { c: 2048, dkLen: 64 });
   return Buffer.from(out);
 }
@@ -40,9 +46,7 @@ function mnemonicToSeedSync (mnemonic, passphrase = '') {
  * @returns {Promise<Buffer>}
  */
 async function mnemonicToSeed (mnemonic, passphrase = '') {
-  const m = normalize(mnemonic);
-  const pwd = Buffer.from(m, 'utf8');
-  const saltBuf = Buffer.from(salt(normalize(passphrase)), 'utf8');
+  const { pwd, saltBuf } = seedInputs(mnemonic, passphrase);
   const out = await pbkdf2Async(sha512, pwd, saltBuf, { c: 2048, dkLen: 64 });
   return Buffer.from(out);
 }

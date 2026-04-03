@@ -3,18 +3,13 @@
 const assert = require('assert');
 const Peer = require('../../types/peer');
 const { randomAmpFrame, fuzzIterations } = require('./helpers');
+const { offlinePeerSettings } = require('../helpers/peer');
 
 describe('fuzz: Peer._handleFabricMessage', function () {
   this.timeout(120000);
 
   it('does not throw on random frames (origin set; debug off)', function () {
-    const peer = new Peer({
-      listen: false,
-      networking: false,
-      peersDb: null,
-      debug: false,
-      reconnectToKnownPeers: false
-    });
+    const peer = new Peer(offlinePeerSettings());
     const origins = [
       { name: '127.0.0.1:19999' },
       null,

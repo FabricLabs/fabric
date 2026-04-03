@@ -170,41 +170,45 @@ function msatToSats (value) {
   return 0;
 }
 
-async function getLightningDepositedBTC (lightning) {
+function listLightningOutputs (funds) {
+  if (!funds || !Array.isArray(funds.outputs)) return [];
+  return funds.outputs.filter((output) => output && output.status !== 'spent');
+}
+
+function outputValueBTC (output) {
+  if (typeof output.amount_msat !== 'undefined') return msatToBTC(output.amount_msat);
+  if (typeof output.amount !== 'undefined') return Number(output.amount || 0);
+  if (typeof output.value !== 'undefined') return Number(output.value || 0);
+  return 0;
+}
+
+function outputValueSats (output) {
+  if (typeof output.amount_msat !== 'undefined') return msatToSats(output.amount_msat);
+  if (typeof output.amount !== 'undefined') return Math.floor(Number(output.amount || 0) * 100000000);
+  if (typeof output.value !== 'undefined') return Number(output.value || 0);
+  return 0;
+}
+
+async function sumLightningOutputs (lightning, projector) {
   const funds = await lightning.listFunds();
-  if (!funds || !Array.isArray(funds.outputs)) return 0;
+  return listLightningOutputs(funds).reduce((sum, output) => sum + projector(output), 0);
+}
 
-  return funds.outputs.reduce((sum, output) => {
-    if (!output) return sum;
-    if (output.status && output.status === 'spent') return sum;
-
-    if (typeof output.amount_msat !== 'undefined') {
-      return sum + msatToBTC(output.amount_msat);
-    }
-
-    if (typeof output.amount !== 'undefined') {
-      return sum + Number(output.amount || 0);
-    }
-
-    if (typeof output.value !== 'undefined') {
-      return sum + Number(output.value || 0);
-    }
-
-    return sum;
-  }, 0);
+async function getLightningDepositedBTC (lightning) {
+  return sumLightningOutputs(lightning, outputValueBTC);
 }
 
 async function getLightningSpendableSats (lightning) {
-  const funds = await lightning.listFunds();
-  if (!funds || !Array.isArray(funds.outputs)) return 0;
+  return sumLightningOutputs(lightning, outputValueSats);
+}
 
-  return funds.outputs.reduce((sum, output) => {
-    if (!output || output.status === 'spent') return sum;
-    if (typeof output.amount_msat !== 'undefined') return sum + msatToSats(output.amount_msat);
-    if (typeof output.amount !== 'undefined') return sum + Math.floor(Number(output.amount || 0) * 100000000);
-    if (typeof output.value !== 'undefined') return sum + Number(output.value || 0);
-    return sum;
-  }, 0);
+async function connectLightningIfNeeded (lightning, remote) {
+  try {
+    await lightning.connectTo(remote);
+  } catch (error) {
+    const message = (error && error.message) ? error.message : '';
+    if (!message.includes('already connected')) throw error;
+  }
 }
 
 async function ensureAliceLightningFunds (bitcoin, aliceLightning, miningAddress) {
@@ -252,19 +256,8 @@ async function ensureAliceChannel (lightning, aliceLightning) {
   const remote = `${aliceInfo.id}@127.0.0.1:${aliceLightning.settings.port}`;
   const masterRemote = `${localInfo.id}@127.0.0.1:${lightning.settings.port || 9735}`;
 
-  try {
-    await lightning.connectTo(remote);
-  } catch (error) {
-    const message = (error && error.message) ? error.message : '';
-    if (!message.includes('already connected')) throw error;
-  }
-
-  try {
-    await aliceLightning.connectTo(masterRemote);
-  } catch (error) {
-    const message = (error && error.message) ? error.message : '';
-    if (!message.includes('already connected')) throw error;
-  }
+  await connectLightningIfNeeded(lightning, remote);
+  await connectLightningIfNeeded(aliceLightning, masterRemote);
 
   const [masterSpendable, aliceSpendable] = await Promise.all([
     getLightningSpendableSats(lightning),
@@ -606,7 +599,12 @@ class Distributor extends Service {
   }
 
   async start () {
+    if (this._state.status === 'STARTED' || this._state.status === 'STARTING' || this._state.cores.length) {
+      this.emit('debug', 'Distributor already started; ignoring duplicate start() call.');
+      return this;
+    }
     this.emit('debug', 'Starting Distributor...');
+    this._state.status = 'STARTING';
 
     for (let i = 0; i < numberOfCores; i++) {
       const core = new Worker(__filename, {
@@ -672,6 +670,10 @@ class Distributor extends Service {
   }
 
   async stop () {
+    if (this._state.status === 'STOPPING' || this._state.status === 'STOPPED') {
+      this.emit('debug', 'Distributor already stopping/stopped; ignoring duplicate stop() call.');
+      return this;
+    }
     this.emit('debug', 'Stopping Distributor...');
     this._state.status = 'STOPPING';
 
@@ -875,20 +877,27 @@ async function main (input = {}) {
       FABRIC_MNEMONIC ? { mnemonic: FABRIC_MNEMONIC } : { mnemonic: FIXTURE_SEED });
     console.log('[DEVELOP] FABRIC_AGENTS_SKIP_CHAIN=1 — distributor + workers only (no Bitcoin / Lightning).');
     const skipMaster = new Distributor(Object.assign({}, input, { key: skipKey }));
-    await skipMaster.start();
-    for (let i = 0; i < numberOfCores; i++) {
-      skipMaster.requestWork({ index: i }, 0);
+    try {
+      await skipMaster.start();
+      for (let i = 0; i < numberOfCores; i++) {
+        skipMaster.requestWork({ index: i }, 0);
+      }
+      skipMaster.requestWork({ index: 'priority' }, 1);
+      const idleDeadline = Math.max(25000, 3000 + numberOfCores * 2000);
+      const drained = await skipMaster.waitForIdle(idleDeadline);
+      if (!drained) {
+        throw new Error(`Skip-chain smoke: queue did not drain within ${idleDeadline}ms`);
+      }
+      console.log('[DEVELOP] Skip-chain smoke: initial queue drained OK.');
+      console.log('[DEVELOP] Skip-chain smoke: complete.');
+      return;
+    } finally {
+      try {
+        await skipMaster.stop();
+      } catch (err) {
+        console.error('[DEVELOP] Skip-chain cleanup failed:', err && err.message ? err.message : err);
+      }
     }
-    skipMaster.requestWork({ index: 'priority' }, 1);
-    const idleDeadline = Math.max(25000, 3000 + numberOfCores * 2000);
-    const drained = await skipMaster.waitForIdle(idleDeadline);
-    if (!drained) {
-      throw new Error(`Skip-chain smoke: queue did not drain within ${idleDeadline}ms`);
-    }
-    console.log('[DEVELOP] Skip-chain smoke: initial queue drained OK.');
-    await skipMaster.stop();
-    console.log('[DEVELOP] Skip-chain smoke: complete.');
-    return;
   }
 
   const withTimeout = async (promise, label, timeoutMs = 6000) => {

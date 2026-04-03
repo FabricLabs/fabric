@@ -676,7 +676,9 @@ class Bitcoin extends Service {
     if (!message.destination) throw new Error('Message must provide a destination.');
 
     if (message.amount instanceof String) {
-      message.amount = message.amount.fixed().toPrecision(8); // TODO: evaluate precision behavior
+      const parsed = Number(message.amount.valueOf());
+      if (!Number.isFinite(parsed)) throw new Error('Message amount must be numeric.');
+      message.amount = parsed.toFixed(8); // normalize boxed string amounts to fixed BTC precision
     }
 
     const actor = new Actor(message);

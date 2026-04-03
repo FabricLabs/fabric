@@ -226,6 +226,9 @@ function fromBase58 (str) {
     return new HDNode(net, depth, parentFingerprint, index, chainCode, privateKey, publicKey);
   }
   if (version === net.bip32.public) {
+    if (keyData[0] !== 0x02 && keyData[0] !== 0x03) {
+      throw new Error('Invalid public key prefix');
+    }
     const publicKey = keyData;
     return new HDNode(net, depth, parentFingerprint, index, chainCode, null, publicKey);
   }

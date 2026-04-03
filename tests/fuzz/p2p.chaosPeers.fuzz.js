@@ -13,69 +13,17 @@ const Message = require('../../types/message');
 const Peer = require('../../types/peer');
 const {
   fuzzPeerChaosIterations,
-  getFreePort,
   randomAcyclicObject,
   randomAmpFrame,
   randomUtf8String
 } = require('./helpers');
-
-let NODEA;
-let NODEB;
-try {
-  NODEA = require('../../settings/node-a');
-} catch (e) {
-  NODEA = { key: {} };
-}
-try {
-  NODEB = require('../../settings/node-b');
-} catch (e) {
-  NODEB = { key: {} };
-}
-
-function hubBaseSettings (port) {
-  return Object.assign(
-    { verbosity: 1 },
-    NODEA,
-    {
-      listen: true,
-      port,
-      interface: '127.0.0.1',
-      upnp: false,
-      peers: [],
-      networking: false,
-      peersDb: null,
-      debug: false,
-      reconnectToKnownPeers: false,
-      constraints: { peers: { max: 32, shuffle: 8 } }
-    }
-  );
-}
-
-function memberBaseSettings (hub, keySettings) {
-  return Object.assign(
-    { verbosity: 1 },
-    keySettings,
-    {
-      listen: false,
-      port: 0,
-      upnp: false,
-      peersDb: null,
-      networking: true,
-      debug: false,
-      reconnectToKnownPeers: false,
-      peers: [`${hub.key.pubkey}@127.0.0.1:${hub.settings.port}`]
-    }
-  );
-}
-
-async function waitUntil (predicate, timeoutMs = 25000, intervalMs = 40) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    if (predicate()) return;
-    await new Promise((r) => setTimeout(r, intervalMs));
-  }
-  throw new Error(`Timeout after ${timeoutMs}ms waiting for condition`);
-}
+const {
+  NODEB,
+  hubBaseSettings,
+  memberBaseSettings,
+  waitUntil,
+  getFreePort
+} = require('../helpers/peer');
 
 function connectionKeys (peer) {
   return Object.keys(peer.connections || {});
@@ -130,8 +78,8 @@ describe('fuzz: live peer chaos (TCP + NOISE)', function () {
 
   it('bidirectional signed GenericMessage storm (session stays up)', async function () {
     const port = await getFreePort();
-    const hub = new Peer(hubBaseSettings(port));
-    const client = new Peer(memberBaseSettings(hub, NODEB));
+    const hub = new Peer(hubBaseSettings(port, { debug: false, reconnectToKnownPeers: false }));
+    const client = new Peer(memberBaseSettings(hub, NODEB, { debug: false, reconnectToKnownPeers: false }));
     peers.push(hub, client);
 
     const hardErrors = [];
@@ -172,8 +120,8 @@ describe('fuzz: live peer chaos (TCP + NOISE)', function () {
 
   it('mixed valid AMP and random payloads; processes remain stoppable', async function () {
     const port = await getFreePort();
-    const hub = new Peer(hubBaseSettings(port));
-    const client = new Peer(memberBaseSettings(hub, NODEB));
+    const hub = new Peer(hubBaseSettings(port, { debug: false, reconnectToKnownPeers: false }));
+    const client = new Peer(memberBaseSettings(hub, NODEB, { debug: false, reconnectToKnownPeers: false }));
     peers.push(hub, client);
 
     await hub.start();

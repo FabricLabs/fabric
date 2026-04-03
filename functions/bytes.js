@@ -17,10 +17,10 @@
  * @returns {Uint8Array}
  */
 function toUint8Strict (input) {
-  if (input instanceof Uint8Array) return input;
   if (typeof Buffer !== 'undefined' && Buffer.isBuffer && Buffer.isBuffer(input)) {
     return new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
   }
+  if (input instanceof Uint8Array) return input;
   throw new TypeError('expected Buffer or Uint8Array');
 }
 
@@ -41,14 +41,14 @@ function _enforceMax (u8, maxLength, label) {
  * @returns {Uint8Array}
  */
 function toUint8Flexible (bytes, maxLength) {
-  if (bytes instanceof Uint8Array) {
-    _enforceMax(bytes, maxLength, 'toUint8Flexible');
-    return bytes;
-  }
   if (typeof Buffer !== 'undefined' && Buffer.isBuffer && Buffer.isBuffer(bytes)) {
     const u8 = new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     _enforceMax(u8, maxLength, 'toUint8Flexible');
     return u8;
+  }
+  if (bytes instanceof Uint8Array) {
+    _enforceMax(bytes, maxLength, 'toUint8Flexible');
+    return bytes;
   }
   const len = bytes != null && typeof bytes.length === 'number' ? bytes.length : null;
   if (maxLength != null && Number.isFinite(maxLength) && len != null && len > maxLength) {

@@ -188,4 +188,90 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     peer.relayFromTrustedPeers(null, msg, 800);
     assert.deepStrictEqual(writes, ['2']);
   });
+
+  it('_handleFabricMessage emits bitcoinBlock and relays from origin for BITCOIN_BLOCK', function () {
+    const peer = createPeer();
+    peers.push(peer);
+    const events = [];
+    let relayedFrom = null;
+    peer.on('bitcoinBlock', (ev) => events.push(ev));
+    peer.relayFrom = function (originName) { relayedFrom = originName; };
+    const msg = Message.fromVector(['BITCOIN_BLOCK', JSON.stringify({ tip: 'abc' })]);
+    msg.signWithKey(peer.key);
+    peer._handleFabricMessage(msg.toBuffer(), { name: '127.0.0.1:9' }, null);
+    assert.strictEqual(events.length, 1);
+    assert.strictEqual(relayedFrom, '127.0.0.1:9');
+  });
+
+  it('_handleFabricMessage emits chainSyncRequest with parsed object', function () {
+    const peer = createPeer();
+    peers.push(peer);
+    let seen = null;
+    peer.once('chainSyncRequest', (ev) => { seen = ev; });
+    const msg = Message.fromVector(['P2P_CHAIN_SYNC_REQUEST', JSON.stringify({ tip: '1234' })]);
+    msg.signWithKey(peer.key);
+    peer._handleFabricMessage(msg.toBuffer(), { name: '127.0.0.1:10' }, null);
+    assert.ok(seen);
+    assert.ok(seen.object);
+    assert.strictEqual(seen.object.tip, '1234');
+  });
+
+  it('_handleFabricMessage warns when FLUSH_CHAIN sender has no verified key', function () {
+    const peer = createPeer();
+    peers.push(peer);
+    const warns = [];
+    peer.on('warning', (w) => warns.push(String(w)));
+    const msg = Message.fromVector(['P2P_FLUSH_CHAIN', JSON.stringify({ snapshotBlockHash: 'a'.repeat(64) })]);
+    msg.signWithKey(peer.key);
+    peer._handleFabricMessage(msg.toBuffer(), { name: '127.0.0.1:11' }, null);
+    assert.ok(warns.some((w) => w.includes('no verified peer key')));
+  });
+
+  it('_handleFabricMessage handles FLUSH_CHAIN score, parse, and hash guards', function () {
+    const peer = createPeer({ debug: true, flushChainMinTrustedScore: 800 });
+    peers.push(peer);
+    const warns = [];
+    const debugs = [];
+    peer.on('warning', (w) => warns.push(String(w)));
+    peer.on('debug', (d) => debugs.push(String(d)));
+    peer.peers['127.0.0.1:12'] = { publicKey: peer.key.pubkey };
+    peer._state.peers = { good: { id: 'good', address: '127.0.0.1:12', score: 800 } };
+    peer._addressToId['127.0.0.1:12'] = 'good';
+
+    const m1 = Message.fromVector(['P2P_FLUSH_CHAIN', JSON.stringify({ snapshotBlockHash: 'a'.repeat(64) })]);
+    m1.signWithKey(peer.key);
+    peer._handleFabricMessage(m1.toBuffer(), { name: '127.0.0.1:12' }, null);
+    assert.ok(debugs.some((d) => d.includes('sender score')));
+
+    peer._state.peers.good.score = 900;
+    const m2 = Message.fromVector(['P2P_FLUSH_CHAIN', '{not-json']);
+    m2.signWithKey(peer.key);
+    peer._handleFabricMessage(m2.toBuffer(), { name: '127.0.0.1:12' }, null);
+    assert.ok(warns.some((w) => w.includes('JSON parse failed')));
+
+    const m3 = Message.fromVector(['P2P_FLUSH_CHAIN', JSON.stringify({ snapshotBlockHash: 'bad' })]);
+    m3.signWithKey(peer.key);
+    peer._handleFabricMessage(m3.toBuffer(), { name: '127.0.0.1:12' }, null);
+    assert.ok(warns.some((w) => w.includes('invalid snapshotBlockHash')));
+  });
+
+  it('_handleFabricMessage emits flushChain and relays trusted peers on valid FLUSH_CHAIN', function () {
+    const peer = createPeer({ flushChainMinTrustedScore: 800 });
+    peers.push(peer);
+    peer.peers['127.0.0.1:13'] = { publicKey: peer.key.pubkey };
+    peer._state.peers = { trusted: { id: 'trusted', address: '127.0.0.1:13', score: 900 } };
+    peer._addressToId['127.0.0.1:13'] = 'trusted';
+    const events = [];
+    let relayed = null;
+    peer.on('flushChain', (ev) => events.push(ev));
+    peer.relayFromTrustedPeers = function (origin, _message, threshold) {
+      relayed = { origin, threshold };
+    };
+    const msg = Message.fromVector(['P2P_FLUSH_CHAIN', JSON.stringify({ snapshotBlockHash: 'B'.repeat(64), network: 'regtest' })]);
+    msg.signWithKey(peer.key);
+    peer._handleFabricMessage(msg.toBuffer(), { name: '127.0.0.1:13' }, null);
+    assert.strictEqual(events.length, 1);
+    assert.strictEqual(events[0].object.snapshotBlockHash, 'b'.repeat(64));
+    assert.deepStrictEqual(relayed, { origin: '127.0.0.1:13', threshold: 800 });
+  });
 });

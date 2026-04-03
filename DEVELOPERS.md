@@ -1,95 +1,159 @@
 # Fabric Developer Resources
-There's a lot of information to cover with regards to building decentralized
-applications, so grab a coffee ☕ and settle in.
+There is a lot to cover when building decentralized applications on Fabric, so grab a coffee ☕ and settle in.
+
+## Contents
+- [Vision](#vision)
+- [Quick start](#quick-start)
+- [Repository layout](#repository-layout)
+- [Development workflow](#development-workflow)
+- [Bitcoin service](#bitcoin-service-servicesbitcoin)
+- [Message types](#message-types-typesmessage)
+- [Architecture](#architecture)
+- [Storage](#storage-typesstore)
+- [Reference links](#reference-links)
+- [Production & release](#production--release)
+- [Core types (reference)](#core-types-reference)
+- [Roadmap & doc backlog](#roadmap--doc-backlog)
+
+## Vision
+Read **[VISION.md](VISION.md)** first for what Fabric is building, how **`@fabric/core`** fits (JS reference client, Bitcoin/Lightning services, **FabricShell**/CLI), and which docs are canonical vs experimental.
 
 ## Quick Start
 See also [`QUICKSTART.md`][quickstart-guide] for up-to-date instructions.
 
-0. `nvm use 22.14.0` (you can get `nvm` from [nvm.sh][nvm-official])
-1. `npm install -g @fabric/core` to add `fabric` to your path
-2. (optional) `fabric setup` to set up your environment (generates a new master key)
-3. `fabric` should now be enough to get you up and running!
+0. `nvm use 22.14.0` (install [`nvm`][nvm-official] if needed)
+1. From a clone of this repo: `npm install` (or `npm install -g @fabric/core` to put `fabric` on your `PATH`)
+2. (optional) `fabric setup` to generate a master key and local config
+3. (optional) `fabric keygen` to generate a new master key without saving to disk (ephemeral)
+4. Run `fabric` — the CLI entry is wired through `types/cli.js` and extends **`Service.FabricShell`**
 
-That's it!  Let's take a look at overall Fabric system and how you, as a developer, might interact with it.
+Working from a **git checkout** (not the global package) is best when you are changing `@fabric/core` itself; use `npm link` or `npm install ../fabric` from downstream packages (Hub, HTTP server) as described in the repo README.
+
+## Repository layout
+| Path | Role |
+|------|------|
+| `types/` | ES6 **classes** — `Actor`, `Peer`, `Service`, `Store`, `Message`, etc. CommonJS (`require`) throughout. |
+| `services/` | Long-running **integrations** (Bitcoin RPC, Lightning stubs, ZMQ, …) built on `Service`. |
+| `contracts/` | Language snippets, traces, and tooling (e.g. type dependency graph). |
+| `scripts/` | CLI entrypoints, doc helpers (`list-jsdoc-type-files.js`, `remove-legacy-types.sh`). |
+| `tests/` | Mocha suites; run with `npm test`. |
+| `settings/` | Default and environment-specific config; `settings/deprecations.js` holds legacy aliases. |
+| `assets/` | **Generated** browser bundles; rebuild with `npm run build` after type changes. |
+
+## Development workflow
+- **Node:** engines field in `package.json` is authoritative (currently Node 22.x).
+- **Unit tests:** `npm test` — runs Mocha recursively under `tests/`.
+- **Lint:** `npm run lint` / `npm run lint:fix` (Semistandard).
+- **API reference:** `npm run make:api` writes `API.md` from JSDoc (see `scripts/list-jsdoc-type-files.js` for which `types/*.js` files are included).
+- **HTML docs:** `npm run make:docs` (runs `make:api` first, then **`scripts/clean-jsdoc-html.js`** — removes all **`docs/**/*.html`** and JSDoc template dirs **`docs/fonts`**, **`docs/scripts`**, **`docs/styles`**, **`docs/public`** so stale pages and duplicate assets do not accumulate, then JSDoc writes under `docs/`).
+- **Historical / one-off Markdown:** see **`docs/NON_CANONICAL.md`** — root-level “completion” and analysis files are not the same tier as **VISION.md** or **`docs/README.md`**.
+- **Native addon (`fabric.node`):** it is **not** `require()`’d unless **`FABRIC_NATIVE_DOUBLE_SHA256=1`**; message body double-SHA256 uses **@noble/hashes** by default. Enable that env var when exercising the C **`doubleSha256`** export.
+- **Local packages:** when `fabric`, `fabric-http`, and Hub are sibling repos, `npm install ../fabric ../fabric-http --no-save` keeps Message opcodes and servers aligned.
+
+Agent-oriented services (lifecycle, workers, payments) are summarized in [`AGENTS.md`](AGENTS.md).
+
+## Production & Release
+Use this repo as a **library** or run the **`fabric`** CLI in environments you control. For shipping:
+
+| Step | Where |
+|------|--------|
+| Node **22.14.x**, `npm ci`, **`npm run ci`** | [`docs/PRODUCTION.md`](docs/PRODUCTION.md) |
+| Completion / privacy / security matrix | [`docs/PRODUCTION-CHECKLIST.md`](docs/PRODUCTION-CHECKLIST.md), [`PRIVACY.md`](PRIVACY.md), [`SECURITY.md`](SECURITY.md) |
+| Version tag, changelog, Hub & fabric-http bumps | [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) |
+| Operator privacy model | [`PRIVACY.md`](PRIVACY.md) |
+| Vulnerability process | [`SECURITY.md`](SECURITY.md) |
+
+**Build scripts:** `npm run build` runs `make:all`, which still has **placeholder** `make:service` / `make:app` / `make:lib` steps. The **release gate for quality is `npm run ci`** (full Mocha suite), not a successful `npm run build`. Track operator and bundle readiness in [`docs/PRODUCTION-CHECKLIST.md`](docs/PRODUCTION-CHECKLIST.md) and [`docs/PRODUCTION.md`](docs/PRODUCTION.md).
+
+## Core Types (reference)
+These live under `types/*.js` (CommonJS). The **`Fabric`** facade (`types/fabric.js`) re-exports many of them for quick experiments; production code usually imports a **leaf** type.
+
+| Type | Role |
+|------|------|
+| **`Actor`** | Base identity + vector clock + `commit()`; most user-facing types extend it. |
+| **`Message`** | Wire envelope for P2P and services; opcode-driven dispatch. |
+| **`Peer`** | TCP/NOISE P2P node, relay, registry; **`Peer.Swarm`** multi-peer orchestration. |
+| **`Service`** | Long-lived app surface, resources; **`Service.FabricShell`** is the browser/CLI application shell (`CLI` extends it). |
+| **`Store`** | LevelDB persistence; **`Store.openEncrypted`** for at-rest crypto. |
+| **`Entity`** | Generic structured document; **`Entity.Transition`** for JSON Patch diffs. |
+| **`Key` / `Identity`** | Schnorr/secp256k1 keys and BIP32/BIP39 identity. |
+| **`Chain` / `Block`** | Local chain views and block helpers (network-specific services extend these). |
+
+Regenerate **`API.md`** with `npm run make:api` after JSDoc changes. Experimental or legacy-only files may be omitted via **`scripts/list-jsdoc-type-files.js`**.
+
+## Bitcoin service (`services/bitcoin`)
+RPC is the **source of truth** when a node is connected.  Optional HTTP fallback for block, transaction, and address-index reads is configured only via `bitcoin.explorerBaseUrl` or `FABRIC_EXPLORER_URL` (an **origin**, not a path). If unset, those helpers stay RPC-only or fail closed with a clear error — `@fabric/core` does not default to any public explorer.
+
+## Message types (`types/message`)
+`P2P_MESSAGE_RECEIPT` (`constants.P2P_MESSAGE_RECEIPT`, `0x44`) is the on-wire type for server acknowledgements of an inbound WebSocket/P2P message (payload JSON uses `@type: Receipt`). It is distinct from `GenericMessage` so clients can discriminate without parsing the body first.
 
 ## Architecture
-Fabric is two things — a protocol for machines to exchange information ("the Fabric Protocol"), and a sotware library (`@fabric/core`) offering up many tools and utilities for building your own networks which speak this protocol.
+Fabric is two things: a **protocol** for machines to exchange information (“the Fabric Protocol”), and a **software library** (`@fabric/core`) with tools for building networks that speak that protocol.
 
-Typically, you will need the following:
-
-  - a Bitcoin Node (bitcoind and/or bcoin with `bcoin --only=127.0.0.1`)
+You will typically run against a **Bitcoin** node (bitcoind and/or bcoin with `bcoin --only=127.0.0.1`) for L1 workflows; Lightning and other L2 paths are integrated where the `services/` layer provides them.
 
 ### Overview
-Using Fabric to interface securely with decentralized systems, you'll start by following the instructions above to obtain a globally-available version of the `fabric` command-line client, which provides the majority of tools you'll need along the way.
+The `fabric` CLI is the default operator surface. The `@fabric/core` library is organized into the areas below (numbered for reference — not every folder name matches one-to-one).
 
-The `@fabric/core` library consists of a few key components:
-
-0. `assets`<sup>~</sup> \[???\] — this may or may not be included in the final release (function may change).  Contains the static build.
-1. `contracts` — a list of Maintainer-reviewed smart contracts, written in any of: `.pur` for Purity (our own language), `.bsc` for Bitcoin Script, `.msc` for [Minsc][minsc-home], and even `.sol` for Solidity).  We may choose to remove some of these before launch, your mileage may vary.
-2. `components` — generic "interface" elements for describing Types to users.
-3. `resources` — Fabric-based definitions for `@fabric/core/types/resource`.
-4. `services` — Maintainer-accepted definitions of the `Service` class.  Yes, you can submit your own!
-5. `types` — a library of ES6 classes implementing various bits; `Actor`, `Channel`, `Oracle`, `Service`, and `Key` are all interesting. :)
-
-Let's go over each in more detail.
+The `@fabric/core` library consists of these major areas:
+0. **Assets** — static and generated files for the default runtime (see below).
+1. **Contracts** — reviewed contract descriptions and scripts (Purity, Bitcoin Script, Minsc, Solidity, etc.).
+2. **Components** — interface vocabulary for describing types to users (CLI-first; web follows).
+3. **Resources** — declarative definitions consumed by `types/resource` and apps.
+4. **Services** — `Service` subclasses and integrations under `services/`.
+5. **Types** — ES6 classes under `types/` (`Actor`, `Channel`, `Oracle`, `Service`, `Key`, …).
 
 #### 0. Assets
-All files in this folder will be imported to the default "inventory" for the `0.1` release.  Additionally, when using `@fabric/http/types/server` all of these files will be available directly at the root path, `/` (configurable).  Used for any generated files required for the _default_ Fabric runtime (not downstream), including binaries and other important media.  Don't commit here unless absolutely necessary!
+Files here feed the default **inventory** for packaged releases. When using `@fabric/http`’s server, many assets are served from `/` (configurable). Use this tree for **generated** binaries, WASM, and bundled UI — avoid committing large binaries unless they are part of the release process.
 
-##### 0.1: Inventory
-We're focused on enabling Lightning-based document exchange for `0.1` — the upcoming, first "official" release of Fabric.  Fabric nodes (anyone running `fabric chat`) will be able to:
+##### 0.1 Inventory
+For the `0.1` line, focus is Lightning-oriented document exchange. Operators running `fabric chat` can:
 
-1. Load a file from disk into local inventory by using `/import <filename>`
-2. Offer up that file to peers by using `/publish <documentID> <rate>`
-3. Request a file from the network by using `/request <documentID> <rate>`
+1. Load a file into local inventory: `/import <filename>`
+2. Publish to peers: `/publish <documentID> <rate>`
+3. Request from the network: `/request <documentID> <rate>`
 
-Once this core set of features is complete and sufficiently covered by tests, we'll begin pushing for `0.1.0-RC1` and triggering the formal security audit.  `0.1.0-RC2` will surely exist afterwards, but hopefully it'll be the last one before `v0.1.0` itself.
+When this surface is stable and well tested, the project can tag `0.1.0-RC1` and move toward a security audit.
 
-##### 0.2: The Future
-You can use [the Official Fabric Roadmap][fabric-roadmap] to look ahead to what we have planned. :)
+##### 0.2 Roadmap
+See [the official Fabric roadmap][fabric-roadmap] for planned work.
 
 #### 1. Contracts
-Peer-to-peer applications (or, "agreements") are self-enforcing; the two peers in any particular arrangement (a `Channel` usually) agree to update their contract's state (or "status" for legal folks) after reliably responding to their counterparty's requests (in the form of a Layer 2, spendable UTXO to which you hold the secret) for the duration of the contract.  Should the contract expire, an "exit" clause is provided and all parties are able to spend funds at Layer 1 again.  In all cases, both parties have already signed the latest, most-valid state, and maintain full control over their own deposit.
 
-Before establishing an agreement, Fabric-speaking peers must first establish a "Payment Channel" using Lightning, Raiden, or something similar.<sup>[Note]</sup>
+Peer-to-peer applications (“agreements”) are self-enforcing: two peers in a `Channel` update shared contract state after responding to counterparty requests (for example via L2 spendable UTXOs). If the contract expires, exit clauses let parties spend on L1 again; both hold the latest signed state.
 
-<small>**Note:** for security's sake, we're only implementing Bitcoin.  PRs welcome.</small>
+Before an agreement, Fabric peers normally open a **payment channel** (Lightning-class or similar).
 
-##### 1.1: Application Resource Contracts
-All agreements in Fabric are represented as well-formed descriptions of **Resources**<sup>[TODO: link here]</sup> — a term we use to describe a standardized service a peer might offer.  Each node in the Fabric network decides which resources they provide (determining which contracts they run), and what prices they accept for participation.  This, in concert with the bidders requesting these resources, forms the "Information Market" discussed in Fabric's whitepaper.
+**Note:** shipping security targets **Bitcoin** first; other chains are out of scope until contributors extend the stack.
 
-To create an
+##### 1.1 Application resource contracts
+Agreements are expressed as structured [**Resources**](#3-resources) — standardized services a peer may offer. Each node chooses which resources it provides and at what price; demand and supply form the “information market” described in the Fabric whitepaper.
 
-##### 1.2a: Convergence
-You'll read in the Components section about our thoughts on User Interface Design, especially Software Development Interface Design.  Maybe someday we'll have a blog to share this on, but my personal goal is to design my software one time, and have it adapt to each platform while still retaining complete, functionality — even if, for example, mobile and desktop users might have different access profiles (usage patterns).
+To create an application resource contract, you combine a **Resource** definition (JSON or programmatic) with a **Service** implementation that honors the declared routes, roles, and constraints. The `Machine` and execution layers then interpret or validate transitions according to the contract `type` you select.
 
-This raises the question: **how should peer-to-peer contracts be written?**
+##### 1.2a Convergence
+User-facing design should be **terminal-first** where possible: one logical app, multiple shells (CLI, web, native). That implies clear **Software Development Interface** boundaries so the same resource definitions work across environments.
 
-We can easily take the philosophical route in saying "any way the users want" but... that's a lot of engineering, and we won't get there without help from a strong community of contributors.  My thoughts are that we start with something small (in terms of implementation cost), formalize it, then start offering up other contract types through the `type` setting of the `Machine` class.
+**How should peer-to-peer contracts be written?** Start with a **small, formal** contract type, prove it in tests, then add variants via the `Machine` / `type` settings rather than ad-hoc scripts everywhere.
 
-##### 1.2b: JavaScript
-**Right now, we're starting with a subset of JavaScript.**  Why?  Because it's the only tool non-developers can use _right now_ to get started on their learning journey.
+##### 1.2b JavaScript
+Execution today starts with a **restricted subset of JavaScript** so newcomers can experiment without a new language. Sandboxing matters: prefer **pure**, stack-friendly functions; a formal grammar for a Fabric-specific dialect is a longer-term goal.
 
-But also aecause it's easy.  Yes yes, it's arbitrary code, and browsers are notably insecure; _sooooo_ we started work on a formal grammar, and hope to publish it as some kind of standalone language.
+Turing completeness is possible; the design still avoids obvious cryptographic footguns. **Code review** remains essential for anything that moves funds or identity.
 
-In any case, we're limiting everything to pure functions and a stack-based execution model.  This will lend itself to easy migration of existing work to other purely-functional languages, and even to _formal verification_ when we get the resources to accomplish that. :)
+#### 2. Components
 
-While Turing Completeness _is_ possible with a Fabric-based system (take note!), we've been careful to avoid any obvious footguns, and are doing our best to iron out all the cryptography-based gotchas.  Code review is everything!
+Fabric targets more than raw library users: a **visual composer** for secured apps on native (`x86`, `ARM`) and the [legacy web][legacy-web] is a goal. Browsers add complexity; the project biases toward **Native Web Components** and similar primitives that do not lock you to a single SPA framework.
 
-#### 4. Components
-Fabric aims to assist more than just developers, and in doing so we are seeking to build a visual composer for functional, reasonably-well secured applications, both on native platforms like `x86` and `ARM` but also for what we call [the "legacy" web][legacy-web].
+The Fabric CLI (`npm i -g @fabric/core`) is the reference shell. Discussion happens in [Grove][grove] and [GitHub Discussions][fabric-core-github-discussions].
 
-As you may know, the World Wide Web is still an incredible place, but due in part to oversight in its design, it lacks a lot of the privacy and security guarantees that we've come to expect from Bitcoin and other decentralized systems.  The browser-based web is full of complexity, the enemy of security, so we've set out to define some kind of interface language that _isn't_ web first, not even NATIVE FIRST, but rather _terminal_ first.
+#### 3. Resources
+Fabric’s decentralized “web” is built around the **Resource** type: a committed agreement to deliver data (often with payment), frequently using HTLC-style flows on the chosen L2.
 
-You've probably encountered the Fabric CLI when you first installed Fabric: `npm i -g @fabric/core` — this is our barebones prototype for implementation in whatever we choose for the final version.  we've already identified a few off-the-shelf solutions which don't mandate a specific downstream package (Native Web Components, in particular, stand out).  Feel free to chat with about it in [Grove][grove] or using [GitHub Discussions][fabric-core-github-discussions] for more formality and structure.
+These are sometimes called **Application Resource Contracts (ARCs)** — the allowed storylines for a contract.
 
-#### 5. Resources
-Fabric makes a truly decentralized web possible by establishing formal contracts surrounding the concept of a **Resource**.  Generally, a "Resource" is a committed agreement to provide some data, document or otherwise, in exchange for a pre-determined fee.  Providers of services within the Fabric network will deliver the document (or a proof of delivery) in the form of an HTLC ("Hash or Time Locked Contract") on the selected Layer 2 network.
-
-In Fabric, we describe these broadly as "Application Resource Contracts" — or, just ARCs for short.  They are the complete set of "storyline arcs" any particular contract can take.
-
-##### An Example Resource
-`resources/document.json`
+##### Example resource
+`resources/document.json`:
 ```json
 {
   "name": "Document",
@@ -117,114 +181,136 @@ In Fabric, we describe these broadly as "Application Resource Contracts" — or,
     "view": ["*"],
     "create": ["~owner"],
     "update": ["~owner"],
-    "delete": ["~owner"],
+    "delete": ["~owner"]
   }
 }
 ```
 
-You can see this is a declarative, JSON-based description of a "generic document" resource.  It contains a human-friendly description, and a few other configuration values which we'll go over in more detail later.
+This is a declarative description of a generic document API: paths, UI component names, state constraints, and RBAC-style roles.
 
-##### Interesting Properties of a Fabric Resource Definition
-- `components` — named list of user-sourced events to their corresponding user interface elements (currently all written for terminals, the Fabric CLI).
-- `constraints` — limitations to hold the system accountable for.  Here, we specify that the clock<sup>Note</sup> never exceed 1000 cycles, so a single document stored in this collection could be served 999 other times before the resource is considered "consumed" — in this way we can also constrain other arbitrary aspects of the application state.
+##### Interesting properties
 
-<small>**Note (a long one):** all classes in Fabric will carry with them a vector clock, incremented any time the state is updated using the `commit()` method found on anything inheriting from the `Actor` class.  Some incoming messages can generate multiple clock events, so be careful with your global event relay policies!  With each new state, channel balances will be updated (unless `NOOP`, a full burn of all bonds), so it will be important to test lower cycle times on high-latency and low-reliability connections.</small>
+- **`components`** — maps named events to UI elements (today oriented to the CLI; same names can map to web components later).
+- **`constraints`** — caps and invariants; the example bounds a **vector clock** so the resource “consumes” capacity as state advances.
 
-Importantly, the `Resource` type is used in combination with the `Service` type to define exactly what features that service provides to other consumers of its information.
+**Note on clocks:** types inheriting `Actor` advance a vector clock on `commit()`. Some messages may advance the clock more than once; design relays and limits accordingly. Channel balances update with state unless the transition is a `NOOP` burn.
 
-#### 5. Services
-Fabric relies on `Message` objects passed between nodes to exchange information,
-like transaction data and requests for computation (RFCs).  Services offer up
-one or more "Resources" as described above, emitting events for any listening consumer,
-or sometimes, for connectivity with external networks (like the World Wide Web).
+`Resource` pairs with `Service` to describe **what** a node exposes to the network.
 
-The `Service` class can be extended to add Fabric support to your favorite project.
+#### 4. Services
+Nodes exchange **`Message`** instances — transactions, computation requests, and control plane data. A **Service** publishes one or more resources and emits events for local consumers or bridges (e.g. HTTP).
 
-##### An Example Fabric Service
+Extend `Service` to integrate external systems.
+
+##### Example service
 ```js
-// Fabric Dependencies
+'use strict';
+
 const Service = require('@fabric/core/types/service');
 
-// Class Definition
 class MyClockService extends Service {
   constructor (input = {}) {
-    // Mandatory
     super(input);
 
-    // Try to configure, else return null
-    try {
-      // Apply the input to some defaults
-      this.settings = Object.assign({
-        clock: 0,    // vector clock start
-        frequency: 1 // Hz
-      }, input);
-    } catch (exception) {
-      // Failed to apply input to an object {}...
-      // Maybe we should switch to TypeScript? ;)
-      console.error('Could not create MyService:', exception);
-      return null;
-    }
+    this.settings = Object.assign({
+      clock: 0,
+      frequency: 1
+    }, input);
 
-    // Currently mandatory
-    // TODO: make optional
     this._state = {
       content: null
     };
 
-    // Chainable pattern
     return this;
   }
 
-  // Called once per 
+  // Called once per tick when the service is running
   tick () {
-    const origin = this.get('clock');
+    const origin = this.get('clock') || 0;
     console.log('clock:', origin);
-    this.set('clock', origin++);
-    this.
+    this.set('clock', origin + 1);
   }
 
-  // custom start function
-  // you can obviously call `super.start()` and `super.stop()`
-  // but this is an example :) and we haven't fully defined expected behaviors yet!
   async start () {
-    // super.start(); // disabled for clean example
-    
+    await super.start();
+    return this;
   }
 }
+
+module.exports = MyClockService;
 ```
 
-Services will define how, if any, an ecosystem emerges and _actually_ succeeds at replacing the web.  They enable a common API between otherwise disparate projects, such as between Bitcoin and Ethereum.
+Services are the integration boundary where ecosystems meet Fabric’s messaging model.
 
-See [the Services Overview][services] for more information.
+See [`guides/SERVICES.md`](guides/SERVICES.md) for a longer overview of bundled services (Bitcoin, Lightning, Exchange, Redis, ZMQ).
 
-#### 6. Types
-`@fabric/core` is a NodeJS-targeted software library, but you don't need the whole kit-and-kaboodle.  Our pattern is to expose CommonJS-based ES6 classes, for several reasons, including maximum compatibility, so you will typically import a Fabric class like this:
+#### 5. Types
+
+`@fabric/core` ships **CommonJS** ES6 classes for broad compatibility. Typical import:
 
 ```js
 const Actor = require('@fabric/core/types/actor');
 ```
 
-Grab what you need, use what you take. :)
+##### Types by example
 
-##### Fabric Types by Example
-Create and sign some string message using the built-in Schnorr `Key` type:
+Create and sign a message with the Schnorr **`Key`** type:
+
 ```js
+'use strict';
+
 const Hash256 = require('@fabric/core/types/hash256');
 const Key = require('@fabric/core/types/key');
+
 const message = 'Hello, world!';
 const key = new Key();
 const signature = key.sign(message);
+
 console.log('Message:', message);
-console.log('Message Hash:', Hash256.digest(message));
-console.log('Key Pubkey:', key.public);
-console.log('Purported Signature:', message);
+console.log('Message hash:', Hash256.digest(message));
+console.log('Public key:', key.public);
+console.log('Signature (hex):', signature.toString('hex'));
 ```
 
-[services]: ../SERVICES.html
+## Storage (`types/store`)
+
+**`Store`** is the long-term Level-backed storage primitive. Pass an optional **`Codec`** (`types/codec`) in settings to encrypt values at rest; Level uses a `buffer` wire format with Fabric encrypt/decrypt.
+
+Use **`Store.encryptedSettings(settings)`** / **`Store.openEncrypted(settings)`** for defaults that match the former `types/keystore.js` (path `./stores/keystore`, `Codec` from `{ key, mode, version }` / `FABRIC_SEED`). Use additional plain **`Store`** instances for caches or indexes (no codec).
+
+**`FabricShell`** (browser/CLI shell) is **`types/service.js`** **`Service.FabricShell`**: it wires `Store.openEncrypted`, peer, machine, tips/stash stores, and resources. **`CLI`** extends **`FabricShell`**.
+
+Other **`Store`** subclasses add domain behavior — for example **`Datastore`**, **`Oracle`**, and **`Resource`**.
+
+### Consolidated prototypes (fewer top-level `types/*.js` files)
+
+- **`Transition`** — defined on **`types/entity.js`**; export **`Entity.Transition`** (JSON Patch between entity states).
+- **`Swarm`** — **`Peer.Swarm`** on **`types/peer.js`** (`Actor` wrapping an embedded `Peer`).
+- Removed standalone modules (unused or superseded): **`aggregator`**, **`consensus`**, **`mempool`**, **`swap`**, **`value`**, **`walker`**. See **`scripts/remove-legacy-types.sh`**.
+- Removed **`types/stash.js`** (legacy `Vector` + localforage); use **`Store`** or app-specific caches instead.
+
+## Reference links
+| Link | Description |
+|------|-------------|
+| [QUICKSTART.md][quickstart-guide] | Install and first commands |
+| [AGENTS.md](AGENTS.md) | Agent services, lifecycle, workers |
+| [SECURITY.md](SECURITY.md) | Disclosure process, release hygiene |
+
+## Roadmap & doc backlog
+Short list of documentation improvements (edit here as items land):
+
+- [ ] Markdown/CMS for published docs site
+- [ ] Sweep remaining `TODO` markers in repo-specific guides
+- [ ] Cross-link `docs/*.html` JSDoc output from this guide where helpful
+
+---
+
+[services]: guides/SERVICES.md
 [actor-type]: Actor.html
 [fabric-core-github]: https://github.com/FabricLabs/fabric
 [fabric-core-github-discussions]: https://github.com/FabricLabs/fabric/discussions
 [fabric-roadmap]: https://github.com/FabricLabs/fabric/projects/1
+[grove]: https://dev.fabric.pub
 [legacy-web]: https://web.fabric.pub
 [minsc-home]: https://min.sc
 [nvm-official]: https://nvm.sh

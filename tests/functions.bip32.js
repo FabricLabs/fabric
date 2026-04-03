@@ -45,6 +45,14 @@ describe('@fabric/core/functions/bip32', function () {
     assert.throws(() => fromBase58(badPriv), /Invalid private key prefix/);
   });
 
+  it('fromBase58 rejects invalid compressed public key prefix in xpub', function () {
+    const xpub = fromSeed(SEED_C).neutered();
+    const raw = decodeCheck(xpub.toBase58());
+    raw.writeUInt8(0x04, 45);
+    const badPub = encodeCheck(raw);
+    assert.throws(() => fromBase58(badPub), /Invalid public key prefix/);
+  });
+
   it('BIP32Factory forwards to fromSeed / fromBase58', function () {
     const ecc = require('../types/ecc');
     const BIP32 = require('../functions/bip32').default;

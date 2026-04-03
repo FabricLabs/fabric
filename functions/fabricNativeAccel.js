@@ -47,14 +47,17 @@ const SUPPORTED_ADDON_EXPORTS = Object.freeze([
   'segwitAddrDecode'
 ]);
 
-function nativeDoubleSha256Enabled () {
-  const v = typeof process !== 'undefined' && process.env ? process.env.FABRIC_NATIVE_DOUBLE_SHA256 : undefined;
+function envEnabled (key) {
+  const v = typeof process !== 'undefined' && process.env ? process.env[key] : undefined;
   return v === '1' || v === 'true';
 }
 
+function nativeDoubleSha256Enabled () {
+  return envEnabled('FABRIC_NATIVE_DOUBLE_SHA256');
+}
+
 function nativeBech32Enabled () {
-  const v = typeof process !== 'undefined' && process.env ? process.env.FABRIC_NATIVE_BECH32 : undefined;
-  return v === '1' || v === 'true';
+  return envEnabled('FABRIC_NATIVE_BECH32');
 }
 
 function nativeAddonLoadRequested () {

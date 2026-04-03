@@ -4,16 +4,11 @@ const assert = require('assert');
 const Message = require('../types/message');
 const Peer = require('../types/peer');
 const Key = require('../types/key');
+const { offlinePeerSettings } = require('./helpers/peer');
 
 describe('Peer P2P_RELAY origin guard', function () {
   it('does not throw when origin is null or missing name (no relay peers)', function () {
-    const peer = new Peer({
-      listen: false,
-      networking: false,
-      peersDb: null,
-      debug: false,
-      reconnectToKnownPeers: false
-    });
+    const peer = new Peer(offlinePeerSettings());
     const k = new Key();
     const relay = Message.fromVector(['P2P_RELAY', JSON.stringify({ hop: 1, payload: 'x' })]);
     relay.signWithKey(k);

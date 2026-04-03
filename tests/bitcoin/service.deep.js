@@ -833,5 +833,113 @@ describe('@fabric/core/services/bitcoin (deep coverage)', function () {
       await new Promise((resolve) => setTimeout(resolve, 30));
       assert.ok(errs.some((x) => x.includes('syncfail')));
     });
+
+    it('_detectExistingBitcoind skips mismatched chains and can reuse matching daemon', async function () {
+      const btc = new Bitcoin({ network: 'regtest', mode: 'rpc', debug: true });
+      const logs = [];
+      btc.on('debug', (m) => logs.push(String(m)));
+      const probes = [
+        { host: '127.0.0.1', rpcport: 18443, source: 'mismatch', network: 'mainnet' },
+        { host: '127.0.0.1', rpcport: 18444, source: 'match', network: 'regtest' }
+      ];
+      btc._buildRPCProbeCandidates = () => probes;
+      btc._createRPCClientForCandidate = (candidate) => ({ candidate });
+      btc._requestWithRPCClient = async (client, method) => {
+        if (method === 'getblockchaininfo') {
+          return { chain: client.candidate.network };
+        }
+        return { version: 1 };
+      };
+      const found = await btc._detectExistingBitcoind();
+      assert.strictEqual(found, true);
+      assert.strictEqual(btc._usingExternalNode, true);
+      assert.strictEqual(btc.settings.rpcport, 18444);
+      assert.ok(logs.some((m) => m.includes('Ignoring external')));
+      assert.ok(logs.some((m) => m.includes('Reusing existing bitcoind')));
+    });
+
+    it('_detectExistingBitcoind logs probe failures in debug mode', async function () {
+      const btc = new Bitcoin({ network: 'regtest', mode: 'rpc', debug: true });
+      const logs = [];
+      btc.on('debug', (m) => logs.push(String(m)));
+      btc._buildRPCProbeCandidates = () => [{ host: '127.0.0.1', rpcport: 1, source: 'bad', network: 'regtest' }];
+      btc._createRPCClientForCandidate = () => ({});
+      btc._requestWithRPCClient = async () => {
+        throw new Error('boom');
+      };
+      const found = await btc._detectExistingBitcoind();
+      assert.strictEqual(found, false);
+      assert.ok(logs.some((m) => m.includes('RPC probe failed')));
+    });
+
+    it('validateAddress handles invalid network and invalid address', function () {
+      const btc1 = new Bitcoin({ network: 'unknown', debug: true });
+      const logs = [];
+      btc1.on('debug', (m) => logs.push(String(m)));
+      assert.strictEqual(btc1.validateAddress('abc'), false);
+      assert.ok(logs.some((m) => m.includes('Address validation failed')));
+
+      const btc2 = new Bitcoin({ network: 'regtest' });
+      assert.strictEqual(btc2.validateAddress('not-a-real-address'), false);
+    });
+
+    it('broadcast verifies and relays through spv adapter', async function () {
+      const btc = new Bitcoin({ network: 'regtest', debug: true });
+      const calls = [];
+      const msg = { verify: async () => true };
+      btc.spv = {
+        sendTX: async () => calls.push('sendTX'),
+        relay: async () => calls.push('relay')
+      };
+      await btc.broadcast(msg);
+      assert.deepStrictEqual(calls, ['sendTX', 'relay']);
+    });
+
+    it('_processRawBlock and _heartbeat exercise helper branches', async function () {
+      const btc = new Bitcoin({ network: 'regtest', debug: true });
+      let bcoin = null;
+      try {
+        bcoin = require('bcoin');
+      } catch (error) {}
+      if (bcoin && bcoin.Block && typeof bcoin.Block.fromRaw === 'function') {
+        const orig = bcoin.Block.fromRaw;
+        bcoin.Block.fromRaw = () => ({ id: 'stub' });
+        try {
+          await btc._processRawBlock(Buffer.from('00', 'hex'));
+        } finally {
+          bcoin.Block.fromRaw = orig;
+        }
+      }
+      let beat = false;
+      btc._syncBestBlock = async () => { beat = true; };
+      await btc._heartbeat();
+      assert.strictEqual(beat, true);
+    });
+
+    it('_processSpendMessage handles boxed String amount', async function () {
+      const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
+      btc._loadWallet = async () => {};
+      btc._makeWalletRequest = async (_method, params) => {
+        assert.strictEqual(typeof params[1], 'string');
+        return 'txid-boxed';
+      };
+      const txid = await btc._processSpendMessage({
+        amount: new String('0.001'),
+        destination: 'bcrt1q000000000000000000000000000000000000000000000000000000000000000000',
+        created: new Date().toISOString()
+      });
+      assert.strictEqual(txid, 'txid-boxed');
+    });
+
+    it('_processSpendMessage rejects non-numeric boxed String amount', async function () {
+      const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
+      await assert.rejects(
+        () => btc._processSpendMessage({
+          amount: new String('not-a-number'),
+          destination: 'bcrt1q000000000000000000000000000000000000000000000000000000000000000000'
+        }),
+        /must be numeric/
+      );
+    });
   });
 });

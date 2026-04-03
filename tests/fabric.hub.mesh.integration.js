@@ -10,72 +10,18 @@
 
 const assert = require('assert');
 const crypto = require('crypto');
-const net = require('net');
 
 const Message = require('../types/message');
 const Peer = require('../types/peer');
 const { purchaseContentHashHex } = require('../functions/publishedDocumentEnvelope');
-
-let NODEA;
-let NODEB;
-try {
-  NODEA = require('../settings/node-a');
-} catch (e) {
-  NODEA = { key: {} };
-}
-try {
-  NODEB = require('../settings/node-b');
-} catch (e) {
-  NODEB = { key: {} };
-}
-
-async function getFreePort () {
-  return await new Promise((resolve, reject) => {
-    const s = net.createServer();
-    s.unref();
-    s.once('error', reject);
-    s.listen(0, '127.0.0.1', () => {
-      const addr = s.address();
-      const port = addr && typeof addr === 'object' ? addr.port : null;
-      s.close(() => {
-        if (!port) return reject(new Error('Could not allocate a free port'));
-        resolve(port);
-      });
-    });
-  });
-}
-
-function hubBaseSettings (port) {
-  return Object.assign(
-    { verbosity: 1 },
-    NODEA,
-    {
-      listen: true,
-      port,
-      interface: '127.0.0.1',
-      upnp: false,
-      peers: [],
-      networking: false,
-      peersDb: null,
-      constraints: { peers: { max: 32, shuffle: 8 } }
-    }
-  );
-}
-
-function memberBaseSettings (hub, keySettings) {
-  return Object.assign(
-    { verbosity: 1 },
-    keySettings,
-    {
-      listen: false,
-      port: 0,
-      upnp: false,
-      peersDb: null,
-      networking: true,
-      peers: [`${hub.key.pubkey}@127.0.0.1:${hub.settings.port}`]
-    }
-  );
-}
+const {
+  NODEA,
+  NODEB,
+  hubBaseSettings,
+  memberBaseSettings,
+  waitUntil,
+  getFreePort
+} = require('./helpers/peer');
 
 function sendGeneric (fromPeer, remoteKey, payload) {
   const conn = fromPeer.connections[remoteKey];
@@ -94,16 +40,6 @@ async function waitForHubConnections (hub, n, timeoutMs = 15000) {
     await new Promise((r) => setTimeout(r, 40));
   }
   throw new Error(`Hub expected ${n} inbound connections, got ${Object.keys(hub.connections).length}`);
-}
-
-/** Avoid fixed sleeps: under full `npm test` load, mesh + NOISE can exceed sub-second delays. */
-async function waitUntil (predicate, timeoutMs = 15000, intervalMs = 40) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    if (predicate()) return;
-    await new Promise((r) => setTimeout(r, intervalMs));
-  }
-  throw new Error(`Timeout after ${timeoutMs}ms waiting for condition`);
 }
 
 function remoteHubAddress (member) {
