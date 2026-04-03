@@ -21,7 +21,7 @@ Read **[VISION.md](VISION.md)** first for what Fabric is building, how **`@fabri
 ## Quick Start
 See also [`QUICKSTART.md`][quickstart-guide] for up-to-date instructions.
 
-0. `nvm use 22.14.0` (install [`nvm`][nvm-official] if needed)
+0. `nvm use 24.14.1` (install [`nvm`][nvm-official] if needed; matches `.nvmrc` / `package.json` engines)
 1. From a clone of this repo: `npm install` (or `npm install -g @fabric/core` to put `fabric` on your `PATH`)
 2. (optional) `fabric setup` to generate a master key and local config
 3. (optional) `fabric keygen` to generate a new master key without saving to disk (ephemeral)

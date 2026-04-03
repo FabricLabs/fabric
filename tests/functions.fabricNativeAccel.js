@@ -12,6 +12,17 @@ const mockAddonPath = path.join(__dirname, '..', 'fixtures', 'native', 'fabricNa
 const badShaAddonPath = path.join(__dirname, '..', 'fixtures', 'native', 'fabricNativeAccelBadDoubleSha.js');
 const throwEmptyAddonPath = path.join(__dirname, '..', 'fixtures', 'native', 'fabricNativeAccelThrowEmpty.js');
 
+/** Child env without inherited FABRIC_SKIP_NATIVE_ADDON (CI often sets it). */
+function addonSubprocessEnv (overrides = {}) {
+  const env = { ...process.env };
+  delete env.FABRIC_SKIP_NATIVE_ADDON;
+  for (const [k, v] of Object.entries(overrides)) {
+    if (v == null) delete env[k];
+    else env[k] = String(v);
+  }
+  return env;
+}
+
 function doubleSha256Js (buf) {
   return crypto.createHash('sha256').update(crypto.createHash('sha256').update(buf).digest()).digest();
 }
@@ -24,7 +35,10 @@ function runStatusSubprocess (envLines, predicateLine, outputLine) {
     ${predicateLine}
     process.stdout.write(JSON.stringify(${outputLine}));
   `;
-  const out = execFileSync(process.execPath, ['-e', script], { encoding: 'utf8' });
+  const out = execFileSync(process.execPath, ['-e', script], {
+    encoding: 'utf8',
+    env: addonSubprocessEnv()
+  });
   return JSON.parse(out);
 }
 
@@ -160,9 +174,6 @@ describe('functions/fabricNativeAccel', function () {
 
   it('mock JS addon satisfies doubleSha256 native path when opted in', function () {
     const script = `
-      process.env.FABRIC_NATIVE_DOUBLE_SHA256 = '1';
-      process.env.FABRIC_ADDON_PATH_STRICT = '1';
-      process.env.FABRIC_ADDON_PATH = ${JSON.stringify(mockAddonPath)};
       const m = require(${JSON.stringify(modPath)});
       const crypto = require('crypto');
       const buf = Buffer.from('native-mock-ds256', 'utf8');
@@ -171,14 +182,18 @@ describe('functions/fabricNativeAccel', function () {
       if (!got.equals(want)) process.exit(2);
       process.stdout.write('ok');
     `;
-    execFileSync(process.execPath, ['-e', script], { encoding: 'utf8' });
+    execFileSync(process.execPath, ['-e', script], {
+      encoding: 'utf8',
+      env: addonSubprocessEnv({
+        FABRIC_NATIVE_DOUBLE_SHA256: '1',
+        FABRIC_ADDON_PATH_STRICT: '1',
+        FABRIC_ADDON_PATH: mockAddonPath
+      })
+    });
   });
 
   it('falls back to JS when native doubleSha256 returns wrong length', function () {
     const script = `
-      process.env.FABRIC_NATIVE_DOUBLE_SHA256 = '1';
-      process.env.FABRIC_ADDON_PATH_STRICT = '1';
-      process.env.FABRIC_ADDON_PATH = ${JSON.stringify(badShaAddonPath)};
       const m = require(${JSON.stringify(modPath)});
       const crypto = require('crypto');
       const buf = Buffer.from('bad-len-addon', 'utf8');
@@ -187,14 +202,18 @@ describe('functions/fabricNativeAccel', function () {
       if (!got.equals(want)) process.exit(2);
       process.stdout.write('ok');
     `;
-    execFileSync(process.execPath, ['-e', script], { encoding: 'utf8' });
+    execFileSync(process.execPath, ['-e', script], {
+      encoding: 'utf8',
+      env: addonSubprocessEnv({
+        FABRIC_NATIVE_DOUBLE_SHA256: '1',
+        FABRIC_ADDON_PATH_STRICT: '1',
+        FABRIC_ADDON_PATH: badShaAddonPath
+      })
+    });
   });
 
   it('mock JS addon covers native bech32 and segwit wrappers', function () {
     const script = `
-      process.env.FABRIC_NATIVE_BECH32 = '1';
-      process.env.FABRIC_ADDON_PATH_STRICT = '1';
-      process.env.FABRIC_ADDON_PATH = ${JSON.stringify(mockAddonPath)};
       const m = require(${JSON.stringify(modPath)});
       const enc = m.bech32Encode('id', Buffer.from([0, 1, 2]), 'bech32m');
       const dec = m.bech32Decode(enc);
@@ -206,7 +225,14 @@ describe('functions/fabricNativeAccel', function () {
       if (!back || !back.program.equals(program)) process.exit(4);
       process.stdout.write('ok');
     `;
-    execFileSync(process.execPath, ['-e', script], { encoding: 'utf8' });
+    execFileSync(process.execPath, ['-e', script], {
+      encoding: 'utf8',
+      env: addonSubprocessEnv({
+        FABRIC_NATIVE_BECH32: '1',
+        FABRIC_ADDON_PATH_STRICT: '1',
+        FABRIC_ADDON_PATH: mockAddonPath
+      })
+    });
   });
 
   it('bech32Decode throws when native addon returns null', function () {
@@ -217,9 +243,6 @@ describe('functions/fabricNativeAccel', function () {
     );
     try {
       const script = `
-        process.env.FABRIC_NATIVE_BECH32 = '1';
-        process.env.FABRIC_ADDON_PATH_STRICT = '1';
-        process.env.FABRIC_ADDON_PATH = ${JSON.stringify(decodeNullAddon)};
         const m = require(${JSON.stringify(modPath)});
         try {
           m.bech32Decode('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4');
@@ -228,7 +251,14 @@ describe('functions/fabricNativeAccel', function () {
           if (!/Invalid bech32 checksum/.test(e.message)) process.exit(3);
         }
       `;
-      execFileSync(process.execPath, ['-e', script], { encoding: 'utf8' });
+      execFileSync(process.execPath, ['-e', script], {
+        encoding: 'utf8',
+        env: addonSubprocessEnv({
+          FABRIC_NATIVE_BECH32: '1',
+          FABRIC_ADDON_PATH_STRICT: '1',
+          FABRIC_ADDON_PATH: decodeNullAddon
+        })
+      });
     } finally {
       try { fs.unlinkSync(decodeNullAddon); } catch { /* ignore */ }
     }
@@ -242,13 +272,17 @@ describe('functions/fabricNativeAccel', function () {
     );
     try {
       const script = `
-        process.env.FABRIC_NATIVE_BECH32 = '1';
-        process.env.FABRIC_ADDON_PATH_STRICT = '1';
-        process.env.FABRIC_ADDON_PATH = ${JSON.stringify(segwitNullAddon)};
         const m = require(${JSON.stringify(modPath)});
         if (m.segwitAddrDecode('bc', 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4') !== null) process.exit(2);
       `;
-      execFileSync(process.execPath, ['-e', script], { encoding: 'utf8' });
+      execFileSync(process.execPath, ['-e', script], {
+        encoding: 'utf8',
+        env: addonSubprocessEnv({
+          FABRIC_NATIVE_BECH32: '1',
+          FABRIC_ADDON_PATH_STRICT: '1',
+          FABRIC_ADDON_PATH: segwitNullAddon
+        })
+      });
     } finally {
       try { fs.unlinkSync(segwitNullAddon); } catch { /* ignore */ }
     }

@@ -1,12 +1,18 @@
 name: CI
+# Gitea: pull_request uses refs/pull/<n>/head (no GitHub-style merge ref). Runner must
+# advertise ubuntu-latest (see https://docs.gitea.com/usage/actions/faq).
 on:
   pull_request:
+    types: [opened, reopened, synchronize]
     branches:
     - '**'
   push:
     branches:
     - master
     - develop
+  workflow_dispatch:
+permissions:
+  contents: read
 jobs:
   test:
     # Single OS: self-hosted Gitea runners typically provide ubuntu-latest in Docker;
@@ -17,6 +23,9 @@ jobs:
     steps:
     - name: Checkout branch
       uses: actions/checkout@v4
+      with:
+        # Gitea uses refs/pull/<n>/head; GitHub uses .../merge for PRs — github.ref is correct on both.
+        ref: ${{ github.ref }}
     - name: Install Node.js
       uses: actions/setup-node@v4
       with:

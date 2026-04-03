@@ -111,8 +111,7 @@ function tryLoadAddon () {
   if (!isNode()) {
     return;
   }
-  const skipBuiltinRelease = typeof process !== 'undefined' && process.env &&
-    process.env.FABRIC_SKIP_NATIVE_ADDON === '1';
+  const skipBuiltinRelease = envEnabled('FABRIC_SKIP_NATIVE_ADDON');
   const fs = require('fs');
   const pathMod = require('path');
   let lastLoadError = null;
