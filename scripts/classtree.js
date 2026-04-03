@@ -33,7 +33,8 @@ const CLASS_HEAD = /^\s*class\s+([A-Za-z_]\w*)\s*(?:extends\s+([A-Za-z_][\w.]*)\
 
 function walkJsFiles (dir, acc = []) {
   if (!fs.existsSync(dir)) return acc;
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  const entries = fs.readdirSync(dir, { withFileTypes: true })
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)));
   for (const e of entries) {
     const full = path.join(dir, e.name);
     if (e.isDirectory()) {
@@ -74,7 +75,7 @@ function buildMap (roots) {
     for (const file of walkJsFiles(abs)) {
       const decls = extractClasses(file);
       if (!decls.length) continue;
-      const rel = path.relative(REPO_ROOT, file);
+      const rel = path.relative(REPO_ROOT, file).split(path.sep).join('/');
       byFile.push({ file: rel, classes: decls });
       for (const { name, extends: ext } of decls) {
         if (inherits[name] !== undefined && inherits[name] !== ext) {

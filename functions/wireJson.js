@@ -153,5 +153,7 @@ module.exports = {
   parsePersistedJson,
   parseJsonBounded,
   blessedParamsFromJadeAttrs,
+  MAX_WIRE_JSON_BYTES: MAX_MESSAGE_SIZE,
+  // Backward-compat alias; prefer MAX_WIRE_JSON_BYTES for correctness.
   MAX_WIRE_JSON_CHARS: MAX_MESSAGE_SIZE
 };

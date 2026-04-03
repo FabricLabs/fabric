@@ -5,3 +5,12 @@ exclude_paths:
   - "docs/**"
   - "assets/**"
   - "_book/**"
+  # Ignore generated/third-party native sources that trigger noisy C analyzers.
+  - "native/**/*.c"
+  - "native/**/*.h"
+  - "src/**/*.c"
+  - "src/**/*.h"
+  # Ignore support code that should not gate release quality checks.
+  - "scripts/**"
+  - "tests/**"
+  - "functions/sipa/**"

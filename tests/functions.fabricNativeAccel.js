@@ -134,6 +134,8 @@ describe('functions/fabricNativeAccel', function () {
   it('status surfaces addon load failure when FABRIC_ADDON_PATH is unloadable', function () {
     const realAddon = path.join(__dirname, '..', 'build', 'Release', 'fabric.node');
     if (fs.existsSync(realAddon)) {
+      // This scenario asserts "unloadable addon path" behavior; skip when a real
+      // compiled addon is present to avoid environment-coupled false failures.
       this.skip();
     }
     const bad = path.join(os.tmpdir(), `fabric-bad-addon-${Date.now()}.node`);
