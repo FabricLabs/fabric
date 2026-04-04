@@ -1,14 +1,14 @@
 'use strict';
 
 /**
- * After upgrading to @noble/hashes@2, several dependencies still import removed subpaths
- * (e.g. `@noble/hashes/ripemd160`, `@noble/hashes/sha256`). This script rewrites those requires
- * in installed packages to `legacy.js` / `sha2.js` on every `npm install`.
+ * Optional manual patch when the dependency tree is forced to a single @noble/hashes@2 (e.g. a
+ * global `overrides["@noble/hashes"]`). bitcoinjs-lib and bs58check still require v1 subpaths
+ * (`ripemd160`, `sha256`); this rewrites installed files to `legacy.js` / `sha2.js`.
  *
- * This is independent of the `elliptic` dependency alias (`@soatok/elliptic-to-noble`): that
- * package satisfies the `elliptic` name for code that expects the old API, while this file
- * keeps bitcoinjs-lib / bs58check / wif working with noble 2.x without maintaining patch-package
- * blobs in the repo.
+ * The default setup for this repo uses targeted overrides in package.json so those packages
+ * keep @noble/hashes@1.7.1 and **must not** use this script (it would break bs58check on v1).
+ *
+ * Independent of the `elliptic` alias (`@soatok/elliptic-to-noble`).
  */
 
 const fs = require('fs');

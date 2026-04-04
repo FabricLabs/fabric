@@ -152,7 +152,15 @@
   },
   "overrides": {
     "elliptic": "$elliptic",
-    "@noble/hashes": "$@noble/hashes"
+    "bitcoinjs-lib": {
+      "@noble/hashes": "=1.7.1"
+    },
+    "bs58check": {
+      "@noble/hashes": "=1.7.1"
+    },
+    "merkletreejs": {
+      "@noble/hashes": "=1.7.1"
+    }
   },
   "devDependencies": {
     "buffer": "=6.0.3",

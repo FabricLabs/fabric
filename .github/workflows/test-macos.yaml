@@ -1,0 +1,76 @@
+# macOS CI runs only on github.com (skipped on Gitea / empty server_url).
+name: CI (macOS)
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    branches:
+    - '**'
+  push:
+    branches:
+    - master
+    - develop
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    # Strict equality: Gitea often sets server_url to http://<host>:<port>; empty URL must not run macOS.
+    if: ${{ github.server_url == 'https://github.com' }}
+    name: Run tests (macos-latest)
+    runs-on: macos-latest
+    steps:
+    - name: Checkout branch
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.ref }}
+    - name: Install Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version-file: '.nvmrc'
+        cache: 'npm'
+        cache-dependency-path: package-lock.json
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    - name: Install dependencies
+      run: npm run report:install-ci
+    - name: Upload install report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: install-report-macos-latest
+        path: reports/install.log
+        if-no-files-found: ignore
+    - name: Smoke load (core modules)
+      run: npm run smoke
+    - name: Lint types
+      run: npm run lint:types
+    - name: Lint CLI harness + native accel shim
+      run: npm run lint:pkg
+    - name: Install bitcoind (Homebrew)
+      run: brew install bitcoin
+    - name: Run tests (with coverage for Codecov)
+      run: npm run report:coverage
+      timeout-minutes: 30
+    - name: Install lightningd (Homebrew)
+      run: |
+        brew install lightning
+        which lightningd || echo "lightningd not found in PATH"
+        lightningd --version || echo "lightningd version check failed"
+    - name: Verify lightningd installation
+      run: |
+        echo "Checking lightningd installation..."
+        if command -v lightningd &> /dev/null; then
+          echo "✅ lightningd is available in PATH"
+          lightningd --version || echo "⚠️ lightningd version check failed"
+        else
+          echo "❌ lightningd not found in PATH"
+          echo "PATH: $PATH"
+          find /opt/homebrew -name lightningd 2>/dev/null || echo "No lightningd found in /opt/homebrew"
+        fi
+    - name: Send coverage report
+      uses: codecov/codecov-action@v4
+      with:
+        directory: ./reports/
+      continue-on-error: true
