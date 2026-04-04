@@ -54,9 +54,6 @@ jobs:
       run: npm run lint:pkg
     - name: Install bitcoind (Homebrew)
       run: brew install bitcoin
-    - name: Run tests (with coverage for Codecov)
-      run: npm run report:coverage
-      timeout-minutes: 30
     - name: Install lightningd (Homebrew)
       run: |
         brew install lightning
@@ -73,6 +70,9 @@ jobs:
           echo "PATH: $PATH"
           find /opt/homebrew -name lightningd 2>/dev/null || echo "No lightningd found in /opt/homebrew"
         fi
+    - name: Run tests (with coverage for Codecov)
+      run: npm run report:coverage
+      timeout-minutes: 30
     - name: Send coverage report
       uses: codecov/codecov-action@v4
       with:

@@ -159,7 +159,10 @@ function encodeSipa (hrp, words, spec) {
  * @returns {string}
  */
 function encode (hrp, words, spec) {
-  if (useNativeCBech32()) return fabricNativeAccel.bech32Encode(hrp, words, spec);
+  if (useNativeCBech32()) {
+    const out = fabricNativeAccel.bech32Encode(hrp, words, spec);
+    if (out != null) return out;
+  }
   if (useSipaReferenceOnNode()) return encodeSipa(hrp, words, spec);
   return encodePure(hrp, words, spec);
 }
@@ -205,7 +208,10 @@ function decodeSipa (str) {
  * @returns {{ hrp: string, words: number[], spec: 'bech32'|'bech32m' }}
  */
 function decode (str) {
-  if (useNativeCBech32()) return fabricNativeAccel.bech32Decode(str);
+  if (useNativeCBech32()) {
+    const out = fabricNativeAccel.bech32Decode(str);
+    if (out != null) return out;
+  }
   if (useSipaReferenceOnNode()) return decodeSipa(str);
   return decodePure(str);
 }

@@ -127,15 +127,9 @@ describe('functions/fabricNativeAccel', function () {
     );
   });
 
-  it('bech32Encode and bech32Decode throw when native bech32 is unavailable', function () {
-    assert.throws(
-      () => fabricNativeAccel.bech32Encode('bc', Buffer.alloc(0), 'bech32'),
-      /native bech32 not available/
-    );
-    assert.throws(
-      () => fabricNativeAccel.bech32Decode('bc1invalid'),
-      /native bech32 not available/
-    );
+  it('bech32Encode and bech32Decode return null when native bech32 is unavailable', function () {
+    assert.strictEqual(fabricNativeAccel.bech32Encode('bc', Buffer.alloc(0), 'bech32'), null);
+    assert.strictEqual(fabricNativeAccel.bech32Decode('bc1invalid'), null);
   });
 
   it('status in fresh subprocess with FABRIC_NATIVE_DOUBLE_SHA256=true reports opt-in', function () {
@@ -235,7 +229,7 @@ describe('functions/fabricNativeAccel', function () {
     });
   });
 
-  it('bech32Decode throws when native addon returns null', function () {
+  it('bech32Decode returns null when native addon returns null', function () {
     const decodeNullAddon = path.join(os.tmpdir(), `fabric-mock-decode-null-${Date.now()}.js`);
     fs.writeFileSync(
       decodeNullAddon,
@@ -244,12 +238,7 @@ describe('functions/fabricNativeAccel', function () {
     try {
       const script = `
         const m = require(${JSON.stringify(modPath)});
-        try {
-          m.bech32Decode('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4');
-          process.exit(2);
-        } catch (e) {
-          if (!/Invalid bech32 checksum/.test(e.message)) process.exit(3);
-        }
+        if (m.bech32Decode('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4') !== null) process.exit(2);
       `;
       execFileSync(process.execPath, ['-e', script], {
         encoding: 'utf8',

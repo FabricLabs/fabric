@@ -104,10 +104,10 @@ function formatAddonLoadError (err) {
 
 function tryLoadAddon () {
   if (loadAttempted) return;
-  loadAttempted = true;
   if (!nativeAddonLoadRequested()) {
     return;
   }
+  loadAttempted = true;
   if (!isNode()) {
     return;
   }
@@ -203,36 +203,38 @@ function doubleSha256Hex (buf) {
  * @param {string} hrp
  * @param {Buffer|number[]} words — each value 0–31
  * @param {'bech32'|'bech32m'} spec
- * @returns {string}
+ * @returns {string|null}
  */
 function bech32Encode (hrp, words, spec) {
-  // Throws when native is off so {@link functions/bech32} can catch and use pure-JS encode.
-  if (!isNativeBech32Callable()) {
-    throw new Error('native bech32 not available (set FABRIC_NATIVE_BECH32=1 and build fabric.node with sipa segwit_addr.c)');
-  }
+  // Null when native is off or the addon call fails — {@link functions/bech32} falls back to JS.
+  if (!isNativeBech32Callable()) return null;
   const enc = spec === 'bech32m' ? 1 : 0;
   const buf = Buffer.isBuffer(words) ? words : Buffer.from(words);
-  return addon.bech32Encode(hrp, buf, enc);
+  try {
+    const out = addon.bech32Encode(hrp, buf, enc);
+    return out != null && typeof out === 'string' ? out : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
  * @param {string} str
- * @returns {{ hrp: string, words: number[], spec: 'bech32'|'bech32m' }}
+ * @returns {{ hrp: string, words: number[], spec: 'bech32'|'bech32m' }|null}
  */
 function bech32Decode (str) {
-  // Same throw-vs-fallback contract as {@link bech32Encode}.
-  if (!isNativeBech32Callable()) {
-    throw new Error('native bech32 not available');
+  if (!isNativeBech32Callable()) return null;
+  try {
+    const r = addon.bech32Decode(str);
+    if (r == null) return null;
+    return {
+      hrp: r.hrp,
+      words: Array.from(r.words),
+      spec: r.spec
+    };
+  } catch {
+    return null;
   }
-  const r = addon.bech32Decode(str);
-  if (r == null) {
-    throw new Error('Invalid bech32 checksum');
-  }
-  return {
-    hrp: r.hrp,
-    words: Array.from(r.words),
-    spec: r.spec
-  };
 }
 
 /**
