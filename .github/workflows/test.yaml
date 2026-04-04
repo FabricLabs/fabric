@@ -16,6 +16,8 @@ permissions:
 env:
   # Ubuntu runners do not ship libnoise / libwally / headers required by binding.gyp.
   FABRIC_SKIP_NODE_GYP: '1'
+  # GitHub Actions: opt composite actions into Node 24 before the Node 20 runner removal.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 jobs:
   test:
     # Single OS: self-hosted Gitea runners typically provide ubuntu-latest in Docker;

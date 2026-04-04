@@ -57,7 +57,7 @@ Use this repo as a **library** or run the **`fabric`** CLI in environments you c
 
 | Step | Where |
 |------|--------|
-| Node **22.14.x**, `npm ci`, **`npm run ci`** | [`docs/PRODUCTION.md`](docs/PRODUCTION.md) |
+| Node **24.14.1** (see `.nvmrc`), `npm ci`, **`npm run ci`** | [`docs/PRODUCTION.md`](docs/PRODUCTION.md) |
 | Completion / privacy / security matrix | [`docs/PRODUCTION-CHECKLIST.md`](docs/PRODUCTION-CHECKLIST.md), [`PRIVACY.md`](PRIVACY.md), [`SECURITY.md`](SECURITY.md) |
 | Version tag, changelog, Hub & fabric-http bumps | [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) |
 | Operator privacy model | [`PRIVACY.md`](PRIVACY.md) |

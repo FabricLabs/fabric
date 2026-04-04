@@ -120,8 +120,8 @@ function blessedParamsFromJadeAttrs (astAttrs) {
   const attrs = [];
   const params = Object.create(null);
   if (!astAttrs) return { attrs, params };
-  for (const a in astAttrs) {
-    const attr = astAttrs[a];
+  if (!Array.isArray(astAttrs)) return { attrs, params };
+  for (const attr of astAttrs) {
     if (!attr || attr.name == null) continue;
     const name = String(attr.name);
     const valRaw = attr.val == null ? '' : attr.val;
