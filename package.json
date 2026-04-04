@@ -17,6 +17,7 @@
     "node": "24.14.1"
   },
   "scripts": {
+    "install": "node scripts/install-native.js",
     "audit": "npm audit --json > reports/AUDIT.json",
     "book": "npm run dev",
     "build:book": "npm run make:book && npm run tidy",
@@ -24,7 +25,7 @@
     "chat": "node scripts/fabric.js shell",
     "ci": "npm run smoke && npm run lint:types && npm run lint:pkg && npm test && npm run test:benchmark",
     "smoke": "node -e \"require('./types/fabric'); require('./types/distributedExecution'); require('./types/message'); require('./types/peer'); require('./types/hash256'); require('./functions/bytes'); require('./functions/fabricCanonicalJson'); require('./functions/wireJson'); require('./functions/fabricNativeAccel'); console.log('smoke ok');\"",
-    "lint:pkg": "eslint scripts/fabric.js scripts/cli.js scripts/gen-quality-reports.js scripts/check-book-links.js scripts/coverage-baseline.js scripts/clean-jsdoc-html.js scripts/classtree.js scripts/report-noble-hashes.js scripts/fix-noble-hashes-compat.js scripts/benchmark-lib.js scripts/benchmark-report.js functions/bytes.js functions/fabricCanonicalJson.js functions/wireJson.js functions/fabricNativeAccel.js functions/base58.js functions/bech32.js functions/sipa/bech32.js functions/sipa/segwit_addr.js functions/bip39.js functions/bip32.js",
+    "lint:pkg": "eslint scripts/fabric.js scripts/cli.js scripts/gen-quality-reports.js scripts/check-book-links.js scripts/coverage-baseline.js scripts/clean-jsdoc-html.js scripts/classtree.js scripts/report-noble-hashes.js scripts/fix-noble-hashes-compat.js scripts/install-native.js scripts/benchmark-lib.js scripts/benchmark-report.js functions/bytes.js functions/fabricCanonicalJson.js functions/wireJson.js functions/fabricNativeAccel.js functions/base58.js functions/bech32.js functions/sipa/bech32.js functions/sipa/segwit_addr.js functions/bip39.js functions/bip32.js",
     "exchange": "node scripts/fabric.js exchange",
     "fabric:start": "node scripts/fabric.js start",
     "clean:all": "rm -rf node_modules package-lock.json",

@@ -12,6 +12,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+env:
+  # Match Linux CI: full native addon needs Homebrew noise/wally stacks; tests use JS + mock addon.
+  FABRIC_SKIP_NODE_GYP: '1'
 jobs:
   test:
     # Strict equality: Gitea often sets server_url to http://<host>:<port>; empty URL must not run macOS.
