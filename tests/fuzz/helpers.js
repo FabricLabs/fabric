@@ -103,7 +103,9 @@ function randomPersistedLikeString () {
   }
   if (roll === 1) {
     const cap = PERSISTED_JSON_MAX_CHARS;
-    const byteBudget = Math.min(cap * 4 + 1024, 1024 * 1024);
+    // Need enough raw bytes to possibly fill `cap` UTF-8 code units; do not cap at 1MiB
+    // when cap is multi‑MiB (see PERSISTED_JSON_MAX_CHARS).
+    const byteBudget = cap * 4 + 1024;
     return randomUtf8String(cap, byteBudget, cap);
   }
   const cap = Math.min(PERSISTED_JSON_MAX_CHARS, 50000);
