@@ -184,7 +184,7 @@ describe('functions/bech32', function () {
       const b = require(${JSON.stringify(bech32Path)});
       const mixed = 'Bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4';
       if (b.decodeSegwitAddress('bc', mixed) !== null) process.exit(2);`
-    ], { encoding: 'utf8' });
-    assert.strictEqual(r.status, 0, r.stderr || r.stdout || '');
+    ], bech32SubprocessOpts());
+    assert.strictEqual(r.status, 0, r.stderr || r.stdout || 'mixed-case bech32 subprocess failed');
   });
 });

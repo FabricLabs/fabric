@@ -68,7 +68,7 @@
     "report:noisy": "node scripts/analyze-deps.js | tee reports/noisy-deps.txt",
     "report:noble-hashes": "node scripts/report-noble-hashes.js",
     "make:classes-dot": "node scripts/classtree.js --write",
-    "report:todo": "grep --exclude-dir=.git --exclude-dir=_book --exclude-dir=assets --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs -rEI \"TODO|FIXME\" . > reports/TODO.txt",
+    "report:todo": "grep --exclude-dir=.git --exclude-dir=_book --exclude-dir=assets --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs --exclude='.tmp-*.html' --exclude='*.tmp-pr*.html' -rEI \"TODO|FIXME\" . > reports/TODO.txt",
     "reports": "npm run report:install && npm run make:coverage && npm run report:todo",
     "review:coverage": "npm run make:coverage && http-server -p 0 reports/coverage",
     "review:todo": "npm run report:todo && cat reports/TODO.txt && echo '\nOutstanding TODO items (@fabric/core):' && wc -l reports/TODO.txt && echo '\nIssues List: https://github.com/FabricLabs/fabric/issues\nDisclosures: security@fabric.pub\n\n'",
@@ -177,6 +177,7 @@
     "jsdoc": "=4.0.5",
     "jsdoc-to-markdown": "=9.1.3",
     "json-to-dot": "=1.1.0",
+    "license-checker": "=25.0.1",
     "mocha": "=12.0.0-beta-10",
     "node-gyp": "=12.2.0"
   },

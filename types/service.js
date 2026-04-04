@@ -317,13 +317,11 @@ class Service extends Actor {
 
     // TODO: remove JSON parser here — only needed for verification
     // TODO: parse JSON types in @fabric/core/types/message
-    let data = beat.data;
+    const data = beat.data;
 
     try {
       const pr = tryParseWireJson(typeof data === 'string' ? data : String(data ?? ''));
-      if (pr.ok) {
-        data = JSON.stringify(pr.value, null, '  ');
-      } else {
+      if (!pr.ok) {
         this.emit('error', `Exception parsing beat: ${pr.error.message}`);
       }
     } catch (exception) {
@@ -861,11 +859,15 @@ class Service extends Actor {
         const pr = tryParsePersistedJson(utf8FromPersistedRaw(prior));
         if (pr.ok && pr.value != null && typeof pr.value === 'object' && !Array.isArray(pr.value)) {
           const v = pr.value;
-          if (v.content != null && typeof v.content === 'object' && !Array.isArray(v.content)) {
-            this._state.content = Object.assign({}, this._state.content, v.content);
-            if (typeof v.status === 'string') this._state.status = v.status;
-            if (Number.isFinite(Number(v.clock))) this._state.clock = Number(v.clock);
-            if (v.version != null) this._state.version = v.version;
+          if (Object.prototype.hasOwnProperty.call(v, 'content')) {
+            if (v.content != null && typeof v.content === 'object' && !Array.isArray(v.content)) {
+              this._state.content = Object.assign({}, this._state.content, v.content);
+              if (typeof v.status === 'string') this._state.status = v.status;
+              if (Number.isFinite(Number(v.clock))) this._state.clock = Number(v.clock);
+              if (v.version != null) this._state.version = v.version;
+            } else {
+              this.emit('warning', '[FABRIC:SERVICE] Ignoring restored state: invalid content envelope');
+            }
           } else {
             this._state.content = Object.assign({}, this._state.content, v);
           }

@@ -6,8 +6,7 @@
 'use strict';
 
 const crypto = require('crypto');
-const { sha256 } = require('@noble/hashes/sha2.js');
-const { sha512 } = require('@noble/hashes/sha2.js');
+const { sha256, sha512 } = require('@noble/hashes/sha2.js');
 const { pbkdf2, pbkdf2Async } = require('@noble/hashes/pbkdf2.js');
 
 const DEFAULT_WORDLIST = require('../settings/bip39-english.json');
@@ -94,6 +93,9 @@ function deriveChecksumBits (entropy) {
 
 function binaryToWord (bits, wordlist) {
   const idx = parseInt(bits.join(''), 2);
+  if (!Number.isFinite(idx) || idx < 0 || idx >= wordlist.length) {
+    throw new RangeError(`Word index ${idx} out of range for wordlist (length ${wordlist.length})`);
+  }
   return wordlist[idx];
 }
 
