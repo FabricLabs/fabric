@@ -62,7 +62,7 @@ const ecc = {
       if (!CURVE_N) return false;
       const k = BigInt('0x' + bytes.toString('hex'));
       return k > 0n && k < CURVE_N;
-    } catch (e) {
+    } catch {
       return false;
     }
   },
@@ -76,7 +76,7 @@ const ecc = {
       }
       fromBytes(bytes);
       return true;
-    } catch (e) {
+    } catch {
       return false;
     }
   },
@@ -88,7 +88,7 @@ const ecc = {
     try {
       const pub = secp256k1.getPublicKey(toUint8Flexible(bytes, 32), compressed);
       return Buffer.from(pub);
-    } catch (e) {
+    } catch {
       return null;
     }
   },
@@ -107,7 +107,7 @@ const ecc = {
       const T = SecpPoint.BASE.multiply(k);
       const R = P.add(T);
       return Buffer.from(toRawBytes(R, compressed));
-    } catch (e) {
+    } catch {
       return null;
     }
   },
@@ -120,7 +120,7 @@ const ecc = {
       if (!SecpPoint) return null;
       const P = fromBytes(bytes);
       return Buffer.from(toRawBytes(P, compressed));
-    } catch (e) {
+    } catch {
       return null;
     }
   },
@@ -135,11 +135,11 @@ const ecc = {
       if (!SecpPoint) return false;
       fromBytes(Buffer.concat([Buffer.from([0x02]), xBytes]));
       return true;
-    } catch (e) {
+    } catch {
       try {
         fromBytes(Buffer.concat([Buffer.from([0x03]), xBytes]));
         return true;
-      } catch (e2) {
+      } catch {
         return false;
       }
     }
@@ -162,7 +162,7 @@ const ecc = {
       const Rx = Buffer.from(toRawBytes(R, true)).slice(1);
       const parity = getYParity(R);
       return { xOnlyPubkey: Rx, parity };
-    } catch (e) {
+    } catch {
       return null;
     }
   },
@@ -219,7 +219,7 @@ const ecc = {
     try {
       // noble-curves v2 prehashes (sha256) by default; verify raw 32-byte hashes.
       return secp256k1.verify(toUint8Flexible(s, 64), toUint8Flexible(m, 32), toUint8Flexible(p, 65), { prehash: false });
-    } catch (e) {
+    } catch {
       return false;
     }
   },
@@ -241,7 +241,7 @@ const ecc = {
     if (m.length !== 32 || px.length !== 32 || s.length !== 64) return false;
     try {
       return schnorrModule.verify(toUint8Flexible(s, 64), toUint8Flexible(m, 32), toUint8Flexible(px, 32));
-    } catch (e) {
+    } catch {
       return false;
     }
   }

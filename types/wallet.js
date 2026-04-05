@@ -1,7 +1,6 @@
 'use strict';
 
 // External Dependencies
-const BN = require('bn.js');
 const merge = require('lodash.merge');
 const networks = require('bitcoinjs-lib/src/networks');
 
@@ -156,7 +155,7 @@ class Wallet extends Service {
    * @param {String} passphrase BIP 39 passphrase for key derivation.
    * @returns {FabricSeed} The seed object.
    */
-  static createSeed (passphrase = '') {
+  static createSeed (_passphrase = '') {
     const mnemonic = bip39.generateMnemonic();
     const seed = bip39.mnemonicToSeedSync(mnemonic);
     const root = bip32.fromSeed(seed, BIP32_DEFAULT_NETWORK);
@@ -235,7 +234,7 @@ class Wallet extends Service {
     };
   }
 
-  loadTransaction (transaction, labels = []) {
+  loadTransaction (transaction, _labels = []) {
     if (!transaction) throw new Error('You must provide a transaction.');
     if (!transaction.id) throw new Error('The transaction must have a "id" property.');
 
@@ -498,8 +497,7 @@ class Wallet extends Service {
 
     let partials = [];
     // TODO: remove short-circuit
-    let cb = await this._generateFakeCoinbase(contract.amount);
-    let mtx = new MTX();
+    await this._generateFakeCoinbase(contract.amount);
     let script = new Script();
 
     let secret = await this.generateSecret();
@@ -565,13 +563,11 @@ class Wallet extends Service {
     if (!address) throw new Error(`Parameter "address" is required.`);
     if (!amount) throw new Error(`Parameter "amount" is required.`);
 
-    let bn = new BN(amount + '', 10);
     // TODO: labeled keypairs
-    let clean = await this.generateCleanKeyPair();
     let change = await this.generateCleanKeyPair();
 
     let mtx = new MTX();
-    let cb = await this._generateFakeCoinbase(amount);
+    await this._generateFakeCoinbase(amount);
 
     mtx.addOutput({
       address: address,
@@ -605,14 +601,13 @@ class Wallet extends Service {
   balanceFromState (state) {
     if (!state.transactions) throw new Error('State does not provide a `transactions` property.');
     if (!state.transactions.length) return 0;
-    return state.transactions.reduce((acc, obj, i) => {
+    return state.transactions.reduce((acc, obj, _i) => {
       if (!acc.value) acc.value = 0;
       acc.value += obj.value;
     });
   }
 
   getFeeForInput (coin, address, keyring, rate) {
-    let fundingTarget = 100000000; // 1 BTC (arbitrary for purposes of this function)
     let testMTX = new MTX();
 
     // TODO: restore swap code, abstract input types
@@ -737,7 +732,6 @@ class Wallet extends Service {
   async _getBondAddress () {
     await this._load();
 
-    let script = new Script();
     let clean = await this.generateCleanKeyPair();
 
     if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'getting bond address, clean:', clean);
@@ -757,7 +751,6 @@ class Wallet extends Service {
 
   async _getSpendableOutput (target, amount = 0) {
     let self = this;
-    let key = null;
     let out = null;
     let mtx = new MTX();
 
@@ -838,7 +831,7 @@ class Wallet extends Service {
     if (this.settings.verbosity >= 5 || this.settings.debug) {
       console.log('[AUDIT]', 'Scanning block for transactions:', block);
     }
-    let found = [];
+    return [];
   }
 
   async _scanChainForTransactions (chain) {

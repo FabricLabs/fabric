@@ -86,7 +86,7 @@ function verifyFederationWitnessOnMessage (messageBuffer, witness, validatorPubk
       const sig = Buffer.from(sigHex, 'hex');
       if (k.verifySchnorr(messageBuffer, sig)) valid++;
       if (valid >= thr) return true;
-    } catch (_) {
+    } catch {
       /* ignore */
     }
   }

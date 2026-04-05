@@ -1,7 +1,6 @@
 'use strict';
 
 const PATCHES_ENABLED = true;
-const OP_TRACE = require('../contracts/trace');
 const { tryParsePersistedJson, tryParseWireJson, utf8FromPersistedRaw } = require('../functions/wireJson');
 
 // Dependencies
@@ -236,11 +235,11 @@ class Service extends Actor {
 
     try {
       plugin = require(local);
-    } catch (E) {
+    } catch {
       // Avoid direct stdout writes from library internals.
       try {
         plugin = require(fallback);
-      } catch (E) {
+      } catch {
         // no-op: return null plugin below
       }
     }
@@ -385,7 +384,7 @@ class Service extends Actor {
     // Attach Event Listeners
     if (source.settings && source.settings.debug) source.on('debug', this._handleTrustedDebug.bind(this));
     if (source.settings && source.settings.verbosity >= 0) {
-      source.on('audit', async function _handleTrustedAudit (audit) {
+      source.on('audit', async function _handleTrustedAudit (_audit) {
         /*
         const now = (new Date()).toISOString();
         const template = {
@@ -410,7 +409,7 @@ class Service extends Actor {
       _handleBeat: source.on('beat', async function (beat) {
         self.emit('debug', `[FABRIC:SERVICE] Source "${label}" emitted beat: ${JSON.stringify(beat, null, '  ')}`);
 
-        const ops = [
+        const _ops = [
           { op: 'add', path: `/actors`, value: {} },
           { op: 'add', path: `/services`, value: {} },
           { op: 'replace', path: `/services/${label}`, value: beat.state }
@@ -418,7 +417,7 @@ class Service extends Actor {
 
         /*
         try {
-          manager.applyPatch(self._state.content, ops);
+          manager.applyPatch(self._state.content, _ops);
           await self.commit();
         } catch (exception) {
           self.emit('warning', `Could not process beat: ${exception}`);
@@ -464,7 +463,7 @@ class Service extends Actor {
   define (name, value) {
     this.definitions[name] = Object.assign({
       data: {},
-      handler: function handler (msg) {
+      handler: function handler (_msg) {
         return null;
       }
     }, value);
@@ -652,7 +651,7 @@ class Service extends Actor {
       });
 
       // Attach events
-      this.collections[key].on('commit', (commit) => {
+      this.collections[key].on('commit', (_commit) => {
         service.broadcast({
           '@type': 'StateUpdate',
           '@data': service.state
@@ -807,7 +806,7 @@ class Service extends Actor {
 
     try {
       memory = await pointer.get(this.state, path);
-    } catch (E) {
+    } catch {
       this.emit('warning', `[FABRIC:SERVICE] posting to unloaded collection: ${path}`);
       memory = [];
     }
@@ -929,11 +928,11 @@ class Service extends Actor {
     return result;
   }
 
-  async join (id) {
+  async join (_id) {
     this.log('join() is not yet implemented for this service.');
   }
 
-  async whisper (target, message) {
+  async whisper (_target, _message) {
     this.log('The "whisper" function is not yet implemented.');
     return this;
   }
@@ -944,7 +943,7 @@ class Service extends Actor {
    * @param  {String} message Content of the message to send.
    * @return {Service}        Chainable method.
    */
-  async send (channel, message, extra) {
+  async send (channel, message, _extra) {
     if (this.debug) this.emit('debug', `[SERVICE] send() Sending: ${channel}`);
 
     const path = Buffer.alloc(256);
@@ -1238,7 +1237,7 @@ class Service extends Actor {
     this.emit('debug', `Service entries: ${Object.keys(this.services)}`);
 
     // Start all Services
-    for (const [name, service] of Object.entries(this.services)) {
+    for (const [name, _service] of Object.entries(this.services)) {
       // TODO: re-evaluate inclusion on Service itself
       if (this.settings.services && this.settings.services.includes(name)) {
         this.emit('debug', `Starting service "${name}" (with trust)...`);
@@ -1351,7 +1350,7 @@ class FabricShell extends Service {
     this._appendMessage(`[FABRIC:APP] @${this.id} -- Starting...`);
     this.status = 'STARTING';
 
-    for (const [name, service] of Object.entries(this.services)) {
+    for (const [name, _service] of Object.entries(this.services)) {
       this._appendWarning(`@${this.id} -- Checking for Service: ${name}`);
       if (this.settings.services.includes(name)) {
         this._appendWarning(`Starting service: ${name}`);

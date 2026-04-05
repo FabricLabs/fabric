@@ -6,8 +6,6 @@ const {
   FABRIC_USER_AGENT
 } = require('../constants');
 
-const OP_TRACE = require('../contracts/trace');
-
 // Dependencies
 const crypto = require('crypto');
 const children = require('child_process');
@@ -40,7 +38,6 @@ const Collection = require('../types/collection');
 const Entity = require('../types/entity');
 const Key = require('../types/key');
 const Service = require('../types/service');
-const State = require('../types/state');
 const Wallet = require('../types/wallet');
 
 // Special Types (internal to Bitcoin)
@@ -486,7 +483,7 @@ class Bitcoin extends Service {
             password: raw.slice(colon + 1),
             secure: false
           });
-        } catch (e) {
+        } catch {
           /* ignore missing/unreadable cookie */
         }
       }
@@ -643,7 +640,7 @@ class Bitcoin extends Service {
       try {
         bitcoin.address.toOutputScript(address, network);
         return true;
-      } catch (e) {
+      } catch {
         return false;
       }
 
@@ -673,8 +670,8 @@ class Bitcoin extends Service {
       this._checkAllTargetBalances()
     ]).catch((exception) => {
       self.emit('error', `Unable to synchronize: ${exception}`);
-    }).then((output) => {
-      // self.emit('log', `Tick output: ${JSON.stringify(output, null, '  ')}`);
+    }).then((_output) => {
+      // self.emit('log', `Tick output: ${JSON.stringify(_output, null, '  ')}`);
 
       const beat = {
         clock: self._clock,
@@ -764,7 +761,7 @@ class Bitcoin extends Service {
     if (!(obj.transactions instanceof Array)) throw new Error('Block must provide transactions as an Array.');
 
     for (const tx of obj.transactions) {
-      let transaction = await this.transactions.create(tx);
+      await this.transactions.create(tx);
     }
 
     let entity = new Entity(obj);
@@ -810,8 +807,6 @@ class Bitcoin extends Service {
 
   async _registerBlock (obj) {
     let result = null;
-    let state = new State(obj);
-    let transform = [state.id, state.render()];
     let prior = null;
 
     // TODO: ensure all appropriate fields, valid block
@@ -964,7 +959,7 @@ class Bitcoin extends Service {
       raw: msg.toRaw().toString('hex')
     };
 
-    let block = await this.blocks.create(template);
+    await this.blocks.create(template);
   }
 
   async _handleConnectMessage (entry, block) {
@@ -1202,16 +1197,14 @@ class Bitcoin extends Service {
 
   async _connectToSeedNodes () {
     for (let i = 0; i < this.settings.seeds.length; i++) {
-      let node = this.settings.seeds[i];
-      this.connect(node);
+      this.connect(this.settings.seeds[i]);
     }
   }
 
   async _connectToEdgeNodes () {
     let bitcoin = this;
 
-    for (let id in this.settings.nodes) {
-      let node = this.settings.nodes[id];
+    for (const _id in this.settings.nodes) {
       let peer = bcoin.Peer.fromOptions({
         network: this.settings.network,
         agent: this.UAString,
@@ -1300,7 +1293,7 @@ class Bitcoin extends Service {
         default:
           if (this.settings.verbosity >= 5) this.emit('debug', `[AUDIT] Unknown ZMQ topic: ${topic}`);
       }
-    } catch (exception) {
+    } catch {
       //', `Could not process ZMQ message: ${exception}`);
     }
   }
@@ -1644,7 +1637,6 @@ class Bitcoin extends Service {
       if (!this.rpc) return reject(new Error('RPC manager does not exist'));
 
       // Reuse existing RPC config but change the URL to target the specific wallet
-      const protocol = this.settings.secure ? 'https' : 'http';
       const host = this.settings.host;
       const port = this.settings.rpcport;
       const auth = `${this.settings.username}:${this.settings.password}`;
@@ -1693,7 +1685,7 @@ class Bitcoin extends Service {
 
   async _checkAllTargetBalances () {
     for (let i = 0; i < this.settings.targets.length; i++) {
-      const balance = await this._getBalanceForAddress(this.settings.targets[i]);
+      await this._getBalanceForAddress(this.settings.targets[i]);
     }
   }
 
@@ -1806,7 +1798,7 @@ class Bitcoin extends Service {
     return this._makeRPCRequest('getblock', [hash]);
   }
 
-  async _getMempool (hash) {
+  async _getMempool (_hash) {
     return this._makeRPCRequest('getrawmempool');
   }
 
@@ -1995,19 +1987,19 @@ class Bitcoin extends Service {
       throw new Error(`Invalid network: ${this.settings.network}`);
     }
 
-    // Calculate total input amount
-    let inputAmount = 0;
+    // Calculate total input amount (reserved for fee / change logic)
+    let _inputAmount = 0;
     for (const input of options.inputs) {
       const utxo = await this._makeRPCRequest('gettxout', [input.txid, input.vout]);
       if (utxo) {
-        inputAmount += utxo.value * 100000000; // Convert BTC to satoshis
+        _inputAmount += utxo.value * 100000000; // Convert BTC to satoshis
       }
     }
 
-    // Calculate total output amount
-    let outputAmount = 0;
+    // Calculate total output amount (reserved for fee / change logic)
+    let _outputAmount = 0;
     for (const output of options.outputs) {
-      outputAmount += output.value;
+      _outputAmount += output.value;
     }
 
     // TODO: add change output
@@ -2259,7 +2251,7 @@ class Bitcoin extends Service {
         ];
 
         // Wait for all checks to complete
-        const results = await Promise.all(checks);
+        await Promise.all(checks);
 
         if (this.settings.debug) {
           this.emit('debug', '[FABRIC:BITCOIN] Successfully connected to bitcoind');
@@ -2549,7 +2541,7 @@ class Bitcoin extends Service {
           // await cleanup();
         }
       };
-      this._errorHandlers.unhandledRejection = async (reason, promise) => {
+      this._errorHandlers.unhandledRejection = async (reason, _promise) => {
         // Only handle rejections from this service's operations
         if (reason.source === 'bitcoin' || (this._nodeProcess && reason.pid === this._nodeProcess.pid)) {
           this.emit('error', '[FABRIC:BITCOIN] Unhandled rejection from Bitcoin service');
@@ -2590,7 +2582,7 @@ class Bitcoin extends Service {
                 break;
               }
             }
-          } catch (e) {
+          } catch {
             // ignore read errors, keep polling
           }
           await new Promise(r => setTimeout(r, cookiePollMs));
@@ -2640,7 +2632,7 @@ class Bitcoin extends Service {
               if (this.settings.debug) this.emit('debug', '[FABRIC:BITCOIN] Read RPC credentials from cookie file (unmanaged)');
             }
           }
-        } catch (e) {
+        } catch {
           // Cookie not available
         }
         if (!this.settings.username || !this.settings.password) {
@@ -2684,7 +2676,7 @@ class Bitcoin extends Service {
       this.peer.on('error', this._handlePeerError.bind(this));
       this.peer.on('packet', this._handlePeerPacket.bind(this));
       this.peer.on('open', () => {
-        let block = this.peer.getBlock([this.network.genesis.hash]);
+        this.peer.getBlock([this.network.genesis.hash]);
       });
     }
 

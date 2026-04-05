@@ -11,23 +11,12 @@ const {
   PEERING_OFFER_MAX_PAYLOAD_CACHE,
   PEERING_OFFER_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
   PEER_MAX_CANDIDATES_QUEUE,
-  P2P_IDENT_REQUEST,
-  P2P_IDENT_RESPONSE,
   P2P_PEER_GOSSIP,
   P2P_PEERING_OFFER,
   PEER_MAX_WIRE_HASH_CACHE,
-  P2P_ROOT,
-  P2P_PING,
-  P2P_PONG,
   P2P_PORT,
-  P2P_START_CHAIN,
   P2P_CHAIN_SYNC_REQUEST,
-  P2P_FLUSH_CHAIN,
-  P2P_INSTRUCTION,
-  P2P_BASE_MESSAGE,
-  P2P_STATE_COMMITTMENT,
-  P2P_STATE_CHANGE,
-  P2P_STATE_ROOT
+  P2P_FLUSH_CHAIN
 } = require('../constants');
 
 // Dependencies
@@ -730,7 +719,7 @@ class Peer extends Service {
     return n;
   }
 
-  subscribe (path) {
+  subscribe (_path) {
 
   }
 
@@ -788,8 +777,8 @@ class Peer extends Service {
 
     this._outboundDialTargets.add(target);
 
-    const derived = this.identity.key.derive(FABRIC_KEY_DERIVATION_PATH);
-    this.emit('debug', `[FABRIC:PEER:_connect] Local derived key (public hex, truncated): ${peerDebugDerivedPublicSummary(derived)} path=${FABRIC_KEY_DERIVATION_PATH}`);
+    const _derived = this.identity.key.derive(FABRIC_KEY_DERIVATION_PATH);
+    this.emit('debug', `[FABRIC:PEER:_connect] Local derived key (public hex, truncated): ${peerDebugDerivedPublicSummary(_derived)} path=${FABRIC_KEY_DERIVATION_PATH}`);
 
     // Store the user's public key if provided
     if (id) {
@@ -823,7 +812,7 @@ class Peer extends Service {
     const client = noise({
       initiator: true,
       prologue: Buffer.from(PROLOGUE),
-      // privateKey: derived.privkey,
+      // privateKey: _derived.privkey,
       verify: this._verifyNOISE.bind(this)
     });
 
@@ -875,7 +864,7 @@ class Peer extends Service {
     });
   }
 
-  _announceAlias (alias, origin = null, socket = null) {
+  _announceAlias (alias, origin = null, _socket = null) {
     const PACKET_PEER_ALIAS = Message.fromVector(['P2P_PEER_ALIAS', JSON.stringify({
       type: 'P2P_PEER_ALIAS',
       object: {
@@ -1540,7 +1529,7 @@ class Peer extends Service {
     // Store a unique actor for this inbound connection
     this._registerActor({ name: target });
 
-    const derived = this.identity.key.derive(FABRIC_KEY_DERIVATION_PATH);
+    const _derived = this.identity.key.derive(FABRIC_KEY_DERIVATION_PATH);
     if (this.settings.debug) {
       this.emit('debug', 'NOISE inbound: session key derived for handshake (private key not logged)');
     }
@@ -1548,7 +1537,7 @@ class Peer extends Service {
     // Create NOISE handler
     const handler = noise({
       prologue: Buffer.from(PROLOGUE),
-      // privateKey: derived.private.toString('hex'),
+      // privateKey: _derived.private.toString('hex'),
       verify: this._verifyNOISE.bind(this)
     });
 
@@ -2172,7 +2161,7 @@ class Peer extends Service {
     if (this._peersDb) {
       try {
         await this._peersDb.close();
-      } catch (e) { /* ignore */ }
+      } catch { /* ignore */ }
       this._peersDb = null;
     }
 
@@ -2191,7 +2180,7 @@ class Peer extends Service {
           // Some server states might not have address() but still need cleanup
           try {
             this.server.close(() => resolve());
-          } catch (error) {
+          } catch {
             // If close fails, it's likely already closed - resolve anyway
             resolve();
           }
