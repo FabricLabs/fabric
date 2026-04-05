@@ -292,8 +292,7 @@ class CLI extends FabricShell {
       }
     }
 
-    // Create and assign Peer instance as the `node` property
-    this.node = new Peer({
+    const peerOpts = {
       debug: this.settings.debug,
       network: this.settings.network,
       interface: this.settings.interface,
@@ -303,7 +302,13 @@ class CLI extends FabricShell {
       state: state,
       upnp: this.settings.upnp,
       key: this.identity.settings
-    });
+    };
+    if (Array.isArray(this.settings.flushChainAuthorizedPubkeys)) {
+      peerOpts.flushChainAuthorizedPubkeys = this.settings.flushChainAuthorizedPubkeys;
+    }
+
+    // Create and assign Peer instance as the `node` property
+    this.node = new Peer(peerOpts);
 
     if (this.settings.debug) {
       this.node.on('debug', (msg) => {
@@ -1586,12 +1591,13 @@ class CLI extends FabricShell {
 
   /**
    * Operator: send `P2P_FLUSH_CHAIN` to Fabric peers whose registry score is strictly greater than
-   * {@link Peer#settings.flushChainMinTrustedScore} (default 800). Federation / playnet testing.
+   * {@link Peer#settings.flushChainMinTrustedScore} (default 800). Peers only honor inbound flush when the
+   * sender's pubkey is listed in {@link Peer#settings.flushChainAuthorizedPubkeys} (configure in Fabric settings JSON).
    */
   _handleFlushChainCli (params) {
     const hex = params[1];
     if (!hex || !/^[0-9a-fA-F]{64}$/.test(String(hex).trim())) {
-      return this._appendError('Usage: flushchain <snapshotBlockHash-hex-64> [label] — sends P2P_FLUSH_CHAIN to peers with score > flushChainMinTrustedScore (default 800).');
+      return this._appendError('Usage: flushchain <snapshotBlockHash-hex-64> [label] — sends P2P_FLUSH_CHAIN to peers with score > flushChainMinTrustedScore; receivers must list authorized signer pubkeys (flushChainAuthorizedPubkeys).');
     }
     const snapshotBlockHash = String(hex).trim().toLowerCase();
     const label = params[2] ? String(params[2]) : undefined;

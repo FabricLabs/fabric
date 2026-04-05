@@ -43,6 +43,8 @@ function isNode () {
 let addon = null;
 let loadAttempted = false;
 let loadError = null;
+/** @type {string|null} Absolute path passed to `require()` when the addon loaded successfully */
+let loadedAddonPath = null;
 
 const SUPPORTED_ADDON_EXPORTS = Object.freeze([
   'doubleSha256',
@@ -115,6 +117,7 @@ function tryLoadAddon () {
   const fs = require('fs');
   const pathMod = require('path');
   let lastLoadError = null;
+  loadedAddonPath = null;
   for (const p of addonPathCandidates(pathMod, skipBuiltinRelease)) {
     try {
       if (!p) continue;
@@ -123,14 +126,17 @@ function tryLoadAddon () {
         continue;
       }
       addon = require(p);
+      loadedAddonPath = p;
       loadError = null;
       return;
     } catch (err) {
       lastLoadError = err;
       addon = null;
+      loadedAddonPath = null;
     }
   }
   addon = null;
+  loadedAddonPath = null;
   loadError = lastLoadError;
 }
 
@@ -158,18 +164,12 @@ function status () {
   if (isNativeBech32Callable()) {
     methods.push('bech32Encode', 'bech32Decode', 'segwitAddrEncode', 'segwitAddrDecode');
   }
-  let pathStr = null;
-  if (addon && isNode()) {
-    const pathMod = require('path');
-    pathStr = (typeof process !== 'undefined' && process.env && process.env.FABRIC_ADDON_PATH) ||
-      pathMod.join(__dirname, '..', 'build', 'Release', 'fabric.node');
-  }
   return {
     available: methods.length > 0,
     methods,
     nativeDoubleSha256OptIn: nativeDoubleSha256Enabled(),
     nativeBech32OptIn: nativeBech32Enabled(),
-    path: pathStr,
+    path: addon && isNode() ? loadedAddonPath : null,
     error: !addon && loadError ? formatAddonLoadError(loadError) : undefined
   };
 }
@@ -259,7 +259,12 @@ function segwitAddrEncode (hrp, version, program) {
   // Returns null without native — no JS segwit in this module; callers use {@link functions/sipa/segwit_addr}.
   if (!isNativeBech32Callable()) return null;
   const buf = Buffer.isBuffer(program) ? program : Buffer.from(program);
-  return addon.segwitAddrEncode(hrp, version, buf);
+  try {
+    const out = addon.segwitAddrEncode(hrp, version, buf);
+    return typeof out === 'string' ? out : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -270,9 +275,13 @@ function segwitAddrEncode (hrp, version, program) {
 function segwitAddrDecode (hrp, addr) {
   // Mirrors segwitAddrEncode: null means “use JS reference implementation.”
   if (!isNativeBech32Callable()) return null;
-  const r = addon.segwitAddrDecode(hrp, addr);
-  if (!r) return null;
-  return { version: r.version, program: Buffer.from(r.program) };
+  try {
+    const r = addon.segwitAddrDecode(hrp, addr);
+    if (r == null || typeof r !== 'object' || typeof r.version !== 'number' || r.program == null) return null;
+    return { version: r.version, program: Buffer.from(r.program) };
+  } catch {
+    return null;
+  }
 }
 
 module.exports = {

@@ -17,6 +17,12 @@ function createPeer (overrides = {}) {
   return new Peer(Object.assign({}, BASE_SETTINGS, overrides));
 }
 
+/** Inbound FLUSH_CHAIN requires {@link Peer#settings.flushChainAuthorizedPubkeys}; use the peer's own pubkey for self-signed tests. */
+function authorizeFlushChain (peer) {
+  peer.settings.flushChainAuthorizedPubkeys = [peer.key.pubkey];
+  return peer;
+}
+
 describe('Peer P2P_FLUSH_CHAIN', function () {
   const peers = [];
 
@@ -217,6 +223,20 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     assert.strictEqual(seen.object.tip, '1234');
   });
 
+  it('_handleFabricMessage does not emit chainSyncRequest on parse failure', function () {
+    const peer = createPeer();
+    peers.push(peer);
+    let seen = false;
+    const warns = [];
+    peer.once('chainSyncRequest', () => { seen = true; });
+    peer.on('warning', (w) => warns.push(String(w)));
+    const msg = Message.fromVector(['P2P_CHAIN_SYNC_REQUEST', '{']);
+    msg.signWithKey(peer.key);
+    peer._handleFabricMessage(msg.toBuffer(), { name: '127.0.0.1:10b' }, null);
+    assert.strictEqual(seen, false);
+    assert.ok(warns.some((w) => w.includes('CHAIN_SYNC_REQUEST parse failed')));
+  });
+
   it('_handleFabricMessage warns when FLUSH_CHAIN sender has no verified key', function () {
     const peer = createPeer();
     peers.push(peer);
@@ -228,8 +248,39 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     assert.ok(warns.some((w) => w.includes('no verified peer key')));
   });
 
+  it('_handleFabricMessage warns when flushChainAuthorizedPubkeys is empty', function () {
+    const peer = createPeer({ flushChainMinTrustedScore: 800, flushChainAuthorizedPubkeys: [] });
+    peers.push(peer);
+    const warns = [];
+    peer.on('warning', (w) => warns.push(String(w)));
+    peer.peers['127.0.0.1:empty'] = { publicKey: peer.key.pubkey };
+    peer._state.peers = { x: { id: 'x', address: '127.0.0.1:empty', score: 900 } };
+    peer._addressToId['127.0.0.1:empty'] = 'x';
+    const msg = Message.fromVector(['P2P_FLUSH_CHAIN', JSON.stringify({ snapshotBlockHash: 'a'.repeat(64) })]);
+    msg.signWithKey(peer.key);
+    peer._handleFabricMessage(msg.toBuffer(), { name: '127.0.0.1:empty' }, null);
+    assert.ok(warns.some((w) => w.includes('flushChainAuthorizedPubkeys is empty')));
+  });
+
+  it('_handleFabricMessage ignores FLUSH_CHAIN when sender pubkey is not authorized', function () {
+    const peer = createPeer({
+      flushChainMinTrustedScore: 800,
+      flushChainAuthorizedPubkeys: ['0'.repeat(66)]
+    });
+    peers.push(peer);
+    const warns = [];
+    peer.on('warning', (w) => warns.push(String(w)));
+    peer.peers['127.0.0.1:na'] = { publicKey: peer.key.pubkey };
+    peer._state.peers = { x: { id: 'x', address: '127.0.0.1:na', score: 900 } };
+    peer._addressToId['127.0.0.1:na'] = 'x';
+    const msg = Message.fromVector(['P2P_FLUSH_CHAIN', JSON.stringify({ snapshotBlockHash: 'a'.repeat(64) })]);
+    msg.signWithKey(peer.key);
+    peer._handleFabricMessage(msg.toBuffer(), { name: '127.0.0.1:na' }, null);
+    assert.ok(warns.some((w) => w.includes('not in flushChainAuthorizedPubkeys')));
+  });
+
   it('_handleFabricMessage handles FLUSH_CHAIN score, parse, and hash guards', function () {
-    const peer = createPeer({ debug: true, flushChainMinTrustedScore: 800 });
+    const peer = authorizeFlushChain(createPeer({ debug: true, flushChainMinTrustedScore: 800 }));
     peers.push(peer);
     const warns = [];
     const debugs = [];
@@ -257,7 +308,7 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
   });
 
   it('_handleFabricMessage handles FlushChain friendly wire name like P2P_FLUSH_CHAIN', function () {
-    const peer = createPeer({ flushChainMinTrustedScore: 800 });
+    const peer = authorizeFlushChain(createPeer({ flushChainMinTrustedScore: 800 }));
     peers.push(peer);
     peer.peers['127.0.0.1:14'] = { publicKey: peer.key.pubkey };
     peer._state.peers = { t2: { id: 't2', address: '127.0.0.1:14', score: 900 } };
@@ -272,7 +323,7 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
   });
 
   it('_handleFabricMessage emits flushChain and relays trusted peers on valid FLUSH_CHAIN', function () {
-    const peer = createPeer({ flushChainMinTrustedScore: 800 });
+    const peer = authorizeFlushChain(createPeer({ flushChainMinTrustedScore: 800 }));
     peers.push(peer);
     peer.peers['127.0.0.1:13'] = { publicKey: peer.key.pubkey };
     peer._state.peers = { trusted: { id: 'trusted', address: '127.0.0.1:13', score: 900 } };

@@ -75,6 +75,18 @@ function peerDebugDerivedPublicSummary (keyInstance) {
 }
 
 /**
+ * Lowercase hex for comparing {@link P2P_FLUSH_CHAIN} authorized pubkeys.
+ * @private
+ */
+function normalizePeerPubkeyHex (pk) {
+  if (pk == null) return '';
+  if (Buffer.isBuffer(pk)) return pk.toString('hex').toLowerCase();
+  const s = String(pk).trim();
+  const h = (s.startsWith('0x') || s.startsWith('0X')) ? s.slice(2) : s;
+  return h.toLowerCase();
+}
+
+/**
  * @classdesc P2P node: TCP/NOISE sessions, gossip, and relay of {@link Message} (AMP) frames. Extends {@link Service}
  * (hence {@link Actor}). Opcode and receipt semantics must stay aligned with <strong>@fabric/http</strong> and Hub when you add types —
  * see {@link Message} wire vs friendly names and <code>constants</code> opcodes.
@@ -154,7 +166,12 @@ class Peer extends Service {
         overLimitPenalty: 22
       },
       /** Inbound {@link P2P_FLUSH_CHAIN}: require sender registry score strictly greater than this (same threshold for relay targets). */
-      flushChainMinTrustedScore: 800
+      flushChainMinTrustedScore: 800,
+      /**
+       * Inbound {@link P2P_FLUSH_CHAIN}: hex strings (or Buffers) of **allowed signer pubkeys** — required in addition to a verified
+       * peer key and score &gt; {@link Peer#settings.flushChainMinTrustedScore}. Empty array rejects every flush request until configured.
+       */
+      flushChainAuthorizedPubkeys: []
     }, config);
 
     // Network Internals
@@ -698,6 +715,7 @@ class Peer extends Service {
   /**
    * Sign and send `P2P_FLUSH_CHAIN` to all connected peers with registry score &gt; threshold.
    * Body JSON: `{ snapshotBlockHash, network?, label? }`.
+   * Peers only act on inbound flush if the sender's pubkey is listed in their {@link Peer#settings.flushChainAuthorizedPubkeys}.
    * @param {Object} object
    * @returns {number} number of sockets written
    */
@@ -1082,8 +1100,11 @@ class Peer extends Service {
         {
           const raw = messageDataToString(message.data);
           const pr = tryParseWireJsonBody(raw);
-          const object = pr.ok ? pr.value : {};
-          this.emit('chainSyncRequest', { message, origin, socket, object });
+          if (!pr.ok || pr.value === null || typeof pr.value !== 'object' || Array.isArray(pr.value)) {
+            this.emit('warning', `[FABRIC:PEER] CHAIN_SYNC_REQUEST parse failed: ${pr.ok ? 'invalid body' : pr.error.message}`);
+            break;
+          }
+          this.emit('chainSyncRequest', { message, origin, socket, object: pr.value });
         }
         break;
       case 'P2P_FLUSH_CHAIN':
@@ -1092,6 +1113,21 @@ class Peer extends Service {
         const rec = this.peers[origin.name];
         if (!rec || !rec.publicKey) {
           this.emit('warning', `[FABRIC:PEER] FLUSH_CHAIN ignored: no verified peer key for ${origin.name}`);
+          break;
+        }
+        const authList = this.settings.flushChainAuthorizedPubkeys;
+        if (!Array.isArray(authList) || authList.length === 0) {
+          this.emit('warning', `[FABRIC:PEER] FLUSH_CHAIN ignored: flushChainAuthorizedPubkeys is empty (configure allowed signer pubkeys)`);
+          break;
+        }
+        const senderHex = normalizePeerPubkeyHex(rec.publicKey);
+        const allowed = new Set();
+        for (const e of authList) {
+          const h = normalizePeerPubkeyHex(e);
+          if (h) allowed.add(h);
+        }
+        if (!senderHex || !allowed.has(senderHex)) {
+          this.emit('warning', `[FABRIC:PEER] FLUSH_CHAIN ignored: sender pubkey not in flushChainAuthorizedPubkeys`);
           break;
         }
         const threshold = Number(this.settings.flushChainMinTrustedScore) || 800;
@@ -1109,7 +1145,11 @@ class Peer extends Service {
           break;
         }
         const object = prFc.value;
-        const snap = object && object.snapshotBlockHash != null ? String(object.snapshotBlockHash).trim() : '';
+        if (object === null || typeof object !== 'object' || Array.isArray(object)) {
+          this.emit('warning', '[FABRIC:PEER] FLUSH_CHAIN body must be a JSON object');
+          break;
+        }
+        const snap = object.snapshotBlockHash != null ? String(object.snapshotBlockHash).trim() : '';
         if (!/^[0-9a-fA-F]{64}$/.test(snap)) {
           this.emit('warning', '[FABRIC:PEER] FLUSH_CHAIN missing or invalid snapshotBlockHash (expect 64 hex)');
           break;
@@ -1169,10 +1209,10 @@ class Peer extends Service {
           const rawGm = messageDataToString(message.data);
           const prGm = tryParseWireJsonBody(rawGm);
           if (!prGm.ok) {
-            this.emit('error', `Broken content body: ${prGm.error.message}`);
-          } else {
-            this._handleGenericMessage(prGm.value, origin, socket, message);
+            this.emit('warning', `[FABRIC:PEER] Generic message parse failed: ${prGm.error.message}`);
+            break;
           }
+          this._handleGenericMessage(prGm.value, origin, socket, message);
         }
 
         break;
@@ -1399,7 +1439,7 @@ class Peer extends Service {
           object: {
             created: now
           }
-        })]);
+        })]).signWithKey(this.key);
 
         this.connections[origin.name]._writeFabric(P2P_PONG.toBuffer());
         break;
@@ -1837,7 +1877,7 @@ class Peer extends Service {
         object: {
           created: now
         }
-      })]);
+      })]).signWithKey(this.key);
 
       // At most one unanswered PING per connection so burst P2P_PONG cannot inflate registry score
       // (FLUSH_CHAIN trust gate uses _registryScoreForConnectionAddress).

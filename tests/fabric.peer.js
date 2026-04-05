@@ -657,12 +657,12 @@ describe('@fabric/core/types/peer', function () {
         });
         peer._handleGenericMessage({ type: 'UNKNOWN_TYPE', object: {} }, { name: 'o' });
       });
-      it('emits error on broken JSON body in Fabric message path', function (done) {
+      it('emits warning on broken JSON body in Fabric message path', function (done) {
         const peer = new Peer({ listen: false, peersDb: null });
         const msg = Message.fromVector(['GenericMessage', 'not json']);
         msg.signWithKey(peer.key);
-        peer.once('error', (m) => {
-          assert.ok(/Broken content body/.test(m));
+        peer.once('warning', (m) => {
+          assert.ok(/Generic message parse failed/.test(m));
           done();
         });
         peer._handleFabricMessage(msg.toBuffer(), { name: 'o' });
