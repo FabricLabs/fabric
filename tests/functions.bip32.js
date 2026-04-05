@@ -101,6 +101,14 @@ describe('@fabric/core/functions/bip32', function () {
     assert.throws(() => root.derive(1.5), /Invalid index/);
   });
 
+  it('derive rejects non-decimal string indices', function () {
+    const root = fromSeed(SEED_A);
+    assert.throws(() => root.derive('0x10'), /Invalid index/);
+    assert.throws(() => root.derive('1e2'), /Invalid index/);
+    const child = root.derive('10');
+    assert.ok(Buffer.isBuffer(child.privateKey));
+  });
+
   it('derivePath requires master node for absolute paths', function () {
     const root = fromSeed(SEED_A);
     const child = root.derive(0);

@@ -1035,6 +1035,8 @@ class Bitcoin extends Service {
 
   _keyNetworkNameForWif () {
     const n = this._normalizeChainName(this.settings.network || 'mainnet');
+    // Playnet runs against regtest-style bitcoind (WIF/bech32 prefixes match regtest, not mainnet).
+    if (n === 'playnet') return 'regtest';
     if (n === 'signet' || n === 'testnet4') return 'testnet';
     if (n === 'mainnet' || n === 'testnet' || n === 'regtest') return n;
     return 'mainnet';
@@ -1752,6 +1754,13 @@ class Bitcoin extends Service {
     const maxSteps = (typeof this.settings.flushChainMaxSteps === 'number' && this.settings.flushChainMaxSteps > 0)
       ? this.settings.flushChainMaxSteps
       : 100000;
+
+    try {
+      await this._makeRPCRequest('getblockheader', [hex]);
+    } catch (err) {
+      const msg = err && err.message ? String(err.message) : String(err);
+      throw new Error(`flushChainToSnapshot: snapshot block not known to node (${msg})`);
+    }
 
     let cursor = String(await this._makeRPCRequest('getbestblockhash', [])).trim().toLowerCase();
     let reachable = false;

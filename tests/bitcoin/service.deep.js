@@ -949,7 +949,7 @@ describe('@fabric/core/services/bitcoin (deep coverage)', function () {
     const TIP = 'a'.repeat(64);
     const FOREIGN = 'f'.repeat(64);
 
-    it('preflight rejects snapshot hash not on the active chain', async function () {
+    it('preflight rejects snapshot hash unknown to the node', async function () {
       const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
       btc._makeRPCRequest = async function (method, params) {
         if (method === 'getbestblockhash') return TIP;
@@ -964,6 +964,27 @@ describe('@fabric/core/services/bitcoin (deep coverage)', function () {
       };
       await assert.rejects(
         () => btc.flushChainToSnapshot(FOREIGN),
+        /snapshot block not known/
+      );
+    });
+
+    it('rejects snapshot hash not an ancestor of the active tip', async function () {
+      const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
+      const SIDE = 'd'.repeat(64);
+      btc._makeRPCRequest = async function (method, params) {
+        if (method === 'getbestblockhash') return TIP;
+        if (method === 'getblockheader') {
+          const h = params[0];
+          if (h === TIP) return { previousblockhash: MID };
+          if (h === MID) return { previousblockhash: SNAP };
+          if (h === SNAP) return {};
+          if (h === SIDE) return { previousblockhash: 'e'.repeat(64) };
+          throw new Error('unknown header');
+        }
+        throw new Error(method);
+      };
+      await assert.rejects(
+        () => btc.flushChainToSnapshot(SIDE),
         /not an ancestor/
       );
     });

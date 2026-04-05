@@ -107,7 +107,15 @@ class HDNode {
   }
 
   derive (index) {
-    const i = typeof index === 'number' ? index : Number(index);
+    let i;
+    if (typeof index === 'number') {
+      i = index;
+    } else if (typeof index === 'string') {
+      if (!/^\d+$/.test(index)) throw new Error('Invalid index');
+      i = Number(index);
+    } else {
+      i = Number(index);
+    }
     if (!Number.isInteger(i) || i < 0 || i > 0xffffffff) throw new Error('Invalid index');
     const hardened = i >= HARDENED_OFFSET;
 

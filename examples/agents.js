@@ -1001,6 +1001,11 @@ class Distributor extends Service {
           } catch {
             /* ignore */
           }
+          const orphaned = this._state.content.queue.length;
+          if (orphaned > 0 && this._state.cores.length === 0) {
+            this.emit('error', `All worker threads exited with ${orphaned} job(s) still queued (work will not run until restart).`);
+            if (this._state.status === 'STARTED') this._state.status = 'PAUSED';
+          }
           this._dispatchWork();
         });
       }
