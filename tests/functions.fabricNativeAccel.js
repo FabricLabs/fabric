@@ -7,10 +7,11 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const fabricNativeAccel = require('../functions/fabricNativeAccel');
-const modPath = path.join(__dirname, '..', 'functions', 'fabricNativeAccel.js');
-const mockAddonPath = path.join(__dirname, '..', 'fixtures', 'native', 'fabricNativeAccelMockAddon.js');
-const badShaAddonPath = path.join(__dirname, '..', 'fixtures', 'native', 'fabricNativeAccelBadDoubleSha.js');
-const throwEmptyAddonPath = path.join(__dirname, '..', 'fixtures', 'native', 'fabricNativeAccelThrowEmpty.js');
+// Resolve from this module so paths stay correct if the test file moves (e.g. tests/ vs tests/functions/).
+const modPath = require.resolve('../functions/fabricNativeAccel.js');
+const mockAddonPath = require.resolve('../fixtures/native/fabricNativeAccelMockAddon.js');
+const badShaAddonPath = require.resolve('../fixtures/native/fabricNativeAccelBadDoubleSha.js');
+const throwEmptyAddonPath = require.resolve('../fixtures/native/fabricNativeAccelThrowEmpty.js');
 
 /**
  * Child env for native-accel subprocess tests: drop all inherited FABRIC_* vars
