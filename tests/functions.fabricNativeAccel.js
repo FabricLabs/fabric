@@ -16,12 +16,19 @@ const throwEmptyAddonPath = path.join(__dirname, '..', 'fixtures', 'native', 'fa
  * Child env for native-accel subprocess tests: drop all inherited FABRIC_* vars
  * (CI / developer shells often set FABRIC_SKIP_NATIVE_ADDON, FABRIC_NATIVE_BECH32, etc.)
  * then apply explicit overrides so behavior matches the test intent.
+ *
+ * Also strips coverage / inspector hooks (e.g. c8's NODE_OPTIONS) so `node -e` subprocesses
+ * load the same modules as a bare Node process — GitHub `report:coverage` inherits those
+ * and they can break isolated addon mock runs.
  */
 function addonSubprocessEnv (overrides = {}) {
   const env = { ...process.env };
   for (const k of Object.keys(env)) {
     if (k.startsWith('FABRIC_')) delete env[k];
   }
+  delete env.NODE_OPTIONS;
+  delete env.NODE_V8_COVERAGE;
+  delete env.V8_COVERAGE;
   for (const [k, v] of Object.entries(overrides)) {
     if (v == null) delete env[k];
     else env[k] = String(v);
@@ -216,24 +223,35 @@ describe('functions/fabricNativeAccel', function () {
     const script = `
       const m = require(${JSON.stringify(modPath)});
       const enc = m.bech32Encode('id', Buffer.from([0, 1, 2]), 'bech32m');
-      if (enc == null || typeof enc !== 'string') process.exit(5);
+      if (enc == null || typeof enc !== 'string') { console.error('bech32Encode'); process.exit(5); }
       const dec = m.bech32Decode(enc);
-      if (dec == null || dec.spec !== 'bech32m') process.exit(2);
+      if (dec == null) { console.error('bech32Decode null'); process.exit(2); }
+      if (dec.spec !== 'bech32m') { console.error('bech32Decode spec', dec.spec); process.exit(2); }
       const program = Buffer.alloc(20, 3);
       const addr = m.segwitAddrEncode('tb', 0, program);
-      if (!addr) process.exit(3);
+      if (!addr) { console.error('segwitAddrEncode'); process.exit(3); }
       const back = m.segwitAddrDecode('tb', addr);
-      if (!back || !back.program.equals(program)) process.exit(4);
+      if (!back) { console.error('segwitAddrDecode null'); process.exit(4); }
+      if (!back.program.equals(program)) {
+        console.error('program mismatch', back.program.length, program.length);
+        process.exit(4);
+      }
       process.stdout.write('ok');
     `;
-    execFileSync(process.execPath, ['-e', script], {
-      encoding: 'utf8',
-      env: addonSubprocessEnv({
-        FABRIC_NATIVE_BECH32: '1',
-        FABRIC_ADDON_PATH_STRICT: '1',
-        FABRIC_ADDON_PATH: mockAddonPath
-      })
-    });
+    try {
+      execFileSync(process.execPath, ['-e', script], {
+        encoding: 'utf8',
+        env: addonSubprocessEnv({
+          FABRIC_NATIVE_BECH32: '1',
+          FABRIC_ADDON_PATH_STRICT: '1',
+          FABRIC_ADDON_PATH: mockAddonPath
+        })
+      });
+    } catch (err) {
+      const stderr = err.stderr != null ? String(err.stderr) : '';
+      const status = err.status != null ? err.status : '';
+      assert.fail(`subprocess failed (status=${status}) stderr=${stderr} ${err.message || err}`);
+    }
   });
 
   it('bech32Decode returns null when native addon returns null', function () {

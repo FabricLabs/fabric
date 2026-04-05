@@ -277,8 +277,10 @@ function segwitAddrDecode (hrp, addr) {
   if (!isNativeBech32Callable()) return null;
   try {
     const r = addon.segwitAddrDecode(hrp, addr);
-    if (r == null || typeof r !== 'object' || typeof r.version !== 'number' || r.program == null) return null;
-    return { version: r.version, program: Buffer.from(r.program) };
+    if (r == null || typeof r !== 'object' || r.program == null) return null;
+    const ver = Number(r.version);
+    if (!Number.isInteger(ver) || ver < 0 || ver > 16) return null;
+    return { version: ver, program: Buffer.from(r.program) };
   } catch {
     return null;
   }
