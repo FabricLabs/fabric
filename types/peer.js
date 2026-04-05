@@ -701,7 +701,13 @@ class Peer extends Service {
   /**
    * Sign and send `P2P_FLUSH_CHAIN` to all connected peers with registry score &gt; threshold.
    * Body JSON: `{ snapshotBlockHash, network?, label? }`.
-   * Peers only act on inbound flush if the sender's pubkey is listed in their {@link Peer#settings.flushChainAuthorizedPubkeys}.
+   *
+   * **Receivers** (see `P2P_FLUSH_CHAIN` handler) require **both**:
+   * 1. Sender pubkey in {@link Peer#settings.flushChainAuthorizedPubkeys} (non-empty allowlist), and
+   * 2. Registry score above {@link Peer#settings.flushChainMinTrustedScore}.
+   * Registry score bumps on `P2P_PONG` only when that pong answers an outbound ping on the same
+   * connection (`_fabricPingOutstanding`), so unsolicited pongs cannot inflate trust alone.
+   *
    * @param {Object} object
    * @returns {number} number of sockets written
    */

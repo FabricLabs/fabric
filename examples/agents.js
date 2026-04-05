@@ -1141,7 +1141,9 @@ class Distributor extends Service {
     const start = Date.now();
 
     while (true) {
-      const queueEmpty = this._state.content.queue.length === 0;
+      const q = this._state.content.queue.length;
+      if (this._state.cores.length === 0 && q > 0) return false;
+      const queueEmpty = q === 0;
       const workersBusy = this._state.cores.some((core) => core && core.__busy);
 
       if (queueEmpty && !workersBusy) return true;

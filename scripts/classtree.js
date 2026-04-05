@@ -92,7 +92,9 @@ function buildMap (roots) {
           if (inherits[name] !== ext) {
             console.warn(`[classtree] duplicate class ${name}: was ${inherits[name]}, now ${ext} (${rel})`);
           } else {
-            console.warn(`[classtree] duplicate class ${name}: same parent ${ext} (${rel}) — keeping first`);
+            const first = firstSeen.get(name);
+            const other = first && first.file !== rel ? ` — duplicate declaration in ${rel} (first: ${first.file})` : ` (${rel})`;
+            console.warn(`[classtree] duplicate class ${name}: same parent ${ext}${other} — keeping first`);
           }
           continue;
         }
