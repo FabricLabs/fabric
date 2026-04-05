@@ -23,6 +23,8 @@ const { sha256 } = require('@noble/hashes/sha2.js');
 /**
  * Deterministic bit stream for {@link Key#bit}. Replaces the `arbitrary` npm package, whose published
  * `main` is a browserify bundle (`docs/dist/index.js`) that breaks under webpack (nested `require`).
+ * Internal helper — omitted from published API / dev docs.
+ * @ignore
  */
 function createKeyBitGenerator (seedQ) {
   const seed = Buffer.alloc(4);

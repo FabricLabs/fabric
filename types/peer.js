@@ -165,12 +165,9 @@ class Peer extends Service {
         defaultCreditCost: 1,
         overLimitPenalty: 22
       },
-      /** Inbound {@link P2P_FLUSH_CHAIN}: require sender registry score strictly greater than this (same threshold for relay targets). */
+      // Inbound P2P_FLUSH_CHAIN: sender registry score must be strictly greater than this (relay uses same threshold).
       flushChainMinTrustedScore: 800,
-      /**
-       * Inbound {@link P2P_FLUSH_CHAIN}: hex strings (or Buffers) of **allowed signer pubkeys** — required in addition to a verified
-       * peer key and score &gt; {@link Peer#settings.flushChainMinTrustedScore}. Empty array rejects every flush request until configured.
-       */
+      // Inbound P2P_FLUSH_CHAIN: allowed signer pubkeys (hex/Buffers); empty = reject all until configured.
       flushChainAuthorizedPubkeys: []
     }, config);
 
@@ -1035,7 +1032,7 @@ class Peer extends Service {
     // Have we seen this message before?
     if (this.messages[hash]) {
       // this.emit('debug', `Duplicate message: ${hash}`);
-      return;
+      return this;
     }
 
     this._rememberWireHash(hash);
@@ -1063,7 +1060,7 @@ class Peer extends Service {
       const signer = new Key({ public: peerRecord.publicKey });
       if (!message.verifyWithKey(signer)) {
         this.emit('warning', `[FABRIC:PEER] Invalid message signature from ${peerKey}`);
-        return;
+        return this;
       }
     }
 

@@ -18,6 +18,8 @@ env:
   FABRIC_SKIP_NODE_GYP: '1'
   # GitHub Actions: opt composite actions into Node 24 before the Node 20 runner removal.
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  # c8 + full mocha tree is memory-heavy; avoid SIGKILL on smaller ubuntu-latest runners.
+  NODE_OPTIONS: --max-old-space-size=6144
 jobs:
   test:
     # Single OS: self-hosted Gitea runners typically provide ubuntu-latest in Docker;

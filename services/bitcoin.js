@@ -127,9 +127,9 @@ class Bitcoin extends Service {
       rpcport: 8332, // RPC port
       interval: 60000, // 10 * 60 * 1000, // every 10 minutes, write a checkpoint
       verbosity: 2,
-      /** When true, flushChainToSnapshot is allowed on mainnet (dangerous). */
+      // When true, flushChainToSnapshot is allowed on mainnet (dangerous).
       flushChainAllowUnsafeNetworks: false,
-      /** Safety cap for repeated `invalidateblock` steps when rewinding to a snapshot tip. */
+      // Safety cap for invalidateblock steps when rewinding to a snapshot tip.
       flushChainMaxSteps: 100000
     }, settings);
 

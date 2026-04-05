@@ -154,7 +154,7 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     assert.ok(relayWrites.length >= 1, 'relayFrom should write ChatMessage to non-origin edges');
   });
 
-  it('rejects messages with invalid signature when sender pubkey is known', function (done) {
+  it('rejects messages with invalid signature when sender pubkey is known', function () {
     const hub = mockHub();
     const expectedSigner = new Key();
     const attacker = new Key();
@@ -166,12 +166,18 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     const msg = Message.fromVector(['GenericMessage', JSON.stringify(content)]);
     msg.signWithKey(attacker);
 
-    hub.once('error', (err) => {
-      assert.ok(String(err).includes('Invalid') || String(err).includes('signature'), String(err));
-      done();
+    let warned = false;
+    hub.once('warning', (w) => {
+      const s = String(w);
+      if (/Invalid message signature|signature/i.test(s)) warned = true;
     });
+    let chats = 0;
+    hub.on('chat', () => { chats++; });
 
     hub._handleFabricMessage(msg.toBuffer(), { name: addr }, null);
+
+    assert.ok(warned, 'expected warning when signature does not match stored peer pubkey');
+    assert.strictEqual(chats, 0, 'forged GenericMessage must not dispatch chat');
   });
 
   it('drops duplicate wire envelopes (reliable dedup for mesh floods)', function () {

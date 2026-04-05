@@ -14,7 +14,11 @@ const fabricCanonicalJson = require('../functions/fabricCanonicalJson');
 
 const BEACON_EPOCH_SIGNING_KIND = 'BeaconEpoch';
 
-/** @deprecated Use {@link module:functions/fabricCanonicalJson} — alias kept for API stability */
+/**
+ * @deprecated Use {@link module:functions/fabricCanonicalJson} — alias kept for API stability.
+ * Omitted from published API / dev docs (Hub / integration use only).
+ * @ignore
+ */
 const stableStringify = fabricCanonicalJson;
 
 /**
@@ -29,8 +33,10 @@ function jsonSafe (value) {
 
 /**
  * UTF-8 string that federation members sign for a beacon epoch (same bytes for all validators).
+ * Omitted from published API / dev docs (Hub / integration use only).
  * @param {object} epochPayload — clock, blockHash, height, balance, balanceSats, timestamp, …
  * @returns {string}
+ * @ignore
  */
 function signingStringForBeaconEpoch (epochPayload) {
   const safe = jsonSafe(epochPayload);
@@ -43,8 +49,10 @@ function signingStringForBeaconEpoch (epochPayload) {
 
 /**
  * SHA-256 hex digest of {@link signingStringForBeaconEpoch} (public commitment).
+ * Omitted from published API / dev docs (Hub / integration use only).
  * @param {object} epochPayload
  * @returns {string}
+ * @ignore
  */
 function epochCommitmentDigestHex (epochPayload) {
   const s = signingStringForBeaconEpoch(epochPayload);
@@ -54,12 +62,14 @@ function epochCommitmentDigestHex (epochPayload) {
 /**
  * Verify threshold Schnorr signatures over the **same** message buffer used when signing
  * (`Key.signSchnorr(messageBuffer)`), without requiring a full {@link Federation} instance.
+ * Omitted from published API / dev docs (Hub / integration use only).
  *
  * @param {Buffer} messageBuffer — typically `Buffer.from(signingStringForBeaconEpoch(epoch), 'utf8')`
  * @param {object} witness
  * @param {string[]} validatorPubkeys — compressed secp256k1 pubkeys, hex
  * @param {number} [threshold=1]
  * @returns {boolean}
+ * @ignore
  */
 function verifyFederationWitnessOnMessage (messageBuffer, witness, validatorPubkeys, threshold = 1) {
   if (!witness || !witness.signatures || typeof witness.signatures !== 'object') return false;
@@ -85,8 +95,10 @@ function verifyFederationWitnessOnMessage (messageBuffer, witness, validatorPubk
 
 /**
  * Setup-phase manifest schema (v1): program identity + allowed traffic + optional federation policy.
+ * Omitted from published API / dev docs (Hub / integration use only).
  * @param {object} raw
  * @returns {object}
+ * @ignore
  */
 function parseDistributedManifestV1 (raw) {
   if (!raw || typeof raw !== 'object') return { ok: false, error: 'manifest must be an object' };
