@@ -7,6 +7,13 @@ engines:
     exclude_paths:
       - "src/**"
       - "native/**"
+  # Lizard defaults (e.g. ccn-medium threshold 8) flag many intentional branches in demos and diagnostics.
+  # Library code is still analyzed; tune thresholds in the Codacy UI if further reduction is needed
+  # (Lizard has no repo-local config file on Codacy).
+  lizard:
+    exclude_paths:
+      - "examples/**"
+      - "types/ecc.selftest.js"
 exclude_paths:
   - "docs/**"
   - "assets/**"

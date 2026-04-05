@@ -247,173 +247,6 @@ const ecc = {
   }
 };
 
-// Development-only self-test to mirror bip32/src/testecc.js and pinpoint failures in-browser.
-// Runs only in environments with a window global (i.e. browser bundles).
-function debugEccSelfTest () {
-  const h = (hex) => Buffer.from(hex, 'hex');
-  const checks = [];
-  const check = (name, cond) => {
-    const ok = !!cond;
-    checks.push({ name, ok });
-    if (!ok) console.error('[fabric/ecc] self-test FAILED:', name);
-  };
-
-  try {
-    check('isPoint(valid G)', ecc.isPoint(h('0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798')));
-    check('isPoint(invalid)', !ecc.isPoint(h('030000000000000000000000000000000000000000000000000000000000000005')));
-    check('isPrivate(sample)', ecc.isPrivate(h('79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798')));
-    check('isPrivate(order-1)', ecc.isPrivate(h('fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140')));
-    check('isPrivate(0)', !ecc.isPrivate(h('0000000000000000000000000000000000000000000000000000000000000000')));
-    check('isPrivate(order)', !ecc.isPrivate(h('fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141')));
-    check('isPrivate(order+1)', !ecc.isPrivate(h('fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364142')));
-
-    const pFromScalar = ecc.pointFromScalar(
-      h('b1121e4088a66a28f5b6b0f5844943ecd9f610196d7bb83b25214b60452c09af'),
-      true
-    );
-    check(
-      'pointFromScalar',
-      pFromScalar &&
-        Buffer.from(pFromScalar).equals(
-          h('02b07ba9dca9523b7ef4bd97703d43d20399eb698e194704791a25ce77a400df99')
-        )
-    );
-
-    if (ecc.xOnlyPointAddTweak) {
-      check(
-        'xOnlyPointAddTweak(null result)',
-        ecc.xOnlyPointAddTweak(
-          h('79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'),
-          h('fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140')
-        ) === null
-      );
-
-      let xOnlyRes = ecc.xOnlyPointAddTweak(
-        h('1617d38ed8d8657da4d4761e8057bc396ea9e4b9d29776d4be096016dbd2509b'),
-        h('a8397a935f0dfceba6ba9618f6451ef4d80637abf4e6af2669fbc9de6a8fd2ac')
-      );
-      check(
-        'xOnlyPointAddTweak(vector1)',
-        xOnlyRes &&
-          Buffer.from(xOnlyRes.xOnlyPubkey).equals(
-            h('e478f99dab91052ab39a33ea35fd5e6e4933f4d28023cd597c9a1f6760346adf')
-          ) &&
-          xOnlyRes.parity === 1
-      );
-
-      xOnlyRes = ecc.xOnlyPointAddTweak(
-        h('2c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991'),
-        h('823c3cd2142744b075a87eade7e1b8678ba308d566226a0056ca2b7a76f86b47')
-      );
-      // No explicit assertion in bip32's testEcc for this one; just ensure it doesn't throw/return null.
-      check('xOnlyPointAddTweak(vector2 non-null)', xOnlyRes !== null);
-    }
-
-    const added = ecc.pointAddScalar(
-      h('0379be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'),
-      h('0000000000000000000000000000000000000000000000000000000000000003'),
-      true
-    );
-    check(
-      'pointAddScalar',
-      added &&
-        Buffer.from(added).equals(
-          h('02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5')
-        )
-    );
-
-    const privAdded = ecc.privateAdd(
-      h('fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd036413e'),
-      h('0000000000000000000000000000000000000000000000000000000000000002')
-    );
-    check(
-      'privateAdd',
-      privAdded &&
-        Buffer.from(privAdded).equals(
-          h('fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140')
-        )
-    );
-
-    if (ecc.privateNegate) {
-      check(
-        'privateNegate(1)',
-        Buffer.from(
-          ecc.privateNegate(
-            h('0000000000000000000000000000000000000000000000000000000000000001')
-          )
-        ).equals(
-          h('fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140')
-        )
-      );
-      check(
-        'privateNegate(order-2)',
-        Buffer.from(
-          ecc.privateNegate(
-            h('fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd036413e')
-          )
-        ).equals(
-          h('0000000000000000000000000000000000000000000000000000000000000003')
-        )
-      );
-      check(
-        'privateNegate(sample)',
-        Buffer.from(
-          ecc.privateNegate(
-            h('b1121e4088a66a28f5b6b0f5844943ecd9f610196d7bb83b25214b60452c09af')
-          )
-        ).equals(
-          h('4eede1bf775995d70a494f0a7bb6bc11e0b8cccd41cce8009ab1132c8b0a3792')
-        )
-      );
-    }
-
-    const sig = ecc.sign(
-      h('5e9f0a0d593efdcf78ac923bc3313e4e7d408d574354ee2b3288c0da9fbba6ed'),
-      h('fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140')
-    );
-    check(
-      'sign',
-      Buffer.from(sig).equals(
-        h('54c4a33c6423d689378f160a7ff8b61330444abb58fb470f96ea16d99d4a2fed07082304410efa6b2943111b6a4e0aaa7b7db55a07e9861d1fb3cb1f421044a5')
-      )
-    );
-    check(
-      'verify',
-      ecc.verify(
-        h('5e9f0a0d593efdcf78ac923bc3313e4e7d408d574354ee2b3288c0da9fbba6ed'),
-        h('0379be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'),
-        sig
-      )
-    );
-
-    if (ecc.signSchnorr) {
-      const schnorrSig = ecc.signSchnorr(
-        h('7e2d58d8b3bcdf1abadec7829054f90dda9805aab56c77333024b9d0a508b75c'),
-        h('c90fdaa22168c234c4c6628b80dc1cd129024e088a67cc74020bbea63b14e5c9'),
-        h('c87aa53824b4d7ae2eb035a2b5bbbccc080e76cdc6d1692c4b0b62d798e6d906')
-      );
-      check(
-        'signSchnorr',
-        Buffer.from(schnorrSig).equals(
-          h('5831aaeed7b44bb74e5eab94ba9d4294c49bcf2a60728d8b4c200f50dd313c1bab745879a5ad954a72c45a91c3a51d3c7adea98d82f8481e0e1e03674a6f3fb7')
-        )
-      );
-      check(
-        'verifySchnorr',
-        ecc.verifySchnorr(
-          h('7e2d58d8b3bcdf1abadec7829054f90dda9805aab56c77333024b9d0a508b75c'),
-          h('dd308afec5777e13121fa72b9cc1b7cc0139715309b086c960e18fd969774eb8'),
-          schnorrSig
-        )
-      );
-    }
-
-    console.log('[fabric/ecc] self-test results:', checks);
-  } catch (e) {
-    console.error('[fabric/ecc] self-test threw:', e && e.message, e);
-  }
-}
-
 if (typeof window !== 'undefined') {
   // Skip under JSDOM (e.g. Sensemaker webpack bundler sets global.window); self-test is for real browsers.
   // Use window.navigator — Node may set global.window without a global `navigator`.
@@ -423,7 +256,11 @@ if (typeof window !== 'undefined') {
   const globalScope = typeof globalThis !== 'undefined' ? globalThis : window;
   if (!skipJsdom && !globalScope.__FABRIC_ECC_SELFTESTED__) {
     globalScope.__FABRIC_ECC_SELFTESTED__ = true;
-    debugEccSelfTest();
+    try {
+      require('./ecc.selftest')(ecc);
+    } catch (e) {
+      console.error('[fabric/ecc] self-test load failed:', e && e.message, e);
+    }
   }
 }
 
