@@ -37,6 +37,7 @@
 const {
   FIXTURE_SEED
 } = require('../constants');
+const { tryParsePersistedJson } = require('../functions/wireJson');
 
 // Dependencies
 const fs = require('fs');
@@ -304,14 +305,36 @@ class Environment extends Entity {
     return value;
   }
 
+  /**
+   * True when `host` is `name:port` with exactly one colon and a numeric port (IPv4 or hostname).
+   * Bare IPv6 literals (`::1`, `2001:db8::1`) have multiple colons — do not treat as host:port.
+   * @param {string} host
+   * @returns {boolean}
+   */
+  _hasSingleNumericPortSuffix (host) {
+    const s = String(host).trim();
+    const first = s.indexOf(':');
+    const last = s.lastIndexOf(':');
+    if (first === -1 || first !== last) return false;
+    const tail = s.slice(last + 1);
+    return /^\d+$/.test(tail);
+  }
+
   _normalizeRPCHost (value) {
     if (!value) return '127.0.0.1';
     const host = String(value).trim();
     if (!host) return '127.0.0.1';
 
-    // bitcoin.conf can express rpcbind/rpcconnect as host:port.
-    if (host.includes(':') &amp;&amp; !host.startsWith('[') &amp;&amp; host.split(':').length === 2) {
-      return host.split(':')[0];
+    // Bracketed IPv6 (e.g. rpcconnect=[::1]:8332): host only, port via _extractRPCPort.
+    if (host.startsWith('[')) {
+      const close = host.indexOf(']');
+      if (close !== -1) return host.slice(0, close + 1);
+      return host;
+    }
+
+    // bitcoin.conf: `host:port` only when a single colon separates a numeric port (not bare IPv6).
+    if (this._hasSingleNumericPortSuffix(host)) {
+      return host.slice(0, host.lastIndexOf(':'));
     }
 
     return host;
@@ -321,9 +344,15 @@ class Environment extends Entity {
     if (!value) return null;
     const endpoint = String(value).trim();
     if (!endpoint.includes(':')) return null;
-    const parts = endpoint.split(':');
-    const maybePort = Number(parts[parts.length - 1]);
-    return Number.isFinite(maybePort) ? maybePort : null;
+    if (endpoint.startsWith('[')) {
+      const close = endpoint.indexOf(']');
+      if (close === -1) return null;
+      const tail = endpoint.slice(close + 1);
+      const m = /^:(\d+)$/.exec(tail);
+      return m ? Number(m[1]) : null;
+    }
+    if (!this._hasSingleNumericPortSuffix(endpoint)) return null;
+    return Number(endpoint.slice(endpoint.lastIndexOf(':') + 1));
   }
 
   _defaultRPCPortForNetwork (network = 'mainnet') {
@@ -605,7 +634,10 @@ class Environment extends Entity {
       const data = this.readWallet();
 
       try {
-        const input = JSON.parse(data);
+        const text = typeof data === 'string' ? data : String(data ?? '');
+        const pr = tryParsePersistedJson(text);
+        if (!pr.ok) throw pr.error;
+        const input = pr.value;
 
         if (!input.object || !input.object.xprv) {
           throw new Error(`Corrupt or out-of-date wallet: ${this.settings.path}`);
@@ -764,10 +796,15 @@ module.exports = Environment;
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="Bond.html">Bond</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Contract.html">Contract</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
@@ -787,12 +824,14 @@ module.exports = Environment;
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
+      <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
@@ -800,6 +839,7 @@ module.exports = Environment;
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
+    <h3><a href="global.html">Global</a></h3>
   </nav>
   <br class="clear" />
   <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>

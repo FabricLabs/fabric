@@ -211,36 +211,11 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 </dd>
 </dl>
 
-## Members
-
-<dl>
-<dt><a href="#flushChainMinTrustedScore">flushChainMinTrustedScore</a></dt>
-<dd><p>Inbound <a href="P2P_FLUSH_CHAIN">P2P_FLUSH_CHAIN</a>: require sender registry score strictly greater than this (same threshold for relay targets).</p>
-</dd>
-<dt><a href="#flushChainAllowUnsafeNetworks">flushChainAllowUnsafeNetworks</a></dt>
-<dd><p>When true, flushChainToSnapshot is allowed on mainnet (dangerous).</p>
-</dd>
-<dt><a href="#flushChainMaxSteps">flushChainMaxSteps</a></dt>
-<dd><p>Safety cap for repeated <code>invalidateblock</code> steps when rewinding to a snapshot tip.</p>
-</dd>
-</dl>
-
 ## Constants
 
 <dl>
-<dt><del><a href="#stableStringify">stableStringify</a></del></dt>
-<dd></dd>
 <dt><del><a href="#Text">Text</a></del></dt>
 <dd></dd>
-</dl>
-
-## Functions
-
-<dl>
-<dt><a href="#createKeyBitGenerator">createKeyBitGenerator()</a></dt>
-<dd><p>Deterministic bit stream for <a href="Key#bit">Key#bit</a>. Replaces the <code>arbitrary</code> npm package, whose published
-<code>main</code> is a browserify bundle (<code>docs/dist/index.js</code>) that breaks under webpack (nested <code>require</code>).</p>
-</dd>
 </dl>
 
 <a name="Actor"></a>
@@ -2082,6 +2057,7 @@ Interact with the user's Environment.
     * [new Environment([settings])](#new_Environment_new)
     * [._getDefaultBitcoinDatadir([configPath])](#Environment+_getDefaultBitcoinDatadir) ⇒ <code>Object</code>
     * [._parseConfigValue(value)](#Environment+_parseConfigValue) ⇒ <code>\*</code>
+    * [._hasSingleNumericPortSuffix(host)](#Environment+_hasSingleNumericPortSuffix) ⇒ <code>boolean</code>
     * [._toFabricSettings(bitcoinConf)](#Environment+_toFabricSettings) ⇒ <code>Object</code>
     * [.readVariable(name)](#Environment+readVariable) ⇒ <code>String</code>
     * [.setWallet(wallet, force)](#Environment+setWallet) ⇒ [<code>Environment</code>](#Environment)
@@ -2121,6 +2097,18 @@ Parse configuration value to appropriate type
 | Param | Type | Description |
 | --- | --- | --- |
 | value | <code>String</code> | The raw configuration value |
+
+<a name="Environment+_hasSingleNumericPortSuffix"></a>
+
+### environment.\_hasSingleNumericPortSuffix(host) ⇒ <code>boolean</code>
+True when `host` is `name:port` with exactly one colon and a numeric port (IPv4 or hostname).
+Bare IPv6 literals (`::1`, `2001:db8::1`) have multiple colons — do not treat as host:port.
+
+**Kind**: instance method of [<code>Environment</code>](#Environment)  
+
+| Param | Type |
+| --- | --- |
+| host | <code>string</code> | 
 
 <a name="Environment+_toFabricSettings"></a>
 
@@ -5529,6 +5517,7 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [._announceLocalDocumentsToPeer(peerAddress)](#Peer+_announceLocalDocumentsToPeer)
     * [._publishDocument(documentId, [content], [rateSats])](#Peer+_publishDocument)
     * [._handleDocumentRequestWire(message, origin, socket)](#Peer+_handleDocumentRequestWire)
+    * [._startFabricPingKeepalive(socket, encryptWrite)](#Peer+_startFabricPingKeepalive)
     * [.start()](#Peer+start)
     * [.stop()](#Peer+stop)
     * [.listen()](#Peer+listen) ⇒ [<code>Peer</code>](#Peer)
@@ -5767,6 +5756,7 @@ Best-effort registry score for a live connection key (`host:port`), using mapped
 ### peer.sendFlushChainToTrustedPeers(object) ⇒ <code>number</code>
 Sign and send `P2P_FLUSH_CHAIN` to all connected peers with registry score &gt; threshold.
 Body JSON: `{ snapshotBlockHash, network?, label? }`.
+Peers only act on inbound flush if the sender's pubkey is listed in their [Peer#settings.flushChainAuthorizedPubkeys](Peer#settings.flushChainAuthorizedPubkeys).
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: <code>number</code> - number of sockets written  
@@ -5934,6 +5924,19 @@ request to other peers (conditional relay).
 | message | [<code>Message</code>](#Message) | 
 | origin | <code>Object</code> | 
 | socket | <code>\*</code> | 
+
+<a name="Peer+_startFabricPingKeepalive"></a>
+
+### peer.\_startFabricPingKeepalive(socket, encryptWrite)
+Periodic P2P_PING and track expected P2P_PONG replies so registry score cannot be
+self-inflated by unsolicited pongs (see FLUSH_CHAIN trust gate).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| socket | <code>\*</code> | — connection object (stores `_fabricPingOutstanding`, `_keepalive`) |
+| encryptWrite | <code>\*</code> | — NOISE encrypt stream with `.write(Buffer)` (`client.encrypt` / `handler.encrypt`) |
 
 <a name="Peer+start"></a>
 
@@ -6309,6 +6312,7 @@ Parse an Object into a corresponding Fabric state.
     * [._announceLocalDocumentsToPeer(peerAddress)](#Peer+_announceLocalDocumentsToPeer)
     * [._publishDocument(documentId, [content], [rateSats])](#Peer+_publishDocument)
     * [._handleDocumentRequestWire(message, origin, socket)](#Peer+_handleDocumentRequestWire)
+    * [._startFabricPingKeepalive(socket, encryptWrite)](#Peer+_startFabricPingKeepalive)
     * [.start()](#Peer+start)
     * [.stop()](#Peer+stop)
     * [.listen()](#Peer+listen) ⇒ [<code>Peer</code>](#Peer)
@@ -6547,6 +6551,7 @@ Best-effort registry score for a live connection key (`host:port`), using mapped
 ### peer.sendFlushChainToTrustedPeers(object) ⇒ <code>number</code>
 Sign and send `P2P_FLUSH_CHAIN` to all connected peers with registry score &gt; threshold.
 Body JSON: `{ snapshotBlockHash, network?, label? }`.
+Peers only act on inbound flush if the sender's pubkey is listed in their [Peer#settings.flushChainAuthorizedPubkeys](Peer#settings.flushChainAuthorizedPubkeys).
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: <code>number</code> - number of sockets written  
@@ -6714,6 +6719,19 @@ request to other peers (conditional relay).
 | message | [<code>Message</code>](#Message) | 
 | origin | <code>Object</code> | 
 | socket | <code>\*</code> | 
+
+<a name="Peer+_startFabricPingKeepalive"></a>
+
+### peer.\_startFabricPingKeepalive(socket, encryptWrite)
+Periodic P2P_PING and track expected P2P_PONG replies so registry score cannot be
+self-inflated by unsolicited pongs (see FLUSH_CHAIN trust gate).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| socket | <code>\*</code> | — connection object (stores `_fabricPingOutstanding`, `_keepalive`) |
+| encryptWrite | <code>\*</code> | — NOISE encrypt stream with `.write(Buffer)` (`client.encrypt` / `handler.encrypt`) |
 
 <a name="Peer+start"></a>
 
@@ -11494,30 +11512,6 @@ Closes the connection to the ZMQ publisher.
 Deprecated 2021-11-06 — use [FabricState](FabricState) (<code>types/state</code>). <code>Scribe</code> was merged into <code>State</code>.
 
 **Kind**: global class  
-<a name="flushChainMinTrustedScore"></a>
-
-## flushChainMinTrustedScore
-Inbound [P2P_FLUSH_CHAIN](P2P_FLUSH_CHAIN): require sender registry score strictly greater than this (same threshold for relay targets).
-
-**Kind**: global variable  
-<a name="flushChainAllowUnsafeNetworks"></a>
-
-## flushChainAllowUnsafeNetworks
-When true, flushChainToSnapshot is allowed on mainnet (dangerous).
-
-**Kind**: global variable  
-<a name="flushChainMaxSteps"></a>
-
-## flushChainMaxSteps
-Safety cap for repeated `invalidateblock` steps when rewinding to a snapshot tip.
-
-**Kind**: global variable  
-<a name="stableStringify"></a>
-
-## ~~stableStringify~~
-***Use [module:functions/fabricCanonicalJson](module:functions/fabricCanonicalJson) — alias kept for API stability***
-
-**Kind**: global constant  
 <a name="Text"></a>
 
 ## ~~Text~~
@@ -11934,10 +11928,3 @@ Join a list with an Oxford comma (delegates to [module:functions/oxfordJoin](mod
 | --- | --- |
 | list | <code>Array.&lt;string&gt;</code> | 
 
-<a name="createKeyBitGenerator"></a>
-
-## createKeyBitGenerator()
-Deterministic bit stream for [Key#bit](Key#bit). Replaces the `arbitrary` npm package, whose published
-`main` is a browserify bundle (`docs/dist/index.js`) that breaks under webpack (nested `require`).
-
-**Kind**: global function  

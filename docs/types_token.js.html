@@ -35,7 +35,7 @@
 
 // Dependencies
 const bitcoin = require('bitcoinjs-lib');
-const schnorr = require('bip-schnorr');
+const { tryParseWireJson } = require('../functions/wireJson');
 
 // Fabric Types
 const Key = require('./key');
@@ -150,9 +150,11 @@ class Token {
     if (parts.length !== 2) return null;
     try {
       const payloadStr = Token.base64UrlDecode(parts[0]);
-      const payload = JSON.parse(payloadStr);
+      const pr = tryParseWireJson(payloadStr);
+      if (!pr.ok) return null;
+      const payload = pr.value;
       const sig = Token.base64UrlDecodeToBuffer(parts[1]);
-      if (!payload || !payload.iss || payload.exp == null) return null;
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload) || !payload.iss || payload.exp == null) return null;
       if (Date.now() / 1000 > payload.exp) return null;
       const ourIss = verificationKey.public ? verificationKey.public.encodeCompressed('hex') : verificationKey.keypair.getPublic(true, 'hex');
       if (payload.iss !== ourIss) return null;
@@ -220,15 +222,20 @@ class Token {
   }
 
   sign () {
-    // Sign the capability using the private key
-    const hash = bitcoin.crypto.sha256(this.capability);
-    this.signature = schnorr.sign(this.issuer.privateKey, hash);
+    const hash = bitcoin.crypto.sha256(Buffer.from(this.capability, 'utf8'));
+    if (!this.issuer || typeof this.issuer.signSchnorrHash !== 'function') {
+      throw new Error('Token.sign requires issuer Key with private material');
+    }
+    this.signature = this.issuer.signSchnorrHash(hash);
   }
 
   verify () {
-    // Verify the signature using the public key
-    const hash = bitcoin.crypto.sha256(this.capability);
-    return schnorr.verify(this.issuer.publicKey, hash, this.signature);
+    const hash = bitcoin.crypto.sha256(Buffer.from(this.capability, 'utf8'));
+    if (!this.issuer || typeof this.issuer.verifySchnorrHash !== 'function') {
+      return false;
+    }
+    if (!this.signature) return false;
+    return this.issuer.verifySchnorrHash(hash, this.signature);
   }
 
   add (other) {
@@ -261,10 +268,15 @@ module.exports = Token;
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="Bond.html">Bond</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Contract.html">Contract</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
@@ -284,12 +296,14 @@ module.exports = Token;
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
+      <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
@@ -297,6 +311,7 @@ module.exports = Token;
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
+    <h3><a href="global.html">Global</a></h3>
   </nav>
   <br class="clear" />
   <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>

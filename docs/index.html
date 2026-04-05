@@ -71,7 +71,7 @@
         <h2>Quick Start</h2>
         <p>See also <a href="QUICKSTART.md"><code>QUICKSTART.md</code></a> for up-to-date instructions.</p>
         <ol start="0">
-          <li><code>nvm use 24.14.1</code> (install <a href="https://nvm.sh"><code>nvm</code></a> if needed)</li>
+          <li><code>nvm use 24.14.1</code> (install <a href="https://nvm.sh"><code>nvm</code></a> if needed; matches <code>.nvmrc</code> / <code>package.json</code> engines)</li>
           <li>From a clone of this repo: <code>npm install</code> (or <code>npm install -g @fabric/core</code> to put <code>fabric</code> on your <code>PATH</code>)</li>
           <li>(optional) <code>fabric setup</code> to generate a master key and local config</li>
           <li>(optional) <code>fabric keygen</code> to generate a new master key without saving to disk (ephemeral)</li>
@@ -140,7 +140,7 @@
           </thead>
           <tbody>
             <tr>
-              <td>Node <strong>22.14.x</strong>, <code>npm ci</code>, <strong><code>npm run ci</code></strong></td>
+              <td>Node <strong>24.14.1</strong> (see <code>.nvmrc</code>), <code>npm ci</code>, <strong><code>npm run ci</code></strong></td>
               <td><a href="docs/PRODUCTION.md"><code>docs/PRODUCTION.md</code></a></td>
             </tr>
             <tr>
@@ -392,8 +392,6 @@ console.log('Signature (hex):', signature.toString('hex'));
             </tr>
           </tbody>
         </table>
-        <h3>Downstream repositories (integration order)</h3>
-        <p>Treat <strong><a href="https://github.com/FabricLabs/hub.fabric.pub">hub.fabric.pub</a></strong> (<code>@fabric/hub</code>) as the canonical Hub; align <strong><code>@fabric/core</code></strong> and <strong><code>@fabric/http</code></strong> on the same branch or tag before bumping Hub. <strong><a href="https://github.com/FabricLabs/sensemaker">Sensemaker</a></strong> subclasses Hub in <code>services/sensemaker.js</code> and pins <code>@fabric/hub</code> from branch <code>feature/sensemaker</code>; production deployment is <strong><a href="https://sensemaker.io">sensemaker.io</a></strong>. Prefer consolidating Hub APIs and WebSocket/RPC behavior in Hub first, then re-point Sensemaker and fix real-time (streaming completions and <code>_handleWebSocketMessage</code> parity with <code>@fabric/http</code> binary <code>JSONCall</code> / <code>Message</code> frames). Optional <strong><code>hub-clean</code></strong> trees are legacy (older Node / <code>package.json</code>); do not fork new work from them.</p>
         <h2>Roadmap &amp; doc backlog</h2>
         <p>Short list of documentation improvements (edit here as items land):</p>
         <ul>
@@ -416,6 +414,224 @@ console.log('Signature (hex):', signature.toString('hex'));
 
 
 
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/actor.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">Base <strong>Actor</strong> type for Fabric: JSON-shaped state, JSON Patch commits, and a
+            content-derived <strong>id</strong>.
+
+            <p><strong>State</strong> — <code>_state.content</code> is observed with <code>fast-json-patch</code>.
+              <a href="Actor.html#commit">Actor#commit</a> turns observer diffs into Actor#history entries and emits <code>commit</code> plus
+              <code>message</code> with <code>type: 'ActorMessage'</code> / <code>data.type: 'Changes'</code>.
+            </p>
+
+            <p><strong>Identity</strong> — Actor#id is a SHA256 digest (hex) of the 32-byte preimage buffer;
+              Actor#preimage is SHA256(UTF-8) of the pretty-printed <a href="Actor.html#toGenericMessage">Actor#toGenericMessage</a>
+              <code>{ type, object }</code> with sorted keys (<a href="Actor.html#toObject">Actor#toObject</a>). Implementation uses Hash256.compute.
+              Treat <code>id</code> as a <strong>content address</strong> for that state shape, not an arbitrary application string hash.
+            </p>
+
+            <p><strong>Relationship to <a href="Message.html">Message</a></strong> — <code>Message</code> extends <code>Actor</code> and implements
+              <strong>AMP</strong> (wire headers, opcodes, Schnorr <code>Fabric/Message</code>). Downstream apps that only need a stable
+              storage key should not label that key <code>Actor#id</code> unless it is produced by this type.
+            </p>
+
+            <p>Narrative docs: <strong>DEVELOPERS.md</strong> (section <em>Actor and Message</em>) and this file’s class JSDoc are
+              kept in sync; <code>npm run make:docs</code> embeds DEVELOPERS.md as the HTML home page, while Actor.html is generated
+              from here.</p>
+          </div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/datastore.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">Ledger-adjacent <a href="Store.html">Store</a> extension. Consolidation with <a href="Store.html">Store</a>
+            is planned (single persistence surface + optional ledger facet); left as-is until that
+            design is scheduled.</div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_datastore.js.html">types/datastore.js</a>, <a href="types_datastore.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
   </div>
   <nav>
     <h2><a href="index.html">Home</a></h2>
@@ -423,10 +639,15 @@ console.log('Signature (hex):', signature.toString('hex'));
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="Bond.html">Bond</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Contract.html">Contract</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
@@ -446,12 +667,14 @@ console.log('Signature (hex):', signature.toString('hex'));
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
+      <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
@@ -459,6 +682,7 @@ console.log('Signature (hex):', signature.toString('hex'));
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
+    <h3><a href="global.html">Global</a></h3>
   </nav>
   <br class="clear" />
   <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>

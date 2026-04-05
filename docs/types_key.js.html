@@ -51,10 +51,47 @@ const {
 // Node Modules
 const crypto = require('crypto');
 const EventEmitter = require('events').EventEmitter;
+const { sha256 } = require('@noble/hashes/sha2.js');
 
-// Deterministic Random
-// TODO: remove
-const Generator = require('arbitrary').default.Generator;
+/**
+ * Deterministic bit stream for {@link Key#bit}. Replaces the `arbitrary` npm package, whose published
+ * `main` is a browserify bundle (`docs/dist/index.js`) that breaks under webpack (nested `require`).
+ * Internal helper — omitted from published API / dev docs.
+ * @ignore
+ */
+function createKeyBitGenerator (seedQ) {
+  const seed = Buffer.alloc(4);
+  seed.writeUInt32BE(seedQ >>> 0, 0);
+  let counter = 0;
+  let pool = Buffer.from(sha256(Buffer.concat([
+    Buffer.from('fabric/key/bitgen/v1', 'utf8'),
+    seed
+  ])));
+  let offset = 0;
+
+  return {
+    next: {
+      bits (n) {
+        let out = 0;
+        for (let i = 0; i &lt; n; i++) {
+          if ((offset >> 3) >= pool.length) {
+            const tail = Buffer.alloc(4);
+            tail.writeUInt32BE(counter >>> 0, 0);
+            counter = (counter + 1) >>> 0;
+            pool = Buffer.from(sha256(Buffer.concat([pool, tail])));
+            offset = 0;
+          }
+          const byteIndex = offset >> 3;
+          const bitInByte = offset &amp; 7;
+          offset++;
+          const bit = (pool[byteIndex] >> (7 - bitInByte)) &amp; 1;
+          out = (out &lt;&lt; 1) | bit;
+        }
+        return out;
+      }
+    }
+  };
+}
 
 // Dependencies
 // TODO: remove all external dependencies
@@ -116,19 +153,32 @@ function secpPointToRawBytes (point, compressed = true) {
   throw new Error('Unsupported secp256k1 Point API');
 }
 
-const base58 = require('bs58check');
+const { encodeCheck, decodeCheck } = require('../functions/base58');
+const bip39 = require('../functions/bip39');
+const bip32Module = require('../functions/bip32');
+const BIP32 = bip32Module.default;
+const BIP32_DEFAULT_NETWORK = bip32Module.DEFAULT_NETWORK;
 const payments = require('bitcoinjs-lib/src/payments');
 
 // Fabric Dependencies
 const Actor = require('./actor');
 const Hash256 = require('./hash256');
 
-// Simple Key Management
-const BIP32 = require('bip32').default;
-const bip39 = require('bip39');
-
 // NOTE: see also @fabric/passport
 // expect a bech32m identifier using prefix "id"
+
+function bip32NetworkFromKeySettings (settings) {
+  const name = settings.network === 'regtest' ? 'regtest' : settings.network;
+  const raw = settings.networks[name] || settings.networks.mainnet;
+  return {
+    messagePrefix: raw.messagePrefix,
+    bech32: raw.bech32,
+    bip32: raw.bip32,
+    pubKeyHash: raw.pubKeyHash,
+    scriptHash: raw.scriptHash,
+    wif: raw.wif
+  };
+}
 
 /**
  * Represents a cryptographic key.
@@ -250,7 +300,7 @@ class Key extends EventEmitter {
     switch (this._mode) {
       case 'FROM_MNEMONIC':
         seed = bip39.mnemonicToSeedSync(this.settings.mnemonic, this.settings.passphrase);
-        root = this.bip32.fromSeed(seed);
+        root = this.bip32.fromSeed(seed, bip32NetworkFromKeySettings(this.settings));
         this.seed = this.settings.seed;
         this.xprv = root.toBase58();
         this.xpub = root.neutered().toBase58();
@@ -261,7 +311,7 @@ class Key extends EventEmitter {
       case 'FROM_SEED':
         // TODO: allow setting of raw seed (deprecates passing a mnemonic in the `seed` property)
         seed = bip39.mnemonicToSeedSync(this.settings.seed, this.settings.passphrase);
-        root = this.bip32.fromSeed(seed);
+        root = this.bip32.fromSeed(seed, bip32NetworkFromKeySettings(this.settings));
         this.seed = this.settings.seed;
         this.xprv = root.toBase58();
         this.xpub = root.neutered().toBase58();
@@ -269,7 +319,7 @@ class Key extends EventEmitter {
         this._point = secpPointFromPrivateKey(root.privateKey);
         break;
       case 'FROM_WIF':
-        const decoded = base58.decode(this.settings.wif);
+        const decoded = decodeCheck(this.settings.wif);
         const version = decoded[0];
         const privateKey = decoded.slice(1, 33);
         const isCompressed = decoded.length === 34 &amp;&amp; decoded[33] === 0x01;
@@ -304,7 +354,7 @@ class Key extends EventEmitter {
         this.mnemonic = bip39.generateMnemonic();
         // TODO: set property `seed` as the actual derived seed, not the seed phrase
         const interim = bip39.mnemonicToSeedSync(this.mnemonic);
-        this.master = this.bip32.fromSeed(interim);
+        this.master = this.bip32.fromSeed(interim, bip32NetworkFromKeySettings(this.settings));
         this.xprv = this.master.toBase58();
         this.xpub = this.master.neutered().toBase58();
         this._point = secpPointFromPrivateKey(this.master.privateKey);
@@ -344,7 +394,7 @@ class Key extends EventEmitter {
     // TODO: consider using sha256(masterprivkey) or sha256(sha256(...))?
     this._starseed = Hash256.digest(this.pubkeyhash).toString('hex');
     this.q = parseInt(this._starseed.substring(0, 4), 16);
-    this.generator = new Generator(this.q);
+    this.generator = createKeyBitGenerator(this.q);
 
     this['@data'] = {
       type: 'Key',
@@ -380,7 +430,7 @@ class Key extends EventEmitter {
     const mnemonic = bip39.entropyToMnemonic(seed);
     const seedBuffer = bip39.mnemonicToSeedSync(mnemonic);
     const bip32 = new BIP32(ecc);
-    const master = bip32.fromSeed(seedBuffer);
+    const master = bip32.fromSeed(seedBuffer, BIP32_DEFAULT_NETWORK);
     const key = new Key();
     key.seed = mnemonic;
     key.private = master.privateKey.toString('hex');
@@ -857,12 +907,7 @@ class Key extends EventEmitter {
       Buffer.from([0x01])
     ]);
 
-    const firstHash = crypto.createHash('sha256').update(payload).digest();
-    const secondHash = crypto.createHash('sha256').update(firstHash).digest();
-    const checksum = secondHash.slice(0, 4);
-    const combined = Buffer.concat([payload, checksum]);
-
-    return base58.encode(combined);
+    return encodeCheck(payload);
   }
 
   toBitcoinAddress () {
@@ -894,10 +939,15 @@ module.exports = Key;
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="Bond.html">Bond</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Contract.html">Contract</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
@@ -917,12 +967,14 @@ module.exports = Key;
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
+      <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
@@ -930,6 +982,7 @@ module.exports = Key;
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
+    <h3><a href="global.html">Global</a></h3>
   </nav>
   <br class="clear" />
   <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>
