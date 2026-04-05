@@ -29,7 +29,6 @@ function jsonSafe (value) {
 
 /**
  * UTF-8 string that federation members sign for a beacon epoch (same bytes for all validators).
- * @private
  * @param {object} epochPayload — clock, blockHash, height, balance, balanceSats, timestamp, …
  * @returns {string}
  */
@@ -44,7 +43,6 @@ function signingStringForBeaconEpoch (epochPayload) {
 
 /**
  * SHA-256 hex digest of {@link signingStringForBeaconEpoch} (public commitment).
- * @private
  * @param {object} epochPayload
  * @returns {string}
  */
@@ -56,7 +54,6 @@ function epochCommitmentDigestHex (epochPayload) {
 /**
  * Verify threshold Schnorr signatures over the **same** message buffer used when signing
  * (`Key.signSchnorr(messageBuffer)`), without requiring a full {@link Federation} instance.
- * @private
  *
  * @param {Buffer} messageBuffer — typically `Buffer.from(signingStringForBeaconEpoch(epoch), 'utf8')`
  * @param {object} witness
@@ -88,7 +85,6 @@ function verifyFederationWitnessOnMessage (messageBuffer, witness, validatorPubk
 
 /**
  * Setup-phase manifest schema (v1): program identity + allowed traffic + optional federation policy.
- * @private
  * @param {object} raw
  * @returns {object}
  */

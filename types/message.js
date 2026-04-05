@@ -95,13 +95,15 @@ const taggedHash = require('../functions/taggedHash');
  * - **Wire** (`wireType`, {@link Message#type}): SCREAMING_SNAKE_CASE strings from opcode
  *   decode (`fromBuffer`, `toVector` first element). Matches AMP / `constants.js` style.
  * - **Friendly** ({@link Message#friendlyType}, `toObject().type`): PascalCase (or historical
- *   labels) for JSON and human-facing APIs — see {@link FRIENDLY_TYPE_BY_WIRE}.
+ *   labels) for JSON and human-facing APIs — see {@link Message.FRIENDLY_TYPE_BY_WIRE}.
  *
  * Encode accepts **either** name via merged {@link Message#types} (canonical wire + legacy friendly).
  * {@link Message.wireTypeFromFriendly} / {@link Message.friendlyTypeFromWire} convert between them.
  *
  * Opcode → wire string order matches the historical `type` switch: when multiple labels share one
- * opcode (e.g. P2P vs Lightning), **first listed** in {@link WIRE_TYPE_DECODE_ORDER} wins.
+ * opcode (e.g. P2P vs Lightning), **first listed** in {@link Message.WIRE_TYPE_DECODE_ORDER} wins.
+ * Those maps are **not** global exports: use {@link Message} statics `WIRE_TYPE_DECODE_ORDER` and
+ * `FRIENDLY_TYPE_BY_WIRE`.
  */
 /** @private */
 const WIRE_TYPE_DECODE_ORDER = Object.freeze([

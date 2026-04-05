@@ -38,6 +38,16 @@ describe('@fabric/core/types/cli (non-render guards)', function () {
     assert.strictEqual(cli.settings.bitcoin.managed, true);
   });
 
+  it('forwards flushChainMinTrustedScore from CLI settings to the Peer node', function () {
+    const cli = new CLI({
+      render: false,
+      bitcoin: { enable: false },
+      lightning: { enable: false },
+      flushChainMinTrustedScore: 650
+    });
+    assert.strictEqual(cli.node.settings.flushChainMinTrustedScore, 650);
+  });
+
   it('does not touch UI elements during _syncUnspent when render=false', async function () {
     const cli = Object.create(CLI.prototype);
     cli.settings = { render: false };

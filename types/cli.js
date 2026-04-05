@@ -306,6 +306,12 @@ class CLI extends FabricShell {
     if (Array.isArray(this.settings.flushChainAuthorizedPubkeys)) {
       peerOpts.flushChainAuthorizedPubkeys = this.settings.flushChainAuthorizedPubkeys;
     }
+    if (this.settings.flushChainMinTrustedScore != null) {
+      const t = Number(this.settings.flushChainMinTrustedScore);
+      if (Number.isFinite(t)) {
+        peerOpts.flushChainMinTrustedScore = t;
+      }
+    }
 
     // Create and assign Peer instance as the `node` property
     this.node = new Peer(peerOpts);

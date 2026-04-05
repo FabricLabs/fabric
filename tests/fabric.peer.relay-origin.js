@@ -21,11 +21,11 @@ describe('Peer P2P_RELAY origin guard', function () {
       return origRelay.apply(this, arguments);
     };
     try {
-      assert.doesNotThrow(() => peer._handleFabricMessage(buf, null, null));
-      assert.doesNotThrow(() => peer._handleFabricMessage(buf, undefined, null));
-      assert.doesNotThrow(() => peer._handleFabricMessage(buf, {}, null));
-      assert.doesNotThrow(() => peer._handleFabricMessage(buf, { name: undefined }, null));
-      assert.strictEqual(relayCalls, 0, 'invalid origins must not invoke relayFrom');
+      assert.strictEqual(peer._handleFabricMessage(buf, null, null), peer);
+      assert.strictEqual(peer._handleFabricMessage(buf, undefined, null), peer);
+      assert.strictEqual(peer._handleFabricMessage(buf, {}, null), peer);
+      assert.strictEqual(peer._handleFabricMessage(buf, { name: undefined }, null), peer);
+      assert.strictEqual(relayCalls, 0, 'invalid origins must skip P2P_RELAY (no relayFrom)');
     } finally {
       peer.relayFrom = origRelay;
     }

@@ -1062,7 +1062,7 @@ class Peer extends Service {
     if (peerRecord && peerRecord.publicKey) {
       const signer = new Key({ public: peerRecord.publicKey });
       if (!message.verifyWithKey(signer)) {
-        this.emit('error', `Invalid message signature from ${peerKey}`);
+        this.emit('warning', `[FABRIC:PEER] Invalid message signature from ${peerKey}`);
         return;
       }
     }
@@ -1169,7 +1169,10 @@ class Peer extends Service {
             break;
           }
           const parsed = prDp.value;
-          if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) break;
+          if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            this.emit('warning', '[FABRIC:PEER] DOCUMENT_PUBLISH body must be a JSON object');
+            break;
+          }
           const docId = parsed.id;
           if (!docId) break;
           const purchaseHash = purchaseContentHashHex(docId, parsed);
@@ -1212,7 +1215,12 @@ class Peer extends Service {
             this.emit('warning', `[FABRIC:PEER] Generic message parse failed: ${prGm.error.message}`);
             break;
           }
-          this._handleGenericMessage(prGm.value, origin, socket, message);
+          const bodyGm = prGm.value;
+          if (bodyGm === null || typeof bodyGm !== 'object' || Array.isArray(bodyGm)) {
+            this.emit('warning', '[FABRIC:PEER] Generic message body must be a JSON object');
+            break;
+          }
+          this._handleGenericMessage(bodyGm, origin, socket, message);
         }
 
         break;
