@@ -12,10 +12,16 @@ const mockAddonPath = path.join(__dirname, '..', 'fixtures', 'native', 'fabricNa
 const badShaAddonPath = path.join(__dirname, '..', 'fixtures', 'native', 'fabricNativeAccelBadDoubleSha.js');
 const throwEmptyAddonPath = path.join(__dirname, '..', 'fixtures', 'native', 'fabricNativeAccelThrowEmpty.js');
 
-/** Child env without inherited FABRIC_SKIP_NATIVE_ADDON (CI often sets it). */
+/**
+ * Child env for native-accel subprocess tests: drop all inherited FABRIC_* vars
+ * (CI / developer shells often set FABRIC_SKIP_NATIVE_ADDON, FABRIC_NATIVE_BECH32, etc.)
+ * then apply explicit overrides so behavior matches the test intent.
+ */
 function addonSubprocessEnv (overrides = {}) {
   const env = { ...process.env };
-  delete env.FABRIC_SKIP_NATIVE_ADDON;
+  for (const k of Object.keys(env)) {
+    if (k.startsWith('FABRIC_')) delete env[k];
+  }
   for (const [k, v] of Object.entries(overrides)) {
     if (v == null) delete env[k];
     else env[k] = String(v);
@@ -210,8 +216,9 @@ describe('functions/fabricNativeAccel', function () {
     const script = `
       const m = require(${JSON.stringify(modPath)});
       const enc = m.bech32Encode('id', Buffer.from([0, 1, 2]), 'bech32m');
+      if (enc == null || typeof enc !== 'string') process.exit(5);
       const dec = m.bech32Decode(enc);
-      if (dec.spec !== 'bech32m') process.exit(2);
+      if (dec == null || dec.spec !== 'bech32m') process.exit(2);
       const program = Buffer.alloc(20, 3);
       const addr = m.segwitAddrEncode('tb', 0, program);
       if (!addr) process.exit(3);

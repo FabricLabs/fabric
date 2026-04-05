@@ -224,13 +224,25 @@ function bech32Encode (hrp, words, spec) {
  */
 function bech32Decode (str) {
   if (!isNativeBech32Callable()) return null;
+  if (typeof str !== 'string') return null;
   try {
     const r = addon.bech32Decode(str);
-    if (r == null) return null;
+    if (r == null || typeof r !== 'object') return null;
+    const raw = r.words;
+    let words;
+    if (Array.isArray(raw)) {
+      words = raw;
+    } else if (raw != null && typeof raw === 'object' && typeof raw.length === 'number') {
+      words = Array.from(raw);
+    } else {
+      return null;
+    }
+    const spec = r.spec;
+    if (spec !== 'bech32' && spec !== 'bech32m') return null;
     return {
       hrp: r.hrp,
-      words: Array.from(r.words),
-      spec: r.spec
+      words,
+      spec
     };
   } catch {
     return null;
