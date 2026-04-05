@@ -110,6 +110,7 @@ function tryLoadAddon () {
     return;
   }
   loadAttempted = true;
+  /* c8 ignore next 3 — browser / non-Node: no native binding (not exercised in Node tests). */
   if (!isNode()) {
     return;
   }

@@ -109,6 +109,13 @@ describe('@fabric/core/functions/bip32', function () {
     assert.ok(Buffer.isBuffer(child.privateKey));
   });
 
+  it('derive accepts bigint index like number', function () {
+    const root = fromSeed(SEED_A);
+    const a = root.derive(2);
+    const b = root.derive(2n);
+    assert.ok(a.privateKey.equals(b.privateKey));
+  });
+
   it('derivePath requires master node for absolute paths', function () {
     const root = fromSeed(SEED_A);
     const child = root.derive(0);

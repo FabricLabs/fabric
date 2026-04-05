@@ -949,6 +949,11 @@ describe('@fabric/core/services/bitcoin (deep coverage)', function () {
     const TIP = 'a'.repeat(64);
     const FOREIGN = 'f'.repeat(64);
 
+    it('_keyNetworkNameForWif maps playnet to regtest for Key.fromWIF', function () {
+      const btc = new Bitcoin({ network: 'playnet', mode: 'rpc' });
+      assert.strictEqual(btc._keyNetworkNameForWif(), 'regtest');
+    });
+
     it('preflight rejects snapshot hash unknown to the node', async function () {
       const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
       btc._makeRPCRequest = async function (method, params) {

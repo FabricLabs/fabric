@@ -71,4 +71,30 @@ describe('@fabric/core/functions/bip39', function () {
     bad[10] = 'two words';
     assert.throws(() => entropyToMnemonic(ent, bad), /whitespace/);
   });
+
+  it('rejects wordlist entries that are empty strings', function () {
+    const ent = crypto.randomBytes(16);
+    const bad = defaultWordlist.slice();
+    bad[11] = '';
+    assert.throws(() => entropyToMnemonic(ent, bad), /non-empty string/);
+  });
+
+  it('generateMnemonic(160) succeeds and returns 15 words', function () {
+    const m = generateMnemonic(160);
+    assert.strictEqual(m.split(' ').length, 15);
+  });
+
+  it('entropyToMnemonic rejects invalid entropy byte lengths', function () {
+    assert.throws(() => entropyToMnemonic(crypto.randomBytes(15)), /Entropy length/);
+  });
+
+  it('mnemonicToEntropy throws on checksum mismatch', function () {
+    const words = VALID_12.split(' ');
+    const baseline = words[words.length - 1];
+    const idx = defaultWordlist.indexOf(baseline);
+    const replacement = defaultWordlist[(idx + 1) % defaultWordlist.length];
+    words[words.length - 1] = replacement;
+    const mutated = words.join(' ');
+    assert.throws(() => mnemonicToEntropy(mutated), /Invalid checksum/);
+  });
 });
