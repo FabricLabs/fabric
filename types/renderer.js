@@ -10,7 +10,7 @@ const parse = require('jade-parser');
 const blessed = require('blessed');
 
 class Renderer {
-  constructor (settings = {}) {
+  constructor (_settings = {}) {
     this.screen = null;
     return this;
   }
@@ -98,7 +98,7 @@ class Renderer {
     this.render(ast, screen, ui, eventHandlers);
 
     // TODO: move this to dynamic event handler
-    screen.key(['escape'], function (ch, key) {
+    screen.key(['escape'], function (_ch, _key) {
       screen.destroy();
       // console.log('the machine:', self.oracle.machine);
       // console.log('the mempool:', self.oracle.mempool);

@@ -14,7 +14,6 @@ game.use('tick', function (input) {
 });
 
 game.use('spawn', function (input) {
-  var self = this;
   var data = _.clone(template);
 
   data.id = Math.random();
@@ -56,8 +55,6 @@ game.use('spawn', function (input) {
 });
 
 game.use('battle', function (input) {
-  var self = this;
-  
   console.log('battling...', input.spawns);
   
   input.spawns[0].stack.push('attack');

@@ -225,7 +225,6 @@ class Contract extends Service {
   }
 
   toDot () {
-    const tokens = [];
   }
 
   parse (input) {

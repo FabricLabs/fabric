@@ -10,7 +10,7 @@
 const Node = require('../types/node');
 
 // Program Definition
-async function OP_START (input = {}) {
+async function OP_START (_input = {}) {
   const node = new Node({
     // TODO: configure with input?
     settings: (this && this.environment) ? this.environment.settings : {

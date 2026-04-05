@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Hub — Playnet FLUSH_CHAIN (embed)</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; }
+    .panel { max-width: 36rem; border: 1px solid #ccc; border-radius: 8px; padding: 1rem 1.25rem; }
+    label { display: block; margin-top: 0.75rem; font-weight: 600; }
+    input[type="text"] { width: 100%; box-sizing: border-box; margin-top: 0.25rem; padding: 0.4rem 0.5rem; }
+    button { margin-top: 1rem; padding: 0.5rem 1rem; cursor: pointer; }
+    .hint { font-size: 0.85rem; color: #444; margin-top: 0.5rem; }
+    pre { background: #f4f4f4; padding: 0.5rem; overflow: auto; font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <h2>Playnet / federation — chain flush</h2>
+    <p>
+      Sends Fabric wire message <code>P2P_FLUSH_CHAIN</code> (opcode <code>0x56</code>) with a JSON body
+      <code>{ snapshotBlockHash, network }</code>. This is operationally destructive; confirm before dispatch.
+    </p>
+    <label for="snap">snapshot block hash (64 hex)</label>
+    <input id="snap" type="text" placeholder="64-character hex" autocomplete="off" />
+    <label for="net">network</label>
+    <input id="net" type="text" value="playnet" />
+    <label for="label">peer label (optional)</label>
+    <input id="label" type="text" placeholder="origin name" />
+    <button type="button" id="go">Send FLUSH_CHAIN</button>
+    <p class="hint">Wire this button to your hub client; the handler below is a stub for embedding.</p>
+    <pre id="out"></pre>
+  </div>
+  <script>
+    (function () {
+      const out = document.getElementById('out');
+      document.getElementById('go').addEventListener('click', function () {
+        const ok = window.confirm(
+          'This requests a chain rewind on trusted peers. Continue?'
+        );
+        if (!ok) {
+          out.textContent = 'Cancelled — no FLUSH_CHAIN payload was built.';
+          return;
+        }
+
+        const snap = document.getElementById('snap').value.trim();
+        const net = document.getElementById('net').value.trim() || 'playnet';
+        const label = document.getElementById('label').value.trim();
+        if (!/^[0-9a-fA-F]{64}$/.test(snap)) {
+          out.textContent = 'Invalid snapshotBlockHash (need 64 hex chars).';
+          return;
+        }
+        const body = JSON.stringify({
+          snapshotBlockHash: snap.toLowerCase(),
+          network: net,
+          ...(label ? { label } : {})
+        });
+        out.textContent = 'Stub: would send P2P_FLUSH_CHAIN with body:\n' + body;
+      });
+    })();
+  </script>
+</body>
+</html>

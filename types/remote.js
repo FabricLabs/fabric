@@ -175,7 +175,7 @@ class Remote extends Actor {
     this.emit('message', message);
   }
 
-  async _handleSocketOpen (message) {
+  async _handleSocketOpen (_message) {
     this._nextReconnect = 0;
     this._reconnectAttempts = 0;
     if (this._reconnector) clearTimeout(this._reconnector);
@@ -341,7 +341,7 @@ class Remote extends Actor {
 
           try {
             result = await response.json();
-          } catch (exception) {
+          } catch {
             result = await response.text();
           }
         }

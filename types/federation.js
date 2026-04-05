@@ -132,7 +132,7 @@ class Federation extends Contract {
     return null;
   }
 
-  tick (input = {}) {
+  tick (_input = {}) {
     this._state.content.clock++;
   }
 

@@ -75,7 +75,7 @@ class Interface extends Service {
     return this._state.set('/status', value);
   }
 
-  shared (count = 1) {
+  shared (_count = 1) {
     const data = new Entity(this.memory);
     const id = data.id;
 

@@ -333,7 +333,7 @@ class Fabric extends Service {
       self.log('source', typeof source, 'emitted:', changes);
     });
 
-    source.on('transaction', async function (transaction) {
+    source.on('transaction', async function (_transaction) {
       // console.log('[FABRIC:CORE]', '[EVENT:TRANSACTION]', `source (${source.constructor.name}):`, transaction);
       // console.log('[PROPOSAL]', 'apply this transaction to local state:', transaction);
     });

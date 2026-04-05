@@ -5,7 +5,6 @@ const {
 } = require('../constants');
 
 const BN = require('bn.js');
-const Key = require('./key');
 const Entity = require('./entity');
 const State = require('./state');
 const Secret = require('./secret');
@@ -96,7 +95,7 @@ class Channel extends State {
    * @param {Number} amount Amount value to add to current outgoing balance.
    */
   add (amount) {
-    const value = new BN(amount + '');
+    void new BN(amount + '');
     /* const layer = new Layer({
       parents: [this._parent],
       uint256: value

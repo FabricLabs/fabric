@@ -10,7 +10,6 @@ self.addEventListener('message', function (e) {
 });
 
 self.addEventListener('fetch', async function (event) {
-  const self = this;
   console.log('[GUARDIAN]', 'request:', event);
 
   const path = event.request.url;
@@ -31,8 +30,8 @@ self.addEventListener('fetch', async function (event) {
       method: 'HEAD'
     });
 
-    const response = await fetch(request);
-    //const content = await response.text();
+    const _response = await fetch(request);
+    //const content = await _response.text();
     return value;
   } else {
     const request = new Request(uri, {

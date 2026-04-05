@@ -4,7 +4,6 @@ const {
   MAGIC_BYTES,
   VERSION_NUMBER,
   HEADER_SIZE,
-  MAX_MESSAGE_SIZE,
   OP_CYCLE,
   GENERIC_MESSAGE_TYPE,
   LOG_MESSAGE_TYPE,
@@ -16,7 +15,6 @@ const {
   P2P_GENERIC,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
-  P2P_ROOT,
   P2P_PING,
   P2P_PONG,
   P2P_START_CHAIN,
@@ -66,8 +64,6 @@ const {
 
 const { tryParseWireJson } = require('../functions/wireJson');
 
-const HEADER_SIG_SIZE = 64;
-
 /**
  * @private
  * @param {Buffer} buf
@@ -84,7 +80,6 @@ const struct = require('struct');
 // Fabric Types
 const Actor = require('./actor');
 const Hash256 = require('./hash256');
-const Key = require('./key');
 
 // Function Definitions
 const padDigits = require('../functions/padDigits');
@@ -881,7 +876,7 @@ Object.defineProperty(Message.prototype, 'type', {
         } else {
           code = this.types['GENERIC_MESSAGE'] || this.types['GenericMessage'];
         }
-      } catch (e) {
+      } catch {
         code = this.types['GENERIC_MESSAGE'] || this.types['GenericMessage'];
       }
     }

@@ -143,7 +143,7 @@ class Machine extends Actor {
     }).join(''), 2).toString(16);
   }
 
-  validateCycle (i) {
+  validateCycle (_i) {
     return false;
   }
 

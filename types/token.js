@@ -134,7 +134,6 @@ class Token {
 
   static fromString (input) {
     const parts = input.split('.');
-    const headers = parts[0];
     const payload = parts[1];
     const signature = parts[2];
     const inner = Token.base64UrlDecode(payload);

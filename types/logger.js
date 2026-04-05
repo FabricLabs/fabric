@@ -48,7 +48,7 @@ class Logger extends Actor {
     if (typeof msg !== 'string') {
       try {
         msg = JSON.stringify(msg);
-      } catch (exception) {
+      } catch {
         console.warn('Unable to parse message to string:', `<${msg.constructor.name}>`, msg);
         return false;
       }

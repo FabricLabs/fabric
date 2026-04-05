@@ -111,7 +111,7 @@ class Filesystem extends Actor {
 
       try {
         fs.utimesSync(path, time, time);
-      } catch (err) {
+      } catch {
         fs.closeSync(fs.openSync(path, 'w'));
       }
     }
@@ -222,7 +222,7 @@ class Filesystem extends Actor {
     });
   }
 
-  async ingest (document, name = null) {
+  async ingest (document, _name = null) {
     if (typeof document !== 'string') {
       document = JSON.stringify(document);
     }

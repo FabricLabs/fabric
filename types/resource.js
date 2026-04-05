@@ -76,7 +76,7 @@ class Resource extends Store {
   async create (obj) {
     let self = this;
     let vector = new State(obj);
-    let collection = await self.store._POST(self.routes.list, vector['@data']);
+    await self.store._POST(self.routes.list, vector['@data']);
     return vector;
   }
 
@@ -89,13 +89,11 @@ class Resource extends Store {
   async update (id, update) {
     let self = this;
     let path = `${self.routes.list}/${id}`;
-    let vector = new State(update);
-    let patches = self.store._PATCH(path, update);
-    let result = self.store._GET(path);
-    return result;
+    await self.store._PATCH(path, update);
+    return await self.store._GET(path);
   }
 
-  async query (inquiry) {
+  async query (_inquiry) {
     let self = this;
     let collection = await self.store._GET(self.routes.list);
     return collection;

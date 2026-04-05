@@ -1,6 +1,6 @@
 'use strict';
 
-async function OP_VERIFY (state) {
+async function OP_VERIFY (_state) {
   return 1;
 }
 

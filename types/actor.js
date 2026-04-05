@@ -486,7 +486,7 @@ class Actor extends EventEmitter {
     return this.state;
   }
 
-  _handleMonitorChanges (changes) {
+  _handleMonitorChanges (_changes) {
     // TODO: emit global state event here
     // after verify, commit
   }

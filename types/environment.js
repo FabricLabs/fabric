@@ -15,7 +15,6 @@ const merge = require('lodash.merge');
 // Fabric Types
 const Actor = require('./actor');
 const Entity = require('./entity');
-const EncryptedPromise = require('./promise');
 const Wallet = require('./wallet');
 
 // Filters
@@ -365,7 +364,7 @@ class Environment extends Entity {
       const [username, password] = content.split(':');
       if (!username || !password) return null;
       return { username, password };
-    } catch (error) {
+    } catch {
       return null;
     }
   }
@@ -556,7 +555,7 @@ class Environment extends Entity {
 
     try {
       fs.utimesSync(this.settings.path, time, time);
-    } catch (err) {
+    } catch {
       fs.closeSync(fs.openSync(this.settings.path, 'w'));
     }
 
@@ -631,7 +630,7 @@ class Environment extends Entity {
     try {
       fs.unlinkSync(this.WALLET_FILE);
       return true;
-    } catch (exception) {
+    } catch {
       if (this.emit) this.emit('warning', '[FABRIC:ENVIRONMENT] Wallet already destroyed or unavailable.');
       return false;
     }

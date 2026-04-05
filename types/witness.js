@@ -2,8 +2,6 @@
 
 const crypto = require('crypto');
 const { secp256k1 } = require('@noble/curves/secp256k1.js');
-const Key = require('./key');
-
 class Witness {
   constructor (settings = {}) {
     this.settings = Object.assign({
@@ -108,7 +106,7 @@ class Witness {
     return this;
   }
 
-  _fromBitcoinSignature (signature = {}) {
+  _fromBitcoinSignature (_signature = {}) {
 
   }
 

@@ -6,7 +6,7 @@
 const Wallet = require('../types/wallet');
 
 // Program Definition
-async function OP_SETUP (command = {}) {
+async function OP_SETUP (_command = {}) {
   // TODO: replicate this program in C / ASM
   if (this.environment.wallet && !this.program.force) {
     console.warn('[FABRIC:CLI]', 'Wallet file exists, no data will be written.  Use --force to override.');

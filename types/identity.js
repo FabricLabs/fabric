@@ -140,8 +140,8 @@ class Identity extends Actor {
     return this;
   }
 
-  _verifyKeyIsChild (key, parent) {
-    
+  _verifyKeyIsChild (_key, _parent) {
+
   }
 }
 

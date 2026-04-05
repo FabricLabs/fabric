@@ -9,9 +9,7 @@
 
 // Constants
 const {
-  BITCOIN_KEY_DERIVATION_PATH,
   FABRIC_KEY_DERIVATION_PATH,
-  LIGHTNING_KEY_DERIVATION_PATH,
   BECH32M_CHARSET
 } = require('../constants');
 
@@ -287,7 +285,6 @@ class Key extends EventEmitter {
         break;
       case 'FROM_WIF':
         const decoded = decodeCheck(this.settings.wif);
-        const version = decoded[0];
         const privateKey = decoded.slice(1, 33);
         const isCompressed = decoded.length === 34 && decoded[33] === 0x01;
         this._point = secpPointFromPrivateKey(privateKey);
@@ -626,7 +623,7 @@ class Key extends EventEmitter {
       let encrypted = cipher.update(value, 'utf8', 'hex');
       encrypted += cipher.final('hex');
       return ivbuff.toString('hex') + ':' + encrypted;
-    } catch (exception) {
+    } catch {
       if (this.settings.debug) console.error('[FABRIC:KEY]', 'Encryption failed');
       return null;
     }
@@ -658,7 +655,7 @@ class Key extends EventEmitter {
       let decrypted = decipher.update(blob, 'hex', 'utf8');
       decrypted += decipher.final('utf8');
       return decrypted;
-    } catch (exception) {
+    } catch {
       if (this.settings.debug) console.error('[FABRIC:KEY]', 'Decryption failed');
       return null;
     }

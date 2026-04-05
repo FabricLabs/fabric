@@ -109,7 +109,7 @@ class Entity extends EventEmitter {
         result = JSON.stringify(this.actor['@data']);
         break;
       case 'Buffer':
-        const buffer = new Uint8Array(this.data);
+        void new Uint8Array(this.data);
         const values = Object.values(this.data);
         result = JSON.stringify(values);
         break;

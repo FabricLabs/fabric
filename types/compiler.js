@@ -124,7 +124,7 @@ class Compiler {
     return this;
   }
 
-  _getScriptAST (input) {
+  _getScriptAST (_input) {
     throw new Error('Not yet supported.');
     return null;
   }
@@ -238,7 +238,7 @@ class Compiler {
     return result;
   }
 
-  _renderToHTML (state = {}) {
+  _renderToHTML (_state = {}) {
     return `<!DOCTYPE html>
 <html>
   <head>
