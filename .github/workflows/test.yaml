@@ -65,9 +65,15 @@ jobs:
       run: npm run lint:pkg
     - name: Download and install bitcoind
       run: |
-        wget https://bitcoin.org/bin/bitcoin-core-28.0/bitcoin-28.0-x86_64-linux-gnu.tar.gz
-        tar -xzf bitcoin-28.0-x86_64-linux-gnu.tar.gz
-        sudo mv bitcoin-28.0/bin/bitcoind bitcoin-28.0/bin/bitcoin-cli /usr/local/bin/
+        set -euo pipefail
+        VERSION=28.0
+        ARCHIVE=bitcoin-${VERSION}-x86_64-linux-gnu.tar.gz
+        BASE=https://bitcoin.org/bin/bitcoin-core-${VERSION}/
+        wget -q "${BASE}SHA256SUMS"
+        wget -q "${BASE}${ARCHIVE}"
+        grep "${ARCHIVE}\$" SHA256SUMS | sha256sum -c -
+        tar -xzf "${ARCHIVE}"
+        sudo mv bitcoin-${VERSION}/bin/bitcoind bitcoin-${VERSION}/bin/bitcoin-cli /usr/local/bin/
     - name: Run tests (with coverage for Codecov)
       run: npm run report:coverage
       timeout-minutes: 30

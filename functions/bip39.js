@@ -106,6 +106,9 @@ function binaryToWord (bits, wordlist) {
  */
 function entropyToMnemonic (entropy, wordlist = DEFAULT_WORDLIST) {
   const wl = resolveWordlist(wordlist);
+  if (typeof entropy === 'string') {
+    throw new Error('Entropy must be a Buffer or Uint8Array; do not pass a hex/utf8 string (use Buffer.from(hex, "hex") explicitly).');
+  }
   if (!Buffer.isBuffer(entropy)) entropy = Buffer.from(entropy);
   if (entropy.length < 16 || entropy.length > 32 || entropy.length % 4 !== 0) {
     throw new Error('Entropy length must be 16–32 bytes and a multiple of 4');

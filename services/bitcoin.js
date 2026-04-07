@@ -465,6 +465,12 @@ class Bitcoin extends Service {
       cookiePaths.push(path.resolve(process.cwd(), 'stores/bitcoin-regtest/regtest/.cookie'));
       if (process.platform === 'darwin') {
         cookiePaths.push(path.join(os.homedir(), 'Library/Application Support/Electron/stores/bitcoin-regtest/regtest/.cookie'));
+        cookiePaths.push(path.join(os.homedir(), 'Library/Application Support/Bitcoin/regtest/.cookie'));
+      }
+      cookiePaths.push(path.join(os.homedir(), '.bitcoin', 'regtest', '.cookie'));
+      const cfgDatadir = this.settings.datadir;
+      if (cfgDatadir && typeof cfgDatadir === 'string' && cfgDatadir.trim()) {
+        cookiePaths.push(path.resolve(process.cwd(), cfgDatadir, 'regtest', '.cookie'));
       }
       for (const cookiePath of cookiePaths) {
         if (!cookiePath || cookiePathsTried.has(cookiePath)) continue;
@@ -723,10 +729,20 @@ class Bitcoin extends Service {
     if (!message.amount) throw new Error('Message must provide an amount.');
     if (!message.destination) throw new Error('Message must provide a destination.');
 
-    if (typeof message.amount === 'string' || message.amount instanceof String) {
+    if (typeof message.amount === 'number' && Number.isFinite(message.amount)) {
+      const sats = message.amount * 1e8;
+      if (!Number.isFinite(sats) || Math.abs(sats - Math.round(sats)) > 1e-6) {
+        throw new Error('Message amount must be a multiple of 1 satoshi (at most 8 decimal places in BTC).');
+      }
+      message.amount = (Math.round(sats) / 1e8).toFixed(8);
+    } else if (typeof message.amount === 'string' || message.amount instanceof String) {
       const parsed = Number(message.amount instanceof String ? message.amount.valueOf() : message.amount);
       if (!Number.isFinite(parsed)) throw new Error('Message amount must be numeric.');
-      message.amount = parsed.toFixed(8); // normalize string amounts to fixed BTC precision
+      const sats = parsed * 1e8;
+      if (!Number.isFinite(sats) || Math.abs(sats - Math.round(sats)) > 1e-6) {
+        throw new Error('Message amount must be a multiple of 1 satoshi (at most 8 decimal places in BTC).');
+      }
+      message.amount = (Math.round(sats) / 1e8).toFixed(8);
     }
 
     const actor = new Actor(message);

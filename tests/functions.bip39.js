@@ -35,6 +35,10 @@ describe('@fabric/core/functions/bip39', function () {
     assert.strictEqual(fromBuf, fromU8);
   });
 
+  it('entropyToMnemonic rejects string entropy (use Buffer.from explicitly)', function () {
+    assert.throws(() => entropyToMnemonic('deadbeef'), /Buffer or Uint8Array/);
+  });
+
   it('generateMnemonic rejects invalid strength', function () {
     assert.throws(() => generateMnemonic(127), /128–256/);
     assert.throws(() => generateMnemonic(129), /128–256/);

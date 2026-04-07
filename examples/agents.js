@@ -15,7 +15,7 @@
  *
  * ## Environment
  *
- * - **`FABRIC_AGENTS_SKIP_CHAIN=1`** — CI-style smoke (exit after queue drains); overridden by `--distributor-only` / `--bitcoin-only`.
+ * - **`FABRIC_AGENTS_SKIP_CHAIN=1`** — CI-style smoke (exit after queue drains); same worker caps as `--smoke` unless `--distributor-only` / `--bitcoin-only`.
  * - **`FABRIC_AGENTS_WORK_MS`** — per-job delay inside workers (default `1200` full stack, `25` when skip-chain).
  * - **`FABRIC_AGENTS_BOOT_IDLE_MS`** — max wait (ms) for initial queue drain after startup (default `120000`).
  * - **`FABRIC_AGENTS_WORK_SHA256_ITERS`** — optional CPU work per job (SHA-256 loop, capped at 2M) for load testing.
@@ -47,10 +47,14 @@ const AGENTS_CLI = (function parseAgentsCli () {
     else if (a === '--smoke') flags.smoke = true;
     else if (a === '--distributor-only') flags.distributorOnly = true;
     else if (a === '--bitcoin-only') flags.bitcoinOnly = true;
-    else if (a === '--work-ms' && argv[i + 1]) {
-      proc.env.FABRIC_AGENTS_WORK_MS = String(argv[++i]);
+    else if (a === '--work-ms') {
+      const next = argv[i + 1];
+      if (next != null && next !== '' && !String(next).startsWith('-')) {
+        proc.env.FABRIC_AGENTS_WORK_MS = String(argv[++i]);
+      }
     } else if (/^--work-ms=/.test(a)) {
-      proc.env.FABRIC_AGENTS_WORK_MS = a.replace(/^--work-ms=/, '');
+      const v = a.replace(/^--work-ms=/, '');
+      if (v !== '') proc.env.FABRIC_AGENTS_WORK_MS = v;
     }
   }
   return flags;
@@ -79,14 +83,22 @@ const Lightning = require('../services/lightning');
 
 // Configuration
 const _cpuCount = Math.max(1, os.cpus().length);
-/** Full example uses all CPUs; skip-chain smoke caps workers so CI / laptops do not spawn dozens of threads. */
-const numberOfCores = process.env.FABRIC_AGENTS_SKIP_CHAIN === '1'
+/**
+ * Light paths cap workers / shorten delays: explicit `--smoke`, or skip-chain env when not running
+ * distributor-only / bitcoin-only full demos (those intentionally use all CPUs).
+ */
+const _agentsLightWorkerProfile = AGENTS_CLI.smoke ||
+  (process.env.FABRIC_AGENTS_SKIP_CHAIN === '1' &&
+    !AGENTS_CLI.distributorOnly &&
+    !AGENTS_CLI.bitcoinOnly);
+/** Full stack uses all CPUs; smoke / skip-chain caps workers so CI / laptops do not spawn dozens of threads. */
+const numberOfCores = _agentsLightWorkerProfile
   ? Math.min(4, _cpuCount)
   : _cpuCount;
 const workDelayMsEnv = Number(process.env.FABRIC_AGENTS_WORK_MS);
 const AGENT_WORK_DELAY_MS = (Number.isFinite(workDelayMsEnv) && workDelayMsEnv >= 0)
   ? workDelayMsEnv
-  : (process.env.FABRIC_AGENTS_SKIP_CHAIN === '1' ? 25 : 1200);
+  : (_agentsLightWorkerProfile ? 25 : 1200);
 const DEFAULT_MAX_QUEUE = 100;
 const BITCOIN_NETWORK = 'regtest';
 const bootIdleMsEnv = Number(process.env.FABRIC_AGENTS_BOOT_IDLE_MS);
@@ -95,6 +107,12 @@ const FABRIC_AGENTS_BOOT_IDLE_MS = (Number.isFinite(bootIdleMsEnv) && bootIdleMs
   : 120000;
 const PRODUCER_INTERVAL_MS = 200;
 const PRODUCER_BATCH_SIZE = Math.max(2, Math.ceil(numberOfCores / 2));
+
+/** Initial queue-drain deadline: respect `FABRIC_AGENTS_BOOT_IDLE_MS` but keep a sensible floor. */
+function agentsBootstrapDrainDeadlineMs (waves, delayMs) {
+  const computed = 3000 + waves * delayMs + 2000;
+  return Math.min(FABRIC_AGENTS_BOOT_IDLE_MS, Math.max(25000, computed));
+}
 const INITIAL_SPENDABLE_BLOCKS = 101;
 const BLOCK_INTERVAL_MS = 10000;
 const LIGHTNING_FUNDING_RATIO = 0.5;
@@ -558,7 +576,7 @@ async function runDistributorOnlyDemo (input = {}) {
   const queuedJobs = numberOfCores + 1;
   const waves = Math.ceil(queuedJobs / Math.max(1, numberOfCores));
   const delayMs = Math.max(AGENT_WORK_DELAY_MS, 1);
-  const idleDeadline = Math.max(25000, 3000 + waves * delayMs + 2000);
+  const idleDeadline = agentsBootstrapDrainDeadlineMs(waves, delayMs);
   const drained = await master.waitForIdle(idleDeadline);
   if (!drained) {
     throw new Error(`Bootstrap queue did not drain within ${idleDeadline}ms`);
@@ -978,6 +996,16 @@ class Distributor extends Service {
             core.__state = message.state || core.__state;
             this._state.content.failed++;
             this._snapshotGlobalState('worker-error');
+            const errDetail = (message && message.error != null)
+              ? message.error
+              : (message && message.message) || 'worker error';
+            this.emit('workerJobFailed', {
+              workerIndex: core.__index,
+              jobId: core.__lastJobID,
+              detail: errDetail,
+              state: core.__state
+            });
+            console.warn('[DEVELOP] Worker job failed:', errDetail);
             core.__busy = false;
             this._dispatchWork();
           }
@@ -1261,7 +1289,7 @@ async function main (input = {}) {
       const queuedJobs = numberOfCores + 1;
       const waves = Math.ceil(queuedJobs / Math.max(1, numberOfCores));
       const delayMs = Math.max(AGENT_WORK_DELAY_MS, 1);
-      const idleDeadline = Math.max(25000, 3000 + waves * delayMs + 2000);
+      const idleDeadline = agentsBootstrapDrainDeadlineMs(waves, delayMs);
       const drained = await skipMaster.waitForIdle(idleDeadline);
       if (!drained) {
         throw new Error(`Skip-chain smoke: queue did not drain within ${idleDeadline}ms`);
@@ -1376,6 +1404,61 @@ async function main (input = {}) {
     });
   });
 
+  const cleanupBootstrapFailure = async () => {
+    if (blockTimer) {
+      clearInterval(blockTimer);
+      blockTimer = null;
+    }
+    if (master) {
+      try {
+        await master.stop();
+      } catch (e) {
+        console.error('[DEVELOP] Bootstrap cleanup: distributor stop failed:', e && e.message ? e.message : e);
+      }
+      master = null;
+    }
+    if (aliceLightning) {
+      try {
+        await aliceLightning.stop();
+      } catch (e) {
+        console.error('[DEVELOP] Bootstrap cleanup: Alice Lightning stop failed:', e && e.message ? e.message : e);
+      }
+      try {
+        if (aliceLightning._child && aliceLightning._child.exitCode === null) {
+          aliceLightning._child.kill('SIGKILL');
+        }
+      } catch { /* ignore */ }
+      aliceLightning = null;
+    }
+    if (lightning) {
+      try {
+        await lightning.stop();
+      } catch (e) {
+        console.error('[DEVELOP] Bootstrap cleanup: Lightning stop failed:', e && e.message ? e.message : e);
+      }
+      try {
+        if (lightning._child && lightning._child.exitCode === null) {
+          lightning._child.kill('SIGKILL');
+        }
+      } catch { /* ignore */ }
+      lightning = null;
+    }
+    if (bitcoin) {
+      try {
+        await bitcoin.stop();
+      } catch (e) {
+        console.error('[DEVELOP] Bootstrap cleanup: Bitcoin stop failed:', e && e.message ? e.message : e);
+      }
+      try {
+        if (bitcoin._nodeProcess && bitcoin._nodeProcess.exitCode === null) {
+          bitcoin._nodeProcess.kill('SIGKILL');
+        }
+      } catch { /* ignore */ }
+      bitcoin = null;
+    }
+  };
+
+  try {
   bitcoin = new Bitcoin({
     network: BITCOIN_NETWORK,
     mode: 'rpc',
@@ -1595,6 +1678,11 @@ async function main (input = {}) {
   const timers = scheduleAgentProducers({ master, lightning, aliceLightning });
   producerTimer = timers.producerTimer;
   statusTimer = timers.statusTimer;
+  } catch (bootstrapError) {
+    console.error('[DEVELOP] Full-stack bootstrap failed:', bootstrapError && bootstrapError.message ? bootstrapError.message : bootstrapError);
+    await cleanupBootstrapFailure();
+    throw bootstrapError;
+  }
 }
 
 if (isMainThread) {

@@ -78,7 +78,7 @@
     "test:app": "npm run make:service && npm run make:app && NODE_ENV=test mocha tests/fabric.app.js",
     "test:bitcoin": "mocha tests/bitcoin.core.js",
     "test:wasm": "emcc contracts/test.c -o assets/wasm.html",
-    "test": "NODE_ENV=test mocha --require ./tests/mocha-env.js --recursive tests --ignore tests/fuzz/**/*.js",
+    "test": "NODE_ENV=test mocha --require ./tests/mocha-env.js --recursive tests --ignore tests/fuzz/**/*.js --ignore tests/benchmark/**/*.js",
     "test:fuzz": "NODE_ENV=test mocha --require ./tests/mocha-env.js --recursive tests/fuzz",
     "test:benchmark": "NODE_ENV=test mocha --require ./tests/mocha-env.js tests/benchmark/benchmark.smoke.js",
     "benchmark": "node scripts/benchmark-report.js",

@@ -1348,7 +1348,9 @@ class CLI extends FabricShell {
   }
 
   async _handlePeerChat (chat) {
-    const truncatedId = truncateMiddle(chat.actor.username || chat.actor.id, 10, '…', 5);
+    const actor = chat.actor || {};
+    const idPrefer = actor.id != null && String(actor.id).length ? String(actor.id) : null;
+    const truncatedId = truncateMiddle(idPrefer || actor.username || '', 10, '…', 5);
     this._appendMessage(`[@${truncatedId}]: ${chat.object.content}`);
   }
 

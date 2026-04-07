@@ -173,6 +173,9 @@ class HDNode {
   derivePath (path) {
     const parts = path.split('/');
     if (parts[0] !== 'm') throw new Error(`Invalid path: ${path}`);
+    if (parts.length - 1 > 255) {
+      throw new Error('Invalid path: BIP-32 depth must not exceed 255');
+    }
     if (this.depth !== 0) {
       throw new Error(`Invalid path: absolute path "${path}" must be derived from the master (depth 0) node`);
     }

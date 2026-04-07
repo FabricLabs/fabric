@@ -205,6 +205,8 @@ class Peer extends Service {
     // Peers: keyed by public key (id). Persistent registry in _state.peers.
     // Map connection address (IP:port) -> peer id (public key). Learned on P2P_SESSION_OFFER/OPEN.
     this._addressToId = {};
+    /** Inbound `host:port` -> remote NOISE static pubkey hex (FLUSH_CHAIN allowlist / registry; not used for AMP verify). */
+    this._inboundNoiseStaticPubkeyByAddress = Object.create(null);
     this.mailboxes = {};
     this.memory = {};
     this.handlers = {};
@@ -890,6 +892,7 @@ class Peer extends Service {
 
     delete this.connections[target];
     delete this.peers[target];
+    if (this._inboundNoiseStaticPubkeyByAddress) delete this._inboundNoiseStaticPubkeyByAddress[target];
     if (this._addressToId) delete this._addressToId[target];
 
     this.emit('connections:close', {
@@ -966,6 +969,24 @@ class Peer extends Service {
           this.emit('error', `Failed to save peer registry: ${message}`);
         });
     }, 500);
+  }
+
+  /**
+   * Sender pubkey hex for FLUSH_CHAIN allowlist: session/URL {@link Peer#peers} entry first,
+   * else inbound NOISE static key (inbound connections have no URL username).
+   * Not used for AMP signature verify — wire signatures use the Fabric identity key, not necessarily NOISE static.
+   * @param {string} connectionAddress host:port
+   * @returns {string} lowercase hex or empty
+   */
+  _flushChainSenderPubkeyHex (connectionAddress) {
+    if (!connectionAddress) return '';
+    const rec = this.peers[connectionAddress];
+    if (rec && typeof rec === 'object' && rec.publicKey != null && rec.publicKey !== '') {
+      const h = normalizePeerPubkeyHex(rec.publicKey);
+      if (h) return h;
+    }
+    const noise = this._inboundNoiseStaticPubkeyByAddress[connectionAddress];
+    return noise ? normalizePeerPubkeyHex(noise) : '';
   }
 
   /**
@@ -1102,8 +1123,8 @@ class Peer extends Service {
       case 'P2P_FLUSH_CHAIN':
       case 'FlushChain': {
         if (!origin || !origin.name) break;
-        const rec = this.peers[origin.name];
-        if (!rec || !rec.publicKey) {
+        const senderHex = this._flushChainSenderPubkeyHex(origin.name);
+        if (!senderHex) {
           this.emit('warning', `[FABRIC:PEER] FLUSH_CHAIN ignored: no verified peer key for ${origin.name}`);
           break;
         }
@@ -1112,7 +1133,6 @@ class Peer extends Service {
           this.emit('warning', `[FABRIC:PEER] FLUSH_CHAIN ignored: flushChainAuthorizedPubkeys is empty (configure allowed signer pubkeys)`);
           break;
         }
-        const senderHex = normalizePeerPubkeyHex(rec.publicKey);
         const allowed = new Set();
         for (const e of authList) {
           const h = normalizePeerPubkeyHex(e);
@@ -1528,6 +1548,25 @@ class Peer extends Service {
     }
   }
 
+  /**
+   * Record inbound NOISE static pubkey for FLUSH_CHAIN allowlist / registry (not for AMP verify).
+   */
+  _scheduleInboundNoisePublicKey (connAddress, remotePublicKey) {
+    if (!connAddress || remotePublicKey == null) return;
+    const pkHex = normalizePeerPubkeyHex(
+      Buffer.isBuffer(remotePublicKey) ? Buffer.from(remotePublicKey) : remotePublicKey
+    );
+    if (!pkHex) return;
+    this._inboundNoiseStaticPubkeyByAddress[connAddress] = pkHex;
+    setImmediate(() => {
+      this._upsertPeerRegistry(connAddress, {
+        publicKey: pkHex,
+        address: connAddress,
+        lastSeen: new Date().toISOString()
+      });
+    });
+  }
+
   _NOISESocketHandler (socket) {
     const target = `${socket.remoteAddress}:${socket.remotePort}`;
     const url = `tcp://${target}`;
@@ -1558,7 +1597,10 @@ class Peer extends Service {
     });
 
     // Set up NOISE event handlers
-    handler.encrypt.on('handshake', this._handleNOISEHandshake.bind(this));
+    handler.encrypt.on('handshake', (_lk, localPk, remotePk) => {
+      this._handleNOISEHandshake(_lk, localPk, remotePk);
+      this._scheduleInboundNoisePublicKey(target, remotePk);
+    });
     handler.encrypt.on('error', (error) => {
       if (error && (error.code === 'EPIPE' || error.code === 'ECONNRESET')) {
         this.emit('warning', `Suppressing transient NOISE encrypt error (${error.code}).`);
@@ -1571,7 +1613,9 @@ class Peer extends Service {
       if (this.settings.debug) this.emit('debug', `Peer encrypt end: ${data}`);
       // socket.destroy();
       delete this.connections[target];
-      this.peers[target].status = 'disconnected';
+      if (this.peers[target] && typeof this.peers[target] === 'object') {
+        this.peers[target].status = 'disconnected';
+      }
     });
 
     handler.decrypt.on('error', (error) => {

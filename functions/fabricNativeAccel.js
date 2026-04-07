@@ -240,8 +240,10 @@ function bech32Decode (str) {
     }
     const spec = r.spec;
     if (spec !== 'bech32' && spec !== 'bech32m') return null;
+    const hrp = r.hrp;
+    if (typeof hrp !== 'string' || hrp.length === 0) return null;
     return {
-      hrp: r.hrp,
+      hrp,
       words,
       spec
     };
@@ -276,6 +278,7 @@ function segwitAddrEncode (hrp, version, program) {
 function segwitAddrDecode (hrp, addr) {
   // Mirrors segwitAddrEncode: null means “use JS reference implementation.”
   if (!isNativeBech32Callable()) return null;
+  if (typeof hrp !== 'string' || typeof addr !== 'string') return null;
   try {
     const r = addon.segwitAddrDecode(hrp, addr);
     if (r == null || typeof r !== 'object' || r.program == null) return null;

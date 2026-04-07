@@ -941,6 +941,24 @@ describe('@fabric/core/services/bitcoin (deep coverage)', function () {
         /must be numeric/
       );
     });
+
+    it('_processSpendMessage rejects amount with precision beyond 1 satoshi', async function () {
+      const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
+      await assert.rejects(
+        () => btc._processSpendMessage({
+          amount: '0.000000001',
+          destination: 'bcrt1q000000000000000000000000000000000000000000000000000000000000000000'
+        }),
+        /satoshi/
+      );
+      await assert.rejects(
+        () => btc._processSpendMessage({
+          amount: 0.000000001,
+          destination: 'bcrt1q000000000000000000000000000000000000000000000000000000000000000000'
+        }),
+        /satoshi/
+      );
+    });
   });
 
   describe('flushChainToSnapshot', function () {

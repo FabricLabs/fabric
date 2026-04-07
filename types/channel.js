@@ -108,9 +108,12 @@ class Channel extends State {
 
   commit () {
     super.commit();
-    const commit = new Entity(this._state);
-    this.emit('commit', commit);
-    return commit;
+    const snapshot = typeof structuredClone === 'function'
+      ? structuredClone(this._state)
+      : JSON.parse(JSON.stringify(this._state));
+    const committed = new Entity(snapshot);
+    this.emit('commit', committed);
+    return committed;
   }
 
   /**

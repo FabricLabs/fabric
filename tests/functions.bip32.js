@@ -128,6 +128,12 @@ describe('@fabric/core/functions/bip32', function () {
     assert.throws(() => root.derivePath('m/01oops'), /Invalid path segment/);
   });
 
+  it('derivePath rejects paths deeper than BIP-32 max depth (255)', function () {
+    const root = fromSeed(SEED_A);
+    const tooDeep = `m/${Array(256).fill('0').join('/')}`;
+    assert.throws(() => root.derivePath(tooDeep), /255/);
+  });
+
   it('fromBase58 rejects xpub with invalid secp256k1 point', function () {
     const xpub = fromSeed(SEED_C).neutered();
     const raw = decodeCheck(xpub.toBase58());

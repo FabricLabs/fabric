@@ -1155,7 +1155,7 @@ describe('@fabric/core/services/bitcoin', function () {
         btc._makeWalletRequest = async (method, params, walletName) => {
           assert.strictEqual(method, 'sendtoaddress');
           assert.strictEqual(params[0], 'bcrt1qdest');
-          assert.strictEqual(params[1], 0.01);
+          assert.strictEqual(params[1], '0.01000000');
           assert.ok(walletName);
           return 'txidhex';
         };

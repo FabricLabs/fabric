@@ -10,12 +10,16 @@ function withPureBech32 (fn) {
   delete require.cache[require.resolve('../functions/fabricNativeAccel.js')];
   delete require.cache[require.resolve('../functions/bech32.js')];
   const prev = process.env.FABRIC_PURE_BECH32;
+  const prevNative = process.env.FABRIC_NATIVE_BECH32;
   process.env.FABRIC_PURE_BECH32 = '1';
+  delete process.env.FABRIC_NATIVE_BECH32;
   try {
     return fn(require('../functions/bech32.js'));
   } finally {
     if (prev === undefined) delete process.env.FABRIC_PURE_BECH32;
     else process.env.FABRIC_PURE_BECH32 = prev;
+    if (prevNative === undefined) delete process.env.FABRIC_NATIVE_BECH32;
+    else process.env.FABRIC_NATIVE_BECH32 = prevNative;
     delete require.cache[require.resolve('../functions/fabricNativeAccel.js')];
     delete require.cache[require.resolve('../functions/bech32.js')];
     require('../functions/bech32.js');
