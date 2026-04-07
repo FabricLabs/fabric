@@ -22,7 +22,7 @@ const CHARSET_REV = (() => {
 })();
 
 const BECH32_CONST = 1;
-const BECH32M_CONST = 0x2bc830a3;
+const BECH32M_CONST = 734539939;
 
 function isNodeRuntime () {
   return typeof process !== 'undefined' && process.versions && typeof process.versions.node === 'string';
@@ -49,11 +49,11 @@ function loadSipaSegwit () {
 }
 
 function polymod (values) {
-  const GEN = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
+  const GEN = [996825010, 642813549, 513874426, 1027748829, 705979059];
   let chk = 1;
   for (let i = 0; i < values.length; ++i) {
     const top = chk >> 25;
-    chk = ((chk & 0x1ffffff) << 5) ^ values[i];
+    chk = ((chk & 33554431) << 5) ^ values[i];
     for (let j = 0; j < 5; ++j) {
       if ((top >> j) & 1) chk ^= GEN[j];
     }

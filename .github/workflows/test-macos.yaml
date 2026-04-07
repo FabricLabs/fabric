@@ -75,7 +75,7 @@ jobs:
       run: npm run report:coverage
       timeout-minutes: 30
     - name: Send coverage report
-      uses: codecov/codecov-action@v4
+      uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4.6.0
       with:
         directory: ./reports/
       continue-on-error: true

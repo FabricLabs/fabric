@@ -5,10 +5,8 @@
  * are exercised under c8 without a compiled addon.
  */
 const crypto = require('crypto');
-const path = require('path');
-const repoRoot = path.join(__dirname, '..', '..');
-const sipaBech32 = require(path.join(repoRoot, 'functions', 'sipa', 'bech32'));
-const sipaSegwit = require(path.join(repoRoot, 'functions', 'sipa', 'segwit_addr'));
+const sipaBech32 = require('../../functions/sipa/bech32');
+const sipaSegwit = require('../../functions/sipa/segwit_addr');
 
 function doubleSha256 (buf) {
   return crypto.createHash('sha256').update(crypto.createHash('sha256').update(buf).digest()).digest();

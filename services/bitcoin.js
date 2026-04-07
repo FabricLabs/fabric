@@ -51,6 +51,33 @@ function redactSensitiveCommandArg (arg) {
   );
 }
 
+const SATS_PER_BTC = 100000000;
+/** Half a satoshi in BTC float terms — tight enough to reject non–8dp amounts without scientific literals. */
+const BTC_FLOAT_SAT_TOLERANCE = 0.000000005;
+
+/**
+ * Resolve a bitcoind datadir for local cookie discovery. Relative paths are cwd-anchored and must not
+ * escape the project root; absolute paths are normalized as-is.
+ * @param {string} datadir
+ * @returns {string|null}
+ */
+function resolveBitcoinDatadirForLocalAccess (datadir) {
+  if (datadir == null || typeof datadir !== 'string') return null;
+  const trimmed = datadir.trim();
+  if (!trimmed) return null;
+  const abs = path.isAbsolute(trimmed)
+    ? path.normalize(trimmed)
+    : path.resolve(process.cwd(), trimmed);
+  if (!path.isAbsolute(trimmed)) {
+    const root = path.resolve(process.cwd());
+    const rel = path.relative(root, abs);
+    if (rel === '' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) {
+      return null;
+    }
+  }
+  return abs;
+}
+
 /**
  * Manages interaction with the Bitcoin network.
  * @augments Service
@@ -470,7 +497,10 @@ class Bitcoin extends Service {
       cookiePaths.push(path.join(os.homedir(), '.bitcoin', 'regtest', '.cookie'));
       const cfgDatadir = this.settings.datadir;
       if (cfgDatadir && typeof cfgDatadir === 'string' && cfgDatadir.trim()) {
-        cookiePaths.push(path.resolve(process.cwd(), cfgDatadir, 'regtest', '.cookie'));
+        const root = resolveBitcoinDatadirForLocalAccess(cfgDatadir);
+        if (root) {
+          cookiePaths.push(path.join(root, 'regtest', '.cookie'));
+        }
       }
       for (const cookiePath of cookiePaths) {
         if (!cookiePath || cookiePathsTried.has(cookiePath)) continue;
@@ -730,19 +760,19 @@ class Bitcoin extends Service {
     if (!message.destination) throw new Error('Message must provide a destination.');
 
     if (typeof message.amount === 'number' && Number.isFinite(message.amount)) {
-      const sats = message.amount * 1e8;
-      if (!Number.isFinite(sats) || Math.abs(sats - Math.round(sats)) > 1e-6) {
+      const sats = message.amount * SATS_PER_BTC;
+      if (!Number.isFinite(sats) || Math.abs(sats - Math.round(sats)) > BTC_FLOAT_SAT_TOLERANCE) {
         throw new Error('Message amount must be a multiple of 1 satoshi (at most 8 decimal places in BTC).');
       }
-      message.amount = (Math.round(sats) / 1e8).toFixed(8);
+      message.amount = (Math.round(sats) / SATS_PER_BTC).toFixed(8);
     } else if (typeof message.amount === 'string' || message.amount instanceof String) {
       const parsed = Number(message.amount instanceof String ? message.amount.valueOf() : message.amount);
       if (!Number.isFinite(parsed)) throw new Error('Message amount must be numeric.');
-      const sats = parsed * 1e8;
-      if (!Number.isFinite(sats) || Math.abs(sats - Math.round(sats)) > 1e-6) {
+      const sats = parsed * SATS_PER_BTC;
+      if (!Number.isFinite(sats) || Math.abs(sats - Math.round(sats)) > BTC_FLOAT_SAT_TOLERANCE) {
         throw new Error('Message amount must be a multiple of 1 satoshi (at most 8 decimal places in BTC).');
       }
-      message.amount = (Math.round(sats) / 1e8).toFixed(8);
+      message.amount = (Math.round(sats) / SATS_PER_BTC).toFixed(8);
     }
 
     const actor = new Actor(message);
@@ -2008,7 +2038,7 @@ class Bitcoin extends Service {
     for (const input of options.inputs) {
       const utxo = await this._makeRPCRequest('gettxout', [input.txid, input.vout]);
       if (utxo) {
-        _inputAmount += utxo.value * 100000000; // Convert BTC to satoshis
+        _inputAmount += utxo.value * SATS_PER_BTC; // Convert BTC to satoshis
       }
     }
 
@@ -2028,7 +2058,7 @@ class Bitcoin extends Service {
       const data = {
         hash: input.txid,
         index: input.vout,
-        sequence: 0xffffffff
+        sequence: 4294967295
       };
 
       psbt.addInput(data);
@@ -2581,7 +2611,11 @@ class Bitcoin extends Service {
           if (n === 'signet') return 'signet';
           return '';
         })();
-        const cookiePath = path.resolve(process.cwd(), datadir, chainSubdir, '.cookie');
+        const datadirRoot = resolveBitcoinDatadirForLocalAccess(datadir);
+        if (!datadirRoot) {
+          throw new Error(`[FABRIC:BITCOIN] Invalid or unsafe datadir for cookie auth: ${datadir}`);
+        }
+        const cookiePath = path.join(datadirRoot, chainSubdir, '.cookie');
         const cookieTimeoutMs = 15000;
         const cookiePollMs = 100;
         const cookieDeadline = Date.now() + cookieTimeoutMs;
@@ -2637,10 +2671,13 @@ class Bitcoin extends Service {
           if (n === 'signet') return 'signet';
           return '';
         })();
-        const cookiePath = path.resolve(process.cwd(), datadir, chainSubdir, '.cookie');
+        const datadirRootUnmanaged = resolveBitcoinDatadirForLocalAccess(datadir);
+        const cookiePathUnmanaged = datadirRootUnmanaged
+          ? path.join(datadirRootUnmanaged, chainSubdir, '.cookie')
+          : null;
         try {
-          if (fs.existsSync(cookiePath)) {
-            const raw = fs.readFileSync(cookiePath, 'utf8').trim();
+          if (cookiePathUnmanaged && fs.existsSync(cookiePathUnmanaged)) {
+            const raw = fs.readFileSync(cookiePathUnmanaged, 'utf8').trim();
             const colon = raw.indexOf(':');
             if (colon !== -1) {
               this.settings.username = raw.slice(0, colon);

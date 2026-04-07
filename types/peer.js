@@ -205,7 +205,7 @@ class Peer extends Service {
     // Peers: keyed by public key (id). Persistent registry in _state.peers.
     // Map connection address (IP:port) -> peer id (public key). Learned on P2P_SESSION_OFFER/OPEN.
     this._addressToId = {};
-    /** Inbound `host:port` -> remote NOISE static pubkey hex (FLUSH_CHAIN allowlist / registry; not used for AMP verify). */
+    /** Inbound address -> NOISE static pubkey hex (FLUSH_CHAIN allowlist only; never for AMP verify). */
     this._inboundNoiseStaticPubkeyByAddress = Object.create(null);
     this.mailboxes = {};
     this.memory = {};
@@ -971,13 +971,7 @@ class Peer extends Service {
     }, 500);
   }
 
-  /**
-   * Sender pubkey hex for FLUSH_CHAIN allowlist: session/URL {@link Peer#peers} entry first,
-   * else inbound NOISE static key (inbound connections have no URL username).
-   * Not used for AMP signature verify — wire signatures use the Fabric identity key, not necessarily NOISE static.
-   * @param {string} connectionAddress host:port
-   * @returns {string} lowercase hex or empty
-   */
+  /** FLUSH_CHAIN sender hex: {@link Peer#peers}[addr].publicKey if set, else inbound NOISE static (allowlist must match). */
   _flushChainSenderPubkeyHex (connectionAddress) {
     if (!connectionAddress) return '';
     const rec = this.peers[connectionAddress];
@@ -1138,7 +1132,7 @@ class Peer extends Service {
           const h = normalizePeerPubkeyHex(e);
           if (h) allowed.add(h);
         }
-        if (!senderHex || !allowed.has(senderHex)) {
+        if (!allowed.has(senderHex)) {
           this.emit('warning', `[FABRIC:PEER] FLUSH_CHAIN ignored: sender pubkey not in flushChainAuthorizedPubkeys`);
           break;
         }
@@ -1540,33 +1534,6 @@ class Peer extends Service {
     }
   }
 
-  _handleNOISEHandshake (_localPrivateKey, localPublicKey, remotePublicKey) {
-    if (this.settings.debug) {
-      // Never log private key material — public keys only for transport diagnostics.
-      this.emit('debug', `Peer transport handshake using local public key: ${localPublicKey.toString('hex')}`);
-      this.emit('debug', `Peer transport handshake with remote public key: ${remotePublicKey.toString('hex')}`);
-    }
-  }
-
-  /**
-   * Record inbound NOISE static pubkey for FLUSH_CHAIN allowlist / registry (not for AMP verify).
-   */
-  _scheduleInboundNoisePublicKey (connAddress, remotePublicKey) {
-    if (!connAddress || remotePublicKey == null) return;
-    const pkHex = normalizePeerPubkeyHex(
-      Buffer.isBuffer(remotePublicKey) ? Buffer.from(remotePublicKey) : remotePublicKey
-    );
-    if (!pkHex) return;
-    this._inboundNoiseStaticPubkeyByAddress[connAddress] = pkHex;
-    setImmediate(() => {
-      this._upsertPeerRegistry(connAddress, {
-        publicKey: pkHex,
-        address: connAddress,
-        lastSeen: new Date().toISOString()
-      });
-    });
-  }
-
   _NOISESocketHandler (socket) {
     const target = `${socket.remoteAddress}:${socket.remotePort}`;
     const url = `tcp://${target}`;
@@ -1598,8 +1565,15 @@ class Peer extends Service {
 
     // Set up NOISE event handlers
     handler.encrypt.on('handshake', (_lk, localPk, remotePk) => {
-      this._handleNOISEHandshake(_lk, localPk, remotePk);
-      this._scheduleInboundNoisePublicKey(target, remotePk);
+      if (this.settings.debug) {
+        // Transport diagnostics only — never log private key material from the handshake.
+        this.emit('debug', `Peer transport handshake using local public key: ${localPk.toString('hex')}`);
+        this.emit('debug', `Peer transport handshake with remote public key: ${remotePk.toString('hex')}`);
+      }
+      if (remotePk != null) {
+        const pkHex = normalizePeerPubkeyHex(Buffer.isBuffer(remotePk) ? Buffer.from(remotePk) : remotePk);
+        if (pkHex) this._inboundNoiseStaticPubkeyByAddress[target] = pkHex;
+      }
     });
     handler.encrypt.on('error', (error) => {
       if (error && (error.code === 'EPIPE' || error.code === 'ECONNRESET')) {

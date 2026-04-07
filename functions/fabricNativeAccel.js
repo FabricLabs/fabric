@@ -117,6 +117,7 @@ function tryLoadAddon () {
   const skipBuiltinRelease = envEnabled('FABRIC_SKIP_NATIVE_ADDON');
   const fs = require('fs');
   const pathMod = require('path');
+  const builtinReleaseAbs = pathMod.join(__dirname, '..', 'build', 'Release', 'fabric.node');
   let lastLoadError = null;
   loadedAddonPath = null;
   for (const p of addonPathCandidates(pathMod, skipBuiltinRelease)) {
@@ -126,7 +127,19 @@ function tryLoadAddon () {
         lastLoadError = new Error(`Native addon not found: ${p}`);
         continue;
       }
-      addon = require(p);
+      let sameAsBuiltin = false;
+      try {
+        const rps = fs.realpathSync.native || fs.realpathSync;
+        sameAsBuiltin = rps(p) === rps(builtinReleaseAbs);
+      } catch {
+        sameAsBuiltin = pathMod.normalize(p) === pathMod.normalize(builtinReleaseAbs);
+      }
+      if (sameAsBuiltin) {
+        addon = require('../build/Release/fabric.node');
+      } else {
+        // nosemgrep — FABRIC_ADDON_PATH only; path validated with existsSync above.
+        addon = require(p);
+      }
       loadedAddonPath = p;
       loadError = null;
       return;

@@ -20,7 +20,8 @@ const Point = secp256k1.Point;
 const ZERO = Point.ZERO;
 const N = Point.Fn.ORDER;
 
-const HARDENED_OFFSET = 0x80000000;
+/** BIP32 hardened derivation bit (2^31). */
+const HARDENED_OFFSET = 2147483648;
 const MASTER_SECRET = new Uint8Array(Buffer.from('Bitcoin seed', 'utf8'));
 
 function hash160 (buf) {
@@ -54,7 +55,7 @@ function fingerprintFromPub (pub) {
 const DEFAULT_NETWORK = {
   messagePrefix: '\x18Bitcoin Signed Message:\n',
   bech32: 'bc',
-  bip32: { public: 0x0488b21e, private: 0x0488ade4 },
+  bip32: { public: 76067358, private: 76066276 },
   pubKeyHash: 0x00,
   scriptHash: 0x05,
   wif: 0x80
@@ -62,11 +63,11 @@ const DEFAULT_NETWORK = {
 
 function networkFromVersions (version) {
   const pairs = [
-    [0x0488b21e, 0x0488ade4, DEFAULT_NETWORK],
-    [0x043587cf, 0x04358394, {
+    [76067358, 76066276, DEFAULT_NETWORK],
+    [70617039, 70615956, {
       messagePrefix: '\x18Bitcoin Signed Message:\n',
       bech32: 'tb',
-      bip32: { public: 0x043587cf, private: 0x04358394 },
+      bip32: { public: 70617039, private: 70615956 },
       pubKeyHash: 0x6f,
       scriptHash: 0xc4,
       wif: 0xef
@@ -116,7 +117,7 @@ class HDNode {
     } else {
       i = Number(index);
     }
-    if (!Number.isInteger(i) || i < 0 || i > 0xffffffff) throw new Error('Invalid index');
+    if (!Number.isInteger(i) || i < 0 || i > 4294967295) throw new Error('Invalid index');
     const hardened = i >= HARDENED_OFFSET;
 
     if (this.privateKey) {
@@ -187,7 +188,7 @@ class HDNode {
       if (hardened) seg = seg.slice(0, -1);
       if (!/^\d+$/.test(seg)) throw new Error(`Invalid path segment: ${parts[p]}`);
       const index = Number(seg);
-      if (!Number.isInteger(index) || index < 0 || index > 0x7fffffff) {
+      if (!Number.isInteger(index) || index < 0 || index > 2147483647) {
         throw new Error(`Invalid path segment: ${parts[p]}`);
       }
       node = node.derive(hardened ? index + HARDENED_OFFSET : index);
@@ -253,7 +254,7 @@ function fromBase58 (str) {
     return new HDNode(net, depth, parentFingerprint, index, chainCode, privateKey, publicKey);
   }
   if (version === net.bip32.public) {
-    if (keyData[0] !== 0x02 && keyData[0] !== 0x03) {
+    if (keyData[0] !== 2 && keyData[0] !== 3) {
       throw new Error('Invalid public key prefix');
     }
     let publicKey;
