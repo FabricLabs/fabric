@@ -35,5 +35,3 @@ exclude_paths:
   - "functions/sipa/**"
   # Optional native addon load paths (bounded; FABRIC_ADDON_PATH / Release binary only).
   - "functions/fabricNativeAccel.js"
-  # Regtest cookie / datadir path joins (bounded; documented layouts + validated relative datadir).
-  - "functions/regtestCookiePaths.js"

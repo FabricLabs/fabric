@@ -18,7 +18,7 @@ describe('@fabric/core/services/bitcoin (deep coverage)', function () {
   this.timeout(180000);
 
   describe('_buildRPCProbeCandidates with credentials and secure client', function () {
-    it('pushes settings.credentials candidates when username/password set', function () {
+    it('pushes settings.credentials candidates when username/password set', async function () {
       const btc = new Bitcoin({
         mode: 'rpc',
         network: 'regtest',
@@ -28,7 +28,7 @@ describe('@fabric/core/services/bitcoin (deep coverage)', function () {
         password: 'secret',
         secure: true
       });
-      const list = btc._buildRPCProbeCandidates();
+      const list = await btc._buildRPCProbeCandidates();
       const cred = list.find((c) => c.source === 'settings.credentials');
       assert.ok(cred, 'expected settings.credentials candidate');
       assert.strictEqual(cred.secure, true);

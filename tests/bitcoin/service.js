@@ -128,7 +128,7 @@ describe('@fabric/core/services/bitcoin', function () {
         }
       });
 
-      it('normalizes host:port values in explicit probe candidates', function () {
+      it('normalizes host:port values in explicit probe candidates', async function () {
         const btc = new Bitcoin({
           network: 'regtest',
           mode: 'rpc',
@@ -139,13 +139,13 @@ describe('@fabric/core/services/bitcoin', function () {
           ]
         });
 
-        const candidates = btc._buildRPCProbeCandidates();
+        const candidates = await btc._buildRPCProbeCandidates();
         const explicit = candidates.find((c) => c.source === undefined && c.network === 'regtest' && c.rpcport === 18443);
         assert.ok(explicit, 'expected explicit probe candidate to exist');
         assert.strictEqual(explicit.host, 'localhost');
       });
 
-      it('prefers configured probe candidates and deduplicates', function () {
+      it('prefers configured probe candidates and deduplicates', async function () {
         const btc = new Bitcoin({
           network: 'regtest',
           mode: 'rpc',
@@ -157,7 +157,7 @@ describe('@fabric/core/services/bitcoin', function () {
           ]
         });
 
-        const candidates = btc._buildRPCProbeCandidates();
+        const candidates = await btc._buildRPCProbeCandidates();
         const same = candidates.filter((c) => c.host === '127.0.0.1' && c.rpcport === 18443 && c.network === 'regtest');
         assert.ok(same.length >= 1, 'expected at least one regtest probe candidate');
 
@@ -271,7 +271,7 @@ describe('@fabric/core/services/bitcoin', function () {
         assert.strictEqual(btc.settings.network, 'regtest');
       });
 
-      it('adds default network fallback probe candidates', function () {
+      it('adds default network fallback probe candidates', async function () {
         const btc = new Bitcoin({
           mode: 'rpc',
           host: '127.0.0.1',
@@ -279,7 +279,7 @@ describe('@fabric/core/services/bitcoin', function () {
           network: 'regtest'
         });
 
-        const candidates = btc._buildRPCProbeCandidates();
+        const candidates = await btc._buildRPCProbeCandidates();
         const keys = new Set(candidates.map((c) => `${c.network}:${c.rpcport}`));
 
         assert.ok(keys.has('regtest:18443'));
@@ -288,7 +288,7 @@ describe('@fabric/core/services/bitcoin', function () {
         assert.ok(keys.has('signet:38332'));
       });
 
-      it('filters invalid probe candidate entries', function () {
+      it('filters invalid probe candidate entries', async function () {
         const btc = new Bitcoin({
           mode: 'rpc',
           host: '127.0.0.1',
@@ -300,7 +300,7 @@ describe('@fabric/core/services/bitcoin', function () {
           ]
         });
 
-        const candidates = btc._buildRPCProbeCandidates();
+        const candidates = await btc._buildRPCProbeCandidates();
         const explicitValid = candidates.filter((c) => c.host === 'localhost' && c.rpcport === 18443 && c.network === 'regtest');
         assert.strictEqual(explicitValid.length, 1, 'expected only valid explicit candidate to survive');
       });

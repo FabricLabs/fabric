@@ -10,7 +10,8 @@ const {
 const crypto = require('crypto');
 const children = require('child_process');
 const fs = require('fs');
-const regtestCookiePaths = require('../functions/regtestCookiePaths');
+const os = require('os');
+const path = require('path');
 
 // External Dependencies
 const jayson = require('jayson/lib/client');
@@ -53,6 +54,8 @@ function redactSensitiveCommandArg (arg) {
 const SATS_PER_BTC = 10 ** 8;
 /** Max |sats − round(sats)| allowed when scaling BTC → satoshis (reject fractional satoshis; allow float noise). */
 const SAT_ADJ_EPS = 1 / (10 ** 6);
+/** Reject absurd paths from env/settings before touching the filesystem (Codacy/Semgrep-friendly bounds). */
+const BITCOIN_COOKIE_PATH_MAX_LEN = 4096;
 
 /**
  * Manages interaction with the Bitcoin network.
@@ -60,32 +63,192 @@ const SAT_ADJ_EPS = 1 / (10 ** 6);
  */
 class Bitcoin extends Service {
   /**
+   * Bitcoin Core chain data subdirectory under {@code -datadir} (empty string for mainnet cookie at datadir root).
+   * Matches Core layout: `regtest/`, `testnet3/`, `signet/`, `testnet4/`, or root for mainnet.
+   * @param {string} network Fabric network name (mainnet, testnet, regtest, signet, testnet4, playnet, …).
+   * @returns {string}
+   */
+  static bitcoindChainDataDirSegment (network) {
+    const n = String(network || 'mainnet').toLowerCase();
+    if (n === 'regtest' || n === 'playnet') return 'regtest';
+    if (n === 'testnet') return 'testnet3';
+    if (n === 'testnet4') return 'testnet4';
+    if (n === 'signet') return 'signet';
+    return '';
+  }
+
+  /**
    * Resolve a configured bitcoind datadir for local cookie discovery. Relative paths are cwd-anchored
    * and must not escape the project root; absolute paths are normalized as-is.
    * @param {string} datadir
    * @returns {string|null}
    */
   static resolveBitcoinDatadirForLocalAccess (datadir) {
-    return regtestCookiePaths.resolveBitcoinDatadirForLocalAccess(datadir);
+    if (datadir == null || typeof datadir !== 'string') return null;
+    const trimmed = datadir.trim();
+    if (!trimmed || trimmed.includes('\0') || trimmed.length > BITCOIN_COOKIE_PATH_MAX_LEN) return null;
+    const abs = path.isAbsolute(trimmed)
+      ? path.normalize(trimmed)
+      : path.resolve(process.cwd(), trimmed);
+    if (!path.isAbsolute(trimmed)) {
+      const root = path.resolve(process.cwd());
+      const rel = path.relative(root, abs);
+      if (rel === '' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) {
+        return null;
+      }
+    }
+    return abs;
   }
 
   /**
-   * Cookie file under a resolved datadir and chain subdirectory (e.g. `regtest`, `signet`).
+   * Resolve {@code FABRIC_BITCOIN_COOKIE_FILE}-style paths: normalize, bound length, and keep relative paths
+   * inside the process cwd (absolute paths allowed for explicit operator overrides).
+   * @param {string} filePath
+   * @returns {string|null}
+   */
+  static resolveBitcoinCookieFileForLocalRead (filePath) {
+    if (filePath == null || typeof filePath !== 'string') return null;
+    const trimmed = filePath.trim();
+    if (!trimmed || trimmed.includes('\0') || trimmed.length > BITCOIN_COOKIE_PATH_MAX_LEN) return null;
+    const abs = path.isAbsolute(trimmed)
+      ? path.normalize(trimmed)
+      : path.resolve(process.cwd(), trimmed);
+    if (!path.isAbsolute(trimmed)) {
+      const root = path.resolve(process.cwd());
+      const rel = path.relative(root, abs);
+      if (rel === '' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) {
+        return null;
+      }
+    }
+    return abs;
+  }
+
+  /**
+   * Read Bitcoin Core {@code .cookie} (user:password) using async I/O. Path must already be resolved/normalized.
+   * @param {string} cookiePath
+   * @returns {Promise<{ username: string, password: string }|null>}
+   */
+  static async tryReadRpcCookieFileCredentials (cookiePath) {
+    if (typeof cookiePath !== 'string' || !cookiePath.trim()) return null;
+    const p = path.normalize(cookiePath.trim());
+    if (p.includes('\0') || p.length > BITCOIN_COOKIE_PATH_MAX_LEN) return null;
+    try {
+      const raw = (await fs.promises.readFile(p, 'utf8')).trim();
+      const colon = raw.indexOf(':');
+      if (colon === -1) return null;
+      return { username: raw.slice(0, colon), password: raw.slice(colon + 1) };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * `.cookie` path under a resolved bitcoind datadir root for the given Fabric network.
+   * @param {string} datadirRoot Absolute or project-relative resolved datadir (Core {@code -datadir} value).
+   * @param {string} network
+   * @returns {string}
+   */
+  static cookiePathForBitcoind (datadirRoot, network) {
+    const seg = Bitcoin.bitcoindChainDataDirSegment(network);
+    if (!seg) return path.join(datadirRoot, '.cookie');
+    return path.join(datadirRoot, seg, '.cookie');
+  }
+
+  /**
+   * Cookie file under explicit chain subdirectory (empty string = mainnet-style datadir/.cookie only).
+   * Prefer {@link #cookiePathForBitcoind} when you have a Fabric network name.
    * @param {string} datadirRoot
-   * @param {string} chainSubdir
+   * @param {string} chainSubdir e.g. `regtest`, `signet`, or `''`
    * @returns {string}
    */
   static cookiePathForChainSubtree (datadirRoot, chainSubdir) {
-    return regtestCookiePaths.cookiePathForChainSubtree(datadirRoot, chainSubdir);
+    const s = chainSubdir == null ? '' : String(chainSubdir);
+    if (!s) return path.join(datadirRoot, '.cookie');
+    return path.join(datadirRoot, s, '.cookie');
   }
 
   /**
-   * Regtest RPC cookie paths to probe, in priority order.
+   * Typical `stores/…` paths under the project for the network (for cookie discovery before node spawn).
+   * @param {string} network
+   * @param {{ storage?: { size?: number } }} [constraints]
+   * @returns {string[]}
+   */
+  static defaultStoresRelativeDirsForProbe (network, constraints) {
+    const n = String(network || 'mainnet').toLowerCase();
+    switch (n) {
+      case 'regtest':
+        return ['stores/bitcoin-regtest'];
+      case 'playnet':
+        return ['stores/bitcoin-playnet'];
+      case 'testnet':
+        return ['stores/bitcoin-testnet'];
+      case 'testnet4':
+        return ['stores/bitcoin-testnet4'];
+      case 'signet':
+        return ['stores/bitcoin-signet'];
+      case 'mainnet':
+      default: {
+        const dirs = ['stores/bitcoin-mainnet'];
+        if (constraints && constraints.storage && constraints.storage.size) {
+          dirs.push('stores/bitcoin-mainnet-pruned');
+        }
+        return dirs;
+      }
+    }
+  }
+
+  /**
+   * Ordered local cookie paths to probe for RPC (env override, project stores, Electron mirror, ~/.bitcoin, optional settings datadir).
+   * @param {{ network?: string, envCookieFile?: string|undefined, settingsDatadir?: string|undefined, constraints?: { storage?: { size?: number } } }} opts
+   * @returns {string[]}
+   */
+  static buildLocalCookieProbePaths (opts = {}) {
+    const { network, envCookieFile, settingsDatadir, constraints } = opts;
+    const net = String(network || 'mainnet').toLowerCase();
+    const list = [];
+    if (envCookieFile) {
+      const resolvedEnv = Bitcoin.resolveBitcoinCookieFileForLocalRead(String(envCookieFile));
+      if (resolvedEnv) list.push(resolvedEnv);
+    }
+    for (const rel of Bitcoin.defaultStoresRelativeDirsForProbe(net, constraints)) {
+      const root = path.resolve(process.cwd(), rel);
+      list.push(Bitcoin.cookiePathForBitcoind(root, net));
+    }
+    if (process.platform === 'darwin') {
+      const hd = os.homedir();
+      for (const rel of Bitcoin.defaultStoresRelativeDirsForProbe(net, constraints)) {
+        const folder = path.basename(rel);
+        const electronRoot = path.join(hd, 'Library/Application Support/Electron/stores', folder);
+        list.push(Bitcoin.cookiePathForBitcoind(electronRoot, net));
+      }
+    }
+    list.push(Bitcoin.cookiePathForBitcoind(path.join(os.homedir(), '.bitcoin'), net));
+    if (settingsDatadir && typeof settingsDatadir === 'string' && settingsDatadir.trim()) {
+      const resolved = Bitcoin.resolveBitcoinDatadirForLocalAccess(settingsDatadir);
+      if (resolved) list.push(Bitcoin.cookiePathForBitcoind(resolved, net));
+    }
+    return list;
+  }
+
+  /**
+   * Parent directory name of `.cookie` (for probe logging).
+   * @param {string} cookiePath
+   * @returns {string}
+   */
+  static parentDirNameForCookieProbe (cookiePath) {
+    if (typeof cookiePath !== 'string' || !cookiePath) return 'unknown';
+    const parts = cookiePath.split(/[/\\]/).filter(Boolean);
+    if (parts.length < 2) return parts[0] || 'unknown';
+    return parts[parts.length - 2];
+  }
+
+  /**
+   * @deprecated Use {@link #buildLocalCookieProbePaths} with `network: 'regtest'`.
    * @param {{ envCookieFile?: string|undefined, settingsDatadir?: string|undefined }} opts
    * @returns {string[]}
    */
   static buildRegtestCookiePathList (opts = {}) {
-    return regtestCookiePaths.buildRegtestCookiePathList(opts);
+    return Bitcoin.buildLocalCookieProbePaths({ ...opts, network: 'regtest' });
   }
 
   /**
@@ -388,6 +551,7 @@ class Bitcoin extends Service {
   _getDefaultRPCPort (network = 'mainnet') {
     switch (network) {
       case 'regtest':
+      case 'playnet':
         return 18443;
       case 'testnet':
         return 18332;
@@ -403,6 +567,7 @@ class Bitcoin extends Service {
   _getDefaultP2PPort (network = 'mainnet') {
     switch (network) {
       case 'regtest':
+      case 'playnet':
         return 18444;
       case 'testnet':
         return 18333;
@@ -461,7 +626,7 @@ class Bitcoin extends Service {
     return host;
   }
 
-  _buildRPCProbeCandidates () {
+  async _buildRPCProbeCandidates () {
     const candidates = [];
     const seen = new Set();
     const cookiePathsTried = new Set();
@@ -486,34 +651,31 @@ class Bitcoin extends Service {
       candidates.push(normalized);
     };
 
-    // Prefer cookie-auth regtest probes first (reuse local bitcoind; avoid double-bind on :18443).
-    if (String(this.settings.network || '').toLowerCase() === 'regtest') {
-      const rpcport = Number(this.settings.rpcport) || this._getDefaultRPCPort('regtest');
+    // Cookie-auth probes when no explicit RPC user/pass (mainnet, testnet*, signet, regtest, playnet, …).
+    if (!this.settings.username && !this.settings.password) {
+      const net = this.settings.network || 'mainnet';
+      const rpcport = Number(this.settings.rpcport) || this._getDefaultRPCPort(net);
       const host = this._normalizeRPCHost(this.settings.host || '127.0.0.1');
-      const cookiePaths = Bitcoin.buildRegtestCookiePathList({
+      const cookiePaths = Bitcoin.buildLocalCookieProbePaths({
+        network: net,
         envCookieFile: process.env.FABRIC_BITCOIN_COOKIE_FILE,
-        settingsDatadir: this.settings.datadir
+        settingsDatadir: this.settings.datadir,
+        constraints: this.settings.constraints
       });
       for (const cookiePath of cookiePaths) {
         if (!cookiePath || cookiePathsTried.has(cookiePath)) continue;
         cookiePathsTried.add(cookiePath);
-        try {
-          if (!fs.existsSync(cookiePath)) continue;
-          const raw = fs.readFileSync(cookiePath, 'utf8').trim();
-          const colon = raw.indexOf(':');
-          if (colon === -1) continue;
-          pushCandidate({
-            source: `cookie:${regtestCookiePaths.parentDirNameForCookieProbe(cookiePath)}`,
-            host,
-            rpcport,
-            network: 'regtest',
-            username: raw.slice(0, colon),
-            password: raw.slice(colon + 1),
-            secure: false
-          });
-        } catch {
-          /* ignore missing/unreadable cookie */
-        }
+        const creds = await Bitcoin.tryReadRpcCookieFileCredentials(cookiePath);
+        if (!creds) continue;
+        pushCandidate({
+          source: `cookie:${Bitcoin.parentDirNameForCookieProbe(cookiePath)}`,
+          host,
+          rpcport,
+          network: net,
+          username: creds.username,
+          password: creds.password,
+          secure: false
+        });
       }
     }
 
@@ -599,7 +761,7 @@ class Bitcoin extends Service {
   }
 
   async _detectExistingBitcoind () {
-    const candidates = this._buildRPCProbeCandidates();
+    const candidates = await this._buildRPCProbeCandidates();
 
     for (const candidate of candidates) {
       try {
@@ -2448,6 +2610,9 @@ class Bitcoin extends Service {
         break;
       case 'playnet':
         datadir = './stores/bitcoin-playnet';
+        params.push('-regtest');
+        params.push('-fallbackfee=1.0');
+        params.push('-maxtxfee=1.1');
         break;
     }
 
@@ -2598,36 +2763,22 @@ class Bitcoin extends Service {
 
       // When using cookie auth, wait for bitcoind to create the cookie file then read credentials
       if (useCookieAuth) {
-        const chainSubdir = (() => {
-          const n = (this.settings.network || '').toLowerCase();
-          if (n === 'regtest') return 'regtest';
-          if (n === 'testnet') return 'testnet3';
-          if (n === 'signet') return 'signet';
-          return '';
-        })();
         const datadirRoot = Bitcoin.resolveBitcoinDatadirForLocalAccess(datadir);
         if (!datadirRoot) {
           throw new Error(`[FABRIC:BITCOIN] Invalid or unsafe datadir for cookie auth: ${datadir}`);
         }
-        const cookiePath = Bitcoin.cookiePathForChainSubtree(datadirRoot, chainSubdir);
+        const cookiePath = Bitcoin.cookiePathForBitcoind(datadirRoot, this.settings.network);
         const cookieTimeoutMs = 15000;
         const cookiePollMs = 100;
         const cookieDeadline = Date.now() + cookieTimeoutMs;
         while (Date.now() < cookieDeadline) {
-          try {
-            if (fs.existsSync(cookiePath)) {
-              const raw = fs.readFileSync(cookiePath, 'utf8').trim();
-              const colon = raw.indexOf(':');
-              if (colon !== -1) {
-                this.settings.username = raw.slice(0, colon);
-                this.settings.password = raw.slice(colon + 1);
-                this.settings.authority = `http://127.0.0.1:${this.settings.rpcport}`;
-                if (this.settings.debug) this.emit('debug', '[FABRIC:BITCOIN] Read RPC credentials from cookie file');
-                break;
-              }
-            }
-          } catch {
-            // ignore read errors, keep polling
+          const creds = await Bitcoin.tryReadRpcCookieFileCredentials(cookiePath);
+          if (creds) {
+            this.settings.username = creds.username;
+            this.settings.password = creds.password;
+            this.settings.authority = `http://127.0.0.1:${this.settings.rpcport}`;
+            if (this.settings.debug) this.emit('debug', '[FABRIC:BITCOIN] Read RPC credentials from cookie file');
+            break;
           }
           await new Promise(r => setTimeout(r, cookiePollMs));
         }
@@ -2658,29 +2809,17 @@ class Bitcoin extends Service {
       const rpcport = this.settings.rpcport || 18443;
       this.settings.authority = `http://${host}:${rpcport}`;
       if (!this.settings.username || !this.settings.password) {
-        const chainSubdir = (() => {
-          const n = (this.settings.network || '').toLowerCase();
-          if (n === 'regtest') return 'regtest';
-          if (n === 'testnet') return 'testnet3';
-          if (n === 'signet') return 'signet';
-          return '';
-        })();
         const datadirRootUnmanaged = Bitcoin.resolveBitcoinDatadirForLocalAccess(datadir);
         const cookiePathUnmanaged = datadirRootUnmanaged
-          ? Bitcoin.cookiePathForChainSubtree(datadirRootUnmanaged, chainSubdir)
+          ? Bitcoin.cookiePathForBitcoind(datadirRootUnmanaged, this.settings.network)
           : null;
-        try {
-          if (cookiePathUnmanaged && fs.existsSync(cookiePathUnmanaged)) {
-            const raw = fs.readFileSync(cookiePathUnmanaged, 'utf8').trim();
-            const colon = raw.indexOf(':');
-            if (colon !== -1) {
-              this.settings.username = raw.slice(0, colon);
-              this.settings.password = raw.slice(colon + 1);
-              if (this.settings.debug) this.emit('debug', '[FABRIC:BITCOIN] Read RPC credentials from cookie file (unmanaged)');
-            }
+        if (cookiePathUnmanaged) {
+          const credsUnmanaged = await Bitcoin.tryReadRpcCookieFileCredentials(cookiePathUnmanaged);
+          if (credsUnmanaged) {
+            this.settings.username = credsUnmanaged.username;
+            this.settings.password = credsUnmanaged.password;
+            if (this.settings.debug) this.emit('debug', '[FABRIC:BITCOIN] Read RPC credentials from cookie file (unmanaged)');
           }
-        } catch {
-          // Cookie not available
         }
         if (!this.settings.username || !this.settings.password) {
           this.settings.username = `fabric_${crypto.randomBytes(8).toString('hex')}`;
