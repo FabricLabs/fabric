@@ -7,8 +7,6 @@ engines:
     exclude_paths:
       - "src/**"
       - "native/**"
-      # Intentional path.join/require for optional native addon; not user-controlled traversal.
-      - "functions/fabricNativeAccel.js"
   # Cppcheck still scanned src/ despite root exclude_paths; tool-specific paths are reliable for PR gates.
   cppcheck:
     exclude_paths:
@@ -35,3 +33,5 @@ exclude_paths:
   - "scripts/**"
   - "tests/**"
   - "functions/sipa/**"
+  # Optional native addon load paths (bounded; FABRIC_ADDON_PATH / Release binary only).
+  - "functions/fabricNativeAccel.js"

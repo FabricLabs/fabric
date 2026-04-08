@@ -12,11 +12,7 @@
 'use strict';
 
 const fabricNativeAccel = require('./fabricNativeAccel');
-
-/** @param {number} a @param {number} b @param {number} c @param {number} d — bytes 0–255 */
-function u32be (a, b, c, d) {
-  return ((a & 255) << 24) | ((b & 255) << 16) | ((c & 255) << 8) | (d & 255);
-}
+const { u32be } = require('./bytes');
 
 const CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
 

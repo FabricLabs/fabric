@@ -14,16 +14,11 @@ const { sha512 } = require('@noble/hashes/sha2.js');
 const { ripemd160 } = require('@noble/hashes/legacy.js');
 const { secp256k1 } = require('@noble/curves/secp256k1.js');
 const { encodeCheck, decodeCheck } = require('./base58');
-const { toUint8Strict } = require('./bytes');
+const { toUint8Strict, u32be } = require('./bytes');
 
 const Point = secp256k1.Point;
 const ZERO = Point.ZERO;
 const N = Point.Fn.ORDER;
-
-/** Pack four 0–255 bytes as a big-endian uint32 (avoids large numeric literals for static analyzers). */
-function u32be (a, b, c, d) {
-  return ((a & 255) << 24) | ((b & 255) << 16) | ((c & 255) << 8) | (d & 255);
-}
 
 /** BIP32 hardened derivation bit (2^31) without a bare 2147483648 literal. */
 const HARDENED_OFFSET = (1 << 31) >>> 0;

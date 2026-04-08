@@ -137,7 +137,6 @@ function tryLoadAddon () {
       if (sameAsBuiltin) {
         addon = require('../build/Release/fabric.node');
       } else {
-        // nosemgrep — FABRIC_ADDON_PATH only; path validated with existsSync above.
         addon = require(p);
       }
       loadedAddonPath = p;

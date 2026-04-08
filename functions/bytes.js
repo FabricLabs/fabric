@@ -35,6 +35,18 @@ function _isByte (v) {
   return Number.isInteger(v) && v >= 0 && v <= 255;
 }
 
+/**
+ * Pack four 0–255 byte values as a big-endian uint32 (for protocol constants without large literals).
+ * @param {number} a
+ * @param {number} b
+ * @param {number} c
+ * @param {number} d
+ * @returns {number}
+ */
+function u32be (a, b, c, d) {
+  return ((a & 255) << 24) | ((b & 255) << 16) | ((c & 255) << 8) | (d & 255);
+}
+
 function _bytesFromIterable (iterable, maxLength) {
   const out = [];
   let i = 0;
@@ -98,5 +110,6 @@ function toUint8Flexible (bytes, maxLength) {
 
 module.exports = {
   toUint8Strict,
-  toUint8Flexible
+  toUint8Flexible,
+  u32be
 };
