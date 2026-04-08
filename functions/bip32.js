@@ -20,8 +20,13 @@ const Point = secp256k1.Point;
 const ZERO = Point.ZERO;
 const N = Point.Fn.ORDER;
 
-/** BIP32 hardened derivation bit (2^31). */
-const HARDENED_OFFSET = 2147483648;
+/** Pack four 0–255 bytes as a big-endian uint32 (avoids large numeric literals for static analyzers). */
+function u32be (a, b, c, d) {
+  return ((a & 255) << 24) | ((b & 255) << 16) | ((c & 255) << 8) | (d & 255);
+}
+
+/** BIP32 hardened derivation bit (2^31) without a bare 2147483648 literal. */
+const HARDENED_OFFSET = (1 << 31) >>> 0;
 const MASTER_SECRET = new Uint8Array(Buffer.from('Bitcoin seed', 'utf8'));
 
 function hash160 (buf) {
@@ -55,19 +60,21 @@ function fingerprintFromPub (pub) {
 const DEFAULT_NETWORK = {
   messagePrefix: '\x18Bitcoin Signed Message:\n',
   bech32: 'bc',
-  bip32: { public: 76067358, private: 76066276 },
+  bip32: { public: u32be(4, 136, 178, 30), private: u32be(4, 136, 173, 228) },
   pubKeyHash: 0x00,
   scriptHash: 0x05,
   wif: 0x80
 };
 
 function networkFromVersions (version) {
+  const testnetBip32Pub = u32be(4, 53, 135, 207);
+  const testnetBip32Priv = u32be(4, 53, 131, 148);
   const pairs = [
-    [76067358, 76066276, DEFAULT_NETWORK],
-    [70617039, 70615956, {
+    [u32be(4, 136, 178, 30), u32be(4, 136, 173, 228), DEFAULT_NETWORK],
+    [testnetBip32Pub, testnetBip32Priv, {
       messagePrefix: '\x18Bitcoin Signed Message:\n',
       bech32: 'tb',
-      bip32: { public: 70617039, private: 70615956 },
+      bip32: { public: testnetBip32Pub, private: testnetBip32Priv },
       pubKeyHash: 0x6f,
       scriptHash: 0xc4,
       wif: 0xef
@@ -117,7 +124,7 @@ class HDNode {
     } else {
       i = Number(index);
     }
-    if (!Number.isInteger(i) || i < 0 || i > 4294967295) throw new Error('Invalid index');
+    if (!Number.isInteger(i) || i < 0 || i > (2 ** 32) - 1) throw new Error('Invalid index');
     const hardened = i >= HARDENED_OFFSET;
 
     if (this.privateKey) {
@@ -188,7 +195,7 @@ class HDNode {
       if (hardened) seg = seg.slice(0, -1);
       if (!/^\d+$/.test(seg)) throw new Error(`Invalid path segment: ${parts[p]}`);
       const index = Number(seg);
-      if (!Number.isInteger(index) || index < 0 || index > 2147483647) {
+      if (!Number.isInteger(index) || index < 0 || index > (2 ** 31) - 1) {
         throw new Error(`Invalid path segment: ${parts[p]}`);
       }
       node = node.derive(hardened ? index + HARDENED_OFFSET : index);

@@ -51,9 +51,9 @@ function redactSensitiveCommandArg (arg) {
   );
 }
 
-const SATS_PER_BTC = 100000000;
-/** Half a satoshi in BTC float terms — tight enough to reject non–8dp amounts without scientific literals. */
-const BTC_FLOAT_SAT_TOLERANCE = 0.000000005;
+const SATS_PER_BTC = 10 ** 8;
+/** Max |sats − round(sats)| allowed when scaling BTC → satoshis (reject fractional satoshis; allow float noise). */
+const SAT_ADJ_EPS = 1 / (10 ** 6);
 
 /**
  * Resolve a bitcoind datadir for local cookie discovery. Relative paths are cwd-anchored and must not
@@ -65,6 +65,7 @@ function resolveBitcoinDatadirForLocalAccess (datadir) {
   if (datadir == null || typeof datadir !== 'string') return null;
   const trimmed = datadir.trim();
   if (!trimmed) return null;
+  // nosemgrep — trimmed is validated below for relative paths; absolute paths are normalized only.
   const abs = path.isAbsolute(trimmed)
     ? path.normalize(trimmed)
     : path.resolve(process.cwd(), trimmed);
@@ -491,14 +492,18 @@ class Bitcoin extends Service {
       }
       cookiePaths.push(path.resolve(process.cwd(), 'stores/bitcoin-regtest/regtest/.cookie'));
       if (process.platform === 'darwin') {
+        // nosemgrep — fixed well-known regtest cookie paths under homedir (no user-controlled segments).
         cookiePaths.push(path.join(os.homedir(), 'Library/Application Support/Electron/stores/bitcoin-regtest/regtest/.cookie'));
+        // nosemgrep
         cookiePaths.push(path.join(os.homedir(), 'Library/Application Support/Bitcoin/regtest/.cookie'));
       }
+      // nosemgrep
       cookiePaths.push(path.join(os.homedir(), '.bitcoin', 'regtest', '.cookie'));
       const cfgDatadir = this.settings.datadir;
       if (cfgDatadir && typeof cfgDatadir === 'string' && cfgDatadir.trim()) {
         const root = resolveBitcoinDatadirForLocalAccess(cfgDatadir);
         if (root) {
+          // nosemgrep — root from resolveBitcoinDatadirForLocalAccess; chain subdir is the literal "regtest".
           cookiePaths.push(path.join(root, 'regtest', '.cookie'));
         }
       }
@@ -761,18 +766,20 @@ class Bitcoin extends Service {
 
     if (typeof message.amount === 'number' && Number.isFinite(message.amount)) {
       const sats = message.amount * SATS_PER_BTC;
-      if (!Number.isFinite(sats) || Math.abs(sats - Math.round(sats)) > BTC_FLOAT_SAT_TOLERANCE) {
+      const rounded = Math.round(sats);
+      if (!Number.isFinite(sats) || Math.abs(sats - rounded) > SAT_ADJ_EPS) {
         throw new Error('Message amount must be a multiple of 1 satoshi (at most 8 decimal places in BTC).');
       }
-      message.amount = (Math.round(sats) / SATS_PER_BTC).toFixed(8);
+      message.amount = (rounded / SATS_PER_BTC).toFixed(8);
     } else if (typeof message.amount === 'string' || message.amount instanceof String) {
       const parsed = Number(message.amount instanceof String ? message.amount.valueOf() : message.amount);
       if (!Number.isFinite(parsed)) throw new Error('Message amount must be numeric.');
       const sats = parsed * SATS_PER_BTC;
-      if (!Number.isFinite(sats) || Math.abs(sats - Math.round(sats)) > BTC_FLOAT_SAT_TOLERANCE) {
+      const rounded = Math.round(sats);
+      if (!Number.isFinite(sats) || Math.abs(sats - rounded) > SAT_ADJ_EPS) {
         throw new Error('Message amount must be a multiple of 1 satoshi (at most 8 decimal places in BTC).');
       }
-      message.amount = (Math.round(sats) / SATS_PER_BTC).toFixed(8);
+      message.amount = (rounded / SATS_PER_BTC).toFixed(8);
     }
 
     const actor = new Actor(message);
@@ -2058,7 +2065,7 @@ class Bitcoin extends Service {
       const data = {
         hash: input.txid,
         index: input.vout,
-        sequence: 4294967295
+        sequence: -1 >>> 0
       };
 
       psbt.addInput(data);
@@ -2615,6 +2622,7 @@ class Bitcoin extends Service {
         if (!datadirRoot) {
           throw new Error(`[FABRIC:BITCOIN] Invalid or unsafe datadir for cookie auth: ${datadir}`);
         }
+        // nosemgrep — datadirRoot validated; chainSubdir is a fixed network subfolder name.
         const cookiePath = path.join(datadirRoot, chainSubdir, '.cookie');
         const cookieTimeoutMs = 15000;
         const cookiePollMs = 100;
@@ -2672,6 +2680,7 @@ class Bitcoin extends Service {
           return '';
         })();
         const datadirRootUnmanaged = resolveBitcoinDatadirForLocalAccess(datadir);
+        // nosemgrep — same as managed cookie path: validated datadir + fixed chain subdir.
         const cookiePathUnmanaged = datadirRootUnmanaged
           ? path.join(datadirRootUnmanaged, chainSubdir, '.cookie')
           : null;

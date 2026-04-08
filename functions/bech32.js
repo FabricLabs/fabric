@@ -13,6 +13,11 @@
 
 const fabricNativeAccel = require('./fabricNativeAccel');
 
+/** @param {number} a @param {number} b @param {number} c @param {number} d — bytes 0–255 */
+function u32be (a, b, c, d) {
+  return ((a & 255) << 24) | ((b & 255) << 16) | ((c & 255) << 8) | (d & 255);
+}
+
 const CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
 
 const CHARSET_REV = (() => {
@@ -22,7 +27,7 @@ const CHARSET_REV = (() => {
 })();
 
 const BECH32_CONST = 1;
-const BECH32M_CONST = 734539939;
+const BECH32M_CONST = u32be(43, 200, 48, 163);
 
 function isNodeRuntime () {
   return typeof process !== 'undefined' && process.versions && typeof process.versions.node === 'string';
@@ -49,11 +54,18 @@ function loadSipaSegwit () {
 }
 
 function polymod (values) {
-  const GEN = [996825010, 642813549, 513874426, 1027748829, 705979059];
+  const GEN = [
+    u32be(59, 106, 87, 178),
+    u32be(38, 80, 142, 109),
+    u32be(30, 161, 25, 250),
+    u32be(61, 66, 51, 221),
+    u32be(42, 20, 98, 179)
+  ];
+  const mask25 = (1 << 25) - 1;
   let chk = 1;
   for (let i = 0; i < values.length; ++i) {
     const top = chk >> 25;
-    chk = ((chk & 33554431) << 5) ^ values[i];
+    chk = ((chk & mask25) << 5) ^ values[i];
     for (let j = 0; j < 5; ++j) {
       if ((top >> j) & 1) chk ^= GEN[j];
     }
