@@ -45,7 +45,6 @@ const OP_TRACE = require('../contracts/trace');
 const crypto = require('crypto');
 const children = require('child_process');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 
 // External Dependencies
@@ -56,9 +55,11 @@ const fetch = require('cross-fetch');
 
 // crypto support libraries
 // Use noble-curves-backed ECC shim instead of tiny-secp256k1
+const ECPairFactory = require('ecpair').default;
 const ecc = require('../types/ecc');
 const bip65 = require('bip65');
 const bip68 = require('bip68');
+const ECPair = ECPairFactory(ecc);
 const bitcoin = require('bitcoinjs-lib');
 
 // Initialize bitcoinjs-lib with the ECC library
@@ -122,7 +123,7 @@ class Bitcoin extends Service {
       spv: {
         port: 18332
       },
-      // Optional HTTP origin for block/tx/address REST fallback (e.g. a Hub). Null = RPC only.
+      /** Optional HTTP origin for block/tx/address REST fallback (e.g. a Hub). Null = RPC only. */
       explorerBaseUrl: null,
       zmq: {
         host: 'localhost',
@@ -150,20 +151,19 @@ class Bitcoin extends Service {
       servers: [],
       targets: [],
       peers: [],
-      // After RPC is ready, call `addnode &lt;host:port> add` for each entry (outbound P2P only).
-      // Used for LAN "playnet" regtest sync. Ignored on mainnet unless p2pAddNodesAllowMainnet is true.
+      /**
+       * After RPC is ready, call `addnode &lt;host:port> add` for each entry (outbound P2P only).
+       * Used for LAN "playnet" regtest sync. Ignored on mainnet unless {@link p2pAddNodesAllowMainnet} is true.
+       * @type {string[]}
+       */
       p2pAddNodes: [],
-      // When true, p2pAddNodes is applied even on mainnet (private deployments only).
+      /** When true, {@link p2pAddNodes} is applied even on mainnet (private deployments only). */
       p2pAddNodesAllowMainnet: false,
       host: '127.0.0.1',
       port: 8333, // P2P port
       rpcport: 8332, // RPC port
       interval: 60000, // 10 * 60 * 1000, // every 10 minutes, write a checkpoint
-      verbosity: 2,
-      // When true, flushChainToSnapshot is allowed on mainnet (dangerous).
-      flushChainAllowUnsafeNetworks: false,
-      // Safety cap for invalidateblock steps when rewinding to a snapshot tip.
-      flushChainMaxSteps: 100000
+      verbosity: 2
     }, settings);
 
     const netNorm = this._normalizeChainName(this.settings.network || 'mainnet');
@@ -438,28 +438,14 @@ class Bitcoin extends Service {
     }
   }
 
-  _rpcHostHasSingleNumericPortSuffix (host) {
-    const s = String(host).trim();
-    if (s.startsWith('[')) return false;
-    const first = s.indexOf(':');
-    const last = s.lastIndexOf(':');
-    if (first === -1 || first !== last) return false;
-    return /^\d+$/.test(s.slice(last + 1));
-  }
-
   _normalizeRPCHost (value) {
     if (!value) return '127.0.0.1';
     const host = String(value).trim();
     if (!host) return '127.0.0.1';
 
-    if (host.startsWith('[')) {
-      const close = host.indexOf(']');
-      if (close !== -1) return host.slice(0, close + 1);
-      return host;
-    }
-
-    if (this._rpcHostHasSingleNumericPortSuffix(host)) {
-      return host.slice(0, host.lastIndexOf(':'));
+    // bitcoin.conf may specify rpcbind/rpcconnect as host:port.
+    if (host.includes(':') &amp;&amp; !host.startsWith('[') &amp;&amp; host.split(':').length === 2) {
+      return host.split(':')[0];
     }
 
     return host;
@@ -468,7 +454,6 @@ class Bitcoin extends Service {
   _buildRPCProbeCandidates () {
     const candidates = [];
     const seen = new Set();
-    const cookiePathsTried = new Set();
 
     const pushCandidate = (candidate) => {
       if (!candidate || !candidate.host || !candidate.rpcport) return;
@@ -489,41 +474,6 @@ class Bitcoin extends Service {
       seen.add(key);
       candidates.push(normalized);
     };
-
-    // Prefer cookie-auth regtest probes first (reuse local bitcoind; avoid double-bind on :18443).
-    if (String(this.settings.network || '').toLowerCase() === 'regtest') {
-      const rpcport = Number(this.settings.rpcport) || this._getDefaultRPCPort('regtest');
-      const host = this._normalizeRPCHost(this.settings.host || '127.0.0.1');
-      const cookiePaths = [];
-      if (process.env.FABRIC_BITCOIN_COOKIE_FILE) {
-        cookiePaths.push(String(process.env.FABRIC_BITCOIN_COOKIE_FILE).trim());
-      }
-      cookiePaths.push(path.resolve(process.cwd(), 'stores/bitcoin-regtest/regtest/.cookie'));
-      if (process.platform === 'darwin') {
-        cookiePaths.push(path.join(os.homedir(), 'Library/Application Support/Electron/stores/bitcoin-regtest/regtest/.cookie'));
-      }
-      for (const cookiePath of cookiePaths) {
-        if (!cookiePath || cookiePathsTried.has(cookiePath)) continue;
-        cookiePathsTried.add(cookiePath);
-        try {
-          if (!fs.existsSync(cookiePath)) continue;
-          const raw = fs.readFileSync(cookiePath, 'utf8').trim();
-          const colon = raw.indexOf(':');
-          if (colon === -1) continue;
-          pushCandidate({
-            source: `cookie:${path.basename(path.dirname(cookiePath))}`,
-            host,
-            rpcport,
-            network: 'regtest',
-            username: raw.slice(0, colon),
-            password: raw.slice(colon + 1),
-            secure: false
-          });
-        } catch (e) {
-          /* ignore missing/unreadable cookie */
-        }
-      }
-    }
 
     if (Array.isArray(this.settings.rpcProbeCandidates)) {
       for (const candidate of this.settings.rpcProbeCandidates) {
@@ -618,18 +568,6 @@ class Bitcoin extends Service {
         ]);
 
         const detectedNetwork = this._normalizeChainName(chainInfo.chain || candidate.network);
-        const targetNetwork = this._normalizeChainName(this.settings.network || 'mainnet');
-
-        // Never reuse a daemon from a different chain.
-        if (detectedNetwork &amp;&amp; targetNetwork &amp;&amp; detectedNetwork !== targetNetwork) {
-          if (this.settings.debug) {
-            this.emit(
-              'debug',
-              `[FABRIC:BITCOIN] Ignoring external ${detectedNetwork} daemon while target network is ${targetNetwork}`
-            );
-          }
-          continue;
-        }
         if (this.settings.debug) {
           this.emit(
             'debug',
@@ -759,10 +697,8 @@ class Bitcoin extends Service {
     if (!message.amount) throw new Error('Message must provide an amount.');
     if (!message.destination) throw new Error('Message must provide a destination.');
 
-    if (typeof message.amount === 'string' || message.amount instanceof String) {
-      const parsed = Number(message.amount instanceof String ? message.amount.valueOf() : message.amount);
-      if (!Number.isFinite(parsed)) throw new Error('Message amount must be numeric.');
-      message.amount = parsed.toFixed(8); // normalize string amounts to fixed BTC precision
+    if (message.amount instanceof String) {
+      message.amount = message.amount.fixed().toPrecision(8); // TODO: evaluate precision behavior
     }
 
     const actor = new Actor(message);
@@ -1066,31 +1002,16 @@ class Bitcoin extends Service {
     return 1;
   }
 
-  _keyNetworkNameForWif () {
-    const n = this._normalizeChainName(this.settings.network || 'mainnet');
-    // Playnet runs against regtest-style bitcoind (WIF/bech32 prefixes match regtest, not mainnet).
-    if (n === 'playnet') return 'regtest';
-    if (n === 'signet' || n === 'testnet4') return 'testnet';
-    if (n === 'mainnet' || n === 'testnet' || n === 'regtest') return n;
-    return 'mainnet';
-  }
-
   async _dumpKeyPair (address) {
     const wif = await this._makeRPCRequest('dumpprivkey', [address]);
-    const k = Key.fromWIF(wif, { network: this._keyNetworkNameForWif() });
-    const priv = k.private;
-    const pubHex = k.public.encodeCompressed('hex');
-    return {
-      privateKey: Buffer.isBuffer(priv) ? priv : Buffer.from(priv, 'hex'),
-      publicKey: Buffer.from(pubHex, 'hex')
-    };
+    const pair = ECPair.fromWIF(wif, this.networks[this.settings.network]);
+    return pair;
   }
 
   async _dumpPrivateKey (address) {
     const wif = await this._makeRPCRequest('dumpprivkey', [address]);
-    const k = Key.fromWIF(wif, { network: this._keyNetworkNameForWif() });
-    const priv = k.private;
-    return Buffer.isBuffer(priv) ? priv : Buffer.from(priv, 'hex');
+    const pair = ECPair.fromWIF(wif, this.networks[this.settings.network]);
+    return pair.privateKey;
   }
 
   async _loadPrivateKey (key) {
@@ -1750,83 +1671,6 @@ class Bitcoin extends Service {
     }
   }
 
-  /**
-   * Rewind the attached Bitcoin Core node to a known-good tip by repeatedly calling `invalidateblock`
-   * on the current best block until `getbestblockhash` matches `snapshotBlockHash`.
-   * Allowed on regtest, playnet, signet, testnet, testnet4 unless settings.flushChainAllowUnsafeNetworks.
-   * @param {string} snapshotBlockHash - 64-char hex block hash to keep as the active tip.
-   * @returns {Promise&lt;{ ok: boolean, steps: number, snapshotBlockHash: string }>}
-   */
-  async flushChainToSnapshot (snapshotBlockHash) {
-    const run = () => this._flushChainToSnapshotBody(snapshotBlockHash);
-    const p = (this._flushChainQueue || Promise.resolve())
-      .catch(() => {})
-      .then(run);
-    this._flushChainQueue = p.catch(() => {});
-    return p;
-  }
-
-  /**
-   * @private
-   */
-  async _flushChainToSnapshotBody (snapshotBlockHash) {
-    const hex = String(snapshotBlockHash || '').trim().toLowerCase();
-    if (!/^[0-9a-f]{64}$/.test(hex)) {
-      throw new Error('flushChainToSnapshot: snapshotBlockHash must be 64 hex characters');
-    }
-    const net = this._normalizeChainName(this.settings.network || 'mainnet');
-    const allowed =
-      net === 'regtest' ||
-      net === 'playnet' ||
-      net === 'signet' ||
-      net === 'testnet' ||
-      net === 'testnet4';
-    if (!allowed &amp;&amp; !this.settings.flushChainAllowUnsafeNetworks) {
-      throw new Error(`flushChainToSnapshot: not allowed for network "${net}" (set flushChainAllowUnsafeNetworks to override)`);
-    }
-    const maxSteps = (typeof this.settings.flushChainMaxSteps === 'number' &amp;&amp; this.settings.flushChainMaxSteps > 0)
-      ? this.settings.flushChainMaxSteps
-      : 100000;
-
-    try {
-      await this._makeRPCRequest('getblockheader', [hex]);
-    } catch (err) {
-      const msg = err &amp;&amp; err.message ? String(err.message) : String(err);
-      throw new Error(`flushChainToSnapshot: snapshot block not known to node (${msg})`);
-    }
-
-    let cursor = String(await this._makeRPCRequest('getbestblockhash', [])).trim().toLowerCase();
-    let reachable = false;
-    for (let i = 0; i &lt; maxSteps; i++) {
-      if (cursor === hex) {
-        reachable = true;
-        break;
-      }
-      const header = await this._makeRPCRequest('getblockheader', [cursor]);
-      const prev = header &amp;&amp; header.previousblockhash
-        ? String(header.previousblockhash).trim().toLowerCase()
-        : null;
-      if (!prev) break;
-      cursor = prev;
-    }
-    if (!reachable) {
-      throw new Error('flushChainToSnapshot: snapshot is not an ancestor of the active tip');
-    }
-
-    let steps = 0;
-    while (steps &lt; maxSteps) {
-      const best = String(await this._makeRPCRequest('getbestblockhash', [])).trim().toLowerCase();
-      if (best === hex) {
-        const out = { ok: true, steps, snapshotBlockHash: hex };
-        this.emit('message', { type: 'BitcoinFlushChain', data: out });
-        return out;
-      }
-      await this._makeRPCRequest('invalidateblock', [best]);
-      steps++;
-    }
-    throw new Error(`flushChainToSnapshot: exceeded flushChainMaxSteps=${maxSteps} before reaching snapshot`);
-  }
-
   async _requestBlockHeader (hash) {
     return this._makeRPCRequest('getblockheader', [hash]);
   }
@@ -2427,7 +2271,7 @@ class Bitcoin extends Service {
     switch (this.settings.network) {
       default:
       case 'mainnet':
-        datadir = (this.settings.constraints.storage.size) ? './stores/bitcoin-mainnet-pruned' : './stores/bitcoin-mainnet';
+        datadir = (this.settings.constraints.storage.size) ? './stores/bitcoin-pruned' : './stores/bitcoin';
         break;
       case 'testnet':
         datadir = './stores/bitcoin-testnet';
@@ -2693,12 +2537,7 @@ class Bitcoin extends Service {
     this.emit('debug', `[SERVICES:BITCOIN] Starting for network "${this.settings.network}"...`);
     this.status = 'STARTING';
 
-    const shouldProbeExternalNode = !(
-      this.settings.enforceIsolatedRegtest &amp;&amp;
-      this.settings.managed &amp;&amp;
-      this.settings.network === 'regtest'
-    );
-    const existingBitcoindFound = shouldProbeExternalNode ? await this._detectExistingBitcoind() : false;
+    const existingBitcoindFound = await this._detectExistingBitcoind();
     if (existingBitcoindFound &amp;&amp; this.settings.managed) {
       this.emit('log', '[FABRIC:BITCOIN] Existing bitcoind detected; not starting another managed instance');
       this.settings.managed = false;
@@ -2929,17 +2768,14 @@ module.exports = Bitcoin;
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="Bond.html">Bond</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="Collection.html">Collection</a></li>
-      <li><a href="Contract.html">Contract</a></li>
-      <li><a href="Disk.html">Disk</a></li>
-      <li><a href="Entity.html">Entity</a></li>
-      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
@@ -2957,14 +2793,12 @@ module.exports = Bitcoin;
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
-      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
-      <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
@@ -2972,7 +2806,28 @@ module.exports = Bitcoin;
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
-    <h3><a href="global.html">Global</a></h3>
+    <h3>Global</h3>
+    <ul>
+      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
+      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
+      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
+      <li><a href="global.html#crypto">crypto</a></li>
+      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
+      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
+      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
+      <li><a href="global.html#gossip">gossip</a></li>
+      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
+      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
+      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
+      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
+      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
+      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
+      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
+      <li><a href="global.html#stableStringify">stableStringify</a></li>
+      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
+      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
+      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
+    </ul>
   </nav>
   <br class="clear" />
   <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>

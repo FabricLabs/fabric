@@ -38,14 +38,6 @@ const { EventEmitter } = require('events');
 const monitor = require('fast-json-patch');
 const Witness = require('./witness');
 
-/**
- * @classdesc &lt;strong>Structured document&lt;/strong> type: extends {@link EventEmitter} (not {@link Actor}) with
- * &lt;code>@type&lt;/code> / &lt;code>@data&lt;/code> shape, JSON serialization, and &lt;code>id&lt;/code> = SHA256(&lt;code>toJSON()&lt;/code>).
- * &lt;strong>Different model from {@link Actor#id}&lt;/strong> (sorted generic envelope). &lt;code>Entity.Transition&lt;/code> (JSON Patch
- * between entity states) is the supported migration path — see &lt;strong>DEVELOPERS.md&lt;/strong> (&lt;em>Consolidated prototypes&lt;/em>).
- * @class Entity
- * @extends EventEmitter
- */
 class Entity extends EventEmitter {
   constructor (data = {}) {
     super(data);
@@ -93,7 +85,7 @@ class Entity extends EventEmitter {
     let entity = this;
     return function buffer () {
       return Buffer.from(entity.toJSON(), 'utf8');
-    };
+    }
   }
 
   get id () {
@@ -216,14 +208,6 @@ class Entity extends EventEmitter {
   }
 }
 
-/**
- * @classdesc JSON Patch &lt;strong>diff&lt;/strong> between two {@link Entity} snapshots (&lt;code>origin&lt;/code>,
- * &lt;code>target&lt;/code>, &lt;code>changes&lt;/code>). Built via {@link Transition.between}, {@link Transition#fromTarget}, or manual
- * &lt;code>changes&lt;/code>; uses &lt;code>fast-json-patch&lt;/code> observe/generate.
- * @memberof Entity
- * @class Transition
- * @extends Entity
- */
 class Transition extends Entity {
   constructor (settings = {}) {
     super(settings);
@@ -328,17 +312,14 @@ module.exports.Transition = Transition;
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="Bond.html">Bond</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="Collection.html">Collection</a></li>
-      <li><a href="Contract.html">Contract</a></li>
-      <li><a href="Disk.html">Disk</a></li>
-      <li><a href="Entity.html">Entity</a></li>
-      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
@@ -356,14 +337,12 @@ module.exports.Transition = Transition;
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
-      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
-      <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
@@ -371,7 +350,28 @@ module.exports.Transition = Transition;
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
-    <h3><a href="global.html">Global</a></h3>
+    <h3>Global</h3>
+    <ul>
+      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
+      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
+      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
+      <li><a href="global.html#crypto">crypto</a></li>
+      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
+      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
+      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
+      <li><a href="global.html#gossip">gossip</a></li>
+      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
+      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
+      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
+      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
+      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
+      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
+      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
+      <li><a href="global.html#stableStringify">stableStringify</a></li>
+      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
+      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
+      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
+    </ul>
   </nav>
   <br class="clear" />
   <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>
