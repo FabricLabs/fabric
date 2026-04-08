@@ -1,7 +1,7 @@
 $ npm i
 
 > @fabric/core@0.1.0-RC1 install
-> node-gyp rebuild
+> node scripts/install-native.js
 
 
   CXX(target) Release/obj.target/fabric/src/binding.o
@@ -18,7 +18,7 @@ $ npm i
   CC(target) Release/obj.target/fabric/src/taproot.o
   SOLINK_MODULE(target) Release/fabric.node
 
-added 622 packages, and audited 623 packages in 1m
+added 665 packages, and audited 666 packages in 30s
 
 109 packages are looking for funding
   run `npm fund` for details

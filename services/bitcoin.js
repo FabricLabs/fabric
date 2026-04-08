@@ -10,8 +10,7 @@ const {
 const crypto = require('crypto');
 const children = require('child_process');
 const fs = require('fs');
-const os = require('os');
-const path = require('path');
+const regtestCookiePaths = require('../functions/regtestCookiePaths');
 
 // External Dependencies
 const jayson = require('jayson/lib/client');
@@ -67,20 +66,7 @@ class Bitcoin extends Service {
    * @returns {string|null}
    */
   static resolveBitcoinDatadirForLocalAccess (datadir) {
-    if (datadir == null || typeof datadir !== 'string') return null;
-    const trimmed = datadir.trim();
-    if (!trimmed) return null;
-    const abs = path.isAbsolute(trimmed)
-      ? path.normalize(trimmed)
-      : path.resolve(process.cwd(), trimmed);
-    if (!path.isAbsolute(trimmed)) {
-      const root = path.resolve(process.cwd());
-      const rel = path.relative(root, abs);
-      if (rel === '' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) {
-        return null;
-      }
-    }
-    return abs;
+    return regtestCookiePaths.resolveBitcoinDatadirForLocalAccess(datadir);
   }
 
   /**
@@ -90,7 +76,7 @@ class Bitcoin extends Service {
    * @returns {string}
    */
   static cookiePathForChainSubtree (datadirRoot, chainSubdir) {
-    return path.join(datadirRoot, chainSubdir, '.cookie');
+    return regtestCookiePaths.cookiePathForChainSubtree(datadirRoot, chainSubdir);
   }
 
   /**
@@ -99,24 +85,7 @@ class Bitcoin extends Service {
    * @returns {string[]}
    */
   static buildRegtestCookiePathList (opts = {}) {
-    const { envCookieFile, settingsDatadir } = opts;
-    const list = [];
-    if (envCookieFile) {
-      const p = String(envCookieFile).trim();
-      if (p) list.push(p);
-    }
-    list.push(path.resolve(process.cwd(), 'stores/bitcoin-regtest/regtest/.cookie'));
-    if (process.platform === 'darwin') {
-      const hd = os.homedir();
-      list.push(path.join(hd, 'Library/Application Support/Electron/stores/bitcoin-regtest/regtest/.cookie'));
-      list.push(path.join(hd, 'Library/Application Support/Bitcoin/regtest/.cookie'));
-    }
-    list.push(path.join(os.homedir(), '.bitcoin', 'regtest', '.cookie'));
-    if (settingsDatadir && typeof settingsDatadir === 'string' && settingsDatadir.trim()) {
-      const root = Bitcoin.resolveBitcoinDatadirForLocalAccess(settingsDatadir);
-      if (root) list.push(Bitcoin.cookiePathForChainSubtree(root, 'regtest'));
-    }
-    return list;
+    return regtestCookiePaths.buildRegtestCookiePathList(opts);
   }
 
   /**
@@ -534,7 +503,7 @@ class Bitcoin extends Service {
           const colon = raw.indexOf(':');
           if (colon === -1) continue;
           pushCandidate({
-            source: `cookie:${path.basename(path.dirname(cookiePath))}`,
+            source: `cookie:${regtestCookiePaths.parentDirNameForCookieProbe(cookiePath)}`,
             host,
             rpcport,
             network: 'regtest',
