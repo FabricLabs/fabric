@@ -82,6 +82,13 @@ describe('@services/bitcoin bitcoind cookie / datadir paths', function () {
     assert.strictEqual(Bitcoin.cookiePathForChainSubtree('/data', ''), path.join('/data', '.cookie'));
   });
 
+  it('cookiePathForChainSubtree rejects unknown chain subdirectory', function () {
+    assert.throws(
+      () => Bitcoin.cookiePathForChainSubtree('/data', '../../../etc'),
+      /unsupported chain subdirectory/
+    );
+  });
+
   it('parentDirNameForCookieProbe matches dirname basename for chain layout', function () {
     assert.strictEqual(Bitcoin.parentDirNameForCookieProbe('/foo/bar/regtest/.cookie'), 'regtest');
   });

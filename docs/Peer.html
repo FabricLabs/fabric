@@ -265,6 +265,46 @@
 
                       <tr>
 
+                        <td class="name"><code>listenPortAttempts</code></td>
+
+
+                        <td class="type">
+
+
+                          <span class="param-type">Number</span>
+
+
+
+                        </td>
+
+
+                        <td class="attributes">
+
+                          &lt;optional><br>
+
+
+
+
+
+                        </td>
+
+
+
+                        <td class="default">
+
+                          20
+
+                        </td>
+
+
+                        <td class="description last">When the listen port is in use (`EADDRINUSE`),
+                          try the next port up to this many times (same host).</td>
+                      </tr>
+
+
+
+                      <tr>
+
                         <td class="name"><code>peers</code></td>
 
 
@@ -347,7 +387,7 @@
             <dd class="tag-source">
               <ul class="dummy">
                 <li>
-                  <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line68">line 68</a>
+                  <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line78">line 78</a>
                 </li>
               </ul>
             </dd>
@@ -445,7 +485,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line197">line 197</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line215">line 215</a>
               </li>
             </ul>
           </dd>
@@ -511,7 +551,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line185">line 185</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line203">line 203</a>
               </li>
             </ul>
           </dd>
@@ -577,7 +617,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line188">line 188</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line206">line 206</a>
               </li>
             </ul>
           </dd>
@@ -646,7 +686,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line204">line 204</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line222">line 222</a>
               </li>
             </ul>
           </dd>
@@ -712,7 +752,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line190">line 190</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line208">line 208</a>
               </li>
             </ul>
           </dd>
@@ -778,7 +818,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line193">line 193</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line211">line 211</a>
               </li>
             </ul>
           </dd>
@@ -844,7 +884,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line195">line 195</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line213">line 213</a>
               </li>
             </ul>
           </dd>
@@ -913,7 +953,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line437">line 437</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line455">line 455</a>
               </li>
             </ul>
           </dd>
@@ -979,7 +1019,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line182">line 182</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line200">line 200</a>
               </li>
             </ul>
           </dd>
@@ -1002,6 +1042,538 @@
 
 
         <h3 class="subsection-title">Methods</h3>
+
+
+
+
+
+
+
+        <h4 class="name" id="_announceLocalDocumentsToPeer"><span class="type-signature"></span>_announceLocalDocumentsToPeer<span class="signature">(peerAddress)</span><span class="type-signature"></span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Re-send all local document publishes to one peer (same bytes as <a href="Peer.html#_publishDocument">Peer#_publishDocument</a>).
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>peerAddress</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">connection key in Peer#connections</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line1592">line 1592</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="_buildDocumentParsedForPublish"><span class="type-signature"></span>_buildDocumentParsedForPublish<span class="signature">(documentId, content)</span><span class="type-signature"> &rarr; {Object}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Build hub-compatible document metadata for purchaseContentHashHex.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>documentId</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>content</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">UTF-8 body</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line1474">line 1474</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Parsed document record (whitelisted fields)
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Object</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="_buildPublishDocumentWireBuffers"><span class="type-signature"></span>_buildPublishDocumentWireBuffers<span class="signature">(documentId, body, rateSats)</span><span class="type-signature"> &rarr; {Array.&lt;Buffer>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          AMP buffers for one document: canonical `DocumentPublish`, then optional pricing `P2P_DOCUMENT_PUBLISH`.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>documentId</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>body</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">UTF-8 body</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>rateSats</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">number</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line1566">line 1566</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Array.&lt;Buffer></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
 
 
 
@@ -1112,7 +1684,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line683">line 683</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line701">line 701</a>
               </li>
             </ul>
           </dd>
@@ -1299,7 +1871,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line348">line 348</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line366">line 366</a>
               </li>
             </ul>
           </dd>
@@ -1463,7 +2035,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line409">line 409</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line427">line 427</a>
               </li>
             </ul>
           </dd>
@@ -1555,7 +2127,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line902">line 902</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line920">line 920</a>
               </li>
             </ul>
           </dd>
@@ -1718,7 +2290,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line249">line 249</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line267">line 267</a>
               </li>
             </ul>
           </dd>
@@ -1877,7 +2449,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line280">line 280</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line298">line 298</a>
               </li>
             </ul>
           </dd>
@@ -1920,6 +2492,195 @@
 
           </dd>
         </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="_handleDocumentRequestWire"><span class="type-signature"></span>_handleDocumentRequestWire<span class="signature">(message, origin, socket)</span><span class="type-signature"></span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Handle inbound `DOCUMENT_REQUEST`: emit `documentRequest` / `DocumentRequest`, then either
+          send `P2P_FILE_SEND` to the requester if `state.documents[id]` is present, or relay the
+          request to other peers (conditional relay).
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>message</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type"><a href="Message.html">Message</a></span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>origin</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>socket</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">*</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line1643">line 1643</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -2036,7 +2797,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line930">line 930</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line948">line 948</a>
               </li>
             </ul>
           </dd>
@@ -2151,7 +2912,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line822">line 822</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line840">line 840</a>
               </li>
             </ul>
           </dd>
@@ -2310,7 +3071,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line370">line 370</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line388">line 388</a>
               </li>
             </ul>
           </dd>
@@ -2469,7 +3230,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line391">line 391</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line409">line 409</a>
               </li>
             </ul>
           </dd>
@@ -2498,6 +3259,429 @@
 
         <h5>Returns:</h5>
 
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">boolean</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="_publishDocument"><span class="type-signature"></span>_publishDocument<span class="signature">(documentId, content<span class="signature-attributes">opt</span>, rateSats<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Store a document locally and gossip to peers.
+          1) **Canonical** `DOCUMENT_PUBLISH` wire message (same bytes as hub `documentPublishEnvelope`) for L1 `contentHash`.
+          2) If `rateSats > 0`, a **pricing** `GENERIC` `P2P_DOCUMENT_PUBLISH` with `rate` and `contentHash` (sat ask).
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+              <th>Default</th>
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>documentId</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+              </td>
+
+
+              <td class="description last">Catalog key (e.g. CLI document name).</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>content</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+                ''
+
+              </td>
+
+
+              <td class="description last">UTF-8 body stored under Peer#state.documents.</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>rateSats</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Number</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+                0
+
+              </td>
+
+
+              <td class="description last">Ask price in satoshis (gossip only; not part of canonical hash).</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line1616">line 1616</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="_respondInventoryFromLocalDocuments"><span class="type-signature"></span>_respondInventoryFromLocalDocuments<span class="signature">(message, origin)</span><span class="type-signature"> &rarr; {boolean}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Reply to `INVENTORY_REQUEST` with `INVENTORY_RESPONSE` built from local documents and rates.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>message</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Generic body from Peer#_handleGenericMessage</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>origin</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line1493">line 1493</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          true if an `INVENTORY_RESPONSE` was written to the requester
+        </div>
 
 
 
@@ -2579,7 +3763,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line855">line 855</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line873">line 873</a>
               </li>
             </ul>
           </dd>
@@ -2604,6 +3788,192 @@
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="_sendP2pFileSendToPeer"><span class="type-signature"></span>_sendP2pFileSendToPeer<span class="signature">(documentId, peerAddress)</span><span class="type-signature"> &rarr; {boolean}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Send a locally stored document to a connected peer as `P2P_FILE_SEND`.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>documentId</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>peerAddress</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">connection key in Peer#connections</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line1529">line 1529</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          true if the payload was written
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">boolean</span>
+
+
+          </dd>
+        </dl>
 
 
 
@@ -2763,7 +4133,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line884">line 884</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line902">line 902</a>
               </li>
             </ul>
           </dd>
@@ -2907,7 +4277,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line298">line 298</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line316">line 316</a>
               </li>
             </ul>
           </dd>
@@ -3089,7 +4459,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line316">line 316</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line334">line 334</a>
               </li>
             </ul>
           </dd>
@@ -3252,7 +4622,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line623">line 623</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line641">line 641</a>
               </li>
             </ul>
           </dd>
@@ -3344,7 +4714,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line1831">line 1831</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line2118">line 2118</a>
               </li>
             </ul>
           </dd>
@@ -3387,6 +4757,188 @@
           <dd>
 
             <span class="param-type"><a href="Peer.html">Peer</a></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="sendDocumentFileToPeer"><span class="type-signature"></span>sendDocumentFileToPeer<span class="signature">(documentId, peerAddress)</span><span class="type-signature"> &rarr; {boolean}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Public helper: push document bytes to a peer (same wire path as <a href="Peer.html#_handleDocumentRequestWire">Peer#_handleDocumentRequestWire</a> fulfillment).
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>documentId</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>peerAddress</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">string</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line1555">line 1555</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">boolean</span>
 
 
           </dd>
@@ -3458,7 +5010,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line1566">line 1566</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line1826">line 1826</a>
               </li>
             </ul>
           </dd>
@@ -3550,7 +5102,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line1693">line 1693</a>
+                <a href="types_peer.js.html">types/peer.js</a>, <a href="types_peer.js.html#line1980">line 1980</a>
               </li>
             </ul>
           </dd>
@@ -3601,14 +5153,12 @@
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
-      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
@@ -3638,28 +5188,6 @@
       <li><a href="Wallet.html">Wallet</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
-    </ul>
-    <h3>Global</h3>
-    <ul>
-      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
-      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
-      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
-      <li><a href="global.html#crypto">crypto</a></li>
-      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
-      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
-      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
-      <li><a href="global.html#gossip">gossip</a></li>
-      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
-      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
-      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
-      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
-      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
-      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
-      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
-      <li><a href="global.html#stableStringify">stableStringify</a></li>
-      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
-      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
-      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
     </ul>
   </nav>
   <br class="clear" />

@@ -57,6 +57,31 @@ const SAT_ADJ_EPS = 1 / (10 ** 6);
 /** Reject absurd paths from env/settings before touching the filesystem (Codacy/Semgrep-friendly bounds). */
 const BITCOIN_COOKIE_PATH_MAX_LEN = 4096;
 
+/** Directory names Bitcoin Core uses under {@code -datadir} (used to block traversal in `.cookie` paths). */
+const BITCOIND_CHAIN_FOLDER_NAMES = new Set(['regtest', 'testnet3', 'testnet4', 'signet']);
+
+/**
+ * Append fixed path components under a resolved base; return null if the result leaves {@code baseAbs}.
+ * @param {string} baseAbs
+ * @param {string[]} parts — no separators; validated by caller
+ * @returns {string|null}
+ */
+function cookiePathUnderDatadirBase (baseAbs, parts) {
+  // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+  const root = path.resolve(baseAbs);
+  let cur = root;
+  for (const part of parts) {
+    // `part` is allowlisted (chain dir name or `.cookie`); traversal is checked via `relative` below.
+    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+    cur = path.resolve(cur, part);
+  }
+  const rel = path.relative(root, cur);
+  if (rel.startsWith('..' + path.sep) || rel === '..' || path.isAbsolute(rel)) {
+    return null;
+  }
+  return cur;
+}
+
 /**
  * Manages interaction with the Bitcoin network.
  * @augments Service
@@ -87,9 +112,14 @@ class Bitcoin extends Service {
     if (datadir == null || typeof datadir !== 'string') return null;
     const trimmed = datadir.trim();
     if (!trimmed || trimmed.includes('\0') || trimmed.length > BITCOIN_COOKIE_PATH_MAX_LEN) return null;
-    const abs = path.isAbsolute(trimmed)
-      ? path.normalize(trimmed)
-      : path.resolve(process.cwd(), trimmed);
+    let abs;
+    if (path.isAbsolute(trimmed)) {
+      abs = path.normalize(trimmed);
+    } else {
+      // Relative: containment enforced by `path.relative` check below (cannot escape cwd).
+      // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+      abs = path.resolve(process.cwd(), trimmed);
+    }
     if (!path.isAbsolute(trimmed)) {
       const root = path.resolve(process.cwd());
       const rel = path.relative(root, abs);
@@ -110,9 +140,14 @@ class Bitcoin extends Service {
     if (filePath == null || typeof filePath !== 'string') return null;
     const trimmed = filePath.trim();
     if (!trimmed || trimmed.includes('\0') || trimmed.length > BITCOIN_COOKIE_PATH_MAX_LEN) return null;
-    const abs = path.isAbsolute(trimmed)
-      ? path.normalize(trimmed)
-      : path.resolve(process.cwd(), trimmed);
+    let abs;
+    if (path.isAbsolute(trimmed)) {
+      abs = path.normalize(trimmed);
+    } else {
+      // Relative: containment enforced by `path.relative` check below (cannot escape cwd).
+      // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+      abs = path.resolve(process.cwd(), trimmed);
+    }
     if (!path.isAbsolute(trimmed)) {
       const root = path.resolve(process.cwd());
       const rel = path.relative(root, abs);
@@ -150,8 +185,19 @@ class Bitcoin extends Service {
    */
   static cookiePathForBitcoind (datadirRoot, network) {
     const seg = Bitcoin.bitcoindChainDataDirSegment(network);
-    if (!seg) return path.join(datadirRoot, '.cookie');
-    return path.join(datadirRoot, seg, '.cookie');
+    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+    const base = path.resolve(datadirRoot);
+    if (!seg) {
+      const p = cookiePathUnderDatadirBase(base, ['.cookie']);
+      if (!p) throw new Error('[FABRIC:BITCOIN] invalid datadir for cookie path');
+      return p;
+    }
+    if (!BITCOIND_CHAIN_FOLDER_NAMES.has(seg)) {
+      throw new Error(`[FABRIC:BITCOIN] internal: unexpected chain dir ${seg}`);
+    }
+    const p = cookiePathUnderDatadirBase(base, [seg, '.cookie']);
+    if (!p) throw new Error('[FABRIC:BITCOIN] invalid datadir for cookie path');
+    return p;
   }
 
   /**
@@ -163,8 +209,19 @@ class Bitcoin extends Service {
    */
   static cookiePathForChainSubtree (datadirRoot, chainSubdir) {
     const s = chainSubdir == null ? '' : String(chainSubdir);
-    if (!s) return path.join(datadirRoot, '.cookie');
-    return path.join(datadirRoot, s, '.cookie');
+    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+    const base = path.resolve(datadirRoot);
+    if (!s) {
+      const p = cookiePathUnderDatadirBase(base, ['.cookie']);
+      if (!p) throw new Error('[FABRIC:BITCOIN] invalid datadir for cookie path');
+      return p;
+    }
+    if (!BITCOIND_CHAIN_FOLDER_NAMES.has(s)) {
+      throw new Error(`[FABRIC:BITCOIN] unsupported chain subdirectory: ${s}`);
+    }
+    const p = cookiePathUnderDatadirBase(base, [s, '.cookie']);
+    if (!p) throw new Error('[FABRIC:BITCOIN] invalid datadir for cookie path');
+    return p;
   }
 
   /**
@@ -210,19 +267,65 @@ class Bitcoin extends Service {
       const resolvedEnv = Bitcoin.resolveBitcoinCookieFileForLocalRead(String(envCookieFile));
       if (resolvedEnv) list.push(resolvedEnv);
     }
-    for (const rel of Bitcoin.defaultStoresRelativeDirsForProbe(net, constraints)) {
-      const root = path.resolve(process.cwd(), rel);
-      list.push(Bitcoin.cookiePathForBitcoind(root, net));
+    const cwd = process.cwd();
+    const mainPruned = Boolean(constraints && constraints.storage && constraints.storage.size);
+    const pushProjectStore = (storeReldir) => {
+      // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+      list.push(Bitcoin.cookiePathForBitcoind(path.resolve(cwd, storeReldir), net));
+    };
+    switch (net) {
+      case 'regtest':
+        pushProjectStore('stores/bitcoin-regtest');
+        break;
+      case 'playnet':
+        pushProjectStore('stores/bitcoin-playnet');
+        break;
+      case 'testnet':
+        pushProjectStore('stores/bitcoin-testnet');
+        break;
+      case 'testnet4':
+        pushProjectStore('stores/bitcoin-testnet4');
+        break;
+      case 'signet':
+        pushProjectStore('stores/bitcoin-signet');
+        break;
+      default:
+        pushProjectStore('stores/bitcoin-mainnet');
+        if (mainPruned) pushProjectStore('stores/bitcoin-mainnet-pruned');
     }
     if (process.platform === 'darwin') {
       const hd = os.homedir();
-      for (const rel of Bitcoin.defaultStoresRelativeDirsForProbe(net, constraints)) {
-        const folder = path.basename(rel);
-        const electronRoot = path.join(hd, 'Library/Application Support/Electron/stores', folder);
+      const pushElectronStore = (folderName) => {
+        // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+        const electronRoot = path.join(hd, 'Library/Application Support/Electron/stores', folderName);
         list.push(Bitcoin.cookiePathForBitcoind(electronRoot, net));
+      };
+      switch (net) {
+        case 'regtest':
+          pushElectronStore('bitcoin-regtest');
+          break;
+        case 'playnet':
+          pushElectronStore('bitcoin-playnet');
+          break;
+        case 'testnet':
+          pushElectronStore('bitcoin-testnet');
+          break;
+        case 'testnet4':
+          pushElectronStore('bitcoin-testnet4');
+          break;
+        case 'signet':
+          pushElectronStore('bitcoin-signet');
+          break;
+        default:
+          pushElectronStore('bitcoin-mainnet');
+          if (mainPruned) pushElectronStore('bitcoin-mainnet-pruned');
       }
     }
-    list.push(Bitcoin.cookiePathForBitcoind(path.join(os.homedir(), '.bitcoin'), net));
+    {
+      // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+      const homeData = path.join(os.homedir(), '.bitcoin');
+      list.push(Bitcoin.cookiePathForBitcoind(homeData, net));
+    }
     if (settingsDatadir && typeof settingsDatadir === 'string' && settingsDatadir.trim()) {
       const resolved = Bitcoin.resolveBitcoinDatadirForLocalAccess(settingsDatadir);
       if (resolved) list.push(Bitcoin.cookiePathForBitcoind(resolved, net));

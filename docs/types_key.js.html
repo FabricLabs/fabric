@@ -63,6 +63,17 @@ const ecc = require('./ecc');
 const { secp256k1, schnorr: nobleSchnorr } = require('@noble/curves/secp256k1.js');
 const SecpPoint = secp256k1.ProjectivePoint || secp256k1.Point;
 
+function privateKeyToBuffer (privkey) {
+  if (Buffer.isBuffer(privkey)) return privkey;
+  if (privkey &amp;&amp; typeof privkey.length === 'number' &amp;&amp; privkey.length === 32) {
+    // Uint8Array or byte-like input from upgraded deps (bip32/ecpair).
+    return Buffer.from(privkey);
+  }
+  if (BN.isBN(privkey)) return Buffer.from(privkey.toString(16).padStart(64, '0'), 'hex');
+  if (typeof privkey === 'string') return Buffer.from(privkey.padStart(64, '0'), 'hex');
+  throw new Error('Invalid private key format');
+}
+
 function secpPointFromPublicKey (pubkey) {
   const bytes = Buffer.isBuffer(pubkey) ? pubkey : Buffer.from(pubkey);
   // noble-curves v1: ProjectivePoint.fromHex(bytes)
@@ -81,7 +92,7 @@ function secpPointFromPublicKey (pubkey) {
 }
 
 function secpPointFromPrivateKey (privkey) {
-  const bytes = Buffer.isBuffer(privkey) ? privkey : Buffer.from(privkey);
+  const bytes = privateKeyToBuffer(privkey);
   // noble-curves v1
   if (secp256k1.ProjectivePoint &amp;&amp; typeof secp256k1.ProjectivePoint.fromPrivateKey === 'function') {
     return secp256k1.ProjectivePoint.fromPrivateKey(bytes);
@@ -302,7 +313,7 @@ class Key extends EventEmitter {
 
     // Read the pair (for modes that use master, set private from master)
     if (!this.private &amp;&amp; this.master &amp;&amp; this.master.privateKey) {
-      this.private = this.master.privateKey;
+      this.private = privateKeyToBuffer(this.master.privateKey);
     }
     // Adapt noble-curves point to the minimal interface used elsewhere.
     this.public = {
@@ -583,6 +594,11 @@ class Key extends EventEmitter {
   }
 
   encrypt (value) {
+    if (!this.private) {
+      if (this.settings.debug) console.error('[FABRIC:KEY]', 'Cannot encrypt without private key');
+      return null;
+    }
+
     try {
       const ivbuff = crypto.randomBytes(16);
       // Derive a 32-byte key from the private key using SHA-256
@@ -594,18 +610,28 @@ class Key extends EventEmitter {
       encrypted += cipher.final('hex');
       return ivbuff.toString('hex') + ':' + encrypted;
     } catch (exception) {
-      console.error('err:', exception);
+      if (this.settings.debug) console.error('[FABRIC:KEY]', 'Encryption failed');
       return null;
     }
   }
 
   decrypt (text) {
     if (!text) return null;
+    if (!this.private) {
+      if (this.settings.debug) console.error('[FABRIC:KEY]', 'Cannot decrypt without private key');
+      return null;
+    }
     if (text instanceof Buffer) text = text.toString('utf8');
 
     try {
+      if (typeof text !== 'string' || !text.includes(':')) return null;
       const parts = text.split(':');
-      const iv = Buffer.from(parts.shift(), 'hex');
+      const ivHex = parts.shift();
+      if (!/^[0-9a-fA-F]{32}$/.test(ivHex || '')) return null;
+      const blobHex = parts.join(':');
+      if (!blobHex || !/^[0-9a-fA-F]+$/.test(blobHex)) return null;
+
+      const iv = Buffer.from(ivHex, 'hex');
       const blob = Buffer.from(parts.join(':'), 'hex');
       // Use the same key derivation as encrypt
       const key = crypto.createHash('sha256')
@@ -616,7 +642,7 @@ class Key extends EventEmitter {
       decrypted += decipher.final('utf8');
       return decrypted;
     } catch (exception) {
-      console.error('err:', exception);
+      if (this.settings.debug) console.error('[FABRIC:KEY]', 'Decryption failed');
       return null;
     }
   }
@@ -656,16 +682,7 @@ class Key extends EventEmitter {
     const messageHash = crypto.createHash('sha256').update(messageBuffer).digest();
 
     // Get private key as 32-byte buffer
-    let privateKeyBuffer;
-    if (Buffer.isBuffer(this.private)) {
-      privateKeyBuffer = this.private;
-    } else if (BN.isBN(this.private)) {
-      privateKeyBuffer = Buffer.from(this.private.toString(16).padStart(64, '0'), 'hex');
-    } else if (typeof this.private === 'string') {
-      privateKeyBuffer = Buffer.from(this.private.padStart(64, '0'), 'hex');
-    } else {
-      throw new Error('Invalid private key format');
-    }
+    const privateKeyBuffer = privateKeyToBuffer(this.private);
 
     // Sign using noble-curves Schnorr (BIP340). Zero auxRand for deterministic signatures.
     const signature = nobleSchnorr.sign(messageHash, privateKeyBuffer, Buffer.alloc(32));
@@ -687,16 +704,7 @@ class Key extends EventEmitter {
     }
 
     // Get private key as 32-byte buffer
-    let privateKeyBuffer;
-    if (Buffer.isBuffer(this.private)) {
-      privateKeyBuffer = this.private;
-    } else if (BN.isBN(this.private)) {
-      privateKeyBuffer = Buffer.from(this.private.toString(16).padStart(64, '0'), 'hex');
-    } else if (typeof this.private === 'string') {
-      privateKeyBuffer = Buffer.from(this.private.padStart(64, '0'), 'hex');
-    } else {
-      throw new Error('Invalid private key format');
-    }
+    const privateKeyBuffer = privateKeyToBuffer(this.private);
 
     // Sign using noble-curves Schnorr (BIP340). Zero auxRand for deterministic signatures.
     const signature = nobleSchnorr.sign(messageHash, privateKeyBuffer, Buffer.alloc(32));
@@ -756,6 +764,11 @@ class Key extends EventEmitter {
   commit () {
     const reference = { ...this.state };
     const state = new Actor(reference);
+    const commit = {
+      type: 'KeyCommit',
+      hash: state.id,
+      signatures: []
+    };
 
     // Store current state's hash
     this._state.hash = state.id;
@@ -794,8 +807,14 @@ class Key extends EventEmitter {
    * to prevent sensitive data from remaining in memory.
    */
   secure () {
+    // Update state before clearing key material, so commit can still be signed.
+    this._state.status = 'secured';
+    this.commit();
+
     // Clear sensitive key material
-    Buffer.write(this.private, 0, this.private.length);
+    if (Buffer.isBuffer(this.private)) {
+      this.private.fill(0);
+    }
 
     // Null out sensitive properties
     this.private = null;
@@ -805,11 +824,6 @@ class Key extends EventEmitter {
 
     // Clear any derived keys
     this.xprv = null;
-
-    // Update state
-    this._state.status = 'secured';
-
-    this.commit();
 
     return this;
   }
@@ -830,20 +844,7 @@ class Key extends EventEmitter {
    */
   toWIF () {
     if (!this.private) throw new Error('Cannot export WIF without private key');
-    let privateKeyBuffer;
-
-    if (Buffer.isBuffer(this.private)) {
-      privateKeyBuffer = this.private;
-    } else if (this.private &amp;&amp; typeof this.private.length === 'number' &amp;&amp; this.private.length === 32) {
-      // Uint8Array or other byte-like (e.g. from bs58check.decode)
-      privateKeyBuffer = Buffer.from(this.private);
-    } else if (BN.isBN(this.private)) {
-      privateKeyBuffer = Buffer.from(this.private.toString(16).padStart(64, '0'), 'hex');
-    } else if (typeof this.private === 'string') {
-      privateKeyBuffer = Buffer.from(this.private.padStart(64, '0'), 'hex');
-    } else {
-      throw new Error('Invalid private key format');
-    }
+    const privateKeyBuffer = privateKeyToBuffer(this.private);
 
     const network = this.settings.network === 'regtest'
       ? this.settings.networks.testnet
@@ -893,14 +894,12 @@ module.exports = Key;
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
-      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
@@ -930,28 +929,6 @@ module.exports = Key;
       <li><a href="Wallet.html">Wallet</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
-    </ul>
-    <h3>Global</h3>
-    <ul>
-      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
-      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
-      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
-      <li><a href="global.html#crypto">crypto</a></li>
-      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
-      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
-      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
-      <li><a href="global.html#gossip">gossip</a></li>
-      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
-      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
-      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
-      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
-      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
-      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
-      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
-      <li><a href="global.html#stableStringify">stableStringify</a></li>
-      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
-      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
-      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
     </ul>
   </nav>
   <br class="clear" />
