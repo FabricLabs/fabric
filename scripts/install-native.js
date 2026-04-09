@@ -16,6 +16,26 @@ function shouldSkip () {
   return v === '1' || v === 'true';
 }
 
+function shouldRequireNativeBuild () {
+  const v = process.env.FABRIC_REQUIRE_NODE_GYP;
+  return v === '1' || v === 'true';
+}
+
+function failOrWarn (message, err) {
+  if (shouldRequireNativeBuild()) {
+    if (err) console.error(err);
+    console.error(message);
+    process.exit(1);
+  }
+  if (err) console.warn(err);
+  console.warn(
+    `${message}\n` +
+      '[@fabric/core] Continuing without native addon. JS fallbacks remain available. ' +
+      'Set FABRIC_REQUIRE_NODE_GYP=1 to fail install when native build is unavailable.'
+  );
+  process.exit(0);
+}
+
 if (shouldSkip()) {
   console.warn(
     '[@fabric/core] Skipping node-gyp rebuild (FABRIC_SKIP_NODE_GYP). ' +
@@ -28,8 +48,7 @@ let nodeGypJs;
 try {
   nodeGypJs = require.resolve('node-gyp/bin/node-gyp.js', { paths: [root] });
 } catch {
-  console.error('[@fabric/core] node-gyp not found; run npm install from the package root.');
-  process.exit(1);
+  failOrWarn('[@fabric/core] node-gyp not found; run npm install from the package root.');
 }
 
 const r = spawnSync(process.execPath, [nodeGypJs, 'rebuild'], {
@@ -39,7 +58,10 @@ const r = spawnSync(process.execPath, [nodeGypJs, 'rebuild'], {
 });
 
 if (r.error) {
-  console.error(r.error);
-  process.exit(1);
+  failOrWarn('[@fabric/core] node-gyp failed to execute.', r.error);
 }
-process.exit(r.status === null ? 1 : r.status);
+if (r.status !== 0) {
+  failOrWarn(`[@fabric/core] node-gyp rebuild failed with exit code ${r.status === null ? 'null' : r.status}.`);
+}
+
+process.exit(0);
