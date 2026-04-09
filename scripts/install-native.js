@@ -2,8 +2,11 @@
 
 /**
  * Optional node-gyp build for `fabric.node` (Noise, secp256k1, libwally, etc.).
- * CI and minimal environments set **FABRIC_SKIP_NODE_GYP=1** so `npm ci` succeeds
- * without system C headers; the JS stack and tests use fallbacks / mock addon paths.
+ *
+ * - **FABRIC_SKIP_NODE_GYP=1**: skip rebuild entirely (fastest; no compiler).
+ * - **FABRIC_REQUIRE_NODE_GYP=1**: fail install if rebuild fails (CI / strict).
+ * - Default: attempt rebuild; on failure warn and exit 0 so `npm install` succeeds
+ *   without system libs; JS uses fallbacks unless FABRIC_NATIVE_* opts in.
  */
 
 const path = require('path');
