@@ -186,7 +186,7 @@ describe('@fabric/core/types/peer', function () {
     describe('relayFrom', function () {
       it('writes message to all connections except origin', function () {
         const peer = new Peer({ listen: false, peersDb: null });
-        const msg = Message.fromVector(['GENERIC', JSON.stringify({ type: 'P2P_PONG' })]);
+        const msg = Message.fromVector(['P2P_PONG', JSON.stringify({ created: new Date().toISOString() })]);
         let written = false;
         peer.connections['b'] = { _writeFabric: (m) => { written = true; } };
         peer.relayFrom('a', msg);
@@ -598,7 +598,7 @@ describe('@fabric/core/types/peer', function () {
       it('ignores duplicate message (same hash)', function () {
         const peer = new Peer({ listen: false, peersDb: null });
         const content = { type: 'INVENTORY_REQUEST', object: {} };
-        const msg = Message.fromVector(['GenericMessage', JSON.stringify(content)]);
+        const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
         msg.signWithKey(peer.key);
         const buf = msg.toBuffer();
         peer._handleFabricMessage(buf, { name: 'o' });
@@ -607,7 +607,7 @@ describe('@fabric/core/types/peer', function () {
       });
       it('drops on incorrect body hash (wire integrity)', function () {
         const peer = new Peer({ listen: false, peersDb: null });
-        const msg = Message.fromVector(['GenericMessage', JSON.stringify({ type: 'INVENTORY_REQUEST', object: {} })]);
+        const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify({ type: 'INVENTORY_REQUEST', object: {} })]);
         msg.signWithKey(peer.key);
         const buf = msg.toBuffer();
         const origFromBuffer = Message.fromBuffer;
@@ -632,7 +632,7 @@ describe('@fabric/core/types/peer', function () {
         const expectedSigner = new Key();
         const other = new Key();
         peer.peers.o = { publicKey: expectedSigner.public.encodeCompressed('hex') };
-        const msg = Message.fromVector(['GenericMessage', JSON.stringify({ type: 'INVENTORY_REQUEST', object: {} })]);
+        const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify({ type: 'INVENTORY_REQUEST', object: {} })]);
         msg.signWithKey(other);
         let warned = false;
         let errored = false;
@@ -646,7 +646,7 @@ describe('@fabric/core/types/peer', function () {
       });
       it('emits debug for unhandled message type', function (done) {
         const peer = new Peer({ listen: false, peersDb: null });
-        const msg = Message.fromVector(['Ping', JSON.stringify({})]);
+        const msg = Message.fromVector(['IdentityRequest', JSON.stringify({})]);
         msg.signWithKey(peer.key);
         const buf = msg.toBuffer();
         peer.once('debug', (m) => {
@@ -659,7 +659,7 @@ describe('@fabric/core/types/peer', function () {
         const peer = new Peer({ listen: false, peersDb: null });
         peer.once('inventory', () => done());
         const content = { type: 'INVENTORY_REQUEST', object: {}, message: {}, origin: {} };
-        const msg = Message.fromVector(['GenericMessage', JSON.stringify(content)]);
+        const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
         msg.signWithKey(peer.key);
         peer._handleFabricMessage(msg.toBuffer(), { name: 'o' });
       });
@@ -672,7 +672,7 @@ describe('@fabric/core/types/peer', function () {
         });
         peer.on('inventory', () => { inventory++; });
         for (const body of [ '[]', '"x"', 'null', '1', 'true' ]) {
-          const msg = Message.fromVector(['GenericMessage', body]);
+          const msg = Message.fromVector(['P2P_BASE_MESSAGE', body]);
           msg.signWithKey(peer.key);
           peer._handleFabricMessage(msg.toBuffer(), { name: 'o' });
         }
@@ -732,10 +732,10 @@ describe('@fabric/core/types/peer', function () {
         assert.strictEqual(relayed, 0);
         assert.ok(written && written.length);
         const back = Message.fromBuffer(written);
-        const outer = JSON.parse(back.data);
-        assert.strictEqual(outer.type, 'P2P_FILE_SEND');
-        assert.strictEqual(outer.object.name, 'doc-held');
-        assert.strictEqual(Buffer.from(outer.object.body, 'base64').toString('utf8'), 'payload-bytes');
+        const body = JSON.parse(back.data);
+        assert.strictEqual(back.type, 'P2P_FILE_SEND');
+        assert.strictEqual(body.name, 'doc-held');
+        assert.strictEqual(Buffer.from(body.body, 'base64').toString('utf8'), 'payload-bytes');
       });
     });
 
@@ -750,7 +750,7 @@ describe('@fabric/core/types/peer', function () {
       });
       it('emits warning on broken JSON body in Fabric message path', function (done) {
         const peer = new Peer({ listen: false, peersDb: null });
-        const msg = Message.fromVector(['GenericMessage', 'not json']);
+        const msg = Message.fromVector(['P2P_BASE_MESSAGE', 'not json']);
         msg.signWithKey(peer.key);
         peer.once('warning', (m) => {
           assert.ok(/Generic message parse failed/.test(m));
@@ -782,11 +782,11 @@ describe('@fabric/core/types/peer', function () {
         assert.ok(written && written.length);
         const back = Message.fromBuffer(written);
         const inner = JSON.parse(back.data);
-        assert.strictEqual(inner.type, 'INVENTORY_RESPONSE');
-        assert.strictEqual(inner.object.items.length, 1);
-        assert.strictEqual(inner.object.items[0].id, 'doca');
-        assert.strictEqual(inner.object.items[0].rateSats, 1000);
-        assert.ok(/^[0-9a-f]{64}$/.test(inner.object.items[0].contentHash));
+        assert.strictEqual(back.type, 'P2P_INVENTORY_RESPONSE');
+        assert.strictEqual(inner.items.length, 1);
+        assert.strictEqual(inner.items[0].id, 'doca');
+        assert.strictEqual(inner.items[0].rateSats, 1000);
+        assert.ok(/^[0-9a-f]{64}$/.test(inner.items[0].contentHash));
       });
       it('serveLocalDocumentInventory skips items above maxSats', function () {
         const peer = new Peer({ listen: false, peersDb: null, serveLocalDocumentInventory: true });
@@ -796,7 +796,7 @@ describe('@fabric/core/types/peer', function () {
         peer.connections['127.0.0.1:12'] = {
           _writeFabric: (b) => {
             const inner = JSON.parse(Message.fromBuffer(b).data);
-            items.push(...(inner.object.items || []));
+            items.push(...(inner.items || []));
           }
         };
         peer._handleGenericMessage({
@@ -822,13 +822,17 @@ describe('@fabric/core/types/peer', function () {
       it('relayInventoryRequest relays offerBtc INVENTORY_REQUEST when no local items', function () {
         const peer = new Peer({ listen: false, peersDb: null, serveLocalDocumentInventory: true, relayInventoryRequest: true });
         peer._state.content.documents = {};
-        let relays = 0;
-        peer.relayFrom = function () { relays++; };
+        let relayed = null;
+        peer.relayFrom = function (_origin, message) { relayed = message; };
         const payload = { type: 'INVENTORY_REQUEST', object: { offerBtc: true, maxSats: 1e6 } };
-        const wire = Message.fromVector(['GenericMessage', JSON.stringify(payload)]);
+        const wire = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(payload)]);
         wire.signWithKey(peer.key);
         peer._handleGenericMessage(payload, { name: 'req:1' }, null, wire);
-        assert.strictEqual(relays, 1);
+        assert.ok(relayed);
+        const outer = Message.fromBuffer(relayed.toBuffer());
+        assert.strictEqual(outer.type, 'P2P_RELAY');
+        const inner = Message.fromBuffer(outer.raw.data);
+        assert.strictEqual(inner.type, 'P2P_INVENTORY_REQUEST');
       });
       it('relayInventoryRequest does not relay when local inventory responds', function () {
         const peer = new Peer({ listen: false, peersDb: null, serveLocalDocumentInventory: true, relayInventoryRequest: true });
@@ -837,7 +841,7 @@ describe('@fabric/core/types/peer', function () {
         let relays = 0;
         peer.relayFrom = function () { relays++; };
         const payload = { type: 'INVENTORY_REQUEST', object: { offerBtc: true, maxSats: 1e6 } };
-        const wire = Message.fromVector(['GenericMessage', JSON.stringify(payload)]);
+        const wire = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(payload)]);
         wire.signWithKey(peer.key);
         peer.connections['req:2'] = { _writeFabric: () => {} };
         peer._handleGenericMessage(payload, { name: 'req:2' }, null, wire);
@@ -848,23 +852,27 @@ describe('@fabric/core/types/peer', function () {
         let relays = 0;
         peer.relayFrom = function () { relays++; };
         const payload = { type: 'INVENTORY_REQUEST', object: { maxSats: 1 } };
-        const wire = Message.fromVector(['GenericMessage', JSON.stringify(payload)]);
+        const wire = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(payload)]);
         wire.signWithKey(peer.key);
         peer._handleGenericMessage(payload, { name: 'req:3' }, null, wire);
         assert.strictEqual(relays, 0);
       });
       it('relayInventoryResponse relays INVENTORY_RESPONSE wire to other peers', function () {
         const peer = new Peer({ listen: false, peersDb: null, relayInventoryResponse: true });
-        let relays = 0;
-        peer.relayFrom = function () { relays++; };
+        let relayed = null;
+        peer.relayFrom = function (_origin, message) { relayed = message; };
         const payload = {
           type: 'INVENTORY_RESPONSE',
           object: { items: [{ id: 'd', rateSats: 0, contentHash: 'a'.repeat(64), network: 'bitcoin' }] }
         };
-        const wire = Message.fromVector(['GenericMessage', JSON.stringify(payload)]);
+        const wire = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(payload)]);
         wire.signWithKey(peer.key);
         peer._handleGenericMessage(payload, { name: 'from:peer' }, null, wire);
-        assert.strictEqual(relays, 1);
+        assert.ok(relayed);
+        const outer = Message.fromBuffer(relayed.toBuffer());
+        assert.strictEqual(outer.type, 'P2P_RELAY');
+        const inner = Message.fromBuffer(outer.raw.data);
+        assert.strictEqual(inner.type, 'P2P_INVENTORY_RESPONSE');
       });
       it('sendDocumentFileToPeer sends P2P_FILE_SEND when document is held', function () {
         const peer = new Peer({ listen: false, peersDb: null });
@@ -874,10 +882,11 @@ describe('@fabric/core/types/peer', function () {
           _writeFabric: (b) => { written = b; }
         };
         assert.strictEqual(peer.sendDocumentFileToPeer('d1', 'p1'), true);
-        const inner = JSON.parse(Message.fromBuffer(written).data);
-        assert.strictEqual(inner.type, 'P2P_FILE_SEND');
-        assert.strictEqual(inner.object.name, 'd1');
-        assert.strictEqual(Buffer.from(inner.object.body, 'base64').toString('utf8'), 'zz');
+        const wire = Message.fromBuffer(written);
+        const inner = JSON.parse(wire.data);
+        assert.strictEqual(wire.type, 'P2P_FILE_SEND');
+        assert.strictEqual(inner.name, 'd1');
+        assert.strictEqual(Buffer.from(inner.body, 'base64').toString('utf8'), 'zz');
       });
       it('_announceLocalDocumentsToPeer writes canonical + pricing buffers per document', function () {
         const peer = new Peer({ listen: false, peersDb: null });
@@ -890,7 +899,7 @@ describe('@fabric/core/types/peer', function () {
         peer._announceLocalDocumentsToPeer('peerZ');
         assert.strictEqual(writes.length, 3);
         assert.strictEqual(Message.fromBuffer(writes[0]).type, 'DOCUMENT_PUBLISH');
-        assert.strictEqual(Message.fromBuffer(writes[1]).type, 'GENERIC_MESSAGE');
+        assert.strictEqual(Message.fromBuffer(writes[1]).type, 'P2P_DOCUMENT_PUBLISH');
         assert.strictEqual(Message.fromBuffer(writes[2]).type, 'DOCUMENT_PUBLISH');
       });
       it('handles P2P_STATE_ANNOUNCE', function (done) {
@@ -1059,7 +1068,7 @@ describe('@fabric/core/types/peer', function () {
           },
           object: { challenge: 'cafebabe' }
         };
-        const msg = Message.fromVector(['GenericMessage', JSON.stringify(content)]);
+        const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
         msg.signWithKey(remoteKey);
         const buf = msg.toBuffer();
 
@@ -1114,7 +1123,7 @@ describe('@fabric/core/types/peer', function () {
           },
           object: { challenge: 'challenge' }
         };
-        const msg = Message.fromVector(['GenericMessage', JSON.stringify(content)]);
+        const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
         msg.signWithKey(remoteKey);
 
         server.once('peer', () => {
@@ -1152,7 +1161,7 @@ describe('@fabric/core/types/peer', function () {
             solution: 'challenge'
           }
         };
-        const msg = Message.fromVector(['GenericMessage', JSON.stringify(content)]);
+        const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
         msg.signWithKey(peer.key);
 
         peer._handleGenericMessage(content, { name: connAddress }, null);
@@ -1184,7 +1193,7 @@ describe('@fabric/core/types/peer', function () {
             solution: 'challenge'
           }
         };
-        const msg = Message.fromVector(['GenericMessage', JSON.stringify(content)]);
+        const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
         msg.signWithKey(serverKey);
 
         peer._handleFabricMessage(msg.toBuffer(), { name: connAddress }, null);
@@ -1215,7 +1224,7 @@ describe('@fabric/core/types/peer', function () {
           },
           object: { challenge: 'cafef00d' }
         };
-        const msg = Message.fromVector(['GenericMessage', JSON.stringify(content)]);
+        const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
         msg.signWithKey(remoteKey);
         server._handleFabricMessage(msg.toBuffer(), { name: connAddress }, null);
 

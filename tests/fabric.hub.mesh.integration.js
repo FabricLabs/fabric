@@ -28,7 +28,7 @@ function sendGeneric (fromPeer, remoteKey, payload) {
   if (!conn || !conn._writeFabric) {
     throw new Error(`No Fabric connection to ${remoteKey} (have: ${Object.keys(fromPeer.connections).join(',')})`);
   }
-  const msg = Message.fromVector(['GenericMessage', JSON.stringify(payload)]);
+  const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(payload)]);
   msg.signWithKey(fromPeer.key);
   conn._writeFabric(msg.toBuffer());
 }
@@ -107,7 +107,7 @@ describe('@fabric/core Hub mesh integration', function () {
       if (!sock || !sock._writeFabric) return;
 
       const reply = (obj) => {
-        const m = Message.fromVector(['GenericMessage', JSON.stringify(obj)]);
+        const m = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(obj)]);
         m.signWithKey(hub.key);
         sock._writeFabric(m.toBuffer());
       };

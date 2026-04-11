@@ -46,12 +46,12 @@ async function getFreePort () {
   });
 }
 
-function sendGeneric (fromPeer, remoteKey, payload) {
+function sendInventoryRequest (fromPeer, remoteKey, object) {
   const conn = fromPeer.connections[remoteKey];
   if (!conn || !conn._writeFabric) {
     throw new Error(`No Fabric connection to ${remoteKey}`);
   }
-  const msg = Message.fromVector(['GenericMessage', JSON.stringify(payload)]);
+  const msg = Message.fromVector(['P2P_INVENTORY_REQUEST', JSON.stringify(object || {})]);
   msg.signWithKey(fromPeer.key);
   conn._writeFabric(msg.toBuffer());
 }
@@ -63,6 +63,15 @@ async function waitForConnections (peer, n, timeoutMs = 20000) {
     await new Promise((r) => setTimeout(r, 50));
   }
   throw new Error(`Expected ${n} connections on peer, got ${Object.keys(peer.connections).length}`);
+}
+
+async function waitFor (predicate, timeoutMs = 5000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (predicate()) return true;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return false;
 }
 
 describe('@fabric/core L1 document publish & distribution', function () {
@@ -261,10 +270,7 @@ describe('@fabric/core L1 document publish & distribution', function () {
     await new Promise((r) => setTimeout(r, 300));
 
     const serverAddr = Object.keys(client.connections)[0];
-    sendGeneric(client, serverAddr, {
-      type: 'INVENTORY_REQUEST',
-      object: { offerBtc: true, maxSats: 500_000, reason: 'verify_l1_hash_before_spend' }
-    });
+    sendInventoryRequest(client, serverAddr, { offerBtc: true, maxSats: 500_000, reason: 'verify_l1_hash_before_spend' });
 
     await new Promise((r) => setTimeout(r, 500));
 
@@ -340,14 +346,11 @@ describe('@fabric/core L1 document publish & distribution', function () {
     await new Promise((r) => setTimeout(r, 400));
 
     const toRouter = Object.keys(buyer.connections)[0];
-    sendGeneric(buyer, toRouter, {
-      type: 'INVENTORY_REQUEST',
-      object: { offerBtc: true, maxSats: 500_000, reason: 'relay_star' }
-    });
+    sendInventoryRequest(buyer, toRouter, { offerBtc: true, maxSats: 500_000, reason: 'relay_star' });
 
-    await new Promise((r) => setTimeout(r, 1200));
+    const gotInventory = await waitFor(() => inv.length >= 1, 5000);
 
-    assert.ok(inv.length >= 1, 'buyer should receive relayed INVENTORY_RESPONSE');
+    assert.ok(gotInventory, 'buyer should receive relayed INVENTORY_RESPONSE');
     assert.strictEqual(inv[0].message.object.items[0].id, docKey);
     assert.strictEqual(inv[0].message.object.items[0].contentHash, expectHash);
 

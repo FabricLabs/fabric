@@ -162,7 +162,7 @@ describe('L1 document exchange expectations', function () {
       const firstData = Message.fromBuffer(captured[0]).data.toString('utf8');
       assert.strictEqual(firstData, Message.fromBuffer(Buffer.from(envBuf)).data.toString('utf8'));
       const second = Message.fromBuffer(captured[1]);
-      assert.strictEqual(second.type, 'GENERIC_MESSAGE');
+      assert.strictEqual(second.type, 'P2P_DOCUMENT_PUBLISH');
     });
   });
 

@@ -6,7 +6,6 @@ const {
 } = require('../constants');
 
 // Dependencies
-const { parsePersistedJson } = require('../functions/wireJson');
 const monitor = require('fast-json-patch');
 const BN = require('bn.js');
 
@@ -14,6 +13,16 @@ const BN = require('bn.js');
 const Actor = require('./actor');
 const State = require('./state');
 const Key = require('./key');
+
+// Fabric Functions
+const {
+  createDefaultOpcodeRegistry,
+  defineOpcode: defineOpcodeEntry,
+  resolveOpcodeContract
+} = require('../functions/opcodeRegistry');
+
+// Strict JSON
+const { parsePersistedJson } = require('../functions/wireJson');
 
 /**
  * @classdesc Deterministic <strong>virtual machine</strong> layer extending {@link Actor}: script/stack, fixed memory buffer,
@@ -81,6 +90,7 @@ class Machine extends Actor {
     this.memory = Buffer.alloc(MACHINE_MAX_MEMORY);
 
     this.known = {}; // definitions
+    this.opcodes = createDefaultOpcodeRegistry();
     this.stack = []; // output
     this.history = []; // State tree
 
@@ -187,8 +197,32 @@ class Machine extends Actor {
   }
 
   // register a local function
-  define (name, op) {
+  define (name, op, definition = {}) {
     this.known[name] = op.bind(this.state);
+    defineOpcodeEntry(this.opcodes, name, Object.assign({}, definition, {
+      implementation: true
+    }));
+    return this.known[name];
+  }
+
+  defineOpcode (name, op, definition = {}) {
+    return this.define(name, op, definition);
+  }
+
+  defineBitcoinOpcode (name, op, definition = {}) {
+    return this.define(name, op, Object.assign({}, definition, { family: 'bitcoin' }));
+  }
+
+  defineFabricOpcode (name, op, definition = {}) {
+    return this.define(name, op, Object.assign({}, definition, { family: 'fabric' }));
+  }
+
+  compileOpcodeContract (body = '') {
+    const resolved = resolveOpcodeContract(this.opcodes, body);
+    if (resolved.unknown.length) {
+      throw new Error(`Unknown opcodes in contract: ${resolved.unknown.join(', ')}`);
+    }
+    return resolved.lines;
   }
 
   applyOperation (op) {

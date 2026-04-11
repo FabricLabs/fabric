@@ -73,7 +73,8 @@ class Fabric extends Service {
     // build maps
     this.agent = {}; // Identity
     this.modules = {}; // List<Class>
-    this.opcodes = {}; // Map<id>
+    // Inherit opcode metadata registry from Service (Bitcoin + Fabric defaults).
+    // Do not reset this.opcodes here; Service constructor initializes it.
     this.peers = {}; // Map<id>
     this.plugins = {}; // Map<id>
     this.services = {}; // Map<id>
@@ -262,12 +263,32 @@ class Fabric extends Service {
 
   use (name, description) {
     this.log('[FABRIC]', `defining <code>${name}</code> as:`, description);
-    this.opcodes[name] = description.bind(this);
     return this.define(name, description);
   }
 
   define (name, description) {
     this.log(`Defining resource "${name}":`, description);
+    const opcodeName = String(name || '');
+    const isBitcoinStyle = opcodeName.startsWith('OP_');
+
+    if (typeof description === 'function' && this.machine) {
+      if (isBitcoinStyle && typeof this.machine.defineBitcoinOpcode === 'function') {
+        this.machine.defineBitcoinOpcode(opcodeName, description);
+      } else if (typeof this.machine.defineFabricOpcode === 'function') {
+        this.machine.defineFabricOpcode(opcodeName, description);
+      }
+    }
+
+    const metadata = {
+      body: String(description || ''),
+      implementation: typeof description === 'function'
+    };
+
+    if (isBitcoinStyle && typeof this.defineBitcoinOpcode === 'function') {
+      this.defineBitcoinOpcode(opcodeName, metadata);
+    } else if (typeof this.defineFabricOpcode === 'function') {
+      this.defineFabricOpcode(opcodeName, metadata);
+    }
     let vector = new Fabric.State(description);
     let resource = new Fabric.Resource(name, description);
     this.log(`Resource:`, resource);

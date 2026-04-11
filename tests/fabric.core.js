@@ -136,4 +136,27 @@ describe('@fabric/core/types/fabric', function () {
     const stack = f.push(v);
     assert.strictEqual(stack[stack.length - 1], v);
   });
+
+  it('inherits default opcode registry families from Service', function () {
+    const f = new Fabric({ persistent: false });
+    const opcodes = f.listOpcodes();
+    assert.ok(opcodes.length > 0);
+    assert.ok(opcodes.some((entry) => entry.family === 'bitcoin'));
+    assert.ok(opcodes.some((entry) => entry.family === 'fabric'));
+  });
+
+  it('use registers function opcodes in machine and metadata registry', function () {
+    const f = new Fabric({ persistent: false });
+    const name = 'P2P_TEST_OPCODE';
+
+    f.use(name, function testOpcode () {
+      return 1;
+    });
+
+    assert.strictEqual(typeof f.machine.known[name], 'function');
+    const entry = f.listOpcodes().find((op) => op.name === name);
+    assert.ok(entry, 'opcode metadata should be registered');
+    assert.strictEqual(entry.implementation, true);
+    assert.strictEqual(entry.family, 'fabric');
+  });
 });
