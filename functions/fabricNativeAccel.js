@@ -221,6 +221,7 @@ function doubleSha256Hex (buf) {
 function bech32Encode (hrp, words, spec) {
   // Null when native is off or the addon call fails — {@link functions/bech32} falls back to JS.
   if (!isNativeBech32Callable()) return null;
+  if (spec !== 'bech32' && spec !== 'bech32m') return null;
   const enc = spec === 'bech32m' ? 1 : 0;
   const buf = Buffer.isBuffer(words) ? words : Buffer.from(words);
   try {

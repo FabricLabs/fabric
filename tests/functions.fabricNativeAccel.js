@@ -328,6 +328,17 @@ describe('functions/fabricNativeAccel', function () {
     });
   });
 
+  it('in-process: bech32Encode rejects unknown spec values', function () {
+    withFabricNativeAccelFresh({
+      FABRIC_NATIVE_BECH32: '1',
+      FABRIC_ADDON_PATH_STRICT: '1',
+      FABRIC_ADDON_PATH: mockAddonPath,
+      FABRIC_NATIVE_TEST_ADDON: ''
+    }, (m) => {
+      assert.strictEqual(m.bech32Encode('id', Buffer.from([0, 1, 2]), 'bad-spec'), null);
+    });
+  });
+
   it('in-process: bech32Decode returns null for non-string input', function () {
     withFabricNativeAccelFresh({
       FABRIC_NATIVE_BECH32: '1',

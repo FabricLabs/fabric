@@ -68,9 +68,11 @@ jobs:
         set -euo pipefail
         VERSION=28.0
         ARCHIVE=bitcoin-${VERSION}-x86_64-linux-gnu.tar.gz
+        ARCHIVE_SHA256=7fe294b02b25b51acb8e8e0a0eb5af6bbafa7cd0c5b0e5fcbb61263104a82fbc
         BASE=https://bitcoin.org/bin/bitcoin-core-${VERSION}/
         wget -q "${BASE}SHA256SUMS"
         wget -q "${BASE}${ARCHIVE}"
+        echo "${ARCHIVE_SHA256}  ${ARCHIVE}" | sha256sum -c -
         grep "${ARCHIVE}\$" SHA256SUMS | sha256sum -c -
         tar -xzf "${ARCHIVE}"
         sudo mv bitcoin-${VERSION}/bin/bitcoind bitcoin-${VERSION}/bin/bitcoin-cli /usr/local/bin/
@@ -91,9 +93,11 @@ jobs:
         export PYTHON="$(command -v python3)"
         python3 --version
 
-        git clone https://github.com/ElementsProject/lightning.git
+        LIGHTNING_REF=v25.05
+        LIGHTNING_COMMIT=2b8b709bfd3d1b296d453eff3f2316a90e6290b8
+        git clone --depth=1 --branch "${LIGHTNING_REF}" https://github.com/ElementsProject/lightning.git
         cd lightning
-        git checkout v25.05
+        test "$(git rev-parse HEAD)" = "${LIGHTNING_COMMIT}"
         ./configure
         make -j$(nproc)
         sudo make install
