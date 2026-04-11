@@ -113,11 +113,14 @@ class HDNode {
     let i;
     if (typeof index === 'number') {
       i = index;
+    } else if (typeof index === 'bigint') {
+      if (index < 0n || index > 0xffffffffn) throw new Error('Invalid index');
+      i = Number(index);
     } else if (typeof index === 'string') {
       if (!/^\d+$/.test(index)) throw new Error('Invalid index');
       i = Number(index);
     } else {
-      i = Number(index);
+      throw new Error('Invalid index');
     }
     if (!Number.isInteger(i) || i < 0 || i > (2 ** 32) - 1) throw new Error('Invalid index');
     const hardened = i >= HARDENED_OFFSET;

@@ -50,12 +50,13 @@ describe('@services/bitcoin bitcoind cookie / datadir paths', function () {
   });
 
   it('buildLocalCookieProbePaths includes env path and project layout for regtest', function () {
+    const envCookiePath = path.join(os.tmpdir(), 'fabric-test-cookie');
     const list = Bitcoin.buildLocalCookieProbePaths({
       network: 'regtest',
-      envCookieFile: '/tmp/fabric-test-cookie',
+      envCookieFile: envCookiePath,
       settingsDatadir: null
     });
-    assert.ok(list.includes('/tmp/fabric-test-cookie'));
+    assert.ok(list.includes(envCookiePath));
     assert.ok(list.some((p) => p.endsWith(path.join('stores', 'bitcoin-regtest', 'regtest', '.cookie'))));
   });
 

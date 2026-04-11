@@ -2587,8 +2587,9 @@ class Bitcoin extends Service {
 
   _defaultBitcoinP2pPort (network) {
     const n = String(network || '').toLowerCase();
-    if (n === 'regtest') return 18444;
-    if (n === 'testnet' || n === 'testnet4') return 18333;
+    if (n === 'regtest' || n === 'playnet') return 18444;
+    if (n === 'testnet') return 18333;
+    if (n === 'testnet4') return 48333;
     if (n === 'signet') return 38333;
     return 8333;
   }
@@ -2732,7 +2733,8 @@ class Bitcoin extends Service {
     this.settings.datadir = datadir; // for downstream users accessing the settings property, e.g. for lightning nodes
 
     // If storage constraints are set, prune the blockchain
-    if (this.settings.network !== 'regtest' && this.settings.constraints.storage.size) {
+    const chain = this._normalizeChainName(this.settings.network || 'mainnet');
+    if (chain !== 'regtest' && chain !== 'playnet' && this.settings.constraints.storage.size) {
       params.push(`-prune=${this.settings.constraints.storage.size}`);
     } else {
       params.push(`-txindex`);

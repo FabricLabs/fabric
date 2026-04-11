@@ -48,4 +48,22 @@ describe('functions/bech32 pure path (in-process)', function () {
       assert.throws(() => b.decode('Bc1qMixed'), /Mixed-case bech32/);
     });
   });
+
+  it('pure encode validates hrp and words before charset indexing', function () {
+    withPureBech32((b) => {
+      assert.throws(() => b.encode('', [0], 'bech32'), /hrp/);
+      assert.throws(() => b.encode('tb', [32], 'bech32'), /invalid word/);
+      assert.throws(() => b.encode('tb', [0], 'oops'), /spec/);
+    });
+  });
+
+  it('pure segwit encode rejects invalid witness parameters', function () {
+    withPureBech32((b) => {
+      assert.strictEqual(b.encodeSegwitAddress('tb', 17, Buffer.alloc(20, 1)), null);
+      assert.strictEqual(b.encodeSegwitAddress('tb', 0, Buffer.alloc(10, 1)), null);
+      assert.strictEqual(b.encodeSegwitAddress('tb', 1, Buffer.alloc(1, 1)), null);
+      assert.strictEqual(b.encodeSegwitAddress('tb', 1, [0, 256]), null);
+      assert.strictEqual(b.encodeSegwitAddress('', 0, Buffer.alloc(20, 1)), null);
+    });
+  });
 });

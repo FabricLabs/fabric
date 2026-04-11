@@ -99,6 +99,8 @@ describe('@fabric/core/functions/bip32', function () {
   it('derive rejects non-integer child index', function () {
     const root = fromSeed(SEED_A);
     assert.throws(() => root.derive(1.5), /Invalid index/);
+    assert.throws(() => root.derive({ valueOf: () => 7 }), /Invalid index/);
+    assert.throws(() => root.derive(true), /Invalid index/);
   });
 
   it('derive rejects non-decimal string indices', function () {

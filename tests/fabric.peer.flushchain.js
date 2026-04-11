@@ -96,6 +96,8 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
   it('_wireInboundRateAllowPeer de-ranks once when credits exceed the window cap', function () {
     const peer = createPeer({ wireTraffic: { maxCreditsPerWindow: 8, windowMs: 600000, overLimitPenalty: 11 } });
     peers.push(peer);
+    peer._state.peers = { t1: { id: 't1', address: '127.0.0.1:1', score: 50 } };
+    peer._addressToId['127.0.0.1:1'] = 't1';
     const warns = [];
     peer.on('warning', (w) => warns.push(String(w)));
     assert.strictEqual(peer._wireInboundRateAllowPeer('127.0.0.1:1', 4), true);
@@ -103,7 +105,9 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     assert.strictEqual(peer._wireInboundRateAllowPeer('127.0.0.1:1', 4), false);
     const derankMsgs = warns.filter((w) => w.includes('De-ranked') && w.includes('inbound-rate'));
     assert.strictEqual(derankMsgs.length, 1, 'expected exactly one de-rank per rolling window');
+    assert.strictEqual(peer._state.peers.t1.score, 39, 'score should be reduced exactly once by overLimitPenalty');
     assert.strictEqual(peer._wireInboundRateAllowPeer('127.0.0.1:1', 1), false);
+    assert.strictEqual(peer._state.peers.t1.score, 39, 'repeated overflow in same window must not de-rank again');
   });
 
   it('publicPeers lists connected sockets and disconnected registry entries', function () {

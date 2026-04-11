@@ -143,7 +143,40 @@ function fromWords (words) {
   return Buffer.from(res);
 }
 
+function assertEncodeSpec (spec) {
+  if (spec !== 'bech32' && spec !== 'bech32m') {
+    throw new TypeError('bech32.encode: spec must be "bech32" or "bech32m"');
+  }
+}
+
+function assertEncodeHrp (hrp) {
+  if (typeof hrp !== 'string' || hrp.length < 1 || hrp.length > 83) {
+    throw new TypeError('bech32.encode: hrp must be a non-empty string (1..83 chars)');
+  }
+  for (let i = 0; i < hrp.length; i++) {
+    const c = hrp.charCodeAt(i);
+    if (c < 33 || c > 126) {
+      throw new TypeError('bech32.encode: hrp must contain printable ASCII only');
+    }
+  }
+}
+
+function assertEncodeWords (words) {
+  if (!Array.isArray(words)) {
+    throw new TypeError('bech32.encode: words must be an array of 5-bit integers');
+  }
+  for (let i = 0; i < words.length; i++) {
+    const v = words[i];
+    if (!Number.isInteger(v) || v < 0 || v > 31) {
+      throw new TypeError(`bech32.encode: invalid word at index ${i}`);
+    }
+  }
+}
+
 function encodePure (hrp, words, spec) {
+  assertEncodeHrp(hrp);
+  assertEncodeWords(words);
+  assertEncodeSpec(spec);
   const c = spec === 'bech32m' ? BECH32M_CONST : BECH32_CONST;
   const chk = createChecksum(hrp, words, c);
   const combined = words.concat(chk);
@@ -167,6 +200,9 @@ function encodeSipa (hrp, words, spec) {
  * @returns {string}
  */
 function encode (hrp, words, spec) {
+  assertEncodeHrp(hrp);
+  assertEncodeWords(words);
+  assertEncodeSpec(spec);
   if (useNativeCBech32()) {
     const out = fabricNativeAccel.bech32Encode(hrp, words, spec);
     if (out != null) return out;
@@ -233,7 +269,34 @@ function decode (str) {
  * @returns {string|null} address or null if invalid (sipa reference behavior on Node)
  */
 function encodeSegwitAddress (hrp, version, program) {
-  const buf = Buffer.isBuffer(program) ? program : Buffer.from(program);
+  try {
+    assertEncodeHrp(hrp);
+  } catch {
+    return null;
+  }
+  if (!Number.isInteger(version) || version < 0 || version > 16) return null;
+  let buf;
+  try {
+    if (Buffer.isBuffer(program)) {
+      buf = program;
+    } else if (program instanceof Uint8Array) {
+      buf = Buffer.from(program);
+    } else if (Array.isArray(program)) {
+      const arr = [];
+      for (let i = 0; i < program.length; i++) {
+        const v = program[i];
+        if (!Number.isInteger(v) || v < 0 || v > 255) return null;
+        arr.push(v);
+      }
+      buf = Buffer.from(arr);
+    } else {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+  if (buf.length < 2 || buf.length > 40) return null;
+  if (version === 0 && buf.length !== 20 && buf.length !== 32) return null;
   if (useNativeCBech32()) {
     const out = fabricNativeAccel.segwitAddrEncode(hrp, version, buf);
     if (out == null) return null;

@@ -755,6 +755,12 @@ describe('@fabric/core/services/bitcoin (deep coverage)', function () {
       assert.strictEqual(btc.network, 'regtest');
     });
 
+    it('_defaultBitcoinP2pPort maps playnet and testnet4 defaults correctly', function () {
+      const btc = new Bitcoin({ network: 'mainnet' });
+      assert.strictEqual(btc._defaultBitcoinP2pPort('playnet'), 18444);
+      assert.strictEqual(btc._defaultBitcoinP2pPort('testnet4'), 48333);
+    });
+
     it('generateBlock uses RPC mode', async function () {
       const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
       btc._makeRPCRequest = async () => ['blkhash'];
@@ -886,21 +892,28 @@ describe('@fabric/core/services/bitcoin (deep coverage)', function () {
     it('broadcast verifies and relays through spv adapter', async function () {
       const btc = new Bitcoin({ network: 'regtest', debug: true });
       const calls = [];
-      const msg = { verify: async () => true };
+      let verifyCalls = 0;
+      const msg = {
+        verify: async () => {
+          verifyCalls++;
+          return true;
+        }
+      };
       btc.spv = {
         sendTX: async () => calls.push('sendTX'),
         relay: async () => calls.push('relay')
       };
       await btc.broadcast(msg);
+      assert.strictEqual(verifyCalls, 1, 'expected broadcast() to call msg.verify() exactly once');
       assert.deepStrictEqual(calls, ['sendTX', 'relay']);
     });
 
     it('_processRawBlock and _heartbeat exercise helper branches', async function () {
       const btc = new Bitcoin({ network: 'regtest', debug: true });
-      let bcoin = null;
+      let bcoin;
       try {
         bcoin = require('bcoin');
-      } catch (error) {}
+      } catch {}
       if (bcoin && bcoin.Block && typeof bcoin.Block.fromRaw === 'function') {
         const orig = bcoin.Block.fromRaw;
         bcoin.Block.fromRaw = () => ({ id: 'stub' });
@@ -909,6 +922,11 @@ describe('@fabric/core/services/bitcoin (deep coverage)', function () {
         } finally {
           bcoin.Block.fromRaw = orig;
         }
+      } else {
+        await assert.rejects(
+          () => btc._processRawBlock(Buffer.from('00', 'hex')),
+          /bcoin/i
+        );
       }
       let beat = false;
       btc._syncBestBlock = async () => { beat = true; };
