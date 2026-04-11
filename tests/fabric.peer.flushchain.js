@@ -241,6 +241,20 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     assert.ok(warns.some((w) => w.includes('CHAIN_SYNC_REQUEST parse failed')));
   });
 
+  it('_handleFabricMessage drops GenericMessage scalar bodies (no crash)', function () {
+    const peer = createPeer();
+    peers.push(peer);
+    let seenGeneric = false;
+    const warns = [];
+    peer._handleGenericMessage = function () { seenGeneric = true; };
+    peer.on('warning', (w) => warns.push(String(w)));
+    const msg = Message.fromVector(['GenericMessage', 'null']);
+    msg.signWithKey(peer.key);
+    peer._handleFabricMessage(msg.toBuffer(), { name: '127.0.0.1:10c' }, null);
+    assert.strictEqual(seenGeneric, false);
+    assert.ok(warns.some((w) => w.includes('Generic message body must be a JSON object')));
+  });
+
   it('_handleFabricMessage warns when FLUSH_CHAIN sender has no verified key', function () {
     const peer = createPeer();
     peers.push(peer);
@@ -344,5 +358,22 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     assert.strictEqual(events.length, 1);
     assert.strictEqual(events[0].object.snapshotBlockHash, 'b'.repeat(64));
     assert.deepStrictEqual(relayed, { origin: '127.0.0.1:13', threshold: 800 });
+  });
+
+  it('_handleFabricMessage authorizes FLUSH_CHAIN via inbound NOISE static pubkey fallback', function () {
+    const peer = createPeer({ flushChainMinTrustedScore: 800 });
+    peer.settings.flushChainAuthorizedPubkeys = [peer.key.pubkey];
+    peers.push(peer);
+    peer._inboundNoiseStaticPubkeyByAddress['127.0.0.1:15'] = peer.key.pubkey;
+    peer._state.peers = {
+      '127.0.0.1:15': { id: 'byAddress', address: '127.0.0.1:15', score: 900 }
+    };
+    const events = [];
+    peer.on('flushChain', (ev) => events.push(ev));
+    const msg = Message.fromVector(['P2P_FLUSH_CHAIN', JSON.stringify({ snapshotBlockHash: 'd'.repeat(64) })]);
+    msg.signWithKey(peer.key);
+    peer._handleFabricMessage(msg.toBuffer(), { name: '127.0.0.1:15' }, null);
+    assert.strictEqual(events.length, 1);
+    assert.strictEqual(events[0].object.snapshotBlockHash, 'd'.repeat(64));
   });
 });
