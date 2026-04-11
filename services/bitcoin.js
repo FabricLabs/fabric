@@ -2575,7 +2575,17 @@ class Bitcoin extends Service {
         ];
 
         // Wait for all checks to complete
-        await Promise.all(checks);
+        const [chainInfo] = await Promise.all(checks);
+
+        const detectedNetwork = this._normalizeChainName(chainInfo && chainInfo.chain);
+        const targetNetwork = this._normalizeChainName(this.settings.network || 'mainnet');
+        if (detectedNetwork && targetNetwork && detectedNetwork !== targetNetwork) {
+          this.emit(
+            'warning',
+            `[FABRIC:BITCOIN] RPC endpoint chain mismatch: detected=${detectedNetwork} expected=${targetNetwork}`
+          );
+          return false;
+        }
 
         if (this.settings.debug) {
           this.emit('debug', '[FABRIC:BITCOIN] Successfully connected to bitcoind');
