@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>JSDoc: Source: lib/chain.js</title>
+
+  <script src="scripts/prettify/prettify.js"> </script>
+  <script src="scripts/prettify/lang-css.js"> </script>
+  <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+  <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+  <div id="main">
+
+    <h1 class="page-title">Source: lib/chain.js</h1>
+
+
+
+
+
+
+    <section>
+      <article>
+        <pre class="prettyprint source linenums"><code>'use strict';
+
+const Block = require('./block');
+const Ledger = require('./ledger');
+const State = require('./state');
+const Store = require('./store');
+
+const MerkleTree = require('merkletreejs');
+
+/**
+ * Chain.
+ * @property {String} name Current name.
+ * @property {Map} indices
+ * @property {Ledger} ledger
+ * @property {Storage} storage
+ */
+class Chain extends Ledger {
+  /**
+   * Holds an immutable chain of events.
+   * @param       {Vector} genesis Initial state for the chain of events.
+   */
+  constructor (origin) {
+    super(origin);
+
+    this.name = (origin) ? origin.name : 'playnet';
+    this.config = Object.assign({
+      name: this.name,
+      type: 'sha256'
+    }, origin);
+
+    this.genesis = new State(this.config);
+    this.state['@data'] = this.genesis['@data'];
+
+    // TODO: set this up via define?
+    this.indices = {
+      blocks: '/blocks',
+      transactions: '/transactions'
+    };
+
+    this.ledger = new Ledger();
+    this.storage = new Store({
+      path: './data/chain'
+    });
+
+    Object.defineProperty(this, 'ledger', {
+      enumerable: false,
+      writable: false
+    });
+
+    Object.defineProperty(this, 'storage', {
+      enumerable: false,
+      writable: false
+    });
+
+    return this;
+  }
+
+  static fromObject (data) {
+    return new Chain(data);
+  }
+
+  get tip () {
+    return this.ledger.tip;
+  }
+
+  get root () {
+    return this.mast.getRoot();
+  }
+
+  get blocks () {
+    return this.state.blocks || [];
+  }
+
+  get leaves () {
+    return this.blocks.map(x => Buffer.from(x['@id'], 'hex'));
+  }
+
+  get _tree () {
+    return new MerkleTree(this.leaves, this.sha256, {
+      isBitcoinTree: true
+    });
+  }
+
+  async start () {
+    let chain = this;
+
+    await chain.storage.open();
+    await chain.ledger.start();
+
+    // TODO: define all state transitions
+    chain.state.blocks = [chain.genesis];
+
+    // blindly bind all events
+    this.trust(chain.ledger);
+
+    // before returning, ensure a commit
+    await chain.commit();
+
+    return chain;
+  }
+
+  async stop () {
+    await this.commit();
+    await this.ledger.stop();
+    await this.storage.close();
+
+    return this;
+  }
+
+  async open () {
+    return this.storage.open();
+  }
+
+  async close () {
+    return this.storage.close();
+  }
+
+  async _load () {
+    let chain = this;
+
+    let query = await chain.storage.get('/blocks');
+    let response = new State(query);
+
+    this.log('query:', query);
+    this.log('response:', response);
+    this.log('response id:', response.id);
+
+    return chain;
+  }
+
+  async append (block) {
+    if (!block['@id'] || !block['@data']) {
+      block = new State(block);
+    }
+
+    let self = this;
+    let path = [self.indices.blocks, block.id].join('/');
+
+    // Chains always have a genesis.
+    if (self.blocks.length === 0 &amp;&amp; !self.genesis) {
+      self.genesis = block['@id'];
+    }
+
+    await self.ledger.append(block['@data']);
+    await self.storage._PUT(path, block);
+
+    self.state.blocks.push(block);
+
+    self['@tree'] = new MerkleTree(this.leaves, this.sha256, {
+      isBitcoinTree: true
+    });
+
+    self.emit('block', block['@id'], block['@data']);
+
+    await self.commit();
+
+    return self;
+  }
+
+  async _listBlocks () {
+    let self = this;
+    let blocks = await self.storage.get(self.indices.blocks);
+
+    return blocks;
+  }
+
+  async mine () {
+    let block = new State({
+      parent: this.id
+    });
+    return block.commit();
+  }
+
+  async commit () {
+    // reject invalid chains
+    if (!this.ledger || !this.ledger.pages) return null;
+
+    let input = this.ledger.pages;
+    let state = new State(input);
+    let commit = await state.commit();
+    let script = []; // validation
+
+    this['@data'] = input;
+    this['@id'] = state.id;
+
+    script.push(`${state.id.toString('hex')}`);
+    script.push(`OP_PUSH32`);
+    script.push(`OP_ALLOC`);
+    script.push(`${JSON.stringify(state['@data'])}`);
+    script.push(`OP_SHA256`);
+    script.push(`${state.id}`);
+    script.push(`OP_EQUALVERIFY`);
+
+    if (commit['@changes']) {
+      this.emit('state', state['@data']);
+      // this.emit('changes', commit['@changes']);
+    }
+
+    return new Block(commit['@changes']);
+  }
+
+  async verify (level = 4, depth = 6) {
+    this.log(`Verification Level ${level} running from -${depth}...`);
+    console.log('root:', this.root);
+    return (this['@id'] === this.root);
+  }
+
+  render () {
+    console.log('[CHAIN]', '[RENDER]', this);
+    return `&lt;Chain id="${this.id}" />`;
+  }
+}
+
+module.exports = Chain;
+</code></pre>
+      </article>
+    </section>
+
+
+
+
+  </div>
+
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="App.html">App</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Compiler.html">Compiler</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="Oracle.html">Oracle</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="Remote.html">Remote</a></li>
+      <li><a href="Router.html">Router</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Stack.html">Stack</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
+    </ul>
+  </nav>
+
+  <br class="clear">
+
+  <footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.6.0-dev</a> on Mon Jul 01 2019 21:32:25 GMT-0700 (Pacific Daylight Time)
+  </footer>
+
+  <script>
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"> </script>
+</body>
+
+</html>

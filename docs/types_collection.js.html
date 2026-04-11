@@ -70,7 +70,7 @@ class Collection extends Stack {
 
     // Set name to plural version, define path for storage
     this.name = pluralize(this.settings.name);
-    this._path = `/${this.name.toLowerCase()}`;
+    this.path = `/` + this.name.toLowerCase();
 
     this._state = {};
     this.value = {};
@@ -91,15 +91,6 @@ class Collection extends Stack {
 
   get routes () {
     return this.settings.routes;
-  }
-
-  get path () {
-    return this._path;
-  }
-
-  set path (value) {
-    this._path = value;
-    return this._path;
   }
 
   /**
@@ -269,14 +260,10 @@ class Collection extends Stack {
   async push (data, commit = true) {
     super.push(data);
 
-    const entity = new Entity(data);
     let state = new State(data);
 
     this['@entity'].states[this.id] = this['@data'];
-    this['@entity'].states[entity.id] = state['@data'];
-
-    // Use entity IDs for collection indexing to avoid collisions in State IDs.
-    this['@data'][this['@data'].length - 1] = entity.id;
+    this['@entity'].states[state.id] = state['@data'];
 
     this['@entity']['@data'] = this['@data'].map(x => x.toString());
     this['@data'] = this['@entity']['@data'];
@@ -362,7 +349,7 @@ class Collection extends Stack {
   toTypedArray () {
     const map = this.map();
     const ids = Object.keys(map);
-    return ids.map((id) => this._wrapResult(map[id]));
+    return ids.map((x) => this._wrapResult(map[ids[x]]));
   }
 
   typedMap () {
@@ -383,12 +370,11 @@ class Collection extends Stack {
    * @returns {Array}
    */
   map () {
-    return pointer.get(this.value, `${this.path}`);
+    return Collection.pointer.get(this.value, `${this.path}`);
   }
 
   render () {
-    // Collection rendering should expose the ordered ID list, not internal state metadata.
-    return JSON.stringify(this['@entity']['@data'] || []);
+    return this.serialize(this.state);
   }
 
   /**
@@ -451,7 +437,7 @@ class Collection extends Stack {
    * Loads {@link State} into memory.
    * @param {State} state State to import.
    * @param {Boolean} commit Whether or not to commit the result.
-   * @emits message Will emit one `CollectionSnapshot` message (not the removed Snapshot type).
+   * @emits message Will emit one {@link Snapshot} message.
    */
   async import (input, commit = true) {
     if (input['@data']) input = input['@data'];
@@ -485,7 +471,7 @@ class Collection extends Stack {
     if (this.settings.verbosity >= 4) console.log('input.id', input.id);
 
     this.emit('message', {
-      '@type': 'CollectionSnapshot',
+      '@type': 'Snapshot',
       '@data': {
         path: this.path,
         state: pointer.get(this.value, this.path)
@@ -555,10 +541,10 @@ module.exports = Collection;
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
-      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
+      <li><a href="HTTPServer.html">HTTPServer</a></li>
       <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
@@ -577,36 +563,24 @@ module.exports = Collection;
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
+      <li><a href="Snapshot.html">Snapshot</a></li>
+      <li><a href="Stack.html">Stack</a></li>
+      <li><a href="Stash.html">Stash</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
+      <li><a href="Value.html">Value</a></li>
       <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
-    <h3>Global</h3>
+    <h3>Events</h3>
     <ul>
-      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
-      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
-      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
-      <li><a href="global.html#crypto">crypto</a></li>
-      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
-      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
-      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
-      <li><a href="global.html#gossip">gossip</a></li>
-      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
-      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
-      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
-      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
-      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
-      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
-      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
-      <li><a href="global.html#stableStringify">stableStringify</a></li>
-      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
-      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
-      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
+      <li><a href="Aggregator.html#event:commit">commit</a></li>
     </ul>
   </nav>
   <br class="clear" />

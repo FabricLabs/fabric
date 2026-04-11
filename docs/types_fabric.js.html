@@ -38,6 +38,7 @@ const crypto = require('crypto');
 
 // components
 const Actor = require('../types/actor');
+const App = require('../types/app');
 const Block = require('../types/block');
 const Chain = require('../types/chain');
 const Circuit = require('../types/circuit');
@@ -45,8 +46,8 @@ const Collection = require('../types/collection');
 // const Contract = require('./contract');
 // const Disk = require('./disk');
 const Entity = require('../types/entity');
-const Hash256 = require('../types/hash256');
 const Key = require('../types/key');
+const Ledger = require('../types/ledger');
 const Machine = require('../types/machine');
 const Message = require('../types/message');
 const Observer = require('../types/observer');
@@ -56,11 +57,12 @@ const Program = require('../types/program');
 const Remote = require('../types/remote');
 const Resource = require('../types/resource');
 const Service = require('../types/service');
+const Scribe = require('../types/scribe');
 const Script = require('../types/script');
 const Stack = require('../types/stack');
 const State = require('../types/state');
 const Store = require('../types/store');
-// Swarm: require('./peer').Swarm
+// const Swarm = require('../types/swarm');
 // const Transaction = require('./transaction');
 const Vector = require('../types/vector');
 const Wallet = require('../types/wallet');
@@ -128,7 +130,7 @@ class Fabric extends Service {
     };
   }
 
-  static get Actor () { return Actor; }
+  static get App () { return App; }
   static get Block () { return Block; }
   static get Chain () { return Chain; }
   static get Circuit () { return Circuit; }
@@ -136,8 +138,8 @@ class Fabric extends Service {
   // static get Contract () { return Contract; }
   // static get Disk () { return Disk; }
   static get Entity () { return Entity; }
-  static get Hash256 () { return Hash256; }
   static get Key () { return Key; }
+  static get Ledger () { return Ledger; }
   static get Machine () { return Machine; }
   static get Message () { return Message; }
   static get Observer () { return Observer; }
@@ -147,20 +149,16 @@ class Fabric extends Service {
   static get Remote () { return Remote; }
   static get Resource () { return Resource; }
   static get Service () { return Service; }
+  static get Scribe () { return Scribe; }
   static get Script () { return Script; }
   static get Stack () { return Stack; }
   static get State () { return State; }
   static get Store () { return Store; }
-  // static get Swarm () { return require('./peer').Swarm; }
+  // static get Swarm () { return Swarm; }
   // static get Transaction () { return Transaction; }
+  static get Vector () { return Vector; }
   static get Wallet () { return Wallet; }
   static get Worker () { return Worker; }
-
-  /** @returns {Function} */
-  static get Federation () { return require('./federation'); }
-
-  /** @returns {Function} */
-  static get DistributedExecution () { return require('./distributedExecution'); }
 
   static sha256 (data) {
     return crypto.createHash('sha256').update(data).digest('hex');
@@ -344,7 +342,7 @@ class Fabric extends Service {
   trust (source) {
     let self = this;
 
-    this.log('[TRUST]', 'trusting:', typeof source);
+    this.warn('[TRUST]', 'trusting:', typeof source);
 
     source.on('changes', async function (changes) {
       self.log('source', typeof source, 'emitted:', changes);
@@ -463,10 +461,10 @@ module.exports = Fabric;
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
-      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
+      <li><a href="HTTPServer.html">HTTPServer</a></li>
       <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
@@ -485,36 +483,24 @@ module.exports = Fabric;
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
+      <li><a href="Snapshot.html">Snapshot</a></li>
+      <li><a href="Stack.html">Stack</a></li>
+      <li><a href="Stash.html">Stash</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
+      <li><a href="Value.html">Value</a></li>
       <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
-    <h3>Global</h3>
+    <h3>Events</h3>
     <ul>
-      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
-      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
-      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
-      <li><a href="global.html#crypto">crypto</a></li>
-      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
-      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
-      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
-      <li><a href="global.html#gossip">gossip</a></li>
-      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
-      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
-      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
-      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
-      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
-      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
-      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
-      <li><a href="global.html#stableStringify">stableStringify</a></li>
-      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
-      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
-      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
+      <li><a href="Aggregator.html#event:commit">commit</a></li>
     </ul>
   </nav>
   <br class="clear" />

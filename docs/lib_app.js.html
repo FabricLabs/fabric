@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>JSDoc: Source: lib/app.js</title>
+
+  <script src="scripts/prettify/prettify.js"> </script>
+  <script src="scripts/prettify/lang-css.js"> </script>
+  <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+  <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+  <div id="main">
+
+    <h1 class="page-title">Source: lib/app.js</h1>
+
+
+
+
+
+
+    <section>
+      <article>
+        <pre class="prettyprint source linenums"><code>'use strict';
+
+const Machine = require('./machine');
+const Remote = require('./remote');
+const Resource = require('./resource');
+const Scribe = require('./scribe');
+const State = require('./state');
+const Storage = require('./store');
+// const Swarm = require('./swarm');
+
+/**
+ * Web-friendly application framework for building single-page applications with
+ * Fabric-based networking and storage.
+ * @property {Collection} components Interface elements.
+ */
+class App extends Scribe {
+  /**
+   * Generic bundle for building Fabric applications.
+   * @param  {Object} definition Application definition.  See `config` for examples.
+   * @return {App}            Returns an instance of `App`.
+   */
+  constructor (definition = {}) {
+    super(definition);
+
+    if (!definition.resources) definition.resources = {};
+
+    this['@data'] = Object.assign({
+      seed: 1
+    }, definition);
+
+    this.machine = new Machine(this['@data']);
+    this.tips = new Storage({ path: './data/tips' });
+    this.stash = new Storage({ path: './data/stash' });
+    // this.swarm = new Swarm();
+    // this.worker = new Worker();
+
+    this.name = 'application';
+    this.network = {};
+    // this.element = document.createElement('fabric-app');
+    this.bindings = {};
+    this.authorities = {};
+    this.components = {};
+    this.resources = {};
+    this.templates = {};
+    this.keys = [];
+
+    this.stash.on('patches', function (patches) {
+      console.log('[FABRIC:APP]', 'heard patches!', patches);
+    });
+
+    if (this['@data'].resources) {
+      for (let name in this['@data'].resources) {
+        this.set(this['@data'].resources[name].components.list, []);
+      }
+    }
+
+    this.commit();
+
+    return this;
+  }
+
+  _bindEvents (element) {
+    for (let name in this.bindings) {
+      element.addEventListener(name, this.bindings[name]);
+    }
+
+    return element;
+  }
+
+  _unbindEvents (element) {
+    for (let name in this.bindings) {
+      element.removeEventListener(this.bindings[name]);
+    }
+
+    return element;
+  }
+
+  /**
+   * Start the program.
+   * @return {Promise}
+   */
+  async start () {
+    this.log('[APP]', 'started!');
+    return this;
+  }
+
+  /**
+   * Stop the program.
+   * @return {Promise}
+   */
+  async stop () {
+    this.log('[APP]', 'stopping...');
+
+    await this.tips.close();
+    await this.stash.close();
+
+    return this;
+  }
+
+  /**
+   * Define a Resource, or "Type", used by the application.
+   * @param  {String} name      Human-friendly name for the Resource.
+   * @param  {Object} structure Map of attribute names -> definitions.
+   * @return {Object}           [description]
+   */
+  async define (name, structure) {
+    let self = this;
+
+    self.log('[APP]', 'defining:', name, structure);
+
+    try {
+      let resource = new Resource(structure);
+
+      resource._sign();
+      resource.trust(self.stash);
+
+      // self.use(name, structure);
+      // TODO: decide on resource['@data'] vs. resource (new)
+      self.resources[name] = resource;
+
+      self._sign();
+    } catch (E) {
+      console.error(E);
+    }
+
+    return this;
+  }
+
+  async register (component) {
+    this.components[component.name] = component;
+  }
+
+  /**
+   * Defer control of this application to an outside authority.
+   * @param  {String} authority Hostname to trust.
+   * @return {App}           The configured application as deferred to `authority`.
+   */
+  async defer (authority) {
+    let self = this;
+    let resources = {};
+
+    console.warn('[APP]', 'deferring authority:', authority);
+
+    if (typeof authority === 'string') {
+      self.remote = new Remote({
+        host: authority
+      });
+      resources = await self.remote.enumerate();
+    } else {
+      resources = authority.resources;
+    }
+
+    if (!resources) {
+      resources = {};
+    }
+
+    self.consume(resources);
+
+    if (window &amp;&amp; window.page) {
+      // load the Index
+      window.page('/', function (context) {
+        self.log('Hello, navigator.');
+        self.log('Context:', context);
+        self.element.navigate('fabric-splash', context);
+      });
+
+      window.page();
+    }
+
+    return this;
+  }
+
+  /**
+   * Configure the Application to use a specific element.
+   * @param  {DOMElement} element DOM element to bind to.
+   * @return {App}           Configured instance of the Application.
+   */
+  attach (element) {
+    this.element = element;
+    return this;
+  }
+
+  /**
+   * Define the Application's resources from an existing resource map.
+   * @param  {Object} resources Map of resource definitions by name.
+   * @return {App}           Configured instance of the Application.
+   */
+  consume (resources) {
+    let self = this;
+
+    self.element.resources = resources;
+
+    for (let key in resources) {
+      let def = resources[key];
+      self.define(def.name, def);
+    }
+
+    return this;
+  }
+
+  /**
+   * Use a CSS selector to find an element in the current document's tree and
+   * bind to it as the render target.
+   * @param  {String} selector CSS selector.
+   * @return {App}          Instance of app with bound element.
+   */
+  envelop (selector) {
+    try {
+      let element = document.querySelector(selector);
+
+      if (!element) {
+        this.log('[FABRIC:APP]', 'envelop()', 'could not find element:', selector);
+        return null;
+      }
+
+      this._bindEvents(element);
+      this.attach(element);
+    } catch (E) {
+      console.error('Could not envelop element:', E);
+    }
+
+    return this;
+  }
+
+  /**
+   * Define a named {@link Resource}.
+   * @param  {String} name       Human-friendly name for this resource.
+   * @param  {Object} definition Map of configuration values.
+   * @return {App}            Configurated instance of the {@link App}.
+   */
+  use (name, definition) {
+    this.log('[APP]', 'using:', name, definition);
+    super.use(name, definition);
+    return this;
+  }
+
+  /**
+   * Get the output of our program.
+   * @return {String}           Output of the program.
+   */
+  render (component) {
+    let rendered = `&lt;fabric-${this.name.toLowerCase()} />`;
+    let sample = new State(rendered);
+
+    if (this.element) {
+      this.element.setAttribute('integrity', `sha256:${sample.id}`);
+      this.element.innerHTML = rendered;
+    }
+
+    return rendered;
+  }
+}
+
+module.exports = App;
+</code></pre>
+      </article>
+    </section>
+
+
+
+
+  </div>
+
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="App.html">App</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Compiler.html">Compiler</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="Oracle.html">Oracle</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="Remote.html">Remote</a></li>
+      <li><a href="Router.html">Router</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Stack.html">Stack</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
+    </ul>
+  </nav>
+
+  <br class="clear">
+
+  <footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.6.0-dev</a> on Mon Jul 01 2019 21:32:25 GMT-0700 (Pacific Daylight Time)
+  </footer>
+
+  <script>
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"> </script>
+</body>
+
+</html>
