@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('assert');
-const { runAll, getScenarios, formatConsoleTable, buildReportPayload } = require('../../scripts/benchmark-lib');
+const { runAll, getScenarios, formatConsoleTable, buildReportPayload } = require('../../scripts/benchmark');
 
 describe('benchmark smoke', function () {
   this.timeout(120000);

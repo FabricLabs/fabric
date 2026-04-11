@@ -18,7 +18,7 @@ $ npm i
   CC(target) Release/obj.target/fabric/src/taproot.o
   SOLINK_MODULE(target) Release/fabric.node
 
-added 665 packages, and audited 666 packages in 30s
+added 665 packages, and audited 666 packages in 28s
 
 109 packages are looking for funding
   run `npm fund` for details
