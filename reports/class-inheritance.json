@@ -87,116 +87,104 @@
     "Text": "Service",
     "Turntable": "Service",
     "ZMQ": "Service",
-    "Distribution": "Contract",
-    "EventEmitter": null,
-    "Buffer": null,
-    "String": null,
-    "HTTP": null
+    "Distribution": "Contract"
   },
   "tree": {
+    "Actor": {
+      "BitcoinBlock": {},
+      "BitcoinTransaction": {},
+      "Block": {},
+      "Chain": {},
+      "Circuit": {
+        "Program": {},
+        "RoundRobin": {}
+      },
+      "Filesystem": {},
+      "History": {},
+      "Identity": {},
+      "Label": {},
+      "Logger": {},
+      "Machine": {},
+      "Message": {
+        "LightningMessage": {}
+      },
+      "Swarm": {},
+      "Queue": {},
+      "Remote": {},
+      "Service": {
+        "Component": {},
+        "Contract": {
+          "Bond": {},
+          "Federation": {},
+          "Distribution": {}
+        },
+        "Fabric": {
+          "Validator": {}
+        },
+        "Interface": {},
+        "Node": {},
+        "Peer": {},
+        "FabricShell": {
+          "CLI": {}
+        },
+        "Wallet": {},
+        "Worker": {},
+        "Bitcoin": {},
+        "Exchange": {},
+        "Lightning": {},
+        "Local": {},
+        "Redis": {},
+        "Text": {},
+        "Turntable": {},
+        "ZMQ": {}
+      },
+      "State": {
+        "Challenge": {},
+        "Channel": {},
+        "Document": {},
+        "Instruction": {},
+        "Ledger": {},
+        "Router": {},
+        "Stack": {
+          "Collection": {},
+          "Script": {}
+        }
+      },
+      "Store": {
+        "Datastore": {},
+        "Oracle": {},
+        "Resource": {}
+      },
+      "Transaction": {},
+      "Tree": {}
+    },
+    "Authority": {},
     "Bech32": {},
     "Codec": {},
     "Compiler": {},
     "Disk": {},
+    "Entity": {
+      "Capability": {},
+      "Transition": {},
+      "Environment": {},
+      "Session": {}
+    },
     "Hash256": {},
     "HKDF": {},
+    "Key": {},
     "Network": {},
     "Observer": {},
+    "Path": {},
     "EncryptedPromise": {
       "Secret": {}
     },
+    "Reader": {},
     "Renderer": {},
+    "Signature": {},
     "Token": {},
     "TypeTree": {},
-    "Witness": {},
-    "EventEmitter": {
-      "Actor": {
-        "BitcoinBlock": {},
-        "BitcoinTransaction": {},
-        "Block": {},
-        "Chain": {},
-        "Circuit": {
-          "Program": {},
-          "RoundRobin": {}
-        },
-        "Filesystem": {},
-        "History": {},
-        "Identity": {},
-        "Label": {},
-        "Logger": {},
-        "Machine": {},
-        "Message": {
-          "LightningMessage": {}
-        },
-        "Swarm": {},
-        "Queue": {},
-        "Remote": {},
-        "Service": {
-          "Component": {},
-          "Contract": {
-            "Bond": {},
-            "Federation": {},
-            "Distribution": {}
-          },
-          "Fabric": {
-            "Validator": {}
-          },
-          "Interface": {},
-          "Node": {},
-          "Peer": {},
-          "FabricShell": {
-            "CLI": {}
-          },
-          "Wallet": {},
-          "Worker": {},
-          "Bitcoin": {},
-          "Exchange": {},
-          "Lightning": {},
-          "Local": {},
-          "Redis": {},
-          "Text": {},
-          "Turntable": {},
-          "ZMQ": {}
-        },
-        "State": {
-          "Challenge": {},
-          "Channel": {},
-          "Document": {},
-          "Instruction": {},
-          "Ledger": {},
-          "Router": {},
-          "Stack": {
-            "Collection": {},
-            "Script": {}
-          }
-        },
-        "Store": {
-          "Datastore": {},
-          "Oracle": {},
-          "Resource": {}
-        },
-        "Transaction": {},
-        "Tree": {}
-      },
-      "Entity": {
-        "Capability": {},
-        "Transition": {},
-        "Environment": {},
-        "Session": {}
-      },
-      "Key": {},
-      "Reader": {},
-      "Vector": {}
-    },
-    "Buffer": {
-      "Signature": {}
-    },
-    "String": {
-      "Path": {}
-    },
-    "HTTP": {
-      "Authority": {}
-    }
+    "Vector": {},
+    "Witness": {}
   },
   "byFile": [
     {
