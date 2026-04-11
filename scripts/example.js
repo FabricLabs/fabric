@@ -62,7 +62,7 @@ function main (input) {
   let cores = [Buffer.alloc(32), 'EXAMPLE_STRING', 'input is an array'];
 
   for (let i = 1; i < 5; i++) {
-    cores.push({ name: `core-${i}` })
+    cores.push({ name: `core-${i}` });
   }
 
   cores.push(Genesis);

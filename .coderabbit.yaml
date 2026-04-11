@@ -1,0 +1,12 @@
+# CodeRabbit — https://docs.coderabbit.ai/configuration/auto-review
+# PRs targeting non-default bases (e.g. release candidates) need an explicit base_branches entry.
+language: en-US
+reviews:
+  profile: chill
+  auto_review:
+    base_branches:
+      - "feature/v0\\.1\\.0-RC1"
+  path_filters:
+    - "!docs/**"
+    - "!assets/**"
+    - "!_book/**"

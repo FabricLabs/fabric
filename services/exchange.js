@@ -9,7 +9,6 @@ const BTCB = require('../currencies/btcb');
 const merge = require('lodash.merge');
 
 // Fabric Types
-const Actor = require('../types/actor');
 const Entity = require('../types/entity');
 const Collection = require('../types/collection');
 const Message = require('../types/message');

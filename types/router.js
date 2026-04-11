@@ -1,12 +1,12 @@
 'use strict';
 
-const Scribe = require('./scribe');
+const State = require('./state');
 
 // TODO: re-define this class for Fabric messages
 // Current code is specific to @fabric/doorman — should be a general-
 // purpose Router, not for strings and triggers in chat messages.
 
-class Router extends Scribe {
+class Router extends State {
   constructor (config) {
     super(config);
 

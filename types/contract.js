@@ -16,6 +16,12 @@ const Key = require('./key');
 const Message = require('./message');
 const Service = require('./service');
 
+/**
+ * Service-backed agreement template: DOT graphs, a derived circuit structure, deploy/genesis/publish flows,
+ * and JSON-Patch–observed commits. Specialized by {@link Bond}, {@link Federation}, and {@link Distribution}.
+ * @class Contract
+ * @extends Service
+ */
 class Contract extends Service {
   constructor (settings = {}) {
     super(settings);
@@ -219,7 +225,6 @@ class Contract extends Service {
   }
 
   toDot () {
-    const tokens = [];
   }
 
   parse (input) {

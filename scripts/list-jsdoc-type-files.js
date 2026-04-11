@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 
 const typesDir = path.join(__dirname, '..', 'types');
-const skip = new Set();
+const skip = new Set(['cli.js']);
 const recursive = process.argv.includes('--recursive');
 
 function walk (dir, base = '') {

@@ -1,6 +1,6 @@
 'use strict';
 
-const Scribe = require('./scribe');
+const State = require('./state');
 const Stack = require('./stack');
 
 /**
@@ -8,9 +8,9 @@ const Stack = require('./stack');
  * @property {Buffer} memory The ledger's memory (4096 bytes).
  * @property {Stack} stack The ledger's stack.
  * @property {Mixed} tip The most recent page in the ledger.
- * @extends Scribe
+ * @extends State
  */
-class Ledger extends Scribe {
+class Ledger extends State {
   constructor (state) {
     super(state);
 

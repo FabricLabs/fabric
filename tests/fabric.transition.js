@@ -1,4 +1,4 @@
-'use strict'
+'use strict';
 
 const assert = require('assert');
 const { Transition } = require('../types/entity');

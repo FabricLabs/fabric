@@ -14,18 +14,18 @@
     "test": "tests"
   },
   "engines": {
-    "node": "22.14.0"
+    "node": "24.14.1"
   },
   "scripts": {
-    "preinstall": "node -e \"\"",
-    "audit": "npm audit --json --level critical > reports/AUDIT.json",
+    "install": "node scripts/install-native.js",
+    "audit": "npm audit --json > reports/AUDIT.json",
     "book": "npm run dev",
     "build:book": "npm run make:book && npm run tidy",
     "build": "npm run make:all",
-    "chat": "node scripts/fabric.js chat",
-    "ci": "npm run smoke && npm run lint:types && npm run lint:pkg && npm test",
-    "smoke": "node -e \"require('./types/fabric'); require('./types/distributedExecution'); require('./types/message'); require('./types/peer'); require('./types/hash256'); require('./functions/fabricNativeAccel'); console.log('smoke ok');\"",
-    "lint:pkg": "semistandard scripts/fabric.js scripts/cli.js scripts/gen-quality-reports.js scripts/check-book-links.js scripts/coverage-baseline.js scripts/clean-jsdoc-html.js functions/fabricNativeAccel.js",
+    "chat": "node scripts/fabric.js shell",
+    "ci": "npm run smoke && npm run lint:types && npm run lint:pkg && npm test && npm run test:benchmark",
+    "smoke": "node -e \"require('./types/fabric'); require('./types/distributedExecution'); require('./types/message'); require('./types/peer'); require('./types/hash256'); require('./functions/bytes'); require('./functions/fabricCanonicalJson'); require('./functions/wireJson'); require('./functions/fabricNativeAccel'); console.log('smoke ok');\"",
+    "lint:pkg": "eslint scripts/fabric.js scripts/cli.js scripts/gen-quality-reports.js scripts/check-book-links.js scripts/coverage-baseline.js scripts/clean-jsdoc-html.js scripts/classtree.js scripts/report-noble-hashes.js scripts/fix-noble-hashes-compat.js scripts/install-native.js scripts/benchmark.js functions/bytes.js functions/fabricCanonicalJson.js functions/wireJson.js functions/fabricNativeAccel.js functions/base58.js functions/bech32.js functions/sipa/bech32.js functions/sipa/segwit_addr.js functions/bip39.js functions/bip32.js",
     "exchange": "node scripts/fabric.js exchange",
     "fabric:start": "node scripts/fabric.js start",
     "clean:all": "rm -rf node_modules package-lock.json",
@@ -39,10 +39,10 @@
     "docs": "npm run make:api && npm run make:docs && http-server -p 8000 docs",
     "examples": "npm run make:examples && http-server -p 8000 examples",
     "keygen": "node scripts/keygen.js",
-    "lint:fix": "semistandard --fix",
-    "lint:types": "semistandard types/**/*.js",
-    "lint:types:fix": "semistandard --fix types/**/*.js",
-    "lint": "semistandard",
+    "lint:fix": "eslint . --fix",
+    "lint:types": "eslint types/**/*.js",
+    "lint:types:fix": "eslint types/**/*.js --fix",
+    "lint": "eslint .",
     "local": "npm run build && http-server -p 8000 ./assets",
     "make:all": "npm run make:service && npm run make:app && npm run make:lib && npm run make:dev # && npm run make:binary",
     "make:api": "NODE_OPTIONS=\"--require ./scripts/bigint-json.js\" jsdoc2md --configure jsdoc.json --files $(node scripts/list-jsdoc-type-files.js) schemata/*.js services/*.js settings/deprecations.js README.md > API.md",
@@ -66,18 +66,22 @@
     "report:deprecations": "node scripts/gen-quality-reports.js deprecations",
     "report:security": "node scripts/gen-quality-reports.js security",
     "report:quality": "node scripts/gen-quality-reports.js all",
-    "report:legal": "license-checker --json > reports/licenses.json",
     "report:noisy": "node scripts/analyze-deps.js | tee reports/noisy-deps.txt",
-    "report:todo": "grep --exclude-dir=.git --exclude-dir=_book --exclude-dir=assets --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs -rEI \"TODO|FIXME\" . > reports/TODO.txt",
+    "report:noble-hashes": "node scripts/report-noble-hashes.js",
+    "make:classes-dot": "node scripts/classtree.js --write",
+    "report:todo": "grep --exclude-dir=.git --exclude-dir=_book --exclude-dir=assets --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs --exclude='.tmp-*.html' --exclude='*.tmp-pr*.html' -rEI \"TODO|FIXME\" . > reports/TODO.txt",
     "reports": "npm run report:install && npm run make:coverage && npm run report:todo",
     "review:coverage": "npm run make:coverage && http-server -p 0 reports/coverage",
     "review:todo": "npm run report:todo && cat reports/TODO.txt && echo '\nOutstanding TODO items (@fabric/core):' && wc -l reports/TODO.txt && echo '\nIssues List: https://github.com/FabricLabs/fabric/issues\nDisclosures: security@fabric.pub\n\n'",
-    "start": "node scripts/app.js",
+    "start": "node scripts/fabric.js shell",
     "static": "npm run build:scripts && http-server -p 8000 assets",
     "test:app": "npm run make:service && npm run make:app && NODE_ENV=test mocha tests/fabric.app.js",
     "test:bitcoin": "mocha tests/bitcoin.core.js",
     "test:wasm": "emcc contracts/test.c -o assets/wasm.html",
-    "test": "NODE_ENV=test mocha --recursive tests -- --serial",
+    "test": "NODE_ENV=test mocha --require ./tests/mocha-env.js --recursive tests --ignore \"tests/fuzz/**\" --ignore \"tests/benchmark/**\" --ignore \"tests/benchmark/**/*.js\"",
+    "test:fuzz": "NODE_ENV=test mocha --require ./tests/mocha-env.js --recursive tests/fuzz",
+    "test:benchmark": "NODE_ENV=test mocha --require ./tests/mocha-env.js tests/benchmark/benchmark.smoke.js",
+    "benchmark": "node scripts/benchmark.js",
     "test:c": "node test_comparison.js",
     "build:c": "node-gyp rebuild",
     "test:fabric": "node test_fabric_namespace.js",
@@ -88,6 +92,9 @@
     "example:basic": "node examples/fabric-basic-usage.js",
     "example:chat": "node examples/fabric-chat-app.js",
     "example:demo": "node examples/fabric-demo.js",
+    "example:agents:smoke": "node examples/agents.js --smoke",
+    "example:agents:distributor": "node examples/agents.js --distributor-only",
+    "example:agents:bitcoin": "node examples/agents.js --bitcoin-only",
     "tidy": "js-beautify --indent-size 2 -r _book/**.html",
     "watch:book": "honkit serve --port 8000 # NOTE: /docs and /examples may not be available."
   },
@@ -112,47 +119,54 @@
   "dependencies": {
     "@noble/curves": "=2.0.1",
     "@noble/hashes": "=2.0.1",
-    "@webassemblyjs/ast": "^1.14.1",
-    "arbitrary": "=1.4.10",
-    "bech32-buffer": "=0.2.1",
-    "bip-schnorr": "=0.6.7",
-    "bip32": "=4.0.0",
-    "bip39": "=3.1.0",
+    "@webassemblyjs/ast": "=1.14.1",
     "bip65": "=1.0.3",
     "bip68": "=1.0.4",
     "bitcoinjs-lib": "=6.1.7",
     "blessed": "=0.1.81",
     "bn.js": "=5.2.3",
-    "commander": "=14.0.0",
+    "commander": "=14.0.3",
     "content-type": "=1.0.5",
     "cross-fetch": "=4.1.0",
     "dotparser": "=1.1.1",
-    "ecpair": "=2.1.0",
     "elliptic": "npm:@soatok/elliptic-to-noble@^9999.0.0",
     "events": "=3.3.0",
     "fast-json-patch": "=3.1.1",
     "javascript-state-machine": "=3.1.0",
-    "jayson": "=4.2.0",
+    "jayson": "=4.3.0",
     "json-pointer": "=0.6.2",
-    "jsonpointer": "=5.0.1",
-    "level": "=9.0.0",
+    "level": "=10.0.0",
     "lodash.merge": "=4.6.2",
     "macaroon": "=3.0.4",
-    "merkletreejs": "=0.5.2",
+    "merkletreejs": "=0.6.0",
     "minsc": "=0.2.0",
     "mkdirp": "=3.0.1",
-    "node-addon-api": "=7.0.0",
+    "node-addon-api": "=8.7.0",
     "noise-protocol-stream": "=1.1.3",
-    "path-to-regexp": "=8.4.0",
+    "node-gyp": "=12.2.0",
+    "path-to-regexp": "=8.4.1",
     "pluralize": "=8.0.0",
-    "redis": "=5.6.0",
+    "redis": "=5.11.0",
     "simple-aes": "=0.1.1",
     "struct": "=0.0.12",
-    "ts-morph": "^27.0.2",
+    "ts-morph": "=27.0.2",
     "zeromq": "=6.5.0"
   },
   "overrides": {
-    "elliptic": "$elliptic"
+    "elliptic": "$elliptic",
+    "mocha": {
+      "diff": "8.0.4",
+      "serialize-javascript": "7.0.5"
+    },
+    "bitcoinjs-lib": {
+      "@noble/hashes": "=1.7.1"
+    },
+    "bs58check": {
+      "@noble/hashes": "=1.7.1"
+    },
+    "merkletreejs": {
+      "@noble/hashes": "=1.7.1"
+    }
   },
   "devDependencies": {
     "buffer": "=6.0.3",
@@ -166,12 +180,11 @@
     "http-server": "=14.1.1",
     "is-my-json-valid": "=2.20.6",
     "js-beautify": "=1.15.4",
-    "jsdoc": "=4.0.4",
-    "jsdoc-to-markdown": "=9.1.2",
+    "jsdoc": "=4.0.5",
+    "jsdoc-to-markdown": "=9.1.3",
     "json-to-dot": "=1.1.0",
-    "mocha": "=12.0.0-beta-10",
-    "node-gyp": "=12.1.0",
-    "semistandard": "=17.0.0"
+    "license-checker": "=25.0.1",
+    "mocha": "=11.7.5"
   },
   "c8": {
     "exclude": [
@@ -179,9 +192,19 @@
       "contracts",
       "currencies",
       "functions/**",
+      "!functions/base58.js",
+      "!functions/bech32.js",
+      "!functions/bip32.js",
+      "!functions/bip39.js",
+      "!functions/bytes.js",
+      "!functions/fabricCanonicalJson.js",
       "!functions/fabricNativeAccel.js",
+      "!functions/publishedDocumentEnvelope.js",
+      "!functions/sipa/bech32.js",
+      "!functions/sipa/segwit_addr.js",
       "!functions/taggedHash.js",
       "!functions/truncateMiddle.js",
+      "!functions/wireJson.js",
       "tests",
       "data",
       "types/cli.js"
@@ -195,13 +218,6 @@
       "node18-linux-x64",
       "node18-macos-x64",
       "node18-windows-x64"
-    ]
-  },
-  "semistandard": {
-    "ignore": [
-      "assets/",
-      "logs/",
-      "stores/"
     ]
   },
   "exports": {

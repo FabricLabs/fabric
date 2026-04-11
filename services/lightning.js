@@ -11,7 +11,6 @@ const { mkdirp } = require('mkdirp');
 // Fabric Types
 const Actor = require('../types/actor');
 const Key = require('../types/key');
-const Remote = require('../types/remote');
 const Service = require('../types/service');
 const Machine = require('../types/machine');
 
@@ -300,7 +299,7 @@ class Lightning extends Service {
         ];
 
         // Wait for all checks to complete
-        const results = await Promise.all(checks);
+        await Promise.all(checks);
 
         if (this.settings.debug) {
           this.emit('debug', '[FABRIC:LIGHTNING] Successfully connected to lightningd');
@@ -424,7 +423,7 @@ class Lightning extends Service {
           if (child.exitCode === null) {
             try {
               child.kill('SIGKILL');
-            } catch (error) {
+            } catch {
               // Ignore if process already exited between checks.
             }
 
@@ -452,7 +451,7 @@ class Lightning extends Service {
           // this.emit('error', err);
         }
       };
-      this._errorHandlers.unhandledRejection = async (reason, promise) => {
+      this._errorHandlers.unhandledRejection = async (reason, _promise) => {
         // Only handle rejections from this service's operations
         if (reason.source === 'lightning' || (this._child && reason.pid === this._child.pid)) {
           this.emit('error', '[FABRIC:LIGHTNING] Unhandled rejection from Lightning service');
@@ -507,9 +506,9 @@ class Lightning extends Service {
       bitcoinCli.stdin.end();
 
       await new Promise((resolve, reject) => {
-        let output = '';
+        let _output = '';
         bitcoinCli.stdout.on('data', (data) => {
-          output += data.toString();
+          _output += data.toString();
         });
         bitcoinCli.stderr.on('data', (data) => {
           const line = data.toString();
@@ -526,7 +525,7 @@ class Lightning extends Service {
       });
 
         if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Lightning is ready');
-      } catch (error) {
+      } catch {
         const networkFlag = this._bitcoinCliNetworkFlag();
         const networkHint = networkFlag ? `${networkFlag} ` : '';
         throw new Error(`Could not connect to bitcoind using bitcoin-cli. Is lightningd running?\n\nMake sure you have bitcoind running and that bitcoin-cli is able to connect to bitcoind.\n\nYou can verify that your Bitcoin Core installation is ready for use by running:\n\n    $ bitcoin-cli ${networkHint}-datadir=${this.settings.bitcoin.datadir} -rpcclienttimeout=60 -rpcconnect=${this.settings.bitcoin.host} -rpcport=${this.settings.bitcoin.rpcport} -rpcuser=${this.settings.bitcoin.rpcuser} -stdinrpcpass echo 'hello world'`);
@@ -641,7 +640,7 @@ class Lightning extends Service {
         if (settled) return;
         settled = true;
         if (timeoutId) clearTimeout(timeoutId);
-        try { client.destroy(); } catch (_) {}
+        try { client.destroy(); } catch {}
         fn(arg);
       };
 
@@ -661,7 +660,7 @@ class Lightning extends Service {
             const response = JSON.parse(buffer);
             if (response.result !== undefined) return finish(resolve, response.result);
             if (response.error) return finish(reject, Object.assign(new Error(response.error.message || 'RPC error'), response.error));
-          } catch (_) {
+          } catch {
             if (buffer.length > 2 * 1024 * 1024) finish(reject, new Error('Lightning RPC response too large'));
           }
         });

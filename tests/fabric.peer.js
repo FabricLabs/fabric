@@ -4,6 +4,7 @@
 const crypto = require('crypto');
 const Peer = require('../types/peer');
 const Message = require('../types/message');
+const Key = require('../types/key');
 const assert = require('assert');
 const net = require('net');
 
@@ -220,6 +221,44 @@ describe('@fabric/core/types/peer', function () {
         });
         peer._connect('127.0.0.1:9999');
       });
+
+      it('emits derived key debug summaries for missing/short/long public keys', function () {
+        const originalCreateConnection = net.createConnection;
+        net.createConnection = function () {
+          throw new Error('stop-after-debug');
+        };
+
+        const peer = new Peer({ listen: false, peersDb: null, debug: true });
+        const seen = [];
+        peer.on('debug', (msg) => {
+          if (String(msg).includes('Local derived key')) seen.push(String(msg));
+        });
+
+        const cases = [
+          null,
+          { settings: {} },
+          { settings: { public: 'abcd' } },
+          { settings: { public: 'a'.repeat(66) } }
+        ];
+
+        try {
+          for (const derived of cases) {
+            peer.identity.key.derive = () => derived;
+            try {
+              peer._connect('127.0.0.1:9001');
+            } catch (e) {
+              assert.ok(/stop-after-debug/.test(e.message));
+            }
+          }
+        } finally {
+          net.createConnection = originalCreateConnection;
+        }
+
+        assert.ok(seen.some((m) => m.includes('(unavailable)')));
+        assert.ok(seen.some((m) => m.includes('(no public key)')));
+        assert.ok(seen.some((m) => m.includes('abcd')));
+        assert.ok(seen.some((m) => m.includes('…')));
+      });
     });
 
     describe('_disconnect', function () {
@@ -363,6 +402,89 @@ describe('@fabric/core/types/peer', function () {
     });
 
     describe('listen', function () {
+      it('start() rejects on non-EADDRINUSE listen failures', async function () {
+        const peer = new Peer({
+          ...settings,
+          port: await getFreePort(),
+          interface: '127.0.0.1',
+          listen: true,
+          peers: [],
+          networking: false,
+          peersDb: null
+        });
+        peers.push(peer);
+
+        peer.listen = async function () {
+          const err = new Error('synthetic listen failure');
+          err.code = 'ECONNRESET';
+          throw err;
+        };
+
+        let warningSeen = false;
+        peer.on('warning', (msg) => {
+          if (String(msg).includes('Could not listen')) warningSeen = true;
+        });
+
+        await assert.rejects(
+          peer.start(),
+          /Peer failed to listen: synthetic listen failure/
+        );
+        assert.strictEqual(warningSeen, true, 'expected warning on non-EADDRINUSE listen failure');
+      });
+
+      it('start() registers actor when listen is disabled', async function () {
+        const port = await getFreePort();
+        const peer = new Peer({
+          ...settings,
+          interface: '127.0.0.1',
+          port,
+          listen: false,
+          peers: [],
+          networking: false,
+          peersDb: null
+        });
+        peers.push(peer);
+
+        let actorName = null;
+        const originalRegisterActor = peer._registerActor.bind(peer);
+        peer._registerActor = function (actor) {
+          actorName = actor && actor.name;
+          return originalRegisterActor(actor);
+        };
+
+        await peer.start();
+        assert.strictEqual(actorName, `127.0.0.1:${port}`);
+      });
+
+      it('start() retries with default attempts when listenPortAttempts is invalid', async function () {
+        const port = await getFreePort();
+        const blocker = net.createServer();
+        await new Promise((resolve, reject) => {
+          blocker.once('error', reject);
+          blocker.listen(port, '127.0.0.1', resolve);
+        });
+
+        const peer = new Peer({
+          ...settings,
+          port,
+          interface: '127.0.0.1',
+          listen: true,
+          peers: [],
+          networking: false,
+          peersDb: null,
+          listenPortAttempts: 0 // invalid -> should fall back to default (20)
+        });
+        peers.push(peer);
+
+        try {
+          await peer.start();
+          assert.strictEqual(peer.settings.port, port + 1);
+        } finally {
+          await peer.stop().catch(() => {});
+          await new Promise((resolve) => blocker.close(resolve));
+        }
+      });
+
       it('rejects when port in use (EADDRINUSE)', async function () {
         const port = await getFreePort();
         const other = net.createServer();
@@ -377,6 +499,40 @@ describe('@fabric/core/types/peer', function () {
           assert.ok(e, 'listen should reject when port is in use');
         } finally {
           other.close();
+        }
+      });
+
+      it('start() binds the next port when the configured port is in use', async function () {
+        const port = await getFreePort();
+        const blocker = net.createServer();
+        await new Promise((resolve, reject) => {
+          blocker.once('error', reject);
+          blocker.listen(port, '127.0.0.1', resolve);
+        });
+
+        const peer = new Peer({
+          ...settings,
+          port,
+          interface: '127.0.0.1',
+          listen: true,
+          peers: [],
+          networking: false,
+          peersDb: null,
+          listenPortAttempts: 20
+        });
+        peers.push(peer);
+
+        try {
+          await peer.start();
+          assert.strictEqual(peer.settings.port, port + 1, 'should use basePort + 1 when base is EADDRINUSE');
+          assert.ok(
+            (peer.listenAddress && peer.listenAddress.endsWith(`:${port + 1}`)) ||
+              String(peer.listenAddress).includes(`:${port + 1}`),
+            `listenAddress should include ${port + 1}, got ${peer.listenAddress}`
+          );
+        } finally {
+          await peer.stop().catch(() => {});
+          await new Promise((resolve) => blocker.close(resolve));
         }
       });
     });
@@ -414,6 +570,23 @@ describe('@fabric/core/types/peer', function () {
           Message.fromBuffer = origFromBuffer;
         }
       });
+      it('emits warning when inbound signature does not match stored peer public key', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        const expectedSigner = new Key();
+        const other = new Key();
+        peer.peers.o = { publicKey: expectedSigner.public.encodeCompressed('hex') };
+        const msg = Message.fromVector(['GenericMessage', JSON.stringify({ type: 'INVENTORY_REQUEST', object: {} })]);
+        msg.signWithKey(other);
+        let warned = false;
+        let errored = false;
+        peer.once('warning', (w) => {
+          if (/Invalid message signature/.test(String(w))) warned = true;
+        });
+        peer.once('error', () => { errored = true; });
+        peer._handleFabricMessage(msg.toBuffer(), { name: 'o' });
+        assert.ok(warned);
+        assert.ok(!errored);
+      });
       it('emits debug for unhandled message type', function (done) {
         const peer = new Peer({ listen: false, peersDb: null });
         const msg = Message.fromVector(['Ping', JSON.stringify({})]);
@@ -432,6 +605,22 @@ describe('@fabric/core/types/peer', function () {
         const msg = Message.fromVector(['GenericMessage', JSON.stringify(content)]);
         msg.signWithKey(peer.key);
         peer._handleFabricMessage(msg.toBuffer(), { name: 'o' });
+      });
+      it('warns and skips _handleGenericMessage when GenericMessage JSON is not an object', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        let warned = 0;
+        let inventory = 0;
+        peer.on('warning', (w) => {
+          if (/Generic message body must be a JSON object/.test(String(w))) warned++;
+        });
+        peer.on('inventory', () => { inventory++; });
+        for (const body of [ '[]', '"x"', 'null', '1', 'true' ]) {
+          const msg = Message.fromVector(['GenericMessage', body]);
+          msg.signWithKey(peer.key);
+          peer._handleFabricMessage(msg.toBuffer(), { name: 'o' });
+        }
+        assert.strictEqual(warned, 5);
+        assert.strictEqual(inventory, 0);
       });
       it('emits lightning for Lightning type with non-JSON body', function (done) {
         const peer = new Peer({ listen: false, peersDb: null });
@@ -502,12 +691,12 @@ describe('@fabric/core/types/peer', function () {
         });
         peer._handleGenericMessage({ type: 'UNKNOWN_TYPE', object: {} }, { name: 'o' });
       });
-      it('emits error on broken JSON body in Fabric message path', function (done) {
+      it('emits warning on broken JSON body in Fabric message path', function (done) {
         const peer = new Peer({ listen: false, peersDb: null });
         const msg = Message.fromVector(['GenericMessage', 'not json']);
         msg.signWithKey(peer.key);
-        peer.once('error', (m) => {
-          assert.ok(/Broken content body/.test(m));
+        peer.once('warning', (m) => {
+          assert.ok(/Generic message parse failed/.test(m));
           done();
         });
         peer._handleFabricMessage(msg.toBuffer(), { name: 'o' });
