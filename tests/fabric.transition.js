@@ -1,7 +1,7 @@
-'use strict'
+'use strict';
 
 const assert = require('assert');
-const Transition = require('../types/transition');
+const { Transition } = require('../types/entity');
 
 const stateSample = [
   { id: 1, something: 1 },
@@ -9,7 +9,7 @@ const stateSample = [
   { id: 3, something: 3 },
 ];
 
-describe('@fabric/core/types/transition', function () {
+describe('@fabric/core/types/entity (Transition)', function () {
   describe('Transition', function () {
     it('can fromTarget(target)', async () => {
       let transition = new Transition({

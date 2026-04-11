@@ -1,29 +1,13 @@
 'use strict';
 
-const FabricScribe = require('../types/scribe');
-const FabricHTTPServer = require('../types/server');
-const FabricStash = require('../types/stash');
+const FabricState = require('../types/state');
 
 /**
- * Deprecated 2021-10-16.
+ * Deprecated 2021-11-06 — use {@link FabricState} (<code>types/state</code>). <code>Scribe</code> was merged into <code>State</code>.
  * @deprecated
  */
-class HTTPServer extends FabricHTTPServer {}
-
-/**
- * Deprecated 2021-11-06.
- * @deprecated
- */
-class Scribe extends FabricScribe {}
-
-/**
- * Deprecated 2021-11-06.
- * @deprecated
- */
-class Stash extends FabricStash {}
+class Scribe extends FabricState {}
 
 module.exports = {
-  HTTPServer,
-  Scribe,
-  Stash
+  Scribe
 };

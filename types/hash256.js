@@ -1,6 +1,7 @@
 'use strict';
 
-const { sha256 } = require('@noble/hashes/sha256');
+const { sha256 } = require('@noble/hashes/sha2.js');
+const fabricNativeAccel = require('../functions/fabricNativeAccel');
 
 /**
  * Simple interaction with 256-bit spaces.
@@ -9,9 +10,9 @@ class Hash256 {
   /**
    * Create an instance of a `Hash256` object by calling `new Hash256()`,
    * where `settings` can be provided to supply a particular input object.
-   * 
+   *
    * If the `settings` is not a string, `input` must be provided.
-   * @param {Object} settings 
+   * @param {Object} settings
    * @param {String} settings.input Input string to map as 256-bit hash.
    */
   constructor (settings = {}) {
@@ -39,6 +40,16 @@ class Hash256 {
     if (typeof input === 'string') input = Buffer.from(input, 'utf8');
     const buffer = sha256(input);
     return Buffer.from(buffer).toString('hex');
+  }
+
+  /**
+   * Double-SHA256 digest (Bitcoin-style). Matches C message body hash.
+   * @param {String|Buffer} input Content to digest.
+   * @returns {String} SHA256(SHA256(input)) as hexadecimal string.
+   */
+  static doubleDigest (input) {
+    if (typeof input === 'string') input = Buffer.from(input, 'utf8');
+    return fabricNativeAccel.doubleSha256Hex(input);
   }
 
   /**
@@ -71,12 +82,9 @@ class Hash256 {
   }
 
   static async hash (input) {
-    const encoder = new TextEncoder();
-    const dataBuffer = encoder.encode(input);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    return hashHex;
+    // Use @noble/hashes for browser compatibility (crypto.subtle is undefined in non-secure context)
+    const data = typeof input === 'string' ? Buffer.from(input, 'utf8') : input;
+    return Hash256.compute(data);
   }
 
   reverse (input = this.value) {

@@ -5,27 +5,24 @@ const {
 } = require('../constants');
 
 const BN = require('bn.js');
-const Key = require('./key');
 const Entity = require('./entity');
-const Scribe = require('./scribe');
+const State = require('./state');
 const Secret = require('./secret');
 
-// const Consensus = require('./consensus');
+// (legacy Consensus type removed)
 // const Layer = require('./layer');
 
 /**
- * The {@link Channel} is a encrypted connection with a member of your
- * {@link Peer} group, with some amount of $BTC bonded and paid for each
- * correctly-validated message.
- *
- * Channels in Fabric are powerful tools for application development, as they
- * can empower users with income opportunities in exchange for delivering
- * service to the network.
+ * @classdesc <strong>Payment / capacity channel</strong> between peers: balances (<code>incoming</code> /
+ * <code>outgoing</code>), counterparty handle, optional asset caps (<code>MAX_CHANNEL_VALUE</code>). Extends
+ * {@link State} → {@link Actor}. Wording below is product-oriented;
+ * wire safety still depends on the Lightning/Bitcoin services you attach, not this object alone.
+ * @class Channel
+ * @extends State
  */
-class Channel extends Scribe {
+class Channel extends State {
   /**
-   * Creates a channel between two peers.
-   * of many transactions over time, to be settled on-chain later.
+   * Creates a channel between two peers (bidirectional by default; <code>settings.mode</code>, <code>settings.asset</code>, …).
    * @param {Object} [settings] Configuration for the channel.
    */
   constructor (settings) {
@@ -63,7 +60,6 @@ class Channel extends Scribe {
       'provider': { enumerable: false },
       'settings': { enumerable: false },
       // 'size': { enumerable: false },
-      'state': { enumerable: false },
     });
 
     this['@id'] = this.id;
@@ -99,7 +95,7 @@ class Channel extends Scribe {
    * @param {Number} amount Amount value to add to current outgoing balance.
    */
   add (amount) {
-    const value = new BN(amount + '');
+    void new BN(amount + '');
     /* const layer = new Layer({
       parents: [this._parent],
       uint256: value
@@ -111,9 +107,13 @@ class Channel extends Scribe {
   }
 
   commit () {
-    const commit = new Entity(this._state);
-    this.emit('commit', commit)
-    return commit;
+    super.commit();
+    const snapshot = typeof structuredClone === 'function'
+      ? structuredClone(this._state)
+      : JSON.parse(JSON.stringify(this._state));
+    const committed = new Entity(snapshot);
+    this.emit('commit', committed);
+    return committed;
   }
 
   /**

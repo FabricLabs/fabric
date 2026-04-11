@@ -193,5 +193,81 @@ describe('@fabric/core/types/circuit', function () {
       assert.strictEqual(circuit.inputWires, 2);
       assert.strictEqual(circuit.outputWires, 1);
     });
+
+    it('compute is identity on arbitrary input', function () {
+      const c = new Circuit();
+      assert.strictEqual(c.compute(42), 42);
+      assert.strictEqual(c.compute('x'), 'x');
+    });
+
+    it('scramble returns ordered gate descriptors for each lifecycle step', function () {
+      const c = new Circuit();
+      const gates = c.scramble();
+      assert.strictEqual(gates.length, c._state.steps.length);
+      assert.ok(gates.every((g) => g.name && g.seed !== undefined));
+    });
+
+    it('hash is sha256 hex of dot export', function () {
+      const c = new Circuit();
+      assert.strictEqual(typeof c.hash, 'string');
+      assert.strictEqual(c.hash.length, 64);
+      assert.strictEqual(/^[0-9a-f]+$/.test(c.hash), true);
+    });
+
+    it('render embeds hash and dot for UI binding', function () {
+      const c = new Circuit();
+      const html = c.render();
+      assert.ok(html.includes('<fabric-circuit>'));
+      assert.ok(html.includes(c.hash));
+      assert.ok(html.includes('data-bind'));
+    });
+
+    it('parse delegates to dotparser', function () {
+      const c = new Circuit();
+      const ast = c.parse('digraph G { a -> b }');
+      assert.ok(ast);
+    });
+
+    it('toObject parses graphviz from state machine export', function () {
+      const c = new Circuit();
+      const obj = c.toObject();
+      assert.ok(Array.isArray(obj));
+    });
+
+    it('fromBristolFormat reads Bristol lines from dot-shaped text', function () {
+      const c = new Circuit();
+      Object.defineProperty(c, 'dot', {
+        configurable: true,
+        get () {
+          return '1 2\n1 1 2 XOR\n';
+        }
+      });
+      c.fromBristolFormat();
+      assert.strictEqual(c.gates.length, 1);
+      assert.strictEqual(c.gates[0].type, 'XOR');
+      assert.deepStrictEqual(c.gates[0].inputs, [1, 1, 2]);
+    });
+
+    it('fromBristolFashion reads extended Bristol lines from dot-shaped text', function () {
+      const c = new Circuit();
+      Object.defineProperty(c, 'dot', {
+        configurable: true,
+        get () {
+          return '1 2 1 1\n2 1 1 1 2 XOR\n';
+        }
+      });
+      c.fromBristolFashion();
+      assert.strictEqual(c.gates.length, 1);
+      assert.strictEqual(c.gates[0].type, 'XOR');
+      assert.strictEqual(c.gates[0].numInputs, 2);
+      assert.strictEqual(c.gates[0].numOutputs, 1);
+    });
+
+    it('_registerMethod stores a callable on methods', function () {
+      const c = new Circuit();
+      const fn = () => 1;
+      c._registerMethod('m', fn);
+      assert.strictEqual(c.methods.m, fn);
+    });
   });
 }); 

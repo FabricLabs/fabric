@@ -1,8 +1,11 @@
 'use strict';
 
+const { tryParsePersistedJson } = require('../functions/wireJson');
+
 // Dependencies
 const { Level } = require('level');
 const crypto = require('crypto');
+const merge = require('lodash.merge');
 const pointer = require('json-pointer');
 
 // Fabric Types
@@ -10,17 +13,20 @@ const Actor = require('./actor');
 const Collection = require('./collection');
 const Entity = require('./entity');
 const Stack = require('./stack');
+const State = require('./state');
 
 /**
- * Long-term storage.
+ * @classdesc Level-backed persistence extending {@link Actor}. Use optional {@link Codec} in <code>settings.codec</code> for
+ * encrypted values; {@link Store.openEncrypted} matches Hub/shell keystore defaults. Commit/history behavior follows {@link Actor}.
+ * @class Store
+ * @extends Actor
  * @property {Mixed} settings Current configuration.
  */
 class Store extends Actor {
   /**
-   * Create an instance of a {@link Store} to manage long-term storage, which is
-   * particularly useful when building a user-facing {@link Product}.
-   * @param  {Object} [settings={}] configuration object.
-   * @return {Store}              Instance of the Store, ready to start.
+   * Create an instance of a {@link Store} to manage long-term storage (LevelDB by default).
+   * @param  {Object} [settings={}] configuration object (<code>path</code>, <code>codec</code>, <code>persistent</code>, …).
+   * @return {Store} Instance of the Store, ready to start.
    */
   constructor (settings = {}) {
     super(settings);
@@ -33,9 +39,18 @@ class Store extends Actor {
       verbosity: 2, // 0 none, 1 error, 2 warning, 3 notice, 4 debug
     }, settings);
 
+    /**
+     * Optional {@link Codec} for encrypted at-rest values (Level `valueEncoding`).
+     * Browser and Hub-style apps typically use one {@link Store} with `codec` for
+     * secrets and separate plain stores for cache/tips.
+     */
+    this.codec = this.settings.codec || null;
+
     this['@entity'] = {
       '@type': 'Store',
-      '@data': {}
+      '@data': {
+        addresses: {}
+      }
     };
 
     this.keys = {};
@@ -66,6 +81,43 @@ class Store extends Actor {
     return this;
   }
 
+  /**
+   * Settings object for a {@link Store} with {@link Codec} at-rest encryption
+   * (same defaults as the legacy `Keystore` type). Prefer `openEncrypted` or
+   * `new Store(Store.encryptedSettings(...))` over ad-hoc Codec wiring.
+   * @param {Object} [settings={}]
+   * @returns {Object} Settings merged with `codec` when absent.
+   */
+  static encryptedSettings (settings = {}) {
+    const Codec = require('./codec');
+    const envSeed = (typeof process !== 'undefined' && process.env && process.env.FABRIC_SEED) || null;
+    const merged = merge({
+      name: 'Keystore',
+      path: './stores/keystore',
+      type: 'EncryptedFabricStore',
+      persistent: true,
+      mode: 'aes-256-cbc',
+      version: 0,
+      seed: envSeed
+    }, settings);
+
+    const codec = merged.codec || new Codec({
+      key: merged.key,
+      mode: merged.mode,
+      version: merged.version
+    });
+
+    return merge(merged, { codec });
+  }
+
+  /**
+   * @param {Object} [settings={}]
+   * @returns {Store}
+   */
+  static openEncrypted (settings = {}) {
+    return new Store(Store.encryptedSettings(settings));
+  }
+
   _getPathForKey (key) {
     const path = pointer.escape(key);
     return this.sha256(path);
@@ -75,16 +127,38 @@ class Store extends Actor {
     console.error('[FABRIC:STORE]', 'Error condition:', err);
   }
 
-  async _setEncrypted (path, value, passphrase = '') {
-    const secret = value; // TODO: encrypt value
-    const name = crypto.createHash('sha256').createHash(path).digest('hex');
+  async _setEncrypted (path, value, _passphrase = '') {
+    if (typeof path !== 'string' || !path.length) {
+      throw new Error('Path is required for encrypted store writes.');
+    }
+
+    const plaintext = (typeof value === 'string') ? value : JSON.stringify(value);
+    let secret = plaintext;
+
+    // Prefer configured codec for at-rest encryption; fallback keeps compatibility.
+    if (this.codec && typeof this.codec.encode === 'function') {
+      const encoded = this.codec.encode(plaintext);
+      secret = Buffer.isBuffer(encoded) ? encoded.toString('hex') : String(encoded);
+    }
+
+    const name = crypto.createHash('sha256').update(path).digest('hex');
     return this.set(`/secrets/${name}`, secret);
   }
 
-  async _getEncrypted (path, passphrase = '') {
-    const name = crypto.createHash('sha256').createHash(path).digest('hex');
-    const secret = this.get(`/secrets/${name}`);
-    const decrypted = secret; // TODO: decrypt value
+  async _getEncrypted (path, _passphrase = '') {
+    if (typeof path !== 'string' || !path.length) return null;
+
+    const name = crypto.createHash('sha256').update(path).digest('hex');
+    const secret = await this.get(`/secrets/${name}`);
+    if (secret == null) return null;
+
+    let decrypted = secret;
+
+    if (this.codec && typeof this.codec.decode === 'function') {
+      const payload = Buffer.isBuffer(secret) ? secret : Buffer.from(String(secret), 'hex');
+      decrypted = this.codec.decode(payload);
+    }
+
     return decrypted;
   }
 
@@ -95,12 +169,12 @@ class Store extends Actor {
    */
   async _REGISTER (obj) {
     const actor = new Actor(obj);
-    const existing = await this._GET(`/entities/${actor.id}`);
+    await this._GET(`/entities/${actor.id}`);
 
     store.log('[STORE]', '_REGISTER', vector.id, vector['@type']);
 
     try {
-      let item = await this._GET(`/entities/${vector.id}`);
+      await this._GET(`/entities/${vector.id}`);
     } catch (E) {
       this.warn('[STORE]', '_REGISTER', `Could not read from store:`, E);
     }
@@ -158,7 +232,7 @@ class Store extends Actor {
     if (this.settings.verbosity >= 5) console.log('[STORE]', 'Patch result:', result);
 
     try {
-      let action = await this._PUT(key, result);
+      await this._PUT(key, result);
     } catch (E) {
       console.error('Could not modify:', E);
     }
@@ -195,15 +269,6 @@ class Store extends Actor {
     self['@entity']['@data'].addresses[router] = address;
 
     let state = new State(value);
-    let serial = state.serialize();
-    let digest = this.sha256(serial);
-
-    // defaults
-    let actor = null;
-    let list = null;
-    let type = null;
-    let tip = null;
-
     if (!self.db) {
       await self.open().catch(self._errorHandler.bind(self));
     }
@@ -220,11 +285,12 @@ class Store extends Actor {
       if (this.settings.verbosity >= 3) console.warn('Creating new collection:', E);
     }
 
-    if (entity) {
-      try {
-        entity = JSON.parse(entity);
-      } catch (E) {
-        console.warn(`Couldn't parse: ${entity}`, E);
+    if (entity && (typeof entity === 'string' || Buffer.isBuffer(entity))) {
+      const text = typeof entity === 'string' ? entity : entity.toString('utf8');
+      const pr = tryParsePersistedJson(text);
+      if (pr.ok) entity = pr.value;
+      else if (this.settings.verbosity >= 4 || this.settings.debug) {
+        console.warn(`Couldn't parse entity JSON: ${pr.error.message}`);
       }
     }
 
@@ -238,14 +304,19 @@ class Store extends Actor {
       }
 
       // Add Element to Collection
-      let height = origin.push(value);
+      origin.push(value);
 
       // Store the object at an entity locale
-      let object = await self._PUT(`/entities/${state.id}`, value);
+      await self._PUT(`/entities/${state.id}`, value);
       let serialized = await origin.serialize();
 
+      // Keep in-memory collection view in sync for _GET/_PUT call paths.
+      const existingList = await self._GET(key);
+      const nextList = Array.isArray(existingList) ? existingList.concat([value]) : [value];
+      await self._PUT(key, nextList);
+
       // Write serialized Collection to disk
-      let answer = await self.db.put(address, serialized.toString());
+      await self.db.put(address, serialized.toString());
     } catch (E) {
       console.log('Could not POST:', key, value, E);
       return false;
@@ -261,11 +332,11 @@ class Store extends Actor {
     if (!list) list = [];
     let vector = new State(data);
     let stack = new Stack(list);
-    let result = stack.push(vector.id);
-    let actor = await this._REGISTER(data);
-    let blob = await this._PUT(`/blobs/${vector.id}`, vector['@data']);
-    let saved = await this._SET(path, stack['@data']);
-    let commit = await this.commit();
+    stack.push(vector.id);
+    await this._REGISTER(data);
+    await this._PUT(`/blobs/${vector.id}`, vector['@data']);
+    await this._SET(path, stack['@data']);
+    await this.commit();
     let output = await this._GET(`/blobs/${vector.id}`);
     return output;
   }
@@ -293,8 +364,18 @@ class Store extends Actor {
         size = value.length;
         hash = this.sha256(value);
         break;
+      case 'Object':
+      case 'Array': {
+        const encoded = JSON.stringify(value);
+        type = 'JSON';
+        size = encoded.length;
+        hash = this.sha256(encoded);
+        break;
+      }
       default:
-        console.error('unhandled type:', value.constructor.name);
+        if (this.settings.verbosity >= 4 || this.settings.debug) {
+          console.error('unhandled type:', value.constructor.name);
+        }
         type = 'Unhandled';
         break;
     }
@@ -364,7 +445,10 @@ class Store extends Actor {
     // This is what defines our key => value store.
     // All functions can be run as a map of an original input vector, allowing
     // binary scoping across trees of varying complexity.
-    const hash = this.sha256(value);
+    const hashInput = (typeof value === 'string' || Buffer.isBuffer(value))
+      ? value
+      : JSON.stringify(value);
+    const hash = this.sha256(hashInput);
     const actor = new Actor({
       type: 'FabricDocument',
       content: data,
@@ -390,7 +474,23 @@ class Store extends Actor {
     // if (this.db) return this;
 
     try {
-      this.db = new Level(this.settings.path);
+      const levelOpts = {};
+      if (this.codec && typeof this.codec.encode === 'function' && typeof this.codec.decode === 'function') {
+        const codec = this.codec;
+        levelOpts.valueEncoding = {
+          name: 'fabric-codec',
+          format: 'buffer',
+          encode: function encodeFabricValue (value) {
+            const out = codec.encode(value);
+            if (out == null) throw new Error('[FABRIC:STORE] Codec.encode returned null');
+            return Buffer.isBuffer(out) ? out : Buffer.from(typeof out === 'string' ? out : JSON.stringify(out), 'utf8');
+          },
+          decode: function decodeFabricValue (buffer) {
+            return codec.decode(buffer);
+          }
+        };
+      }
+      this.db = new Level(this.settings.path, levelOpts);
       this.trust(this.db);
       this.status = 'opened';
       await this.commit();
@@ -429,19 +529,22 @@ class Store extends Actor {
     let name = `/sources/${store.id}`;
 
     source.on('write', function (key, value) {
-      if (store.settings.verbosity >= 5) console.log('[TRUST:SOURCE]', source.constructor.name, 'emitted a write event', name, key, value.constructor.name, value);
+      const valueType = (value && value.constructor && value.constructor.name) || typeof value;
+      if (store.settings.verbosity >= 5) console.log('[TRUST:SOURCE]', source.constructor.name, 'emitted a write event', name, key, valueType, value);
 
       let id = pointer.escape(key);
       let router = store.sha256(id);
-      let state = new State(value);
+      let state = new Actor(value);
 
+      // TODO: refactor storage paths
       pointer.set(store['@entity']['@data'], `${name}`, value);
       pointer.set(store['@entity']['@data'], `/states/${state.id}`, value);
       pointer.set(store['@entity']['@data'], `/blobs/${state.id}`, state.serialize());
-      pointer.set(store['@entity']['@data'], `/types/${state.id}`, value.constructor.name);
+      pointer.set(store['@entity']['@data'], `/types/${state.id}`, valueType);
       pointer.set(store['@entity']['@data'], `/tips/${router}`, state.id);
       pointer.set(store['@entity']['@data'], `/names/${router}`, id);
 
+      // TODO: document this event
       store.emit('source/events', {
         '@type': 'Request',
         '@method': 'put',
@@ -537,7 +640,6 @@ class Store extends Actor {
   async start () {
     if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Starting:', this.settings.path);
     this.status = 'starting';
-    let keys = null;
 
     try {
       await this.open();

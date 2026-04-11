@@ -2,7 +2,7 @@
 
 // Dependencies
 const Peer = require('../types/peer');
-const Swarm = require('../types/swarm');
+const { Swarm } = require('../types/peer');
 const Message = require('../types/message');
 
 // Configuration
@@ -34,7 +34,7 @@ async function main () {
   console.log('[EXAMPLES:HEARTBEAT]', 'Swarm started!');
 
   // Send Regular Updates (outside of internal ping/pong)
-  const heartbeat = setInterval(function () {
+  const _heartbeat = setInterval(function () {
     console.warn('[EXAMPLES:HEARTBEAT]', 'Starting to send interval message...');
     const message = Message.fromVector(['Generic', Date.now().toString()]);
     console.log('[EXAMPLES:HEARTBEAT]', 'Sending :', message.raw);

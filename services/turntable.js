@@ -51,7 +51,7 @@ class Turntable extends Service {
   async _send (message) {
     for (let i = 0; i < Object.keys(this.rooms).length; i++) {
       const id = Object.keys(this.rooms)[i];
-      const msg = await this.rooms[id].say(message.object.content);
+      await this.rooms[id].say(message.object.content);
     }
   }
 

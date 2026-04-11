@@ -42,6 +42,10 @@ const {
   GENERIC_MESSAGE_TYPE,
   LOG_MESSAGE_TYPE,
   GENERIC_LIST_TYPE,
+  BITCOIN_BLOCK_TYPE,
+  BITCOIN_BLOCK_HASH_TYPE,
+  BITCOIN_TRANSACTION_TYPE,
+  BITCOIN_TRANSACTION_HASH_TYPE,
   P2P_GENERIC,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
@@ -58,15 +62,47 @@ const {
   P2P_STATE_REQUEST,
   P2P_TRANSACTION,
   P2P_CALL,
+  P2P_RELAY,
+  P2P_MESSAGE_RECEIPT,
   CHAT_MESSAGE,
   DOCUMENT_PUBLISH_TYPE,
   DOCUMENT_REQUEST_TYPE,
+  JSON_CALL_TYPE,
+  PATCH_MESSAGE_TYPE,
+  CONTRACT_PROPOSAL_TYPE,
   BLOCK_CANDIDATE,
   PEER_CANDIDATE,
-  SESSION_START
+  SESSION_START,
+  // Lightning message codes
+  LIGHTNING_WARNING,
+  LIGHTNING_INIT,
+  LIGHTNING_ERROR,
+  LIGHTNING_PING,
+  LIGHTNING_PONG,
+  LIGHTNING_OPEN_CHANNEL,
+  LIGHTNING_ACCEPT_CHANNEL,
+  LIGHTNING_FUNDING_CREATED,
+  LIGHTNING_FUNDING_SIGNED,
+  LIGHTNING_CHANNEL_READY,
+  LIGHTNING_SHUTDOWN,
+  LIGHTNING_CLOSING_SIGNED,
+  LIGHTNING_UPDATE_ADD_HTLC,
+  LIGHTNING_UPDATE_FULFILL_HTLC,
+  LIGHTNING_UPDATE_FAIL_HTLC,
+  LIGHTNING_COMMITMENT_SIGNED,
+  LIGHTNING_REVOKE_AND_ACK,
+  LIGHTNING_CHANNEL_ANNOUNCEMENT,
+  LIGHTNING_NODE_ANNOUNCEMENT,
+  LIGHTNING_CHANNEL_UPDATE
 } = require('../constants');
 
 const HEADER_SIG_SIZE = 64;
+
+/** @param {Buffer} buf */
+function isAllZero32 (buf) {
+  if (!buf || buf.length !== 32) return true;
+  return buf.equals(Buffer.alloc(32));
+}
 
 // Dependencies
 // const crypto = require('crypto');
@@ -75,9 +111,206 @@ const struct = require('struct');
 // Fabric Types
 const Actor = require('./actor');
 const Hash256 = require('./hash256');
+const Key = require('./key');
 
 // Function Definitions
 const padDigits = require('../functions/padDigits');
+const taggedHash = require('../functions/taggedHash');
+
+/**
+ * **Two parallel type names:**
+ * - **Wire** (`wireType`, {@link Message#type}): SCREAMING_SNAKE_CASE strings from opcode
+ *   decode (`fromBuffer`, `toVector` first element). Matches AMP / `constants.js` style.
+ * - **Friendly** ({@link Message#friendlyType}, `toObject().type`): PascalCase (or historical
+ *   labels) for JSON and human-facing APIs — see {@link FRIENDLY_TYPE_BY_WIRE}.
+ *
+ * Encode accepts **either** name via merged {@link Message#types} (canonical wire + legacy friendly).
+ * {@link Message.wireTypeFromFriendly} / {@link Message.friendlyTypeFromWire} convert between them.
+ *
+ * Opcode → wire string order matches the historical `type` switch: when multiple labels share one
+ * opcode (e.g. P2P vs Lightning), **first listed** in {@link WIRE_TYPE_DECODE_ORDER} wins.
+ */
+const WIRE_TYPE_DECODE_ORDER = Object.freeze([
+  [BITCOIN_BLOCK_TYPE, 'BITCOIN_BLOCK'],
+  [BITCOIN_BLOCK_HASH_TYPE, 'BITCOIN_BLOCK_HASH'],
+  [BITCOIN_TRANSACTION_TYPE, 'BITCOIN_TRANSACTION'],
+  [BITCOIN_TRANSACTION_HASH_TYPE, 'BITCOIN_TRANSACTION_HASH'],
+  [GENERIC_MESSAGE_TYPE, 'GENERIC_MESSAGE'],
+  [GENERIC_MESSAGE_TYPE + 1, 'JSON_BLOB'],
+  [LOG_MESSAGE_TYPE, 'LOG_MESSAGE'],
+  [GENERIC_LIST_TYPE, 'GENERIC_LIST'],
+  [DOCUMENT_PUBLISH_TYPE, 'DOCUMENT_PUBLISH'],
+  [DOCUMENT_REQUEST_TYPE, 'DOCUMENT_REQUEST'],
+  [BLOCK_CANDIDATE, 'BLOCK_CANDIDATE'],
+  [P2P_PING, 'P2P_PING'],
+  [P2P_PONG, 'P2P_PONG'],
+  [P2P_GENERIC, 'P2P_GENERIC'],
+  [P2P_CHAIN_SYNC_REQUEST, 'P2P_CHAIN_SYNC_REQUEST'],
+  [P2P_IDENT_REQUEST, 'P2P_IDENT_REQUEST'],
+  [P2P_IDENT_RESPONSE, 'P2P_IDENT_RESPONSE'],
+  [P2P_BASE_MESSAGE, 'P2P_BASE_MESSAGE'],
+  [P2P_STATE_ROOT, 'P2P_STATE_ROOT'],
+  [P2P_STATE_CHANGE, 'P2P_STATE_CHANGE'],
+  [P2P_STATE_REQUEST, 'P2P_STATE_REQUEST'],
+  [P2P_TRANSACTION, 'P2P_TRANSACTION'],
+  [P2P_CALL, 'P2P_CALL'],
+  [P2P_RELAY, 'P2P_RELAY'],
+  [P2P_MESSAGE_RECEIPT, 'P2P_MESSAGE_RECEIPT'],
+  [PEER_CANDIDATE, 'PEER_CANDIDATE'],
+  [SESSION_START, 'SESSION_START'],
+  [CHAT_MESSAGE, 'CHAT_MESSAGE'],
+  [JSON_CALL_TYPE, 'JSON_CALL'],
+  [PATCH_MESSAGE_TYPE, 'JSON_PATCH'],
+  [CONTRACT_PROPOSAL_TYPE, 'CONTRACT_PROPOSAL'],
+  [P2P_START_CHAIN, 'P2P_START_CHAIN'],
+  [LIGHTNING_WARNING, 'LIGHTNING_WARNING'],
+  [LIGHTNING_INIT, 'LIGHTNING_INIT'],
+  [LIGHTNING_ERROR, 'LIGHTNING_ERROR'],
+  [LIGHTNING_PING, 'LIGHTNING_PING'],
+  [LIGHTNING_PONG, 'LIGHTNING_PONG'],
+  [LIGHTNING_OPEN_CHANNEL, 'LIGHTNING_OPEN_CHANNEL'],
+  [LIGHTNING_ACCEPT_CHANNEL, 'LIGHTNING_ACCEPT_CHANNEL'],
+  [LIGHTNING_FUNDING_CREATED, 'LIGHTNING_FUNDING_CREATED'],
+  [LIGHTNING_FUNDING_SIGNED, 'LIGHTNING_FUNDING_SIGNED'],
+  [LIGHTNING_CHANNEL_READY, 'LIGHTNING_CHANNEL_READY'],
+  [LIGHTNING_SHUTDOWN, 'LIGHTNING_SHUTDOWN'],
+  [LIGHTNING_CLOSING_SIGNED, 'LIGHTNING_CLOSING_SIGNED'],
+  [LIGHTNING_UPDATE_ADD_HTLC, 'LIGHTNING_UPDATE_ADD_HTLC'],
+  [LIGHTNING_UPDATE_FULFILL_HTLC, 'LIGHTNING_UPDATE_FULFILL_HTLC'],
+  [LIGHTNING_UPDATE_FAIL_HTLC, 'LIGHTNING_UPDATE_FAIL_HTLC'],
+  [LIGHTNING_COMMITMENT_SIGNED, 'LIGHTNING_COMMITMENT_SIGNED'],
+  [LIGHTNING_REVOKE_AND_ACK, 'LIGHTNING_REVOKE_AND_ACK'],
+  [LIGHTNING_CHANNEL_ANNOUNCEMENT, 'LIGHTNING_CHANNEL_ANNOUNCEMENT'],
+  [LIGHTNING_NODE_ANNOUNCEMENT, 'LIGHTNING_NODE_ANNOUNCEMENT'],
+  [LIGHTNING_CHANNEL_UPDATE, 'LIGHTNING_CHANNEL_UPDATE']
+]);
+
+const CANONICAL_WIRE_TYPE_BY_OPCODE = Object.freeze(
+  WIRE_TYPE_DECODE_ORDER.reduce((acc, pair) => {
+    const code = pair[0];
+    const name = pair[1];
+    if (typeof code !== 'number' || !Number.isFinite(code)) return acc;
+    if (acc[code] !== undefined) return acc;
+    acc[code] = name;
+    return acc;
+  }, {})
+);
+
+const CANONICAL_MESSAGE_TYPE_STRINGS = Object.freeze(
+  Object.entries(CANONICAL_WIRE_TYPE_BY_OPCODE).reduce((acc, entry) => {
+    const code = Number(entry[0]);
+    const name = entry[1];
+    acc[name] = code;
+    return acc;
+  }, {})
+);
+
+const LEGACY_MESSAGE_TYPE_ALIASES = Object.freeze({
+  BitcoinBlock: BITCOIN_BLOCK_TYPE,
+  BitcoinBlockHash: BITCOIN_BLOCK_HASH_TYPE,
+  BitcoinTransaction: BITCOIN_TRANSACTION_TYPE,
+  BitcoinTransactionHash: BITCOIN_TRANSACTION_HASH_TYPE,
+  GenericMessage: GENERIC_MESSAGE_TYPE,
+  GenericLogMessage: LOG_MESSAGE_TYPE,
+  GenericList: GENERIC_LIST_TYPE,
+  GenericQueue: GENERIC_LIST_TYPE,
+  FabricLogMessage: LOG_MESSAGE_TYPE,
+  FabricServiceLogMessage: LOG_MESSAGE_TYPE,
+  GenericTransferQueue: GENERIC_LIST_TYPE,
+  JSONBlob: GENERIC_MESSAGE_TYPE + 1,
+  JSONCall: JSON_CALL_TYPE,
+  JSONPatch: PATCH_MESSAGE_TYPE,
+  ContractProposal: CONTRACT_PROPOSAL_TYPE,
+  Generic: P2P_GENERIC,
+  Cycle: typeof OP_CYCLE === 'string' ? parseInt(OP_CYCLE, 16) : Number(OP_CYCLE),
+  IdentityRequest: P2P_IDENT_REQUEST,
+  IdentityResponse: P2P_IDENT_RESPONSE,
+  ChainSyncRequest: P2P_CHAIN_SYNC_REQUEST,
+  Ping: P2P_PING,
+  Pong: P2P_PONG,
+  DocumentRequest: DOCUMENT_REQUEST_TYPE,
+  DocumentPublish: DOCUMENT_PUBLISH_TYPE,
+  BlockCandidate: BLOCK_CANDIDATE,
+  PeerCandidate: PEER_CANDIDATE,
+  PeerInstruction: P2P_INSTRUCTION,
+  PeerMessage: P2P_BASE_MESSAGE,
+  StartSession: SESSION_START,
+  ChatMessage: CHAT_MESSAGE,
+  StartChain: P2P_START_CHAIN,
+  StateRoot: P2P_STATE_ROOT,
+  StateCommitment: P2P_STATE_COMMITTMENT,
+  StateChange: P2P_STATE_CHANGE,
+  StateRequest: P2P_STATE_REQUEST,
+  Transaction: P2P_TRANSACTION,
+  Call: P2P_CALL,
+  LogMessage: LOG_MESSAGE_TYPE,
+  LightningWarning: LIGHTNING_WARNING,
+  LightningInit: LIGHTNING_INIT,
+  LightningError: LIGHTNING_ERROR,
+  LightningPing: LIGHTNING_PING,
+  LightningPong: LIGHTNING_PONG,
+  OpenChannel: LIGHTNING_OPEN_CHANNEL,
+  AcceptChannel: LIGHTNING_ACCEPT_CHANNEL,
+  FundingCreated: LIGHTNING_FUNDING_CREATED,
+  FundingSigned: LIGHTNING_FUNDING_SIGNED,
+  ChannelReady: LIGHTNING_CHANNEL_READY,
+  Shutdown: LIGHTNING_SHUTDOWN,
+  ClosingSigned: LIGHTNING_CLOSING_SIGNED,
+  UpdateAddHTLC: LIGHTNING_UPDATE_ADD_HTLC,
+  UpdateFulfillHTLC: LIGHTNING_UPDATE_FULFILL_HTLC,
+  UpdateFailHTLC: LIGHTNING_UPDATE_FAIL_HTLC,
+  CommitmentSigned: LIGHTNING_COMMITMENT_SIGNED,
+  RevokeAndAck: LIGHTNING_REVOKE_AND_ACK,
+  ChannelAnnouncement: LIGHTNING_CHANNEL_ANNOUNCEMENT,
+  NodeAnnouncement: LIGHTNING_NODE_ANNOUNCEMENT,
+  ChannelUpdate: LIGHTNING_CHANNEL_UPDATE
+});
+
+/**
+ * Wire-level type strings (ALL_CAPS, opcode decode) ↔ JSON-oriented friendly names (PascalCase
+ * where historically used). {@link Message#wireType} / {@link Message#type} use wire names;
+ * {@link Message#friendlyType} and {@link Message#toObject} `type` use friendly names.
+ */
+const FRIENDLY_TYPE_BY_WIRE = Object.freeze((() => {
+  const tmp = {};
+  for (const friendly of Object.keys(LEGACY_MESSAGE_TYPE_ALIASES)) {
+    const code = LEGACY_MESSAGE_TYPE_ALIASES[friendly];
+    if (typeof code !== 'number' || !Number.isFinite(code)) continue;
+    const wire = CANONICAL_WIRE_TYPE_BY_OPCODE[code];
+    if (!wire || tmp[wire] !== undefined) continue;
+    tmp[wire] = friendly;
+  }
+  for (const wire of Object.values(CANONICAL_WIRE_TYPE_BY_OPCODE)) {
+    if (tmp[wire] === undefined) tmp[wire] = wire;
+  }
+  return tmp;
+})());
+
+const FRIENDLY_TO_WIRE_TYPE = Object.freeze((() => {
+  const tmp = {};
+  for (const [wire, friendly] of Object.entries(FRIENDLY_TYPE_BY_WIRE)) {
+    if (tmp[friendly] === undefined) tmp[friendly] = wire;
+  }
+  return tmp;
+})());
+
+/**
+ * @param {string} wire
+ * @returns {string}
+ */
+function friendlyTypeFromWire (wire) {
+  const w = String(wire || '').trim();
+  return FRIENDLY_TYPE_BY_WIRE[w] || w;
+}
+
+/**
+ * @param {string} friendly
+ * @returns {string}
+ */
+function wireTypeFromFriendly (friendly) {
+  const f = String(friendly || '').trim();
+  return FRIENDLY_TO_WIRE_TYPE[f] || f;
+}
 
 /**
  * The {@link Message} type defines the Application Messaging Protocol, or AMP.
@@ -102,6 +335,7 @@ class Message extends Actor {
       type: Buffer.alloc(4), // TODO: 8, 32
       size: Buffer.alloc(4), // TODO: 8, 32
       hash: Buffer.alloc(32),
+      preimage: Buffer.alloc(32),
       signature: Buffer.alloc(64),
       data: null
     };
@@ -116,17 +350,46 @@ class Message extends Actor {
       this.signer = null;
     }
 
-    if (input.data &amp;&amp; input.type) {
-      this.type = input.type;
+    /** When true, body preimage field is zeroed on wire (no SHA256(body) commitment). */
+    this._sensitive = !!(input &amp;&amp; input.sensitive);
+
+    // Support both @type/@data (deprecated) and type/data (preferred) formats
+    const messageType = input.type || input['@type'];
+    const messageData = input.data || input['@data'];
+
+    if (messageData &amp;&amp; messageType) {
+      this.type = messageType;
       // Set the type field to the numeric constant
-      const typeCode = this.types[input.type] || GENERIC_MESSAGE_TYPE;
+      const typeCode = this.types[messageType] || GENERIC_MESSAGE_TYPE;
       this.raw.type.writeUInt32BE(typeCode, 0);
 
-      if (typeof input.data !== 'string') {
-        this.data = JSON.stringify(input.data);
+      if (typeof messageData !== 'string') {
+        this.data = JSON.stringify(messageData);
       } else {
-        this.data = input.data;
+        this.data = messageData;
       }
+    }
+
+    if (input.preimage != null) this.preimage = input.preimage;
+
+    // Log HEARTBEAT message creation to track origin
+    if (this.type === 'HEARTBEAT' || messageType === 'HEARTBEAT') {
+      const hasSignature = input.signature || (this.raw.signature &amp;&amp; this.raw.signature.toString('hex') !== '0'.repeat(128));
+      const inputSummary = {
+        type: input.type || input['@type'],
+        hasType: !!(input.type || input['@type']),
+        hasData: !!(input.data || input['@data']),
+        hasSignature: !!hasSignature,
+        inputKeys: Object.keys(input).filter(k => !k.startsWith('_') &amp;&amp; k !== 'signer')
+      };
+
+      console.log('[FABRIC:MESSAGE]', '⚠️  HEARTBEAT message created:', {
+        messageType: this.type || messageType,
+        input: inputSummary,
+        hasSignature: hasSignature,
+        signatureHex: this.raw.signature ? this.raw.signature.toString('hex').substring(0, 16) + '...' : 'none'
+      });
+      console.trace('[FABRIC:MESSAGE]', 'HEARTBEAT creation stack trace:');
     }
 
     // Set various properties to be unenumerable
@@ -142,6 +405,10 @@ class Message extends Actor {
     ]) Object.defineProperty(this, name, { enumerable: false });
 
     return this;
+  }
+
+  get author () {
+    return this.raw.author.toString('hex');
   }
 
   get body () {
@@ -174,6 +441,31 @@ class Message extends Actor {
   set signature (value) {
     if (value instanceof Buffer) value = value.toString('hex');
     this.raw.signature.write(value, 'hex');
+  }
+
+  /**
+   * Optional 32-byte preimage on wire:
+   * - **All zeros:** sensitive payload (no commitment) or legacy; {@link Message#sensitive} uses this.
+   * - **SHA256(body):** default for non-sensitive messages (single digest; {@link Message#hash} is double-SHA256(body)).
+   * - **Other:** explicit HTLC secret or custom (must match what was signed).
+   */
+  get preimage () {
+    if (!this.raw || !Buffer.isBuffer(this.raw.preimage) || this.raw.preimage.length !== 32) return null;
+    if (isAllZero32(this.raw.preimage)) return null;
+    return Buffer.from(this.raw.preimage);
+  }
+
+  set preimage (value) {
+    if (!this.raw.preimage || !Buffer.isBuffer(this.raw.preimage) || this.raw.preimage.length !== 32) {
+      this.raw.preimage = Buffer.alloc(32);
+    }
+    if (value === null || value === undefined) {
+      this.raw.preimage.fill(0);
+      return;
+    }
+    const buf = Buffer.isBuffer(value) ? value : Buffer.from(value, 'hex');
+    if (buf.length !== 32) throw new Error('Message preimage must be 32 bytes');
+    buf.copy(this.raw.preimage);
   }
 
   toBuffer () {
@@ -212,11 +504,17 @@ class Message extends Actor {
         type: parseInt(`${this.raw.type.toString('hex')}`, 16),
         size: parseInt(`${this.raw.size.toString('hex')}`, 16),
         hash: this.raw.hash.toString('hex'),
+        preimage: this.preimage ? this.preimage.toString('hex') : null,
         signature: this.raw.signature.toString('hex'),
       },
-      type: this.type,
+      type: this.friendlyType,
+      wireType: this.wireType,
       data: this.data
     };
+  }
+
+  toVector () {
+    return [this.type, this.data];
   }
 
   fromObject (input) {
@@ -225,6 +523,9 @@ class Message extends Actor {
 
   /**
    * Signs the message using a specific key.
+   * Uses BIP-340 Schnorr signatures with tagged hash "Fabric/Message".
+   * Signs the complete message (header + body) as per C implementation.
+   *
    * @param {Object} key Key object with private key and sign method.
    * @param {String|Buffer} key.private Private key
    * @param {String|Buffer} key.pubkey Public key
@@ -237,12 +538,53 @@ class Message extends Actor {
     if (!key.private) throw new Error('Cannot sign message with public key only.');
     if (!key.sign) throw new Error('Key object must implement sign method');
 
-    // Hash the message data according to BIP 340
-    const message = this.raw.data.toString('utf8');
-    const messageHash = Hash256.digest(message);
-    const signature = key.sign(messageHash);
+    // Extract x-only public key (32 bytes) from compressed pubkey (33 bytes)
+    // This matches the C implementation which uses secp256k1_xonly_pubkey_serialize
+    const compressedPubkey = Buffer.from(key.public.encodeCompressed('hex'), 'hex');
+    const xOnlyPubkey = compressedPubkey.slice(1); // Remove prefix byte (first byte)
 
-    this.raw.author.write(key.pubkey.toString('hex'), 'hex');
+    // Set author field BEFORE signing so it's included in the signed data
+    // Write x-only pubkey to author field (32 bytes = 64 hex chars)
+    this.raw.author.write(xOnlyPubkey.toString('hex'), 'hex');
+
+    // Create header with signature field zeroed (as it would be during signing)
+    // The C implementation includes the signature field in offsetof(Message, body),
+    // but it's zero/uninitialized when signing, so we zero it
+    const zeroedSignature = Buffer.alloc(64); // 64 bytes of zeros
+    const pre = Buffer.isBuffer(this.raw.preimage)
+      ? this.raw.preimage
+      : Buffer.from(this.raw.preimage || '', 'hex');
+    if (pre.length !== 32) throw new Error('Message preimage must be 32 bytes on wire');
+    const headerForHash = Buffer.concat([
+      Buffer.from(this.raw.magic, 'hex'),
+      Buffer.from(this.raw.version, 'hex'),
+      Buffer.from(this.raw.parent, 'hex'),
+      Buffer.from(this.raw.author, 'hex'),
+      Buffer.from(this.raw.type, 'hex'),
+      Buffer.from(this.raw.size, 'hex'),
+      Buffer.from(this.raw.hash, 'hex'),
+      pre,
+      zeroedSignature // Signature field zeroed for hash computation
+    ]);
+
+    // Create buffer with header (signature zeroed) + body
+    // This matches the C implementation: memcpy(data_buffer, message, offsetof(Message, body))
+    const dataBuffer = Buffer.concat([
+      headerForHash,
+      this.raw.data || Buffer.alloc(0)
+    ]);
+
+    // Compute tagged hash with "Fabric/Message" tag (BIP-340)
+    // This matches: secp256k1_tagged_sha256(ctx, msghash, "Fabric/Message", data_buffer, data_size)
+    const tag = 'Fabric/Message';
+    const messageHash = taggedHash(tag, dataBuffer);
+
+    // Sign the tagged hash using BIP-340 Schnorr
+    // This matches: secp256k1_schnorrsig_sign32(ctx, signature, msghash, &amp;keypair, NULL)
+    // Use signSchnorrHash since we already have a pre-computed hash
+    const signature = key.signSchnorrHash(messageHash);
+
+    // Write signature (64 bytes = 128 hex chars)
     this.raw.signature.write(signature.toString('hex'), 'hex');
 
     return this;
@@ -266,14 +608,14 @@ class Message extends Actor {
     if (!this.signer) throw new Error('No signer available.');
     if (!this.signer.verify) throw new Error('Signer must implement verify method');
 
-    const hash = Hash256.digest(this.raw.data);
-    const signature = this.raw.signature;
-
     return this.verifyWithKey(this.signer);
   }
 
   /**
    * Verify a message's signature with a specific key.
+   * Uses BIP-340 Schnorr signature verification with tagged hash "Fabric/Message".
+   * Verifies the complete message (header + body) as per C implementation.
+   *
    * @param {Object} key Key object with verify method.
    * @param {Function} key.verify Verification function
    * @returns {Boolean} `true` if the signature is valid, `false` if not.
@@ -284,12 +626,62 @@ class Message extends Actor {
     if (!key) throw new Error('No key provided.');
     if (!key.verify) throw new Error('Key object must implement verify method');
 
-    // Get the raw message data as a string
-    const message = this.raw.data.toString('utf8');
-    const messageHash = Hash256.digest(message);
-    const signature = this.raw.signature;
+    // Parse x-only pubkey from author field (32 bytes = 64 hex chars)
+    // This matches the C implementation which uses secp256k1_xonly_pubkey_parse
+    const authorHex = this.raw.author.toString('hex');
+    if (authorHex.length !== 64) {
+      throw new Error(`Invalid author field length: expected 64 hex chars (32 bytes), got ${authorHex.length}`);
+    }
+    const xOnlyPubkeyFromAuthor = Buffer.from(authorHex, 'hex');
 
-    return key.verify(messageHash, signature);
+    // Get x-only pubkey from the provided key for comparison
+    // This allows us to verify using the key directly instead of reconstructing
+    const compressedPubkeyFromKey = Buffer.from(key.public.encodeCompressed('hex'), 'hex');
+    const xOnlyPubkeyFromKey = compressedPubkeyFromKey.slice(1);
+
+    // Verify that the author field matches the key's x-only pubkey
+    if (!xOnlyPubkeyFromAuthor.equals(xOnlyPubkeyFromKey)) {
+      return false;
+    }
+
+    // Create header with signature field zeroed (as it would be during signing)
+    // The C implementation includes the signature field in offsetof(Message, body),
+    // but it's zero/uninitialized when signing, so we zero it for verification
+    const zeroedSignature = Buffer.alloc(64); // 64 bytes of zeros
+    const pre = Buffer.isBuffer(this.raw.preimage)
+      ? this.raw.preimage
+      : Buffer.from(this.raw.preimage || '', 'hex');
+    if (pre.length !== 32) throw new Error('Message preimage must be 32 bytes on wire');
+    const headerForHash = Buffer.concat([
+      Buffer.from(this.raw.magic, 'hex'),
+      Buffer.from(this.raw.version, 'hex'),
+      Buffer.from(this.raw.parent, 'hex'),
+      Buffer.from(this.raw.author, 'hex'),
+      Buffer.from(this.raw.type, 'hex'),
+      Buffer.from(this.raw.size, 'hex'),
+      Buffer.from(this.raw.hash, 'hex'),
+      pre,
+      zeroedSignature // Signature field zeroed for hash computation
+    ]);
+
+    // Create buffer with header (signature zeroed) + body
+    // This matches the C implementation: memcpy(data_buffer, message, offsetof(Message, body))
+    const dataBuffer = Buffer.concat([
+      headerForHash,
+      this.raw.data || Buffer.alloc(0)
+    ]);
+
+    // Compute tagged hash with "Fabric/Message" tag (BIP-340)
+    const tag = 'Fabric/Message';
+    const messageHash = taggedHash(tag, dataBuffer);
+
+    // Get signature
+    const signature = this.raw.signature;
+    const sigBuffer = Buffer.isBuffer(signature) ? signature : Buffer.from(signature.toString('hex'), 'hex');
+
+    // Use the provided key's verifySchnorrHash method directly
+    // This avoids needing to reconstruct the key from the author field
+    return key.verifySchnorrHash(messageHash, sigBuffer);
   }
 
   /**
@@ -312,9 +704,11 @@ class Message extends Actor {
       .charsnt('magic', 4, 'hex')
       .charsnt('version', 4, 'hex')
       .charsnt('parent', 32, 'hex')
+      .charsnt('author', 32, 'hex')
       .charsnt('type', 4, 'hex')
       .charsnt('size', 4, 'hex')
       .charsnt('hash', 32, 'hex')
+      .charsnt('preimage', 32, 'hex')
       .charsnt('signature', 64, 'hex')
       .charsnt('data', buffer.length - HEADER_SIZE);
 
@@ -333,7 +727,8 @@ class Message extends Actor {
       type: buffer.slice(72, 76),
       size: buffer.slice(76, 80),
       hash: buffer.slice(80, 112),
-      signature: buffer.slice(112, HEADER_SIZE)
+      preimage: buffer.slice(112, 144),
+      signature: buffer.slice(144, HEADER_SIZE)
     };
 
     if (buffer.length >= HEADER_SIZE) {
@@ -364,7 +759,7 @@ class Message extends Actor {
     }
 
     const message = new Message();
-
+    const payload = buffer.subarray(HEADER_SIZE);
     message.raw = {
       magic: buffer.subarray(0, 4),
       version: buffer.subarray(4, 8),
@@ -373,10 +768,14 @@ class Message extends Actor {
       type: buffer.subarray(72, 76),
       size: buffer.subarray(76, 80),
       hash: buffer.subarray(80, 112),
-      signature: buffer.subarray(112, HEADER_SIZE)
+      preimage: buffer.subarray(112, 144),
+      signature: buffer.subarray(144, HEADER_SIZE),
+      data: payload
     };
 
-    message.data = buffer.subarray(HEADER_SIZE);
+    // Do not assign `message.data` here: the `data` setter recomputes `raw.hash`
+    // (double-SHA256 of the body), which would replace the on-wire hash and break
+    // `Peer._handleFabricMessage` body-integrity checks (C parity).
 
     return message;
   }
@@ -405,53 +804,11 @@ class Message extends Actor {
   }
 
   get types () {
-    // Message Types
-    return {
-      'GenericMessage': GENERIC_MESSAGE_TYPE,
-      'GenericLogMessage': LOG_MESSAGE_TYPE,
-      'GenericList': GENERIC_LIST_TYPE,
-      'GenericQueue': GENERIC_LIST_TYPE,
-      'FabricLogMessage': LOG_MESSAGE_TYPE,
-      'FabricServiceLogMessage': LOG_MESSAGE_TYPE,
-      'GenericTransferQueue': GENERIC_LIST_TYPE,
-      'JSONBlob': GENERIC_MESSAGE_TYPE + 1,
-      // TODO: document Generic type
-      // P2P Commands
-      'Generic': P2P_GENERIC,
-      'Cycle': OP_CYCLE,
-      'IdentityRequest': P2P_IDENT_REQUEST,
-      'IdentityResponse': P2P_IDENT_RESPONSE,
-      'ChainSyncRequest': P2P_CHAIN_SYNC_REQUEST,
-      // TODO: restore this type
-      // 'StateRoot': P2P_ROOT,
-      'Ping': P2P_PING,
-      'Pong': P2P_PONG,
-      'DocumentRequest': DOCUMENT_REQUEST_TYPE,
-      'DocumentPublish': DOCUMENT_PUBLISH_TYPE,
-      'BlockCandidate': BLOCK_CANDIDATE,
-      'PeerCandidate': PEER_CANDIDATE,
-      'PeerInstruction': P2P_INSTRUCTION,
-      'PeerMessage': P2P_BASE_MESSAGE,
-      'StartSession': SESSION_START,
-      'ChatMessage': CHAT_MESSAGE,
-      'StartChain': P2P_START_CHAIN,
-      // TODO: restore above StateRoot type
-      'StateRoot': P2P_STATE_ROOT,
-      'StateCommitment': P2P_STATE_COMMITTMENT,
-      'StateChange': P2P_STATE_CHANGE,
-      'StateRequest': P2P_STATE_REQUEST,
-      'Transaction': P2P_TRANSACTION,
-      'Call': P2P_CALL,
-      'LogMessage': LOG_MESSAGE_TYPE
-    };
+    return Object.assign({}, CANONICAL_MESSAGE_TYPE_STRINGS, LEGACY_MESSAGE_TYPE_ALIASES);
   }
 
   get codes () {
-    return Object.entries(this.types).reduce((ret, entry) => {
-      const [ key, value ] = entry;
-      ret[ value ] = key;
-      return ret;
-    }, {});
+    return Object.assign({}, CANONICAL_WIRE_TYPE_BY_OPCODE);
   }
 
   get magic () {
@@ -471,6 +828,9 @@ class Message extends Actor {
   }
 
   get header () {
+    if (!Buffer.isBuffer(this.raw.preimage) || this.raw.preimage.length !== 32) {
+      throw new Error('Message raw.preimage must be a 32-byte Buffer');
+    }
     const parts = [
       Buffer.from(this.raw.magic, 'hex'),
       Buffer.from(this.raw.version, 'hex'),
@@ -479,84 +839,49 @@ class Message extends Actor {
       Buffer.from(this.raw.type, 'hex'),
       Buffer.from(this.raw.size, 'hex'),
       Buffer.from(this.raw.hash, 'hex'),
+      this.raw.preimage,
       Buffer.from(this.raw.signature, 'hex')
     ];
 
     return Buffer.concat(parts);
   }
+
+  /**
+   * AMP wire type string (SCREAMING_SNAKE_CASE / opcode-canonical). Same as {@link Message#type}.
+   */
+  get wireType () {
+    const code = parseInt(this.raw.type.toString('hex'), 16);
+    return CANONICAL_WIRE_TYPE_BY_OPCODE[code] || 'GENERIC_MESSAGE';
+  }
+
+  /**
+   * JSON-oriented type label (historical PascalCase aliases). Use in APIs and `toObject().type`.
+   */
+  get friendlyType () {
+    return friendlyTypeFromWire(this.wireType);
+  }
 }
 
 Object.defineProperty(Message.prototype, 'type', {
   get () {
-    const code = parseInt(this.raw.type.toString('hex'), 16);
-    switch (code) {
-      case GENERIC_MESSAGE_TYPE:
-        return 'GenericMessage';
-      case GENERIC_MESSAGE_TYPE + 1:
-        return 'JSONBlob';
-      case LOG_MESSAGE_TYPE:
-        return 'GenericLogMessage';
-      case GENERIC_LIST_TYPE:
-        return 'GenericList';
-      case DOCUMENT_PUBLISH_TYPE:
-        return 'DocumentPublish';
-      case DOCUMENT_REQUEST_TYPE:
-        return 'DocumentRequest';
-      case BLOCK_CANDIDATE:
-        return 'BlockCandidate';
-      case OP_CYCLE:
-        return 'Cycle';
-      case P2P_PING:
-        return 'Ping';
-      case P2P_PONG:
-        return 'Pong';
-      case P2P_GENERIC:
-        return 'Generic';
-      case P2P_CHAIN_SYNC_REQUEST:
-        return 'ChainSyncRequest';
-      case P2P_IDENT_REQUEST:
-        return 'IdentityRequest';
-      case P2P_IDENT_RESPONSE:
-        return 'IdentityResponse';
-      case P2P_BASE_MESSAGE:
-        return 'PeerMessage';
-      case P2P_STATE_ROOT:
-        return 'StateRoot';
-      case P2P_STATE_CHANGE:
-        return 'StateChange';
-      case P2P_STATE_REQUEST:
-        return 'StateRequest';
-      case P2P_TRANSACTION:
-        return 'Transaction';
-      case P2P_CALL:
-        return 'Call';
-      case PEER_CANDIDATE:
-        return 'PeerCandidate';
-      case SESSION_START:
-        return 'StartSession';
-      case CHAT_MESSAGE:
-        return 'ChatMessage';
-      case P2P_START_CHAIN:
-        return 'StartChain';
-      default:
-        return 'GenericMessage';
-    }
+    return this.wireType;
   },
   set (value) {
+    // console.trace('setting type:', value);
     let code = this.types[value];
-    // Default to GenericMessage or JSONBlob based on content
+    // Default to GENERIC_MESSAGE or JSON_BLOB based on content
     if (!code) {
       this.emit('warning', `Unknown message type: ${value}`);
       // Check if data is valid JSON
       try {
         if (this.data &amp;&amp; JSON.parse(this.data)) {
-          code = this.types['JSONBlob'];
-          value = 'JSONBlob';
+          code = this.types['JSON_BLOB'] || this.types['JSONBlob'];
+          value = 'JSON_BLOB';
         } else {
-          code = this.types['GenericMessage'];
+          code = this.types['GENERIC_MESSAGE'] || this.types['GenericMessage'];
         }
       } catch (e) {
-        code = this.types['GenericMessage'];
+        code = this.types['GENERIC_MESSAGE'] || this.types['GenericMessage'];
       }
     }
 
@@ -573,11 +898,51 @@ Object.defineProperty(Message.prototype, 'data', {
   },
   set (value) {
     if (!value) value = '';
-    this.raw.hash = Hash256.digest(value.toString('utf8'));
-    this.raw.data = Buffer.from(value);
+    const bodyBuf = Buffer.from(value);
+    const hexDouble = Hash256.doubleDigest(bodyBuf);
+    // Keep `raw.hash` as 32 bytes (double-SHA256 of body); do not assign a string to the buffer slot.
+    if (Buffer.isBuffer(this.raw.hash) &amp;&amp; this.raw.hash.length === 32) {
+      Buffer.from(hexDouble, 'hex').copy(this.raw.hash);
+    } else {
+      this.raw.hash = Buffer.from(hexDouble, 'hex');
+    }
+    this.raw.data = bodyBuf;
     this.raw.size.write(padDigits(this.raw.data.byteLength.toString(16), 8), 'hex');
+    // Preimage: single SHA256(body) for non-sensitive (commitment); zeros when sensitive (no body hash in preimage).
+    if (!Buffer.isBuffer(this.raw.preimage) || this.raw.preimage.length !== 32) {
+      this.raw.preimage = Buffer.alloc(32);
+    }
+    if (this._sensitive) {
+      this.raw.preimage.fill(0);
+    } else {
+      Buffer.from(Hash256.digest(bodyBuf), 'hex').copy(this.raw.preimage);
+    }
   }
 });
+
+Object.defineProperty(Message.prototype, 'sensitive', {
+  get () {
+    return !!this._sensitive;
+  },
+  set (value) {
+    this._sensitive = !!value;
+    if (!this.raw || !Buffer.isBuffer(this.raw.data) || !this.raw.data.length) return;
+    const bodyBuf = this.raw.data;
+    if (!Buffer.isBuffer(this.raw.preimage) || this.raw.preimage.length !== 32) {
+      this.raw.preimage = Buffer.alloc(32);
+    }
+    if (this._sensitive) {
+      this.raw.preimage.fill(0);
+    } else {
+      Buffer.from(Hash256.digest(bodyBuf), 'hex').copy(this.raw.preimage);
+    }
+  }
+});
+
+Message.friendlyTypeFromWire = friendlyTypeFromWire;
+Message.wireTypeFromFriendly = wireTypeFromFriendly;
+Message.FRIENDLY_TYPE_BY_WIRE = FRIENDLY_TYPE_BY_WIRE;
+Message.FRIENDLY_TO_WIRE_TYPE = FRIENDLY_TO_WIRE_TYPE;
 
 module.exports = Message;
 </code></pre>
@@ -600,10 +965,10 @@ module.exports = Message;
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
-      <li><a href="HTTPServer.html">HTTPServer</a></li>
       <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
@@ -622,24 +987,36 @@ module.exports = Message;
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
-      <li><a href="Snapshot.html">Snapshot</a></li>
-      <li><a href="Stack.html">Stack</a></li>
-      <li><a href="Stash.html">Stash</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
-      <li><a href="Swarm.html">Swarm</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
-      <li><a href="Value.html">Value</a></li>
       <li><a href="Vector.html">Vector</a></li>
-      <li><a href="Walker.html">Walker</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
-    <h3>Events</h3>
+    <h3>Global</h3>
     <ul>
-      <li><a href="Aggregator.html#event:commit">commit</a></li>
+      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
+      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
+      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
+      <li><a href="global.html#crypto">crypto</a></li>
+      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
+      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
+      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
+      <li><a href="global.html#gossip">gossip</a></li>
+      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
+      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
+      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
+      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
+      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
+      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
+      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
+      <li><a href="global.html#stableStringify">stableStringify</a></li>
+      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
+      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
+      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
     </ul>
   </nav>
   <br class="clear" />

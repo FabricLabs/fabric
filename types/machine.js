@@ -6,6 +6,7 @@ const {
 } = require('../constants');
 
 // Dependencies
+const { parsePersistedJson } = require('../functions/wireJson');
 const monitor = require('fast-json-patch');
 const BN = require('bn.js');
 
@@ -15,9 +16,40 @@ const State = require('./state');
 const Key = require('./key');
 
 /**
- * General-purpose state machine with {@link Vector}-based instructions.
+ * @classdesc Deterministic <strong>virtual machine</strong> layer extending {@link Actor}: script/stack, fixed memory buffer,
+ * clock, and a {@link Key}-backed generator for reproducible “random” bits (<code>sip</code>). Consumes {@link State}-signed
+ * instruction entries from {@link Fabric#push} — not the same as P2P {@link Message} dispatch (see
+ * <code>types/message.js</code>).
+ * @class Machine
+ * @extends Actor
  */
 class Machine extends Actor {
+  /**
+   * Parse a JSON object of Buffer-like entries into an array of {@link Buffer}s (legacy wire / script helper).
+   * @param {string} [input='']
+   * @returns {Buffer[]}
+   */
+  static fromObjectString (input = '') {
+    if (!input) throw new Error('Must provide input.');
+    if (typeof input !== 'string') input = JSON.stringify(input);
+    const result = [];
+    const object = parsePersistedJson(input);
+
+    for (const i in object) {
+      let element = object[i];
+
+      if (element instanceof Array) {
+        element = Buffer.from(element);
+      } else {
+        element = Buffer.from(element.data);
+      }
+
+      result.push(element);
+    }
+
+    return result;
+  }
+
   /**
    * Create a Machine.
    * @param {Object} settings Run-time configuration.
@@ -32,18 +64,14 @@ class Machine extends Actor {
       debug: false,
       deterministic: true,
       interval: 60, // seconds
+      key: null,
       precision: 8,
       script: [],
-      seed: 1, // TODO: select seed for production
-      type: 'fabric'
+      type: 'x86'
     }, settings);
 
     // machine key
-    this.key = new Key({
-      seed: this.settings.seed + '', // casts to string
-      xprv: this.settings.xprv,
-      private: this.settings.private,
-    });
+    this.key = new Key(this.settings.key);
 
     // internal clock
     this.clock = this.settings.clock;
@@ -83,7 +111,6 @@ class Machine extends Actor {
   }
 
   get tip () {
-    this.log(`tip requested: ${val}`);
     this.log(`tip requested, history: ${JSON.stringify(this.history)}`);
     return this.history[this.history.length - 1] || null;
   }
@@ -116,7 +143,7 @@ class Machine extends Actor {
     }).join(''), 2).toString(16);
   }
 
-  validateCycle (i) {
+  validateCycle (_i) {
     return false;
   }
 
@@ -194,7 +221,13 @@ class Machine extends Actor {
 
   async start () {
     this.status = 'STARTING';
-    this._governor = setInterval(this.compute.bind(this), this.settings.frequency * 1000);
+    const f = this.settings.frequency;
+    const fromFreq = (typeof f === 'number' && Number.isFinite(f)) ? f * 1000 : NaN;
+    const intervalSec = (typeof this.settings.interval === 'number' && Number.isFinite(this.settings.interval))
+      ? this.settings.interval
+      : 60;
+    const ms = Number.isFinite(fromFreq) && fromFreq > 0 ? fromFreq : Math.max(1, intervalSec * 1000);
+    this._governor = setInterval(this.compute.bind(this), ms);
     this.status = 'STARTED';
     return this;
   }

@@ -1,9 +1,30 @@
 # Security
-Fabric makes an effort to maximize the security of default system.
+Fabric aims to maximize the security of a sensible default configuration while keeping dependencies understandable and reviewable.
 
 ## Objectives
-- Maximize the security of a default system
-- Minimize external dependencies
+- Secure defaults for the reference client (`@fabric/core`)
+- Minimal attack surface where practical
+- Clear separation between **experimental** APIs and **release** commitments (see [CHANGELOG.md](CHANGELOG.md))
+
+## P2P gossip (`P2P_PEER_GOSSIP`)
+Relay of gossip is bounded to reduce amplification DoS: **logical payload** deduplication (stable hash over `type` + `object` sans `gossipHop`), **`gossipHop` TTL** (default 5, decremented on each relay), **per-origin relay budget** per rolling minute (default 60), and **FIFO-capped** wire-hash and payload caches. See `constants.js` (`GOSSIP_*`, `PEER_MAX_WIRE_HASH_CACHE`) and `Peer` `settings.gossip`.
+
+## P2P peering offers (`P2P_PEERING_OFFER`)
+Relay uses the same class of controls as gossip, with separate state: logical dedup (hash over `type` + `object` sans `peeringHop`), **`peeringHop` TTL** (default 5), **per-origin relay budget** per rolling minute (default 60), **FIFO-capped** payload cache, and a **bounded, deduped** candidate queue for offered addresses (`PEER_MAX_CANDIDATES_QUEUE`, default 128). See `constants.js` (`PEERING_OFFER_*`, `PEER_MAX_CANDIDATES_QUEUE`) and `Peer` `settings.peering`.
+
+## Operator-facing docs
+| Doc | Use |
+|-----|-----|
+| [DEVELOPERS.md](DEVELOPERS.md) | Contributor workflow, core types, tests |
+| [PRIVACY.md](PRIVACY.md) | What is / is not hidden from peers and observers |
+| [AUDIT.md](AUDIT.md) | Known issues and recommendations |
+| [docs/PRODUCTION.md](docs/PRODUCTION.md) | Node version, native addons, downstream alignment |
 
 ## Process
-1. Before beginning work, execute `npm run reports`
+1. Before large changes, run **`npm run ci`** (full test suite).
+2. For dependency and coverage reports: **`npm run reports`** (install log, coverage, TODO grep — may be slow).
+3. Review **`npm audit`** results before release tags; record exceptions in the release notes if needed.
+4. **Never** commit seeds, `stores/` production data, or RPC passwords (see [docs/PRODUCTION.md](docs/PRODUCTION.md)).
+
+## Disclosure
+Report security issues through the contact in [TODO.md](TODO.md) / project README as applicable.

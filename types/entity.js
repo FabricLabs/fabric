@@ -2,7 +2,17 @@
 
 const crypto = require('crypto');
 const { EventEmitter } = require('events');
+const monitor = require('fast-json-patch');
+const Witness = require('./witness');
 
+/**
+ * @classdesc <strong>Structured document</strong> type: extends {@link EventEmitter} (not {@link Actor}) with
+ * <code>@type</code> / <code>@data</code> shape, JSON serialization, and <code>id</code> = SHA256(<code>toJSON()</code>).
+ * <strong>Different model from {@link Actor#id}</strong> (sorted generic envelope). <code>Entity.Transition</code> (JSON Patch
+ * between entity states) is the supported migration path — see <strong>DEVELOPERS.md</strong> (<em>Consolidated prototypes</em>).
+ * @class Entity
+ * @extends EventEmitter
+ */
 class Entity extends EventEmitter {
   constructor (data = {}) {
     super(data);
@@ -50,7 +60,7 @@ class Entity extends EventEmitter {
     let entity = this;
     return function buffer () {
       return Buffer.from(entity.toJSON(), 'utf8');
-    }
+    };
   }
 
   get id () {
@@ -99,7 +109,7 @@ class Entity extends EventEmitter {
         result = JSON.stringify(this.actor['@data']);
         break;
       case 'Buffer':
-        const buffer = new Uint8Array(this.data);
+        void new Uint8Array(this.data);
         const values = Object.values(this.data);
         result = JSON.stringify(values);
         break;
@@ -173,4 +183,102 @@ class Entity extends EventEmitter {
   }
 }
 
+/**
+ * @classdesc JSON Patch <strong>diff</strong> between two {@link Entity} snapshots (<code>origin</code>,
+ * <code>target</code>, <code>changes</code>). Built via {@link Transition.between}, {@link Transition#fromTarget}, or manual
+ * <code>changes</code>; uses <code>fast-json-patch</code> observe/generate.
+ * @memberof Entity
+ * @class Transition
+ * @extends Entity
+ */
+class Transition extends Entity {
+  constructor (settings = {}) {
+    super(settings);
+
+    this.status = 'constructing';
+    this._state = {
+      origin: null,
+      target: null,
+      changes: [],
+      program: [],
+      witness: null
+    };
+
+    this.settings = Object.assign({}, this._state, settings);
+    this.witness = new Witness(this.settings);
+
+    this._setOrigin(this.settings.origin);
+    this._setTarget(this.settings.target);
+
+    this.status = 'constructed';
+  }
+
+  static between (origin, target) {
+    const x = new Entity(origin);
+    const y = new Entity(target);
+
+    const actor = Object.assign({}, origin);
+    const observer = monitor.observe(actor);
+
+    Object.assign(actor, target);
+
+    return new Transition({
+      origin: x.id,
+      target: y.id,
+      changes: monitor.generate(observer)
+    });
+  }
+
+  fromTarget (target) {
+    const base = new Entity();
+    const entity = this._describeTarget(target);
+    return new Transition({
+      origin: base.id,
+      target: entity.id
+    });
+  }
+
+  _applyTo (state) {
+    if (!state) throw new Error('State must be provided.');
+    if (!(state instanceof Entity)) throw new Error('State not of known Entity type.');
+
+    const instance = Object.assign({}, state);
+    const observer = monitor.observe(instance);
+
+    try {
+      monitor.applyPatch(instance, this._state.changes);
+    } catch (E) {
+      console.error('Could not apply changes:', E);
+    }
+
+    monitor.generate(observer);
+    return instance;
+  }
+
+  _setChanges (changes) {
+    if (!changes) throw new Error('No changes specified.');
+    this._state.changes = changes;
+  }
+
+  _setOrigin (origin) {
+    if (!origin) throw new Error('No origin specified.');
+    this._state.origin = origin;
+  }
+
+  _setTarget (target) {
+    if (!target) throw new Error('No target specified.');
+    this._state.target = target;
+  }
+
+  _describeTarget (target) {
+    if (!target) throw new Error('No target specified.');
+    const entity = new Entity(target);
+    this._setTarget(entity.id);
+    return entity;
+  }
+}
+
+Entity.Transition = Transition;
+
 module.exports = Entity;
+module.exports.Transition = Transition;

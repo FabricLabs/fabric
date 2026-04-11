@@ -1,47 +1,125 @@
-name: npm test
+name: CI
+# Gitea: pull_request uses refs/pull/<n>/head (no GitHub-style merge ref). Runner must
+# advertise ubuntu-latest (see https://docs.gitea.com/usage/actions/faq).
 on:
   pull_request:
+    types: [opened, reopened, synchronize]
     branches:
     - '**'
   push:
     branches:
     - master
+    - develop
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  # Ubuntu runners do not ship libnoise / libwally / headers required by binding.gyp.
+  FABRIC_SKIP_NODE_GYP: '1'
+  # GitHub Actions: opt composite actions into Node 24 before the Node 20 runner removal.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  # c8 + full mocha tree is memory-heavy; avoid SIGKILL on smaller ubuntu-latest runners.
+  NODE_OPTIONS: --max-old-space-size=6144
 jobs:
   test:
+    # Single OS: self-hosted Gitea runners typically provide ubuntu-latest in Docker;
+    # macOS-in-Docker (e.g. sickcodes/docker-osx) is brittle. GitHub.com runs macOS via
+    # workflow test-macos.yaml (skipped when github.server_url is not github.com).
     name: Run tests
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os:
-        - macos-latest
-        - ubuntu-latest
+    runs-on: ubuntu-latest
     steps:
     - name: Checkout branch
-      uses: actions/checkout@v3
-    - name: Install Node.js on ${{ matrix.os }}
+      uses: actions/checkout@v4
+      with:
+        # Gitea uses refs/pull/<n>/head; GitHub uses .../merge for PRs — github.ref is correct on both.
+        ref: ${{ github.ref }}
+    - name: Install Node.js
       uses: actions/setup-node@v4
       with:
         node-version-file: '.nvmrc'
         cache: 'npm'
         cache-dependency-path: package-lock.json
     - name: Set up Python
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
-        python-version: '3.8'
+        # 3.12+ dropped stdlib distutils; CLN's bundled libwally (external/Makefile) still imports it.
+        python-version: '3.11'
+    - name: Install Ubuntu build deps and C libs
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential libsecp256k1-dev
     - name: Install dependencies
-      run: npm run report:install
+      run: npm run report:install-ci
+    - name: Upload install report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: install-report-ubuntu-latest
+        path: reports/install.log
+        if-no-files-found: ignore
+    - name: Smoke load (core modules)
+      run: npm run smoke
+    - name: Lint types
+      run: npm run lint:types
+    - name: Lint CLI harness + native accel shim
+      run: npm run lint:pkg
     - name: Download and install bitcoind
       run: |
-        if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
-          wget https://bitcoin.org/bin/bitcoin-core-27.0/bitcoin-27.0-x86_64-linux-gnu.tar.gz
-          tar -xzf bitcoin-27.0-x86_64-linux-gnu.tar.gz
-          sudo mv bitcoin-27.0/bin/bitcoind /usr/local/bin/
-        else
-          brew install bitcoin
-        fi
-    - name: Generate coverage report
+        set -euo pipefail
+        VERSION=28.0
+        ARCHIVE=bitcoin-${VERSION}-x86_64-linux-gnu.tar.gz
+        ARCHIVE_SHA256=7fe294b02b25b51acb8e8e0a0eb5af6bbafa7cd0c5b0e5fcbb61263104a82fbc
+        BASE=https://bitcoin.org/bin/bitcoin-core-${VERSION}/
+        wget -q "${BASE}SHA256SUMS"
+        wget -q "${BASE}${ARCHIVE}"
+        echo "${ARCHIVE_SHA256}  ${ARCHIVE}" | sha256sum -c -
+        grep "${ARCHIVE}\$" SHA256SUMS | sha256sum -c -
+        tar -xzf "${ARCHIVE}"
+        sudo mv bitcoin-${VERSION}/bin/bitcoind bitcoin-${VERSION}/bin/bitcoin-cli /usr/local/bin/
+    - name: Run tests (with coverage for Codecov)
       run: npm run report:coverage
+      timeout-minutes: 30
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@1.79.0
+    - name: Install lightningd
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          autoconf automake build-essential git libtool python3 python3-pip \
+          net-tools zlib1g-dev libsqlite3-dev libgmp-dev libsodium-dev gettext
+
+        python3 -m pip install --upgrade pip setuptools wheel mako
+
+        export PYTHON="$(command -v python3)"
+        python3 --version
+
+        LIGHTNING_REF=v25.05
+        LIGHTNING_COMMIT=2b8b709bfd3d1b296d453eff3f2316a90e6290b8
+        git clone --depth=1 --branch "${LIGHTNING_REF}" https://github.com/ElementsProject/lightning.git
+        cd lightning
+        test "$(git rev-parse HEAD)" = "${LIGHTNING_COMMIT}"
+        ./configure
+        make -j$(nproc)
+        sudo make install
+
+        which lightningd || echo "lightningd not found in PATH"
+        ls -la /usr/local/bin/lightningd || echo "lightningd not found in /usr/local/bin"
+        sudo ln -sf /usr/local/bin/lightningd /usr/bin/lightningd || true
+        echo "Lightning Network installation completed"
+    - name: Verify lightningd installation
+      run: |
+        echo "Checking lightningd installation..."
+        if command -v lightningd &> /dev/null; then
+          echo "✅ lightningd is available in PATH"
+          lightningd --version || echo "⚠️ lightningd version check failed"
+        else
+          echo "❌ lightningd not found in PATH"
+          echo "PATH: $PATH"
+          find /usr -name lightningd 2>/dev/null || echo "No lightningd found in /usr"
+          find /usr/local -name lightningd 2>/dev/null || echo "No lightningd found in /usr/local"
+        fi
     - name: Send coverage report
-      uses: codecov/codecov-action@v3.1.1
+      uses: codecov/codecov-action@v4
       with:
         directory: ./reports/
+      continue-on-error: true

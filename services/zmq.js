@@ -21,8 +21,6 @@ class ZMQ extends Service {
   constructor (settings = {}) {
     super(settings);
 
-    // Assign settings over the defaults
-    // NOTE: switch to lodash.merge if clobbering defaults
     this.settings = Object.assign({
       host: '127.0.0.1',
       port: 29000,
@@ -31,11 +29,89 @@ class ZMQ extends Service {
         'rawblock',
         'hashtx',
         'rawtx'
-      ]
+      ],
+      reconnectInterval: 5000,  // 5 seconds between reconnection attempts
+      maxReconnectAttempts: 10  // Maximum number of reconnection attempts
     }, settings);
 
     this.socket = null;
-    this._state = { status: 'STOPPED' };
+    this._state = {
+      status: 'STOPPED',
+      reconnectAttempts: 0
+    };
+
+    return this;
+  }
+
+  /** Avoid process crash when nothing listens for `error` (Node EventEmitter default). */
+  _emitErrorSafe (err) {
+    if (this.listenerCount('error') > 0) this.emit('error', err);
+    else this.emit('warning', `[ZMQ] ${err && err.message ? err.message : err}`);
+  }
+
+  async connect () {
+    this._state.status = 'CONNECTING';
+    this.socket = zeromq.socket('sub');
+
+    // Add connection event handlers
+    this.socket.on('connect', () => {
+      this.emit('debug', `[ZMQ] Connected to ${this.settings.host}:${this.settings.port}`);
+      this._state.status = 'CONNECTED';
+      this._state.reconnectAttempts = 0;  // Reset reconnection attempts on successful connect
+    });
+
+    this.socket.on('disconnect', () => {
+      this.emit('debug', `[ZMQ] Disconnected from ${this.settings.host}:${this.settings.port}`);
+      this._state.status = 'DISCONNECTED';
+    });
+
+    this.socket.on('error', (error) => {
+      this._emitErrorSafe(error);
+    });
+
+    this.socket.on('close', async (msg) => {
+      this.emit('debug', `[ZMQ] Socket closed: ${msg}`);
+      // Only attempt reconnection if we haven't stopped the service intentionally
+      if (this._state.status !== 'STOPPED' && this._state.status !== 'STOPPING') {
+        if (this._state.reconnectAttempts < this.settings.maxReconnectAttempts) {
+          this._state.reconnectAttempts++;
+          this.emit('debug', `[ZMQ] Attempting to reconnect (${this._state.reconnectAttempts}/${this.settings.maxReconnectAttempts})...`);
+          setTimeout(async () => {
+            try {
+              await this.start();
+            } catch (err) {
+              this._emitErrorSafe(err);
+            }
+          }, this.settings.reconnectInterval);
+        } else {
+          this.emit('warning', '[ZMQ] Max reconnection attempts reached. Giving up.');
+          this._emitErrorSafe(new Error('Max reconnection attempts reached'));
+        }
+      }
+    });
+
+    this.socket.on('message', (topic, message) => {
+      switch (topic.toString()) {
+        case 'rawblock':
+          const block = Message.fromVector(['BitcoinBlock', { content: message.toString('hex') }]);
+          this.emit('message', block);
+          break;
+        case 'rawtx':
+          const transaction = Message.fromVector(['BitcoinTransaction', { content: message.toString('hex') }]);
+          this.emit('message', transaction);
+          break;
+        case 'hashtx':
+          const txHash = Message.fromVector(['BitcoinTransactionHash', { content: message.toString('hex') }]);
+          this.emit('message', txHash);
+          break;
+        case 'hashblock':
+          const blockHash = Message.fromVector(['BitcoinBlockHash', { content: message.toString('hex') }]);
+          this.emit('message', blockHash);
+          break;
+      }
+    });
+
+    this.socket.connect(`tcp://${this.settings.host}:${this.settings.port}`);
 
     return this;
   }
@@ -45,34 +121,7 @@ class ZMQ extends Service {
    * @returns {ZMQ} Instance of the service.
    */
   async start () {
-    const self = this;
-
-    this.socket = zeromq.socket('sub');
-
-    // Add connection event handlers
-    this.socket.on('connect', () => {
-      console.log(`[ZMQ] Connected to ${this.settings.host}:${this.settings.port}`);
-    });
-
-    this.socket.on('disconnect', () => {
-      console.log(`[ZMQ] Disconnected from ${this.settings.host}:${this.settings.port}`);
-    });
-
-    this.socket.on('error', (error) => {
-      console.error('[ZMQ] Error:', error);
-    });
-
-    this.socket.connect(`tcp://${this.settings.host}:${this.settings.port}`);
-    this.socket.on('message', function _handleSocketMessage (topic, message) {
-      const path = `channels/${topic.toString()}`;
-      if (self.settings.debug) self.emit('debug', `[ZMQ] Received message on topic: ${topic.toString()}, length: ${message.length}`);
-      self.emit('debug', `ZMQ message @ [${path}] (${message.length} bytes) ⇒ ${message.toString('hex')}`);
-      self.emit('message', Message.fromVector(['Generic', {
-        topic: topic.toString(),
-        message: message.toString('hex'),
-        encoding: 'hex'
-      }]).toObject());
-    });
+    await this.connect();
 
     for (let i = 0; i < this.settings.subscriptions.length; i++) {
       this.subscribe(this.settings.subscriptions[i]);

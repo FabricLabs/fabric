@@ -1,4 +1,4 @@
-'use strict'
+'use strict';
 
 // Constants
 const {
@@ -10,19 +10,20 @@ const {
 const BN = require('bn.js');
 const struct = require('struct');
 const crypto = require('crypto');
+const { secp256k1 } = require('@noble/curves/secp256k1.js');
 
 // Fabric Types
 const Entity = require('./entity');
 const Key = require('./key');
 
 /**
- * The {@link Session} type describes a connection between {@link Peer}
- * objects, and includes its own lifecycle.
+ * The {@link Session} type describes a connection between {@link Peer} objects, and includes its own lifecycle.
  */
 class Session extends Entity {
   /**
    * Creates a new {@link Session}.
-   * @param {Object} settings 
+   * @param {Object} [settings] Configuration.
+   * @returns {Session} The session instance.
    */
   constructor (settings = {}) {
     super(settings);
@@ -141,7 +142,10 @@ class Session extends Entity {
     this.status = 'starting';
 
     const target = new Key({ public: this.settings.recipient });
-    this.derived = this.key.keypair.derive(target.public);
+    // ECDH shared secret (shim KeyPair has no derive(); use noble secp256k1)
+    const ourPriv = this.key.keypair.getPrivate('bytes');
+    const theirPub = Buffer.from(target.public.encode('hex'), 'hex');
+    this.derived = Buffer.from(secp256k1.getSharedSecret(ourPriv, theirPub, false));
 
     const key = new BN(this.key.public.encode('hex'), 16);
     const start = this.TypedMessage('SessionStart', key.toString(10));

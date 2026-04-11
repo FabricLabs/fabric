@@ -1,22 +1,21 @@
 'use strict';
 
 // External Dependencies
-const BN = require('bn.js');
-const EC = require('elliptic').ec;
 const merge = require('lodash.merge');
 const networks = require('bitcoinjs-lib/src/networks');
 
 // Mnemonics
-const ecc = require('tiny-secp256k1');
-const BIP32 = require('bip32').default;
+const ecc = require('./ecc');
+const BIP32 = require('../functions/bip32').default;
+const { DEFAULT_NETWORK: BIP32_DEFAULT_NETWORK } = require('../functions/bip32');
 const bip32 = new BIP32(ecc);
-const bip39 = require('bip39');
+const bip39 = require('../functions/bip39');
 
 // Types
 const Key = require('./key');
 const Actor = require('./actor');
 const Collection = require('./collection');
-// const Consensus = require('./consensus');
+// (legacy bcoin facade removed; use services/bitcoin + RPC)
 // const Channel = require('./channel');
 const Hash256 = require('./hash256');
 const Service = require('./service');
@@ -75,16 +74,9 @@ class Wallet extends Service {
     this.seed = null;
 
     // Initialize key management
-    if (this.settings.key && this.settings.key.seed) {
-      this.key = new Key({
-        seed: this.settings.key.seed,
-        passphrase: this.settings.key.passphrase || ''
-      });
-      this.seed = this.settings.key.seed;
-    } else {
-      this.key = new Key();
-      this.seed = this.key.mnemonic;
-    }
+    this.key = new Key(this.settings.key);
+    this.seed = this.key.seed;
+
     this.wallet = {
       keypair: this.key.keypair
     };
@@ -163,10 +155,10 @@ class Wallet extends Service {
    * @param {String} passphrase BIP 39 passphrase for key derivation.
    * @returns {FabricSeed} The seed object.
    */
-  static createSeed (passphrase = '') {
+  static createSeed (_passphrase = '') {
     const mnemonic = bip39.generateMnemonic();
     const seed = bip39.mnemonicToSeedSync(mnemonic);
-    const root = bip32.fromSeed(seed);
+    const root = bip32.fromSeed(seed, BIP32_DEFAULT_NETWORK);
     return {
       phrase: mnemonic,
       master: root.privateKey.toString('hex'),
@@ -181,9 +173,18 @@ class Wallet extends Service {
    * @returns {Wallet} Instance of the wallet.
    */
   static fromSeed (seed) {
+    if (!seed || typeof seed !== 'object' || typeof seed.phrase !== 'string') {
+      throw new Error('Seed object must provide a mnemonic phrase string.');
+    }
+
+    const phrase = seed.phrase.trim().replace(/\s+/g, ' ');
+    if (!bip39.validateMnemonic(phrase)) {
+      throw new Error('Seed phrase must be a valid BIP39 mnemonic.');
+    }
+
     return new Wallet({
       key: {
-        seed: seed.phrase,
+        seed: phrase,
         passphrase: ''
       }
     });
@@ -233,7 +234,7 @@ class Wallet extends Service {
     };
   }
 
-  loadTransaction (transaction, labels = []) {
+  loadTransaction (transaction, _labels = []) {
     if (!transaction) throw new Error('You must provide a transaction.');
     if (!transaction.id) throw new Error('The transaction must have a "id" property.');
 
@@ -256,6 +257,43 @@ class Wallet extends Service {
     this.commit();
 
     return this;
+  }
+
+  /**
+   * Register a key with optional labels.
+   * Accepts a Key instance, pubkey hex string, or object-like key input.
+   * @param {Key|String|Object} input Key material to load.
+   * @param {Array<String>} [labels=[]] Optional labels.
+   * @returns {Object} Stored key descriptor.
+   */
+  loadKey (input, labels = []) {
+    let key = null;
+
+    if (input instanceof Key) {
+      key = input;
+    } else if (input && typeof input === 'object' && (input.pubkey || input.public)) {
+      key = this.publicKeyFromString(input.pubkey || input.public);
+    } else if (typeof input === 'string' || Buffer.isBuffer(input) || (typeof Uint8Array !== 'undefined' && input instanceof Uint8Array)) {
+      key = this.publicKeyFromString(input);
+    } else if (input && typeof input === 'object') {
+      key = this.publicKeyFromString(input);
+    } else {
+      throw new Error('Invalid key input.');
+    }
+
+    const pubkey = key.pubkey;
+    if (!pubkey || typeof pubkey !== 'string') throw new Error('Could not derive pubkey from key input.');
+
+    const item = {
+      pubkey,
+      labels: Array.isArray(labels) ? labels : []
+    };
+
+    this._state.keys[pubkey] = item;
+    this._state.content.keys[pubkey] = item;
+    this.keys.set(`/${pubkey}`, item);
+
+    return item;
   }
 
   /**
@@ -295,7 +333,10 @@ class Wallet extends Service {
       case 'ServiceMessage':
         return this._processServiceMessage(msg['@data']);
       default:
-        return console.warn('[FABRIC:WALLET]', `Unhandled message type: ${msg['@type']}`);
+        if (this.settings.verbosity >= 4 || this.settings.debug) {
+          this.emit('warning', `[FABRIC:WALLET] Unhandled message type: ${msg['@type']}`);
+        }
+        return null;
     }
   }
 
@@ -309,7 +350,10 @@ class Wallet extends Service {
         this.addTransactionToWallet(msg['@data']);
         break;
       default:
-        return console.warn('[FABRIC:WALLET]', `Unhandled message type: ${msg['@type']}`);
+        if (this.settings.verbosity >= 4 || this.settings.debug) {
+          this.emit('warning', `[FABRIC:WALLET] Unhandled message type: ${msg['@type']}`);
+        }
+        return null;
     }
   }
 
@@ -320,19 +364,23 @@ class Wallet extends Service {
       const txid = block.block.hashes[i].toString('hex');
       // ATTN: Eric
       // TODO: process transaction
-      console.log('found txid in block:', txid);
+      if (this.settings.verbosity >= 5) console.log('found txid in block:', txid);
     }
   }
 
   async _attachTXID (txid) {
-    // TODO: check that `txid` is a proper TXID
+    if (typeof txid !== 'string' || !/^[0-9a-fA-F]{64}$/.test(txid)) {
+      throw new Error('txid must be a 64-character hex string');
+    }
     let txp = await this.txids.create(txid);
     if (this.settings.verbosity >= 5) console.log('[AUDIT]', `Attached TXID ${txid} to Wallet ID ${this.id}, result:`, txp);
     return txp;
   }
 
   async _handleFabricTransaction (tx) {
-    console.log('[FABRIC:WALLET]', 'Handling Fabric Transaction:', tx);
+    if (this.settings.verbosity >= 5) {
+      console.log('[FABRIC:WALLET]', 'Handling Fabric Transaction:', tx);
+    }
   }
 
   async addTransactionToWallet (transaction) {
@@ -439,7 +487,9 @@ class Wallet extends Service {
       // sha256
       // -> pubkey
       contract.counterparty = await this.ring.getPublicKey();
-      console.log('contract counterparty artificially generated:', contract.counterparty);
+      if (this.settings.verbosity >= 5 || this.settings.debug) {
+        console.log('contract counterparty artificially generated:', contract.counterparty);
+      }
     }
 
     let leftover = contract.amount % this.settings.decimals;
@@ -447,18 +497,21 @@ class Wallet extends Service {
 
     let partials = [];
     // TODO: remove short-circuit
-    let cb = await this._generateFakeCoinbase(contract.amount);
-    let mtx = new MTX();
+    await this._generateFakeCoinbase(contract.amount);
     let script = new Script();
 
     let secret = await this.generateSecret();
     let image = Buffer.from(secret.hash);
 
-    console.log('secret generated:', secret);
-    console.log('image of secret:', image);
+    if (this.settings.verbosity >= 5 || this.settings.debug) {
+      console.log('secret generated:', secret);
+      console.log('image of secret:', image);
+    }
 
     let refund = await this.ring.getPublicKey();
-    console.log('refund:', refund);
+    if (this.settings.verbosity >= 5 || this.settings.debug) {
+      console.log('refund:', refund);
+    }
 
     script.pushSym('OP_IF');
     script.pushSym('OP_SHA256');
@@ -480,8 +533,10 @@ class Wallet extends Service {
       partials.push(script);
     }
 
-    console.log('parts:', partials);
-    console.log('leftover:', leftover);
+    if (this.settings.verbosity >= 5 || this.settings.debug) {
+      console.log('parts:', partials);
+      console.log('leftover:', leftover);
+    }
 
     let entity = new Actor({
       comment: 'List of transactions to validate.',
@@ -498,7 +553,9 @@ class Wallet extends Service {
     const entity = await this.secrets.create({
       hash: secret.hash
     });
-    console.log('created secret:', entity);
+    if (this.settings.verbosity >= 5 || this.settings.debug) {
+      console.log('created secret:', entity);
+    }
     return entity;
   }
 
@@ -506,13 +563,11 @@ class Wallet extends Service {
     if (!address) throw new Error(`Parameter "address" is required.`);
     if (!amount) throw new Error(`Parameter "amount" is required.`);
 
-    let bn = new BN(amount + '', 10);
     // TODO: labeled keypairs
-    let clean = await this.generateCleanKeyPair();
     let change = await this.generateCleanKeyPair();
 
     let mtx = new MTX();
-    let cb = await this._generateFakeCoinbase(amount);
+    await this._generateFakeCoinbase(amount);
 
     mtx.addOutput({
       address: address,
@@ -543,31 +598,16 @@ class Wallet extends Service {
     };
   }
 
-  addInputForCrowdfund (coin, inputIndex, mtx, keyring, hashType) {
-    let sampleCoin = coin instanceof Coin ? coin : Coin.fromJSON(coin);
-    if (!hashType) hashType = Script.hashType.ANYONECANPAY | Script.hashType.ALL;
-
-    mtx.addCoin(sampleCoin);
-    mtx.scriptInput(inputIndex, sampleCoin, keyring);
-    mtx.signInput(inputIndex, sampleCoin, keyring, hashType);
-
-    console.log('MTX after Input added (and signed):', mtx);
-
-    // TODO: return a full object for Fabric
-    return mtx;
-  }
-
   balanceFromState (state) {
     if (!state.transactions) throw new Error('State does not provide a `transactions` property.');
     if (!state.transactions.length) return 0;
-    return state.transactions.reduce((acc, obj, i) => {
+    return state.transactions.reduce((acc, obj, _i) => {
       if (!acc.value) acc.value = 0;
       acc.value += obj.value;
     });
   }
 
   getFeeForInput (coin, address, keyring, rate) {
-    let fundingTarget = 100000000; // 1 BTC (arbitrary for purposes of this function)
     let testMTX = new MTX();
 
     // TODO: restore swap code, abstract input types
@@ -590,7 +630,9 @@ class Wallet extends Service {
   }
 
   _handleWalletTransaction (tx) {
-    console.log('[BRIDGE:WALLET]', 'incoming transaction:', tx);
+    if (this.settings.verbosity >= 5) {
+      console.log('[BRIDGE:WALLET]', 'incoming transaction:', tx);
+    }
   }
 
   _getDepositAddress () {
@@ -605,66 +647,6 @@ class Wallet extends Service {
     return {
       address: this.account.deriveReceive(index).getAddress('string')
     };
-  }
-
-  async _splitCoinbase (funderKeyring, coin, targetAmount, txRate) {
-    // loop through each coinbase coin to split
-    let coins = [];
-
-    const mtx = new MTX();
-
-    assert(coin.value > targetAmount, 'coin value is not enough!');
-
-    // creating a transaction that will have an output equal to what we want to fund
-    mtx.addOutput({
-      address: funderKeyring.getAddress(),
-      value: targetAmount
-    });
-
-    // the fund method will automatically split
-    // the remaining funds to the change address
-    // Note that in a real application these splitting transactions will also
-    // have to be broadcast to the network
-    await mtx.fund([coin], {
-      rate: txRate,
-      // send change back to an address belonging to the funder
-      changeAddress: funderKeyring.getAddress()
-    }).then(() => {
-      // sign the mtx to finalize split
-      mtx.sign(funderKeyring);
-      assert(mtx.verify());
-
-      const tx = mtx.toTX();
-      assert(tx.verify(mtx.view));
-
-      const outputs = tx.outputs;
-
-      // get coins from tx
-      outputs.forEach((outputs, index) => {
-        coins.push(Coin.fromTX(tx, index, -1));
-      });
-    }).catch(e => console.log('There was an error: ', e));
-
-    return coins;
-  }
-
-  async composeCrowdfund (coins) {
-    const funderCoins = {};
-    // Loop through each coinbase
-    for (let index in coins) {
-      const coinbase = coins[index][0];
-      // estimate fee for each coin (assuming their split coins will use same tx type)
-      const estimatedFee = getFeeForInput(coinbase, fundeeAddress, funders[index], txRate);
-      const targetPlusFee = amountToFund + estimatedFee;
-
-      // split the coinbase with targetAmount plus estimated fee
-      const splitCoins = await Utils.splitCoinbase(funders[index], coinbase, targetPlusFee, txRate);
-
-      // add to funderCoins object with returned coins from splitCoinbase being value,
-      // and index being the key
-      funderCoins[index] = splitCoins;
-    }
-    // ... we'll keep filling out the rest of the code here
   }
 
   async _addOutputToSpendables (coin) {
@@ -685,98 +667,16 @@ class Wallet extends Service {
     });
   }
 
-  async _generateFakeCoinbase (amount = 1) {
-    // TODO: use Satoshis for all calculations
-    let num = new BN(amount, 10);
-
-    // TODO: remove all fake coinbases
-    // TODO: remove all short-circuits
-    // fake coinbase
-    let cb = new MTX();
-    let clean = await this.generateCleanKeyPair();
-
-    // Coinbase Input
-    cb.addInput({
-      prevout: new Outpoint(),
-      script: new Script(),
-      sequence: 0xffffffff
-    });
-
-    // Add Output to pay ourselves
-    cb.addOutput({
-      address: clean.address,
-      value: 5000000000
-    });
-
-    // TODO: remove short-circuit
-    let coin = Coin.fromTX(cb, 0, -1);
-    let tx = cb.toTX();
-
-    // TODO: remove entirely, test short-circuit removal
-    // await this._addOutputToSpendables(coin);
-
-    return {
-      type: 'BitcoinTransactionOutput',
-      data: {
-        tx: cb,
-        coin: coin
-      }
-    };
-  }
-
-  async _getFreeCoinbase (amount = 1) {
-    let num = new BN(amount, 10);
-    let max = new BN('5000000000000', 10); // upper limit per coinbase
-    let hun = new BN('100000000', 10); // one hundred million
-    let value = num.mul(hun); // amount in Satoshis
-
-    if (value.gt(max)) {
-      console.warn('Value (in satoshis) higher than max:', value.toString(10), `(max was ${max.toString(10)})`);
-      value = max;
-    }
-
-    let v = value.toString(10);
-    let w = parseInt(v);
-
-    await this._load();
-
-    const coins = {};
-    const coinbase = new MTX();
-
-    // INSERT 1 Input
-    coinbase.addInput({
-      prevout: new Outpoint(),
-      script: new Script(),
-      sequence: 0xffffffff
-    });
-
-    try {
-      // INSERT 1 Output
-      coinbase.addOutput({
-        address: this._getDepositAddress(),
-        value: w
-      });
-    } catch (E) {
-      console.error('Could not add output:', E);
-    }
-
-    // TODO: wallet._getSpendableOutput()
-    let coin = Coin.fromTX(coinbase, 0, -1);
-    this._state.utxos.push(coin);
-
-    // console.log('coinbase:', coinbase);
-
-    return coinbase;
-  }
-
   /**
    * Signs a transaction with the keyring.
    * @param {BcoinTX} tx
    */
   async _sign (tx) {
     let signature = await tx.sign(this.keyring);
-    console.log('signing tx:', tx);
-    console.log('signing sig:', signature);
+    if (this.settings.verbosity >= 5 || this.settings.debug) {
+      console.log('signing tx:', tx);
+      console.log('signing sig:', signature);
+    }
     return Object.assign({}, tx, { signature });
   }
 
@@ -804,7 +704,9 @@ class Wallet extends Service {
   }
 
   async _createFromFreshSeed (passphrase = '') {
-    console.log('creating fresh seed with passphrase:', passphrase);
+    if (this.settings.verbosity >= 5) {
+      console.log('creating fresh seed with passphrase:', passphrase ? '[REDACTED]' : '');
+    }
     const key = new Key({ passphrase: passphrase });
     return {
       phrase: key.mnemonic,
@@ -815,54 +717,21 @@ class Wallet extends Service {
   }
 
   async _importSeed (seed) {
-    let mnemonic = new Mnemonic(seed);
-    return this._loadSeed(mnemonic.toString());
-  }
+    if (typeof seed !== 'string') {
+      throw new Error('Seed must be a string.');
+    }
 
-  async _createIncentivizedTransaction (config) {
-    console.log('creating incentivized transaction with config:', config);
+    const phrase = seed.trim().replace(/\s+/g, ' ');
+    if (!bip39.validateMnemonic(phrase)) {
+      throw new Error('Seed must be a valid BIP39 mnemonic phrase.');
+    }
 
-    let mtx = new MTX();
-    let data = new Script();
-    let clean = await this.generateCleanKeyPair();
-
-    data.pushSym('OP_IF');
-    data.pushSym('OP_SHA256');
-    data.pushData(Buffer.from(config.hash));
-    data.pushSym('OP_EQUALVERIFY');
-    data.pushData(Buffer.from(config.payee));
-    data.pushSym('OP_ELSE');
-    data.pushInt(config.locktime);
-    data.pushSym('OP_CHECKSEQUENCEVERIFY');
-    data.pushSym('OP_DROP');
-    data.pushData(Buffer.from(clean.public));
-    data.pushSym('OP_ENDIF');
-    data.pushSym('OP_CHECKSIG');
-    data.compile();
-
-    console.log('address data:', data);
-    let segwitAddress = await this.getAddressForScript(data);
-
-    mtx.addOutput({
-      address: segwitAddress,
-      value: 0
-    });
-
-    // TODO: load available outputs from wallet
-    let out = await mtx.fund([] /* coins */, {
-      // TODO: fee estimation
-      rate: 10000,
-      changeAddress: this.ring.getAddress()
-    });
-
-    console.log('transaction:', out);
-    return out;
+    return this._loadSeed(phrase);
   }
 
   async _getBondAddress () {
     await this._load();
 
-    let script = new Script();
     let clean = await this.generateCleanKeyPair();
 
     if (this.settings.verbosity >= 5) console.log('[AUDIT]', 'getting bond address, clean:', clean);
@@ -882,13 +751,14 @@ class Wallet extends Service {
 
   async _getSpendableOutput (target, amount = 0) {
     let self = this;
-    let key = null;
     let out = null;
     let mtx = new MTX();
 
     await this._load();
 
-    console.log('funding transaction with coins:', this._state.utxos);
+    if (this.settings.verbosity >= 5 || this.settings.debug) {
+      console.log('funding transaction with coins:', this._state.utxos);
+    }
 
     // INSERT 1 Output
     mtx.addOutput({
@@ -902,10 +772,11 @@ class Wallet extends Service {
       changeAddress: self.ring.getAddress()
     });
 
-    console.log('out:', out);
-
-    console.trace('created mutable transaction:', mtx);
-    console.trace('created immutable transaction:', mtx.toTX());
+    if (this.settings.verbosity >= 5 || this.settings.debug) {
+      console.log('out:', out);
+      console.trace('created mutable transaction:', mtx);
+      console.trace('created immutable transaction:', mtx.toTX());
+    }
 
     return {
       tx: mtx.toTX(),
@@ -922,62 +793,6 @@ class Wallet extends Service {
       sigHashType,
       version_or_flags
     );
-  }
-
-  async getRedeemTX (address, fee, fundingTX, fundingTXoutput, redeemScript, inputScript, locktime, privateKey) {
-    // Create a mutable transaction object
-    let redeemTX = new MTX();
-
-    // Get the output we want to spend (coins sent to the P2SH address)
-    let coin = Coin.fromTX(fundingTX, fundingTXoutput, -1);
-
-    // Add that coin as an input to our transaction
-    redeemTX.addCoin(coin);
-
-    // Redeem the input coin with either the swap or refund script
-    redeemTX.inputs[0].script = inputScript;
-
-    // Create the output back to our primary wallet
-    redeemTX.addOutput({
-      address: address,
-      value: coin.value - fee
-    });
-
-    // If this was a refund redemption we need to set the sequence
-    // Sequence is the relative timelock value applied to individual inputs
-    if (locktime) {
-      redeemTX.setSequence(0, locktime, this.CSV_seconds);
-    } else {
-      redeemTX.inputs[0].sequence = 0xffffffff;
-    }
-
-    // Set SIGHASH and replay protection bits
-    let version_or_flags = 0;
-    let type = null;
-
-    if (this.libName === 'bcash') {
-      version_or_flags = this.flags;
-      type = Script.hashType.SIGHASH_FORKID | Script.hashType.ALL;
-    }
-
-    // Create the signature authorizing the input script to spend the coin
-    let sig = await this.signInput(
-      redeemTX,
-      0,
-      redeemScript,
-      coin.value,
-      privateKey,
-      type,
-      version_or_flags
-    );
-
-    // Insert the signature into the input script where we had a `0` placeholder
-    inputScript.setData(0, sig);
-
-    // Finish up and return
-    inputScript.compile();
-
-    return redeemTX;
   }
 
   /**
@@ -1012,82 +827,22 @@ class Wallet extends Service {
     return inputRefund;
   }
 
-  async _createOrderForPubkey (pubkey) {
-    this.emit('log', `creating ORDER transaction with pubkey: ${pubkey}`);
-
-    let mtx = new MTX();
-    let data = new Script();
-    let clean = await this.generateCleanKeyPair();
-
-    let secret = 'fixed secret :)';
-    let sechash = require('crypto').createHash('sha256').update(secret).digest('hex');
-
-    this.emit('log', `SECRET CREATED: ${secret}`);
-    this.emit('log', `SECHASH: ${sechash}`);
-
-    data.pushSym('OP_IF');
-    data.pushSym('OP_SHA256');
-    data.pushData(Buffer.from(sechash));
-    data.pushSym('OP_EQUALVERIFY');
-    data.pushData(Buffer.from(pubkey));
-    data.pushSym('OP_ELSE');
-    data.pushInt(86400);
-    data.pushSym('OP_CHECKSEQUENCEVERIFY');
-    data.pushSym('OP_DROP');
-    data.pushData(Buffer.from(clean.public));
-    data.pushSym('OP_ENDIF');
-    data.pushSym('OP_CHECKSIG');
-    data.compile();
-
-    this.emit('log', `[AUDIT] address data: ${data}`);
-    let segwitAddress = await this.getAddressForScript(data);
-    let address = await this.getAddressFromRedeemScript(data);
-
-    this.emit('log', `[AUDIT] segwit address: ${segwitAddress}`);
-    this.emit('log', `[AUDIT] normal address: ${address}`);
-
-    mtx.addOutput({
-      address: address,
-      value: 25000000
-    });
-
-    // ensure a coin exists...
-    // NOTE: this is tracked in this._state.coins
-    // and thus does not need to be cast to a variable...
-    let coinbase = await this._getFreeCoinbase();
-
-    // TODO: load available outputs from wallet
-    let out = await mtx.fund(this._state.utxos, {
-      // TODO: fee estimation
-      rate: 10000,
-      changeAddress: this.ring.getAddress()
-    });
-
-    let tx = mtx.toTX();
-    let sig = await mtx.sign(this.ring);
-
-    this.emit('log', 'transaction:', tx);
-    this.emit('log', 'sig:', sig);
-
-    return {
-      tx: tx,
-      mtx: mtx,
-      sig: sig
-    };
-  }
-
   async _scanBlockForTransactions (block) {
-    console.log('[AUDIT]', 'Scanning block for transactions:', block);
-    let found = [];
+    if (this.settings.verbosity >= 5 || this.settings.debug) {
+      console.log('[AUDIT]', 'Scanning block for transactions:', block);
+    }
+    return [];
   }
 
   async _scanChainForTransactions (chain) {
-    console.log('[AUDIT]', 'Scanning chain for transactions:', chain);
+    if (this.settings.verbosity >= 5 || this.settings.debug) {
+      console.log('[AUDIT]', 'Scanning chain for transactions:', chain);
+    }
 
     let transactions = [];
 
     for (let i = 0; i < chain.blocks.length; i++) {
-      transactions.concat(await this._scanBlockForTransactions(chain.blocks[i]));
+      transactions = transactions.concat(await this._scanBlockForTransactions(chain.blocks[i]));
     }
 
     return transactions;
@@ -1140,7 +895,16 @@ class Wallet extends Service {
    * @param {String} input Hex-encoded string to create key from.
    */
   publicKeyFromString (input) {
-    if (input instanceof Point) {
+    if (input === null || input === undefined) {
+      return new Key({ public: input });
+    }
+    if (typeof input === 'string' || typeof input === 'number') {
+      return new Key({ public: String(input) });
+    }
+    if (Buffer.isBuffer(input) || (typeof Uint8Array !== 'undefined' && input instanceof Uint8Array)) {
+      return new Key({ public: Buffer.from(input).toString('hex') });
+    }
+    if (typeof input === 'object' && typeof input.encode === 'function') {
       return new Key({ public: input.encode('hex', true) });
     }
     return new Key({ public: input });
@@ -1196,8 +960,23 @@ class Wallet extends Service {
   }
 
   async _loadSeed (seed) {
-    this.settings.key = { seed };
-    await this._load();
+    if (typeof seed !== 'string') {
+      throw new Error('Seed must be a string.');
+    }
+
+    const phrase = seed.trim().replace(/\s+/g, ' ');
+    if (!bip39.validateMnemonic(phrase)) {
+      throw new Error('Seed must be a valid BIP39 mnemonic phrase.');
+    }
+
+    this.settings.key = { seed: phrase };
+    if (typeof this._load === 'function') {
+      await this._load();
+    } else {
+      // Legacy fallback for runtimes that initialize directly from key settings.
+      this.key = new Key({ seed: phrase });
+      this.seed = this.key.seed;
+    }
     return this.seed;
   }
 
@@ -1264,6 +1043,17 @@ class Wallet extends Service {
       }
     }
     return addresses;
+  }
+
+  /**
+   * L1 / hub document purchase binding: same 64-char hex as hub `CreatePurchaseInvoice` / HTLC `contentHash`.
+   * @param {string} documentId
+   * @param {object} parsed Whitelisted document fields (see {@link Peer#_buildDocumentParsedForPublish}).
+   * @returns {string}
+   */
+  static purchaseContentHashHex (documentId, parsed) {
+    const { purchaseContentHashHex: hashFn } = require('../functions/publishedDocumentEnvelope');
+    return hashFn(documentId, parsed);
   }
 }
 

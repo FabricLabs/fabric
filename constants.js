@@ -12,7 +12,7 @@ const MAX_PEERS = 32;
 const PRECISION = 100;
 
 // Fabric Core
-const FABRIC_USER_AGENT = 'Fabric Core 0.1.0 (@fabric/core#v0.1.0-RC1)';
+const FABRIC_USER_AGENT = 'Fabric Core 0.1.0 (@fabric/core#v0.1.0-RC2)';
 const BITCOIN_NETWORK = 'mainnet';
 const BITCOIN_GENESIS = '000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f';
 const BITCOIN_GENESIS_ROOT = '4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b';
@@ -23,10 +23,13 @@ const FIXTURE_XPRV = 'xprv9s21ZrQH143K2cCWaTZPjPDwac1CzTW4LKMfzLFEMNZJUoDYppxpyP
 
 // Message Constants
 const MAGIC_BYTES = 0xC0D3F33D;
-const VERSION_NUMBER = 0x01; // 0 for development, pre-alpha, 1 for production
-const HEADER_SIZE = 176; // [4], [4], [32], [32], [4], [4], [32], [64] bytes
+const VERSION_NUMBER = 0x02; // bumped for 208-byte header (optional preimage field)
+/* magic, version, parent, author, type, size, hash, preimage, signature — then body */
+const HEADER_SIZE = 208;
 const LARGE_COLLECTION_SIZE = 10; // TODO: test with 1,000,000
 const MAX_MESSAGE_SIZE = 4096 - HEADER_SIZE;
+/** Max UTF-16 code units accepted for `JSON.parse` of locally persisted JSON (LevelDB peer registry, CLI STATE file). */
+const PERSISTED_JSON_MAX_CHARS = 2 * 1024 * 1024;
 
 // Stacks and Frames
 const MAX_STACK_HEIGHT = 32; // max height of stack (number of elements)
@@ -44,11 +47,19 @@ const FABRIC_PLAYNET_ADDRESS = ''; // deposit address (P2TR)
 const FABRIC_PLAYNET_ORIGIN = ''; // block hash of first deploy
 
 // FABRIC ONLY
+const BITCOIN_BLOCK_TYPE = 21000;
+const BITCOIN_BLOCK_HASH_TYPE = 21100;
+const BITCOIN_TRANSACTION_TYPE = 22000;
+const BITCOIN_TRANSACTION_HASH_TYPE = 22100;
 const GENERIC_MESSAGE_TYPE = 15103;
 const LOG_MESSAGE_TYPE = 3235156080;
 const GENERIC_LIST_TYPE = 3235170158;
 const DOCUMENT_PUBLISH_TYPE = 998;
 const DOCUMENT_REQUEST_TYPE = 999;
+const JSON_CALL_TYPE = 16000;
+const PATCH_MESSAGE_TYPE = 1024;
+/** Contract negotiation: batched Fabric messages + chain Merkle root + JSON Patch (RFC 6902) — see docs/CONTRACT_PROPOSAL.md */
+const CONTRACT_PROPOSAL_TYPE = 138; // 0x8A (POLICY.md / FABRIC_MESSAGE_TYPE_CONSOLIDATION)
 
 // Opcodes
 const OP_CYCLE = '00';
@@ -72,6 +83,23 @@ const BECH32M_CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
 
 // Peering
 const P2P_PORT = 7777;
+// Gossip and peering discovery (WebRTC + Fabric P2P)
+const P2P_PEER_GOSSIP = 'P2P_PEER_GOSSIP'; // Gossip known peers for cross-cluster discovery
+const P2P_PEERING_OFFER = 'P2P_PEERING_OFFER'; // Peer needs more connections; gossiped until fulfilled
+/** Max gossip relays per logical hop (anti amplification). */
+const GOSSIP_MAX_HOPS = 5;
+/** Per-origin relay budget per rolling minute (anti flood). */
+const GOSSIP_MAX_RELAYS_PER_ORIGIN_PER_MINUTE = 60;
+/** Max entries for logical gossip payload dedup (excluding hop/signature churn). */
+const GOSSIP_MAX_PAYLOAD_CACHE = 50000;
+/** Peering-offer relay: same defaults as gossip (separate caches / rate map). */
+const PEERING_OFFER_MAX_HOPS = 5;
+const PEERING_OFFER_MAX_RELAYS_PER_ORIGIN_PER_MINUTE = 60;
+const PEERING_OFFER_MAX_PAYLOAD_CACHE = 50000;
+/** Max queued connection candidates from {@link P2P_PEERING_OFFER} (FIFO eviction). */
+const PEER_MAX_CANDIDATES_QUEUE = 128;
+/** Max wire-hash dedup entries in {@link Peer} (bounded memory). */
+const PEER_MAX_WIRE_HASH_CACHE = 10000;
 const P2P_GENERIC = 0x80; // 128 in decimal
 const P2P_IDENT_REQUEST = 0x01; // 1, or the identity
 const P2P_IDENT_RESPONSE = 0x11;
@@ -87,7 +115,11 @@ const P2P_STATE_COMMITTMENT = 0x00000032; // TODO: select w/ no overlap
 const P2P_STATE_CHANGE = 0x00000033; // TODO: select w/ no overlap
 const P2P_TRANSACTION = 0x00000039; // TODO: select w/ no overlap
 const P2P_CALL = 0x00000042;
+const P2P_RELAY = 0x00000043; // Relay envelope for onion routing; preserves original message + signature
+const P2P_MESSAGE_RECEIPT = 0x00000044; // Ack/receipt for a processed inbound message (WebSocket / P2P)
 const P2P_CHAIN_SYNC_REQUEST = 0x55;
+/** Playnet / federation: rewind bitcoind to a known-good tip; relay only to highly trusted peers. */
+const P2P_FLUSH_CHAIN = 0x56;
 const P2P_SESSION_ACK = 0x4200;
 const P2P_MUSIG_START = 0x4220;
 const P2P_MUSIG_ACCEPT = 0x4221;
@@ -108,6 +140,35 @@ const CHAT_MESSAGE = 0x67;
 const LIGHTNING_TEST_HEADER = 'D0520C6E';
 const LIGHTNING_PROTOCOL_H_INIT = 'Noise_XK_secp256k1_ChaChaPoly_SHA256';
 const LIGHTNING_PROTOCOL_PROLOGUE = 'lightning';
+
+// Lightning BOLT Message Types (subset)
+// Setup & Control
+const LIGHTNING_WARNING = 0x00000001; // 1
+const LIGHTNING_INIT = 0x00000010; // 16
+const LIGHTNING_ERROR = 0x00000011; // 17
+const LIGHTNING_PING = 0x00000012; // 18 (alias of P2P_PING)
+const LIGHTNING_PONG = 0x00000013; // 19 (alias of P2P_PONG)
+
+// Channel Management
+const LIGHTNING_OPEN_CHANNEL = 0x00000020; // 32
+const LIGHTNING_ACCEPT_CHANNEL = 0x00000021; // 33
+const LIGHTNING_FUNDING_CREATED = 0x00000022; // 34
+const LIGHTNING_FUNDING_SIGNED = 0x00000023; // 35
+const LIGHTNING_CHANNEL_READY = 0x00000024; // 36
+const LIGHTNING_SHUTDOWN = 0x00000026; // 38
+const LIGHTNING_CLOSING_SIGNED = 0x00000027; // 39
+
+// Payment Messages
+const LIGHTNING_UPDATE_ADD_HTLC = 0x00000080; // 128
+const LIGHTNING_UPDATE_FULFILL_HTLC = 0x00000082; // 130
+const LIGHTNING_UPDATE_FAIL_HTLC = 0x00000083; // 131
+const LIGHTNING_COMMITMENT_SIGNED = 0x00000084; // 132
+const LIGHTNING_REVOKE_AND_ACK = 0x00000085; // 133
+
+// Gossip Protocol
+const LIGHTNING_CHANNEL_ANNOUNCEMENT = 0x00000100; // 256
+const LIGHTNING_NODE_ANNOUNCEMENT = 0x00000101; // 257
+const LIGHTNING_CHANNEL_UPDATE = 0x00000102; // 258
 
 // Lightning BMM
 const LIGHTNING_BMM_HEADER = 'D0520C6E';
@@ -139,6 +200,10 @@ module.exports = {
   FIXTURE_XPUB,
   FIXTURE_XPRV,
   HEADER_SIZE,
+  BITCOIN_BLOCK_TYPE,
+  BITCOIN_BLOCK_HASH_TYPE,
+  BITCOIN_TRANSACTION_TYPE,
+  BITCOIN_TRANSACTION_HASH_TYPE,
   GENERIC_MESSAGE_TYPE,
   LOG_MESSAGE_TYPE,
   GENERIC_LIST_TYPE,
@@ -153,6 +218,26 @@ module.exports = {
   LIGHTNING_TEST_HEADER,
   LIGHTNING_PROTOCOL_H_INIT,
   LIGHTNING_PROTOCOL_PROLOGUE,
+  LIGHTNING_WARNING,
+  LIGHTNING_INIT,
+  LIGHTNING_ERROR,
+  LIGHTNING_PING,
+  LIGHTNING_PONG,
+  LIGHTNING_OPEN_CHANNEL,
+  LIGHTNING_ACCEPT_CHANNEL,
+  LIGHTNING_FUNDING_CREATED,
+  LIGHTNING_FUNDING_SIGNED,
+  LIGHTNING_CHANNEL_READY,
+  LIGHTNING_SHUTDOWN,
+  LIGHTNING_CLOSING_SIGNED,
+  LIGHTNING_UPDATE_ADD_HTLC,
+  LIGHTNING_UPDATE_FULFILL_HTLC,
+  LIGHTNING_UPDATE_FAIL_HTLC,
+  LIGHTNING_COMMITMENT_SIGNED,
+  LIGHTNING_REVOKE_AND_ACK,
+  LIGHTNING_CHANNEL_ANNOUNCEMENT,
+  LIGHTNING_NODE_ANNOUNCEMENT,
+  LIGHTNING_CHANNEL_UPDATE,
   LIGHTNING_BMM_HEADER,
   LIGHTNING_SIDECHAIN_NUM,
   LIGHTNING_SIDEBLOCK_HASH,
@@ -162,6 +247,7 @@ module.exports = {
   MAX_FRAME_SIZE,
   MAX_MEMORY_ALLOC,
   MAX_MESSAGE_SIZE,
+  PERSISTED_JSON_MAX_CHARS,
   MAX_STACK_HEIGHT,
   MAX_CHANNEL_VALUE,
   MAX_CHAT_MESSAGE_LENGTH,
@@ -181,9 +267,20 @@ module.exports = {
   OP_EQUALVERIFY,
   OP_SEPARATOR,
   P2P_GENERIC,
+  P2P_PEER_GOSSIP,
+  P2P_PEERING_OFFER,
+  GOSSIP_MAX_HOPS,
+  GOSSIP_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
+  GOSSIP_MAX_PAYLOAD_CACHE,
+  PEERING_OFFER_MAX_HOPS,
+  PEERING_OFFER_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
+  PEERING_OFFER_MAX_PAYLOAD_CACHE,
+  PEER_MAX_CANDIDATES_QUEUE,
+  PEER_MAX_WIRE_HASH_CACHE,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
   P2P_CHAIN_SYNC_REQUEST,
+  P2P_FLUSH_CHAIN,
   P2P_ROOT,
   P2P_PING,
   P2P_PONG,
@@ -197,6 +294,8 @@ module.exports = {
   P2P_STATE_REQUEST,
   P2P_TRANSACTION,
   P2P_CALL,
+  P2P_RELAY,
+  P2P_MESSAGE_RECEIPT,
   P2P_SESSION_ACK,
   P2P_MUSIG_START,
   P2P_MUSIG_ACCEPT,
@@ -207,6 +306,9 @@ module.exports = {
   PEER_CANDIDATE,
   DOCUMENT_PUBLISH_TYPE,
   DOCUMENT_REQUEST_TYPE,
+  JSON_CALL_TYPE,
+  PATCH_MESSAGE_TYPE,
+  CONTRACT_PROPOSAL_TYPE,
   SESSION_START,
   VERSION_NUMBER
 };

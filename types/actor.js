@@ -1,7 +1,30 @@
 'use strict';
 
+/**
+ * @fileoverview Base <strong>Actor</strong> type for Fabric: JSON-shaped state, JSON Patch commits, and a
+ * content-derived <strong>id</strong>.
+ *
+ * <p><strong>State</strong> — <code>_state.content</code> is observed with <code>fast-json-patch</code>.
+ * {@link Actor#commit} turns observer diffs into {@link Actor#history} entries and emits <code>commit</code> plus
+ * <code>message</code> with <code>type: 'ActorMessage'</code> / <code>data.type: 'Changes'</code>.</p>
+ *
+ * <p><strong>Identity</strong> — {@link Actor#id} is a SHA256 digest (hex) of the 32-byte preimage buffer;
+ * {@link Actor#preimage} is SHA256(UTF-8) of the pretty-printed {@link Actor#toGenericMessage}
+ * <code>{ type, object }</code> with sorted keys ({@link Actor#toObject}). Implementation uses {@link Hash256.compute}.
+ * Treat <code>id</code> as a <strong>content address</strong> for that state shape, not an arbitrary application string hash.</p>
+ *
+ * <p><strong>Relationship to {@link Message}</strong> — <code>Message</code> extends <code>Actor</code> and implements
+ * <strong>AMP</strong> (wire headers, opcodes, Schnorr <code>Fabric/Message</code>). Downstream apps that only need a stable
+ * storage key should not label that key <code>Actor#id</code> unless it is produced by this type.</p>
+ *
+ * <p>Narrative docs: <strong>DEVELOPERS.md</strong> (section <em>Actor and Message</em>) and this file’s class JSDoc are
+ * kept in sync; <code>npm run make:docs</code> embeds DEVELOPERS.md as the HTML home page, while Actor.html is generated
+ * from here.</p>
+ */
+
 // Generics
 const EventEmitter = require('events');
+// const stream = require('node:stream/promises');
 
 // Dependencies
 const monitor = require('fast-json-patch');
@@ -12,13 +35,25 @@ const Hash256 = require('./hash256');
 
 // Fabric Functions
 const _sortKeys = require('../functions/_sortKeys');
+const { tryParsePersistedJson } = require('../functions/wireJson');
 
 /**
- * Generic Fabric Actor.
+ * @classdesc Base <strong>Actor</strong>: JSON-shaped <code>_state.content</code> observed with
+ * <code>fast-json-patch</code>; {@link Actor#commit} turns diffs into {@link Actor#history} and emits
+ * <code>commit</code> plus <code>message</code> (<code>type: 'ActorMessage'</code>, <code>data.type: 'Changes'</code>).
+ * <strong>Identity</strong> — {@link Actor#id} is SHA256(hex) of the 32-byte preimage buffer; {@link Actor#preimage} is
+ * SHA256(UTF-8) of pretty-printed {@link Actor#toGenericMessage} <code>{ type, object }</code> with sorted keys
+ * ({@link Actor#toObject}); uses {@link Hash256.compute}. Treat <code>id</code> as a <strong>content address</strong>, not an
+ * arbitrary app string hash. <strong>Wire traffic</strong> — see {@link Message} (extends Actor, AMP). Same narrative as
+ * <strong>DEVELOPERS.md</strong> (<em>Actor and Message</em>) and <code>@fileoverview</code> above (also on
+ * <code>types_actor.js.html</code> source page).
+ * @class Actor
+ * @extends EventEmitter
  * @access protected
- * @emits message Fabric {@link Message} objects.
- * @property {String} id Unique identifier for this Actor (id === SHA256(preimage)).
- * @property {String} preimage Input hash for the `id` property (preimage === SHA256(ActorState)).
+ * @fires Actor#commit
+ * @emits message Emits structured objects; on {@link Actor#commit}, <code>type: 'ActorMessage'</code> with patch metadata (not necessarily a {@link Message} AMP instance).
+ * @property {String} id 64-char hex: SHA256 of the 32-byte digest represented by {@link Actor#preimage}.
+ * @property {String} preimage 64-char hex: SHA256 of UTF-8 pretty JSON of {@link Actor#toGenericMessage}.
  */
 class Actor extends EventEmitter {
   /**
@@ -27,7 +62,7 @@ class Actor extends EventEmitter {
    * for the actor, including key material [!!!] — be mindful of
    * what you share with others!
    * @param {Object} [actor] Object to use as the actor.
-   * @param {String} [actor.seed] BIP24 Mnemonic to use as a seed phrase.
+   * @param {String} [actor.seed] Optional mnemonic or seed string stored into state (see BIP39 / wallet docs — not validated here).
    * @param {Buffer} [actor.public] Public key.
    * @param {Buffer} [actor.private] Private key.
    * @returns {Actor} Instance of the Actor.  Call {@link Actor#sign} to emit a {@link Signature}.
@@ -102,14 +137,8 @@ class Actor extends EventEmitter {
     let result = null;
 
     if (typeof input === 'string' && input.length) {
-      console.log('trying to parse as JSON:', input);
-      try {
-        result = JSON.parse(input);
-      } catch (E) {
-        console.error('Failure in fromJSON:', E);
-      }
-    } else {
-      console.trace('Invalid input:', typeof input);
+      const pr = tryParsePersistedJson(input);
+      result = pr.ok ? pr.value : null;
     }
 
     return result;
@@ -257,7 +286,6 @@ class Actor extends EventEmitter {
     ];
 
     monitor.applyPatch(this._state.content, patches);
-    console.log('new state:', this._state.content);
     this.commit();
 
     return this;
@@ -281,6 +309,35 @@ class Actor extends EventEmitter {
   }
 
   /**
+   * Returns a new output stream for the Actor.
+   * @param {TransformStream} [pipe] Pipe to stream to.
+   * @returns {TransformStream} New output stream for the Actor.
+   */
+  stream (pipe) {
+    if (pipe) {
+      //
+      const stream = new stream.Transform({
+        transform (chunk, encoding, done) {
+          done(null, chunk);
+        }
+      });
+
+      // TODO: test this
+      // 1. Stream to the output pipe
+      stream.pipe(pipe);
+
+      // 2. Stream to the actor
+      this.stream.pipe(stream);
+
+      return stream;
+    } else {
+      return this.stream;
+    }
+
+    return this.stream;
+  }
+
+  /**
    * Casts the Actor to a normalized Buffer.
    * @returns {Buffer}
    */
@@ -289,17 +346,19 @@ class Actor extends EventEmitter {
   }
 
   /**
-   * Casts the Actor to a generic message, used to uniquely identify the Actor's state.
-   * Fields:
-   * - `type`: 'FabricActorState'
-   * - `object`: state
+   * Casts the Actor to a generic message envelope for state announcements and history.
+   * Shape is stable: `{ type, object }` where `object` is sorted-key state ({@link Actor#toObject}).
+   * {@link Actor#id} derives from a digest of the pretty-printed generic message; extending this
+   * envelope requires a format/version migration across the network.
+   * @param {String} [type='FabricActorState'] Logical message type string.
    * @see {@link https://en.wikipedia.org/wiki/Merkle_tree}
    * @see {@link https://dev.fabric.pub/messages}
-   * @returns {Object} Generic message object.
+   * @returns {Object} `{ type, object }`
    */
   toGenericMessage (type = 'FabricActorState') {
+    const messageType = type || 'FabricActorState';
     return {
-      type: 'FabricActorState',
+      type: messageType,
       object: this.toObject()
     };
   }
@@ -427,7 +486,7 @@ class Actor extends EventEmitter {
     return this.state;
   }
 
-  _handleMonitorChanges (changes) {
+  _handleMonitorChanges (_changes) {
     // TODO: emit global state event here
     // after verify, commit
   }

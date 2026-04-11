@@ -1,8 +1,5 @@
 'use strict';
 
-const Collection = require('./collection');
-const EncryptedPromise = require('./promise');
-const Entity = require('./entity');
 const Machine = require('./machine');
 const Router = require('./router');
 const Service = require('./service');

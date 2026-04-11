@@ -11,7 +11,7 @@ module.exports = function html (input) {
   try {
     const actor = new Actor(input);
     return actor.toHTML();
-  } catch (exception) {
+  } catch {
     return '<html>Error!</html>\n';
   }
 };

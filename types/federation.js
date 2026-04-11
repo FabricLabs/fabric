@@ -4,7 +4,7 @@
 const merge = require('lodash.merge');
 const { run } = require('minsc');
 const crypto = require('crypto');
-const ecc = require('tiny-secp256k1');
+const ecc = require('./ecc');
 const bitcoin = require('bitcoinjs-lib');
 
 // Fabric Types
@@ -13,7 +13,7 @@ const Key = require('./key');
 const Wallet = require('./wallet');
 
 /**
- * Create and manage sets of signers with the Federation class.
+ * Create and manage sets of {Signer} instances with the Federation class.
  */
 class Federation extends Contract {
   /**
@@ -30,7 +30,7 @@ class Federation extends Contract {
       consensus: {
         validators: []
       },
-      identity: {
+      key: {
         password: '', // derivation password
         seed: null, // seed phrase (!!!)
         xprv: null, // avoid using seed phrase
@@ -40,8 +40,8 @@ class Federation extends Contract {
     }, settings);
 
     // Internal Key
-    this.key = new Key(this.settings.identity);
-    this.wallet = new Wallet(this.settings.identity);
+    this.key = new Key(this.settings.key);
+    this.wallet = new Wallet(this.settings.key);
 
     // Internal State
     this._state = {
@@ -132,7 +132,7 @@ class Federation extends Contract {
     return null;
   }
 
-  tick (input = {}) {
+  tick (_input = {}) {
     this._state.content.clock++;
   }
 
@@ -278,7 +278,7 @@ class Federation extends Contract {
         // Ensure signature is a Buffer
         const sigBuffer = Buffer.isBuffer(signature) ? signature : Buffer.from(signature);
 
-        // Verify using tiny-secp256k1's Schnorr implementation
+        // Verify using noble-curves Schnorr (BIP340)
         if (ecc.verifySchnorr(messageHash, xOnlyPubkey, sigBuffer)) {
           validCount++;
           if (validCount >= threshold) {

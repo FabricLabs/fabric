@@ -1,9 +1,12 @@
 'use strict';
 
+const { tryParsePersistedJson } = require('../functions/wireJson');
+
 // Dependencies
 const fs = require('fs');
 const path = require('path');
 const mkdirp = require('mkdirp');
+//const chokidar = require('chokidar');
 
 // Fabric Types
 const Actor = require('./actor');
@@ -108,7 +111,7 @@ class Filesystem extends Actor {
 
       try {
         fs.utimesSync(path, time, time);
-      } catch (err) {
+      } catch {
         fs.closeSync(fs.openSync(path, 'w'));
       }
     }
@@ -183,31 +186,43 @@ class Filesystem extends Actor {
    * @returns {Promise} Resolves with Filesystem instance.
    */
   _loadFromDisk () {
-    const self = this;
     return new Promise((resolve, reject) => {
       try {
         // Check for STATE file in .fabric directory
-        const statePath = path.join(self.path, '.fabric', 'STATE');
+        const statePath = path.join(this.path, '.fabric', 'STATE');
         if (fs.existsSync(statePath)) {
-          const stateHex = fs.readFileSync(statePath, 'utf8');
-          const stateBuffer = Buffer.from(stateHex, 'hex');
-          const state = JSON.parse(stateBuffer.toString());
-          self._state.content = state;
+          const stateHex = fs.readFileSync(statePath, 'utf8').trim();
+          if (stateHex.length > 0) {
+            try {
+              const stateBuffer = Buffer.from(stateHex, 'hex');
+              const stateStr = stateBuffer.toString('utf8');
+              if (stateStr.length > 0) {
+                const pr = tryParsePersistedJson(stateStr);
+                if (pr.ok) this._state.content = pr.value;
+                else throw pr.error;
+              }
+            } catch (parseErr) {
+              // STATE file is empty, truncated, or corrupted; use default state
+              if (this.settings.debug) {
+                console.debug('[FILESYSTEM]', 'STATE file invalid, using default:', parseErr.message);
+              }
+            }
+          }
         }
 
-        const files = fs.readdirSync(self.path);
-        self._state.content.files = files.filter(file => file !== '.fabric');
-        self.commit();
+        const files = fs.readdirSync(this.path);
+        this._state.content.files = files.filter(file => file !== '.fabric');
+        this.commit();
 
-        resolve(self);
+        resolve(this);
       } catch (exception) {
-        self.emit('error', exception);
+        this.emit('error', exception);
         reject(exception);
       }
     });
   }
 
-  async ingest (document, name = null) {
+  async ingest (document, _name = null) {
     if (typeof document !== 'string') {
       document = JSON.stringify(document);
     }
@@ -235,7 +250,7 @@ class Filesystem extends Actor {
     this.writeFile(name, content);
 
     // Ensure changes are persisted
-    await this.sync();
+    await this.synchronize();
 
     return {
       id: actor.id,
@@ -252,12 +267,18 @@ class Filesystem extends Actor {
     this.touchDir(fabricPath);
 
     this.touchDir(this.path); // ensure exists
-    this.sync();
 
-    fs.watch(this.path, {
+    // Load from disk
+    await this._loadFromDisk();
+
+    // Watch for changes in the filesystem
+    /* chokidar.watch(this.path, {
+      ignoreInitial: true,
       persistent: false,
-      recursive: true
-    }, this._handleDiskChange.bind(this));
+      ignored: /(^|[/\\])\.fabric([/\\]|$)/ // ignore .fabric directory
+    }).on('all', (event, filePath) => {
+      this._handleDiskChange(event, filePath);
+    }); */
 
     this._state.content.status = 'STARTED';
     this.commit();
@@ -271,10 +292,10 @@ class Filesystem extends Actor {
   }
 
   /**
-   * Syncronize state from the local filesystem.
+   * Synchronize state from the local filesystem.
    * @returns {Filesystem} Instance of the Fabric filesystem.
    */
-  async sync () {
+  async synchronize () {
     await this._loadFromDisk();
     this.commit();
     return this;
@@ -309,13 +330,12 @@ class Filesystem extends Actor {
   commit () {
     const state = new Actor(this.state);
 
-    // Store current state's hash as parent
-    this._state.content.parent = state.id;
-
     // Write state to STATE file using absolute path
     const statePath = path.resolve(this.path, '.fabric', 'STATE');
+    // console.debug('[FILESYSTEM]', 'Writing state:', this.state);
     const stateHex = Buffer.from(JSON.stringify(this.state)).toString('hex');
     this.writeFile(statePath, stateHex);
+    this.writeFile(statePath + '.json', JSON.stringify(this.state, null, '  '));
 
     const commit = Message.fromVector(['COMMIT', state]);
     commit.signatures = commit.signatures || [];
@@ -328,6 +348,23 @@ class Filesystem extends Actor {
     }
 
     this.emit('commit', commit);
+  }
+
+  /**
+   * Synchronize the filesystem with the local state.
+   * @returns {Promise} Resolves with Filesystem instance.
+   */
+  sync () {
+    return new Promise((resolve, reject) => {
+      try {
+        this.synchronize().then(() => {
+          resolve(this);
+        });
+      } catch (exception) {
+        this.emit('error', exception);
+        reject(exception);
+      }
+    });
   }
 }
 

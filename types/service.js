@@ -1,7 +1,7 @@
 'use strict';
 
 const PATCHES_ENABLED = true;
-const OP_TRACE = require('../contracts/trace');
+const { tryParsePersistedJson, tryParseWireJson, utf8FromPersistedRaw } = require('../functions/wireJson');
 
 // Dependencies
 const crypto = require('crypto');
@@ -19,6 +19,7 @@ const manager = require('fast-json-patch');
 const Actor = require('./actor');
 const Collection = require('./collection');
 const Entity = require('./entity');
+const Filesystem = require('./filesystem');
 const Hash256 = require('./hash256');
 const Identity = require('./identity');
 const Key = require('./key');
@@ -27,14 +28,11 @@ const Resource = require('./resource');
 const Store = require('./store');
 
 /**
- * The "Service" is a simple model for processing messages in a distributed
- * system.  {@link Service} instances are public interfaces for outside systems,
- * and typically advertise their presence to the network.
- *
- * To implement a Service, you will typically need to implement all methods from
- * this prototype.  In general, `connect` and `send` are the highest-priority
- * jobs, and by default the `fabric` property will serve as an I/O stream using
- * familiar semantics.
+ * @classdesc Long-lived application surface extending {@link Actor}. Integrates external systems and the Fabric
+ * network: peers consume and produce {@link Message} (AMP) instances, not ad-hoc JSON. Subclasses implement routing,
+ * resources, and lifecycle (<code>start</code>/<code>stop</code> patterns — see <strong>AGENTS.md</strong>). The CLI/browser shell is {@link Service.FabricShell}.
+ * @class Service
+ * @extends Actor
  * @access protected
  * @property map The "map" is a hashtable of "key" => "value" pairs.
  */
@@ -47,7 +45,7 @@ class Service extends Actor {
    * @param {Object} [settings.state] Initial state to assign.
    */
   constructor (settings = {}) {
-    // Initialize Scribe, our logging tool
+    // State (extends Actor) carries logging / lifecycle helpers formerly on Scribe
     super(settings);
 
     this.name = this.constructor.name;
@@ -68,6 +66,7 @@ class Service extends Actor {
       fs: {
         path: `./stores/fabric-service-${this.name}`
       },
+      key: null,
       state: {
         ...super.state,
         actors: {}, // TODO: schema
@@ -110,12 +109,13 @@ class Service extends Actor {
     //          Error: Not implemented yet
     this.key = new Key(this.settings.key);
     this.identity = new Identity(this.settings.key);
+    this.fs = new Filesystem({ ...this.settings.fs, key: this.settings.key });
 
     if (this.settings.persistent) {
       try {
         this.store = new Store(this.settings);
       } catch (E) {
-        console.error('Store Error:', E);
+        this.emit('error', `Store Error: ${E.message || E}`);
       }
     }
 
@@ -142,17 +142,18 @@ class Service extends Actor {
       _ttl: new Map(),
       get: async (key) => {
         const now = Date.now();
-        const ttl = this.cache._ttl.get(key);
-        if (ttl && ttl < now) {
+        const expiresAt = this.cache._ttl.get(key);
+        if (expiresAt !== undefined && expiresAt < now) {
           this.cache._data.delete(key);
           this.cache._ttl.delete(key);
           return null;
         }
         return this.cache._data.get(key);
       },
-      set: async (key, value, ttl = 60000) => {
+      /** @param {string} key @param {*} value @param {number} [ttlMs=60000] time-to-live in milliseconds */
+      set: async (key, value, ttlMs = 60000) => {
         this.cache._data.set(key, value);
-        this.cache._ttl.set(key, Date.now() + ttl);
+        this.cache._ttl.set(key, Date.now() + ttlMs);
       }
     };
 
@@ -234,12 +235,12 @@ class Service extends Actor {
 
     try {
       plugin = require(local);
-    } catch (E) {
-      console.log('could not load main:', E);
+    } catch {
+      // Avoid direct stdout writes from library internals.
       try {
         plugin = require(fallback);
-      } catch (E) {
-        console.log('Fallback service failed to load:', E);
+      } catch {
+        // no-op: return null plugin below
       }
     }
 
@@ -252,12 +253,21 @@ class Service extends Actor {
     for (const [name, service] of Object.entries(this.services)) {
       if (!this.settings.services.includes(name)) continue;
       if (!service.alert) {
-        console.error('Service', name, 'does not have an alert function?');
+        this.emit('warning', `Service ${name} does not have an alert function`);
         continue;
       }
 
       service.alert(msg);
     }
+  }
+
+  /**
+   * @param {String} msg Warning text (used by {@link Service#_registerService} duplicate guard).
+   * @returns {Service} This instance.
+   */
+  _appendWarning (msg) {
+    this.emit('warning', msg);
+    return this;
   }
 
   identify () {
@@ -301,17 +311,18 @@ class Service extends Actor {
 
     if (!beat) {
       this.emit('error', 'Beat could not construct a Message!');
-      console.trace();
-      process.exit();
+      throw new Error('Beat could not construct a Message');
     }
 
     // TODO: remove JSON parser here — only needed for verification
     // TODO: parse JSON types in @fabric/core/types/message
-    let data = beat.data;
+    const data = beat.data;
 
     try {
-      const parsed = JSON.parse(data);
-      data = JSON.stringify(parsed, null, '  ');
+      const pr = tryParseWireJson(typeof data === 'string' ? data : String(data ?? ''));
+      if (!pr.ok) {
+        this.emit('error', `Exception parsing beat: ${pr.error.message}`);
+      }
     } catch (exception) {
       this.emit('error', `Exception parsing beat: ${exception}`);
     }
@@ -336,7 +347,7 @@ class Service extends Actor {
     try {
       result = pointer.get(this._state.content, path);
     } catch (exception) {
-      console.error('[FABRIC:STATE]', 'Could not retrieve path:', path, pointer.get(this['@entity']['@data'], '/'), exception);
+      this.emit('error', `[FABRIC:STATE] Could not retrieve path ${path}: ${exception.message || exception}`);
     }
     return result;
   }
@@ -363,8 +374,9 @@ class Service extends Actor {
    * @param  {EventEmitter} source Emitter of events.
    * @return {Service} Instance of Service after binding events.
    */
-  trust (source, name = source.constructor.name) {
-    if (!(source instanceof EventEmitter)) throw new Error('Source is not an EventEmitter.')
+  trust (source, name) {
+    if (!(source instanceof EventEmitter)) throw new Error('Source is not an EventEmitter.');
+    const label = name != null && name !== '' ? String(name) : source.constructor.name;
 
     // Constants
     const self = this;
@@ -372,7 +384,7 @@ class Service extends Actor {
     // Attach Event Listeners
     if (source.settings && source.settings.debug) source.on('debug', this._handleTrustedDebug.bind(this));
     if (source.settings && source.settings.verbosity >= 0) {
-      source.on('audit', async function _handleTrustedAudit (audit) {
+      source.on('audit', async function _handleTrustedAudit (_audit) {
         /*
         const now = (new Date()).toISOString();
         const template = {
@@ -389,23 +401,23 @@ class Service extends Actor {
 
     return {
       _handleActor: source.on('actor', async function (actor) {
-        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted actor: ${JSON.stringify(actor, null, '  ')}`);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${label}" emitted actor: ${JSON.stringify(actor, null, '  ')}`);
       }),
       _handleAlert: source.on('alert', async function (alert) {
-        self.alert(`[FABRIC:SERVICE] [ALERT] [!!!] ${name} alerted: ${alert}`);
+        self.alert(`[FABRIC:SERVICE] [ALERT] [!!!] ${label} alerted: ${alert}`);
       }),
       _handleBeat: source.on('beat', async function (beat) {
-        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted beat: ${JSON.stringify(beat, null, '  ')}`);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${label}" emitted beat: ${JSON.stringify(beat, null, '  ')}`);
 
-        const ops = [
+        const _ops = [
           { op: 'add', path: `/actors`, value: {} },
           { op: 'add', path: `/services`, value: {} },
-          { op: 'replace', path: `/services/${name}`, value: beat.state }
+          { op: 'replace', path: `/services/${label}`, value: beat.state }
         ];
 
         /*
         try {
-          manager.applyPatch(self._state.content, ops);
+          manager.applyPatch(self._state.content, _ops);
           await self.commit();
         } catch (exception) {
           self.emit('warning', `Could not process beat: ${exception}`);
@@ -413,37 +425,37 @@ class Service extends Actor {
         */
       }),
       _handleChanges: source.on('changes', async function (changes) {
-        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted changes: ${changes}`);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${label}" emitted changes: ${changes}`);
       }),
       _handleChannel: source.on('channel', async function (channel) {
-        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted channel: ${JSON.stringify(channel, null, '  ')}`);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${label}" emitted channel: ${JSON.stringify(channel, null, '  ')}`);
       }),
       _handleCommit: source.on('commit', async function (commit) {
-        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" committed: ${JSON.stringify(commit, null, '  ')}`);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${label}" committed: ${JSON.stringify(commit, null, '  ')}`);
       }),
       _handleError: source.on('error', async function _handleTrustedError (error) {
-        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted error: ${error}`);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${label}" emitted error: ${error}`);
       }),
       _handleLog: source.on('log', async function _handleTrustedLog (log) {
-        if (self.settings.debug) self.emit('log', `[FABRIC:SERVICE] Source "${name}" emitted log: ${log}`);
+        if (self.settings.debug) self.emit('log', `[FABRIC:SERVICE] Source "${label}" emitted log: ${log}`);
       }),
       _handleMessage: source.on('message', async function (message) {
-        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted message: ${JSON.stringify(message.toObject ? message.toObject() : message, null, '  ')}`);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${label}" emitted message: ${JSON.stringify(message.toObject ? message.toObject() : message, null, '  ')}`);
         await self._handleTrustedMessage(message);
       }),
       _handlePatches: source.on('patches', async function (patches) {
-        self.emit('debug', `[FABRIC:SERVICE] [${name}] Service State: ${JSON.stringify(source.state, null, '  ')}`);
-        self.emit('debug', `[FABRIC:SERVICE] [${name}] Patches: ${JSON.stringify(patches)}`);
+        self.emit('debug', `[FABRIC:SERVICE] [${label}] Service State: ${JSON.stringify(source.state, null, '  ')}`);
+        self.emit('debug', `[FABRIC:SERVICE] [${label}] Patches: ${JSON.stringify(patches)}`);
         self.emit('patches', patches);
       }),
       _handleReady: source.on('ready', async function _handleTrustedReady (info) {
-        self.emit('log', `[FABRIC:SERVICE] Source "${name}" emitted ready: ${JSON.stringify(info)}`);
+        self.emit('log', `[FABRIC:SERVICE] Source "${label}" emitted ready: ${JSON.stringify(info)}`);
       }),
       _handleTip: source.on('tip', async function (hash) {
-        self.alert(`[FABRIC:SERVICE] New ${name} chaintip: ${hash}`);
+        self.alert(`[FABRIC:SERVICE] New ${label} chaintip: ${hash}`);
       }),
       _handleWarning: source.on('warning', async function _handleTrustedWarning (warning) {
-        if (self.settings?.verbosity >= 2) self.emit('warning', `[FABRIC:SERVICE] Source "${name}" emitted warning: ${warning}`);
+        if (self.settings?.verbosity >= 2) self.emit('warning', `[FABRIC:SERVICE] Source "${label}" emitted warning: ${warning}`);
       })
     };
   }
@@ -451,7 +463,7 @@ class Service extends Actor {
   define (name, value) {
     this.definitions[name] = Object.assign({
       data: {},
-      handler: function handler (msg) {
+      handler: function handler (_msg) {
         return null;
       }
     }, value);
@@ -490,7 +502,7 @@ class Service extends Actor {
         object: message.object
       });
     } catch (E) {
-      this.error('Malformed message:', message);
+      this.emit('error', `Malformed message: ${E && E.message ? E.message : E}`);
     }
 
     return this;
@@ -504,12 +516,15 @@ class Service extends Actor {
   lock (duration = 1000) {
     if (this._state.status === 'LOCKED') return false;
     this._state.status = 'LOCKED';
+    if (this._lockTimer) clearTimeout(this._lockTimer);
+    this._lockTimer = setTimeout(() => {
+      this._lockTimer = null;
+      delete this.locker;
+      this._state.status = 'UNLOCKED';
+    }, duration);
     this.locker = new Actor({
       created: (new Date()).toISOString(),
-      contract: (setTimeout(() => {
-        delete this.locker;
-        this._state.status = 'UNLOCKED';
-      }, duration))
+      contract: 'locked'
     });
 
     return true;
@@ -541,7 +556,9 @@ class Service extends Actor {
   }
 
   async process () {
-    console.log('process created');
+    if (this.settings?.verbosity >= 4 || this.settings?.debug) {
+      this.emit('debug', '[FABRIC:SERVICE] process() created');
+    }
   }
 
   async broadcast (msg) {
@@ -550,7 +567,9 @@ class Service extends Actor {
 
     for (let name in this.clients) {
       let target = this.clients[name];
-      console.log('[FABRIC:SERVICE]', 'Sending broadcast to client:', target);
+      if (this.settings?.verbosity >= 4 || this.settings?.debug) {
+        this.emit('debug', `[FABRIC:SERVICE] Sending broadcast to client: ${target}`);
+      }
     }
 
     this.emit('message', msg);
@@ -562,25 +581,31 @@ class Service extends Actor {
    * @return {Promise}     Resolves with resulting {@link State}.
    */
   async route (msg) {
-    console.log('[FABRIC:SERVICE]', 'routing message:', msg);
-    console.log('[FABRIC:SERVICE]', 'definitions:', Object.keys(this.definitions));
+    if (this.settings?.verbosity >= 4 || this.settings?.debug) {
+      this.emit('debug', `[FABRIC:SERVICE] routing message: ${JSON.stringify(msg)}`);
+      this.emit('debug', `[FABRIC:SERVICE] definitions: ${JSON.stringify(Object.keys(this.definitions))}`);
+    }
 
     let result = null;
 
     if (this.definitions[msg.type]) {
-      console.log('[FABRIC:SERVICE]', this.name, 'received a well-defined message type from message in requested route:', msg);
+      if (this.settings?.verbosity >= 4 || this.settings?.debug) {
+        this.emit('debug', `[FABRIC:SERVICE] ${this.name} handling message type: ${msg.type}`);
+      }
 
       let handler = this.definitions[msg.type].handler;
       let state = handler.apply(this.state, [msg]);
 
-      console.log('sample:', state);
-      console.log('sample.channels:', state.channels);
-      console.log('sample.messages:', state.messages);
+      if (this.settings?.verbosity >= 4 || this.settings?.debug) {
+        this.emit('debug', `[FABRIC:SERVICE] route state sample: ${JSON.stringify(state)}`);
+      }
 
       result = state;
 
       let commit = await this.commit();
-      console.log('commit:', commit);
+      if (this.settings?.verbosity >= 4 || this.settings?.debug) {
+        this.emit('debug', `[FABRIC:SERVICE] route commit: ${commit}`);
+      }
     }
 
     return result;
@@ -626,7 +651,7 @@ class Service extends Actor {
       });
 
       // Attach events
-      this.collections[key].on('commit', (commit) => {
+      this.collections[key].on('commit', (_commit) => {
         service.broadcast({
           '@type': 'StateUpdate',
           '@data': service.state
@@ -634,11 +659,11 @@ class Service extends Actor {
       });
 
       this.collections[key].on('message', (message) => {
-        console.log('[FABRIC:SERVICE]', 'Internal message:', key, message);
+        service.emit('debug', `[FABRIC:SERVICE] Internal message (${key}): ${JSON.stringify(message)}`);
       });
 
       this.collections[key].on('transaction', (transaction) => {
-        console.log('[FABRIC:SERVICE]', 'Internal transaction:', key, transaction);
+        service.emit('debug', `[FABRIC:SERVICE] Internal transaction (${key}): ${JSON.stringify(transaction)}`);
       });
 
       this.collections[key].on('changes', (changes) => {
@@ -654,7 +679,7 @@ class Service extends Actor {
       try {
         await this.store.start();
       } catch (E) {
-        console.error('[FABRIC:SERVICE]', 'Could not start store:', E);
+        this.emit('error', `[FABRIC:SERVICE] Could not start store: ${E.message || E}`);
       }
     }
 
@@ -669,7 +694,7 @@ class Service extends Actor {
     try {
       this.observer = manager.observe(this._state.content);
     } catch (exception) {
-      console.trace('Could not observe state:', this._state.content, exception);
+      this.emit('error', `[FABRIC:SERVICE] Could not observe state: ${exception.message || exception}`);
     }
 
     // Set a heartbeat
@@ -697,7 +722,7 @@ class Service extends Actor {
       try {
         await this.store.stop();
       } catch (E) {
-        console.error('[FABRIC:SERVICE]', 'Exception stopping store:', E);
+        this.emit('error', `[FABRIC:SERVICE] Exception stopping store: ${E.message || E}`);
       }
     }
 
@@ -752,7 +777,7 @@ class Service extends Actor {
       try {
         result = pointer.set(this.state, path, value);
       } catch (E) {
-        this.error(`Could not _PUT() ${path}:`, E);
+        this.emit('error', `Could not _PUT() ${path}: ${E && E.message ? E.message : E}`);
       }
     }
 
@@ -781,7 +806,7 @@ class Service extends Actor {
 
     try {
       memory = await pointer.get(this.state, path);
-    } catch (E) {
+    } catch {
       this.emit('warning', `[FABRIC:SERVICE] posting to unloaded collection: ${path}`);
       memory = [];
     }
@@ -789,7 +814,8 @@ class Service extends Actor {
     try {
       collection = new Collection(memory);
     } catch (E) {
-      console.error('Could not create collection:', E, memory);
+      this.emit('error', `Could not create collection: ${E.message || E}`);
+      return null;
     }
 
     // TODO: use Resource definition to de-deuplicate by fields.id
@@ -802,7 +828,7 @@ class Service extends Actor {
       await this.set(path, await collection.populate());
       result = `${path}/${data.address}`;
     } catch (E) {
-      console.log('NOPE:', E);
+      this.emit('error', `Could not persist collection update: ${E.message || E}`);
     }
 
     if (commit) await this.commit();
@@ -829,7 +855,26 @@ class Service extends Actor {
     if (this.store) {
       try {
         const prior = await this.store.get('/');
-        this.state = JSON.parse(prior);
+        const pr = tryParsePersistedJson(utf8FromPersistedRaw(prior));
+        if (pr.ok && pr.value != null && typeof pr.value === 'object' && !Array.isArray(pr.value)) {
+          const v = pr.value;
+          if (Object.prototype.hasOwnProperty.call(v, 'content')) {
+            if (v.content != null && typeof v.content === 'object' && !Array.isArray(v.content)) {
+              this._state.content = Object.assign({}, this._state.content, v.content);
+              if (typeof v.status === 'string') this._state.status = v.status;
+              if (Number.isFinite(Number(v.clock))) this._state.clock = Number(v.clock);
+              if (v.version != null) this._state.version = v.version;
+            } else {
+              this.emit('warning', '[FABRIC:SERVICE] Ignoring restored state: invalid content envelope');
+            }
+          } else {
+            this._state.content = Object.assign({}, this._state.content, v);
+          }
+        } else if (pr.ok) {
+          this.emit('warning', '[FABRIC:SERVICE] Ignoring restored state: expected a plain object');
+        } else {
+          this.emit('warning', `[FABRIC:SERVICE] Could not restore state: ${pr.error.message}`);
+        }
       } catch (exception) {
         this.emit('warning', `[FABRIC:SERVICE] Could not restore state: ${exception}`);
       }
@@ -883,11 +928,11 @@ class Service extends Actor {
     return result;
   }
 
-  async join (id) {
+  async join (_id) {
     this.log('join() is not yet implemented for this service.');
   }
 
-  async whisper (target, message) {
+  async whisper (_target, _message) {
     this.log('The "whisper" function is not yet implemented.');
     return this;
   }
@@ -898,8 +943,8 @@ class Service extends Actor {
    * @param  {String} message Content of the message to send.
    * @return {Service}        Chainable method.
    */
-  async send (channel, message, extra) {
-    if (this.debug) console.log('[SERVICE]', 'send()', 'Sending:', channel, message, extra);
+  async send (channel, message, _extra) {
+    if (this.debug) this.emit('debug', `[SERVICE] send() Sending: ${channel}`);
 
     const path = Buffer.alloc(256);
     const payload = Buffer.alloc(2048);
@@ -937,7 +982,7 @@ class Service extends Actor {
           this.emit('patches', patches);
         }
       } catch (E) {
-        console.error('Could not generate patches:', E);
+        this.emit('error', `Could not generate patches: ${E.message || E}`);
       }
     }
 
@@ -953,7 +998,7 @@ class Service extends Actor {
   }
 
   async _handleBitcoinCommit (commit) {
-    console.log('[FABRIC:SERVICE] Handling (Bitcoin?) commit:', commit);
+    this.emit('debug', `[FABRIC:SERVICE] Handling (Bitcoin?) commit: ${JSON.stringify(commit)}`);
   }
 
   async _attachBindings (emitter) {
@@ -977,13 +1022,19 @@ class Service extends Actor {
   }
 
   async _getActor (id) {
-    if (!id) return this.error('Parameter "id" is required.');
+    if (!id) {
+      this.emit('error', 'Parameter "id" is required.');
+      return null;
+    }
     let path = pointer.escape(id);
     return this._GET(`/actors/${path}`);
   }
 
   async _getChannel (id) {
-    if (!id) return this.error('Parameter "id" is required.');
+    if (!id) {
+      this.emit('error', 'Parameter "id" is required.');
+      return null;
+    }
     let target = pointer.escape(id);
     return this._GET(`/channels/${target}`);
   }
@@ -1008,7 +1059,8 @@ class Service extends Actor {
         subscriptions: []
       }, actor, { id }));
     } catch (E) {
-      return this.error('Something went wrong saving:', E);
+      this.emit('error', `Something went wrong saving: ${E && E.message ? E.message : E}`);
+      return null;
     }
 
     await this.commit();
@@ -1033,7 +1085,7 @@ class Service extends Actor {
     const path = `/channels/${target}`;
 
     try {
-      this._PUT(path, merge({
+      await this._PUT(path, merge({
         members: []
       }, channel));
     } catch (E) {
@@ -1091,12 +1143,15 @@ class Service extends Actor {
 
     try {
       // TODO: allow configurable validators
-      this._state.content = manager.applyPatch(this.state, changes, function isValid () {
+      // Mutate canonical state — do not applyPatch(this.state): the getter returns a
+      // shallow copy each time, so replacing _state.content with that copy breaks nested
+      // references after subscribe() / _applyChanges().
+      manager.applyPatch(this._state.content, changes, function isValid () {
         // TODO: invalidate changes without appropriate capability token
         return true;
       }, true /* mutate doc (1st param) */);
     } catch (exception) {
-      console.error('Could not apply changes:', changes, exception);
+      console.error(`Could not apply changes: ${exception.message || exception}`);
     }
 
     this.commit();
@@ -1105,7 +1160,7 @@ class Service extends Actor {
   }
 
   async _handleStateChange (changes) {
-    console.log('MAGIC HANDLER:', changes);
+    this.emit('debug', `[FABRIC:SERVICE] State change: ${JSON.stringify(changes)}`);
     this.emit('message', {
       '@type': 'Transaction',
       '@data': {
@@ -1182,7 +1237,7 @@ class Service extends Actor {
     this.emit('debug', `Service entries: ${Object.keys(this.services)}`);
 
     // Start all Services
-    for (const [name, service] of Object.entries(this.services)) {
+    for (const [name, _service] of Object.entries(this.services)) {
       // TODO: re-evaluate inclusion on Service itself
       if (this.settings.services && this.settings.services.includes(name)) {
         this.emit('debug', `Starting service "${name}" (with trust)...`);
@@ -1209,4 +1264,291 @@ class Service extends Actor {
   }
 }
 
+/**
+ * Browser / CLI application shell: encrypted store, peer node, resources.
+ * @private
+ * @class FabricShell
+ */
+class FabricShell extends Service {
+  constructor (definition = {}) {
+    super(definition);
+
+    const Peer = require('./peer');
+    const Machine = require('./machine');
+
+    if (!definition.resources) definition.resources = {};
+
+    this.settings = Object.assign({
+      seed: null,
+      listen: false,
+      path: './stores/fabric-application',
+      prefix: '/',
+      services: [],
+      verbosity: 1
+    }, definition);
+
+    this.node = new Peer(this.settings);
+    this.actor = new Actor(this.settings);
+    this.machine = new Machine(this.settings);
+    this.store = Store.openEncrypted(this.settings);
+
+    this.tips = new Store({ path: './stores/tips' });
+    this.stash = new Store({ path: './stores/stash' });
+
+    this.name = 'application';
+    this.network = {};
+
+    this.bindings = {};
+    this.authorities = {};
+    this.components = {};
+    this.elements = {};
+    this.services = {};
+    this.commands = {};
+    this.resources = {};
+    this.templates = {};
+    this.keys = [];
+
+    this.stash.on('patches', (patches) => {
+      this.emit('debug', `[FABRIC:APP] heard patches: ${JSON.stringify(patches)}`);
+    });
+
+    if (this.settings.resources) {
+      for (const name in this.resources) {
+        this.set(this.settings.prefix + this.resources[name].components.list, []);
+      }
+    }
+
+    this._state = {
+      anchor: 'BTC',
+      chains: {}
+    };
+
+    this.commit();
+
+    return this;
+  }
+
+  _bindEvents (element) {
+    for (const name in this.bindings) element.addEventListener(name, this.bindings[name]);
+    return element;
+  }
+
+  _unbindEvents (element) {
+    for (const name in this.bindings) element.removeEventListener(this.bindings[name]);
+    return element;
+  }
+
+  async bootstrap () {
+    return true;
+  }
+
+  async _signWithOwnID (input) {
+    return this.key.sign(input);
+  }
+
+  async start () {
+    this._appendMessage(`[FABRIC:APP] @${this.id} -- Starting...`);
+    this.status = 'STARTING';
+
+    for (const [name, _service] of Object.entries(this.services)) {
+      this._appendWarning(`@${this.id} -- Checking for Service: ${name}`);
+      if (this.settings.services.includes(name)) {
+        this._appendWarning(`Starting service: ${name}`);
+        await this.services[name]._bindStore(this.store);
+        await this.services[name].start();
+      }
+    }
+
+    this.node.start();
+    this.status = 'STARTED';
+    this.emit('ready');
+    this._appendMessage(`[FABRIC:APP] @${this.id} -- Started!`);
+
+    return this;
+  }
+
+  async stop () {
+    this.emit('log', '[FABRIC:APP] Stopping...');
+    await this.node.stop();
+    await this.tips.close();
+    await this.stash.close();
+    this.emit('log', '[FABRIC:APP] Stopped!');
+    return this;
+  }
+
+  async define (name, structure) {
+    const self = this;
+
+    self.log('[APP]', 'defining:', name, structure);
+
+    try {
+      const resource = new Resource(structure);
+
+      resource.trust(self.stash);
+
+      self.resources[name] = resource;
+    } catch (E) {
+      this.emit('error', E.message || String(E));
+    }
+
+    return this;
+  }
+
+  async register (component) {
+    this.components[component.name] = component;
+  }
+
+  async defer (authority) {
+    const self = this;
+    let resources = {};
+
+    this.emit('warning', `[APP] deferring authority: ${authority}`);
+
+    if (!resources) {
+      resources = {};
+    }
+
+    self.consume(resources);
+
+    if (typeof window !== 'undefined' && window.page) {
+      window.page('/', function (context) {
+        self.log('Hello, navigator.');
+        self.log('Context:', context);
+        self.element.navigate('fabric-splash', context);
+      });
+
+      window.page();
+    }
+
+    return this;
+  }
+
+  async _appendMessage (msg) {
+    this.emit('log', `[${(new Date()).toISOString()}]: ${msg}`);
+  }
+
+  async _appendWarning (msg) {
+    this.emit('warning', `[${(new Date()).toISOString()}]: ${msg}`);
+  }
+
+  async _appendError (msg) {
+    const line = `[${(new Date()).toISOString()}]: ${msg}`;
+    // Emitting `error` with no listener throws in Node.js EventEmitter.
+    if (this.listenerCount('error') > 0) {
+      this.emit('error', line);
+    } else {
+      this.emit('warning', line);
+    }
+  }
+
+  attach (element) {
+    this.element = element;
+    return this;
+  }
+
+  consume (resources) {
+    const self = this;
+
+    self.element.resources = resources;
+
+    for (const key in resources) {
+      const def = resources[key];
+      self.define(def.name, def);
+    }
+
+    return this;
+  }
+
+  envelop (selector) {
+    try {
+      const element = document.querySelector(selector);
+
+      if (!element) {
+        this.log('[FABRIC:APP]', 'envelop()', 'could not find element:', selector);
+        return null;
+      }
+
+      this._bindEvents(element);
+      this.attach(element);
+    } catch (E) {
+      this.emit('error', `Could not envelop element: ${E.message || E}`);
+    }
+
+    return this;
+  }
+
+  use (name, definition) {
+    this.log('[APP]', 'using:', name, definition);
+    super.use(name, definition);
+    return this;
+  }
+
+  render () {
+    const actor = new Actor(this._state);
+    const html = `<fabric-${this.name.toLowerCase()}>` +
+      `\n  <fabric-state id="${actor.id}">` +
+      `\n    <fabric-state-json integrity="sha256:${actor.preimage}">${actor.serialize()}</fabric-state-json>` +
+      '\n  </fabric-state>' +
+      `\n</fabric-${this.name.toLowerCase()}>\n`;
+
+    const sample = new Actor(html);
+
+    if (this.element) {
+      this.element.setAttribute('integrity', `sha256:${sample.preimage}`);
+      this.element.innerHTML = html;
+    }
+
+    return html;
+  }
+
+  _registerCommand (command, method) {
+    this.commands[command] = method.bind(this);
+  }
+
+  _registerService (name, ServiceClass) {
+    const self = this;
+    const service = new ServiceClass(merge({}, this.settings, this.settings[name]));
+
+    if (this.services[name]) {
+      return this._appendWarning(`Service already registered: ${name}`);
+    }
+
+    this.services[name] = service;
+
+    this.services[name].on('error', function (msg) {
+      self._appendError(`Service "${name}" emitted error: ${JSON.stringify(msg, null, '  ')}`);
+    });
+
+    this.services[name].on('warning', function (msg) {
+      self._appendWarning(`Service warning from ${name}: ${JSON.stringify(msg, null, '  ')}`);
+    });
+
+    this.services[name].on('message', function (msg) {
+      self._appendMessage(`@services/${name} -- <FabricServiceMessage>(${typeof msg}) ${JSON.stringify(msg, null, '  ')}`);
+      switch (msg['@type']) {
+        case 'ChatMessage':
+          self.node.relayFrom(self.node.id, Message.fromVector(['ChatMessage', JSON.stringify(msg)]));
+          break;
+        default:
+          break;
+      }
+    });
+
+    this.on('identity', function _registerActor (identity) {
+      if (this.settings.services.includes(name)) {
+        self._appendMessage(`Registering actor on service "${name}": ${JSON.stringify(identity)}`);
+
+        try {
+          this.services[name]._registerActor(identity);
+        } catch (exception) {
+          self._appendError(`Error from service "${name}" during _registerActor: ${exception}`);
+        }
+      }
+    });
+
+    return this.services[name];
+  }
+}
+
 module.exports = Service;
+module.exports.FabricShell = FabricShell;

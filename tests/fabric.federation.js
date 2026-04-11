@@ -113,8 +113,8 @@ describe('@fabric/core/types/federation', function () {
       const isValid = federation.verify(message.raw.data, signature);
       assert.ok(isValid);
 
-      // Verify the message structure
-      assert.equal(message.type, 'Call');
+      // Verify the message structure (wire type is SCREAMING_SNAKE)
+      assert.equal(message.type, 'P2P_CALL');
       assert.deepEqual(JSON.parse(message.raw.data.toString()), {
         method: 'test',
         params: ['param1', 'param2']
@@ -174,8 +174,8 @@ describe('@fabric/core/types/federation', function () {
       assert.ok(federation.verifyMultiSignature(multiSig, 2)); // At least 2 signatures
       assert.ok(federation.verifyMultiSignature(multiSig, 3)); // All signatures
 
-      // Verify the message structure
-      assert.equal(message.type, 'Call');
+      // Verify the message structure (wire type is SCREAMING_SNAKE)
+      assert.equal(message.type, 'P2P_CALL');
       assert.deepEqual(JSON.parse(message.raw.data.toString()), {
         method: 'test',
         params: ['param1', 'param2']

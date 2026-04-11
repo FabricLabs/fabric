@@ -1,13 +1,19 @@
 'use strict';
 
 const Identity = require('../types/identity');
-const Key = require('../types/key');
 const assert = require('assert');
-const EC = require('elliptic').ec;
-const ec = new EC('secp256k1');
-const bip39 = require('bip39');
-const BIP32 = require('bip32').default;
-const ecc = require('tiny-secp256k1');
+const bip39 = require('../functions/bip39');
+const BIP32 = require('../functions/bip32').default;
+const ecc = require('../types/ecc');
+let nobleSecp256k1 = null;
+try {
+  nobleSecp256k1 = require('@noble/curves/secp256k1.js');
+} catch (error) {
+  // Support older noble-curves subpath exports used in some CI environments.
+  nobleSecp256k1 = require('@noble/curves/secp256k1');
+}
+const { secp256k1, schnorr: nobleSchnorr } = nobleSecp256k1;
+const crypto = require('crypto');
 
 const SAMPLE = {
   seed: 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
@@ -31,11 +37,12 @@ describe('@fabric/core/types/identity', function () {
       });
       const actualPubkey = identity.pubkey;
 
-      // Compute expected pubkey using bip32
+      // Compute expected pubkey using bip32 + noble curves
       const seed = bip39.mnemonicToSeedSync(SAMPLE.seed);
       const root = new BIP32(ecc).fromSeed(seed);
-      const keypair = ec.keyFromPrivate(root.privateKey);
-      const expectedPubkey = keypair.getPublic().encodeCompressed('hex');
+      const expectedPubkey = Buffer.from(
+        secp256k1.getPublicKey(root.privateKey, true)
+      ).toString('hex');
 
       assert.ok(identity);
       assert.equal(actualPubkey, expectedPubkey);
@@ -49,12 +56,13 @@ describe('@fabric/core/types/identity', function () {
       const actualChild = identity.key.derive('m/0');
       const actualChildPubkey = actualChild.pubkey;
 
-      // Compute expected child key using bip32
+      // Compute expected child key using bip32 (shim expects 'bytes' for Buffer/Uint8Array)
       const seed = bip39.mnemonicToSeedSync(SAMPLE.seed);
       const root = new BIP32(ecc).fromSeed(seed);
       const child = root.derivePath('m/0');
-      const childKeypair = ec.keyFromPrivate(child.privateKey);
-      const expectedChildPubkey = childKeypair.getPublic().encodeCompressed('hex');
+      const expectedChildPubkey = Buffer.from(
+        secp256k1.getPublicKey(child.privateKey, true)
+      ).toString('hex');
 
       assert.ok(actualChild);
       assert.equal(actualChildPubkey, expectedChildPubkey);
@@ -70,13 +78,15 @@ describe('@fabric/core/types/identity', function () {
       const actualSignature = identity.sign(message);
       const actualVerified = identity.key.verify(message, actualSignature);
 
-      // Compute expected signature using bip32
+      // Basic sanity checks on signature format and verification
       const seed = bip39.mnemonicToSeedSync(SAMPLE.seed);
       const root = new BIP32(ecc).fromSeed(seed);
-      const keypair = ec.keyFromPrivate(root.privateKey);
-      const msgHash = Buffer.from(message).toString('hex');
-      const expectedSignature = keypair.sign(msgHash).toDER('hex');
-      const expectedVerified = keypair.verify(msgHash, expectedSignature);
+      const msgHash = crypto.createHash('sha256').update(Buffer.from(message)).digest();
+      const expectedSig = nobleSchnorr.sign(msgHash, root.privateKey);
+      const xOnlyPubkey = Buffer.from(
+        secp256k1.getPublicKey(root.privateKey, true)
+      ).slice(1); // drop prefix for x-only
+      const expectedVerified = nobleSchnorr.verify(expectedSig, msgHash, xOnlyPubkey);
 
       assert.ok(actualSignature);
       assert.equal(actualVerified, true);

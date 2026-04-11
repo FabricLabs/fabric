@@ -2,7 +2,7 @@
 
 // Dependencies
 const bitcoin = require('bitcoinjs-lib');
-const schnorr = require('bip-schnorr');
+const { tryParseWireJson } = require('../functions/wireJson');
 
 // Fabric Types
 const Key = require('./key');
@@ -34,7 +34,7 @@ class Token {
 
     // Trust Chain
     this.issuer = this.settings.issuer ? this.settings.issuer : this.ephemera;
-    this.subject = this.settings.subject ? this.settings.subject : this.ephemera.keypair.getPublic(true).encodeCompressed('hex');
+    this.subject = this.settings.subject ? this.settings.subject : this.ephemera.keypair.getPublic(true, 'hex');
 
     // ECDSA Signature
     this.signature = null;
@@ -63,12 +63,77 @@ class Token {
       input += '=';
     }
 
-    return Buffer.from(input, 'base64').toString();
+    return Buffer.from(input, 'base64').toString('utf8');
+  }
+
+  static base64UrlDecodeToBuffer (input) {
+    let s = input.replace(/-/g, '+').replace(/_/g, '/');
+    while (s.length % 4) s += '=';
+    return Buffer.from(s, 'base64');
+  }
+
+  static base64UrlEncodeBuffer (input) {
+    const b = Buffer.isBuffer(input) ? input : Buffer.from(input);
+    return b.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  /**
+   * Create a cryptographically signed token string.
+   * Format: base64url(payload).base64url(signature)
+   * Payload: { cap, iss, sub, iat, exp }. Signature: Schnorr over payload JSON.
+   * @param {Object} [options]
+   * @param {number} [options.expiresInSeconds=31536000] Token lifetime (default 1 year).
+   * @returns {string}
+   */
+  toSignedString (options = {}) {
+    const expiresInSeconds = options.expiresInSeconds ?? 365 * 24 * 60 * 60;
+    const iat = Math.floor(Date.now() / 1000);
+    const exp = iat + expiresInSeconds;
+    const iss = this.issuer.public ? this.issuer.public.encodeCompressed('hex') : this.issuer.keypair.getPublic(true, 'hex');
+    const payload = {
+      cap: this.capability,
+      iss,
+      sub: this.settings.subject ?? this.subject,
+      iat,
+      exp
+    };
+    const payloadStr = JSON.stringify(payload);
+    const payloadB64 = Token.base64UrlEncode(payloadStr);
+    const signature = this.issuer.sign(payloadStr);
+    const sigB64 = Token.base64UrlEncodeBuffer(Buffer.isBuffer(signature) ? signature : Buffer.from(signature));
+    return `${payloadB64}.${sigB64}`;
+  }
+
+  /**
+   * Verify a signed token string. Returns parsed payload if valid, null otherwise.
+   * @param {string} tokenString
+   * @param {Key} verificationKey Key used to verify the signature (must match issuer).
+   * @returns {{ cap: string, iss: string, sub: string, iat: number, exp: number }|null}
+   */
+  static verifySigned (tokenString, verificationKey) {
+    if (!tokenString || typeof tokenString !== 'string') return null;
+    if (!verificationKey) return null;
+    const parts = tokenString.split('.');
+    if (parts.length !== 2) return null;
+    try {
+      const payloadStr = Token.base64UrlDecode(parts[0]);
+      const pr = tryParseWireJson(payloadStr);
+      if (!pr.ok) return null;
+      const payload = pr.value;
+      const sig = Token.base64UrlDecodeToBuffer(parts[1]);
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload) || !payload.iss || payload.exp == null) return null;
+      if (Date.now() / 1000 > payload.exp) return null;
+      const ourIss = verificationKey.public ? verificationKey.public.encodeCompressed('hex') : verificationKey.keypair.getPublic(true, 'hex');
+      if (payload.iss !== ourIss) return null;
+      if (!verificationKey.verify(payloadStr, sig)) return null;
+      return payload;
+    } catch {
+      return null;
+    }
   }
 
   static fromString (input) {
     const parts = input.split('.');
-    const headers = parts[0];
     const payload = parts[1];
     const signature = parts[2];
     const inner = Token.base64UrlDecode(payload);
@@ -85,7 +150,9 @@ class Token {
   toString () {
     // TODO: determine rounding preference (secwise)
     const utime = Math.floor(this.created / 1000);
-    const issuer = this.issuer.keypair.getPublic(true).encodeCompressed('hex');
+    // Fabric Key: keypair.getPublic returns hex string; elliptic: returns Point with encodeCompressed
+    const pub = this.issuer.keypair.getPublic(true);
+    const issuer = typeof pub === 'string' ? pub : (pub && typeof pub.encodeCompressed === 'function' ? pub.encodeCompressed('hex') : '');
     const header = {
       alg: 'ES256K',
       iss: issuer,
@@ -121,15 +188,20 @@ class Token {
   }
 
   sign () {
-    // Sign the capability using the private key
-    const hash = bitcoin.crypto.sha256(this.capability);
-    this.signature = schnorr.sign(this.issuer.privateKey, hash);
+    const hash = bitcoin.crypto.sha256(Buffer.from(this.capability, 'utf8'));
+    if (!this.issuer || typeof this.issuer.signSchnorrHash !== 'function') {
+      throw new Error('Token.sign requires issuer Key with private material');
+    }
+    this.signature = this.issuer.signSchnorrHash(hash);
   }
 
   verify () {
-    // Verify the signature using the public key
-    const hash = bitcoin.crypto.sha256(this.capability);
-    return schnorr.verify(this.issuer.publicKey, hash, this.signature);
+    const hash = bitcoin.crypto.sha256(Buffer.from(this.capability, 'utf8'));
+    if (!this.issuer || typeof this.issuer.verifySchnorrHash !== 'function') {
+      return false;
+    }
+    if (!this.signature) return false;
+    return this.issuer.verifySchnorrHash(hash, this.signature);
   }
 
   add (other) {

@@ -1,12 +1,9 @@
 'use strict';
 
 const crypto = require('crypto');
-const EC = require('elliptic').ec;
-const Key = require('./key');
-
+const { secp256k1 } = require('@noble/curves/secp256k1.js');
 class Witness {
   constructor (settings = {}) {
-    this.ec = new EC('secp256k1');
     this.settings = Object.assign({
       curve: 'secp256k1',
       data: null,
@@ -16,7 +13,7 @@ class Witness {
     this.buffer = Buffer.alloc(32 * 256);
     this._state = {
       data: this.settings.data
-    }
+    };
 
     if (settings && settings.keypair) {
       if (settings.keypair.private) {
@@ -27,14 +24,15 @@ class Witness {
     }
 
     if (!this.keypair) {
-      this.keypair = this.ec.genKeyPair();
+      const privateKey = crypto.randomBytes(32);
+      const publicKey = Buffer.from(secp256k1.getPublicKey(privateKey, false));
+      this.keypair = { privateKey, publicKey };
     }
 
     if (settings && settings.data) {
       this._loadData(settings.data);
     }
 
-    Object.defineProperty(this, 'ec', { enumerable: false });
     Object.defineProperty(this, 'buffer', { enumerable: false });
     Object.defineProperty(this, 'keypair', { enumerable: false });
 
@@ -50,16 +48,20 @@ class Witness {
   }
 
   get pubkey () {
-    return this.keypair.getPublic().encode('hex');
+    return Buffer.from(this.keypair.publicKey).toString('hex');
   }
 
   get signature () {
-    // return this.keypair.sign(this.hash).toDER().toString('hex');
-    let sig = this.keypair.sign(this.hash);
+    const digest = Buffer.from(this.hash, 'hex');
+    const sig = secp256k1.sign(digest, this.keypair.privateKey, { prehash: false });
+    const compact = (sig && typeof sig.toCompactRawBytes === 'function')
+      ? Buffer.from(sig.toCompactRawBytes())
+      : Buffer.from(sig);
+
     return {
       curve: this.settings.curve,
-      r: sig.r.toString('hex'),
-      s: sig.s.toString('hex')
+      r: compact.slice(0, 32).toString('hex'),
+      s: compact.slice(32, 64).toString('hex')
     };
   }
 
@@ -73,18 +75,20 @@ class Witness {
 
   _dumpKeypair () {
     return {
-      private: this.keypair.getPrivate(),
-      public: this.keypair.getPublic()
-    }
+      private: this.keypair.privateKey,
+      public: this.keypair.publicKey
+    };
   }
 
   _usePrivateKey (key) {
-    this.keypair = this.ec.keyFromPrivate(key, 'hex');
+    const privateKey = Buffer.isBuffer(key) ? key : Buffer.from(key, 'hex');
+    const publicKey = Buffer.from(secp256k1.getPublicKey(privateKey, false));
+    this.keypair = { privateKey, publicKey };
   }
 
   _usePublicKey (key) {
-    this.keypair = this.ec.keyFromPublic(key, 'hex');
-    console.log(`using public key ${key}, generated keypair:`, this.keypair);
+    const publicKey = Buffer.isBuffer(key) ? key : Buffer.from(key, 'hex');
+    this.keypair = { publicKey };
   }
 
   _loadData (data) {
@@ -102,7 +106,7 @@ class Witness {
     return this;
   }
 
-  _fromBitcoinSignature (signature = {}) {
+  _fromBitcoinSignature (_signature = {}) {
 
   }
 
@@ -138,11 +142,16 @@ class Witness {
   }
 
   verify (msg, signature) {
-    let hash = this.digest(msg);
-    let verifies = this.keypair.verify(hash, signature);
+    const hash = Buffer.from(this.digest(msg), 'hex');
+    const publicKey = Buffer.from(this.keypair.publicKey);
+    const compact = Buffer.concat([
+      Buffer.from(signature.r, 'hex'),
+      Buffer.from(signature.s, 'hex')
+    ]);
+    const verifies = secp256k1.verify(compact, hash, publicKey, { prehash: false });
     let verification = {
       msg: msg,
-      hash: hash,
+      hash: hash.toString('hex'),
       pubkey: this.pubkey,
       signature: signature,
       verifies: verifies

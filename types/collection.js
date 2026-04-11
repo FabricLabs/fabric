@@ -37,7 +37,7 @@ class Collection extends Stack {
 
     // Set name to plural version, define path for storage
     this.name = pluralize(this.settings.name);
-    this.path = `/` + this.name.toLowerCase();
+    this._path = `/${this.name.toLowerCase()}`;
 
     this._state = {};
     this.value = {};
@@ -58,6 +58,15 @@ class Collection extends Stack {
 
   get routes () {
     return this.settings.routes;
+  }
+
+  get path () {
+    return this._path;
+  }
+
+  set path (value) {
+    this._path = value;
+    return this._path;
   }
 
   /**
@@ -90,7 +99,7 @@ class Collection extends Stack {
     try {
       if (this.settings.verbosity >= 5) console.log(`getting ${this.path}/${id} from:`, this.value);
       result = pointer.get(this.value, `${this.path}/${id}`);
-    } catch (E) {
+    } catch {
      // console.debug('[FABRIC:COLLECTION]', `@${this.name}`, Date.now(), `Could not find ID "${id}" in tree ${this.asMerkleTree()}`);
     }
 
@@ -227,10 +236,14 @@ class Collection extends Stack {
   async push (data, commit = true) {
     super.push(data);
 
+    const entity = new Entity(data);
     let state = new State(data);
 
     this['@entity'].states[this.id] = this['@data'];
-    this['@entity'].states[state.id] = state['@data'];
+    this['@entity'].states[entity.id] = state['@data'];
+
+    // Use entity IDs for collection indexing to avoid collisions in State IDs.
+    this['@data'][this['@data'].length - 1] = entity.id;
 
     this['@entity']['@data'] = this['@data'].map(x => x.toString());
     this['@data'] = this['@entity']['@data'];
@@ -316,7 +329,7 @@ class Collection extends Stack {
   toTypedArray () {
     const map = this.map();
     const ids = Object.keys(map);
-    return ids.map((x) => this._wrapResult(map[ids[x]]));
+    return ids.map((id) => this._wrapResult(map[id]));
   }
 
   typedMap () {
@@ -337,11 +350,12 @@ class Collection extends Stack {
    * @returns {Array}
    */
   map () {
-    return Collection.pointer.get(this.value, `${this.path}`);
+    return pointer.get(this.value, `${this.path}`);
   }
 
   render () {
-    return this.serialize(this.state);
+    // Collection rendering should expose the ordered ID list, not internal state metadata.
+    return JSON.stringify(this['@entity']['@data'] || []);
   }
 
   /**
@@ -404,7 +418,7 @@ class Collection extends Stack {
    * Loads {@link State} into memory.
    * @param {State} state State to import.
    * @param {Boolean} commit Whether or not to commit the result.
-   * @emits message Will emit one {@link Snapshot} message.
+   * @emits message Will emit one `CollectionSnapshot` message (not the removed Snapshot type).
    */
   async import (input, commit = true) {
     if (input['@data']) input = input['@data'];
@@ -438,7 +452,7 @@ class Collection extends Stack {
     if (this.settings.verbosity >= 4) console.log('input.id', input.id);
 
     this.emit('message', {
-      '@type': 'Snapshot',
+      '@type': 'CollectionSnapshot',
       '@data': {
         path: this.path,
         state: pointer.get(this.value, this.path)

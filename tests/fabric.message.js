@@ -17,11 +17,13 @@ const {
   P2P_STATE_COMMITTMENT,
   P2P_STATE_CHANGE,
   P2P_TRANSACTION,
-  P2P_CALL
+  P2P_CALL,
+  P2P_MESSAGE_RECEIPT
 } = require('../constants');
 
 const Message = require('../types/message');
 const Key = require('../types/key');
+const Hash256 = require('../types/hash256');
 const assert = require('assert');
 
 // Create a key with a private key for signing
@@ -55,8 +57,23 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(literal.headers.version, VERSION_NUMBER);
       assert.strictEqual(literal.headers.type, P2P_CALL);
       assert.strictEqual(literal.headers.size, 29);
-      assert.strictEqual(literal.headers.hash, '29ef07455d1e3ab5f0b5ad485d4bb85a00a4dd4003dabd43cab0f43199fc316e');
-      assert.strictEqual(message.type, 'Call');
+      assert.strictEqual(literal.headers.hash, 'd3595887441da0b0ac8bdb05c8b85b2e4fbad11c43dbbf4ce8b6ec27d7cd0646');
+      assert.strictEqual(message.type, 'P2P_CALL');
+    });
+
+    it('exposes wireType, friendlyType, and JSON-oriented toObject().type', function () {
+      const m = Message.fromVector(['Call', JSON.stringify(example.data)]);
+      assert.strictEqual(m.wireType, 'P2P_CALL');
+      assert.strictEqual(m.type, 'P2P_CALL');
+      assert.strictEqual(m.friendlyType, 'Call');
+      const o = m.toObject();
+      assert.strictEqual(o.type, 'Call');
+      assert.strictEqual(o.wireType, 'P2P_CALL');
+    });
+
+    it('static helpers convert friendly ↔ wire', function () {
+      assert.strictEqual(Message.wireTypeFromFriendly('ChatMessage'), 'CHAT_MESSAGE');
+      assert.strictEqual(Message.friendlyTypeFromWire('CHAT_MESSAGE'), 'ChatMessage');
     });
 
     it('can compose from an object literal', async function prove () {
@@ -71,8 +88,76 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(literal.headers.version, VERSION_NUMBER);
       assert.strictEqual(literal.headers.type, P2P_CALL);
       assert.strictEqual(literal.headers.size, 29);
-      assert.strictEqual(literal.headers.hash, '29ef07455d1e3ab5f0b5ad485d4bb85a00a4dd4003dabd43cab0f43199fc316e');
-      assert.strictEqual(message.type, 'Call');
+      assert.strictEqual(literal.headers.hash, 'd3595887441da0b0ac8bdb05c8b85b2e4fbad11c43dbbf4ce8b6ec27d7cd0646');
+      assert.strictEqual(message.type, 'P2P_CALL');
+    });
+
+    it('round-trips P2P_MESSAGE_RECEIPT with stable type code', function () {
+      const payload = {
+        '@type': 'Receipt',
+        '@actor': 'deadbeef',
+        '@data': { ok: true },
+        '@version': 1
+      };
+      const message = Message.fromVector(['P2P_MESSAGE_RECEIPT', payload]);
+      assert.strictEqual(message.type, 'P2P_MESSAGE_RECEIPT');
+
+      const literal = message.toObject();
+      assert.strictEqual(literal.headers.type, P2P_MESSAGE_RECEIPT);
+
+      const buffer = message.toBuffer();
+      const restored = Message.fromBuffer(buffer);
+      assert.strictEqual(restored.type, 'P2P_MESSAGE_RECEIPT');
+      const body = JSON.parse(restored.body);
+      assert.strictEqual(body['@type'], 'Receipt');
+      assert.strictEqual(body['@version'], 1);
+      assert.strictEqual(body['@actor'], 'deadbeef');
+    });
+
+    it('fromBuffer keeps header hash bytes from wire (body integrity field)', function () {
+      const message = Message.fromVector(['Call', JSON.stringify(example.data)]);
+      message.signWithKey(key);
+      const buf = message.toBuffer();
+      const hashOnWire = buf.subarray(80, 112).toString('hex');
+      const restored = Message.fromBuffer(buf);
+      const hashAfterParse = Buffer.isBuffer(restored.raw.hash)
+        ? restored.raw.hash.toString('hex')
+        : restored.raw.hash;
+      assert.strictEqual(hashAfterParse, hashOnWire);
+      assert.strictEqual(Hash256.doubleDigest(restored.raw.data), hashOnWire);
+    });
+
+    it('public messages carry SHA256(body) in preimage; sensitive blanks preimage; explicit preimage overrides', function () {
+      const bodyJson = JSON.stringify(example.data);
+      const expectedCommit = Hash256.digest(Buffer.from(bodyJson));
+
+      const pub = Message.fromVector(['Call', bodyJson]);
+      pub.signWithKey(key);
+      assert.ok(pub.preimage);
+      assert.strictEqual(pub.preimage.toString('hex'), expectedCommit);
+      const lit = pub.toObject();
+      assert.strictEqual(lit.headers.preimage, expectedCommit);
+
+      const sens = new Message({
+        type: 'Call',
+        data: bodyJson,
+        sensitive: true
+      });
+      sens.signWithKey(key);
+      assert.strictEqual(sens.preimage, null);
+
+      const secret = Buffer.alloc(32, 0xab);
+      const priv = new Message({
+        type: 'Call',
+        data: bodyJson,
+        preimage: secret
+      });
+      priv.signWithKey(key);
+      assert.ok(priv.preimage);
+      assert.strictEqual(priv.preimage.toString('hex'), secret.toString('hex'));
+      const back = Message.fromBuffer(priv.toBuffer());
+      assert.strictEqual(back.preimage.toString('hex'), secret.toString('hex'));
+      assert.ok(back.verifyWithKey(key));
     });
   });
 
@@ -87,6 +172,7 @@ describe('@fabric/core/types/message', function () {
         type: Buffer.from('00000067', 'hex'),
         size: Buffer.from('00000015', 'hex'),
         hash: Buffer.alloc(32),
+        preimage: Buffer.alloc(32),
         signature: Buffer.alloc(64),
         data: Buffer.from('"Hello, world!"', 'utf8')
       };
@@ -99,6 +185,7 @@ describe('@fabric/core/types/message', function () {
         format.type,
         format.size,
         format.hash,
+        format.preimage,
         format.signature,
         format.data
       ]);
@@ -112,6 +199,7 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(format.type.toString('hex'), parsed.type.toString('hex'));
       assert.strictEqual(format.size.toString('hex'), parsed.size.toString('hex'));
       assert.strictEqual(format.hash.toString('hex'), parsed.hash.toString('hex'));
+      assert.strictEqual(format.preimage.toString('hex'), parsed.preimage.toString('hex'));
       assert.strictEqual(format.signature.toString('hex'), parsed.signature.toString('hex'));
       assert.strictEqual(format.data.toString('hex'), parsed.data.toString('hex'));
     });
@@ -132,13 +220,23 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(literal.headers.version, VERSION_NUMBER);
       assert.strictEqual(literal.headers.type, P2P_CALL);
       assert.strictEqual(literal.headers.size, 29);
-      assert.strictEqual(literal.headers.hash, '29ef07455d1e3ab5f0b5ad485d4bb85a00a4dd4003dabd43cab0f43199fc316e');
-      assert.strictEqual(message.type, 'Call');
+      assert.strictEqual(literal.headers.hash, 'd3595887441da0b0ac8bdb05c8b85b2e4fbad11c43dbbf4ce8b6ec27d7cd0646');
+      assert.strictEqual(message.type, 'P2P_CALL');
     });
   });
 
   describe('toBuffer()', function () {
-    xit('should generate a restorable buffer', async function prove () {
+    it('round-trips signed wire bytes through fromBuffer', function () {
+      const m = Message.fromVector(['GenericMessage', JSON.stringify({ type: 'probe', n: 1 })]);
+      m.signWithKey(key);
+      const buf = m.toBuffer();
+      const restored = Message.fromBuffer(buf);
+      assert.strictEqual(restored.type, m.type);
+      assert.strictEqual(restored.data, m.data);
+      assert.ok(restored.verifyWithKey(key));
+    });
+
+    it('should generate a restorable buffer', async function prove () {
       const data = JSON.stringify({
         actor: 'deadbeefbabe',
         object: {
@@ -151,9 +249,24 @@ describe('@fabric/core/types/message', function () {
       const buffer = message.toBuffer();
       const restored = Message.fromBuffer(buffer);
 
-      assert.strictEqual(restored.data, '{"content":"Hello, world!"},"target":"/messages"}');
+      assert.strictEqual(restored.data, data);
       assert.ok(message);
-      assert.strictEqual(message.id, '9df866854b4e8bf23c7e9e3db0121e35ecb75ff001489c8a839545c98c67f722');
+      assert.strictEqual(restored.id, message.id);
+    });
+  });
+
+  describe('verifyWithKey()', function () {
+    it('returns false when verifying with a different key than signer', function () {
+      const m = Message.fromVector(['Call', JSON.stringify(example.data)]);
+      m.signWithKey(key);
+      const other = new Key();
+      assert.strictEqual(m.verifyWithKey(other), false);
+    });
+
+    it('throws when key lacks verify', function () {
+      const m = Message.fromVector(['Call', JSON.stringify(example.data)]);
+      m.signWithKey(key);
+      assert.throws(() => m.verifyWithKey({}), /Key object must implement verify method/);
     });
   });
 
@@ -174,8 +287,8 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(literal.headers.version, VERSION_NUMBER);
       // assert.strictEqual(literal.headers.type, P2P_CALL);
       assert.strictEqual(literal.headers.size, 29);
-      assert.strictEqual(literal.headers.hash, '29ef07455d1e3ab5f0b5ad485d4bb85a00a4dd4003dabd43cab0f43199fc316e');
-      assert.strictEqual(message.type, 'Generic');
+      assert.strictEqual(literal.headers.hash, 'd3595887441da0b0ac8bdb05c8b85b2e4fbad11c43dbbf4ce8b6ec27d7cd0646');
+      assert.strictEqual(message.type, 'P2P_GENERIC');
     });
   });
 });

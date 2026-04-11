@@ -1,31 +1,32 @@
 'use strict';
 
-const App = require('../types/app');
+const { FabricShell } = require('../types/service');
 
 const assert = require('assert');
 const expect = require('chai').expect;
 
-describe('@fabric/core/types/app', function () {
-  describe('App', function () {
-    this.timeout(10000);
+describe('@fabric/core/types/service (FabricShell)', function () {
+  describe('FabricShell', function () {
+    // Full suite load can push start/stop over 5s; keep CI stable.
+    this.timeout(30000);
 
     it('is available from @fabric/core', function () {
-      assert.equal(App instanceof Function, true);
+      assert.equal(FabricShell instanceof Function, true);
     });
 
-    xit('should expose a constructor', function () {
-      assert.equal(typeof App, 'function');
+    it('should expose a constructor', function () {
+      assert.equal(typeof FabricShell, 'function');
     });
 
     it('has a normal lifecycle', async function () {
-      const app = new App();
+      const app = new FabricShell();
       await app.start();
       await app.stop();
       assert.ok(app);
     });
 
     it('allow a Resource to be defined', async function () {
-      const app = new App();
+      const app = new FabricShell();
       app.define('Example', {
         components: {
           list: 'fabric-example-list',
@@ -39,27 +40,21 @@ describe('@fabric/core/types/app', function () {
     });
 
     it('should create an application smoothly', async function () {
-      const app = new App();
+      const app = new FabricShell();
       await app.start();
       await app.stop();
       assert.ok(app);
     });
 
-    xit('should load data from an oracle', async function () {
-      const app = new App();
-      const oracle = new Oracle({
-        path: './data/oracle'
-      });
+    it('should defer to an oracle authority', async function () {
+      const app = new FabricShell();
+      const oracle = { id: 'test-oracle' };
+      app.attach({});
 
       await app.start();
-      await oracle.start();
-
-      await oracle._load('./resources');
-      await app._defer(oracle);
-      // await app._explore();
+      await app.defer(oracle);
 
       await app.stop();
-      await oracle.stop();
 
       assert.ok(oracle);
       assert.ok(app);

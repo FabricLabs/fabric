@@ -6,7 +6,7 @@ const SEEDS = {
   origin: 'unknown burger engine plug teach spot squeeze fringe ethics skate riot brand hurry melody double then trumpet impulse lesson inflict enlist eager region ride',
   relayer: 'salmon asthma decorate oxygen relief excite lamp huge bunker tennis spread chase liar glass shoe giant crane drama media step crack decline ring stay',
   destination: 'frown equal zero tackle relief shallow leisure diet roast festival good plunge pencil virus vote property blame random bacon rich ecology major survey slice'
-}
+};
 
 const DESTINATION_ID = 'mt4Wm6TW4ejU51iviiD73ECNCfRsjiBhQf';
 
