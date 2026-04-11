@@ -37,6 +37,7 @@
 const fs = require('fs');
 const path = require('path');
 const mkdirp = require('mkdirp');
+//const chokidar = require('chokidar');
 
 // Fabric Types
 const Actor = require('./actor');
@@ -216,25 +217,36 @@ class Filesystem extends Actor {
    * @returns {Promise} Resolves with Filesystem instance.
    */
   _loadFromDisk () {
-    const self = this;
     return new Promise((resolve, reject) => {
       try {
         // Check for STATE file in .fabric directory
-        const statePath = path.join(self.path, '.fabric', 'STATE');
+        const statePath = path.join(this.path, '.fabric', 'STATE');
         if (fs.existsSync(statePath)) {
-          const stateHex = fs.readFileSync(statePath, 'utf8');
-          const stateBuffer = Buffer.from(stateHex, 'hex');
-          const state = JSON.parse(stateBuffer.toString());
-          self._state.content = state;
+          const stateHex = fs.readFileSync(statePath, 'utf8').trim();
+          if (stateHex.length > 0) {
+            try {
+              const stateBuffer = Buffer.from(stateHex, 'hex');
+              const stateStr = stateBuffer.toString('utf8');
+              if (stateStr.length > 0) {
+                const state = JSON.parse(stateStr);
+                this._state.content = state;
+              }
+            } catch (parseErr) {
+              // STATE file is empty, truncated, or corrupted; use default state
+              if (this.settings.debug) {
+                console.debug('[FILESYSTEM]', 'STATE file invalid, using default:', parseErr.message);
+              }
+            }
+          }
         }
 
-        const files = fs.readdirSync(self.path);
-        self._state.content.files = files.filter(file => file !== '.fabric');
-        self.commit();
+        const files = fs.readdirSync(this.path);
+        this._state.content.files = files.filter(file => file !== '.fabric');
+        this.commit();
 
-        resolve(self);
+        resolve(this);
       } catch (exception) {
-        self.emit('error', exception);
+        this.emit('error', exception);
         reject(exception);
       }
     });
@@ -268,7 +280,7 @@ class Filesystem extends Actor {
     this.writeFile(name, content);
 
     // Ensure changes are persisted
-    await this.sync();
+    await this.synchronize();
 
     return {
       id: actor.id,
@@ -285,12 +297,18 @@ class Filesystem extends Actor {
     this.touchDir(fabricPath);
 
     this.touchDir(this.path); // ensure exists
-    this.sync();
 
-    fs.watch(this.path, {
+    // Load from disk
+    await this._loadFromDisk();
+
+    // Watch for changes in the filesystem
+    /* chokidar.watch(this.path, {
+      ignoreInitial: true,
       persistent: false,
-      recursive: true
-    }, this._handleDiskChange.bind(this));
+      ignored: /(^|[/\\])\.fabric([/\\]|$)/ // ignore .fabric directory
+    }).on('all', (event, filePath) => {
+      this._handleDiskChange(event, filePath);
+    }); */
 
     this._state.content.status = 'STARTED';
     this.commit();
@@ -304,10 +322,10 @@ class Filesystem extends Actor {
   }
 
   /**
-   * Syncronize state from the local filesystem.
+   * Synchronize state from the local filesystem.
    * @returns {Filesystem} Instance of the Fabric filesystem.
    */
-  async sync () {
+  async synchronize () {
     await this._loadFromDisk();
     this.commit();
     return this;
@@ -342,13 +360,12 @@ class Filesystem extends Actor {
   commit () {
     const state = new Actor(this.state);
 
-    // Store current state's hash as parent
-    this._state.content.parent = state.id;
-
     // Write state to STATE file using absolute path
     const statePath = path.resolve(this.path, '.fabric', 'STATE');
+    // console.debug('[FILESYSTEM]', 'Writing state:', this.state);
     const stateHex = Buffer.from(JSON.stringify(this.state)).toString('hex');
     this.writeFile(statePath, stateHex);
+    this.writeFile(statePath + '.json', JSON.stringify(this.state, null, '  '));
 
     const commit = Message.fromVector(['COMMIT', state]);
     commit.signatures = commit.signatures || [];
@@ -361,6 +378,23 @@ class Filesystem extends Actor {
     }
 
     this.emit('commit', commit);
+  }
+
+  /**
+   * Synchronize the filesystem with the local state.
+   * @returns {Promise} Resolves with Filesystem instance.
+   */
+  sync () {
+    return new Promise((resolve, reject) => {
+      try {
+        this.synchronize().then(() => {
+          resolve(this);
+        });
+      } catch (exception) {
+        this.emit('error', exception);
+        reject(exception);
+      }
+    });
   }
 }
 
@@ -385,10 +419,10 @@ module.exports = Filesystem;
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
-      <li><a href="HTTPServer.html">HTTPServer</a></li>
       <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
@@ -407,24 +441,36 @@ module.exports = Filesystem;
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
-      <li><a href="Snapshot.html">Snapshot</a></li>
-      <li><a href="Stack.html">Stack</a></li>
-      <li><a href="Stash.html">Stash</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
-      <li><a href="Swarm.html">Swarm</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
-      <li><a href="Value.html">Value</a></li>
       <li><a href="Vector.html">Vector</a></li>
-      <li><a href="Walker.html">Walker</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
-    <h3>Events</h3>
+    <h3>Global</h3>
     <ul>
-      <li><a href="Aggregator.html#event:commit">commit</a></li>
+      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
+      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
+      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
+      <li><a href="global.html#crypto">crypto</a></li>
+      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
+      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
+      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
+      <li><a href="global.html#gossip">gossip</a></li>
+      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
+      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
+      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
+      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
+      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
+      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
+      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
+      <li><a href="global.html#stableStringify">stableStringify</a></li>
+      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
+      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
+      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
     </ul>
   </nav>
   <br class="clear" />
