@@ -130,9 +130,12 @@ class Lightning extends Service {
   }
 
   _bitcoinCliNetworkFlag () {
-    const network = this.settings.network || 'regtest';
+    const network = String(this.settings.network || 'regtest').toLowerCase();
     switch (network) {
+      case 'main':
+      case 'bitcoin':
       case 'mainnet': return null;
+      case 'test':
       case 'testnet': return '-testnet';
       case 'testnet4': return '-testnet4';
       case 'signet': return '-signet';

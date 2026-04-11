@@ -138,24 +138,32 @@ class Store extends Actor {
     // Prefer configured codec for at-rest encryption; fallback keeps compatibility.
     if (this.codec && typeof this.codec.encode === 'function') {
       const encoded = this.codec.encode(plaintext);
-      secret = Buffer.isBuffer(encoded) ? encoded.toString('hex') : String(encoded);
+      const encodedBuffer = Buffer.isBuffer(encoded)
+        ? encoded
+        : Buffer.from(String(encoded), 'utf8');
+      secret = encodedBuffer.toString('hex');
     }
 
-    const name = crypto.createHash('sha256').update(path).digest('hex');
+    const name = this._getPathForKey(path);
     return this.set(`/secrets/${name}`, secret);
   }
 
   async _getEncrypted (path, _passphrase = '') {
     if (typeof path !== 'string' || !path.length) return null;
 
-    const name = crypto.createHash('sha256').update(path).digest('hex');
+    const name = this._getPathForKey(path);
     const secret = await this.get(`/secrets/${name}`);
     if (secret == null) return null;
 
     let decrypted = secret;
 
     if (this.codec && typeof this.codec.decode === 'function') {
-      const payload = Buffer.isBuffer(secret) ? secret : Buffer.from(String(secret), 'hex');
+      let payload = secret;
+      if (!Buffer.isBuffer(payload)) {
+        const serialized = String(secret);
+        const isHex = /^[0-9a-fA-F]+$/.test(serialized) && serialized.length % 2 === 0;
+        payload = Buffer.from(serialized, isHex ? 'hex' : 'utf8');
+      }
       decrypted = this.codec.decode(payload);
     }
 
@@ -312,7 +320,10 @@ class Store extends Actor {
 
       // Keep in-memory collection view in sync for _GET/_PUT call paths.
       const existingList = await self._GET(key);
-      const nextList = Array.isArray(existingList) ? existingList.concat([value]) : [value];
+      const persistedList = Array.isArray(family) ? family.filter((item) => item != null) : [];
+      const inMemoryList = Array.isArray(existingList) ? existingList.filter((item) => item != null) : [];
+      const seedList = inMemoryList.length ? inMemoryList : persistedList;
+      const nextList = seedList.concat([value]);
       await self._PUT(key, nextList);
 
       // Write serialized Collection to disk

@@ -65,6 +65,7 @@ const COMMANDS = {
 async function main () {
   const environment = new Environment(process.wallet);
   const program = new Command();
+  const argv = process.argv;
 
   environment.start();
 
@@ -86,7 +87,7 @@ async function main () {
     .description('Initiate peer bootstrapping.')
     .action(COMMANDS.START.bind({ environment }));
 
-  program.command('shell', { isDefault: true })
+  program.command('shell')
     .description('Open the interactive Fabric shell (Blessed TUI).')
     .action(COMMANDS.SHELL.bind({ environment }));
 
@@ -115,19 +116,34 @@ async function main () {
   program.option('--password <PASSWORD>', 'Specify the encryption password.', '');
   program.option('--wallet <FILE>', 'Load wallet from file.', file);
 
-  await program.parseAsync(process.argv);
+  const optionsPreview = program.parseOptions(argv);
+  const requestedCommand = Array.isArray(optionsPreview.operands) ? optionsPreview.operands[0] : null;
+  const wantsHelp = argv.includes('--help') || argv.includes('-h');
+  const wantsVersion = argv.includes('--version') || argv.includes('-V');
+  const wantsReceive = argv.includes('--receive');
 
   if (!environment.wallet) {
-    if (environment.walletExists() && !program.force) {
+    if (requestedCommand === 'setup') {
+      await program.parseAsync(argv);
+      return this;
+    }
+
+    const forceEnabled = argv.includes('--force');
+    if (environment.walletExists() && !forceEnabled) {
       console.warn('[FABRIC:CLI]', 'Wallet file exists, no data will be written.  Use --force to override.');
       console.warn('[FABRIC:CLI]', '[WARNING]', '--force DESTROYS ALL DATA: DOUBLE-CHECK YOUR BACKUPS!');
-      console.warn('[FABRIC:CLI]', 'EXISTING_XPUB_PUBLIC', '=', environment.wallet.key.xpub);
     } else {
       await OP_SETUP.apply({ environment, program });
     }
 
     process.exit();
-  } else if (program.test) {
+  }
+
+  const shouldDefaultShell = !requestedCommand && !wantsHelp && !wantsVersion && !wantsReceive;
+  const parseArgv = shouldDefaultShell ? argv.concat(['shell']) : argv;
+  await program.parseAsync(parseArgv);
+
+  if (program.test) {
     console.log('[FABRIC:CLI]', 'Not yet implemented.');
     process.exit();
   } else if (program.receive) {

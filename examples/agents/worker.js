@@ -46,13 +46,10 @@ function cloneState (value) {
 }
 
 function compileWorkerFunction (source) {
-  if (!source) return null;
-  try {
-    // Example-only trusted code path to preserve settings.function behavior.
-    return new Function(`return (${source});`)();
-  } catch {
-    return null;
-  }
+  // Dynamic code compilation is intentionally disabled for security.
+  // Workers execute the built-in `defaultWork` implementation.
+  void source;
+  return null;
 }
 
 function computeWorkerStateID (state = {}) {
@@ -69,7 +66,7 @@ function computeWorkerStateID (state = {}) {
 }
 
 function runWorkerLoop ({ parentPort, workerData, processObj }) {
-  const run = compileWorkerFunction(workerData && workerData.functionSource);
+  const run = compileWorkerFunction(workerData && workerData.functionSource) || defaultWork;
   const boundState = Object.assign({
     workerIndex: workerData && workerData.workerIndex,
     processed: 0,
