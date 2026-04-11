@@ -47,10 +47,51 @@ const Actor = require('./actor');
 const State = require('./state');
 const Key = require('./key');
 
+// Fabric Functions
+const {
+  createDefaultOpcodeRegistry,
+  defineOpcode: defineOpcodeEntry,
+  resolveOpcodeContract
+} = require('../functions/opcodeRegistry');
+
+// Strict JSON
+const { parsePersistedJson } = require('../functions/wireJson');
+
 /**
- * General-purpose state machine with {@link Vector}-based instructions.
+ * @classdesc Deterministic &lt;strong>virtual machine&lt;/strong> layer extending {@link Actor}: script/stack, fixed memory buffer,
+ * clock, and a {@link Key}-backed generator for reproducible “random” bits (&lt;code>sip&lt;/code>). Consumes {@link State}-signed
+ * instruction entries from {@link Fabric#push} — not the same as P2P {@link Message} dispatch (see
+ * &lt;code>types/message.js&lt;/code>).
+ * @class Machine
+ * @extends Actor
  */
 class Machine extends Actor {
+  /**
+   * Parse a JSON object of Buffer-like entries into an array of {@link Buffer}s (legacy wire / script helper).
+   * @param {string} [input='']
+   * @returns {Buffer[]}
+   */
+  static fromObjectString (input = '') {
+    if (!input) throw new Error('Must provide input.');
+    if (typeof input !== 'string') input = JSON.stringify(input);
+    const result = [];
+    const object = parsePersistedJson(input);
+
+    for (const i in object) {
+      let element = object[i];
+
+      if (element instanceof Array) {
+        element = Buffer.from(element);
+      } else {
+        element = Buffer.from(element.data);
+      }
+
+      result.push(element);
+    }
+
+    return result;
+  }
+
   /**
    * Create a Machine.
    * @param {Object} settings Run-time configuration.
@@ -82,6 +123,7 @@ class Machine extends Actor {
     this.memory = Buffer.alloc(MACHINE_MAX_MEMORY);
 
     this.known = {}; // definitions
+    this.opcodes = createDefaultOpcodeRegistry();
     this.stack = []; // output
     this.history = []; // State tree
 
@@ -112,7 +154,6 @@ class Machine extends Actor {
   }
 
   get tip () {
-    this.log(`tip requested: ${val}`);
     this.log(`tip requested, history: ${JSON.stringify(this.history)}`);
     return this.history[this.history.length - 1] || null;
   }
@@ -145,7 +186,7 @@ class Machine extends Actor {
     }).join(''), 2).toString(16);
   }
 
-  validateCycle (i) {
+  validateCycle (_i) {
     return false;
   }
 
@@ -189,8 +230,32 @@ class Machine extends Actor {
   }
 
   // register a local function
-  define (name, op) {
+  define (name, op, definition = {}) {
     this.known[name] = op.bind(this.state);
+    defineOpcodeEntry(this.opcodes, name, Object.assign({}, definition, {
+      implementation: true
+    }));
+    return this.known[name];
+  }
+
+  defineOpcode (name, op, definition = {}) {
+    return this.define(name, op, definition);
+  }
+
+  defineBitcoinOpcode (name, op, definition = {}) {
+    return this.define(name, op, Object.assign({}, definition, { family: 'bitcoin' }));
+  }
+
+  defineFabricOpcode (name, op, definition = {}) {
+    return this.define(name, op, Object.assign({}, definition, { family: 'fabric' }));
+  }
+
+  compileOpcodeContract (body = '') {
+    const resolved = resolveOpcodeContract(this.opcodes, body);
+    if (resolved.unknown.length) {
+      throw new Error(`Unknown opcodes in contract: ${resolved.unknown.join(', ')}`);
+    }
+    return resolved.lines;
   }
 
   applyOperation (op) {
@@ -223,7 +288,13 @@ class Machine extends Actor {
 
   async start () {
     this.status = 'STARTING';
-    this._governor = setInterval(this.compute.bind(this), this.settings.frequency * 1000);
+    const f = this.settings.frequency;
+    const fromFreq = (typeof f === 'number' &amp;&amp; Number.isFinite(f)) ? f * 1000 : NaN;
+    const intervalSec = (typeof this.settings.interval === 'number' &amp;&amp; Number.isFinite(this.settings.interval))
+      ? this.settings.interval
+      : 60;
+    const ms = Number.isFinite(fromFreq) &amp;&amp; fromFreq > 0 ? fromFreq : Math.max(1, intervalSec * 1000);
+    this._governor = setInterval(this.compute.bind(this), ms);
     this.status = 'STARTED';
     return this;
   }
@@ -250,14 +321,17 @@ module.exports = Machine;
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Bond.html">Bond</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Contract.html">Contract</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
-      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
@@ -275,12 +349,14 @@ module.exports = Machine;
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
+      <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
@@ -290,25 +366,10 @@ module.exports = Machine;
     </ul>
     <h3>Global</h3>
     <ul>
-      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
-      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
-      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
-      <li><a href="global.html#crypto">crypto</a></li>
-      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
-      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
-      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
-      <li><a href="global.html#gossip">gossip</a></li>
-      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
-      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
-      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
-      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
-      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
-      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
-      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
-      <li><a href="global.html#stableStringify">stableStringify</a></li>
-      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
-      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
-      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
+      <li><a href="global.html#BITCOIND_CHAIN_FOLDER_NAMES">BITCOIND_CHAIN_FOLDER_NAMES</a></li>
+      <li><a href="global.html#BITCOIN_COOKIE_PATH_MAX_LEN">BITCOIN_COOKIE_PATH_MAX_LEN</a></li>
+      <li><a href="global.html#SAT_ADJ_EPS">SAT_ADJ_EPS</a></li>
+      <li><a href="global.html#cookiePathUnderDatadirBase">cookiePathUnderDatadirBase</a></li>
     </ul>
   </nav>
   <br class="clear" />

@@ -76,43 +76,49 @@ class ZMQ extends Service {
     return this;
   }
 
+  /** Avoid process crash when nothing listens for `error` (Node EventEmitter default). */
+  _emitErrorSafe (err) {
+    if (this.listenerCount('error') > 0) this.emit('error', err);
+    else this.emit('warning', `[ZMQ] ${err &amp;&amp; err.message ? err.message : err}`);
+  }
+
   async connect () {
     this._state.status = 'CONNECTING';
     this.socket = zeromq.socket('sub');
 
     // Add connection event handlers
     this.socket.on('connect', () => {
-      console.log(`[ZMQ] Connected to ${this.settings.host}:${this.settings.port}`);
+      this.emit('debug', `[ZMQ] Connected to ${this.settings.host}:${this.settings.port}`);
       this._state.status = 'CONNECTED';
       this._state.reconnectAttempts = 0;  // Reset reconnection attempts on successful connect
     });
 
     this.socket.on('disconnect', () => {
-      console.log(`[ZMQ] Disconnected from ${this.settings.host}:${this.settings.port}`);
+      this.emit('debug', `[ZMQ] Disconnected from ${this.settings.host}:${this.settings.port}`);
       this._state.status = 'DISCONNECTED';
     });
 
     this.socket.on('error', (error) => {
-      console.error('[ZMQ] Error:', error);
+      this._emitErrorSafe(error);
     });
 
     this.socket.on('close', async (msg) => {
-      console.error('[ZMQ] Socket closed:', msg);
+      this.emit('debug', `[ZMQ] Socket closed: ${msg}`);
       // Only attempt reconnection if we haven't stopped the service intentionally
       if (this._state.status !== 'STOPPED' &amp;&amp; this._state.status !== 'STOPPING') {
         if (this._state.reconnectAttempts &lt; this.settings.maxReconnectAttempts) {
           this._state.reconnectAttempts++;
-          console.log(`[ZMQ] Attempting to reconnect (${this._state.reconnectAttempts}/${this.settings.maxReconnectAttempts})...`);
+          this.emit('debug', `[ZMQ] Attempting to reconnect (${this._state.reconnectAttempts}/${this.settings.maxReconnectAttempts})...`);
           setTimeout(async () => {
             try {
               await this.start();
             } catch (err) {
-              console.error('[ZMQ] Reconnection failed:', err);
+              this._emitErrorSafe(err);
             }
           }, this.settings.reconnectInterval);
         } else {
-          console.error('[ZMQ] Max reconnection attempts reached. Giving up.');
-          this.emit('error', new Error('Max reconnection attempts reached'));
+          this.emit('warning', '[ZMQ] Max reconnection attempts reached. Giving up.');
+          this._emitErrorSafe(new Error('Max reconnection attempts reached'));
         }
       }
     });
@@ -190,14 +196,17 @@ module.exports = ZMQ;
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Bond.html">Bond</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Contract.html">Contract</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
-      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
@@ -215,12 +224,14 @@ module.exports = ZMQ;
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
+      <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
@@ -230,25 +241,10 @@ module.exports = ZMQ;
     </ul>
     <h3>Global</h3>
     <ul>
-      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
-      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
-      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
-      <li><a href="global.html#crypto">crypto</a></li>
-      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
-      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
-      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
-      <li><a href="global.html#gossip">gossip</a></li>
-      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
-      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
-      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
-      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
-      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
-      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
-      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
-      <li><a href="global.html#stableStringify">stableStringify</a></li>
-      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
-      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
-      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
+      <li><a href="global.html#BITCOIND_CHAIN_FOLDER_NAMES">BITCOIND_CHAIN_FOLDER_NAMES</a></li>
+      <li><a href="global.html#BITCOIN_COOKIE_PATH_MAX_LEN">BITCOIN_COOKIE_PATH_MAX_LEN</a></li>
+      <li><a href="global.html#SAT_ADJ_EPS">SAT_ADJ_EPS</a></li>
+      <li><a href="global.html#cookiePathUnderDatadirBase">cookiePathUnderDatadirBase</a></li>
     </ul>
   </nav>
   <br class="clear" />

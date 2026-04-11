@@ -165,6 +165,7 @@
             <pre><span class="hljs-meta">&#x27;use strict&#x27;</span>;
 
 <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;debug-trace&#x27;</span>)({ <span class="hljs-attr">always</span>: <span class="hljs-literal">true</span> });
+<span class="hljs-keyword">const</span> { setMaxListeners } = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;events&#x27;</span>);
 
 <span class="hljs-keyword">const</span> <span class="hljs-variable constant_">SEEDS</span> = {
   <span class="hljs-attr">origin</span>: <span class="hljs-string">&#x27;unknown burger engine plug teach spot squeeze fringe ethics skate riot brand hurry melody double then trumpet impulse lesson inflict enlist eager region ride&#x27;</span>,
@@ -195,6 +196,7 @@
 <span class="hljs-keyword">const</span> <span class="hljs-title class_">Message</span> = <span class="hljs-built_in">require</span>(<span class="hljs-string">&#x27;../types/message&#x27;</span>);
 
 <span class="hljs-keyword">async</span> <span class="hljs-keyword">function</span> <span class="hljs-title function_">main</span> () {
+  <span class="hljs-title function_">setMaxListeners</span>(<span class="hljs-number">0</span>);
   <span class="hljs-keyword">const</span> swarm = {
     <span class="hljs-attr">origin</span>: <span class="hljs-keyword">new</span> <span class="hljs-title class_">Peer</span>({
       <span class="hljs-attr">listen</span>: <span class="hljs-literal">true</span>,
@@ -237,32 +239,8 @@
           <div class='highlight'>
             <pre>  swarm.<span class="hljs-property">origin</span>.<span class="hljs-title function_">on</span>(<span class="hljs-string">&#x27;peer:candidate&#x27;</span>, <span class="hljs-keyword">async</span> <span class="hljs-keyword">function</span> (<span class="hljs-params">peer</span>) {
     <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;[EXAMPLES:RELAY]&#x27;</span>, <span class="hljs-string">&#x27;Origin Peer emitted &quot;peer:candidate&quot; event:&#x27;</span>, peer);
-
     <span class="hljs-keyword">if</span> (peer.<span class="hljs-property">id</span> === <span class="hljs-variable constant_">DESTINATION_ID</span>) {
-      <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">warn</span>(<span class="hljs-string">&#x27;[EXAMPLES:RELAY]&#x27;</span>, <span class="hljs-string">&#x27;Peer event was destination peer!&#x27;</span>);
-      <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">warn</span>(<span class="hljs-string">&#x27;[EXAMPLES:RELAY]&#x27;</span>, <span class="hljs-string">&#x27;Origin node peers:&#x27;</span>, swarm.<span class="hljs-property">origin</span>.<span class="hljs-property">peers</span>);
-      <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">warn</span>(<span class="hljs-string">&#x27;[EXAMPLES:RELAY]&#x27;</span>, <span class="hljs-string">&#x27;Relay node peers:&#x27;</span>, swarm.<span class="hljs-property">relayer</span>.<span class="hljs-property">peers</span>);
-      <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">warn</span>(<span class="hljs-string">&#x27;[EXAMPLES:RELAY]&#x27;</span>, <span class="hljs-string">&#x27;Destination node peers:&#x27;</span>, swarm.<span class="hljs-property">destination</span>.<span class="hljs-property">peers</span>);</pre>
-          </div>
-        </div>
-
-      </li>
-
-
-      <li id="section-4">
-        <div class="annotation">
-
-          <div class="sswrap ">
-            <a class="ss" href="#section-4">&#x00a7;</a>
-          </div>
-          <p>Send Message</p>
-
-        </div>
-
-        <div class="content">
-          <div class='highlight'>
-            <pre>      <span class="hljs-keyword">let</span> message = <span class="hljs-title class_">Message</span>.<span class="hljs-title function_">fromVector</span>([<span class="hljs-string">&#x27;Generic&#x27;</span>, <span class="hljs-string">&#x27;Hello, world!&#x27;</span>]);
-      <span class="hljs-keyword">await</span> swarm.<span class="hljs-property">origin</span>.<span class="hljs-title function_">broadcast</span>(message);
+      <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">warn</span>(<span class="hljs-string">&#x27;[EXAMPLES:RELAY]&#x27;</span>, <span class="hljs-string">&#x27;Destination candidate discovered.&#x27;</span>);
     }
   });
 
@@ -275,11 +253,11 @@
       </li>
 
 
-      <li id="section-5">
+      <li id="section-4">
         <div class="annotation">
 
           <div class="sswrap ">
-            <a class="ss" href="#section-5">&#x00a7;</a>
+            <a class="ss" href="#section-4">&#x00a7;</a>
           </div>
           <p>Start component services</p>
 
@@ -297,7 +275,38 @@
 
   <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;[EXAMPLES:RELAY]&#x27;</span>, <span class="hljs-string">&#x27;Starting destination Peer...&#x27;</span>);
   <span class="hljs-keyword">await</span> swarm.<span class="hljs-property">destination</span>.<span class="hljs-title function_">start</span>();
-  <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;[EXAMPLES:RELAY]&#x27;</span>, <span class="hljs-string">&#x27;Destination Peer started!&#x27;</span>);
+  <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;[EXAMPLES:RELAY]&#x27;</span>, <span class="hljs-string">&#x27;Destination Peer started!&#x27;</span>);</pre>
+          </div>
+        </div>
+
+      </li>
+
+
+      <li id="section-5">
+        <div class="annotation">
+
+          <div class="sswrap ">
+            <a class="ss" href="#section-5">&#x00a7;</a>
+          </div>
+          <p>Allow peering to settle before broadcasting.</p>
+
+        </div>
+
+        <div class="content">
+          <div class='highlight'>
+            <pre>  <span class="hljs-keyword">await</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">Promise</span>(<span class="hljs-function">(<span class="hljs-params">resolve</span>) =&gt;</span> <span class="hljs-built_in">setTimeout</span>(resolve, <span class="hljs-number">1200</span>));
+
+  <span class="hljs-keyword">const</span> message = <span class="hljs-title class_">Message</span>.<span class="hljs-title function_">fromVector</span>([<span class="hljs-string">&#x27;P2P_BASE_MESSAGE&#x27;</span>, <span class="hljs-title class_">JSON</span>.<span class="hljs-title function_">stringify</span>({
+    <span class="hljs-attr">type</span>: <span class="hljs-string">&#x27;RelayExample&#x27;</span>,
+    <span class="hljs-attr">object</span>: { <span class="hljs-attr">text</span>: <span class="hljs-string">&#x27;Hello, world!&#x27;</span> }
+  })]);
+  <span class="hljs-keyword">await</span> swarm.<span class="hljs-property">origin</span>.<span class="hljs-title function_">broadcast</span>(message.<span class="hljs-title function_">toBuffer</span>());
+
+  <span class="hljs-keyword">await</span> <span class="hljs-keyword">new</span> <span class="hljs-title class_">Promise</span>(<span class="hljs-function">(<span class="hljs-params">resolve</span>) =&gt;</span> <span class="hljs-built_in">setTimeout</span>(resolve, <span class="hljs-number">1500</span>));
+
+  <span class="hljs-keyword">await</span> swarm.<span class="hljs-property">destination</span>.<span class="hljs-title function_">stop</span>();
+  <span class="hljs-keyword">await</span> swarm.<span class="hljs-property">relayer</span>.<span class="hljs-title function_">stop</span>();
+  <span class="hljs-keyword">await</span> swarm.<span class="hljs-property">origin</span>.<span class="hljs-title function_">stop</span>();
 }
 
 <span class="hljs-title function_">main</span>().<span class="hljs-title function_">catch</span>(<span class="hljs-keyword">function</span> <span class="hljs-title function_">exceptionHandler</span> (exception) {

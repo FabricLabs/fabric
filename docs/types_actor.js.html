@@ -33,6 +33,28 @@
       <article>
         <pre class="prettyprint source linenums"><code>'use strict';
 
+/**
+ * @fileoverview Base &lt;strong>Actor&lt;/strong> type for Fabric: JSON-shaped state, JSON Patch commits, and a
+ * content-derived &lt;strong>id&lt;/strong>.
+ *
+ * &lt;p>&lt;strong>State&lt;/strong> — &lt;code>_state.content&lt;/code> is observed with &lt;code>fast-json-patch&lt;/code>.
+ * {@link Actor#commit} turns observer diffs into {@link Actor#history} entries and emits &lt;code>commit&lt;/code> plus
+ * &lt;code>message&lt;/code> with &lt;code>type: 'ActorMessage'&lt;/code> / &lt;code>data.type: 'Changes'&lt;/code>.&lt;/p>
+ *
+ * &lt;p>&lt;strong>Identity&lt;/strong> — {@link Actor#id} is a SHA256 digest (hex) of the 32-byte preimage buffer;
+ * {@link Actor#preimage} is SHA256(UTF-8) of the pretty-printed {@link Actor#toGenericMessage}
+ * &lt;code>{ type, object }&lt;/code> with sorted keys ({@link Actor#toObject}). Implementation uses {@link Hash256.compute}.
+ * Treat &lt;code>id&lt;/code> as a &lt;strong>content address&lt;/strong> for that state shape, not an arbitrary application string hash.&lt;/p>
+ *
+ * &lt;p>&lt;strong>Relationship to {@link Message}&lt;/strong> — &lt;code>Message&lt;/code> extends &lt;code>Actor&lt;/code> and implements
+ * &lt;strong>AMP&lt;/strong> (wire headers, opcodes, Schnorr &lt;code>Fabric/Message&lt;/code>). Downstream apps that only need a stable
+ * storage key should not label that key &lt;code>Actor#id&lt;/code> unless it is produced by this type.&lt;/p>
+ *
+ * &lt;p>Narrative docs: &lt;strong>DEVELOPERS.md&lt;/strong> (section &lt;em>Actor and Message&lt;/em>) and this file’s class JSDoc are
+ * kept in sync; &lt;code>npm run make:docs&lt;/code> embeds DEVELOPERS.md as the HTML home page, while Actor.html is generated
+ * from here.&lt;/p>
+ */
+
 // Generics
 const EventEmitter = require('events');
 // const stream = require('node:stream/promises');
@@ -46,13 +68,25 @@ const Hash256 = require('./hash256');
 
 // Fabric Functions
 const _sortKeys = require('../functions/_sortKeys');
+const { tryParsePersistedJson } = require('../functions/wireJson');
 
 /**
- * Generic Fabric Actor.
+ * @classdesc Base &lt;strong>Actor&lt;/strong>: JSON-shaped &lt;code>_state.content&lt;/code> observed with
+ * &lt;code>fast-json-patch&lt;/code>; {@link Actor#commit} turns diffs into {@link Actor#history} and emits
+ * &lt;code>commit&lt;/code> plus &lt;code>message&lt;/code> (&lt;code>type: 'ActorMessage'&lt;/code>, &lt;code>data.type: 'Changes'&lt;/code>).
+ * &lt;strong>Identity&lt;/strong> — {@link Actor#id} is SHA256(hex) of the 32-byte preimage buffer; {@link Actor#preimage} is
+ * SHA256(UTF-8) of pretty-printed {@link Actor#toGenericMessage} &lt;code>{ type, object }&lt;/code> with sorted keys
+ * ({@link Actor#toObject}); uses {@link Hash256.compute}. Treat &lt;code>id&lt;/code> as a &lt;strong>content address&lt;/strong>, not an
+ * arbitrary app string hash. &lt;strong>Wire traffic&lt;/strong> — see {@link Message} (extends Actor, AMP). Same narrative as
+ * &lt;strong>DEVELOPERS.md&lt;/strong> (&lt;em>Actor and Message&lt;/em>) and &lt;code>@fileoverview&lt;/code> above (also on
+ * &lt;code>types_actor.js.html&lt;/code> source page).
+ * @class Actor
+ * @extends EventEmitter
  * @access protected
- * @emits message Fabric {@link Message} objects.
- * @property {String} id Unique identifier for this Actor (id === SHA256(preimage)).
- * @property {String} preimage Input hash for the `id` property (preimage === SHA256(ActorState)).
+ * @fires Actor#commit
+ * @emits message Emits structured objects; on {@link Actor#commit}, &lt;code>type: 'ActorMessage'&lt;/code> with patch metadata (not necessarily a {@link Message} AMP instance).
+ * @property {String} id 64-char hex: SHA256 of the 32-byte digest represented by {@link Actor#preimage}.
+ * @property {String} preimage 64-char hex: SHA256 of UTF-8 pretty JSON of {@link Actor#toGenericMessage}.
  */
 class Actor extends EventEmitter {
   /**
@@ -61,7 +95,7 @@ class Actor extends EventEmitter {
    * for the actor, including key material [!!!] — be mindful of
    * what you share with others!
    * @param {Object} [actor] Object to use as the actor.
-   * @param {String} [actor.seed] BIP24 Mnemonic to use as a seed phrase.
+   * @param {String} [actor.seed] Optional mnemonic or seed string stored into state (see BIP39 / wallet docs — not validated here).
    * @param {Buffer} [actor.public] Public key.
    * @param {Buffer} [actor.private] Private key.
    * @returns {Actor} Instance of the Actor.  Call {@link Actor#sign} to emit a {@link Signature}.
@@ -136,12 +170,8 @@ class Actor extends EventEmitter {
     let result = null;
 
     if (typeof input === 'string' &amp;&amp; input.length) {
-      try {
-        result = JSON.parse(input);
-      } catch (E) {
-        // Fail closed: callers expect null on invalid JSON.
-        result = null;
-      }
+      const pr = tryParsePersistedJson(input);
+      result = pr.ok ? pr.value : null;
     }
 
     return result;
@@ -489,7 +519,7 @@ class Actor extends EventEmitter {
     return this.state;
   }
 
-  _handleMonitorChanges (changes) {
+  _handleMonitorChanges (_changes) {
     // TODO: emit global state event here
     // after verify, commit
   }
@@ -534,14 +564,17 @@ module.exports = Actor;
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Bond.html">Bond</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Contract.html">Contract</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
-      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
@@ -559,12 +592,14 @@ module.exports = Actor;
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
+      <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
@@ -574,25 +609,10 @@ module.exports = Actor;
     </ul>
     <h3>Global</h3>
     <ul>
-      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
-      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
-      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
-      <li><a href="global.html#crypto">crypto</a></li>
-      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
-      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
-      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
-      <li><a href="global.html#gossip">gossip</a></li>
-      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
-      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
-      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
-      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
-      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
-      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
-      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
-      <li><a href="global.html#stableStringify">stableStringify</a></li>
-      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
-      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
-      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
+      <li><a href="global.html#BITCOIND_CHAIN_FOLDER_NAMES">BITCOIND_CHAIN_FOLDER_NAMES</a></li>
+      <li><a href="global.html#BITCOIN_COOKIE_PATH_MAX_LEN">BITCOIN_COOKIE_PATH_MAX_LEN</a></li>
+      <li><a href="global.html#SAT_ADJ_EPS">SAT_ADJ_EPS</a></li>
+      <li><a href="global.html#cookiePathUnderDatadirBase">cookiePathUnderDatadirBase</a></li>
     </ul>
   </nav>
   <br class="clear" />

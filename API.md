@@ -1,6 +1,23 @@
 ## Classes
 
 <dl>
+<dt><a href="#Bitcoin">Bitcoin</a> ⇐ <code><a href="#Service">Service</a></code></dt>
+<dd><p>Manages interaction with the Bitcoin network.</p>
+</dd>
+<dt><a href="#Lightning">Lightning</a></dt>
+<dd><p>Manage a Lightning node.</p>
+</dd>
+<dt><a href="#Redis">Redis</a></dt>
+<dd><p>Connect and subscribe to Redis servers.</p>
+</dd>
+<dt><a href="#Text">Text</a> ⇐ <code><a href="#Service">Service</a></code></dt>
+<dd></dd>
+<dt><a href="#ZMQ">ZMQ</a></dt>
+<dd><p>Connect and subscribe to ZeroMQ publishers.</p>
+</dd>
+<dt><del><a href="#Scribe">Scribe</a></del></dt>
+<dd><p>Deprecated 2021-11-06 — use <a href="FabricState">FabricState</a> (<code>types/state</code>). <code>Scribe</code> was merged into <code>State</code>.</p>
+</dd>
 <dt><a href="#Actor">Actor</a> ⇐ <code>EventEmitter</code></dt>
 <dd><p>Base <strong>Actor</strong>: JSON-shaped <code>_state.content</code> observed with
 <code>fast-json-patch</code>; <a href="#Actor+commit">commit</a> turns diffs into <a href="Actor#history">Actor#history</a> and emits
@@ -192,23 +209,6 @@ live on <a href="#Machine">Machine</a> and <a href="#State">State</a> / <a href=
 almost like &quot;threads&quot;, as they run asynchronously over the duration of a
 contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</p>
 </dd>
-<dt><a href="#Bitcoin">Bitcoin</a> ⇐ <code><a href="#Service">Service</a></code></dt>
-<dd><p>Manages interaction with the Bitcoin network.</p>
-</dd>
-<dt><a href="#Lightning">Lightning</a></dt>
-<dd><p>Manage a Lightning node.</p>
-</dd>
-<dt><a href="#Redis">Redis</a></dt>
-<dd><p>Connect and subscribe to Redis servers.</p>
-</dd>
-<dt><a href="#Text">Text</a> ⇐ <code><a href="#Service">Service</a></code></dt>
-<dd></dd>
-<dt><a href="#ZMQ">ZMQ</a></dt>
-<dd><p>Connect and subscribe to ZeroMQ publishers.</p>
-</dd>
-<dt><del><a href="#Scribe">Scribe</a></del></dt>
-<dd><p>Deprecated 2021-11-06 — use <a href="FabricState">FabricState</a> (<code>types/state</code>). <code>Scribe</code> was merged into <code>State</code>.</p>
-</dd>
 </dl>
 
 ## Constants
@@ -249,6 +249,1538 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 </dd>
 </dl>
 
+<a name="Bitcoin"></a>
+
+## Bitcoin ⇐ [<code>Service</code>](#Service)
+Manages interaction with the Bitcoin network.
+
+**Kind**: global class  
+**Extends**: [<code>Service</code>](#Service)  
+
+* [Bitcoin](#Bitcoin) ⇐ [<code>Service</code>](#Service)
+    * [new Bitcoin([settings])](#new_Bitcoin_new)
+    * _instance_
+        * [.UAString](#Bitcoin+UAString)
+        * [.tip](#Bitcoin+tip)
+        * [.height](#Bitcoin+height)
+        * [.broadcast(tx)](#Bitcoin+broadcast)
+        * [._processSpendMessage(message)](#Bitcoin+_processSpendMessage) ⇒ <code>BitcoinTransactionID</code>
+        * [._prepareTransaction(obj)](#Bitcoin+_prepareTransaction)
+        * [._handleCommittedBlock(block)](#Bitcoin+_handleCommittedBlock)
+        * [._handlePeerPacket(msg)](#Bitcoin+_handlePeerPacket)
+        * [._handleBlockFromSPV(msg)](#Bitcoin+_handleBlockFromSPV)
+        * [._handleTransactionFromSPV(tx)](#Bitcoin+_handleTransactionFromSPV)
+        * [._subscribeToShard(shard)](#Bitcoin+_subscribeToShard)
+        * [._connectSPV()](#Bitcoin+_connectSPV)
+        * [.connect(addr)](#Bitcoin+connect)
+        * [._makeRPCRequest(method, params, [opts])](#Bitcoin+_makeRPCRequest) ⇒ <code>Promise</code>
+        * [.getBlockInfo(hashOrHeight)](#Bitcoin+getBlockInfo) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.getTransactionInfo(txid)](#Bitcoin+getTransactionInfo) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.getAddressInfo(address)](#Bitcoin+getAddressInfo) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.flushChainToSnapshot(snapshotBlockHash)](#Bitcoin+flushChainToSnapshot) ⇒ <code>Promise.&lt;{ok: boolean, steps: number, snapshotBlockHash: string}&gt;</code>
+        * [._requestBlockAtHeight(height)](#Bitcoin+_requestBlockAtHeight) ⇒ <code>Object</code>
+        * [._createContractProposal(options)](#Bitcoin+_createContractProposal) ⇒ <code>ContractProposal</code>
+        * [._buildPSBT(options)](#Bitcoin+_buildPSBT) ⇒ <code>PSBT</code>
+        * [._normalizeP2pPeerAddress(peer)](#Bitcoin+_normalizeP2pPeerAddress) ⇒ <code>string</code> \| <code>null</code>
+        * [.applyP2pAddNodes(peers, [command])](#Bitcoin+applyP2pAddNodes) ⇒ <code>Promise.&lt;Array.&lt;string&gt;&gt;</code>
+        * [.start()](#Bitcoin+start)
+        * [.stop()](#Bitcoin+stop)
+        * [._appendWarning(msg)](#Service+_appendWarning) ⇒ [<code>Service</code>](#Service)
+        * [.init()](#Service+init)
+        * [.tick()](#Service+tick) ⇒ <code>Number</code>
+        * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
+        * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
+        * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
+        * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
+        * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
+        * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
+        * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
+        * [.defineOpcode(name, [definition])](#Service+defineOpcode) ⇒ <code>Object</code>
+        * [.defineBitcoinOpcode(name, [definition])](#Service+defineBitcoinOpcode) ⇒ <code>Object</code>
+        * [.defineFabricOpcode(name, [definition])](#Service+defineFabricOpcode) ⇒ <code>Object</code>
+        * [.defineOpcodeContract(name, body, [meta])](#Service+defineOpcodeContract) ⇒ <code>Object</code>
+        * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
+        * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
+        * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
+        * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
+        * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
+        * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
+        * [._send(message)](#Service+_send)
+        * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
+        * [.commit()](#Actor+commit) ⇒ <code>String</code>
+        * [.export()](#Actor+export) ⇒ <code>Object</code>
+        * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
+        * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
+        * [.toGenericMessage([type])](#Actor+toGenericMessage) ⇒ <code>Object</code>
+        * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
+        * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
+        * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
+        * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
+        * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
+        * [.value([format])](#Actor+value) ⇒ <code>Object</code>
+        * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
+    * _static_
+        * [.bitcoindChainDataDirSegment(network)](#Bitcoin.bitcoindChainDataDirSegment) ⇒ <code>string</code>
+        * [.resolveBitcoinDatadirForLocalAccess(datadir)](#Bitcoin.resolveBitcoinDatadirForLocalAccess) ⇒ <code>string</code> \| <code>null</code>
+        * [.resolveBitcoinCookieFileForLocalRead(filePath)](#Bitcoin.resolveBitcoinCookieFileForLocalRead) ⇒ <code>string</code> \| <code>null</code>
+        * [.tryReadRpcCookieFileCredentials(cookiePath)](#Bitcoin.tryReadRpcCookieFileCredentials) ⇒ <code>Promise.&lt;({username: string, password: string}\|null)&gt;</code>
+        * [.cookiePathForBitcoind(datadirRoot, network)](#Bitcoin.cookiePathForBitcoind) ⇒ <code>string</code>
+        * [.cookiePathForChainSubtree(datadirRoot, chainSubdir)](#Bitcoin.cookiePathForChainSubtree) ⇒ <code>string</code>
+        * [.defaultStoresRelativeDirsForProbe(network, [constraints])](#Bitcoin.defaultStoresRelativeDirsForProbe) ⇒ <code>Array.&lt;string&gt;</code>
+        * [.buildLocalCookieProbePaths(opts)](#Bitcoin.buildLocalCookieProbePaths) ⇒ <code>Array.&lt;string&gt;</code>
+        * [.parentDirNameForCookieProbe(cookiePath)](#Bitcoin.parentDirNameForCookieProbe) ⇒ <code>string</code>
+        * ~~[.buildRegtestCookiePathList(opts)](#Bitcoin.buildRegtestCookiePathList) ⇒ <code>Array.&lt;string&gt;</code>~~
+
+<a name="new_Bitcoin_new"></a>
+
+### new Bitcoin([settings])
+Creates an instance of the Bitcoin service.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Map of configuration options for the Bitcoin service. |
+| [settings.network] | <code>String</code> | One of `regtest`, `testnet`, or `mainnet`. |
+| [settings.nodes] | <code>Array</code> | List of address:port pairs to trust. |
+| [settings.seeds] | <code>Array</code> | Bitcoin peers to request chain from (address:port). |
+| [settings.fullnode] | <code>Boolean</code> | Run a full node. |
+
+<a name="Bitcoin+UAString"></a>
+
+### bitcoin.UAString
+User Agent string for the Bitcoin P2P network.
+
+**Kind**: instance property of [<code>Bitcoin</code>](#Bitcoin)  
+<a name="Bitcoin+tip"></a>
+
+### bitcoin.tip
+Chain tip (block hash of the chain with the most Proof of Work)
+
+**Kind**: instance property of [<code>Bitcoin</code>](#Bitcoin)  
+<a name="Bitcoin+height"></a>
+
+### bitcoin.height
+Chain height (`=== length - 1`)
+
+**Kind**: instance property of [<code>Bitcoin</code>](#Bitcoin)  
+<a name="Bitcoin+broadcast"></a>
+
+### bitcoin.broadcast(tx)
+Broadcast a transaction to the Bitcoin network.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Unstable**:   
+
+| Param | Type | Description |
+| --- | --- | --- |
+| tx | <code>TX</code> | Bitcoin transaction |
+
+<a name="Bitcoin+_processSpendMessage"></a>
+
+### bitcoin.\_processSpendMessage(message) ⇒ <code>BitcoinTransactionID</code>
+Process a spend message.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>BitcoinTransactionID</code> - Hex-encoded representation of the transaction ID.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| message | <code>SpendMessage</code> | Generic-level message for spending. |
+| message.amount | <code>String</code> | Amount (in BTC) to spend. |
+| message.destination | <code>String</code> | Destination for funds. |
+
+<a name="Bitcoin+_prepareTransaction"></a>
+
+### bitcoin.\_prepareTransaction(obj)
+Prepares a [Transaction](Transaction) for storage.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| obj | <code>Transaction</code> | Transaction to prepare. |
+
+<a name="Bitcoin+_handleCommittedBlock"></a>
+
+### bitcoin.\_handleCommittedBlock(block)
+Receive a committed block.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| block | <code>Block</code> | Block to handle. |
+
+<a name="Bitcoin+_handlePeerPacket"></a>
+
+### bitcoin.\_handlePeerPacket(msg)
+Process a message from a peer in the Bitcoin network.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | <code>PeerPacket</code> | Message from peer. |
+
+<a name="Bitcoin+_handleBlockFromSPV"></a>
+
+### bitcoin.\_handleBlockFromSPV(msg)
+Hand a [Block](Block) message as supplied by an [SPV](SPV) client.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | <code>BlockMessage</code> | A [Message](#Message) as passed by the [SPV](SPV) source. |
+
+<a name="Bitcoin+_handleTransactionFromSPV"></a>
+
+### bitcoin.\_handleTransactionFromSPV(tx)
+Verify and interpret a [BitcoinTransaction](BitcoinTransaction), as received from an
+[SPVSource](SPVSource).
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| tx | <code>BitcoinTransaction</code> | Incoming transaction from the SPV source. |
+
+<a name="Bitcoin+_subscribeToShard"></a>
+
+### bitcoin.\_subscribeToShard(shard)
+Attach event handlers for a supplied list of addresses.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| shard | <code>Shard</code> | List of addresses to monitor. |
+
+<a name="Bitcoin+_connectSPV"></a>
+
+### bitcoin.\_connectSPV()
+Initiate outbound connections to configured SPV nodes.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+<a name="Bitcoin+connect"></a>
+
+### bitcoin.connect(addr)
+Connect to a Fabric [Peer](#Peer).
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>connect</code>](#Service+connect)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| addr | <code>String</code> | Address to connect to. |
+
+<a name="Bitcoin+_makeRPCRequest"></a>
+
+### bitcoin.\_makeRPCRequest(method, params, [opts]) ⇒ <code>Promise</code>
+Make a single RPC request to the Bitcoin node.
+Retries on "Work queue depth exceeded" (bitcoind temporary backpressure).
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>Promise</code> - A promise that resolves to the RPC response.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| method | <code>String</code> | The RPC method to call. |
+| params | <code>Array</code> | The parameters to pass to the RPC method. |
+| [opts] | <code>Object</code> | Options. retries: max retries for work-queue errors (default 5). |
+
+<a name="Bitcoin+getBlockInfo"></a>
+
+### bitcoin.getBlockInfo(hashOrHeight) ⇒ <code>Promise.&lt;Object&gt;</code>
+Blockchain explorer: fetch block info by hash or height.
+Uses RPC when available; optional HTTP API when `explorerBaseUrl` is set.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - Block info { hash, height, time, txcount, size, ... }.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| hashOrHeight | <code>String</code> \| <code>Number</code> | Block hash (hex) or block height. |
+
+<a name="Bitcoin+getTransactionInfo"></a>
+
+### bitcoin.getTransactionInfo(txid) ⇒ <code>Promise.&lt;Object&gt;</code>
+Blockchain explorer: fetch transaction info by txid.
+Uses RPC when available; optional HTTP API when `explorerBaseUrl` is set.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - Transaction info.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| txid | <code>String</code> | Transaction ID (hex). |
+
+<a name="Bitcoin+getAddressInfo"></a>
+
+### bitcoin.getAddressInfo(address) ⇒ <code>Promise.&lt;Object&gt;</code>
+Blockchain explorer: fetch address info (balance, tx count, recent txs).
+Requires `explorerBaseUrl` (Core has no generic address index over RPC alone).
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - Address info { address, chain_stats, mempool_stats, recent_txs }.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| address | <code>String</code> | Bitcoin address. |
+
+<a name="Bitcoin+flushChainToSnapshot"></a>
+
+### bitcoin.flushChainToSnapshot(snapshotBlockHash) ⇒ <code>Promise.&lt;{ok: boolean, steps: number, snapshotBlockHash: string}&gt;</code>
+Rewind the attached Bitcoin Core node to a known-good tip by repeatedly calling `invalidateblock`
+on the current best block until `getbestblockhash` matches `snapshotBlockHash`.
+Allowed on regtest, playnet, signet, testnet, testnet4 unless settings.flushChainAllowUnsafeNetworks.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| snapshotBlockHash | <code>string</code> | 64-char hex block hash to keep as the active tip. |
+
+<a name="Bitcoin+_requestBlockAtHeight"></a>
+
+### bitcoin.\_requestBlockAtHeight(height) ⇒ <code>Object</code>
+Retrieve the equivalent to `getblockhash` from Bitcoin Core.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>Object</code> - The block hash.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| height | <code>Number</code> | Height of block to retrieve. |
+
+<a name="Bitcoin+_createContractProposal"></a>
+
+### bitcoin.\_createContractProposal(options) ⇒ <code>ContractProposal</code>
+Creates an unsigned Bitcoin transaction.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>ContractProposal</code> - Instance of the proposal.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| options | <code>Object</code> | Options for the transaction. |
+
+<a name="Bitcoin+_buildPSBT"></a>
+
+### bitcoin.\_buildPSBT(options) ⇒ <code>PSBT</code>
+Create a Partially-Signed Bitcoin Transaction (PSBT).
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>PSBT</code> - Instance of the PSBT.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| options | <code>Object</code> | Parameters for the PSBT. |
+
+<a name="Bitcoin+_normalizeP2pPeerAddress"></a>
+
+### bitcoin.\_normalizeP2pPeerAddress(peer) ⇒ <code>string</code> \| <code>null</code>
+Normalize `host` or `host:port` for Bitcoin Core `addnode`.
+IPv6 must use brackets: `[::1]:18444`. If port is omitted, the default P2P port for [settings.network](settings.network) is appended.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type |
+| --- | --- |
+| peer | <code>string</code> | 
+
+<a name="Bitcoin+applyP2pAddNodes"></a>
+
+### bitcoin.applyP2pAddNodes(peers, [command]) ⇒ <code>Promise.&lt;Array.&lt;string&gt;&gt;</code>
+Connect to Bitcoin P2P peers via RPC (`addnode`). Best-effort per peer; failures emit `warning`.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Returns**: <code>Promise.&lt;Array.&lt;string&gt;&gt;</code> - Peers successfully passed to `addnode`  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| peers | <code>Array.&lt;string&gt;</code> |  |  |
+| [command] | <code>string</code> | <code>&quot;&#x27;add&#x27;&quot;</code> | add | onetry | remove |
+
+<a name="Bitcoin+start"></a>
+
+### bitcoin.start()
+Start the Bitcoin service, including the initiation of outbound requests.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>start</code>](#Service+start)  
+<a name="Bitcoin+stop"></a>
+
+### bitcoin.stop()
+Stop the Bitcoin service.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+<a name="Service+_appendWarning"></a>
+
+### bitcoin.\_appendWarning(msg) ⇒ [<code>Service</code>](#Service)
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>\_appendWarning</code>](#Service+_appendWarning)  
+**Returns**: [<code>Service</code>](#Service) - This instance.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | <code>String</code> | Warning text (used by [Service#_registerService](Service#_registerService) duplicate guard). |
+
+<a name="Service+init"></a>
+
+### bitcoin.init()
+Called by Web Components.
+TODO: move to @fabric/http/types/spa
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>init</code>](#Service+init)  
+<a name="Service+tick"></a>
+
+### bitcoin.tick() ⇒ <code>Number</code>
+Move forward one clock cycle.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>tick</code>](#Service+tick)  
+<a name="Service+beat"></a>
+
+### bitcoin.beat() ⇒ [<code>Service</code>](#Service)
+Compute latest state.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>beat</code>](#Service+beat)  
+**Emits**: <code>Message#event:beat</code>  
+<a name="Service+get"></a>
+
+### bitcoin.get(path) ⇒ <code>Mixed</code>
+Retrieve a key from the [State](#State).
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>get</code>](#Service+get)  
+**Returns**: <code>Mixed</code> - Returns the target value if found, otherwise null.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>Path</code> | Key to retrieve. |
+
+<a name="Service+set"></a>
+
+### bitcoin.set(path) ⇒ <code>Mixed</code>
+Set a key in the [State](#State) to a particular value.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>set</code>](#Service+set)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>Path</code> | Key to retrieve. |
+
+<a name="Service+trust"></a>
+
+### bitcoin.trust(source) ⇒ [<code>Service</code>](#Service)
+Explicitly trust all events from a known source.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>trust</code>](#Service+trust)  
+**Returns**: [<code>Service</code>](#Service) - Instance of Service after binding events.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| source | <code>EventEmitter</code> | Emitter of events. |
+
+<a name="Service+handler"></a>
+
+### bitcoin.handler(message) ⇒ [<code>Service</code>](#Service)
+Default route handler for an incoming message.  Follows the Activity
+Streams 2.0 spec: https://www.w3.org/TR/activitystreams-core/
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>handler</code>](#Service+handler)  
+**Returns**: [<code>Service</code>](#Service) - Chainable method.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| message | <code>Activity</code> | Message object. |
+
+<a name="Service+lock"></a>
+
+### bitcoin.lock([duration]) ⇒ <code>Boolean</code>
+Attempt to acquire a lock for `duration` seconds.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>lock</code>](#Service+lock)  
+**Returns**: <code>Boolean</code> - true if locked, false if unable to lock.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [duration] | <code>Number</code> | <code>1000</code> | Number of milliseconds to hold lock. |
+
+<a name="Service+when"></a>
+
+### bitcoin.when(event, method) ⇒ <code>EventEmitter</code>
+Bind a method to an event, with current state as the immutable context.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>when</code>](#Service+when)  
+**Returns**: <code>EventEmitter</code> - Instance of EventEmitter.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| event | <code>String</code> | Name of the event upon which to execute `method` as a function. |
+| method | <code>function</code> | Function to execute when named [Event](Event) `event` is encountered. |
+
+<a name="Service+defineOpcode"></a>
+
+### bitcoin.defineOpcode(name, [definition]) ⇒ <code>Object</code>
+Register a single opcode entry in the service registry.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>defineOpcode</code>](#Service+defineOpcode)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| [definition] | <code>Object</code> |  |
+
+<a name="Service+defineBitcoinOpcode"></a>
+
+### bitcoin.defineBitcoinOpcode(name, [definition]) ⇒ <code>Object</code>
+Register Bitcoin-style primitive opcode metadata.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>defineBitcoinOpcode</code>](#Service+defineBitcoinOpcode)  
+
+| Param | Type |
+| --- | --- |
+| name | <code>string</code> | 
+| [definition] | <code>Object</code> | 
+
+<a name="Service+defineFabricOpcode"></a>
+
+### bitcoin.defineFabricOpcode(name, [definition]) ⇒ <code>Object</code>
+Register Fabric opcode metadata.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>defineFabricOpcode</code>](#Service+defineFabricOpcode)  
+
+| Param | Type |
+| --- | --- |
+| name | <code>string</code> | 
+| [definition] | <code>Object</code> | 
+
+<a name="Service+defineOpcodeContract"></a>
+
+### bitcoin.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
+Register a newline-delimited opcode contract.
+Contract body example:
+`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>defineOpcodeContract</code>](#Service+defineOpcodeContract)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>string</code> | Contract label |
+| body | <code>string</code> | Newline-delimited opcode list |
+| [meta] | <code>Object</code> |  |
+
+<a name="Service+listOpcodes"></a>
+
+### bitcoin.listOpcodes() ⇒ <code>Array.&lt;Object&gt;</code>
+Snapshot opcode registry for UI / API use.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>listOpcodes</code>](#Service+listOpcodes)  
+<a name="Service+route"></a>
+
+### bitcoin.route(msg) ⇒ <code>Promise</code>
+Resolve a [State](#State) from a particular [Message](#Message) object.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>route</code>](#Service+route)  
+**Returns**: <code>Promise</code> - Resolves with resulting [State](#State).  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | [<code>Message</code>](#Message) | Explicit Fabric [Message](#Message). |
+
+<a name="Service+_GET"></a>
+
+### bitcoin.\_GET(path) ⇒ <code>Promise</code>
+Retrieve a value from the Service's state.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>\_GET</code>](#Service+_GET)  
+**Returns**: <code>Promise</code> - Resolves with the result.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | Path of the value to retrieve. |
+
+<a name="Service+_PUT"></a>
+
+### bitcoin.\_PUT(path, value, [commit]) ⇒ <code>Promise</code>
+Store a value in the Service's state.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>\_PUT</code>](#Service+_PUT)  
+**Returns**: <code>Promise</code> - Resolves with with stored document.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| path | <code>String</code> |  | Path to store the value at. |
+| value | <code>Object</code> |  | Document to store. |
+| [commit] | <code>Boolean</code> | <code>false</code> | Sign the resulting state. |
+
+<a name="Service+send"></a>
+
+### bitcoin.send(channel, message) ⇒ [<code>Service</code>](#Service)
+Send a message to a channel.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>send</code>](#Service+send)  
+**Returns**: [<code>Service</code>](#Service) - Chainable method.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| channel | <code>String</code> | Channel name to which the message will be sent. |
+| message | <code>String</code> | Content of the message to send. |
+
+<a name="Service+_registerActor"></a>
+
+### bitcoin.\_registerActor(actor) ⇒ <code>Promise</code>
+Register an [Actor](#Actor) with the [Service](#Service).
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>\_registerActor</code>](#Service+_registerActor)  
+**Returns**: <code>Promise</code> - Resolves upon successful registration.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| actor | <code>Object</code> | Instance of the [Actor](#Actor). |
+
+<a name="Service+_send"></a>
+
+### bitcoin.\_send(message)
+Sends a message.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>\_send</code>](#Service+_send)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| message | <code>Mixed</code> | Message to send. |
+
+<a name="Actor+adopt"></a>
+
+### bitcoin.adopt(changes) ⇒ [<code>Actor</code>](#Actor)
+Explicitly adopt a set of [JSONPatch](JSONPatch)-encoded changes.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>adopt</code>](#Actor+adopt)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| changes | <code>Array</code> | List of [JSONPatch](JSONPatch) operations to apply. |
+
+<a name="Actor+commit"></a>
+
+### bitcoin.commit() ⇒ <code>String</code>
+Resolve the current state to a commitment.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>commit</code>](#Actor+commit)  
+**Returns**: <code>String</code> - 32-byte ID  
+<a name="Actor+export"></a>
+
+### bitcoin.export() ⇒ <code>Object</code>
+Export the Actor's state to a standard [Object](Object).
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>export</code>](#Actor+export)  
+**Returns**: <code>Object</code> - Standard object.  
+<a name="Actor+stream"></a>
+
+### bitcoin.stream([pipe]) ⇒ <code>TransformStream</code>
+Returns a new output stream for the Actor.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>stream</code>](#Actor+stream)  
+**Returns**: <code>TransformStream</code> - New output stream for the Actor.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [pipe] | <code>TransformStream</code> | Pipe to stream to. |
+
+<a name="Actor+toBuffer"></a>
+
+### bitcoin.toBuffer() ⇒ <code>Buffer</code>
+Casts the Actor to a normalized Buffer.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>toBuffer</code>](#Actor+toBuffer)  
+<a name="Actor+toGenericMessage"></a>
+
+### bitcoin.toGenericMessage([type]) ⇒ <code>Object</code>
+Casts the Actor to a generic message envelope for state announcements and history.
+Shape is stable: `{ type, object }` where `object` is sorted-key state ([toObject](#Actor+toObject)).
+[Actor#id](Actor#id) derives from a digest of the pretty-printed generic message; extending this
+envelope requires a format/version migration across the network.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>toGenericMessage</code>](#Actor+toGenericMessage)  
+**Returns**: <code>Object</code> - `{ type, object }`  
+**See**
+
+- [https://en.wikipedia.org/wiki/Merkle_tree](https://en.wikipedia.org/wiki/Merkle_tree)
+- [https://dev.fabric.pub/messages](https://dev.fabric.pub/messages)
+
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [type] | <code>String</code> | <code>&#x27;FabricActorState&#x27;</code> | Logical message type string. |
+
+<a name="Actor+toObject"></a>
+
+### bitcoin.toObject() ⇒ <code>Object</code>
+Returns the Actor's current state as an [Object](Object).
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>toObject</code>](#Actor+toObject)  
+<a name="Actor+pause"></a>
+
+### bitcoin.pause() ⇒ [<code>Actor</code>](#Actor)
+Toggles `status` property to paused.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>pause</code>](#Actor+pause)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+<a name="Actor+serialize"></a>
+
+### bitcoin.serialize() ⇒ <code>String</code>
+Serialize the Actor's current state into a JSON-formatted string.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>serialize</code>](#Actor+serialize)  
+<a name="Actor+sign"></a>
+
+### bitcoin.sign() ⇒ [<code>Actor</code>](#Actor)
+Signs the Actor.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>sign</code>](#Actor+sign)  
+<a name="Actor+unpause"></a>
+
+### bitcoin.unpause() ⇒ [<code>Actor</code>](#Actor)
+Toggles `status` property to unpaused.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>unpause</code>](#Actor+unpause)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+<a name="Actor+value"></a>
+
+### bitcoin.value([format]) ⇒ <code>Object</code>
+Get the inner value of the Actor with an optional cast type.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>value</code>](#Actor+value)  
+**Returns**: <code>Object</code> - Inner value of the Actor as an [Object](Object), or cast to the requested `format`.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [format] | <code>String</code> | <code>object</code> | Cast the value to one of: `buffer, hex, json, string` |
+
+<a name="Actor+_readObject"></a>
+
+### bitcoin.\_readObject(input) ⇒ <code>Object</code>
+Parse an Object into a corresponding Fabric state.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>\_readObject</code>](#Actor+_readObject)  
+**Returns**: <code>Object</code> - Fabric state.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>Object</code> | Object to read as input. |
+
+<a name="Bitcoin.bitcoindChainDataDirSegment"></a>
+
+### Bitcoin.bitcoindChainDataDirSegment(network) ⇒ <code>string</code>
+Bitcoin Core chain data subdirectory under {@code -datadir} (empty string for mainnet cookie at datadir root).
+Matches Core layout: `regtest/`, `testnet3/`, `signet/`, `testnet4/`, or root for mainnet.
+
+**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| network | <code>string</code> | Fabric network name (mainnet, testnet, regtest, signet, testnet4, playnet, …). |
+
+<a name="Bitcoin.resolveBitcoinDatadirForLocalAccess"></a>
+
+### Bitcoin.resolveBitcoinDatadirForLocalAccess(datadir) ⇒ <code>string</code> \| <code>null</code>
+Resolve a configured bitcoind datadir for local cookie discovery. Relative paths are cwd-anchored
+and must not escape the project root; absolute paths are normalized as-is.
+
+**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type |
+| --- | --- |
+| datadir | <code>string</code> | 
+
+<a name="Bitcoin.resolveBitcoinCookieFileForLocalRead"></a>
+
+### Bitcoin.resolveBitcoinCookieFileForLocalRead(filePath) ⇒ <code>string</code> \| <code>null</code>
+Resolve {@code FABRIC_BITCOIN_COOKIE_FILE}-style paths: normalize, bound length, and keep relative paths
+inside the process cwd (absolute paths allowed for explicit operator overrides).
+
+**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type |
+| --- | --- |
+| filePath | <code>string</code> | 
+
+<a name="Bitcoin.tryReadRpcCookieFileCredentials"></a>
+
+### Bitcoin.tryReadRpcCookieFileCredentials(cookiePath) ⇒ <code>Promise.&lt;({username: string, password: string}\|null)&gt;</code>
+Read Bitcoin Core {@code .cookie} (user:password) using async I/O. Path must already be resolved/normalized.
+
+**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type |
+| --- | --- |
+| cookiePath | <code>string</code> | 
+
+<a name="Bitcoin.cookiePathForBitcoind"></a>
+
+### Bitcoin.cookiePathForBitcoind(datadirRoot, network) ⇒ <code>string</code>
+`.cookie` path under a resolved bitcoind datadir root for the given Fabric network.
+
+**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| datadirRoot | <code>string</code> | Absolute or project-relative resolved datadir (Core {@code -datadir} value). |
+| network | <code>string</code> |  |
+
+<a name="Bitcoin.cookiePathForChainSubtree"></a>
+
+### Bitcoin.cookiePathForChainSubtree(datadirRoot, chainSubdir) ⇒ <code>string</code>
+Cookie file under explicit chain subdirectory (empty string = mainnet-style datadir/.cookie only).
+Prefer [#cookiePathForBitcoind](#cookiePathForBitcoind) when you have a Fabric network name.
+
+**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| datadirRoot | <code>string</code> |  |
+| chainSubdir | <code>string</code> | e.g. `regtest`, `signet`, or `''` |
+
+<a name="Bitcoin.defaultStoresRelativeDirsForProbe"></a>
+
+### Bitcoin.defaultStoresRelativeDirsForProbe(network, [constraints]) ⇒ <code>Array.&lt;string&gt;</code>
+Typical `stores/…` paths under the project for the network (for cookie discovery before node spawn).
+
+**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type |
+| --- | --- |
+| network | <code>string</code> | 
+| [constraints] | [<code>BitcoinCookieProbeConstraints</code>](#BitcoinCookieProbeConstraints) | 
+
+<a name="Bitcoin.buildLocalCookieProbePaths"></a>
+
+### Bitcoin.buildLocalCookieProbePaths(opts) ⇒ <code>Array.&lt;string&gt;</code>
+Ordered local cookie paths to probe for RPC (env override, project stores, Electron mirror, ~/.bitcoin, optional settings datadir).
+
+**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type |
+| --- | --- |
+| opts | [<code>BitcoinLocalCookieProbeOpts</code>](#BitcoinLocalCookieProbeOpts) | 
+
+<a name="Bitcoin.parentDirNameForCookieProbe"></a>
+
+### Bitcoin.parentDirNameForCookieProbe(cookiePath) ⇒ <code>string</code>
+Parent directory name of `.cookie` (for probe logging).
+
+**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type |
+| --- | --- |
+| cookiePath | <code>string</code> | 
+
+<a name="Bitcoin.buildRegtestCookiePathList"></a>
+
+### ~~Bitcoin.buildRegtestCookiePathList(opts) ⇒ <code>Array.&lt;string&gt;</code>~~
+***Use [#buildLocalCookieProbePaths](#buildLocalCookieProbePaths) with `network: 'regtest'`.***
+
+**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type |
+| --- | --- |
+| opts | [<code>BitcoinRegtestCookieOpts</code>](#BitcoinRegtestCookieOpts) | 
+
+<a name="Lightning"></a>
+
+## Lightning
+Manage a Lightning node.
+
+**Kind**: global class  
+
+* [Lightning](#Lightning)
+    * [new Lightning([settings])](#new_Lightning_new)
+    * _instance_
+        * [.createChannel(peer, amount, [pushMsat], [options])](#Lightning+createChannel)
+        * [.createInvoice(amount)](#Lightning+createInvoice)
+        * [.computeLiquidity()](#Lightning+computeLiquidity) ⇒ <code>Object</code>
+        * [._makeRPCRequest(method, [params], [timeoutMs])](#Lightning+_makeRPCRequest) ⇒ <code>Object</code> \| <code>String</code>
+    * _static_
+        * [.CLN_RPC_METHODS](#Lightning.CLN_RPC_METHODS) : <code>ReadonlyArray.&lt;string&gt;</code>
+        * [.defaultListenPortForNetwork([network])](#Lightning.defaultListenPortForNetwork) ⇒ <code>number</code>
+
+<a name="new_Lightning_new"></a>
+
+### new Lightning([settings])
+Create an instance of the Lightning [Service](#Service).
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Settings. |
+
+<a name="Lightning+createChannel"></a>
+
+### lightning.createChannel(peer, amount, [pushMsat], [options])
+Creates a new Lightning channel.
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| peer | <code>String</code> |  | Public key of the peer to create a channel with. |
+| amount | <code>String</code> |  | Amount in satoshis to fund the channel. |
+| [pushMsat] | <code>Number</code> \| <code>null</code> | <code></code> | Optional push amount in millisatoshis. |
+| [options] | <code>Object</code> | <code>{}</code> | Optional overrides (e.g. minconf for regtest). |
+
+<a name="Lightning+createInvoice"></a>
+
+### lightning.createInvoice(amount)
+Create a new Lightning invoice.
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| amount | <code>String</code> | Amount in millisatoshi (msat). |
+
+<a name="Lightning+computeLiquidity"></a>
+
+### lightning.computeLiquidity() ⇒ <code>Object</code>
+Computes the total liquidity of the Lightning node.
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+**Returns**: <code>Object</code> - Liquidity in BTC.  
+<a name="Lightning+_makeRPCRequest"></a>
+
+### lightning.\_makeRPCRequest(method, [params], [timeoutMs]) ⇒ <code>Object</code> \| <code>String</code>
+Make an RPC request through the Lightning UNIX socket.
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+**Returns**: <code>Object</code> \| <code>String</code> - Respond from the Lightning node.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| method | <code>String</code> |  | Name of method to call. |
+| [params] | <code>Array</code> |  | Array of parameters. |
+| [timeoutMs] | <code>Number</code> | <code>30000</code> | Optional timeout in ms; default 30000. Prevents hanging when lightningd is busy. |
+
+<a name="Lightning.CLN_RPC_METHODS"></a>
+
+### Lightning.CLN\_RPC\_METHODS : <code>ReadonlyArray.&lt;string&gt;</code>
+Core Lightning JSON-RPC method names invoked by this service (see docs/LIGHTNING_COMPAT.md).
+
+**Kind**: static property of [<code>Lightning</code>](#Lightning)  
+<a name="Lightning.defaultListenPortForNetwork"></a>
+
+### Lightning.defaultListenPortForNetwork([network]) ⇒ <code>number</code>
+Default TCP port lightningd listens on when [settings.port](settings.port) is omitted (BOLT / common conventions).
+
+**Kind**: static method of [<code>Lightning</code>](#Lightning)  
+
+| Param | Type |
+| --- | --- |
+| [network] | <code>string</code> | 
+
+<a name="Redis"></a>
+
+## Redis
+Connect and subscribe to Redis servers.
+
+**Kind**: global class  
+
+* [Redis](#Redis)
+    * [new Redis([settings])](#new_Redis_new)
+    * [.start()](#Redis+start) ⇒ [<code>Redis</code>](#Redis)
+    * [.stop()](#Redis+stop) ⇒ [<code>Redis</code>](#Redis)
+
+<a name="new_Redis_new"></a>
+
+### new Redis([settings])
+Creates an instance of a Redis subscriber.
+
+**Returns**: [<code>Redis</code>](#Redis) - Instance of the Redis service, ready to run `start()`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Settings for the Redis connection. |
+| [settings.host] | <code>String</code> | Host for the Redis server. |
+| [settings.port] | <code>Number</code> | Remote Redis service port. |
+
+<a name="Redis+start"></a>
+
+### redis.start() ⇒ [<code>Redis</code>](#Redis)
+Opens the connection and subscribes to the requested channels.
+
+**Kind**: instance method of [<code>Redis</code>](#Redis)  
+**Returns**: [<code>Redis</code>](#Redis) - Instance of the service.  
+<a name="Redis+stop"></a>
+
+### redis.stop() ⇒ [<code>Redis</code>](#Redis)
+Closes the connection to the Redis server.
+
+**Kind**: instance method of [<code>Redis</code>](#Redis)  
+**Returns**: [<code>Redis</code>](#Redis) - Instance of the service.  
+<a name="Text"></a>
+
+## Text ⇐ [<code>Service</code>](#Service)
+**Kind**: global class  
+**Extends**: [<code>Service</code>](#Service)  
+
+* [Text](#Text) ⇐ [<code>Service</code>](#Service)
+    * [new Text()](#new_Text_new)
+    * _instance_
+        * [._appendWarning(msg)](#Service+_appendWarning) ⇒ [<code>Service</code>](#Service)
+        * [.init()](#Service+init)
+        * [.tick()](#Service+tick) ⇒ <code>Number</code>
+        * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
+        * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
+        * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
+        * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
+        * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
+        * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
+        * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
+        * [.defineOpcode(name, [definition])](#Service+defineOpcode) ⇒ <code>Object</code>
+        * [.defineBitcoinOpcode(name, [definition])](#Service+defineBitcoinOpcode) ⇒ <code>Object</code>
+        * [.defineFabricOpcode(name, [definition])](#Service+defineFabricOpcode) ⇒ <code>Object</code>
+        * [.defineOpcodeContract(name, body, [meta])](#Service+defineOpcodeContract) ⇒ <code>Object</code>
+        * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
+        * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
+        * [.start()](#Service+start)
+        * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
+        * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
+        * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
+        * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
+        * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
+        * [._send(message)](#Service+_send)
+        * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
+        * [.commit()](#Actor+commit) ⇒ <code>String</code>
+        * [.export()](#Actor+export) ⇒ <code>Object</code>
+        * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
+        * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
+        * [.toGenericMessage([type])](#Actor+toGenericMessage) ⇒ <code>Object</code>
+        * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
+        * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
+        * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
+        * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
+        * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
+        * [.value([format])](#Actor+value) ⇒ <code>Object</code>
+        * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
+    * _static_
+        * [.tokenize(string)](#Text.tokenize) ⇒ <code>Array.&lt;string&gt;</code>
+        * [.truncateMiddle(fullStr, strLen, [separator])](#Text.truncateMiddle) ⇒ <code>string</code>
+        * [.toRelativeTime(date)](#Text.toRelativeTime) ⇒ <code>string</code>
+        * [.oxfordJoin(list)](#Text.oxfordJoin) ⇒ <code>string</code>
+
+<a name="new_Text_new"></a>
+
+### new Text()
+Text-oriented [Service](#Service) stub (legacy name was <code>TXT</code>).
+Static helpers mirror small utilities used in Sensemaker (tokenize, middle truncation,
+relative time strings) and core helpers ([module:functions/oxfordJoin](module:functions/oxfordJoin)).
+
+<a name="Service+_appendWarning"></a>
+
+### text.\_appendWarning(msg) ⇒ [<code>Service</code>](#Service)
+**Kind**: instance method of [<code>Text</code>](#Text)  
+**Returns**: [<code>Service</code>](#Service) - This instance.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | <code>String</code> | Warning text (used by [Service#_registerService](Service#_registerService) duplicate guard). |
+
+<a name="Service+init"></a>
+
+### text.init()
+Called by Web Components.
+TODO: move to @fabric/http/types/spa
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+<a name="Service+tick"></a>
+
+### text.tick() ⇒ <code>Number</code>
+Move forward one clock cycle.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+<a name="Service+beat"></a>
+
+### text.beat() ⇒ [<code>Service</code>](#Service)
+Compute latest state.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+**Emits**: <code>Message#event:beat</code>  
+<a name="Service+get"></a>
+
+### text.get(path) ⇒ <code>Mixed</code>
+Retrieve a key from the [State](#State).
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+**Returns**: <code>Mixed</code> - Returns the target value if found, otherwise null.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>Path</code> | Key to retrieve. |
+
+<a name="Service+set"></a>
+
+### text.set(path) ⇒ <code>Mixed</code>
+Set a key in the [State](#State) to a particular value.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>Path</code> | Key to retrieve. |
+
+<a name="Service+trust"></a>
+
+### text.trust(source) ⇒ [<code>Service</code>](#Service)
+Explicitly trust all events from a known source.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+**Returns**: [<code>Service</code>](#Service) - Instance of Service after binding events.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| source | <code>EventEmitter</code> | Emitter of events. |
+
+<a name="Service+handler"></a>
+
+### text.handler(message) ⇒ [<code>Service</code>](#Service)
+Default route handler for an incoming message.  Follows the Activity
+Streams 2.0 spec: https://www.w3.org/TR/activitystreams-core/
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+**Returns**: [<code>Service</code>](#Service) - Chainable method.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| message | <code>Activity</code> | Message object. |
+
+<a name="Service+lock"></a>
+
+### text.lock([duration]) ⇒ <code>Boolean</code>
+Attempt to acquire a lock for `duration` seconds.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+**Returns**: <code>Boolean</code> - true if locked, false if unable to lock.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [duration] | <code>Number</code> | <code>1000</code> | Number of milliseconds to hold lock. |
+
+<a name="Service+when"></a>
+
+### text.when(event, method) ⇒ <code>EventEmitter</code>
+Bind a method to an event, with current state as the immutable context.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+**Returns**: <code>EventEmitter</code> - Instance of EventEmitter.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| event | <code>String</code> | Name of the event upon which to execute `method` as a function. |
+| method | <code>function</code> | Function to execute when named [Event](Event) `event` is encountered. |
+
+<a name="Service+defineOpcode"></a>
+
+### text.defineOpcode(name, [definition]) ⇒ <code>Object</code>
+Register a single opcode entry in the service registry.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| [definition] | <code>Object</code> |  |
+
+<a name="Service+defineBitcoinOpcode"></a>
+
+### text.defineBitcoinOpcode(name, [definition]) ⇒ <code>Object</code>
+Register Bitcoin-style primitive opcode metadata.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+
+| Param | Type |
+| --- | --- |
+| name | <code>string</code> | 
+| [definition] | <code>Object</code> | 
+
+<a name="Service+defineFabricOpcode"></a>
+
+### text.defineFabricOpcode(name, [definition]) ⇒ <code>Object</code>
+Register Fabric opcode metadata.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+
+| Param | Type |
+| --- | --- |
+| name | <code>string</code> | 
+| [definition] | <code>Object</code> | 
+
+<a name="Service+defineOpcodeContract"></a>
+
+### text.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
+Register a newline-delimited opcode contract.
+Contract body example:
+`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>string</code> | Contract label |
+| body | <code>string</code> | Newline-delimited opcode list |
+| [meta] | <code>Object</code> |  |
+
+<a name="Service+listOpcodes"></a>
+
+### text.listOpcodes() ⇒ <code>Array.&lt;Object&gt;</code>
+Snapshot opcode registry for UI / API use.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+<a name="Service+route"></a>
+
+### text.route(msg) ⇒ <code>Promise</code>
+Resolve a [State](#State) from a particular [Message](#Message) object.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+**Returns**: <code>Promise</code> - Resolves with resulting [State](#State).  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | [<code>Message</code>](#Message) | Explicit Fabric [Message](#Message). |
+
+<a name="Service+start"></a>
+
+### text.start()
+Start the service, including the initiation of an outbound connection
+to any peers designated in the service's configuration.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+<a name="Service+_GET"></a>
+
+### text.\_GET(path) ⇒ <code>Promise</code>
+Retrieve a value from the Service's state.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+**Returns**: <code>Promise</code> - Resolves with the result.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>String</code> | Path of the value to retrieve. |
+
+<a name="Service+_PUT"></a>
+
+### text.\_PUT(path, value, [commit]) ⇒ <code>Promise</code>
+Store a value in the Service's state.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+**Returns**: <code>Promise</code> - Resolves with with stored document.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| path | <code>String</code> |  | Path to store the value at. |
+| value | <code>Object</code> |  | Document to store. |
+| [commit] | <code>Boolean</code> | <code>false</code> | Sign the resulting state. |
+
+<a name="Service+connect"></a>
+
+### text.connect(notify) ⇒ <code>Promise</code>
+Attach to network.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+**Returns**: <code>Promise</code> - Resolves to [Fabric](#Fabric).  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| notify | <code>Boolean</code> | <code>true</code> | Commit to changes. |
+
+<a name="Service+send"></a>
+
+### text.send(channel, message) ⇒ [<code>Service</code>](#Service)
+Send a message to a channel.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+**Returns**: [<code>Service</code>](#Service) - Chainable method.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| channel | <code>String</code> | Channel name to which the message will be sent. |
+| message | <code>String</code> | Content of the message to send. |
+
+<a name="Service+_registerActor"></a>
+
+### text.\_registerActor(actor) ⇒ <code>Promise</code>
+Register an [Actor](#Actor) with the [Service](#Service).
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+**Returns**: <code>Promise</code> - Resolves upon successful registration.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| actor | <code>Object</code> | Instance of the [Actor](#Actor). |
+
+<a name="Service+_send"></a>
+
+### text.\_send(message)
+Sends a message.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| message | <code>Mixed</code> | Message to send. |
+
+<a name="Actor+adopt"></a>
+
+### text.adopt(changes) ⇒ [<code>Actor</code>](#Actor)
+Explicitly adopt a set of [JSONPatch](JSONPatch)-encoded changes.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| changes | <code>Array</code> | List of [JSONPatch](JSONPatch) operations to apply. |
+
+<a name="Actor+commit"></a>
+
+### text.commit() ⇒ <code>String</code>
+Resolve the current state to a commitment.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+**Returns**: <code>String</code> - 32-byte ID  
+<a name="Actor+export"></a>
+
+### text.export() ⇒ <code>Object</code>
+Export the Actor's state to a standard [Object](Object).
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+**Returns**: <code>Object</code> - Standard object.  
+<a name="Actor+stream"></a>
+
+### text.stream([pipe]) ⇒ <code>TransformStream</code>
+Returns a new output stream for the Actor.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+**Returns**: <code>TransformStream</code> - New output stream for the Actor.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [pipe] | <code>TransformStream</code> | Pipe to stream to. |
+
+<a name="Actor+toBuffer"></a>
+
+### text.toBuffer() ⇒ <code>Buffer</code>
+Casts the Actor to a normalized Buffer.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+<a name="Actor+toGenericMessage"></a>
+
+### text.toGenericMessage([type]) ⇒ <code>Object</code>
+Casts the Actor to a generic message envelope for state announcements and history.
+Shape is stable: `{ type, object }` where `object` is sorted-key state ([toObject](#Actor+toObject)).
+[Actor#id](Actor#id) derives from a digest of the pretty-printed generic message; extending this
+envelope requires a format/version migration across the network.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+**Returns**: <code>Object</code> - `{ type, object }`  
+**See**
+
+- [https://en.wikipedia.org/wiki/Merkle_tree](https://en.wikipedia.org/wiki/Merkle_tree)
+- [https://dev.fabric.pub/messages](https://dev.fabric.pub/messages)
+
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [type] | <code>String</code> | <code>&#x27;FabricActorState&#x27;</code> | Logical message type string. |
+
+<a name="Actor+toObject"></a>
+
+### text.toObject() ⇒ <code>Object</code>
+Returns the Actor's current state as an [Object](Object).
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+<a name="Actor+pause"></a>
+
+### text.pause() ⇒ [<code>Actor</code>](#Actor)
+Toggles `status` property to paused.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+<a name="Actor+serialize"></a>
+
+### text.serialize() ⇒ <code>String</code>
+Serialize the Actor's current state into a JSON-formatted string.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+<a name="Actor+sign"></a>
+
+### text.sign() ⇒ [<code>Actor</code>](#Actor)
+Signs the Actor.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+<a name="Actor+unpause"></a>
+
+### text.unpause() ⇒ [<code>Actor</code>](#Actor)
+Toggles `status` property to unpaused.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+<a name="Actor+value"></a>
+
+### text.value([format]) ⇒ <code>Object</code>
+Get the inner value of the Actor with an optional cast type.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+**Returns**: <code>Object</code> - Inner value of the Actor as an [Object](Object), or cast to the requested `format`.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [format] | <code>String</code> | <code>object</code> | Cast the value to one of: `buffer, hex, json, string` |
+
+<a name="Actor+_readObject"></a>
+
+### text.\_readObject(input) ⇒ <code>Object</code>
+Parse an Object into a corresponding Fabric state.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+**Returns**: <code>Object</code> - Fabric state.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>Object</code> | Object to read as input. |
+
+<a name="Text.tokenize"></a>
+
+### Text.tokenize(string) ⇒ <code>Array.&lt;string&gt;</code>
+Split on runs of whitespace (Sensemaker-style tokenization).
+
+**Kind**: static method of [<code>Text</code>](#Text)  
+
+| Param | Type |
+| --- | --- |
+| string | <code>string</code> | 
+
+<a name="Text.truncateMiddle"></a>
+
+### Text.truncateMiddle(fullStr, strLen, [separator]) ⇒ <code>string</code>
+Shorten a string in the middle if longer than <code>strLen</code>.
+
+**Kind**: static method of [<code>Text</code>](#Text)  
+
+| Param | Type |
+| --- | --- |
+| fullStr | <code>string</code> | 
+| strLen | <code>number</code> | 
+| [separator] | <code>string</code> | 
+
+<a name="Text.toRelativeTime"></a>
+
+### Text.toRelativeTime(date) ⇒ <code>string</code>
+Human-readable relative time (e.g. <code>3 days ago</code>), ported from Sensemaker.
+
+**Kind**: static method of [<code>Text</code>](#Text)  
+
+| Param | Type |
+| --- | --- |
+| date | <code>Date</code> \| <code>string</code> \| <code>number</code> | 
+
+<a name="Text.oxfordJoin"></a>
+
+### Text.oxfordJoin(list) ⇒ <code>string</code>
+Join a list with an Oxford comma (delegates to [module:functions/oxfordJoin](module:functions/oxfordJoin)).
+
+**Kind**: static method of [<code>Text</code>](#Text)  
+
+| Param | Type |
+| --- | --- |
+| list | <code>Array.&lt;string&gt;</code> | 
+
+<a name="ZMQ"></a>
+
+## ZMQ
+Connect and subscribe to ZeroMQ publishers.
+
+**Kind**: global class  
+
+* [ZMQ](#ZMQ)
+    * [new ZMQ([settings])](#new_ZMQ_new)
+    * [._emitErrorSafe()](#ZMQ+_emitErrorSafe)
+    * [.start()](#ZMQ+start) ⇒ [<code>ZMQ</code>](#ZMQ)
+    * [.stop()](#ZMQ+stop) ⇒ [<code>ZMQ</code>](#ZMQ)
+
+<a name="new_ZMQ_new"></a>
+
+### new ZMQ([settings])
+Creates an instance of a ZeroMQ subscriber.
+
+**Returns**: [<code>ZMQ</code>](#ZMQ) - Instance of the ZMQ service, ready to run `start()`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [settings] | <code>Object</code> | Settings for the ZMQ connection. |
+| [settings.host] | <code>String</code> | Host for the ZMQ publisher. |
+| [settings.port] | <code>Number</code> | Remote ZeroMQ service port. |
+
+<a name="ZMQ+_emitErrorSafe"></a>
+
+### zmQ.\_emitErrorSafe()
+Avoid process crash when nothing listens for `error` (Node EventEmitter default).
+
+**Kind**: instance method of [<code>ZMQ</code>](#ZMQ)  
+<a name="ZMQ+start"></a>
+
+### zmQ.start() ⇒ [<code>ZMQ</code>](#ZMQ)
+Opens the connection and subscribes to the requested channels.
+
+**Kind**: instance method of [<code>ZMQ</code>](#ZMQ)  
+**Returns**: [<code>ZMQ</code>](#ZMQ) - Instance of the service.  
+<a name="ZMQ+stop"></a>
+
+### zmQ.stop() ⇒ [<code>ZMQ</code>](#ZMQ)
+Closes the connection to the ZMQ publisher.
+
+**Kind**: instance method of [<code>ZMQ</code>](#ZMQ)  
+**Returns**: [<code>ZMQ</code>](#ZMQ) - Instance of the service.  
+<a name="Scribe"></a>
+
+## ~~Scribe~~
+***Deprecated***
+
+Deprecated 2021-11-06 — use [FabricState](FabricState) (<code>types/state</code>). <code>Scribe</code> was merged into <code>State</code>.
+
+**Kind**: global class  
 <a name="Actor"></a>
 
 ## Actor ⇐ <code>EventEmitter</code>
@@ -727,6 +2259,19 @@ Get a number of random bytes from the runtime environment.
     * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
     * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
     * [._send(message)](#Service+_send)
+    * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
+    * [.commit()](#Actor+commit) ⇒ <code>String</code>
+    * [.export()](#Actor+export) ⇒ <code>Object</code>
+    * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
+    * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
+    * [.toGenericMessage([type])](#Actor+toGenericMessage) ⇒ <code>Object</code>
+    * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
+    * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
+    * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
+    * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
+    * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
+    * [.value([format])](#Actor+value) ⇒ <code>Object</code>
+    * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
 
 <a name="new_Bond_new"></a>
 
@@ -992,6 +2537,126 @@ Sends a message.
 | Param | Type | Description |
 | --- | --- | --- |
 | message | <code>Mixed</code> | Message to send. |
+
+<a name="Actor+adopt"></a>
+
+### bond.adopt(changes) ⇒ [<code>Actor</code>](#Actor)
+Explicitly adopt a set of [JSONPatch](JSONPatch)-encoded changes.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| changes | <code>Array</code> | List of [JSONPatch](JSONPatch) operations to apply. |
+
+<a name="Actor+commit"></a>
+
+### bond.commit() ⇒ <code>String</code>
+Resolve the current state to a commitment.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+**Returns**: <code>String</code> - 32-byte ID  
+<a name="Actor+export"></a>
+
+### bond.export() ⇒ <code>Object</code>
+Export the Actor's state to a standard [Object](Object).
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+**Returns**: <code>Object</code> - Standard object.  
+<a name="Actor+stream"></a>
+
+### bond.stream([pipe]) ⇒ <code>TransformStream</code>
+Returns a new output stream for the Actor.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+**Returns**: <code>TransformStream</code> - New output stream for the Actor.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [pipe] | <code>TransformStream</code> | Pipe to stream to. |
+
+<a name="Actor+toBuffer"></a>
+
+### bond.toBuffer() ⇒ <code>Buffer</code>
+Casts the Actor to a normalized Buffer.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+<a name="Actor+toGenericMessage"></a>
+
+### bond.toGenericMessage([type]) ⇒ <code>Object</code>
+Casts the Actor to a generic message envelope for state announcements and history.
+Shape is stable: `{ type, object }` where `object` is sorted-key state ([toObject](#Actor+toObject)).
+[Actor#id](Actor#id) derives from a digest of the pretty-printed generic message; extending this
+envelope requires a format/version migration across the network.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+**Returns**: <code>Object</code> - `{ type, object }`  
+**See**
+
+- [https://en.wikipedia.org/wiki/Merkle_tree](https://en.wikipedia.org/wiki/Merkle_tree)
+- [https://dev.fabric.pub/messages](https://dev.fabric.pub/messages)
+
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [type] | <code>String</code> | <code>&#x27;FabricActorState&#x27;</code> | Logical message type string. |
+
+<a name="Actor+toObject"></a>
+
+### bond.toObject() ⇒ <code>Object</code>
+Returns the Actor's current state as an [Object](Object).
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+<a name="Actor+pause"></a>
+
+### bond.pause() ⇒ [<code>Actor</code>](#Actor)
+Toggles `status` property to paused.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+<a name="Actor+serialize"></a>
+
+### bond.serialize() ⇒ <code>String</code>
+Serialize the Actor's current state into a JSON-formatted string.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+<a name="Actor+sign"></a>
+
+### bond.sign() ⇒ [<code>Actor</code>](#Actor)
+Signs the Actor.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+<a name="Actor+unpause"></a>
+
+### bond.unpause() ⇒ [<code>Actor</code>](#Actor)
+Toggles `status` property to unpaused.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+<a name="Actor+value"></a>
+
+### bond.value([format]) ⇒ <code>Object</code>
+Get the inner value of the Actor with an optional cast type.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+**Returns**: <code>Object</code> - Inner value of the Actor as an [Object](Object), or cast to the requested `format`.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [format] | <code>String</code> | <code>object</code> | Cast the value to one of: `buffer, hex, json, string` |
+
+<a name="Actor+_readObject"></a>
+
+### bond.\_readObject(input) ⇒ <code>Object</code>
+Parse an Object into a corresponding Fabric state.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+**Returns**: <code>Object</code> - Fabric state.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>Object</code> | Object to read as input. |
 
 <a name="Chain"></a>
 
@@ -1835,6 +3500,19 @@ Loads [State](#State) into memory.
     * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
     * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
     * [._send(message)](#Service+_send)
+    * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
+    * [.commit()](#Actor+commit) ⇒ <code>String</code>
+    * [.export()](#Actor+export) ⇒ <code>Object</code>
+    * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
+    * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
+    * [.toGenericMessage([type])](#Actor+toGenericMessage) ⇒ <code>Object</code>
+    * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
+    * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
+    * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
+    * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
+    * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
+    * [.value([format])](#Actor+value) ⇒ <code>Object</code>
+    * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
 
 <a name="new_Contract_new"></a>
 
@@ -2102,6 +3780,127 @@ Sends a message.
 | Param | Type | Description |
 | --- | --- | --- |
 | message | <code>Mixed</code> | Message to send. |
+
+<a name="Actor+adopt"></a>
+
+### contract.adopt(changes) ⇒ [<code>Actor</code>](#Actor)
+Explicitly adopt a set of [JSONPatch](JSONPatch)-encoded changes.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| changes | <code>Array</code> | List of [JSONPatch](JSONPatch) operations to apply. |
+
+<a name="Actor+commit"></a>
+
+### contract.commit() ⇒ <code>String</code>
+Resolve the current state to a commitment.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+**Overrides**: [<code>commit</code>](#Actor+commit)  
+**Returns**: <code>String</code> - 32-byte ID  
+<a name="Actor+export"></a>
+
+### contract.export() ⇒ <code>Object</code>
+Export the Actor's state to a standard [Object](Object).
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>Object</code> - Standard object.  
+<a name="Actor+stream"></a>
+
+### contract.stream([pipe]) ⇒ <code>TransformStream</code>
+Returns a new output stream for the Actor.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>TransformStream</code> - New output stream for the Actor.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [pipe] | <code>TransformStream</code> | Pipe to stream to. |
+
+<a name="Actor+toBuffer"></a>
+
+### contract.toBuffer() ⇒ <code>Buffer</code>
+Casts the Actor to a normalized Buffer.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+<a name="Actor+toGenericMessage"></a>
+
+### contract.toGenericMessage([type]) ⇒ <code>Object</code>
+Casts the Actor to a generic message envelope for state announcements and history.
+Shape is stable: `{ type, object }` where `object` is sorted-key state ([toObject](#Actor+toObject)).
+[Actor#id](Actor#id) derives from a digest of the pretty-printed generic message; extending this
+envelope requires a format/version migration across the network.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>Object</code> - `{ type, object }`  
+**See**
+
+- [https://en.wikipedia.org/wiki/Merkle_tree](https://en.wikipedia.org/wiki/Merkle_tree)
+- [https://dev.fabric.pub/messages](https://dev.fabric.pub/messages)
+
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [type] | <code>String</code> | <code>&#x27;FabricActorState&#x27;</code> | Logical message type string. |
+
+<a name="Actor+toObject"></a>
+
+### contract.toObject() ⇒ <code>Object</code>
+Returns the Actor's current state as an [Object](Object).
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+<a name="Actor+pause"></a>
+
+### contract.pause() ⇒ [<code>Actor</code>](#Actor)
+Toggles `status` property to paused.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+<a name="Actor+serialize"></a>
+
+### contract.serialize() ⇒ <code>String</code>
+Serialize the Actor's current state into a JSON-formatted string.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+<a name="Actor+sign"></a>
+
+### contract.sign() ⇒ [<code>Actor</code>](#Actor)
+Signs the Actor.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+<a name="Actor+unpause"></a>
+
+### contract.unpause() ⇒ [<code>Actor</code>](#Actor)
+Toggles `status` property to unpaused.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
+<a name="Actor+value"></a>
+
+### contract.value([format]) ⇒ <code>Object</code>
+Get the inner value of the Actor with an optional cast type.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>Object</code> - Inner value of the Actor as an [Object](Object), or cast to the requested `format`.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [format] | <code>String</code> | <code>object</code> | Cast the value to one of: `buffer, hex, json, string` |
+
+<a name="Actor+_readObject"></a>
+
+### contract.\_readObject(input) ⇒ <code>Object</code>
+Parse an Object into a corresponding Fabric state.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>Object</code> - Fabric state.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| input | <code>Object</code> | Object to read as input. |
 
 <a name="Disk"></a>
 
@@ -10837,1538 +12636,6 @@ Handle a task.
 | --- | --- | --- |
 | input | [<code>Vector</code>](#Vector) | Input vector. |
 
-<a name="Bitcoin"></a>
-
-## Bitcoin ⇐ [<code>Service</code>](#Service)
-Manages interaction with the Bitcoin network.
-
-**Kind**: global class  
-**Extends**: [<code>Service</code>](#Service)  
-
-* [Bitcoin](#Bitcoin) ⇐ [<code>Service</code>](#Service)
-    * [new Bitcoin([settings])](#new_Bitcoin_new)
-    * _instance_
-        * [.UAString](#Bitcoin+UAString)
-        * [.tip](#Bitcoin+tip)
-        * [.height](#Bitcoin+height)
-        * [.broadcast(tx)](#Bitcoin+broadcast)
-        * [._processSpendMessage(message)](#Bitcoin+_processSpendMessage) ⇒ <code>BitcoinTransactionID</code>
-        * [._prepareTransaction(obj)](#Bitcoin+_prepareTransaction)
-        * [._handleCommittedBlock(block)](#Bitcoin+_handleCommittedBlock)
-        * [._handlePeerPacket(msg)](#Bitcoin+_handlePeerPacket)
-        * [._handleBlockFromSPV(msg)](#Bitcoin+_handleBlockFromSPV)
-        * [._handleTransactionFromSPV(tx)](#Bitcoin+_handleTransactionFromSPV)
-        * [._subscribeToShard(shard)](#Bitcoin+_subscribeToShard)
-        * [._connectSPV()](#Bitcoin+_connectSPV)
-        * [.connect(addr)](#Bitcoin+connect)
-        * [._makeRPCRequest(method, params, [opts])](#Bitcoin+_makeRPCRequest) ⇒ <code>Promise</code>
-        * [.getBlockInfo(hashOrHeight)](#Bitcoin+getBlockInfo) ⇒ <code>Promise.&lt;Object&gt;</code>
-        * [.getTransactionInfo(txid)](#Bitcoin+getTransactionInfo) ⇒ <code>Promise.&lt;Object&gt;</code>
-        * [.getAddressInfo(address)](#Bitcoin+getAddressInfo) ⇒ <code>Promise.&lt;Object&gt;</code>
-        * [.flushChainToSnapshot(snapshotBlockHash)](#Bitcoin+flushChainToSnapshot) ⇒ <code>Promise.&lt;{ok: boolean, steps: number, snapshotBlockHash: string}&gt;</code>
-        * [._requestBlockAtHeight(height)](#Bitcoin+_requestBlockAtHeight) ⇒ <code>Object</code>
-        * [._createContractProposal(options)](#Bitcoin+_createContractProposal) ⇒ <code>ContractProposal</code>
-        * [._buildPSBT(options)](#Bitcoin+_buildPSBT) ⇒ <code>PSBT</code>
-        * [._normalizeP2pPeerAddress(peer)](#Bitcoin+_normalizeP2pPeerAddress) ⇒ <code>string</code> \| <code>null</code>
-        * [.applyP2pAddNodes(peers, [command])](#Bitcoin+applyP2pAddNodes) ⇒ <code>Promise.&lt;Array.&lt;string&gt;&gt;</code>
-        * [.start()](#Bitcoin+start)
-        * [.stop()](#Bitcoin+stop)
-        * [._appendWarning(msg)](#Service+_appendWarning) ⇒ [<code>Service</code>](#Service)
-        * [.init()](#Service+init)
-        * [.tick()](#Service+tick) ⇒ <code>Number</code>
-        * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
-        * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
-        * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
-        * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
-        * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
-        * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
-        * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
-        * [.defineOpcode(name, [definition])](#Service+defineOpcode) ⇒ <code>Object</code>
-        * [.defineBitcoinOpcode(name, [definition])](#Service+defineBitcoinOpcode) ⇒ <code>Object</code>
-        * [.defineFabricOpcode(name, [definition])](#Service+defineFabricOpcode) ⇒ <code>Object</code>
-        * [.defineOpcodeContract(name, body, [meta])](#Service+defineOpcodeContract) ⇒ <code>Object</code>
-        * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
-        * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
-        * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
-        * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
-        * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
-        * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
-        * [._send(message)](#Service+_send)
-        * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
-        * [.commit()](#Actor+commit) ⇒ <code>String</code>
-        * [.export()](#Actor+export) ⇒ <code>Object</code>
-        * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
-        * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
-        * [.toGenericMessage([type])](#Actor+toGenericMessage) ⇒ <code>Object</code>
-        * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
-        * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
-        * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
-        * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
-        * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
-        * [.value([format])](#Actor+value) ⇒ <code>Object</code>
-        * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
-    * _static_
-        * [.bitcoindChainDataDirSegment(network)](#Bitcoin.bitcoindChainDataDirSegment) ⇒ <code>string</code>
-        * [.resolveBitcoinDatadirForLocalAccess(datadir)](#Bitcoin.resolveBitcoinDatadirForLocalAccess) ⇒ <code>string</code> \| <code>null</code>
-        * [.resolveBitcoinCookieFileForLocalRead(filePath)](#Bitcoin.resolveBitcoinCookieFileForLocalRead) ⇒ <code>string</code> \| <code>null</code>
-        * [.tryReadRpcCookieFileCredentials(cookiePath)](#Bitcoin.tryReadRpcCookieFileCredentials) ⇒ <code>Promise.&lt;({username: string, password: string}\|null)&gt;</code>
-        * [.cookiePathForBitcoind(datadirRoot, network)](#Bitcoin.cookiePathForBitcoind) ⇒ <code>string</code>
-        * [.cookiePathForChainSubtree(datadirRoot, chainSubdir)](#Bitcoin.cookiePathForChainSubtree) ⇒ <code>string</code>
-        * [.defaultStoresRelativeDirsForProbe(network, [constraints])](#Bitcoin.defaultStoresRelativeDirsForProbe) ⇒ <code>Array.&lt;string&gt;</code>
-        * [.buildLocalCookieProbePaths(opts)](#Bitcoin.buildLocalCookieProbePaths) ⇒ <code>Array.&lt;string&gt;</code>
-        * [.parentDirNameForCookieProbe(cookiePath)](#Bitcoin.parentDirNameForCookieProbe) ⇒ <code>string</code>
-        * ~~[.buildRegtestCookiePathList(opts)](#Bitcoin.buildRegtestCookiePathList) ⇒ <code>Array.&lt;string&gt;</code>~~
-
-<a name="new_Bitcoin_new"></a>
-
-### new Bitcoin([settings])
-Creates an instance of the Bitcoin service.
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [settings] | <code>Object</code> | Map of configuration options for the Bitcoin service. |
-| [settings.network] | <code>String</code> | One of `regtest`, `testnet`, or `mainnet`. |
-| [settings.nodes] | <code>Array</code> | List of address:port pairs to trust. |
-| [settings.seeds] | <code>Array</code> | Bitcoin peers to request chain from (address:port). |
-| [settings.fullnode] | <code>Boolean</code> | Run a full node. |
-
-<a name="Bitcoin+UAString"></a>
-
-### bitcoin.UAString
-User Agent string for the Bitcoin P2P network.
-
-**Kind**: instance property of [<code>Bitcoin</code>](#Bitcoin)  
-<a name="Bitcoin+tip"></a>
-
-### bitcoin.tip
-Chain tip (block hash of the chain with the most Proof of Work)
-
-**Kind**: instance property of [<code>Bitcoin</code>](#Bitcoin)  
-<a name="Bitcoin+height"></a>
-
-### bitcoin.height
-Chain height (`=== length - 1`)
-
-**Kind**: instance property of [<code>Bitcoin</code>](#Bitcoin)  
-<a name="Bitcoin+broadcast"></a>
-
-### bitcoin.broadcast(tx)
-Broadcast a transaction to the Bitcoin network.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Unstable**:   
-
-| Param | Type | Description |
-| --- | --- | --- |
-| tx | <code>TX</code> | Bitcoin transaction |
-
-<a name="Bitcoin+_processSpendMessage"></a>
-
-### bitcoin.\_processSpendMessage(message) ⇒ <code>BitcoinTransactionID</code>
-Process a spend message.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Returns**: <code>BitcoinTransactionID</code> - Hex-encoded representation of the transaction ID.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| message | <code>SpendMessage</code> | Generic-level message for spending. |
-| message.amount | <code>String</code> | Amount (in BTC) to spend. |
-| message.destination | <code>String</code> | Destination for funds. |
-
-<a name="Bitcoin+_prepareTransaction"></a>
-
-### bitcoin.\_prepareTransaction(obj)
-Prepares a [Transaction](Transaction) for storage.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| obj | <code>Transaction</code> | Transaction to prepare. |
-
-<a name="Bitcoin+_handleCommittedBlock"></a>
-
-### bitcoin.\_handleCommittedBlock(block)
-Receive a committed block.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| block | <code>Block</code> | Block to handle. |
-
-<a name="Bitcoin+_handlePeerPacket"></a>
-
-### bitcoin.\_handlePeerPacket(msg)
-Process a message from a peer in the Bitcoin network.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| msg | <code>PeerPacket</code> | Message from peer. |
-
-<a name="Bitcoin+_handleBlockFromSPV"></a>
-
-### bitcoin.\_handleBlockFromSPV(msg)
-Hand a [Block](Block) message as supplied by an [SPV](SPV) client.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| msg | <code>BlockMessage</code> | A [Message](#Message) as passed by the [SPV](SPV) source. |
-
-<a name="Bitcoin+_handleTransactionFromSPV"></a>
-
-### bitcoin.\_handleTransactionFromSPV(tx)
-Verify and interpret a [BitcoinTransaction](BitcoinTransaction), as received from an
-[SPVSource](SPVSource).
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| tx | <code>BitcoinTransaction</code> | Incoming transaction from the SPV source. |
-
-<a name="Bitcoin+_subscribeToShard"></a>
-
-### bitcoin.\_subscribeToShard(shard)
-Attach event handlers for a supplied list of addresses.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| shard | <code>Shard</code> | List of addresses to monitor. |
-
-<a name="Bitcoin+_connectSPV"></a>
-
-### bitcoin.\_connectSPV()
-Initiate outbound connections to configured SPV nodes.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-<a name="Bitcoin+connect"></a>
-
-### bitcoin.connect(addr)
-Connect to a Fabric [Peer](#Peer).
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>connect</code>](#Service+connect)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| addr | <code>String</code> | Address to connect to. |
-
-<a name="Bitcoin+_makeRPCRequest"></a>
-
-### bitcoin.\_makeRPCRequest(method, params, [opts]) ⇒ <code>Promise</code>
-Make a single RPC request to the Bitcoin node.
-Retries on "Work queue depth exceeded" (bitcoind temporary backpressure).
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Returns**: <code>Promise</code> - A promise that resolves to the RPC response.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| method | <code>String</code> | The RPC method to call. |
-| params | <code>Array</code> | The parameters to pass to the RPC method. |
-| [opts] | <code>Object</code> | Options. retries: max retries for work-queue errors (default 5). |
-
-<a name="Bitcoin+getBlockInfo"></a>
-
-### bitcoin.getBlockInfo(hashOrHeight) ⇒ <code>Promise.&lt;Object&gt;</code>
-Blockchain explorer: fetch block info by hash or height.
-Uses RPC when available; optional HTTP API when `explorerBaseUrl` is set.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Returns**: <code>Promise.&lt;Object&gt;</code> - Block info { hash, height, time, txcount, size, ... }.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| hashOrHeight | <code>String</code> \| <code>Number</code> | Block hash (hex) or block height. |
-
-<a name="Bitcoin+getTransactionInfo"></a>
-
-### bitcoin.getTransactionInfo(txid) ⇒ <code>Promise.&lt;Object&gt;</code>
-Blockchain explorer: fetch transaction info by txid.
-Uses RPC when available; optional HTTP API when `explorerBaseUrl` is set.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Returns**: <code>Promise.&lt;Object&gt;</code> - Transaction info.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| txid | <code>String</code> | Transaction ID (hex). |
-
-<a name="Bitcoin+getAddressInfo"></a>
-
-### bitcoin.getAddressInfo(address) ⇒ <code>Promise.&lt;Object&gt;</code>
-Blockchain explorer: fetch address info (balance, tx count, recent txs).
-Requires `explorerBaseUrl` (Core has no generic address index over RPC alone).
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Returns**: <code>Promise.&lt;Object&gt;</code> - Address info { address, chain_stats, mempool_stats, recent_txs }.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| address | <code>String</code> | Bitcoin address. |
-
-<a name="Bitcoin+flushChainToSnapshot"></a>
-
-### bitcoin.flushChainToSnapshot(snapshotBlockHash) ⇒ <code>Promise.&lt;{ok: boolean, steps: number, snapshotBlockHash: string}&gt;</code>
-Rewind the attached Bitcoin Core node to a known-good tip by repeatedly calling `invalidateblock`
-on the current best block until `getbestblockhash` matches `snapshotBlockHash`.
-Allowed on regtest, playnet, signet, testnet, testnet4 unless settings.flushChainAllowUnsafeNetworks.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| snapshotBlockHash | <code>string</code> | 64-char hex block hash to keep as the active tip. |
-
-<a name="Bitcoin+_requestBlockAtHeight"></a>
-
-### bitcoin.\_requestBlockAtHeight(height) ⇒ <code>Object</code>
-Retrieve the equivalent to `getblockhash` from Bitcoin Core.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Returns**: <code>Object</code> - The block hash.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| height | <code>Number</code> | Height of block to retrieve. |
-
-<a name="Bitcoin+_createContractProposal"></a>
-
-### bitcoin.\_createContractProposal(options) ⇒ <code>ContractProposal</code>
-Creates an unsigned Bitcoin transaction.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Returns**: <code>ContractProposal</code> - Instance of the proposal.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| options | <code>Object</code> | Options for the transaction. |
-
-<a name="Bitcoin+_buildPSBT"></a>
-
-### bitcoin.\_buildPSBT(options) ⇒ <code>PSBT</code>
-Create a Partially-Signed Bitcoin Transaction (PSBT).
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Returns**: <code>PSBT</code> - Instance of the PSBT.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| options | <code>Object</code> | Parameters for the PSBT. |
-
-<a name="Bitcoin+_normalizeP2pPeerAddress"></a>
-
-### bitcoin.\_normalizeP2pPeerAddress(peer) ⇒ <code>string</code> \| <code>null</code>
-Normalize `host` or `host:port` for Bitcoin Core `addnode`.
-IPv6 must use brackets: `[::1]:18444`. If port is omitted, the default P2P port for [settings.network](settings.network) is appended.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-
-| Param | Type |
-| --- | --- |
-| peer | <code>string</code> | 
-
-<a name="Bitcoin+applyP2pAddNodes"></a>
-
-### bitcoin.applyP2pAddNodes(peers, [command]) ⇒ <code>Promise.&lt;Array.&lt;string&gt;&gt;</code>
-Connect to Bitcoin P2P peers via RPC (`addnode`). Best-effort per peer; failures emit `warning`.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Returns**: <code>Promise.&lt;Array.&lt;string&gt;&gt;</code> - Peers successfully passed to `addnode`  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| peers | <code>Array.&lt;string&gt;</code> |  |  |
-| [command] | <code>string</code> | <code>&quot;&#x27;add&#x27;&quot;</code> | add | onetry | remove |
-
-<a name="Bitcoin+start"></a>
-
-### bitcoin.start()
-Start the Bitcoin service, including the initiation of outbound requests.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>start</code>](#Service+start)  
-<a name="Bitcoin+stop"></a>
-
-### bitcoin.stop()
-Stop the Bitcoin service.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-<a name="Service+_appendWarning"></a>
-
-### bitcoin.\_appendWarning(msg) ⇒ [<code>Service</code>](#Service)
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>\_appendWarning</code>](#Service+_appendWarning)  
-**Returns**: [<code>Service</code>](#Service) - This instance.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| msg | <code>String</code> | Warning text (used by [Service#_registerService](Service#_registerService) duplicate guard). |
-
-<a name="Service+init"></a>
-
-### bitcoin.init()
-Called by Web Components.
-TODO: move to @fabric/http/types/spa
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>init</code>](#Service+init)  
-<a name="Service+tick"></a>
-
-### bitcoin.tick() ⇒ <code>Number</code>
-Move forward one clock cycle.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>tick</code>](#Service+tick)  
-<a name="Service+beat"></a>
-
-### bitcoin.beat() ⇒ [<code>Service</code>](#Service)
-Compute latest state.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>beat</code>](#Service+beat)  
-**Emits**: <code>Message#event:beat</code>  
-<a name="Service+get"></a>
-
-### bitcoin.get(path) ⇒ <code>Mixed</code>
-Retrieve a key from the [State](#State).
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>get</code>](#Service+get)  
-**Returns**: <code>Mixed</code> - Returns the target value if found, otherwise null.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | <code>Path</code> | Key to retrieve. |
-
-<a name="Service+set"></a>
-
-### bitcoin.set(path) ⇒ <code>Mixed</code>
-Set a key in the [State](#State) to a particular value.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>set</code>](#Service+set)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | <code>Path</code> | Key to retrieve. |
-
-<a name="Service+trust"></a>
-
-### bitcoin.trust(source) ⇒ [<code>Service</code>](#Service)
-Explicitly trust all events from a known source.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>trust</code>](#Service+trust)  
-**Returns**: [<code>Service</code>](#Service) - Instance of Service after binding events.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| source | <code>EventEmitter</code> | Emitter of events. |
-
-<a name="Service+handler"></a>
-
-### bitcoin.handler(message) ⇒ [<code>Service</code>](#Service)
-Default route handler for an incoming message.  Follows the Activity
-Streams 2.0 spec: https://www.w3.org/TR/activitystreams-core/
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>handler</code>](#Service+handler)  
-**Returns**: [<code>Service</code>](#Service) - Chainable method.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| message | <code>Activity</code> | Message object. |
-
-<a name="Service+lock"></a>
-
-### bitcoin.lock([duration]) ⇒ <code>Boolean</code>
-Attempt to acquire a lock for `duration` seconds.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>lock</code>](#Service+lock)  
-**Returns**: <code>Boolean</code> - true if locked, false if unable to lock.  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| [duration] | <code>Number</code> | <code>1000</code> | Number of milliseconds to hold lock. |
-
-<a name="Service+when"></a>
-
-### bitcoin.when(event, method) ⇒ <code>EventEmitter</code>
-Bind a method to an event, with current state as the immutable context.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>when</code>](#Service+when)  
-**Returns**: <code>EventEmitter</code> - Instance of EventEmitter.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| event | <code>String</code> | Name of the event upon which to execute `method` as a function. |
-| method | <code>function</code> | Function to execute when named [Event](Event) `event` is encountered. |
-
-<a name="Service+defineOpcode"></a>
-
-### bitcoin.defineOpcode(name, [definition]) ⇒ <code>Object</code>
-Register a single opcode entry in the service registry.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>defineOpcode</code>](#Service+defineOpcode)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
-| [definition] | <code>Object</code> |  |
-
-<a name="Service+defineBitcoinOpcode"></a>
-
-### bitcoin.defineBitcoinOpcode(name, [definition]) ⇒ <code>Object</code>
-Register Bitcoin-style primitive opcode metadata.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>defineBitcoinOpcode</code>](#Service+defineBitcoinOpcode)  
-
-| Param | Type |
-| --- | --- |
-| name | <code>string</code> | 
-| [definition] | <code>Object</code> | 
-
-<a name="Service+defineFabricOpcode"></a>
-
-### bitcoin.defineFabricOpcode(name, [definition]) ⇒ <code>Object</code>
-Register Fabric opcode metadata.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>defineFabricOpcode</code>](#Service+defineFabricOpcode)  
-
-| Param | Type |
-| --- | --- |
-| name | <code>string</code> | 
-| [definition] | <code>Object</code> | 
-
-<a name="Service+defineOpcodeContract"></a>
-
-### bitcoin.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
-Register a newline-delimited opcode contract.
-Contract body example:
-`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>defineOpcodeContract</code>](#Service+defineOpcodeContract)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| name | <code>string</code> | Contract label |
-| body | <code>string</code> | Newline-delimited opcode list |
-| [meta] | <code>Object</code> |  |
-
-<a name="Service+listOpcodes"></a>
-
-### bitcoin.listOpcodes() ⇒ <code>Array.&lt;Object&gt;</code>
-Snapshot opcode registry for UI / API use.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>listOpcodes</code>](#Service+listOpcodes)  
-<a name="Service+route"></a>
-
-### bitcoin.route(msg) ⇒ <code>Promise</code>
-Resolve a [State](#State) from a particular [Message](#Message) object.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>route</code>](#Service+route)  
-**Returns**: <code>Promise</code> - Resolves with resulting [State](#State).  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| msg | [<code>Message</code>](#Message) | Explicit Fabric [Message](#Message). |
-
-<a name="Service+_GET"></a>
-
-### bitcoin.\_GET(path) ⇒ <code>Promise</code>
-Retrieve a value from the Service's state.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>\_GET</code>](#Service+_GET)  
-**Returns**: <code>Promise</code> - Resolves with the result.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | <code>String</code> | Path of the value to retrieve. |
-
-<a name="Service+_PUT"></a>
-
-### bitcoin.\_PUT(path, value, [commit]) ⇒ <code>Promise</code>
-Store a value in the Service's state.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>\_PUT</code>](#Service+_PUT)  
-**Returns**: <code>Promise</code> - Resolves with with stored document.  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| path | <code>String</code> |  | Path to store the value at. |
-| value | <code>Object</code> |  | Document to store. |
-| [commit] | <code>Boolean</code> | <code>false</code> | Sign the resulting state. |
-
-<a name="Service+send"></a>
-
-### bitcoin.send(channel, message) ⇒ [<code>Service</code>](#Service)
-Send a message to a channel.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>send</code>](#Service+send)  
-**Returns**: [<code>Service</code>](#Service) - Chainable method.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| channel | <code>String</code> | Channel name to which the message will be sent. |
-| message | <code>String</code> | Content of the message to send. |
-
-<a name="Service+_registerActor"></a>
-
-### bitcoin.\_registerActor(actor) ⇒ <code>Promise</code>
-Register an [Actor](#Actor) with the [Service](#Service).
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>\_registerActor</code>](#Service+_registerActor)  
-**Returns**: <code>Promise</code> - Resolves upon successful registration.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| actor | <code>Object</code> | Instance of the [Actor](#Actor). |
-
-<a name="Service+_send"></a>
-
-### bitcoin.\_send(message)
-Sends a message.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>\_send</code>](#Service+_send)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| message | <code>Mixed</code> | Message to send. |
-
-<a name="Actor+adopt"></a>
-
-### bitcoin.adopt(changes) ⇒ [<code>Actor</code>](#Actor)
-Explicitly adopt a set of [JSONPatch](JSONPatch)-encoded changes.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>adopt</code>](#Actor+adopt)  
-**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| changes | <code>Array</code> | List of [JSONPatch](JSONPatch) operations to apply. |
-
-<a name="Actor+commit"></a>
-
-### bitcoin.commit() ⇒ <code>String</code>
-Resolve the current state to a commitment.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>commit</code>](#Actor+commit)  
-**Returns**: <code>String</code> - 32-byte ID  
-<a name="Actor+export"></a>
-
-### bitcoin.export() ⇒ <code>Object</code>
-Export the Actor's state to a standard [Object](Object).
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>export</code>](#Actor+export)  
-**Returns**: <code>Object</code> - Standard object.  
-<a name="Actor+stream"></a>
-
-### bitcoin.stream([pipe]) ⇒ <code>TransformStream</code>
-Returns a new output stream for the Actor.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>stream</code>](#Actor+stream)  
-**Returns**: <code>TransformStream</code> - New output stream for the Actor.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [pipe] | <code>TransformStream</code> | Pipe to stream to. |
-
-<a name="Actor+toBuffer"></a>
-
-### bitcoin.toBuffer() ⇒ <code>Buffer</code>
-Casts the Actor to a normalized Buffer.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>toBuffer</code>](#Actor+toBuffer)  
-<a name="Actor+toGenericMessage"></a>
-
-### bitcoin.toGenericMessage([type]) ⇒ <code>Object</code>
-Casts the Actor to a generic message envelope for state announcements and history.
-Shape is stable: `{ type, object }` where `object` is sorted-key state ([toObject](#Actor+toObject)).
-[Actor#id](Actor#id) derives from a digest of the pretty-printed generic message; extending this
-envelope requires a format/version migration across the network.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>toGenericMessage</code>](#Actor+toGenericMessage)  
-**Returns**: <code>Object</code> - `{ type, object }`  
-**See**
-
-- [https://en.wikipedia.org/wiki/Merkle_tree](https://en.wikipedia.org/wiki/Merkle_tree)
-- [https://dev.fabric.pub/messages](https://dev.fabric.pub/messages)
-
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| [type] | <code>String</code> | <code>&#x27;FabricActorState&#x27;</code> | Logical message type string. |
-
-<a name="Actor+toObject"></a>
-
-### bitcoin.toObject() ⇒ <code>Object</code>
-Returns the Actor's current state as an [Object](Object).
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>toObject</code>](#Actor+toObject)  
-<a name="Actor+pause"></a>
-
-### bitcoin.pause() ⇒ [<code>Actor</code>](#Actor)
-Toggles `status` property to paused.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>pause</code>](#Actor+pause)  
-**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
-<a name="Actor+serialize"></a>
-
-### bitcoin.serialize() ⇒ <code>String</code>
-Serialize the Actor's current state into a JSON-formatted string.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>serialize</code>](#Actor+serialize)  
-<a name="Actor+sign"></a>
-
-### bitcoin.sign() ⇒ [<code>Actor</code>](#Actor)
-Signs the Actor.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>sign</code>](#Actor+sign)  
-<a name="Actor+unpause"></a>
-
-### bitcoin.unpause() ⇒ [<code>Actor</code>](#Actor)
-Toggles `status` property to unpaused.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>unpause</code>](#Actor+unpause)  
-**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
-<a name="Actor+value"></a>
-
-### bitcoin.value([format]) ⇒ <code>Object</code>
-Get the inner value of the Actor with an optional cast type.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>value</code>](#Actor+value)  
-**Returns**: <code>Object</code> - Inner value of the Actor as an [Object](Object), or cast to the requested `format`.  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| [format] | <code>String</code> | <code>object</code> | Cast the value to one of: `buffer, hex, json, string` |
-
-<a name="Actor+_readObject"></a>
-
-### bitcoin.\_readObject(input) ⇒ <code>Object</code>
-Parse an Object into a corresponding Fabric state.
-
-**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
-**Overrides**: [<code>\_readObject</code>](#Actor+_readObject)  
-**Returns**: <code>Object</code> - Fabric state.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| input | <code>Object</code> | Object to read as input. |
-
-<a name="Bitcoin.bitcoindChainDataDirSegment"></a>
-
-### Bitcoin.bitcoindChainDataDirSegment(network) ⇒ <code>string</code>
-Bitcoin Core chain data subdirectory under {@code -datadir} (empty string for mainnet cookie at datadir root).
-Matches Core layout: `regtest/`, `testnet3/`, `signet/`, `testnet4/`, or root for mainnet.
-
-**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| network | <code>string</code> | Fabric network name (mainnet, testnet, regtest, signet, testnet4, playnet, …). |
-
-<a name="Bitcoin.resolveBitcoinDatadirForLocalAccess"></a>
-
-### Bitcoin.resolveBitcoinDatadirForLocalAccess(datadir) ⇒ <code>string</code> \| <code>null</code>
-Resolve a configured bitcoind datadir for local cookie discovery. Relative paths are cwd-anchored
-and must not escape the project root; absolute paths are normalized as-is.
-
-**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
-
-| Param | Type |
-| --- | --- |
-| datadir | <code>string</code> | 
-
-<a name="Bitcoin.resolveBitcoinCookieFileForLocalRead"></a>
-
-### Bitcoin.resolveBitcoinCookieFileForLocalRead(filePath) ⇒ <code>string</code> \| <code>null</code>
-Resolve {@code FABRIC_BITCOIN_COOKIE_FILE}-style paths: normalize, bound length, and keep relative paths
-inside the process cwd (absolute paths allowed for explicit operator overrides).
-
-**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
-
-| Param | Type |
-| --- | --- |
-| filePath | <code>string</code> | 
-
-<a name="Bitcoin.tryReadRpcCookieFileCredentials"></a>
-
-### Bitcoin.tryReadRpcCookieFileCredentials(cookiePath) ⇒ <code>Promise.&lt;({username: string, password: string}\|null)&gt;</code>
-Read Bitcoin Core {@code .cookie} (user:password) using async I/O. Path must already be resolved/normalized.
-
-**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
-
-| Param | Type |
-| --- | --- |
-| cookiePath | <code>string</code> | 
-
-<a name="Bitcoin.cookiePathForBitcoind"></a>
-
-### Bitcoin.cookiePathForBitcoind(datadirRoot, network) ⇒ <code>string</code>
-`.cookie` path under a resolved bitcoind datadir root for the given Fabric network.
-
-**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| datadirRoot | <code>string</code> | Absolute or project-relative resolved datadir (Core {@code -datadir} value). |
-| network | <code>string</code> |  |
-
-<a name="Bitcoin.cookiePathForChainSubtree"></a>
-
-### Bitcoin.cookiePathForChainSubtree(datadirRoot, chainSubdir) ⇒ <code>string</code>
-Cookie file under explicit chain subdirectory (empty string = mainnet-style datadir/.cookie only).
-Prefer [#cookiePathForBitcoind](#cookiePathForBitcoind) when you have a Fabric network name.
-
-**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| datadirRoot | <code>string</code> |  |
-| chainSubdir | <code>string</code> | e.g. `regtest`, `signet`, or `''` |
-
-<a name="Bitcoin.defaultStoresRelativeDirsForProbe"></a>
-
-### Bitcoin.defaultStoresRelativeDirsForProbe(network, [constraints]) ⇒ <code>Array.&lt;string&gt;</code>
-Typical `stores/…` paths under the project for the network (for cookie discovery before node spawn).
-
-**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
-
-| Param | Type |
-| --- | --- |
-| network | <code>string</code> | 
-| [constraints] | [<code>BitcoinCookieProbeConstraints</code>](#BitcoinCookieProbeConstraints) | 
-
-<a name="Bitcoin.buildLocalCookieProbePaths"></a>
-
-### Bitcoin.buildLocalCookieProbePaths(opts) ⇒ <code>Array.&lt;string&gt;</code>
-Ordered local cookie paths to probe for RPC (env override, project stores, Electron mirror, ~/.bitcoin, optional settings datadir).
-
-**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
-
-| Param | Type |
-| --- | --- |
-| opts | [<code>BitcoinLocalCookieProbeOpts</code>](#BitcoinLocalCookieProbeOpts) | 
-
-<a name="Bitcoin.parentDirNameForCookieProbe"></a>
-
-### Bitcoin.parentDirNameForCookieProbe(cookiePath) ⇒ <code>string</code>
-Parent directory name of `.cookie` (for probe logging).
-
-**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
-
-| Param | Type |
-| --- | --- |
-| cookiePath | <code>string</code> | 
-
-<a name="Bitcoin.buildRegtestCookiePathList"></a>
-
-### ~~Bitcoin.buildRegtestCookiePathList(opts) ⇒ <code>Array.&lt;string&gt;</code>~~
-***Use [#buildLocalCookieProbePaths](#buildLocalCookieProbePaths) with `network: 'regtest'`.***
-
-**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
-
-| Param | Type |
-| --- | --- |
-| opts | [<code>BitcoinRegtestCookieOpts</code>](#BitcoinRegtestCookieOpts) | 
-
-<a name="Lightning"></a>
-
-## Lightning
-Manage a Lightning node.
-
-**Kind**: global class  
-
-* [Lightning](#Lightning)
-    * [new Lightning([settings])](#new_Lightning_new)
-    * _instance_
-        * [.createChannel(peer, amount, [pushMsat], [options])](#Lightning+createChannel)
-        * [.createInvoice(amount)](#Lightning+createInvoice)
-        * [.computeLiquidity()](#Lightning+computeLiquidity) ⇒ <code>Object</code>
-        * [._makeRPCRequest(method, [params], [timeoutMs])](#Lightning+_makeRPCRequest) ⇒ <code>Object</code> \| <code>String</code>
-    * _static_
-        * [.CLN_RPC_METHODS](#Lightning.CLN_RPC_METHODS) : <code>ReadonlyArray.&lt;string&gt;</code>
-        * [.defaultListenPortForNetwork([network])](#Lightning.defaultListenPortForNetwork) ⇒ <code>number</code>
-
-<a name="new_Lightning_new"></a>
-
-### new Lightning([settings])
-Create an instance of the Lightning [Service](#Service).
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [settings] | <code>Object</code> | Settings. |
-
-<a name="Lightning+createChannel"></a>
-
-### lightning.createChannel(peer, amount, [pushMsat], [options])
-Creates a new Lightning channel.
-
-**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| peer | <code>String</code> |  | Public key of the peer to create a channel with. |
-| amount | <code>String</code> |  | Amount in satoshis to fund the channel. |
-| [pushMsat] | <code>Number</code> \| <code>null</code> | <code></code> | Optional push amount in millisatoshis. |
-| [options] | <code>Object</code> | <code>{}</code> | Optional overrides (e.g. minconf for regtest). |
-
-<a name="Lightning+createInvoice"></a>
-
-### lightning.createInvoice(amount)
-Create a new Lightning invoice.
-
-**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| amount | <code>String</code> | Amount in millisatoshi (msat). |
-
-<a name="Lightning+computeLiquidity"></a>
-
-### lightning.computeLiquidity() ⇒ <code>Object</code>
-Computes the total liquidity of the Lightning node.
-
-**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
-**Returns**: <code>Object</code> - Liquidity in BTC.  
-<a name="Lightning+_makeRPCRequest"></a>
-
-### lightning.\_makeRPCRequest(method, [params], [timeoutMs]) ⇒ <code>Object</code> \| <code>String</code>
-Make an RPC request through the Lightning UNIX socket.
-
-**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
-**Returns**: <code>Object</code> \| <code>String</code> - Respond from the Lightning node.  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| method | <code>String</code> |  | Name of method to call. |
-| [params] | <code>Array</code> |  | Array of parameters. |
-| [timeoutMs] | <code>Number</code> | <code>30000</code> | Optional timeout in ms; default 30000. Prevents hanging when lightningd is busy. |
-
-<a name="Lightning.CLN_RPC_METHODS"></a>
-
-### Lightning.CLN\_RPC\_METHODS : <code>ReadonlyArray.&lt;string&gt;</code>
-Core Lightning JSON-RPC method names invoked by this service (see docs/LIGHTNING_COMPAT.md).
-
-**Kind**: static property of [<code>Lightning</code>](#Lightning)  
-<a name="Lightning.defaultListenPortForNetwork"></a>
-
-### Lightning.defaultListenPortForNetwork([network]) ⇒ <code>number</code>
-Default TCP port lightningd listens on when [settings.port](settings.port) is omitted (BOLT / common conventions).
-
-**Kind**: static method of [<code>Lightning</code>](#Lightning)  
-
-| Param | Type |
-| --- | --- |
-| [network] | <code>string</code> | 
-
-<a name="Redis"></a>
-
-## Redis
-Connect and subscribe to Redis servers.
-
-**Kind**: global class  
-
-* [Redis](#Redis)
-    * [new Redis([settings])](#new_Redis_new)
-    * [.start()](#Redis+start) ⇒ [<code>Redis</code>](#Redis)
-    * [.stop()](#Redis+stop) ⇒ [<code>Redis</code>](#Redis)
-
-<a name="new_Redis_new"></a>
-
-### new Redis([settings])
-Creates an instance of a Redis subscriber.
-
-**Returns**: [<code>Redis</code>](#Redis) - Instance of the Redis service, ready to run `start()`  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [settings] | <code>Object</code> | Settings for the Redis connection. |
-| [settings.host] | <code>String</code> | Host for the Redis server. |
-| [settings.port] | <code>Number</code> | Remote Redis service port. |
-
-<a name="Redis+start"></a>
-
-### redis.start() ⇒ [<code>Redis</code>](#Redis)
-Opens the connection and subscribes to the requested channels.
-
-**Kind**: instance method of [<code>Redis</code>](#Redis)  
-**Returns**: [<code>Redis</code>](#Redis) - Instance of the service.  
-<a name="Redis+stop"></a>
-
-### redis.stop() ⇒ [<code>Redis</code>](#Redis)
-Closes the connection to the Redis server.
-
-**Kind**: instance method of [<code>Redis</code>](#Redis)  
-**Returns**: [<code>Redis</code>](#Redis) - Instance of the service.  
-<a name="Text"></a>
-
-## Text ⇐ [<code>Service</code>](#Service)
-**Kind**: global class  
-**Extends**: [<code>Service</code>](#Service)  
-
-* [Text](#Text) ⇐ [<code>Service</code>](#Service)
-    * [new Text()](#new_Text_new)
-    * _instance_
-        * [._appendWarning(msg)](#Service+_appendWarning) ⇒ [<code>Service</code>](#Service)
-        * [.init()](#Service+init)
-        * [.tick()](#Service+tick) ⇒ <code>Number</code>
-        * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
-        * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
-        * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
-        * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
-        * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
-        * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
-        * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
-        * [.defineOpcode(name, [definition])](#Service+defineOpcode) ⇒ <code>Object</code>
-        * [.defineBitcoinOpcode(name, [definition])](#Service+defineBitcoinOpcode) ⇒ <code>Object</code>
-        * [.defineFabricOpcode(name, [definition])](#Service+defineFabricOpcode) ⇒ <code>Object</code>
-        * [.defineOpcodeContract(name, body, [meta])](#Service+defineOpcodeContract) ⇒ <code>Object</code>
-        * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
-        * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
-        * [.start()](#Service+start)
-        * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
-        * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
-        * [.connect(notify)](#Service+connect) ⇒ <code>Promise</code>
-        * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
-        * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
-        * [._send(message)](#Service+_send)
-        * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
-        * [.commit()](#Actor+commit) ⇒ <code>String</code>
-        * [.export()](#Actor+export) ⇒ <code>Object</code>
-        * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
-        * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
-        * [.toGenericMessage([type])](#Actor+toGenericMessage) ⇒ <code>Object</code>
-        * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
-        * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
-        * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
-        * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
-        * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
-        * [.value([format])](#Actor+value) ⇒ <code>Object</code>
-        * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
-    * _static_
-        * [.tokenize(string)](#Text.tokenize) ⇒ <code>Array.&lt;string&gt;</code>
-        * [.truncateMiddle(fullStr, strLen, [separator])](#Text.truncateMiddle) ⇒ <code>string</code>
-        * [.toRelativeTime(date)](#Text.toRelativeTime) ⇒ <code>string</code>
-        * [.oxfordJoin(list)](#Text.oxfordJoin) ⇒ <code>string</code>
-
-<a name="new_Text_new"></a>
-
-### new Text()
-Text-oriented [Service](#Service) stub (legacy name was <code>TXT</code>).
-Static helpers mirror small utilities used in Sensemaker (tokenize, middle truncation,
-relative time strings) and core helpers ([module:functions/oxfordJoin](module:functions/oxfordJoin)).
-
-<a name="Service+_appendWarning"></a>
-
-### text.\_appendWarning(msg) ⇒ [<code>Service</code>](#Service)
-**Kind**: instance method of [<code>Text</code>](#Text)  
-**Returns**: [<code>Service</code>](#Service) - This instance.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| msg | <code>String</code> | Warning text (used by [Service#_registerService](Service#_registerService) duplicate guard). |
-
-<a name="Service+init"></a>
-
-### text.init()
-Called by Web Components.
-TODO: move to @fabric/http/types/spa
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-<a name="Service+tick"></a>
-
-### text.tick() ⇒ <code>Number</code>
-Move forward one clock cycle.
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-<a name="Service+beat"></a>
-
-### text.beat() ⇒ [<code>Service</code>](#Service)
-Compute latest state.
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-**Emits**: <code>Message#event:beat</code>  
-<a name="Service+get"></a>
-
-### text.get(path) ⇒ <code>Mixed</code>
-Retrieve a key from the [State](#State).
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-**Returns**: <code>Mixed</code> - Returns the target value if found, otherwise null.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | <code>Path</code> | Key to retrieve. |
-
-<a name="Service+set"></a>
-
-### text.set(path) ⇒ <code>Mixed</code>
-Set a key in the [State](#State) to a particular value.
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | <code>Path</code> | Key to retrieve. |
-
-<a name="Service+trust"></a>
-
-### text.trust(source) ⇒ [<code>Service</code>](#Service)
-Explicitly trust all events from a known source.
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-**Returns**: [<code>Service</code>](#Service) - Instance of Service after binding events.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| source | <code>EventEmitter</code> | Emitter of events. |
-
-<a name="Service+handler"></a>
-
-### text.handler(message) ⇒ [<code>Service</code>](#Service)
-Default route handler for an incoming message.  Follows the Activity
-Streams 2.0 spec: https://www.w3.org/TR/activitystreams-core/
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-**Returns**: [<code>Service</code>](#Service) - Chainable method.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| message | <code>Activity</code> | Message object. |
-
-<a name="Service+lock"></a>
-
-### text.lock([duration]) ⇒ <code>Boolean</code>
-Attempt to acquire a lock for `duration` seconds.
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-**Returns**: <code>Boolean</code> - true if locked, false if unable to lock.  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| [duration] | <code>Number</code> | <code>1000</code> | Number of milliseconds to hold lock. |
-
-<a name="Service+when"></a>
-
-### text.when(event, method) ⇒ <code>EventEmitter</code>
-Bind a method to an event, with current state as the immutable context.
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-**Returns**: <code>EventEmitter</code> - Instance of EventEmitter.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| event | <code>String</code> | Name of the event upon which to execute `method` as a function. |
-| method | <code>function</code> | Function to execute when named [Event](Event) `event` is encountered. |
-
-<a name="Service+defineOpcode"></a>
-
-### text.defineOpcode(name, [definition]) ⇒ <code>Object</code>
-Register a single opcode entry in the service registry.
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
-| [definition] | <code>Object</code> |  |
-
-<a name="Service+defineBitcoinOpcode"></a>
-
-### text.defineBitcoinOpcode(name, [definition]) ⇒ <code>Object</code>
-Register Bitcoin-style primitive opcode metadata.
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-
-| Param | Type |
-| --- | --- |
-| name | <code>string</code> | 
-| [definition] | <code>Object</code> | 
-
-<a name="Service+defineFabricOpcode"></a>
-
-### text.defineFabricOpcode(name, [definition]) ⇒ <code>Object</code>
-Register Fabric opcode metadata.
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-
-| Param | Type |
-| --- | --- |
-| name | <code>string</code> | 
-| [definition] | <code>Object</code> | 
-
-<a name="Service+defineOpcodeContract"></a>
-
-### text.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
-Register a newline-delimited opcode contract.
-Contract body example:
-`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| name | <code>string</code> | Contract label |
-| body | <code>string</code> | Newline-delimited opcode list |
-| [meta] | <code>Object</code> |  |
-
-<a name="Service+listOpcodes"></a>
-
-### text.listOpcodes() ⇒ <code>Array.&lt;Object&gt;</code>
-Snapshot opcode registry for UI / API use.
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-<a name="Service+route"></a>
-
-### text.route(msg) ⇒ <code>Promise</code>
-Resolve a [State](#State) from a particular [Message](#Message) object.
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-**Returns**: <code>Promise</code> - Resolves with resulting [State](#State).  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| msg | [<code>Message</code>](#Message) | Explicit Fabric [Message](#Message). |
-
-<a name="Service+start"></a>
-
-### text.start()
-Start the service, including the initiation of an outbound connection
-to any peers designated in the service's configuration.
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-<a name="Service+_GET"></a>
-
-### text.\_GET(path) ⇒ <code>Promise</code>
-Retrieve a value from the Service's state.
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-**Returns**: <code>Promise</code> - Resolves with the result.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| path | <code>String</code> | Path of the value to retrieve. |
-
-<a name="Service+_PUT"></a>
-
-### text.\_PUT(path, value, [commit]) ⇒ <code>Promise</code>
-Store a value in the Service's state.
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-**Returns**: <code>Promise</code> - Resolves with with stored document.  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| path | <code>String</code> |  | Path to store the value at. |
-| value | <code>Object</code> |  | Document to store. |
-| [commit] | <code>Boolean</code> | <code>false</code> | Sign the resulting state. |
-
-<a name="Service+connect"></a>
-
-### text.connect(notify) ⇒ <code>Promise</code>
-Attach to network.
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-**Returns**: <code>Promise</code> - Resolves to [Fabric](#Fabric).  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| notify | <code>Boolean</code> | <code>true</code> | Commit to changes. |
-
-<a name="Service+send"></a>
-
-### text.send(channel, message) ⇒ [<code>Service</code>](#Service)
-Send a message to a channel.
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-**Returns**: [<code>Service</code>](#Service) - Chainable method.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| channel | <code>String</code> | Channel name to which the message will be sent. |
-| message | <code>String</code> | Content of the message to send. |
-
-<a name="Service+_registerActor"></a>
-
-### text.\_registerActor(actor) ⇒ <code>Promise</code>
-Register an [Actor](#Actor) with the [Service](#Service).
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-**Returns**: <code>Promise</code> - Resolves upon successful registration.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| actor | <code>Object</code> | Instance of the [Actor](#Actor). |
-
-<a name="Service+_send"></a>
-
-### text.\_send(message)
-Sends a message.
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| message | <code>Mixed</code> | Message to send. |
-
-<a name="Actor+adopt"></a>
-
-### text.adopt(changes) ⇒ [<code>Actor</code>](#Actor)
-Explicitly adopt a set of [JSONPatch](JSONPatch)-encoded changes.
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| changes | <code>Array</code> | List of [JSONPatch](JSONPatch) operations to apply. |
-
-<a name="Actor+commit"></a>
-
-### text.commit() ⇒ <code>String</code>
-Resolve the current state to a commitment.
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-**Returns**: <code>String</code> - 32-byte ID  
-<a name="Actor+export"></a>
-
-### text.export() ⇒ <code>Object</code>
-Export the Actor's state to a standard [Object](Object).
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-**Returns**: <code>Object</code> - Standard object.  
-<a name="Actor+stream"></a>
-
-### text.stream([pipe]) ⇒ <code>TransformStream</code>
-Returns a new output stream for the Actor.
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-**Returns**: <code>TransformStream</code> - New output stream for the Actor.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [pipe] | <code>TransformStream</code> | Pipe to stream to. |
-
-<a name="Actor+toBuffer"></a>
-
-### text.toBuffer() ⇒ <code>Buffer</code>
-Casts the Actor to a normalized Buffer.
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-<a name="Actor+toGenericMessage"></a>
-
-### text.toGenericMessage([type]) ⇒ <code>Object</code>
-Casts the Actor to a generic message envelope for state announcements and history.
-Shape is stable: `{ type, object }` where `object` is sorted-key state ([toObject](#Actor+toObject)).
-[Actor#id](Actor#id) derives from a digest of the pretty-printed generic message; extending this
-envelope requires a format/version migration across the network.
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-**Returns**: <code>Object</code> - `{ type, object }`  
-**See**
-
-- [https://en.wikipedia.org/wiki/Merkle_tree](https://en.wikipedia.org/wiki/Merkle_tree)
-- [https://dev.fabric.pub/messages](https://dev.fabric.pub/messages)
-
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| [type] | <code>String</code> | <code>&#x27;FabricActorState&#x27;</code> | Logical message type string. |
-
-<a name="Actor+toObject"></a>
-
-### text.toObject() ⇒ <code>Object</code>
-Returns the Actor's current state as an [Object](Object).
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-<a name="Actor+pause"></a>
-
-### text.pause() ⇒ [<code>Actor</code>](#Actor)
-Toggles `status` property to paused.
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
-<a name="Actor+serialize"></a>
-
-### text.serialize() ⇒ <code>String</code>
-Serialize the Actor's current state into a JSON-formatted string.
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-<a name="Actor+sign"></a>
-
-### text.sign() ⇒ [<code>Actor</code>](#Actor)
-Signs the Actor.
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-<a name="Actor+unpause"></a>
-
-### text.unpause() ⇒ [<code>Actor</code>](#Actor)
-Toggles `status` property to unpaused.
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-**Returns**: [<code>Actor</code>](#Actor) - Instance of the Actor.  
-<a name="Actor+value"></a>
-
-### text.value([format]) ⇒ <code>Object</code>
-Get the inner value of the Actor with an optional cast type.
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-**Returns**: <code>Object</code> - Inner value of the Actor as an [Object](Object), or cast to the requested `format`.  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| [format] | <code>String</code> | <code>object</code> | Cast the value to one of: `buffer, hex, json, string` |
-
-<a name="Actor+_readObject"></a>
-
-### text.\_readObject(input) ⇒ <code>Object</code>
-Parse an Object into a corresponding Fabric state.
-
-**Kind**: instance method of [<code>Text</code>](#Text)  
-**Returns**: <code>Object</code> - Fabric state.  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| input | <code>Object</code> | Object to read as input. |
-
-<a name="Text.tokenize"></a>
-
-### Text.tokenize(string) ⇒ <code>Array.&lt;string&gt;</code>
-Split on runs of whitespace (Sensemaker-style tokenization).
-
-**Kind**: static method of [<code>Text</code>](#Text)  
-
-| Param | Type |
-| --- | --- |
-| string | <code>string</code> | 
-
-<a name="Text.truncateMiddle"></a>
-
-### Text.truncateMiddle(fullStr, strLen, [separator]) ⇒ <code>string</code>
-Shorten a string in the middle if longer than <code>strLen</code>.
-
-**Kind**: static method of [<code>Text</code>](#Text)  
-
-| Param | Type |
-| --- | --- |
-| fullStr | <code>string</code> | 
-| strLen | <code>number</code> | 
-| [separator] | <code>string</code> | 
-
-<a name="Text.toRelativeTime"></a>
-
-### Text.toRelativeTime(date) ⇒ <code>string</code>
-Human-readable relative time (e.g. <code>3 days ago</code>), ported from Sensemaker.
-
-**Kind**: static method of [<code>Text</code>](#Text)  
-
-| Param | Type |
-| --- | --- |
-| date | <code>Date</code> \| <code>string</code> \| <code>number</code> | 
-
-<a name="Text.oxfordJoin"></a>
-
-### Text.oxfordJoin(list) ⇒ <code>string</code>
-Join a list with an Oxford comma (delegates to [module:functions/oxfordJoin](module:functions/oxfordJoin)).
-
-**Kind**: static method of [<code>Text</code>](#Text)  
-
-| Param | Type |
-| --- | --- |
-| list | <code>Array.&lt;string&gt;</code> | 
-
-<a name="ZMQ"></a>
-
-## ZMQ
-Connect and subscribe to ZeroMQ publishers.
-
-**Kind**: global class  
-
-* [ZMQ](#ZMQ)
-    * [new ZMQ([settings])](#new_ZMQ_new)
-    * [._emitErrorSafe()](#ZMQ+_emitErrorSafe)
-    * [.start()](#ZMQ+start) ⇒ [<code>ZMQ</code>](#ZMQ)
-    * [.stop()](#ZMQ+stop) ⇒ [<code>ZMQ</code>](#ZMQ)
-
-<a name="new_ZMQ_new"></a>
-
-### new ZMQ([settings])
-Creates an instance of a ZeroMQ subscriber.
-
-**Returns**: [<code>ZMQ</code>](#ZMQ) - Instance of the ZMQ service, ready to run `start()`  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| [settings] | <code>Object</code> | Settings for the ZMQ connection. |
-| [settings.host] | <code>String</code> | Host for the ZMQ publisher. |
-| [settings.port] | <code>Number</code> | Remote ZeroMQ service port. |
-
-<a name="ZMQ+_emitErrorSafe"></a>
-
-### zmQ.\_emitErrorSafe()
-Avoid process crash when nothing listens for `error` (Node EventEmitter default).
-
-**Kind**: instance method of [<code>ZMQ</code>](#ZMQ)  
-<a name="ZMQ+start"></a>
-
-### zmQ.start() ⇒ [<code>ZMQ</code>](#ZMQ)
-Opens the connection and subscribes to the requested channels.
-
-**Kind**: instance method of [<code>ZMQ</code>](#ZMQ)  
-**Returns**: [<code>ZMQ</code>](#ZMQ) - Instance of the service.  
-<a name="ZMQ+stop"></a>
-
-### zmQ.stop() ⇒ [<code>ZMQ</code>](#ZMQ)
-Closes the connection to the ZMQ publisher.
-
-**Kind**: instance method of [<code>ZMQ</code>](#ZMQ)  
-**Returns**: [<code>ZMQ</code>](#ZMQ) - Instance of the service.  
-<a name="Scribe"></a>
-
-## ~~Scribe~~
-***Deprecated***
-
-Deprecated 2021-11-06 — use [FabricState](FabricState) (<code>types/state</code>). <code>Scribe</code> was merged into <code>State</code>.
-
-**Kind**: global class  
 <a name="SAT_ADJ_EPS"></a>
 
 ## SAT\_ADJ\_EPS

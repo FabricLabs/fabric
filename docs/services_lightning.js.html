@@ -44,7 +44,6 @@ const { mkdirp } = require('mkdirp');
 // Fabric Types
 const Actor = require('../types/actor');
 const Key = require('../types/key');
-const Remote = require('../types/remote');
 const Service = require('../types/service');
 const Machine = require('../types/machine');
 
@@ -161,6 +160,19 @@ class Lightning extends Service {
     if (n === 'testnet' || n === 'test') return 'testnet';
     if (n === 'signet') return 'signet';
     return 'regtest';
+  }
+
+  _bitcoinCliNetworkFlag () {
+    const network = this.settings.network || 'regtest';
+    switch (network) {
+      case 'mainnet': return null;
+      case 'testnet': return '-testnet';
+      case 'testnet4': return '-testnet4';
+      case 'signet': return '-signet';
+      case 'regtest':
+      default:
+        return '-regtest';
+    }
   }
 
   static plugin (state) {
@@ -320,7 +332,7 @@ class Lightning extends Service {
         ];
 
         // Wait for all checks to complete
-        const results = await Promise.all(checks);
+        await Promise.all(checks);
 
         if (this.settings.debug) {
           this.emit('debug', '[FABRIC:LIGHTNING] Successfully connected to lightningd');
@@ -444,7 +456,7 @@ class Lightning extends Service {
           if (child.exitCode === null) {
             try {
               child.kill('SIGKILL');
-            } catch (error) {
+            } catch {
               // Ignore if process already exited between checks.
             }
 
@@ -472,7 +484,7 @@ class Lightning extends Service {
           // this.emit('error', err);
         }
       };
-      this._errorHandlers.unhandledRejection = async (reason, promise) => {
+      this._errorHandlers.unhandledRejection = async (reason, _promise) => {
         // Only handle rejections from this service's operations
         if (reason.source === 'lightning' || (this._child &amp;&amp; reason.pid === this._child.pid)) {
           this.emit('error', '[FABRIC:LIGHTNING] Unhandled rejection from Lightning service');
@@ -510,24 +522,26 @@ class Lightning extends Service {
     if (this.settings.managed &amp;&amp; this.settings.bitcoin) {
       if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Waiting for Lightning to be ready...');
       try {
-        const bitcoinCli = children.spawn('bitcoin-cli', [
-        '-regtest',
-        `-datadir=${this.settings.bitcoin.datadir}`,
-        '-rpcclienttimeout=60',
-        `-rpcconnect=${this.settings.bitcoin.host}`,
-        `-rpcport=${this.settings.bitcoin.rpcport}`,
-        `-rpcuser=${this.settings.bitcoin.rpcuser}`,
-        '-stdinrpcpass',
-        'getblockchaininfo'
-      ]);
+        const bitcoinCliArgs = [
+          `-datadir=${this.settings.bitcoin.datadir}`,
+          '-rpcclienttimeout=60',
+          `-rpcconnect=${this.settings.bitcoin.host}`,
+          `-rpcport=${this.settings.bitcoin.rpcport}`,
+          `-rpcuser=${this.settings.bitcoin.rpcuser}`,
+          '-stdinrpcpass',
+          'getblockchaininfo'
+        ];
+        const networkFlag = this._bitcoinCliNetworkFlag();
+        if (networkFlag) bitcoinCliArgs.unshift(networkFlag);
+        const bitcoinCli = children.spawn('bitcoin-cli', bitcoinCliArgs);
 
       bitcoinCli.stdin.write(this.settings.bitcoin.rpcpassword + '\n');
       bitcoinCli.stdin.end();
 
       await new Promise((resolve, reject) => {
-        let output = '';
+        let _output = '';
         bitcoinCli.stdout.on('data', (data) => {
-          output += data.toString();
+          _output += data.toString();
         });
         bitcoinCli.stderr.on('data', (data) => {
           const line = data.toString();
@@ -544,8 +558,10 @@ class Lightning extends Service {
       });
 
         if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Lightning is ready');
-      } catch (error) {
-        throw new Error(`Could not connect to bitcoind using bitcoin-cli. Is lightningd running?\n\nMake sure you have bitcoind running and that bitcoin-cli is able to connect to bitcoind.\n\nYou can verify that your Bitcoin Core installation is ready for use by running:\n\n    $ bitcoin-cli -regtest -datadir=${this.settings.bitcoin.datadir} -rpcclienttimeout=60 -rpcconnect=${this.settings.bitcoin.host} -rpcport=${this.settings.bitcoin.rpcport} -rpcuser=${this.settings.bitcoin.rpcuser} -stdinrpcpass echo 'hello world'`);
+      } catch {
+        const networkFlag = this._bitcoinCliNetworkFlag();
+        const networkHint = networkFlag ? `${networkFlag} ` : '';
+        throw new Error(`Could not connect to bitcoind using bitcoin-cli. Is lightningd running?\n\nMake sure you have bitcoind running and that bitcoin-cli is able to connect to bitcoind.\n\nYou can verify that your Bitcoin Core installation is ready for use by running:\n\n    $ bitcoin-cli ${networkHint}-datadir=${this.settings.bitcoin.datadir} -rpcclienttimeout=60 -rpcconnect=${this.settings.bitcoin.host} -rpcport=${this.settings.bitcoin.rpcport} -rpcuser=${this.settings.bitcoin.rpcuser} -stdinrpcpass echo 'hello world'`);
       }
     }
 
@@ -657,7 +673,7 @@ class Lightning extends Service {
         if (settled) return;
         settled = true;
         if (timeoutId) clearTimeout(timeoutId);
-        try { client.destroy(); } catch (_) {}
+        try { client.destroy(); } catch {}
         fn(arg);
       };
 
@@ -677,7 +693,7 @@ class Lightning extends Service {
             const response = JSON.parse(buffer);
             if (response.result !== undefined) return finish(resolve, response.result);
             if (response.error) return finish(reject, Object.assign(new Error(response.error.message || 'RPC error'), response.error));
-          } catch (_) {
+          } catch {
             if (buffer.length > 2 * 1024 * 1024) finish(reject, new Error('Lightning RPC response too large'));
           }
         });
@@ -874,14 +890,17 @@ module.exports = Lightning;
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Bond.html">Bond</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Contract.html">Contract</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
-      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
@@ -899,12 +918,14 @@ module.exports = Lightning;
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
+      <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
@@ -914,25 +935,10 @@ module.exports = Lightning;
     </ul>
     <h3>Global</h3>
     <ul>
-      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
-      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
-      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
-      <li><a href="global.html#crypto">crypto</a></li>
-      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
-      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
-      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
-      <li><a href="global.html#gossip">gossip</a></li>
-      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
-      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
-      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
-      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
-      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
-      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
-      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
-      <li><a href="global.html#stableStringify">stableStringify</a></li>
-      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
-      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
-      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
+      <li><a href="global.html#BITCOIND_CHAIN_FOLDER_NAMES">BITCOIND_CHAIN_FOLDER_NAMES</a></li>
+      <li><a href="global.html#BITCOIN_COOKIE_PATH_MAX_LEN">BITCOIN_COOKIE_PATH_MAX_LEN</a></li>
+      <li><a href="global.html#SAT_ADJ_EPS">SAT_ADJ_EPS</a></li>
+      <li><a href="global.html#cookiePathUnderDatadirBase">cookiePathUnderDatadirBase</a></li>
     </ul>
   </nav>
   <br class="clear" />

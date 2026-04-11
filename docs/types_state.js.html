@@ -48,13 +48,19 @@ const Actor = require('./actor');
 
 // Local Services
 const json = require('../functions/json');
+const { tryParsePersistedJson, parsePersistedJson } = require('../functions/wireJson');
 
 /**
- * The {@link State} is the core of most {@link User}-facing interactions.  To
- * interact with the {@link User}, simply propose a change in the state by
- * committing to the outcome.  This workflow keeps app design quite simple!
+ * @classdesc &lt;strong>Named snapshot&lt;/strong> of application data extending {@link Actor} — &lt;code>@type&lt;/code>,
+ * &lt;code>@data&lt;/code>, &lt;code>@id&lt;/code>, JSON Patch
+ * flows. Absorbs former &lt;strong>Scribe&lt;/strong> behavior: &lt;code>verbose&lt;/code> / &lt;code>verbosity&lt;/code>, &lt;code>now&lt;/code>,
+ * &lt;code>trust&lt;/code>, &lt;code>start&lt;/code>/&lt;code>stop&lt;/code>, and structured &lt;code>log&lt;/code> / &lt;code>error&lt;/code> /
+ * &lt;code>warn&lt;/code> / &lt;code>debug&lt;/code> (console + events). {@link Channel}, {@link Document}, {@link Ledger},
+ * {@link Router}, and {@link Instruction} extend &lt;code>State&lt;/code> directly. {@link Vector} is an {@link EventEmitter} only.
+ * Sibling concept to {@link Entity}.
+ * @class State
+ * @extends Actor
  * @access protected
- * @augments EventEmitter
  * @property {Number} size Size of state in bytes.
  * @property {Buffer} @buffer Byte-for-byte memory representation of state.
  * @property {String} @type Named type.
@@ -132,6 +138,16 @@ class State extends Actor {
 
     this.value = {};
 
+    const cfg = (typeof data === 'object' &amp;&amp; data !== null &amp;&amp; !Buffer.isBuffer(data)) ? data : {};
+    this.settings = Object.assign({
+      verbose: true,
+      verbosity: 2,
+      path: './stores/state',
+      tags: []
+    }, this.settings, cfg);
+
+    this.status = 'ready';
+
     // TODO: document hidden properties
     // Remove various undesired clutter from output
     Object.defineProperty(this, '@allocation', { enumerable: false });
@@ -206,11 +222,9 @@ class State extends Actor {
     let result = null;
 
     if (typeof input === 'string') {
-      try {
-        result = JSON.parse(input);
-      } catch (E) {
-        console.error('Failure in fromJSON:', E);
-      }
+      const pr = tryParsePersistedJson(input);
+      if (pr.ok) result = pr.value;
+      else console.error('Failure in fromJSON:', pr.error);
     }
 
     return result;
@@ -228,6 +242,104 @@ class State extends Actor {
 
   sha256 (value) {
     return crypto.createHash('sha256').update(value).digest('hex');
+  }
+
+  now () {
+    return new Date().getTime();
+  }
+
+  _sign () {
+    this.commit();
+  }
+
+  /**
+   * @param {EventEmitter} source Event stream.
+   * @returns {State} this
+   */
+  trust (source) {
+    const self = this;
+    source.on('message', async function handleTrustedMessage (_msg) {});
+    source.on('transaction', async function handleTrustedTransaction (transaction) {
+      self.log('[EVENT:TRANSACTION]', 'apply this transaction to local state:', transaction);
+      self.log('[PROPOSAL]', 'apply this transaction to local state:', transaction);
+    });
+    return self;
+  }
+
+  /**
+   * @param {State} other Peer {@link State} whose `settings.namespace` is appended to `settings.tags`.
+   * @returns {Number} New length of `settings.tags`.
+   */
+  inherits (other) {
+    const ns = other &amp;&amp; other.settings &amp;&amp; other.settings.namespace;
+    if (ns) this.settings.tags.push(ns);
+    return this.settings.tags.length;
+  }
+
+  log (...inputs) {
+    const t = this.now();
+    inputs.unshift(`[${this.constructor.name.toUpperCase()}]`);
+    inputs.unshift(`[${t}]`);
+    if (this.settings.verbosity >= 3) {
+      console.log.apply(null, ['[STATE]'].concat(inputs));
+    }
+    return this.emit('info', ['[STATE]'].concat(inputs));
+  }
+
+  error (...inputs) {
+    const t = this.now();
+    inputs.unshift(`[${this.constructor.name.toUpperCase()}]`);
+    inputs.unshift(`[${t}]`);
+    if (this.settings.verbose) {
+      console.error.apply(null, ['[STATE]'].concat(inputs));
+    }
+    return this.emit('error', ['[STATE]'].concat(inputs));
+  }
+
+  warn (...inputs) {
+    const t = this.now();
+    inputs.unshift(`[${this.constructor.name.toUpperCase()}]`);
+    inputs.unshift(`[${t}]`);
+    if (this.settings.verbose) {
+      console.warn.apply(null, ['[STATE]'].concat(inputs));
+    }
+    return this.emit('warning', ['[STATE]'].concat(inputs));
+  }
+
+  debug (...inputs) {
+    const t = this.now();
+    inputs.unshift(`[${this.constructor.name.toUpperCase()}]`);
+    inputs.unshift(`[${t}]`);
+    if (this.settings.verbose) {
+      console.debug.apply(null, ['[STATE]'].concat(inputs));
+    }
+    return this.emit('debug', ['[STATE]'].concat(inputs));
+  }
+
+  async open () {
+    this.status = 'opened';
+    return this;
+  }
+
+  async close () {
+    this.status = 'closed';
+    return this;
+  }
+
+  async start () {
+    this.status = 'starting';
+    this['@data'] = this.settings;
+    await this.open();
+    await this.commit();
+    this.status = 'started';
+    return this;
+  }
+
+  async stop () {
+    this.status = 'stopping';
+    await this.close();
+    this.status = 'stopped';
+    return this;
   }
 
   async _applyChanges (ops) {
@@ -326,7 +438,7 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
    * @param  {Mixed} [input] Input to serialize.
    * @return {Buffer}       {@link Store}-able blob.
    */
-  serialize (input = this.state, encoding = 'json') {
+  serialize (input = this.state, _encoding = 'json') {
     const state = {};
     let result = null;
 
@@ -368,7 +480,7 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
       }
     }
 
-    return JSON.parse(json(result));
+    return parsePersistedJson(json(result));
   }
 
   /**
@@ -516,14 +628,17 @@ module.exports = State;
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Bond.html">Bond</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Contract.html">Contract</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
-      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
@@ -541,12 +656,14 @@ module.exports = State;
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
+      <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
@@ -556,25 +673,10 @@ module.exports = State;
     </ul>
     <h3>Global</h3>
     <ul>
-      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
-      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
-      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
-      <li><a href="global.html#crypto">crypto</a></li>
-      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
-      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
-      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
-      <li><a href="global.html#gossip">gossip</a></li>
-      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
-      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
-      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
-      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
-      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
-      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
-      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
-      <li><a href="global.html#stableStringify">stableStringify</a></li>
-      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
-      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
-      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
+      <li><a href="global.html#BITCOIND_CHAIN_FOLDER_NAMES">BITCOIND_CHAIN_FOLDER_NAMES</a></li>
+      <li><a href="global.html#BITCOIN_COOKIE_PATH_MAX_LEN">BITCOIN_COOKIE_PATH_MAX_LEN</a></li>
+      <li><a href="global.html#SAT_ADJ_EPS">SAT_ADJ_EPS</a></li>
+      <li><a href="global.html#cookiePathUnderDatadirBase">cookiePathUnderDatadirBase</a></li>
     </ul>
   </nav>
   <br class="clear" />
