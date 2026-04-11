@@ -152,7 +152,6 @@
 ./types/peer.js:    // TODO: switch to child pubkey
 ./types/peer.js:              // TODO: consider making this a FabricMessageID
 ./types/peer.js:    // TODO: output stream
-./types/peer.js:        // TODO: ensure no pong is handled when a ping was not previously sent
 ./types/peer.js:        // TODO: reject and punish mis-behaving peers
 ./types/peer.js:        // TODO: reject and punish mis-behaving peers
 ./types/peer.js:    // TODO: reconcile APIs for these methods
@@ -200,14 +199,7 @@
 ./DEVELOPERS.md:- [ ] Sweep remaining `TODO` markers in repo-specific guides
 ./DEVELOPERS.md:## TODO
 ./DEVELOPERS.md:- [ ] Remove TODOs
-./.tmp-pr176.html:|**Reports &amp; generated data** &lt;br&gt; `reports/*`, `reports/class-inheritance.json`, `reports/AUDIT.json`, `reports/TODO.txt`|Generated audit, class-inheritance, and updated TODO reports; updated reporting outputs.|
-./.tmp-pr176.html:<td><strong>Reports &amp; generated data</strong> <br> <code class="notranslate">reports/*</code>, <code class="notranslate">reports/class-inheritance.json</code>, <code class="notranslate">reports/AUDIT.json</code>, <code class="notranslate">reports/TODO.txt</code></td>
-./.tmp-pr176.html:<td>Generated audit, class-inheritance, and updated TODO reports; updated reporting outputs.</td>
-./.tmp-pr176.html:* `reports/TODO.txt`
-./.tmp-pr176.html:<li><code class="notranslate">reports/TODO.txt</code></li>
-./.tmp-pr176.html:              <span class="blob-code-inner blob-code-marker-deletion">      message.amount = message.amount.fixed().toPrecision(8); // TODO: evaluate precision behavior</span>
-./.tmp-pr176.html:            <td class="border-0 px-2 py-1 blob-code-inner blob-code-deletion js-blob-code-deletion blob-code-marker-deletion">      <span class="pl-s1">message</span><span class="pl-kos">.</span><span class="pl-c1">amount</span> <span class="pl-c1">=</span> <span class="pl-s1">message</span><span class="pl-kos">.</span><span class="pl-c1">amount</span><span class="pl-kos">.</span><span class="pl-en">fixed</span><span class="pl-kos">(</span><span class="pl-kos">)</span><span class="pl-kos">.</span><span class="pl-en">toPrecision</span><span class="pl-kos">(</span><span class="pl-c1">8</span><span class="pl-kos">)</span><span class="pl-kos">;</span> <span class="pl-c">// TODO: evaluate precision behavior</span></td>
-./package.json:    "report:todo": "grep --exclude-dir=.git --exclude-dir=_book --exclude-dir=assets --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs -rEI \"TODO|FIXME\" . > reports/TODO.txt",
+./package.json:    "report:todo": "grep --exclude-dir=.git --exclude-dir=_book --exclude-dir=assets --exclude-dir=node_modules --exclude-dir=reports --exclude-dir=coverage --exclude-dir=docs --exclude='.tmp-*.html' --exclude='*.tmp-pr*.html' -rEI \"TODO|FIXME\" . > reports/TODO.txt",
 ./package.json:    "review:todo": "npm run report:todo && cat reports/TODO.txt && echo '\nOutstanding TODO items (@fabric/core):' && wc -l reports/TODO.txt && echo '\nIssues List: https://github.com/FabricLabs/fabric/issues\nDisclosures: security@fabric.pub\n\n'",
 ./guides/SETTINGS.md:### WARNING: TODO
 ./examples/bitcoin.js:  // TODO: import these into core process logic
@@ -216,11 +208,7 @@
 ./examples/swarm.html:            TODO: receive entities from seed node
 ./examples/swarm.html:            TODO: create entities on swarm instance</p>
 ./examples/agents.js:// TODO: ensure utilization of multiple cores
-./examples/agents.js:    // TODO: do something productive here!
-./examples/agents.js:    // TODO: replace this with Actor ID
-./examples/agents.js:// TODO: move these to `functions/`
 ./examples/agents.js:  // TODO: document all descriptors
-./examples/agents.js:  // TODO: migrate this to `functions/onParentMessage.js`
 ./examples/agents.js:  // TODO: migrate to `functions/`
 ./examples/bitcoin.html:          <p>TODO: import these into core process logic
 ./examples/service.js:      // TODO: revert to OPTIONS (this was a temporary fix for an NGINX bug)
@@ -264,18 +252,3 @@
 ./SECURITY.md:Report security issues through the contact in [TODO.md](TODO.md) / project README as applicable.
 ./whitepaper.md:TODO
 ./whitepaper.md:TODO: include content hashes of links as they appear at
-./src/nuklear.h:    NK_ASSERT(x >= 0.0f && "TODO support negative floats");
-./src/nuklear.h:      /*  the rectangles easily fit). @TODO a smarter approach would be to only */
-./src/nuklear.h:/*  @TODO: don't expose this structure */
-./src/nuklear.h:      /*  @TODO this should use size from table (not 512MB) */
-./src/nuklear.h:      /*  @TODO the name INDEX could list multiple fonts, */
-./src/nuklear.h:      STBTT_assert(0); /*  @TODO: high-byte mapping for japanese/chinese/korean */
-./src/nuklear.h:   /*  @TODO */
-./src/nuklear.h:            /*  @TODO handle matching point */
-./src/nuklear.h:      /*  @TODO implement hinting */
-./src/nuklear.h:         /*  @TODO These "flex" implementations ignore the flex-depth and resolution, */
-./src/nuklear.h:#define STBTT_GPOS_TODO_assert(x)
-./src/nuklear.h:               /*  @TODO: maybe test against sy1 rather than y_bottom? */
-./src/nuklear.h:/*  tessellate until threshold p is happy... @TODO warped to compensate for non-linear stretching */
-./src/nuklear.h:   /*  @TODO this "flatness" calculation is just made-up nonsense that seems to work well enough */
-./src/nuklear.h:         /*  @TODO handle other encodings */
