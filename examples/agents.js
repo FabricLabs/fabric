@@ -79,6 +79,15 @@ const process = require('process');
 const { encodeCheck, decodeCheck } = require('../functions/base58');
 const { Worker, isMainThread, parentPort, workerData } = require('worker_threads');
 const { FIXTURE_SEED } = require('../constants');
+const {
+  producerConfigFromEnv,
+  scheduleAgentProducers
+} = require('./agents/producer');
+const {
+  defaultWork,
+  cloneState,
+  runWorkerLoop
+} = require('./agents/worker');
 // TODO: ensure utilization of multiple cores
 
 // Fabric Types
@@ -118,26 +127,7 @@ const bootIdleMsEnv = Number(process.env.FABRIC_AGENTS_BOOT_IDLE_MS);
 const FABRIC_AGENTS_BOOT_IDLE_MS = (Number.isFinite(bootIdleMsEnv) && bootIdleMsEnv > 0)
   ? bootIdleMsEnv
   : 120000;
-const producerIntervalEnv = Number(process.env.FABRIC_AGENTS_PRODUCER_INTERVAL_MS);
-const PRODUCER_INTERVAL_MS = (Number.isFinite(producerIntervalEnv) && producerIntervalEnv > 0)
-  ? Math.floor(producerIntervalEnv)
-  : 100;
-const producerBatchEnv = Number(process.env.FABRIC_AGENTS_PRODUCER_BATCH_SIZE);
-const PRODUCER_BATCH_SIZE = (Number.isFinite(producerBatchEnv) && producerBatchEnv > 0)
-  ? Math.floor(producerBatchEnv)
-  : Math.max(4, numberOfCores);
-const producerTargetEnv = Number(process.env.FABRIC_AGENTS_PRODUCER_TARGET);
-const PRODUCER_TARGET = (Number.isFinite(producerTargetEnv) && producerTargetEnv > 0)
-  ? Math.floor(producerTargetEnv)
-  : 1000;
-const fastBidEveryEnv = Number(process.env.FABRIC_AGENTS_FAST_BID_EVERY);
-const PRODUCER_FAST_BID_EVERY = (Number.isFinite(fastBidEveryEnv) && fastBidEveryEnv > 0)
-  ? Math.floor(fastBidEveryEnv)
-  : 25;
-const fastBidAmountEnv = Number(process.env.FABRIC_AGENTS_FAST_BID_AMOUNT);
-const PRODUCER_FAST_BID_AMOUNT = (Number.isFinite(fastBidAmountEnv) && fastBidAmountEnv >= 1)
-  ? Math.floor(fastBidAmountEnv)
-  : 3;
+const PRODUCER_CONFIG = producerConfigFromEnv(numberOfCores);
 
 /** Initial queue-drain deadline: respect `FABRIC_AGENTS_BOOT_IDLE_MS` but keep a sensible floor. */
 function agentsBootstrapDrainDeadlineMs (waves, delayMs) {
@@ -159,44 +149,9 @@ const WORK_SHA256_ITERS = (Number.isFinite(workShaEnv) && workShaEnv > 0)
   : 0;
 const AGENTS_STATUS_JSON = AGENTS_CLI.statusJson || process.env.FABRIC_AGENTS_STATUS_JSON === '1';
 
-// Work Function
-const work = function (payload = {}) {
-  this.queueProcessed = (this.queueProcessed || 0) + 1;
-  this.lastPayload = payload.index;
-  const workSha256Iters = (Number.isFinite(Number(this.workSha256Iters)) && Number(this.workSha256Iters) > 0)
-    ? Math.min(Math.floor(Number(this.workSha256Iters)), 2_000_000)
-    : 0;
-  const workDelayMs = (Number.isFinite(Number(this.workDelayMs)) && Number(this.workDelayMs) >= 0)
-    ? Number(this.workDelayMs)
-    : 0;
-
-  console.debug(`[WORKER:INNER] Worker #${this.workerIndex} Starting work...`, payload.index);
-  return new Promise((resolve) => {
-    if (workSha256Iters > 0) {
-      let buf = crypto.randomBytes(32);
-      for (let i = 0; i < workSha256Iters; i++) {
-        buf = crypto.createHash('sha256').update(buf).update(Buffer.from(String(i % 65536))).digest();
-      }
-      this.lastWorkDigest = buf.toString('hex', 0, 8);
-    }
-    const newState = { ...payload.state, workerIndex: this.workerIndex, incrementor: this.queueProcessed };
-    const entityID = `${newState.workerIndex}:${newState.incrementor}:${payload.index}`;
-    setTimeout(() => {
-      console.log('[WORKER:INNER] Work complete:', payload);
-      resolve({
-        depth: payload.state.depth,
-        parent: payload.state.parent,
-        output: payload.index,
-        entity: entityID,
-        state: { ...newState, id: entityID }
-      });
-    }, workDelayMs);
-  });
-};
-
 // Settings
 const configuration = {
-  function: work,
+  function: defaultWork,
   maxQueue: DEFAULT_MAX_QUEUE,
   wallet: {
     keys: [
@@ -206,24 +161,6 @@ const configuration = {
 };
 
 // Functions
-// TODO: move these to `functions/`
-function cloneState (value) {
-  try {
-    return JSON.parse(JSON.stringify(value || {}));
-  } catch {
-    return {};
-  }
-}
-
-function compileWorkerFunction (source) {
-  if (!source) return null;
-  try {
-    // Example-only trusted code path to preserve settings.function behavior.
-    return new Function(`return (${source});`)();
-  } catch {
-    return null;
-  }
-}
 
 function createJobID (payload = {}, paymentSats = 0) {
   const envelope = {
@@ -235,19 +172,6 @@ function createJobID (payload = {}, paymentSats = 0) {
   };
 
   return new Entity(envelope).id;
-}
-
-function computeWorkerStateID (state = {}) {
-  return new Entity({
-    workerIndex: state.workerIndex,
-    processed: state.processed,
-    depth: state.depth,
-    errors: state.errors,
-    lastJobID: state.lastJobID,
-    queueProcessed: state.queueProcessed,
-    lastPayload: state.lastPayload,
-    parentStateID: state.parentStateID
-  }).id;
 }
 
 async function mineBlocksToAddress (bitcoin, address, count = 1) {
@@ -301,14 +225,6 @@ function msatToSats (value) {
     if (Number.isFinite(parsed)) return Math.floor(parsed / 1000);
   }
   return 0;
-}
-
-function requiredBidFromQueueError (error) {
-  const message = String((error && error.message) || error || '');
-  const match = message.match(/Pay\s+(\d+)\s+satoshi/i);
-  if (!match) return null;
-  const parsed = Number(match[1]);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : null;
 }
 
 function listLightningOutputs (funds) {
@@ -531,161 +447,6 @@ npm run example:agents:bitcoin
 }
 
 /**
- * @param {{ master: Distributor, lightning?: object, aliceLightning?: object }} opts
- * @returns {{ producerTimer: NodeJS.Timeout, statusTimer: NodeJS.Timeout }}
- */
-function scheduleAgentProducers ({ master, lightning, aliceLightning }) {
-  let producerSequence = 0;
-  let completed = false;
-  let producing = false;
-  const metrics = {
-    target: PRODUCER_TARGET,
-    submitted: 0,
-    accepted: 0,
-    queueFull: 0,
-    rebidSuccess: 0,
-    rebidFailure: 0,
-    maxBid: 0
-  };
-  let resolveDone;
-  const done = new Promise((resolve) => {
-    resolveDone = resolve;
-  });
-
-  const trySubmitWork = (jobIndex) => {
-    const occasionalFastLane = PRODUCER_FAST_BID_EVERY > 0 && (jobIndex % PRODUCER_FAST_BID_EVERY === 0);
-    const initialBid = occasionalFastLane ? PRODUCER_FAST_BID_AMOUNT : 0;
-    metrics.submitted++;
-
-    try {
-      master.requestWork({ index: `work-${jobIndex}` }, initialBid);
-      metrics.accepted++;
-      if (initialBid > metrics.maxBid) metrics.maxBid = initialBid;
-      return true;
-    } catch (error) {
-      const requiredBid = requiredBidFromQueueError(error);
-      if (requiredBid == null) {
-        return false;
-      }
-
-      metrics.queueFull++;
-      const escalatedBid = Math.max(requiredBid, initialBid + 1);
-      try {
-        master.requestWork({ index: `work-${jobIndex}` }, escalatedBid);
-        metrics.accepted++;
-        metrics.rebidSuccess++;
-        if (escalatedBid > metrics.maxBid) metrics.maxBid = escalatedBid;
-        return true;
-      } catch {
-        metrics.rebidFailure++;
-        return false;
-      }
-    }
-  };
-
-  const producerTimer = setInterval(() => {
-    if (completed || producing) return;
-    producing = true;
-    try {
-      for (let i = 0; i < PRODUCER_BATCH_SIZE; i++) {
-        if (metrics.accepted >= metrics.target) break;
-        const submitted = trySubmitWork(producerSequence++);
-        if (!submitted) break;
-      }
-    } finally {
-      producing = false;
-    }
-
-    if (metrics.accepted >= metrics.target) {
-      completed = true;
-      clearInterval(producerTimer);
-    }
-  }, PRODUCER_INTERVAL_MS);
-
-  const statusTimer = setInterval(() => {
-    Promise.resolve().then(async () => {
-      let snapshot = {
-        masterFunds: {},
-        aliceFunds: {},
-        masterChannels: [],
-        aliceChannels: [],
-        updatedAt: null
-      };
-      if (lightning && aliceLightning) {
-        snapshot = await getLightningStatusSnapshot(lightning, aliceLightning);
-      }
-      master.setExternalStatus(snapshot);
-
-      const status = master.status();
-      const aliceChannels = Array.isArray(snapshot.aliceChannels) ? snapshot.aliceChannels : [];
-      const masterChannels = Array.isArray(snapshot.masterChannels) ? snapshot.masterChannels : [];
-      const aliceFunds = snapshot.aliceFunds || {};
-      const masterFunds = snapshot.masterFunds || {};
-      const workerSummary = status.workers.map((worker) => {
-        const state = worker.state || {};
-        return `w${worker.index}:done=${worker.processed},err=${worker.errors},earned=${worker.earnedSats || 0}sats,paid=${worker.paidJobs || 0},${worker.busy ? 'busy' : 'idle'},state.jobs=${state.queueProcessed || 0},state.depth=${state.depth || 0},state.last=${state.lastPayload || '-'}`;
-      }).join(' | ');
-
-      if (AGENTS_STATUS_JSON) {
-        console.log(JSON.stringify({
-          type: 'agents_status',
-          timestamp: new Date().toISOString(),
-          queueDepth: status.queueDepth,
-          completed: status.completed,
-          failed: status.failed,
-          paymentCreditSats: status.paymentCreditSats,
-          paidJobsCompleted: status.paidJobsCompleted,
-          paidJobsFailed: status.paidJobsFailed,
-          totalPaidSatsEarned: status.totalPaidSatsEarned,
-          processed: status.processed,
-          workersBusy: status.workersBusy,
-          workersTotal: status.workersTotal,
-          stateDepth: status.stateDepth,
-          stateTip: status.stateTip,
-          historyRoot: status.historyRoot,
-          lightning: {
-            masterChannels: masterChannels.length,
-            aliceChannels: aliceChannels.length,
-            masterFunds: masterFunds.total_msat || masterFunds.total || null,
-            aliceFunds: aliceFunds.total_msat || aliceFunds.total || null
-          }
-        }));
-      }
-
-      console.log(
-        `[MASTER] [STATUS] queue=${status.queueDepth} completed=${status.completed} failed=${status.failed} processed=${status.processed} paid_done=${status.paidJobsCompleted} paid_fail=${status.paidJobsFailed} earned=${status.totalPaidSatsEarned}sats credit=${status.paymentCreditSats}sats busy=${status.workersBusy}/${status.workersTotal} ${workerSummary}`
-      );
-
-      if (lightning && aliceLightning) {
-        console.log(
-          `[ALICE] [STATUS:LIGHTNING] channels=${aliceChannels.length} funds=${aliceFunds.total_msat || aliceFunds.total || '-'}`
-        );
-        console.log(
-          `[MASTER] [STATUS:LIGHTNING] channels=${masterChannels.length} funds=${masterFunds.total_msat || masterFunds.total || '-'}`
-        );
-      }
-
-      console.log(
-        `[MASTER] [MERKLE] depth=${status.stateDepth} root=${status.historyRoot || '-'} tip=${status.stateTip || '-'} parent=${status.stateParent || '-'}`
-      );
-
-      console.log(
-        `[MASTER] [BIDDING] accepted=${metrics.accepted}/${metrics.target} submitted=${metrics.submitted} queue_full=${metrics.queueFull} rebid_ok=${metrics.rebidSuccess} rebid_fail=${metrics.rebidFailure} max_bid=${metrics.maxBid}`
-      );
-
-      if (completed && status.queueDepth === 0 && status.workersBusy === 0) {
-        clearInterval(statusTimer);
-        resolveDone(Object.assign({}, metrics));
-      }
-    }).catch((error) => {
-      console.warn('[STATUS]', 'Status tick failed:', error.message);
-    });
-  }, 5000);
-
-  return { producerTimer, statusTimer, done };
-}
-
-/**
  * Long-running distributor + workers only (no Bitcoin / Lightning).
  * @param {object} [input]
  */
@@ -727,7 +488,14 @@ async function runDistributorOnlyDemo (input = {}) {
   }
   console.log('[DEVELOP] Initial queue drained; starting producer loop.');
 
-  const timers = scheduleAgentProducers({ master, lightning: null, aliceLightning: null });
+  const timers = scheduleAgentProducers({
+    master,
+    lightning: null,
+    aliceLightning: null,
+    getLightningStatusSnapshot,
+    statusJsonEnabled: AGENTS_STATUS_JSON,
+    config: PRODUCER_CONFIG
+  });
   producerTimer = timers.producerTimer;
   statusTimer = timers.statusTimer;
   const summary = await timers.done;
@@ -839,7 +607,14 @@ async function runBitcoinOnlyDemo (input = {}) {
     console.warn(`[DEVELOP] Initial queue still busy after ${FABRIC_AGENTS_BOOT_IDLE_MS}ms; continuing with producer.`);
   }
 
-  const timers = scheduleAgentProducers({ master, lightning: null, aliceLightning: null });
+  const timers = scheduleAgentProducers({
+    master,
+    lightning: null,
+    aliceLightning: null,
+    getLightningStatusSnapshot,
+    statusJsonEnabled: AGENTS_STATUS_JSON,
+    config: PRODUCER_CONFIG
+  });
   producerTimer = timers.producerTimer;
   statusTimer = timers.statusTimer;
   const summary = await timers.done;
@@ -961,69 +736,6 @@ function normalizeXpubForNetwork (xpub, network = 'mainnet') {
 
   const remapped = Buffer.concat([target, bytes.subarray(4)]);
   return encodeCheck(remapped);
-}
-
-function runWorkerLoop () {
-  const run = compileWorkerFunction(workerData && workerData.functionSource);
-  const boundState = Object.assign({
-    workerIndex: workerData && workerData.workerIndex,
-    processed: 0,
-    depth: 0,
-    errors: 0,
-    lastJobID: null,
-    parentStateID: null,
-    stateID: null,
-    workSha256Iters: Number(workerData && workerData.workSha256Iters) || 0,
-    workDelayMs: Number(workerData && workerData.workDelayMs) || 0
-  }, cloneState(workerData && workerData.initialState));
-
-  boundState.stateID = computeWorkerStateID(boundState);
-
-  if (!parentPort) return;
-
-  // TODO: migrate this to `functions/onParentMessage.js`
-  parentPort.on('message', async (message) => {
-    if (!message) return;
-    if (message.type === 'shutdown') {
-      process.exit(0);
-      return;
-    }
-    if (message.type !== 'start') return;
-
-    try {
-      boundState.lastJobID = message.id || null;
-      boundState.parentStateID = boundState.stateID || message.parentStateID || boundState.parentStateID || null;
-      boundState.parent = boundState.parentStateID;
-      boundState.depth = (boundState.depth || 0) + 1;
-      if (typeof run === 'function') {
-        const result = await run.call(boundState, Object.assign({}, message.payload, {
-          state: boundState
-        }));
-
-        if (result && typeof result === 'object' && result.state && typeof result.state === 'object') {
-          Object.assign(boundState, result.state);
-        }
-      }
-
-      boundState.processed++;
-      boundState.stateID = computeWorkerStateID(boundState);
-
-      parentPort.postMessage({
-        type: 'done',
-        id: message.id,
-        pid: process.pid,
-        state: cloneState(boundState)
-      });
-    } catch (error) {
-      boundState.errors++;
-      parentPort.postMessage({
-        type: 'error',
-        id: message.id,
-        error: error.message,
-        state: cloneState(boundState)
-      });
-    }
-  });
 }
 
 /**
@@ -1444,7 +1156,7 @@ class Distributor extends Service {
 
 async function main (input = {}) {
   if (!isMainThread) {
-    runWorkerLoop(input);
+    runWorkerLoop({ parentPort, workerData, processObj: process });
     return;
   }
 
@@ -1902,7 +1614,14 @@ async function main (input = {}) {
     console.warn(`[DEVELOP] Initial queue still busy after ${FABRIC_AGENTS_BOOT_IDLE_MS}ms; continuing with producer.`);
   }
 
-  const timers = scheduleAgentProducers({ master, lightning, aliceLightning });
+  const timers = scheduleAgentProducers({
+    master,
+    lightning,
+    aliceLightning,
+    getLightningStatusSnapshot,
+    statusJsonEnabled: AGENTS_STATUS_JSON,
+    config: PRODUCER_CONFIG
+  });
   producerTimer = timers.producerTimer;
   statusTimer = timers.statusTimer;
   const summary = await timers.done;
@@ -1925,7 +1644,7 @@ if (isMainThread) {
     console.log('[DEVELOP]', 'Main thread complete');
   });
 } else {
-  runWorkerLoop();
+  runWorkerLoop({ parentPort, workerData, processObj: process });
 }
 
 module.exports = main;

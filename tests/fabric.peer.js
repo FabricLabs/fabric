@@ -402,6 +402,15 @@ describe('@fabric/core/types/peer', function () {
     });
 
     describe('listen', function () {
+      async function assertListenRejectsQuickly (peer, timeoutMs = 1500) {
+        return Promise.race([
+          peer.listen().then(() => {
+            throw new Error('listen should reject');
+          }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('listen timeout')), timeoutMs))
+        ]);
+      }
+
       it('start() rejects on non-EADDRINUSE listen failures', async function () {
         const peer = new Peer({
           ...settings,
@@ -500,6 +509,54 @@ describe('@fabric/core/types/peer', function () {
         } finally {
           other.close();
         }
+      });
+
+      it('rejects on invalid listen interface instead of hanging', async function () {
+        const peer = new Peer({
+          ...settings,
+          port: await getFreePort(),
+          interface: '203.0.113.250',
+          listen: true,
+          peers: [],
+          networking: false,
+          peersDb: null
+        });
+        peers.push(peer);
+
+        let rejected = false;
+        try {
+          await assertListenRejectsQuickly(peer);
+        } catch (error) {
+          rejected = true;
+          assert.notStrictEqual(error.message, 'listen timeout', 'listen should reject quickly on startup socket errors');
+        }
+
+        assert.strictEqual(rejected, true, 'listen should reject on invalid interface');
+      });
+
+      it('emits exactly one startup error event for invalid interface when listener exists', async function () {
+        const peer = new Peer({
+          ...settings,
+          port: await getFreePort(),
+          interface: '203.0.113.251',
+          listen: true,
+          peers: [],
+          networking: false,
+          peersDb: null
+        });
+        peers.push(peer);
+
+        let errorsSeen = 0;
+        peer.on('error', () => { errorsSeen++; });
+
+        try {
+          await assertListenRejectsQuickly(peer);
+          assert.fail('listen should reject');
+        } catch (error) {
+          assert.notStrictEqual(error.message, 'listen timeout', 'listen should reject quickly on startup socket errors');
+        }
+
+        assert.strictEqual(errorsSeen, 1, 'expected exactly one startup error event');
       });
 
       it('start() binds the next port when the configured port is in use', async function () {

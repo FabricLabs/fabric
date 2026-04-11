@@ -2307,45 +2307,56 @@ class Peer extends Service {
   async listen () {
     return new Promise((resolve, reject) => {
       if (this.settings.debug) this.emit('debug', `Listening on ${this.interface}:${this.port}`);
+      let settled = false;
+
+      const rejectListen = (error) => {
+        if (settled) return;
+        settled = true;
+        this.server.removeListener('error', errorHandler);
+        if (this.listenerCount('error') > 0) {
+          this.emit('error', `Server socket error: ${error}`);
+        }
+        return reject(error);
+      };
 
       // Handle server errors before attempting to listen
       const errorHandler = (error) => {
         if (error.code === 'EADDRINUSE') {
-          // Don't emit('error') here - caller gets rejection; emit would cause ERR_UNHANDLED_ERROR if no listener
-          this.server.close(() => reject(error));
-        } else {
-          this.emit('error', `Server socket error: ${error}`);
-          // Don't reject on other errors during listen, let the callback handle it
+          // Ensure server resources are released before retrying upstream.
+          this.server.close(() => rejectListen(error));
+          return;
         }
+        rejectListen(error);
       };
 
       this.server.once('error', errorHandler);
 
       this.server.listen(this.port, this.interface, (error) => {
+        if (settled) return;
         // Remove the error handler since we're handling the result here
         this.server.removeListener('error', errorHandler);
 
         if (error) {
-          // Don't emit('error') for EADDRINUSE - caller gets rejection; emit would cause ERR_UNHANDLED_ERROR if no listener
-          return reject(error);
+          return rejectListen(error);
         }
+        settled = true;
 
         const details = this.server.address();
         const address = `${details.address}:${details.port}`;
 
+        // Runtime errors after listen succeeds; attach once so port-retry does not stack handlers.
+        if (!this._peerServerRuntimeErrorBound) {
+          this._peerServerRuntimeErrorBound = true;
+          this.server.on('error', (runtimeError) => {
+            if (runtimeError.code !== 'EADDRINUSE' && this.listenerCount('error') > 0) {
+              this.emit('error', `Server socket error: ${runtimeError}`);
+            }
+          });
+        }
+
         this.emit('log', `Now listening on tcp://${address} [!!!]`);
         return resolve(address);
       });
-
-      // Runtime errors after listen succeeds; attach once so port-retry does not stack handlers.
-      if (!this._peerServerRuntimeErrorBound) {
-        this._peerServerRuntimeErrorBound = true;
-        this.server.on('error', (error) => {
-          if (error.code !== 'EADDRINUSE') {
-            this.emit('error', `Server socket error: ${error}`);
-          }
-        });
-      }
     });
   }
 }
