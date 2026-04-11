@@ -5,6 +5,11 @@ const url = require('url');
 /** Minimal URI → response cache (replaces legacy Stash type). */
 const stash = new Map();
 
+if (typeof self === 'undefined' || typeof self.addEventListener !== 'function') {
+  console.log('[EXAMPLES:SERVICE]', 'This example targets a Service Worker context (run in browser).');
+  process.exit(0);
+}
+
 self.addEventListener('message', function (e) {
   e.source.postMessage('[GUARDIAN]', 'Hello! Your message was: ' + e.data);
 });
@@ -30,8 +35,8 @@ self.addEventListener('fetch', async function (event) {
       method: 'HEAD'
     });
 
-    const _response = await fetch(request);
-    //const content = await _response.text();
+    const response = await fetch(request);
+    //const content = await response.text();
     return value;
   } else {
     const request = new Request(uri, {

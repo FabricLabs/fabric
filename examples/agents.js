@@ -1642,6 +1642,11 @@ if (isMainThread) {
   }).then((exitNote) => {
     if (exitNote === 'no-complete-log') return;
     console.log('[DEVELOP]', 'Main thread complete');
+    const skipChainEnv = process.env.FABRIC_AGENTS_SKIP_CHAIN === '1';
+    const smokeExit = (AGENTS_CLI.smoke || skipChainEnv) && !AGENTS_CLI.distributorOnly && !AGENTS_CLI.bitcoinOnly;
+    if (require.main === module && smokeExit) {
+      process.exit(0);
+    }
   });
 } else {
   runWorkerLoop({ parentPort, workerData, processObj: process });

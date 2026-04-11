@@ -1,6 +1,7 @@
 'use strict';
 
 // Dependencies
+const { setMaxListeners } = require('events');
 const Peer = require('../types/peer');
 const { Swarm } = require('../types/peer');
 const Message = require('../types/message');
@@ -11,6 +12,8 @@ const settings = {
 };
 
 async function main () {
+  // Swarm demos fan out listeners during NOISE handshakes.
+  setMaxListeners(0);
   // Create a Hub (seeder peer) and a Swarm (peer cluster)
   let seeder = new Peer({ listen: true });
   let swarm = new Swarm(settings);
@@ -46,18 +49,36 @@ async function main () {
   // TODO: receive entities from seed node
   // TODO: create entities on swarm instance
 
-  // Send Regular Updates (outside of internal ping/pong)
-  let heartbeat = setInterval(function () {
-    console.warn('[EXAMPLES:SWARM]', 'Starting to send interval message...');
-    let message = Message.fromVector(['Generic', Date.now().toString()]);
-    console.log('[EXAMPLES:SWARM]', 'Sending :', message.raw);
+  const stopWithTimeout = async (instance, label, timeoutMs = 1200) => {
+    if (!instance || typeof instance.stop !== 'function') return;
+    try {
+      await Promise.race([
+        instance.stop(),
+        new Promise((resolve) => setTimeout(resolve, timeoutMs))
+      ]);
+    } catch (error) {
+      console.warn('[EXAMPLES:SWARM]', `${label} stop warning:`, error.message);
+    }
+  };
 
-    // Send interval message through seed node
-    seeder.broadcast(message);
+  const shutdown = async () => {
+    await stopWithTimeout(downstream, 'Downstream');
+    await stopWithTimeout(swarm, 'Swarm');
+    await stopWithTimeout(seeder, 'Seeder');
+  };
 
-    // Send interval message through swarm agent
-    // swarm.broadcast(message);
-  }, 5000);
+  console.warn('[EXAMPLES:SWARM]', 'Sending one swarm message...');
+  const message = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify({
+    type: 'SwarmExample',
+    object: { at: Date.now() }
+  })]);
+  seeder.broadcast(message.toBuffer());
+
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  await shutdown();
+
+  // Some peer transports may keep sockets around briefly in demos.
+  if (require.main === module) process.exit(0);
 }
 
 main().catch(function exceptionHandler (exception) {

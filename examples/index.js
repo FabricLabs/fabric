@@ -9,22 +9,28 @@
 // ## Importing Fabric
 // Fabric is easily imported into existing applications.  When using JavaScript,
 // use the `require` semantic to import as a library.
-const Fabric = require('@fabric/core');
+const Fabric = require('../');
 
 // Most interactions with Fabric are asynchronous, so let's define our program's
 // primary behavior.
 async function main () {
   // 1. Create an instance of Fabric...
-  let app = new Fabric();
+  const app = new Fabric();
 
-  // 2. Add some data...
-  await app._POST(`/inscriptions`, { input: 'Hello, world!' });
+  // 2. Add some state with a deterministic in-memory path.
+  await app._SET('/examples/index/message', { input: 'Hello, world!' });
+  const stored = await app._GET('/examples/index/message');
 
-  // 3. Output some results!
-  console.log('app:', app);
+  // 3. Output some results without dumping the full object graph.
+  console.log('[EXAMPLES:INDEX]', 'id:', app.id);
+  console.log('[EXAMPLES:INDEX]', 'clock:', app.clock);
+  console.log('[EXAMPLES:INDEX]', 'stored:', stored);
 }
 
-main();
+main().catch((exception) => {
+  console.error('[EXAMPLES:INDEX]', 'Main Process Exception:', exception);
+  process.exitCode = 1;
+});
 // Now that we've defined our program, let's run it to see the results.
 
 // ### Next Steps
