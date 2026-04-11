@@ -95,7 +95,7 @@ class Circuit extends Actor {
   fromBristolFashion () {
     // Convert from Bristol Fashion format to internal circuit representation
     const lines = this.dot.split('\n');
-    const [numGates, numWires, numInputWires, numOutputWires] = lines[0].split(' ').map(Number);
+    const [_numGates, _numWires, numInputWires, numOutputWires] = lines[0].split(' ').map(Number);
 
     this.gates = [];
     this.wires = [];
@@ -128,7 +128,7 @@ class Circuit extends Actor {
   fromBristolFormat () {
     // Convert from Bristol Format to internal circuit representation
     const lines = this.dot.split('\n');
-    const [numGates, numWires] = lines[0].split(' ').map(Number);
+    const [_numGates, _numWires] = lines[0].split(' ').map(Number);
 
     this.gates = [];
     this.wires = [];
@@ -196,7 +196,7 @@ class Circuit extends Actor {
   scramble () {
     let key = crypto.randomBytes(32);
     let machine = new Machine({ seed: key });
-    let seed = machine.sip();
+    void machine.sip();
     let gates = [];
 
     for (let i = 0; i < this._state.steps.length; i++) {

@@ -1,5 +1,7 @@
 'use strict';
 
+const { tryParsePersistedJson } = require('../functions/wireJson');
+
 // Dependencies
 const { Level } = require('level');
 const crypto = require('crypto');
@@ -14,15 +16,17 @@ const Stack = require('./stack');
 const State = require('./state');
 
 /**
- * Long-term storage.
+ * @classdesc Level-backed persistence extending {@link Actor}. Use optional {@link Codec} in <code>settings.codec</code> for
+ * encrypted values; {@link Store.openEncrypted} matches Hub/shell keystore defaults. Commit/history behavior follows {@link Actor}.
+ * @class Store
+ * @extends Actor
  * @property {Mixed} settings Current configuration.
  */
 class Store extends Actor {
   /**
-   * Create an instance of a {@link Store} to manage long-term storage, which is
-   * particularly useful when building a user-facing {@link Product}.
-   * @param  {Object} [settings={}] configuration object.
-   * @return {Store}              Instance of the Store, ready to start.
+   * Create an instance of a {@link Store} to manage long-term storage (LevelDB by default).
+   * @param  {Object} [settings={}] configuration object (<code>path</code>, <code>codec</code>, <code>persistent</code>, …).
+   * @return {Store} Instance of the Store, ready to start.
    */
   constructor (settings = {}) {
     super(settings);
@@ -123,7 +127,7 @@ class Store extends Actor {
     console.error('[FABRIC:STORE]', 'Error condition:', err);
   }
 
-  async _setEncrypted (path, value, passphrase = '') {
+  async _setEncrypted (path, value, _passphrase = '') {
     if (typeof path !== 'string' || !path.length) {
       throw new Error('Path is required for encrypted store writes.');
     }
@@ -141,7 +145,7 @@ class Store extends Actor {
     return this.set(`/secrets/${name}`, secret);
   }
 
-  async _getEncrypted (path, passphrase = '') {
+  async _getEncrypted (path, _passphrase = '') {
     if (typeof path !== 'string' || !path.length) return null;
 
     const name = crypto.createHash('sha256').update(path).digest('hex');
@@ -165,12 +169,12 @@ class Store extends Actor {
    */
   async _REGISTER (obj) {
     const actor = new Actor(obj);
-    const existing = await this._GET(`/entities/${actor.id}`);
+    await this._GET(`/entities/${actor.id}`);
 
     store.log('[STORE]', '_REGISTER', vector.id, vector['@type']);
 
     try {
-      let item = await this._GET(`/entities/${vector.id}`);
+      await this._GET(`/entities/${vector.id}`);
     } catch (E) {
       this.warn('[STORE]', '_REGISTER', `Could not read from store:`, E);
     }
@@ -228,7 +232,7 @@ class Store extends Actor {
     if (this.settings.verbosity >= 5) console.log('[STORE]', 'Patch result:', result);
 
     try {
-      let action = await this._PUT(key, result);
+      await this._PUT(key, result);
     } catch (E) {
       console.error('Could not modify:', E);
     }
@@ -265,18 +269,6 @@ class Store extends Actor {
     self['@entity']['@data'].addresses[router] = address;
 
     let state = new State(value);
-    const serializedState = state.serialize();
-    let serial = Buffer.isBuffer(serializedState)
-      ? serializedState
-      : Buffer.from(JSON.stringify(serializedState), 'utf8');
-    let digest = this.sha256(serial);
-
-    // defaults
-    let actor = null;
-    let list = null;
-    let type = null;
-    let tip = null;
-
     if (!self.db) {
       await self.open().catch(self._errorHandler.bind(self));
     }
@@ -293,15 +285,12 @@ class Store extends Actor {
       if (this.settings.verbosity >= 3) console.warn('Creating new collection:', E);
     }
 
-    if (entity) {
-      try {
-        if (typeof entity === 'string') {
-          entity = JSON.parse(entity);
-        }
-      } catch (E) {
-        if (this.settings.verbosity >= 4 || this.settings.debug) {
-          console.warn(`Couldn't parse: ${entity}`, E);
-        }
+    if (entity && (typeof entity === 'string' || Buffer.isBuffer(entity))) {
+      const text = typeof entity === 'string' ? entity : entity.toString('utf8');
+      const pr = tryParsePersistedJson(text);
+      if (pr.ok) entity = pr.value;
+      else if (this.settings.verbosity >= 4 || this.settings.debug) {
+        console.warn(`Couldn't parse entity JSON: ${pr.error.message}`);
       }
     }
 
@@ -315,10 +304,10 @@ class Store extends Actor {
       }
 
       // Add Element to Collection
-      let height = origin.push(value);
+      origin.push(value);
 
       // Store the object at an entity locale
-      let object = await self._PUT(`/entities/${state.id}`, value);
+      await self._PUT(`/entities/${state.id}`, value);
       let serialized = await origin.serialize();
 
       // Keep in-memory collection view in sync for _GET/_PUT call paths.
@@ -327,7 +316,7 @@ class Store extends Actor {
       await self._PUT(key, nextList);
 
       // Write serialized Collection to disk
-      let answer = await self.db.put(address, serialized.toString());
+      await self.db.put(address, serialized.toString());
     } catch (E) {
       console.log('Could not POST:', key, value, E);
       return false;
@@ -343,11 +332,11 @@ class Store extends Actor {
     if (!list) list = [];
     let vector = new State(data);
     let stack = new Stack(list);
-    let result = stack.push(vector.id);
-    let actor = await this._REGISTER(data);
-    let blob = await this._PUT(`/blobs/${vector.id}`, vector['@data']);
-    let saved = await this._SET(path, stack['@data']);
-    let commit = await this.commit();
+    stack.push(vector.id);
+    await this._REGISTER(data);
+    await this._PUT(`/blobs/${vector.id}`, vector['@data']);
+    await this._SET(path, stack['@data']);
+    await this.commit();
     let output = await this._GET(`/blobs/${vector.id}`);
     return output;
   }
@@ -651,7 +640,6 @@ class Store extends Actor {
   async start () {
     if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Starting:', this.settings.path);
     this.status = 'starting';
-    let keys = null;
 
     try {
       await this.open();

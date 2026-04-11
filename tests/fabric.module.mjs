@@ -25,6 +25,7 @@ describe('@fabric/core (ESM)', function () {
       assert.equal(Fabric.Chain instanceof Function, true);
       assert.equal(Fabric.Circuit instanceof Function, true);
       assert.equal(Fabric.Collection instanceof Function, true);
+      assert.equal(Fabric.Contract instanceof Function, true);
       assert.equal(Fabric.Entity instanceof Function, true);
       assert.equal(Fabric.Key instanceof Function, true);
       assert.equal(Fabric.Ledger instanceof Function, true);
@@ -42,6 +43,7 @@ describe('@fabric/core (ESM)', function () {
       assert.equal(Fabric.Stack instanceof Function, true);
       assert.equal(Fabric.State instanceof Function, true);
       assert.equal(Fabric.Store instanceof Function, true);
+      assert.equal(Fabric.Text instanceof Function, true);
       assert.equal(Fabric.Vector instanceof Function, true);
       assert.equal(Fabric.Wallet instanceof Function, true);
       assert.equal(Fabric.Worker instanceof Function, true);

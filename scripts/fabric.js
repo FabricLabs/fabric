@@ -29,8 +29,8 @@ const {
   BITCOIN_GENESIS
 } = require('../constants');
 
-// Settings
-const settings = require('../settings/local');
+// Settings (load for env-backed defaults used by Environment / CLI)
+require('../settings/local');
 
 // Paths
 const path = process.env.HOME + '/.fabric';
@@ -62,7 +62,7 @@ const COMMANDS = {
   TEST: OP_TEST
 };
 
-async function main (input = {}) {
+async function main () {
   const environment = new Environment(process.wallet);
   const program = new Command();
 
@@ -140,6 +140,6 @@ async function main (input = {}) {
   return this;
 }
 
-main(settings).catch((exception) => {
+main().catch((exception) => {
   console.error('[FABRIC:CLI]', 'Main Process Exception:', exception);
 });

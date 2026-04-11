@@ -23,7 +23,7 @@ class Queue extends Actor {
   }
 
   async start () {
-    await this._registerMethod('verify', async function (...params) {
+    await this._registerMethod('verify', async function (..._params) {
 
     });
 
@@ -48,15 +48,15 @@ class Queue extends Actor {
     return this._state.jobs[job.id];
   }
 
-  async _takeJob (job) {
+  async _takeJob (_job) {
 
   }
 
-  async _completeJob (job) {
+  async _completeJob (_job) {
 
   }
 
-  async _failJob (job) {
+  async _failJob (_job) {
 
   }
 }

@@ -99,7 +99,7 @@ class Collection extends Stack {
     try {
       if (this.settings.verbosity >= 5) console.log(`getting ${this.path}/${id} from:`, this.value);
       result = pointer.get(this.value, `${this.path}/${id}`);
-    } catch (E) {
+    } catch {
      // console.debug('[FABRIC:COLLECTION]', `@${this.name}`, Date.now(), `Could not find ID "${id}" in tree ${this.asMerkleTree()}`);
     }
 

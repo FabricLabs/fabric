@@ -136,7 +136,6 @@ async function run () {
   if (external.length && checkExternal) {
     console.error('Checking %d external hrefs (HEAD)...', external.length);
     for (const e of external) {
-      /* eslint-disable no-await-in-loop */
       const r = await probeExternalUrl(e.href);
       if (!r.ok) {
         console.error(`  FAIL ${e.from} -> ${e.href} (${r.status})`);

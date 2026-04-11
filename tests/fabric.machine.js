@@ -30,7 +30,9 @@ describe('@fabric/core/types/machine', function () {
       const machine = new Machine({ key: { seed: playnet.key.seed } });
       const sip = machine.sip();
       assert.strictEqual(sip.length, 32);
-      assert.strictEqual(sip, 'b8d3ebf4499c51d06d5df1e26973e7d9');
+      // Constructor consumes one 128-bit sip into `entropy`; this is the second sip from
+      // Key’s deterministic bit stream (`fabric/key/bitgen/v1` + pubkeyhash-derived seed).
+      assert.strictEqual(sip, '88b27944aebe8fad98c5ba8bcdf8189d');
     });
 
     it('provides the predicted entropy on first slurp with seed', function () {
@@ -38,7 +40,7 @@ describe('@fabric/core/types/machine', function () {
       const slurp = machine.slurp();
       assert.ok(slurp);
       assert.strictEqual(slurp.length, 64);
-      assert.strictEqual(slurp, 'b8d3ebf4499c51d06d5df1e26973e7d94999d4c8f30407a6ccdc15255a53e22a');
+      assert.strictEqual(slurp, '88b27944aebe8fad98c5ba8bcdf8189dadd9e35f2156c1c1024be43573b57ba5');
     });
 
     it('can compute a value', async function prove () {

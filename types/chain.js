@@ -53,12 +53,12 @@ class Chain extends Actor {
       ledger: []
     };
 
-    for (let [key, value] of Object.entries(this._state.transactions)) {
+    for (const [, value] of Object.entries(this._state.transactions)) {
       const tx = new Transaction(value);
       this._state.transactions[tx.id] = tx;
     }
 
-    for (let [key, value] of Object.entries(this._state.mempool)) {
+    for (let [, value] of Object.entries(this._state.mempool)) {
       this.proposeTransaction(value);
     }
 
@@ -305,7 +305,7 @@ class Chain extends Actor {
   validate (chain) {
     let valid = false;
     for (let i = 0; i < chain.height; i++) {
-      let block = chain.blocks[i];
+      void chain.blocks[i];
     }
     return valid;
   }

@@ -1,5 +1,11 @@
 'use strict';
 
+/**
+ * @fileoverview Ledger-adjacent {@link Store} extension. Consolidation with {@link Store}
+ * is planned (single persistence surface + optional ledger facet); left as-is until that
+ * design is scheduled.
+ */
+
 const fs = require('fs');
 const monitor = require('fast-json-patch');
 

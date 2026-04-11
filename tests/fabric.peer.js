@@ -4,6 +4,7 @@
 const crypto = require('crypto');
 const Peer = require('../types/peer');
 const Message = require('../types/message');
+const Key = require('../types/key');
 const assert = require('assert');
 const net = require('net');
 
@@ -569,6 +570,23 @@ describe('@fabric/core/types/peer', function () {
           Message.fromBuffer = origFromBuffer;
         }
       });
+      it('emits warning when inbound signature does not match stored peer public key', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        const expectedSigner = new Key();
+        const other = new Key();
+        peer.peers.o = { publicKey: expectedSigner.public.encodeCompressed('hex') };
+        const msg = Message.fromVector(['GenericMessage', JSON.stringify({ type: 'INVENTORY_REQUEST', object: {} })]);
+        msg.signWithKey(other);
+        let warned = false;
+        let errored = false;
+        peer.once('warning', (w) => {
+          if (/Invalid message signature/.test(String(w))) warned = true;
+        });
+        peer.once('error', () => { errored = true; });
+        peer._handleFabricMessage(msg.toBuffer(), { name: 'o' });
+        assert.ok(warned);
+        assert.ok(!errored);
+      });
       it('emits debug for unhandled message type', function (done) {
         const peer = new Peer({ listen: false, peersDb: null });
         const msg = Message.fromVector(['Ping', JSON.stringify({})]);
@@ -587,6 +605,22 @@ describe('@fabric/core/types/peer', function () {
         const msg = Message.fromVector(['GenericMessage', JSON.stringify(content)]);
         msg.signWithKey(peer.key);
         peer._handleFabricMessage(msg.toBuffer(), { name: 'o' });
+      });
+      it('warns and skips _handleGenericMessage when GenericMessage JSON is not an object', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        let warned = 0;
+        let inventory = 0;
+        peer.on('warning', (w) => {
+          if (/Generic message body must be a JSON object/.test(String(w))) warned++;
+        });
+        peer.on('inventory', () => { inventory++; });
+        for (const body of [ '[]', '"x"', 'null', '1', 'true' ]) {
+          const msg = Message.fromVector(['GenericMessage', body]);
+          msg.signWithKey(peer.key);
+          peer._handleFabricMessage(msg.toBuffer(), { name: 'o' });
+        }
+        assert.strictEqual(warned, 5);
+        assert.strictEqual(inventory, 0);
       });
       it('emits lightning for Lightning type with non-JSON body', function (done) {
         const peer = new Peer({ listen: false, peersDb: null });
@@ -657,12 +691,12 @@ describe('@fabric/core/types/peer', function () {
         });
         peer._handleGenericMessage({ type: 'UNKNOWN_TYPE', object: {} }, { name: 'o' });
       });
-      it('emits error on broken JSON body in Fabric message path', function (done) {
+      it('emits warning on broken JSON body in Fabric message path', function (done) {
         const peer = new Peer({ listen: false, peersDb: null });
         const msg = Message.fromVector(['GenericMessage', 'not json']);
         msg.signWithKey(peer.key);
-        peer.once('error', (m) => {
-          assert.ok(/Broken content body/.test(m));
+        peer.once('warning', (m) => {
+          assert.ok(/Generic message parse failed/.test(m));
           done();
         });
         peer._handleFabricMessage(msg.toBuffer(), { name: 'o' });

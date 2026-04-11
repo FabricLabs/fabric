@@ -4,7 +4,6 @@ const {
   MAGIC_BYTES,
   VERSION_NUMBER,
   HEADER_SIZE,
-  MAX_MESSAGE_SIZE,
   OP_CYCLE,
   GENERIC_MESSAGE_TYPE,
   LOG_MESSAGE_TYPE,
@@ -16,13 +15,13 @@ const {
   P2P_GENERIC,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
-  P2P_ROOT,
   P2P_PING,
   P2P_PONG,
   P2P_START_CHAIN,
   P2P_INSTRUCTION,
   P2P_BASE_MESSAGE,
   P2P_CHAIN_SYNC_REQUEST,
+  P2P_FLUSH_CHAIN,
   P2P_STATE_ROOT,
   P2P_STATE_COMMITTMENT,
   P2P_STATE_CHANGE,
@@ -63,7 +62,7 @@ const {
   LIGHTNING_CHANNEL_UPDATE
 } = require('../constants');
 
-const HEADER_SIG_SIZE = 64;
+const { tryParseWireJson } = require('../functions/wireJson');
 
 /**
  * @private
@@ -81,7 +80,6 @@ const struct = require('struct');
 // Fabric Types
 const Actor = require('./actor');
 const Hash256 = require('./hash256');
-const Key = require('./key');
 
 // Function Definitions
 const padDigits = require('../functions/padDigits');
@@ -92,13 +90,15 @@ const taggedHash = require('../functions/taggedHash');
  * - **Wire** (`wireType`, {@link Message#type}): SCREAMING_SNAKE_CASE strings from opcode
  *   decode (`fromBuffer`, `toVector` first element). Matches AMP / `constants.js` style.
  * - **Friendly** ({@link Message#friendlyType}, `toObject().type`): PascalCase (or historical
- *   labels) for JSON and human-facing APIs — see {@link FRIENDLY_TYPE_BY_WIRE}.
+ *   labels) for JSON and human-facing APIs — see {@link Message.FRIENDLY_TYPE_BY_WIRE}.
  *
  * Encode accepts **either** name via merged {@link Message#types} (canonical wire + legacy friendly).
  * {@link Message.wireTypeFromFriendly} / {@link Message.friendlyTypeFromWire} convert between them.
  *
  * Opcode → wire string order matches the historical `type` switch: when multiple labels share one
- * opcode (e.g. P2P vs Lightning), **first listed** in {@link WIRE_TYPE_DECODE_ORDER} wins.
+ * opcode (e.g. P2P vs Lightning), **first listed** in {@link Message.WIRE_TYPE_DECODE_ORDER} wins.
+ * Those maps are **not** global exports: use {@link Message} statics `WIRE_TYPE_DECODE_ORDER` and
+ * `FRIENDLY_TYPE_BY_WIRE`.
  */
 /** @private */
 const WIRE_TYPE_DECODE_ORDER = Object.freeze([
@@ -117,6 +117,7 @@ const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [P2P_PONG, 'P2P_PONG'],
   [P2P_GENERIC, 'P2P_GENERIC'],
   [P2P_CHAIN_SYNC_REQUEST, 'P2P_CHAIN_SYNC_REQUEST'],
+  [P2P_FLUSH_CHAIN, 'P2P_FLUSH_CHAIN'],
   [P2P_IDENT_REQUEST, 'P2P_IDENT_REQUEST'],
   [P2P_IDENT_RESPONSE, 'P2P_IDENT_RESPONSE'],
   [P2P_BASE_MESSAGE, 'P2P_BASE_MESSAGE'],
@@ -197,6 +198,7 @@ const LEGACY_MESSAGE_TYPE_ALIASES = Object.freeze({
   IdentityRequest: P2P_IDENT_REQUEST,
   IdentityResponse: P2P_IDENT_RESPONSE,
   ChainSyncRequest: P2P_CHAIN_SYNC_REQUEST,
+  FlushChain: P2P_FLUSH_CHAIN,
   Ping: P2P_PING,
   Pong: P2P_PONG,
   DocumentRequest: DOCUMENT_REQUEST_TYPE,
@@ -287,16 +289,34 @@ function wireTypeFromFriendly (friendly) {
 }
 
 /**
- * The {@link Message} type defines the Application Messaging Protocol, or AMP.
- * Each {@link Actor} in the network receives and broadcasts messages,
- * selectively disclosing new routes to peers which may have open circuits.
- * @type {Object}
+ * @classdesc <strong>Application Messaging Protocol (AMP)</strong> — binary envelope for what {@link Peer},
+ * {@link Service}, and bridges actually exchange. Extends {@link Actor} for construction and state helpers, but on the wire
+ * you think in <strong>opcodes</strong>, <strong>headers</strong> (parent, author as x-only pubkey, hash, preimage,
+ * 64-byte Schnorr signature), and <strong>payload</strong>.
+ *
+ * <p><strong>Signing</strong> — {@link Message#signWithKey} / {@link Message#verifyWithKey} use BIP-340 Schnorr on tagged
+ * hash <code>Fabric/Message</code> over header (signature field zeroed) + body. This is <strong>not</strong> Bitcoin Signed
+ * Message (ECDSA + Core prefix).</p>
+ *
+ * <p><strong>Type names</strong> — {@link Message#wireType} / {@link Message#type} use SCREAMING_SNAKE wire labels from
+ * opcode decode; {@link Message#friendlyType} and {@link Message#toObject}'s <code>type</code> use PascalCase (or legacy)
+ * JSON names. {@link Message.wireTypeFromFriendly} / {@link Message.friendlyTypeFromWire} bridge the two. See file header
+ * maps (<code>WIRE_TYPE_DECODE_ORDER</code>, <code>LEGACY_MESSAGE_TYPE_ALIASES</code>) when aligning <strong>@fabric/http</strong>
+ * or Hub.</p>
+ *
+ * <p><strong>Narrative</strong> — See <strong>DEVELOPERS.md</strong> (<em>Actor and Message</em>) and {@link Actor}
+ * <code>@fileoverview</code>; home HTML is generated from DEVELOPERS.md, while this page comes from
+ * <code>types/message.js</code>.</p>
+ * @class Message
+ * @extends Actor
  */
 class Message extends Actor {
   /**
-   * The `Message` type is standardized in {@link Fabric} as a {@link Array}, which can be added to any other vector to compute a resulting state.
-   * @param  {Object} message Message vector.  Will be serialized by {@link Array#_serialize}.
-   * @return {Message} Instance of the message.
+   * Build a message from an object. Prefer <code>type</code>/<code>data</code>; <code>@type</code> / <code>@data</code>
+   * are accepted for backward compatibility.
+   * @param {Object} [input={}] Initial fields: <code>type</code> or <code>@type</code>, <code>data</code> or
+   * <code>@data</code>, optional <code>signer</code>, <code>sensitive</code>, <code>preimage</code>.
+   * @return {Message} Instance ready for {@link Message#asRaw}, {@link Message#signWithKey}, etc.
    */
   constructor (input = {}) {
     super(input);
@@ -846,15 +866,17 @@ Object.defineProperty(Message.prototype, 'type', {
     // Default to GENERIC_MESSAGE or JSON_BLOB based on content
     if (!code) {
       this.emit('warning', `Unknown message type: ${value}`);
-      // Check if data is valid JSON
+      // Check if data is valid JSON (bounded — same limit as AMP bodies)
       try {
-        if (this.data && JSON.parse(this.data)) {
+        const raw = typeof this.data === 'string' ? this.data : String(this.data ?? '');
+        const pr = tryParseWireJson(raw);
+        if (pr.ok && pr.value) {
           code = this.types['JSON_BLOB'] || this.types['JSONBlob'];
           value = 'JSON_BLOB';
         } else {
           code = this.types['GENERIC_MESSAGE'] || this.types['GenericMessage'];
         }
-      } catch (e) {
+      } catch {
         code = this.types['GENERIC_MESSAGE'] || this.types['GenericMessage'];
       }
     }
@@ -915,6 +937,7 @@ Object.defineProperty(Message.prototype, 'sensitive', {
 
 Message.friendlyTypeFromWire = friendlyTypeFromWire;
 Message.wireTypeFromFriendly = wireTypeFromFriendly;
+Message.WIRE_TYPE_DECODE_ORDER = WIRE_TYPE_DECODE_ORDER;
 Message.FRIENDLY_TYPE_BY_WIRE = FRIENDLY_TYPE_BY_WIRE;
 Message.FRIENDLY_TO_WIRE_TYPE = FRIENDLY_TO_WIRE_TYPE;
 

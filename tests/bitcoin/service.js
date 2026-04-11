@@ -63,6 +63,9 @@ describe('@fabric/core/services/bitcoin', function () {
     });
 
     describe('validateAddress', function () {
+      // Key/network init can exceed default timeout under full-suite load.
+      this.timeout(30000);
+
       it('accepts a known-valid regtest address in fabric mode', function () {
         const btc = new Bitcoin({ network: 'regtest', mode: 'fabric' });
 
@@ -101,7 +104,9 @@ describe('@fabric/core/services/bitcoin', function () {
       it('normalizes RPC host values safely', function () {
         const btc = new Bitcoin({ network: 'regtest', mode: 'rpc' });
         assert.strictEqual(btc._normalizeRPCHost('localhost:18443'), 'localhost');
+        assert.strictEqual(btc._normalizeRPCHost('127.0.0.1:18443'), '127.0.0.1');
         assert.strictEqual(btc._normalizeRPCHost('127.0.0.1'), '127.0.0.1');
+        assert.strictEqual(btc._normalizeRPCHost('::1'), '::1');
         assert.strictEqual(btc._normalizeRPCHost('  localhost  '), 'localhost');
         assert.strictEqual(btc._normalizeRPCHost(''), '127.0.0.1');
         assert.strictEqual(btc._normalizeRPCHost(null), '127.0.0.1');
@@ -123,7 +128,7 @@ describe('@fabric/core/services/bitcoin', function () {
         }
       });
 
-      it('normalizes host:port values in explicit probe candidates', function () {
+      it('normalizes host:port values in explicit probe candidates', async function () {
         const btc = new Bitcoin({
           network: 'regtest',
           mode: 'rpc',
@@ -134,13 +139,13 @@ describe('@fabric/core/services/bitcoin', function () {
           ]
         });
 
-        const candidates = btc._buildRPCProbeCandidates();
+        const candidates = await btc._buildRPCProbeCandidates();
         const explicit = candidates.find((c) => c.source === undefined && c.network === 'regtest' && c.rpcport === 18443);
         assert.ok(explicit, 'expected explicit probe candidate to exist');
         assert.strictEqual(explicit.host, 'localhost');
       });
 
-      it('prefers configured probe candidates and deduplicates', function () {
+      it('prefers configured probe candidates and deduplicates', async function () {
         const btc = new Bitcoin({
           network: 'regtest',
           mode: 'rpc',
@@ -152,7 +157,7 @@ describe('@fabric/core/services/bitcoin', function () {
           ]
         });
 
-        const candidates = btc._buildRPCProbeCandidates();
+        const candidates = await btc._buildRPCProbeCandidates();
         const same = candidates.filter((c) => c.host === '127.0.0.1' && c.rpcport === 18443 && c.network === 'regtest');
         assert.ok(same.length >= 1, 'expected at least one regtest probe candidate');
 
@@ -266,7 +271,7 @@ describe('@fabric/core/services/bitcoin', function () {
         assert.strictEqual(btc.settings.network, 'regtest');
       });
 
-      it('adds default network fallback probe candidates', function () {
+      it('adds default network fallback probe candidates', async function () {
         const btc = new Bitcoin({
           mode: 'rpc',
           host: '127.0.0.1',
@@ -274,7 +279,7 @@ describe('@fabric/core/services/bitcoin', function () {
           network: 'regtest'
         });
 
-        const candidates = btc._buildRPCProbeCandidates();
+        const candidates = await btc._buildRPCProbeCandidates();
         const keys = new Set(candidates.map((c) => `${c.network}:${c.rpcport}`));
 
         assert.ok(keys.has('regtest:18443'));
@@ -283,7 +288,7 @@ describe('@fabric/core/services/bitcoin', function () {
         assert.ok(keys.has('signet:38332'));
       });
 
-      it('filters invalid probe candidate entries', function () {
+      it('filters invalid probe candidate entries', async function () {
         const btc = new Bitcoin({
           mode: 'rpc',
           host: '127.0.0.1',
@@ -295,7 +300,7 @@ describe('@fabric/core/services/bitcoin', function () {
           ]
         });
 
-        const candidates = btc._buildRPCProbeCandidates();
+        const candidates = await btc._buildRPCProbeCandidates();
         const explicitValid = candidates.filter((c) => c.host === 'localhost' && c.rpcport === 18443 && c.network === 'regtest');
         assert.strictEqual(explicitValid.length, 1, 'expected only valid explicit candidate to survive');
       });
@@ -1150,7 +1155,7 @@ describe('@fabric/core/services/bitcoin', function () {
         btc._makeWalletRequest = async (method, params, walletName) => {
           assert.strictEqual(method, 'sendtoaddress');
           assert.strictEqual(params[0], 'bcrt1qdest');
-          assert.strictEqual(params[1], 0.01);
+          assert.strictEqual(params[1], '0.01000000');
           assert.ok(walletName);
           return 'txidhex';
         };
@@ -1244,12 +1249,11 @@ describe('@fabric/core/services/bitcoin', function () {
       });
 
       it('_createPayment builds p2wpkh payment for network', function () {
-        const ecc = require('../../types/ecc');
-        const ECPairFactory = require('ecpair').default;
-        const ECPair = ECPairFactory(ecc);
-        const pair = ECPair.makeRandom({ network: require('bitcoinjs-lib').networks.regtest });
+        const Key = require('../../types/key');
+        const k = new Key({ network: 'regtest' });
+        const pubkey = Buffer.from(k.public.encodeCompressed('hex'), 'hex');
         const btc = new Bitcoin({ network: 'regtest', mode: 'fabric' });
-        const pay = btc._createPayment({ pubkey: pair.publicKey });
+        const pay = btc._createPayment({ pubkey });
         assert.ok(pay.output && pay.output.length > 0);
       });
     });

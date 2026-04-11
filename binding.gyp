@@ -3,6 +3,7 @@
     "target_name": "fabric",
     "sources": [
       "src/binding.cc",
+      "native/sipa/segwit_addr.c",
       "src/peer.c",
       "src/message.c",
       "src/errors.c",
@@ -16,7 +17,8 @@
     ],
     "include_dirs": [
       "<!@(node -p \"require('node-addon-api').include\")",
-      "src"
+      "src",
+      "native/sipa"
     ],
     "conditions": [
       ["OS=='linux'", {

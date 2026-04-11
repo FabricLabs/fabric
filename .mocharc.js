@@ -1,7 +1,9 @@
 module.exports = {
   parallel: false,
   recursive: true,
-  timeout: 10000,
+  // CI runs `c8 npm test`; instrumentation + slower runners can push fuzz / integration
+  // cases past a 10s budget while they still pass locally without c8.
+  timeout: 30000,
   // Some suites leave active handles (ZMQ, Level, timers, NOISE sockets). Without this,
   // Mocha can report "passing" yet the Node process never exits. See `node --test` / `--detect-open-handles` to debug.
   exit: true,

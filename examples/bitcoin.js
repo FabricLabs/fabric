@@ -4,10 +4,9 @@ require('debug-trace')({ always: true });
 
 const Fabric = require('../');
 const Bitcoin = require('../services/bitcoin');
-const Wallet = require('../types/wallet');
 
 async function main () {
-  let fabric = new Fabric();
+  let _fabric = new Fabric();
   let bitcoin = new Bitcoin({ network: 'regtest' });
   // let wallet = new Wallet();
 

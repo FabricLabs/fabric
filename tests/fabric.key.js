@@ -4,14 +4,9 @@ const Key = require('../types/key');
 const assert = require('assert');
 const networks = require('bitcoinjs-lib/src/networks');
 const { secp256k1 } = require('@noble/curves/secp256k1.js');
-const bip39 = require('bip39');
-const BIP32 = require('bip32').default;
-const base58 = require('bs58check');
 
 const message = require('../assets/message');
 const playnet = require('../settings/playnet');
-
-const BIP_32_TEST_VECTOR_SEED = Buffer.from('000102030405060708090a0b0c0d0e0f', 'hex');
 
 const SAMPLE = {
   seed: 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'

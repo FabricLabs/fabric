@@ -3,8 +3,6 @@
 const crypto = require('crypto');
 const SimpleAES = require('simple-aes').default;
 const Hash256 = require('./hash256');
-const Network = require('./network');
-const Witness = require('./witness');
 const MAX_MEMORY = Math.pow(2, 21) + (64 * 1000);
 
 class EncryptedPromise {

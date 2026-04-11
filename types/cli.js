@@ -33,6 +33,7 @@ const Key = require('./key');
 
 // Functions
 const truncateMiddle = require('../functions/truncateMiddle');
+const { tryParsePersistedJson, tryParseWireJson, messageDataToString } = require('../functions/wireJson');
 
 // Services
 const Bitcoin = require('../services/bitcoin');
@@ -282,10 +283,16 @@ class CLI extends FabricShell {
 
   _loadPeer () {
     const file = this.fs.readFile('STATE');
-    const state = (file) ? JSON.parse(file) : {};
+    let state = {};
+    if (file) {
+      const text = typeof file === 'string' ? file : String(file);
+      const pr = tryParsePersistedJson(text);
+      if (pr.ok && pr.value !== null && typeof pr.value === 'object' && !Array.isArray(pr.value)) {
+        state = pr.value;
+      }
+    }
 
-    // Create and assign Peer instance as the `node` property
-    this.node = new Peer({
+    const peerOpts = {
       debug: this.settings.debug,
       network: this.settings.network,
       interface: this.settings.interface,
@@ -295,7 +302,19 @@ class CLI extends FabricShell {
       state: state,
       upnp: this.settings.upnp,
       key: this.identity.settings
-    });
+    };
+    if (Array.isArray(this.settings.flushChainAuthorizedPubkeys)) {
+      peerOpts.flushChainAuthorizedPubkeys = this.settings.flushChainAuthorizedPubkeys;
+    }
+    if (this.settings.flushChainMinTrustedScore != null) {
+      const t = Number(this.settings.flushChainMinTrustedScore);
+      if (Number.isFinite(t)) {
+        peerOpts.flushChainMinTrustedScore = t;
+      }
+    }
+
+    // Create and assign Peer instance as the `node` property
+    this.node = new Peer(peerOpts);
 
     if (this.settings.debug) {
       this.node.on('debug', (msg) => {
@@ -396,6 +415,7 @@ class CLI extends FabricShell {
     this._registerCommand('import', this._handleImportCommand);
     this._registerCommand('join', this._handleJoinRequest);
     this._registerCommand('sync', this._handleChainSyncRequest);
+    this._registerCommand('flushchain', this._handleFlushChainCli);
     this._registerCommand('send', this._handleSendRequest);
     this._registerCommand('fund', this._handleFundRequest);
     this._registerCommand('state', this._handleStateRequest);
@@ -478,6 +498,7 @@ class CLI extends FabricShell {
     this.node.on('peer', this._handlePeer.bind(this));
     this.node.on('peer:candidate', this._handlePeerCandidate.bind(this));
     this.node.on('session:update', this._handleSessionUpdate.bind(this));
+    this.node.on('flushChain', this._handlePeerFlushChain.bind(this));
 
     // ## Document Exchange
     this.node.on('DocumentPublish', this._handlePeerDocumentPublish.bind(this));
@@ -519,7 +540,7 @@ class CLI extends FabricShell {
     // const events = this.trust(this.lightning);
 
     // ## Start all services
-    for (const [name, service] of Object.entries(this.services)) {
+    for (const [name, _service] of Object.entries(this.services)) {
       // Skip when service name not found in settings
       if (!this.settings.services.includes(name)) continue;
       // Anchor services are started below with explicit ordering.
@@ -574,7 +595,7 @@ class CLI extends FabricShell {
         if (bitcoinStartPromise) {
           try {
             await bitcoinStartPromise;
-          } catch (exception) {
+          } catch {
             this._appendError('[FABRIC:CLI] Skipping Lightning startup because Bitcoin did not start successfully');
             return;
           }
@@ -807,7 +828,7 @@ class CLI extends FabricShell {
     } else {
       // When not rendering, send output through stdout once so callers can capture it.
       // Avoid duplicating blessed output here to keep the TUI stable.
-      // eslint-disable-next-line no-console
+       
       console.log(message);
     }
   }
@@ -888,7 +909,7 @@ class CLI extends FabricShell {
     return false;
   }
 
-  async _handleContractsRequest (params) {
+  async _handleContractsRequest (_params) {
     this._appendMessage('{bold}Current Contracts{/bold}: ' + JSON.stringify(this.contracts, null, '  '));
     return false;
   }
@@ -903,7 +924,7 @@ class CLI extends FabricShell {
     return false;
   }
 
-  async _handleStateRequest (params) {
+  async _handleStateRequest (_params) {
     const value = await this.get(``);
     this._appendMessage('{bold}Current State{/bold}: ' + JSON.stringify(value, null, ' '));
     return false;
@@ -930,7 +951,7 @@ class CLI extends FabricShell {
     this._fundChannel(params[1], params[2]);
   }
 
-  async _handleChannelRequest (params) {
+  async _handleChannelRequest (_params) {
     const state = await this.lightning._syncOracleChannels();
     this._appendMessage(`{bold}Channels:{/bold} ${JSON.stringify(state.channels, null, '  ')}`);
   }
@@ -956,7 +977,7 @@ class CLI extends FabricShell {
     if (!params[1]) return this._appendError(`You must specify a sidechain.`);
   }
 
-  async _handleInventoryRequest (params) {
+  async _handleInventoryRequest (_params) {
     this._appendMessage(`{bold}Inventory:{/bold} ${JSON.stringify(this.documents, null, '  ')}`);
   }
 
@@ -1004,8 +1025,8 @@ class CLI extends FabricShell {
     this._appendMessage(`[SERVICES:BITCOIN] ${log}`);
   }
 
-  async _handleBitcoinCommit (commit) {
-    // this._appendMessage(`Bitcoin service emitted commit: ${JSON.stringify(commit)}`);
+  async _handleBitcoinCommit (_commit) {
+    // this._appendMessage(`Bitcoin service emitted commit: ${JSON.stringify(_commit)}`);
   }
 
   async _handleBitcoinSync (sync) {
@@ -1014,8 +1035,8 @@ class CLI extends FabricShell {
     this.commit();
   }
 
-  async _handleBitcoinBlock (block) {
-    // this._appendMessage(`Bitcoin service emitted block ${JSON.stringify(block)}, chain height now: ${this.bitcoin.height}`);
+  async _handleBitcoinBlock (_block) {
+    // this._appendMessage(`Bitcoin service emitted block ${JSON.stringify(_block)}, chain height now: ${this.bitcoin.height}`);
     // await this.bitcoin._syncChainInfoOverRPC();
     this._syncChainDisplay();
     // const message = Message.fromVector(['BlockCandidate', block.raw]);
@@ -1171,7 +1192,7 @@ class CLI extends FabricShell {
     }
 
     // TODO: use @fabric/core/types/channel
-    const channel = {
+    const _channel = {
       id: Hash256.digest(`${this.node.id}:${connection.id}`),
       counterparty: connection.id
     };
@@ -1181,8 +1202,8 @@ class CLI extends FabricShell {
       this.emit('connection', connection);
     }
 
-    /* if (!this.channels[channel.id]) {
-      this.channels[channel.id] = channel;
+    /* if (!this.channels[_channel.id]) {
+      this.channels[_channel.id] = _channel;
     } */
 
     this._syncConnectionList();
@@ -1322,12 +1343,14 @@ class CLI extends FabricShell {
     this.commit();
   }
 
-  async _handlePeerCommit (commit) {
-    // this._appendDebug(`[NODE] [COMMIT] ${JSON.stringify(commit)}`);
+  async _handlePeerCommit (_commit) {
+    // this._appendDebug(`[NODE] [COMMIT] ${JSON.stringify(_commit)}`);
   }
 
   async _handlePeerChat (chat) {
-    const truncatedId = truncateMiddle(chat.actor.username || chat.actor.id, 10, '…', 5);
+    const actor = chat.actor || {};
+    const idPrefer = actor.id != null && String(actor.id).length ? String(actor.id) : null;
+    const truncatedId = truncateMiddle(idPrefer || actor.username || '', 10, '…', 5);
     this._appendMessage(`[@${truncatedId}]: ${chat.object.content}`);
   }
 
@@ -1341,15 +1364,30 @@ class CLI extends FabricShell {
 
   async _handlePeerMessage (message) {
     switch (message.type) {
-      case 'ChatMessage':
-        try {
-          const parsed = JSON.parse(message.data);
-          const truncatedId = truncateMiddle(parsed.actor.username || parsed.actor, 10, '…', 5);
-          this._appendMessage(`[@${truncatedId}]: ${parsed.object.content}`);
-        } catch (exception) {
-          this._appendError(`Could not parse <ChatMessage> data (should be JSON): ${message.data}`);
+      case 'ChatMessage': {
+        const rawChat = messageDataToString(message.data);
+        const prChat = tryParseWireJson(rawChat === '' ? '{}' : rawChat);
+        if (!prChat.ok) {
+          this._appendError(`Could not parse <ChatMessage> data: ${prChat.error.message}`);
+          break;
         }
+        const parsed = prChat.value;
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          this._appendError('Could not parse <ChatMessage> data: expected object');
+          break;
+        }
+        const actor = parsed.actor;
+        const obj = parsed.object;
+        const truncatedId = truncateMiddle(
+          actor && (actor.username || actor),
+          10,
+          '…',
+          5
+        );
+        const content = obj && obj.content != null ? String(obj.content) : '';
+        this._appendMessage(`[@${truncatedId}]: ${content}`);
         break;
+      }
       case 'BlockCandidate':
         this._appendMessage(`Received Candidate Block from peer: <${message.type}> ${message.data}`);
         this.bitcoin.append(message.data);
@@ -1372,21 +1410,21 @@ class CLI extends FabricShell {
     this._appendMessage(`Local "socket:data" event: ${JSON.stringify(data)}`);
   }
 
-  async _handlePromptEnterKey (ch, key) {
+  async _handlePromptEnterKey (_ch, _key) {
     this.elements['prompt'].historyIndex = this.history.length;
     this.elements['form'].submit();
     this.elements['prompt'].clearValue();
     this.elements['prompt'].readInput();
   }
 
-  async _handlePromptUpKey (ch, key) {
+  async _handlePromptUpKey (_ch, _key) {
     const index = this.elements['prompt'].historyIndex;
     if (index > 0) this.elements['prompt'].historyIndex--;
     this.elements['prompt'].setValue(this.history[index]);
     this.screen.render();
   }
 
-  async _handlePromptDownKey (ch, key) {
+  async _handlePromptDownKey (_ch, _key) {
     const index = ++this.elements['prompt'].historyIndex;
 
     if (index < this.history.length) {
@@ -1408,7 +1446,7 @@ class CLI extends FabricShell {
     return false;
   }
 
-  async _handleUnspentRequest (params) {
+  async _handleUnspentRequest (_params) {
     await this._syncUnspent();
     this._appendMessage(`{bold}Unspent:{/bold} ${JSON.stringify(this._state.unspent, null, '  ')}`);
   }
@@ -1443,7 +1481,7 @@ class CLI extends FabricShell {
   }
 
   _sendToAllServices (message) {
-    for (const [name, service] of Object.entries(this.services)) {
+    for (const [name, _service] of Object.entries(this.services)) {
       if (this.settings.services.includes(name)) {
         service._send(message);
       }
@@ -1524,7 +1562,7 @@ class CLI extends FabricShell {
     return false;
   }
 
-  _handlePeerListRequest (params) {
+  _handlePeerListRequest (_params) {
     this._appendMessage('Peers: ' + JSON.stringify(this.peers, null, ' '));
     return false;
   }
@@ -1559,6 +1597,47 @@ class CLI extends FabricShell {
     return false;
   }
 
+  /**
+   * Operator: send `P2P_FLUSH_CHAIN` to Fabric peers whose registry score is strictly greater than
+   * {@link Peer#settings.flushChainMinTrustedScore} (default 800). Peers only honor inbound flush when the
+   * sender's pubkey is listed in {@link Peer#settings.flushChainAuthorizedPubkeys} (configure in Fabric settings JSON).
+   */
+  _handleFlushChainCli (params) {
+    const hex = params[1];
+    if (!hex || !/^[0-9a-fA-F]{64}$/.test(String(hex).trim())) {
+      return this._appendError('Usage: flushchain <snapshotBlockHash-hex-64> [label] — sends P2P_FLUSH_CHAIN to peers with score > flushChainMinTrustedScore; receivers must list authorized signer pubkeys (flushChainAuthorizedPubkeys).');
+    }
+    const snapshotBlockHash = String(hex).trim().toLowerCase();
+    const label = params[2] ? String(params[2]) : undefined;
+    const network = (this.settings.bitcoin && this.settings.bitcoin.network) || this.settings.network;
+    const body = { snapshotBlockHash, network };
+    if (label) body.label = label;
+    const n = this.node.sendFlushChainToTrustedPeers(body);
+    this._appendMessage(`FLUSH_CHAIN sent to ${n} trusted peer connection(s) (score > ${this.node.settings.flushChainMinTrustedScore}).`);
+    return false;
+  }
+
+  async _handlePeerFlushChain (payload) {
+    const object = payload && payload.object;
+    if (!object || !object.snapshotBlockHash) return;
+    if (!this.settings.bitcoin || !this.settings.bitcoin.enable || !this.bitcoin) {
+      return this._appendWarning('[FLUSH_CHAIN] Bitcoin service disabled; not rewinding chain.');
+    }
+    const localNet = this.settings.bitcoin.network || this.settings.network;
+    if (object.network && localNet && object.network !== localNet) {
+      if (this.settings.debug) {
+        this._appendDebug(`[FLUSH_CHAIN] skipped: message network ${object.network} !== local ${localNet}`);
+      }
+      return;
+    }
+    try {
+      const r = await this.bitcoin.flushChainToSnapshot(object.snapshotBlockHash);
+      this._appendMessage(`[FLUSH_CHAIN] bitcoind rewound to snapshot: ${JSON.stringify(r)}`);
+    } catch (err) {
+      this._appendError(`[FLUSH_CHAIN] ${err.message || err}`);
+    }
+  }
+
   async spend (to, amount) {
     let tx = null;
 
@@ -1591,14 +1670,14 @@ class CLI extends FabricShell {
     }
   }
 
-  async _handleSyncUIRequest (params) {
+  async _handleSyncUIRequest (_params) {
     this._appendMessage(`Manually syncing UI displays...`);
     await this._syncChainDisplay();
     await this._syncBalance();
     this._appendMessage(`UI sync complete.`);
   }
 
-  async _handleListElementsRequest (params) {
+  async _handleListElementsRequest (_params) {
     if (this.elements) {
       const elementNames = Object.keys(this.elements);
       this._appendMessage(`Available UI elements: ${elementNames.join(', ')}`);
@@ -1608,7 +1687,7 @@ class CLI extends FabricShell {
     }
   }
 
-  async _handleTestRPCRequest (params) {
+  async _handleTestRPCRequest (_params) {
     if (!this.bitcoin || !this.bitcoin._makeRPCRequest) {
       this._appendError(`Bitcoin service not available`);
       return;
@@ -1753,7 +1832,7 @@ class CLI extends FabricShell {
     }
   }
 
-  async _handleListWalletsRequest (params) {
+  async _handleListWalletsRequest (_params) {
     if (!this.bitcoin || !this.bitcoin._makeRPCRequest) {
       this._appendError(`Bitcoin service not available`);
       return;
@@ -1813,7 +1892,7 @@ class CLI extends FabricShell {
     }
   }
 
-  async _handleBitcoinHelpRequest (params) {
+  async _handleBitcoinHelpRequest (_params) {
     this._appendMessage(`{bold}Bitcoin Core Recovery Help{/bold}\n`);
 
     this._appendMessage(`{yellow-fg}If you're seeing Bitcoin Core errors:{/yellow-fg}`);
@@ -1941,7 +2020,7 @@ class CLI extends FabricShell {
     }
   }
 
-  _handleExplorerHelpRequest (params) {
+  _handleExplorerHelpRequest (_params) {
     this._appendMessage(`{bold}Blockchain Explorer{/bold}`);
     this._appendMessage(`  block <hash|height>  - Look up block by hash or height`);
     this._appendMessage(`  tx <txid>           - Look up transaction by txid`);
@@ -2017,7 +2096,7 @@ class CLI extends FabricShell {
 
     switch (params[1]) {
       default:
-        text = `{bold}Fabric CLI Help{/bold}\nThe Fabric CLI offers a simple command-based interface to a Fabric-speaking Network.  You can use \`/connect <address>\` to establish a connection to a known peer, or any of the available commands.\n\n{bold}Panels{/bold}: F1 Home | F2 Console | F3 Network | F4 Wallet | F5 Contracts | F6 Blockchain\n\n{bold}Available Commands{/bold}:\n\n${Object.keys(this.commands).map(x => `  ${x}`).join('\n')}\n\n{bold}Usage{/bold}:\n  Type any command with a forward slash, e.g. /help, /peers, /connect localhost:7777\n\n{bold}Examples{/bold}:\n  /help          - Show this help message\n  /block 850000  - Browse block by height (F6 panel)\n  /tx <txid>     - Look up transaction\n  /address <addr> - Look up address\n  /peers         - List connected peers\n  /connect <addr> - Connect to a peer\n  /identity      - Show your identity\n  /wallet        - Show wallet information\n  /bitcoin       - Show Bitcoin service status\n  /quit          - Exit the application`
+        text = `{bold}Fabric CLI Help{/bold}\nThe Fabric CLI offers a simple command-based interface to a Fabric-speaking Network.  You can use \`/connect <address>\` to establish a connection to a known peer, or any of the available commands.\n\n{bold}Panels{/bold}: F1 Home | F2 Console | F3 Network | F4 Wallet | F5 Contracts | F6 Blockchain\n\n{bold}Available Commands{/bold}:\n\n${Object.keys(this.commands).map(x => `  ${x}`).join('\n')}\n\n{bold}Usage{/bold}:\n  Type any command with a forward slash, e.g. /help, /peers, /connect localhost:7777\n\n{bold}Examples{/bold}:\n  /help          - Show this help message\n  /block 850000  - Browse block by height (F6 panel)\n  /tx <txid>     - Look up transaction\n  /address <addr> - Look up address\n  /peers         - List connected peers\n  /connect <addr> - Connect to a peer\n  /identity      - Show your identity\n  /wallet        - Show wallet information\n  /bitcoin       - Show Bitcoin service status\n  /quit          - Exit the application`;
         break;
     }
 
@@ -2061,7 +2140,7 @@ class CLI extends FabricShell {
           heightNum = await this.bitcoin._makeRPCRequest('getblockcount');
           const info = await this.bitcoin._makeRPCRequest('getblockchaininfo');
           tip = (info.bestblockhash || '').substring(0, 24) + '...';
-        } catch (e) {
+        } catch {
           tip = 'RPC unavailable';
         }
       }
@@ -2317,7 +2396,7 @@ class CLI extends FabricShell {
           this.screen.render();
           if (this.settings.debug) this._appendMessage(`_syncBalance: Updated wallet info with detailed balances`);
         }
-      } catch (walletException) {
+      } catch {
         if (this.settings.debug) this._appendMessage(`_syncBalance: No wallet loaded or getwalletinfo failed, using defaults`);
         // Update with basic balance info only
         this._state.balances.immature = 0;
@@ -2383,7 +2462,7 @@ class CLI extends FabricShell {
       this.commit();
 
       if (this.screen && typeof this.screen.render === 'function') this.screen.render();
-    } catch (exception) {
+    } catch {
       // if (this.settings.debug) this._appendError(`Could not sync balance: ${JSON.stringify(exception)}`);
     }
   }
@@ -2561,26 +2640,26 @@ class CLI extends FabricShell {
       default:
         break;
       case 'home':
-        this.screen.append(this.elements['home'])
+        this.screen.append(this.elements['home']);
         break;
       case 'help':
-        this.screen.append(this.elements['help'])
+        this.screen.append(this.elements['help']);
         break;
       case 'contracts':
-        this.screen.append(this.elements['contracts'])
+        this.screen.append(this.elements['contracts']);
         break;
       case 'messages':
         // this.screen.append(this.elements['logBox'])
         break;
       case 'network':
-        this.screen.append(this.elements['network'])
+        this.screen.append(this.elements['network']);
         break;
       case 'wallet':
-        this.screen.append(this.elements['walletBox'])
+        this.screen.append(this.elements['walletBox']);
         break;
       case 'blockchain':
-        this.screen.append(this.elements['blockchainBox'])
-        this._refreshBlockchainPanel()
+        this.screen.append(this.elements['blockchainBox']);
+        this._refreshBlockchainPanel();
         break;
     }
   }
@@ -3169,7 +3248,7 @@ class CLI extends FabricShell {
       delete self.elements['prompt'].__listener;
       delete self.elements['prompt'].__done;
 
-      self.elements['prompt'].screen.focusPop(self.elements['prompt'])
+      self.elements['prompt'].screen.focusPop(self.elements['prompt']);
 
       self.elements['prompt'].addListener('keypress', oldListener);
       self.elements['prompt'].addListener('blur', oldBlur);
@@ -3279,7 +3358,7 @@ class CLI extends FabricShell {
             resolve(true);
           }
         });
-      } catch (e) {
+      } catch {
         resolve(false);
       }
     });

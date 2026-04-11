@@ -105,7 +105,7 @@ window.onload = function () {
   /**/
 
   app._explore();
-}
+};
 
 // ## Execution
 main(settings).catch(_handleError).then(_handleOutput);

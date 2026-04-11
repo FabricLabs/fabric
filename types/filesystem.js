@@ -1,5 +1,7 @@
 'use strict';
 
+const { tryParsePersistedJson } = require('../functions/wireJson');
+
 // Dependencies
 const fs = require('fs');
 const path = require('path');
@@ -109,7 +111,7 @@ class Filesystem extends Actor {
 
       try {
         fs.utimesSync(path, time, time);
-      } catch (err) {
+      } catch {
         fs.closeSync(fs.openSync(path, 'w'));
       }
     }
@@ -195,8 +197,9 @@ class Filesystem extends Actor {
               const stateBuffer = Buffer.from(stateHex, 'hex');
               const stateStr = stateBuffer.toString('utf8');
               if (stateStr.length > 0) {
-                const state = JSON.parse(stateStr);
-                this._state.content = state;
+                const pr = tryParsePersistedJson(stateStr);
+                if (pr.ok) this._state.content = pr.value;
+                else throw pr.error;
               }
             } catch (parseErr) {
               // STATE file is empty, truncated, or corrupted; use default state
@@ -219,7 +222,7 @@ class Filesystem extends Actor {
     });
   }
 
-  async ingest (document, name = null) {
+  async ingest (document, _name = null) {
     if (typeof document !== 'string') {
       document = JSON.stringify(document);
     }

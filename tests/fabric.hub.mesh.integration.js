@@ -10,72 +10,18 @@
 
 const assert = require('assert');
 const crypto = require('crypto');
-const net = require('net');
 
 const Message = require('../types/message');
 const Peer = require('../types/peer');
 const { purchaseContentHashHex } = require('../functions/publishedDocumentEnvelope');
-
-let NODEA;
-let NODEB;
-try {
-  NODEA = require('../settings/node-a');
-} catch (e) {
-  NODEA = { key: {} };
-}
-try {
-  NODEB = require('../settings/node-b');
-} catch (e) {
-  NODEB = { key: {} };
-}
-
-async function getFreePort () {
-  return await new Promise((resolve, reject) => {
-    const s = net.createServer();
-    s.unref();
-    s.once('error', reject);
-    s.listen(0, '127.0.0.1', () => {
-      const addr = s.address();
-      const port = addr && typeof addr === 'object' ? addr.port : null;
-      s.close(() => {
-        if (!port) return reject(new Error('Could not allocate a free port'));
-        resolve(port);
-      });
-    });
-  });
-}
-
-function hubBaseSettings (port) {
-  return Object.assign(
-    { verbosity: 1 },
-    NODEA,
-    {
-      listen: true,
-      port,
-      interface: '127.0.0.1',
-      upnp: false,
-      peers: [],
-      networking: false,
-      peersDb: null,
-      constraints: { peers: { max: 32, shuffle: 8 } }
-    }
-  );
-}
-
-function memberBaseSettings (hub, keySettings) {
-  return Object.assign(
-    { verbosity: 1 },
-    keySettings,
-    {
-      listen: false,
-      port: 0,
-      upnp: false,
-      peersDb: null,
-      networking: true,
-      peers: [`${hub.key.pubkey}@127.0.0.1:${hub.settings.port}`]
-    }
-  );
-}
+const {
+  NODEA,
+  NODEB,
+  hubBaseSettings,
+  memberBaseSettings,
+  waitUntil,
+  getFreePort
+} = require('./helpers/peer');
 
 function sendGeneric (fromPeer, remoteKey, payload) {
   const conn = fromPeer.connections[remoteKey];
@@ -199,7 +145,11 @@ describe('@fabric/core Hub mesh integration', function () {
     await waitForHubConnections(hub, 1);
 
     hub._publishDocument(docId, body.toString('utf8'), askSats);
-    await new Promise((r) => setTimeout(r, 350));
+    await waitUntil(() => {
+      const c = alicePublishes.filter((e) => e.source === 'canonical').length;
+      const p = alicePublishes.filter((e) => e.source === 'pricing').length;
+      return c >= 1 && p >= 1;
+    });
 
     const aliceCanonical = alicePublishes.filter((e) => e.source === 'canonical');
     const alicePricing = alicePublishes.filter((e) => e.source === 'pricing');
@@ -214,7 +164,7 @@ describe('@fabric/core Hub mesh integration', function () {
       type: 'INVENTORY_REQUEST',
       object: { offerBtc: true, maxSats: 500_000, reason: 'verify_l1_hash_before_spend' }
     });
-    await new Promise((r) => setTimeout(r, 400));
+    await waitUntil(() => aliceInventory.length >= 1 && aliceFiles.length >= 1);
 
     assert.strictEqual(aliceInventory.length, 1);
     assert.strictEqual(aliceInventory[0].message.object.items[0].contentHash, contentHash);
@@ -245,7 +195,7 @@ describe('@fabric/core Hub mesh integration', function () {
       type: 'INVENTORY_REQUEST',
       object: { offerBtc: true, maxSats: 1_000_000, joiner: 'late' }
     });
-    await new Promise((r) => setTimeout(r, 400));
+    await waitUntil(() => bobInventory.length >= 1 && bobFiles.length >= 1);
 
     assert.strictEqual(bobInventory.length, 1);
     assert.strictEqual(bobInventory[0].message.object.items[0].contentHash, contentHash);

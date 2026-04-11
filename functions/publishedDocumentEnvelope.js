@@ -10,15 +10,7 @@
 
 const crypto = require('crypto');
 const Message = require('../types/message');
-
-function fabricCanonicalJson (value) {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) {
-    return '[' + value.map((v) => fabricCanonicalJson(v)).join(',') + ']';
-  }
-  const keys = Object.keys(value).sort();
-  return '{' + keys.map((k) => JSON.stringify(k) + ':' + fabricCanonicalJson(value[k])).join(',') + '}';
-}
+const fabricCanonicalJson = require('./fabricCanonicalJson');
 
 /**
  * Whitelisted fields only — stable across hub collection metadata (e.g. purchase price).

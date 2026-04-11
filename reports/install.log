@@ -1,12 +1,26 @@
 $ npm i
 
-> @fabric/core@0.1.0-RC1 preinstall
-> node -e ""
+> @fabric/core@0.1.0-RC1 install
+> node scripts/install-native.js
 
 
-added 649 packages, and audited 650 packages in 15s
+  CXX(target) Release/obj.target/fabric/src/binding.o
+  CC(target) Release/obj.target/fabric/native/sipa/segwit_addr.o
+  CC(target) Release/obj.target/fabric/src/peer.o
+  CC(target) Release/obj.target/fabric/src/message.o
+  CC(target) Release/obj.target/fabric/src/errors.o
+  CC(target) Release/obj.target/fabric/src/threads.o
+  CC(target) Release/obj.target/fabric/src/scoring.o
+  CC(target) Release/obj.target/fabric/src/validation.o
+  CC(target) Release/obj.target/fabric/src/secure_memory.o
+  CC(target) Release/obj.target/fabric/src/secure_random.o
+  CC(target) Release/obj.target/fabric/src/bip340.o
+  CC(target) Release/obj.target/fabric/src/taproot.o
+  SOLINK_MODULE(target) Release/fabric.node
 
-111 packages are looking for funding
+added 665 packages, and audited 666 packages in 28s
+
+109 packages are looking for funding
   run `npm fund` for details
 
 found 0 vulnerabilities

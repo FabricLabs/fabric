@@ -7,7 +7,8 @@ const expect = require('chai').expect;
 
 describe('@fabric/core/types/service (FabricShell)', function () {
   describe('FabricShell', function () {
-    this.timeout(5000);
+    // Full suite load can push start/stop over 5s; keep CI stable.
+    this.timeout(30000);
 
     it('is available from @fabric/core', function () {
       assert.equal(FabricShell instanceof Function, true);

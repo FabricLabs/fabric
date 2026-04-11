@@ -8,9 +8,37 @@ _Include this file in your repo to keep uses of `git status` quite clean._
 _Used as a string separator when reading this file. :)_
 
 ## Ignore:
-## Source
-src
-src/**
+## `src/*` — legacy C tree; negated paths match `binding.gyp` + headers the addon needs.
+src/*
+!src/binding.cc
+!src/bip340.c
+!src/bip340.h
+!src/cli.c
+!src/cli.h
+!src/cli_main.c
+!src/constants.h
+!src/datadir.h
+!src/errors.c
+!src/errors.h
+!src/message.c
+!src/message.h
+!src/noise.h
+!src/peer.c
+!src/peer.h
+!src/protocol.h
+!src/scoring.c
+!src/scoring.h
+!src/secure_memory.c
+!src/secure_memory.h
+!src/secure_random.c
+!src/secure_random.h
+!src/taproot.c
+!src/taproot.h
+!src/threads.c
+!src/threads.h
+!src/timing_protection.h
+!src/validation.c
+!src/validation.h
 
 # WIP
 types/cli.js
@@ -29,6 +57,13 @@ lib-cov
 
 ### Coverage directory used by tools like istanbul
 coverage
+reports/coverage-btc-tmp/
+reports/credits.json
+reports/licenses.json
+reports/benchmark-latest.json
+reports/AUDIT.json
+reports/class-inheritance.json
+reports/npm-audit.json
 
 ### node-waf configuration
 .lock-wscript
@@ -55,6 +90,9 @@ assets/fabric.min.js
 settings/local.js
 # Hide bitcoin node blocks
 stores
+
+# Local Hub dev state (see scripts/run-local-hub.sh)
+.hub-dev-data/
 
 # Filesystem tests may write runtime state under versioned fixtures
 tests/fixtures/filesystem/.fabric/
