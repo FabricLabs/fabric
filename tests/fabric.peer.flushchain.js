@@ -255,7 +255,7 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     assert.ok(warns.some((w) => w.includes('Generic message body must be a JSON object')));
   });
 
-  it('_handleFabricMessage warns when FLUSH_CHAIN sender has no verified key', function () {
+  it('_handleFabricMessage enforces FLUSH_CHAIN allowlist even with a signed sender key', function () {
     const peer = createPeer();
     peers.push(peer);
     const warns = [];
@@ -263,7 +263,7 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     const msg = Message.fromVector(['P2P_FLUSH_CHAIN', JSON.stringify({ snapshotBlockHash: 'a'.repeat(64) })]);
     msg.signWithKey(peer.key);
     peer._handleFabricMessage(msg.toBuffer(), { name: '127.0.0.1:11' }, null);
-    assert.ok(warns.some((w) => w.includes('no verified peer key')));
+    assert.ok(warns.some((w) => w.includes('flushChainAuthorizedPubkeys is empty')));
   });
 
   it('_handleFabricMessage warns when flushChainAuthorizedPubkeys is empty', function () {
@@ -305,7 +305,10 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     peer.on('warning', (w) => warns.push(String(w)));
     peer.on('debug', (d) => debugs.push(String(d)));
     peer.peers['127.0.0.1:12'] = { publicKey: peer.key.pubkey };
-    peer._state.peers = { good: { id: 'good', address: '127.0.0.1:12', score: 800 } };
+    peer._state.peers = {
+      good: { id: 'good', address: '127.0.0.1:12', score: 800 },
+      '127.0.0.1:12': { id: 'good', address: '127.0.0.1:12', score: 800 }
+    };
     peer._addressToId['127.0.0.1:12'] = 'good';
 
     const m1 = Message.fromVector(['P2P_FLUSH_CHAIN', JSON.stringify({ snapshotBlockHash: 'a'.repeat(64) })]);
@@ -314,6 +317,7 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     assert.ok(debugs.some((d) => d.includes('sender score')));
 
     peer._state.peers.good.score = 900;
+    peer._state.peers['127.0.0.1:12'].score = 900;
     const m2 = Message.fromVector(['P2P_FLUSH_CHAIN', '{not-json']);
     m2.signWithKey(peer.key);
     peer._handleFabricMessage(m2.toBuffer(), { name: '127.0.0.1:12' }, null);
@@ -329,7 +333,10 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     const peer = authorizeFlushChain(createPeer({ flushChainMinTrustedScore: 800 }));
     peers.push(peer);
     peer.peers['127.0.0.1:14'] = { publicKey: peer.key.pubkey };
-    peer._state.peers = { t2: { id: 't2', address: '127.0.0.1:14', score: 900 } };
+    peer._state.peers = {
+      t2: { id: 't2', address: '127.0.0.1:14', score: 900 },
+      '127.0.0.1:14': { id: 't2', address: '127.0.0.1:14', score: 900 }
+    };
     peer._addressToId['127.0.0.1:14'] = 't2';
     const events = [];
     peer.on('flushChain', (ev) => events.push(ev));
@@ -344,7 +351,10 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     const peer = authorizeFlushChain(createPeer({ flushChainMinTrustedScore: 800 }));
     peers.push(peer);
     peer.peers['127.0.0.1:13'] = { publicKey: peer.key.pubkey };
-    peer._state.peers = { trusted: { id: 'trusted', address: '127.0.0.1:13', score: 900 } };
+    peer._state.peers = {
+      trusted: { id: 'trusted', address: '127.0.0.1:13', score: 900 },
+      '127.0.0.1:13': { id: 'trusted', address: '127.0.0.1:13', score: 900 }
+    };
     peer._addressToId['127.0.0.1:13'] = 'trusted';
     const events = [];
     let relayed = null;
@@ -375,5 +385,33 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     peer._handleFabricMessage(msg.toBuffer(), { name: '127.0.0.1:15' }, null);
     assert.strictEqual(events.length, 1);
     assert.strictEqual(events[0].object.snapshotBlockHash, 'd'.repeat(64));
+  });
+
+  it('_handleFabricMessage does not trust FLUSH_CHAIN score from unbound session actor.id mapping', function () {
+    const peer = createPeer({ debug: true, flushChainMinTrustedScore: 800 });
+    peer.settings.flushChainAuthorizedPubkeys = [peer.key.pubkey];
+    peers.push(peer);
+
+    const connAddress = '127.0.0.1:16';
+    // Verified sender key for this connection (NOISE static fallback path).
+    peer._inboundNoiseStaticPubkeyByAddress[connAddress] = peer.key.pubkey;
+
+    // Attacker-controlled alias learned from P2P_SESSION_OFFER.actor.id.
+    peer._addressToId[connAddress] = 'trusted-peer-id';
+    peer._state.peers = {
+      'trusted-peer-id': { id: 'trusted-peer-id', address: '198.51.100.10:7777', score: 999 }
+    };
+
+    const events = [];
+    const debugs = [];
+    peer.on('flushChain', (ev) => events.push(ev));
+    peer.on('debug', (d) => debugs.push(String(d)));
+
+    const msg = Message.fromVector(['P2P_FLUSH_CHAIN', JSON.stringify({ snapshotBlockHash: 'e'.repeat(64) })]);
+    msg.signWithKey(peer.key);
+    peer._handleFabricMessage(msg.toBuffer(), { name: connAddress }, null);
+
+    assert.strictEqual(events.length, 0, 'must ignore spoofed mapped-id score for FLUSH_CHAIN');
+    assert.ok(debugs.some((d) => d.includes('sender score 0 not > 800')));
   });
 });

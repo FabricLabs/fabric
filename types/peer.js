@@ -69,10 +69,17 @@ function peerDebugDerivedPublicSummary (keyInstance) {
  */
 function normalizePeerPubkeyHex (pk) {
   if (pk == null) return '';
-  if (Buffer.isBuffer(pk)) return pk.toString('hex').toLowerCase();
+  if (Buffer.isBuffer(pk)) {
+    const h = pk.toString('hex').toLowerCase();
+    if (pk.length === 32) return h;
+    if (pk.length === 33 && (h.startsWith('02') || h.startsWith('03'))) return h.slice(2);
+    return h;
+  }
   const s = String(pk).trim();
   const h = (s.startsWith('0x') || s.startsWith('0X')) ? s.slice(2) : s;
-  return h.toLowerCase();
+  const lo = h.toLowerCase();
+  if (lo.length === 66 && (lo.startsWith('02') || lo.startsWith('03'))) return lo.slice(2);
+  return lo;
 }
 
 /**
@@ -701,6 +708,45 @@ class Peer extends Service {
   }
 
   /**
+   * FLUSH_CHAIN trust score bound to verified sender key.
+   *
+   * Prevents trusting attacker-controlled `P2P_SESSION_OFFER.actor.id` aliases
+   * by refusing `_addressToId`-mapped scores unless that mapped registry entry
+   * is explicitly bound to the same verified sender pubkey.
+   *
+   * @param {string} connAddress
+   * @param {string} senderPubkeyHex - verified sender pubkey hex (from NOISE/static or trusted peer record)
+   * @returns {number}
+   */
+  _registryScoreForFlushChainSender (connAddress, senderPubkeyHex) {
+    const reg = this._state.peers || {};
+    const senderHex = normalizePeerPubkeyHex(senderPubkeyHex);
+    const candidates = new Set();
+    if (connAddress) candidates.add(connAddress);
+    if (senderHex) candidates.add(senderHex);
+
+    const mappedId = this._addressToId && this._addressToId[connAddress];
+    if (mappedId && senderHex) {
+      const mapped = reg[mappedId];
+      if (mapped && typeof mapped === 'object') {
+        const mappedPk = normalizePeerPubkeyHex(mapped.publicKey);
+        // Only trust mapped id score when mapped record is key-bound.
+        if (mappedPk && mappedPk === senderHex) candidates.add(mappedId);
+      }
+    }
+
+    let best = 0;
+    for (const key of candidates) {
+      const e = reg[key];
+      if (!e) continue;
+      const s = Number(e.score);
+      if (Number.isFinite(s) && s > best) best = s;
+    }
+
+    return best;
+  }
+
+  /**
    * Sign and send `P2P_FLUSH_CHAIN` to all connected peers with registry score &gt; threshold.
    * Body JSON: `{ snapshotBlockHash, network?, label? }`.
    *
@@ -732,11 +778,16 @@ class Peer extends Service {
   }
 
   _beginFabricHandshake (client) {
+    const keyClaim = this._buildSessionKeyExchangeClaim(this.identity.id);
     // Start handshake
     const vector = ['P2P_SESSION_OFFER', JSON.stringify({
       type: 'P2P_SESSION_OFFER',
       actor: {
-        id: this.identity.id
+        id: this.identity.id,
+        pubkey: keyClaim.pubkey,
+        parentPubkey: keyClaim.parentPubkey,
+        parentXpub: keyClaim.parentXpub,
+        parentSignature: keyClaim.parentSignature
       },
       object: {
         challenge: crypto.randomBytes(8).toString('hex'),
@@ -984,6 +1035,117 @@ class Peer extends Service {
   }
 
   /**
+   * Verify Fabric message signature against the message's own on-wire author field.
+   * Returns normalized x-only signer pubkey hex on success.
+   * @private
+   * @param {Message} message
+   * @returns {string}
+   */
+  _verifiedFabricSignerPubkeyHex (message) {
+    if (!message || !message.raw || !message.raw.author) return '';
+    const xOnly = normalizePeerPubkeyHex(message.raw.author);
+    if (!/^[0-9a-f]{64}$/.test(xOnly)) return '';
+    try {
+      // Canonical compressed form; verifyWithKey checks x-only author parity-independently.
+      const signer = new Key({ public: `02${xOnly}` });
+      if (!message.verifyWithKey(signer)) return '';
+      return xOnly;
+    } catch {
+      return '';
+    }
+  }
+
+  /**
+   * Stable message covered by parent-key signature to bind a session child key claim.
+   * @private
+   */
+  _sessionKeyProofMessage (peerId, childPubkeyHex, parentPubkeyHex) {
+    return [
+      'fabric-session-key-proof-v1',
+      String(peerId || ''),
+      normalizePeerPubkeyHex(childPubkeyHex),
+      normalizePeerPubkeyHex(parentPubkeyHex)
+    ].join(':');
+  }
+
+  /**
+   * Build signed key-exchange claim for early Fabric session messages.
+   * Child key signs the Fabric message envelope; parent key signs child binding.
+   * @private
+   */
+  _buildSessionKeyExchangeClaim (peerId = this.identity.id) {
+    const childPubkey = this.key.public.encodeCompressed('hex');
+    const parentPubkey = this.key.public.encodeCompressed('hex');
+    const proofMsg = this._sessionKeyProofMessage(peerId, childPubkey, parentPubkey);
+    const parentSignature = this.key.signSchnorr(proofMsg).toString('hex');
+    return {
+      pubkey: childPubkey,
+      parentPubkey,
+      parentXpub: this.key.xpub || null,
+      parentSignature
+    };
+  }
+
+  /**
+   * Validate claimed session key exchange against verified wire signer key.
+   * Missing/invalid signatures are protocol violations and are penalized.
+   * @private
+   */
+  _validateSessionKeyExchangeClaim (genericMessage, signerPubkeyHex, originName) {
+    const actor = (genericMessage && genericMessage.actor && typeof genericMessage.actor === 'object')
+      ? genericMessage.actor
+      : {};
+    const peerId = actor.id;
+    const claimedChild = normalizePeerPubkeyHex(actor.pubkey || actor.publicKey);
+    const claimedParent = normalizePeerPubkeyHex(actor.parentPubkey || actor.parentPublicKey);
+    const parentSigHex = typeof actor.parentSignature === 'string' ? actor.parentSignature.trim() : '';
+
+    if (!claimedChild || !claimedParent || !parentSigHex) {
+      this._punishPeerForSessionKeyViolation(originName, 'missing session key signature material');
+      return false;
+    }
+    if (!/^[0-9a-f]{64}$/.test(claimedChild) || !/^[0-9a-f]{64}$/.test(claimedParent)) {
+      this._punishPeerForSessionKeyViolation(originName, 'invalid session key format');
+      return false;
+    }
+    if (!/^[0-9a-f]{128}$/.test(parentSigHex)) {
+      this._punishPeerForSessionKeyViolation(originName, 'invalid parent signature format');
+      return false;
+    }
+    if (claimedChild !== normalizePeerPubkeyHex(signerPubkeyHex)) {
+      this._punishPeerForSessionKeyViolation(originName, 'claimed child key does not match signer');
+      return false;
+    }
+
+    const proofMsg = this._sessionKeyProofMessage(peerId, claimedChild, claimedParent);
+    let ok = false;
+    try {
+      const parentKey = new Key({ public: `02${claimedParent}` });
+      ok = parentKey.verifySchnorr(proofMsg, Buffer.from(parentSigHex, 'hex'));
+    } catch {
+      ok = false;
+    }
+    if (!ok) {
+      this._punishPeerForSessionKeyViolation(originName, 'invalid parent signature');
+      return false;
+    }
+
+    return { peerId, childPubkey: claimedChild, parentPubkey: claimedParent, parentXpub: actor.parentXpub || null };
+  }
+
+  /**
+   * Penalize protocol violations around unsigned/unverifiable session key claims.
+   * @private
+   */
+  _punishPeerForSessionKeyViolation (originName, reason) {
+    const penalty = Number(this.settings.wireTraffic && this.settings.wireTraffic.sessionKeyViolationPenalty) || 240;
+    if (originName) this._derankPeerForWireTraffic(originName, penalty, `session-key:${reason}`);
+    this.emit('warning', `[FABRIC:PEER] Session key violation from ${originName || 'unknown'}: ${reason}`);
+    const conn = originName && this.connections && this.connections[originName];
+    if (conn && typeof conn.destroy === 'function') conn.destroy();
+  }
+
+  /**
    * Upsert a peer into the persistent registry (state.peers) and schedule save to LevelDB.
    * @param {string} address - Peer address (e.g. host:port).
    * @param {Object} [updates] - Fields to set/merge (id, score, firstSeen, lastSeen, alias, publicKey).
@@ -1063,13 +1225,21 @@ class Peer extends Service {
       return this;
     }
 
-    // Verify message signature if we have the peer's public key (origin is `{ name }` from sockets)
+    // Verify every inbound message against the signed on-wire author field.
+    const signerPubkeyHex = this._verifiedFabricSignerPubkeyHex(message);
+    if (!signerPubkeyHex) {
+      const from = (origin && origin.name) ? origin.name : 'unknown';
+      this.emit('warning', `[FABRIC:PEER] Invalid message signature from ${from}`);
+      return this;
+    }
+
+    // If a connection already has a pinned key, require continuity.
     const peerKey = origin && (origin.name != null ? origin.name : origin);
     const peerRecord = peerKey && this.peers[peerKey];
     if (peerRecord && peerRecord.publicKey) {
-      const signer = new Key({ public: peerRecord.publicKey });
-      if (!message.verifyWithKey(signer)) {
-        this.emit('warning', `[FABRIC:PEER] Invalid message signature from ${peerKey}`);
+      const pinned = normalizePeerPubkeyHex(peerRecord.publicKey);
+      if (pinned && pinned !== signerPubkeyHex) {
+        this.emit('warning', `[FABRIC:PEER] Signer mismatch from ${peerKey}: expected pinned peer key`);
         return this;
       }
     }
@@ -1117,7 +1287,7 @@ class Peer extends Service {
       case 'P2P_FLUSH_CHAIN':
       case 'FlushChain': {
         if (!origin || !origin.name) break;
-        const senderHex = this._flushChainSenderPubkeyHex(origin.name);
+        const senderHex = signerPubkeyHex || this._flushChainSenderPubkeyHex(origin.name);
         if (!senderHex) {
           this.emit('warning', `[FABRIC:PEER] FLUSH_CHAIN ignored: no verified peer key for ${origin.name}`);
           break;
@@ -1137,7 +1307,7 @@ class Peer extends Service {
           break;
         }
         const threshold = Number(this.settings.flushChainMinTrustedScore) || 800;
-        const score = this._registryScoreForConnectionAddress(origin.name);
+        const score = this._registryScoreForFlushChainSender(origin.name, senderHex);
         if (!(score > threshold)) {
           if (this.settings.debug) {
             this.emit('debug', `[FABRIC:PEER] FLUSH_CHAIN ignored: sender score ${score} not > ${threshold}`);
@@ -1291,6 +1461,10 @@ class Peer extends Service {
   _handleGenericMessage (message, origin = null, socket = null, wireMessage = null) {
     if (this.settings.debug) this.emit('debug', `Generic message:\n\tFrom: ${JSON.stringify(origin)}\n\tType: ${message.type}\n\tBody:\n\`\`\`\n${JSON.stringify(message.object, null, '  ')}\n\`\`\``);
 
+    const signerPubkeyHex = wireMessage
+      ? this._verifiedFabricSignerPubkeyHex(wireMessage)
+      : normalizePeerPubkeyHex(message && message.actor && (message.actor.publicKey || message.actor.pubkey));
+
     // Lookup the appropriate Actor for the message's origin
     const actor = new Actor(origin);
 
@@ -1322,6 +1496,20 @@ class Peer extends Service {
         const connAddress = origin.name;
         if (this.settings.debug) this.emit('debug', `Handling session offer: ${JSON.stringify(message.object)}`);
         if (this.settings.debug) this.emit('debug', `Session offer origin: ${JSON.stringify(origin)}`);
+        {
+          const sessionClaim = this._validateSessionKeyExchangeClaim(message, signerPubkeyHex, connAddress);
+          if (!sessionClaim) break;
+        }
+
+        // If we've already bound this Fabric id to a key, reject key-mismatched offers.
+        const existingPeer = (this._state.peers && this._state.peers[peerId]) || null;
+        if (existingPeer && existingPeer.publicKey) {
+          const known = normalizePeerPubkeyHex(existingPeer.publicKey);
+          if (known && known !== signerPubkeyHex) {
+            this.emit('warning', `[FABRIC:PEER] Rejecting session offer for ${peerId}: signer key mismatch`);
+            break;
+          }
+        }
 
         // Same peer reconnecting from new port? Close old connection and replace with new.
         // Do not tear down our outbound dial to the peer's listen address: concurrent inbound +
@@ -1346,18 +1534,32 @@ class Peer extends Service {
           id: peerId,
           name: connAddress,
           address: connAddress,
-          connections: [ connAddress ]
+          connections: [ connAddress ],
+          publicKey: signerPubkeyHex
         });
 
-        this._upsertPeerRegistry(connAddress, { id: peerId, address: connAddress, lastSeen: new Date().toISOString() });
+        this._upsertPeerRegistry(connAddress, {
+          id: peerId,
+          address: connAddress,
+          publicKey: signerPubkeyHex,
+          lastSeen: new Date().toISOString()
+        });
         this._addressToId[connAddress] = peerId;
 
         // Emit peer event
         this.emit('peer', this.peers[connAddress]);
 
         // Send session open event
+        const keyClaim = this._buildSessionKeyExchangeClaim(this.identity.id);
         const vector = ['P2P_SESSION_OPEN', JSON.stringify({
           type: 'P2P_SESSION_OPEN',
+          actor: {
+            id: this.identity.id,
+            pubkey: keyClaim.pubkey,
+            parentPubkey: keyClaim.parentPubkey,
+            parentXpub: keyClaim.parentXpub,
+            parentSignature: keyClaim.parentSignature
+          },
           object: {
             initiator: message.actor.id,
             counterparty: this.identity.id,
@@ -1376,8 +1578,25 @@ class Peer extends Service {
       case 'P2P_SESSION_OPEN':
         if (this.settings.debug) this.emit('debug', `Handling session open: ${JSON.stringify(message.object)}`);
         const openPeerId = message.object.counterparty;
-        this.peers[origin.name] = { id: openPeerId, name: origin.name, address: origin };
-        this._upsertPeerRegistry(origin.name, { id: openPeerId, address: origin.name, lastSeen: new Date().toISOString() });
+        {
+          const sessionClaim = this._validateSessionKeyExchangeClaim(message, signerPubkeyHex, origin.name);
+          if (!sessionClaim) break;
+        }
+        const existingOpenPeer = (this._state.peers && this._state.peers[openPeerId]) || null;
+        if (existingOpenPeer && existingOpenPeer.publicKey) {
+          const knownOpen = normalizePeerPubkeyHex(existingOpenPeer.publicKey);
+          if (knownOpen && knownOpen !== signerPubkeyHex) {
+            this.emit('warning', `[FABRIC:PEER] Rejecting session open for ${openPeerId}: signer key mismatch`);
+            break;
+          }
+        }
+        this.peers[origin.name] = { id: openPeerId, name: origin.name, address: origin, publicKey: signerPubkeyHex };
+        this._upsertPeerRegistry(origin.name, {
+          id: openPeerId,
+          address: origin.name,
+          publicKey: signerPubkeyHex,
+          lastSeen: new Date().toISOString()
+        });
         this._addressToId[origin.name] = openPeerId;
         // Don't emit peer event here - it's already emitted in P2P_SESSION_OFFER
         break;

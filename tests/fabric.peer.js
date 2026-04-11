@@ -637,7 +637,7 @@ describe('@fabric/core/types/peer', function () {
         let warned = false;
         let errored = false;
         peer.once('warning', (w) => {
-          if (/Invalid message signature/.test(String(w))) warned = true;
+          if (/Signer mismatch/.test(String(w))) warned = true;
         });
         peer.once('error', () => { errored = true; });
         peer._handleFabricMessage(msg.toBuffer(), { name: 'o' });
@@ -1042,6 +1042,8 @@ describe('@fabric/core/types/peer', function () {
         const server = new Peer({ listen: false, peersDb: null });
         const connAddress = '127.0.0.1:9999';
         const remotePeerId = 'remote-peer-id-abc';
+        const remoteKey = new Key();
+        const remoteProof = server._sessionKeyProofMessage(remotePeerId, remoteKey.pubkey, remoteKey.pubkey);
         let replyBuffer = null;
         server.connections[connAddress] = {
           _writeFabric: (buf, socket) => { replyBuffer = buf; }
@@ -1049,11 +1051,16 @@ describe('@fabric/core/types/peer', function () {
 
         const content = {
           type: 'P2P_SESSION_OFFER',
-          actor: { id: remotePeerId },
+          actor: {
+            id: remotePeerId,
+            pubkey: remoteKey.pubkey,
+            parentPubkey: remoteKey.pubkey,
+            parentSignature: remoteKey.signSchnorr(remoteProof).toString('hex')
+          },
           object: { challenge: 'cafebabe' }
         };
         const msg = Message.fromVector(['GenericMessage', JSON.stringify(content)]);
-        msg.signWithKey(server.key);
+        msg.signWithKey(remoteKey);
         const buf = msg.toBuffer();
 
         server.once('peer', (peer) => {
@@ -1080,6 +1087,8 @@ describe('@fabric/core/types/peer', function () {
         const oldAddr = '127.0.0.1:8888';
         const newAddr = '127.0.0.1:9999';
         const remotePeerId = 'same-peer-id';
+        const remoteKey = new Key();
+        const remoteProof = server._sessionKeyProofMessage(remotePeerId, remoteKey.pubkey, remoteKey.pubkey);
         let oldDestroyCalled = false;
         let replyBuffer = null;
 
@@ -1097,11 +1106,16 @@ describe('@fabric/core/types/peer', function () {
 
         const content = {
           type: 'P2P_SESSION_OFFER',
-          actor: { id: remotePeerId },
+          actor: {
+            id: remotePeerId,
+            pubkey: remoteKey.pubkey,
+            parentPubkey: remoteKey.pubkey,
+            parentSignature: remoteKey.signSchnorr(remoteProof).toString('hex')
+          },
           object: { challenge: 'challenge' }
         };
         const msg = Message.fromVector(['GenericMessage', JSON.stringify(content)]);
-        msg.signWithKey(server.key);
+        msg.signWithKey(remoteKey);
 
         server.once('peer', () => {
           assert.strictEqual(oldDestroyCalled, true);
@@ -1120,10 +1134,18 @@ describe('@fabric/core/types/peer', function () {
         const peer = new Peer({ listen: false, peersDb: null });
         const connAddress = '127.0.0.1:9999';
         const serverId = 'server-identity-id';
+        const serverKey = new Key();
+        const serverProof = peer._sessionKeyProofMessage(serverId, serverKey.pubkey, serverKey.pubkey);
         peer.connections[connAddress] = { _writeFabric: () => {} };
 
         const content = {
           type: 'P2P_SESSION_OPEN',
+          actor: {
+            id: serverId,
+            pubkey: serverKey.pubkey,
+            parentPubkey: serverKey.pubkey,
+            parentSignature: serverKey.signSchnorr(serverProof).toString('hex')
+          },
           object: {
             initiator: peer.identity.id,
             counterparty: serverId,
@@ -1144,10 +1166,18 @@ describe('@fabric/core/types/peer', function () {
         const peer = new Peer({ listen: false, peersDb: null });
         const connAddress = '127.0.0.1:9999';
         const serverId = 'server-identity-id';
+        const serverKey = new Key();
+        const serverProof = peer._sessionKeyProofMessage(serverId, serverKey.pubkey, serverKey.pubkey);
         peer.connections[connAddress] = { _writeFabric: () => {} };
 
         const content = {
           type: 'P2P_SESSION_OPEN',
+          actor: {
+            id: serverId,
+            pubkey: serverKey.pubkey,
+            parentPubkey: serverKey.pubkey,
+            parentSignature: serverKey.signSchnorr(serverProof).toString('hex')
+          },
           object: {
             initiator: peer.identity.id,
             counterparty: serverId,
@@ -1155,12 +1185,43 @@ describe('@fabric/core/types/peer', function () {
           }
         };
         const msg = Message.fromVector(['GenericMessage', JSON.stringify(content)]);
-        msg.signWithKey(peer.key);
+        msg.signWithKey(serverKey);
 
         peer._handleFabricMessage(msg.toBuffer(), { name: connAddress }, null);
 
         assert.strictEqual(peer.peers[connAddress].id, serverId);
         assert.strictEqual(peer._addressToId[connAddress], serverId);
+      });
+
+      it('rejects and de-ranks P2P_SESSION_OFFER when key claim is unsigned', function () {
+        const server = new Peer({ listen: false, peersDb: null });
+        const connAddress = '127.0.0.1:9001';
+        const remotePeerId = 'unsigned-offer-peer';
+        const remoteKey = new Key();
+        const warnings = [];
+        server.on('warning', (w) => warnings.push(String(w)));
+        server.connections[connAddress] = { _writeFabric: () => {} };
+        server._state.peers = {
+          [connAddress]: { id: connAddress, address: connAddress, score: 500 }
+        };
+
+        const content = {
+          type: 'P2P_SESSION_OFFER',
+          actor: {
+            id: remotePeerId,
+            pubkey: remoteKey.pubkey,
+            parentPubkey: remoteKey.pubkey
+            // parentSignature omitted on purpose (protocol violation)
+          },
+          object: { challenge: 'cafef00d' }
+        };
+        const msg = Message.fromVector(['GenericMessage', JSON.stringify(content)]);
+        msg.signWithKey(remoteKey);
+        server._handleFabricMessage(msg.toBuffer(), { name: connAddress }, null);
+
+        assert.strictEqual(server._addressToId[connAddress], undefined);
+        assert.ok(warnings.some((w) => /Session key violation/i.test(w)));
+        assert.ok((server._state.peers[connAddress] || {}).score < 500);
       });
     });
 
