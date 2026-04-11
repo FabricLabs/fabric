@@ -214,25 +214,8 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 ## Constants
 
 <dl>
-<dt><a href="#SAT_ADJ_EPS">SAT_ADJ_EPS</a></dt>
-<dd><p>Max |sats − round(sats)| allowed when scaling BTC → satoshis (reject fractional satoshis; allow float noise).</p>
-</dd>
-<dt><a href="#BITCOIN_COOKIE_PATH_MAX_LEN">BITCOIN_COOKIE_PATH_MAX_LEN</a></dt>
-<dd><p>Reject absurd paths from env/settings before touching the filesystem (Codacy/Semgrep-friendly bounds).</p>
-</dd>
-<dt><a href="#BITCOIND_CHAIN_FOLDER_NAMES">BITCOIND_CHAIN_FOLDER_NAMES</a></dt>
-<dd><p>Directory names Bitcoin Core uses under {@code -datadir} (used to block traversal in <code>.cookie</code> paths).</p>
-</dd>
 <dt><del><a href="#Text">Text</a></del></dt>
 <dd></dd>
-</dl>
-
-## Functions
-
-<dl>
-<dt><a href="#cookiePathUnderDatadirBase">cookiePathUnderDatadirBase(baseAbs, parts)</a> ⇒ <code>string</code> | <code>null</code></dt>
-<dd><p>Append fixed path components under a resolved base; return null if the result leaves {@code baseAbs}.</p>
-</dd>
 </dl>
 
 ## Typedefs
@@ -12369,24 +12352,6 @@ Closes the connection to the ZMQ publisher.
 Deprecated 2021-11-06 — use [FabricState](FabricState) (<code>types/state</code>). <code>Scribe</code> was merged into <code>State</code>.
 
 **Kind**: global class  
-<a name="SAT_ADJ_EPS"></a>
-
-## SAT\_ADJ\_EPS
-Max |sats − round(sats)| allowed when scaling BTC → satoshis (reject fractional satoshis; allow float noise).
-
-**Kind**: global constant  
-<a name="BITCOIN_COOKIE_PATH_MAX_LEN"></a>
-
-## BITCOIN\_COOKIE\_PATH\_MAX\_LEN
-Reject absurd paths from env/settings before touching the filesystem (Codacy/Semgrep-friendly bounds).
-
-**Kind**: global constant  
-<a name="BITCOIND_CHAIN_FOLDER_NAMES"></a>
-
-## BITCOIND\_CHAIN\_FOLDER\_NAMES
-Directory names Bitcoin Core uses under {@code -datadir} (used to block traversal in `.cookie` paths).
-
-**Kind**: global constant  
 <a name="Text"></a>
 
 ## ~~Text~~
@@ -12864,18 +12829,6 @@ Join a list with an Oxford comma (delegates to [module:functions/oxfordJoin](mod
 | Param | Type |
 | --- | --- |
 | list | <code>Array.&lt;string&gt;</code> | 
-
-<a name="cookiePathUnderDatadirBase"></a>
-
-## cookiePathUnderDatadirBase(baseAbs, parts) ⇒ <code>string</code> \| <code>null</code>
-Append fixed path components under a resolved base; return null if the result leaves {@code baseAbs}.
-
-**Kind**: global function  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| baseAbs | <code>string</code> |  |
-| parts | <code>Array.&lt;string&gt;</code> | — no separators; validated by caller |
 
 <a name="BitcoinCookieProbeConstraints"></a>
 
