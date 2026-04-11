@@ -85,20 +85,16 @@ function redactSensitiveCommandArg (arg) {
 }
 
 const SATS_PER_BTC = 10 ** 8;
-/** Max |sats − round(sats)| allowed when scaling BTC → satoshis (reject fractional satoshis; allow float noise). */
+// Internal: max |sats - round(sats)| allowed for BTC -> sats conversion
+// (reject fractional satoshis while tolerating float noise).
 const SAT_ADJ_EPS = 1 / (10 ** 6);
-/** Reject absurd paths from env/settings before touching the filesystem (Codacy/Semgrep-friendly bounds). */
+// Internal: reject absurd cookie path lengths before filesystem reads.
 const BITCOIN_COOKIE_PATH_MAX_LEN = 4096;
 
-/** Directory names Bitcoin Core uses under {@code -datadir} (used to block traversal in `.cookie` paths). */
+// Internal allowlist: Bitcoin Core chain directory names under -datadir.
 const BITCOIND_CHAIN_FOLDER_NAMES = new Set(['regtest', 'testnet3', 'testnet4', 'signet']);
 
-/**
- * Append fixed path components under a resolved base; return null if the result leaves {@code baseAbs}.
- * @param {string} baseAbs
- * @param {string[]} parts — no separators; validated by caller
- * @returns {string|null}
- */
+// Internal helper: append fixed path components under baseAbs and reject traversal.
 function cookiePathUnderDatadirBase (baseAbs, parts) {
   // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
   const root = path.resolve(baseAbs);
@@ -2612,7 +2608,17 @@ class Bitcoin extends Service {
         ];
 
         // Wait for all checks to complete
-        await Promise.all(checks);
+        const [chainInfo] = await Promise.all(checks);
+
+        const detectedNetwork = this._normalizeChainName(chainInfo &amp;&amp; chainInfo.chain);
+        const targetNetwork = this._normalizeChainName(this.settings.network || 'mainnet');
+        if (detectedNetwork &amp;&amp; targetNetwork &amp;&amp; detectedNetwork !== targetNetwork) {
+          this.emit(
+            'warning',
+            `[FABRIC:BITCOIN] RPC endpoint chain mismatch: detected=${detectedNetwork} expected=${targetNetwork}`
+          );
+          return false;
+        }
 
         if (this.settings.debug) {
           this.emit('debug', '[FABRIC:BITCOIN] Successfully connected to bitcoind');
@@ -3278,13 +3284,7 @@ module.exports = Bitcoin;
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
-    <h3>Global</h3>
-    <ul>
-      <li><a href="global.html#BITCOIND_CHAIN_FOLDER_NAMES">BITCOIND_CHAIN_FOLDER_NAMES</a></li>
-      <li><a href="global.html#BITCOIN_COOKIE_PATH_MAX_LEN">BITCOIN_COOKIE_PATH_MAX_LEN</a></li>
-      <li><a href="global.html#SAT_ADJ_EPS">SAT_ADJ_EPS</a></li>
-      <li><a href="global.html#cookiePathUnderDatadirBase">cookiePathUnderDatadirBase</a></li>
-    </ul>
+    <h3><a href="global.html">Global</a></h3>
   </nav>
   <br class="clear" />
   <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>

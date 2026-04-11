@@ -103,204 +103,6 @@
 
 
 
-        <h4 class="name" id="BITCOIND_CHAIN_FOLDER_NAMES"><span class="type-signature">(constant) </span>BITCOIND_CHAIN_FOLDER_NAMES<span class="type-signature"></span></h4>
-
-
-
-
-        <div class="description">
-          Directory names Bitcoin Core uses under {@code -datadir} (used to block traversal in `.cookie` paths).
-        </div>
-
-
-
-
-
-
-
-        <dl class="details">
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-          <dt class="tag-source">Source:</dt>
-          <dd class="tag-source">
-            <ul class="dummy">
-              <li>
-                <a href="services_bitcoin.js.html">services/bitcoin.js</a>, <a href="services_bitcoin.js.html#line61">line 61</a>
-              </li>
-            </ul>
-          </dd>
-
-
-
-
-
-
-
-        </dl>
-
-
-
-
-
-
-
-
-        <h4 class="name" id="BITCOIN_COOKIE_PATH_MAX_LEN"><span class="type-signature">(constant) </span>BITCOIN_COOKIE_PATH_MAX_LEN<span class="type-signature"></span></h4>
-
-
-
-
-        <div class="description">
-          Reject absurd paths from env/settings before touching the filesystem (Codacy/Semgrep-friendly bounds).
-        </div>
-
-
-
-
-
-
-
-        <dl class="details">
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-          <dt class="tag-source">Source:</dt>
-          <dd class="tag-source">
-            <ul class="dummy">
-              <li>
-                <a href="services_bitcoin.js.html">services/bitcoin.js</a>, <a href="services_bitcoin.js.html#line58">line 58</a>
-              </li>
-            </ul>
-          </dd>
-
-
-
-
-
-
-
-        </dl>
-
-
-
-
-
-
-
-
-        <h4 class="name" id="SAT_ADJ_EPS"><span class="type-signature">(constant) </span>SAT_ADJ_EPS<span class="type-signature"></span></h4>
-
-
-
-
-        <div class="description">
-          Max |sats − round(sats)| allowed when scaling BTC → satoshis (reject fractional satoshis; allow float noise).
-        </div>
-
-
-
-
-
-
-
-        <dl class="details">
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-          <dt class="tag-source">Source:</dt>
-          <dd class="tag-source">
-            <ul class="dummy">
-              <li>
-                <a href="services_bitcoin.js.html">services/bitcoin.js</a>, <a href="services_bitcoin.js.html#line56">line 56</a>
-              </li>
-            </ul>
-          </dd>
-
-
-
-
-
-
-
-        </dl>
-
-
-
-
-
-
-
-
         <h4 class="name" id="Text"><span class="type-signature">(constant) </span>Text<span class="type-signature"></span></h4>
 
 
@@ -363,195 +165,6 @@
 
         </dl>
 
-
-
-
-
-
-
-
-
-
-        <h3 class="subsection-title">Methods</h3>
-
-
-
-
-
-
-
-        <h4 class="name" id="cookiePathUnderDatadirBase"><span class="type-signature"></span>cookiePathUnderDatadirBase<span class="signature">(baseAbs, parts)</span><span class="type-signature"> &rarr; {string|null}</span></h4>
-
-
-
-
-
-
-        <div class="description">
-          Append fixed path components under a resolved base; return null if the result leaves {@code baseAbs}.
-        </div>
-
-
-
-
-
-
-
-
-
-        <h5>Parameters:</h5>
-
-
-        <table class="params">
-          <thead>
-            <tr>
-
-              <th>Name</th>
-
-
-              <th>Type</th>
-
-
-
-
-
-              <th class="last">Description</th>
-            </tr>
-          </thead>
-
-          <tbody>
-
-
-            <tr>
-
-              <td class="name"><code>baseAbs</code></td>
-
-
-              <td class="type">
-
-
-                <span class="param-type">string</span>
-
-
-
-              </td>
-
-
-
-
-
-              <td class="description last"></td>
-            </tr>
-
-
-
-            <tr>
-
-              <td class="name"><code>parts</code></td>
-
-
-              <td class="type">
-
-
-                <span class="param-type">Array.&lt;string></span>
-
-
-
-              </td>
-
-
-
-
-
-              <td class="description last">— no separators; validated by caller</td>
-            </tr>
-
-
-          </tbody>
-        </table>
-
-
-
-
-
-
-        <dl class="details">
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-          <dt class="tag-source">Source:</dt>
-          <dd class="tag-source">
-            <ul class="dummy">
-              <li>
-                <a href="services_bitcoin.js.html">services/bitcoin.js</a>, <a href="services_bitcoin.js.html#line69">line 69</a>
-              </li>
-            </ul>
-          </dd>
-
-
-
-
-
-
-
-        </dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        <h5>Returns:</h5>
-
-
-
-
-        <dl>
-          <dt>
-            Type
-          </dt>
-          <dd>
-
-            <span class="param-type">string</span>
-            |
-
-            <span class="param-type">null</span>
-
-
-          </dd>
-        </dl>
 
 
 
@@ -743,7 +356,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="services_bitcoin.js.html">services/bitcoin.js</a>, <a href="services_bitcoin.js.html#line85">line 85</a>
+                <a href="services_bitcoin.js.html">services/bitcoin.js</a>, <a href="services_bitcoin.js.html#line81">line 81</a>
               </li>
             </ul>
           </dd>
@@ -974,7 +587,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="services_bitcoin.js.html">services/bitcoin.js</a>, <a href="services_bitcoin.js.html#line92">line 92</a>
+                <a href="services_bitcoin.js.html">services/bitcoin.js</a>, <a href="services_bitcoin.js.html#line88">line 88</a>
               </li>
             </ul>
           </dd>
@@ -1143,7 +756,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="services_bitcoin.js.html">services/bitcoin.js</a>, <a href="services_bitcoin.js.html#line101">line 101</a>
+                <a href="services_bitcoin.js.html">services/bitcoin.js</a>, <a href="services_bitcoin.js.html#line97">line 97</a>
               </li>
             </ul>
           </dd>
@@ -1221,13 +834,7 @@
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
-    <h3>Global</h3>
-    <ul>
-      <li><a href="global.html#BITCOIND_CHAIN_FOLDER_NAMES">BITCOIND_CHAIN_FOLDER_NAMES</a></li>
-      <li><a href="global.html#BITCOIN_COOKIE_PATH_MAX_LEN">BITCOIN_COOKIE_PATH_MAX_LEN</a></li>
-      <li><a href="global.html#SAT_ADJ_EPS">SAT_ADJ_EPS</a></li>
-      <li><a href="global.html#cookiePathUnderDatadirBase">cookiePathUnderDatadirBase</a></li>
-    </ul>
+    <h3><a href="global.html">Global</a></h3>
   </nav>
   <br class="clear" />
   <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>
