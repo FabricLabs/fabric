@@ -31,7 +31,7 @@ const REPORT = path.join(__dirname, '..', 'reports', 'benchmark-latest.json');
 function makeWireBuffer () {
   const header = Buffer.alloc(HEADER_SIZE);
   for (let i = 0; i < HEADER_SIZE; i++) header[i] = (i * 17 + 3) & 0xff;
-  const body = Buffer.from('{"type":"GENERIC_MESSAGE","object":{"x":1}}', 'utf8');
+  const body = Buffer.from('{"type":"P2P_BASE_MESSAGE","object":{"x":1}}', 'utf8');
   return Buffer.concat([header, body]);
 }
 

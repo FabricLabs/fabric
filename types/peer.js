@@ -34,7 +34,14 @@ const {
   whitelistedDocumentFields,
   purchaseContentHashHex
 } = require('../functions/publishedDocumentEnvelope');
-const { messageDataToString, tryParsePersistedJson, tryParseWireJsonBody, utf8FromPersistedRaw } = require('../functions/wireJson');
+
+// Strict JSON
+const {
+  messageDataToString,
+  tryParsePersistedJson,
+  tryParseWireJsonBody,
+  utf8FromPersistedRaw
+} = require('../functions/wireJson');
 
 // Fabric Types
 const Actor = require('./actor');
@@ -1263,7 +1270,16 @@ class Peer extends Service {
         break;
       case 'P2P_RELAY':
         if (!origin || origin.name == null) break;
-        this.relayFrom(origin.name, message);
+        {
+          // Relay payload is the raw inner Fabric Message bytes (no JSON envelope).
+          const inner = (message.raw && Buffer.isBuffer(message.raw.data))
+            ? message.raw.data
+            : Buffer.alloc(0);
+          if (inner.length > 0) {
+            this._handleFabricMessage(inner, origin, socket);
+            this._relayWirePayload(origin.name, inner, socket);
+          }
+        }
         break;
       case 'BITCOIN_BLOCK':
       case 'BitcoinBlock':
@@ -1335,6 +1351,41 @@ class Peer extends Service {
         this.relayFromTrustedPeers(origin.name, message, threshold);
         break;
       }
+      case 'P2P_INVENTORY_REQUEST':
+      case 'P2P_INVENTORY_RESPONSE':
+      case 'P2P_PEER_GOSSIP':
+      case 'P2P_PEERING_OFFER':
+      case 'P2P_PING':
+      case 'P2P_PONG':
+      case 'P2P_CHAT_MESSAGE':
+      case 'P2P_STATE_ANNOUNCE':
+      case 'P2P_PEER_ALIAS':
+      case 'P2P_PEER_ANNOUNCE':
+      case 'P2P_SESSION_OFFER':
+      case 'P2P_SESSION_OPEN':
+      case 'P2P_DOCUMENT_PUBLISH':
+      case 'P2P_FILE_SEND':
+      case 'CONTRACT_PUBLISH':
+      case 'CONTRACT_MESSAGE':
+      {
+        const rawTyped = messageDataToString(message.data);
+        const prTyped = tryParseWireJsonBody(rawTyped);
+        if (!prTyped.ok || prTyped.value === null || typeof prTyped.value !== 'object' || Array.isArray(prTyped.value)) {
+          this.emit('warning', `[FABRIC:PEER] ${message.type} parse failed: ${prTyped.ok ? 'invalid body' : prTyped.error.message}`);
+          break;
+        }
+        const wireToInner = {
+          P2P_INVENTORY_REQUEST: 'INVENTORY_REQUEST',
+          P2P_INVENTORY_RESPONSE: 'INVENTORY_RESPONSE'
+        };
+        const innerType = wireToInner[message.type] || message.type;
+        const parsed = prTyped.value;
+        const genericBody = (parsed && typeof parsed === 'object' && (parsed.actor || parsed.object || parsed.type))
+          ? Object.assign({}, parsed, { type: parsed.type || innerType })
+          : { type: innerType, object: parsed };
+        this._handleGenericMessage(genericBody, origin, socket, message);
+        break;
+      }
       case 'DOCUMENT_PUBLISH':
       case 'DocumentPublish':
         try {
@@ -1375,10 +1426,7 @@ class Peer extends Service {
           this.emit('warning', `[FABRIC:PEER] DOCUMENT_REQUEST failed: ${exception.message}`);
         }
         break;
-      case 'GENERIC_MESSAGE':
-      case 'GenericMessage':
       case 'P2P_BASE_MESSAGE':
-      case 'PeerMessage':
       case 'CHAT_MESSAGE':
       case 'ChatMessage':
         // this.emit('debug', `message ${message}`);
@@ -1458,6 +1506,147 @@ class Peer extends Service {
     return this;
   }
 
+  _relayWirePayload (originName, wirePayload, socket = null) {
+    if (!originName) return false;
+    const body = Buffer.isBuffer(wirePayload)
+      ? wirePayload
+      : Buffer.from(wirePayload || []);
+    if (!body.length) return false;
+    const relayMessage = Message.fromVector(['P2P_RELAY', body]);
+    relayMessage.signWithKey(this.key);
+    this.relayFrom(originName, relayMessage, socket);
+    return true;
+  }
+
+  _relayGenericPayload (originName, payload, socket = null, _wireMessage = null) {
+    const innerType = (payload && payload.type === 'INVENTORY_REQUEST')
+      ? 'P2P_INVENTORY_REQUEST'
+      : (payload && payload.type === 'INVENTORY_RESPONSE')
+          ? 'P2P_INVENTORY_RESPONSE'
+          : 'P2P_BASE_MESSAGE';
+    const innerBody = (innerType === 'P2P_BASE_MESSAGE')
+      ? JSON.stringify(payload)
+      : JSON.stringify((payload && payload.object) ? payload.object : {});
+    const innerBuffer = Message
+      .fromVector([innerType, innerBody])
+      .signWithKey(this.key)
+      .toBuffer();
+    return this._relayWirePayload(originName, innerBuffer, socket);
+  }
+
+  _handleSessionOfferGenericMessage (message, origin, socket, signerPubkeyHex) {
+    const peerId = message.actor.id;
+    const connAddress = origin.name;
+    if (this.settings.debug) this.emit('debug', `Handling session offer: ${JSON.stringify(message.object)}`);
+    if (this.settings.debug) this.emit('debug', `Session offer origin: ${JSON.stringify(origin)}`);
+    {
+      const sessionClaim = this._validateSessionKeyExchangeClaim(message, signerPubkeyHex, connAddress);
+      if (!sessionClaim) return this;
+    }
+
+    // If we've already bound this Fabric id to a key, reject key-mismatched offers.
+    const existingPeer = (this._state.peers && this._state.peers[peerId]) || null;
+    if (existingPeer && existingPeer.publicKey) {
+      const known = normalizePeerPubkeyHex(existingPeer.publicKey);
+      if (known && known !== signerPubkeyHex) {
+        this.emit('warning', `[FABRIC:PEER] Rejecting session offer for ${peerId}: signer key mismatch`);
+        return this;
+      }
+    }
+
+    // Same peer reconnecting from new port? Close old connection and replace with new.
+    // Do not tear down our outbound dial to the peer's listen address: concurrent inbound +
+    // outbound to the same Fabric id is normal (e.g. ring + star mesh); dropping the stable
+    // `host:listenPort` socket breaks address-keyed sends on the satellite.
+    const addressToId = this._addressToId || {};
+    for (const [addr, mappedId] of Object.entries(addressToId)) {
+      if (mappedId !== peerId || addr === connAddress) continue;
+      if (this._outboundDialTargets && this._outboundDialTargets.has(addr)) continue;
+      const oldSocket = this.connections[addr];
+      if (oldSocket) {
+        if (oldSocket._keepalive) clearInterval(oldSocket._keepalive);
+        delete this.connections[addr];
+        delete this.peers[addr];
+        delete this._addressToId[addr];
+        if (typeof oldSocket.destroy === 'function') oldSocket.destroy();
+      }
+      break;
+    }
+
+    this.peers[connAddress] = new Actor({
+      id: peerId,
+      name: connAddress,
+      address: connAddress,
+      connections: [ connAddress ],
+      publicKey: signerPubkeyHex
+    });
+
+    this._upsertPeerRegistry(connAddress, {
+      id: peerId,
+      address: connAddress,
+      publicKey: signerPubkeyHex,
+      lastSeen: new Date().toISOString()
+    });
+    this._addressToId[connAddress] = peerId;
+
+    // Emit peer event
+    this.emit('peer', this.peers[connAddress]);
+
+    // Send session open event
+    const keyClaim = this._buildSessionKeyExchangeClaim(this.identity.id);
+    const vector = ['P2P_SESSION_OPEN', JSON.stringify({
+      type: 'P2P_SESSION_OPEN',
+      actor: {
+        id: this.identity.id,
+        pubkey: keyClaim.pubkey,
+        parentPubkey: keyClaim.parentPubkey,
+        parentXpub: keyClaim.parentXpub,
+        parentSignature: keyClaim.parentSignature
+      },
+      object: {
+        initiator: message.actor.id,
+        counterparty: this.identity.id,
+        solution: message.object.challenge
+      }
+    })];
+
+    const PACKET_SESSION_START = Message.fromVector(vector).signWithKey(this.key);
+    const reply = PACKET_SESSION_START.toBuffer();
+    if (this.settings.debug) this.emit('debug', `session_start ${PACKET_SESSION_START} ${reply.toString('hex')}`);
+    this.connections[connAddress]._writeFabric(reply, socket);
+    if (this.settings.announceDocumentsOnPeerConnect) {
+      this._announceLocalDocumentsToPeer(connAddress);
+    }
+    return this;
+  }
+
+  _handleSessionOpenGenericMessage (message, origin, signerPubkeyHex) {
+    if (this.settings.debug) this.emit('debug', `Handling session open: ${JSON.stringify(message.object)}`);
+    const openPeerId = message.object.counterparty;
+    {
+      const sessionClaim = this._validateSessionKeyExchangeClaim(message, signerPubkeyHex, origin.name);
+      if (!sessionClaim) return this;
+    }
+    const existingOpenPeer = (this._state.peers && this._state.peers[openPeerId]) || null;
+    if (existingOpenPeer && existingOpenPeer.publicKey) {
+      const knownOpen = normalizePeerPubkeyHex(existingOpenPeer.publicKey);
+      if (knownOpen && knownOpen !== signerPubkeyHex) {
+        this.emit('warning', `[FABRIC:PEER] Rejecting session open for ${openPeerId}: signer key mismatch`);
+        return this;
+      }
+    }
+    this.peers[origin.name] = { id: openPeerId, name: origin.name, address: origin, publicKey: signerPubkeyHex };
+    this._upsertPeerRegistry(origin.name, {
+      id: openPeerId,
+      address: origin.name,
+      publicKey: signerPubkeyHex,
+      lastSeen: new Date().toISOString()
+    });
+    this._addressToId[origin.name] = openPeerId;
+    // Don't emit peer event here - it's already emitted in P2P_SESSION_OFFER
+    return this;
+  }
+
   _handleGenericMessage (message, origin = null, socket = null, wireMessage = null) {
     if (this.settings.debug) this.emit('debug', `Generic message:\n\tFrom: ${JSON.stringify(origin)}\n\tType: ${message.type}\n\tBody:\n\`\`\`\n${JSON.stringify(message.object, null, '  ')}\n\`\`\``);
 
@@ -1479,126 +1668,23 @@ class Peer extends Service {
         if (this.settings.serveLocalDocumentInventory) {
           const served = this._respondInventoryFromLocalDocuments(message, origin);
           const req = message.object || {};
-          if (this.settings.relayInventoryRequest && !served && wireMessage && req.offerBtc === true) {
-            this.relayFrom(origin.name, wireMessage, socket);
+          if (this.settings.relayInventoryRequest && !served && req.offerBtc === true) {
+            this._relayGenericPayload(origin && origin.name, message, socket, wireMessage);
           }
         }
         break;
       case 'INVENTORY_RESPONSE':
         // Document inventory reply (may include per-item L1 HTLC offers).
         this.emit('inventoryResponse', { message, origin, socket });
-        if (this.settings.relayInventoryResponse && wireMessage) {
-          this.relayFrom(origin.name, wireMessage, socket);
+        if (this.settings.relayInventoryResponse) {
+          this._relayGenericPayload(origin && origin.name, message, socket, wireMessage);
         }
         break;
       case 'P2P_SESSION_OFFER':
-        const peerId = message.actor.id;
-        const connAddress = origin.name;
-        if (this.settings.debug) this.emit('debug', `Handling session offer: ${JSON.stringify(message.object)}`);
-        if (this.settings.debug) this.emit('debug', `Session offer origin: ${JSON.stringify(origin)}`);
-        {
-          const sessionClaim = this._validateSessionKeyExchangeClaim(message, signerPubkeyHex, connAddress);
-          if (!sessionClaim) break;
-        }
-
-        // If we've already bound this Fabric id to a key, reject key-mismatched offers.
-        const existingPeer = (this._state.peers && this._state.peers[peerId]) || null;
-        if (existingPeer && existingPeer.publicKey) {
-          const known = normalizePeerPubkeyHex(existingPeer.publicKey);
-          if (known && known !== signerPubkeyHex) {
-            this.emit('warning', `[FABRIC:PEER] Rejecting session offer for ${peerId}: signer key mismatch`);
-            break;
-          }
-        }
-
-        // Same peer reconnecting from new port? Close old connection and replace with new.
-        // Do not tear down our outbound dial to the peer's listen address: concurrent inbound +
-        // outbound to the same Fabric id is normal (e.g. ring + star mesh); dropping the stable
-        // `host:listenPort` socket breaks address-keyed sends on the satellite.
-        const addressToId = this._addressToId || {};
-        for (const [addr, mappedId] of Object.entries(addressToId)) {
-          if (mappedId !== peerId || addr === connAddress) continue;
-          if (this._outboundDialTargets && this._outboundDialTargets.has(addr)) continue;
-          const oldSocket = this.connections[addr];
-          if (oldSocket) {
-            if (oldSocket._keepalive) clearInterval(oldSocket._keepalive);
-            delete this.connections[addr];
-            delete this.peers[addr];
-            delete this._addressToId[addr];
-            if (typeof oldSocket.destroy === 'function') oldSocket.destroy();
-          }
-          break;
-        }
-
-        this.peers[connAddress] = new Actor({
-          id: peerId,
-          name: connAddress,
-          address: connAddress,
-          connections: [ connAddress ],
-          publicKey: signerPubkeyHex
-        });
-
-        this._upsertPeerRegistry(connAddress, {
-          id: peerId,
-          address: connAddress,
-          publicKey: signerPubkeyHex,
-          lastSeen: new Date().toISOString()
-        });
-        this._addressToId[connAddress] = peerId;
-
-        // Emit peer event
-        this.emit('peer', this.peers[connAddress]);
-
-        // Send session open event
-        const keyClaim = this._buildSessionKeyExchangeClaim(this.identity.id);
-        const vector = ['P2P_SESSION_OPEN', JSON.stringify({
-          type: 'P2P_SESSION_OPEN',
-          actor: {
-            id: this.identity.id,
-            pubkey: keyClaim.pubkey,
-            parentPubkey: keyClaim.parentPubkey,
-            parentXpub: keyClaim.parentXpub,
-            parentSignature: keyClaim.parentSignature
-          },
-          object: {
-            initiator: message.actor.id,
-            counterparty: this.identity.id,
-            solution: message.object.challenge
-          }
-        })];
-
-        const PACKET_SESSION_START = Message.fromVector(vector).signWithKey(this.key);
-        const reply = PACKET_SESSION_START.toBuffer();
-        if (this.settings.debug) this.emit('debug', `session_start ${PACKET_SESSION_START} ${reply.toString('hex')}`);
-        this.connections[connAddress]._writeFabric(reply, socket);
-        if (this.settings.announceDocumentsOnPeerConnect) {
-          this._announceLocalDocumentsToPeer(connAddress);
-        }
+        this._handleSessionOfferGenericMessage(message, origin, socket, signerPubkeyHex);
         break;
       case 'P2P_SESSION_OPEN':
-        if (this.settings.debug) this.emit('debug', `Handling session open: ${JSON.stringify(message.object)}`);
-        const openPeerId = message.object.counterparty;
-        {
-          const sessionClaim = this._validateSessionKeyExchangeClaim(message, signerPubkeyHex, origin.name);
-          if (!sessionClaim) break;
-        }
-        const existingOpenPeer = (this._state.peers && this._state.peers[openPeerId]) || null;
-        if (existingOpenPeer && existingOpenPeer.publicKey) {
-          const knownOpen = normalizePeerPubkeyHex(existingOpenPeer.publicKey);
-          if (knownOpen && knownOpen !== signerPubkeyHex) {
-            this.emit('warning', `[FABRIC:PEER] Rejecting session open for ${openPeerId}: signer key mismatch`);
-            break;
-          }
-        }
-        this.peers[origin.name] = { id: openPeerId, name: origin.name, address: origin, publicKey: signerPubkeyHex };
-        this._upsertPeerRegistry(origin.name, {
-          id: openPeerId,
-          address: origin.name,
-          publicKey: signerPubkeyHex,
-          lastSeen: new Date().toISOString()
-        });
-        this._addressToId[origin.name] = openPeerId;
-        // Don't emit peer event here - it's already emitted in P2P_SESSION_OFFER
+        this._handleSessionOpenGenericMessage(message, origin, signerPubkeyHex);
         break;
       case 'P2P_CHAT_MESSAGE':
         this.emit('chat', message);
@@ -1628,7 +1714,7 @@ class Peer extends Service {
         const relayBody = Object.assign({}, message, {
           object: Object.assign({}, obj, { gossipHop: hop - 1 })
         });
-        const gossipRelay = Message.fromVector(['GENERIC', JSON.stringify(relayBody)]).signWithKey(this.key);
+        const gossipRelay = Message.fromVector(['P2P_PEER_GOSSIP', JSON.stringify(relayBody.object || {})]).signWithKey(this.key);
         this.relayFrom(origin.name, gossipRelay);
         break;
       }
@@ -1657,24 +1743,18 @@ class Peer extends Service {
         const relayBody = Object.assign({}, message, {
           object: Object.assign({}, obj, { peeringHop: hop - 1 })
         });
-        const offerRelay = Message.fromVector(['GENERIC', JSON.stringify(relayBody)]).signWithKey(this.key);
+        const offerRelay = Message.fromVector(['P2P_PEERING_OFFER', JSON.stringify(relayBody.object || {})]).signWithKey(this.key);
         this.relayFrom(origin.name, offerRelay);
         break;
       }
       case 'P2P_PING':
         const now = (new Date()).toISOString();
-        const P2P_PONG = Message.fromVector(['GENERIC', JSON.stringify({
-          actor: {
-            id: this.identity.id
-          },
-          created: now,
-          type: 'P2P_PONG',
-          object: {
-            created: now
-          }
+        const P2P_PONG = Message.fromVector(['P2P_PONG', JSON.stringify({
+          created: now
         })]).signWithKey(this.key);
-
-        this.connections[origin.name]._writeFabric(P2P_PONG.toBuffer());
+        if (this.connections[origin.name] && this.connections[origin.name]._writeFabric) {
+          this.connections[origin.name]._writeFabric(P2P_PONG.toBuffer());
+        }
         break;
       case 'P2P_PONG': {
         const conn = origin && origin.name ? this.connections[origin.name] : null;
@@ -1905,7 +1985,7 @@ class Peer extends Service {
       type: 'INVENTORY_RESPONSE',
       object: { items }
     };
-    const m = Message.fromVector(['GenericMessage', JSON.stringify(payload)]);
+    const m = Message.fromVector(['P2P_INVENTORY_RESPONSE', JSON.stringify(payload.object || {})]);
     m.signWithKey(this.key);
     conn._writeFabric(m.toBuffer());
     return true;
@@ -1931,7 +2011,7 @@ class Peer extends Service {
         body: Buffer.from(bodyStr, 'utf8').toString('base64')
       }
     };
-    const reply = Message.fromVector(['GenericMessage', JSON.stringify(filePayload)]);
+    const reply = Message.fromVector(['P2P_FILE_SEND', JSON.stringify(filePayload.object || {})]);
     reply.signWithKey(this.key);
     conn._writeFabric(reply.toBuffer());
     return true;
@@ -2105,15 +2185,8 @@ class Peer extends Service {
     socket._fabricPingOutstanding = 0;
     socket._keepalive = setInterval(() => {
       const now = (new Date()).toISOString();
-      const P2P_PING = Message.fromVector(['GENERIC', JSON.stringify({
-        actor: {
-          id: this.identity.id
-        },
-        created: now,
-        type: 'P2P_PING',
-        object: {
-          created: now
-        }
+      const P2P_PING = Message.fromVector(['P2P_PING', JSON.stringify({
+        created: now
       })]).signWithKey(this.key);
 
       // At most one unanswered PING per connection so burst P2P_PONG cannot inflate registry score

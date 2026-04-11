@@ -710,5 +710,48 @@ describe('@fabric/core/types/service', function () {
       await service.stop();
       assert.strictEqual(out, null);
     });
+
+    it('exposes default opcode registry including Bitcoin and Fabric entries', function () {
+      const service = new Service(FAST_SERVICE);
+      const opcodes = service.listOpcodes();
+      assert.ok(Array.isArray(opcodes) && opcodes.length > 0);
+      assert.ok(opcodes.some((x) => x.name === 'OP_SHA256' && x.family === 'bitcoin'));
+      assert.ok(opcodes.some((x) => x.name === 'P2P_FLUSH_CHAIN' && x.family === 'fabric'));
+    });
+
+    it('defineOpcodeContract parses newline-delimited contracts for Hub UI', function () {
+      const service = new Service(FAST_SERVICE);
+      const authorPubkey = service.key.pubkey;
+      const contract = service.defineOpcodeContract('ExampleContract', 'OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN', {
+        author: 'id:example-author'
+        ,
+        authorPubkey
+      });
+      assert.deepStrictEqual(contract.lines, ['OP_DUP', 'OP_HASH160', 'P2P_FLUSH_CHAIN']);
+      assert.strictEqual(contract.author, 'id:example-author');
+      assert.strictEqual(contract.policy.threshold, 1);
+      assert.strictEqual(contract.policy.participants, 1);
+      assert.strictEqual(contract.policy.pubkeys[0].length, 64);
+      assert.ok(service.definitions.ExampleContract);
+    });
+
+    it('defineOpcodeContract rejects unknown opcodes', function () {
+      const service = new Service(FAST_SERVICE);
+      assert.throws(() => {
+        service.defineOpcodeContract('BadContract', 'OP_DUP\nOP_NOT_A_REAL_OPCODE');
+      }, /Unknown opcodes/);
+    });
+
+    it('defineOpcodeContract enforces taproot 1-of-1 policy bound to author pubkey', function () {
+      const service = new Service(FAST_SERVICE);
+      const authorPubkey = service.key.pubkey;
+      assert.throws(() => {
+        service.defineOpcodeContract('BadPolicyContract', 'OP_DUP', {
+          author: 'id:example-author',
+          authorPubkey,
+          policy: { pubkeys: [authorPubkey, authorPubkey], threshold: 2, participants: 2 }
+        });
+      }, /policy pubkeys must be 1-of-1/);
+    });
   });
 });

@@ -18,8 +18,9 @@ const Fabric = require('../');
 // We're going to contain our application withing a `main` function, defined
 // here using the `async` prefix.
 async function main() {
-  let fabric = new Fabric();
-  console.log('[EXAMPLE]', 'Fabric:', fabric);
+  const fabric = new Fabric();
+  console.log('[EXAMPLE:FABRIC]', 'id:', fabric.id);
+  console.log('[EXAMPLE:FABRIC]', 'clock:', fabric.clock);
 }
 
 // Finally, let's run our program.

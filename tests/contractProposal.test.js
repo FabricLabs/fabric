@@ -36,7 +36,7 @@ describe('functions/contractProposal', function () {
 
   it('createContractProposalMessage sets CONTRACT_PROPOSAL wire type', function () {
     const key = new Key({});
-    const inner = Message.fromVector(['GenericMessage', JSON.stringify({ type: 'X', object: {} })]);
+    const inner = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify({ type: 'X', object: {} })]);
     inner.signWithKey(key);
     const msg = createContractProposalMessage(key, { messages: [inner], contractId: 'c1' });
     assert.strictEqual(msg.wireType, 'CONTRACT_PROPOSAL');
@@ -46,7 +46,7 @@ describe('functions/contractProposal', function () {
 
   it('round-trip buffer preserves wire type and verifyContractProposalPayload passes', function () {
     const key = new Key({});
-    const inner = Message.fromVector(['GenericMessage', JSON.stringify({ type: 'Y', object: { n: 1 } })]);
+    const inner = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify({ type: 'Y', object: { n: 1 } })]);
     inner.signWithKey(key);
     const msg = createContractProposalMessage(key, { messages: [inner], contractId: 'c2' });
     const again = Message.fromBuffer(msg.toBuffer());

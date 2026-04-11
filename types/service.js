@@ -26,6 +26,12 @@ const Key = require('./key');
 const Message = require('./message');
 const Resource = require('./resource');
 const Store = require('./store');
+const {
+  createDefaultOpcodeRegistry,
+  defineOpcode: defineOpcodeEntry,
+  resolveOpcodeContract,
+  normalizePubkeyHex
+} = require('../functions/opcodeRegistry');
 
 /**
  * @classdesc Long-lived application surface extending {@link Actor}. Integrates external systems and the Fabric
@@ -97,6 +103,7 @@ class Service extends Actor {
     this.resources = {};
     this.services = {};
     this.methods = {};
+    this.opcodes = createDefaultOpcodeRegistry();
     this.clients = {};
     this.targets = [];
     this.history = [];
@@ -461,6 +468,9 @@ class Service extends Actor {
   }
 
   define (name, value) {
+    if (String(name || '').startsWith('OP_')) {
+      this.defineOpcode(name, Object.assign({ family: 'bitcoin' }, value || {}));
+    }
     this.definitions[name] = Object.assign({
       data: {},
       handler: function handler (_msg) {
@@ -545,6 +555,99 @@ class Service extends Actor {
     this.resources[name] = new Resource(resource);
     this.emit('resource', this.resources[name]);
     return this.resources[name];
+  }
+
+  /**
+   * Register a single opcode entry in the service registry.
+   * @param {string} name Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`)
+   * @param {Object} [definition]
+   * @returns {Object}
+   */
+  defineOpcode (name, definition = {}) {
+    return defineOpcodeEntry(this.opcodes, name, definition);
+  }
+
+  /**
+   * Register Bitcoin-style primitive opcode metadata.
+   * @param {string} name
+   * @param {Object} [definition]
+   * @returns {Object}
+   */
+  defineBitcoinOpcode (name, definition = {}) {
+    return this.defineOpcode(name, Object.assign({}, definition, { family: 'bitcoin' }));
+  }
+
+  /**
+   * Register Fabric opcode metadata.
+   * @param {string} name
+   * @param {Object} [definition]
+   * @returns {Object}
+   */
+  defineFabricOpcode (name, definition = {}) {
+    return this.defineOpcode(name, Object.assign({}, definition, { family: 'fabric' }));
+  }
+
+  /**
+   * Register a newline-delimited opcode contract.
+   * Contract body example:
+   * `OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+   * @param {string} name Contract label
+   * @param {string} body Newline-delimited opcode list
+   * @param {Object} [meta]
+   * @returns {Object}
+   */
+  defineOpcodeContract (name, body, meta = {}) {
+    const resolved = resolveOpcodeContract(this.opcodes, body);
+    if (resolved.unknown.length) {
+      throw new Error(`Unknown opcodes in contract "${name}": ${resolved.unknown.join(', ')}`);
+    }
+
+    const author = (meta && meta.author != null) ? String(meta.author) : null;
+    const authorPubkey = normalizePubkeyHex(meta.authorPubkey || meta.pubkey || '');
+    if (!author) throw new Error(`Contract "${name}" must include author.`);
+    if (!authorPubkey) throw new Error(`Contract "${name}" must include a valid author pubkey.`);
+
+    const proposedPolicy = (meta && typeof meta.policy === 'object' && meta.policy) ? meta.policy : {};
+    const policyPubkeys = Array.isArray(proposedPolicy.pubkeys)
+      ? proposedPolicy.pubkeys.map((x) => normalizePubkeyHex(x)).filter(Boolean)
+      : [];
+    if (policyPubkeys.length && (policyPubkeys.length !== 1 || policyPubkeys[0] !== authorPubkey)) {
+      throw new Error(`Contract "${name}" policy pubkeys must be 1-of-1 and match author pubkey.`);
+    }
+
+    const policy = Object.assign({}, proposedPolicy, {
+      type: 'taproot-multisig',
+      threshold: 1,
+      participants: 1,
+      pubkeys: [authorPubkey]
+    });
+
+    const contract = Object.assign({
+      name,
+      body: String(body || ''),
+      lines: resolved.lines,
+      opcodes: resolved.resolved.map((entry) => entry.name),
+      author,
+      authorPubkey,
+      policy
+    }, meta);
+
+    this.define(name, {
+      data: contract,
+      handler: function handler (msg) {
+        return Object.assign({}, msg, { contract });
+      }
+    });
+
+    return contract;
+  }
+
+  /**
+   * Snapshot opcode registry for UI / API use.
+   * @returns {Object[]}
+   */
+  listOpcodes () {
+    return Object.values(this.opcodes || {}).map((entry) => Object.assign({}, entry));
   }
 
   _handleTrustedDebug (message) {

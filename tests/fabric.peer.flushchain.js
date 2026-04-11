@@ -241,14 +241,14 @@ describe('Peer P2P_FLUSH_CHAIN', function () {
     assert.ok(warns.some((w) => w.includes('CHAIN_SYNC_REQUEST parse failed')));
   });
 
-  it('_handleFabricMessage drops GenericMessage scalar bodies (no crash)', function () {
+  it('_handleFabricMessage drops P2P_BASE_MESSAGE scalar bodies (no crash)', function () {
     const peer = createPeer();
     peers.push(peer);
     let seenGeneric = false;
     const warns = [];
     peer._handleGenericMessage = function () { seenGeneric = true; };
     peer.on('warning', (w) => warns.push(String(w)));
-    const msg = Message.fromVector(['GenericMessage', 'null']);
+    const msg = Message.fromVector(['P2P_BASE_MESSAGE', 'null']);
     msg.signWithKey(peer.key);
     peer._handleFabricMessage(msg.toBuffer(), { name: '127.0.0.1:10c' }, null);
     assert.strictEqual(seenGeneric, false);

@@ -359,7 +359,7 @@ class Remote extends Actor {
   }
 
   async send (message) {
-    const msg = Message.fromVector(['GenericMessage', JSON.stringify(message)]);
+    const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(message)]);
     const raw = msg.toRaw();
     const actor = new Actor({ content: raw.toString('hex') });
     this.socket.send(raw);

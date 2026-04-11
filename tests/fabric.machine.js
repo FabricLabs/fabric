@@ -77,5 +77,16 @@ describe('@fabric/core/types/machine', function () {
       assert.ok(machine.stack.length >= 1);
       assert.strictEqual(machine.stack[machine.stack.length - 1], 4);
     });
+
+    it('compileOpcodeContract accepts newline-delimited opcode bodies', function () {
+      const machine = new Machine(false);
+      const lines = machine.compileOpcodeContract('OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN');
+      assert.deepStrictEqual(lines, ['OP_DUP', 'OP_HASH160', 'P2P_FLUSH_CHAIN']);
+    });
+
+    it('compileOpcodeContract rejects unknown opcode symbols', function () {
+      const machine = new Machine(false);
+      assert.throws(() => machine.compileOpcodeContract('OP_TRUE\nOP_NOT_REAL'), /Unknown opcodes/);
+    });
   });
 });

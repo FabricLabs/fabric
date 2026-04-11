@@ -83,6 +83,29 @@ function cookiePathUnderDatadirBase (baseAbs, parts) {
 }
 
 /**
+ * Constraints hint for cookie / store probe paths (e.g. pruned mainnet).
+ * @typedef {Object} BitcoinCookieProbeConstraints
+ * @property {Object} [storage]
+ * @property {number} [storage.size]
+ */
+
+/**
+ * Options for {@link Bitcoin.buildLocalCookieProbePaths}.
+ * @typedef {Object} BitcoinLocalCookieProbeOpts
+ * @property {string} [network]
+ * @property {string} [envCookieFile]
+ * @property {string} [settingsDatadir]
+ * @property {BitcoinCookieProbeConstraints} [constraints]
+ */
+
+/**
+ * Options for {@link Bitcoin.buildRegtestCookiePathList}.
+ * @typedef {Object} BitcoinRegtestCookieOpts
+ * @property {string} [envCookieFile]
+ * @property {string} [settingsDatadir]
+ */
+
+/**
  * Manages interaction with the Bitcoin network.
  * @augments Service
  */
@@ -227,7 +250,7 @@ class Bitcoin extends Service {
   /**
    * Typical `stores/…` paths under the project for the network (for cookie discovery before node spawn).
    * @param {string} network
-   * @param {{ storage?: { size?: number } }} [constraints]
+   * @param {BitcoinCookieProbeConstraints} [constraints]
    * @returns {string[]}
    */
   static defaultStoresRelativeDirsForProbe (network, constraints) {
@@ -256,7 +279,7 @@ class Bitcoin extends Service {
 
   /**
    * Ordered local cookie paths to probe for RPC (env override, project stores, Electron mirror, ~/.bitcoin, optional settings datadir).
-   * @param {{ network?: string, envCookieFile?: string|undefined, settingsDatadir?: string|undefined, constraints?: { storage?: { size?: number } } }} opts
+   * @param {BitcoinLocalCookieProbeOpts} opts
    * @returns {string[]}
    */
   static buildLocalCookieProbePaths (opts = {}) {
@@ -347,7 +370,7 @@ class Bitcoin extends Service {
 
   /**
    * @deprecated Use {@link #buildLocalCookieProbePaths} with `network: 'regtest'`.
-   * @param {{ envCookieFile?: string|undefined, settingsDatadir?: string|undefined }} opts
+   * @param {BitcoinRegtestCookieOpts} opts
    * @returns {string[]}
    */
   static buildRegtestCookiePathList (opts = {}) {

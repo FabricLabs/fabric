@@ -214,8 +214,39 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 ## Constants
 
 <dl>
+<dt><a href="#SAT_ADJ_EPS">SAT_ADJ_EPS</a></dt>
+<dd><p>Max |sats − round(sats)| allowed when scaling BTC → satoshis (reject fractional satoshis; allow float noise).</p>
+</dd>
+<dt><a href="#BITCOIN_COOKIE_PATH_MAX_LEN">BITCOIN_COOKIE_PATH_MAX_LEN</a></dt>
+<dd><p>Reject absurd paths from env/settings before touching the filesystem (Codacy/Semgrep-friendly bounds).</p>
+</dd>
+<dt><a href="#BITCOIND_CHAIN_FOLDER_NAMES">BITCOIND_CHAIN_FOLDER_NAMES</a></dt>
+<dd><p>Directory names Bitcoin Core uses under {@code -datadir} (used to block traversal in <code>.cookie</code> paths).</p>
+</dd>
 <dt><del><a href="#Text">Text</a></del></dt>
 <dd></dd>
+</dl>
+
+## Functions
+
+<dl>
+<dt><a href="#cookiePathUnderDatadirBase">cookiePathUnderDatadirBase(baseAbs, parts)</a> ⇒ <code>string</code> | <code>null</code></dt>
+<dd><p>Append fixed path components under a resolved base; return null if the result leaves {@code baseAbs}.</p>
+</dd>
+</dl>
+
+## Typedefs
+
+<dl>
+<dt><a href="#BitcoinCookieProbeConstraints">BitcoinCookieProbeConstraints</a> : <code>Object</code></dt>
+<dd><p>Constraints hint for cookie / store probe paths (e.g. pruned mainnet).</p>
+</dd>
+<dt><a href="#BitcoinLocalCookieProbeOpts">BitcoinLocalCookieProbeOpts</a> : <code>Object</code></dt>
+<dd><p>Options for <a href="#Bitcoin.buildLocalCookieProbePaths">buildLocalCookieProbePaths</a>.</p>
+</dd>
+<dt><a href="#BitcoinRegtestCookieOpts">BitcoinRegtestCookieOpts</a> : <code>Object</code></dt>
+<dd><p>Options for <a href="#Bitcoin.buildRegtestCookiePathList">buildRegtestCookiePathList</a>.</p>
+</dd>
 </dl>
 
 <a name="Actor"></a>
@@ -684,6 +715,11 @@ Get a number of random bytes from the runtime environment.
     * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
     * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
     * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
+    * [.defineOpcode(name, [definition])](#Service+defineOpcode) ⇒ <code>Object</code>
+    * [.defineBitcoinOpcode(name, [definition])](#Service+defineBitcoinOpcode) ⇒ <code>Object</code>
+    * [.defineFabricOpcode(name, [definition])](#Service+defineFabricOpcode) ⇒ <code>Object</code>
+    * [.defineOpcodeContract(name, body, [meta])](#Service+defineOpcodeContract) ⇒ <code>Object</code>
+    * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
     * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
     * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
     * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
@@ -814,6 +850,63 @@ Bind a method to an event, with current state as the immutable context.
 | event | <code>String</code> | Name of the event upon which to execute `method` as a function. |
 | method | <code>function</code> | Function to execute when named [Event](Event) `event` is encountered. |
 
+<a name="Service+defineOpcode"></a>
+
+### bond.defineOpcode(name, [definition]) ⇒ <code>Object</code>
+Register a single opcode entry in the service registry.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| [definition] | <code>Object</code> |  |
+
+<a name="Service+defineBitcoinOpcode"></a>
+
+### bond.defineBitcoinOpcode(name, [definition]) ⇒ <code>Object</code>
+Register Bitcoin-style primitive opcode metadata.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+
+| Param | Type |
+| --- | --- |
+| name | <code>string</code> | 
+| [definition] | <code>Object</code> | 
+
+<a name="Service+defineFabricOpcode"></a>
+
+### bond.defineFabricOpcode(name, [definition]) ⇒ <code>Object</code>
+Register Fabric opcode metadata.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+
+| Param | Type |
+| --- | --- |
+| name | <code>string</code> | 
+| [definition] | <code>Object</code> | 
+
+<a name="Service+defineOpcodeContract"></a>
+
+### bond.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
+Register a newline-delimited opcode contract.
+Contract body example:
+`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>string</code> | Contract label |
+| body | <code>string</code> | Newline-delimited opcode list |
+| [meta] | <code>Object</code> |  |
+
+<a name="Service+listOpcodes"></a>
+
+### bond.listOpcodes() ⇒ <code>Array.&lt;Object&gt;</code>
+Snapshot opcode registry for UI / API use.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
 <a name="Service+route"></a>
 
 ### bond.route(msg) ⇒ <code>Promise</code>
@@ -1730,6 +1823,11 @@ Loads [State](#State) into memory.
     * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
     * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
     * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
+    * [.defineOpcode(name, [definition])](#Service+defineOpcode) ⇒ <code>Object</code>
+    * [.defineBitcoinOpcode(name, [definition])](#Service+defineBitcoinOpcode) ⇒ <code>Object</code>
+    * [.defineFabricOpcode(name, [definition])](#Service+defineFabricOpcode) ⇒ <code>Object</code>
+    * [.defineOpcodeContract(name, body, [meta])](#Service+defineOpcodeContract) ⇒ <code>Object</code>
+    * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
     * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
     * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
     * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
@@ -1862,6 +1960,63 @@ Bind a method to an event, with current state as the immutable context.
 | event | <code>String</code> | Name of the event upon which to execute `method` as a function. |
 | method | <code>function</code> | Function to execute when named [Event](Event) `event` is encountered. |
 
+<a name="Service+defineOpcode"></a>
+
+### contract.defineOpcode(name, [definition]) ⇒ <code>Object</code>
+Register a single opcode entry in the service registry.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| [definition] | <code>Object</code> |  |
+
+<a name="Service+defineBitcoinOpcode"></a>
+
+### contract.defineBitcoinOpcode(name, [definition]) ⇒ <code>Object</code>
+Register Bitcoin-style primitive opcode metadata.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| name | <code>string</code> | 
+| [definition] | <code>Object</code> | 
+
+<a name="Service+defineFabricOpcode"></a>
+
+### contract.defineFabricOpcode(name, [definition]) ⇒ <code>Object</code>
+Register Fabric opcode metadata.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| name | <code>string</code> | 
+| [definition] | <code>Object</code> | 
+
+<a name="Service+defineOpcodeContract"></a>
+
+### contract.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
+Register a newline-delimited opcode contract.
+Contract body example:
+`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>string</code> | Contract label |
+| body | <code>string</code> | Newline-delimited opcode list |
+| [meta] | <code>Object</code> |  |
+
+<a name="Service+listOpcodes"></a>
+
+### contract.listOpcodes() ⇒ <code>Array.&lt;Object&gt;</code>
+Snapshot opcode registry for UI / API use.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
 <a name="Service+route"></a>
 
 ### contract.route(msg) ⇒ <code>Promise</code>
@@ -2179,6 +2334,11 @@ types for experiments and apps. Prefer importing <strong>leaf</strong> types in 
         * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
         * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
         * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
+        * [.defineOpcode(name, [definition])](#Service+defineOpcode) ⇒ <code>Object</code>
+        * [.defineBitcoinOpcode(name, [definition])](#Service+defineBitcoinOpcode) ⇒ <code>Object</code>
+        * [.defineFabricOpcode(name, [definition])](#Service+defineFabricOpcode) ⇒ <code>Object</code>
+        * [.defineOpcodeContract(name, body, [meta])](#Service+defineOpcodeContract) ⇒ <code>Object</code>
+        * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
         * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
         * [.start()](#Service+start)
         * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
@@ -2353,6 +2513,63 @@ Bind a method to an event, with current state as the immutable context.
 | event | <code>String</code> | Name of the event upon which to execute `method` as a function. |
 | method | <code>function</code> | Function to execute when named [Event](Event) `event` is encountered. |
 
+<a name="Service+defineOpcode"></a>
+
+### fabric.defineOpcode(name, [definition]) ⇒ <code>Object</code>
+Register a single opcode entry in the service registry.
+
+**Kind**: instance method of [<code>Fabric</code>](#Fabric)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| [definition] | <code>Object</code> |  |
+
+<a name="Service+defineBitcoinOpcode"></a>
+
+### fabric.defineBitcoinOpcode(name, [definition]) ⇒ <code>Object</code>
+Register Bitcoin-style primitive opcode metadata.
+
+**Kind**: instance method of [<code>Fabric</code>](#Fabric)  
+
+| Param | Type |
+| --- | --- |
+| name | <code>string</code> | 
+| [definition] | <code>Object</code> | 
+
+<a name="Service+defineFabricOpcode"></a>
+
+### fabric.defineFabricOpcode(name, [definition]) ⇒ <code>Object</code>
+Register Fabric opcode metadata.
+
+**Kind**: instance method of [<code>Fabric</code>](#Fabric)  
+
+| Param | Type |
+| --- | --- |
+| name | <code>string</code> | 
+| [definition] | <code>Object</code> | 
+
+<a name="Service+defineOpcodeContract"></a>
+
+### fabric.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
+Register a newline-delimited opcode contract.
+Contract body example:
+`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+
+**Kind**: instance method of [<code>Fabric</code>](#Fabric)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>string</code> | Contract label |
+| body | <code>string</code> | Newline-delimited opcode list |
+| [meta] | <code>Object</code> |  |
+
+<a name="Service+listOpcodes"></a>
+
+### fabric.listOpcodes() ⇒ <code>Array.&lt;Object&gt;</code>
+Snapshot opcode registry for UI / API use.
+
+**Kind**: instance method of [<code>Fabric</code>](#Fabric)  
 <a name="Service+route"></a>
 
 ### fabric.route(msg) ⇒ <code>Promise</code>
@@ -2612,6 +2829,11 @@ EventEmitter-only instruction handle; use [State](#State) / [Machine](#Machine) 
         * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
         * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
         * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
+        * [.defineOpcode(name, [definition])](#Service+defineOpcode) ⇒ <code>Object</code>
+        * [.defineBitcoinOpcode(name, [definition])](#Service+defineBitcoinOpcode) ⇒ <code>Object</code>
+        * [.defineFabricOpcode(name, [definition])](#Service+defineFabricOpcode) ⇒ <code>Object</code>
+        * [.defineOpcodeContract(name, body, [meta])](#Service+defineOpcodeContract) ⇒ <code>Object</code>
+        * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
         * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
         * [.start()](#Service+start)
         * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
@@ -2786,6 +3008,63 @@ Bind a method to an event, with current state as the immutable context.
 | event | <code>String</code> | Name of the event upon which to execute `method` as a function. |
 | method | <code>function</code> | Function to execute when named [Event](Event) `event` is encountered. |
 
+<a name="Service+defineOpcode"></a>
+
+### fabric.defineOpcode(name, [definition]) ⇒ <code>Object</code>
+Register a single opcode entry in the service registry.
+
+**Kind**: instance method of [<code>Fabric</code>](#Fabric)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| [definition] | <code>Object</code> |  |
+
+<a name="Service+defineBitcoinOpcode"></a>
+
+### fabric.defineBitcoinOpcode(name, [definition]) ⇒ <code>Object</code>
+Register Bitcoin-style primitive opcode metadata.
+
+**Kind**: instance method of [<code>Fabric</code>](#Fabric)  
+
+| Param | Type |
+| --- | --- |
+| name | <code>string</code> | 
+| [definition] | <code>Object</code> | 
+
+<a name="Service+defineFabricOpcode"></a>
+
+### fabric.defineFabricOpcode(name, [definition]) ⇒ <code>Object</code>
+Register Fabric opcode metadata.
+
+**Kind**: instance method of [<code>Fabric</code>](#Fabric)  
+
+| Param | Type |
+| --- | --- |
+| name | <code>string</code> | 
+| [definition] | <code>Object</code> | 
+
+<a name="Service+defineOpcodeContract"></a>
+
+### fabric.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
+Register a newline-delimited opcode contract.
+Contract body example:
+`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+
+**Kind**: instance method of [<code>Fabric</code>](#Fabric)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>string</code> | Contract label |
+| body | <code>string</code> | Newline-delimited opcode list |
+| [meta] | <code>Object</code> |  |
+
+<a name="Service+listOpcodes"></a>
+
+### fabric.listOpcodes() ⇒ <code>Array.&lt;Object&gt;</code>
+Snapshot opcode registry for UI / API use.
+
+**Kind**: instance method of [<code>Fabric</code>](#Fabric)  
 <a name="Service+route"></a>
 
 ### fabric.route(msg) ⇒ <code>Promise</code>
@@ -5482,6 +5761,7 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
 
 * [Peer](#Peer) ⇐ [<code>Service</code>](#Service)
     * [new Peer([config])](#new_Peer_new)
+    * [._inboundNoiseStaticPubkeyByAddress](#Peer+_inboundNoiseStaticPubkeyByAddress)
     * [.messages](#Peer+messages)
     * [._gossipPayloadSeen](#Peer+_gossipPayloadSeen)
     * [._gossipRelayByOrigin](#Peer+_gossipRelayByOrigin)
@@ -5502,10 +5782,12 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [.broadcast(message)](#Peer+broadcast)
     * [.relayFromTrustedPeers(origin, message, [minScoreExclusive])](#Peer+relayFromTrustedPeers)
     * [._registryScoreForConnectionAddress(connAddress)](#Peer+_registryScoreForConnectionAddress) ⇒ <code>number</code>
+    * [._registryScoreForFlushChainSender(connAddress, senderPubkeyHex)](#Peer+_registryScoreForFlushChainSender) ⇒ <code>number</code>
     * [.sendFlushChainToTrustedPeers(object)](#Peer+sendFlushChainToTrustedPeers) ⇒ <code>number</code>
     * [._connect(target)](#Peer+_connect)
     * [._loadPeerRegistry()](#Peer+_loadPeerRegistry) ⇒ <code>Promise.&lt;void&gt;</code>
     * [._savePeerRegistry()](#Peer+_savePeerRegistry)
+    * [._flushChainSenderPubkeyHex()](#Peer+_flushChainSenderPubkeyHex)
     * [._upsertPeerRegistry(address, [updates])](#Peer+_upsertPeerRegistry)
     * [._fillPeerSlots()](#Peer+_fillPeerSlots) ⇒ [<code>Peer</code>](#Peer)
     * [._handleFabricMessage(buffer)](#Peer+_handleFabricMessage) ⇒ [<code>Peer</code>](#Peer)
@@ -5531,6 +5813,11 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
     * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
     * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
+    * [.defineOpcode(name, [definition])](#Service+defineOpcode) ⇒ <code>Object</code>
+    * [.defineBitcoinOpcode(name, [definition])](#Service+defineBitcoinOpcode) ⇒ <code>Object</code>
+    * [.defineFabricOpcode(name, [definition])](#Service+defineFabricOpcode) ⇒ <code>Object</code>
+    * [.defineOpcodeContract(name, body, [meta])](#Service+defineOpcodeContract) ⇒ <code>Object</code>
+    * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
     * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
     * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
     * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
@@ -5567,6 +5854,12 @@ Create an instance of [Peer](#Peer).
 | [config.listenPortAttempts] | <code>Number</code> | <code>20</code> | When the listen port is in use (`EADDRINUSE`),   try the next port up to this many times (same host). |
 | [config.peers] | <code>Array</code> | <code>[]</code> | List of initial peers. |
 
+<a name="Peer+_inboundNoiseStaticPubkeyByAddress"></a>
+
+### peer.\_inboundNoiseStaticPubkeyByAddress
+Inbound address -> NOISE static pubkey hex (FLUSH_CHAIN allowlist only; never for AMP verify).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+messages"></a>
 
 ### peer.messages
@@ -5751,12 +6044,33 @@ Best-effort registry score for a live connection key (`host:port`), using mapped
 | --- | --- |
 | connAddress | <code>string</code> | 
 
+<a name="Peer+_registryScoreForFlushChainSender"></a>
+
+### peer.\_registryScoreForFlushChainSender(connAddress, senderPubkeyHex) ⇒ <code>number</code>
+FLUSH_CHAIN trust score bound to verified sender key.
+
+Prevents trusting attacker-controlled `P2P_SESSION_OFFER.actor.id` aliases
+by refusing `_addressToId`-mapped scores unless that mapped registry entry
+is explicitly bound to the same verified sender pubkey.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| connAddress | <code>string</code> |  |
+| senderPubkeyHex | <code>string</code> | verified sender pubkey hex (from NOISE/static or trusted peer record) |
+
 <a name="Peer+sendFlushChainToTrustedPeers"></a>
 
 ### peer.sendFlushChainToTrustedPeers(object) ⇒ <code>number</code>
 Sign and send `P2P_FLUSH_CHAIN` to all connected peers with registry score &gt; threshold.
 Body JSON: `{ snapshotBlockHash, network?, label? }`.
-Peers only act on inbound flush if the sender's pubkey is listed in their [Peer#settings.flushChainAuthorizedPubkeys](Peer#settings.flushChainAuthorizedPubkeys).
+
+**Receivers** (see `P2P_FLUSH_CHAIN` handler) require **both**:
+1. Sender pubkey in [Peer#settings.flushChainAuthorizedPubkeys](Peer#settings.flushChainAuthorizedPubkeys) (non-empty allowlist), and
+2. Registry score above [Peer#settings.flushChainMinTrustedScore](Peer#settings.flushChainMinTrustedScore).
+Registry score bumps on `P2P_PONG` only when that pong answers an outbound ping on the same
+connection (`_fabricPingOutstanding`), so unsolicited pongs cannot inflate trust alone.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: <code>number</code> - number of sockets written  
@@ -5787,6 +6101,12 @@ Uses classic-level in Node, browser-level (IndexedDB) in browser.
 
 ### peer.\_savePeerRegistry()
 Persist peer registry to LevelDB (debounced).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+<a name="Peer+_flushChainSenderPubkeyHex"></a>
+
+### peer.\_flushChainSenderPubkeyHex()
+FLUSH_CHAIN sender hex: [Peer#peers](Peer#peers)[addr].publicKey if set, else inbound NOISE static (allowlist must match).
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 <a name="Peer+_upsertPeerRegistry"></a>
@@ -6062,6 +6382,63 @@ Bind a method to an event, with current state as the immutable context.
 | event | <code>String</code> | Name of the event upon which to execute `method` as a function. |
 | method | <code>function</code> | Function to execute when named [Event](Event) `event` is encountered. |
 
+<a name="Service+defineOpcode"></a>
+
+### peer.defineOpcode(name, [definition]) ⇒ <code>Object</code>
+Register a single opcode entry in the service registry.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| [definition] | <code>Object</code> |  |
+
+<a name="Service+defineBitcoinOpcode"></a>
+
+### peer.defineBitcoinOpcode(name, [definition]) ⇒ <code>Object</code>
+Register Bitcoin-style primitive opcode metadata.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| name | <code>string</code> | 
+| [definition] | <code>Object</code> | 
+
+<a name="Service+defineFabricOpcode"></a>
+
+### peer.defineFabricOpcode(name, [definition]) ⇒ <code>Object</code>
+Register Fabric opcode metadata.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| name | <code>string</code> | 
+| [definition] | <code>Object</code> | 
+
+<a name="Service+defineOpcodeContract"></a>
+
+### peer.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
+Register a newline-delimited opcode contract.
+Contract body example:
+`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>string</code> | Contract label |
+| body | <code>string</code> | Newline-delimited opcode list |
+| [meta] | <code>Object</code> |  |
+
+<a name="Service+listOpcodes"></a>
+
+### peer.listOpcodes() ⇒ <code>Array.&lt;Object&gt;</code>
+Snapshot opcode registry for UI / API use.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
 <a name="Service+route"></a>
 
 ### peer.route(msg) ⇒ <code>Promise</code>
@@ -6277,6 +6654,7 @@ Parse an Object into a corresponding Fabric state.
 
 * [Peer](#Peer)
     * [new Peer([config])](#new_Peer_new)
+    * [._inboundNoiseStaticPubkeyByAddress](#Peer+_inboundNoiseStaticPubkeyByAddress)
     * [.messages](#Peer+messages)
     * [._gossipPayloadSeen](#Peer+_gossipPayloadSeen)
     * [._gossipRelayByOrigin](#Peer+_gossipRelayByOrigin)
@@ -6297,10 +6675,12 @@ Parse an Object into a corresponding Fabric state.
     * [.broadcast(message)](#Peer+broadcast)
     * [.relayFromTrustedPeers(origin, message, [minScoreExclusive])](#Peer+relayFromTrustedPeers)
     * [._registryScoreForConnectionAddress(connAddress)](#Peer+_registryScoreForConnectionAddress) ⇒ <code>number</code>
+    * [._registryScoreForFlushChainSender(connAddress, senderPubkeyHex)](#Peer+_registryScoreForFlushChainSender) ⇒ <code>number</code>
     * [.sendFlushChainToTrustedPeers(object)](#Peer+sendFlushChainToTrustedPeers) ⇒ <code>number</code>
     * [._connect(target)](#Peer+_connect)
     * [._loadPeerRegistry()](#Peer+_loadPeerRegistry) ⇒ <code>Promise.&lt;void&gt;</code>
     * [._savePeerRegistry()](#Peer+_savePeerRegistry)
+    * [._flushChainSenderPubkeyHex()](#Peer+_flushChainSenderPubkeyHex)
     * [._upsertPeerRegistry(address, [updates])](#Peer+_upsertPeerRegistry)
     * [._fillPeerSlots()](#Peer+_fillPeerSlots) ⇒ [<code>Peer</code>](#Peer)
     * [._handleFabricMessage(buffer)](#Peer+_handleFabricMessage) ⇒ [<code>Peer</code>](#Peer)
@@ -6326,6 +6706,11 @@ Parse an Object into a corresponding Fabric state.
     * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
     * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
     * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
+    * [.defineOpcode(name, [definition])](#Service+defineOpcode) ⇒ <code>Object</code>
+    * [.defineBitcoinOpcode(name, [definition])](#Service+defineBitcoinOpcode) ⇒ <code>Object</code>
+    * [.defineFabricOpcode(name, [definition])](#Service+defineFabricOpcode) ⇒ <code>Object</code>
+    * [.defineOpcodeContract(name, body, [meta])](#Service+defineOpcodeContract) ⇒ <code>Object</code>
+    * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
     * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
     * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
     * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
@@ -6362,6 +6747,12 @@ Create an instance of [Peer](#Peer).
 | [config.listenPortAttempts] | <code>Number</code> | <code>20</code> | When the listen port is in use (`EADDRINUSE`),   try the next port up to this many times (same host). |
 | [config.peers] | <code>Array</code> | <code>[]</code> | List of initial peers. |
 
+<a name="Peer+_inboundNoiseStaticPubkeyByAddress"></a>
+
+### peer.\_inboundNoiseStaticPubkeyByAddress
+Inbound address -> NOISE static pubkey hex (FLUSH_CHAIN allowlist only; never for AMP verify).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+messages"></a>
 
 ### peer.messages
@@ -6546,12 +6937,33 @@ Best-effort registry score for a live connection key (`host:port`), using mapped
 | --- | --- |
 | connAddress | <code>string</code> | 
 
+<a name="Peer+_registryScoreForFlushChainSender"></a>
+
+### peer.\_registryScoreForFlushChainSender(connAddress, senderPubkeyHex) ⇒ <code>number</code>
+FLUSH_CHAIN trust score bound to verified sender key.
+
+Prevents trusting attacker-controlled `P2P_SESSION_OFFER.actor.id` aliases
+by refusing `_addressToId`-mapped scores unless that mapped registry entry
+is explicitly bound to the same verified sender pubkey.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| connAddress | <code>string</code> |  |
+| senderPubkeyHex | <code>string</code> | verified sender pubkey hex (from NOISE/static or trusted peer record) |
+
 <a name="Peer+sendFlushChainToTrustedPeers"></a>
 
 ### peer.sendFlushChainToTrustedPeers(object) ⇒ <code>number</code>
 Sign and send `P2P_FLUSH_CHAIN` to all connected peers with registry score &gt; threshold.
 Body JSON: `{ snapshotBlockHash, network?, label? }`.
-Peers only act on inbound flush if the sender's pubkey is listed in their [Peer#settings.flushChainAuthorizedPubkeys](Peer#settings.flushChainAuthorizedPubkeys).
+
+**Receivers** (see `P2P_FLUSH_CHAIN` handler) require **both**:
+1. Sender pubkey in [Peer#settings.flushChainAuthorizedPubkeys](Peer#settings.flushChainAuthorizedPubkeys) (non-empty allowlist), and
+2. Registry score above [Peer#settings.flushChainMinTrustedScore](Peer#settings.flushChainMinTrustedScore).
+Registry score bumps on `P2P_PONG` only when that pong answers an outbound ping on the same
+connection (`_fabricPingOutstanding`), so unsolicited pongs cannot inflate trust alone.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: <code>number</code> - number of sockets written  
@@ -6582,6 +6994,12 @@ Uses classic-level in Node, browser-level (IndexedDB) in browser.
 
 ### peer.\_savePeerRegistry()
 Persist peer registry to LevelDB (debounced).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+<a name="Peer+_flushChainSenderPubkeyHex"></a>
+
+### peer.\_flushChainSenderPubkeyHex()
+FLUSH_CHAIN sender hex: [Peer#peers](Peer#peers)[addr].publicKey if set, else inbound NOISE static (allowlist must match).
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 <a name="Peer+_upsertPeerRegistry"></a>
@@ -6857,6 +7275,63 @@ Bind a method to an event, with current state as the immutable context.
 | event | <code>String</code> | Name of the event upon which to execute `method` as a function. |
 | method | <code>function</code> | Function to execute when named [Event](Event) `event` is encountered. |
 
+<a name="Service+defineOpcode"></a>
+
+### peer.defineOpcode(name, [definition]) ⇒ <code>Object</code>
+Register a single opcode entry in the service registry.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| [definition] | <code>Object</code> |  |
+
+<a name="Service+defineBitcoinOpcode"></a>
+
+### peer.defineBitcoinOpcode(name, [definition]) ⇒ <code>Object</code>
+Register Bitcoin-style primitive opcode metadata.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| name | <code>string</code> | 
+| [definition] | <code>Object</code> | 
+
+<a name="Service+defineFabricOpcode"></a>
+
+### peer.defineFabricOpcode(name, [definition]) ⇒ <code>Object</code>
+Register Fabric opcode metadata.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| name | <code>string</code> | 
+| [definition] | <code>Object</code> | 
+
+<a name="Service+defineOpcodeContract"></a>
+
+### peer.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
+Register a newline-delimited opcode contract.
+Contract body example:
+`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>string</code> | Contract label |
+| body | <code>string</code> | Newline-delimited opcode list |
+| [meta] | <code>Object</code> |  |
+
+<a name="Service+listOpcodes"></a>
+
+### peer.listOpcodes() ⇒ <code>Array.&lt;Object&gt;</code>
+Snapshot opcode registry for UI / API use.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
 <a name="Service+route"></a>
 
 ### peer.route(msg) ⇒ <code>Promise</code>
@@ -8009,6 +8484,11 @@ resources, and lifecycle (<code>start</code>/<code>stop</code> patterns — see 
     * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
     * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
     * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
+    * [.defineOpcode(name, [definition])](#Service+defineOpcode) ⇒ <code>Object</code>
+    * [.defineBitcoinOpcode(name, [definition])](#Service+defineBitcoinOpcode) ⇒ <code>Object</code>
+    * [.defineFabricOpcode(name, [definition])](#Service+defineFabricOpcode) ⇒ <code>Object</code>
+    * [.defineOpcodeContract(name, body, [meta])](#Service+defineOpcodeContract) ⇒ <code>Object</code>
+    * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
     * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
     * [.start()](#Service+start)
     * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
@@ -8149,6 +8629,63 @@ Bind a method to an event, with current state as the immutable context.
 | event | <code>String</code> | Name of the event upon which to execute `method` as a function. |
 | method | <code>function</code> | Function to execute when named [Event](Event) `event` is encountered. |
 
+<a name="Service+defineOpcode"></a>
+
+### service.defineOpcode(name, [definition]) ⇒ <code>Object</code>
+Register a single opcode entry in the service registry.
+
+**Kind**: instance method of [<code>Service</code>](#Service)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| [definition] | <code>Object</code> |  |
+
+<a name="Service+defineBitcoinOpcode"></a>
+
+### service.defineBitcoinOpcode(name, [definition]) ⇒ <code>Object</code>
+Register Bitcoin-style primitive opcode metadata.
+
+**Kind**: instance method of [<code>Service</code>](#Service)  
+
+| Param | Type |
+| --- | --- |
+| name | <code>string</code> | 
+| [definition] | <code>Object</code> | 
+
+<a name="Service+defineFabricOpcode"></a>
+
+### service.defineFabricOpcode(name, [definition]) ⇒ <code>Object</code>
+Register Fabric opcode metadata.
+
+**Kind**: instance method of [<code>Service</code>](#Service)  
+
+| Param | Type |
+| --- | --- |
+| name | <code>string</code> | 
+| [definition] | <code>Object</code> | 
+
+<a name="Service+defineOpcodeContract"></a>
+
+### service.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
+Register a newline-delimited opcode contract.
+Contract body example:
+`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+
+**Kind**: instance method of [<code>Service</code>](#Service)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>string</code> | Contract label |
+| body | <code>string</code> | Newline-delimited opcode list |
+| [meta] | <code>Object</code> |  |
+
+<a name="Service+listOpcodes"></a>
+
+### service.listOpcodes() ⇒ <code>Array.&lt;Object&gt;</code>
+Snapshot opcode registry for UI / API use.
+
+**Kind**: instance method of [<code>Service</code>](#Service)  
 <a name="Service+route"></a>
 
 ### service.route(msg) ⇒ <code>Promise</code>
@@ -8380,6 +8917,11 @@ Parse an Object into a corresponding Fabric state.
     * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
     * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
     * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
+    * [.defineOpcode(name, [definition])](#Service+defineOpcode) ⇒ <code>Object</code>
+    * [.defineBitcoinOpcode(name, [definition])](#Service+defineBitcoinOpcode) ⇒ <code>Object</code>
+    * [.defineFabricOpcode(name, [definition])](#Service+defineFabricOpcode) ⇒ <code>Object</code>
+    * [.defineOpcodeContract(name, body, [meta])](#Service+defineOpcodeContract) ⇒ <code>Object</code>
+    * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
     * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
     * [.start()](#Service+start)
     * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
@@ -8520,6 +9062,63 @@ Bind a method to an event, with current state as the immutable context.
 | event | <code>String</code> | Name of the event upon which to execute `method` as a function. |
 | method | <code>function</code> | Function to execute when named [Event](Event) `event` is encountered. |
 
+<a name="Service+defineOpcode"></a>
+
+### service.defineOpcode(name, [definition]) ⇒ <code>Object</code>
+Register a single opcode entry in the service registry.
+
+**Kind**: instance method of [<code>Service</code>](#Service)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| [definition] | <code>Object</code> |  |
+
+<a name="Service+defineBitcoinOpcode"></a>
+
+### service.defineBitcoinOpcode(name, [definition]) ⇒ <code>Object</code>
+Register Bitcoin-style primitive opcode metadata.
+
+**Kind**: instance method of [<code>Service</code>](#Service)  
+
+| Param | Type |
+| --- | --- |
+| name | <code>string</code> | 
+| [definition] | <code>Object</code> | 
+
+<a name="Service+defineFabricOpcode"></a>
+
+### service.defineFabricOpcode(name, [definition]) ⇒ <code>Object</code>
+Register Fabric opcode metadata.
+
+**Kind**: instance method of [<code>Service</code>](#Service)  
+
+| Param | Type |
+| --- | --- |
+| name | <code>string</code> | 
+| [definition] | <code>Object</code> | 
+
+<a name="Service+defineOpcodeContract"></a>
+
+### service.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
+Register a newline-delimited opcode contract.
+Contract body example:
+`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+
+**Kind**: instance method of [<code>Service</code>](#Service)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>string</code> | Contract label |
+| body | <code>string</code> | Newline-delimited opcode list |
+| [meta] | <code>Object</code> |  |
+
+<a name="Service+listOpcodes"></a>
+
+### service.listOpcodes() ⇒ <code>Array.&lt;Object&gt;</code>
+Snapshot opcode registry for UI / API use.
+
+**Kind**: instance method of [<code>Service</code>](#Service)  
 <a name="Service+route"></a>
 
 ### service.route(msg) ⇒ <code>Promise</code>
@@ -10248,60 +10847,77 @@ Manages interaction with the Bitcoin network.
 
 * [Bitcoin](#Bitcoin) ⇐ [<code>Service</code>](#Service)
     * [new Bitcoin([settings])](#new_Bitcoin_new)
-    * [.UAString](#Bitcoin+UAString)
-    * [.tip](#Bitcoin+tip)
-    * [.height](#Bitcoin+height)
-    * [.broadcast(tx)](#Bitcoin+broadcast)
-    * [._processSpendMessage(message)](#Bitcoin+_processSpendMessage) ⇒ <code>BitcoinTransactionID</code>
-    * [._prepareTransaction(obj)](#Bitcoin+_prepareTransaction)
-    * [._handleCommittedBlock(block)](#Bitcoin+_handleCommittedBlock)
-    * [._handlePeerPacket(msg)](#Bitcoin+_handlePeerPacket)
-    * [._handleBlockFromSPV(msg)](#Bitcoin+_handleBlockFromSPV)
-    * [._handleTransactionFromSPV(tx)](#Bitcoin+_handleTransactionFromSPV)
-    * [._subscribeToShard(shard)](#Bitcoin+_subscribeToShard)
-    * [._connectSPV()](#Bitcoin+_connectSPV)
-    * [.connect(addr)](#Bitcoin+connect)
-    * [._makeRPCRequest(method, params, [opts])](#Bitcoin+_makeRPCRequest) ⇒ <code>Promise</code>
-    * [.getBlockInfo(hashOrHeight)](#Bitcoin+getBlockInfo) ⇒ <code>Promise.&lt;Object&gt;</code>
-    * [.getTransactionInfo(txid)](#Bitcoin+getTransactionInfo) ⇒ <code>Promise.&lt;Object&gt;</code>
-    * [.getAddressInfo(address)](#Bitcoin+getAddressInfo) ⇒ <code>Promise.&lt;Object&gt;</code>
-    * [.flushChainToSnapshot(snapshotBlockHash)](#Bitcoin+flushChainToSnapshot) ⇒ <code>Promise.&lt;{ok: boolean, steps: number, snapshotBlockHash: string}&gt;</code>
-    * [._requestBlockAtHeight(height)](#Bitcoin+_requestBlockAtHeight) ⇒ <code>Object</code>
-    * [._createContractProposal(options)](#Bitcoin+_createContractProposal) ⇒ <code>ContractProposal</code>
-    * [._buildPSBT(options)](#Bitcoin+_buildPSBT) ⇒ <code>PSBT</code>
-    * [._normalizeP2pPeerAddress(peer)](#Bitcoin+_normalizeP2pPeerAddress) ⇒ <code>string</code> \| <code>null</code>
-    * [.applyP2pAddNodes(peers, [command])](#Bitcoin+applyP2pAddNodes) ⇒ <code>Promise.&lt;Array.&lt;string&gt;&gt;</code>
-    * [.start()](#Bitcoin+start)
-    * [.stop()](#Bitcoin+stop)
-    * [._appendWarning(msg)](#Service+_appendWarning) ⇒ [<code>Service</code>](#Service)
-    * [.init()](#Service+init)
-    * [.tick()](#Service+tick) ⇒ <code>Number</code>
-    * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
-    * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
-    * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
-    * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
-    * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
-    * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
-    * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
-    * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
-    * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
-    * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
-    * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
-    * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
-    * [._send(message)](#Service+_send)
-    * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
-    * [.commit()](#Actor+commit) ⇒ <code>String</code>
-    * [.export()](#Actor+export) ⇒ <code>Object</code>
-    * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
-    * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
-    * [.toGenericMessage([type])](#Actor+toGenericMessage) ⇒ <code>Object</code>
-    * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
-    * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
-    * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
-    * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
-    * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
-    * [.value([format])](#Actor+value) ⇒ <code>Object</code>
-    * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
+    * _instance_
+        * [.UAString](#Bitcoin+UAString)
+        * [.tip](#Bitcoin+tip)
+        * [.height](#Bitcoin+height)
+        * [.broadcast(tx)](#Bitcoin+broadcast)
+        * [._processSpendMessage(message)](#Bitcoin+_processSpendMessage) ⇒ <code>BitcoinTransactionID</code>
+        * [._prepareTransaction(obj)](#Bitcoin+_prepareTransaction)
+        * [._handleCommittedBlock(block)](#Bitcoin+_handleCommittedBlock)
+        * [._handlePeerPacket(msg)](#Bitcoin+_handlePeerPacket)
+        * [._handleBlockFromSPV(msg)](#Bitcoin+_handleBlockFromSPV)
+        * [._handleTransactionFromSPV(tx)](#Bitcoin+_handleTransactionFromSPV)
+        * [._subscribeToShard(shard)](#Bitcoin+_subscribeToShard)
+        * [._connectSPV()](#Bitcoin+_connectSPV)
+        * [.connect(addr)](#Bitcoin+connect)
+        * [._makeRPCRequest(method, params, [opts])](#Bitcoin+_makeRPCRequest) ⇒ <code>Promise</code>
+        * [.getBlockInfo(hashOrHeight)](#Bitcoin+getBlockInfo) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.getTransactionInfo(txid)](#Bitcoin+getTransactionInfo) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.getAddressInfo(address)](#Bitcoin+getAddressInfo) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.flushChainToSnapshot(snapshotBlockHash)](#Bitcoin+flushChainToSnapshot) ⇒ <code>Promise.&lt;{ok: boolean, steps: number, snapshotBlockHash: string}&gt;</code>
+        * [._requestBlockAtHeight(height)](#Bitcoin+_requestBlockAtHeight) ⇒ <code>Object</code>
+        * [._createContractProposal(options)](#Bitcoin+_createContractProposal) ⇒ <code>ContractProposal</code>
+        * [._buildPSBT(options)](#Bitcoin+_buildPSBT) ⇒ <code>PSBT</code>
+        * [._normalizeP2pPeerAddress(peer)](#Bitcoin+_normalizeP2pPeerAddress) ⇒ <code>string</code> \| <code>null</code>
+        * [.applyP2pAddNodes(peers, [command])](#Bitcoin+applyP2pAddNodes) ⇒ <code>Promise.&lt;Array.&lt;string&gt;&gt;</code>
+        * [.start()](#Bitcoin+start)
+        * [.stop()](#Bitcoin+stop)
+        * [._appendWarning(msg)](#Service+_appendWarning) ⇒ [<code>Service</code>](#Service)
+        * [.init()](#Service+init)
+        * [.tick()](#Service+tick) ⇒ <code>Number</code>
+        * [.beat()](#Service+beat) ⇒ [<code>Service</code>](#Service)
+        * [.get(path)](#Service+get) ⇒ <code>Mixed</code>
+        * [.set(path)](#Service+set) ⇒ <code>Mixed</code>
+        * [.trust(source)](#Service+trust) ⇒ [<code>Service</code>](#Service)
+        * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
+        * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
+        * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
+        * [.defineOpcode(name, [definition])](#Service+defineOpcode) ⇒ <code>Object</code>
+        * [.defineBitcoinOpcode(name, [definition])](#Service+defineBitcoinOpcode) ⇒ <code>Object</code>
+        * [.defineFabricOpcode(name, [definition])](#Service+defineFabricOpcode) ⇒ <code>Object</code>
+        * [.defineOpcodeContract(name, body, [meta])](#Service+defineOpcodeContract) ⇒ <code>Object</code>
+        * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
+        * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
+        * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
+        * [._PUT(path, value, [commit])](#Service+_PUT) ⇒ <code>Promise</code>
+        * [.send(channel, message)](#Service+send) ⇒ [<code>Service</code>](#Service)
+        * [._registerActor(actor)](#Service+_registerActor) ⇒ <code>Promise</code>
+        * [._send(message)](#Service+_send)
+        * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
+        * [.commit()](#Actor+commit) ⇒ <code>String</code>
+        * [.export()](#Actor+export) ⇒ <code>Object</code>
+        * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
+        * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
+        * [.toGenericMessage([type])](#Actor+toGenericMessage) ⇒ <code>Object</code>
+        * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
+        * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
+        * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
+        * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
+        * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
+        * [.value([format])](#Actor+value) ⇒ <code>Object</code>
+        * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
+    * _static_
+        * [.bitcoindChainDataDirSegment(network)](#Bitcoin.bitcoindChainDataDirSegment) ⇒ <code>string</code>
+        * [.resolveBitcoinDatadirForLocalAccess(datadir)](#Bitcoin.resolveBitcoinDatadirForLocalAccess) ⇒ <code>string</code> \| <code>null</code>
+        * [.resolveBitcoinCookieFileForLocalRead(filePath)](#Bitcoin.resolveBitcoinCookieFileForLocalRead) ⇒ <code>string</code> \| <code>null</code>
+        * [.tryReadRpcCookieFileCredentials(cookiePath)](#Bitcoin.tryReadRpcCookieFileCredentials) ⇒ <code>Promise.&lt;({username: string, password: string}\|null)&gt;</code>
+        * [.cookiePathForBitcoind(datadirRoot, network)](#Bitcoin.cookiePathForBitcoind) ⇒ <code>string</code>
+        * [.cookiePathForChainSubtree(datadirRoot, chainSubdir)](#Bitcoin.cookiePathForChainSubtree) ⇒ <code>string</code>
+        * [.defaultStoresRelativeDirsForProbe(network, [constraints])](#Bitcoin.defaultStoresRelativeDirsForProbe) ⇒ <code>Array.&lt;string&gt;</code>
+        * [.buildLocalCookieProbePaths(opts)](#Bitcoin.buildLocalCookieProbePaths) ⇒ <code>Array.&lt;string&gt;</code>
+        * [.parentDirNameForCookieProbe(cookiePath)](#Bitcoin.parentDirNameForCookieProbe) ⇒ <code>string</code>
+        * ~~[.buildRegtestCookiePathList(opts)](#Bitcoin.buildRegtestCookiePathList) ⇒ <code>Array.&lt;string&gt;</code>~~
 
 <a name="new_Bitcoin_new"></a>
 
@@ -10700,6 +11316,68 @@ Bind a method to an event, with current state as the immutable context.
 | event | <code>String</code> | Name of the event upon which to execute `method` as a function. |
 | method | <code>function</code> | Function to execute when named [Event](Event) `event` is encountered. |
 
+<a name="Service+defineOpcode"></a>
+
+### bitcoin.defineOpcode(name, [definition]) ⇒ <code>Object</code>
+Register a single opcode entry in the service registry.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>defineOpcode</code>](#Service+defineOpcode)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| [definition] | <code>Object</code> |  |
+
+<a name="Service+defineBitcoinOpcode"></a>
+
+### bitcoin.defineBitcoinOpcode(name, [definition]) ⇒ <code>Object</code>
+Register Bitcoin-style primitive opcode metadata.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>defineBitcoinOpcode</code>](#Service+defineBitcoinOpcode)  
+
+| Param | Type |
+| --- | --- |
+| name | <code>string</code> | 
+| [definition] | <code>Object</code> | 
+
+<a name="Service+defineFabricOpcode"></a>
+
+### bitcoin.defineFabricOpcode(name, [definition]) ⇒ <code>Object</code>
+Register Fabric opcode metadata.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>defineFabricOpcode</code>](#Service+defineFabricOpcode)  
+
+| Param | Type |
+| --- | --- |
+| name | <code>string</code> | 
+| [definition] | <code>Object</code> | 
+
+<a name="Service+defineOpcodeContract"></a>
+
+### bitcoin.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
+Register a newline-delimited opcode contract.
+Contract body example:
+`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>defineOpcodeContract</code>](#Service+defineOpcodeContract)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>string</code> | Contract label |
+| body | <code>string</code> | Newline-delimited opcode list |
+| [meta] | <code>Object</code> |  |
+
+<a name="Service+listOpcodes"></a>
+
+### bitcoin.listOpcodes() ⇒ <code>Array.&lt;Object&gt;</code>
+Snapshot opcode registry for UI / API use.
+
+**Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
+**Overrides**: [<code>listOpcodes</code>](#Service+listOpcodes)  
 <a name="Service+route"></a>
 
 ### bitcoin.route(msg) ⇒ <code>Promise</code>
@@ -10913,6 +11591,123 @@ Parse an Object into a corresponding Fabric state.
 | --- | --- | --- |
 | input | <code>Object</code> | Object to read as input. |
 
+<a name="Bitcoin.bitcoindChainDataDirSegment"></a>
+
+### Bitcoin.bitcoindChainDataDirSegment(network) ⇒ <code>string</code>
+Bitcoin Core chain data subdirectory under {@code -datadir} (empty string for mainnet cookie at datadir root).
+Matches Core layout: `regtest/`, `testnet3/`, `signet/`, `testnet4/`, or root for mainnet.
+
+**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| network | <code>string</code> | Fabric network name (mainnet, testnet, regtest, signet, testnet4, playnet, …). |
+
+<a name="Bitcoin.resolveBitcoinDatadirForLocalAccess"></a>
+
+### Bitcoin.resolveBitcoinDatadirForLocalAccess(datadir) ⇒ <code>string</code> \| <code>null</code>
+Resolve a configured bitcoind datadir for local cookie discovery. Relative paths are cwd-anchored
+and must not escape the project root; absolute paths are normalized as-is.
+
+**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type |
+| --- | --- |
+| datadir | <code>string</code> | 
+
+<a name="Bitcoin.resolveBitcoinCookieFileForLocalRead"></a>
+
+### Bitcoin.resolveBitcoinCookieFileForLocalRead(filePath) ⇒ <code>string</code> \| <code>null</code>
+Resolve {@code FABRIC_BITCOIN_COOKIE_FILE}-style paths: normalize, bound length, and keep relative paths
+inside the process cwd (absolute paths allowed for explicit operator overrides).
+
+**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type |
+| --- | --- |
+| filePath | <code>string</code> | 
+
+<a name="Bitcoin.tryReadRpcCookieFileCredentials"></a>
+
+### Bitcoin.tryReadRpcCookieFileCredentials(cookiePath) ⇒ <code>Promise.&lt;({username: string, password: string}\|null)&gt;</code>
+Read Bitcoin Core {@code .cookie} (user:password) using async I/O. Path must already be resolved/normalized.
+
+**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type |
+| --- | --- |
+| cookiePath | <code>string</code> | 
+
+<a name="Bitcoin.cookiePathForBitcoind"></a>
+
+### Bitcoin.cookiePathForBitcoind(datadirRoot, network) ⇒ <code>string</code>
+`.cookie` path under a resolved bitcoind datadir root for the given Fabric network.
+
+**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| datadirRoot | <code>string</code> | Absolute or project-relative resolved datadir (Core {@code -datadir} value). |
+| network | <code>string</code> |  |
+
+<a name="Bitcoin.cookiePathForChainSubtree"></a>
+
+### Bitcoin.cookiePathForChainSubtree(datadirRoot, chainSubdir) ⇒ <code>string</code>
+Cookie file under explicit chain subdirectory (empty string = mainnet-style datadir/.cookie only).
+Prefer [#cookiePathForBitcoind](#cookiePathForBitcoind) when you have a Fabric network name.
+
+**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| datadirRoot | <code>string</code> |  |
+| chainSubdir | <code>string</code> | e.g. `regtest`, `signet`, or `''` |
+
+<a name="Bitcoin.defaultStoresRelativeDirsForProbe"></a>
+
+### Bitcoin.defaultStoresRelativeDirsForProbe(network, [constraints]) ⇒ <code>Array.&lt;string&gt;</code>
+Typical `stores/…` paths under the project for the network (for cookie discovery before node spawn).
+
+**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type |
+| --- | --- |
+| network | <code>string</code> | 
+| [constraints] | [<code>BitcoinCookieProbeConstraints</code>](#BitcoinCookieProbeConstraints) | 
+
+<a name="Bitcoin.buildLocalCookieProbePaths"></a>
+
+### Bitcoin.buildLocalCookieProbePaths(opts) ⇒ <code>Array.&lt;string&gt;</code>
+Ordered local cookie paths to probe for RPC (env override, project stores, Electron mirror, ~/.bitcoin, optional settings datadir).
+
+**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type |
+| --- | --- |
+| opts | [<code>BitcoinLocalCookieProbeOpts</code>](#BitcoinLocalCookieProbeOpts) | 
+
+<a name="Bitcoin.parentDirNameForCookieProbe"></a>
+
+### Bitcoin.parentDirNameForCookieProbe(cookiePath) ⇒ <code>string</code>
+Parent directory name of `.cookie` (for probe logging).
+
+**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type |
+| --- | --- |
+| cookiePath | <code>string</code> | 
+
+<a name="Bitcoin.buildRegtestCookiePathList"></a>
+
+### ~~Bitcoin.buildRegtestCookiePathList(opts) ⇒ <code>Array.&lt;string&gt;</code>~~
+***Use [#buildLocalCookieProbePaths](#buildLocalCookieProbePaths) with `network: 'regtest'`.***
+
+**Kind**: static method of [<code>Bitcoin</code>](#Bitcoin)  
+
+| Param | Type |
+| --- | --- |
+| opts | [<code>BitcoinRegtestCookieOpts</code>](#BitcoinRegtestCookieOpts) | 
+
 <a name="Lightning"></a>
 
 ## Lightning
@@ -11062,6 +11857,11 @@ Closes the connection to the Redis server.
         * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
         * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
         * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
+        * [.defineOpcode(name, [definition])](#Service+defineOpcode) ⇒ <code>Object</code>
+        * [.defineBitcoinOpcode(name, [definition])](#Service+defineBitcoinOpcode) ⇒ <code>Object</code>
+        * [.defineFabricOpcode(name, [definition])](#Service+defineFabricOpcode) ⇒ <code>Object</code>
+        * [.defineOpcodeContract(name, body, [meta])](#Service+defineOpcodeContract) ⇒ <code>Object</code>
+        * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
         * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
         * [.start()](#Service+start)
         * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
@@ -11199,6 +11999,63 @@ Bind a method to an event, with current state as the immutable context.
 | event | <code>String</code> | Name of the event upon which to execute `method` as a function. |
 | method | <code>function</code> | Function to execute when named [Event](Event) `event` is encountered. |
 
+<a name="Service+defineOpcode"></a>
+
+### text.defineOpcode(name, [definition]) ⇒ <code>Object</code>
+Register a single opcode entry in the service registry.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| [definition] | <code>Object</code> |  |
+
+<a name="Service+defineBitcoinOpcode"></a>
+
+### text.defineBitcoinOpcode(name, [definition]) ⇒ <code>Object</code>
+Register Bitcoin-style primitive opcode metadata.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+
+| Param | Type |
+| --- | --- |
+| name | <code>string</code> | 
+| [definition] | <code>Object</code> | 
+
+<a name="Service+defineFabricOpcode"></a>
+
+### text.defineFabricOpcode(name, [definition]) ⇒ <code>Object</code>
+Register Fabric opcode metadata.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+
+| Param | Type |
+| --- | --- |
+| name | <code>string</code> | 
+| [definition] | <code>Object</code> | 
+
+<a name="Service+defineOpcodeContract"></a>
+
+### text.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
+Register a newline-delimited opcode contract.
+Contract body example:
+`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>string</code> | Contract label |
+| body | <code>string</code> | Newline-delimited opcode list |
+| [meta] | <code>Object</code> |  |
+
+<a name="Service+listOpcodes"></a>
+
+### text.listOpcodes() ⇒ <code>Array.&lt;Object&gt;</code>
+Snapshot opcode registry for UI / API use.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
 <a name="Service+route"></a>
 
 ### text.route(msg) ⇒ <code>Promise</code>
@@ -11512,6 +12369,24 @@ Closes the connection to the ZMQ publisher.
 Deprecated 2021-11-06 — use [FabricState](FabricState) (<code>types/state</code>). <code>Scribe</code> was merged into <code>State</code>.
 
 **Kind**: global class  
+<a name="SAT_ADJ_EPS"></a>
+
+## SAT\_ADJ\_EPS
+Max |sats − round(sats)| allowed when scaling BTC → satoshis (reject fractional satoshis; allow float noise).
+
+**Kind**: global constant  
+<a name="BITCOIN_COOKIE_PATH_MAX_LEN"></a>
+
+## BITCOIN\_COOKIE\_PATH\_MAX\_LEN
+Reject absurd paths from env/settings before touching the filesystem (Codacy/Semgrep-friendly bounds).
+
+**Kind**: global constant  
+<a name="BITCOIND_CHAIN_FOLDER_NAMES"></a>
+
+## BITCOIND\_CHAIN\_FOLDER\_NAMES
+Directory names Bitcoin Core uses under {@code -datadir} (used to block traversal in `.cookie` paths).
+
+**Kind**: global constant  
 <a name="Text"></a>
 
 ## ~~Text~~
@@ -11532,6 +12407,11 @@ Deprecated 2021-11-06 — use [FabricState](FabricState) (<code>types/state</cod
         * [.handler(message)](#Service+handler) ⇒ [<code>Service</code>](#Service)
         * [.lock([duration])](#Service+lock) ⇒ <code>Boolean</code>
         * [.when(event, method)](#Service+when) ⇒ <code>EventEmitter</code>
+        * [.defineOpcode(name, [definition])](#Service+defineOpcode) ⇒ <code>Object</code>
+        * [.defineBitcoinOpcode(name, [definition])](#Service+defineBitcoinOpcode) ⇒ <code>Object</code>
+        * [.defineFabricOpcode(name, [definition])](#Service+defineFabricOpcode) ⇒ <code>Object</code>
+        * [.defineOpcodeContract(name, body, [meta])](#Service+defineOpcodeContract) ⇒ <code>Object</code>
+        * [.listOpcodes()](#Service+listOpcodes) ⇒ <code>Array.&lt;Object&gt;</code>
         * [.route(msg)](#Service+route) ⇒ <code>Promise</code>
         * [.start()](#Service+start)
         * [._GET(path)](#Service+_GET) ⇒ <code>Promise</code>
@@ -11669,6 +12549,63 @@ Bind a method to an event, with current state as the immutable context.
 | event | <code>String</code> | Name of the event upon which to execute `method` as a function. |
 | method | <code>function</code> | Function to execute when named [Event](Event) `event` is encountered. |
 
+<a name="Service+defineOpcode"></a>
+
+### text.defineOpcode(name, [definition]) ⇒ <code>Object</code>
+Register a single opcode entry in the service registry.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>string</code> | Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`) |
+| [definition] | <code>Object</code> |  |
+
+<a name="Service+defineBitcoinOpcode"></a>
+
+### text.defineBitcoinOpcode(name, [definition]) ⇒ <code>Object</code>
+Register Bitcoin-style primitive opcode metadata.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+
+| Param | Type |
+| --- | --- |
+| name | <code>string</code> | 
+| [definition] | <code>Object</code> | 
+
+<a name="Service+defineFabricOpcode"></a>
+
+### text.defineFabricOpcode(name, [definition]) ⇒ <code>Object</code>
+Register Fabric opcode metadata.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+
+| Param | Type |
+| --- | --- |
+| name | <code>string</code> | 
+| [definition] | <code>Object</code> | 
+
+<a name="Service+defineOpcodeContract"></a>
+
+### text.defineOpcodeContract(name, body, [meta]) ⇒ <code>Object</code>
+Register a newline-delimited opcode contract.
+Contract body example:
+`OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>string</code> | Contract label |
+| body | <code>string</code> | Newline-delimited opcode list |
+| [meta] | <code>Object</code> |  |
+
+<a name="Service+listOpcodes"></a>
+
+### text.listOpcodes() ⇒ <code>Array.&lt;Object&gt;</code>
+Snapshot opcode registry for UI / API use.
+
+**Kind**: instance method of [<code>Text</code>](#Text)  
 <a name="Service+route"></a>
 
 ### text.route(msg) ⇒ <code>Promise</code>
@@ -11927,4 +12864,57 @@ Join a list with an Oxford comma (delegates to [module:functions/oxfordJoin](mod
 | Param | Type |
 | --- | --- |
 | list | <code>Array.&lt;string&gt;</code> | 
+
+<a name="cookiePathUnderDatadirBase"></a>
+
+## cookiePathUnderDatadirBase(baseAbs, parts) ⇒ <code>string</code> \| <code>null</code>
+Append fixed path components under a resolved base; return null if the result leaves {@code baseAbs}.
+
+**Kind**: global function  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| baseAbs | <code>string</code> |  |
+| parts | <code>Array.&lt;string&gt;</code> | — no separators; validated by caller |
+
+<a name="BitcoinCookieProbeConstraints"></a>
+
+## BitcoinCookieProbeConstraints : <code>Object</code>
+Constraints hint for cookie / store probe paths (e.g. pruned mainnet).
+
+**Kind**: global typedef  
+**Properties**
+
+| Name | Type |
+| --- | --- |
+| [storage] | <code>Object</code> | 
+| [storage.size] | <code>number</code> | 
+
+<a name="BitcoinLocalCookieProbeOpts"></a>
+
+## BitcoinLocalCookieProbeOpts : <code>Object</code>
+Options for [buildLocalCookieProbePaths](#Bitcoin.buildLocalCookieProbePaths).
+
+**Kind**: global typedef  
+**Properties**
+
+| Name | Type |
+| --- | --- |
+| [network] | <code>string</code> | 
+| [envCookieFile] | <code>string</code> | 
+| [settingsDatadir] | <code>string</code> | 
+| [constraints] | [<code>BitcoinCookieProbeConstraints</code>](#BitcoinCookieProbeConstraints) | 
+
+<a name="BitcoinRegtestCookieOpts"></a>
+
+## BitcoinRegtestCookieOpts : <code>Object</code>
+Options for [buildRegtestCookiePathList](#Bitcoin.buildRegtestCookiePathList).
+
+**Kind**: global typedef  
+**Properties**
+
+| Name | Type |
+| --- | --- |
+| [envCookieFile] | <code>string</code> | 
+| [settingsDatadir] | <code>string</code> | 
 

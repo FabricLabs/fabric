@@ -5,7 +5,6 @@ const {
   VERSION_NUMBER,
   HEADER_SIZE,
   OP_CYCLE,
-  GENERIC_MESSAGE_TYPE,
   LOG_MESSAGE_TYPE,
   GENERIC_LIST_TYPE,
   BITCOIN_BLOCK_TYPE,
@@ -22,6 +21,16 @@ const {
   P2P_BASE_MESSAGE,
   P2P_CHAIN_SYNC_REQUEST,
   P2P_FLUSH_CHAIN,
+  P2P_INVENTORY_REQUEST,
+  P2P_INVENTORY_RESPONSE,
+  P2P_FILE_SEND,
+  P2P_DOCUMENT_PUBLISH,
+  P2P_PEER_ALIAS,
+  P2P_PEER_ANNOUNCE,
+  P2P_SESSION_OFFER,
+  P2P_SESSION_OPEN,
+  P2P_CONTRACT_PUBLISH,
+  P2P_CONTRACT_MESSAGE,
   P2P_STATE_ROOT,
   P2P_STATE_COMMITTMENT,
   P2P_STATE_CHANGE,
@@ -106,8 +115,6 @@ const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [BITCOIN_BLOCK_HASH_TYPE, 'BITCOIN_BLOCK_HASH'],
   [BITCOIN_TRANSACTION_TYPE, 'BITCOIN_TRANSACTION'],
   [BITCOIN_TRANSACTION_HASH_TYPE, 'BITCOIN_TRANSACTION_HASH'],
-  [GENERIC_MESSAGE_TYPE, 'GENERIC_MESSAGE'],
-  [GENERIC_MESSAGE_TYPE + 1, 'JSON_BLOB'],
   [LOG_MESSAGE_TYPE, 'LOG_MESSAGE'],
   [GENERIC_LIST_TYPE, 'GENERIC_LIST'],
   [DOCUMENT_PUBLISH_TYPE, 'DOCUMENT_PUBLISH'],
@@ -118,6 +125,16 @@ const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [P2P_GENERIC, 'P2P_GENERIC'],
   [P2P_CHAIN_SYNC_REQUEST, 'P2P_CHAIN_SYNC_REQUEST'],
   [P2P_FLUSH_CHAIN, 'P2P_FLUSH_CHAIN'],
+  [P2P_INVENTORY_REQUEST, 'P2P_INVENTORY_REQUEST'],
+  [P2P_INVENTORY_RESPONSE, 'P2P_INVENTORY_RESPONSE'],
+  [P2P_FILE_SEND, 'P2P_FILE_SEND'],
+  [P2P_DOCUMENT_PUBLISH, 'P2P_DOCUMENT_PUBLISH'],
+  [P2P_PEER_ALIAS, 'P2P_PEER_ALIAS'],
+  [P2P_PEER_ANNOUNCE, 'P2P_PEER_ANNOUNCE'],
+  [P2P_SESSION_OFFER, 'P2P_SESSION_OFFER'],
+  [P2P_SESSION_OPEN, 'P2P_SESSION_OPEN'],
+  [P2P_CONTRACT_PUBLISH, 'CONTRACT_PUBLISH'],
+  [P2P_CONTRACT_MESSAGE, 'CONTRACT_MESSAGE'],
   [P2P_IDENT_REQUEST, 'P2P_IDENT_REQUEST'],
   [P2P_IDENT_RESPONSE, 'P2P_IDENT_RESPONSE'],
   [P2P_BASE_MESSAGE, 'P2P_BASE_MESSAGE'],
@@ -182,14 +199,12 @@ const LEGACY_MESSAGE_TYPE_ALIASES = Object.freeze({
   BitcoinBlockHash: BITCOIN_BLOCK_HASH_TYPE,
   BitcoinTransaction: BITCOIN_TRANSACTION_TYPE,
   BitcoinTransactionHash: BITCOIN_TRANSACTION_HASH_TYPE,
-  GenericMessage: GENERIC_MESSAGE_TYPE,
   GenericLogMessage: LOG_MESSAGE_TYPE,
   GenericList: GENERIC_LIST_TYPE,
   GenericQueue: GENERIC_LIST_TYPE,
   FabricLogMessage: LOG_MESSAGE_TYPE,
   FabricServiceLogMessage: LOG_MESSAGE_TYPE,
   GenericTransferQueue: GENERIC_LIST_TYPE,
-  JSONBlob: GENERIC_MESSAGE_TYPE + 1,
   JSONCall: JSON_CALL_TYPE,
   JSONPatch: PATCH_MESSAGE_TYPE,
   ContractProposal: CONTRACT_PROPOSAL_TYPE,
@@ -199,6 +214,14 @@ const LEGACY_MESSAGE_TYPE_ALIASES = Object.freeze({
   IdentityResponse: P2P_IDENT_RESPONSE,
   ChainSyncRequest: P2P_CHAIN_SYNC_REQUEST,
   FlushChain: P2P_FLUSH_CHAIN,
+  InventoryRequest: P2P_INVENTORY_REQUEST,
+  InventoryResponse: P2P_INVENTORY_RESPONSE,
+  PeerAlias: P2P_PEER_ALIAS,
+  PeerAnnounce: P2P_PEER_ANNOUNCE,
+  SessionOffer: P2P_SESSION_OFFER,
+  SessionOpen: P2P_SESSION_OPEN,
+  FileSend: P2P_FILE_SEND,
+  DocumentPricingPublish: P2P_DOCUMENT_PUBLISH,
   Ping: P2P_PING,
   Pong: P2P_PONG,
   DocumentRequest: DOCUMENT_REQUEST_TYPE,
@@ -354,10 +377,12 @@ class Message extends Actor {
     if (messageData && messageType) {
       this.type = messageType;
       // Set the type field to the numeric constant
-      const typeCode = this.types[messageType] || GENERIC_MESSAGE_TYPE;
+      const typeCode = this.types[messageType] || this.types.P2P_BASE_MESSAGE;
       this.raw.type.writeUInt32BE(typeCode, 0);
 
-      if (typeof messageData !== 'string') {
+      if (Buffer.isBuffer(messageData) || messageData instanceof Uint8Array) {
+        this.data = Buffer.from(messageData);
+      } else if (typeof messageData !== 'string') {
         this.data = JSON.stringify(messageData);
       } else {
         this.data = messageData;
@@ -845,7 +870,7 @@ class Message extends Actor {
    */
   get wireType () {
     const code = parseInt(this.raw.type.toString('hex'), 16);
-    return CANONICAL_WIRE_TYPE_BY_OPCODE[code] || 'GENERIC_MESSAGE';
+    return CANONICAL_WIRE_TYPE_BY_OPCODE[code] || 'P2P_BASE_MESSAGE';
   }
 
   /**
@@ -863,22 +888,13 @@ Object.defineProperty(Message.prototype, 'type', {
   set (value) {
     // console.trace('setting type:', value);
     let code = this.types[value];
-    // Default to GENERIC_MESSAGE or JSON_BLOB based on content
+    // Default to P2P_BASE_MESSAGE for unknown/unregistered names.
     if (!code) {
       this.emit('warning', `Unknown message type: ${value}`);
-      // Check if data is valid JSON (bounded — same limit as AMP bodies)
-      try {
-        const raw = typeof this.data === 'string' ? this.data : String(this.data ?? '');
-        const pr = tryParseWireJson(raw);
-        if (pr.ok && pr.value) {
-          code = this.types['JSON_BLOB'] || this.types['JSONBlob'];
-          value = 'JSON_BLOB';
-        } else {
-          code = this.types['GENERIC_MESSAGE'] || this.types['GenericMessage'];
-        }
-      } catch {
-        code = this.types['GENERIC_MESSAGE'] || this.types['GenericMessage'];
-      }
+      // Keep unknown payloads representable on-wire without inventing ad-hoc generic labels.
+      tryParseWireJson(typeof this.data === 'string' ? this.data : String(this.data ?? ''));
+      code = this.types.P2P_BASE_MESSAGE;
+      value = 'P2P_BASE_MESSAGE';
     }
 
     const padded = padDigits(code.toString(16), 8);

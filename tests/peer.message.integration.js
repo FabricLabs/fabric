@@ -90,7 +90,7 @@ describe('peer/message integration (mesh & secure delivery)', function () {
       };
     }
 
-    const inner = Message.fromVector(['GenericMessage', JSON.stringify({
+    const inner = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify({
       type: 'P2P_CHAT_MESSAGE',
       object: { text: 'relay-test' }
     })]);
@@ -111,21 +111,59 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     const b = '127.0.0.1:7201';
     const c = '127.0.0.1:7202';
 
-    let bGot = 0;
-    let cGot = 0;
+    const bWrites = [];
+    const cWrites = [];
     hub.connections[a] = wireMock([]);
-    hub.connections[b] = { _writeFabric: () => { bGot++; }, destroy: () => {} };
-    hub.connections[c] = { _writeFabric: () => { cGot++; }, destroy: () => {} };
+    hub.connections[b] = { _writeFabric: (buf) => { bWrites.push(buf); }, destroy: () => {} };
+    hub.connections[c] = { _writeFabric: (buf) => { cWrites.push(buf); }, destroy: () => {} };
 
     hub.peers[a] = { id: 'id-a', publicKey: k.pubkey };
 
-    const relay = Message.fromVector(['P2P_RELAY', JSON.stringify({ hop: 1, payload: 'test' })]);
+    const inner = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify({
+      type: 'P2P_CHAT_MESSAGE',
+      object: { text: 'relayed' }
+    })]);
+    inner.signWithKey(k);
+    const relay = Message.fromVector(['P2P_RELAY', inner.toBuffer()]);
     relay.signWithKey(k);
 
     hub._handleFabricMessage(relay.toBuffer(), { name: a }, null);
 
-    assert.strictEqual(bGot, 1);
-    assert.strictEqual(cGot, 1);
+    assert.ok(bWrites.length >= 1);
+    assert.ok(cWrites.length >= 1);
+    assert.ok(bWrites.some((buf) => Message.fromBuffer(buf).type === 'P2P_RELAY'));
+    assert.ok(cWrites.some((buf) => Message.fromBuffer(buf).type === 'P2P_RELAY'));
+  });
+
+  it('P2P_RELAY body carries raw relayed message bytes', function () {
+    const hub = mockHub();
+    const k = new Key();
+    const a = '127.0.0.1:7250';
+    const bWrites = [];
+    hub.connections[a] = wireMock([]);
+    hub.connections['127.0.0.1:7251'] = {
+      _writeFabric: (buf) => bWrites.push(buf),
+      destroy: () => {}
+    };
+    hub.peers[a] = { id: 'id-a', publicKey: k.pubkey };
+
+    const inner = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify({
+      type: 'P2P_CHAT_MESSAGE',
+      object: { text: 'raw-relay' }
+    })]);
+    inner.signWithKey(k);
+    const relay = Message.fromVector(['P2P_RELAY', inner.toBuffer()]);
+    relay.signWithKey(k);
+
+    hub._handleFabricMessage(relay.toBuffer(), { name: a }, null);
+
+    assert.ok(bWrites.length >= 1);
+    const relayBuffer = bWrites.find((buf) => Message.fromBuffer(buf).type === 'P2P_RELAY');
+    assert.ok(relayBuffer, 'expected relayed P2P_RELAY wire');
+    const outer = Message.fromBuffer(relayBuffer);
+    assert.strictEqual(outer.type, 'P2P_RELAY');
+    const relayedInner = Message.fromBuffer(outer.raw.data);
+    assert.strictEqual(relayedInner.type, 'P2P_BASE_MESSAGE');
   });
 
   it('accepts signed chat from known pubkey and relays to mesh', function () {
@@ -141,7 +179,7 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     hub.peers[addr] = { id: 'client', publicKey: clientKey.pubkey };
 
     const content = { type: 'P2P_CHAT_MESSAGE', object: { text: 'secure-mesh' } };
-    const msg = Message.fromVector(['GenericMessage', JSON.stringify(content)]);
+    const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
     msg.signWithKey(clientKey);
 
     let chat = null;
@@ -163,13 +201,13 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     hub.peers[addr] = { id: 'victim', publicKey: expectedSigner.pubkey };
 
     const content = { type: 'P2P_CHAT_MESSAGE', object: { text: 'forged' } };
-    const msg = Message.fromVector(['GenericMessage', JSON.stringify(content)]);
+    const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
     msg.signWithKey(attacker);
 
     let warned = false;
     hub.once('warning', (w) => {
       const s = String(w);
-      if (/Invalid message signature|signature/i.test(s)) warned = true;
+      if (/Invalid message signature|signature|Signer mismatch/i.test(s)) warned = true;
     });
     let chats = 0;
     hub.on('chat', () => { chats++; });
@@ -177,7 +215,7 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     hub._handleFabricMessage(msg.toBuffer(), { name: addr }, null);
 
     assert.ok(warned, 'expected warning when signature does not match stored peer pubkey');
-    assert.strictEqual(chats, 0, 'forged GenericMessage must not dispatch chat');
+    assert.strictEqual(chats, 0, 'forged P2P_BASE_MESSAGE must not dispatch chat');
   });
 
   it('drops duplicate wire envelopes (reliable dedup for mesh floods)', function () {
@@ -188,7 +226,7 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     hub.peers[addr] = { id: 'p', publicKey: k.pubkey };
 
     const content = { type: 'P2P_CHAT_MESSAGE', object: { text: 'once' } };
-    const msg = Message.fromVector(['GenericMessage', JSON.stringify(content)]);
+    const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
     msg.signWithKey(k);
     const buf = msg.toBuffer();
 
@@ -208,7 +246,7 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     hub.connections[addr] = { _writeFabric: () => {}, destroy: () => {} };
     hub.peers[addr] = { id: 'p', publicKey: k.pubkey };
 
-    const msg = Message.fromVector(['GenericMessage', JSON.stringify({
+    const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify({
       type: 'P2P_CHAT_MESSAGE',
       object: { text: 'x' }
     })]);

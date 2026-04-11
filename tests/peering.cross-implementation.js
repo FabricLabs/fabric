@@ -53,7 +53,7 @@ describe('peering (cross-implementation)', function () {
     it('round-trips: Message → toBuffer → fromBuffer → verify', function () {
       const signer = new Key();
       const content = { type: 'GenericMessage', object: { greeting: 'hello' } };
-      const msg = Message.fromVector(['GenericMessage', JSON.stringify(content)]);
+      const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
       msg.signWithKey(signer);
 
       const buf = msg.toBuffer();
@@ -69,7 +69,7 @@ describe('peering (cross-implementation)', function () {
 
     it('body hash (double-SHA256) is consistent across serialize/parse', function () {
       const body = '{"test":true}';
-      const msg = Message.fromVector(['GenericMessage', body]);
+      const msg = Message.fromVector(['P2P_BASE_MESSAGE', body]);
       msg.signWithKey(new Key());
 
       const hashBefore = msg.raw.hash.toString('hex');
@@ -91,7 +91,7 @@ describe('peering (cross-implementation)', function () {
       server.peers[connAddress] = { id: 'client-1', publicKey: clientKey.pubkey };
 
       const content = { type: 'P2P_CHAT_MESSAGE', object: { text: 'hello from wire' } };
-      const msg = Message.fromVector(['GenericMessage', JSON.stringify(content)]);
+      const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
       msg.signWithKey(clientKey);
 
       let chatReceived = null;
@@ -113,7 +113,7 @@ describe('peering (cross-implementation)', function () {
       server.peers[connAddress] = { id: 'client-1', publicKey: clientKey.pubkey };
 
       const content = { type: 'P2P_CHAT_MESSAGE', object: { text: 'signed' } };
-      const msg = Message.fromVector(['GenericMessage', JSON.stringify(content)]);
+      const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
       msg.signWithKey(clientKey);
 
       let chatReceived = null;
@@ -129,7 +129,7 @@ describe('peering (cross-implementation)', function () {
 
     it('rejects message with incorrect body hash (wire integrity)', function () {
       const peer = new Peer({ listen: false, peersDb: null });
-      const msg = Message.fromVector(['GenericMessage', JSON.stringify({ type: 'P2P_CHAT_MESSAGE', object: { text: 'x' } })]);
+      const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify({ type: 'P2P_CHAT_MESSAGE', object: { text: 'x' } })]);
       msg.signWithKey(peer.key);
       const buf = msg.toBuffer();
 

@@ -6,17 +6,19 @@ const Fabric = require('../');
 const Bitcoin = require('../services/bitcoin');
 
 async function main () {
-  let _fabric = new Fabric();
-  let bitcoin = new Bitcoin({ network: 'regtest' });
-  // let wallet = new Wallet();
+  const fabric = new Fabric();
+  const bitcoin = new Bitcoin({ network: 'regtest' });
 
+  // Listen for messages from the Bitcoin service
   bitcoin.on('message', function (msg) {
     console.log('[DEVELOP]', 'Bitcoin emitted message:', msg);
   });
 
-  // fabric.use(bitcoin);
+  // Use the Bitcoin service in the Fabric instance
+  fabric.use(bitcoin);
+
+  // Start the Bitcoin service
   await bitcoin.start();
-  // await wallet.start();
 
   // TODO: import these into core process logic
   // await wallet._scanChainForTransactions(bitcoin.blockchain);
@@ -24,6 +26,13 @@ async function main () {
   // console.log('fabric:', fabric);
   console.log('bitcoin state:', bitcoin.state);
   // console.log('wallet state:', wallet.state);
+
+  await bitcoin.stop();
 }
 
-module.exports = main();
+if (require.main === module) {
+  main().catch((exception) => {
+    console.error('[EXAMPLES:BITCOIN]', 'Main Process Exception:', exception);
+    process.exitCode = 1;
+  });
+}

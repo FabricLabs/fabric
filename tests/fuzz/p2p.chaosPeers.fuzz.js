@@ -76,7 +76,7 @@ describe('fuzz: live peer chaos (TCP + NOISE)', function () {
     }
   });
 
-  it('bidirectional signed GenericMessage storm (session stays up)', async function () {
+  it('bidirectional signed P2P_BASE_MESSAGE storm (session stays up)', async function () {
     const port = await getFreePort();
     const hub = new Peer(hubBaseSettings(port, { debug: false, reconnectToKnownPeers: false }));
     const client = new Peer(memberBaseSettings(hub, NODEB, { debug: false, reconnectToKnownPeers: false }));
@@ -104,7 +104,7 @@ describe('fuzz: live peer chaos (TCP + NOISE)', function () {
       const sender = (i % 2 === 0) ? hub : client;
       const label = sender === hub ? 'hub' : 'client';
       const body = randomGenericPayload(sender);
-      const msg = Message.fromVector(['GenericMessage', JSON.stringify(body)]);
+      const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(body)]);
       msg.signWithKey(sender.key);
       writeFabric(sender, label, msg.toBuffer());
       if ((i & 7) === 7) await new Promise((r) => setImmediate(r));
@@ -145,7 +145,7 @@ describe('fuzz: live peer chaos (TCP + NOISE)', function () {
       let buf;
       if (roll < 6) {
         const body = randomGenericPayload(sender);
-        const msg = Message.fromVector(['GenericMessage', JSON.stringify(body)]);
+        const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(body)]);
         msg.signWithKey(sender.key);
         buf = msg.toBuffer();
       } else if (roll < 8) {
