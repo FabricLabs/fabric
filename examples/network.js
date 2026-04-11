@@ -1,6 +1,6 @@
 'use strict';
 
-const _playnet = require('../settings/playnet');
+const playnet = require('../settings/playnet');
 const Peer = require('../types/peer');
 const Message = require('../types/message');
 

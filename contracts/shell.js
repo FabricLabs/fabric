@@ -9,8 +9,7 @@ const CLI = require('../types/cli');
 // Program Definition
 async function OP_SHELL () {
   if (!this.environment.wallet) {
-    console.error('[FABRIC:SHELL] No wallet found. Run `fabric setup` first.');
-    process.exit(1);
+    throw new Error('[FABRIC:SHELL] No wallet found. Run `fabric setup` first.');
   }
 
   // Merge CLI context settings into local settings

@@ -115,7 +115,7 @@ async function main () {
   program.option('--password <PASSWORD>', 'Specify the encryption password.', '');
   program.option('--wallet <FILE>', 'Load wallet from file.', file);
 
-  program.parse(process.argv);
+  await program.parseAsync(process.argv);
 
   if (!environment.wallet) {
     if (environment.walletExists() && !program.force) {

@@ -67,12 +67,18 @@ const SecpPoint = secp256k1.ProjectivePoint || secp256k1.Point;
 
 function privateKeyToBuffer (privkey) {
   if (Buffer.isBuffer(privkey)) return privkey;
-  if (privkey && typeof privkey.length === 'number' && privkey.length === 32) {
-    // Uint8Array or byte-like input from upgraded deps (bip32/ecpair).
+  if (BN.isBN(privkey)) return Buffer.from(privkey.toString(16).padStart(64, '0'), 'hex');
+  if (typeof privkey === 'string') {
+    if (!/^[0-9a-fA-F]{1,64}$/.test(privkey)) throw new Error('Invalid private key format');
+    return Buffer.from(privkey.padStart(64, '0'), 'hex');
+  }
+  if (ArrayBuffer.isView(privkey) && !(privkey instanceof DataView) && privkey.byteLength === 32) {
+    // Uint8Array and other typed-array views from upgraded deps (bip32/ecpair).
     return Buffer.from(privkey);
   }
-  if (BN.isBN(privkey)) return Buffer.from(privkey.toString(16).padStart(64, '0'), 'hex');
-  if (typeof privkey === 'string') return Buffer.from(privkey.padStart(64, '0'), 'hex');
+  if (Array.isArray(privkey) && privkey.length === 32 && privkey.every((x) => Number.isInteger(x) && x >= 0 && x <= 255)) {
+    return Buffer.from(privkey);
+  }
   throw new Error('Invalid private key format');
 }
 

@@ -304,5 +304,17 @@ describe('@fabric/core/types/key', function () {
       key.private = 1;
       assert.throws(() => key.signSchnorr('invalid private key'), /Invalid private key format/);
     });
+
+    it('rejects non-hex string private key values', function () {
+      const key = new Key();
+      key.private = 'z'.repeat(32);
+      assert.throws(() => key.signSchnorr('invalid private key'), /Invalid private key format/);
+    });
+
+    it('rejects plain array-like private key objects', function () {
+      const key = new Key();
+      key.private = { length: 32 };
+      assert.throws(() => key.signSchnorr('invalid private key'), /Invalid private key format/);
+    });
   });
 });

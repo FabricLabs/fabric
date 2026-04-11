@@ -47,7 +47,7 @@ async function main () {
   // TODO: create entities on swarm instance
 
   // Send Regular Updates (outside of internal ping/pong)
-  let _heartbeat = setInterval(function () {
+  let heartbeat = setInterval(function () {
     console.warn('[EXAMPLES:SWARM]', 'Starting to send interval message...');
     let message = Message.fromVector(['Generic', Date.now().toString()]);
     console.log('[EXAMPLES:SWARM]', 'Sending :', message.raw);

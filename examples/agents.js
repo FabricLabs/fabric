@@ -12,11 +12,19 @@
  * | `--distributor-only` | Distributor + workers + producer loop until SIGINT/ SIGTERM (no Bitcoin / Lightning) |
  * | `--bitcoin-only` | Regtest Bitcoin + distributor + producer; no Lightning (lighter “real” stack) |
  * | `--work-ms=<n>` | Worker simulated job duration (also `FABRIC_AGENTS_WORK_MS`) |
+ * | `--status-json` | Emit machine-readable status lines (also `FABRIC_AGENTS_STATUS_JSON=1`) |
  *
  * ## Environment
  *
  * - **`FABRIC_AGENTS_SKIP_CHAIN=1`** — CI-style smoke (exit after queue drains); same worker caps as `--smoke` unless `--distributor-only` / `--bitcoin-only`.
  * - **`FABRIC_AGENTS_WORK_MS`** — per-job delay inside workers (default `1200` full stack, `25` when skip-chain).
+ * - **`FABRIC_AGENTS_PRODUCER_TARGET`** — number of accepted jobs to process before stopping (default `1000`).
+ * - **`FABRIC_AGENTS_MAX_QUEUE`** — queue capacity before unpaid jobs must rebid (default `64`).
+ * - **`FABRIC_AGENTS_PRODUCER_INTERVAL_MS`** — producer tick interval in ms (default `100`).
+ * - **`FABRIC_AGENTS_PRODUCER_BATCH_SIZE`** — jobs attempted per producer tick (default `max(4, cores)`).
+ * - **`FABRIC_AGENTS_FAST_BID_EVERY`** — submit a pre-paid fast-lane bid every N jobs (default `25`).
+ * - **`FABRIC_AGENTS_FAST_BID_AMOUNT`** — sats used for periodic fast-lane bids (default `3`).
+ * - **`FABRIC_AGENTS_STATUS_JSON=1`** — emit JSON status snapshots (plus normal human-readable logs).
  * - **`FABRIC_AGENTS_BOOT_IDLE_MS`** — max wait (ms) for initial queue drain after startup (default `120000`).
  * - **`FABRIC_AGENTS_WORK_SHA256_ITERS`** — optional CPU work per job (SHA-256 loop, capped at 2M) for load testing.
  * - **`FABRIC_MNEMONIC`** — optional; smoke / distributor-only use {@link FIXTURE_SEED} when unset.
@@ -37,7 +45,8 @@ const AGENTS_CLI = (function parseAgentsCli () {
     help: false,
     smoke: false,
     distributorOnly: false,
-    bitcoinOnly: false
+    bitcoinOnly: false,
+    statusJson: false
   };
   const proc = globalThis.process;
   const argv = proc.argv.slice(2);
@@ -47,6 +56,7 @@ const AGENTS_CLI = (function parseAgentsCli () {
     else if (a === '--smoke') flags.smoke = true;
     else if (a === '--distributor-only') flags.distributorOnly = true;
     else if (a === '--bitcoin-only') flags.bitcoinOnly = true;
+    else if (a === '--status-json') flags.statusJson = true;
     else if (a === '--work-ms') {
       const next = argv[i + 1];
       if (next != null && next !== '' && !String(next).startsWith('-')) {
@@ -99,14 +109,35 @@ const workDelayMsEnv = Number(process.env.FABRIC_AGENTS_WORK_MS);
 const AGENT_WORK_DELAY_MS = (Number.isFinite(workDelayMsEnv) && workDelayMsEnv >= 0)
   ? workDelayMsEnv
   : (_agentsLightWorkerProfile ? 25 : 1200);
-const DEFAULT_MAX_QUEUE = 100;
+const maxQueueEnv = Number(process.env.FABRIC_AGENTS_MAX_QUEUE);
+const DEFAULT_MAX_QUEUE = (Number.isFinite(maxQueueEnv) && maxQueueEnv > 0)
+  ? Math.floor(maxQueueEnv)
+  : 64;
 const BITCOIN_NETWORK = 'regtest';
 const bootIdleMsEnv = Number(process.env.FABRIC_AGENTS_BOOT_IDLE_MS);
 const FABRIC_AGENTS_BOOT_IDLE_MS = (Number.isFinite(bootIdleMsEnv) && bootIdleMsEnv > 0)
   ? bootIdleMsEnv
   : 120000;
-const PRODUCER_INTERVAL_MS = 200;
-const PRODUCER_BATCH_SIZE = Math.max(2, Math.ceil(numberOfCores / 2));
+const producerIntervalEnv = Number(process.env.FABRIC_AGENTS_PRODUCER_INTERVAL_MS);
+const PRODUCER_INTERVAL_MS = (Number.isFinite(producerIntervalEnv) && producerIntervalEnv > 0)
+  ? Math.floor(producerIntervalEnv)
+  : 100;
+const producerBatchEnv = Number(process.env.FABRIC_AGENTS_PRODUCER_BATCH_SIZE);
+const PRODUCER_BATCH_SIZE = (Number.isFinite(producerBatchEnv) && producerBatchEnv > 0)
+  ? Math.floor(producerBatchEnv)
+  : Math.max(4, numberOfCores);
+const producerTargetEnv = Number(process.env.FABRIC_AGENTS_PRODUCER_TARGET);
+const PRODUCER_TARGET = (Number.isFinite(producerTargetEnv) && producerTargetEnv > 0)
+  ? Math.floor(producerTargetEnv)
+  : 1000;
+const fastBidEveryEnv = Number(process.env.FABRIC_AGENTS_FAST_BID_EVERY);
+const PRODUCER_FAST_BID_EVERY = (Number.isFinite(fastBidEveryEnv) && fastBidEveryEnv > 0)
+  ? Math.floor(fastBidEveryEnv)
+  : 25;
+const fastBidAmountEnv = Number(process.env.FABRIC_AGENTS_FAST_BID_AMOUNT);
+const PRODUCER_FAST_BID_AMOUNT = (Number.isFinite(fastBidAmountEnv) && fastBidAmountEnv >= 1)
+  ? Math.floor(fastBidAmountEnv)
+  : 3;
 
 /** Initial queue-drain deadline: respect `FABRIC_AGENTS_BOOT_IDLE_MS` but keep a sensible floor. */
 function agentsBootstrapDrainDeadlineMs (waves, delayMs) {
@@ -126,17 +157,24 @@ const workShaEnv = Number(process.env.FABRIC_AGENTS_WORK_SHA256_ITERS);
 const WORK_SHA256_ITERS = (Number.isFinite(workShaEnv) && workShaEnv > 0)
   ? Math.min(Math.floor(workShaEnv), 2_000_000)
   : 0;
+const AGENTS_STATUS_JSON = AGENTS_CLI.statusJson || process.env.FABRIC_AGENTS_STATUS_JSON === '1';
 
 // Work Function
 const work = function (payload = {}) {
   this.queueProcessed = (this.queueProcessed || 0) + 1;
   this.lastPayload = payload.index;
+  const workSha256Iters = (Number.isFinite(Number(this.workSha256Iters)) && Number(this.workSha256Iters) > 0)
+    ? Math.min(Math.floor(Number(this.workSha256Iters)), 2_000_000)
+    : 0;
+  const workDelayMs = (Number.isFinite(Number(this.workDelayMs)) && Number(this.workDelayMs) >= 0)
+    ? Number(this.workDelayMs)
+    : 0;
 
   console.debug(`[WORKER:INNER] Worker #${this.workerIndex} Starting work...`, payload.index);
   return new Promise((resolve) => {
-    if (WORK_SHA256_ITERS > 0) {
+    if (workSha256Iters > 0) {
       let buf = crypto.randomBytes(32);
-      for (let i = 0; i < WORK_SHA256_ITERS; i++) {
+      for (let i = 0; i < workSha256Iters; i++) {
         buf = crypto.createHash('sha256').update(buf).update(Buffer.from(String(i % 65536))).digest();
       }
       this.lastWorkDigest = buf.toString('hex', 0, 8);
@@ -152,7 +190,7 @@ const work = function (payload = {}) {
         entity: entityID,
         state: { ...newState, id: entityID }
       });
-    }, AGENT_WORK_DELAY_MS);
+    }, workDelayMs);
   });
 };
 
@@ -263,6 +301,14 @@ function msatToSats (value) {
     if (Number.isFinite(parsed)) return Math.floor(parsed / 1000);
   }
   return 0;
+}
+
+function requiredBidFromQueueError (error) {
+  const message = String((error && error.message) || error || '');
+  const match = message.match(/Pay\s+(\d+)\s+satoshi/i);
+  if (!match) return null;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : null;
 }
 
 function listLightningOutputs (funds) {
@@ -461,10 +507,18 @@ Options:
   --distributor-only   Distributor + periodic work until SIGINT (no Bitcoin / Lightning)
   --bitcoin-only       Managed regtest bitcoind + distributor until SIGINT (no Lightning)
   --work-ms=<n>        Per-job worker delay in ms (same as FABRIC_AGENTS_WORK_MS)
+  --status-json        Emit JSON status snapshots (same as FABRIC_AGENTS_STATUS_JSON=1)
 
 Environment:
   FABRIC_AGENTS_SKIP_CHAIN=1   CI-style smoke (exit after drain); ignored if --distributor-only / --bitcoin-only
   FABRIC_AGENTS_WORK_MS        Worker simulated job duration
+  FABRIC_AGENTS_PRODUCER_TARGET  Accepted jobs target before stopping (default 1000)
+  FABRIC_AGENTS_MAX_QUEUE        Queue capacity before unpaid jobs must rebid (default 64)
+  FABRIC_AGENTS_PRODUCER_INTERVAL_MS Producer tick interval in ms (default 100)
+  FABRIC_AGENTS_PRODUCER_BATCH_SIZE  Jobs attempted each producer tick (default max(4, cores))
+  FABRIC_AGENTS_FAST_BID_EVERY   Submit a fast-lane paid bid every N jobs (default 25)
+  FABRIC_AGENTS_FAST_BID_AMOUNT  Sats for periodic fast-lane bids (default 3)
+  FABRIC_AGENTS_STATUS_JSON=1  Emit JSON status snapshots
   FABRIC_AGENTS_BOOT_IDLE_MS   Max ms to wait for initial queue drain (default 120000)
   FABRIC_AGENTS_WORK_SHA256_ITERS  Optional SHA-256 iterations per job (load test; cap 2M)
   FABRIC_MNEMONIC              Optional BIP-39 mnemonic for keys
@@ -482,14 +536,69 @@ npm run example:agents:bitcoin
  */
 function scheduleAgentProducers ({ master, lightning, aliceLightning }) {
   let producerSequence = 0;
-  const producerTimer = setInterval(() => {
-    for (let i = 0; i < PRODUCER_BATCH_SIZE; i++) {
-      try {
-        master.requestWork({ index: `work-${producerSequence++}` }, 0);
-      } catch (error) {
-        console.warn('[STATUS]', 'Queue submit skipped:', error.message);
-        break;
+  let completed = false;
+  let producing = false;
+  const metrics = {
+    target: PRODUCER_TARGET,
+    submitted: 0,
+    accepted: 0,
+    queueFull: 0,
+    rebidSuccess: 0,
+    rebidFailure: 0,
+    maxBid: 0
+  };
+  let resolveDone;
+  const done = new Promise((resolve) => {
+    resolveDone = resolve;
+  });
+
+  const trySubmitWork = (jobIndex) => {
+    const occasionalFastLane = PRODUCER_FAST_BID_EVERY > 0 && (jobIndex % PRODUCER_FAST_BID_EVERY === 0);
+    const initialBid = occasionalFastLane ? PRODUCER_FAST_BID_AMOUNT : 0;
+    metrics.submitted++;
+
+    try {
+      master.requestWork({ index: `work-${jobIndex}` }, initialBid);
+      metrics.accepted++;
+      if (initialBid > metrics.maxBid) metrics.maxBid = initialBid;
+      return true;
+    } catch (error) {
+      const requiredBid = requiredBidFromQueueError(error);
+      if (requiredBid == null) {
+        return false;
       }
+
+      metrics.queueFull++;
+      const escalatedBid = Math.max(requiredBid, initialBid + 1);
+      try {
+        master.requestWork({ index: `work-${jobIndex}` }, escalatedBid);
+        metrics.accepted++;
+        metrics.rebidSuccess++;
+        if (escalatedBid > metrics.maxBid) metrics.maxBid = escalatedBid;
+        return true;
+      } catch {
+        metrics.rebidFailure++;
+        return false;
+      }
+    }
+  };
+
+  const producerTimer = setInterval(() => {
+    if (completed || producing) return;
+    producing = true;
+    try {
+      for (let i = 0; i < PRODUCER_BATCH_SIZE; i++) {
+        if (metrics.accepted >= metrics.target) break;
+        const submitted = trySubmitWork(producerSequence++);
+        if (!submitted) break;
+      }
+    } finally {
+      producing = false;
+    }
+
+    if (metrics.accepted >= metrics.target) {
+      completed = true;
+      clearInterval(producerTimer);
     }
   }, PRODUCER_INTERVAL_MS);
 
@@ -514,11 +623,37 @@ function scheduleAgentProducers ({ master, lightning, aliceLightning }) {
       const masterFunds = snapshot.masterFunds || {};
       const workerSummary = status.workers.map((worker) => {
         const state = worker.state || {};
-        return `w${worker.index}:done=${worker.processed},err=${worker.errors},${worker.busy ? 'busy' : 'idle'},state.jobs=${state.queueProcessed || 0},state.depth=${state.depth || 0},state.last=${state.lastPayload || '-'}`;
+        return `w${worker.index}:done=${worker.processed},err=${worker.errors},earned=${worker.earnedSats || 0}sats,paid=${worker.paidJobs || 0},${worker.busy ? 'busy' : 'idle'},state.jobs=${state.queueProcessed || 0},state.depth=${state.depth || 0},state.last=${state.lastPayload || '-'}`;
       }).join(' | ');
 
+      if (AGENTS_STATUS_JSON) {
+        console.log(JSON.stringify({
+          type: 'agents_status',
+          timestamp: new Date().toISOString(),
+          queueDepth: status.queueDepth,
+          completed: status.completed,
+          failed: status.failed,
+          paymentCreditSats: status.paymentCreditSats,
+          paidJobsCompleted: status.paidJobsCompleted,
+          paidJobsFailed: status.paidJobsFailed,
+          totalPaidSatsEarned: status.totalPaidSatsEarned,
+          processed: status.processed,
+          workersBusy: status.workersBusy,
+          workersTotal: status.workersTotal,
+          stateDepth: status.stateDepth,
+          stateTip: status.stateTip,
+          historyRoot: status.historyRoot,
+          lightning: {
+            masterChannels: masterChannels.length,
+            aliceChannels: aliceChannels.length,
+            masterFunds: masterFunds.total_msat || masterFunds.total || null,
+            aliceFunds: aliceFunds.total_msat || aliceFunds.total || null
+          }
+        }));
+      }
+
       console.log(
-        `[MASTER] [STATUS] queue=${status.queueDepth} completed=${status.completed} failed=${status.failed} processed=${status.processed} busy=${status.workersBusy}/${status.workersTotal} ${workerSummary}`
+        `[MASTER] [STATUS] queue=${status.queueDepth} completed=${status.completed} failed=${status.failed} processed=${status.processed} paid_done=${status.paidJobsCompleted} paid_fail=${status.paidJobsFailed} earned=${status.totalPaidSatsEarned}sats credit=${status.paymentCreditSats}sats busy=${status.workersBusy}/${status.workersTotal} ${workerSummary}`
       );
 
       if (lightning && aliceLightning) {
@@ -533,12 +668,21 @@ function scheduleAgentProducers ({ master, lightning, aliceLightning }) {
       console.log(
         `[MASTER] [MERKLE] depth=${status.stateDepth} root=${status.historyRoot || '-'} tip=${status.stateTip || '-'} parent=${status.stateParent || '-'}`
       );
+
+      console.log(
+        `[MASTER] [BIDDING] accepted=${metrics.accepted}/${metrics.target} submitted=${metrics.submitted} queue_full=${metrics.queueFull} rebid_ok=${metrics.rebidSuccess} rebid_fail=${metrics.rebidFailure} max_bid=${metrics.maxBid}`
+      );
+
+      if (completed && status.queueDepth === 0 && status.workersBusy === 0) {
+        clearInterval(statusTimer);
+        resolveDone(Object.assign({}, metrics));
+      }
     }).catch((error) => {
       console.warn('[STATUS]', 'Status tick failed:', error.message);
     });
   }, 5000);
 
-  return { producerTimer, statusTimer };
+  return { producerTimer, statusTimer, done };
 }
 
 /**
@@ -586,9 +730,11 @@ async function runDistributorOnlyDemo (input = {}) {
   const timers = scheduleAgentProducers({ master, lightning: null, aliceLightning: null });
   producerTimer = timers.producerTimer;
   statusTimer = timers.statusTimer;
+  const summary = await timers.done;
 
-  console.log('[DEVELOP] Distributor-only demo running.');
-  await new Promise(() => {});
+  console.log(`[DEVELOP] Distributor-only producer complete: accepted=${summary.accepted}/${summary.target} rebid_ok=${summary.rebidSuccess} max_bid=${summary.maxBid}`);
+  await master.stop();
+  return summary;
 }
 
 /**
@@ -696,9 +842,18 @@ async function runBitcoinOnlyDemo (input = {}) {
   const timers = scheduleAgentProducers({ master, lightning: null, aliceLightning: null });
   producerTimer = timers.producerTimer;
   statusTimer = timers.statusTimer;
+  const summary = await timers.done;
 
-  console.log('[DEVELOP] Bitcoin + distributor demo running (no Lightning). Ctrl+C to stop.');
-  await new Promise(() => {});
+  console.log(`[DEVELOP] Bitcoin+distributor producer complete: accepted=${summary.accepted}/${summary.target} rebid_ok=${summary.rebidSuccess} max_bid=${summary.maxBid}`);
+  await master.stop();
+  if (blockTimer) {
+    clearInterval(blockTimer);
+    blockTimer = null;
+  }
+  if (bitcoin) {
+    await bitcoin.stop();
+  }
+  return summary;
 }
 
 async function payRequestedAmount (lightning, aliceLightning, request = {}) {
@@ -817,7 +972,9 @@ function runWorkerLoop () {
     errors: 0,
     lastJobID: null,
     parentStateID: null,
-    stateID: null
+    stateID: null,
+    workSha256Iters: Number(workerData && workerData.workSha256Iters) || 0,
+    workDelayMs: Number(workerData && workerData.workDelayMs) || 0
   }, cloneState(workerData && workerData.initialState));
 
   boundState.stateID = computeWorkerStateID(boundState);
@@ -894,6 +1051,10 @@ class Distributor extends Service {
         maxQueue: settings.maxQueue || DEFAULT_MAX_QUEUE,
         completed: 0,
         failed: 0,
+        paymentCreditSats: 0,
+        paidJobsCompleted: 0,
+        paidJobsFailed: 0,
+        totalPaidSatsEarned: 0,
         nextWorkerIndex: 0,
         stateTip: null,
         externalStatus: {
@@ -961,8 +1122,12 @@ class Distributor extends Service {
             workerIndex: i,
             initialState: {
               queueProcessed: 0,
-              lastPayload: null
+              lastPayload: null,
+              workSha256Iters: WORK_SHA256_ITERS,
+              workDelayMs: AGENT_WORK_DELAY_MS
             },
+            workSha256Iters: WORK_SHA256_ITERS,
+            workDelayMs: AGENT_WORK_DELAY_MS,
             functionSource: (this.settings.function && this.settings.function.toString)
               ? this.settings.function.toString()
               : null
@@ -974,6 +1139,9 @@ class Distributor extends Service {
         core.__processed = 0;
         core.__errors = 0;
         core.__lastJobID = null;
+        core.__activePaymentSats = 0;
+        core.__earnedSats = 0;
+        core.__paidJobs = 0;
         core.__state = {};
         this._state.cores.push(core);
 
@@ -985,7 +1153,14 @@ class Distributor extends Service {
             core.__lastJobID = message.id || null;
             core.__state = message.state || core.__state;
             this._state.content.completed++;
+            if (core.__activePaymentSats > 0) {
+              core.__earnedSats += core.__activePaymentSats;
+              core.__paidJobs++;
+              this._state.content.paidJobsCompleted++;
+              this._state.content.totalPaidSatsEarned += core.__activePaymentSats;
+            }
             this._snapshotGlobalState('worker-done');
+            core.__activePaymentSats = 0;
             core.__busy = false;
             this._dispatchWork();
           }
@@ -995,6 +1170,9 @@ class Distributor extends Service {
             core.__lastJobID = message.id || null;
             core.__state = message.state || core.__state;
             this._state.content.failed++;
+            if (core.__activePaymentSats > 0) {
+              this._state.content.paidJobsFailed++;
+            }
             this._snapshotGlobalState('worker-error');
             const errDetail = (message && message.error != null)
               ? message.error
@@ -1006,6 +1184,7 @@ class Distributor extends Service {
               state: core.__state
             });
             console.warn('[DEVELOP] Worker job failed:', errDetail);
+            core.__activePaymentSats = 0;
             core.__busy = false;
             this._dispatchWork();
           }
@@ -1099,14 +1278,21 @@ class Distributor extends Service {
     if (queue.length >= maxQueue && !paidPriority) {
       const topCost = queue[0].paymentSats;
       const cost = topCost + 1;
+      const availableCredit = Number(this._state.content.paymentCreditSats || 0);
 
-      this.emit('payments:request', {
-        amount: cost,
-        description: 'Priority work payment',
-        recipient: 'Priority work payment'
-      });
+      if (availableCredit >= cost) {
+        this._state.content.paymentCreditSats = availableCredit - cost;
+        paymentSats = cost;
+      } else {
+        this.emit('payments:request', {
+          amount: cost,
+          description: 'Priority work payment',
+          recipient: 'Priority work payment',
+          payload
+        });
 
-      throw new Error(`Queue full (${maxQueue}).  Pay ${cost} satoshi for priority.`);
+        throw new Error(`Queue full (${maxQueue}).  Pay ${cost} satoshi for priority.`);
+      }
     }
 
     const job = {
@@ -1150,6 +1336,7 @@ class Distributor extends Service {
       // Take job from queue and dispatch to worker.
       const job = queue.shift();
       core.__busy = true;
+      core.__activePaymentSats = Number(job.paymentSats) || 0;
       try {
         core.postMessage({
           type: 'start',
@@ -1159,6 +1346,7 @@ class Distributor extends Service {
         });
       } catch (error) {
         queue.unshift(job);
+        core.__activePaymentSats = 0;
         core.__busy = false;
         this.emit('error', 'Failed to dispatch job:', error.message);
       }
@@ -1192,6 +1380,19 @@ class Distributor extends Service {
     return this;
   }
 
+  creditPayment (amountSats = 0, metadata = {}) {
+    const amount = Math.max(0, Math.floor(Number(amountSats) || 0));
+    if (amount <= 0) return this._state.content.paymentCreditSats;
+    this._state.content.paymentCreditSats += amount;
+    this.emit('payments:credited', {
+      amount,
+      availableCredit: this._state.content.paymentCreditSats,
+      metadata
+    });
+    this._snapshotGlobalState('payment-credited');
+    return this._state.content.paymentCreditSats;
+  }
+
   status () {
     const workers = this._state.cores.map((core) => ({
       index: core.__index,
@@ -1199,6 +1400,8 @@ class Distributor extends Service {
       processed: core.__processed || 0,
       errors: core.__errors || 0,
       lastJobID: core.__lastJobID || null,
+      earnedSats: core.__earnedSats || 0,
+      paidJobs: core.__paidJobs || 0,
       state: core.__state || {}
     }));
 
@@ -1210,6 +1413,10 @@ class Distributor extends Service {
       queueDepth: this._state.content.queue.length,
       completed: this._state.content.completed,
       failed: this._state.content.failed || 0,
+      paymentCreditSats: this._state.content.paymentCreditSats || 0,
+      paidJobsCompleted: this._state.content.paidJobsCompleted || 0,
+      paidJobsFailed: this._state.content.paidJobsFailed || 0,
+      totalPaidSatsEarned: this._state.content.totalPaidSatsEarned || 0,
       processed: (this._state.content.completed || 0) + (this._state.content.failed || 0),
       stateTip: this._state.id,
       stateParent: this._state.history.length > 1 ? this._state.history[this._state.history.length - 2] : null,
@@ -1294,6 +1501,8 @@ async function main (input = {}) {
       if (!drained) {
         throw new Error(`Skip-chain smoke: queue did not drain within ${idleDeadline}ms`);
       }
+      const status = skipMaster.status();
+      console.log(`[DEVELOP] Skip-chain smoke earnings: paid_done=${status.paidJobsCompleted} earned=${status.totalPaidSatsEarned}sats credit=${status.paymentCreditSats}sats`);
       console.log('[DEVELOP] Skip-chain smoke: initial queue drained OK.');
       console.log('[DEVELOP] Skip-chain smoke: complete.');
       return;
@@ -1630,22 +1839,40 @@ async function main (input = {}) {
   }));
 
   let paymentInFlight = false;
+  const deferredPaymentRequests = [];
 
   // TODO: migrate to `functions/`
   master.on('payments:request', async (request) => {
     if (paymentInFlight) {
-      console.warn('[PAYMENTS] Payment already in-flight, skipping duplicate request.');
+      deferredPaymentRequests.push(request);
+      console.warn('[PAYMENTS] Payment already in-flight, queueing duplicate request.');
       return;
     }
 
     paymentInFlight = true;
     try {
       const result = await payRequestedAmount(lightning, aliceLightning, request);
+      master.creditPayment(result.sats, {
+        invoiceHash: result.invoice && (result.invoice.paymentHash || result.invoice.payment_hash || null),
+        request
+      });
+      if (request && request.payload) {
+        try {
+          const paidJobID = master.requestWork(request.payload, 0);
+          console.log(`[PAYMENTS] Re-queued paid priority work as job ${paidJobID}.`);
+        } catch (queueError) {
+          console.warn('[PAYMENTS] Could not re-queue paid priority work:', queueError.message);
+        }
+      }
       console.log(`[PAYMENTS] Paid ${result.sats} sats via Lightning (invoice=${result.invoice.paymentHash || '-'}).`);
     } catch (error) {
       console.error('[PAYMENTS] Failed to complete payment request:', error.message);
     } finally {
       paymentInFlight = false;
+      const next = deferredPaymentRequests.shift();
+      if (next) {
+        setImmediate(() => master.emit('payments:request', next));
+      }
     }
   });
 
@@ -1678,6 +1905,10 @@ async function main (input = {}) {
   const timers = scheduleAgentProducers({ master, lightning, aliceLightning });
   producerTimer = timers.producerTimer;
   statusTimer = timers.statusTimer;
+  const summary = await timers.done;
+  console.log(`[DEVELOP] Full-stack producer complete: accepted=${summary.accepted}/${summary.target} rebid_ok=${summary.rebidSuccess} max_bid=${summary.maxBid}`);
+  await cleanupBootstrapFailure();
+  return summary;
   } catch (bootstrapError) {
     console.error('[DEVELOP] Full-stack bootstrap failed:', bootstrapError && bootstrapError.message ? bootstrapError.message : bootstrapError);
     await cleanupBootstrapFailure();
