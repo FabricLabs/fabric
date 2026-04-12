@@ -7,7 +7,7 @@ const Message = require('../types/message');
 // Main Process
 async function main () {
   // Create Message instance
-  const message = Message.fromVector(['GenericMessage', '"Hello, world!"']);
+  const message = Message.fromVector(['P2P_BASE_MESSAGE', '"Hello, world!"']);
 
   // Return generic Object
   return {

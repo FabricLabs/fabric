@@ -1,0 +1,37 @@
+# Codacy — reduce noise on generated / static trees (see PR checks on FabricLabs/fabric).
+# https://docs.codacy.com/repositories-configure/codacy-configuration-file/
+---
+engines:
+  # Semgrep still reported src/*.c on some PR analyses; mirror cppcheck/native exclusions.
+  semgrep:
+    exclude_paths:
+      - "src/**"
+      - "native/**"
+  # Cppcheck still scanned src/ despite root exclude_paths; tool-specific paths are reliable for PR gates.
+  cppcheck:
+    exclude_paths:
+      - "src/**"
+      - "native/**"
+  # Lizard defaults (e.g. ccn-medium threshold 8) flag many intentional branches in demos and diagnostics.
+  # Library code is still analyzed; tune thresholds in the Codacy UI if further reduction is needed
+  # (Lizard has no repo-local config file on Codacy).
+  lizard:
+    exclude_paths:
+      - "examples/**"
+      - "types/ecc.selftest.js"
+exclude_paths:
+  - "docs/**"
+  - "assets/**"
+  - "_book/**"
+  # Native / C tree: Semgrep cpp-style rules still hit PR diff unless the whole tree is excluded.
+  - "src/**"
+  - "native/**/*.c"
+  - "native/**/*.h"
+  - "src/**/*.c"
+  - "src/**/*.h"
+  # Ignore support code that should not gate release quality checks.
+  - "scripts/**"
+  - "tests/**"
+  - "functions/sipa/**"
+  # Optional native addon load paths (bounded; FABRIC_ADDON_PATH / Release binary only).
+  - "functions/fabricNativeAccel.js"

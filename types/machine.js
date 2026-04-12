@@ -14,10 +14,51 @@ const Actor = require('./actor');
 const State = require('./state');
 const Key = require('./key');
 
+// Fabric Functions
+const {
+  createDefaultOpcodeRegistry,
+  defineOpcode: defineOpcodeEntry,
+  resolveOpcodeContract
+} = require('../functions/opcodeRegistry');
+
+// Strict JSON
+const { parsePersistedJson } = require('../functions/wireJson');
+
 /**
- * General-purpose state machine with {@link Vector}-based instructions.
+ * @classdesc Deterministic <strong>virtual machine</strong> layer extending {@link Actor}: script/stack, fixed memory buffer,
+ * clock, and a {@link Key}-backed generator for reproducible “random” bits (<code>sip</code>). Consumes {@link State}-signed
+ * instruction entries from {@link Fabric#push} — not the same as P2P {@link Message} dispatch (see
+ * <code>types/message.js</code>).
+ * @class Machine
+ * @extends Actor
  */
 class Machine extends Actor {
+  /**
+   * Parse a JSON object of Buffer-like entries into an array of {@link Buffer}s (legacy wire / script helper).
+   * @param {string} [input='']
+   * @returns {Buffer[]}
+   */
+  static fromObjectString (input = '') {
+    if (!input) throw new Error('Must provide input.');
+    if (typeof input !== 'string') input = JSON.stringify(input);
+    const result = [];
+    const object = parsePersistedJson(input);
+
+    for (const i in object) {
+      let element = object[i];
+
+      if (element instanceof Array) {
+        element = Buffer.from(element);
+      } else {
+        element = Buffer.from(element.data);
+      }
+
+      result.push(element);
+    }
+
+    return result;
+  }
+
   /**
    * Create a Machine.
    * @param {Object} settings Run-time configuration.
@@ -49,6 +90,7 @@ class Machine extends Actor {
     this.memory = Buffer.alloc(MACHINE_MAX_MEMORY);
 
     this.known = {}; // definitions
+    this.opcodes = createDefaultOpcodeRegistry();
     this.stack = []; // output
     this.history = []; // State tree
 
@@ -79,7 +121,6 @@ class Machine extends Actor {
   }
 
   get tip () {
-    this.log(`tip requested: ${val}`);
     this.log(`tip requested, history: ${JSON.stringify(this.history)}`);
     return this.history[this.history.length - 1] || null;
   }
@@ -112,7 +153,7 @@ class Machine extends Actor {
     }).join(''), 2).toString(16);
   }
 
-  validateCycle (i) {
+  validateCycle (_i) {
     return false;
   }
 
@@ -156,8 +197,32 @@ class Machine extends Actor {
   }
 
   // register a local function
-  define (name, op) {
+  define (name, op, definition = {}) {
     this.known[name] = op.bind(this.state);
+    defineOpcodeEntry(this.opcodes, name, Object.assign({}, definition, {
+      implementation: true
+    }));
+    return this.known[name];
+  }
+
+  defineOpcode (name, op, definition = {}) {
+    return this.define(name, op, definition);
+  }
+
+  defineBitcoinOpcode (name, op, definition = {}) {
+    return this.define(name, op, Object.assign({}, definition, { family: 'bitcoin' }));
+  }
+
+  defineFabricOpcode (name, op, definition = {}) {
+    return this.define(name, op, Object.assign({}, definition, { family: 'fabric' }));
+  }
+
+  compileOpcodeContract (body = '') {
+    const resolved = resolveOpcodeContract(this.opcodes, body);
+    if (resolved.unknown.length) {
+      throw new Error(`Unknown opcodes in contract: ${resolved.unknown.join(', ')}`);
+    }
+    return resolved.lines;
   }
 
   applyOperation (op) {
@@ -190,7 +255,13 @@ class Machine extends Actor {
 
   async start () {
     this.status = 'STARTING';
-    this._governor = setInterval(this.compute.bind(this), this.settings.frequency * 1000);
+    const f = this.settings.frequency;
+    const fromFreq = (typeof f === 'number' && Number.isFinite(f)) ? f * 1000 : NaN;
+    const intervalSec = (typeof this.settings.interval === 'number' && Number.isFinite(this.settings.interval))
+      ? this.settings.interval
+      : 60;
+    const ms = Number.isFinite(fromFreq) && fromFreq > 0 ? fromFreq : Math.max(1, intervalSec * 1000);
+    this._governor = setInterval(this.compute.bind(this), ms);
     this.status = 'STARTED';
     return this;
   }

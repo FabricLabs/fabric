@@ -1,0 +1,29 @@
+Analyzing package update frequency...
+
+Most Frequently Updated Current Dependencies:
+══════════════════════════
+1.  @noble/hashes     │ 11 updates
+2.  node-addon-api    │ 10 updates
+3.  zeromq            │  9 updates
+4.  mocha             │  7 updates
+5.  path-to-regexp    │  7 updates
+6.  honkit            │  7 updates
+7.  jayson            │  6 updates
+8.  merkletreejs      │  6 updates
+9.  commander         │  5 updates
+10. @noble/curves     │  5 updates
+11. chai              │  4 updates
+12. ecpair            │  4 updates
+13. jsdoc             │  4 updates
+14. jsdoc-to-markdown │  4 updates
+15. eslint            │  4 updates
+16. c8                │  4 updates
+17. elliptic          │  4 updates
+18. js-beautify       │  4 updates
+19. buffer            │  4 updates
+20. node-gyp          │  3 updates
+21. redis             │  3 updates
+22. bn.js             │  3 updates
+23. bitcoinjs-lib     │  3 updates
+24. cross-env         │  3 updates
+25. fast-json-patch   │  3 updates

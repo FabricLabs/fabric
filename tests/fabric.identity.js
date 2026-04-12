@@ -2,8 +2,8 @@
 
 const Identity = require('../types/identity');
 const assert = require('assert');
-const bip39 = require('bip39');
-const BIP32 = require('bip32').default;
+const bip39 = require('../functions/bip39');
+const BIP32 = require('../functions/bip32').default;
 const ecc = require('../types/ecc');
 let nobleSecp256k1 = null;
 try {

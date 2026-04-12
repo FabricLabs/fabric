@@ -1,8 +1,8 @@
 'use strict';
 
-const Vector = require('./vector');
+const State = require('./state');
 
-class Document extends Vector {
+class Document extends State {
   constructor (doc) {
     super(doc);
 
@@ -15,14 +15,14 @@ class Document extends Vector {
   }
 
   /**
-   * Compiles an `input` {@link Vector}.
+   * Compiles an `input` {@link State} snapshot (signed instruction payload).
    * ENV provides the name of a parent type (e.g., "scaffold" or "0xDEADBEEF...")
    * UI provides the name of the desired component
-   * @param  {Vector}  input [env, ui]
+   * @param  {Array|Object}  input [env, ui]
    * @return {Promise}       Promise which resolves on compilation.
    */
   async compile (input) {
-    let vector = new Vector(input)._sign();
+    let vector = new State(input)._sign();
     let contract = [
       `extends ${input[0]}`,
       `block body`,

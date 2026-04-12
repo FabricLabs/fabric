@@ -1,25 +1,39 @@
 name: CI
+# Gitea: pull_request uses refs/pull/<n>/head (no GitHub-style merge ref). Runner must
+# advertise ubuntu-latest (see https://docs.gitea.com/usage/actions/faq).
 on:
   pull_request:
+    types: [opened, reopened, synchronize]
     branches:
     - '**'
   push:
     branches:
     - master
     - develop
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  # Ubuntu runners do not ship libnoise / libwally / headers required by binding.gyp.
+  FABRIC_SKIP_NODE_GYP: '1'
+  # GitHub Actions: opt composite actions into Node 24 before the Node 20 runner removal.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  # c8 + full mocha tree is memory-heavy; avoid SIGKILL on smaller ubuntu-latest runners.
+  NODE_OPTIONS: --max-old-space-size=6144
 jobs:
   test:
+    # Single OS: self-hosted Gitea runners typically provide ubuntu-latest in Docker;
+    # macOS-in-Docker (e.g. sickcodes/docker-osx) is brittle. GitHub.com runs macOS via
+    # workflow test-macos.yaml (skipped when github.server_url is not github.com).
     name: Run tests
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os:
-        - macos-latest
-        - ubuntu-latest
+    runs-on: ubuntu-latest
     steps:
     - name: Checkout branch
       uses: actions/checkout@v4
-    - name: Install Node.js on ${{ matrix.os }}
+      with:
+        # Gitea uses refs/pull/<n>/head; GitHub uses .../merge for PRs — github.ref is correct on both.
+        ref: ${{ github.ref }}
+    - name: Install Node.js
       uses: actions/setup-node@v4
       with:
         node-version-file: '.nvmrc'
@@ -31,7 +45,6 @@ jobs:
         # 3.12+ dropped stdlib distutils; CLN's bundled libwally (external/Makefile) still imports it.
         python-version: '3.11'
     - name: Install Ubuntu build deps and C libs
-      if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential libsecp256k1-dev
@@ -41,7 +54,7 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: install-report-${{ matrix.os }}
+        name: install-report-ubuntu-latest
         path: reports/install.log
         if-no-files-found: ignore
     - name: Smoke load (core modules)
@@ -52,56 +65,47 @@ jobs:
       run: npm run lint:pkg
     - name: Download and install bitcoind
       run: |
-        if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
-          wget https://bitcoin.org/bin/bitcoin-core-28.0/bitcoin-28.0-x86_64-linux-gnu.tar.gz
-          tar -xzf bitcoin-28.0-x86_64-linux-gnu.tar.gz
-          sudo mv bitcoin-28.0/bin/bitcoind bitcoin-28.0/bin/bitcoin-cli /usr/local/bin/
-        else
-          brew install bitcoin
-        fi
+        set -euo pipefail
+        VERSION=28.0
+        ARCHIVE=bitcoin-${VERSION}-x86_64-linux-gnu.tar.gz
+        ARCHIVE_SHA256=7fe294b02b25b51acb8e8e0a0eb5af6bbafa7cd0c5b0e5fcbb61263104a82fbc
+        BASE=https://bitcoin.org/bin/bitcoin-core-${VERSION}/
+        wget -q "${BASE}SHA256SUMS"
+        wget -q "${BASE}${ARCHIVE}"
+        echo "${ARCHIVE_SHA256}  ${ARCHIVE}" | sha256sum -c -
+        grep "${ARCHIVE}\$" SHA256SUMS | sha256sum -c -
+        tar -xzf "${ARCHIVE}"
+        sudo mv bitcoin-${VERSION}/bin/bitcoind bitcoin-${VERSION}/bin/bitcoin-cli /usr/local/bin/
     - name: Run tests (with coverage for Codecov)
       run: npm run report:coverage
       timeout-minutes: 30
     - name: Install Rust toolchain
-      if: matrix.os == 'ubuntu-latest'
       uses: dtolnay/rust-toolchain@1.79.0
     - name: Install lightningd
       run: |
-        if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
-          # Install dependencies
-          sudo apt-get update
-          sudo apt-get install -y \
-            autoconf automake build-essential git libtool python3 python3-pip \
-            net-tools zlib1g-dev libsqlite3-dev libgmp-dev libsodium-dev gettext
+        sudo apt-get update
+        sudo apt-get install -y \
+          autoconf automake build-essential git libtool python3 python3-pip \
+          net-tools zlib1g-dev libsqlite3-dev libgmp-dev libsodium-dev gettext
 
-          # Wire generation + setuptools (distutils compatibility if build scripts expect it)
-          pip3 install --upgrade pip setuptools wheel mako
+        python3 -m pip install --upgrade pip setuptools wheel mako
 
-          # Prefer Actions Python on PATH (apt's /usr/bin/python3 may be 3.12+ without distutils)
-          export PYTHON="$(command -v python3)"
-          python3 --version
+        export PYTHON="$(command -v python3)"
+        python3 --version
 
-          # Clone and build Core Lightning v25.05
-          git clone https://github.com/ElementsProject/lightning.git
-          cd lightning
-          git checkout v25.05
-          ./configure
-          make -j$(nproc)
-          sudo make install
+        LIGHTNING_REF=v25.05
+        LIGHTNING_COMMIT=2b8b709bfd3d1b296d453eff3f2316a90e6290b8
+        git clone --depth=1 --branch "${LIGHTNING_REF}" https://github.com/ElementsProject/lightning.git
+        cd lightning
+        test "$(git rev-parse HEAD)" = "${LIGHTNING_COMMIT}"
+        ./configure
+        make -j$(nproc)
+        sudo make install
 
-          # Verify installation and add to PATH
-          which lightningd || echo "lightningd not found in PATH"
-          ls -la /usr/local/bin/lightningd || echo "lightningd not found in /usr/local/bin"
-          sudo ln -sf /usr/local/bin/lightningd /usr/bin/lightningd || true
-          echo "Lightning Network installation completed"
-        else
-          brew install lightning
-
-          # Verify installation
-          which lightningd || echo "lightningd not found in PATH"
-          lightningd --version || echo "lightningd version check failed"
-          echo "Lightning Network installation completed"
-        fi
+        which lightningd || echo "lightningd not found in PATH"
+        ls -la /usr/local/bin/lightningd || echo "lightningd not found in /usr/local/bin"
+        sudo ln -sf /usr/local/bin/lightningd /usr/bin/lightningd || true
+        echo "Lightning Network installation completed"
     - name: Verify lightningd installation
       run: |
         echo "Checking lightningd installation..."
@@ -111,12 +115,8 @@ jobs:
         else
           echo "❌ lightningd not found in PATH"
           echo "PATH: $PATH"
-          echo "Searching for lightningd..."
           find /usr -name lightningd 2>/dev/null || echo "No lightningd found in /usr"
           find /usr/local -name lightningd 2>/dev/null || echo "No lightningd found in /usr/local"
-          if [ "${{ matrix.os }}" = "macos-latest" ]; then
-            find /opt/homebrew -name lightningd 2>/dev/null || echo "No lightningd found in /opt/homebrew"
-          fi
         fi
     - name: Send coverage report
       uses: codecov/codecov-action@v4

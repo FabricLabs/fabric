@@ -4,9 +4,7 @@ const {
   MAGIC_BYTES,
   VERSION_NUMBER,
   HEADER_SIZE,
-  MAX_MESSAGE_SIZE,
   OP_CYCLE,
-  GENERIC_MESSAGE_TYPE,
   LOG_MESSAGE_TYPE,
   GENERIC_LIST_TYPE,
   BITCOIN_BLOCK_TYPE,
@@ -16,13 +14,23 @@ const {
   P2P_GENERIC,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
-  P2P_ROOT,
   P2P_PING,
   P2P_PONG,
   P2P_START_CHAIN,
   P2P_INSTRUCTION,
   P2P_BASE_MESSAGE,
   P2P_CHAIN_SYNC_REQUEST,
+  P2P_FLUSH_CHAIN,
+  P2P_INVENTORY_REQUEST,
+  P2P_INVENTORY_RESPONSE,
+  P2P_FILE_SEND,
+  P2P_DOCUMENT_PUBLISH,
+  P2P_PEER_ALIAS,
+  P2P_PEER_ANNOUNCE,
+  P2P_SESSION_OFFER,
+  P2P_SESSION_OPEN,
+  P2P_CONTRACT_PUBLISH,
+  P2P_CONTRACT_MESSAGE,
   P2P_STATE_ROOT,
   P2P_STATE_COMMITTMENT,
   P2P_STATE_CHANGE,
@@ -63,9 +71,12 @@ const {
   LIGHTNING_CHANNEL_UPDATE
 } = require('../constants');
 
-const HEADER_SIG_SIZE = 64;
+const { tryParseWireJson } = require('../functions/wireJson');
 
-/** @param {Buffer} buf */
+/**
+ * @private
+ * @param {Buffer} buf
+ */
 function isAllZero32 (buf) {
   if (!buf || buf.length !== 32) return true;
   return buf.equals(Buffer.alloc(32));
@@ -78,7 +89,6 @@ const struct = require('struct');
 // Fabric Types
 const Actor = require('./actor');
 const Hash256 = require('./hash256');
-const Key = require('./key');
 
 // Function Definitions
 const padDigits = require('../functions/padDigits');
@@ -89,21 +99,22 @@ const taggedHash = require('../functions/taggedHash');
  * - **Wire** (`wireType`, {@link Message#type}): SCREAMING_SNAKE_CASE strings from opcode
  *   decode (`fromBuffer`, `toVector` first element). Matches AMP / `constants.js` style.
  * - **Friendly** ({@link Message#friendlyType}, `toObject().type`): PascalCase (or historical
- *   labels) for JSON and human-facing APIs — see {@link FRIENDLY_TYPE_BY_WIRE}.
+ *   labels) for JSON and human-facing APIs — see {@link Message.FRIENDLY_TYPE_BY_WIRE}.
  *
  * Encode accepts **either** name via merged {@link Message#types} (canonical wire + legacy friendly).
  * {@link Message.wireTypeFromFriendly} / {@link Message.friendlyTypeFromWire} convert between them.
  *
  * Opcode → wire string order matches the historical `type` switch: when multiple labels share one
- * opcode (e.g. P2P vs Lightning), **first listed** in {@link WIRE_TYPE_DECODE_ORDER} wins.
+ * opcode (e.g. P2P vs Lightning), **first listed** in {@link Message.WIRE_TYPE_DECODE_ORDER} wins.
+ * Those maps are **not** global exports: use {@link Message} statics `WIRE_TYPE_DECODE_ORDER` and
+ * `FRIENDLY_TYPE_BY_WIRE`.
  */
+/** @private */
 const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [BITCOIN_BLOCK_TYPE, 'BITCOIN_BLOCK'],
   [BITCOIN_BLOCK_HASH_TYPE, 'BITCOIN_BLOCK_HASH'],
   [BITCOIN_TRANSACTION_TYPE, 'BITCOIN_TRANSACTION'],
   [BITCOIN_TRANSACTION_HASH_TYPE, 'BITCOIN_TRANSACTION_HASH'],
-  [GENERIC_MESSAGE_TYPE, 'GENERIC_MESSAGE'],
-  [GENERIC_MESSAGE_TYPE + 1, 'JSON_BLOB'],
   [LOG_MESSAGE_TYPE, 'LOG_MESSAGE'],
   [GENERIC_LIST_TYPE, 'GENERIC_LIST'],
   [DOCUMENT_PUBLISH_TYPE, 'DOCUMENT_PUBLISH'],
@@ -113,6 +124,17 @@ const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [P2P_PONG, 'P2P_PONG'],
   [P2P_GENERIC, 'P2P_GENERIC'],
   [P2P_CHAIN_SYNC_REQUEST, 'P2P_CHAIN_SYNC_REQUEST'],
+  [P2P_FLUSH_CHAIN, 'P2P_FLUSH_CHAIN'],
+  [P2P_INVENTORY_REQUEST, 'P2P_INVENTORY_REQUEST'],
+  [P2P_INVENTORY_RESPONSE, 'P2P_INVENTORY_RESPONSE'],
+  [P2P_FILE_SEND, 'P2P_FILE_SEND'],
+  [P2P_DOCUMENT_PUBLISH, 'P2P_DOCUMENT_PUBLISH'],
+  [P2P_PEER_ALIAS, 'P2P_PEER_ALIAS'],
+  [P2P_PEER_ANNOUNCE, 'P2P_PEER_ANNOUNCE'],
+  [P2P_SESSION_OFFER, 'P2P_SESSION_OFFER'],
+  [P2P_SESSION_OPEN, 'P2P_SESSION_OPEN'],
+  [P2P_CONTRACT_PUBLISH, 'CONTRACT_PUBLISH'],
+  [P2P_CONTRACT_MESSAGE, 'CONTRACT_MESSAGE'],
   [P2P_IDENT_REQUEST, 'P2P_IDENT_REQUEST'],
   [P2P_IDENT_RESPONSE, 'P2P_IDENT_RESPONSE'],
   [P2P_BASE_MESSAGE, 'P2P_BASE_MESSAGE'],
@@ -177,14 +199,12 @@ const LEGACY_MESSAGE_TYPE_ALIASES = Object.freeze({
   BitcoinBlockHash: BITCOIN_BLOCK_HASH_TYPE,
   BitcoinTransaction: BITCOIN_TRANSACTION_TYPE,
   BitcoinTransactionHash: BITCOIN_TRANSACTION_HASH_TYPE,
-  GenericMessage: GENERIC_MESSAGE_TYPE,
   GenericLogMessage: LOG_MESSAGE_TYPE,
   GenericList: GENERIC_LIST_TYPE,
   GenericQueue: GENERIC_LIST_TYPE,
   FabricLogMessage: LOG_MESSAGE_TYPE,
   FabricServiceLogMessage: LOG_MESSAGE_TYPE,
   GenericTransferQueue: GENERIC_LIST_TYPE,
-  JSONBlob: GENERIC_MESSAGE_TYPE + 1,
   JSONCall: JSON_CALL_TYPE,
   JSONPatch: PATCH_MESSAGE_TYPE,
   ContractProposal: CONTRACT_PROPOSAL_TYPE,
@@ -193,6 +213,15 @@ const LEGACY_MESSAGE_TYPE_ALIASES = Object.freeze({
   IdentityRequest: P2P_IDENT_REQUEST,
   IdentityResponse: P2P_IDENT_RESPONSE,
   ChainSyncRequest: P2P_CHAIN_SYNC_REQUEST,
+  FlushChain: P2P_FLUSH_CHAIN,
+  InventoryRequest: P2P_INVENTORY_REQUEST,
+  InventoryResponse: P2P_INVENTORY_RESPONSE,
+  PeerAlias: P2P_PEER_ALIAS,
+  PeerAnnounce: P2P_PEER_ANNOUNCE,
+  SessionOffer: P2P_SESSION_OFFER,
+  SessionOpen: P2P_SESSION_OPEN,
+  FileSend: P2P_FILE_SEND,
+  DocumentPricingPublish: P2P_DOCUMENT_PUBLISH,
   Ping: P2P_PING,
   Pong: P2P_PONG,
   DocumentRequest: DOCUMENT_REQUEST_TYPE,
@@ -238,6 +267,7 @@ const LEGACY_MESSAGE_TYPE_ALIASES = Object.freeze({
  * where historically used). {@link Message#wireType} / {@link Message#type} use wire names;
  * {@link Message#friendlyType} and {@link Message#toObject} `type` use friendly names.
  */
+/** @private */
 const FRIENDLY_TYPE_BY_WIRE = Object.freeze((() => {
   const tmp = {};
   for (const friendly of Object.keys(LEGACY_MESSAGE_TYPE_ALIASES)) {
@@ -262,6 +292,7 @@ const FRIENDLY_TO_WIRE_TYPE = Object.freeze((() => {
 })());
 
 /**
+ * @private
  * @param {string} wire
  * @returns {string}
  */
@@ -271,6 +302,7 @@ function friendlyTypeFromWire (wire) {
 }
 
 /**
+ * @private
  * @param {string} friendly
  * @returns {string}
  */
@@ -280,16 +312,34 @@ function wireTypeFromFriendly (friendly) {
 }
 
 /**
- * The {@link Message} type defines the Application Messaging Protocol, or AMP.
- * Each {@link Actor} in the network receives and broadcasts messages,
- * selectively disclosing new routes to peers which may have open circuits.
- * @type {Object}
+ * @classdesc <strong>Application Messaging Protocol (AMP)</strong> — binary envelope for what {@link Peer},
+ * {@link Service}, and bridges actually exchange. Extends {@link Actor} for construction and state helpers, but on the wire
+ * you think in <strong>opcodes</strong>, <strong>headers</strong> (parent, author as x-only pubkey, hash, preimage,
+ * 64-byte Schnorr signature), and <strong>payload</strong>.
+ *
+ * <p><strong>Signing</strong> — {@link Message#signWithKey} / {@link Message#verifyWithKey} use BIP-340 Schnorr on tagged
+ * hash <code>Fabric/Message</code> over header (signature field zeroed) + body. This is <strong>not</strong> Bitcoin Signed
+ * Message (ECDSA + Core prefix).</p>
+ *
+ * <p><strong>Type names</strong> — {@link Message#wireType} / {@link Message#type} use SCREAMING_SNAKE wire labels from
+ * opcode decode; {@link Message#friendlyType} and {@link Message#toObject}'s <code>type</code> use PascalCase (or legacy)
+ * JSON names. {@link Message.wireTypeFromFriendly} / {@link Message.friendlyTypeFromWire} bridge the two. See file header
+ * maps (<code>WIRE_TYPE_DECODE_ORDER</code>, <code>LEGACY_MESSAGE_TYPE_ALIASES</code>) when aligning <strong>@fabric/http</strong>
+ * or Hub.</p>
+ *
+ * <p><strong>Narrative</strong> — See <strong>DEVELOPERS.md</strong> (<em>Actor and Message</em>) and {@link Actor}
+ * <code>@fileoverview</code>; home HTML is generated from DEVELOPERS.md, while this page comes from
+ * <code>types/message.js</code>.</p>
+ * @class Message
+ * @extends Actor
  */
 class Message extends Actor {
   /**
-   * The `Message` type is standardized in {@link Fabric} as a {@link Array}, which can be added to any other vector to compute a resulting state.
-   * @param  {Object} message Message vector.  Will be serialized by {@link Array#_serialize}.
-   * @return {Message} Instance of the message.
+   * Build a message from an object. Prefer <code>type</code>/<code>data</code>; <code>@type</code> / <code>@data</code>
+   * are accepted for backward compatibility.
+   * @param {Object} [input={}] Initial fields: <code>type</code> or <code>@type</code>, <code>data</code> or
+   * <code>@data</code>, optional <code>signer</code>, <code>sensitive</code>, <code>preimage</code>.
+   * @return {Message} Instance ready for {@link Message#asRaw}, {@link Message#signWithKey}, etc.
    */
   constructor (input = {}) {
     super(input);
@@ -327,10 +377,12 @@ class Message extends Actor {
     if (messageData && messageType) {
       this.type = messageType;
       // Set the type field to the numeric constant
-      const typeCode = this.types[messageType] || GENERIC_MESSAGE_TYPE;
+      const typeCode = this.types[messageType] || this.types.P2P_BASE_MESSAGE;
       this.raw.type.writeUInt32BE(typeCode, 0);
 
-      if (typeof messageData !== 'string') {
+      if (Buffer.isBuffer(messageData) || messageData instanceof Uint8Array) {
+        this.data = Buffer.from(messageData);
+      } else if (typeof messageData !== 'string') {
         this.data = JSON.stringify(messageData);
       } else {
         this.data = messageData;
@@ -818,7 +870,7 @@ class Message extends Actor {
    */
   get wireType () {
     const code = parseInt(this.raw.type.toString('hex'), 16);
-    return CANONICAL_WIRE_TYPE_BY_OPCODE[code] || 'GENERIC_MESSAGE';
+    return CANONICAL_WIRE_TYPE_BY_OPCODE[code] || 'P2P_BASE_MESSAGE';
   }
 
   /**
@@ -836,20 +888,13 @@ Object.defineProperty(Message.prototype, 'type', {
   set (value) {
     // console.trace('setting type:', value);
     let code = this.types[value];
-    // Default to GENERIC_MESSAGE or JSON_BLOB based on content
+    // Default to P2P_BASE_MESSAGE for unknown/unregistered names.
     if (!code) {
       this.emit('warning', `Unknown message type: ${value}`);
-      // Check if data is valid JSON
-      try {
-        if (this.data && JSON.parse(this.data)) {
-          code = this.types['JSON_BLOB'] || this.types['JSONBlob'];
-          value = 'JSON_BLOB';
-        } else {
-          code = this.types['GENERIC_MESSAGE'] || this.types['GenericMessage'];
-        }
-      } catch (e) {
-        code = this.types['GENERIC_MESSAGE'] || this.types['GenericMessage'];
-      }
+      // Keep unknown payloads representable on-wire without inventing ad-hoc generic labels.
+      tryParseWireJson(typeof this.data === 'string' ? this.data : String(this.data ?? ''));
+      code = this.types.P2P_BASE_MESSAGE;
+      value = 'P2P_BASE_MESSAGE';
     }
 
     const padded = padDigits(code.toString(16), 8);
@@ -908,6 +953,7 @@ Object.defineProperty(Message.prototype, 'sensitive', {
 
 Message.friendlyTypeFromWire = friendlyTypeFromWire;
 Message.wireTypeFromFriendly = wireTypeFromFriendly;
+Message.WIRE_TYPE_DECODE_ORDER = WIRE_TYPE_DECODE_ORDER;
 Message.FRIENDLY_TYPE_BY_WIRE = FRIENDLY_TYPE_BY_WIRE;
 Message.FRIENDLY_TO_WIRE_TYPE = FRIENDLY_TO_WIRE_TYPE;
 

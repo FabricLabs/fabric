@@ -227,7 +227,7 @@ describe('@fabric/core/types/message', function () {
 
   describe('toBuffer()', function () {
     it('round-trips signed wire bytes through fromBuffer', function () {
-      const m = Message.fromVector(['GenericMessage', JSON.stringify({ type: 'probe', n: 1 })]);
+      const m = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify({ type: 'probe', n: 1 })]);
       m.signWithKey(key);
       const buf = m.toBuffer();
       const restored = Message.fromBuffer(buf);

@@ -1,7 +1,7 @@
 'use strict';
 
 const PATCHES_ENABLED = true;
-const OP_TRACE = require('../contracts/trace');
+const { tryParsePersistedJson, tryParseWireJson, utf8FromPersistedRaw } = require('../functions/wireJson');
 
 // Dependencies
 const crypto = require('crypto');
@@ -26,16 +26,19 @@ const Key = require('./key');
 const Message = require('./message');
 const Resource = require('./resource');
 const Store = require('./store');
+const {
+  createDefaultOpcodeRegistry,
+  defineOpcode: defineOpcodeEntry,
+  resolveOpcodeContract,
+  normalizePubkeyHex
+} = require('../functions/opcodeRegistry');
 
 /**
- * The "Service" is a simple model for processing messages in a distributed
- * system.  {@link Service} instances are public interfaces for outside systems,
- * and typically advertise their presence to the network.
- *
- * To implement a Service, you will typically need to implement all methods from
- * this prototype.  In general, `connect` and `send` are the highest-priority
- * jobs, and by default the `fabric` property will serve as an I/O stream using
- * familiar semantics.
+ * @classdesc Long-lived application surface extending {@link Actor}. Integrates external systems and the Fabric
+ * network: peers consume and produce {@link Message} (AMP) instances, not ad-hoc JSON. Subclasses implement routing,
+ * resources, and lifecycle (<code>start</code>/<code>stop</code> patterns — see <strong>AGENTS.md</strong>). The CLI/browser shell is {@link Service.FabricShell}.
+ * @class Service
+ * @extends Actor
  * @access protected
  * @property map The "map" is a hashtable of "key" => "value" pairs.
  */
@@ -48,7 +51,7 @@ class Service extends Actor {
    * @param {Object} [settings.state] Initial state to assign.
    */
   constructor (settings = {}) {
-    // Initialize Scribe, our logging tool
+    // State (extends Actor) carries logging / lifecycle helpers formerly on Scribe
     super(settings);
 
     this.name = this.constructor.name;
@@ -100,6 +103,7 @@ class Service extends Actor {
     this.resources = {};
     this.services = {};
     this.methods = {};
+    this.opcodes = createDefaultOpcodeRegistry();
     this.clients = {};
     this.targets = [];
     this.history = [];
@@ -145,17 +149,18 @@ class Service extends Actor {
       _ttl: new Map(),
       get: async (key) => {
         const now = Date.now();
-        const ttl = this.cache._ttl.get(key);
-        if (ttl && ttl < now) {
+        const expiresAt = this.cache._ttl.get(key);
+        if (expiresAt !== undefined && expiresAt < now) {
           this.cache._data.delete(key);
           this.cache._ttl.delete(key);
           return null;
         }
         return this.cache._data.get(key);
       },
-      set: async (key, value, ttl = 60000) => {
+      /** @param {string} key @param {*} value @param {number} [ttlMs=60000] time-to-live in milliseconds */
+      set: async (key, value, ttlMs = 60000) => {
         this.cache._data.set(key, value);
-        this.cache._ttl.set(key, Date.now() + ttl);
+        this.cache._ttl.set(key, Date.now() + ttlMs);
       }
     };
 
@@ -237,11 +242,11 @@ class Service extends Actor {
 
     try {
       plugin = require(local);
-    } catch (E) {
+    } catch {
       // Avoid direct stdout writes from library internals.
       try {
         plugin = require(fallback);
-      } catch (E) {
+      } catch {
         // no-op: return null plugin below
       }
     }
@@ -318,11 +323,13 @@ class Service extends Actor {
 
     // TODO: remove JSON parser here — only needed for verification
     // TODO: parse JSON types in @fabric/core/types/message
-    let data = beat.data;
+    const data = beat.data;
 
     try {
-      const parsed = JSON.parse(data);
-      data = JSON.stringify(parsed, null, '  ');
+      const pr = tryParseWireJson(typeof data === 'string' ? data : String(data ?? ''));
+      if (!pr.ok) {
+        this.emit('error', `Exception parsing beat: ${pr.error.message}`);
+      }
     } catch (exception) {
       this.emit('error', `Exception parsing beat: ${exception}`);
     }
@@ -374,8 +381,9 @@ class Service extends Actor {
    * @param  {EventEmitter} source Emitter of events.
    * @return {Service} Instance of Service after binding events.
    */
-  trust (source, name = source.constructor.name) {
-    if (!(source instanceof EventEmitter)) throw new Error('Source is not an EventEmitter.')
+  trust (source, name) {
+    if (!(source instanceof EventEmitter)) throw new Error('Source is not an EventEmitter.');
+    const label = name != null && name !== '' ? String(name) : source.constructor.name;
 
     // Constants
     const self = this;
@@ -383,7 +391,7 @@ class Service extends Actor {
     // Attach Event Listeners
     if (source.settings && source.settings.debug) source.on('debug', this._handleTrustedDebug.bind(this));
     if (source.settings && source.settings.verbosity >= 0) {
-      source.on('audit', async function _handleTrustedAudit (audit) {
+      source.on('audit', async function _handleTrustedAudit (_audit) {
         /*
         const now = (new Date()).toISOString();
         const template = {
@@ -400,23 +408,23 @@ class Service extends Actor {
 
     return {
       _handleActor: source.on('actor', async function (actor) {
-        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted actor: ${JSON.stringify(actor, null, '  ')}`);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${label}" emitted actor: ${JSON.stringify(actor, null, '  ')}`);
       }),
       _handleAlert: source.on('alert', async function (alert) {
-        self.alert(`[FABRIC:SERVICE] [ALERT] [!!!] ${name} alerted: ${alert}`);
+        self.alert(`[FABRIC:SERVICE] [ALERT] [!!!] ${label} alerted: ${alert}`);
       }),
       _handleBeat: source.on('beat', async function (beat) {
-        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted beat: ${JSON.stringify(beat, null, '  ')}`);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${label}" emitted beat: ${JSON.stringify(beat, null, '  ')}`);
 
-        const ops = [
+        const _ops = [
           { op: 'add', path: `/actors`, value: {} },
           { op: 'add', path: `/services`, value: {} },
-          { op: 'replace', path: `/services/${name}`, value: beat.state }
+          { op: 'replace', path: `/services/${label}`, value: beat.state }
         ];
 
         /*
         try {
-          manager.applyPatch(self._state.content, ops);
+          manager.applyPatch(self._state.content, _ops);
           await self.commit();
         } catch (exception) {
           self.emit('warning', `Could not process beat: ${exception}`);
@@ -424,45 +432,48 @@ class Service extends Actor {
         */
       }),
       _handleChanges: source.on('changes', async function (changes) {
-        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted changes: ${changes}`);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${label}" emitted changes: ${changes}`);
       }),
       _handleChannel: source.on('channel', async function (channel) {
-        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted channel: ${JSON.stringify(channel, null, '  ')}`);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${label}" emitted channel: ${JSON.stringify(channel, null, '  ')}`);
       }),
       _handleCommit: source.on('commit', async function (commit) {
-        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" committed: ${JSON.stringify(commit, null, '  ')}`);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${label}" committed: ${JSON.stringify(commit, null, '  ')}`);
       }),
       _handleError: source.on('error', async function _handleTrustedError (error) {
-        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted error: ${error}`);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${label}" emitted error: ${error}`);
       }),
       _handleLog: source.on('log', async function _handleTrustedLog (log) {
-        if (self.settings.debug) self.emit('log', `[FABRIC:SERVICE] Source "${name}" emitted log: ${log}`);
+        if (self.settings.debug) self.emit('log', `[FABRIC:SERVICE] Source "${label}" emitted log: ${log}`);
       }),
       _handleMessage: source.on('message', async function (message) {
-        self.emit('debug', `[FABRIC:SERVICE] Source "${name}" emitted message: ${JSON.stringify(message.toObject ? message.toObject() : message, null, '  ')}`);
+        self.emit('debug', `[FABRIC:SERVICE] Source "${label}" emitted message: ${JSON.stringify(message.toObject ? message.toObject() : message, null, '  ')}`);
         await self._handleTrustedMessage(message);
       }),
       _handlePatches: source.on('patches', async function (patches) {
-        self.emit('debug', `[FABRIC:SERVICE] [${name}] Service State: ${JSON.stringify(source.state, null, '  ')}`);
-        self.emit('debug', `[FABRIC:SERVICE] [${name}] Patches: ${JSON.stringify(patches)}`);
+        self.emit('debug', `[FABRIC:SERVICE] [${label}] Service State: ${JSON.stringify(source.state, null, '  ')}`);
+        self.emit('debug', `[FABRIC:SERVICE] [${label}] Patches: ${JSON.stringify(patches)}`);
         self.emit('patches', patches);
       }),
       _handleReady: source.on('ready', async function _handleTrustedReady (info) {
-        self.emit('log', `[FABRIC:SERVICE] Source "${name}" emitted ready: ${JSON.stringify(info)}`);
+        self.emit('log', `[FABRIC:SERVICE] Source "${label}" emitted ready: ${JSON.stringify(info)}`);
       }),
       _handleTip: source.on('tip', async function (hash) {
-        self.alert(`[FABRIC:SERVICE] New ${name} chaintip: ${hash}`);
+        self.alert(`[FABRIC:SERVICE] New ${label} chaintip: ${hash}`);
       }),
       _handleWarning: source.on('warning', async function _handleTrustedWarning (warning) {
-        if (self.settings?.verbosity >= 2) self.emit('warning', `[FABRIC:SERVICE] Source "${name}" emitted warning: ${warning}`);
+        if (self.settings?.verbosity >= 2) self.emit('warning', `[FABRIC:SERVICE] Source "${label}" emitted warning: ${warning}`);
       })
     };
   }
 
   define (name, value) {
+    if (String(name || '').startsWith('OP_')) {
+      this.defineOpcode(name, Object.assign({ family: 'bitcoin' }, value || {}));
+    }
     this.definitions[name] = Object.assign({
       data: {},
-      handler: function handler (msg) {
+      handler: function handler (_msg) {
         return null;
       }
     }, value);
@@ -544,6 +555,99 @@ class Service extends Actor {
     this.resources[name] = new Resource(resource);
     this.emit('resource', this.resources[name]);
     return this.resources[name];
+  }
+
+  /**
+   * Register a single opcode entry in the service registry.
+   * @param {string} name Opcode symbol (e.g. `OP_SHA256`, `P2P_FLUSH_CHAIN`)
+   * @param {Object} [definition]
+   * @returns {Object}
+   */
+  defineOpcode (name, definition = {}) {
+    return defineOpcodeEntry(this.opcodes, name, definition);
+  }
+
+  /**
+   * Register Bitcoin-style primitive opcode metadata.
+   * @param {string} name
+   * @param {Object} [definition]
+   * @returns {Object}
+   */
+  defineBitcoinOpcode (name, definition = {}) {
+    return this.defineOpcode(name, Object.assign({}, definition, { family: 'bitcoin' }));
+  }
+
+  /**
+   * Register Fabric opcode metadata.
+   * @param {string} name
+   * @param {Object} [definition]
+   * @returns {Object}
+   */
+  defineFabricOpcode (name, definition = {}) {
+    return this.defineOpcode(name, Object.assign({}, definition, { family: 'fabric' }));
+  }
+
+  /**
+   * Register a newline-delimited opcode contract.
+   * Contract body example:
+   * `OP_DUP\nOP_HASH160\nP2P_FLUSH_CHAIN`
+   * @param {string} name Contract label
+   * @param {string} body Newline-delimited opcode list
+   * @param {Object} [meta]
+   * @returns {Object}
+   */
+  defineOpcodeContract (name, body, meta = {}) {
+    const resolved = resolveOpcodeContract(this.opcodes, body);
+    if (resolved.unknown.length) {
+      throw new Error(`Unknown opcodes in contract "${name}": ${resolved.unknown.join(', ')}`);
+    }
+
+    const author = (meta && meta.author != null) ? String(meta.author) : null;
+    const authorPubkey = normalizePubkeyHex(meta.authorPubkey || meta.pubkey || '');
+    if (!author) throw new Error(`Contract "${name}" must include author.`);
+    if (!authorPubkey) throw new Error(`Contract "${name}" must include a valid author pubkey.`);
+
+    const proposedPolicy = (meta && typeof meta.policy === 'object' && meta.policy) ? meta.policy : {};
+    const policyPubkeys = Array.isArray(proposedPolicy.pubkeys)
+      ? proposedPolicy.pubkeys.map((x) => normalizePubkeyHex(x)).filter(Boolean)
+      : [];
+    if (policyPubkeys.length && (policyPubkeys.length !== 1 || policyPubkeys[0] !== authorPubkey)) {
+      throw new Error(`Contract "${name}" policy pubkeys must be 1-of-1 and match author pubkey.`);
+    }
+
+    const policy = Object.assign({}, proposedPolicy, {
+      type: 'taproot-multisig',
+      threshold: 1,
+      participants: 1,
+      pubkeys: [authorPubkey]
+    });
+
+    const contract = Object.assign({
+      name,
+      body: String(body || ''),
+      lines: resolved.lines,
+      opcodes: resolved.resolved.map((entry) => entry.name),
+      author,
+      authorPubkey,
+      policy
+    }, meta);
+
+    this.define(name, {
+      data: contract,
+      handler: function handler (msg) {
+        return Object.assign({}, msg, { contract });
+      }
+    });
+
+    return contract;
+  }
+
+  /**
+   * Snapshot opcode registry for UI / API use.
+   * @returns {Object[]}
+   */
+  listOpcodes () {
+    return Object.values(this.opcodes || {}).map((entry) => Object.assign({}, entry));
   }
 
   _handleTrustedDebug (message) {
@@ -650,7 +754,7 @@ class Service extends Actor {
       });
 
       // Attach events
-      this.collections[key].on('commit', (commit) => {
+      this.collections[key].on('commit', (_commit) => {
         service.broadcast({
           '@type': 'StateUpdate',
           '@data': service.state
@@ -805,7 +909,7 @@ class Service extends Actor {
 
     try {
       memory = await pointer.get(this.state, path);
-    } catch (E) {
+    } catch {
       this.emit('warning', `[FABRIC:SERVICE] posting to unloaded collection: ${path}`);
       memory = [];
     }
@@ -854,7 +958,26 @@ class Service extends Actor {
     if (this.store) {
       try {
         const prior = await this.store.get('/');
-        this.state = JSON.parse(prior);
+        const pr = tryParsePersistedJson(utf8FromPersistedRaw(prior));
+        if (pr.ok && pr.value != null && typeof pr.value === 'object' && !Array.isArray(pr.value)) {
+          const v = pr.value;
+          if (Object.prototype.hasOwnProperty.call(v, 'content')) {
+            if (v.content != null && typeof v.content === 'object' && !Array.isArray(v.content)) {
+              this._state.content = Object.assign({}, this._state.content, v.content);
+              if (typeof v.status === 'string') this._state.status = v.status;
+              if (Number.isFinite(Number(v.clock))) this._state.clock = Number(v.clock);
+              if (v.version != null) this._state.version = v.version;
+            } else {
+              this.emit('warning', '[FABRIC:SERVICE] Ignoring restored state: invalid content envelope');
+            }
+          } else {
+            this._state.content = Object.assign({}, this._state.content, v);
+          }
+        } else if (pr.ok) {
+          this.emit('warning', '[FABRIC:SERVICE] Ignoring restored state: expected a plain object');
+        } else {
+          this.emit('warning', `[FABRIC:SERVICE] Could not restore state: ${pr.error.message}`);
+        }
       } catch (exception) {
         this.emit('warning', `[FABRIC:SERVICE] Could not restore state: ${exception}`);
       }
@@ -908,11 +1031,11 @@ class Service extends Actor {
     return result;
   }
 
-  async join (id) {
+  async join (_id) {
     this.log('join() is not yet implemented for this service.');
   }
 
-  async whisper (target, message) {
+  async whisper (_target, _message) {
     this.log('The "whisper" function is not yet implemented.');
     return this;
   }
@@ -923,7 +1046,7 @@ class Service extends Actor {
    * @param  {String} message Content of the message to send.
    * @return {Service}        Chainable method.
    */
-  async send (channel, message, extra) {
+  async send (channel, message, _extra) {
     if (this.debug) this.emit('debug', `[SERVICE] send() Sending: ${channel}`);
 
     const path = Buffer.alloc(256);
@@ -1217,7 +1340,7 @@ class Service extends Actor {
     this.emit('debug', `Service entries: ${Object.keys(this.services)}`);
 
     // Start all Services
-    for (const [name, service] of Object.entries(this.services)) {
+    for (const [name, _service] of Object.entries(this.services)) {
       // TODO: re-evaluate inclusion on Service itself
       if (this.settings.services && this.settings.services.includes(name)) {
         this.emit('debug', `Starting service "${name}" (with trust)...`);
@@ -1246,6 +1369,7 @@ class Service extends Actor {
 
 /**
  * Browser / CLI application shell: encrypted store, peer node, resources.
+ * @private
  * @class FabricShell
  */
 class FabricShell extends Service {
@@ -1329,7 +1453,7 @@ class FabricShell extends Service {
     this._appendMessage(`[FABRIC:APP] @${this.id} -- Starting...`);
     this.status = 'STARTING';
 
-    for (const [name, service] of Object.entries(this.services)) {
+    for (const [name, _service] of Object.entries(this.services)) {
       this._appendWarning(`@${this.id} -- Checking for Service: ${name}`);
       if (this.settings.services.includes(name)) {
         this._appendWarning(`Starting service: ${name}`);

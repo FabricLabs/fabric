@@ -2,13 +2,15 @@
 
 const fs = require('fs');
 
+const { blessedParamsFromJadeAttrs } = require('../functions/wireJson');
+
 const lex = require('jade-lexer');
 const parse = require('jade-parser');
 
 const blessed = require('blessed');
 
 class Renderer {
-  constructor (settings = {}) {
+  constructor (_settings = {}) {
     this.screen = null;
     return this;
   }
@@ -25,23 +27,7 @@ class Renderer {
       let space = ' '.repeat(depth * 2);
       // result += depth;
 
-      let attrs = [];
-      let params = {};
-      for (let a in ast.attrs) {
-        let attr = ast.attrs[a];
-        attrs.push(attr.name + '=' + attr.val);
-
-        if (attr.val[0] === "'") {
-          let content = attr.val.substring(1, attr.val.length - 1);
-          if (content[0] === '{') {
-            params[attr.name] = JSON.parse(content);
-          } else {
-            params[attr.name] = content;
-          }
-        } else {
-          params[attr.name] = JSON.parse(attr.val);
-        }
-      }
+      const { attrs, params } = blessedParamsFromJadeAttrs(ast.attrs);
 
       params.parent = screen;
 
@@ -112,7 +98,7 @@ class Renderer {
     this.render(ast, screen, ui, eventHandlers);
 
     // TODO: move this to dynamic event handler
-    screen.key(['escape'], function (ch, key) {
+    screen.key(['escape'], function (_ch, _key) {
       screen.destroy();
       // console.log('the machine:', self.oracle.machine);
       // console.log('the mempool:', self.oracle.mempool);

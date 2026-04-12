@@ -4,6 +4,7 @@
 const {
   FIXTURE_SEED
 } = require('../constants');
+const { tryParsePersistedJson } = require('../functions/wireJson');
 
 // Dependencies
 const fs = require('fs');
@@ -14,7 +15,6 @@ const merge = require('lodash.merge');
 // Fabric Types
 const Actor = require('./actor');
 const Entity = require('./entity');
-const EncryptedPromise = require('./promise');
 const Wallet = require('./wallet');
 
 // Filters
@@ -271,14 +271,36 @@ class Environment extends Entity {
     return value;
   }
 
+  /**
+   * True when `host` is `name:port` with exactly one colon and a numeric port (IPv4 or hostname).
+   * Bare IPv6 literals (`::1`, `2001:db8::1`) have multiple colons — do not treat as host:port.
+   * @param {string} host
+   * @returns {boolean}
+   */
+  _hasSingleNumericPortSuffix (host) {
+    const s = String(host).trim();
+    const first = s.indexOf(':');
+    const last = s.lastIndexOf(':');
+    if (first === -1 || first !== last) return false;
+    const tail = s.slice(last + 1);
+    return /^\d+$/.test(tail);
+  }
+
   _normalizeRPCHost (value) {
     if (!value) return '127.0.0.1';
     const host = String(value).trim();
     if (!host) return '127.0.0.1';
 
-    // bitcoin.conf can express rpcbind/rpcconnect as host:port.
-    if (host.includes(':') && !host.startsWith('[') && host.split(':').length === 2) {
-      return host.split(':')[0];
+    // Bracketed IPv6 (e.g. rpcconnect=[::1]:8332): host only, port via _extractRPCPort.
+    if (host.startsWith('[')) {
+      const close = host.indexOf(']');
+      if (close !== -1) return host.slice(0, close + 1);
+      return host;
+    }
+
+    // bitcoin.conf: `host:port` only when a single colon separates a numeric port (not bare IPv6).
+    if (this._hasSingleNumericPortSuffix(host)) {
+      return host.slice(0, host.lastIndexOf(':'));
     }
 
     return host;
@@ -288,9 +310,15 @@ class Environment extends Entity {
     if (!value) return null;
     const endpoint = String(value).trim();
     if (!endpoint.includes(':')) return null;
-    const parts = endpoint.split(':');
-    const maybePort = Number(parts[parts.length - 1]);
-    return Number.isFinite(maybePort) ? maybePort : null;
+    if (endpoint.startsWith('[')) {
+      const close = endpoint.indexOf(']');
+      if (close === -1) return null;
+      const tail = endpoint.slice(close + 1);
+      const m = /^:(\d+)$/.exec(tail);
+      return m ? Number(m[1]) : null;
+    }
+    if (!this._hasSingleNumericPortSuffix(endpoint)) return null;
+    return Number(endpoint.slice(endpoint.lastIndexOf(':') + 1));
   }
 
   _defaultRPCPortForNetwork (network = 'mainnet') {
@@ -336,7 +364,7 @@ class Environment extends Entity {
       const [username, password] = content.split(':');
       if (!username || !password) return null;
       return { username, password };
-    } catch (error) {
+    } catch {
       return null;
     }
   }
@@ -527,7 +555,7 @@ class Environment extends Entity {
 
     try {
       fs.utimesSync(this.settings.path, time, time);
-    } catch (err) {
+    } catch {
       fs.closeSync(fs.openSync(this.settings.path, 'w'));
     }
 
@@ -572,7 +600,10 @@ class Environment extends Entity {
       const data = this.readWallet();
 
       try {
-        const input = JSON.parse(data);
+        const text = typeof data === 'string' ? data : String(data ?? '');
+        const pr = tryParsePersistedJson(text);
+        if (!pr.ok) throw pr.error;
+        const input = pr.value;
 
         if (!input.object || !input.object.xprv) {
           throw new Error(`Corrupt or out-of-date wallet: ${this.settings.path}`);
@@ -599,7 +630,7 @@ class Environment extends Entity {
     try {
       fs.unlinkSync(this.WALLET_FILE);
       return true;
-    } catch (exception) {
+    } catch {
       if (this.emit) this.emit('warning', '[FABRIC:ENVIRONMENT] Wallet already destroyed or unavailable.');
       return false;
     }

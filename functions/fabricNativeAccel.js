@@ -5,19 +5,31 @@
  * If `build/Release/fabric.node` is missing or fails to load, all helpers fall
  * back to pure JavaScript (@noble/hashes / existing types).
  *
- * **Double-SHA256 (body hash):** the native `doubleSha256` path is **opt-in**
- * (`FABRIC_NATIVE_DOUBLE_SHA256=1`) so a broken or ABI-mismatched `fabric.node`
- * cannot segfault the process during normal tests or `Message` construction.
- * **`FABRIC_SKIP_NATIVE_ADDON=1`:** never `require()` the addon (opt-in may still be true);
- * used by tests when a stale local `fabric.node` would SIGSEGV on load.
- * Default is pure JS (same output as libwally when the addon works).
+ * **Double-SHA256 (body hash):** opt-in **`FABRIC_NATIVE_DOUBLE_SHA256=1`**
  *
- * **Browser / webpack:** do not `require('fs')` at module scope — bundlers execute
- * that at load time and fail. Node-only requires live inside `tryLoadAddon` after
- * an `isNode()` guard (see Hub `webpack` `resolve.fallback.fs`).
+ * **Bech32 / Bech32m / native segwit (Pieter Wuille `ref/c/segwit_addr`):** opt-in
+ * **`FABRIC_NATIVE_BECH32=1`** — uses the same C reference as [sipa/bech32](https://github.com/sipa/bech32).
+ * Requires a `fabric.node` built with `native/sipa/segwit_addr.c`. If the binary is
+ * older and lacks these exports, {@link #isNativeBech32Callable} is false and
+ * `functions/bech32` falls back to the JS reference.
  *
- * Supported methods (C addon must export these names):
- *   - `doubleSha256(Buffer)` → Buffer(32) — Bitcoin-style SHA256(SHA256(data))
+ * **`FABRIC_SKIP_NATIVE_ADDON=1`:** do not `require()` the default **`build/Release/fabric.node`**
+ * candidate (avoids a stale binary that might SIGSEGV). **`FABRIC_ADDON_PATH`** is still loaded
+ * when set, so tests and tooling can pin a safe JS mock or known-good addon.
+ *
+ * **`FABRIC_ADDON_PATH_STRICT=1`:** with **`FABRIC_ADDON_PATH`** set, try **only** that path
+ * (do not fall back to `build/Release/fabric.node`). If STRICT is set without a path, it is ignored
+ * so native accel can still load `build/Release/fabric.node`. Used by tests and tooling.
+ *
+ * **Browser / webpack:** Node-only requires live inside `tryLoadAddon` after an
+ * `isNode()` guard.
+ *
+ * Supported addon exports (current binding):
+ *   - `doubleSha256(Buffer)` → Buffer(32)
+ *   - `bech32Encode(hrp, wordsBuffer, enc0or1)` → string
+ *   - `bech32Decode(string)` → `{ hrp, words, spec }` or null
+ *   - `segwitAddrEncode(hrp, version, programBuffer)` → string or null
+ *   - `segwitAddrDecode(hrp, addr)` → `{ version, program }` or null
  *
  * @module @fabric/core/functions/fabricNativeAccel
  */
@@ -31,71 +43,147 @@ function isNode () {
 let addon = null;
 let loadAttempted = false;
 let loadError = null;
+/** @type {string|null} Absolute path passed to `require()` when the addon loaded successfully */
+let loadedAddonPath = null;
 
-const SUPPORTED_ADDON_EXPORTS = Object.freeze(['doubleSha256']);
+const SUPPORTED_ADDON_EXPORTS = Object.freeze([
+  'doubleSha256',
+  'bech32Encode',
+  'bech32Decode',
+  'segwitAddrEncode',
+  'segwitAddrDecode'
+]);
 
-function nativeDoubleSha256Enabled () {
-  const v = typeof process !== 'undefined' && process.env ? process.env.FABRIC_NATIVE_DOUBLE_SHA256 : undefined;
+function envEnabled (key) {
+  const v = typeof process !== 'undefined' && process.env ? process.env[key] : undefined;
   return v === '1' || v === 'true';
 }
 
-function addonPathCandidates (pathMod) {
-  const env = typeof process !== 'undefined' && process.env ? process.env.FABRIC_ADDON_PATH : undefined;
+function nativeDoubleSha256Enabled () {
+  return envEnabled('FABRIC_NATIVE_DOUBLE_SHA256');
+}
+
+function nativeBech32Enabled () {
+  return envEnabled('FABRIC_NATIVE_BECH32');
+}
+
+function nativeAddonLoadRequested () {
+  return nativeDoubleSha256Enabled() || nativeBech32Enabled();
+}
+
+function addonPathCandidates (pathMod, skipBuiltinRelease = false) {
+  const raw = typeof process !== 'undefined' && process.env ? process.env.FABRIC_ADDON_PATH : undefined;
+  const env = raw != null ? String(raw).trim() : '';
+  const strictFlag = typeof process !== 'undefined' && process.env &&
+    (process.env.FABRIC_ADDON_PATH_STRICT === '1' || process.env.FABRIC_ADDON_PATH_STRICT === 'true');
+  // Strict mode only applies when an explicit override path is set; otherwise STRICT alone would
+  // skip build/Release and silently disable native accel (no candidates).
+  const strict = strictFlag && env.length > 0;
   const list = [];
   if (env) list.push(env);
-  list.push(pathMod.join(__dirname, '..', 'build', 'Release', 'fabric.node'));
+  if (!strict && !skipBuiltinRelease) {
+    list.push(pathMod.join(__dirname, '..', 'build', 'Release', 'fabric.node'));
+  }
   return list;
+}
+
+/**
+ * @param {unknown} err
+ * @returns {string|undefined}
+ */
+function formatAddonLoadError (err) {
+  if (err == null) return undefined;
+  if (err instanceof Error) {
+    const msg = typeof err.message === 'string' ? err.message.trim() : '';
+    if (msg.length) return err.message;
+    const asString = String(err).trim();
+    if (asString.length) return String(err);
+    return err.name && err.name !== 'Error' ? err.name : 'Native addon failed to load';
+  }
+  const s = String(err);
+  return s.length ? s : 'Native addon failed to load';
 }
 
 function tryLoadAddon () {
   if (loadAttempted) return;
+  if (!nativeAddonLoadRequested()) {
+    return;
+  }
   loadAttempted = true;
-  // Never `require()` fabric.node unless opted in — a bad binary can segfault on load.
-  if (!nativeDoubleSha256Enabled()) {
-    return;
-  }
-  // Tests / tooling: skip `require()` entirely (e.g. stale `fabric.node` that SIGSEGVs on this Node).
-  if (typeof process !== 'undefined' && process.env && process.env.FABRIC_SKIP_NATIVE_ADDON === '1') {
-    return;
-  }
+  /* c8 ignore next 3 — browser / non-Node: no native binding (not exercised in Node tests). */
   if (!isNode()) {
     return;
   }
+  const skipBuiltinRelease = envEnabled('FABRIC_SKIP_NATIVE_ADDON');
   const fs = require('fs');
   const pathMod = require('path');
-  for (const p of addonPathCandidates(pathMod)) {
+  const builtinReleaseAbs = pathMod.join(__dirname, '..', 'build', 'Release', 'fabric.node');
+  let lastLoadError = null;
+  loadedAddonPath = null;
+  for (const p of addonPathCandidates(pathMod, skipBuiltinRelease)) {
     try {
-      if (!p || !fs.existsSync(p)) continue;
-      addon = require(p);
+      if (!p) continue;
+      if (!fs.existsSync(p)) {
+        lastLoadError = new Error(`Native addon not found: ${p}`);
+        continue;
+      }
+      let sameAsBuiltin = false;
+      try {
+        const rps = fs.realpathSync.native || fs.realpathSync;
+        sameAsBuiltin = rps(p) === rps(builtinReleaseAbs);
+      } catch {
+        sameAsBuiltin = pathMod.normalize(p) === pathMod.normalize(builtinReleaseAbs);
+      }
+      if (sameAsBuiltin) {
+        addon = require('../build/Release/fabric.node');
+      } else {
+        addon = require(p);
+      }
+      loadedAddonPath = p;
       loadError = null;
       return;
     } catch (err) {
-      loadError = err;
+      lastLoadError = err;
       addon = null;
+      loadedAddonPath = null;
     }
   }
+  addon = null;
+  loadedAddonPath = null;
+  loadError = lastLoadError;
+}
+
+function isNativeBech32Callable () {
+  if (!nativeBech32Enabled()) return false;
+  tryLoadAddon();
+  return !!(
+    addon &&
+    typeof addon.bech32Encode === 'function' &&
+    typeof addon.bech32Decode === 'function' &&
+    typeof addon.segwitAddrEncode === 'function' &&
+    typeof addon.segwitAddrDecode === 'function'
+  );
 }
 
 /**
- * @returns {{ available: boolean, methods: string[], path: string|null, error?: string }}
+ * @returns {{ available: boolean, methods: string[], path: string|null, error?: string, nativeDoubleSha256OptIn: boolean, nativeBech32OptIn: boolean }}
  */
 function status () {
   tryLoadAddon();
   const methods = [];
-  const canUseNative = nativeDoubleSha256Enabled() && addon && typeof addon.doubleSha256 === 'function';
-  if (canUseNative) methods.push('doubleSha256');
-  let pathStr = null;
-  if (addon && isNode()) {
-    const pathMod = require('path');
-    pathStr = (typeof process !== 'undefined' && process.env && process.env.FABRIC_ADDON_PATH) ||
-      pathMod.join(__dirname, '..', 'build', 'Release', 'fabric.node');
+  if (nativeDoubleSha256Enabled() && addon && typeof addon.doubleSha256 === 'function') {
+    methods.push('doubleSha256');
+  }
+  if (isNativeBech32Callable()) {
+    methods.push('bech32Encode', 'bech32Decode', 'segwitAddrEncode', 'segwitAddrDecode');
   }
   return {
     available: methods.length > 0,
     methods,
     nativeDoubleSha256OptIn: nativeDoubleSha256Enabled(),
-    path: pathStr,
-    error: !addon && loadError ? loadError.message : undefined
+    nativeBech32OptIn: nativeBech32Enabled(),
+    path: addon && isNode() ? loadedAddonPath : null,
+    error: !addon && loadError ? formatAddonLoadError(loadError) : undefined
   };
 }
 
@@ -124,9 +212,106 @@ function doubleSha256Hex (buf) {
   return doubleSha256Buffer(buf).toString('hex');
 }
 
+/**
+ * @param {string} hrp
+ * @param {Buffer|number[]} words — each value 0–31
+ * @param {'bech32'|'bech32m'} spec
+ * @returns {string|null}
+ */
+function bech32Encode (hrp, words, spec) {
+  // Null when native is off or the addon call fails — {@link functions/bech32} falls back to JS.
+  if (!isNativeBech32Callable()) return null;
+  if (spec !== 'bech32' && spec !== 'bech32m') return null;
+  const enc = spec === 'bech32m' ? 1 : 0;
+  const buf = Buffer.isBuffer(words) ? words : Buffer.from(words);
+  try {
+    const out = addon.bech32Encode(hrp, buf, enc);
+    return out != null && typeof out === 'string' ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * @param {string} str
+ * @returns {{ hrp: string, words: number[], spec: 'bech32'|'bech32m' }|null}
+ */
+function bech32Decode (str) {
+  if (!isNativeBech32Callable()) return null;
+  if (typeof str !== 'string') return null;
+  try {
+    const r = addon.bech32Decode(str);
+    if (r == null || typeof r !== 'object') return null;
+    const raw = r.words;
+    let words;
+    if (Array.isArray(raw)) {
+      words = raw;
+    } else if (raw != null && typeof raw === 'object' && typeof raw.length === 'number') {
+      words = Array.from(raw);
+    } else {
+      return null;
+    }
+    const spec = r.spec;
+    if (spec !== 'bech32' && spec !== 'bech32m') return null;
+    const hrp = r.hrp;
+    if (typeof hrp !== 'string' || hrp.length === 0) return null;
+    return {
+      hrp,
+      words,
+      spec
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * @param {string} hrp
+ * @param {number} version
+ * @param {Buffer|Uint8Array|number[]} program
+ * @returns {string|null}
+ */
+function segwitAddrEncode (hrp, version, program) {
+  // Returns null without native — no JS segwit in this module; callers use {@link functions/sipa/segwit_addr}.
+  if (!isNativeBech32Callable()) return null;
+  const buf = Buffer.isBuffer(program) ? program : Buffer.from(program);
+  try {
+    const out = addon.segwitAddrEncode(hrp, version, buf);
+    return typeof out === 'string' ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * @param {string} hrp
+ * @param {string} addr
+ * @returns {{ version: number, program: Buffer }|null}
+ */
+function segwitAddrDecode (hrp, addr) {
+  // Mirrors segwitAddrEncode: null means “use JS reference implementation.”
+  if (!isNativeBech32Callable()) return null;
+  if (typeof hrp !== 'string' || typeof addr !== 'string') return null;
+  try {
+    const r = addon.segwitAddrDecode(hrp, addr);
+    if (r == null || typeof r !== 'object' || r.program == null) return null;
+    const ver = Number(r.version);
+    if (!Number.isInteger(ver) || ver < 0 || ver > 16) return null;
+    return { version: ver, program: Buffer.from(r.program) };
+  } catch {
+    return null;
+  }
+}
+
 module.exports = {
   SUPPORTED_ADDON_EXPORTS,
   status,
+  nativeBech32Enabled,
+  isNativeBech32Callable,
   doubleSha256Buffer,
-  doubleSha256Hex
+  doubleSha256Hex,
+  bech32Encode,
+  bech32Decode,
+  segwitAddrEncode,
+  segwitAddrDecode
 };

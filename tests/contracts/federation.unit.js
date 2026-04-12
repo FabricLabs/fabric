@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('assert');
-const settings = require('../../fixtures')
+const settings = require('../../fixtures');
 const Federation = require('../../contracts/federation');
 
 describe('@fabric/core/contracts/federation', function () {

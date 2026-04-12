@@ -4,14 +4,9 @@ const Key = require('../types/key');
 const assert = require('assert');
 const networks = require('bitcoinjs-lib/src/networks');
 const { secp256k1 } = require('@noble/curves/secp256k1.js');
-const bip39 = require('bip39');
-const BIP32 = require('bip32').default;
-const base58 = require('bs58check');
 
 const message = require('../assets/message');
 const playnet = require('../settings/playnet');
-
-const BIP_32_TEST_VECTOR_SEED = Buffer.from('000102030405060708090a0b0c0d0e0f', 'hex');
 
 const SAMPLE = {
   seed: 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
@@ -294,6 +289,32 @@ describe('@fabric/core/types/key', function () {
       assert.strictEqual(key.seed, null);
       assert.strictEqual(key.xprv, null);
       assert.strictEqual(key._state.status, 'secured');
+    });
+
+    it('accepts Uint8Array private keys for signing', function () {
+      const bytes = new Uint8Array(32).fill(1);
+      const key = new Key({ private: bytes });
+      const sig = key.signSchnorr('byte-like private key');
+      assert.ok(Buffer.isBuffer(sig));
+      assert.strictEqual(sig.length, 64);
+    });
+
+    it('throws on invalid private key format', function () {
+      const key = new Key();
+      key.private = 1;
+      assert.throws(() => key.signSchnorr('invalid private key'), /Invalid private key format/);
+    });
+
+    it('rejects non-hex string private key values', function () {
+      const key = new Key();
+      key.private = 'z'.repeat(32);
+      assert.throws(() => key.signSchnorr('invalid private key'), /Invalid private key format/);
+    });
+
+    it('rejects plain array-like private key objects', function () {
+      const key = new Key();
+      key.private = { length: 32 };
+      assert.throws(() => key.signSchnorr('invalid private key'), /Invalid private key format/);
     });
   });
 });

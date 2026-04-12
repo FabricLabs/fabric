@@ -24,6 +24,7 @@ describe('fabricNativeAccel', function () {
     assert.strictEqual(typeof s.available, 'boolean');
     assert.ok(Array.isArray(s.methods));
     assert.strictEqual(typeof s.nativeDoubleSha256OptIn, 'boolean');
+    assert.strictEqual(typeof s.nativeBech32OptIn, 'boolean');
     assert.ok('path' in s);
   });
 
@@ -44,5 +45,6 @@ describe('fabricNativeAccel', function () {
   it('exports SUPPORTED_ADDON_EXPORTS', function () {
     assert.ok(accel.SUPPORTED_ADDON_EXPORTS);
     assert.ok(accel.SUPPORTED_ADDON_EXPORTS.includes('doubleSha256'));
+    assert.ok(accel.SUPPORTED_ADDON_EXPORTS.includes('bech32Encode'));
   });
 });

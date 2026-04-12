@@ -8,8 +8,6 @@ const {
 
 const merge = require('lodash.merge');
 const EventEmitter = require('events').EventEmitter;
-const Message = require('./message');
-
 /**
  * Read from a byte stream, seeking valid Fabric messages.
  */
@@ -77,7 +75,7 @@ class Reader extends EventEmitter {
 
   _promiseBytes (count = 1) {
     const self = this;
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve, _reject) => {
       const bytes = self._readBytes(count);
       return resolve(bytes);
     });
@@ -113,13 +111,13 @@ class Reader extends EventEmitter {
 
     // Read header
     const magic = elements[0];
-    const version = elements[1];
-    const parent = elements[2];
-    const author = elements[3];
-    const type = elements[4];
+    const _version = elements[1];
+    const _parent = elements[2];
+    const _author = elements[3];
+    const _type = elements[4];
     const size = elements[5];
-    const signature = elements[6];
-    const hash = elements[7];
+    const _signature = elements[6];
+    const _hash = elements[7];
 
     if (magic !== MAGIC_BYTES) {
       throw new Error(`Header not magic: ${magic} !== ${MAGIC_BYTES}`);
@@ -132,20 +130,7 @@ class Reader extends EventEmitter {
     const data = this._takeBytes(HEADER_SIZE + size);
     const frame = Buffer.from(data, 'hex');
 
-    // Provide data for debugger
-    const proposal = {
-      magic,
-      version,
-      parent,
-      author,
-      type,
-      size,
-      hash,
-      signature,
-      data
-    };
-
-    // this.emit('debug', `Reader Proposal: ${JSON.stringify(proposal, null, '  ')}`);
+    // this.emit('debug', `Reader Proposal: ${JSON.stringify({ magic, version, parent, author, type, size, hash, signature, data }, null, '  ')}`);
     this.emit('message', frame);
   }
 }

@@ -1,12 +1,13 @@
 'use strict';
 
 require('debug-trace')({ always: true });
+const { setMaxListeners } = require('events');
 
 const SEEDS = {
   origin: 'unknown burger engine plug teach spot squeeze fringe ethics skate riot brand hurry melody double then trumpet impulse lesson inflict enlist eager region ride',
   relayer: 'salmon asthma decorate oxygen relief excite lamp huge bunker tennis spread chase liar glass shoe giant crane drama media step crack decline ring stay',
   destination: 'frown equal zero tackle relief shallow leisure diet roast festival good plunge pencil virus vote property blame random bacon rich ecology major survey slice'
-}
+};
 
 const DESTINATION_ID = 'mt4Wm6TW4ejU51iviiD73ECNCfRsjiBhQf';
 
@@ -15,6 +16,7 @@ const Peer = require('../types/peer');
 const Message = require('../types/message');
 
 async function main () {
+  setMaxListeners(0);
   const swarm = {
     origin: new Peer({
       listen: true,
@@ -41,16 +43,8 @@ async function main () {
   // Core functionality (wait for peer, send message)
   swarm.origin.on('peer:candidate', async function (peer) {
     console.log('[EXAMPLES:RELAY]', 'Origin Peer emitted "peer:candidate" event:', peer);
-
     if (peer.id === DESTINATION_ID) {
-      console.warn('[EXAMPLES:RELAY]', 'Peer event was destination peer!');
-      console.warn('[EXAMPLES:RELAY]', 'Origin node peers:', swarm.origin.peers);
-      console.warn('[EXAMPLES:RELAY]', 'Relay node peers:', swarm.relayer.peers);
-      console.warn('[EXAMPLES:RELAY]', 'Destination node peers:', swarm.destination.peers);
-
-      // Send Message
-      let message = Message.fromVector(['Generic', 'Hello, world!']);
-      await swarm.origin.broadcast(message);
+      console.warn('[EXAMPLES:RELAY]', 'Destination candidate discovered.');
     }
   });
 
@@ -70,6 +64,21 @@ async function main () {
   console.log('[EXAMPLES:RELAY]', 'Starting destination Peer...');
   await swarm.destination.start();
   console.log('[EXAMPLES:RELAY]', 'Destination Peer started!');
+
+  // Allow peering to settle before broadcasting.
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+
+  const message = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify({
+    type: 'RelayExample',
+    object: { text: 'Hello, world!' }
+  })]);
+  await swarm.origin.broadcast(message.toBuffer());
+
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+
+  await swarm.destination.stop();
+  await swarm.relayer.stop();
+  await swarm.origin.stop();
 }
 
 main().catch(function exceptionHandler (exception) {

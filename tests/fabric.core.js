@@ -4,7 +4,7 @@ const assert = require('assert');
 const EventEmitter = require('events');
 const crypto = require('crypto');
 const Fabric = require('../types/fabric');
-const Vector = require('../types/vector');
+const State = require('../types/state');
 
 describe('@fabric/core/types/fabric', function () {
   it('constructs with defaults', function () {
@@ -21,6 +21,10 @@ describe('@fabric/core/types/fabric', function () {
     assert.strictEqual(Fabric.Message, require('../types/message'));
     assert.strictEqual(Fabric.Hash256, require('../types/hash256'));
     assert.strictEqual(Fabric.Wallet, require('../types/wallet'));
+    assert.strictEqual(Fabric.Bond, require('../types/bond'));
+    assert.strictEqual(Fabric.Contract, require('../types/contract'));
+    assert.strictEqual(Fabric.Text, require('../services/text'));
+    assert.strictEqual(Fabric.RoundRobin, require('../types/roundRobin'));
   });
 
   it('Fabric.sha256 matches crypto', function () {
@@ -58,7 +62,7 @@ describe('@fabric/core/types/fabric', function () {
 
   it('append delegates to chain', function () {
     const f = new Fabric({ persistent: false });
-    const v = new Vector({ test: 1 });
+    const v = new State({ test: 1 });
     assert.doesNotThrow(() => f.append(v));
   });
 
@@ -120,9 +124,39 @@ describe('@fabric/core/types/fabric', function () {
     assert.ok(calls.some((c) => c[0] === 'DELETE'));
   });
 
-  it('push coerces non-Vector input and updates machine script', function () {
+  it('push coerces non-State input and updates machine script', function () {
     const f = new Fabric({ persistent: false });
     const stack = f.push({ op: 'noop' });
     assert.ok(stack);
+  });
+
+  it('push leaves bare Vector (EventEmitter) instances unwrapped', function () {
+    const f = new Fabric({ persistent: false });
+    const v = new Fabric.Vector();
+    const stack = f.push(v);
+    assert.strictEqual(stack[stack.length - 1], v);
+  });
+
+  it('inherits default opcode registry families from Service', function () {
+    const f = new Fabric({ persistent: false });
+    const opcodes = f.listOpcodes();
+    assert.ok(opcodes.length > 0);
+    assert.ok(opcodes.some((entry) => entry.family === 'bitcoin'));
+    assert.ok(opcodes.some((entry) => entry.family === 'fabric'));
+  });
+
+  it('use registers function opcodes in machine and metadata registry', function () {
+    const f = new Fabric({ persistent: false });
+    const name = 'P2P_TEST_OPCODE';
+
+    f.use(name, function testOpcode () {
+      return 1;
+    });
+
+    assert.strictEqual(typeof f.machine.known[name], 'function');
+    const entry = f.listOpcodes().find((op) => op.name === name);
+    assert.ok(entry, 'opcode metadata should be registered');
+    assert.strictEqual(entry.implementation, true);
+    assert.strictEqual(entry.family, 'fabric');
   });
 });

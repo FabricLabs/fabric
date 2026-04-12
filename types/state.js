@@ -15,13 +15,19 @@ const Actor = require('./actor');
 
 // Local Services
 const json = require('../functions/json');
+const { tryParsePersistedJson, parsePersistedJson } = require('../functions/wireJson');
 
 /**
- * The {@link State} is the core of most {@link User}-facing interactions.  To
- * interact with the {@link User}, simply propose a change in the state by
- * committing to the outcome.  This workflow keeps app design quite simple!
+ * @classdesc <strong>Named snapshot</strong> of application data extending {@link Actor} — <code>@type</code>,
+ * <code>@data</code>, <code>@id</code>, JSON Patch
+ * flows. Absorbs former <strong>Scribe</strong> behavior: <code>verbose</code> / <code>verbosity</code>, <code>now</code>,
+ * <code>trust</code>, <code>start</code>/<code>stop</code>, and structured <code>log</code> / <code>error</code> /
+ * <code>warn</code> / <code>debug</code> (console + events). {@link Channel}, {@link Document}, {@link Ledger},
+ * {@link Router}, and {@link Instruction} extend <code>State</code> directly. {@link Vector} is an {@link EventEmitter} only.
+ * Sibling concept to {@link Entity}.
+ * @class State
+ * @extends Actor
  * @access protected
- * @augments EventEmitter
  * @property {Number} size Size of state in bytes.
  * @property {Buffer} @buffer Byte-for-byte memory representation of state.
  * @property {String} @type Named type.
@@ -99,6 +105,16 @@ class State extends Actor {
 
     this.value = {};
 
+    const cfg = (typeof data === 'object' && data !== null && !Buffer.isBuffer(data)) ? data : {};
+    this.settings = Object.assign({
+      verbose: true,
+      verbosity: 2,
+      path: './stores/state',
+      tags: []
+    }, this.settings, cfg);
+
+    this.status = 'ready';
+
     // TODO: document hidden properties
     // Remove various undesired clutter from output
     Object.defineProperty(this, '@allocation', { enumerable: false });
@@ -173,11 +189,9 @@ class State extends Actor {
     let result = null;
 
     if (typeof input === 'string') {
-      try {
-        result = JSON.parse(input);
-      } catch (E) {
-        console.error('Failure in fromJSON:', E);
-      }
+      const pr = tryParsePersistedJson(input);
+      if (pr.ok) result = pr.value;
+      else console.error('Failure in fromJSON:', pr.error);
     }
 
     return result;
@@ -195,6 +209,104 @@ class State extends Actor {
 
   sha256 (value) {
     return crypto.createHash('sha256').update(value).digest('hex');
+  }
+
+  now () {
+    return new Date().getTime();
+  }
+
+  _sign () {
+    this.commit();
+  }
+
+  /**
+   * @param {EventEmitter} source Event stream.
+   * @returns {State} this
+   */
+  trust (source) {
+    const self = this;
+    source.on('message', async function handleTrustedMessage (_msg) {});
+    source.on('transaction', async function handleTrustedTransaction (transaction) {
+      self.log('[EVENT:TRANSACTION]', 'apply this transaction to local state:', transaction);
+      self.log('[PROPOSAL]', 'apply this transaction to local state:', transaction);
+    });
+    return self;
+  }
+
+  /**
+   * @param {State} other Peer {@link State} whose `settings.namespace` is appended to `settings.tags`.
+   * @returns {Number} New length of `settings.tags`.
+   */
+  inherits (other) {
+    const ns = other && other.settings && other.settings.namespace;
+    if (ns) this.settings.tags.push(ns);
+    return this.settings.tags.length;
+  }
+
+  log (...inputs) {
+    const t = this.now();
+    inputs.unshift(`[${this.constructor.name.toUpperCase()}]`);
+    inputs.unshift(`[${t}]`);
+    if (this.settings.verbosity >= 3) {
+      console.log.apply(null, ['[STATE]'].concat(inputs));
+    }
+    return this.emit('info', ['[STATE]'].concat(inputs));
+  }
+
+  error (...inputs) {
+    const t = this.now();
+    inputs.unshift(`[${this.constructor.name.toUpperCase()}]`);
+    inputs.unshift(`[${t}]`);
+    if (this.settings.verbose) {
+      console.error.apply(null, ['[STATE]'].concat(inputs));
+    }
+    return this.emit('error', ['[STATE]'].concat(inputs));
+  }
+
+  warn (...inputs) {
+    const t = this.now();
+    inputs.unshift(`[${this.constructor.name.toUpperCase()}]`);
+    inputs.unshift(`[${t}]`);
+    if (this.settings.verbose) {
+      console.warn.apply(null, ['[STATE]'].concat(inputs));
+    }
+    return this.emit('warning', ['[STATE]'].concat(inputs));
+  }
+
+  debug (...inputs) {
+    const t = this.now();
+    inputs.unshift(`[${this.constructor.name.toUpperCase()}]`);
+    inputs.unshift(`[${t}]`);
+    if (this.settings.verbose) {
+      console.debug.apply(null, ['[STATE]'].concat(inputs));
+    }
+    return this.emit('debug', ['[STATE]'].concat(inputs));
+  }
+
+  async open () {
+    this.status = 'opened';
+    return this;
+  }
+
+  async close () {
+    this.status = 'closed';
+    return this;
+  }
+
+  async start () {
+    this.status = 'starting';
+    this['@data'] = this.settings;
+    await this.open();
+    await this.commit();
+    this.status = 'started';
+    return this;
+  }
+
+  async stop () {
+    this.status = 'stopping';
+    await this.close();
+    this.status = 'stopped';
+    return this;
   }
 
   async _applyChanges (ops) {
@@ -293,7 +405,7 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
    * @param  {Mixed} [input] Input to serialize.
    * @return {Buffer}       {@link Store}-able blob.
    */
-  serialize (input = this.state, encoding = 'json') {
+  serialize (input = this.state, _encoding = 'json') {
     const state = {};
     let result = null;
 
@@ -335,7 +447,7 @@ When you're ready to continue, visit the following URL: https://dev.fabric.pub/W
       }
     }
 
-    return JSON.parse(json(result));
+    return parsePersistedJson(json(result));
   }
 
   /**

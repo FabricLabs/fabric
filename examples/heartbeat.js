@@ -1,6 +1,7 @@
 'use strict';
 
 // Dependencies
+const { setMaxListeners } = require('events');
 const Peer = require('../types/peer');
 const { Swarm } = require('../types/peer');
 const Message = require('../types/message');
@@ -11,6 +12,7 @@ const settings = {
 };
 
 async function main () {
+  setMaxListeners(0);
   // Create a Hub (seeder peer) and a Swarm (peer cluster)
   let seeder = new Peer({ listen: true });
   let swarm = new Swarm(settings);
@@ -33,18 +35,36 @@ async function main () {
   await swarm.start();
   console.log('[EXAMPLES:HEARTBEAT]', 'Swarm started!');
 
-  // Send Regular Updates (outside of internal ping/pong)
-  const heartbeat = setInterval(function () {
-    console.warn('[EXAMPLES:HEARTBEAT]', 'Starting to send interval message...');
-    const message = Message.fromVector(['Generic', Date.now().toString()]);
-    console.log('[EXAMPLES:HEARTBEAT]', 'Sending :', message.raw);
+  const stopWithTimeout = async (instance, label, timeoutMs = 1200) => {
+    if (!instance || typeof instance.stop !== 'function') return;
+    try {
+      await Promise.race([
+        instance.stop(),
+        new Promise((resolve) => setTimeout(resolve, timeoutMs))
+      ]);
+    } catch (error) {
+      console.warn('[EXAMPLES:HEARTBEAT]', `${label} stop warning:`, error.message);
+    }
+  };
 
-    // Send interval message through seed node
-    seeder.broadcast(message);
+  const shutdown = async () => {
+    await stopWithTimeout(swarm, 'Swarm');
+    await stopWithTimeout(seeder, 'Seeder');
+  };
 
-    // Send interval message through swarm agent
-    // swarm.broadcast(message);
-  }, 5000);
+  // Send a single explicit heartbeat over the current v1 base message type.
+  console.warn('[EXAMPLES:HEARTBEAT]', 'Sending heartbeat...');
+  const message = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify({
+    type: 'Heartbeat',
+    object: { at: Date.now() }
+  })]);
+  seeder.broadcast(message.toBuffer());
+
+  // Give peers a short window to process, then shut down cleanly.
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  await shutdown();
+
+  if (require.main === module) process.exit(0);
 }
 
 main().catch(function exceptionHandler (exception) {

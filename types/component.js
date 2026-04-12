@@ -20,7 +20,7 @@ class Component extends Service {
     return this;
   }
 
-  toHTML (ast) {
+  toHTML (_ast) {
     return `<broken />`;
   }
 

@@ -4,6 +4,9 @@ const assert = require('assert');
 const CLI = require('../types/cli');
 
 describe('@fabric/core/types/cli (non-render guards)', function () {
+  // Constructing CLI pulls a large module graph; under full-suite CPU contention this can exceed the default timeout.
+  this.timeout(30000);
+
   it('defaults to regtest with isolated datadir', function () {
     const cli = new CLI({ render: false });
     assert.strictEqual(cli.settings.bitcoin.network, 'regtest');
@@ -33,6 +36,16 @@ describe('@fabric/core/types/cli (non-render guards)', function () {
     assert.strictEqual(cli.settings.bitcoin.network, 'signet');
     assert.strictEqual(cli.settings.bitcoin.datadir, './stores/bitcoin-signet');
     assert.strictEqual(cli.settings.bitcoin.managed, true);
+  });
+
+  it('forwards flushChainMinTrustedScore from CLI settings to the Peer node', function () {
+    const cli = new CLI({
+      render: false,
+      bitcoin: { enable: false },
+      lightning: { enable: false },
+      flushChainMinTrustedScore: 650
+    });
+    assert.strictEqual(cli.node.settings.flushChainMinTrustedScore, 650);
   });
 
   it('does not touch UI elements during _syncUnspent when render=false', async function () {

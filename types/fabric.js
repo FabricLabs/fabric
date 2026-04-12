@@ -6,10 +6,11 @@ const crypto = require('crypto');
 // components
 const Actor = require('../types/actor');
 const Block = require('../types/block');
+const Bond = require('../types/bond');
 const Chain = require('../types/chain');
 const Circuit = require('../types/circuit');
 const Collection = require('../types/collection');
-// const Contract = require('./contract');
+const Contract = require('./contract');
 // const Disk = require('./disk');
 const Entity = require('../types/entity');
 const Hash256 = require('../types/hash256');
@@ -20,6 +21,7 @@ const Observer = require('../types/observer');
 const Oracle = require('../types/oracle');
 const Peer = require('../types/peer');
 const Program = require('../types/program');
+const RoundRobin = require('../types/roundRobin');
 const Remote = require('../types/remote');
 const Resource = require('../types/resource');
 const Service = require('../types/service');
@@ -27,6 +29,7 @@ const Script = require('../types/script');
 const Stack = require('../types/stack');
 const State = require('../types/state');
 const Store = require('../types/store');
+const Text = require('../services/text');
 // Swarm: require('./peer').Swarm
 // const Transaction = require('./transaction');
 const Vector = require('../types/vector');
@@ -34,21 +37,22 @@ const Wallet = require('../types/wallet');
 const Worker = require('../types/worker');
 
 /**
- * Reliable decentralized infrastructure.
+ * @classdesc Facade {@link Service} that bundles {@link Chain}, {@link Machine}, {@link Store}, {@link Peer}, and related
+ * types for experiments and apps. Prefer importing <strong>leaf</strong> types in production; this class re-exports many of them as statics.
+ * @class Fabric
+ * @extends Service
  */
 class Fabric extends Service {
   /**
-   * The {@link Fabric} type implements a peer-to-peer protocol for
-   * establishing and settling of mutually-agreed upon proofs of
-   * work.  Contract execution takes place in the local node first,
-   * then is optionally shared with the network.
+   * The {@link Fabric} type implements a peer-to-peer protocol for establishing and settling mutually agreed proofs of work.
+   * Contract execution runs locally first, then may be shared with the network.
    *
-   * Utilizing
    * @exports Fabric
    * @constructor
-   * @param {Vector} config - Initial configuration for the Fabric engine.  This can be considered the "genesis" state for any contract using the system.  If a chain of events is maintained over long periods of time, `state` can be considered "in contention", and it is demonstrated that the outstanding value of the contract remains to be settled.
+   * @param {Object} [settings={}] Engine settings (merged into <code>this.settings</code>); typically includes
+   * <code>path</code>, <code>persistent</code>, and <code>state</code> (initial {@link Actor} content).
    * @emits Fabric#thread
-   * @emits Fabric#step Emitted on a `compute` step.
+   * @emits Fabric#step Emitted on a <code>compute</code> step.
    */
   constructor (settings = {}) {
     super(settings);
@@ -69,7 +73,8 @@ class Fabric extends Service {
     // build maps
     this.agent = {}; // Identity
     this.modules = {}; // List<Class>
-    this.opcodes = {}; // Map<id>
+    // Inherit opcode metadata registry from Service (Bitcoin + Fabric defaults).
+    // Do not reset this.opcodes here; Service constructor initializes it.
     this.peers = {}; // Map<id>
     this.plugins = {}; // Map<id>
     this.services = {}; // Map<id>
@@ -97,10 +102,12 @@ class Fabric extends Service {
 
   static get Actor () { return Actor; }
   static get Block () { return Block; }
+  static get Bond () { return Bond; }
   static get Chain () { return Chain; }
   static get Circuit () { return Circuit; }
   static get Collection () { return Collection; }
-  // static get Contract () { return Contract; }
+  static get RoundRobin () { return RoundRobin; }
+  static get Contract () { return Contract; }
   // static get Disk () { return Disk; }
   static get Entity () { return Entity; }
   static get Hash256 () { return Hash256; }
@@ -117,11 +124,20 @@ class Fabric extends Service {
   static get Script () { return Script; }
   static get Stack () { return Stack; }
   static get State () { return State; }
+  /** @deprecated Use {@link State}. Alias for backward compatibility. */
+  static get Scribe () { return State; }
   static get Store () { return Store; }
+  static get Text () { return Text; }
   // static get Swarm () { return require('./peer').Swarm; }
   // static get Transaction () { return Transaction; }
   static get Wallet () { return Wallet; }
   static get Worker () { return Worker; }
+
+  /**
+   * EventEmitter-only instruction handle; use {@link State} / {@link Machine} for signed payloads.
+   * @returns {Function} The {@link module:types/vector~Vector} constructor.
+   */
+  static get Vector () { return Vector; }
 
   /** @returns {Function} */
   static get Federation () { return require('./federation'); }
@@ -238,20 +254,41 @@ class Fabric extends Service {
    * @return {Stack}
    */
   push (value) {
-    let name = value.constructor.name;
-    if (name !== 'Vector') value = new Vector(value)._sign();
+    if (!(value instanceof State) && !(value instanceof Vector)) {
+      value = new State(value)._sign();
+    }
     this.machine.script.push(value);
     return this.machine.script;
   }
 
   use (name, description) {
     this.log('[FABRIC]', `defining <code>${name}</code> as:`, description);
-    this.opcodes[name] = description.bind(this);
     return this.define(name, description);
   }
 
   define (name, description) {
     this.log(`Defining resource "${name}":`, description);
+    const opcodeName = String(name || '');
+    const isBitcoinStyle = opcodeName.startsWith('OP_');
+
+    if (typeof description === 'function' && this.machine) {
+      if (isBitcoinStyle && typeof this.machine.defineBitcoinOpcode === 'function') {
+        this.machine.defineBitcoinOpcode(opcodeName, description);
+      } else if (typeof this.machine.defineFabricOpcode === 'function') {
+        this.machine.defineFabricOpcode(opcodeName, description);
+      }
+    }
+
+    const metadata = {
+      body: String(description || ''),
+      implementation: typeof description === 'function'
+    };
+
+    if (isBitcoinStyle && typeof this.defineBitcoinOpcode === 'function') {
+      this.defineBitcoinOpcode(opcodeName, metadata);
+    } else if (typeof this.defineFabricOpcode === 'function') {
+      this.defineFabricOpcode(opcodeName, metadata);
+    }
     let vector = new Fabric.State(description);
     let resource = new Fabric.Resource(name, description);
     this.log(`Resource:`, resource);
@@ -317,7 +354,7 @@ class Fabric extends Service {
       self.log('source', typeof source, 'emitted:', changes);
     });
 
-    source.on('transaction', async function (transaction) {
+    source.on('transaction', async function (_transaction) {
       // console.log('[FABRIC:CORE]', '[EVENT:TRANSACTION]', `source (${source.constructor.name}):`, transaction);
       // console.log('[PROPOSAL]', 'apply this transaction to local state:', transaction);
     });

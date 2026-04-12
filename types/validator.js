@@ -6,8 +6,8 @@ class Validator extends Fabric {
   constructor (config) {
     super(config);
 
-    async function main (input) {
-      return input.pipe(this.stream);
+    async function main (_input) {
+      return _input.pipe(this.stream);
     }
 
     this.process = main();
@@ -15,7 +15,7 @@ class Validator extends Fabric {
     return this;
   }
 
-  validate (input) {
+  validate (_input) {
     return true;
   }
 }

@@ -37,7 +37,7 @@ describe('@fabric/core/types/sidechain', function () {
     };
 
     return new Message({
-      type: 'GenericMessage',
+      type: 'P2P_BASE_MESSAGE',
       data: JSON.stringify(genesisData)
     });
   }
@@ -76,7 +76,7 @@ describe('@fabric/core/types/sidechain', function () {
     };
 
     return new Message({
-      type: 'GenericMessage',
+      type: 'P2P_BASE_MESSAGE',
       data: JSON.stringify(taprootData)
     });
   }
@@ -344,7 +344,7 @@ describe('@fabric/core/types/sidechain', function () {
 
       const testMessages = [
         new Message({
-          type: 'GenericMessage',
+          type: 'P2P_BASE_MESSAGE',
           data: JSON.stringify({
             type: 'SidechainGenesis',
             timestamp: Date.now(),

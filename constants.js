@@ -28,6 +28,8 @@ const VERSION_NUMBER = 0x02; // bumped for 208-byte header (optional preimage fi
 const HEADER_SIZE = 208;
 const LARGE_COLLECTION_SIZE = 10; // TODO: test with 1,000,000
 const MAX_MESSAGE_SIZE = 4096 - HEADER_SIZE;
+/** Max UTF-16 code units accepted for `JSON.parse` of locally persisted JSON (LevelDB peer registry, CLI STATE file). */
+const PERSISTED_JSON_MAX_CHARS = 2 * 1024 * 1024;
 
 // Stacks and Frames
 const MAX_STACK_HEIGHT = 32; // max height of stack (number of elements)
@@ -116,6 +118,18 @@ const P2P_CALL = 0x00000042;
 const P2P_RELAY = 0x00000043; // Relay envelope for onion routing; preserves original message + signature
 const P2P_MESSAGE_RECEIPT = 0x00000044; // Ack/receipt for a processed inbound message (WebSocket / P2P)
 const P2P_CHAIN_SYNC_REQUEST = 0x55;
+/** Playnet / federation: rewind bitcoind to a known-good tip; relay only to highly trusted peers. */
+const P2P_FLUSH_CHAIN = 0x56;
+const P2P_INVENTORY_REQUEST = 0x57;
+const P2P_INVENTORY_RESPONSE = 0x58;
+const P2P_FILE_SEND = 0x59;
+const P2P_DOCUMENT_PUBLISH = 0x5a;
+const P2P_PEER_ALIAS = 0x5b;
+const P2P_PEER_ANNOUNCE = 0x5c;
+const P2P_SESSION_OFFER = 0x5d;
+const P2P_SESSION_OPEN = 0x5e;
+const P2P_CONTRACT_PUBLISH = 0x5f;
+const P2P_CONTRACT_MESSAGE = 0x60;
 const P2P_SESSION_ACK = 0x4200;
 const P2P_MUSIG_START = 0x4220;
 const P2P_MUSIG_ACCEPT = 0x4221;
@@ -243,6 +257,7 @@ module.exports = {
   MAX_FRAME_SIZE,
   MAX_MEMORY_ALLOC,
   MAX_MESSAGE_SIZE,
+  PERSISTED_JSON_MAX_CHARS,
   MAX_STACK_HEIGHT,
   MAX_CHANNEL_VALUE,
   MAX_CHAT_MESSAGE_LENGTH,
@@ -275,6 +290,17 @@ module.exports = {
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
   P2P_CHAIN_SYNC_REQUEST,
+  P2P_FLUSH_CHAIN,
+  P2P_INVENTORY_REQUEST,
+  P2P_INVENTORY_RESPONSE,
+  P2P_FILE_SEND,
+  P2P_DOCUMENT_PUBLISH,
+  P2P_PEER_ALIAS,
+  P2P_PEER_ANNOUNCE,
+  P2P_SESSION_OFFER,
+  P2P_SESSION_OPEN,
+  P2P_CONTRACT_PUBLISH,
+  P2P_CONTRACT_MESSAGE,
   P2P_ROOT,
   P2P_PING,
   P2P_PONG,

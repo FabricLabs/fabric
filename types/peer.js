@@ -11,22 +11,12 @@ const {
   PEERING_OFFER_MAX_PAYLOAD_CACHE,
   PEERING_OFFER_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
   PEER_MAX_CANDIDATES_QUEUE,
-  P2P_IDENT_REQUEST,
-  P2P_IDENT_RESPONSE,
   P2P_PEER_GOSSIP,
   P2P_PEERING_OFFER,
   PEER_MAX_WIRE_HASH_CACHE,
-  P2P_ROOT,
-  P2P_PING,
-  P2P_PONG,
   P2P_PORT,
-  P2P_START_CHAIN,
   P2P_CHAIN_SYNC_REQUEST,
-  P2P_INSTRUCTION,
-  P2P_BASE_MESSAGE,
-  P2P_STATE_COMMITTMENT,
-  P2P_STATE_CHANGE,
-  P2P_STATE_ROOT
+  P2P_FLUSH_CHAIN
 } = require('../constants');
 
 // Dependencies
@@ -45,6 +35,14 @@ const {
   purchaseContentHashHex
 } = require('../functions/publishedDocumentEnvelope');
 
+// Strict JSON
+const {
+  messageDataToString,
+  tryParsePersistedJson,
+  tryParseWireJsonBody,
+  utf8FromPersistedRaw
+} = require('../functions/wireJson');
+
 // Fabric Types
 const Actor = require('./actor');
 const Hash256 = require('./hash256');
@@ -58,7 +56,10 @@ const Service = require('./service');
 // Constants
 const PROLOGUE = 'FABRIC';
 
-/** Safe debug label for a derived Key — never log private material. */
+/**
+ * Safe debug label for a derived Key — never log private material.
+ * @private
+ */
 function peerDebugDerivedPublicSummary (keyInstance) {
   if (!keyInstance || !keyInstance.settings) return '(unavailable)';
   const pubHex = typeof keyInstance.settings.public === 'string'
@@ -70,7 +71,30 @@ function peerDebugDerivedPublicSummary (keyInstance) {
 }
 
 /**
- * An in-memory representation of a node in our network.
+ * Lowercase hex for comparing {@link P2P_FLUSH_CHAIN} authorized pubkeys.
+ * @private
+ */
+function normalizePeerPubkeyHex (pk) {
+  if (pk == null) return '';
+  if (Buffer.isBuffer(pk)) {
+    const h = pk.toString('hex').toLowerCase();
+    if (pk.length === 32) return h;
+    if (pk.length === 33 && (h.startsWith('02') || h.startsWith('03'))) return h.slice(2);
+    return h;
+  }
+  const s = String(pk).trim();
+  const h = (s.startsWith('0x') || s.startsWith('0X')) ? s.slice(2) : s;
+  const lo = h.toLowerCase();
+  if (lo.length === 66 && (lo.startsWith('02') || lo.startsWith('03'))) return lo.slice(2);
+  return lo;
+}
+
+/**
+ * @classdesc P2P node: TCP/NOISE sessions, gossip, and relay of {@link Message} (AMP) frames. Extends {@link Service}
+ * (hence {@link Actor}). Opcode and receipt semantics must stay aligned with <strong>@fabric/http</strong> and Hub when you add types —
+ * see {@link Message} wire vs friendly names and <code>constants</code> opcodes.
+ * @class Peer
+ * @extends Service
  */
 class Peer extends Service {
   /**
@@ -79,6 +103,8 @@ class Peer extends Service {
    * @param {Boolean} [config.listen] Whether or not to listen for connections.
    * @param {Boolean} [config.upnp] Whether or not to use UPNP for automatic configuration.
    * @param {Number} [config.port=7777] Port to use for P2P connections.
+   * @param {Number} [config.listenPortAttempts=20] When the listen port is in use (`EADDRINUSE`),
+   *   try the next port up to this many times (same host).
    * @param {Array} [config.peers=[]] List of initial peers.
    */
   constructor (config = {}) {
@@ -103,29 +129,18 @@ class Peer extends Service {
       // a developer machine's stale peer list (which can hang/timeout the suite).
       peersDb: (process.env.NODE_ENV === 'test') ? null : 'stores/hub/peers',
       port: 7777,
+      listenPortAttempts: 20,
       reconnectToKnownPeers: true,
-      /**
-       * When true, answers `INVENTORY_REQUEST` (with `object.offerBtc`) using local
-       * `state.documents` / `documentRates` and {@link purchaseContentHashHex} for each item.
-       */
+      // When true, answers INVENTORY_REQUEST (offerBtc) using local documents/rates.
       serveLocalDocumentInventory: false,
-      /**
-       * After `P2P_SESSION_OPEN` to a new inbound peer, re-send canonical `DocumentPublish` and
-       * pricing gossip for each entry in `state.documents` so late joiners see catalog offers.
-       */
+      // Re-send canonical DocumentPublish + pricing to new inbound peers.
       announceDocumentsOnPeerConnect: false,
-      /**
-       * When {@link Peer#settings.serveLocalDocumentInventory} is enabled and this node sends no
-       * `INVENTORY_RESPONSE`, forward the original generic wire to other peers (POLICY.md conditional relay).
-       */
+      // If local inventory doesn't answer, optionally relay INVENTORY_REQUEST.
       relayInventoryRequest: false,
-      /**
-       * After handling `INVENTORY_RESPONSE`, forward the same wire to peers other than the sender
-       * (star/mesh routers; default off to avoid leaking replies).
-       */
+      // Optionally relay INVENTORY_RESPONSE to peers other than the sender.
       relayInventoryResponse: false,
       connectTimeout: 5000,
-      /** Limits relay amplification on {@link P2P_PEER_GOSSIP} (hop TTL, payload dedup, per-origin rate). */
+      // Relay amplification controls for P2P_PEER_GOSSIP.
       gossip: {
         maxHops: GOSSIP_MAX_HOPS,
         maxRelaysPerOriginPerMinute: GOSSIP_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
@@ -143,19 +158,20 @@ class Peer extends Service {
       }, config.state),
       upnp: false,
       key: {},
-      /**
-       * Inbound wire traffic budgeting (Bitcoin Core–style peer quality).
-       * Credits accrue per rolling window; overflow de-ranks the peer (registry score)
-       * and drops the message. Heavier opcodes cost more credits.
-       */
+      // Inbound wire traffic budgeting (Bitcoin Core-style peer quality).
       wireTraffic: {
         windowMs: 60 * 1000,
         maxCreditsPerWindow: 520,
         chainSyncCreditCost: 55,
+        flushChainCreditCost: 120,
         bitcoinBlockCreditCost: 3,
         defaultCreditCost: 1,
         overLimitPenalty: 22
-      }
+      },
+      // Inbound P2P_FLUSH_CHAIN: sender registry score must be strictly greater than this (relay uses same threshold).
+      flushChainMinTrustedScore: 800,
+      // Inbound P2P_FLUSH_CHAIN: allowed signer pubkeys (hex/Buffers); empty = reject all until configured.
+      flushChainAuthorizedPubkeys: []
     }, config);
 
     // Network Internals
@@ -203,6 +219,8 @@ class Peer extends Service {
     // Peers: keyed by public key (id). Persistent registry in _state.peers.
     // Map connection address (IP:port) -> peer id (public key). Learned on P2P_SESSION_OFFER/OPEN.
     this._addressToId = {};
+    /** Inbound address -> NOISE static pubkey hex (FLUSH_CHAIN allowlist only; never for AMP verify). */
+    this._inboundNoiseStaticPubkeyByAddress = Object.create(null);
     this.mailboxes = {};
     this.memory = {};
     this.handlers = {};
@@ -252,21 +270,6 @@ class Peer extends Service {
     };
 
     return this;
-  }
-
-  _resolveToAddress (idOrAddress) {
-    if (!idOrAddress || typeof idOrAddress !== 'string') return null;
-    // Direct match on connection address
-    if (this.connections[idOrAddress]) return idOrAddress;
-    // Look up by id: find which address this id is connected from
-    const registry = this._state.peers || {};
-    const byId = registry[idOrAddress];
-    if (byId && byId.address && this.connections[byId.address]) return byId.address;
-    // Check _addressToId reverse: find address that maps to this id
-    for (const [addr, id] of Object.entries(this._addressToId || {})) {
-      if (id === idOrAddress && this.connections[addr]) return addr;
-    }
-    return null;
   }
 
   /**
@@ -328,6 +331,9 @@ class Peer extends Service {
     const t = wireType != null ? String(wireType) : '';
     if (t === 'P2P_CHAIN_SYNC_REQUEST' || t === 'ChainSyncRequest' || wireType === P2P_CHAIN_SYNC_REQUEST) {
       return Number(w.chainSyncCreditCost) || 55;
+    }
+    if (t === 'P2P_FLUSH_CHAIN' || t === 'FlushChain' || wireType === P2P_FLUSH_CHAIN) {
+      return Number(w.flushChainCreditCost) || 120;
     }
     if (t === 'BITCOIN_BLOCK' || t === 'BitcoinBlock') {
       return Number(w.bitcoinBlockCreditCost) || 3;
@@ -512,7 +518,7 @@ class Peer extends Service {
           }
         }
       }
-    }
+    };
   }
 
   get interface () {
@@ -618,7 +624,7 @@ class Peer extends Service {
   }
 
   _resolveToAddress (idOrAddress) {
-    if (!idOrAddress) return null;
+    if (!idOrAddress || typeof idOrAddress !== 'string') return null;
     if (this.connections[idOrAddress]) return idOrAddress;
     const addressToId = this._addressToId || {};
     for (const addr in addressToId) {
@@ -669,16 +675,126 @@ class Peer extends Service {
     }
   }
 
-  subscribe (path) {
+  /**
+   * Relay an AMP message only to connected peers whose persistent registry score is strictly greater than
+   * {@link Peer#settings.flushChainMinTrustedScore} (default 800). Used for `P2P_FLUSH_CHAIN`.
+   * @param {string|null} origin - Connection key to skip (inbound sender), or null when originating locally.
+   * @param {Message|Buffer} message
+   * @param {number} [minScoreExclusive] - Override trust threshold (relay if peer score &gt; this value).
+   */
+  relayFromTrustedPeers (origin, message, minScoreExclusive = null) {
+    const threshold = (minScoreExclusive != null && Number.isFinite(Number(minScoreExclusive)))
+      ? Number(minScoreExclusive)
+      : (Number(this.settings.flushChainMinTrustedScore) || 800);
+    const buf = Buffer.isBuffer(message) ? message : message.toBuffer();
+    for (const id in this.connections) {
+      if (origin && id === origin) continue;
+      const score = this._registryScoreForConnectionAddress(id);
+      if (!(score > threshold)) continue;
+      this.connections[id]._writeFabric(buf);
+    }
+  }
+
+  /**
+   * Best-effort registry score for a live connection key (`host:port`), using mapped Fabric id when known.
+   * @param {string} connAddress
+   * @returns {number}
+   */
+  _registryScoreForConnectionAddress (connAddress) {
+    const reg = this._state.peers || {};
+    const mappedId = this._addressToId && this._addressToId[connAddress];
+    let best = 0;
+    for (const key of [mappedId, connAddress]) {
+      if (!key) continue;
+      const e = reg[key];
+      if (!e) continue;
+      const s = Number(e.score);
+      if (Number.isFinite(s) && s > best) best = s;
+    }
+    return best;
+  }
+
+  /**
+   * FLUSH_CHAIN trust score bound to verified sender key.
+   *
+   * Prevents trusting attacker-controlled `P2P_SESSION_OFFER.actor.id` aliases
+   * by refusing `_addressToId`-mapped scores unless that mapped registry entry
+   * is explicitly bound to the same verified sender pubkey.
+   *
+   * @param {string} connAddress
+   * @param {string} senderPubkeyHex - verified sender pubkey hex (from NOISE/static or trusted peer record)
+   * @returns {number}
+   */
+  _registryScoreForFlushChainSender (connAddress, senderPubkeyHex) {
+    const reg = this._state.peers || {};
+    const senderHex = normalizePeerPubkeyHex(senderPubkeyHex);
+    const candidates = new Set();
+    if (connAddress) candidates.add(connAddress);
+    if (senderHex) candidates.add(senderHex);
+
+    const mappedId = this._addressToId && this._addressToId[connAddress];
+    if (mappedId && senderHex) {
+      const mapped = reg[mappedId];
+      if (mapped && typeof mapped === 'object') {
+        const mappedPk = normalizePeerPubkeyHex(mapped.publicKey);
+        // Only trust mapped id score when mapped record is key-bound.
+        if (mappedPk && mappedPk === senderHex) candidates.add(mappedId);
+      }
+    }
+
+    let best = 0;
+    for (const key of candidates) {
+      const e = reg[key];
+      if (!e) continue;
+      const s = Number(e.score);
+      if (Number.isFinite(s) && s > best) best = s;
+    }
+
+    return best;
+  }
+
+  /**
+   * Sign and send `P2P_FLUSH_CHAIN` to all connected peers with registry score &gt; threshold.
+   * Body JSON: `{ snapshotBlockHash, network?, label? }`.
+   *
+   * **Receivers** (see `P2P_FLUSH_CHAIN` handler) require **both**:
+   * 1. Sender pubkey in {@link Peer#settings.flushChainAuthorizedPubkeys} (non-empty allowlist), and
+   * 2. Registry score above {@link Peer#settings.flushChainMinTrustedScore}.
+   * Registry score bumps on `P2P_PONG` only when that pong answers an outbound ping on the same
+   * connection (`_fabricPingOutstanding`), so unsolicited pongs cannot inflate trust alone.
+   *
+   * @param {Object} object
+   * @returns {number} number of sockets written
+   */
+  sendFlushChainToTrustedPeers (object) {
+    const body = JSON.stringify(object && typeof object === 'object' ? object : {});
+    const msg = Message.fromVector(['P2P_FLUSH_CHAIN', body]).signWithKey(this.key);
+    const buf = msg.toBuffer();
+    const threshold = Number(this.settings.flushChainMinTrustedScore) || 800;
+    let n = 0;
+    for (const id in this.connections) {
+      if (!(this._registryScoreForConnectionAddress(id) > threshold)) continue;
+      this.connections[id]._writeFabric(buf);
+      n++;
+    }
+    return n;
+  }
+
+  subscribe (_path) {
 
   }
 
   _beginFabricHandshake (client) {
+    const keyClaim = this._buildSessionKeyExchangeClaim(this.identity.id);
     // Start handshake
     const vector = ['P2P_SESSION_OFFER', JSON.stringify({
       type: 'P2P_SESSION_OFFER',
       actor: {
-        id: this.identity.id
+        id: this.identity.id,
+        pubkey: keyClaim.pubkey,
+        parentPubkey: keyClaim.parentPubkey,
+        parentXpub: keyClaim.parentXpub,
+        parentSignature: keyClaim.parentSignature
       },
       object: {
         challenge: crypto.randomBytes(8).toString('hex'),
@@ -727,8 +843,8 @@ class Peer extends Service {
 
     this._outboundDialTargets.add(target);
 
-    const derived = this.identity.key.derive(FABRIC_KEY_DERIVATION_PATH);
-    this.emit('debug', `[FABRIC:PEER:_connect] Local derived key (public hex, truncated): ${peerDebugDerivedPublicSummary(derived)} path=${FABRIC_KEY_DERIVATION_PATH}`);
+    const _derived = this.identity.key.derive(FABRIC_KEY_DERIVATION_PATH);
+    this.emit('debug', `[FABRIC:PEER:_connect] Local derived key (public hex, truncated): ${peerDebugDerivedPublicSummary(_derived)} path=${FABRIC_KEY_DERIVATION_PATH}`);
 
     // Store the user's public key if provided
     if (id) {
@@ -762,7 +878,7 @@ class Peer extends Service {
     const client = noise({
       initiator: true,
       prologue: Buffer.from(PROLOGUE),
-      // privateKey: derived.privkey,
+      // privateKey: _derived.privkey,
       verify: this._verifyNOISE.bind(this)
     });
 
@@ -814,7 +930,7 @@ class Peer extends Service {
     });
   }
 
-  _announceAlias (alias, origin = null, socket = null) {
+  _announceAlias (alias, origin = null, _socket = null) {
     const PACKET_PEER_ALIAS = Message.fromVector(['P2P_PEER_ALIAS', JSON.stringify({
       type: 'P2P_PEER_ALIAS',
       object: {
@@ -834,6 +950,7 @@ class Peer extends Service {
 
     delete this.connections[target];
     delete this.peers[target];
+    if (this._inboundNoiseStaticPubkeyByAddress) delete this._inboundNoiseStaticPubkeyByAddress[target];
     if (this._addressToId) delete this._addressToId[target];
 
     this.emit('connections:close', {
@@ -854,7 +971,15 @@ class Peer extends Service {
     try {
       this._peersDb = this._peersDb || new Level(location);
       const raw = await this._peersDb.get('peers').catch(() => null);
-      const peers = raw ? JSON.parse(raw) : {};
+      let peers = {};
+      if (raw != null && raw !== '') {
+        const pr = tryParsePersistedJson(utf8FromPersistedRaw(raw));
+        if (pr.ok && pr.value !== null && typeof pr.value === 'object' && !Array.isArray(pr.value)) {
+          peers = pr.value;
+        } else if (!pr.ok) {
+          this.emit('debug', `[FABRIC:PEER] Peer registry JSON invalid or oversized: ${pr.error.message}`);
+        }
+      }
       if (peers && typeof peers === 'object') {
         // Migrate legacy address-keyed entries to id-keyed (id is the fixed public key)
         const migrated = {};
@@ -902,6 +1027,129 @@ class Peer extends Service {
           this.emit('error', `Failed to save peer registry: ${message}`);
         });
     }, 500);
+  }
+
+  /** FLUSH_CHAIN sender hex: {@link Peer#peers}[addr].publicKey if set, else inbound NOISE static (allowlist must match). */
+  _flushChainSenderPubkeyHex (connectionAddress) {
+    if (!connectionAddress) return '';
+    const rec = this.peers[connectionAddress];
+    if (rec && typeof rec === 'object' && rec.publicKey != null && rec.publicKey !== '') {
+      const h = normalizePeerPubkeyHex(rec.publicKey);
+      if (h) return h;
+    }
+    const noise = this._inboundNoiseStaticPubkeyByAddress[connectionAddress];
+    return noise ? normalizePeerPubkeyHex(noise) : '';
+  }
+
+  /**
+   * Verify Fabric message signature against the message's own on-wire author field.
+   * Returns normalized x-only signer pubkey hex on success.
+   * @private
+   * @param {Message} message
+   * @returns {string}
+   */
+  _verifiedFabricSignerPubkeyHex (message) {
+    if (!message || !message.raw || !message.raw.author) return '';
+    const xOnly = normalizePeerPubkeyHex(message.raw.author);
+    if (!/^[0-9a-f]{64}$/.test(xOnly)) return '';
+    try {
+      // Canonical compressed form; verifyWithKey checks x-only author parity-independently.
+      const signer = new Key({ public: `02${xOnly}` });
+      if (!message.verifyWithKey(signer)) return '';
+      return xOnly;
+    } catch {
+      return '';
+    }
+  }
+
+  /**
+   * Stable message covered by parent-key signature to bind a session child key claim.
+   * @private
+   */
+  _sessionKeyProofMessage (peerId, childPubkeyHex, parentPubkeyHex) {
+    return [
+      'fabric-session-key-proof-v1',
+      String(peerId || ''),
+      normalizePeerPubkeyHex(childPubkeyHex),
+      normalizePeerPubkeyHex(parentPubkeyHex)
+    ].join(':');
+  }
+
+  /**
+   * Build signed key-exchange claim for early Fabric session messages.
+   * Child key signs the Fabric message envelope; parent key signs child binding.
+   * @private
+   */
+  _buildSessionKeyExchangeClaim (peerId = this.identity.id) {
+    const childPubkey = this.key.public.encodeCompressed('hex');
+    const parentPubkey = this.key.public.encodeCompressed('hex');
+    const proofMsg = this._sessionKeyProofMessage(peerId, childPubkey, parentPubkey);
+    const parentSignature = this.key.signSchnorr(proofMsg).toString('hex');
+    return {
+      pubkey: childPubkey,
+      parentPubkey,
+      parentXpub: this.key.xpub || null,
+      parentSignature
+    };
+  }
+
+  /**
+   * Validate claimed session key exchange against verified wire signer key.
+   * Missing/invalid signatures are protocol violations and are penalized.
+   * @private
+   */
+  _validateSessionKeyExchangeClaim (genericMessage, signerPubkeyHex, originName) {
+    const actor = (genericMessage && genericMessage.actor && typeof genericMessage.actor === 'object')
+      ? genericMessage.actor
+      : {};
+    const peerId = actor.id;
+    const claimedChild = normalizePeerPubkeyHex(actor.pubkey || actor.publicKey);
+    const claimedParent = normalizePeerPubkeyHex(actor.parentPubkey || actor.parentPublicKey);
+    const parentSigHex = typeof actor.parentSignature === 'string' ? actor.parentSignature.trim() : '';
+
+    if (!claimedChild || !claimedParent || !parentSigHex) {
+      this._punishPeerForSessionKeyViolation(originName, 'missing session key signature material');
+      return false;
+    }
+    if (!/^[0-9a-f]{64}$/.test(claimedChild) || !/^[0-9a-f]{64}$/.test(claimedParent)) {
+      this._punishPeerForSessionKeyViolation(originName, 'invalid session key format');
+      return false;
+    }
+    if (!/^[0-9a-f]{128}$/.test(parentSigHex)) {
+      this._punishPeerForSessionKeyViolation(originName, 'invalid parent signature format');
+      return false;
+    }
+    if (claimedChild !== normalizePeerPubkeyHex(signerPubkeyHex)) {
+      this._punishPeerForSessionKeyViolation(originName, 'claimed child key does not match signer');
+      return false;
+    }
+
+    const proofMsg = this._sessionKeyProofMessage(peerId, claimedChild, claimedParent);
+    let ok = false;
+    try {
+      const parentKey = new Key({ public: `02${claimedParent}` });
+      ok = parentKey.verifySchnorr(proofMsg, Buffer.from(parentSigHex, 'hex'));
+    } catch {
+      ok = false;
+    }
+    if (!ok) {
+      this._punishPeerForSessionKeyViolation(originName, 'invalid parent signature');
+      return false;
+    }
+
+    return { peerId, childPubkey: claimedChild, parentPubkey: claimedParent, parentXpub: actor.parentXpub || null };
+  }
+
+  /**
+   * Penalize protocol violations around unsigned/unverifiable session key claims.
+   * @private
+   */
+  _punishPeerForSessionKeyViolation (originName, reason) {
+    const penalty = Number(this.settings.wireTraffic && this.settings.wireTraffic.sessionKeyViolationPenalty) || 240;
+    if (originName) this._derankPeerForWireTraffic(originName, penalty, `session-key:${reason}`);
+    this.emit('warning', `[FABRIC:PEER] Session key violation from ${originName || 'unknown'}: ${reason}`);
+    const conn = originName && this.connections && this.connections[originName];
+    if (conn && typeof conn.destroy === 'function') conn.destroy();
   }
 
   /**
@@ -963,7 +1211,7 @@ class Peer extends Service {
     // Have we seen this message before?
     if (this.messages[hash]) {
       // this.emit('debug', `Duplicate message: ${hash}`);
-      return;
+      return this;
     }
 
     this._rememberWireHash(hash);
@@ -984,14 +1232,22 @@ class Peer extends Service {
       return this;
     }
 
-    // Verify message signature if we have the peer's public key (origin is `{ name }` from sockets)
+    // Verify every inbound message against the signed on-wire author field.
+    const signerPubkeyHex = this._verifiedFabricSignerPubkeyHex(message);
+    if (!signerPubkeyHex) {
+      const from = (origin && origin.name) ? origin.name : 'unknown';
+      this.emit('warning', `[FABRIC:PEER] Invalid message signature from ${from}`);
+      return this;
+    }
+
+    // If a connection already has a pinned key, require continuity.
     const peerKey = origin && (origin.name != null ? origin.name : origin);
     const peerRecord = peerKey && this.peers[peerKey];
     if (peerRecord && peerRecord.publicKey) {
-      const signer = new Key({ public: peerRecord.publicKey });
-      if (!message.verifyWithKey(signer)) {
-        this.emit('error', `Invalid message signature from ${peerKey}`);
-        return;
+      const pinned = normalizePeerPubkeyHex(peerRecord.publicKey);
+      if (pinned && pinned !== signerPubkeyHex) {
+        this.emit('warning', `[FABRIC:PEER] Signer mismatch from ${peerKey}: expected pinned peer key`);
+        return this;
       }
     }
 
@@ -1013,7 +1269,17 @@ class Peer extends Service {
         this.emit('debug', `Unhandled message type: ${message.type}`);
         break;
       case 'P2P_RELAY':
-        this.relayFrom(origin.name, message);
+        if (!origin || origin.name == null) break;
+        {
+          // Relay payload is the raw inner Fabric Message bytes (no JSON envelope).
+          const inner = (message.raw && Buffer.isBuffer(message.raw.data))
+            ? message.raw.data
+            : Buffer.alloc(0);
+          if (inner.length > 0) {
+            this._handleFabricMessage(inner, origin, socket);
+            this._relayWirePayload(origin.name, inner, socket);
+          }
+        }
         break;
       case 'BITCOIN_BLOCK':
       case 'BitcoinBlock':
@@ -1024,23 +1290,116 @@ class Peer extends Service {
       case 'P2P_CHAIN_SYNC_REQUEST':
       case 'ChainSyncRequest':
         if (!origin || !origin.name) break;
-        try {
-          const raw = message.data != null
-            ? (typeof message.data === 'string' ? message.data : String(message.data))
-            : '{}';
-          const object = JSON.parse(raw || '{}');
-          this.emit('chainSyncRequest', { message, origin, socket, object });
-        } catch (parseErr) {
-          this.emit('chainSyncRequest', { message, origin, socket, object: {} });
+        {
+          const raw = messageDataToString(message.data);
+          const pr = tryParseWireJsonBody(raw);
+          if (!pr.ok || pr.value === null || typeof pr.value !== 'object' || Array.isArray(pr.value)) {
+            this.emit('warning', `[FABRIC:PEER] CHAIN_SYNC_REQUEST parse failed: ${pr.ok ? 'invalid body' : pr.error.message}`);
+            break;
+          }
+          this.emit('chainSyncRequest', { message, origin, socket, object: pr.value });
         }
         break;
+      case 'P2P_FLUSH_CHAIN':
+      case 'FlushChain': {
+        if (!origin || !origin.name) break;
+        const senderHex = signerPubkeyHex || this._flushChainSenderPubkeyHex(origin.name);
+        if (!senderHex) {
+          this.emit('warning', `[FABRIC:PEER] FLUSH_CHAIN ignored: no verified peer key for ${origin.name}`);
+          break;
+        }
+        const authList = this.settings.flushChainAuthorizedPubkeys;
+        if (!Array.isArray(authList) || authList.length === 0) {
+          this.emit('warning', `[FABRIC:PEER] FLUSH_CHAIN ignored: flushChainAuthorizedPubkeys is empty (configure allowed signer pubkeys)`);
+          break;
+        }
+        const allowed = new Set();
+        for (const e of authList) {
+          const h = normalizePeerPubkeyHex(e);
+          if (h) allowed.add(h);
+        }
+        if (!allowed.has(senderHex)) {
+          this.emit('warning', `[FABRIC:PEER] FLUSH_CHAIN ignored: sender pubkey not in flushChainAuthorizedPubkeys`);
+          break;
+        }
+        const threshold = Number(this.settings.flushChainMinTrustedScore) || 800;
+        const score = this._registryScoreForFlushChainSender(origin.name, senderHex);
+        if (!(score > threshold)) {
+          if (this.settings.debug) {
+            this.emit('debug', `[FABRIC:PEER] FLUSH_CHAIN ignored: sender score ${score} not > ${threshold}`);
+          }
+          break;
+        }
+        const rawFc = messageDataToString(message.data);
+        const prFc = tryParseWireJsonBody(rawFc);
+        if (!prFc.ok) {
+          this.emit('warning', `[FABRIC:PEER] FLUSH_CHAIN JSON parse failed: ${prFc.error.message}`);
+          break;
+        }
+        const object = prFc.value;
+        if (object === null || typeof object !== 'object' || Array.isArray(object)) {
+          this.emit('warning', '[FABRIC:PEER] FLUSH_CHAIN body must be a JSON object');
+          break;
+        }
+        const snap = object.snapshotBlockHash != null ? String(object.snapshotBlockHash).trim() : '';
+        if (!/^[0-9a-fA-F]{64}$/.test(snap)) {
+          this.emit('warning', '[FABRIC:PEER] FLUSH_CHAIN missing or invalid snapshotBlockHash (expect 64 hex)');
+          break;
+        }
+        object.snapshotBlockHash = snap.toLowerCase();
+        this.emit('flushChain', { message, origin, socket, object });
+        this.relayFromTrustedPeers(origin.name, message, threshold);
+        break;
+      }
+      case 'P2P_INVENTORY_REQUEST':
+      case 'P2P_INVENTORY_RESPONSE':
+      case 'P2P_PEER_GOSSIP':
+      case 'P2P_PEERING_OFFER':
+      case 'P2P_PING':
+      case 'P2P_PONG':
+      case 'P2P_CHAT_MESSAGE':
+      case 'P2P_STATE_ANNOUNCE':
+      case 'P2P_PEER_ALIAS':
+      case 'P2P_PEER_ANNOUNCE':
+      case 'P2P_SESSION_OFFER':
+      case 'P2P_SESSION_OPEN':
+      case 'P2P_DOCUMENT_PUBLISH':
+      case 'P2P_FILE_SEND':
+      case 'CONTRACT_PUBLISH':
+      case 'CONTRACT_MESSAGE':
+      {
+        const rawTyped = messageDataToString(message.data);
+        const prTyped = tryParseWireJsonBody(rawTyped);
+        if (!prTyped.ok || prTyped.value === null || typeof prTyped.value !== 'object' || Array.isArray(prTyped.value)) {
+          this.emit('warning', `[FABRIC:PEER] ${message.type} parse failed: ${prTyped.ok ? 'invalid body' : prTyped.error.message}`);
+          break;
+        }
+        const wireToInner = {
+          P2P_INVENTORY_REQUEST: 'INVENTORY_REQUEST',
+          P2P_INVENTORY_RESPONSE: 'INVENTORY_RESPONSE'
+        };
+        const innerType = wireToInner[message.type] || message.type;
+        const parsed = prTyped.value;
+        const genericBody = (parsed && typeof parsed === 'object' && (parsed.actor || parsed.object || parsed.type))
+          ? Object.assign({}, parsed, { type: parsed.type || innerType })
+          : { type: innerType, object: parsed };
+        this._handleGenericMessage(genericBody, origin, socket, message);
+        break;
+      }
       case 'DOCUMENT_PUBLISH':
       case 'DocumentPublish':
         try {
-          const raw = message.data != null
-            ? (typeof message.data === 'string' ? message.data : String(message.data))
-            : '{}';
-          const parsed = JSON.parse(raw || '{}');
+          const rawDp = messageDataToString(message.data);
+          const prDp = tryParseWireJsonBody(rawDp);
+          if (!prDp.ok) {
+            this.emit('warning', `[FABRIC:PEER] DOCUMENT_PUBLISH parse failed: ${prDp.error.message}`);
+            break;
+          }
+          const parsed = prDp.value;
+          if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            this.emit('warning', '[FABRIC:PEER] DOCUMENT_PUBLISH body must be a JSON object');
+            break;
+          }
           const docId = parsed.id;
           if (!docId) break;
           const purchaseHash = purchaseContentHashHex(docId, parsed);
@@ -1067,20 +1426,25 @@ class Peer extends Service {
           this.emit('warning', `[FABRIC:PEER] DOCUMENT_REQUEST failed: ${exception.message}`);
         }
         break;
-      case 'GENERIC_MESSAGE':
-      case 'GenericMessage':
       case 'P2P_BASE_MESSAGE':
-      case 'PeerMessage':
       case 'CHAT_MESSAGE':
       case 'ChatMessage':
         // this.emit('debug', `message ${message}`);
         // this.emit('debug', `message data: ${message.data}`);
-        // Parse JSON body
-        try {
-          const content = JSON.parse(message.data);
-          this._handleGenericMessage(content, origin, socket, message);
-        } catch (exception) {
-          this.emit('error', `Broken content body: ${exception}`);
+        // Parse JSON body (bounded — see functions/wireJson)
+        {
+          const rawGm = messageDataToString(message.data);
+          const prGm = tryParseWireJsonBody(rawGm);
+          if (!prGm.ok) {
+            this.emit('warning', `[FABRIC:PEER] Generic message parse failed: ${prGm.error.message}`);
+            break;
+          }
+          const bodyGm = prGm.value;
+          if (bodyGm === null || typeof bodyGm !== 'object' || Array.isArray(bodyGm)) {
+            this.emit('warning', '[FABRIC:PEER] Generic message body must be a JSON object');
+            break;
+          }
+          this._handleGenericMessage(bodyGm, origin, socket, message);
         }
 
         break;
@@ -1125,12 +1489,14 @@ class Peer extends Service {
       case 'NodeAnnouncement':
       case 'LIGHTNING_CHANNEL_UPDATE':
       case 'ChannelUpdate':
-        try {
-          const content = JSON.parse(message.data);
-          this.emit('lightning', { type: message.type, content, origin });
-        } catch (e) {
-          // If not JSON, emit raw buffer payload for lightning listeners
-          this.emit('lightning', { type: message.type, raw: message.data, origin });
+        {
+          const rawLn = messageDataToString(message.data);
+          const prLn = tryParseWireJsonBody(rawLn);
+          if (prLn.ok) {
+            this.emit('lightning', { type: message.type, content: prLn.value, origin });
+          } else {
+            this.emit('lightning', { type: message.type, raw: message.data, origin });
+          }
         }
         break;
     }
@@ -1140,8 +1506,153 @@ class Peer extends Service {
     return this;
   }
 
+  _relayWirePayload (originName, wirePayload, socket = null) {
+    if (!originName) return false;
+    const body = Buffer.isBuffer(wirePayload)
+      ? wirePayload
+      : Buffer.from(wirePayload || []);
+    if (!body.length) return false;
+    const relayMessage = Message.fromVector(['P2P_RELAY', body]);
+    relayMessage.signWithKey(this.key);
+    this.relayFrom(originName, relayMessage, socket);
+    return true;
+  }
+
+  _relayGenericPayload (originName, payload, socket = null, _wireMessage = null) {
+    const innerType = (payload && payload.type === 'INVENTORY_REQUEST')
+      ? 'P2P_INVENTORY_REQUEST'
+      : (payload && payload.type === 'INVENTORY_RESPONSE')
+          ? 'P2P_INVENTORY_RESPONSE'
+          : 'P2P_BASE_MESSAGE';
+    const innerBody = (innerType === 'P2P_BASE_MESSAGE')
+      ? JSON.stringify(payload)
+      : JSON.stringify((payload && payload.object) ? payload.object : {});
+    const innerBuffer = Message
+      .fromVector([innerType, innerBody])
+      .signWithKey(this.key)
+      .toBuffer();
+    return this._relayWirePayload(originName, innerBuffer, socket);
+  }
+
+  _handleSessionOfferGenericMessage (message, origin, socket, signerPubkeyHex) {
+    const peerId = message.actor.id;
+    const connAddress = origin.name;
+    if (this.settings.debug) this.emit('debug', `Handling session offer: ${JSON.stringify(message.object)}`);
+    if (this.settings.debug) this.emit('debug', `Session offer origin: ${JSON.stringify(origin)}`);
+    {
+      const sessionClaim = this._validateSessionKeyExchangeClaim(message, signerPubkeyHex, connAddress);
+      if (!sessionClaim) return this;
+    }
+
+    // If we've already bound this Fabric id to a key, reject key-mismatched offers.
+    const existingPeer = (this._state.peers && this._state.peers[peerId]) || null;
+    if (existingPeer && existingPeer.publicKey) {
+      const known = normalizePeerPubkeyHex(existingPeer.publicKey);
+      if (known && known !== signerPubkeyHex) {
+        this.emit('warning', `[FABRIC:PEER] Rejecting session offer for ${peerId}: signer key mismatch`);
+        return this;
+      }
+    }
+
+    // Same peer reconnecting from new port? Close old connection and replace with new.
+    // Do not tear down our outbound dial to the peer's listen address: concurrent inbound +
+    // outbound to the same Fabric id is normal (e.g. ring + star mesh); dropping the stable
+    // `host:listenPort` socket breaks address-keyed sends on the satellite.
+    const addressToId = this._addressToId || {};
+    for (const [addr, mappedId] of Object.entries(addressToId)) {
+      if (mappedId !== peerId || addr === connAddress) continue;
+      if (this._outboundDialTargets && this._outboundDialTargets.has(addr)) continue;
+      const oldSocket = this.connections[addr];
+      if (oldSocket) {
+        if (oldSocket._keepalive) clearInterval(oldSocket._keepalive);
+        delete this.connections[addr];
+        delete this.peers[addr];
+        delete this._addressToId[addr];
+        if (typeof oldSocket.destroy === 'function') oldSocket.destroy();
+      }
+      break;
+    }
+
+    this.peers[connAddress] = new Actor({
+      id: peerId,
+      name: connAddress,
+      address: connAddress,
+      connections: [ connAddress ],
+      publicKey: signerPubkeyHex
+    });
+
+    this._upsertPeerRegistry(connAddress, {
+      id: peerId,
+      address: connAddress,
+      publicKey: signerPubkeyHex,
+      lastSeen: new Date().toISOString()
+    });
+    this._addressToId[connAddress] = peerId;
+
+    // Emit peer event
+    this.emit('peer', this.peers[connAddress]);
+
+    // Send session open event
+    const keyClaim = this._buildSessionKeyExchangeClaim(this.identity.id);
+    const vector = ['P2P_SESSION_OPEN', JSON.stringify({
+      type: 'P2P_SESSION_OPEN',
+      actor: {
+        id: this.identity.id,
+        pubkey: keyClaim.pubkey,
+        parentPubkey: keyClaim.parentPubkey,
+        parentXpub: keyClaim.parentXpub,
+        parentSignature: keyClaim.parentSignature
+      },
+      object: {
+        initiator: message.actor.id,
+        counterparty: this.identity.id,
+        solution: message.object.challenge
+      }
+    })];
+
+    const PACKET_SESSION_START = Message.fromVector(vector).signWithKey(this.key);
+    const reply = PACKET_SESSION_START.toBuffer();
+    if (this.settings.debug) this.emit('debug', `session_start ${PACKET_SESSION_START} ${reply.toString('hex')}`);
+    this.connections[connAddress]._writeFabric(reply, socket);
+    if (this.settings.announceDocumentsOnPeerConnect) {
+      this._announceLocalDocumentsToPeer(connAddress);
+    }
+    return this;
+  }
+
+  _handleSessionOpenGenericMessage (message, origin, signerPubkeyHex) {
+    if (this.settings.debug) this.emit('debug', `Handling session open: ${JSON.stringify(message.object)}`);
+    const openPeerId = message.object.counterparty;
+    {
+      const sessionClaim = this._validateSessionKeyExchangeClaim(message, signerPubkeyHex, origin.name);
+      if (!sessionClaim) return this;
+    }
+    const existingOpenPeer = (this._state.peers && this._state.peers[openPeerId]) || null;
+    if (existingOpenPeer && existingOpenPeer.publicKey) {
+      const knownOpen = normalizePeerPubkeyHex(existingOpenPeer.publicKey);
+      if (knownOpen && knownOpen !== signerPubkeyHex) {
+        this.emit('warning', `[FABRIC:PEER] Rejecting session open for ${openPeerId}: signer key mismatch`);
+        return this;
+      }
+    }
+    this.peers[origin.name] = { id: openPeerId, name: origin.name, address: origin, publicKey: signerPubkeyHex };
+    this._upsertPeerRegistry(origin.name, {
+      id: openPeerId,
+      address: origin.name,
+      publicKey: signerPubkeyHex,
+      lastSeen: new Date().toISOString()
+    });
+    this._addressToId[origin.name] = openPeerId;
+    // Don't emit peer event here - it's already emitted in P2P_SESSION_OFFER
+    return this;
+  }
+
   _handleGenericMessage (message, origin = null, socket = null, wireMessage = null) {
     if (this.settings.debug) this.emit('debug', `Generic message:\n\tFrom: ${JSON.stringify(origin)}\n\tType: ${message.type}\n\tBody:\n\`\`\`\n${JSON.stringify(message.object, null, '  ')}\n\`\`\``);
+
+    const signerPubkeyHex = wireMessage
+      ? this._verifiedFabricSignerPubkeyHex(wireMessage)
+      : normalizePeerPubkeyHex(message && message.actor && (message.actor.publicKey || message.actor.pubkey));
 
     // Lookup the appropriate Actor for the message's origin
     const actor = new Actor(origin);
@@ -1157,81 +1668,23 @@ class Peer extends Service {
         if (this.settings.serveLocalDocumentInventory) {
           const served = this._respondInventoryFromLocalDocuments(message, origin);
           const req = message.object || {};
-          if (this.settings.relayInventoryRequest && !served && wireMessage && req.offerBtc === true) {
-            this.relayFrom(origin.name, wireMessage, socket);
+          if (this.settings.relayInventoryRequest && !served && req.offerBtc === true) {
+            this._relayGenericPayload(origin && origin.name, message, socket, wireMessage);
           }
         }
         break;
       case 'INVENTORY_RESPONSE':
         // Document inventory reply (may include per-item L1 HTLC offers).
         this.emit('inventoryResponse', { message, origin, socket });
-        if (this.settings.relayInventoryResponse && wireMessage) {
-          this.relayFrom(origin.name, wireMessage, socket);
+        if (this.settings.relayInventoryResponse) {
+          this._relayGenericPayload(origin && origin.name, message, socket, wireMessage);
         }
         break;
       case 'P2P_SESSION_OFFER':
-        const peerId = message.actor.id;
-        const connAddress = origin.name;
-        if (this.settings.debug) this.emit('debug', `Handling session offer: ${JSON.stringify(message.object)}`);
-        if (this.settings.debug) this.emit('debug', `Session offer origin: ${JSON.stringify(origin)}`);
-
-        // Same peer reconnecting from new port? Close old connection and replace with new.
-        // Do not tear down our outbound dial to the peer's listen address: concurrent inbound +
-        // outbound to the same Fabric id is normal (e.g. ring + star mesh); dropping the stable
-        // `host:listenPort` socket breaks address-keyed sends on the satellite.
-        const addressToId = this._addressToId || {};
-        for (const [addr, mappedId] of Object.entries(addressToId)) {
-          if (mappedId !== peerId || addr === connAddress) continue;
-          if (this._outboundDialTargets && this._outboundDialTargets.has(addr)) continue;
-          const oldSocket = this.connections[addr];
-          if (oldSocket) {
-            if (oldSocket._keepalive) clearInterval(oldSocket._keepalive);
-            delete this.connections[addr];
-            delete this.peers[addr];
-            delete this._addressToId[addr];
-            if (typeof oldSocket.destroy === 'function') oldSocket.destroy();
-          }
-          break;
-        }
-
-        this.peers[connAddress] = new Actor({
-          id: peerId,
-          name: connAddress,
-          address: connAddress,
-          connections: [ connAddress ]
-        });
-
-        this._upsertPeerRegistry(connAddress, { id: peerId, address: connAddress, lastSeen: new Date().toISOString() });
-        this._addressToId[connAddress] = peerId;
-
-        // Emit peer event
-        this.emit('peer', this.peers[connAddress]);
-
-        // Send session open event
-        const vector = ['P2P_SESSION_OPEN', JSON.stringify({
-          type: 'P2P_SESSION_OPEN',
-          object: {
-            initiator: message.actor.id,
-            counterparty: this.identity.id,
-            solution: message.object.challenge
-          }
-        })];
-
-        const PACKET_SESSION_START = Message.fromVector(vector).signWithKey(this.key);
-        const reply = PACKET_SESSION_START.toBuffer();
-        if (this.settings.debug) this.emit('debug', `session_start ${PACKET_SESSION_START} ${reply.toString('hex')}`);
-        this.connections[connAddress]._writeFabric(reply, socket);
-        if (this.settings.announceDocumentsOnPeerConnect) {
-          this._announceLocalDocumentsToPeer(connAddress);
-        }
+        this._handleSessionOfferGenericMessage(message, origin, socket, signerPubkeyHex);
         break;
       case 'P2P_SESSION_OPEN':
-        if (this.settings.debug) this.emit('debug', `Handling session open: ${JSON.stringify(message.object)}`);
-        const openPeerId = message.object.counterparty;
-        this.peers[origin.name] = { id: openPeerId, name: origin.name, address: origin };
-        this._upsertPeerRegistry(origin.name, { id: openPeerId, address: origin.name, lastSeen: new Date().toISOString() });
-        this._addressToId[origin.name] = openPeerId;
-        // Don't emit peer event here - it's already emitted in P2P_SESSION_OFFER
+        this._handleSessionOpenGenericMessage(message, origin, signerPubkeyHex);
         break;
       case 'P2P_CHAT_MESSAGE':
         this.emit('chat', message);
@@ -1261,7 +1714,7 @@ class Peer extends Service {
         const relayBody = Object.assign({}, message, {
           object: Object.assign({}, obj, { gossipHop: hop - 1 })
         });
-        const gossipRelay = Message.fromVector(['GENERIC', JSON.stringify(relayBody)]).signWithKey(this.key);
+        const gossipRelay = Message.fromVector(['P2P_PEER_GOSSIP', JSON.stringify(relayBody.object || {})]).signWithKey(this.key);
         this.relayFrom(origin.name, gossipRelay);
         break;
       }
@@ -1290,28 +1743,30 @@ class Peer extends Service {
         const relayBody = Object.assign({}, message, {
           object: Object.assign({}, obj, { peeringHop: hop - 1 })
         });
-        const offerRelay = Message.fromVector(['GENERIC', JSON.stringify(relayBody)]).signWithKey(this.key);
+        const offerRelay = Message.fromVector(['P2P_PEERING_OFFER', JSON.stringify(relayBody.object || {})]).signWithKey(this.key);
         this.relayFrom(origin.name, offerRelay);
         break;
       }
       case 'P2P_PING':
         const now = (new Date()).toISOString();
-        const P2P_PONG = Message.fromVector(['GENERIC', JSON.stringify({
-          actor: {
-            id: this.identity.id
-          },
-          created: now,
-          type: 'P2P_PONG',
-          object: {
-            created: now
-          }
-        })]);
-
-        this.connections[origin.name]._writeFabric(P2P_PONG.toBuffer());
+        const P2P_PONG = Message.fromVector(['P2P_PONG', JSON.stringify({
+          created: now
+        })]).signWithKey(this.key);
+        if (this.connections[origin.name] && this.connections[origin.name]._writeFabric) {
+          this.connections[origin.name]._writeFabric(P2P_PONG.toBuffer());
+        }
         break;
-      case 'P2P_PONG':
-        // Update the peer's score for succesfully responding to a ping
-        // TODO: ensure no pong is handled when a ping was not previously sent
+      case 'P2P_PONG': {
+        const conn = origin && origin.name ? this.connections[origin.name] : null;
+        const outstanding = conn && (conn._fabricPingOutstanding | 0);
+        if (!outstanding) {
+          if (this.settings.debug) {
+            this.emit('debug', `[FABRIC:PEER] Ignoring P2P_PONG from ${origin && origin.name}: no outbound ping pending`);
+          }
+          break;
+        }
+        conn._fabricPingOutstanding = 0;
+
         const instance = this.state.actors[actor.id] ? this.state.actors[actor.id] : {};
         const newScore = (instance.score || 0) + 1;
 
@@ -1331,6 +1786,7 @@ class Peer extends Service {
         this.emit('state', this.state);
 
         break;
+      }
       case 'P2P_PEER_ALIAS':
         this.emit('debug', `peer_alias ${origin.name} <Generic>${JSON.stringify(message.object || '')}`);
         this.connections[origin.name]._alias = message.object.name;
@@ -1377,14 +1833,6 @@ class Peer extends Service {
     }
   }
 
-  _handleNOISEHandshake (_localPrivateKey, localPublicKey, remotePublicKey) {
-    if (this.settings.debug) {
-      // Never log private key material — public keys only for transport diagnostics.
-      this.emit('debug', `Peer transport handshake using local public key: ${localPublicKey.toString('hex')}`);
-      this.emit('debug', `Peer transport handshake with remote public key: ${remotePublicKey.toString('hex')}`);
-    }
-  }
-
   _NOISESocketHandler (socket) {
     const target = `${socket.remoteAddress}:${socket.remotePort}`;
     const url = `tcp://${target}`;
@@ -1392,7 +1840,7 @@ class Peer extends Service {
     // Store a unique actor for this inbound connection
     this._registerActor({ name: target });
 
-    const derived = this.identity.key.derive(FABRIC_KEY_DERIVATION_PATH);
+    const _derived = this.identity.key.derive(FABRIC_KEY_DERIVATION_PATH);
     if (this.settings.debug) {
       this.emit('debug', 'NOISE inbound: session key derived for handshake (private key not logged)');
     }
@@ -1400,7 +1848,7 @@ class Peer extends Service {
     // Create NOISE handler
     const handler = noise({
       prologue: Buffer.from(PROLOGUE),
-      // privateKey: derived.private.toString('hex'),
+      // privateKey: _derived.private.toString('hex'),
       verify: this._verifyNOISE.bind(this)
     });
 
@@ -1415,7 +1863,17 @@ class Peer extends Service {
     });
 
     // Set up NOISE event handlers
-    handler.encrypt.on('handshake', this._handleNOISEHandshake.bind(this));
+    handler.encrypt.on('handshake', (_lk, localPk, remotePk) => {
+      if (this.settings.debug) {
+        // Transport diagnostics only — never log private key material from the handshake.
+        this.emit('debug', `Peer transport handshake using local public key: ${localPk.toString('hex')}`);
+        this.emit('debug', `Peer transport handshake with remote public key: ${remotePk.toString('hex')}`);
+      }
+      if (remotePk != null) {
+        const pkHex = normalizePeerPubkeyHex(Buffer.isBuffer(remotePk) ? Buffer.from(remotePk) : remotePk);
+        if (pkHex) this._inboundNoiseStaticPubkeyByAddress[target] = pkHex;
+      }
+    });
     handler.encrypt.on('error', (error) => {
       if (error && (error.code === 'EPIPE' || error.code === 'ECONNRESET')) {
         this.emit('warning', `Suppressing transient NOISE encrypt error (${error.code}).`);
@@ -1428,7 +1886,9 @@ class Peer extends Service {
       if (this.settings.debug) this.emit('debug', `Peer encrypt end: ${data}`);
       // socket.destroy();
       delete this.connections[target];
-      this.peers[target].status = 'disconnected';
+      if (this.peers[target] && typeof this.peers[target] === 'object') {
+        this.peers[target].status = 'disconnected';
+      }
     });
 
     handler.decrypt.on('error', (error) => {
@@ -1465,6 +1925,7 @@ class Peer extends Service {
 
     // Store socket in collection
     this.connections[target] = socket;
+    this._startFabricPingKeepalive(socket, handler.encrypt);
 
     // Begin NOISE stream
     handler.encrypt.pipe(socket).pipe(handler.decrypt);
@@ -1496,7 +1957,7 @@ class Peer extends Service {
 
   /**
    * Reply to `INVENTORY_REQUEST` with `INVENTORY_RESPONSE` built from local documents and rates.
-   * @param {{ type: string, object?: object }} message generic body from {@link Peer#_handleGenericMessage}
+   * @param {{type: string, object: (Object|undefined)}} message Generic body from {@link Peer#_handleGenericMessage}
    * @param {{ name: string }} origin
    * @returns {boolean} true if an `INVENTORY_RESPONSE` was written to the requester
    */
@@ -1524,7 +1985,7 @@ class Peer extends Service {
       type: 'INVENTORY_RESPONSE',
       object: { items }
     };
-    const m = Message.fromVector(['GenericMessage', JSON.stringify(payload)]);
+    const m = Message.fromVector(['P2P_INVENTORY_RESPONSE', JSON.stringify(payload.object || {})]);
     m.signWithKey(this.key);
     conn._writeFabric(m.toBuffer());
     return true;
@@ -1550,7 +2011,7 @@ class Peer extends Service {
         body: Buffer.from(bodyStr, 'utf8').toString('base64')
       }
     };
-    const reply = Message.fromVector(['GenericMessage', JSON.stringify(filePayload)]);
+    const reply = Message.fromVector(['P2P_FILE_SEND', JSON.stringify(filePayload.object || {})]);
     reply.signWithKey(this.key);
     conn._writeFabric(reply.toBuffer());
     return true;
@@ -1651,10 +2112,11 @@ class Peer extends Service {
    * @param {*} socket
    */
   _handleDocumentRequestWire (message, origin, socket) {
-    const raw = message.data != null
-      ? (typeof message.data === 'string' ? message.data : String(message.data))
-      : '{}';
-    const parsed = JSON.parse(raw || '{}');
+    const rawDr = messageDataToString(message.data);
+    const prDr = tryParseWireJsonBody(rawDr);
+    if (!prDr.ok) return;
+    const parsed = prDr.value;
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return;
     const docId = parsed.document || parsed.id;
     if (!docId) return;
 
@@ -1712,30 +2174,29 @@ class Peer extends Service {
     return this;
   }
 
-  _registerNOISEClient (name, socket, client) {
-    // Assign socket properties
-    // Failure counter
-    socket._failureCount = 0;
-    socket._lastMessage = null;
-    socket._messageLog = [];
-
-    // Enable keepalive
+  /**
+   * Periodic P2P_PING and track expected P2P_PONG replies so registry score cannot be
+   * self-inflated by unsolicited pongs (see FLUSH_CHAIN trust gate).
+   * @param {*} socket — connection object (stores `_fabricPingOutstanding`, `_keepalive`)
+   * @param {*} encryptWrite — NOISE encrypt stream with `.write(Buffer)` (`client.encrypt` / `handler.encrypt`)
+   */
+  _startFabricPingKeepalive (socket, encryptWrite) {
+    if (socket._keepalive) clearInterval(socket._keepalive);
+    socket._fabricPingOutstanding = 0;
     socket._keepalive = setInterval(() => {
       const now = (new Date()).toISOString();
-      const P2P_PING = Message.fromVector(['GENERIC', JSON.stringify({
-        actor: {
-          id: this.identity.id
-        },
-        created: now,
-        type: 'P2P_PING',
-        object: {
-          created: now
-        }
-      })]);
+      const P2P_PING = Message.fromVector(['P2P_PING', JSON.stringify({
+        created: now
+      })]).signWithKey(this.key);
 
+      // At most one unanswered PING per connection so burst P2P_PONG cannot inflate registry score
+      // (FLUSH_CHAIN trust gate uses _registryScoreForConnectionAddress).
+      if ((socket._fabricPingOutstanding | 0) >= 1) return;
+      socket._fabricPingOutstanding = 1;
       try {
-        client.encrypt.write(P2P_PING.toBuffer());
+        encryptWrite.write(P2P_PING.toBuffer());
       } catch (exception) {
+        socket._fabricPingOutstanding = 0;
         if (exception && (exception.code === 'EPIPE' || exception.code === 'ECONNRESET')) {
           this.emit('warning', `Suppressing transient write error (${exception.code}) during ping.`);
         } else {
@@ -1743,6 +2204,16 @@ class Peer extends Service {
         }
       }
     }, 60000);
+  }
+
+  _registerNOISEClient (name, socket, client) {
+    // Assign socket properties
+    // Failure counter
+    socket._failureCount = 0;
+    socket._lastMessage = null;
+    socket._messageLog = [];
+
+    this._startFabricPingKeepalive(socket, client.encrypt);
 
     // TODO: reconcile APIs for these methods
     // Map destroy function
@@ -1857,22 +2328,49 @@ class Peer extends Service {
       this.emit('debug', `[FABRIC:PEER] Peer list: ${JSON.stringify(this.settings.peers)}`);
     }
 
-    this._registerActor({ name: `${this.interface}:${this.port}` });
-
     if (this.settings.listen) {
       this.emit('log', 'Listener starting...');
-      if (this.settings.debug) this.emit('debug', `Starting listener on ${this.interface}:${this.port}`);
 
-      try {
-        address = await this.listen();
-        if (this.settings.debug) this.emit('debug', `got address: ${JSON.stringify(address)}`);
-        this.listenAddress = address;
-        this.emit('log', 'Listener started!');
-      } catch (exception) {
-        // Do not emit('error') here — with no listener Node throws ERR_UNHANDLED_ERROR; callers get the throw below.
-        this.emit('warning', 'Could not listen:', exception);
-        throw new Error('Peer failed to listen: ' + (exception && exception.message ? exception.message : exception));
+      const maxAttemptsRaw = this.settings.listenPortAttempts;
+      const maxAttempts = (typeof maxAttemptsRaw === 'number' && maxAttemptsRaw > 0)
+        ? Math.min(256, Math.floor(maxAttemptsRaw))
+        : 20;
+      const basePort = (typeof this.settings.port === 'number' && !Number.isNaN(this.settings.port))
+        ? this.settings.port
+        : 7777;
+
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        this.settings.port = basePort + attempt;
+        if (this.public && typeof this.public === 'object') this.public.port = this.settings.port;
+
+        if (this.settings.debug) {
+          this.emit('debug', `Starting listener on ${this.interface}:${this.settings.port} (attempt ${attempt + 1}/${maxAttempts})`);
+        }
+
+        try {
+          address = await this.listen();
+          if (this.settings.debug) this.emit('debug', `got address: ${JSON.stringify(address)}`);
+          this.listenAddress = address;
+          if (attempt > 0) {
+            this.emit('log', `[FABRIC:PEER] Port ${basePort} was busy; listening on ${this.settings.port} instead.`);
+          }
+          this.emit('log', 'Listener started!');
+          break;
+        } catch (exception) {
+          const inUse = exception && exception.code === 'EADDRINUSE';
+          if (inUse && attempt < maxAttempts - 1) {
+            this.emit('warning', `[FABRIC:PEER] Port ${this.settings.port} in use, trying ${this.settings.port + 1}...`);
+            continue;
+          }
+          // Do not emit('error') here — with no listener Node throws ERR_UNHANDLED_ERROR; callers get the throw below.
+          this.emit('warning', 'Could not listen:', exception);
+          throw new Error('Peer failed to listen: ' + (exception && exception.message ? exception.message : exception));
+        }
       }
+
+      this._registerActor({ name: `${this.interface}:${this.port}` });
+    } else {
+      this._registerActor({ name: `${this.interface}:${this.port}` });
     }
 
     if (this.settings.networking && this.settings.peers && this.settings.peers.length) {
@@ -1979,7 +2477,7 @@ class Peer extends Service {
     if (this._peersDb) {
       try {
         await this._peersDb.close();
-      } catch (e) { /* ignore */ }
+      } catch { /* ignore */ }
       this._peersDb = null;
     }
 
@@ -1998,7 +2496,7 @@ class Peer extends Service {
           // Some server states might not have address() but still need cleanup
           try {
             this.server.close(() => resolve());
-          } catch (error) {
+          } catch {
             // If close fails, it's likely already closed - resolve anyway
             resolve();
           }
@@ -2014,7 +2512,7 @@ class Peer extends Service {
           resolve();
         });
       });
-    }
+    };
 
     this.emit('debug', 'Closing network...');
     await terminator();
@@ -2101,41 +2599,55 @@ class Peer extends Service {
   async listen () {
     return new Promise((resolve, reject) => {
       if (this.settings.debug) this.emit('debug', `Listening on ${this.interface}:${this.port}`);
+      let settled = false;
+
+      const rejectListen = (error) => {
+        if (settled) return;
+        settled = true;
+        this.server.removeListener('error', errorHandler);
+        if (this.listenerCount('error') > 0) {
+          this.emit('error', `Server socket error: ${error}`);
+        }
+        return reject(error);
+      };
 
       // Handle server errors before attempting to listen
       const errorHandler = (error) => {
         if (error.code === 'EADDRINUSE') {
-          // Don't emit('error') here - caller gets rejection; emit would cause ERR_UNHANDLED_ERROR if no listener
-          this.server.close(() => reject(error));
-        } else {
-          this.emit('error', `Server socket error: ${error}`);
-          // Don't reject on other errors during listen, let the callback handle it
+          // Ensure server resources are released before retrying upstream.
+          this.server.close(() => rejectListen(error));
+          return;
         }
+        rejectListen(error);
       };
 
       this.server.once('error', errorHandler);
 
       this.server.listen(this.port, this.interface, (error) => {
+        if (settled) return;
         // Remove the error handler since we're handling the result here
         this.server.removeListener('error', errorHandler);
 
         if (error) {
-          // Don't emit('error') for EADDRINUSE - caller gets rejection; emit would cause ERR_UNHANDLED_ERROR if no listener
-          return reject(error);
+          return rejectListen(error);
         }
+        settled = true;
 
         const details = this.server.address();
         const address = `${details.address}:${details.port}`;
 
+        // Runtime errors after listen succeeds; attach once so port-retry does not stack handlers.
+        if (!this._peerServerRuntimeErrorBound) {
+          this._peerServerRuntimeErrorBound = true;
+          this.server.on('error', (runtimeError) => {
+            if (runtimeError.code !== 'EADDRINUSE' && this.listenerCount('error') > 0) {
+              this.emit('error', `Server socket error: ${runtimeError}`);
+            }
+          });
+        }
+
         this.emit('log', `Now listening on tcp://${address} [!!!]`);
         return resolve(address);
-      });
-
-      // Keep a general error handler for runtime errors
-      this.server.on('error', (error) => {
-        if (error.code !== 'EADDRINUSE') {
-          this.emit('error', `Server socket error: ${error}`);
-        }
       });
     });
   }

@@ -7,30 +7,23 @@
  * Used by Hub Beacon, HTTP manifest routes (`@fabric/http`), and peers that
  * must reject messages outside the agreed program.
  */
+/** @private */
 const crypto = require('crypto');
 const Key = require('./key');
+const fabricCanonicalJson = require('../functions/fabricCanonicalJson');
 
-/** @type {string} */
 const BEACON_EPOCH_SIGNING_KIND = 'BeaconEpoch';
 
 /**
- * Deterministic JSON (sorted object keys) for hashing and signing.
- * @param {*} value
- * @returns {string}
+ * @deprecated Use {@link module:functions/fabricCanonicalJson} — alias kept for API stability.
+ * Omitted from published API / dev docs (Hub / integration use only).
+ * @ignore
  */
-function stableStringify (value) {
-  if (value === null || typeof value !== 'object') {
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return '[' + value.map((v) => stableStringify(v)).join(',') + ']';
-  }
-  const keys = Object.keys(value).sort();
-  return '{' + keys.map((k) => JSON.stringify(k) + ':' + stableStringify(value[k])).join(',') + '}';
-}
+const stableStringify = fabricCanonicalJson;
 
 /**
  * Drop `undefined` and normalize values the same way JSON.parse(JSON.stringify) does.
+ * @private
  * @param {*} value
  * @returns {*}
  */
@@ -40,12 +33,14 @@ function jsonSafe (value) {
 
 /**
  * UTF-8 string that federation members sign for a beacon epoch (same bytes for all validators).
+ * Omitted from published API / dev docs (Hub / integration use only).
  * @param {object} epochPayload — clock, blockHash, height, balance, balanceSats, timestamp, …
  * @returns {string}
+ * @ignore
  */
 function signingStringForBeaconEpoch (epochPayload) {
   const safe = jsonSafe(epochPayload);
-  return stableStringify({
+  return fabricCanonicalJson({
     version: 1,
     kind: BEACON_EPOCH_SIGNING_KIND,
     epoch: safe
@@ -54,8 +49,10 @@ function signingStringForBeaconEpoch (epochPayload) {
 
 /**
  * SHA-256 hex digest of {@link signingStringForBeaconEpoch} (public commitment).
+ * Omitted from published API / dev docs (Hub / integration use only).
  * @param {object} epochPayload
  * @returns {string}
+ * @ignore
  */
 function epochCommitmentDigestHex (epochPayload) {
   const s = signingStringForBeaconEpoch(epochPayload);
@@ -65,12 +62,14 @@ function epochCommitmentDigestHex (epochPayload) {
 /**
  * Verify threshold Schnorr signatures over the **same** message buffer used when signing
  * (`Key.signSchnorr(messageBuffer)`), without requiring a full {@link Federation} instance.
+ * Omitted from published API / dev docs (Hub / integration use only).
  *
  * @param {Buffer} messageBuffer — typically `Buffer.from(signingStringForBeaconEpoch(epoch), 'utf8')`
  * @param {object} witness
  * @param {string[]} validatorPubkeys — compressed secp256k1 pubkeys, hex
  * @param {number} [threshold=1]
  * @returns {boolean}
+ * @ignore
  */
 function verifyFederationWitnessOnMessage (messageBuffer, witness, validatorPubkeys, threshold = 1) {
   if (!witness || !witness.signatures || typeof witness.signatures !== 'object') return false;
@@ -87,7 +86,7 @@ function verifyFederationWitnessOnMessage (messageBuffer, witness, validatorPubk
       const sig = Buffer.from(sigHex, 'hex');
       if (k.verifySchnorr(messageBuffer, sig)) valid++;
       if (valid >= thr) return true;
-    } catch (_) {
+    } catch {
       /* ignore */
     }
   }
@@ -96,8 +95,10 @@ function verifyFederationWitnessOnMessage (messageBuffer, witness, validatorPubk
 
 /**
  * Setup-phase manifest schema (v1): program identity + allowed traffic + optional federation policy.
+ * Omitted from published API / dev docs (Hub / integration use only).
  * @param {object} raw
  * @returns {object}
+ * @ignore
  */
 function parseDistributedManifestV1 (raw) {
   if (!raw || typeof raw !== 'object') return { ok: false, error: 'manifest must be an object' };

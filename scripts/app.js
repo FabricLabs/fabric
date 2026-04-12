@@ -1,49 +1,19 @@
 #!/usr/bin/env node
 'use strict';
 
-// Settings
-const settings = require('../settings/default');
-
-// Fabric Types
-const { FabricShell } = require('../types/service');
-
-// Fabric Services
-const Lightning = require('../services/lightning');
-
-// Functions
-const _handleMessage = require('../functions/_handleMessage');
-const _handleWarning = require('../functions/_handleWarning');
-const _handleError = require('../functions/_handleError');
+const settings = require('../settings/local');
+const Environment = require('../types/environment');
+const OP_SHELL = require('../contracts/shell');
 
 async function main () {
-  // Instantiate Application
-  const app = new FabricShell(settings);
-
-  // Define Resources
-  await app.define('Example', {
-    components: {
-      list: 'example-list',
-      view: 'example-view'
-    }
-  });
-
-  // Register Services
-  await app._registerService('lightning', Lightning);
-
-  // Attach Listeners
-  app.on('message', _handleMessage);
-  app.on('warning', _handleWarning);
-  app.on('error', _handleError);
-
-  // Start the Application
-  await app.start();
-
-  // Render the UI
-  return app.render();
+  const environment = new Environment();
+  environment.start();
+  return OP_SHELL.apply({ environment, settings });
 }
 
 main().catch((exception) => {
-  console.error('[SCRIPTS:MAIN]', 'Main Process Exception:', exception);
+  console.error('[SCRIPTS:APP]', 'Shell failed:', exception);
+  process.exitCode = 1;
 }).then((output) => {
-  console.log('[SCRIPTS:MAIN]', 'Main Process Output:', output);
+  if (output) console.log('[SCRIPTS:APP]', output);
 });
