@@ -1,12 +1,12 @@
-#ifndef SECURE_RANDOM_H
-#define SECURE_RANDOM_H
+#ifndef FABRIC_RANDOM_H
+#define FABRIC_RANDOM_H
 
 #include <stdint.h>
 #include <stddef.h>
 #include "errors.h"
 
 /**
- * @file secure_random.h
+ * @file random.h
  * @brief Cryptographically secure random number generation
  *
  * This module provides secure random number generation suitable for
@@ -63,4 +63,4 @@ void fabric_secure_random_cleanup(void);
  */
 FabricError fabric_secure_random_test_entropy(void);
 
-#endif // SECURE_RANDOM_H
+#endif // FABRIC_RANDOM_H

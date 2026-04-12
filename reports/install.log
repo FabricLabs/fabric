@@ -12,13 +12,12 @@ $ npm i
   CC(target) Release/obj.target/fabric/src/threads.o
   CC(target) Release/obj.target/fabric/src/scoring.o
   CC(target) Release/obj.target/fabric/src/validation.o
-  CC(target) Release/obj.target/fabric/src/secure_memory.o
-  CC(target) Release/obj.target/fabric/src/secure_random.o
-  CC(target) Release/obj.target/fabric/src/bip340.o
+  CC(target) Release/obj.target/fabric/src/sha2.o
+  CC(target) Release/obj.target/fabric/src/security.o
   CC(target) Release/obj.target/fabric/src/taproot.o
   SOLINK_MODULE(target) Release/fabric.node
 
-added 665 packages, and audited 666 packages in 28s
+added 665 packages, and audited 666 packages in 33s
 
 109 packages are looking for funding
   run `npm fund` for details
