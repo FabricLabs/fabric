@@ -199,6 +199,124 @@ describe('@fabric/core/services/lightning (unit)', function () {
       const out = await ln.createLocalNode();
       assert.strictEqual(out, null);
     });
+
+    it('routes stderr error-like lines to error events', async function () {
+      const origSpawn = cp.spawn;
+      cp.spawn = function () {
+        const child = new EventEmitter();
+        child.stdout = new EventEmitter();
+        child.stderr = new EventEmitter();
+        child.exitCode = null;
+        child.killed = false;
+        child.kill = function () {
+          this.killed = true;
+          this.exitCode = 0;
+          setImmediate(() => this.emit('close', 0));
+        };
+        return child;
+      };
+
+      const ln = new Lightning({ managed: true, debug: false });
+      ln._waitForLightningD = async () => true;
+
+      try {
+        await ln.createLocalNode();
+        const got = await new Promise((resolve) => {
+          ln.once('error', (msg) => resolve(msg));
+          ln._child.stderr.emit('data', Buffer.from('FATAL: something broke\n'));
+        });
+        assert.ok(String(got).includes('FATAL: something broke'));
+      } finally {
+        if (ln._errorHandlers && ln._errorHandlers.exit) await ln._errorHandlers.exit();
+        if (ln._errorHandlers) {
+          Object.entries(ln._errorHandlers).forEach(([event, handler]) => {
+            if (handler) process.removeListener(event, handler);
+          });
+        }
+        cp.spawn = origSpawn;
+      }
+    });
+
+    it('routes non-error stderr lines to debug only when debug is enabled', async function () {
+      const origSpawn = cp.spawn;
+      cp.spawn = function () {
+        const child = new EventEmitter();
+        child.stdout = new EventEmitter();
+        child.stderr = new EventEmitter();
+        child.exitCode = null;
+        child.killed = false;
+        child.kill = function () {
+          this.killed = true;
+          this.exitCode = 0;
+          setImmediate(() => this.emit('close', 0));
+        };
+        return child;
+      };
+
+      const ln = new Lightning({ managed: true, debug: true });
+      ln._waitForLightningD = async () => true;
+
+      try {
+        await ln.createLocalNode();
+        const got = await new Promise((resolve) => {
+          ln.once('debug', (msg) => {
+            if (String(msg).includes('Set feerate to 253 perkw')) resolve(msg);
+          });
+          ln._child.stderr.emit('data', Buffer.from('Set feerate to 253 perkw\n'));
+        });
+        assert.ok(String(got).includes('Set feerate to 253 perkw'));
+      } finally {
+        if (ln._errorHandlers && ln._errorHandlers.exit) await ln._errorHandlers.exit();
+        if (ln._errorHandlers) {
+          Object.entries(ln._errorHandlers).forEach(([event, handler]) => {
+            if (handler) process.removeListener(event, handler);
+          });
+        }
+        cp.spawn = origSpawn;
+      }
+    });
+
+    it('ignores empty stderr lines', async function () {
+      const origSpawn = cp.spawn;
+      cp.spawn = function () {
+        const child = new EventEmitter();
+        child.stdout = new EventEmitter();
+        child.stderr = new EventEmitter();
+        child.exitCode = null;
+        child.killed = false;
+        child.kill = function () {
+          this.killed = true;
+          this.exitCode = 0;
+          setImmediate(() => this.emit('close', 0));
+        };
+        return child;
+      };
+
+      const ln = new Lightning({ managed: true, debug: true });
+      ln._waitForLightningD = async () => true;
+      let debugCount = 0;
+      let errorCount = 0;
+
+      try {
+        ln.on('error', () => { errorCount++; });
+        ln.on('debug', () => { debugCount++; });
+        await ln.createLocalNode();
+        const beforeDebug = debugCount;
+        const beforeError = errorCount;
+        ln._child.stderr.emit('data', Buffer.from('   \n'));
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        assert.strictEqual(debugCount, beforeDebug);
+        assert.strictEqual(errorCount, beforeError);
+      } finally {
+        if (ln._errorHandlers && ln._errorHandlers.exit) await ln._errorHandlers.exit();
+        if (ln._errorHandlers) {
+          Object.entries(ln._errorHandlers).forEach(([event, handler]) => {
+            if (handler) process.removeListener(event, handler);
+          });
+        }
+        cp.spawn = origSpawn;
+      }
+    });
   });
 
   describe('start', function () {
