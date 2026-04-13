@@ -1309,7 +1309,16 @@ describe('@fabric/core/services/bitcoin real-world RPC command parity', function
     btc.rpc = require('jayson/lib/client').http(config);
 
     // Connectivity sanity check.
-    await btc._makeRPCRequest('getblockchaininfo');
+    try {
+      await btc._makeRPCRequest('getblockchaininfo');
+    } catch (error) {
+      const msg = String(error && error.message ? error.message : error);
+      if (msg.includes('ECONNREFUSED') || msg.includes('connect')) {
+        this.skip();
+        return;
+      }
+      throw error;
+    }
   });
 
   enabledCommands.forEach((command) => {

@@ -10,9 +10,8 @@
       "src/threads.c",
       "src/scoring.c",
       "src/validation.c",
-      "src/secure_memory.c",
-      "src/secure_random.c",
-      "src/bip340.c",
+      "src/sha2.c",
+      "src/security.c",
       "src/taproot.c"
     ],
     "include_dirs": [
@@ -23,11 +22,11 @@
     "conditions": [
       ["OS=='linux'", {
         "include_dirs": ["/usr/include", "/usr/local/include"],
-        "libraries": ["-L/usr/lib", "-L/usr/local/lib", "-lsecp256k1", "-lnoiseprotocol", "-lnoisekeys", "-lwallycore"]
+        "libraries": ["-L/usr/lib", "-L/usr/local/lib", "-lsecp256k1", "-lnoiseprotocol", "-lnoisekeys"]
       }],
       ["OS=='mac'", {
-        "include_dirs": ["/opt/homebrew/opt/secp256k1/include", "/opt/homebrew/opt/libwally-core/include", "/usr/local/include"],
-        "libraries": ["-L/opt/homebrew/opt/secp256k1/lib", "-L/opt/homebrew/opt/libwally-core/lib", "-L/usr/local/lib", "-lsecp256k1", "-lnoiseprotocol", "-lnoisekeys", "-lwallycore"]
+        "include_dirs": ["/opt/homebrew/opt/secp256k1/include", "/usr/local/include"],
+        "libraries": ["-L/opt/homebrew/opt/secp256k1/lib", "-L/usr/local/lib", "-lsecp256k1", "-lnoiseprotocol", "-lnoisekeys"]
       }]
     ],
     "cflags!": ["-fno-exceptions"],

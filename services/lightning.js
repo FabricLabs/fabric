@@ -24,6 +24,18 @@ function redactSensitiveCommandArg (arg) {
   );
 }
 
+function shouldTreatLightningStderrAsError (line) {
+  const text = String(line || '').trim().toLowerCase();
+  if (!text) return false;
+  return (
+    text.includes('error') ||
+    text.includes('fatal') ||
+    text.includes('exception') ||
+    text.includes('traceback') ||
+    text.includes('failed')
+  );
+}
+
 /**
  * Manage a Lightning node.
  */
@@ -397,7 +409,13 @@ class Lightning extends Service {
       });
 
       this._child.stderr.on('data', (data) => {
-        this.emit('error', `[FABRIC:LIGHTNING] ${data.toString('utf8').trim()}`);
+        const line = data.toString('utf8').trim();
+        if (!line) return;
+        if (shouldTreatLightningStderrAsError(line)) {
+          this.emit('error', `[FABRIC:LIGHTNING] ${line}`);
+          return;
+        }
+        if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] ${line}`);
       });
 
       this._child.on('close', (code) => {

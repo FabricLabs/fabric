@@ -1,11 +1,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include "sha2.h"
 #include "timing_protection.h"
 #include "message.h"
 #include "validation.h"
-#include "secure_memory.h"
-#include <wally_crypto.h>
+#include "memory.h"
+#include "taproot.h"
 
 Message *message_create(void)
 {
@@ -86,17 +87,15 @@ FabricError message_set_body(Message *message, const uint8_t *data, uint32_t siz
 
 FabricError message_compute_hash(Message *message, const secp256k1_context *ctx)
 {
-  // Deprecated for signature flow: do not overwrite message->hash since it's used for wire body hash.
-  // Keep as no-op success to avoid breaking older call sites.
-  (void)message; (void)ctx;
-  return FABRIC_SUCCESS;
+  (void)ctx;
+  return message_compute_body_hash(message);
 }
 
 static FabricError double_sha256_bytes(const uint8_t *data, size_t len, uint8_t out32[32])
 {
   uint8_t tmp[32];
-  if (wally_sha256(data, len, tmp, 32) != WALLY_OK) return FABRIC_ERROR_HASH_COMPUTATION_FAILED;
-  if (wally_sha256(tmp, 32, out32, 32) != WALLY_OK) return FABRIC_ERROR_HASH_COMPUTATION_FAILED;
+  if (!fabric_sha256(data, len, tmp)) return FABRIC_ERROR_HASH_COMPUTATION_FAILED;
+  if (!fabric_sha256(tmp, sizeof(tmp), out32)) return FABRIC_ERROR_HASH_COMPUTATION_FAILED;
   return FABRIC_SUCCESS;
 }
 
@@ -132,7 +131,7 @@ FabricError message_sign(Message *message, const uint8_t *private_key, const sec
 {
   FABRIC_CHECK_NULL(message);
   FABRIC_CHECK_NULL(private_key);
-  FABRIC_CHECK_NULL(ctx);
+  (void)ctx;
 
   // Compute tagged hash locally (do not modify message->hash which holds body hash for wire integrity)
   const char *tag = "Fabric/Message";
@@ -149,37 +148,30 @@ FabricError message_sign(Message *message, const uint8_t *private_key, const sec
     memcpy(data_buffer + header_size, message->body, message->size);
   }
 
-  uint8_t msghash[32];
-  if (secp256k1_tagged_sha256(ctx, msghash, (const unsigned char *)tag, tag_len, data_buffer, data_size) != 1)
+  const secp256k1_context *bip_ctx = NULL;
+  FabricError berr = fabric_bip340_get_context(&bip_ctx);
+  if (berr != FABRIC_SUCCESS)
   {
+    free(data_buffer);
+    return berr;
+  }
+
+  uint8_t msghash[32];
+  if (secp256k1_tagged_sha256(bip_ctx, msghash, (const unsigned char *)tag, tag_len, data_buffer, data_size) != 1)
+  {
+    fabric_bip340_release_context();
     free(data_buffer);
     return FABRIC_ERROR_HASH_COMPUTATION_FAILED;
   }
+  fabric_bip340_release_context();
   free(data_buffer);
 
-  // Create a keypair from the private key
-  secp256k1_keypair keypair;
-  if (secp256k1_keypair_create(ctx, &keypair, private_key) != 1)
-  {
-    return FABRIC_ERROR_KEY_GENERATION_FAILED;
-  }
-
-  // Sign the hash using BIP-340 Schnorr
-  if (secp256k1_schnorrsig_sign32(ctx, message->signature, msghash, &keypair, NULL) != 1)
+  if (fabric_bip340_sign(msghash, private_key, message->signature) != FABRIC_SUCCESS)
   {
     return FABRIC_ERROR_SIGNATURE_FAILED;
   }
 
-  // Get the x-only public key for the author field
-  secp256k1_xonly_pubkey xonly_pubkey;
-  int pk_parity;
-  if (secp256k1_keypair_xonly_pub(ctx, &xonly_pubkey, &pk_parity, &keypair) != 1)
-  {
-    return FABRIC_ERROR_KEY_GENERATION_FAILED;
-  }
-
-  // Serialize the x-only public key to the author field (32 bytes)
-  if (secp256k1_xonly_pubkey_serialize(ctx, message->author, &xonly_pubkey) != 1)
+  if (fabric_bip340_pubkey_from_private(private_key, message->author) != FABRIC_SUCCESS)
   {
     return FABRIC_ERROR_KEY_GENERATION_FAILED;
   }
@@ -190,14 +182,7 @@ FabricError message_sign(Message *message, const uint8_t *private_key, const sec
 FabricError message_verify(const Message *message, const secp256k1_context *ctx)
 {
   FABRIC_CHECK_NULL(message);
-  FABRIC_CHECK_NULL(ctx);
-
-  // Parse the x-only public key from the author field
-  secp256k1_xonly_pubkey pubkey;
-  if (secp256k1_xonly_pubkey_parse(ctx, &pubkey, message->author) != 1)
-  {
-    return FABRIC_ERROR_INVALID_KEY;
-  }
+  (void)ctx;
 
   // Recompute tagged hash for verification
   const char *tag = "Fabric/Message";
@@ -211,16 +196,23 @@ FabricError message_verify(const Message *message, const secp256k1_context *ctx)
   {
     memcpy(data_buffer + header_size, message->body, message->size);
   }
+  const secp256k1_context *bip_ctx = NULL;
+  FabricError berr = fabric_bip340_get_context(&bip_ctx);
+  if (berr != FABRIC_SUCCESS)
+  {
+    free(data_buffer);
+    return berr;
+  }
   uint8_t msghash[32];
-  int ok = secp256k1_tagged_sha256(ctx, msghash, (const unsigned char *)tag, tag_len, data_buffer, data_size);
+  int ok = secp256k1_tagged_sha256(bip_ctx, msghash, (const unsigned char *)tag, tag_len, data_buffer, data_size);
+  fabric_bip340_release_context();
   free(data_buffer);
   if (ok != 1) return FABRIC_ERROR_HASH_COMPUTATION_FAILED;
 
-  // Verify the Schnorr signature using recomputed hash
-  if (secp256k1_schnorrsig_verify(ctx, message->signature, msghash, 32, &pubkey) != 1)
-  {
-    return FABRIC_ERROR_VERIFICATION_FAILED;
-  }
+  int valid = 0;
+  berr = fabric_bip340_verify(msghash, 32, message->author, message->signature, &valid);
+  if (berr != FABRIC_SUCCESS) return berr;
+  if (!valid) return FABRIC_ERROR_VERIFICATION_FAILED;
 
   return FABRIC_SUCCESS;
 }
