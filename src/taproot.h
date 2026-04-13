@@ -120,6 +120,7 @@ FabricError fabric_bip340_verify(const uint8_t *msg,
                                  const uint8_t signature[FABRIC_BIP340_SIGNATURE_SIZE],
                                  int *out_valid);
 FabricError fabric_bip340_get_context(const secp256k1_context **out_ctx);
+void fabric_bip340_release_context(void);
 
 #endif // FABRIC_TAPROOT_H
 

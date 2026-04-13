@@ -87,10 +87,8 @@ FabricError message_set_body(Message *message, const uint8_t *data, uint32_t siz
 
 FabricError message_compute_hash(Message *message, const secp256k1_context *ctx)
 {
-  // Deprecated for signature flow: do not overwrite message->hash since it's used for wire body hash.
-  // Keep as no-op success to avoid breaking older call sites.
-  (void)message; (void)ctx;
-  return FABRIC_SUCCESS;
+  (void)ctx;
+  return message_compute_body_hash(message);
 }
 
 static FabricError double_sha256_bytes(const uint8_t *data, size_t len, uint8_t out32[32])
@@ -161,9 +159,11 @@ FabricError message_sign(Message *message, const uint8_t *private_key, const sec
   uint8_t msghash[32];
   if (secp256k1_tagged_sha256(bip_ctx, msghash, (const unsigned char *)tag, tag_len, data_buffer, data_size) != 1)
   {
+    fabric_bip340_release_context();
     free(data_buffer);
     return FABRIC_ERROR_HASH_COMPUTATION_FAILED;
   }
+  fabric_bip340_release_context();
   free(data_buffer);
 
   if (fabric_bip340_sign(msghash, private_key, message->signature) != FABRIC_SUCCESS)
@@ -205,12 +205,14 @@ FabricError message_verify(const Message *message, const secp256k1_context *ctx)
   }
   uint8_t msghash[32];
   int ok = secp256k1_tagged_sha256(bip_ctx, msghash, (const unsigned char *)tag, tag_len, data_buffer, data_size);
+  fabric_bip340_release_context();
   free(data_buffer);
   if (ok != 1) return FABRIC_ERROR_HASH_COMPUTATION_FAILED;
 
   int valid = 0;
   berr = fabric_bip340_verify(msghash, 32, message->author, message->signature, &valid);
-  if (berr != FABRIC_SUCCESS || !valid) return FABRIC_ERROR_VERIFICATION_FAILED;
+  if (berr != FABRIC_SUCCESS) return berr;
+  if (!valid) return FABRIC_ERROR_VERIFICATION_FAILED;
 
   return FABRIC_SUCCESS;
 }
