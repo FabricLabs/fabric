@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const EventEmitter = require('events');
 const cp = require('child_process');
+const net = require('net');
 
 const Lightning = require('../../services/lightning');
 
@@ -16,6 +17,43 @@ describe('@fabric/core/services/lightning (unit)', function () {
       assert.strictEqual(Lightning.defaultListenPortForNetwork('testnet'), 19735);
       assert.strictEqual(Lightning.defaultListenPortForNetwork('testnet4'), 19735);
       assert.strictEqual(Lightning.defaultListenPortForNetwork('signet'), 39735);
+    });
+  });
+
+  describe('network helpers', function () {
+    it('_clnNetworkCliName maps aliases safely', function () {
+      assert.strictEqual(new Lightning({ network: 'mainnet' })._clnNetworkCliName(), 'bitcoin');
+      assert.strictEqual(new Lightning({ network: 'bitcoin' })._clnNetworkCliName(), 'bitcoin');
+      assert.strictEqual(new Lightning({ network: 'testnet' })._clnNetworkCliName(), 'testnet');
+      assert.strictEqual(new Lightning({ network: 'testnet4' })._clnNetworkCliName(), 'testnet4');
+      assert.strictEqual(new Lightning({ network: 'signet' })._clnNetworkCliName(), 'signet');
+      assert.strictEqual(new Lightning({ network: 'regtest' })._clnNetworkCliName(), 'regtest');
+    });
+
+    it('_bitcoinCliNetworkFlag maps network flags', function () {
+      assert.strictEqual(new Lightning({ network: 'mainnet' })._bitcoinCliNetworkFlag(), null);
+      assert.strictEqual(new Lightning({ network: 'bitcoin' })._bitcoinCliNetworkFlag(), null);
+      assert.strictEqual(new Lightning({ network: 'main' })._bitcoinCliNetworkFlag(), null);
+      assert.strictEqual(new Lightning({ network: 'testnet' })._bitcoinCliNetworkFlag(), '-testnet');
+      assert.strictEqual(new Lightning({ network: 'test' })._bitcoinCliNetworkFlag(), '-testnet');
+      assert.strictEqual(new Lightning({ network: 'testnet4' })._bitcoinCliNetworkFlag(), '-testnet4');
+      assert.strictEqual(new Lightning({ network: 'signet' })._bitcoinCliNetworkFlag(), '-signet');
+      assert.strictEqual(new Lightning({ network: 'regtest' })._bitcoinCliNetworkFlag(), '-regtest');
+    });
+
+    it('static plugin wires OP_TEST when LightningPlugin exists', function () {
+      const prior = global.LightningPlugin;
+      class FakePlugin {
+        constructor () { this.methods = {}; }
+        addMethod (name, fn) { this.methods[name] = fn; }
+      }
+      global.LightningPlugin = FakePlugin;
+      try {
+        const plugin = Lightning.plugin({});
+        assert.ok(plugin && plugin.methods && typeof plugin.methods.test === 'function');
+      } finally {
+        global.LightningPlugin = prior;
+      }
     });
   });
 
@@ -191,6 +229,40 @@ describe('@fabric/core/services/lightning (unit)', function () {
         await assert.rejects(() => ln._waitForLightningD(1, 5), /socket not found|Failed to connect/);
       }
     });
+
+    it('retries with backoff and then throws after max attempts', async function () {
+      const ln = new Lightning({ datadir: '/tmp', socket: 'sock' });
+      const origExists = fs.existsSync;
+      fs.existsSync = () => true;
+      ln._makeRPCRequest = async () => {
+        throw new Error('not ready');
+      };
+      try {
+        await assert.rejects(
+          () => ln._waitForLightningD(2, 1),
+          /Failed to connect to lightningd after 2 attempts/
+        );
+      } finally {
+        fs.existsSync = origExists;
+      }
+    });
+
+    it('emits debug success messages when debug is enabled', async function () {
+      const ln = new Lightning({ datadir: '/tmp', socket: 'sock', debug: true });
+      const debugLines = [];
+      ln.on('debug', (m) => debugLines.push(String(m)));
+      const origExists = fs.existsSync;
+      fs.existsSync = () => true;
+      ln._makeRPCRequest = async () => ({ id: 'ok' });
+      try {
+        const out = await ln._waitForLightningD(1, 1);
+        assert.strictEqual(out, true);
+        assert.ok(debugLines.some((x) => x.includes('Attempt 1/1')));
+        assert.ok(debugLines.some((x) => x.includes('Successfully connected to lightningd')));
+      } finally {
+        fs.existsSync = origExists;
+      }
+    });
   });
 
   describe('createLocalNode', function () {
@@ -317,6 +389,134 @@ describe('@fabric/core/services/lightning (unit)', function () {
         cp.spawn = origSpawn;
       }
     });
+
+    it('adds supported plugin params, logs unsupported plugins, and disable-plugin flags', async function () {
+      const origSpawn = cp.spawn;
+      let capturedArgs = null;
+      cp.spawn = function (_cmd, args) {
+        capturedArgs = args;
+        const child = new EventEmitter();
+        child.stdout = new EventEmitter();
+        child.stderr = new EventEmitter();
+        child.exitCode = null;
+        child.killed = false;
+        child.kill = function () {
+          this.killed = true;
+          this.exitCode = 0;
+          setImmediate(() => this.emit('close', 0));
+        };
+        return child;
+      };
+
+      const ln = new Lightning({
+        managed: true,
+        debug: true,
+        plugins: {
+          'experimental-offers': { enabled: true },
+          unknownPlugin: { anything: 1 }
+        },
+        disablePlugins: ['cln-grpc']
+      });
+      ln._waitForLightningD = async () => true;
+      const debug = [];
+      ln.on('debug', (m) => debug.push(String(m)));
+      try {
+        await ln.createLocalNode();
+        ln._child.stdout.emit('data', Buffer.from('hello stdout'));
+        assert.ok(capturedArgs.some((x) => x.includes('--experimental-offers-enabled=true')));
+        assert.ok(capturedArgs.some((x) => x.includes('--disable-plugin=cln-grpc')));
+        assert.ok(debug.some((x) => x.includes('Skipping unsupported plugin configuration: unknownPlugin')));
+        assert.ok(debug.some((x) => x.includes('Disabling plugin: cln-grpc')));
+        assert.ok(debug.some((x) => x.includes('hello stdout')));
+      } finally {
+        if (ln._errorHandlers && ln._errorHandlers.exit) await ln._errorHandlers.exit();
+        if (ln._errorHandlers) {
+          Object.entries(ln._errorHandlers).forEach(([event, handler]) => {
+            if (handler) process.removeListener(event, handler);
+          });
+        }
+        cp.spawn = origSpawn;
+      }
+    });
+
+    it('cleanup handler emits error when cleanup throws', async function () {
+      const origSpawn = cp.spawn;
+      cp.spawn = function () {
+        const child = new EventEmitter();
+        child.stdout = new EventEmitter();
+        child.stderr = new EventEmitter();
+        child.exitCode = null;
+        child.killed = false;
+        child.kill = function () {};
+        child.once = function () {
+          throw new Error('cleanup once boom');
+        };
+        return child;
+      };
+
+      const ln = new Lightning({ managed: true, debug: true });
+      ln._waitForLightningD = async () => true;
+      try {
+        await ln.createLocalNode();
+        const msg = await new Promise((resolve) => {
+          ln.once('error', (m) => {
+            if (String(m).includes('Error during cleanup')) resolve(String(m));
+          });
+          ln._errorHandlers.exit();
+        });
+        assert.ok(msg.includes('Error during cleanup'));
+      } finally {
+        if (ln._errorHandlers) {
+          Object.entries(ln._errorHandlers).forEach(([event, handler]) => {
+            if (handler) process.removeListener(event, handler);
+          });
+        }
+        cp.spawn = origSpawn;
+      }
+    });
+
+    it('uncaughtException and unhandledRejection handlers gate by source/pid', async function () {
+      const origSpawn = cp.spawn;
+      cp.spawn = function () {
+        const child = new EventEmitter();
+        child.stdout = new EventEmitter();
+        child.stderr = new EventEmitter();
+        child.exitCode = null;
+        child.killed = false;
+        child.pid = 4242;
+        child.kill = function () {
+          this.killed = true;
+          this.exitCode = 0;
+          setImmediate(() => this.emit('close', 0));
+        };
+        return child;
+      };
+
+      const ln = new Lightning({ managed: true, debug: false });
+      ln._waitForLightningD = async () => true;
+      const errors = [];
+      ln.on('error', (m) => errors.push(String(m)));
+      try {
+        await ln.createLocalNode();
+        await ln._errorHandlers.uncaughtException({ source: 'lightning', message: 'boom-1' });
+        await ln._errorHandlers.uncaughtException({ pid: 4242, message: 'boom-2' });
+        await ln._errorHandlers.uncaughtException({ pid: 9, message: 'ignore' });
+        await ln._errorHandlers.unhandledRejection({ source: 'lightning' });
+        await ln._errorHandlers.unhandledRejection({ pid: 4242 });
+        await ln._errorHandlers.unhandledRejection({ pid: 9 });
+        assert.ok(errors.some((x) => x.includes('Uncaught exception from Lightning service')));
+        assert.ok(errors.some((x) => x.includes('Unhandled rejection from Lightning service')));
+        assert.strictEqual(errors.filter((x) => x.includes('ignore')).length, 0);
+      } finally {
+        if (ln._errorHandlers && ln._errorHandlers.exit) await ln._errorHandlers.exit();
+        if (ln._errorHandlers) {
+          Object.entries(ln._errorHandlers).forEach(([event, handler]) => {
+            if (handler) process.removeListener(event, handler);
+          });
+        }
+        cp.spawn = origSpawn;
+      }
+    });
   });
 
   describe('start', function () {
@@ -348,6 +548,82 @@ describe('@fabric/core/services/lightning (unit)', function () {
       assert.ok(synced);
       assert.ok(ln.status === 'started' || ln.status === 'STARTED');
       if (ln._heart) clearInterval(ln._heart);
+    });
+
+    it('when managed is true: runs createLocalNode branch', async function () {
+      const origSpawn = cp.spawn;
+      cp.spawn = function () {
+        const child = new EventEmitter();
+        child.stdin = { write: function () {}, end: function () {} };
+        child.stdout = new EventEmitter();
+        child.stderr = new EventEmitter();
+        setImmediate(() => child.emit('close', 0));
+        return child;
+      };
+      const ln = new Lightning({
+        managed: true,
+        bitcoin: { rpcuser: 'u', rpcpassword: 'p', host: '127.0.0.1', rpcport: 18443, datadir: '/tmp' }
+      });
+      let created = false;
+      ln.createLocalNode = async () => { created = true; };
+      ln.machine = { start: async () => {} };
+      ln._makeRPCRequest = async (method) => {
+        if (method === 'listchannels') return { channels: [] };
+        if (method === 'getinfo') return { id: 'x', alias: '', color: '', blockheight: 0 };
+        throw new Error('unexpected');
+      };
+      await ln.start();
+      cp.spawn = origSpawn;
+      assert.strictEqual(created, true);
+      if (ln._heart) clearInterval(ln._heart);
+    });
+
+    it('throws with actionable hint when bitcoin-cli preflight fails', async function () {
+      const origSpawn = cp.spawn;
+      cp.spawn = function () {
+        const child = new EventEmitter();
+        child.stdin = { write: function () {}, end: function () {} };
+        child.stdout = new EventEmitter();
+        child.stderr = new EventEmitter();
+        setImmediate(() => child.emit('close', 1));
+        return child;
+      };
+      const ln = new Lightning({
+        managed: true,
+        bitcoin: { rpcuser: 'u', rpcpassword: 'p', host: '127.0.0.1', rpcport: 18443, datadir: '/tmp' }
+      });
+      ln.machine = { start: async () => {} };
+      await assert.rejects(() => ln.start(), /Could not connect to bitcoind using bitcoin-cli/);
+      cp.spawn = origSpawn;
+    });
+
+    it('emits lightning cli stderr through error channel during preflight', async function () {
+      const origSpawn = cp.spawn;
+      cp.spawn = function () {
+        const child = new EventEmitter();
+        child.stdin = { write: function () {}, end: function () {} };
+        child.stdout = new EventEmitter();
+        child.stderr = new EventEmitter();
+        setImmediate(() => {
+          child.stdout.emit('data', Buffer.from('ok'));
+          child.stderr.emit('data', Buffer.from('rpc warning'));
+          child.emit('close', 0);
+        });
+        return child;
+      };
+      const ln = new Lightning({
+        managed: true,
+        bitcoin: { rpcuser: 'u', rpcpassword: 'p', host: '127.0.0.1', rpcport: 18443, datadir: '/tmp' }
+      });
+      ln.machine = { start: async () => {} };
+      ln.createLocalNode = async () => {};
+      ln.sync = async () => {};
+      const errors = [];
+      ln.on('error', (m) => errors.push(String(m)));
+      await ln.start();
+      cp.spawn = origSpawn;
+      if (ln._heart) clearInterval(ln._heart);
+      assert.ok(errors.some((x) => x.includes('Lightning CLI error: rpc warning')));
     });
   });
 
@@ -549,6 +825,104 @@ describe('@fabric/core/services/lightning (unit)', function () {
       const err = await p.catch(e => e);
       assert.ok(err && (err.message === 'err' || String(err).includes('err')));
     });
+
+    it('emits error on malformed payload then resolves on a valid one', async function () {
+      const ln = new Lightning();
+      const grpc = new EventEmitter();
+      grpc.write = function () {};
+      ln.grpc = grpc;
+      const errors = [];
+      ln.on('error', (e) => errors.push(String(e)));
+      const p = ln._makeGRPCRequest('method', []);
+      setImmediate(() => {
+        grpc.emit('data', Buffer.from('{ not-json'));
+        grpc.emit('data', Buffer.from(JSON.stringify({ result: { ok: true } })));
+      });
+      const out = await p;
+      assert.strictEqual(out.ok, true);
+      assert.ok(errors.some((x) => x.includes('Could not make RPC request')));
+    });
+
+    it('rejects when grpc.write throws', async function () {
+      const ln = new Lightning();
+      const grpc = new EventEmitter();
+      grpc.write = function () {
+        throw new Error('write boom');
+      };
+      ln.grpc = grpc;
+      await assert.rejects(() => ln._makeGRPCRequest('method', []), /write boom/);
+    });
+  });
+
+  describe('_makeRPCRequest edge branches', function () {
+    it('times out when socket never responds', async function () {
+      const origCreate = net.createConnection;
+      net.createConnection = function () {
+        const client = new EventEmitter();
+        client.destroy = function () {};
+        client.write = function () {};
+        return client;
+      };
+      const ln = new Lightning({ datadir: '/tmp', socket: 'timeout.sock' });
+      try {
+        await assert.rejects(() => ln._makeRPCRequest('getinfo', [], 5), /timeout/i);
+      } finally {
+        net.createConnection = origCreate;
+      }
+    });
+
+    it('rejects when response grows beyond safety cap without valid JSON', async function () {
+      const origCreate = net.createConnection;
+      net.createConnection = function () {
+        const client = new EventEmitter();
+        client.destroy = function () {};
+        client.write = function () {
+          setImmediate(() => {
+            client.emit('data', 'x'.repeat(2 * 1024 * 1024 + 5));
+          });
+        };
+        return client;
+      };
+      const ln = new Lightning({ datadir: '/tmp', socket: 'large.sock' });
+      try {
+        await assert.rejects(() => ln._makeRPCRequest('getinfo', [], 100), /response too large/i);
+      } finally {
+        net.createConnection = origCreate;
+      }
+    });
+
+    it('rejects when rpc response contains error object', async function () {
+      const origCreate = net.createConnection;
+      net.createConnection = function () {
+        const client = new EventEmitter();
+        client.destroy = function () {};
+        client.write = function () {
+          setImmediate(() => {
+            client.emit('data', Buffer.from(JSON.stringify({ error: { message: 'rpc boom', code: -1 } })));
+          });
+        };
+        return client;
+      };
+      const ln = new Lightning({ datadir: '/tmp', socket: 'err.sock' });
+      try {
+        await assert.rejects(() => ln._makeRPCRequest('getinfo', [], 100), /rpc boom/);
+      } finally {
+        net.createConnection = origCreate;
+      }
+    });
+
+    it('rejects when createConnection throws synchronously', async function () {
+      const origCreate = net.createConnection;
+      net.createConnection = function () {
+        throw new Error('connect throw');
+      };
+      const ln = new Lightning({ datadir: '/tmp', socket: 'throw.sock' });
+      try {
+        await assert.rejects(() => ln._makeRPCRequest('getinfo', [], 100), /connect throw/);
+      } finally {
+        net.createConnection = origCreate;
+      }
+    });
   });
 
   describe('stop (managed with child)', function () {
@@ -584,6 +958,60 @@ describe('@fabric/core/services/lightning (unit)', function () {
       ln._makeRPCRequest = () => new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10));
       ln.machine = { stop: async () => {} };
       await ln.stop();
+      assert.ok(ln.status === 'stopped' || ln.status === 'STOPPED');
+    });
+
+    it('handles already-exited child path and nulls custom process handlers', async function () {
+      const ln = new Lightning({ managed: true, debug: true, datadir: '/tmp', socket: 'sock' });
+      const child = new EventEmitter();
+      child.killed = false;
+      child.exitCode = 0; // exercises "already exited" branch
+      child.kill = function () {
+        this.killed = true;
+      };
+      ln._child = child;
+      ln._makeRPCRequest = async () => {};
+      ln.machine = { stop: async () => {} };
+      ln._heart = setInterval(() => {}, 60000);
+      ln._errorHandlers.SIGINT = function () {};
+      ln._errorHandlers.SIGTERM = function () {};
+      ln._errorHandlers.exit = function () {};
+      ln._errorHandlers.uncaughtException = function () {};
+      ln._errorHandlers.unhandledRejection = function () {};
+      await ln.stop();
+      assert.strictEqual(ln._errorHandlers.SIGINT, null);
+      assert.strictEqual(ln._errorHandlers.SIGTERM, null);
+      assert.strictEqual(ln._errorHandlers.exit, null);
+      assert.strictEqual(ln._errorHandlers.uncaughtException, null);
+      assert.strictEqual(ln._errorHandlers.unhandledRejection, null);
+      assert.ok(ln.status === 'stopped' || ln.status === 'STOPPED');
+    });
+
+    it('logs socket cleanup path and cleanup errors in managed stop', async function () {
+      const ln = new Lightning({ managed: true, debug: true, datadir: '/tmp', socket: 'sock' });
+      const child = new EventEmitter();
+      child.killed = false;
+      child.exitCode = 0; // avoids SIGKILL and hits already-exited logic
+      child.kill = function () {};
+      ln._child = child;
+      ln._makeRPCRequest = async () => {};
+      ln.machine = { stop: async () => {} };
+
+      const origExists = fs.existsSync;
+      const origUnlink = fs.unlinkSync;
+      let unlinkCalls = 0;
+      fs.existsSync = function () { return true; };
+      fs.unlinkSync = function () {
+        unlinkCalls++;
+        throw new Error('unlink failed');
+      };
+      try {
+        await ln.stop();
+      } finally {
+        fs.existsSync = origExists;
+        fs.unlinkSync = origUnlink;
+      }
+      assert.strictEqual(unlinkCalls, 1);
       assert.ok(ln.status === 'stopped' || ln.status === 'STOPPED');
     });
   });
