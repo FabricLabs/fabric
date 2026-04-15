@@ -31,8 +31,7 @@ function shouldTreatLightningStderrAsError (line) {
     text.includes('error') ||
     text.includes('fatal') ||
     text.includes('exception') ||
-    text.includes('traceback') ||
-    text.includes('failed')
+    text.includes('traceback')
   );
 }
 

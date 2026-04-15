@@ -175,7 +175,7 @@ FabricError fabric_bip340_sign(const uint8_t msg32[32],
   // Optional auxiliary randomness (32 bytes). Use secure random if available.
   uint8_t aux_rand[32];
   if (fabric_secure_random_bytes(aux_rand, sizeof(aux_rand)) != FABRIC_SUCCESS) {
-    memset(aux_rand, 0, sizeof(aux_rand));
+    secure_zero_stack(aux_rand, sizeof(aux_rand));
   }
 
   if (secp256k1_schnorrsig_sign32(ctx, out_signature, msg32, &keypair, aux_rand) != 1) {
@@ -358,7 +358,7 @@ FabricError fabric_taproot_keypath_sign(const uint8_t msg32[32],
   // Sign using the tweaked keypair
   uint8_t aux_rand[32] = {0};
   if (fabric_secure_random_bytes(aux_rand, sizeof(aux_rand)) != FABRIC_SUCCESS) {
-    memset(aux_rand, 0, sizeof(aux_rand));
+    secure_zero_stack(aux_rand, sizeof(aux_rand));
   }
   if (secp256k1_schnorrsig_sign32(ctx, out_sig64, msg32, &keypair, aux_rand) != 1) {
     secure_zero_stack(aux_rand, sizeof(aux_rand));

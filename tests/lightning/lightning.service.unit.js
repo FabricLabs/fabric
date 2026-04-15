@@ -800,7 +800,6 @@ describe('@fabric/core/services/lightning (unit)', function () {
   describe('_makeGRPCRequest', function () {
     it('writes request and resolves on result data', async function () {
       const ln = new Lightning();
-      const EventEmitter = require('events');
       const grpc = new EventEmitter();
       grpc.write = function () {};
       ln.grpc = grpc;
@@ -814,7 +813,6 @@ describe('@fabric/core/services/lightning (unit)', function () {
 
     it('rejects on response.error', async function () {
       const ln = new Lightning();
-      const EventEmitter = require('events');
       const grpc = new EventEmitter();
       grpc.write = function () {};
       ln.grpc = grpc;
@@ -928,7 +926,6 @@ describe('@fabric/core/services/lightning (unit)', function () {
   describe('stop (managed with child)', function () {
     it('attempts graceful shutdown and cleans up socket when managed and _child set', async function () {
       const ln = new Lightning({ managed: true, datadir: __dirname });
-      const EventEmitter = require('events');
       const child = new EventEmitter();
       child.killed = false;
       child.exitCode = null;
@@ -946,7 +943,6 @@ describe('@fabric/core/services/lightning (unit)', function () {
 
     it('force-kills child when graceful shutdown times out', async function () {
       const ln = new Lightning({ managed: true });
-      const EventEmitter = require('events');
       const child = new EventEmitter();
       child.killed = false;
       child.exitCode = null;

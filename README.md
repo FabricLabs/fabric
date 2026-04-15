@@ -17,10 +17,8 @@ applications for downstream developers.
 |-----|---------|
 | [VISION.md](VISION.md) | Product vision, architecture snapshot, documentation map |
 | [DEVELOPERS.md](DEVELOPERS.md) | Repo layout, tests, core types, storage |
-| [docs/PRODUCTION.md](docs/PRODUCTION.md) | Node version, native deps, downstream alignment |
 | [PRIVACY.md](PRIVACY.md) | Privacy model for operators |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
-| [docs/README.md](docs/README.md) | Index of operational and generated docs |
 
 ## Quick Start
 `npm i -g FabricLabs/fabric#master`
