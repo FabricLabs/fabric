@@ -347,6 +347,84 @@ describe('@fabric/core/services/lightning (unit)', function () {
       }
     });
 
+    it('flushes trailing stderr on stderr close when line has no final newline', async function () {
+      const origSpawn = cp.spawn;
+      cp.spawn = function () {
+        const child = new EventEmitter();
+        child.stdout = new EventEmitter();
+        child.stderr = new EventEmitter();
+        child.exitCode = null;
+        child.killed = false;
+        child.kill = function () {
+          this.killed = true;
+          this.exitCode = 0;
+          setImmediate(() => this.emit('close', 0));
+        };
+        return child;
+      };
+
+      const ln = new Lightning({ managed: true, debug: false });
+      ln._waitForLightningD = async () => true;
+
+      try {
+        await ln.createLocalNode();
+        const got = await new Promise((resolve) => {
+          ln.once('error', (msg) => resolve(msg));
+          ln._child.stderr.emit('data', Buffer.from('FATAL: trailing without newline'));
+          ln._child.stderr.emit('close');
+        });
+        assert.ok(String(got).includes('FATAL: trailing without newline'));
+      } finally {
+        if (ln._errorHandlers && ln._errorHandlers.exit) await ln._errorHandlers.exit();
+        if (ln._errorHandlers) {
+          Object.entries(ln._errorHandlers).forEach(([event, handler]) => {
+            if (handler) process.removeListener(event, handler);
+          });
+        }
+        cp.spawn = origSpawn;
+      }
+    });
+
+    it('flushes trailing non-error stderr on stderr close when debug is enabled', async function () {
+      const origSpawn = cp.spawn;
+      cp.spawn = function () {
+        const child = new EventEmitter();
+        child.stdout = new EventEmitter();
+        child.stderr = new EventEmitter();
+        child.exitCode = null;
+        child.killed = false;
+        child.kill = function () {
+          this.killed = true;
+          this.exitCode = 0;
+          setImmediate(() => this.emit('close', 0));
+        };
+        return child;
+      };
+
+      const ln = new Lightning({ managed: true, debug: true });
+      ln._waitForLightningD = async () => true;
+
+      try {
+        await ln.createLocalNode();
+        const got = await new Promise((resolve) => {
+          ln.once('debug', (msg) => {
+            if (String(msg).includes('Set feerate to 253 perkw')) resolve(msg);
+          });
+          ln._child.stderr.emit('data', Buffer.from('Set feerate to 253 perkw'));
+          ln._child.stderr.emit('close');
+        });
+        assert.ok(String(got).includes('Set feerate to 253 perkw'));
+      } finally {
+        if (ln._errorHandlers && ln._errorHandlers.exit) await ln._errorHandlers.exit();
+        if (ln._errorHandlers) {
+          Object.entries(ln._errorHandlers).forEach(([event, handler]) => {
+            if (handler) process.removeListener(event, handler);
+          });
+        }
+        cp.spawn = origSpawn;
+      }
+    });
+
     it('routes non-error stderr lines to debug only when debug is enabled', async function () {
       const origSpawn = cp.spawn;
       cp.spawn = function () {
