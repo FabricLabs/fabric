@@ -6,6 +6,7 @@
 #include <secp256k1.h>
 #include <secp256k1_schnorrsig.h>
 #include <secp256k1_extrakeys.h>
+#include "taproot.h"
 #include "message.h"
 #include "errors.h"
 #include "threads.h"

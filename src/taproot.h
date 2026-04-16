@@ -3,11 +3,32 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <secp256k1.h>
+
+/* libsecp256k1 ≥0.2: prefer CONTEXT_NONE; older headers lack it. */
+#if defined(SECP256K1_CONTEXT_NONE)
+#define FABRIC_SECP256K1_CONTEXT_CREATE_FLAGS (SECP256K1_CONTEXT_NONE)
+#else
+#define FABRIC_SECP256K1_CONTEXT_CREATE_FLAGS (SECP256K1_CONTEXT_SIGN | SECP256K1_CONTEXT_VERIFY)
+#endif
+
 #include "errors.h"
 
 // BIP341 Taproot v1 witness program sizes
 #define FABRIC_TAPROOT_INTERNAL_KEY_SIZE 32
 #define FABRIC_TAPROOT_SCRIPT_PUBKEY_SIZE (1 /*OP_1*/ + 1 /*push 32*/ + FABRIC_TAPROOT_INTERNAL_KEY_SIZE)
+
+// BIP340 x-only public key and signature sizes
+#define FABRIC_BIP340_XONLY_PUBLIC_KEY_SIZE 32
+#define FABRIC_BIP340_SIGNATURE_SIZE 64
+#define FABRIC_SECP256K1_PRIVATE_KEY_SIZE 32
+
+// Keypair structure for convenience
+typedef struct
+{
+  uint8_t private_key[FABRIC_SECP256K1_PRIVATE_KEY_SIZE];
+  uint8_t xonly_public_key[FABRIC_BIP340_XONLY_PUBLIC_KEY_SIZE];
+} FabricBip340Keypair;
 
 // Build a Taproot v1 scriptPubKey (P2TR) for a given x-only internal key
 // scriptPubKey = OP_1 (0x51) || 0x20 || 32-byte-internal-key
@@ -91,6 +112,23 @@ FabricError fabric_taproot_scriptpubkey_to_address(const uint8_t *spk,
 // Initialize Taproot/secp context (idempotent)
 FabricError fabric_taproot_init(void);
 void fabric_taproot_cleanup(void);
+
+// BIP340 API (implemented alongside Taproot in C core)
+FabricError fabric_bip340_init(void);
+void fabric_bip340_cleanup(void);
+FabricError fabric_bip340_keygen(FabricBip340Keypair *out_keypair);
+FabricError fabric_bip340_pubkey_from_private(const uint8_t private_key[FABRIC_SECP256K1_PRIVATE_KEY_SIZE],
+                                              uint8_t out_xonly_pubkey[FABRIC_BIP340_XONLY_PUBLIC_KEY_SIZE]);
+FabricError fabric_bip340_sign(const uint8_t msg32[32],
+                               const uint8_t private_key[FABRIC_SECP256K1_PRIVATE_KEY_SIZE],
+                               uint8_t out_signature[FABRIC_BIP340_SIGNATURE_SIZE]);
+FabricError fabric_bip340_verify(const uint8_t *msg,
+                                 size_t msg_len,
+                                 const uint8_t xonly_pubkey[FABRIC_BIP340_XONLY_PUBLIC_KEY_SIZE],
+                                 const uint8_t signature[FABRIC_BIP340_SIGNATURE_SIZE],
+                                 int *out_valid);
+FabricError fabric_bip340_get_context(const secp256k1_context **out_ctx);
+void fabric_bip340_release_context(void);
 
 #endif // FABRIC_TAPROOT_H
 

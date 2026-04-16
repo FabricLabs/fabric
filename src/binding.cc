@@ -1,29 +1,19 @@
 #include <napi.h>
 #include <secp256k1.h>
 #include <noise/protocol.h>
-#include <wally_core.h>
-#include <wally_crypto.h>
-
 extern "C"
 {
 #include "peer.h"
 #include "message.h"
 #include "errors.h"
-#include "bip340.h"
 #include "taproot.h"
 #include "segwit_addr.h"
+#include "sha2.h"
 }
 
 // Initialize the Fabric addon
 Napi::Object Init(Napi::Env env, Napi::Object exports)
 {
-  // Initialize libwally once for cryptographic primitives (trusted by wallet)
-  static bool g_wally_inited = false;
-  if (!g_wally_inited) {
-    if (wally_init(0) == 0) {
-      g_wally_inited = true;
-    }
-  }
   // Message methods
   exports.Set("createMessage", Napi::Function::New(env, [](const Napi::CallbackInfo &info) -> Napi::Value
                                                    {
@@ -138,7 +128,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports)
     }
 
     // Create secp256k1 context for hashing
-    secp256k1_context* ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN | SECP256K1_CONTEXT_VERIFY);
+    secp256k1_context* ctx = secp256k1_context_create(FABRIC_SECP256K1_CONTEXT_CREATE_FLAGS);
     if (!ctx) {
       Napi::Error::New(env, "Failed to create secp256k1 context").ThrowAsJavaScriptException();
       return env.Undefined();
@@ -193,7 +183,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports)
     }
 
     // Create secp256k1 context for signing
-    secp256k1_context* ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN | SECP256K1_CONTEXT_VERIFY);
+    secp256k1_context* ctx = secp256k1_context_create(FABRIC_SECP256K1_CONTEXT_CREATE_FLAGS);
     if (!ctx) {
       Napi::Error::New(env, "Failed to create secp256k1 context").ThrowAsJavaScriptException();
       return env.Undefined();
@@ -239,7 +229,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports)
     }
 
     // Create secp256k1 context for verification
-    secp256k1_context* ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN | SECP256K1_CONTEXT_VERIFY);
+    secp256k1_context* ctx = secp256k1_context_create(FABRIC_SECP256K1_CONTEXT_CREATE_FLAGS);
     if (!ctx) {
       Napi::Error::New(env, "Failed to create secp256k1 context").ThrowAsJavaScriptException();
       return env.Undefined();
@@ -818,11 +808,11 @@ Napi::Object Init(Napi::Env env, Napi::Object exports)
     }
     Napi::Buffer<uint8_t> in = info[0].As<Napi::Buffer<uint8_t>>();
     uint8_t tmp[32], out32[32];
-    if (wally_sha256(in.Data(), in.Length(), tmp, sizeof(tmp)) != WALLY_OK) {
+    if (!fabric_sha256(in.Data(), in.Length(), tmp)) {
       Napi::Error::New(env, "doubleSha256: inner sha256 failed").ThrowAsJavaScriptException();
       return env.Undefined();
     }
-    if (wally_sha256(tmp, 32, out32, sizeof(out32)) != WALLY_OK) {
+    if (!fabric_sha256(tmp, sizeof(tmp), out32)) {
       Napi::Error::New(env, "doubleSha256: outer sha256 failed").ThrowAsJavaScriptException();
       return env.Undefined();
     }

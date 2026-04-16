@@ -1,12 +1,12 @@
-#ifndef SECURE_MEMORY_H
-#define SECURE_MEMORY_H
+#ifndef FABRIC_MEMORY_H
+#define FABRIC_MEMORY_H
 
 #include <stddef.h>
 #include <stdint.h>
 #include "errors.h"
 
 /**
- * @file secure_memory.h
+ * @file memory.h
  * @brief Secure memory management utilities
  *
  * This module provides secure memory operations that prevent
@@ -130,4 +130,4 @@ FabricError fabric_secure_memory_init(void);
  */
 void fabric_secure_memory_cleanup(void);
 
-#endif // SECURE_MEMORY_H
+#endif // FABRIC_MEMORY_H

@@ -3,17 +3,6 @@
 [![Coverage Status][badge-coverage]][coverage]
 [![GitHub contributors][badge-contributors]][contributors]
 
-**Status:** `0.1.0-RC1` — run **`npm run ci`** before release tags (full test suite).
-
-| Doc | Purpose |
-|-----|---------|
-| [VISION.md](VISION.md) | Product vision, architecture snapshot, documentation map |
-| [DEVELOPERS.md](DEVELOPERS.md) | Repo layout, tests, core types, storage |
-| [docs/PRODUCTION.md](docs/PRODUCTION.md) | Node version, native deps, downstream alignment |
-| [PRIVACY.md](PRIVACY.md) | Privacy model for operators |
-| [CHANGELOG.md](CHANGELOG.md) | Release notes |
-| [docs/README.md](docs/README.md) | Index of operational and generated docs |
-
 [The `@fabric/core` project][fabric-github] provides an API for building peer-to-peer applications on [Bitcoin][bitcoin].
 
 Fabric is an experimental approach to the secure establishment and execution of
@@ -21,6 +10,15 @@ peer-to-peer agreements ("contracts") using Bitcoin as a bonding mechanism. The
 `@fabric/core` project provides a robust set of implementations as JavaScript
 classes, enabling the rapid prototyping and testing of Bitcoin-based
 applications for downstream developers.
+
+**Status:** `0.1.0-RC1` — run **`npm run ci`** before release tags (full test suite).
+
+| Doc | Purpose |
+|-----|---------|
+| [VISION.md](VISION.md) | Product vision, architecture snapshot, documentation map |
+| [DEVELOPERS.md](DEVELOPERS.md) | Repo layout, tests, core types, storage |
+| [PRIVACY.md](PRIVACY.md) | Privacy model for operators |
+| [CHANGELOG.md](CHANGELOG.md) | Release notes |
 
 ## Quick Start
 `npm i -g FabricLabs/fabric#master`

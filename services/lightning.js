@@ -24,6 +24,48 @@ function redactSensitiveCommandArg (arg) {
   );
 }
 
+function shouldTreatLightningStderrAsError (line) {
+  const text = String(line || '').trim().toLowerCase();
+  if (!text) return false;
+  return (
+    text.includes('error') ||
+    text.includes('fatal') ||
+    text.includes('exception') ||
+    text.includes('traceback')
+  );
+}
+
+/**
+ * Node does not chunk stderr on line boundaries; buffer and emit per logical line.
+ */
+function appendLightningStderrChunk (service, chunk) {
+  if (!service._lightningdStderrBuf) service._lightningdStderrBuf = '';
+  service._lightningdStderrBuf += chunk.toString('utf8');
+  const parts = service._lightningdStderrBuf.split(/\r?\n/);
+  service._lightningdStderrBuf = parts.pop() || '';
+  for (const raw of parts) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (shouldTreatLightningStderrAsError(line)) {
+      service.emit('error', `[FABRIC:LIGHTNING] ${line}`);
+      continue;
+    }
+    if (service.settings.debug) service.emit('debug', `[FABRIC:LIGHTNING] ${line}`);
+  }
+}
+
+function flushLightningStderrBuffer (service) {
+  if (!service._lightningdStderrBuf) return;
+  const line = service._lightningdStderrBuf.trim();
+  service._lightningdStderrBuf = '';
+  if (!line) return;
+  if (shouldTreatLightningStderrAsError(line)) {
+    service.emit('error', `[FABRIC:LIGHTNING] ${line}`);
+    return;
+  }
+  if (service.settings.debug) service.emit('debug', `[FABRIC:LIGHTNING] ${line}`);
+}
+
 /**
  * Manage a Lightning node.
  */
@@ -396,11 +438,19 @@ class Lightning extends Service {
         if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] ${data.toString('utf8').trim()}`);
       });
 
+      this._lightningdStderrBuf = '';
       this._child.stderr.on('data', (data) => {
-        this.emit('error', `[FABRIC:LIGHTNING] ${data.toString('utf8').trim()}`);
+        appendLightningStderrChunk(this, data);
+      });
+      this._child.stderr.on('end', () => {
+        flushLightningStderrBuffer(this);
+      });
+      this._child.stderr.on('close', () => {
+        flushLightningStderrBuffer(this);
       });
 
       this._child.on('close', (code) => {
+        flushLightningStderrBuffer(this);
         if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Lightning node exited with code ${code}`);
         this.emit('log', `[FABRIC:LIGHTNING] Lightning node exited with code ${code}`);
       });

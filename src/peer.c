@@ -14,8 +14,8 @@
 #include "peer.h"
 #include "message.h"
 #include "protocol.h"
-#include "secure_random.h"
-#include "secure_memory.h"
+#include "random.h"
+#include "memory.h"
 #include "validation.h"
 #include "scoring.h"
 #include "datadir.h"
@@ -376,7 +376,7 @@ Peer *peer_create(void)
     }
 
     // Initialize secp256k1 context
-    peer->secp256k1_ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN | SECP256K1_CONTEXT_VERIFY);
+    peer->secp256k1_ctx = secp256k1_context_create(FABRIC_SECP256K1_CONTEXT_CREATE_FLAGS);
     if (!peer->secp256k1_ctx)
     {
       fabric_rwlock_destroy(&peer->connections_rwlock);
