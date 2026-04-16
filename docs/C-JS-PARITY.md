@@ -5,9 +5,12 @@ Parity notes for the native addon (`binding.cc`, `src/*.c`) and the JavaScript r
 ## Native / JS surface summary
 
 ### 1. `binding.gyp`
-- **Sources**: `validation.c`, `secure_memory.c`, `secure_random.c`, `bip340.c`, `taproot.c` (plus existing peer/message stack)
-- **Library**: `libwallycore` (double-SHA256 and related primitives used from C)
-- **Purpose**: BIP340/Taproot helpers from JS; secure message body handling in C
+- **Sources**: `src/binding.cc` plus three C translation units that `#include` the implementation files (unity build for fewer compile units, same behavior):
+  - **`src/crypto.c`** — `sha2.c`, `security.c`, `native/sipa/segwit_addr.c`, `taproot.c`
+  - **`src/protocol.c`** — `errors.c`, `validation.c`, `message.c`
+  - **`src/p2p.c`** — `threads.c`, `scoring.c`, `peer.c` (named `p2p.c` so the TU can include `peer.c` without self-inclusion)
+- **Libraries**: `secp256k1`, Noise (`libnoiseprotocol`, `libnoisekeys`) — see `binding.gyp` `conditions` for platform paths
+- **Purpose**: N-API surface in `binding.cc`; crypto/protocol/peer layers compiled as above for Message, Peer, and wire parity with JS
 
 ### 2. `src/binding.cc`
 - **libwally**: `wally_init(0)` once at addon load
@@ -18,7 +21,7 @@ Parity notes for the native addon (`binding.cc`, `src/*.c`) and the JavaScript r
 - CLI state includes `Peer *peer`, listening port, `broadcast` / `listen` / `connect` / `stop`
 - Outbound path: `message_set_body` → `message_compute_body_hash` → `message_sign` → `peer_send_message`
 
-### 4. `src/message.c`
+### 4. `src/message.c` (compiled via `src/protocol.c`)
 - Secure alloc/free/zero for bodies; validation helpers on `message_set_body`
 - **Body hash**: `message_compute_body_hash` = SHA256(SHA256(body)) (Bitcoin-style)
 - **Signing**: tagged hash `"Fabric/Message"` over header + body into a separate buffer; **does not** overwrite `message->hash` (wire body hash)

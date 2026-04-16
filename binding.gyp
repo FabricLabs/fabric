@@ -3,16 +3,9 @@
     "target_name": "fabric",
     "sources": [
       "src/binding.cc",
-      "native/sipa/segwit_addr.c",
-      "src/peer.c",
-      "src/message.c",
-      "src/errors.c",
-      "src/threads.c",
-      "src/scoring.c",
-      "src/validation.c",
-      "src/sha2.c",
-      "src/security.c",
-      "src/taproot.c"
+      "src/crypto.c",
+      "src/protocol.c",
+      "src/p2p.c"
     ],
     "include_dirs": [
       "<!@(node -p \"require('node-addon-api').include\")",
