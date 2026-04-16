@@ -309,6 +309,44 @@ describe('@fabric/core/services/lightning (unit)', function () {
       }
     });
 
+    it('joins split stderr chunks before classifying a line', async function () {
+      const origSpawn = cp.spawn;
+      cp.spawn = function () {
+        const child = new EventEmitter();
+        child.stdout = new EventEmitter();
+        child.stderr = new EventEmitter();
+        child.exitCode = null;
+        child.killed = false;
+        child.kill = function () {
+          this.killed = true;
+          this.exitCode = 0;
+          setImmediate(() => this.emit('close', 0));
+        };
+        return child;
+      };
+
+      const ln = new Lightning({ managed: true, debug: false });
+      ln._waitForLightningD = async () => true;
+
+      try {
+        await ln.createLocalNode();
+        const got = await new Promise((resolve) => {
+          ln.once('error', (msg) => resolve(msg));
+          ln._child.stderr.emit('data', Buffer.from('FATAL: some'));
+          ln._child.stderr.emit('data', Buffer.from('thing broke\n'));
+        });
+        assert.ok(String(got).includes('FATAL: something broke'));
+      } finally {
+        if (ln._errorHandlers && ln._errorHandlers.exit) await ln._errorHandlers.exit();
+        if (ln._errorHandlers) {
+          Object.entries(ln._errorHandlers).forEach(([event, handler]) => {
+            if (handler) process.removeListener(event, handler);
+          });
+        }
+        cp.spawn = origSpawn;
+      }
+    });
+
     it('routes non-error stderr lines to debug only when debug is enabled', async function () {
       const origSpawn = cp.spawn;
       cp.spawn = function () {
@@ -522,14 +560,6 @@ describe('@fabric/core/services/lightning (unit)', function () {
   describe('start', function () {
     it('when managed is false: checks bitcoin-cli then starts machine and sync', async function () {
       const origSpawn = cp.spawn;
-      cp.spawn = function () {
-        const child = new EventEmitter();
-        child.stdin = { write: function () {}, end: function () {} };
-        child.stdout = new EventEmitter();
-        child.stderr = new EventEmitter();
-        setImmediate(() => child.emit('close', 0));
-        return child;
-      };
       const ln = new Lightning({
         managed: false,
         bitcoin: { rpcuser: 'u', rpcpassword: 'p', host: '127.0.0.1', rpcport: 18443, datadir: '/tmp' }
@@ -543,23 +573,26 @@ describe('@fabric/core/services/lightning (unit)', function () {
       let synced = false;
       const origSync = ln.sync.bind(ln);
       ln.sync = async () => { synced = true; return origSync(); };
-      await ln.start();
-      cp.spawn = origSpawn;
-      assert.ok(synced);
-      assert.ok(ln.status === 'started' || ln.status === 'STARTED');
-      if (ln._heart) clearInterval(ln._heart);
+      try {
+        cp.spawn = function () {
+          const child = new EventEmitter();
+          child.stdin = { write: function () {}, end: function () {} };
+          child.stdout = new EventEmitter();
+          child.stderr = new EventEmitter();
+          setImmediate(() => child.emit('close', 0));
+          return child;
+        };
+        await ln.start();
+        assert.ok(synced);
+        assert.ok(ln.status === 'started' || ln.status === 'STARTED');
+      } finally {
+        cp.spawn = origSpawn;
+        if (ln._heart) clearInterval(ln._heart);
+      }
     });
 
     it('when managed is true: runs createLocalNode branch', async function () {
       const origSpawn = cp.spawn;
-      cp.spawn = function () {
-        const child = new EventEmitter();
-        child.stdin = { write: function () {}, end: function () {} };
-        child.stdout = new EventEmitter();
-        child.stderr = new EventEmitter();
-        setImmediate(() => child.emit('close', 0));
-        return child;
-      };
       const ln = new Lightning({
         managed: true,
         bitcoin: { rpcuser: 'u', rpcpassword: 'p', host: '127.0.0.1', rpcport: 18443, datadir: '/tmp' }
@@ -572,45 +605,47 @@ describe('@fabric/core/services/lightning (unit)', function () {
         if (method === 'getinfo') return { id: 'x', alias: '', color: '', blockheight: 0 };
         throw new Error('unexpected');
       };
-      await ln.start();
-      cp.spawn = origSpawn;
-      assert.strictEqual(created, true);
-      if (ln._heart) clearInterval(ln._heart);
+      try {
+        cp.spawn = function () {
+          const child = new EventEmitter();
+          child.stdin = { write: function () {}, end: function () {} };
+          child.stdout = new EventEmitter();
+          child.stderr = new EventEmitter();
+          setImmediate(() => child.emit('close', 0));
+          return child;
+        };
+        await ln.start();
+        assert.strictEqual(created, true);
+      } finally {
+        cp.spawn = origSpawn;
+        if (ln._heart) clearInterval(ln._heart);
+      }
     });
 
     it('throws with actionable hint when bitcoin-cli preflight fails', async function () {
       const origSpawn = cp.spawn;
-      cp.spawn = function () {
-        const child = new EventEmitter();
-        child.stdin = { write: function () {}, end: function () {} };
-        child.stdout = new EventEmitter();
-        child.stderr = new EventEmitter();
-        setImmediate(() => child.emit('close', 1));
-        return child;
-      };
       const ln = new Lightning({
         managed: true,
         bitcoin: { rpcuser: 'u', rpcpassword: 'p', host: '127.0.0.1', rpcport: 18443, datadir: '/tmp' }
       });
       ln.machine = { start: async () => {} };
-      await assert.rejects(() => ln.start(), /Could not connect to bitcoind using bitcoin-cli/);
-      cp.spawn = origSpawn;
+      try {
+        cp.spawn = function () {
+          const child = new EventEmitter();
+          child.stdin = { write: function () {}, end: function () {} };
+          child.stdout = new EventEmitter();
+          child.stderr = new EventEmitter();
+          setImmediate(() => child.emit('close', 1));
+          return child;
+        };
+        await assert.rejects(() => ln.start(), /Could not connect to bitcoind using bitcoin-cli/);
+      } finally {
+        cp.spawn = origSpawn;
+      }
     });
 
     it('emits lightning cli stderr through error channel during preflight', async function () {
       const origSpawn = cp.spawn;
-      cp.spawn = function () {
-        const child = new EventEmitter();
-        child.stdin = { write: function () {}, end: function () {} };
-        child.stdout = new EventEmitter();
-        child.stderr = new EventEmitter();
-        setImmediate(() => {
-          child.stdout.emit('data', Buffer.from('ok'));
-          child.stderr.emit('data', Buffer.from('rpc warning'));
-          child.emit('close', 0);
-        });
-        return child;
-      };
       const ln = new Lightning({
         managed: true,
         bitcoin: { rpcuser: 'u', rpcpassword: 'p', host: '127.0.0.1', rpcport: 18443, datadir: '/tmp' }
@@ -620,10 +655,25 @@ describe('@fabric/core/services/lightning (unit)', function () {
       ln.sync = async () => {};
       const errors = [];
       ln.on('error', (m) => errors.push(String(m)));
-      await ln.start();
-      cp.spawn = origSpawn;
-      if (ln._heart) clearInterval(ln._heart);
-      assert.ok(errors.some((x) => x.includes('Lightning CLI error: rpc warning')));
+      try {
+        cp.spawn = function () {
+          const child = new EventEmitter();
+          child.stdin = { write: function () {}, end: function () {} };
+          child.stdout = new EventEmitter();
+          child.stderr = new EventEmitter();
+          setImmediate(() => {
+            child.stdout.emit('data', Buffer.from('ok'));
+            child.stderr.emit('data', Buffer.from('rpc warning'));
+            child.emit('close', 0);
+          });
+          return child;
+        };
+        await ln.start();
+        assert.ok(errors.some((x) => x.includes('Lightning CLI error: rpc warning')));
+      } finally {
+        cp.spawn = origSpawn;
+        if (ln._heart) clearInterval(ln._heart);
+      }
     });
   });
 

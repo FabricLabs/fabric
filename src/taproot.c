@@ -5,6 +5,7 @@
 #include <secp256k1_schnorrsig.h>
 #include "memory.h"
 #include "random.h"
+#include "secp_compat.h"
 #include "taproot.h"
 #include "../native/sipa/segwit_addr.h"
 
@@ -29,7 +30,7 @@ static FabricError fabric_bip340_acquire_context(const secp256k1_context **out_c
 
   pthread_mutex_lock(&g_bip340_mutex);
   if (!g_bip340_initialized || !g_secp_ctx) {
-    g_secp_ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN | SECP256K1_CONTEXT_VERIFY);
+    g_secp_ctx = secp256k1_context_create(FABRIC_SECP256K1_CONTEXT_CREATE_FLAGS);
     if (!g_secp_ctx) {
       pthread_mutex_unlock(&g_bip340_mutex);
       return FABRIC_ERROR_CRYPTO_INIT_FAILED;
@@ -101,6 +102,7 @@ FabricError fabric_bip340_keygen(FabricBip340Keypair *out_keypair)
   do {
     int rc = fabric_secure_random_bytes(out_keypair->private_key, FABRIC_SECP256K1_PRIVATE_KEY_SIZE);
     if (rc != FABRIC_SUCCESS) {
+      secure_zero_stack(out_keypair->private_key, FABRIC_SECP256K1_PRIVATE_KEY_SIZE);
       fabric_bip340_release_context();
       return FABRIC_ERROR_KEY_GENERATION_FAILED;
     }
