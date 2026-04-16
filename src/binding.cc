@@ -1,9 +1,9 @@
 #include <napi.h>
 #include <secp256k1.h>
 #include <noise/protocol.h>
-
 extern "C"
 {
+#include "secp_compat.h"
 #include "peer.h"
 #include "message.h"
 #include "errors.h"
@@ -129,7 +129,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports)
     }
 
     // Create secp256k1 context for hashing
-    secp256k1_context* ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN | SECP256K1_CONTEXT_VERIFY);
+    secp256k1_context* ctx = secp256k1_context_create(FABRIC_SECP256K1_CONTEXT_CREATE_FLAGS);
     if (!ctx) {
       Napi::Error::New(env, "Failed to create secp256k1 context").ThrowAsJavaScriptException();
       return env.Undefined();
@@ -184,7 +184,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports)
     }
 
     // Create secp256k1 context for signing
-    secp256k1_context* ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN | SECP256K1_CONTEXT_VERIFY);
+    secp256k1_context* ctx = secp256k1_context_create(FABRIC_SECP256K1_CONTEXT_CREATE_FLAGS);
     if (!ctx) {
       Napi::Error::New(env, "Failed to create secp256k1 context").ThrowAsJavaScriptException();
       return env.Undefined();
@@ -230,7 +230,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports)
     }
 
     // Create secp256k1 context for verification
-    secp256k1_context* ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN | SECP256K1_CONTEXT_VERIFY);
+    secp256k1_context* ctx = secp256k1_context_create(FABRIC_SECP256K1_CONTEXT_CREATE_FLAGS);
     if (!ctx) {
       Napi::Error::New(env, "Failed to create secp256k1 context").ThrowAsJavaScriptException();
       return env.Undefined();

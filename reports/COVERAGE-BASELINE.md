@@ -1,13 +1,13 @@
 # Test coverage baseline
 
-_Generated: 2026-03-24T15:20:47.662Z — from `c8` json-summary after `npm test`._
+_Generated: 2026-04-13T19:22:44.612Z — from `c8` json-summary after `npm test`._
 
 | Metric | % |
 | --- | ---: |
-| Lines | 80.63 |
-| Statements | 80.63 |
-| Functions | 70.64 |
-| Branches | 71.02 |
+| Lines | 85.47 |
+| Statements | 85.47 |
+| Functions | 77.13 |
+| Branches | 75.78 |
 
 **Goal:** raise toward 100% incrementally; prioritize `types/message.js`, `types/peer.js`, `services/bitcoin.js`, and CLI paths.
 
