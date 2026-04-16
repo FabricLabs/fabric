@@ -445,6 +445,9 @@ class Lightning extends Service {
       this._child.stderr.on('end', () => {
         flushLightningStderrBuffer(this);
       });
+      this._child.stderr.on('close', () => {
+        flushLightningStderrBuffer(this);
+      });
 
       this._child.on('close', (code) => {
         flushLightningStderrBuffer(this);

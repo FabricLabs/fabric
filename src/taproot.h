@@ -4,6 +4,14 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <secp256k1.h>
+
+/* libsecp256k1 ≥0.2: prefer CONTEXT_NONE; older headers lack it. */
+#if defined(SECP256K1_CONTEXT_NONE)
+#define FABRIC_SECP256K1_CONTEXT_CREATE_FLAGS (SECP256K1_CONTEXT_NONE)
+#else
+#define FABRIC_SECP256K1_CONTEXT_CREATE_FLAGS (SECP256K1_CONTEXT_SIGN | SECP256K1_CONTEXT_VERIFY)
+#endif
+
 #include "errors.h"
 
 // BIP341 Taproot v1 witness program sizes
