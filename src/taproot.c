@@ -15,8 +15,6 @@ static int g_bip340_cleanup_requested = 0;
 static size_t g_bip340_context_refs = 0;
 static pthread_mutex_t g_bip340_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-#define FABRIC_BECH32_MAX_ADDR_LEN 91
-
 static void secure_zero_stack(void *ptr, size_t len)
 {
   if (!ptr || len == 0) return;
@@ -28,6 +26,10 @@ static FabricError fabric_bip340_acquire_context(const secp256k1_context **out_c
   if (!out_ctx) return FABRIC_ERROR_NULL_POINTER;
 
   pthread_mutex_lock(&g_bip340_mutex);
+  if (g_bip340_cleanup_requested) {
+    pthread_mutex_unlock(&g_bip340_mutex);
+    return FABRIC_ERROR_OPERATION_FAILED;
+  }
   if (!g_bip340_initialized || !g_secp_ctx) {
     g_secp_ctx = secp256k1_context_create(FABRIC_SECP256K1_CONTEXT_CREATE_FLAGS);
     if (!g_secp_ctx) {
@@ -36,7 +38,6 @@ static FabricError fabric_bip340_acquire_context(const secp256k1_context **out_c
     }
     g_bip340_initialized = 1;
   }
-  g_bip340_cleanup_requested = 0;
   g_bip340_context_refs++;
   *out_ctx = g_secp_ctx;
   pthread_mutex_unlock(&g_bip340_mutex);
@@ -69,6 +70,10 @@ FabricError fabric_bip340_init(void)
 void fabric_bip340_cleanup(void)
 {
   pthread_mutex_lock(&g_bip340_mutex);
+  if (!g_secp_ctx && g_bip340_context_refs == 0) {
+    pthread_mutex_unlock(&g_bip340_mutex);
+    return;
+  }
   g_bip340_cleanup_requested = 1;
   if (g_bip340_context_refs == 0 && g_secp_ctx) {
     secp256k1_context_destroy(g_secp_ctx);
@@ -381,7 +386,9 @@ FabricError fabric_taproot_scriptpubkey_to_address(const uint8_t *spk,
   if (!spk || spk_len != FABRIC_TAPROOT_SCRIPT_PUBKEY_SIZE || !hrp || !out_addr) return FABRIC_ERROR_NULL_POINTER;
   // Extract 32-byte witness program from OP_1 0x20 <32-bytes>
   if (spk_len < 34 || spk[0] != 0x51 || spk[1] != 0x20) return FABRIC_ERROR_INVALID_INPUT;
-  if (out_addr_capacity < FABRIC_BECH32_MAX_ADDR_LEN) return FABRIC_ERROR_BUFFER_TOO_SMALL;
+  /* segwit_addr.h: output buffer size must be >= 73 + strlen(hrp) (null-terminated string). */
+  size_t required_out = 73 + strlen(hrp);
+  if (out_addr_capacity < required_out) return FABRIC_ERROR_BUFFER_TOO_SMALL;
   // sipa segwit_addr_encode() uses witness version 1 for Taproot.
   if (!segwit_addr_encode(out_addr, hrp, 1, (const uint8_t *)(spk + 2), 32)) {
     return FABRIC_ERROR_OPERATION_FAILED;
