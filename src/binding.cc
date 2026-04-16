@@ -3,7 +3,6 @@
 #include <noise/protocol.h>
 extern "C"
 {
-#include "secp_compat.h"
 #include "peer.h"
 #include "message.h"
 #include "errors.h"

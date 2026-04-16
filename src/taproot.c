@@ -5,7 +5,6 @@
 #include <secp256k1_schnorrsig.h>
 #include "memory.h"
 #include "random.h"
-#include "secp_compat.h"
 #include "taproot.h"
 #include "../native/sipa/segwit_addr.h"
 
