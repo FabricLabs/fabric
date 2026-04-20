@@ -55,6 +55,29 @@ describe('@fabric/core/functions/fabricPaymentBech32', function () {
     assert.strictEqual(fp.isFabricRoutedPaymentString(''), false);
   });
 
+  it('encodeFabricRoutedPaymentV0 rejects malformed byte array hash32', function () {
+    assert.throws(
+      () => fp.encodeFabricRoutedPaymentV0({ hash32: [0, 1, 2] }),
+      /exactly 32 elements/
+    );
+    assert.throws(
+      () => fp.encodeFabricRoutedPaymentV0({ hash32: Array(32).fill(1.5) }),
+      /0\.\.255/
+    );
+    assert.throws(
+      () => fp.encodeFabricRoutedPaymentV0({ hash32: Array(32).fill(256) }),
+      /0\.\.255/
+    );
+  });
+
+  it('encodeFabricRoutedPaymentV0 accepts validated 32-byte number array', function () {
+    const arr = Array.from(crypto.randomBytes(32));
+    const enc = fp.encodeFabricRoutedPaymentV0({ hash32: arr });
+    const dec = fp.decodeFabricRoutedPayment(enc);
+    assert.ok(dec);
+    assert.deepStrictEqual(Array.from(dec.hash32), arr);
+  });
+
   it('encodeFabricRoutedPaymentV0 accepts Uint8Array hash32', function () {
     const u8 = new Uint8Array(32);
     u8[0] = 9;

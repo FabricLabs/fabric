@@ -23,7 +23,15 @@ describe('@fabric/core/services/lightning (unit)', function () {
   describe('Lightning BOLT12 static exports', function () {
     it('re-exports bolt12Semantics as Bolt12Semantics', function () {
       const bolt12Semantics = require('../../functions/bolt12Semantics');
-      assert.ok(Lightning.Bolt12Semantics, 'services/lightning.js must assign Lightning.Bolt12Semantics');
+      const lightningPath = require.resolve('../../services/lightning');
+      const src = fs.readFileSync(lightningPath, 'utf8');
+      assert.ok(
+        /\bBolt12Semantics\b/.test(src) && src.includes('bolt12Semantics'),
+        `expected ${path.relative(process.cwd(), lightningPath)} to wire Bolt12Semantics`
+      );
+      assert.ok(Lightning.Bolt12, 'Lightning.Bolt12');
+      assert.ok(Lightning.FabricPayment, 'Lightning.FabricPayment');
+      assert.ok(Lightning.Bolt12Semantics, 'Lightning.Bolt12Semantics');
       assert.strictEqual(Lightning.Bolt12Semantics, bolt12Semantics);
     });
   });

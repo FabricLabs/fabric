@@ -11,11 +11,8 @@ function rawTransactionBuffer (raw) {
   if (Buffer.isBuffer(raw)) return raw;
   const s = String(raw).replace(/\s+/g, '');
   if (!s.length || s.length % 2 !== 0) return Buffer.alloc(0);
-  try {
-    return Buffer.from(s, 'hex');
-  } catch {
-    return Buffer.alloc(0);
-  }
+  if (!/^[0-9a-fA-F]+$/.test(s)) return Buffer.alloc(0);
+  return Buffer.from(s, 'hex');
 }
 
 function bitcoinTxidHex (buf) {
@@ -27,6 +24,11 @@ function bitcoinTxidHex (buf) {
 function doubleSha256Hex (buf) {
   const h = crypto.createHash('sha256').update(buf).digest();
   return crypto.createHash('sha256').update(h).digest('hex');
+}
+
+function doubleSha256Buf (buf) {
+  const h = crypto.createHash('sha256').update(buf).digest();
+  return crypto.createHash('sha256').update(h).digest();
 }
 
 class BitcoinTransaction extends Actor {
@@ -46,7 +48,7 @@ class BitcoinTransaction extends Actor {
 
     this._state = {
       content: {
-        raw: this.settings.raw != null ? this.settings.raw : null
+        raw: this.settings.raw != null ? rawTransactionBuffer(this.settings.raw) : null
       },
       status: 'PAUSED'
     };
@@ -71,8 +73,8 @@ class BitcoinTransaction extends Actor {
   }
 
   signAsHolder () {
-    const digestHex = doubleSha256Hex(this._rawBuf());
-    this.signature = this.holder.sign(digestHex);
+    const digest = doubleSha256Buf(this._rawBuf());
+    this.signature = this.holder.signSchnorrHash(digest);
     return this;
   }
 }

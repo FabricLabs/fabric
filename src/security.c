@@ -91,19 +91,21 @@ void fabric_secure_memory_cleanup(void)
   memory_initialized = 0;
 }
 
-static void track_allocation(void *ptr, size_t size)
+/** @return 0 on success, -1 if tracking metadata could not be allocated */
+static int track_allocation(void *ptr, size_t size)
 {
   if (!ptr || size == 0)
-    return;
+    return 0;
 
   allocation_record_t *record = malloc(sizeof(allocation_record_t));
   if (!record)
-    return; // Unable to track, but don't fail the allocation
+    return -1;
 
   record->ptr = ptr;
   record->size = size;
   record->next = allocations;
   allocations = record;
+  return 0;
 }
 
 static size_t untrack_allocation(void *ptr)
@@ -153,8 +155,12 @@ void *fabric_secure_malloc(size_t size)
   // Zero initialize
   memset(ptr, 0, size);
 
-  // Track the allocation
-  track_allocation(ptr, size);
+  // Track the allocation (fail closed: untracked secure buffers are unsafe to hand out)
+  if (track_allocation(ptr, size) != 0)
+  {
+    free(ptr);
+    return NULL;
+  }
 
   return ptr;
 }
@@ -194,6 +200,11 @@ void *fabric_secure_realloc(void *ptr, size_t old_size, size_t new_size)
   if (!ptr)
   {
     return fabric_secure_malloc(new_size);
+  }
+
+  if (old_size == 0)
+  {
+    old_size = fabric_secure_malloc_size(ptr);
   }
 
   void *new_ptr = fabric_secure_malloc(new_size);
@@ -381,16 +392,34 @@ FabricError fabric_secure_random_bytes(uint8_t *buffer, size_t length)
 
 #ifdef __linux__
   // Linux: Try getrandom() first (available since kernel 3.17)
-  ssize_t result = getrandom(buffer, length, 0);
-  if (result == (ssize_t)length)
   {
-    return FABRIC_SUCCESS;
-  }
+    size_t offset = 0;
+    while (offset < length)
+    {
+      ssize_t result;
+      do
+      {
+        result = getrandom(buffer + offset, length - offset, 0);
+      } while (result < 0 && errno == EINTR);
 
-  // If getrandom() fails, fall back to /dev/urandom
-  if (result < 0 && errno != ENOSYS)
-  {
-    return FABRIC_ERROR_SYSTEM_CALL_FAILED;
+      if (result < 0)
+      {
+        if (errno != ENOSYS)
+        {
+          return FABRIC_ERROR_SYSTEM_CALL_FAILED;
+        }
+        break; /* fall back to /dev/urandom */
+      }
+      if (result == 0)
+      {
+        return FABRIC_ERROR_SYSTEM_CALL_FAILED;
+      }
+      offset += (size_t)result;
+    }
+    if (offset == length)
+    {
+      return FABRIC_SUCCESS;
+    }
   }
 #endif
 
@@ -579,6 +608,10 @@ FabricError fabric_secure_random_test_entropy(void)
       }
       consecutive_count = 0;
     }
+  }
+  if (consecutive_count > max_consecutive)
+  {
+    max_consecutive = consecutive_count;
   }
 
   // Fail if more than 5% of bytes are consecutive duplicates

@@ -1,4 +1,5 @@
 #include "sha2.h"
+#include "memory.h"
 
 #include <string.h>
 
@@ -263,7 +264,8 @@ static void fabric_sha512_final(fabric_sha512_ctx *ctx, uint8_t hash[64])
 
 int fabric_sha256(const uint8_t *data, size_t len, uint8_t out32[32])
 {
-  if (!data || !out32) return 0;
+  if (!out32) return 0;
+  if (!data && len != 0) return 0;
   fabric_sha256_ctx ctx;
   fabric_sha256_init(&ctx);
   fabric_sha256_update(&ctx, data, len);
@@ -273,7 +275,8 @@ int fabric_sha256(const uint8_t *data, size_t len, uint8_t out32[32])
 
 int fabric_sha512(const uint8_t *data, size_t len, uint8_t out64[64])
 {
-  if (!data || !out64) return 0;
+  if (!out64) return 0;
+  if (!data && len != 0) return 0;
   fabric_sha512_ctx ctx;
   fabric_sha512_init(&ctx);
   fabric_sha512_update(&ctx, data, len);
@@ -292,13 +295,25 @@ int fabric_hmac_sha512(const uint8_t *key, size_t key_len,
   uint8_t inner[64];
   size_t i;
 
-  if (!key || !data || !out64) return 0;
+#define FABRIC_HMAC_SHA512_WIPE() do { \
+    fabric_secure_zero(key_block, sizeof(key_block)); \
+    fabric_secure_zero(key_hash, sizeof(key_hash)); \
+    fabric_secure_zero(o_key_pad, sizeof(o_key_pad)); \
+    fabric_secure_zero(i_key_pad, sizeof(i_key_pad)); \
+    fabric_secure_zero(inner, sizeof(inner)); \
+  } while (0)
+
+  if (!out64) return 0;
+  if ((key == NULL && key_len > 0) || (data == NULL && data_len > 0)) return 0;
 
   memset(key_block, 0, sizeof(key_block));
   if (key_len > sizeof(key_block)) {
-    if (!fabric_sha512(key, key_len, key_hash)) return 0;
+    if (!fabric_sha512(key, key_len, key_hash)) {
+      FABRIC_HMAC_SHA512_WIPE();
+      return 0;
+    }
     memcpy(key_block, key_hash, sizeof(key_hash));
-  } else {
+  } else if (key_len > 0 && key != NULL) {
     memcpy(key_block, key, key_len);
   }
 
@@ -317,6 +332,7 @@ int fabric_hmac_sha512(const uint8_t *key, size_t key_len,
   fabric_sha512_update(&ctx, o_key_pad, sizeof(o_key_pad));
   fabric_sha512_update(&ctx, inner, sizeof(inner));
   fabric_sha512_final(&ctx, out64);
+  FABRIC_HMAC_SHA512_WIPE();
   return 1;
 }
 
@@ -331,7 +347,14 @@ int fabric_pbkdf2_hmac_sha512(const uint8_t *password, size_t password_len,
   uint8_t t[64];
   uint8_t sbuf[256];
 
-  if (!password || !salt || !out || iterations == 0) return 0;
+#define FABRIC_PBKDF2_WIPE() do { \
+    fabric_secure_zero(u, sizeof(u)); \
+    fabric_secure_zero(t, sizeof(t)); \
+    fabric_secure_zero(sbuf, sizeof(sbuf)); \
+  } while (0)
+
+  if (!out || iterations == 0) return 0;
+  if ((password == NULL && password_len > 0) || (salt == NULL && salt_len > 0)) return 0;
   if (salt_len + 4 > sizeof(sbuf)) return 0;
 
   while (generated < out_len) {
@@ -341,11 +364,17 @@ int fabric_pbkdf2_hmac_sha512(const uint8_t *password, size_t password_len,
     sbuf[salt_len + 2] = (uint8_t)((block_index >> 8) & 0xff);
     sbuf[salt_len + 3] = (uint8_t)(block_index & 0xff);
 
-    if (!fabric_hmac_sha512(password, password_len, sbuf, salt_len + 4, u)) return 0;
+    if (!fabric_hmac_sha512(password, password_len, sbuf, salt_len + 4, u)) {
+      FABRIC_PBKDF2_WIPE();
+      return 0;
+    }
     memcpy(t, u, sizeof(t));
 
     for (uint32_t i = 1; i < iterations; i++) {
-      if (!fabric_hmac_sha512(password, password_len, u, sizeof(u), u)) return 0;
+      if (!fabric_hmac_sha512(password, password_len, u, sizeof(u), u)) {
+        FABRIC_PBKDF2_WIPE();
+        return 0;
+      }
       for (size_t j = 0; j < sizeof(t); j++) t[j] ^= u[j];
     }
 
@@ -355,5 +384,6 @@ int fabric_pbkdf2_hmac_sha512(const uint8_t *password, size_t password_len,
     block_index++;
   }
 
+  FABRIC_PBKDF2_WIPE();
   return 1;
 }
