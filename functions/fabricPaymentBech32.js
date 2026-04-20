@@ -1,16 +1,5 @@
 'use strict';
 
-/**
- * **Fabric-routed payment** references: **bech32m** with HRP **`fa`**, strings **`fa1…`**
- * (same checksum family as BOLT12 / Taproot addresses per [BIP 350](https://github.com/bitcoin/bips/blob/master/bip-0350.mediawiki)).
- *
- * This is **not** a Lightning invoice; it is an opaque handle for Fabric / Hub routing (e.g. document
- * purchase, mesh settlement) that wallets and UIs can recognize without conflicting with `ln…` strings.
- *
- * @module functions/fabricPaymentBech32
- * @see docs/FABRIC_PAYMENT_BECH32.md
- */
-
 const bech32 = require('./bech32');
 const lb = require('./lightningBolt12');
 
