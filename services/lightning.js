@@ -17,6 +17,10 @@ const Machine = require('../types/machine');
 // Contracts
 const OP_TEST = require('../contracts/test');
 
+const lightningBolt12 = require('../functions/lightningBolt12');
+const bolt12Semantics = require('../functions/bolt12Semantics');
+const fabricPaymentBech32 = require('../functions/fabricPaymentBech32');
+
 function redactSensitiveCommandArg (arg) {
   return String(arg).replace(
     /((?:--?rpcpassword|--?rpcuser|--?rpcauth|--bitcoin-rpcpassword|--bitcoin-rpcuser)=).*/i,
@@ -273,6 +277,88 @@ class Lightning extends Service {
       paymentHash: result.payment_hash,
       expiresAt: result.expires_at
     };
+  }
+
+  async callRpc (method, params = [], timeoutMs = 30000) {
+    return this._makeRPCRequest(method, params, timeoutMs);
+  }
+
+  async decodeLightning (boltString) {
+    return this._makeRPCRequest('decode', [boltString]);
+  }
+
+  async decodePay (bolt11) {
+    return this._makeRPCRequest('decodepay', [bolt11]);
+  }
+
+  async createOffer (params) {
+    if (!params || typeof params !== 'object' || Array.isArray(params)) {
+      throw new Error('createOffer requires a params object (e.g. { amount_msat, description })');
+    }
+    return this._makeRPCRequest('offer', [params]);
+  }
+
+  async fetchInvoice (offerOrParams, invoiceParams = null) {
+    if (offerOrParams != null && typeof offerOrParams === 'object' && !Array.isArray(offerOrParams) && typeof offerOrParams.offer === 'string') {
+      return this._makeRPCRequest('fetchinvoice', [offerOrParams]);
+    }
+    if (typeof offerOrParams !== 'string') {
+      throw new Error('fetchInvoice requires offer string or params object with `offer`');
+    }
+    if (invoiceParams != null && typeof invoiceParams === 'object' && !Array.isArray(invoiceParams)) {
+      return this._makeRPCRequest('fetchinvoice', [offerOrParams, invoiceParams]);
+    }
+    return this._makeRPCRequest('fetchinvoice', [offerOrParams]);
+  }
+
+  async pay (invoiceOrParams, timeoutMs = 30000) {
+    return this._makeRPCRequest('pay', [invoiceOrParams], timeoutMs);
+  }
+
+  async listOffers (filter = null) {
+    if (filter == null) return this._makeRPCRequest('listoffers', []);
+    if (typeof filter === 'string') return this._makeRPCRequest('listoffers', [filter]);
+    if (typeof filter === 'object' && !Array.isArray(filter)) {
+      return this._makeRPCRequest('listoffers', [filter]);
+    }
+    throw new Error('listOffers expects offer_id string, filter object, or null');
+  }
+
+  async disableOffer (offerId) {
+    return this._makeRPCRequest('disableoffer', [offerId]);
+  }
+
+  async createInvoiceRequest (params) {
+    if (!params || typeof params !== 'object' || Array.isArray(params)) {
+      throw new Error('createInvoiceRequest requires a params object (e.g. { amount, description })');
+    }
+    return this._makeRPCRequest('invoicerequest', [params]);
+  }
+
+  async listInvoiceRequests (filter = null) {
+    if (filter == null) return this._makeRPCRequest('listinvoicerequests', []);
+    if (typeof filter === 'string') return this._makeRPCRequest('listinvoicerequests', [filter]);
+    if (typeof filter === 'object' && !Array.isArray(filter)) {
+      return this._makeRPCRequest('listinvoicerequests', [filter]);
+    }
+    throw new Error('listInvoiceRequests expects invreq_id string, filter object, or null');
+  }
+
+  async disableInvoiceRequest (invreqId) {
+    return this._makeRPCRequest('disableinvoicerequest', [invreqId]);
+  }
+
+  async sendInvoice (params) {
+    if (!params || typeof params !== 'object' || Array.isArray(params)) {
+      throw new Error('sendInvoice requires a params object (e.g. { invreq, label })');
+    }
+    return this._makeRPCRequest('sendinvoice', [params]);
+  }
+
+  async getRoute (destinationId, amountMsat, riskfactor = 10, maxHopsOrExtra = null) {
+    const args = [destinationId, amountMsat, riskfactor];
+    if (maxHopsOrExtra != null) args.push(maxHopsOrExtra);
+    return this._makeRPCRequest('getroute', args);
   }
 
   /**
@@ -885,14 +971,38 @@ class Lightning extends Service {
  */
 Lightning.CLN_RPC_METHODS = Object.freeze([
   'connect',
+  'decode',
+  'decodepay',
+  'disableinvoicerequest',
+  'disableoffer',
+  'fetchinvoice',
   'fundchannel',
   'getinfo',
+  'getroute',
   'invoice',
+  'invoicerequest',
   'listchannels',
   'listfunds',
+  'listinvoicerequests',
+  'listoffers',
   'newaddr',
+  'offer',
+  'pay',
+  'sendinvoice',
   'stop'
 ]);
+
+Lightning.DOCS = Object.freeze({
+  boltCompatibility: 'docs/BOLT_COMPATIBILITY.md',
+  fabricLightningOffers: 'docs/FABRIC_LIGHTNING_OFFERS.md',
+  fabricLightningMarkets: 'docs/FABRIC_LIGHTNING_OFFERS.md',
+  fabricPaymentBech32: 'docs/FABRIC_PAYMENT_BECH32.md',
+  lightningCompat: 'docs/LIGHTNING_COMPAT.md'
+});
+
+Lightning.Bolt12 = lightningBolt12;
+
+Lightning.FabricPayment = fabricPaymentBech32;
 
 Lightning.redactSensitiveCommandArg = redactSensitiveCommandArg;
 
