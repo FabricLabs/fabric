@@ -86,7 +86,7 @@ class Chain extends Actor {
   }
 
   get height () {
-
+    return this.blocks.length;
   }
 
   get leaves () {
@@ -119,12 +119,12 @@ class Chain extends Actor {
       actor: proposal.actor || Actor.randomBytes(32).toString('hex'),
       changes: proposal.changes,
       mode: proposal.mode || 'NAIVE_SIGHASH_SINGLE',
-      object: Buffer.concat(
+      object: Buffer.concat([
         Buffer.alloc(32), // pubkey
         Buffer.alloc(32), // parent
         Buffer.alloc(32), // changes
-        Buffer.alloc(64), // signature
-      ),
+        Buffer.alloc(64) // signature
+      ]),
       parent: this.id,
       signature: Buffer.alloc(64),
       state: this.state,
@@ -135,7 +135,11 @@ class Chain extends Actor {
   proposeTransaction (transaction) {
     const actor = new Transaction(transaction);
 
-    // TODO: reject duplicate transactions
+    const prior = this._state.transactions[actor.id];
+    if (prior) {
+      return prior instanceof Transaction ? prior : new Transaction(prior);
+    }
+
     this._state.transactions[actor.id] = actor;
     this._state.mempool.push(actor.id);
 
@@ -152,7 +156,7 @@ class Chain extends Actor {
 
     super.trust(source, 'TIMECHAIN');
 
-    source.on('message', function TODO (message) {
+    source.on('message', function onTrustedSourceMessage (message) {
       self.emit('debug', `Message from trusted source: ${message}`);
     });
 

@@ -23,9 +23,10 @@ describe('@fabric/core/types/bitcoin', function () {
     it('exposes identifier properties', function () {
       const tx = new BitcoinTransaction({ raw: 'deadbeef' });
 
-      assert.strictEqual(tx.hash, '<hash>');
-      assert.strictEqual(tx.id, '<fabricID>');
-      assert.strictEqual(tx.txid, '<txID>');
+      assert.strictEqual(tx._state.content.raw, 'deadbeef');
+      assert.strictEqual(tx.hash, '281dd50f6f56bc6e867fe73dd614a73c55a647a479704f64804b574cafb0f5c5');
+      assert.strictEqual(tx.txid, 'c5f5b0af4c574b80644f7079a447a6553ca714d63de77f866ebc566f0fd51d28');
+      assert.strictEqual(tx.id, tx.txid);
     });
 
     it('can sign as holder', function () {
