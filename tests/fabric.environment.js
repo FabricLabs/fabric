@@ -30,6 +30,22 @@ describe('@fabric/core/types/environment', function () {
       assert.ok(environment);
     });
 
+    it('does not treat the BIP39 fixture as the default seed when NODE_ENV is not test (fresh install)', function () {
+      const prev = process.env.NODE_ENV;
+      const home = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-env-'));
+      const store = path.join(home, '.fabric');
+      const walletPath = path.join(store, 'wallet.json');
+      process.env.NODE_ENV = 'production';
+      try {
+        const environment = new Environment({ home, path: walletPath, store });
+        environment.start();
+        assert.strictEqual(environment.wallet, false, 'in-memory wallet must not be created from the test fixture in production');
+      } finally {
+        process.env.NODE_ENV = prev;
+        fs.rmSync(home, { recursive: true, force: true });
+      }
+    });
+
     it('can instantiate from a seed', async function () {
       const environment = new Environment({ xpub: FIXTURE_SEED });
       await environment.start();
