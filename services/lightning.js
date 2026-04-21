@@ -17,10 +17,6 @@ const Machine = require('../types/machine');
 // Contracts
 const OP_TEST = require('../contracts/test');
 
-const lightningBolt12 = require('../functions/lightningBolt12');
-const bolt12Semantics = require('../functions/bolt12Semantics');
-const fabricPaymentBech32 = require('../functions/fabricPaymentBech32');
-
 function redactSensitiveCommandArg (arg) {
   return String(arg).replace(
     /((?:--?rpcpassword|--?rpcuser|--?rpcauth|--bitcoin-rpcpassword|--bitcoin-rpcuser)=).*/i,
@@ -1000,10 +996,12 @@ Lightning.DOCS = Object.freeze({
   lightningCompat: 'docs/LIGHTNING_COMPAT.md'
 });
 
-Lightning.Bolt12 = lightningBolt12;
-
-Lightning.FabricPayment = fabricPaymentBech32;
-
 Lightning.redactSensitiveCommandArg = redactSensitiveCommandArg;
+
+Object.assign(Lightning, {
+  Bolt12: require('../functions/lightningBolt12'),
+  FabricPayment: require('../functions/fabricPaymentBech32'),
+  Bolt12Semantics: require('../functions/bolt12Semantics')
+});
 
 module.exports = Lightning;

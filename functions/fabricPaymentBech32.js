@@ -22,6 +22,25 @@ const FabricRouteType = Object.freeze({
 });
 
 /**
+ * @param {Array|unknown} arr
+ * @returns {Buffer}
+ */
+function hash32ByteArrayToBuffer (arr) {
+  if (!Array.isArray(arr) || arr.length !== 32) {
+    throw new TypeError('hash32 array must have exactly 32 elements');
+  }
+  const out = Buffer.alloc(32);
+  for (let i = 0; i < 32; i++) {
+    const x = arr[i];
+    if (!Number.isInteger(x) || x < 0 || x > 255) {
+      throw new TypeError('hash32 array elements must be integers in 0..255');
+    }
+    out[i] = x;
+  }
+  return out;
+}
+
+/**
  * @param {string|null|undefined} s
  * @returns {boolean}
  */
@@ -41,7 +60,7 @@ function encodeFabricRoutedPaymentV0 (o) {
   let buf;
   if (Buffer.isBuffer(o.hash32)) buf = o.hash32;
   else if (o.hash32 instanceof Uint8Array) buf = Buffer.from(o.hash32);
-  else if (Array.isArray(o.hash32)) buf = Buffer.from(o.hash32);
+  else if (Array.isArray(o.hash32)) buf = hash32ByteArrayToBuffer(o.hash32);
   else throw new TypeError('hash32 must be Buffer, Uint8Array, or byte array');
   if (buf.length !== 32) throw new TypeError('hash32 must be exactly 32 bytes');
   const routeType = o.routeType != null ? Number(o.routeType) : FabricRouteType.DOCUMENT_CONTENT_HASH;
@@ -73,12 +92,11 @@ function decodeFabricRoutedPayment (str) {
   } catch {
     return null;
   }
-  if (raw.length < 2 + 32) return null;
+  if (raw.length !== 34) return null;
   const version = raw[0];
   const routeType = raw[1];
   const hash32 = Buffer.from(raw.slice(2, 34));
   if (version !== FABRIC_PAYMENT_VERSION) return null;
-  if (raw.length !== 34) return null;
   return {
     version,
     routeType,
@@ -97,7 +115,7 @@ function classifyPaymentEncodingString (s) {
   const t = String(s || '').trim();
   if (!t) return 'empty';
   if (isFabricRoutedPaymentString(t)) return 'fabric_routed_payment';
-  return lb.classifyLightningEncodedString(s);
+  return lb.classifyLightningEncodedString(t);
 }
 
 module.exports = {
