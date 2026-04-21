@@ -33,6 +33,8 @@
       <article>
         <pre class="prettyprint source linenums"><code>'use strict';
 
+const { tryParsePersistedJson } = require('../functions/wireJson');
+
 // Dependencies
 const { Level } = require('level');
 const crypto = require('crypto');
@@ -44,17 +46,20 @@ const Actor = require('./actor');
 const Collection = require('./collection');
 const Entity = require('./entity');
 const Stack = require('./stack');
+const State = require('./state');
 
 /**
- * Long-term storage.
+ * @classdesc Level-backed persistence extending {@link Actor}. Use optional {@link Codec} in &lt;code>settings.codec&lt;/code> for
+ * encrypted values; {@link Store.openEncrypted} matches Hub/shell keystore defaults. Commit/history behavior follows {@link Actor}.
+ * @class Store
+ * @extends Actor
  * @property {Mixed} settings Current configuration.
  */
 class Store extends Actor {
   /**
-   * Create an instance of a {@link Store} to manage long-term storage, which is
-   * particularly useful when building a user-facing {@link Product}.
-   * @param  {Object} [settings={}] configuration object.
-   * @return {Store}              Instance of the Store, ready to start.
+   * Create an instance of a {@link Store} to manage long-term storage (LevelDB by default).
+   * @param  {Object} [settings={}] configuration object (&lt;code>path&lt;/code>, &lt;code>codec&lt;/code>, &lt;code>persistent&lt;/code>, …).
+   * @return {Store} Instance of the Store, ready to start.
    */
   constructor (settings = {}) {
     super(settings);
@@ -76,7 +81,9 @@ class Store extends Actor {
 
     this['@entity'] = {
       '@type': 'Store',
-      '@data': {}
+      '@data': {
+        addresses: {}
+      }
     };
 
     this.keys = {};
@@ -153,16 +160,46 @@ class Store extends Actor {
     console.error('[FABRIC:STORE]', 'Error condition:', err);
   }
 
-  async _setEncrypted (path, value, passphrase = '') {
-    const secret = value; // TODO: encrypt value
-    const name = crypto.createHash('sha256').createHash(path).digest('hex');
+  async _setEncrypted (path, value, _passphrase = '') {
+    if (typeof path !== 'string' || !path.length) {
+      throw new Error('Path is required for encrypted store writes.');
+    }
+
+    const plaintext = (typeof value === 'string') ? value : JSON.stringify(value);
+    let secret = plaintext;
+
+    // Prefer configured codec for at-rest encryption; fallback keeps compatibility.
+    if (this.codec &amp;&amp; typeof this.codec.encode === 'function') {
+      const encoded = this.codec.encode(plaintext);
+      const encodedBuffer = Buffer.isBuffer(encoded)
+        ? encoded
+        : Buffer.from(String(encoded), 'utf8');
+      secret = encodedBuffer.toString('hex');
+    }
+
+    const name = this._getPathForKey(path);
     return this.set(`/secrets/${name}`, secret);
   }
 
-  async _getEncrypted (path, passphrase = '') {
-    const name = crypto.createHash('sha256').createHash(path).digest('hex');
-    const secret = this.get(`/secrets/${name}`);
-    const decrypted = secret; // TODO: decrypt value
+  async _getEncrypted (path, _passphrase = '') {
+    if (typeof path !== 'string' || !path.length) return null;
+
+    const name = this._getPathForKey(path);
+    const secret = await this.get(`/secrets/${name}`);
+    if (secret == null) return null;
+
+    let decrypted = secret;
+
+    if (this.codec &amp;&amp; typeof this.codec.decode === 'function') {
+      let payload = secret;
+      if (!Buffer.isBuffer(payload)) {
+        const serialized = String(secret);
+        const isHex = /^[0-9a-fA-F]+$/.test(serialized) &amp;&amp; serialized.length % 2 === 0;
+        payload = Buffer.from(serialized, isHex ? 'hex' : 'utf8');
+      }
+      decrypted = this.codec.decode(payload);
+    }
+
     return decrypted;
   }
 
@@ -173,12 +210,12 @@ class Store extends Actor {
    */
   async _REGISTER (obj) {
     const actor = new Actor(obj);
-    const existing = await this._GET(`/entities/${actor.id}`);
+    await this._GET(`/entities/${actor.id}`);
 
     store.log('[STORE]', '_REGISTER', vector.id, vector['@type']);
 
     try {
-      let item = await this._GET(`/entities/${vector.id}`);
+      await this._GET(`/entities/${vector.id}`);
     } catch (E) {
       this.warn('[STORE]', '_REGISTER', `Could not read from store:`, E);
     }
@@ -236,7 +273,7 @@ class Store extends Actor {
     if (this.settings.verbosity >= 5) console.log('[STORE]', 'Patch result:', result);
 
     try {
-      let action = await this._PUT(key, result);
+      await this._PUT(key, result);
     } catch (E) {
       console.error('Could not modify:', E);
     }
@@ -273,15 +310,6 @@ class Store extends Actor {
     self['@entity']['@data'].addresses[router] = address;
 
     let state = new State(value);
-    let serial = state.serialize();
-    let digest = this.sha256(serial);
-
-    // defaults
-    let actor = null;
-    let list = null;
-    let type = null;
-    let tip = null;
-
     if (!self.db) {
       await self.open().catch(self._errorHandler.bind(self));
     }
@@ -298,11 +326,12 @@ class Store extends Actor {
       if (this.settings.verbosity >= 3) console.warn('Creating new collection:', E);
     }
 
-    if (entity) {
-      try {
-        entity = JSON.parse(entity);
-      } catch (E) {
-        console.warn(`Couldn't parse: ${entity}`, E);
+    if (entity &amp;&amp; (typeof entity === 'string' || Buffer.isBuffer(entity))) {
+      const text = typeof entity === 'string' ? entity : entity.toString('utf8');
+      const pr = tryParsePersistedJson(text);
+      if (pr.ok) entity = pr.value;
+      else if (this.settings.verbosity >= 4 || this.settings.debug) {
+        console.warn(`Couldn't parse entity JSON: ${pr.error.message}`);
       }
     }
 
@@ -316,14 +345,22 @@ class Store extends Actor {
       }
 
       // Add Element to Collection
-      let height = origin.push(value);
+      origin.push(value);
 
       // Store the object at an entity locale
-      let object = await self._PUT(`/entities/${state.id}`, value);
+      await self._PUT(`/entities/${state.id}`, value);
       let serialized = await origin.serialize();
 
+      // Keep in-memory collection view in sync for _GET/_PUT call paths.
+      const existingList = await self._GET(key);
+      const persistedList = Array.isArray(family) ? family.filter((item) => item != null) : [];
+      const inMemoryList = Array.isArray(existingList) ? existingList.filter((item) => item != null) : [];
+      const seedList = inMemoryList.length ? inMemoryList : persistedList;
+      const nextList = seedList.concat([value]);
+      await self._PUT(key, nextList);
+
       // Write serialized Collection to disk
-      let answer = await self.db.put(address, serialized.toString());
+      await self.db.put(address, serialized.toString());
     } catch (E) {
       console.log('Could not POST:', key, value, E);
       return false;
@@ -339,11 +376,11 @@ class Store extends Actor {
     if (!list) list = [];
     let vector = new State(data);
     let stack = new Stack(list);
-    let result = stack.push(vector.id);
-    let actor = await this._REGISTER(data);
-    let blob = await this._PUT(`/blobs/${vector.id}`, vector['@data']);
-    let saved = await this._SET(path, stack['@data']);
-    let commit = await this.commit();
+    stack.push(vector.id);
+    await this._REGISTER(data);
+    await this._PUT(`/blobs/${vector.id}`, vector['@data']);
+    await this._SET(path, stack['@data']);
+    await this.commit();
     let output = await this._GET(`/blobs/${vector.id}`);
     return output;
   }
@@ -371,8 +408,18 @@ class Store extends Actor {
         size = value.length;
         hash = this.sha256(value);
         break;
+      case 'Object':
+      case 'Array': {
+        const encoded = JSON.stringify(value);
+        type = 'JSON';
+        size = encoded.length;
+        hash = this.sha256(encoded);
+        break;
+      }
       default:
-        console.error('unhandled type:', value.constructor.name);
+        if (this.settings.verbosity >= 4 || this.settings.debug) {
+          console.error('unhandled type:', value.constructor.name);
+        }
         type = 'Unhandled';
         break;
     }
@@ -442,7 +489,10 @@ class Store extends Actor {
     // This is what defines our key => value store.
     // All functions can be run as a map of an original input vector, allowing
     // binary scoping across trees of varying complexity.
-    const hash = this.sha256(value);
+    const hashInput = (typeof value === 'string' || Buffer.isBuffer(value))
+      ? value
+      : JSON.stringify(value);
+    const hash = this.sha256(hashInput);
     const actor = new Actor({
       type: 'FabricDocument',
       content: data,
@@ -634,7 +684,6 @@ class Store extends Actor {
   async start () {
     if (this.settings.verbosity >= 3) console.log('[FABRIC:STORE]', 'Starting:', this.settings.path);
     this.status = 'starting';
-    let keys = null;
 
     try {
       await this.open();
@@ -681,14 +730,17 @@ module.exports = Store;
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Bond.html">Bond</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Contract.html">Contract</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
-      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
@@ -706,12 +758,14 @@ module.exports = Store;
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
+      <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
@@ -721,25 +775,7 @@ module.exports = Store;
     </ul>
     <h3>Global</h3>
     <ul>
-      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
-      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
-      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
-      <li><a href="global.html#crypto">crypto</a></li>
-      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
-      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
-      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
-      <li><a href="global.html#gossip">gossip</a></li>
-      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
-      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
-      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
-      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
-      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
-      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
-      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
-      <li><a href="global.html#stableStringify">stableStringify</a></li>
-      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
-      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
-      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
+      <li><a href="global.html#appendLightningStderrChunk">appendLightningStderrChunk</a></li>
     </ul>
   </nav>
   <br class="clear" />

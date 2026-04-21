@@ -51,19 +51,17 @@ const Actor = require('./actor');
 const Message = require('./message');
 
 /**
- * Interact with a remote {@link Resource}.  This is currently the only
- * HTTP-related code that should remain in @fabric/core — all else must
- * be moved to @fabric/http before final release!
- * @type {Remote}
+ * @classdesc &lt;strong>WebSocket client&lt;/strong> to a remote Fabric/Hub-style host (extends {@link Actor}). Per comment in
+ * source, prefer moving richer HTTP to &lt;code>@fabric/http&lt;/code>; this type stays for minimal {@link Message}-oriented
+ * bridging. Uses browser/Node &lt;code>WebSocket&lt;/code> with JSON {@link Message} payloads where applicable.
+ * @class Remote
+ * @extends Actor
  * @property {Object} config
  * @property {Boolean} secure
  */
 class Remote extends Actor {
   /**
-   * An in-memory representation of a node in our network.
-   * @param       {Object} target - Target object.
-   * @param       {String} target.host - Named host, e.g. "localhost".
-   * @param       {String} target.secure - Require TLS session.
+   * @param {Object} [config={}] &lt;code>host&lt;/code>, &lt;code>port&lt;/code>, &lt;code>secure&lt;/code>, backoff, optional macaroon, …
    * @constructor
    */
   constructor (config = {}) {
@@ -84,7 +82,7 @@ class Remote extends Actor {
     this.secure = this.settings.secure;
     this.socket = null;
 
-    this.endpoint = `${(this.secure) ? 'wss' : 'ws'}:${this.host}:${this.port}/`;
+    this.endpoint = `${this.secure ? 'wss' : 'ws'}://${this.host}:${this.port}/`;
 
     this._nextReconnect = 0;
     this._reconnectAttempts = 0;
@@ -210,7 +208,7 @@ class Remote extends Actor {
     this.emit('message', message);
   }
 
-  async _handleSocketOpen (message) {
+  async _handleSocketOpen (_message) {
     this._nextReconnect = 0;
     this._reconnectAttempts = 0;
     if (this._reconnector) clearTimeout(this._reconnector);
@@ -376,7 +374,7 @@ class Remote extends Actor {
 
           try {
             result = await response.json();
-          } catch (exception) {
+          } catch {
             result = await response.text();
           }
         }
@@ -394,7 +392,7 @@ class Remote extends Actor {
   }
 
   async send (message) {
-    const msg = Message.fromVector(['GenericMessage', JSON.stringify(message)]);
+    const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(message)]);
     const raw = msg.toRaw();
     const actor = new Actor({ content: raw.toString('hex') });
     this.socket.send(raw);
@@ -507,14 +505,17 @@ module.exports = Remote;
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Bond.html">Bond</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Contract.html">Contract</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
-      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
@@ -532,12 +533,14 @@ module.exports = Remote;
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
+      <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
@@ -547,25 +550,7 @@ module.exports = Remote;
     </ul>
     <h3>Global</h3>
     <ul>
-      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
-      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
-      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
-      <li><a href="global.html#crypto">crypto</a></li>
-      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
-      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
-      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
-      <li><a href="global.html#gossip">gossip</a></li>
-      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
-      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
-      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
-      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
-      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
-      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
-      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
-      <li><a href="global.html#stableStringify">stableStringify</a></li>
-      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
-      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
-      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
+      <li><a href="global.html#appendLightningStderrChunk">appendLightningStderrChunk</a></li>
     </ul>
   </nav>
   <br class="clear" />

@@ -39,12 +39,11 @@ const {
   FABRIC_USER_AGENT
 } = require('../constants');
 
-const OP_TRACE = require('../contracts/trace');
-
 // Dependencies
 const crypto = require('crypto');
 const children = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 // External Dependencies
@@ -55,11 +54,9 @@ const fetch = require('cross-fetch');
 
 // crypto support libraries
 // Use noble-curves-backed ECC shim instead of tiny-secp256k1
-const ECPairFactory = require('ecpair').default;
 const ecc = require('../types/ecc');
 const bip65 = require('bip65');
 const bip68 = require('bip68');
-const ECPair = ECPairFactory(ecc);
 const bitcoin = require('bitcoinjs-lib');
 
 // Initialize bitcoinjs-lib with the ECC library
@@ -74,7 +71,6 @@ const Collection = require('../types/collection');
 const Entity = require('../types/entity');
 const Key = require('../types/key');
 const Service = require('../types/service');
-const State = require('../types/state');
 const Wallet = require('../types/wallet');
 
 // Special Types (internal to Bitcoin)
@@ -88,11 +84,328 @@ function redactSensitiveCommandArg (arg) {
   );
 }
 
+const SATS_PER_BTC = 10 ** 8;
+// Internal: max |sats - round(sats)| allowed for BTC -> sats conversion
+// (reject fractional satoshis while tolerating float noise).
+const SAT_ADJ_EPS = 1 / (10 ** 6);
+// Internal: reject absurd cookie path lengths before filesystem reads.
+const BITCOIN_COOKIE_PATH_MAX_LEN = 4096;
+
+// Internal allowlist: Bitcoin Core chain directory names under -datadir.
+const BITCOIND_CHAIN_FOLDER_NAMES = new Set(['regtest', 'testnet3', 'testnet4', 'signet']);
+
+// Internal helper: append fixed path components under baseAbs and reject traversal.
+function cookiePathUnderDatadirBase (baseAbs, parts) {
+  // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+  const root = path.resolve(baseAbs);
+  let cur = root;
+  for (const part of parts) {
+    // `part` is allowlisted (chain dir name or `.cookie`); traversal is checked via `relative` below.
+    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+    cur = path.resolve(cur, part);
+  }
+  const rel = path.relative(root, cur);
+  if (rel.startsWith('..' + path.sep) || rel === '..' || path.isAbsolute(rel)) {
+    return null;
+  }
+  return cur;
+}
+
+/**
+ * Constraints hint for cookie / store probe paths (e.g. pruned mainnet).
+ * @typedef {Object} BitcoinCookieProbeConstraints
+ * @property {Object} [storage]
+ * @property {number} [storage.size]
+ */
+
+/**
+ * Options for {@link Bitcoin.buildLocalCookieProbePaths}.
+ * @typedef {Object} BitcoinLocalCookieProbeOpts
+ * @property {string} [network]
+ * @property {string} [envCookieFile]
+ * @property {string} [settingsDatadir]
+ * @property {BitcoinCookieProbeConstraints} [constraints]
+ */
+
+/**
+ * Options for {@link Bitcoin.buildRegtestCookiePathList}.
+ * @typedef {Object} BitcoinRegtestCookieOpts
+ * @property {string} [envCookieFile]
+ * @property {string} [settingsDatadir]
+ */
+
 /**
  * Manages interaction with the Bitcoin network.
  * @augments Service
  */
 class Bitcoin extends Service {
+  /**
+   * Bitcoin Core chain data subdirectory under {@code -datadir} (empty string for mainnet cookie at datadir root).
+   * Matches Core layout: `regtest/`, `testnet3/`, `signet/`, `testnet4/`, or root for mainnet.
+   * @param {string} network Fabric network name (mainnet, testnet, regtest, signet, testnet4, playnet, …).
+   * @returns {string}
+   */
+  static bitcoindChainDataDirSegment (network) {
+    const n = String(network || 'mainnet').toLowerCase();
+    if (n === 'regtest' || n === 'playnet') return 'regtest';
+    if (n === 'testnet') return 'testnet3';
+    if (n === 'testnet4') return 'testnet4';
+    if (n === 'signet') return 'signet';
+    return '';
+  }
+
+  /**
+   * Resolve a configured bitcoind datadir for local cookie discovery. Relative paths are cwd-anchored
+   * and must not escape the project root; absolute paths are normalized as-is.
+   * @param {string} datadir
+   * @returns {string|null}
+   */
+  static resolveBitcoinDatadirForLocalAccess (datadir) {
+    if (datadir == null || typeof datadir !== 'string') return null;
+    const trimmed = datadir.trim();
+    if (!trimmed || trimmed.includes('\0') || trimmed.length > BITCOIN_COOKIE_PATH_MAX_LEN) return null;
+    let abs;
+    if (path.isAbsolute(trimmed)) {
+      abs = path.normalize(trimmed);
+    } else {
+      // Relative: containment enforced by `path.relative` check below (cannot escape cwd).
+      // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+      abs = path.resolve(process.cwd(), trimmed);
+    }
+    if (!path.isAbsolute(trimmed)) {
+      const root = path.resolve(process.cwd());
+      const rel = path.relative(root, abs);
+      if (rel === '' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) {
+        return null;
+      }
+    }
+    return abs;
+  }
+
+  /**
+   * Resolve {@code FABRIC_BITCOIN_COOKIE_FILE}-style paths: normalize, bound length, and keep relative paths
+   * inside the process cwd (absolute paths allowed for explicit operator overrides).
+   * @param {string} filePath
+   * @returns {string|null}
+   */
+  static resolveBitcoinCookieFileForLocalRead (filePath) {
+    if (filePath == null || typeof filePath !== 'string') return null;
+    const trimmed = filePath.trim();
+    if (!trimmed || trimmed.includes('\0') || trimmed.length > BITCOIN_COOKIE_PATH_MAX_LEN) return null;
+    let abs;
+    if (path.isAbsolute(trimmed)) {
+      abs = path.normalize(trimmed);
+    } else {
+      // Relative: containment enforced by `path.relative` check below (cannot escape cwd).
+      // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+      abs = path.resolve(process.cwd(), trimmed);
+    }
+    if (!path.isAbsolute(trimmed)) {
+      const root = path.resolve(process.cwd());
+      const rel = path.relative(root, abs);
+      if (rel === '' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) {
+        return null;
+      }
+    }
+    return abs;
+  }
+
+  /**
+   * Read Bitcoin Core {@code .cookie} (user:password) using async I/O. Path must already be resolved/normalized.
+   * @param {string} cookiePath
+   * @returns {Promise&lt;{ username: string, password: string }|null>}
+   */
+  static async tryReadRpcCookieFileCredentials (cookiePath) {
+    if (typeof cookiePath !== 'string' || !cookiePath.trim()) return null;
+    const p = path.normalize(cookiePath.trim());
+    if (p.includes('\0') || p.length > BITCOIN_COOKIE_PATH_MAX_LEN) return null;
+    try {
+      const raw = (await fs.promises.readFile(p, 'utf8')).trim();
+      const colon = raw.indexOf(':');
+      if (colon === -1) return null;
+      return { username: raw.slice(0, colon), password: raw.slice(colon + 1) };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * `.cookie` path under a resolved bitcoind datadir root for the given Fabric network.
+   * @param {string} datadirRoot Absolute or project-relative resolved datadir (Core {@code -datadir} value).
+   * @param {string} network
+   * @returns {string}
+   */
+  static cookiePathForBitcoind (datadirRoot, network) {
+    const seg = Bitcoin.bitcoindChainDataDirSegment(network);
+    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+    const base = path.resolve(datadirRoot);
+    if (!seg) {
+      const p = cookiePathUnderDatadirBase(base, ['.cookie']);
+      if (!p) throw new Error('[FABRIC:BITCOIN] invalid datadir for cookie path');
+      return p;
+    }
+    if (!BITCOIND_CHAIN_FOLDER_NAMES.has(seg)) {
+      throw new Error(`[FABRIC:BITCOIN] internal: unexpected chain dir ${seg}`);
+    }
+    const p = cookiePathUnderDatadirBase(base, [seg, '.cookie']);
+    if (!p) throw new Error('[FABRIC:BITCOIN] invalid datadir for cookie path');
+    return p;
+  }
+
+  /**
+   * Cookie file under explicit chain subdirectory (empty string = mainnet-style datadir/.cookie only).
+   * Prefer {@link #cookiePathForBitcoind} when you have a Fabric network name.
+   * @param {string} datadirRoot
+   * @param {string} chainSubdir e.g. `regtest`, `signet`, or `''`
+   * @returns {string}
+   */
+  static cookiePathForChainSubtree (datadirRoot, chainSubdir) {
+    const s = chainSubdir == null ? '' : String(chainSubdir);
+    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+    const base = path.resolve(datadirRoot);
+    if (!s) {
+      const p = cookiePathUnderDatadirBase(base, ['.cookie']);
+      if (!p) throw new Error('[FABRIC:BITCOIN] invalid datadir for cookie path');
+      return p;
+    }
+    if (!BITCOIND_CHAIN_FOLDER_NAMES.has(s)) {
+      throw new Error(`[FABRIC:BITCOIN] unsupported chain subdirectory: ${s}`);
+    }
+    const p = cookiePathUnderDatadirBase(base, [s, '.cookie']);
+    if (!p) throw new Error('[FABRIC:BITCOIN] invalid datadir for cookie path');
+    return p;
+  }
+
+  /**
+   * Typical `stores/…` paths under the project for the network (for cookie discovery before node spawn).
+   * @param {string} network
+   * @param {BitcoinCookieProbeConstraints} [constraints]
+   * @returns {string[]}
+   */
+  static defaultStoresRelativeDirsForProbe (network, constraints) {
+    const n = String(network || 'mainnet').toLowerCase();
+    switch (n) {
+      case 'regtest':
+        return ['stores/bitcoin-regtest'];
+      case 'playnet':
+        return ['stores/bitcoin-playnet'];
+      case 'testnet':
+        return ['stores/bitcoin-testnet'];
+      case 'testnet4':
+        return ['stores/bitcoin-testnet4'];
+      case 'signet':
+        return ['stores/bitcoin-signet'];
+      case 'mainnet':
+      default: {
+        const dirs = ['stores/bitcoin-mainnet'];
+        if (constraints &amp;&amp; constraints.storage &amp;&amp; constraints.storage.size) {
+          dirs.push('stores/bitcoin-mainnet-pruned');
+        }
+        return dirs;
+      }
+    }
+  }
+
+  /**
+   * Ordered local cookie paths to probe for RPC (env override, project stores, Electron mirror, ~/.bitcoin, optional settings datadir).
+   * @param {BitcoinLocalCookieProbeOpts} opts
+   * @returns {string[]}
+   */
+  static buildLocalCookieProbePaths (opts = {}) {
+    const { network, envCookieFile, settingsDatadir, constraints } = opts;
+    const net = String(network || 'mainnet').toLowerCase();
+    const list = [];
+    if (envCookieFile) {
+      const resolvedEnv = Bitcoin.resolveBitcoinCookieFileForLocalRead(String(envCookieFile));
+      if (resolvedEnv) list.push(resolvedEnv);
+    }
+    const cwd = process.cwd();
+    const mainPruned = Boolean(constraints &amp;&amp; constraints.storage &amp;&amp; constraints.storage.size);
+    const pushProjectStore = (storeReldir) => {
+      // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+      list.push(Bitcoin.cookiePathForBitcoind(path.resolve(cwd, storeReldir), net));
+    };
+    switch (net) {
+      case 'regtest':
+        pushProjectStore('stores/bitcoin-regtest');
+        break;
+      case 'playnet':
+        pushProjectStore('stores/bitcoin-playnet');
+        break;
+      case 'testnet':
+        pushProjectStore('stores/bitcoin-testnet');
+        break;
+      case 'testnet4':
+        pushProjectStore('stores/bitcoin-testnet4');
+        break;
+      case 'signet':
+        pushProjectStore('stores/bitcoin-signet');
+        break;
+      default:
+        pushProjectStore('stores/bitcoin-mainnet');
+        if (mainPruned) pushProjectStore('stores/bitcoin-mainnet-pruned');
+    }
+    if (process.platform === 'darwin') {
+      const hd = os.homedir();
+      const pushElectronStore = (folderName) => {
+        // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+        const electronRoot = path.join(hd, 'Library/Application Support/Electron/stores', folderName);
+        list.push(Bitcoin.cookiePathForBitcoind(electronRoot, net));
+      };
+      switch (net) {
+        case 'regtest':
+          pushElectronStore('bitcoin-regtest');
+          break;
+        case 'playnet':
+          pushElectronStore('bitcoin-playnet');
+          break;
+        case 'testnet':
+          pushElectronStore('bitcoin-testnet');
+          break;
+        case 'testnet4':
+          pushElectronStore('bitcoin-testnet4');
+          break;
+        case 'signet':
+          pushElectronStore('bitcoin-signet');
+          break;
+        default:
+          pushElectronStore('bitcoin-mainnet');
+          if (mainPruned) pushElectronStore('bitcoin-mainnet-pruned');
+      }
+    }
+    {
+      // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+      const homeData = path.join(os.homedir(), '.bitcoin');
+      list.push(Bitcoin.cookiePathForBitcoind(homeData, net));
+    }
+    if (settingsDatadir &amp;&amp; typeof settingsDatadir === 'string' &amp;&amp; settingsDatadir.trim()) {
+      const resolved = Bitcoin.resolveBitcoinDatadirForLocalAccess(settingsDatadir);
+      if (resolved) list.push(Bitcoin.cookiePathForBitcoind(resolved, net));
+    }
+    return list;
+  }
+
+  /**
+   * Parent directory name of `.cookie` (for probe logging).
+   * @param {string} cookiePath
+   * @returns {string}
+   */
+  static parentDirNameForCookieProbe (cookiePath) {
+    if (typeof cookiePath !== 'string' || !cookiePath) return 'unknown';
+    const parts = cookiePath.split(/[/\\]/).filter(Boolean);
+    if (parts.length &lt; 2) return parts[0] || 'unknown';
+    return parts[parts.length - 2];
+  }
+
+  /**
+   * @deprecated Use {@link #buildLocalCookieProbePaths} with `network: 'regtest'`.
+   * @param {BitcoinRegtestCookieOpts} opts
+   * @returns {string[]}
+   */
+  static buildRegtestCookiePathList (opts = {}) {
+    return Bitcoin.buildLocalCookieProbePaths({ ...opts, network: 'regtest' });
+  }
+
   /**
    * Creates an instance of the Bitcoin service.
    * @param {Object} [settings] Map of configuration options for the Bitcoin service.
@@ -123,7 +436,7 @@ class Bitcoin extends Service {
       spv: {
         port: 18332
       },
-      /** Optional HTTP origin for block/tx/address REST fallback (e.g. a Hub). Null = RPC only. */
+      // Optional HTTP origin for block/tx/address REST fallback (e.g. a Hub). Null = RPC only.
       explorerBaseUrl: null,
       zmq: {
         host: 'localhost',
@@ -151,19 +464,20 @@ class Bitcoin extends Service {
       servers: [],
       targets: [],
       peers: [],
-      /**
-       * After RPC is ready, call `addnode &lt;host:port> add` for each entry (outbound P2P only).
-       * Used for LAN "playnet" regtest sync. Ignored on mainnet unless {@link p2pAddNodesAllowMainnet} is true.
-       * @type {string[]}
-       */
+      // After RPC is ready, call `addnode &lt;host:port> add` for each entry (outbound P2P only).
+      // Used for LAN "playnet" regtest sync. Ignored on mainnet unless p2pAddNodesAllowMainnet is true.
       p2pAddNodes: [],
-      /** When true, {@link p2pAddNodes} is applied even on mainnet (private deployments only). */
+      // When true, p2pAddNodes is applied even on mainnet (private deployments only).
       p2pAddNodesAllowMainnet: false,
       host: '127.0.0.1',
       port: 8333, // P2P port
       rpcport: 8332, // RPC port
       interval: 60000, // 10 * 60 * 1000, // every 10 minutes, write a checkpoint
-      verbosity: 2
+      verbosity: 2,
+      // When true, flushChainToSnapshot is allowed on mainnet (dangerous).
+      flushChainAllowUnsafeNetworks: false,
+      // Safety cap for invalidateblock steps when rewinding to a snapshot tip.
+      flushChainMaxSteps: 100000
     }, settings);
 
     const netNorm = this._normalizeChainName(this.settings.network || 'mainnet');
@@ -392,6 +706,7 @@ class Bitcoin extends Service {
   _getDefaultRPCPort (network = 'mainnet') {
     switch (network) {
       case 'regtest':
+      case 'playnet':
         return 18443;
       case 'testnet':
         return 18332;
@@ -407,6 +722,7 @@ class Bitcoin extends Service {
   _getDefaultP2PPort (network = 'mainnet') {
     switch (network) {
       case 'regtest':
+      case 'playnet':
         return 18444;
       case 'testnet':
         return 18333;
@@ -438,22 +754,37 @@ class Bitcoin extends Service {
     }
   }
 
+  _rpcHostHasSingleNumericPortSuffix (host) {
+    const s = String(host).trim();
+    if (s.startsWith('[')) return false;
+    const first = s.indexOf(':');
+    const last = s.lastIndexOf(':');
+    if (first === -1 || first !== last) return false;
+    return /^\d+$/.test(s.slice(last + 1));
+  }
+
   _normalizeRPCHost (value) {
     if (!value) return '127.0.0.1';
     const host = String(value).trim();
     if (!host) return '127.0.0.1';
 
-    // bitcoin.conf may specify rpcbind/rpcconnect as host:port.
-    if (host.includes(':') &amp;&amp; !host.startsWith('[') &amp;&amp; host.split(':').length === 2) {
-      return host.split(':')[0];
+    if (host.startsWith('[')) {
+      const close = host.indexOf(']');
+      if (close !== -1) return host.slice(0, close + 1);
+      return host;
+    }
+
+    if (this._rpcHostHasSingleNumericPortSuffix(host)) {
+      return host.slice(0, host.lastIndexOf(':'));
     }
 
     return host;
   }
 
-  _buildRPCProbeCandidates () {
+  async _buildRPCProbeCandidates () {
     const candidates = [];
     const seen = new Set();
+    const cookiePathsTried = new Set();
 
     const pushCandidate = (candidate) => {
       if (!candidate || !candidate.host || !candidate.rpcport) return;
@@ -474,6 +805,34 @@ class Bitcoin extends Service {
       seen.add(key);
       candidates.push(normalized);
     };
+
+    // Cookie-auth probes when no explicit RPC user/pass (mainnet, testnet*, signet, regtest, playnet, …).
+    if (!this.settings.username &amp;&amp; !this.settings.password) {
+      const net = this.settings.network || 'mainnet';
+      const rpcport = Number(this.settings.rpcport) || this._getDefaultRPCPort(net);
+      const host = this._normalizeRPCHost(this.settings.host || '127.0.0.1');
+      const cookiePaths = Bitcoin.buildLocalCookieProbePaths({
+        network: net,
+        envCookieFile: process.env.FABRIC_BITCOIN_COOKIE_FILE,
+        settingsDatadir: this.settings.datadir,
+        constraints: this.settings.constraints
+      });
+      for (const cookiePath of cookiePaths) {
+        if (!cookiePath || cookiePathsTried.has(cookiePath)) continue;
+        cookiePathsTried.add(cookiePath);
+        const creds = await Bitcoin.tryReadRpcCookieFileCredentials(cookiePath);
+        if (!creds) continue;
+        pushCandidate({
+          source: `cookie:${Bitcoin.parentDirNameForCookieProbe(cookiePath)}`,
+          host,
+          rpcport,
+          network: net,
+          username: creds.username,
+          password: creds.password,
+          secure: false
+        });
+      }
+    }
 
     if (Array.isArray(this.settings.rpcProbeCandidates)) {
       for (const candidate of this.settings.rpcProbeCandidates) {
@@ -557,7 +916,7 @@ class Bitcoin extends Service {
   }
 
   async _detectExistingBitcoind () {
-    const candidates = this._buildRPCProbeCandidates();
+    const candidates = await this._buildRPCProbeCandidates();
 
     for (const candidate of candidates) {
       try {
@@ -568,6 +927,18 @@ class Bitcoin extends Service {
         ]);
 
         const detectedNetwork = this._normalizeChainName(chainInfo.chain || candidate.network);
+        const targetNetwork = this._normalizeChainName(this.settings.network || 'mainnet');
+
+        // Never reuse a daemon from a different chain.
+        if (detectedNetwork &amp;&amp; targetNetwork &amp;&amp; detectedNetwork !== targetNetwork) {
+          if (this.settings.debug) {
+            this.emit(
+              'debug',
+              `[FABRIC:BITCOIN] Ignoring external ${detectedNetwork} daemon while target network is ${targetNetwork}`
+            );
+          }
+          continue;
+        }
         if (this.settings.debug) {
           this.emit(
             'debug',
@@ -614,7 +985,7 @@ class Bitcoin extends Service {
       try {
         bitcoin.address.toOutputScript(address, network);
         return true;
-      } catch (e) {
+      } catch {
         return false;
       }
 
@@ -644,8 +1015,8 @@ class Bitcoin extends Service {
       this._checkAllTargetBalances()
     ]).catch((exception) => {
       self.emit('error', `Unable to synchronize: ${exception}`);
-    }).then((output) => {
-      // self.emit('log', `Tick output: ${JSON.stringify(output, null, '  ')}`);
+    }).then((_output) => {
+      // self.emit('log', `Tick output: ${JSON.stringify(_output, null, '  ')}`);
 
       const beat = {
         clock: self._clock,
@@ -697,8 +1068,22 @@ class Bitcoin extends Service {
     if (!message.amount) throw new Error('Message must provide an amount.');
     if (!message.destination) throw new Error('Message must provide a destination.');
 
-    if (message.amount instanceof String) {
-      message.amount = message.amount.fixed().toPrecision(8); // TODO: evaluate precision behavior
+    if (typeof message.amount === 'number' &amp;&amp; Number.isFinite(message.amount)) {
+      const sats = message.amount * SATS_PER_BTC;
+      const rounded = Math.round(sats);
+      if (!Number.isFinite(sats) || Math.abs(sats - rounded) > SAT_ADJ_EPS) {
+        throw new Error('Message amount must be a multiple of 1 satoshi (at most 8 decimal places in BTC).');
+      }
+      message.amount = (rounded / SATS_PER_BTC).toFixed(8);
+    } else if (typeof message.amount === 'string' || message.amount instanceof String) {
+      const parsed = Number(message.amount instanceof String ? message.amount.valueOf() : message.amount);
+      if (!Number.isFinite(parsed)) throw new Error('Message amount must be numeric.');
+      const sats = parsed * SATS_PER_BTC;
+      const rounded = Math.round(sats);
+      if (!Number.isFinite(sats) || Math.abs(sats - rounded) > SAT_ADJ_EPS) {
+        throw new Error('Message amount must be a multiple of 1 satoshi (at most 8 decimal places in BTC).');
+      }
+      message.amount = (rounded / SATS_PER_BTC).toFixed(8);
     }
 
     const actor = new Actor(message);
@@ -733,7 +1118,7 @@ class Bitcoin extends Service {
     if (!(obj.transactions instanceof Array)) throw new Error('Block must provide transactions as an Array.');
 
     for (const tx of obj.transactions) {
-      let transaction = await this.transactions.create(tx);
+      await this.transactions.create(tx);
     }
 
     let entity = new Entity(obj);
@@ -779,8 +1164,6 @@ class Bitcoin extends Service {
 
   async _registerBlock (obj) {
     let result = null;
-    let state = new State(obj);
-    let transform = [state.id, state.render()];
     let prior = null;
 
     // TODO: ensure all appropriate fields, valid block
@@ -933,7 +1316,7 @@ class Bitcoin extends Service {
       raw: msg.toRaw().toString('hex')
     };
 
-    let block = await this.blocks.create(template);
+    await this.blocks.create(template);
   }
 
   async _handleConnectMessage (entry, block) {
@@ -1002,16 +1385,31 @@ class Bitcoin extends Service {
     return 1;
   }
 
+  _keyNetworkNameForWif () {
+    const n = this._normalizeChainName(this.settings.network || 'mainnet');
+    // Playnet runs against regtest-style bitcoind (WIF/bech32 prefixes match regtest, not mainnet).
+    if (n === 'playnet') return 'regtest';
+    if (n === 'signet' || n === 'testnet4') return 'testnet';
+    if (n === 'mainnet' || n === 'testnet' || n === 'regtest') return n;
+    return 'mainnet';
+  }
+
   async _dumpKeyPair (address) {
     const wif = await this._makeRPCRequest('dumpprivkey', [address]);
-    const pair = ECPair.fromWIF(wif, this.networks[this.settings.network]);
-    return pair;
+    const k = Key.fromWIF(wif, { network: this._keyNetworkNameForWif() });
+    const priv = k.private;
+    const pubHex = k.public.encodeCompressed('hex');
+    return {
+      privateKey: Buffer.isBuffer(priv) ? priv : Buffer.from(priv, 'hex'),
+      publicKey: Buffer.from(pubHex, 'hex')
+    };
   }
 
   async _dumpPrivateKey (address) {
     const wif = await this._makeRPCRequest('dumpprivkey', [address]);
-    const pair = ECPair.fromWIF(wif, this.networks[this.settings.network]);
-    return pair.privateKey;
+    const k = Key.fromWIF(wif, { network: this._keyNetworkNameForWif() });
+    const priv = k.private;
+    return Buffer.isBuffer(priv) ? priv : Buffer.from(priv, 'hex');
   }
 
   async _loadPrivateKey (key) {
@@ -1156,16 +1554,14 @@ class Bitcoin extends Service {
 
   async _connectToSeedNodes () {
     for (let i = 0; i &lt; this.settings.seeds.length; i++) {
-      let node = this.settings.seeds[i];
-      this.connect(node);
+      this.connect(this.settings.seeds[i]);
     }
   }
 
   async _connectToEdgeNodes () {
     let bitcoin = this;
 
-    for (let id in this.settings.nodes) {
-      let node = this.settings.nodes[id];
+    for (const _id in this.settings.nodes) {
       let peer = bcoin.Peer.fromOptions({
         network: this.settings.network,
         agent: this.UAString,
@@ -1254,7 +1650,7 @@ class Bitcoin extends Service {
         default:
           if (this.settings.verbosity >= 5) this.emit('debug', `[AUDIT] Unknown ZMQ topic: ${topic}`);
       }
-    } catch (exception) {
+    } catch {
       //', `Could not process ZMQ message: ${exception}`);
     }
   }
@@ -1598,7 +1994,6 @@ class Bitcoin extends Service {
       if (!this.rpc) return reject(new Error('RPC manager does not exist'));
 
       // Reuse existing RPC config but change the URL to target the specific wallet
-      const protocol = this.settings.secure ? 'https' : 'http';
       const host = this.settings.host;
       const port = this.settings.rpcport;
       const auth = `${this.settings.username}:${this.settings.password}`;
@@ -1647,7 +2042,7 @@ class Bitcoin extends Service {
 
   async _checkAllTargetBalances () {
     for (let i = 0; i &lt; this.settings.targets.length; i++) {
-      const balance = await this._getBalanceForAddress(this.settings.targets[i]);
+      await this._getBalanceForAddress(this.settings.targets[i]);
     }
   }
 
@@ -1671,6 +2066,83 @@ class Bitcoin extends Service {
     }
   }
 
+  /**
+   * Rewind the attached Bitcoin Core node to a known-good tip by repeatedly calling `invalidateblock`
+   * on the current best block until `getbestblockhash` matches `snapshotBlockHash`.
+   * Allowed on regtest, playnet, signet, testnet, testnet4 unless settings.flushChainAllowUnsafeNetworks.
+   * @param {string} snapshotBlockHash - 64-char hex block hash to keep as the active tip.
+   * @returns {Promise&lt;{ ok: boolean, steps: number, snapshotBlockHash: string }>}
+   */
+  async flushChainToSnapshot (snapshotBlockHash) {
+    const run = () => this._flushChainToSnapshotBody(snapshotBlockHash);
+    const p = (this._flushChainQueue || Promise.resolve())
+      .catch(() => {})
+      .then(run);
+    this._flushChainQueue = p.catch(() => {});
+    return p;
+  }
+
+  /**
+   * @private
+   */
+  async _flushChainToSnapshotBody (snapshotBlockHash) {
+    const hex = String(snapshotBlockHash || '').trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(hex)) {
+      throw new Error('flushChainToSnapshot: snapshotBlockHash must be 64 hex characters');
+    }
+    const net = this._normalizeChainName(this.settings.network || 'mainnet');
+    const allowed =
+      net === 'regtest' ||
+      net === 'playnet' ||
+      net === 'signet' ||
+      net === 'testnet' ||
+      net === 'testnet4';
+    if (!allowed &amp;&amp; !this.settings.flushChainAllowUnsafeNetworks) {
+      throw new Error(`flushChainToSnapshot: not allowed for network "${net}" (set flushChainAllowUnsafeNetworks to override)`);
+    }
+    const maxSteps = (typeof this.settings.flushChainMaxSteps === 'number' &amp;&amp; this.settings.flushChainMaxSteps > 0)
+      ? this.settings.flushChainMaxSteps
+      : 100000;
+
+    try {
+      await this._makeRPCRequest('getblockheader', [hex]);
+    } catch (err) {
+      const msg = err &amp;&amp; err.message ? String(err.message) : String(err);
+      throw new Error(`flushChainToSnapshot: snapshot block not known to node (${msg})`);
+    }
+
+    let cursor = String(await this._makeRPCRequest('getbestblockhash', [])).trim().toLowerCase();
+    let reachable = false;
+    for (let i = 0; i &lt; maxSteps; i++) {
+      if (cursor === hex) {
+        reachable = true;
+        break;
+      }
+      const header = await this._makeRPCRequest('getblockheader', [cursor]);
+      const prev = header &amp;&amp; header.previousblockhash
+        ? String(header.previousblockhash).trim().toLowerCase()
+        : null;
+      if (!prev) break;
+      cursor = prev;
+    }
+    if (!reachable) {
+      throw new Error('flushChainToSnapshot: snapshot is not an ancestor of the active tip');
+    }
+
+    let steps = 0;
+    while (steps &lt; maxSteps) {
+      const best = String(await this._makeRPCRequest('getbestblockhash', [])).trim().toLowerCase();
+      if (best === hex) {
+        const out = { ok: true, steps, snapshotBlockHash: hex };
+        this.emit('message', { type: 'BitcoinFlushChain', data: out });
+        return out;
+      }
+      await this._makeRPCRequest('invalidateblock', [best]);
+      steps++;
+    }
+    throw new Error(`flushChainToSnapshot: exceeded flushChainMaxSteps=${maxSteps} before reaching snapshot`);
+  }
+
   async _requestBlockHeader (hash) {
     return this._makeRPCRequest('getblockheader', [hash]);
   }
@@ -1683,7 +2155,7 @@ class Bitcoin extends Service {
     return this._makeRPCRequest('getblock', [hash]);
   }
 
-  async _getMempool (hash) {
+  async _getMempool (_hash) {
     return this._makeRPCRequest('getrawmempool');
   }
 
@@ -1872,19 +2344,19 @@ class Bitcoin extends Service {
       throw new Error(`Invalid network: ${this.settings.network}`);
     }
 
-    // Calculate total input amount
-    let inputAmount = 0;
+    // Calculate total input amount (reserved for fee / change logic)
+    let _inputAmount = 0;
     for (const input of options.inputs) {
       const utxo = await this._makeRPCRequest('gettxout', [input.txid, input.vout]);
       if (utxo) {
-        inputAmount += utxo.value * 100000000; // Convert BTC to satoshis
+        _inputAmount += utxo.value * SATS_PER_BTC; // Convert BTC to satoshis
       }
     }
 
-    // Calculate total output amount
-    let outputAmount = 0;
+    // Calculate total output amount (reserved for fee / change logic)
+    let _outputAmount = 0;
     for (const output of options.outputs) {
-      outputAmount += output.value;
+      _outputAmount += output.value;
     }
 
     // TODO: add change output
@@ -1897,7 +2369,7 @@ class Bitcoin extends Service {
       const data = {
         hash: input.txid,
         index: input.vout,
-        sequence: 0xffffffff
+        sequence: -1 >>> 0
       };
 
       psbt.addInput(data);
@@ -2136,7 +2608,17 @@ class Bitcoin extends Service {
         ];
 
         // Wait for all checks to complete
-        const results = await Promise.all(checks);
+        const [chainInfo] = await Promise.all(checks);
+
+        const detectedNetwork = this._normalizeChainName(chainInfo &amp;&amp; chainInfo.chain);
+        const targetNetwork = this._normalizeChainName(this.settings.network || 'mainnet');
+        if (detectedNetwork &amp;&amp; targetNetwork &amp;&amp; detectedNetwork !== targetNetwork) {
+          this.emit(
+            'warning',
+            `[FABRIC:BITCOIN] RPC endpoint chain mismatch: detected=${detectedNetwork} expected=${targetNetwork}`
+          );
+          return false;
+        }
 
         if (this.settings.debug) {
           this.emit('debug', '[FABRIC:BITCOIN] Successfully connected to bitcoind');
@@ -2167,8 +2649,9 @@ class Bitcoin extends Service {
 
   _defaultBitcoinP2pPort (network) {
     const n = String(network || '').toLowerCase();
-    if (n === 'regtest') return 18444;
-    if (n === 'testnet' || n === 'testnet4') return 18333;
+    if (n === 'regtest' || n === 'playnet') return 18444;
+    if (n === 'testnet') return 18333;
+    if (n === 'testnet4') return 48333;
     if (n === 'signet') return 38333;
     return 8333;
   }
@@ -2271,7 +2754,7 @@ class Bitcoin extends Service {
     switch (this.settings.network) {
       default:
       case 'mainnet':
-        datadir = (this.settings.constraints.storage.size) ? './stores/bitcoin-pruned' : './stores/bitcoin';
+        datadir = (this.settings.constraints.storage.size) ? './stores/bitcoin-mainnet-pruned' : './stores/bitcoin-mainnet';
         break;
       case 'testnet':
         datadir = './stores/bitcoin-testnet';
@@ -2293,6 +2776,9 @@ class Bitcoin extends Service {
         break;
       case 'playnet':
         datadir = './stores/bitcoin-playnet';
+        params.push('-regtest');
+        params.push('-fallbackfee=1.0');
+        params.push('-maxtxfee=1.1');
         break;
     }
 
@@ -2309,7 +2795,8 @@ class Bitcoin extends Service {
     this.settings.datadir = datadir; // for downstream users accessing the settings property, e.g. for lightning nodes
 
     // If storage constraints are set, prune the blockchain
-    if (this.settings.network !== 'regtest' &amp;&amp; this.settings.constraints.storage.size) {
+    const chain = this._normalizeChainName(this.settings.network || 'mainnet');
+    if (chain !== 'regtest' &amp;&amp; chain !== 'playnet' &amp;&amp; this.settings.constraints.storage.size) {
       params.push(`-prune=${this.settings.constraints.storage.size}`);
     } else {
       params.push(`-txindex`);
@@ -2426,7 +2913,7 @@ class Bitcoin extends Service {
           // await cleanup();
         }
       };
-      this._errorHandlers.unhandledRejection = async (reason, promise) => {
+      this._errorHandlers.unhandledRejection = async (reason, _promise) => {
         // Only handle rejections from this service's operations
         if (reason.source === 'bitcoin' || (this._nodeProcess &amp;&amp; reason.pid === this._nodeProcess.pid)) {
           this.emit('error', '[FABRIC:BITCOIN] Unhandled rejection from Bitcoin service');
@@ -2443,32 +2930,22 @@ class Bitcoin extends Service {
 
       // When using cookie auth, wait for bitcoind to create the cookie file then read credentials
       if (useCookieAuth) {
-        const chainSubdir = (() => {
-          const n = (this.settings.network || '').toLowerCase();
-          if (n === 'regtest') return 'regtest';
-          if (n === 'testnet') return 'testnet3';
-          if (n === 'signet') return 'signet';
-          return '';
-        })();
-        const cookiePath = path.resolve(process.cwd(), datadir, chainSubdir, '.cookie');
+        const datadirRoot = Bitcoin.resolveBitcoinDatadirForLocalAccess(datadir);
+        if (!datadirRoot) {
+          throw new Error(`[FABRIC:BITCOIN] Invalid or unsafe datadir for cookie auth: ${datadir}`);
+        }
+        const cookiePath = Bitcoin.cookiePathForBitcoind(datadirRoot, this.settings.network);
         const cookieTimeoutMs = 15000;
         const cookiePollMs = 100;
         const cookieDeadline = Date.now() + cookieTimeoutMs;
         while (Date.now() &lt; cookieDeadline) {
-          try {
-            if (fs.existsSync(cookiePath)) {
-              const raw = fs.readFileSync(cookiePath, 'utf8').trim();
-              const colon = raw.indexOf(':');
-              if (colon !== -1) {
-                this.settings.username = raw.slice(0, colon);
-                this.settings.password = raw.slice(colon + 1);
-                this.settings.authority = `http://127.0.0.1:${this.settings.rpcport}`;
-                if (this.settings.debug) this.emit('debug', '[FABRIC:BITCOIN] Read RPC credentials from cookie file');
-                break;
-              }
-            }
-          } catch (e) {
-            // ignore read errors, keep polling
+          const creds = await Bitcoin.tryReadRpcCookieFileCredentials(cookiePath);
+          if (creds) {
+            this.settings.username = creds.username;
+            this.settings.password = creds.password;
+            this.settings.authority = `http://127.0.0.1:${this.settings.rpcport}`;
+            if (this.settings.debug) this.emit('debug', '[FABRIC:BITCOIN] Read RPC credentials from cookie file');
+            break;
           }
           await new Promise(r => setTimeout(r, cookiePollMs));
         }
@@ -2499,26 +2976,17 @@ class Bitcoin extends Service {
       const rpcport = this.settings.rpcport || 18443;
       this.settings.authority = `http://${host}:${rpcport}`;
       if (!this.settings.username || !this.settings.password) {
-        const chainSubdir = (() => {
-          const n = (this.settings.network || '').toLowerCase();
-          if (n === 'regtest') return 'regtest';
-          if (n === 'testnet') return 'testnet3';
-          if (n === 'signet') return 'signet';
-          return '';
-        })();
-        const cookiePath = path.resolve(process.cwd(), datadir, chainSubdir, '.cookie');
-        try {
-          if (fs.existsSync(cookiePath)) {
-            const raw = fs.readFileSync(cookiePath, 'utf8').trim();
-            const colon = raw.indexOf(':');
-            if (colon !== -1) {
-              this.settings.username = raw.slice(0, colon);
-              this.settings.password = raw.slice(colon + 1);
-              if (this.settings.debug) this.emit('debug', '[FABRIC:BITCOIN] Read RPC credentials from cookie file (unmanaged)');
-            }
+        const datadirRootUnmanaged = Bitcoin.resolveBitcoinDatadirForLocalAccess(datadir);
+        const cookiePathUnmanaged = datadirRootUnmanaged
+          ? Bitcoin.cookiePathForBitcoind(datadirRootUnmanaged, this.settings.network)
+          : null;
+        if (cookiePathUnmanaged) {
+          const credsUnmanaged = await Bitcoin.tryReadRpcCookieFileCredentials(cookiePathUnmanaged);
+          if (credsUnmanaged) {
+            this.settings.username = credsUnmanaged.username;
+            this.settings.password = credsUnmanaged.password;
+            if (this.settings.debug) this.emit('debug', '[FABRIC:BITCOIN] Read RPC credentials from cookie file (unmanaged)');
           }
-        } catch (e) {
-          // Cookie not available
         }
         if (!this.settings.username || !this.settings.password) {
           this.settings.username = `fabric_${crypto.randomBytes(8).toString('hex')}`;
@@ -2537,7 +3005,12 @@ class Bitcoin extends Service {
     this.emit('debug', `[SERVICES:BITCOIN] Starting for network "${this.settings.network}"...`);
     this.status = 'STARTING';
 
-    const existingBitcoindFound = await this._detectExistingBitcoind();
+    const shouldProbeExternalNode = !(
+      this.settings.enforceIsolatedRegtest &amp;&amp;
+      this.settings.managed &amp;&amp;
+      this.settings.network === 'regtest'
+    );
+    const existingBitcoindFound = shouldProbeExternalNode ? await this._detectExistingBitcoind() : false;
     if (existingBitcoindFound &amp;&amp; this.settings.managed) {
       this.emit('log', '[FABRIC:BITCOIN] Existing bitcoind detected; not starting another managed instance');
       this.settings.managed = false;
@@ -2556,7 +3029,7 @@ class Bitcoin extends Service {
       this.peer.on('error', this._handlePeerError.bind(this));
       this.peer.on('packet', this._handlePeerPacket.bind(this));
       this.peer.on('open', () => {
-        let block = this.peer.getBlock([this.network.genesis.hash]);
+        this.peer.getBlock([this.network.genesis.hash]);
       });
     }
 
@@ -2768,14 +3241,17 @@ module.exports = Bitcoin;
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Bond.html">Bond</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Contract.html">Contract</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
-      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
@@ -2793,12 +3269,14 @@ module.exports = Bitcoin;
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
+      <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
@@ -2808,25 +3286,7 @@ module.exports = Bitcoin;
     </ul>
     <h3>Global</h3>
     <ul>
-      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
-      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
-      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
-      <li><a href="global.html#crypto">crypto</a></li>
-      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
-      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
-      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
-      <li><a href="global.html#gossip">gossip</a></li>
-      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
-      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
-      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
-      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
-      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
-      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
-      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
-      <li><a href="global.html#stableStringify">stableStringify</a></li>
-      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
-      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
-      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
+      <li><a href="global.html#appendLightningStderrChunk">appendLightningStderrChunk</a></li>
     </ul>
   </nav>
   <br class="clear" />

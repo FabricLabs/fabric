@@ -37,6 +37,7 @@
 const {
   FIXTURE_SEED
 } = require('../constants');
+const { tryParsePersistedJson } = require('../functions/wireJson');
 
 // Dependencies
 const fs = require('fs');
@@ -47,7 +48,6 @@ const merge = require('lodash.merge');
 // Fabric Types
 const Actor = require('./actor');
 const Entity = require('./entity');
-const EncryptedPromise = require('./promise');
 const Wallet = require('./wallet');
 
 // Filters
@@ -116,12 +116,15 @@ class Environment extends Entity {
   }
 
   get seed () {
-    return [
-      FIXTURE_SEED,
+    const explicit = [
       this.settings.seed,
       this['FABRIC_SEED'],
       this.readVariable('FABRIC_SEED')
-    ].find(any);
+    ];
+    if (process.env.NODE_ENV === 'test') {
+      explicit.unshift(FIXTURE_SEED);
+    }
+    return explicit.find(any);
   }
 
   get xprv () {
@@ -130,7 +133,7 @@ class Environment extends Entity {
       this.settings.xprv,
       this['FABRIC_XPRV'],
       this.readVariable('FABRIC_XPRV'),
-      this.wallet.xprv
+      this.wallet &amp;&amp; this.wallet.xprv
     ].find(any);
   }
 
@@ -140,7 +143,7 @@ class Environment extends Entity {
       this.settings.xpub,
       this['FABRIC_XPUB'],
       this.readVariable('FABRIC_XPUB'),
-      this.wallet.xpub
+      this.wallet &amp;&amp; this.wallet.xpub
     ].find(any);
   }
 
@@ -304,14 +307,36 @@ class Environment extends Entity {
     return value;
   }
 
+  /**
+   * True when `host` is `name:port` with exactly one colon and a numeric port (IPv4 or hostname).
+   * Bare IPv6 literals (`::1`, `2001:db8::1`) have multiple colons — do not treat as host:port.
+   * @param {string} host
+   * @returns {boolean}
+   */
+  _hasSingleNumericPortSuffix (host) {
+    const s = String(host).trim();
+    const first = s.indexOf(':');
+    const last = s.lastIndexOf(':');
+    if (first === -1 || first !== last) return false;
+    const tail = s.slice(last + 1);
+    return /^\d+$/.test(tail);
+  }
+
   _normalizeRPCHost (value) {
     if (!value) return '127.0.0.1';
     const host = String(value).trim();
     if (!host) return '127.0.0.1';
 
-    // bitcoin.conf can express rpcbind/rpcconnect as host:port.
-    if (host.includes(':') &amp;&amp; !host.startsWith('[') &amp;&amp; host.split(':').length === 2) {
-      return host.split(':')[0];
+    // Bracketed IPv6 (e.g. rpcconnect=[::1]:8332): host only, port via _extractRPCPort.
+    if (host.startsWith('[')) {
+      const close = host.indexOf(']');
+      if (close !== -1) return host.slice(0, close + 1);
+      return host;
+    }
+
+    // bitcoin.conf: `host:port` only when a single colon separates a numeric port (not bare IPv6).
+    if (this._hasSingleNumericPortSuffix(host)) {
+      return host.slice(0, host.lastIndexOf(':'));
     }
 
     return host;
@@ -321,9 +346,15 @@ class Environment extends Entity {
     if (!value) return null;
     const endpoint = String(value).trim();
     if (!endpoint.includes(':')) return null;
-    const parts = endpoint.split(':');
-    const maybePort = Number(parts[parts.length - 1]);
-    return Number.isFinite(maybePort) ? maybePort : null;
+    if (endpoint.startsWith('[')) {
+      const close = endpoint.indexOf(']');
+      if (close === -1) return null;
+      const tail = endpoint.slice(close + 1);
+      const m = /^:(\d+)$/.exec(tail);
+      return m ? Number(m[1]) : null;
+    }
+    if (!this._hasSingleNumericPortSuffix(endpoint)) return null;
+    return Number(endpoint.slice(endpoint.lastIndexOf(':') + 1));
   }
 
   _defaultRPCPortForNetwork (network = 'mainnet') {
@@ -369,7 +400,7 @@ class Environment extends Entity {
       const [username, password] = content.split(':');
       if (!username || !password) return null;
       return { username, password };
-    } catch (error) {
+    } catch {
       return null;
     }
   }
@@ -547,7 +578,7 @@ class Environment extends Entity {
     try {
       fs.mkdirSync(this.settings.store);
     } catch (exception) {
-      console.error('Could not make store:', exception);
+      if (this.emit) this.emit('error', `Could not make store: ${exception.message || exception}`);
       return false;
     }
 
@@ -560,7 +591,7 @@ class Environment extends Entity {
 
     try {
       fs.utimesSync(this.settings.path, time, time);
-    } catch (err) {
+    } catch {
       fs.closeSync(fs.openSync(this.settings.path, 'w'));
     }
 
@@ -605,7 +636,10 @@ class Environment extends Entity {
       const data = this.readWallet();
 
       try {
-        const input = JSON.parse(data);
+        const text = typeof data === 'string' ? data : String(data ?? '');
+        const pr = tryParsePersistedJson(text);
+        if (!pr.ok) throw pr.error;
+        const input = pr.value;
 
         if (!input.object || !input.object.xprv) {
           throw new Error(`Corrupt or out-of-date wallet: ${this.settings.path}`);
@@ -619,7 +653,7 @@ class Environment extends Entity {
           }
         });
       } catch (exception) {
-        console.error('[FABRIC:KEYGEN]', 'Could not load wallet data:', exception);
+        if (this.emit) this.emit('error', `[FABRIC:KEYGEN] Could not load wallet data: ${exception.message || exception}`);
       }
     } else {
       this.wallet = false;
@@ -632,8 +666,8 @@ class Environment extends Entity {
     try {
       fs.unlinkSync(this.WALLET_FILE);
       return true;
-    } catch (exception) {
-      console.error('[FABRIC:ENVIRONMENT]', 'Wallet destroyed.');
+    } catch {
+      if (this.emit) this.emit('warning', '[FABRIC:ENVIRONMENT] Wallet already destroyed or unavailable.');
       return false;
     }
   }
@@ -696,7 +730,7 @@ class Environment extends Entity {
       const content = JSON.stringify(encrypted, null, '  ') + '\n';
       fs.writeFileSync(this.WALLET_FILE, content);
     } catch (exception) {
-      console.error('[FABRIC:ENV]', 'Could not write wallet file:', exception);
+      if (this.emit) this.emit('error', `[FABRIC:ENV] Could not write wallet file: ${exception.message || exception}`);
       process.exit(1);
     }
 
@@ -764,14 +798,17 @@ module.exports = Environment;
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Bond.html">Bond</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Contract.html">Contract</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
-      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
@@ -789,12 +826,14 @@ module.exports = Environment;
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
+      <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
@@ -804,25 +843,7 @@ module.exports = Environment;
     </ul>
     <h3>Global</h3>
     <ul>
-      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
-      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
-      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
-      <li><a href="global.html#crypto">crypto</a></li>
-      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
-      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
-      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
-      <li><a href="global.html#gossip">gossip</a></li>
-      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
-      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
-      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
-      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
-      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
-      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
-      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
-      <li><a href="global.html#stableStringify">stableStringify</a></li>
-      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
-      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
-      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
+      <li><a href="global.html#appendLightningStderrChunk">appendLightningStderrChunk</a></li>
     </ul>
   </nav>
   <br class="clear" />

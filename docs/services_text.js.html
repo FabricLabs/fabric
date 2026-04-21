@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>Source: services/text.js &middot; Docs</title>
+  <script src="scripts/prettify/prettify.js"> </script>
+  <script src="scripts/prettify/lang-css.js"> </script>
+  <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+  <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+  <script>
+    window.dataLayer = window.dataLayer || [];
+
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag('js', new Date());
+    gtag('config', 'G-09Y57FL980');
+  </script>
+</head>
+
+<body>
+  <div id="main">
+    <h1 class="page-title">Source: services/text.js</h1>
+
+
+
+
+    <section>
+      <article>
+        <pre class="prettyprint source linenums"><code>'use strict';
+
+const Service = require('../types/service');
+const truncateMiddle = require('../functions/truncateMiddle');
+const oxfordJoin = require('../functions/oxfordJoin');
+
+/**
+ * Text-oriented {@link Service} stub (legacy name was &lt;code>TXT&lt;/code>).
+ * Static helpers mirror small utilities used in Sensemaker (tokenize, middle truncation,
+ * relative time strings) and core helpers ({@link module:functions/oxfordJoin}).
+ * @class Text
+ * @extends Service
+ */
+class Text extends Service {
+  constructor (config) {
+    super(config);
+    this.config = Object.assign({}, config);
+  }
+
+  /**
+   * Split on runs of whitespace (Sensemaker-style tokenization).
+   * @param {string} string
+   * @returns {string[]}
+   */
+  static tokenize (string) {
+    return String(string).split(/\s/g);
+  }
+
+  /**
+   * Shorten a string in the middle if longer than &lt;code>strLen&lt;/code>.
+   * @param {string} fullStr
+   * @param {number} strLen
+   * @param {string} [separator]
+   * @returns {string}
+   */
+  static truncateMiddle (fullStr, strLen, separator) {
+    return truncateMiddle(fullStr, strLen, separator);
+  }
+
+  /**
+   * Human-readable relative time (e.g. &lt;code>3 days ago&lt;/code>), ported from Sensemaker.
+   * @param {Date|string|number} date
+   * @returns {string}
+   */
+  static toRelativeTime (date) {
+    const now = new Date();
+    const then = new Date(date);
+    const diff = now - then;
+    const seconds = Math.floor(diff / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    const weeks = Math.floor(days / 7);
+    const months = Math.floor(weeks / 4);
+    const years = Math.floor(months / 12);
+
+    if (years > 0) return `${years} year${years === 1 ? '' : 's'} ago`;
+    if (months > 0) return `${months} month${months === 1 ? '' : 's'} ago`;
+    if (weeks > 0) return `${weeks} week${weeks === 1 ? '' : 's'} ago`;
+    if (days > 0) return `${days} day${days === 1 ? '' : 's'} ago`;
+    if (hours > 0) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+    if (minutes > 0) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`;
+    if (seconds > 0) return `${seconds} second${seconds === 1 ? '' : 's'} ago`;
+    return 'just now';
+  }
+
+  /**
+   * Join a list with an Oxford comma (delegates to {@link module:functions/oxfordJoin}).
+   * @param {string[]} list
+   * @returns {string}
+   */
+  static oxfordJoin (list) {
+    return oxfordJoin(list);
+  }
+}
+
+module.exports = Text;
+</code></pre>
+      </article>
+    </section>
+
+
+
+  </div>
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="Actor.html">Actor</a></li>
+      <li><a href="Bitcoin.html">Bitcoin</a></li>
+      <li><a href="Bond.html">Bond</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="Channel.html">Channel</a></li>
+      <li><a href="Circuit.html">Circuit</a></li>
+      <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Contract.html">Contract</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
+      <li><a href="Environment.html">Environment</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Federation.html">Federation</a></li>
+      <li><a href="Filesystem.html">Filesystem</a></li>
+      <li><a href="HKDF.html">HKDF</a></li>
+      <li><a href="Hash256.html">Hash256</a></li>
+      <li><a href="Identity.html">Identity</a></li>
+      <li><a href="Interface.html">Interface</a></li>
+      <li><a href="Key.html">Key</a></li>
+      <li><a href="Ledger.html">Ledger</a></li>
+      <li><a href="Lightning.html">Lightning</a></li>
+      <li><a href="Logger.html">Logger</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="Reader.html">Reader</a></li>
+      <li><a href="Redis.html">Redis</a></li>
+      <li><a href="Remote.html">Remote</a></li>
+      <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Session.html">Session</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="global.html#Text">Text</a></li>
+      <li><a href="Token.html">Token</a></li>
+      <li><a href="Tree.html">Tree</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Wallet.html">Wallet</a></li>
+      <li><a href="Worker.html">Worker</a></li>
+      <li><a href="ZMQ.html">ZMQ</a></li>
+    </ul>
+    <h3>Global</h3>
+    <ul>
+      <li><a href="global.html#appendLightningStderrChunk">appendLightningStderrChunk</a></li>
+    </ul>
+  </nav>
+  <br class="clear" />
+  <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>
+  <script type="text/javascript">
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"></script>
+</body>
+
+</html>

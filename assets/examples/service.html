@@ -169,12 +169,16 @@
 <span class="hljs-comment">/** Minimal URI → response cache (replaces legacy Stash type). */</span>
 <span class="hljs-keyword">const</span> stash = <span class="hljs-keyword">new</span> <span class="hljs-title class_">Map</span>();
 
+<span class="hljs-keyword">if</span> (<span class="hljs-keyword">typeof</span> self === <span class="hljs-string">&#x27;undefined&#x27;</span> || <span class="hljs-keyword">typeof</span> self.<span class="hljs-property">addEventListener</span> !== <span class="hljs-string">&#x27;function&#x27;</span>) {
+  <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;[EXAMPLES:SERVICE]&#x27;</span>, <span class="hljs-string">&#x27;This example targets a Service Worker context (run in browser).&#x27;</span>);
+  process.<span class="hljs-title function_">exit</span>(<span class="hljs-number">0</span>);
+}
+
 self.<span class="hljs-title function_">addEventListener</span>(<span class="hljs-string">&#x27;message&#x27;</span>, <span class="hljs-keyword">function</span> (<span class="hljs-params">e</span>) {
   e.<span class="hljs-property">source</span>.<span class="hljs-title function_">postMessage</span>(<span class="hljs-string">&#x27;[GUARDIAN]&#x27;</span>, <span class="hljs-string">&#x27;Hello! Your message was: &#x27;</span> + e.<span class="hljs-property">data</span>);
 });
 
 self.<span class="hljs-title function_">addEventListener</span>(<span class="hljs-string">&#x27;fetch&#x27;</span>, <span class="hljs-keyword">async</span> <span class="hljs-keyword">function</span> (<span class="hljs-params">event</span>) {
-  <span class="hljs-keyword">const</span> self = <span class="hljs-variable language_">this</span>;
   <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;[GUARDIAN]&#x27;</span>, <span class="hljs-string">&#x27;request:&#x27;</span>, event);
 
   <span class="hljs-keyword">const</span> path = event.<span class="hljs-property">request</span>.<span class="hljs-property">url</span>;

@@ -178,7 +178,6 @@ game.<span class="hljs-title function_">use</span>(<span class="hljs-string">&#x
 });
 
 game.<span class="hljs-title function_">use</span>(<span class="hljs-string">&#x27;spawn&#x27;</span>, <span class="hljs-keyword">function</span> (<span class="hljs-params">input</span>) {
-  <span class="hljs-keyword">var</span> self = <span class="hljs-variable language_">this</span>;
   <span class="hljs-keyword">var</span> data = _.<span class="hljs-title function_">clone</span>(template);
 
   data.<span class="hljs-property">id</span> = <span class="hljs-title class_">Math</span>.<span class="hljs-title function_">random</span>();
@@ -264,8 +263,6 @@ game.<span class="hljs-title function_">use</span>(<span class="hljs-string">&#x
 });
 
 game.<span class="hljs-title function_">use</span>(<span class="hljs-string">&#x27;battle&#x27;</span>, <span class="hljs-keyword">function</span> (<span class="hljs-params">input</span>) {
-  <span class="hljs-keyword">var</span> self = <span class="hljs-variable language_">this</span>;
-  
   <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;battling...&#x27;</span>, input.<span class="hljs-property">spawns</span>);
   
   input.<span class="hljs-property">spawns</span>[<span class="hljs-number">0</span>].<span class="hljs-property">stack</span>.<span class="hljs-title function_">push</span>(<span class="hljs-string">&#x27;attack&#x27;</span>);

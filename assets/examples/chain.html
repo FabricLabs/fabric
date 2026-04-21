@@ -185,19 +185,19 @@
 <span class="hljs-keyword">const</span> chain = <span class="hljs-keyword">new</span> <span class="hljs-title class_">Chain</span>();
 
 <span class="hljs-keyword">async</span> <span class="hljs-keyword">function</span> <span class="hljs-title function_">main</span> () {
-  <span class="hljs-keyword">await</span> chain.<span class="hljs-property">storage</span>.<span class="hljs-title function_">open</span>();
+  <span class="hljs-keyword">await</span> chain.<span class="hljs-title function_">start</span>();
 
   chain.<span class="hljs-title function_">on</span>(<span class="hljs-string">&#x27;block&#x27;</span>, <span class="hljs-keyword">function</span> (<span class="hljs-params">block</span>) {
     <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;[CHAIN]&#x27;</span>, <span class="hljs-string">&#x27;new block:&#x27;</span>, block);
     <span class="hljs-variable language_">console</span>.<span class="hljs-title function_">log</span>(<span class="hljs-string">&#x27;[CHAIN]&#x27;</span>, <span class="hljs-string">&#x27;chain:&#x27;</span>, chain);
   });
 
-  chain.<span class="hljs-title function_">append</span>({ <span class="hljs-attr">test</span>: <span class="hljs-string">&#x27;foo&#x27;</span> });
-  chain.<span class="hljs-title function_">append</span>({ <span class="hljs-attr">test</span>: <span class="hljs-string">&#x27;bar&#x27;</span> });
+  <span class="hljs-keyword">await</span> chain.<span class="hljs-title function_">append</span>({ <span class="hljs-attr">test</span>: <span class="hljs-string">&#x27;foo&#x27;</span> });
+  <span class="hljs-keyword">await</span> chain.<span class="hljs-title function_">append</span>({ <span class="hljs-attr">test</span>: <span class="hljs-string">&#x27;bar&#x27;</span> });
 
-  <span class="hljs-keyword">await</span> chain.<span class="hljs-property">storage</span>.<span class="hljs-title function_">close</span>();
+  <span class="hljs-keyword">await</span> chain.<span class="hljs-title function_">stop</span>();
 
-  <span class="hljs-keyword">return</span> <span class="hljs-variable language_">this</span>;
+  <span class="hljs-keyword">return</span> chain;
 }
 
 <span class="hljs-title function_">main</span>().<span class="hljs-title function_">catch</span>(<span class="hljs-function">(<span class="hljs-params">exception</span>) =&gt;</span> {
