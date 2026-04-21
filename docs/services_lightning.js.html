@@ -57,6 +57,48 @@ function redactSensitiveCommandArg (arg) {
   );
 }
 
+function shouldTreatLightningStderrAsError (line) {
+  const text = String(line || '').trim().toLowerCase();
+  if (!text) return false;
+  return (
+    text.includes('error') ||
+    text.includes('fatal') ||
+    text.includes('exception') ||
+    text.includes('traceback')
+  );
+}
+
+/**
+ * Node does not chunk stderr on line boundaries; buffer and emit per logical line.
+ */
+function appendLightningStderrChunk (service, chunk) {
+  if (!service._lightningdStderrBuf) service._lightningdStderrBuf = '';
+  service._lightningdStderrBuf += chunk.toString('utf8');
+  const parts = service._lightningdStderrBuf.split(/\r?\n/);
+  service._lightningdStderrBuf = parts.pop() || '';
+  for (const raw of parts) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (shouldTreatLightningStderrAsError(line)) {
+      service.emit('error', `[FABRIC:LIGHTNING] ${line}`);
+      continue;
+    }
+    if (service.settings.debug) service.emit('debug', `[FABRIC:LIGHTNING] ${line}`);
+  }
+}
+
+function flushLightningStderrBuffer (service) {
+  if (!service._lightningdStderrBuf) return;
+  const line = service._lightningdStderrBuf.trim();
+  service._lightningdStderrBuf = '';
+  if (!line) return;
+  if (shouldTreatLightningStderrAsError(line)) {
+    service.emit('error', `[FABRIC:LIGHTNING] ${line}`);
+    return;
+  }
+  if (service.settings.debug) service.emit('debug', `[FABRIC:LIGHTNING] ${line}`);
+}
+
 /**
  * Manage a Lightning node.
  */
@@ -266,6 +308,88 @@ class Lightning extends Service {
     };
   }
 
+  async callRpc (method, params = [], timeoutMs = 30000) {
+    return this._makeRPCRequest(method, params, timeoutMs);
+  }
+
+  async decodeLightning (boltString) {
+    return this._makeRPCRequest('decode', [boltString]);
+  }
+
+  async decodePay (bolt11) {
+    return this._makeRPCRequest('decodepay', [bolt11]);
+  }
+
+  async createOffer (params) {
+    if (!params || typeof params !== 'object' || Array.isArray(params)) {
+      throw new Error('createOffer requires a params object (e.g. { amount_msat, description })');
+    }
+    return this._makeRPCRequest('offer', [params]);
+  }
+
+  async fetchInvoice (offerOrParams, invoiceParams = null) {
+    if (offerOrParams != null &amp;&amp; typeof offerOrParams === 'object' &amp;&amp; !Array.isArray(offerOrParams) &amp;&amp; typeof offerOrParams.offer === 'string') {
+      return this._makeRPCRequest('fetchinvoice', [offerOrParams]);
+    }
+    if (typeof offerOrParams !== 'string') {
+      throw new Error('fetchInvoice requires offer string or params object with `offer`');
+    }
+    if (invoiceParams != null &amp;&amp; typeof invoiceParams === 'object' &amp;&amp; !Array.isArray(invoiceParams)) {
+      return this._makeRPCRequest('fetchinvoice', [offerOrParams, invoiceParams]);
+    }
+    return this._makeRPCRequest('fetchinvoice', [offerOrParams]);
+  }
+
+  async pay (invoiceOrParams, timeoutMs = 30000) {
+    return this._makeRPCRequest('pay', [invoiceOrParams], timeoutMs);
+  }
+
+  async listOffers (filter = null) {
+    if (filter == null) return this._makeRPCRequest('listoffers', []);
+    if (typeof filter === 'string') return this._makeRPCRequest('listoffers', [filter]);
+    if (typeof filter === 'object' &amp;&amp; !Array.isArray(filter)) {
+      return this._makeRPCRequest('listoffers', [filter]);
+    }
+    throw new Error('listOffers expects offer_id string, filter object, or null');
+  }
+
+  async disableOffer (offerId) {
+    return this._makeRPCRequest('disableoffer', [offerId]);
+  }
+
+  async createInvoiceRequest (params) {
+    if (!params || typeof params !== 'object' || Array.isArray(params)) {
+      throw new Error('createInvoiceRequest requires a params object (e.g. { amount, description })');
+    }
+    return this._makeRPCRequest('invoicerequest', [params]);
+  }
+
+  async listInvoiceRequests (filter = null) {
+    if (filter == null) return this._makeRPCRequest('listinvoicerequests', []);
+    if (typeof filter === 'string') return this._makeRPCRequest('listinvoicerequests', [filter]);
+    if (typeof filter === 'object' &amp;&amp; !Array.isArray(filter)) {
+      return this._makeRPCRequest('listinvoicerequests', [filter]);
+    }
+    throw new Error('listInvoiceRequests expects invreq_id string, filter object, or null');
+  }
+
+  async disableInvoiceRequest (invreqId) {
+    return this._makeRPCRequest('disableinvoicerequest', [invreqId]);
+  }
+
+  async sendInvoice (params) {
+    if (!params || typeof params !== 'object' || Array.isArray(params)) {
+      throw new Error('sendInvoice requires a params object (e.g. { invreq, label })');
+    }
+    return this._makeRPCRequest('sendinvoice', [params]);
+  }
+
+  async getRoute (destinationId, amountMsat, riskfactor = 10, maxHopsOrExtra = null) {
+    const args = [destinationId, amountMsat, riskfactor];
+    if (maxHopsOrExtra != null) args.push(maxHopsOrExtra);
+    return this._makeRPCRequest('getroute', args);
+  }
+
   /**
    * Computes the total liquidity of the Lightning node.
    * @returns {Object} Liquidity in BTC.
@@ -429,11 +553,19 @@ class Lightning extends Service {
         if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] ${data.toString('utf8').trim()}`);
       });
 
+      this._lightningdStderrBuf = '';
       this._child.stderr.on('data', (data) => {
-        this.emit('error', `[FABRIC:LIGHTNING] ${data.toString('utf8').trim()}`);
+        appendLightningStderrChunk(this, data);
+      });
+      this._child.stderr.on('end', () => {
+        flushLightningStderrBuffer(this);
+      });
+      this._child.stderr.on('close', () => {
+        flushLightningStderrBuffer(this);
       });
 
       this._child.on('close', (code) => {
+        flushLightningStderrBuffer(this);
         if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Lightning node exited with code ${code}`);
         this.emit('log', `[FABRIC:LIGHTNING] Lightning node exited with code ${code}`);
       });
@@ -868,16 +1000,42 @@ class Lightning extends Service {
  */
 Lightning.CLN_RPC_METHODS = Object.freeze([
   'connect',
+  'decode',
+  'decodepay',
+  'disableinvoicerequest',
+  'disableoffer',
+  'fetchinvoice',
   'fundchannel',
   'getinfo',
+  'getroute',
   'invoice',
+  'invoicerequest',
   'listchannels',
   'listfunds',
+  'listinvoicerequests',
+  'listoffers',
   'newaddr',
+  'offer',
+  'pay',
+  'sendinvoice',
   'stop'
 ]);
 
+Lightning.DOCS = Object.freeze({
+  boltCompatibility: 'docs/BOLT_COMPATIBILITY.md',
+  fabricLightningOffers: 'docs/FABRIC_LIGHTNING_OFFERS.md',
+  fabricLightningMarkets: 'docs/FABRIC_LIGHTNING_OFFERS.md',
+  fabricPaymentBech32: 'docs/FABRIC_PAYMENT_BECH32.md',
+  lightningCompat: 'docs/LIGHTNING_COMPAT.md'
+});
+
 Lightning.redactSensitiveCommandArg = redactSensitiveCommandArg;
+
+Object.assign(Lightning, {
+  Bolt12: require('../functions/lightningBolt12'),
+  FabricPayment: require('../functions/fabricPaymentBech32'),
+  Bolt12Semantics: require('../functions/bolt12Semantics')
+});
 
 module.exports = Lightning;
 </code></pre>
@@ -936,7 +1094,10 @@ module.exports = Lightning;
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
-    <h3><a href="global.html">Global</a></h3>
+    <h3>Global</h3>
+    <ul>
+      <li><a href="global.html#appendLightningStderrChunk">appendLightningStderrChunk</a></li>
+    </ul>
   </nav>
   <br class="clear" />
   <footer><a href="https://github.com/FabricLabs/fabric">git://</a> &middot; <a href="https://chat.fabric.pub/#/room/#hub:fabric.pub">Community</a></footer>

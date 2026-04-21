@@ -218,6 +218,14 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 <dd></dd>
 </dl>
 
+## Functions
+
+<dl>
+<dt><a href="#appendLightningStderrChunk">appendLightningStderrChunk()</a></dt>
+<dd><p>Node does not chunk stderr on line boundaries; buffer and emit per logical line.</p>
+</dd>
+</dl>
+
 ## Typedefs
 
 <dl>
@@ -12830,6 +12838,12 @@ Join a list with an Oxford comma (delegates to [module:functions/oxfordJoin](mod
 | --- | --- |
 | list | <code>Array.&lt;string&gt;</code> | 
 
+<a name="appendLightningStderrChunk"></a>
+
+## appendLightningStderrChunk()
+Node does not chunk stderr on line boundaries; buffer and emit per logical line.
+
+**Kind**: global function  
 <a name="BitcoinCookieProbeConstraints"></a>
 
 ## BitcoinCookieProbeConstraints : <code>Object</code>
