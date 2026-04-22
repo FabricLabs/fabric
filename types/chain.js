@@ -137,7 +137,7 @@ class Chain extends Actor {
 
     const prior = this._state.transactions[actor.id];
     if (prior) {
-      return prior instanceof Transaction ? prior : new Transaction(prior);
+      return prior;
     }
 
     this._state.transactions[actor.id] = actor;

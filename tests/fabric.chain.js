@@ -99,6 +99,7 @@ describe('@fabric/core/types/chain', function () {
       const tx2 = chain.proposeTransaction(payload);
 
       assert.strictEqual(tx1.id, tx2.id);
+      assert.strictEqual(tx1, tx2, 'duplicate proposal should return the same Transaction instance');
       assert.strictEqual(chain.mempool.filter((id) => id === tx1.id).length, 1);
       await chain.stop();
     });

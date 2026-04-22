@@ -86,10 +86,11 @@ class Environment extends Entity {
     const explicit = [
       this.settings.seed,
       this['FABRIC_SEED'],
-      this.readVariable('FABRIC_SEED')
+      this.readVariable('FABRIC_SEED'),
+      this.local
     ];
     if (process.env.NODE_ENV === 'test') {
-      explicit.unshift(FIXTURE_SEED);
+      explicit.push(FIXTURE_SEED);
     }
     return explicit.find(any);
   }

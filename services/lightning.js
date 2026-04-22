@@ -35,9 +35,6 @@ function shouldTreatLightningStderrAsError (line) {
   );
 }
 
-/**
- * Node does not chunk stderr on line boundaries; buffer and emit per logical line.
- */
 function appendLightningStderrChunk (service, chunk) {
   if (!service._lightningdStderrBuf) service._lightningdStderrBuf = '';
   service._lightningdStderrBuf += chunk.toString('utf8');

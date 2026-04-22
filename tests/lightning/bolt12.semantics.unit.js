@@ -39,9 +39,20 @@ describe('@fabric/core/functions/bolt12Semantics', function () {
     assert.ok(sum.offer_recurrence);
   });
 
-  it('BOLT12_TLV exposes recurrence-related type numbers', function () {
-    assert.strictEqual(bs.BOLT12_TLV.OFFER_RECURRENCE_COMPULSORY, 24);
-    assert.strictEqual(bs.BOLT12_TLV.INVREQ_RECURRENCE_COUNTER, 92);
-    assert.strictEqual(bs.BOLT12_TLV.SIGNATURE_MIN, 240);
+  it('BOLT12_TLV aliases CLN_BOLT12_TLV', function () {
+    assert.strictEqual(bs.BOLT12_TLV, bs.CLN_BOLT12_TLV);
+  });
+
+  it('CLN_BOLT12_TLV exposes recurrence and BOLT #12 invoice_request / invoice TLV ids', function () {
+    assert.strictEqual(bs.CLN_BOLT12_TLV.OFFER_RECURRENCE_COMPULSORY, 24);
+    assert.strictEqual(bs.CLN_BOLT12_TLV.INVREQ_FEATURES, 84);
+    assert.strictEqual(bs.CLN_BOLT12_TLV.INVREQ_PAYER_NOTE, 89);
+    assert.strictEqual(bs.CLN_BOLT12_TLV.INVREQ_PATHS, 90);
+    assert.strictEqual(bs.CLN_BOLT12_TLV.INVREQ_BIP353_NAME, 91);
+    assert.strictEqual(bs.CLN_BOLT12_TLV.INVREQ_RECURRENCE_COUNTER, 92);
+    assert.strictEqual(bs.CLN_BOLT12_TLV.INVOICE_RELATIVE_EXPIRY, 166);
+    assert.strictEqual(bs.CLN_BOLT12_TLV.INVOICE_FALLBACKS, 172);
+    assert.strictEqual(bs.CLN_BOLT12_TLV.INVOICE_FEATURES, 174);
+    assert.strictEqual(bs.CLN_BOLT12_TLV.SIGNATURE_MIN, 240);
   });
 });
