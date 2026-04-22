@@ -278,7 +278,7 @@ describe('@fabric/core/services/lightning (unit)', function () {
       await assert.rejects(() => ln.createOffer(null), /requires a params object/);
     });
 
-    it('fetchInvoice passes offer only, offer + params, or single keyword object', async function () {
+    it('fetchInvoice passes offer only, offer + params, keyword object, or merged keyword objects', async function () {
       const ln = new Lightning();
       let calls = 0;
       ln._makeRPCRequest = async (method, params) => {
@@ -286,12 +286,21 @@ describe('@fabric/core/services/lightning (unit)', function () {
         assert.strictEqual(method, 'fetchinvoice');
         if (calls === 1) assert.deepStrictEqual(params, ['lno1a']);
         else if (calls === 2) assert.deepStrictEqual(params, ['lno1b', { amount_msat: '5000' }]);
-        else assert.deepStrictEqual(params, [{ offer: 'lno1c', amount_msat: '1000', payer_note: 'hi' }]);
+        else if (calls === 3) {
+          assert.deepStrictEqual(params, [{ offer: 'lno1c', amount_msat: '1000', payer_note: 'hi' }]);
+        } else {
+          assert.deepStrictEqual(params, [{
+            offer: 'lno1d',
+            amount_msat: '1000',
+            payer_note: 'merged'
+          }]);
+        }
         return {};
       };
       await ln.fetchInvoice('lno1a');
       await ln.fetchInvoice('lno1b', { amount_msat: '5000' });
       await ln.fetchInvoice({ offer: 'lno1c', amount_msat: '1000', payer_note: 'hi' });
+      await ln.fetchInvoice({ offer: 'lno1d', amount_msat: '1000' }, { payer_note: 'merged' });
     });
 
     it('fetchInvoice rejects invalid first arg', async function () {
@@ -391,18 +400,25 @@ describe('@fabric/core/services/lightning (unit)', function () {
       await ln.disableOffer('offer_id_1');
     });
 
-    it('getRoute passes three or four args', async function () {
+    it('getRoute passes three args, fourth as cltv, or full tail via routeOptions (e.g. maxhops)', async function () {
       const ln = new Lightning();
       let n = 0;
       ln._makeRPCRequest = async (method, params) => {
         n++;
         assert.strictEqual(method, 'getroute');
         if (n === 1) assert.deepStrictEqual(params, ['dest', 1e7, 10]);
-        else assert.deepStrictEqual(params, ['dest', 1e7, 1, 0]);
+        else if (n === 2) assert.deepStrictEqual(params, ['dest', 1e7, 1, 0]);
+        else {
+          assert.deepStrictEqual(
+            params,
+            ['dest', 1e7, 10, null, null, null, null, 5]
+          );
+        }
         return { route: [] };
       };
       await ln.getRoute('dest', 1e7);
       await ln.getRoute('dest', 1e7, 1, 0);
+      await ln.getRoute('dest', 1e7, 10, { maxhops: 5 });
     });
   });
 

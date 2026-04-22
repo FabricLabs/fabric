@@ -293,6 +293,9 @@ class Lightning extends Service {
 
   async fetchInvoice (offerOrParams, invoiceParams = null) {
     if (offerOrParams != null && typeof offerOrParams === 'object' && !Array.isArray(offerOrParams) && typeof offerOrParams.offer === 'string') {
+      if (invoiceParams != null && typeof invoiceParams === 'object' && !Array.isArray(invoiceParams)) {
+        return this._makeRPCRequest('fetchinvoice', [Object.assign({}, offerOrParams, invoiceParams)]);
+      }
       return this._makeRPCRequest('fetchinvoice', [offerOrParams]);
     }
     if (typeof offerOrParams !== 'string') {
@@ -348,9 +351,24 @@ class Lightning extends Service {
     return this._makeRPCRequest('sendinvoice', [params]);
   }
 
-  async getRoute (destinationId, amountMsat, riskfactor = 10, maxHopsOrExtra = null) {
+  async getRoute (destinationId, amountMsat, riskfactor = 10, cltvOrRouteOptions = null) {
+    if (cltvOrRouteOptions != null && typeof cltvOrRouteOptions === 'object' && !Array.isArray(cltvOrRouteOptions)) {
+      const o = cltvOrRouteOptions;
+      return this._makeRPCRequest('getroute', [
+        destinationId,
+        amountMsat,
+        riskfactor,
+        o.cltv != null ? o.cltv : null,
+        o.fromid != null ? o.fromid : null,
+        o.fuzzpercent != null ? o.fuzzpercent : null,
+        o.exclude != null ? o.exclude : null,
+        o.maxhops != null ? o.maxhops : null
+      ]);
+    }
     const args = [destinationId, amountMsat, riskfactor];
-    if (maxHopsOrExtra != null) args.push(maxHopsOrExtra);
+    if (cltvOrRouteOptions != null) {
+      args.push(cltvOrRouteOptions);
+    }
     return this._makeRPCRequest('getroute', args);
   }
 
