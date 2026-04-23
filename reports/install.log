@@ -10,9 +10,14 @@ $ npm i
   CC(target) Release/obj.target/fabric/src/p2p.o
   SOLINK_MODULE(target) Release/fabric.node
 
-added 666 packages, and audited 667 packages in 54s
+added 666 packages, and audited 667 packages in 1m
 
 109 packages are looking for funding
   run `npm fund` for details
 
-found 0 vulnerabilities
+2 moderate severity vulnerabilities
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.
