@@ -34,6 +34,9 @@ const {
   whitelistedDocumentFields,
   purchaseContentHashHex
 } = require('../functions/publishedDocumentEnvelope');
+const {
+  normalizeFabricDocumentOfferEnvelopeForHandlers
+} = require('../functions/fabricDocumentOfferEnvelope');
 
 // Strict JSON
 const {
@@ -131,7 +134,8 @@ class Peer extends Service {
       port: 7777,
       listenPortAttempts: 20,
       reconnectToKnownPeers: true,
-      // When true, answers INVENTORY_REQUEST (offerBtc) using local documents/rates.
+      // When true, answers INVENTORY_REQUEST: `offerBtc` (L1 offers) and `kind: 'documents'`
+      // (Hub / browser catalog) using local `_state.content.documents` (+ optional rates/collections).
       serveLocalDocumentInventory: false,
       // Re-send canonical DocumentPublish + pricing to new inbound peers.
       announceDocumentsOnPeerConnect: false,
@@ -1648,47 +1652,51 @@ class Peer extends Service {
   }
 
   _handleGenericMessage (message, origin = null, socket = null, wireMessage = null) {
-    if (this.settings.debug) this.emit('debug', `Generic message:\n\tFrom: ${JSON.stringify(origin)}\n\tType: ${message.type}\n\tBody:\n\`\`\`\n${JSON.stringify(message.object, null, '  ')}\n\`\`\``);
+    const msg = normalizeFabricDocumentOfferEnvelopeForHandlers(message);
+    if (this.settings.debug) this.emit('debug', `Generic message:\n\tFrom: ${JSON.stringify(origin)}\n\tType: ${msg.type}\n\tBody:\n\`\`\`\n${JSON.stringify(msg.object, null, '  ')}\n\`\`\``);
 
     const signerPubkeyHex = wireMessage
       ? this._verifiedFabricSignerPubkeyHex(wireMessage)
-      : normalizePeerPubkeyHex(message && message.actor && (message.actor.publicKey || message.actor.pubkey));
+      : normalizePeerPubkeyHex(msg && msg.actor && (msg.actor.publicKey || msg.actor.pubkey));
 
     // Lookup the appropriate Actor for the message's origin
     const actor = new Actor(origin);
 
-    switch (message.type) {
+    switch (msg.type) {
       default:
-        this.emit('debug', `Unhandled Generic Message: ${message.type} ${JSON.stringify(message, null, '  ')}`);
+        this.emit('debug', `Unhandled Generic Message: ${msg.type} ${JSON.stringify(msg, null, '  ')}`);
         break;
       case 'INVENTORY_REQUEST':
         // Upstream Inventory request (typically for documents). Emit an 'inventory'
         // event so higher-level services (e.g. hub) can respond appropriately.
-        this.emit('inventory', { message, origin, socket });
+        // JSON `type` may be legacy `INVENTORY_REQUEST` or Fabric alias `FABRIC_DOCUMENT_OFFER` (see `functions/fabricDocumentOfferEnvelope.js`).
+        this.emit('inventory', { message: msg, origin, socket });
         if (this.settings.serveLocalDocumentInventory) {
-          const served = this._respondInventoryFromLocalDocuments(message, origin);
-          const req = message.object || {};
+          const served = this._respondInventoryFromLocalDocuments(msg, origin);
+          const req = msg.object || {};
           if (this.settings.relayInventoryRequest && !served && req.offerBtc === true) {
-            this._relayGenericPayload(origin && origin.name, message, socket, wireMessage);
+            // Relay path matches L1 `offerBtc` requests; Hub-driven `kind:documents` relays use TTL in app code.
+            this._relayGenericPayload(origin && origin.name, msg, socket, wireMessage);
           }
         }
         break;
       case 'INVENTORY_RESPONSE':
         // Document inventory reply (may include per-item L1 HTLC offers).
-        this.emit('inventoryResponse', { message, origin, socket });
+        // JSON `type` may be legacy `INVENTORY_RESPONSE` or Fabric alias `FABRIC_DOCUMENT_OFFER_RESPONSE`.
+        this.emit('inventoryResponse', { message: msg, origin, socket });
         if (this.settings.relayInventoryResponse) {
-          this._relayGenericPayload(origin && origin.name, message, socket, wireMessage);
+          this._relayGenericPayload(origin && origin.name, msg, socket, wireMessage);
         }
         break;
       case 'P2P_SESSION_OFFER':
-        this._handleSessionOfferGenericMessage(message, origin, socket, signerPubkeyHex);
+        this._handleSessionOfferGenericMessage(msg, origin, socket, signerPubkeyHex);
         break;
       case 'P2P_SESSION_OPEN':
-        this._handleSessionOpenGenericMessage(message, origin, signerPubkeyHex);
+        this._handleSessionOpenGenericMessage(msg, origin, signerPubkeyHex);
         break;
       case 'P2P_CHAT_MESSAGE':
-        this.emit('chat', message);
-        const relay = Message.fromVector(['ChatMessage', JSON.stringify(message)]);
+        this.emit('chat', msg);
+        const relay = Message.fromVector(['ChatMessage', JSON.stringify(msg)]);
         relay.signWithKey(this.key);
         // this.emit('debug', `Relayed chat message: ${JSON.stringify(relay.toGenericMessage())}`);
         this.relayFrom(origin.name, relay);
@@ -1956,6 +1964,69 @@ class Peer extends Service {
   }
 
   /**
+   * Items for Hub-style `kind: 'documents'` inventory (Fabric UI / `@fabric/hub` merge expects `object.kind`).
+   * @param {Object} [req] request object subset
+   * @returns {object[]}
+   */
+  _collectDocumentCatalogInventoryItems (_req) {
+    const docs = this._state.content.documents;
+    if (!docs || typeof docs !== 'object') return [];
+    const collections = this._state.content.collections && typeof this._state.content.collections.documents === 'object'
+      ? this._state.content.collections.documents
+      : {};
+    const rates = this._state.content.documentRates || {};
+    /** @type {object[]} */
+    const items = [];
+    for (const docId of Object.keys(docs)) {
+      const body = docs[docId];
+      const parsed = this._buildDocumentParsedForPublish(docId, body);
+      const row = collections[docId];
+      const purchaseFromCollection = row && Number(row.purchasePriceSats) > 0 ? Math.round(Number(row.purchasePriceSats)) : null;
+      const rateSats = Object.prototype.hasOwnProperty.call(rates, docId) ? rates[docId] : 0;
+      const purchasePriceSats = purchaseFromCollection != null ? purchaseFromCollection : (Number(rateSats) > 0 ? Math.round(Number(rateSats)) : undefined);
+      const published = row ? !!row.published : true;
+      items.push({
+        id: parsed.id,
+        sha256: parsed.sha256 || parsed.id,
+        name: parsed.name,
+        mime: parsed.mime || 'application/octet-stream',
+        size: parsed.size,
+        created: parsed.created || new Date().toISOString(),
+        published,
+        ...(purchasePriceSats != null && purchasePriceSats > 0 ? { purchasePriceSats } : {}),
+        ...(row && row.bitcoinHeight != null && Number.isFinite(Number(row.bitcoinHeight))
+          ? { bitcoinHeight: Math.round(Number(row.bitcoinHeight)) }
+          : {}),
+        ...(row && row.bitcoinBlockHash ? { bitcoinBlockHash: String(row.bitcoinBlockHash) } : {}),
+        ...(row && row.bitcoinTxid ? { bitcoinTxid: String(row.bitcoinTxid) } : {})
+      });
+    }
+    return items;
+  }
+
+  /**
+   * Write {@link INVENTORY_RESPONSE} (`P2P_INVENTORY_RESPONSE`) compatible with `@fabric/hub` Bridge merging
+   * (body includes `kind: 'documents'` so the browser can merge `object.items`).
+   * @param {string} originName connection key {@link Peer#connections}
+   * @param {object[]} items
+   * @returns {boolean}
+   */
+  _sendLocalInventoryDocumentsWireResponse (originName, items) {
+    if (!originName || !items || !items.length) return false;
+    const conn = this.connections[originName];
+    if (!conn || !conn._writeFabric) return false;
+    const obj = {
+      kind: 'documents',
+      items,
+      created: Date.now()
+    };
+    const m = Message.fromVector(['P2P_INVENTORY_RESPONSE', JSON.stringify(obj)]);
+    m.signWithKey(this.key);
+    conn._writeFabric(m.toBuffer());
+    return true;
+  }
+
+  /**
    * Reply to `INVENTORY_REQUEST` with `INVENTORY_RESPONSE` built from local documents and rates.
    * @param {{type: string, object: (Object|undefined)}} message Generic body from {@link Peer#_handleGenericMessage}
    * @param {{ name: string }} origin
@@ -1964,31 +2035,31 @@ class Peer extends Service {
   _respondInventoryFromLocalDocuments (message, origin) {
     if (!origin || !origin.name) return false;
     const req = message.object || {};
-    if (req.offerBtc !== true) return false;
     const docs = this._state.content.documents;
     if (!docs || typeof docs !== 'object') return false;
-    const rates = this._state.content.documentRates || {};
-    const maxSats = req.maxSats;
-    const items = [];
-    for (const docId of Object.keys(docs)) {
-      const body = docs[docId];
-      const parsed = this._buildDocumentParsedForPublish(docId, body);
-      const contentHash = purchaseContentHashHex(docId, parsed);
-      const rateSats = Object.prototype.hasOwnProperty.call(rates, docId) ? rates[docId] : 0;
-      if (maxSats != null && Number.isFinite(maxSats) && rateSats > maxSats) continue;
-      items.push({ id: docId, rateSats, contentHash, network: 'bitcoin' });
+
+    if (req.offerBtc === true) {
+      const rates = this._state.content.documentRates || {};
+      const maxSats = req.maxSats;
+      /** @type {object[]} */
+      const items = [];
+      for (const docId of Object.keys(docs)) {
+        const body = docs[docId];
+        const parsed = this._buildDocumentParsedForPublish(docId, body);
+        const contentHash = purchaseContentHashHex(docId, parsed);
+        const rateSats = Object.prototype.hasOwnProperty.call(rates, docId) ? rates[docId] : 0;
+        if (maxSats != null && Number.isFinite(maxSats) && rateSats > maxSats) continue;
+        items.push({ id: docId, rateSats, contentHash, network: 'bitcoin' });
+      }
+      if (!items.length) return false;
+      return this._sendLocalInventoryDocumentsWireResponse(origin.name, items);
     }
+
+    const reqKind = String(req.kind || '').trim().toLowerCase();
+    if (reqKind !== 'documents') return false;
+    const items = this._collectDocumentCatalogInventoryItems({});
     if (!items.length) return false;
-    const conn = this.connections[origin.name];
-    if (!conn || !conn._writeFabric) return false;
-    const payload = {
-      type: 'INVENTORY_RESPONSE',
-      object: { items }
-    };
-    const m = Message.fromVector(['P2P_INVENTORY_RESPONSE', JSON.stringify(payload.object || {})]);
-    m.signWithKey(this.key);
-    conn._writeFabric(m.toBuffer());
-    return true;
+    return this._sendLocalInventoryDocumentsWireResponse(origin.name, items);
   }
 
   /**

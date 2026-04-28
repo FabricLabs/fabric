@@ -767,6 +767,22 @@ describe('@fabric/core/types/peer', function () {
         });
         peer._handleGenericMessage({ type: 'INVENTORY_REQUEST', object: {}, message: {}, origin: {} }, { name: 'o' });
       });
+      it('normalizes FABRIC_DOCUMENT_OFFER envelope to INVENTORY_REQUEST', function (done) {
+        const peer = new Peer({ listen: false, peersDb: null });
+        peer.once('inventory', (ev) => {
+          assert.strictEqual(ev.message.type, 'INVENTORY_REQUEST');
+          done();
+        });
+        peer._handleGenericMessage({ type: 'FABRIC_DOCUMENT_OFFER', object: {}, message: {}, origin: {} }, { name: 'o' });
+      });
+      it('normalizes FABRIC_DOCUMENT_OFFER_RESPONSE envelope to INVENTORY_RESPONSE', function (done) {
+        const peer = new Peer({ listen: false, peersDb: null });
+        peer.once('inventoryResponse', (ev) => {
+          assert.strictEqual(ev.message.type, 'INVENTORY_RESPONSE');
+          done();
+        });
+        peer._handleGenericMessage({ type: 'FABRIC_DOCUMENT_OFFER_RESPONSE', object: { kind: 'documents', items: [] } }, { name: 'o' });
+      });
       it('serveLocalDocumentInventory sends INVENTORY_RESPONSE for offerBtc requests', function () {
         const peer = new Peer({ listen: false, peersDb: null, serveLocalDocumentInventory: true });
         peer._state.content.documents = { doca: 'hello' };
@@ -783,6 +799,7 @@ describe('@fabric/core/types/peer', function () {
         const back = Message.fromBuffer(written);
         const inner = JSON.parse(back.data);
         assert.strictEqual(back.type, 'P2P_INVENTORY_RESPONSE');
+        assert.strictEqual(inner.kind, 'documents');
         assert.strictEqual(inner.items.length, 1);
         assert.strictEqual(inner.items[0].id, 'doca');
         assert.strictEqual(inner.items[0].rateSats, 1000);
@@ -818,6 +835,25 @@ describe('@fabric/core/types/peer', function () {
           object: {}
         }, { name: '127.0.0.1:13' });
         assert.strictEqual(writes, 0);
+      });
+      it('serveLocalDocumentInventory responds to Hub-style kind:documents catalog requests', function () {
+        const peer = new Peer({ listen: false, peersDb: null, serveLocalDocumentInventory: true });
+        peer._state.content.documents = { catdoc: 'hello catalog' };
+        let written = null;
+        peer.connections['127.0.0.1:14'] = {
+          _writeFabric: (b) => { written = b; }
+        };
+        peer._handleGenericMessage({
+          type: 'INVENTORY_REQUEST',
+          object: { kind: 'documents', created: Date.now() }
+        }, { name: '127.0.0.1:14' });
+        assert.ok(written && written.length);
+        const back = Message.fromBuffer(written);
+        const inner = JSON.parse(back.data);
+        assert.strictEqual(inner.kind, 'documents');
+        assert.strictEqual(inner.items.length, 1);
+        assert.strictEqual(inner.items[0].id, 'catdoc');
+        assert.strictEqual(inner.items[0].published, true);
       });
       it('relayInventoryRequest relays offerBtc INVENTORY_REQUEST when no local items', function () {
         const peer = new Peer({ listen: false, peersDb: null, serveLocalDocumentInventory: true, relayInventoryRequest: true });
