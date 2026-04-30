@@ -30,6 +30,71 @@ describe('@fabric/core/types/environment', function () {
       assert.ok(environment);
     });
 
+    it('does not treat the BIP39 fixture as the default seed when NODE_ENV is not test (fresh install)', function () {
+      const prev = {
+        NODE_ENV: process.env.NODE_ENV,
+        FABRIC_SEED: process.env.FABRIC_SEED,
+        FABRIC_XPRV: process.env.FABRIC_XPRV,
+        FABRIC_XPUB: process.env.FABRIC_XPUB
+      };
+      const home = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-env-'));
+      const store = path.join(home, '.fabric');
+      const walletPath = path.join(store, 'wallet.json');
+      try {
+        delete process.env.FABRIC_SEED;
+        delete process.env.FABRIC_XPRV;
+        delete process.env.FABRIC_XPUB;
+        process.env.NODE_ENV = 'production';
+        const environment = new Environment({ home, path: walletPath, store });
+        environment.start();
+        assert.strictEqual(environment.wallet, false, 'in-memory wallet must not be created from the test fixture in production');
+      } finally {
+        for (const k of Object.keys(prev)) {
+          if (prev[k] === undefined) delete process.env[k];
+          else process.env[k] = prev[k];
+        }
+        fs.rmSync(home, { recursive: true, force: true });
+      }
+    });
+
+    it('does not emit fatal error events when wallet file is empty or invalid JSON', function () {
+      const prev = {
+        NODE_ENV: process.env.NODE_ENV,
+        FABRIC_SEED: process.env.FABRIC_SEED,
+        FABRIC_XPRV: process.env.FABRIC_XPRV,
+        FABRIC_XPUB: process.env.FABRIC_XPUB
+      };
+
+      try {
+        delete process.env.FABRIC_SEED;
+        delete process.env.FABRIC_XPRV;
+        delete process.env.FABRIC_XPUB;
+        process.env.NODE_ENV = 'production';
+
+        for (const content of ['', '{']) {
+          const home = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-env-bad-wallet-'));
+          const store = path.join(home, '.fabric');
+          const walletPath = path.join(store, 'wallet.json');
+          fs.mkdirSync(store, { recursive: true });
+          fs.writeFileSync(walletPath, content, 'utf8');
+
+          const environment = new Environment({ home, path: walletPath, store });
+          let emittedError = null;
+          environment.on('error', (err) => { emittedError = err; });
+
+          environment.start();
+          assert.strictEqual(emittedError, null, `unexpected error event for wallet content repr: ${JSON.stringify(content)}`);
+          assert.strictEqual(environment.wallet, false);
+          fs.rmSync(home, { recursive: true, force: true });
+        }
+      } finally {
+        for (const k of Object.keys(prev)) {
+          if (prev[k] === undefined) delete process.env[k];
+          else process.env[k] = prev[k];
+        }
+      }
+    });
+
     it('can instantiate from a seed', async function () {
       const environment = new Environment({ xpub: FIXTURE_SEED });
       await environment.start();

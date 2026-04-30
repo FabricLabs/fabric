@@ -166,6 +166,9 @@
     },
     "merkletreejs": {
       "@noble/hashes": "=1.7.1"
+    },
+    "jayson": {
+      "uuid": "14.0.0"
     }
   },
   "devDependencies": {
