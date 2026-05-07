@@ -50,30 +50,21 @@ class Codec {
 
   encode (data) {
     if (typeof data !== 'string') data = JSON.stringify(data);
-    try {
-      const actor = new Actor(data);
-      const label = new Label(`${this.key.pubkey}/${actor.id}`);
-      const blob = this.key.encrypt(data);
-      this._registerActor(actor);
-      this._registerLabel(label);
-      return blob;
-    } catch (exception) {
-      console.error('err:', exception);
-      return null;
-    }
+    const actor = new Actor(data);
+    const label = new Label(`${this.key.pubkey}/${actor.id}`);
+    const blob = this.key.encrypt(data);
+    this._registerActor(actor);
+    this._registerLabel(label);
+    return blob;
   }
 
   decode (blob) {
-    try {
-      const actor = new Actor(blob);
-      const label = new Label(`${this.key.pubkey}/${actor.id}`);
-      const data = this.key.decrypt(blob);
-      this._registerActor(actor);
-      this._registerLabel(label);
-      return data;
-    } catch (exception) {
-      console.error('err:', exception);
-    }
+    const actor = new Actor(blob);
+    const label = new Label(`${this.key.pubkey}/${actor.id}`);
+    const data = this.key.decrypt(blob);
+    this._registerActor(actor);
+    this._registerLabel(label);
+    return data;
   }
 }
 

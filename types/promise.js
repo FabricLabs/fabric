@@ -102,7 +102,6 @@ class EncryptedPromise {
     const iv = Hash256.digest(password);
     const aes = new SimpleAES(256, iv);
     const data = aes.decrypt(iv, this._state.blob);
-    console.log('decrypted:', data);
     this._state.data = data;
     this._state.state = 'DECRYPTED';
     return data;

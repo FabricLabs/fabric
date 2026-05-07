@@ -272,7 +272,7 @@ class Key extends EventEmitter {
       case 'FROM_MNEMONIC':
         seed = bip39.mnemonicToSeedSync(this.settings.mnemonic, this.settings.passphrase);
         root = this.bip32.fromSeed(seed, bip32NetworkFromKeySettings(this.settings));
-        this.seed = this.settings.seed;
+        this.seed = this.settings.mnemonic;
         this.xprv = root.toBase58();
         this.xpub = root.neutered().toBase58();
         this.master = root;

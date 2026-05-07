@@ -177,24 +177,24 @@ class Store extends Actor {
    */
   async _REGISTER (obj) {
     const actor = new Actor(obj);
-    await this._GET(`/entities/${actor.id}`);
+    let result = null;
 
-    store.log('[STORE]', '_REGISTER', vector.id, vector['@type']);
+    this.log('[STORE]', '_REGISTER', actor.id, actor.type);
 
     try {
-      await this._GET(`/entities/${vector.id}`);
+      await this._GET(`/entities/${actor.id}`);
     } catch (E) {
       this.warn('[STORE]', '_REGISTER', `Could not read from store:`, E);
     }
 
     try {
-      await this._SET(`/types/${vector.id}`, vector['@type']);
+      await this._SET(`/types/${actor.id}`, actor.type);
     } catch (E) {
       this.error('Error creating object:', E, obj);
     }
 
     try {
-      result = await this._SET(`/entities/${vector.id}`, vector['@data']);
+      result = await this._SET(`/entities/${actor.id}`, actor.toObject());
     } catch (E) {
       this.error('Error creating object:', E, obj);
     }

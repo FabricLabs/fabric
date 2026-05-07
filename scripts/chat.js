@@ -51,11 +51,22 @@ const settings = {
 };
 
 // Define Main Program
+function _loadSeedData () {
+  if (!environment.walletExists()) return null;
+  try {
+    const raw = environment.readWallet();
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return parsed['@data'] || parsed;
+  } catch (e) {
+    return null;
+  }
+}
+
 async function main () {
   if (!environment.walletExists()) {
-    seed = await wallet._createSeed();
+    seed = await wallet._createFromFreshSeed();
   } else {
-    seed = environment.readWallet();
+    seed = _loadSeedData();
   }
 
   const COMMANDS = {
@@ -75,8 +86,8 @@ async function main () {
       }
 
       // Load from Seed
-      settings.key.seed = seed['@data'];
-      settings.wallet.seed = seed['@data'];
+      settings.key.seed = seed.phrase;
+      settings.wallet.seed = seed.phrase;
 
       // Fabric CLI
       const chat = new CLI(settings);
@@ -115,9 +126,9 @@ async function main () {
   program.parse(process.argv);
 
   if (!environment.walletExists() || (program.keygen && program.force)) {
-    seed = await wallet._createSeed();
+    seed = await wallet._createFromFreshSeed();
   } else {
-    seed = environment.readWallet();
+    seed = _loadSeedData();
   }
 
   if (program.keygen) {
@@ -147,7 +158,7 @@ async function main () {
     } else {
       console.warn('[FABRIC:KEYGEN]', 'Key file exists, no data will be written.  Use --force to override.');
       console.warn('[FABRIC:KEYGEN]', '[WARNING]', '--force DESTROYS ALL DATA: DOUBLE-CHECK YOUR BACKUPS!');
-      console.warn('[FABRIC:KEYGEN]', 'EXISTING_XPUB_PUBLIC', '=', seed['@data'].xpub.public);
+      console.warn('[FABRIC:KEYGEN]', 'EXISTING_XPUB', '=', seed.xpub);
     }
 
     // prevent further execution
@@ -155,7 +166,7 @@ async function main () {
   } else if (program.receive) {
     const wallet = new Wallet({
       key: {
-        seed: seed['@data'].seed
+        seed: seed.phrase
       }
     });
 
