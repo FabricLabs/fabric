@@ -1694,13 +1694,14 @@ class Peer extends Service {
       case 'P2P_SESSION_OPEN':
         this._handleSessionOpenGenericMessage(msg, origin, signerPubkeyHex);
         break;
-      case 'P2P_CHAT_MESSAGE':
+      case 'P2P_CHAT_MESSAGE': {
         this.emit('chat', msg);
         const relay = Message.fromVector(['ChatMessage', JSON.stringify(msg)]);
         relay.signWithKey(this.key);
         // this.emit('debug', `Relayed chat message: ${JSON.stringify(relay.toGenericMessage())}`);
         this.relayFrom(origin.name, relay);
         break;
+      }
       case 'P2P_STATE_ANNOUNCE':
         const state = new Actor(message.object.state);
         this.emit('debug', `state_announce <Generic>${JSON.stringify(message.object || '')} ${state.toGenericMessage()}`);
@@ -2009,10 +2010,13 @@ class Peer extends Service {
    * (body includes `kind: 'documents'` so the browser can merge `object.items`).
    * @param {string} originName connection key {@link Peer#connections}
    * @param {object[]} items
+   * @param {{ allowEmpty?: boolean }} [opts]
    * @returns {boolean}
    */
-  _sendLocalInventoryDocumentsWireResponse (originName, items) {
-    if (!originName || !items || !items.length) return false;
+  _sendLocalInventoryDocumentsWireResponse (originName, items, opts = {}) {
+    const allowEmpty = !!(opts && opts.allowEmpty);
+    if (!originName || !Array.isArray(items)) return false;
+    if (!allowEmpty && items.length === 0) return false;
     const conn = this.connections[originName];
     if (!conn || !conn._writeFabric) return false;
     const obj = {
@@ -2058,8 +2062,7 @@ class Peer extends Service {
     const reqKind = String(req.kind || '').trim().toLowerCase();
     if (reqKind !== 'documents') return false;
     const items = this._collectDocumentCatalogInventoryItems({});
-    if (!items.length) return false;
-    return this._sendLocalInventoryDocumentsWireResponse(origin.name, items);
+    return this._sendLocalInventoryDocumentsWireResponse(origin.name, items, { allowEmpty: true });
   }
 
   /**

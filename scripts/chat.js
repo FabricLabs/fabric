@@ -85,6 +85,10 @@ async function main () {
         SETTINGS.earn = true;
       }
 
+      if (!seed || typeof seed !== 'object') {
+        throw new Error('[FABRIC:CHAT] Wallet data is corrupt or unreadable; run with --force --keygen to regenerate.');
+      }
+
       // Load from Seed
       settings.key.seed = seed.phrase;
       settings.wallet.seed = seed.phrase;
@@ -158,12 +162,18 @@ async function main () {
     } else {
       console.warn('[FABRIC:KEYGEN]', 'Key file exists, no data will be written.  Use --force to override.');
       console.warn('[FABRIC:KEYGEN]', '[WARNING]', '--force DESTROYS ALL DATA: DOUBLE-CHECK YOUR BACKUPS!');
+      if (!seed || typeof seed !== 'object') {
+        throw new Error('[FABRIC:KEYGEN] Wallet data is corrupt or unreadable; run with --force --keygen to regenerate.');
+      }
       console.warn('[FABRIC:KEYGEN]', 'EXISTING_XPUB', '=', seed.xpub);
     }
 
     // prevent further execution
     process.exit();
   } else if (program.receive) {
+    if (!seed || typeof seed !== 'object' || !seed.phrase) {
+      throw new Error('[FABRIC:CHAT] Wallet data is corrupt or unreadable; run with --force --keygen to regenerate.');
+    }
     const wallet = new Wallet({
       key: {
         seed: seed.phrase

@@ -53,6 +53,9 @@ class Codec {
     const actor = new Actor(data);
     const label = new Label(`${this.key.pubkey}/${actor.id}`);
     const blob = this.key.encrypt(data);
+    if (blob == null) {
+      throw new Error('[FABRIC:CODEC] Encryption failed — private key unavailable or cipher error');
+    }
     this._registerActor(actor);
     this._registerLabel(label);
     return blob;

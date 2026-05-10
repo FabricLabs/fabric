@@ -19,6 +19,7 @@
 #include "validation.h"
 #include "scoring.h"
 #include "datadir.h"
+#include "constants.h"
 
 #ifndef MSG_NOSIGNAL
 #define MSG_NOSIGNAL 0
@@ -162,150 +163,27 @@ static NoiseProtocolId protocol_id = {0};
 
 FabricError perform_handshake(Peer *peer, Connection *conn, int is_initiator)
 {
-  NoiseHandshakeState *handshake = NULL;
-  uint8_t buffer[PEER_BUFFER_SIZE];
-  int handshake_complete = 0;
-  int timeout_count = 0;
-  const int max_timeout = 100; // 100 attempts before timeout
+  if (!peer || !conn || conn->sock < 0)
+    return FABRIC_ERROR_PEER_INIT_FAILED;
 
-  // Initialize handshake state with protocol id selected for current peer app
-  NoiseProtocolId pid; noise_get_protocol_id(peer->app_protocol, &pid);
-  if (noise_handshakestate_new_by_id(&handshake, &pid,
-                                     is_initiator ? NOISE_ROLE_INITIATOR : NOISE_ROLE_RESPONDER) != NOISE_ERROR_NONE)
+  NoiseCipherState *send = NULL;
+  NoiseCipherState *recv = NULL;
+  const uint8_t *remote_pk = (conn->remote_pubkey[0] || conn->remote_pubkey[1]) ? conn->remote_pubkey : NULL;
+
+  if (noise_perform_xx_handshake(conn->sock,
+                                  is_initiator ? 1 : 0,
+                                  peer->app_protocol,
+                                  NULL,
+                                  remote_pk,
+                                  &send,
+                                  &recv) != 0)
   {
-    return FABRIC_ERROR_NOISE_INIT_FAILED;
+    return FABRIC_ERROR_NOISE_HANDSHAKE_FAILED;
   }
 
-  // Set prologue according to peer app_protocol
-  size_t prologue_len = 0;
-  const uint8_t *prologue = noise_get_prologue(conn->is_lightning ? NOISE_PROTOCOL_LIGHTNING : NOISE_PROTOCOL_FABRIC, &prologue_len);
-  if (noise_handshakestate_set_prologue(handshake, prologue, prologue_len) != NOISE_ERROR_NONE)
-  {
-    goto cleanup;
-  }
-
-  // Set keypairs
-  NoiseDHState *dh = noise_handshakestate_get_local_keypair_dh(handshake);
-  if (!dh)
-    goto cleanup;
-
-  if (noise_dhstate_set_keypair_private(dh, peer->private_key, 32) != NOISE_ERROR_NONE)
-  {
-    goto cleanup;
-  }
-
-  if (conn->remote_pubkey[0] || conn->remote_pubkey[1])
-  {
-    dh = noise_handshakestate_get_remote_public_key_dh(handshake);
-    if (!dh)
-      goto cleanup;
-    if (noise_dhstate_set_public_key(dh, conn->remote_pubkey, 32) != NOISE_ERROR_NONE)
-    {
-      goto cleanup;
-    }
-  }
-
-  // Start handshake
-  if (noise_handshakestate_start(handshake) != NOISE_ERROR_NONE)
-  {
-    goto cleanup;
-  }
-
-  // Perform handshake
-  while (!handshake_complete && timeout_count < max_timeout)
-  {
-    int action = noise_handshakestate_get_action(handshake);
-
-    switch (action)
-    {
-    case NOISE_ACTION_WRITE_MESSAGE:
-    {
-      NoiseBuffer mbuf;
-      mbuf.data = buffer;
-      mbuf.size = 0;
-      mbuf.max_size = sizeof(buffer);
-
-      if (noise_handshakestate_write_message(handshake, &mbuf, NULL) != NOISE_ERROR_NONE)
-      {
-        goto cleanup;
-      }
-
-      ssize_t sent = send(conn->sock, mbuf.data, mbuf.size, MSG_NOSIGNAL);
-      if (sent < 0)
-      {
-        if (errno == EAGAIN || errno == EWOULDBLOCK)
-        {
-          usleep(1000); // 1ms delay
-          timeout_count++;
-          continue;
-        }
-        goto cleanup;
-      }
-      if ((size_t)sent != mbuf.size)
-      {
-        goto cleanup;
-      }
-      break;
-    }
-
-    case NOISE_ACTION_READ_MESSAGE:
-    {
-      ssize_t bytes = recv(conn->sock, buffer, sizeof(buffer), 0);
-      if (bytes < 0)
-      {
-        if (errno == EAGAIN || errno == EWOULDBLOCK)
-        {
-          usleep(1000); // 1ms delay
-          timeout_count++;
-          continue;
-        }
-        goto cleanup;
-      }
-      if (bytes == 0)
-      {
-        // Connection closed
-        goto cleanup;
-      }
-
-      NoiseBuffer mbuf;
-      mbuf.data = buffer;
-      mbuf.size = (size_t)bytes;
-      mbuf.max_size = sizeof(buffer);
-
-      if (noise_handshakestate_read_message(handshake, &mbuf, NULL) != NOISE_ERROR_NONE)
-      {
-        goto cleanup;
-      }
-      break;
-    }
-
-    case NOISE_ACTION_SPLIT:
-    {
-      if (noise_handshakestate_split(handshake, &conn->send_cipher, &conn->recv_cipher) != NOISE_ERROR_NONE)
-      {
-        goto cleanup;
-      }
-      handshake_complete = 1;
-      break;
-    }
-
-    default:
-      goto cleanup;
-    }
-  }
-
-  if (timeout_count >= max_timeout)
-  {
-    goto cleanup;
-  }
-
-  noise_handshakestate_free(handshake);
+  conn->send_cipher = send;
+  conn->recv_cipher = recv;
   return FABRIC_SUCCESS;
-
-cleanup:
-  if (handshake)
-    noise_handshakestate_free(handshake);
-  return FABRIC_ERROR_NOISE_HANDSHAKE_FAILED;
 }
 
 Peer *peer_create(void)
@@ -761,7 +639,7 @@ static FabricError peer_connect_lightning(Peer *peer, const char *host, int port
   fcntl(conn->sock, F_SETFL, flags | O_NONBLOCK);
   conn->is_initiator = 1;
   conn->is_lightning = 0;
-  if (noise_perform_xx_handshake(conn->sock, 1, peer->app_protocol, peer->private_key, NULL, &conn->send_cipher, &conn->recv_cipher) != 0)
+  if (noise_perform_xx_handshake(conn->sock, 1, peer->app_protocol, NULL, NULL, &conn->send_cipher, &conn->recv_cipher) != 0)
   {
     close(conn->sock);
     FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
@@ -881,7 +759,7 @@ FabricError peer_connect(Peer *peer, const char *host, int port)
   // Perform Noise XX handshake via noise.c API
   fcntl(conn->sock, F_SETFL, flags | O_NONBLOCK);
   conn->is_initiator = 1; conn->is_lightning = 0;
-  if (noise_perform_xx_handshake(conn->sock, 1, peer->app_protocol, peer->private_key, NULL, &conn->send_cipher, &conn->recv_cipher) != 0)
+  if (noise_perform_xx_handshake(conn->sock, 1, peer->app_protocol, NULL, NULL, &conn->send_cipher, &conn->recv_cipher) != 0)
   { close(conn->sock); FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION); return FABRIC_ERROR_NOISE_HANDSHAKE_FAILED; }
   fcntl(conn->sock, F_SETFL, flags);
 
@@ -1041,7 +919,7 @@ FabricError peer_accept(Peer *peer, int port)
   // Perform handshake as responder
   conn->is_initiator = 0;
 
-  if (noise_perform_xx_handshake(conn->sock, 0, peer->app_protocol, peer->private_key, NULL, &conn->send_cipher, &conn->recv_cipher) != 0)
+  if (noise_perform_xx_handshake(conn->sock, 0, peer->app_protocol, NULL, NULL, &conn->send_cipher, &conn->recv_cipher) != 0)
   {
     fabric_condition_destroy(&conn->conn_condition);
     fabric_mutex_destroy(&conn->conn_mutex);
@@ -1179,20 +1057,31 @@ FabricError peer_send_message(Peer *peer, int connection_id, const Message *mess
     conn->rl_last_refill = now;
   }
 
-  uint8_t buffer[PEER_BUFFER_SIZE];
+  size_t scratch_cap = (size_t)FABRIC_NOISE_MAX_FRAME_BYTES + 512;
+  uint8_t *buffer = malloc(scratch_cap);
+  if (!buffer)
+  {
+    FABRIC_MUTEX_UNLOCK_OR(&conn->conn_mutex, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
+    FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
+    return FABRIC_ERROR_OUT_OF_MEMORY;
+  }
+
   size_t message_size = sizeof(Message) - sizeof(uint8_t *) + message->size;
 
   // Enforce per-connection byte/token limits
   if (message_size > conn->rl_byte_tokens || conn->rl_msg_tokens == 0)
   {
+    free(buffer);
     FABRIC_MUTEX_UNLOCK_OR(&conn->conn_mutex, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
     FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
     return FABRIC_ERROR_RESOURCE_UNAVAILABLE;
   }
 
   // Serialize header via protocol helper (BE magic)
-  size_t header_size = protocol_serialize_header(message, buffer, sizeof(buffer));
-  if (header_size == 0) {
+  size_t header_size = protocol_serialize_header(message, buffer, scratch_cap);
+  if (header_size == 0)
+  {
+    free(buffer);
     FABRIC_MUTEX_UNLOCK_OR(&conn->conn_mutex, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
     FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
     return FABRIC_ERROR_MESSAGE_SERIALIZATION_FAILED;
@@ -1201,6 +1090,7 @@ FabricError peer_send_message(Peer *peer, int connection_id, const Message *mess
   if (message_verify_body_hash(message) != FABRIC_SUCCESS)
   {
     printf("[fabricd] abort send: invalid body hash on conn %d\n", connection_id);
+    free(buffer);
     FABRIC_MUTEX_UNLOCK_OR(&conn->conn_mutex, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
     FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
     return FABRIC_ERROR_VERIFICATION_FAILED;
@@ -1212,6 +1102,7 @@ FabricError peer_send_message(Peer *peer, int connection_id, const Message *mess
     if (vr != FABRIC_SUCCESS)
     {
       printf("[fabricd] abort send: unsigned/invalid signature on conn %d\n", connection_id);
+      free(buffer);
       FABRIC_MUTEX_UNLOCK_OR(&conn->conn_mutex, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
       FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
       return FABRIC_ERROR_INVALID_SIGNATURE;
@@ -1222,49 +1113,48 @@ FabricError peer_send_message(Peer *peer, int connection_id, const Message *mess
     memcpy(buffer + header_size, message->body, message->size);
   }
 
-  // Encrypt
+  // Encrypt (plaintext → ciphertext in-place in buffer)
   NoiseBuffer noise_buffer;
   noise_buffer.data = buffer;
   noise_buffer.size = message_size;
-  noise_buffer.max_size = sizeof(buffer);
+  noise_buffer.max_size = scratch_cap;
 
   if (noise_cipherstate_encrypt(conn->send_cipher, &noise_buffer) != NOISE_ERROR_NONE)
   {
+    free(buffer);
+    FABRIC_MUTEX_UNLOCK_OR(&conn->conn_mutex, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
+    FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
     return FABRIC_ERROR_NOISE_WRITE_FAILED;
   }
 
-  // Add retry logic to send function
-  int retries = 3;
-  while (retries > 0)
-  {
-    ssize_t sent = send(conn->sock, noise_buffer.data, noise_buffer.size, MSG_NOSIGNAL);
-    if (sent > 0 && (size_t)sent == noise_buffer.size)
-    {
-      // Consume tokens on success
-      if (conn->rl_msg_tokens > 0) conn->rl_msg_tokens--;
-      if (conn->rl_byte_tokens >= noise_buffer.size) conn->rl_byte_tokens -= (uint32_t)noise_buffer.size;
-      // Unlock connection and release read lock
-      FABRIC_MUTEX_UNLOCK_OR(&conn->conn_mutex, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
-      FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
-      return FABRIC_SUCCESS;
-    }
+  int sock_flags = fcntl(conn->sock, F_GETFL, 0);
+  if (sock_flags >= 0)
+    (void)fcntl(conn->sock, F_SETFL, sock_flags & ~O_NONBLOCK);
 
-    if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EPIPE)
-    {
-      break;
-    }
-    if (errno == EPIPE) {
-      // Peer closed; no more retries
-      break;
-    }
-    retries--;
-    usleep(1000); // 1ms backoff
+  int fw = fabric_noise_write_frame(conn->sock, noise_buffer.data, noise_buffer.size);
+
+  if (sock_flags >= 0)
+    (void)fcntl(conn->sock, F_SETFL, sock_flags);
+
+  if (fw != 0)
+  {
+    free(buffer);
+    FABRIC_MUTEX_UNLOCK_OR(&conn->conn_mutex, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
+    FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
+    return FABRIC_ERROR_SOCKET_SEND_FAILED;
   }
-  // Unlock connection and release read lock on error
+
+  free(buffer);
+
+  if (conn->rl_msg_tokens > 0)
+    conn->rl_msg_tokens--;
+  size_t wire_approx = noise_buffer.size + 9;
+  if (conn->rl_byte_tokens >= wire_approx)
+    conn->rl_byte_tokens -= (uint32_t)wire_approx;
+
   FABRIC_MUTEX_UNLOCK_OR(&conn->conn_mutex, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
   FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
-
-  return FABRIC_ERROR_SOCKET_SEND_FAILED;
+  return FABRIC_SUCCESS;
 }
 
 FabricError peer_receive_message(Peer *peer, int connection_id, Message *message)
@@ -1301,138 +1191,147 @@ FabricError peer_receive_message(Peer *peer, int connection_id, Message *message
     conn->rl_last_refill = now;
   }
 
-  uint8_t buffer[PEER_BUFFER_SIZE];
-
-  // Set socket to non-blocking for receive with timeout
-  int flags = fcntl(conn->sock, F_GETFL, 0);
-  fcntl(conn->sock, F_SETFL, flags | O_NONBLOCK);
-
-  // Add retry logic to receive function with timeout
-  int retries = 10; // More retries for timeout
-  while (retries > 0)
+  size_t scratch_cap = (size_t)FABRIC_NOISE_MAX_FRAME_BYTES + 512;
+  uint8_t *buffer = malloc(scratch_cap);
+  if (!buffer)
   {
-    ssize_t received = recv(conn->sock, buffer, sizeof(buffer), 0);
-    if (received > 0)
-    {
-      // Setup noise buffer for decryption
-      NoiseBuffer noise_buffer;
-      noise_buffer.data = buffer;
-      noise_buffer.size = (size_t)received;
-      noise_buffer.max_size = sizeof(buffer);
-
-      // Decrypt the message
-      int nd = noise_cipherstate_decrypt(conn->recv_cipher, &noise_buffer);
-      if (nd != NOISE_ERROR_NONE)
-      {
-        printf("[fabricd] decrypt failed (%d) on conn %d\n", nd, connection_id);
-        return FABRIC_ERROR_NOISE_READ_FAILED;
-      }
-
-      // Deserialize the message header
-      if (noise_buffer.size < sizeof(Message) - sizeof(uint8_t *))
-      {
-        FABRIC_MUTEX_UNLOCK_OR(&conn->conn_mutex, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
-        FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
-        printf("[fabricd] protocol violation: short header from conn %d\n", connection_id);
-        peer_flag_and_disconnect(peer, connection_id, PEER_BEHAVIOR_PROTOCOL_VIOLATION, "short header");
-        return FABRIC_ERROR_MESSAGE_INVALID_FORMAT;
-      }
-      // Parse header via protocol helper
-      FabricError ph = protocol_parse_header(buffer, noise_buffer.size, message);
-      if (ph != FABRIC_SUCCESS)
-      {
-        FABRIC_MUTEX_UNLOCK_OR(&conn->conn_mutex, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
-        FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
-        peer_flag_and_disconnect(peer, connection_id, PEER_BEHAVIOR_PROTOCOL_VIOLATION, "bad header");
-        return ph;
-      }
-
-      // Verify message size (defensive bounds)
-      size_t body_offset = sizeof(Message) - sizeof(uint8_t *);
-      if (message->size > MESSAGE_BODY_SIZE_MAX)
-      {
-        FABRIC_MUTEX_UNLOCK_OR(&conn->conn_mutex, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
-        FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
-        printf("[fabricd] protocol violation: oversize body %u from conn %d\n", message->size, connection_id);
-        peer_flag_and_disconnect(peer, connection_id, PEER_BEHAVIOR_PROTOCOL_VIOLATION, "oversize body");
-        return FABRIC_ERROR_MESSAGE_TOO_LARGE;
-      }
-      if (message->size > 0)
-      {
-        if (noise_buffer.size < body_offset + message->size)
-        {
-          FABRIC_MUTEX_UNLOCK_OR(&conn->conn_mutex, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
-          FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
-          printf("[fabricd] protocol violation: truncated body from conn %d\n", connection_id);
-          peer_flag_and_disconnect(peer, connection_id, PEER_BEHAVIOR_PROTOCOL_VIOLATION, "truncated body");
-          return FABRIC_ERROR_MESSAGE_INVALID_FORMAT;
-        }
-        // Rate limit: ensure we have tokens to accept this message
-        if (conn->rl_msg_tokens == 0 || conn->rl_byte_tokens < (body_offset + message->size))
-        {
-          FABRIC_MUTEX_UNLOCK_OR(&conn->conn_mutex, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
-          FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
-          printf("[fabricd] spam detected: rate limit exceeded on conn %d\n", connection_id);
-          peer_flag_and_disconnect(peer, connection_id, PEER_BEHAVIOR_SPAM_DETECTED, "rate limit exceeded");
-          return FABRIC_ERROR_RESOURCE_UNAVAILABLE;
-        }
-        // Allocate and copy body
-        message->body = malloc(message->size);
-        if (!message->body)
-        {
-          return FABRIC_ERROR_OUT_OF_MEMORY;
-        }
-        memcpy(message->body, buffer + body_offset, message->size);
-        // Verify body hash matches; penalize on mismatch
-        if (message_verify_body_hash(message) != FABRIC_SUCCESS)
-        {
-          FABRIC_MUTEX_UNLOCK_OR(&conn->conn_mutex, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
-          FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
-          printf("[fabricd] protocol violation: bad body hash on conn %d\n", connection_id);
-          peer_flag_and_disconnect(peer, connection_id, PEER_BEHAVIOR_PROTOCOL_VIOLATION, "bad body hash");
-          return FABRIC_ERROR_VERIFICATION_FAILED;
-        }
-        // Enforce signature validity; penalize on failure
-        if (peer->secp256k1_ctx && message_verify(message, peer->secp256k1_ctx) != FABRIC_SUCCESS)
-        {
-          FABRIC_MUTEX_UNLOCK_OR(&conn->conn_mutex, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
-          FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
-          printf("[fabricd] protocol violation: unsigned/invalid signature on conn %d\n", connection_id);
-          peer_flag_and_disconnect(peer, connection_id, PEER_BEHAVIOR_PROTOCOL_VIOLATION, "invalid signature");
-          return FABRIC_ERROR_INVALID_SIGNATURE;
-        }
-        // Consume tokens (header+body as received)
-        if (conn->rl_msg_tokens > 0) conn->rl_msg_tokens--;
-        size_t consumed = noise_buffer.size; // encrypted size approx; use received length
-        if (conn->rl_byte_tokens >= consumed) conn->rl_byte_tokens -= (uint32_t)consumed;
-      }
-      else
-      {
-        message->body = NULL;
-      }
-
-      // Unlock connection and release read lock on success
-      FABRIC_MUTEX_UNLOCK_OR(&conn->conn_mutex, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
-      FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
-
-      return FABRIC_SUCCESS;
-    }
-    if (errno != EAGAIN && errno != EWOULDBLOCK)
-    {
-      break;
-    }
-    retries--;
-    usleep(100000); // 100ms backoff for timeout
+    FABRIC_MUTEX_UNLOCK_OR(&conn->conn_mutex, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
+    FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
+    return FABRIC_ERROR_OUT_OF_MEMORY;
   }
 
-  // Restore socket to blocking mode
-  fcntl(conn->sock, F_SETFL, flags);
+  int flags = fcntl(conn->sock, F_GETFL, 0);
+  if (flags >= 0)
+    (void)fcntl(conn->sock, F_SETFL, flags & ~O_NONBLOCK);
 
-  // Unlock connection and release read lock on error
+  size_t enc_len = 0;
+  int frame_rc = fabric_noise_read_frame(conn->sock, buffer, scratch_cap, &enc_len);
+
+  if (flags >= 0)
+    (void)fcntl(conn->sock, F_SETFL, flags);
+
+  if (frame_rc != 0)
+  {
+    free(buffer);
+    FABRIC_MUTEX_UNLOCK_OR(&conn->conn_mutex, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
+    FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
+    return FABRIC_ERROR_SOCKET_RECV_FAILED;
+  }
+
+  NoiseBuffer noise_buffer;
+  noise_buffer.data = buffer;
+  noise_buffer.size = enc_len;
+  noise_buffer.max_size = scratch_cap;
+
+  if (noise_cipherstate_decrypt(conn->recv_cipher, &noise_buffer) != NOISE_ERROR_NONE)
+  {
+    free(buffer);
+    FABRIC_MUTEX_UNLOCK_OR(&conn->conn_mutex, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
+    FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
+    printf("[fabricd] decrypt failed on conn %d\n", connection_id);
+    peer_flag_and_disconnect(peer, connection_id, PEER_BEHAVIOR_PROTOCOL_VIOLATION, "noise decrypt failed");
+    return FABRIC_ERROR_NOISE_READ_FAILED;
+  }
+
+  if (noise_buffer.size < sizeof(Message) - sizeof(uint8_t *))
+  {
+    free(buffer);
+    FABRIC_MUTEX_UNLOCK_OR(&conn->conn_mutex, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
+    FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
+    printf("[fabricd] protocol violation: short header from conn %d\n", connection_id);
+    peer_flag_and_disconnect(peer, connection_id, PEER_BEHAVIOR_PROTOCOL_VIOLATION, "short header");
+    return FABRIC_ERROR_MESSAGE_INVALID_FORMAT;
+  }
+
+  FabricError ph = protocol_parse_header(buffer, noise_buffer.size, message);
+  if (ph != FABRIC_SUCCESS)
+  {
+    free(buffer);
+    FABRIC_MUTEX_UNLOCK_OR(&conn->conn_mutex, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
+    FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
+    peer_flag_and_disconnect(peer, connection_id, PEER_BEHAVIOR_PROTOCOL_VIOLATION, "bad header");
+    return ph;
+  }
+
+  size_t body_offset = sizeof(Message) - sizeof(uint8_t *);
+  if (message->size > MESSAGE_BODY_SIZE_MAX)
+  {
+    free(buffer);
+    FABRIC_MUTEX_UNLOCK_OR(&conn->conn_mutex, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
+    FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
+    printf("[fabricd] protocol violation: oversize body %u from conn %d\n", message->size, connection_id);
+    peer_flag_and_disconnect(peer, connection_id, PEER_BEHAVIOR_PROTOCOL_VIOLATION, "oversize body");
+    return FABRIC_ERROR_MESSAGE_TOO_LARGE;
+  }
+
+  if (message->size > 0)
+  {
+    if (noise_buffer.size < body_offset + message->size)
+    {
+      free(buffer);
+      FABRIC_MUTEX_UNLOCK_OR(&conn->conn_mutex, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
+      FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
+      printf("[fabricd] protocol violation: truncated body from conn %d\n", connection_id);
+      peer_flag_and_disconnect(peer, connection_id, PEER_BEHAVIOR_PROTOCOL_VIOLATION, "truncated body");
+      return FABRIC_ERROR_MESSAGE_INVALID_FORMAT;
+    }
+    if (conn->rl_msg_tokens == 0 || conn->rl_byte_tokens < (body_offset + message->size))
+    {
+      free(buffer);
+      FABRIC_MUTEX_UNLOCK_OR(&conn->conn_mutex, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
+      FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
+      printf("[fabricd] spam detected: rate limit exceeded on conn %d\n", connection_id);
+      peer_flag_and_disconnect(peer, connection_id, PEER_BEHAVIOR_SPAM_DETECTED, "rate limit exceeded");
+      return FABRIC_ERROR_RESOURCE_UNAVAILABLE;
+    }
+    message->body = malloc(message->size);
+    if (!message->body)
+    {
+      free(buffer);
+      FABRIC_MUTEX_UNLOCK_OR(&conn->conn_mutex, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
+      FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
+      return FABRIC_ERROR_OUT_OF_MEMORY;
+    }
+    memcpy(message->body, buffer + body_offset, message->size);
+    if (message_verify_body_hash(message) != FABRIC_SUCCESS)
+    {
+      free(message->body);
+      message->body = NULL;
+      free(buffer);
+      FABRIC_MUTEX_UNLOCK_OR(&conn->conn_mutex, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
+      FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
+      printf("[fabricd] protocol violation: bad body hash on conn %d\n", connection_id);
+      peer_flag_and_disconnect(peer, connection_id, PEER_BEHAVIOR_PROTOCOL_VIOLATION, "bad body hash");
+      return FABRIC_ERROR_VERIFICATION_FAILED;
+    }
+    if (peer->secp256k1_ctx && message_verify(message, peer->secp256k1_ctx) != FABRIC_SUCCESS)
+    {
+      free(message->body);
+      message->body = NULL;
+      free(buffer);
+      FABRIC_MUTEX_UNLOCK_OR(&conn->conn_mutex, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
+      FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
+      printf("[fabricd] protocol violation: unsigned/invalid signature on conn %d\n", connection_id);
+      peer_flag_and_disconnect(peer, connection_id, PEER_BEHAVIOR_PROTOCOL_VIOLATION, "invalid signature");
+      return FABRIC_ERROR_INVALID_SIGNATURE;
+    }
+    if (conn->rl_msg_tokens > 0)
+      conn->rl_msg_tokens--;
+    size_t consumed = enc_len + 9;
+    if (conn->rl_byte_tokens >= consumed)
+      conn->rl_byte_tokens -= (uint32_t)consumed;
+  }
+  else
+  {
+    message->body = NULL;
+  }
+
+  free(buffer);
+
   FABRIC_MUTEX_UNLOCK_OR(&conn->conn_mutex, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
   FABRIC_RWLOCK_UNLOCK_OR(&peer->connections_rwlock, return FABRIC_ERROR_INTERNAL_STATE_CORRUPTION);
 
-  return FABRIC_ERROR_SOCKET_RECV_FAILED;
+  return FABRIC_SUCCESS;
 }
 
 // Receive messages, auto-handle basic protocol, and return only application messages
@@ -1868,7 +1767,7 @@ static void *listener_thread_function(void *arg)
 
     // Perform handshake as responder (accepted socket already non-blocking)
     memcpy(conn->remote_pubkey, remote_pubkey + (33 - 32), 32);
-    if (noise_perform_xx_handshake(client_sock, 0, peer->app_protocol, peer->private_key, conn->remote_pubkey, &conn->send_cipher, &conn->recv_cipher) != 0)
+    if (noise_perform_xx_handshake(client_sock, 0, peer->app_protocol, NULL, conn->remote_pubkey, &conn->send_cipher, &conn->recv_cipher) != 0)
     {
       fabric_condition_destroy(&conn->conn_condition);
       fabric_mutex_destroy(&conn->conn_mutex);

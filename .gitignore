@@ -25,6 +25,7 @@ src/*
 !src/message.h
 !src/memory.h
 !src/noise.h
+!src/noise.c
 !src/p2p.c
 !src/peer.c
 !src/peer.h

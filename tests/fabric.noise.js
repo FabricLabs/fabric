@@ -19,7 +19,7 @@ describe('@fabric/core/types/noise', function () {
 
       // Create NOISE handler
       const handler = noise({
-        prologue: Buffer.from('fabric'),
+        prologue: Buffer.from('FABRIC'),
         verify: (localPrivateKey, localPublicKey, remotePublicKey, done) => {
           // Verify the remote public key using our Key class
           const remoteKey = new Key({ public: remotePublicKey.toString('hex') });
@@ -44,7 +44,7 @@ describe('@fabric/core/types/noise', function () {
 
       // Create NOISE handlers
       const handler1 = noise({
-        prologue: Buffer.from('fabric'),
+        prologue: Buffer.from('FABRIC'),
         verify: (localPrivateKey, localPublicKey, remotePublicKey, done) => {
           const remoteKey = new Key({ public: remotePublicKey.toString('hex') });
           const message = 'Hello, Fabric!';
@@ -55,7 +55,7 @@ describe('@fabric/core/types/noise', function () {
       });
 
       const handler2 = noise({
-        prologue: Buffer.from('fabric'),
+        prologue: Buffer.from('FABRIC'),
         verify: (localPrivateKey, localPublicKey, remotePublicKey, done) => {
           const remoteKey = new Key({ public: remotePublicKey.toString('hex') });
           const message = 'Hello, Fabric!';
@@ -75,7 +75,7 @@ describe('@fabric/core/types/noise', function () {
       });
 
       const handler = noise({
-        prologue: Buffer.from('fabric'),
+        prologue: Buffer.from('FABRIC'),
         verify: (localPrivateKey, localPublicKey, remotePublicKey, done) => {
           const remoteKey = new Key({ public: remotePublicKey.toString('hex') });
           const message = 'Hello, Fabric!';

@@ -7,10 +7,11 @@ $ npm i
   CXX(target) Release/obj.target/fabric/src/binding.o
   CC(target) Release/obj.target/fabric/src/crypto.o
   CC(target) Release/obj.target/fabric/src/protocol.o
+  CC(target) Release/obj.target/fabric/src/noise.o
   CC(target) Release/obj.target/fabric/src/p2p.o
   SOLINK_MODULE(target) Release/fabric.node
 
-added 685 packages, and audited 686 packages in 29s
+added 685 packages, and audited 686 packages in 23s
 
 111 packages are looking for funding
   run `npm fund` for details

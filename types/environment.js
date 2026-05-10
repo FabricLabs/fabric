@@ -88,7 +88,7 @@ class Environment extends Entity {
       this['FABRIC_SEED'],
       this.readVariable('FABRIC_SEED'),
       this.local
-    ];
+    ].map((candidate) => (typeof candidate === 'string' ? candidate.trim() : candidate));
     if (process.env.NODE_ENV === 'test') {
       explicit.push(FIXTURE_SEED);
     }
@@ -601,18 +601,18 @@ class Environment extends Entity {
         }
       });
     } else if (this.walletExists()) {
-      const data = this.readWallet();
-      const text = typeof data === 'string' ? data : String(data ?? '');
-
-      if (text.trim() === '') {
-        if (this.emit) {
-          this.emit('warning', `[FABRIC:KEYGEN] Wallet file is empty (${this.settings.path}); remove it or regenerate with fabric setup`);
-        }
-        this.wallet = false;
-        return this;
-      }
-
       try {
+        const data = this.readWallet();
+        const text = typeof data === 'string' ? data : String(data ?? '');
+
+        if (text.trim() === '') {
+          if (this.emit) {
+            this.emit('warning', `[FABRIC:KEYGEN] Wallet file is empty (${this.settings.path}); remove it or regenerate with fabric setup`);
+          }
+          this.wallet = false;
+          return this;
+        }
+
         const pr = tryParsePersistedJson(text);
         if (!pr.ok) throw pr.error;
         const input = pr.value;
