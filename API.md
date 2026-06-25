@@ -196,7 +196,8 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 <dd><p>Manages interaction with the Bitcoin network.</p>
 </dd>
 <dt><a href="#Lightning">Lightning</a></dt>
-<dd><p>Manage a Lightning node.</p>
+<dd><p>Manage a Lightning node (Core Lightning JSON-RPC over Unix socket).</p>
+<p>BOLT checklist: <code>docs/BOLT_COMPATIBILITY.md</code>. RPC map: <code>docs/LIGHTNING_COMPAT.md</code>.</p>
 </dd>
 <dt><a href="#Redis">Redis</a></dt>
 <dd><p>Connect and subscribe to Redis servers.</p>
@@ -5775,6 +5776,8 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [._fillPeerSlots()](#Peer+_fillPeerSlots) ⇒ [<code>Peer</code>](#Peer)
     * [._handleFabricMessage(buffer)](#Peer+_handleFabricMessage) ⇒ [<code>Peer</code>](#Peer)
     * [._buildDocumentParsedForPublish(documentId, content)](#Peer+_buildDocumentParsedForPublish) ⇒ <code>Object</code>
+    * [._collectDocumentCatalogInventoryItems([req])](#Peer+_collectDocumentCatalogInventoryItems) ⇒ <code>Array.&lt;object&gt;</code>
+    * [._sendLocalInventoryDocumentsWireResponse(originName, items, [opts])](#Peer+_sendLocalInventoryDocumentsWireResponse) ⇒ <code>boolean</code>
     * [._respondInventoryFromLocalDocuments(message, origin)](#Peer+_respondInventoryFromLocalDocuments) ⇒ <code>boolean</code>
     * [._sendP2pFileSendToPeer(documentId, peerAddress)](#Peer+_sendP2pFileSendToPeer) ⇒ <code>boolean</code>
     * [.sendDocumentFileToPeer(documentId, peerAddress)](#Peer+sendDocumentFileToPeer) ⇒ <code>boolean</code>
@@ -6135,6 +6138,32 @@ Build hub-compatible document metadata for [purchaseContentHashHex](purchaseCont
 | --- | --- | --- |
 | documentId | <code>String</code> |  |
 | content | <code>String</code> | UTF-8 body |
+
+<a name="Peer+_collectDocumentCatalogInventoryItems"></a>
+
+### peer.\_collectDocumentCatalogInventoryItems([req]) ⇒ <code>Array.&lt;object&gt;</code>
+Items for Hub-style `kind: 'documents'` inventory (Fabric UI / `@fabric/hub` merge expects `object.kind`).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [req] | <code>Object</code> | request object subset |
+
+<a name="Peer+_sendLocalInventoryDocumentsWireResponse"></a>
+
+### peer.\_sendLocalInventoryDocumentsWireResponse(originName, items, [opts]) ⇒ <code>boolean</code>
+Write [INVENTORY_RESPONSE](INVENTORY_RESPONSE) (`P2P_INVENTORY_RESPONSE`) compatible with `@fabric/hub` Bridge merging
+(body includes `kind: 'documents'` so the browser can merge `object.items`).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| originName | <code>string</code> | connection key [Peer#connections](Peer#connections) |
+| items | <code>Array.&lt;object&gt;</code> |  |
+| [opts] | <code>Object</code> |  |
+| [opts.allowEmpty] | <code>boolean</code> |  |
 
 <a name="Peer+_respondInventoryFromLocalDocuments"></a>
 
@@ -6668,6 +6697,8 @@ Parse an Object into a corresponding Fabric state.
     * [._fillPeerSlots()](#Peer+_fillPeerSlots) ⇒ [<code>Peer</code>](#Peer)
     * [._handleFabricMessage(buffer)](#Peer+_handleFabricMessage) ⇒ [<code>Peer</code>](#Peer)
     * [._buildDocumentParsedForPublish(documentId, content)](#Peer+_buildDocumentParsedForPublish) ⇒ <code>Object</code>
+    * [._collectDocumentCatalogInventoryItems([req])](#Peer+_collectDocumentCatalogInventoryItems) ⇒ <code>Array.&lt;object&gt;</code>
+    * [._sendLocalInventoryDocumentsWireResponse(originName, items, [opts])](#Peer+_sendLocalInventoryDocumentsWireResponse) ⇒ <code>boolean</code>
     * [._respondInventoryFromLocalDocuments(message, origin)](#Peer+_respondInventoryFromLocalDocuments) ⇒ <code>boolean</code>
     * [._sendP2pFileSendToPeer(documentId, peerAddress)](#Peer+_sendP2pFileSendToPeer) ⇒ <code>boolean</code>
     * [.sendDocumentFileToPeer(documentId, peerAddress)](#Peer+sendDocumentFileToPeer) ⇒ <code>boolean</code>
@@ -7028,6 +7059,32 @@ Build hub-compatible document metadata for [purchaseContentHashHex](purchaseCont
 | --- | --- | --- |
 | documentId | <code>String</code> |  |
 | content | <code>String</code> | UTF-8 body |
+
+<a name="Peer+_collectDocumentCatalogInventoryItems"></a>
+
+### peer.\_collectDocumentCatalogInventoryItems([req]) ⇒ <code>Array.&lt;object&gt;</code>
+Items for Hub-style `kind: 'documents'` inventory (Fabric UI / `@fabric/hub` merge expects `object.kind`).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [req] | <code>Object</code> | request object subset |
+
+<a name="Peer+_sendLocalInventoryDocumentsWireResponse"></a>
+
+### peer.\_sendLocalInventoryDocumentsWireResponse(originName, items, [opts]) ⇒ <code>boolean</code>
+Write [INVENTORY_RESPONSE](INVENTORY_RESPONSE) (`P2P_INVENTORY_RESPONSE`) compatible with `@fabric/hub` Bridge merging
+(body includes `kind: 'documents'` so the browser can merge `object.items`).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| originName | <code>string</code> | connection key [Peer#connections](Peer#connections) |
+| items | <code>Array.&lt;object&gt;</code> |  |
+| [opts] | <code>Object</code> |  |
+| [opts.allowEmpty] | <code>boolean</code> |  |
 
 <a name="Peer+_respondInventoryFromLocalDocuments"></a>
 
@@ -11694,19 +11751,37 @@ Parent directory name of `.cookie` (for probe logging).
 <a name="Lightning"></a>
 
 ## Lightning
-Manage a Lightning node.
+Manage a Lightning node (Core Lightning JSON-RPC over Unix socket).
+
+BOLT checklist: `docs/BOLT_COMPATIBILITY.md`. RPC map: `docs/LIGHTNING_COMPAT.md`.
 
 **Kind**: global class  
+**See**: Lightning.DOCS  
 
 * [Lightning](#Lightning)
     * [new Lightning([settings])](#new_Lightning_new)
     * _instance_
+        * [.rpc](#Lightning+rpc)
         * [.createChannel(peer, amount, [pushMsat], [options])](#Lightning+createChannel)
         * [.createInvoice(amount)](#Lightning+createInvoice)
+        * [.callRpc(method, [params], [timeoutMs])](#Lightning+callRpc) ⇒ <code>Promise.&lt;\*&gt;</code>
+        * [.decodeLightning(boltString)](#Lightning+decodeLightning) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.decodePay(bolt11)](#Lightning+decodePay) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.createOffer(params)](#Lightning+createOffer) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.fetchInvoice(offerOrParams, [invoiceParams])](#Lightning+fetchInvoice) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.pay(invoiceOrParams, [timeoutMs])](#Lightning+pay) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.listOffers([filter])](#Lightning+listOffers) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.disableOffer(offerId)](#Lightning+disableOffer) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.createInvoiceRequest(params)](#Lightning+createInvoiceRequest) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.listInvoiceRequests([filter])](#Lightning+listInvoiceRequests) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.disableInvoiceRequest(invreqId)](#Lightning+disableInvoiceRequest) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.sendInvoice(params)](#Lightning+sendInvoice) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.getRoute(destinationId, amountMsat, [riskfactor], [cltvOrRouteOptions])](#Lightning+getRoute) ⇒ <code>Promise.&lt;Object&gt;</code>
         * [.computeLiquidity()](#Lightning+computeLiquidity) ⇒ <code>Object</code>
         * [._makeRPCRequest(method, [params], [timeoutMs])](#Lightning+_makeRPCRequest) ⇒ <code>Object</code> \| <code>String</code>
     * _static_
         * [.CLN_RPC_METHODS](#Lightning.CLN_RPC_METHODS) : <code>ReadonlyArray.&lt;string&gt;</code>
+        * [.DOCS](#Lightning.DOCS) : <code>Readonly.&lt;{boltCompatibility: string, fabricLightningOffers: string, fabricLightningMarkets: string, fabricPaymentBech32: string, lightningCompat: string}&gt;</code>
         * [.defaultListenPortForNetwork([network])](#Lightning.defaultListenPortForNetwork) ⇒ <code>number</code>
 
 <a name="new_Lightning_new"></a>
@@ -11719,6 +11794,12 @@ Create an instance of the Lightning [Service](#Service).
 | --- | --- | --- |
 | [settings] | <code>Object</code> | Settings. |
 
+<a name="Lightning+rpc"></a>
+
+### lightning.rpc
+Optional RPC client handle (e.g. REST/grpc); not used by Core Lightning socket `_makeRPCRequest`.
+
+**Kind**: instance property of [<code>Lightning</code>](#Lightning)  
 <a name="Lightning+createChannel"></a>
 
 ### lightning.createChannel(peer, amount, [pushMsat], [options])
@@ -11743,6 +11824,171 @@ Create a new Lightning invoice.
 | Param | Type | Description |
 | --- | --- | --- |
 | amount | <code>String</code> | Amount in millisatoshi (msat). |
+
+<a name="Lightning+callRpc"></a>
+
+### lightning.callRpc(method, [params], [timeoutMs]) ⇒ <code>Promise.&lt;\*&gt;</code>
+Invoke any Core Lightning JSON-RPC method over the lightningd socket (escape hatch for methods without a typed wrapper).
+Named `callRpc` so it does not shadow the `rpc` instance property.
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+**Returns**: <code>Promise.&lt;\*&gt;</code> - RPC result.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| method | <code>String</code> |  | RPC method name (e.g. `listpeers`). |
+| [params] | <code>Array</code> | <code>[]</code> | Positional/object params as accepted by lightningd for that method. |
+| [timeoutMs] | <code>Number</code> | <code>30000</code> | Optional timeout. |
+
+<a name="Lightning+decodeLightning"></a>
+
+### lightning.decodeLightning(boltString) ⇒ <code>Promise.&lt;Object&gt;</code>
+Decode a BOLT11 invoice or BOLT12 offer string (Core Lightning `decode`).
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - Decoded fields.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| boltString | <code>String</code> | `lnbc...`, `lno1...`, etc. |
+
+<a name="Lightning+decodePay"></a>
+
+### lightning.decodePay(bolt11) ⇒ <code>Promise.&lt;Object&gt;</code>
+Decode a BOLT11 invoice for payment fields (Core Lightning `decodepay`).
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - Decoded pay details.  
+
+| Param | Type |
+| --- | --- |
+| bolt11 | <code>String</code> | 
+
+<a name="Lightning+createOffer"></a>
+
+### lightning.createOffer(params) ⇒ <code>Promise.&lt;Object&gt;</code>
+Create a BOLT12 offer (requires `experimental-offers` / modern CLN). Pass-through to `offer`.
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - Offer result (includes `bolt12` / offer id per CLN version).  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| params | <code>Object</code> | Keyword args, e.g. `{ amount_msat, description, label, issuer, ... }`. |
+
+<a name="Lightning+fetchInvoice"></a>
+
+### lightning.fetchInvoice(offerOrParams, [invoiceParams]) ⇒ <code>Promise.&lt;Object&gt;</code>
+Request a BOLT11 invoice from a BOLT12 offer (Core Lightning `fetchinvoice`).
+
+Call either:
+- `fetchInvoice('lno1…')` or `fetchInvoice('lno1…', { amount_msat, quantity, payer_note, timeout, … })`
+- **Recurrence** (when the offer is recurring): `recurrence_counter` (start at 0), `recurrence_start`, `recurrence_label` (stable label linking the series; required when counter is set). See Core Lightning **`fetchinvoice`** and [BOLT #12](https://github.com/lightning/bolts/blob/master/12-offer-encoding.md).
+- `fetchInvoice({ offer: 'lno1…', amount_msat, … })` — single keyword object as accepted by CLN.
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - Invoice response (includes `invoice` bolt11 when successful).  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| offerOrParams | <code>String</code> \| <code>Object</code> |  | Bolt12 offer string (`lno1…`), or one params object with an `offer` field. |
+| [invoiceParams] | <code>Object</code> | <code></code> | When the first arg is a string, optional extra fields merged into the RPC (second positional group). |
+
+<a name="Lightning+pay"></a>
+
+### lightning.pay(invoiceOrParams, [timeoutMs]) ⇒ <code>Promise.&lt;Object&gt;</code>
+Pay a BOLT11 invoice or BOLT12-fetched bolt11 string (Core Lightning `pay`).
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - Payment result.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| invoiceOrParams | <code>String</code> \| <code>Object</code> |  | Bolt11 string, or keyword object (e.g. `{ bolt11 }`, `{ bolt12 }` per CLN). |
+| [timeoutMs] | <code>Number</code> | <code>30000</code> |  |
+
+<a name="Lightning+listOffers"></a>
+
+### lightning.listOffers([filter]) ⇒ <code>Promise.&lt;Object&gt;</code>
+List offers created on this node (Core Lightning `listoffers`).
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [filter] | <code>String</code> \| <code>Object</code> \| <code>null</code> | <code></code> | `offer_id` string, or `{ offer_id?, active_only? }`, or null for all. |
+
+<a name="Lightning+disableOffer"></a>
+
+### lightning.disableOffer(offerId) ⇒ <code>Promise.&lt;Object&gt;</code>
+Disable a local offer by id (Core Lightning `disableoffer`).
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+
+| Param | Type |
+| --- | --- |
+| offerId | <code>String</code> | 
+
+<a name="Lightning+createInvoiceRequest"></a>
+
+### lightning.createInvoiceRequest(params) ⇒ <code>Promise.&lt;Object&gt;</code>
+Create a BOLT12 `invoice_request` (you request that someone else pay you via their offer flow). Returns `bolt12` (`lnr1…`). (Core Lightning `invoicerequest`, v22.11+.)
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| params | <code>Object</code> | `{ amount, description, issuer?, label?, absolute_expiry?, single_use? }` — see CLN docs for amount formats. |
+
+<a name="Lightning+listInvoiceRequests"></a>
+
+### lightning.listInvoiceRequests([filter]) ⇒ <code>Promise.&lt;Object&gt;</code>
+List `invoice_request` records (Core Lightning `listinvoicerequests`).
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [filter] | <code>String</code> \| <code>Object</code> \| <code>null</code> | <code></code> | `invreq_id` string, or `{ invreq_id?, active_only? }`, or null for all. |
+
+<a name="Lightning+disableInvoiceRequest"></a>
+
+### lightning.disableInvoiceRequest(invreqId) ⇒ <code>Promise.&lt;Object&gt;</code>
+Disable an `invoice_request` so no further invoices are accepted (Core Lightning `disableinvoicerequest`).
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+
+| Param | Type |
+| --- | --- |
+| invreqId | <code>String</code> | 
+
+<a name="Lightning+sendInvoice"></a>
+
+### lightning.sendInvoice(params) ⇒ <code>Promise.&lt;Object&gt;</code>
+Create and send a BOLT12 invoice to the issuer of an `invoice_request` (Core Lightning `sendinvoice`).
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| params | <code>Object</code> | `{ invreq, label, amount_msat?, timeout?, quantity? }` — `invreq` is the `lnr1…` string. |
+
+<a name="Lightning+getRoute"></a>
+
+### lightning.getRoute(destinationId, amountMsat, [riskfactor], [cltvOrRouteOptions]) ⇒ <code>Promise.&lt;Object&gt;</code>
+Route probe (Core Lightning `getroute`).
+CLN order: `id`, `amount_msat`, `riskfactor`, `cltv`, `fromid`, `fuzzpercent`, `exclude`, `maxhops`
+— the fourth **positional** is `cltv`, not `maxhops`. To set `maxhops` (or other tail fields) use the
+`routeOptions` object so intermediate slots are sent as `null` where needed.
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| destinationId | <code>String</code> |  | Destination node id (pubkey). |
+| amountMsat | <code>Number</code> \| <code>String</code> |  |  |
+| [riskfactor] | <code>Number</code> | <code>10</code> |  |
+| [cltvOrRouteOptions] | <code>Number</code> \| <code>Object</code> \| <code>null</code> | <code></code> | Omitted: three-arg RPC. If a number: fourth positional (`cltv`).   If an object: tail fields `cltv`, `fromid`, `fuzzpercent`, `exclude`, `maxhops` (each optional). |
 
 <a name="Lightning+computeLiquidity"></a>
 
@@ -11769,6 +12015,13 @@ Make an RPC request through the Lightning UNIX socket.
 
 ### Lightning.CLN\_RPC\_METHODS : <code>ReadonlyArray.&lt;string&gt;</code>
 Core Lightning JSON-RPC method names invoked by this service (see docs/LIGHTNING_COMPAT.md).
+
+**Kind**: static property of [<code>Lightning</code>](#Lightning)  
+<a name="Lightning.DOCS"></a>
+
+### Lightning.DOCS : <code>Readonly.&lt;{boltCompatibility: string, fabricLightningOffers: string, fabricLightningMarkets: string, fabricPaymentBech32: string, lightningCompat: string}&gt;</code>
+Paths to canonical Markdown docs (relative to the `@fabric/core` package root).
+`fabricLightningMarkets` and `fabricLightningOffers` point at the same file (Fabric **markets** vs Lightning BOLT12 **offers**).
 
 **Kind**: static property of [<code>Lightning</code>](#Lightning)  
 <a name="Lightning.defaultListenPortForNetwork"></a>

@@ -2010,7 +2010,8 @@ class Peer extends Service {
    * (body includes `kind: 'documents'` so the browser can merge `object.items`).
    * @param {string} originName connection key {@link Peer#connections}
    * @param {object[]} items
-   * @param {{ allowEmpty?: boolean }} [opts]
+   * @param {Object} [opts]
+   * @param {boolean} [opts.allowEmpty]
    * @returns {boolean}
    */
   _sendLocalInventoryDocumentsWireResponse (originName, items, opts = {}) {
