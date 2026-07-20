@@ -7,6 +7,7 @@ There is a lot to cover when building decentralized applications on Fabric, so g
 - [Repository layout](#repository-layout)
 - [Development workflow](#development-workflow)
 - [Bitcoin service](#bitcoin-service-servicesbitcoin)
+- [Lightning BOLTs, RPC map & Hub desktop (`npm link`)](#lightning-bolts-rpc-map--hub-desktop-npm-link)
 - [Message types](#message-types-typesmessage)
 - [Architecture](#architecture)
 - [Storage](#storage-typesstore)
@@ -83,6 +84,27 @@ Regenerate **`API.md`** with `npm run make:api` after JSDoc changes. Experimenta
 
 ## Bitcoin service (`services/bitcoin`)
 RPC is the **source of truth** when a node is connected.  Optional HTTP fallback for block, transaction, and address-index reads is configured only via `bitcoin.explorerBaseUrl` or `FABRIC_EXPLORER_URL` (an **origin**, not a path). If unset, those helpers stay RPC-only or fail closed with a clear error — `@fabric/core` does not default to any public explorer.
+
+## Lightning: BOLTs, RPC map & Hub desktop (`npm link`)
+
+| Doc | Purpose |
+|-----|---------|
+| [docs/BOLT_COMPATIBILITY.md](docs/BOLT_COMPATIBILITY.md) | Checklist: **BOLT #1–#12** vs delegated to `lightningd` vs exposed on `Lightning` |
+| [docs/FABRIC_LIGHTNING_OFFERS.md](docs/FABRIC_LIGHTNING_OFFERS.md) | Fabric **markets** (commerce / P2P) vs **BOLT12**; **`Lightning.Bolt12`** |
+| [docs/FABRIC_PAYMENT_BECH32.md](docs/FABRIC_PAYMENT_BECH32.md) | **`fa1…`** bech32m Fabric-routed payments; **`Lightning.FabricPayment`** |
+| [docs/LIGHTNING_COMPAT.md](docs/LIGHTNING_COMPAT.md) | Core Lightning **JSON-RPC** ↔ Fabric method names |
+
+**Programmatic:** `require('@fabric/core/services/lightning').DOCS` lists Markdown paths (`fabricLightningMarkets` and `fabricLightningOffers` are the same file); **`Lightning.Bolt12`** re-exports `functions/lightningBolt12.js` (`FabricLightningMarketRole` / `FabricLightningOfferRole`); **`Lightning.Bolt12Semantics`** re-exports `functions/bolt12Semantics.js` (BIP-340 scope for **`decode`**, recurrence TLV helpers); **`Lightning.FabricPayment`** re-exports `functions/fabricPaymentBech32.js` (`fa1…` encode/decode and **`classifyPaymentEncodingString`**).
+
+### Manual test: `@fabric/hub` desktop + local `@fabric/core` / `@fabric/http`
+
+After changing **`@fabric/core`**, you can exercise the stack from the **`@fabric/hub`** package (Electron / desktop; e.g. sibling clone `hub.fabric.pub`) by linking local packages. Typical order:
+
+1. **This repo (`@fabric/core`):** `npm link` — registers the global link for `@fabric/core`.
+2. **`@fabric/http`** (sibling clone): `npm link @fabric/core` then `npm link` — HTTP server depends on core; second `npm link` publishes `@fabric/http` globally.
+3. **Hub (`@fabric/hub`):** `npm link @fabric/core` and `npm link @fabric/http` — resolves both to your working trees.
+
+Then start the Hub desktop app (see Hub’s `package.json`, e.g. `build:desktop` / Electron scripts). Verify Lightning UI or HTTP mutations against your linked core. To unlink later: `npm unlink @fabric/core` / `@fabric/http` in Hub and HTTP, then reinstall published versions as needed.
 
 ## Message types (`types/message`)
 `P2P_MESSAGE_RECEIPT` (`constants.P2P_MESSAGE_RECEIPT`, `0x44`) is the on-wire type for server acknowledgements of an inbound WebSocket/P2P message (payload JSON uses `@type: Receipt`). It is distinct from `GenericMessage` so clients can discriminate without parsing the body first.

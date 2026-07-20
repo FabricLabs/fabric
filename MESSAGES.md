@@ -131,7 +131,26 @@ These are routed from decoded JSON bodies (often received as `P2P_BASE_MESSAGE` 
 | `BitcoinBlock` | Friendly/body-level alias used in some handlers for block notifications. |
 | `BitcoinTransaction` | Friendly/body-level alias for transaction notifications. |
 
-## 3) Aliases and Notes
+## 3) Application namespaces (contract flow)
+
+**Full specification:** [docs/APPLICATION_NAMESPACES.md](docs/APPLICATION_NAMESPACES.md)  
+**Code catalog:** [`functions/applicationNamespaces.js`](functions/applicationNamespaces.js)
+
+Fabric uses a small, consistent pattern for multi-app mesh traffic (Hub,
+GoonCitizen, Sensemaker, …):
+
+1. **Global shoutbox** — `P2P_CHAT_MESSAGE` (not contract-namespaced).
+2. **Contract discovery** — `CONTRACT_PUBLISH` / `P2P_CONTRACT_PUBLISH` →
+   namespace id = `Actor(definition).id`.
+3. **Namespaced updates** — `CONTRACT_MESSAGE` / `P2P_CONTRACT_MESSAGE` with
+   `contract: <id>`; apps **ignore** unknown namespaces (not fatal).
+4. **Federation timelines** — validators + threshold on Federation-shaped
+   contracts define convergent authority for that namespace.
+
+Wire aliases: `P2P_CONTRACT_*` encode to the same opcodes as `CONTRACT_*`
+(see `types/message.js`).
+
+## 4) Aliases and Notes
 
 - `types/message.js` accepts both canonical wire names and legacy friendly aliases (for example `JSONCall` -> `JSON_CALL`, `DocumentPublish` -> `DOCUMENT_PUBLISH`).
 - Some constants intentionally share numeric codes (notably some `P2P_*` and `LIGHTNING_*` values); canonical decode ordering in `types/message.js` determines the preferred wire label.
