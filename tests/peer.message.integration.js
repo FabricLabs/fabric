@@ -239,6 +239,125 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     assert.strictEqual(chats, 1);
   });
 
+  it('relays first-class P2P_CHAT_MESSAGE frames (hop re-sign, first-class opcode + author body preserved)', function () {
+    const hub = mockHub();
+    const author = new Key();
+    const origin = '127.0.0.1:7700';
+    const relayWrites = [];
+    hub.connections[origin] = { _writeFabric: () => {}, destroy: () => {} };
+    hub.connections['127.0.0.1:7701'] = {
+      _writeFabric: (buf) => relayWrites.push(Buffer.isBuffer(buf) ? buf : Buffer.from(buf)),
+      destroy: () => {}
+    };
+    hub.peers[origin] = { id: 'author', publicKey: author.pubkey };
+
+    const msg = Message.fromVector(['P2P_CHAT_MESSAGE', JSON.stringify({
+      type: 'P2P_CHAT_MESSAGE',
+      actor: { publicKey: author.pubkey, id: author.pubkey },
+      object: { channel: 'global', body: 'hop-signed', author: author.pubkey }
+    })]);
+    msg.signWithKey(author);
+
+    hub._handleFabricMessage(msg.toBuffer(), { name: origin }, null);
+
+    assert.ok(relayWrites.length >= 1, 'chat should relay to non-origin edge');
+    const relayed = Message.fromBuffer(relayWrites[0]);
+    // Keeps the first-class opcode; re-signed by the hop so per-connection key
+    // pinning holds downstream; the author is preserved in the body.
+    assert.strictEqual(relayed.type, 'P2P_CHAT_MESSAGE', 'relay keeps first-class opcode');
+    const relayedSigner = hub._verifiedFabricSignerPubkeyHex(relayed);
+    const hubXOnly = hub.key.pubkey.length === 66 ? hub.key.pubkey.slice(2) : hub.key.pubkey;
+    assert.strictEqual(relayedSigner, hubXOnly, 're-signed by hop');
+    const body = JSON.parse(relayed.raw.data.toString('utf8'));
+    assert.strictEqual(body.object.author, author.pubkey, 'author preserved in body');
+  });
+
+  it('CONTRACT_MESSAGE dispatches by namespace and does not crash on unknown contract id', function () {
+    const hub = mockHub();
+    const k = new Key();
+    const origin = '127.0.0.1:7800';
+    hub.connections[origin] = { _writeFabric: () => {}, destroy: () => {} };
+    hub.connections['127.0.0.1:7801'] = { _writeFabric: () => {}, destroy: () => {} };
+    hub.peers[origin] = { id: 'p', publicKey: k.pubkey };
+
+    const events = [];
+    hub.on('contract:message', (e) => events.push(e));
+
+    const msg = Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({
+      contract: 'unregistered-contract-id',
+      type: 'MissionBroadcast',
+      object: { mission: { id: 'm1' } }
+    })]);
+    msg.signWithKey(k);
+
+    // Must not throw despite the contract not being registered locally.
+    hub._handleFabricMessage(msg.toBuffer(), { name: origin }, null);
+
+    assert.strictEqual(events.length, 1);
+    assert.strictEqual(events[0].contract, 'unregistered-contract-id');
+    assert.strictEqual(events[0].registered, false);
+  });
+
+  it('CONTRACT_MESSAGE without a contract namespace is dropped with a warning', function () {
+    const hub = mockHub();
+    const k = new Key();
+    const origin = '127.0.0.1:7850';
+    hub.connections[origin] = { _writeFabric: () => {}, destroy: () => {} };
+    hub.peers[origin] = { id: 'p', publicKey: k.pubkey };
+
+    let warned = false;
+    hub.once('warning', (w) => { if (/missing .*contract/i.test(String(w))) warned = true; });
+    let events = 0;
+    hub.on('contract:message', () => { events++; });
+
+    const msg = Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({ type: 'X', object: {} })]);
+    msg.signWithKey(k);
+    hub._handleFabricMessage(msg.toBuffer(), { name: origin }, null);
+
+    assert.ok(warned, 'expected warning for missing contract namespace');
+    assert.strictEqual(events, 0);
+  });
+
+  it('CONTRACT_PUBLISH emits contract:publish with a deterministic id', function () {
+    const hub = mockHub();
+    const k = new Key();
+    const origin = '127.0.0.1:7900';
+    hub.connections[origin] = { _writeFabric: () => {}, destroy: () => {} };
+    hub.peers[origin] = { id: 'p', publicKey: k.pubkey };
+
+    let event = null;
+    hub.once('contract:publish', (e) => { event = e; });
+
+    const definition = { name: 'GoonCitizen', version: 1, state: {} };
+    const msg = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]);
+    msg.signWithKey(k);
+    hub._handleFabricMessage(msg.toBuffer(), { name: origin }, null);
+
+    assert.ok(event, 'expected contract:publish');
+    assert.ok(event.contract && /^[0-9a-f]{64}$/.test(event.contract), 'deterministic Actor id');
+  });
+
+  it('CONTRACT_PROPOSAL verifies payload and emits contract:proposal', function () {
+    const hub = mockHub();
+    const k = new Key();
+    const origin = '127.0.0.1:7950';
+    hub.connections[origin] = { _writeFabric: () => {}, destroy: () => {} };
+    hub.peers[origin] = { id: 'p', publicKey: k.pubkey };
+
+    const { createContractProposalMessage } = require('../functions/contractProposal');
+    const inner = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify({ type: 'Accept', object: { n: 1 } })]);
+    inner.signWithKey(k);
+    const proposal = createContractProposalMessage(k, { messages: [inner], contractId: 'goon-contract' });
+
+    let event = null;
+    hub.once('contract:proposal', (e) => { event = e; });
+
+    hub._handleFabricMessage(proposal.toBuffer(), { name: origin }, null);
+
+    assert.ok(event, 'expected contract:proposal');
+    assert.strictEqual(event.contract, 'goon-contract');
+  });
+
   it('drops body hash mismatch before signature (wire integrity warning)', function () {
     const hub = mockHub();
     const k = new Key();

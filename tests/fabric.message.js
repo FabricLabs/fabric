@@ -76,6 +76,31 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(Message.friendlyTypeFromWire('CHAT_MESSAGE'), 'ChatMessage');
     });
 
+    it('P2P_CHAT_MESSAGE is a first-class opcode (roundtrips distinct from CHAT_MESSAGE)', function () {
+      const m = Message.fromVector(['P2P_CHAT_MESSAGE', JSON.stringify({ hello: 'world' })]);
+      assert.strictEqual(m.type, 'P2P_CHAT_MESSAGE');
+      const restored = Message.fromBuffer(m.toBuffer());
+      assert.strictEqual(restored.type, 'P2P_CHAT_MESSAGE');
+      // Not collapsed into P2P_BASE_MESSAGE, and distinct from legacy CHAT_MESSAGE.
+      assert.notStrictEqual(restored.type, 'P2P_BASE_MESSAGE');
+      assert.notStrictEqual(restored.type, 'CHAT_MESSAGE');
+    });
+
+    it('P2P_CONTRACT_* names encode to canonical contract opcodes', function () {
+      const cases = [
+        ['P2P_CONTRACT_PUBLISH', 'CONTRACT_PUBLISH'],
+        ['P2P_CONTRACT_MESSAGE', 'CONTRACT_MESSAGE'],
+        ['P2P_CONTRACT_PROPOSAL', 'CONTRACT_PROPOSAL']
+      ];
+      for (const [alias, canonical] of cases) {
+        const m = Message.fromVector([alias, JSON.stringify({ contract: 'x' })]);
+        assert.strictEqual(m.type, canonical, `${alias} should encode as ${canonical}`);
+        const restored = Message.fromBuffer(m.toBuffer());
+        assert.strictEqual(restored.type, canonical);
+        assert.notStrictEqual(restored.type, 'P2P_BASE_MESSAGE');
+      }
+    });
+
     it('can compose from an object literal', async function prove () {
       const message = new Message(example);
       const literal = message.toObject();

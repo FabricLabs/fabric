@@ -145,6 +145,8 @@ const BLOCK_CANDIDATE = 0x03;
 
 const SESSION_START = 0x02;
 const CHAT_MESSAGE = 0x67;
+/** First-class peer chat frame (author-signed, relayed verbatim). Legacy inner-JSON `P2P_CHAT_MESSAGE` bodies carried by P2P_BASE_MESSAGE / CHAT_MESSAGE remain decodable. */
+const P2P_CHAT_MESSAGE = 0x68;
 
 // Lightning
 const LIGHTNING_TEST_HEADER = 'D0520C6E';
@@ -220,6 +222,7 @@ module.exports = {
   LARGE_COLLECTION_SIZE,
   BLOCK_CANDIDATE,
   CHAT_MESSAGE,
+  P2P_CHAT_MESSAGE,
   INPUT_HINT,
   ZERO_LENGTH_PLAINTEXT,
   BECH32M_CHARSET,

@@ -54,6 +54,9 @@ const Key = require('./key');
 const Machine = require('./machine');
 const Message = require('./message');
 const Service = require('./service');
+
+// Contract negotiation payload verification (CONTRACT_PROPOSAL wire frames)
+const { verifyContractProposalPayload } = require('../functions/contractProposal');
 // const Wallet = require('./wallet');
 
 // Constants
@@ -1384,9 +1387,17 @@ class Peer extends Service {
         };
         const innerType = wireToInner[message.type] || message.type;
         const parsed = prTyped.value;
-        const genericBody = (parsed && typeof parsed === 'object' && (parsed.actor || parsed.object || parsed.type))
-          ? Object.assign({}, parsed, { type: parsed.type || innerType })
-          : { type: innerType, object: parsed };
+        let genericBody;
+        if (message.type === 'CONTRACT_PUBLISH' || message.type === 'CONTRACT_MESSAGE') {
+          // Contract frames dispatch by WIRE type (namespace routing). The app
+          // payload — including any inner `type` like MissionBroadcast — is kept
+          // intact under `object` so handlers see the full body.
+          genericBody = { type: message.type, object: parsed };
+        } else {
+          genericBody = (parsed && typeof parsed === 'object' && (parsed.actor || parsed.object || parsed.type))
+            ? Object.assign({}, parsed, { type: parsed.type || innerType })
+            : { type: innerType, object: parsed };
+        }
         this._handleGenericMessage(genericBody, origin, socket, message);
         break;
       }
@@ -1430,6 +1441,36 @@ class Peer extends Service {
           this.emit('warning', `[FABRIC:PEER] DOCUMENT_REQUEST failed: ${exception.message}`);
         }
         break;
+      case 'CONTRACT_PROPOSAL':
+      case 'ContractProposal': {
+        const rawCp = messageDataToString(message.data);
+        const prCp = tryParseWireJsonBody(rawCp);
+        if (!prCp.ok || prCp.value === null || typeof prCp.value !== 'object' || Array.isArray(prCp.value)) {
+          this.emit('warning', `[FABRIC:PEER] CONTRACT_PROPOSAL parse failed: ${prCp.ok ? 'invalid body' : prCp.error.message}`);
+          break;
+        }
+        const payload = prCp.value;
+        const verdict = verifyContractProposalPayload(payload);
+        if (!verdict || verdict.ok !== true) {
+          this.emit('warning', `[FABRIC:PEER] CONTRACT_PROPOSAL rejected: ${(verdict && verdict.error) || 'verification failed'}`);
+          break;
+        }
+        this.emit('contract:proposal', {
+          contract: payload.contractId != null ? String(payload.contractId) : null,
+          payload,
+          message,
+          origin,
+          socket,
+          signer: signerPubkeyHex || null
+        });
+        if (origin && origin.name) {
+          // Re-sign with hop key (per-connection key pinning). The proposal's
+          // author-signed inner `messages[]` remain end-to-end verifiable.
+          const relay = Message.fromVector(['CONTRACT_PROPOSAL', messageDataToString(message.data)]).signWithKey(this.key);
+          this.relayFrom(origin.name, relay);
+        }
+        break;
+      }
       case 'P2P_BASE_MESSAGE':
       case 'CHAT_MESSAGE':
       case 'ChatMessage':
@@ -1695,10 +1736,12 @@ class Peer extends Service {
         this._handleSessionOpenGenericMessage(msg, origin, signerPubkeyHex);
         break;
       case 'P2P_CHAT_MESSAGE': {
-        this.emit('chat', msg);
-        const relay = Message.fromVector(['ChatMessage', JSON.stringify(msg)]);
-        relay.signWithKey(this.key);
-        // this.emit('debug', `Relayed chat message: ${JSON.stringify(relay.toGenericMessage())}`);
+        this.emit('chat', msg, { origin, signer: signerPubkeyHex || null, wireMessage });
+        if (!origin || !origin.name) break;
+        // Re-sign with this hop's key so per-connection key pinning holds on the
+        // next hop. The author is carried in the body (`actor` / `object.author`)
+        // for app-layer verification. Keeps the first-class P2P_CHAT_MESSAGE type.
+        const relay = Message.fromVector(['P2P_CHAT_MESSAGE', JSON.stringify(msg)]).signWithKey(this.key);
         this.relayFrom(origin.name, relay);
         break;
       }
@@ -1827,18 +1870,59 @@ class Peer extends Service {
       case 'P2P_FILE_SEND':
         this.emit('file', { message, origin });
         break;
-      case 'CONTRACT_PUBLISH':
+      case 'CONTRACT_PUBLISH': {
         // TODO: reject and punish mis-behaving peers
-        this.emit('debug', `Handling peer contract publish: ${JSON.stringify(message.object)}`);
-        this._registerContract(message.object);
+        this.emit('debug', `Handling peer contract publish: ${JSON.stringify(msg.object)}`);
+        if (!msg.object || typeof msg.object !== 'object') break;
+        const publishedId = (new Actor(msg.object)).id;
+        this._registerContract(msg.object);
+        this.emit('contract:publish', {
+          contract: publishedId,
+          object: msg.object,
+          origin,
+          signer: signerPubkeyHex || null
+        });
+        if (origin && origin.name) {
+          // Re-sign with hop key (per-connection key pinning); body preserved.
+          const relay = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(msg.object)]).signWithKey(this.key);
+          this.relayFrom(origin.name, relay);
+        }
         break;
-      case 'CONTRACT_MESSAGE':
+      }
+      case 'CONTRACT_MESSAGE': {
         // TODO: reject and punish mis-behaving peers
-        if (this.settings.debug) this.emit('debug', `Handling contract message: ${JSON.stringify(message.object)}`);
-        if (this.settings.debug) this.emit('debug', `Contract state: ${JSON.stringify(this.state.contracts[message.object.contract])}`);
-        manager.applyPatch(this._state.content.contracts[message.object.contract], message.object.ops);
-        this.commit();
+        if (this.settings.debug) this.emit('debug', `Handling contract message: ${JSON.stringify(msg.object)}`);
+        const contractId = msg.object && msg.object.contract ? String(msg.object.contract) : null;
+        if (!contractId) {
+          this.emit('warning', '[FABRIC:PEER] CONTRACT_MESSAGE missing `contract` namespace id; dropped');
+          break;
+        }
+        const registered = !!(this._state.content.contracts && this._state.content.contracts[contractId]);
+        // State ops only apply to locally registered contract namespaces —
+        // unknown ids must not crash the peer (message may still be app-consumed).
+        if (registered && Array.isArray(msg.object.ops) && msg.object.ops.length) {
+          try {
+            manager.applyPatch(this._state.content.contracts[contractId], msg.object.ops);
+            this.commit();
+          } catch (exception) {
+            this.emit('warning', `[FABRIC:PEER] CONTRACT_MESSAGE patch failed for ${contractId}: ${exception.message}`);
+            break;
+          }
+        }
+        this.emit('contract:message', {
+          contract: contractId,
+          registered,
+          object: msg.object,
+          origin,
+          signer: signerPubkeyHex || null
+        });
+        if (origin && origin.name) {
+          // Re-sign with hop key (per-connection key pinning); body preserved.
+          const relay = Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify(msg.object)]).signWithKey(this.key);
+          this.relayFrom(origin.name, relay);
+        }
         break;
+      }
     }
   }
 
