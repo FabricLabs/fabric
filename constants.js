@@ -54,6 +54,8 @@ const BITCOIN_TRANSACTION_HASH_TYPE = 22100;
 const GENERIC_MESSAGE_TYPE = 15103;
 const LOG_MESSAGE_TYPE = 3235156080;
 const GENERIC_LIST_TYPE = 3235170158;
+/** Sidechain registry / state update (typed fields; HTTP may map RFC6902 ↔ fields). */
+const SIDECHAIN_STATE_PATCH_TYPE = 997;
 const DOCUMENT_PUBLISH_TYPE = 998;
 const DOCUMENT_REQUEST_TYPE = 999;
 const JSON_CALL_TYPE = 16000;
@@ -84,8 +86,10 @@ const BECH32M_CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
 // Peering
 const P2P_PORT = 7777;
 // Gossip and peering discovery (WebRTC + Fabric P2P)
-const P2P_PEER_GOSSIP = 'P2P_PEER_GOSSIP'; // Gossip known peers for cross-cluster discovery
-const P2P_PEERING_OFFER = 'P2P_PEERING_OFFER'; // Peer needs more connections; gossiped until fulfilled
+/** First-class wire opcode: gossip known peers for cross-cluster discovery. */
+const P2P_PEER_GOSSIP = 0x61;
+/** First-class wire opcode: peer needs more connections; relayed until fulfilled. */
+const P2P_PEERING_OFFER = 0x62;
 /** Max gossip relays per logical hop (anti amplification). */
 const GOSSIP_MAX_HOPS = 5;
 /** Per-origin relay budget per rolling minute (anti flood). */
@@ -145,7 +149,7 @@ const BLOCK_CANDIDATE = 0x03;
 
 const SESSION_START = 0x02;
 const CHAT_MESSAGE = 0x67;
-/** First-class peer chat frame (author-signed, relayed verbatim). Legacy inner-JSON `P2P_CHAT_MESSAGE` bodies carried by P2P_BASE_MESSAGE / CHAT_MESSAGE remain decodable. */
+/** First-class peer chat frame (author-signed, relayed verbatim). Body = raw UTF-8 text only (no JSON). Author is AMP header + signature. */
 const P2P_CHAT_MESSAGE = 0x68;
 
 // Lightning
@@ -327,6 +331,7 @@ module.exports = {
   P2P_MUSIG_REPLY_TO_PROPOSAL,
   P2P_MUSIG_ACCEPT_PROPOSAL,
   PEER_CANDIDATE,
+  SIDECHAIN_STATE_PATCH_TYPE,
   DOCUMENT_PUBLISH_TYPE,
   DOCUMENT_REQUEST_TYPE,
   JSON_CALL_TYPE,

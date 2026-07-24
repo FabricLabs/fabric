@@ -116,30 +116,36 @@ async function main () {
   program.option('--password <PASSWORD>', 'Specify the encryption password.', '');
   program.option('--wallet <FILE>', 'Load wallet from file.', file);
 
-  const optionsPreview = program.parseOptions(argv);
-  const requestedCommand = Array.isArray(optionsPreview.operands) ? optionsPreview.operands[0] : null;
+  // parseOptions() keeps node + script in operands; find a known subcommand in user args.
+  const COMMAND_NAMES = Object.keys(COMMANDS).map((k) => k.toLowerCase());
+  const requestedCommand = argv.slice(2).find((a) => COMMAND_NAMES.includes(a)) || null;
   const wantsHelp = argv.includes('--help') || argv.includes('-h');
   const wantsVersion = argv.includes('--version') || argv.includes('-V');
   const wantsReceive = argv.includes('--receive');
 
+  // Help / version never require a wallet.
+  if (wantsHelp || wantsVersion) {
+    await program.parseAsync(argv);
+    return;
+  }
+
   if (!environment.wallet) {
     if (requestedCommand === 'setup') {
       await program.parseAsync(argv);
-      return this;
+      return;
     }
 
-    const forceEnabled = argv.includes('--force');
-    if (environment.walletExists() && !forceEnabled) {
-      console.warn('[FABRIC:CLI]', 'Wallet file exists, no data will be written.  Use --force to override.');
-      console.warn('[FABRIC:CLI]', '[WARNING]', '--force DESTROYS ALL DATA: DOUBLE-CHECK YOUR BACKUPS!');
+    if (environment.walletExists()) {
+      console.error('[FABRIC:CLI]', `Wallet file exists but could not be loaded: ${environment.WALLET_FILE}`);
+      console.error('[FABRIC:CLI]', 'Fix or remove the file, or run: fabric setup --force');
+      console.error('[FABRIC:CLI]', '[WARNING]', '--force DESTROYS ALL DATA: DOUBLE-CHECK YOUR BACKUPS!');
     } else {
-      await OP_SETUP.apply({ environment, program });
+      console.error('[FABRIC:CLI]', 'No wallet configured. Run: fabric setup');
     }
-
-    process.exit();
+    process.exit(1);
   }
 
-  const shouldDefaultShell = !requestedCommand && !wantsHelp && !wantsVersion && !wantsReceive;
+  const shouldDefaultShell = !requestedCommand && !wantsReceive;
   const parseArgv = shouldDefaultShell ? argv.concat(['shell']) : argv;
   await program.parseAsync(parseArgv);
 
@@ -152,8 +158,6 @@ async function main () {
     console.log('[FABRIC:CLI]', '$BTC', 'Receive Address:', address.toString());
     process.exit();
   }
-
-  return this;
 }
 
 main().catch((exception) => {

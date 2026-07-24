@@ -103,7 +103,7 @@ describe('L1 document exchange complete flow', function () {
       size: buf.length,
       sha256: crypto.createHash('sha256').update(buf).digest('hex')
     };
-    const expectedHash = purchaseContentHashHex(docId, parsed);
+    const envelopeHash = purchaseContentHashHex(docId, parsed);
     const expectedEnvelope = documentPublishEnvelopeBuffer(docId, parsed);
 
     const events = [];
@@ -118,6 +118,10 @@ describe('L1 document exchange complete flow', function () {
 
     const askSats = 21_000;
     hub._publishDocument(docId, body, askSats);
+    // Priced publish seals: pricing gossip / HTLC bind to SHA256(K), not envelope hash.
+    const sealedMeta = hub._getDocumentSealedMeta(docId);
+    assert.ok(sealedMeta && sealedMeta.paymentHashHex, 'priced publish should seal');
+    const buyHash = sealedMeta.paymentHashHex;
 
     await new Promise((r) => setTimeout(r, 500));
 
@@ -126,12 +130,13 @@ describe('L1 document exchange complete flow', function () {
 
     assert.strictEqual(canonical.length, 1, 'one canonical DOCUMENT_PUBLISH');
     assert.strictEqual(pricing.length, 1, 'one pricing gossip when rateSats > 0');
-    assert.strictEqual(canonical[0].purchaseContentHashHex, expectedHash);
+    assert.strictEqual(canonical[0].purchaseContentHashHex, envelopeHash);
     assert.strictEqual(pricing[0].rateSats, askSats);
-    assert.strictEqual(pricing[0].contentHash, expectedHash);
+    assert.strictEqual(pricing[0].contentHash, buyHash);
+    assert.notStrictEqual(buyHash, envelopeHash);
 
     assert.strictEqual(docPub.length, 1);
-    assert.strictEqual(docPub[0].purchaseContentHashHex, expectedHash);
+    assert.strictEqual(docPub[0].purchaseContentHashHex, envelopeHash);
 
     const envMsg = Message.fromBuffer(Buffer.from(expectedEnvelope));
     assert.strictEqual(

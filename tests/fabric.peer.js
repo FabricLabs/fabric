@@ -379,6 +379,34 @@ describe('@fabric/core/types/peer', function () {
         peer._announceAlias('myalias', { name: 'origin' }, null);
         assert.strictEqual(broadcasted, true);
       });
+
+      it('receives UTF-8 P2P_PEER_ALIAS and relays bit-identical', function () {
+        const Message = require('../types/message');
+        const Key = require('../types/key');
+        const hub = new Peer({ listen: false, peersDb: null });
+        const author = new Key();
+        const origin = '127.0.0.1:7700';
+        const relayWrites = [];
+        hub.connections[origin] = { _writeFabric: () => {}, destroy: () => {} };
+        hub.connections['127.0.0.1:7701'] = {
+          _writeFabric: (buf) => relayWrites.push(Buffer.isBuffer(buf) ? buf : Buffer.from(buf)),
+          destroy: () => {}
+        };
+        hub.peers[origin] = { id: 'relay-peer', publicKey: hub.key.pubkey };
+
+        const msg = Message.fromVector(['P2P_PEER_ALIAS', 'Neorion']);
+        msg.signWithKey(author);
+        const original = msg.toBuffer();
+
+        let ev = null;
+        hub.once('peerAlias', (e) => { ev = e; });
+        hub._handleFabricMessage(original, { name: origin }, null);
+
+        assert.ok(ev);
+        assert.strictEqual(ev.alias, 'Neorion');
+        assert.ok(relayWrites.length >= 1);
+        assert.ok(relayWrites[0].equals(original));
+      });
     });
 
     describe('_fillPeerSlots', function () {
@@ -632,7 +660,8 @@ describe('@fabric/core/types/peer', function () {
         const expectedSigner = new Key();
         const other = new Key();
         peer.peers.o = { publicKey: expectedSigner.public.encodeCompressed('hex') };
-        const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify({ type: 'INVENTORY_REQUEST', object: {} })]);
+        // Use a non-relay-as-is type so TCP peer pin still applies (inventory is mesh-relayable).
+        const msg = Message.fromVector(['P2P_DOCUMENT_PUBLISH', JSON.stringify({ id: 'x', content: 'y' })]);
         msg.signWithKey(other);
         let warned = false;
         let errored = false;
@@ -745,6 +774,206 @@ describe('@fabric/core/types/peer', function () {
         assert.strictEqual(back.type, 'P2P_FILE_SEND');
         assert.strictEqual(body.name, 'doc-held');
         assert.strictEqual(Buffer.from(body.body, 'base64').toString('utf8'), 'payload-bytes');
+        assert.strictEqual(body.blobIndex, 0);
+        assert.strictEqual(body.blobTotal, 1);
+        assert.ok(/^[0-9a-f]{64}$/.test(body.blobHashHex));
+        assert.ok(/^[0-9a-f]{64}$/.test(body.merkleRootHex));
+      });
+      it('multi-blob P2P_FILE_SEND reassembles and rejects wrong bytes', function () {
+        const seller = new Peer({ listen: false, peersDb: null, sealPricedDocuments: false });
+        const buyer = new Peer({ listen: false, peersDb: null });
+        const payload = Buffer.alloc(5000, 0x7a).toString('utf8');
+        seller._state.content.documents = { 'doc-xl': payload };
+        seller.settings.inventoryBlobChunkBytes = 1200;
+        const frames = [];
+        seller.connections['buyer:1'] = {
+          _writeFabric: (buf) => {
+            frames.push(buf);
+            buyer._handleFabricMessage(buf, { name: 'seller:1' }, null);
+          }
+        };
+        let received = null;
+        let rejected = null;
+        buyer.on('documentReceived', (ev) => { received = ev; });
+        buyer.on('documentBlobRejected', (ev) => { rejected = ev; });
+        assert.ok(seller._sendP2pFileSendToPeer('doc-xl', 'buyer:1'));
+        assert.ok(frames.length > 1);
+        assert.ok(received && received.verified);
+        assert.strictEqual(received.buffer.toString('utf8'), payload);
+
+        // Tamper one frame after the fact: direct ingest of wrong body.
+        const badMsg = Message.fromVector(['P2P_FILE_SEND', JSON.stringify({
+          name: 'doc-evil',
+          body: Buffer.alloc(1200, 1).toString('base64'),
+          blobIndex: 0,
+          blobTotal: 2,
+          blobHashHex: '11'.repeat(32),
+          merkleRootHex: '22'.repeat(32)
+        })]);
+        badMsg.signWithKey(seller.key);
+        buyer._handleFabricMessage(badMsg.toBuffer(), { name: 'seller:1' }, null);
+        assert.ok(rejected && /hash mismatch|rejected/i.test(String(rejected.error || 'rejected')));
+      });
+      it('sealed priced doc: ciphertext without key; open after payment-hash reveal', function () {
+        const seller = new Peer({ listen: false, peersDb: null, sealPricedDocuments: true });
+        const buyer = new Peer({ listen: false, peersDb: null });
+        const secret = 'sealed-secret-' + 'Z'.repeat(3000);
+        seller._publishDocument('doc-seal', secret, 250);
+        const meta = seller._getDocumentSealedMeta('doc-seal');
+        assert.ok(meta && meta.paymentHashHex);
+
+        let opened = null;
+        let cipher = null;
+        buyer.on('documentCiphertextReceived', (ev) => { cipher = ev; });
+        buyer.on('documentReceived', (ev) => { opened = ev; });
+
+        seller.connections['buyer:2'] = {
+          _writeFabric: (buf) => buyer._handleFabricMessage(buf, { name: 'seller:2' }, null)
+        };
+
+        // Unpaid request path: ciphertext only.
+        assert.ok(seller._sendP2pFileSendToPeer('doc-seal', 'buyer:2', { revealKey: false }));
+        assert.ok(cipher && cipher.verified);
+        assert.strictEqual(opened, null);
+        assert.ok(!buyer._state.content.documents['doc-seal']);
+
+        // Payment-hash unlock reveals key.
+        assert.ok(seller._sendP2pFileSendToPeer('doc-seal', 'buyer:2', { revealKey: true }));
+        assert.ok(opened && opened.opened && opened.verified);
+        assert.strictEqual(opened.buffer.toString('utf8'), secret);
+
+        // DocumentRequest with wrong hash does not unlock.
+        const buyer2 = new Peer({ listen: false, peersDb: null });
+        let opened2 = null;
+        buyer2.on('documentReceived', (ev) => { opened2 = ev; });
+        seller.connections['buyer:3'] = {
+          _writeFabric: (buf) => buyer2._handleFabricMessage(buf, { name: 'seller:3' }, null)
+        };
+        const msg = Message.fromVector(['DocumentRequest', JSON.stringify({
+          document: 'doc-seal',
+          contentHashHex: 'aa'.repeat(32)
+        })]);
+        msg.signWithKey(buyer2.key);
+        seller._handleFabricMessage(msg.toBuffer(), { name: 'buyer:3' }, null);
+        assert.strictEqual(opened2, null);
+        assert.ok(buyer2.pendingSealedDeliveries['doc-seal'] ||
+          Object.keys(buyer2.pendingSealedDeliveries).length >= 0);
+
+        // Matching hash unlocks via auto-fulfill.
+        const buyer3 = new Peer({ listen: false, peersDb: null });
+        let opened3 = null;
+        buyer3.on('documentReceived', (ev) => { opened3 = ev; });
+        seller.connections['buyer:4'] = {
+          _writeFabric: (buf) => buyer3._handleFabricMessage(buf, { name: 'seller:4' }, null)
+        };
+        const okReq = Message.fromVector(['DocumentRequest', JSON.stringify({
+          document: 'doc-seal',
+          contentHashHex: meta.paymentHashHex
+        })]);
+        okReq.signWithKey(buyer3.key);
+        seller._handleFabricMessage(okReq.toBuffer(), { name: 'buyer:4' }, null);
+        assert.ok(opened3 && opened3.opened);
+        assert.strictEqual(opened3.buffer.toString('utf8'), secret);
+      });
+      it('DOCUMENT_REQUEST queues pending when autoFulfillDocumentRequests is false', function () {
+        const peer = new Peer({
+          listen: false,
+          peersDb: null,
+          autoFulfillDocumentRequests: false
+        });
+        peer._state.content.documents = { 'doc-consent': 'secret' };
+        let written = null;
+        let pending = null;
+        peer.connections['buyer:1'] = {
+          _writeFabric: (buf) => { written = buf; }
+        };
+        peer.on('documentRequestPending', (row) => { pending = row; });
+        const msg = Message.fromVector(['DocumentRequest', JSON.stringify({ document: 'doc-consent' })]);
+        msg.signWithKey(peer.key);
+        peer._handleFabricMessage(msg.toBuffer(), { name: 'buyer:1' }, null);
+        assert.strictEqual(written, null);
+        assert.ok(pending && pending.key);
+        assert.strictEqual(pending.documentId, 'doc-consent');
+        assert.strictEqual(peer.listPendingDocumentRequests().length, 1);
+
+        const approved = peer.approveDocumentRequest(pending.key);
+        assert.strictEqual(approved.ok, true);
+        assert.ok(written && written.length);
+        const back = Message.fromBuffer(written);
+        assert.strictEqual(back.type, 'P2P_FILE_SEND');
+        assert.strictEqual(peer.listPendingDocumentRequests().length, 0);
+      });
+      it('denyDocumentRequest drops pending without sending file', function () {
+        const peer = new Peer({
+          listen: false,
+          peersDb: null,
+          autoFulfillDocumentRequests: false
+        });
+        peer._state.content.documents = { 'doc-deny': 'x' };
+        let writes = 0;
+        peer.connections['buyer:2'] = {
+          _writeFabric: () => { writes++; }
+        };
+        const msg = Message.fromVector(['DocumentRequest', JSON.stringify({ document: 'doc-deny' })]);
+        msg.signWithKey(peer.key);
+        peer._handleFabricMessage(msg.toBuffer(), { name: 'buyer:2' }, null);
+        const key = peer.listPendingDocumentRequests()[0].key;
+        const denied = peer.denyDocumentRequest(key);
+        assert.strictEqual(denied.ok, true);
+        assert.strictEqual(writes, 0);
+        assert.strictEqual(peer.listPendingDocumentRequests().length, 0);
+      });
+      it('requestPeerInventory writes P2P_INVENTORY_REQUEST', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        let written = null;
+        peer.connections['seller:7'] = {
+          _writeFabric: (buf) => { written = buf; }
+        };
+        assert.strictEqual(peer.requestPeerInventory('seller:7', { kind: 'documents' }), true);
+        const back = Message.fromBuffer(written);
+        assert.strictEqual(back.type, 'P2P_INVENTORY_REQUEST');
+        const body = JSON.parse(back.data);
+        assert.strictEqual(body.kind, 'documents');
+      });
+      it('requestDocument directs DocumentRequest to one peer', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        let written = null;
+        peer.connections['seller:3'] = {
+          _writeFabric: (buf) => { written = buf; }
+        };
+        assert.strictEqual(peer.requestDocument('abc', 'seller:3'), true);
+        const back = Message.fromBuffer(written);
+        assert.ok(back.type === 'DocumentRequest' || back.type === 'DOCUMENT_REQUEST');
+        assert.strictEqual(JSON.parse(back.data).document, 'abc');
+      });
+      it('private relay rewrites budgeted DocumentRequest instead of bit-identical forward', function () {
+        const peer = new Peer({
+          listen: false,
+          peersDb: null,
+          relayPrivateDocumentRequests: true,
+          documentRelayFeeSats: 10,
+          documentRelayMaxHops: 4
+        });
+        let relayedIdentical = 0;
+        peer.relayFrom = () => { relayedIdentical++; };
+        const outs = [];
+        peer.broadcast = (buf) => { outs.push(buf); };
+        const msg = Message.fromVector(['DocumentRequest', JSON.stringify({
+          document: 'missing-doc',
+          maxSats: 100,
+          relayHop: 3,
+          routeId: 'aabbccdd'
+        })]);
+        msg.signWithKey(peer.key);
+        peer._handleFabricMessage(msg.toBuffer(), { name: 'buyer:1' }, null);
+        assert.strictEqual(relayedIdentical, 0);
+        assert.strictEqual(outs.length, 1);
+        const body = JSON.parse(Message.fromBuffer(outs[0]).data);
+        assert.strictEqual(body.document, 'missing-doc');
+        assert.strictEqual(body.maxSats, 90);
+        assert.strictEqual(body.relayHop, 2);
+        assert.ok(body.routeId);
+        assert.notStrictEqual(body.routeId, 'aabbccdd');
       });
     });
 

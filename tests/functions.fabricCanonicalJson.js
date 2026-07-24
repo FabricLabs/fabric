@@ -2,7 +2,7 @@
 
 const assert = require('assert');
 const fabricCanonicalJson = require('../functions/fabricCanonicalJson');
-const { stableStringify } = require('../types/distributedExecution');
+const { stableStringify } = require('../functions/fabricCanonicalJson');
 
 describe('functions/fabricCanonicalJson', function () {
   it('sorts object keys deterministically', function () {
@@ -17,7 +17,7 @@ describe('functions/fabricCanonicalJson', function () {
     assert.strictEqual(fabricCanonicalJson([1, undefined, 2]), '[1,null,2]');
   });
 
-  it('matches distributedExecution stableStringify (beacon / federation binding)', function () {
+  it('matches stableStringify alias (beacon / federation binding)', function () {
     const payload = { version: 1, kind: 'BeaconEpoch', epoch: { h: 1, x: 2 } };
     assert.strictEqual(fabricCanonicalJson(payload), stableStringify(payload));
   });

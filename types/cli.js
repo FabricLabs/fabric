@@ -34,6 +34,27 @@ const Key = require('./key');
 // Functions
 const truncateMiddle = require('../functions/truncateMiddle');
 const { tryParsePersistedJson, tryParseWireJson, messageDataToString } = require('../functions/wireJson');
+const { DocumentOfferBook } = require('../functions/documentOfferBook');
+const {
+  createDocumentPurchaseSession,
+  findSession,
+  isDuplicateSettlement,
+  rememberSettlement,
+  listRefundCandidates
+} = require('../functions/documentPurchaseSession');
+const inventoryHtlc = require('../functions/inventoryHtlc');
+const { contentHashHexFromObject } = require('../functions/documentPaymentHash');
+const {
+  extractPreimageFromClaimTx,
+  refundLocktimeMature,
+  prepareInventoryHtlcBuyerRefundPsbt,
+  signAndExtractInventoryHtlcBuyerRefund
+} = inventoryHtlc;
+const {
+  CLI_CONTRACTS,
+  resolveEnabledContracts,
+  findCliContract
+} = require('../functions/cliContracts');
 
 // Services
 const Bitcoin = require('../services/bitcoin');
@@ -130,12 +151,17 @@ class CLI extends FabricShell {
 
     // Assign Settings
     this.settings = merge({
-      debug: true,
+      debug: false,
+      verbosity: 1,
       ephemeral: false,
       listen: false,
       peering: true,
       render: true,
       services: [],
+      /** Per-contract CLI surface enable overrides: `{ explorer: false, debug: true }`. */
+      cliContracts: {},
+      /** Explicit disable list of CLI contract ids. `core` cannot be disabled. */
+      cliContractsDisabled: [],
       network: bitcoinSettings.network,
       interval: 1000,
       port: 7777, // Default port
@@ -205,8 +231,19 @@ class CLI extends FabricShell {
     this.aliases = {};
     this.channels = {};
     this.commands = {};
+    /** @type {Map<string, object>} id → CLI contract descriptor (+ enabled) */
+    this.cliContracts = new Map();
+    /** @type {Map<string, string>} command → contract id */
+    this._commandOwners = new Map();
     this.contracts = {};
     this.documents = {};
+    /** Last remote inventory catalogs keyed by peer address. */
+    this.remoteInventories = {};
+    this.offerBook = new DocumentOfferBook();
+    /** @type {Map<string, object>} */
+    this.purchaseSessions = new Map();
+    /** Paid (documentId|blobIndex|contentHash) keys — blocks double-pay. */
+    this.paidSettlements = new Set();
     this.elements = {};
     this.peers = {};
     this.requests = {};
@@ -301,7 +338,17 @@ class CLI extends FabricShell {
       networking: true, // Ensure networking is always enabled
       state: state,
       upnp: this.settings.upnp,
-      key: this.identity.settings
+      key: this.identity.settings,
+      // Consenting peer file exchange (CLI): serve catalog; do not auto-send on request.
+      serveLocalDocumentInventory: this.settings.serveLocalDocumentInventory !== false,
+      announceDocumentsOnPeerConnect: this.settings.announceDocumentsOnPeerConnect !== false,
+      autoFulfillDocumentRequests: this.settings.autoFulfillDocumentRequests === true,
+      relayPrivateDocumentRequests: this.settings.relayPrivateDocumentRequests !== false,
+      attachInventoryHtlc: !!this.settings.attachInventoryHtlc,
+      inventoryHtlcLocktimeHeight: this.settings.inventoryHtlcLocktimeHeight || null,
+      documentRelayFeeSats: this.settings.documentRelayFeeSats != null ? this.settings.documentRelayFeeSats : null,
+      documentRelayFeeBps: this.settings.documentRelayFeeBps != null ? this.settings.documentRelayFeeBps : 100,
+      documentRelayMaxHops: this.settings.documentRelayMaxHops != null ? this.settings.documentRelayMaxHops : 4
     };
     if (Array.isArray(this.settings.flushChainAuthorizedPubkeys)) {
       peerOpts.flushChainAuthorizedPubkeys = this.settings.flushChainAuthorizedPubkeys;
@@ -391,62 +438,8 @@ class CLI extends FabricShell {
    * Starts (and renders) the CLI.
    */
   async start () {
-    // Register Internal Commands
-    this._registerCommand('help', this._handleHelpRequest);
-    this._registerCommand('quit', this._handleQuitRequest);
-    this._registerCommand('exit', this._handleQuitRequest);
-    this._registerCommand('clear', this._handleClearRequest);
-    this._registerCommand('flush', this._handleFlushRequest);
-    this._registerCommand('alias', this._handleAliasRequest);
-    this._registerCommand('peers', this._handlePeerListRequest);
-    this._registerCommand('rotate', this._handleRotateRequest);
-    this._registerCommand('connect', this._handleConnectRequest);
-    this._registerCommand('disconnect', this._handleDisconnectRequest);
-    this._registerCommand('settings', this._handleSettingsRequest);
-    this._registerCommand('inventory', this._handleInventoryRequest);
-    this._registerCommand('channels', this._handleChannelRequest);
-    this._registerCommand('identity', this._handleIdentityRequest);
-    this._registerCommand('generate', this._handleGenerateRequest);
-    this._registerCommand('wallet', this._handleWalletCommand);
-    this._registerCommand('service', this._handleServiceCommand);
-    this._registerCommand('publish', this._handlePublishCommand);
-    this._registerCommand('request', this._handleRequestCommand);
-    this._registerCommand('grant', this._handleGrantCommand);
-    this._registerCommand('import', this._handleImportCommand);
-    this._registerCommand('join', this._handleJoinRequest);
-    this._registerCommand('sync', this._handleChainSyncRequest);
-    this._registerCommand('flushchain', this._handleFlushChainCli);
-    this._registerCommand('send', this._handleSendRequest);
-    this._registerCommand('fund', this._handleFundRequest);
-    this._registerCommand('state', this._handleStateRequest);
-    this._registerCommand('set', this._handleSetRequest);
-    this._registerCommand('get', this._handleGetRequest);
-
-    // Contracts
-    this._registerCommand('contracts', this._handleContractsRequest);
-    this._registerCommand('subscribe', this._handleSubscribeRequest);
-    this._registerCommand('create', this._handleCreateRequest);
-    this._registerCommand('deploy', this._handleDeployRequest);
-    this._registerCommand('accept', this._handleAcceptRequest);
-
-    // Service Commands
-    this._registerCommand('bitcoin', this._handleBitcoinRequest);
-    this._registerCommand('lightning', this._handleLightningRequest);
-
-    // Debug Commands
-    this._registerCommand('syncui', this._handleSyncUIRequest);
-    this._registerCommand('listelements', this._handleListElementsRequest);
-    this._registerCommand('testrpc', this._handleTestRPCRequest);
-    this._registerCommand('createwallet', this._handleCreateWalletRequest);
-    this._registerCommand('loadwallet', this._handleLoadWalletRequest);
-    this._registerCommand('listwallets', this._handleListWalletsRequest);
-    this._registerCommand('bitcoinhelp', this._handleBitcoinHelpRequest);
-
-    // Blockchain explorer
-    this._registerCommand('block', this._handleBlockExplorerRequest);
-    this._registerCommand('tx', this._handleTxExplorerRequest);
-    this._registerCommand('address', this._handleAddressExplorerRequest);
-    this._registerCommand('explorer', this._handleExplorerHelpRequest);
+    // Register composable CLI contracts (default-on surfaces; disable via /contracts).
+    this._loadCliContracts();
 
     // Services
     this._registerService('bitcoin', Bitcoin);
@@ -503,6 +496,14 @@ class CLI extends FabricShell {
     // ## Document Exchange
     this.node.on('DocumentPublish', this._handlePeerDocumentPublish.bind(this));
     this.node.on('DocumentRequest', this._handlePeerDocumentRequest.bind(this));
+    this.node.on('documentRequestPending', this._handlePeerDocumentRequestPending.bind(this));
+    this.node.on('inventoryResponse', this._handlePeerInventoryResponse.bind(this));
+    this.node.on('file', this._handlePeerFileReceive.bind(this));
+    this.node.on('documentReceived', this._handlePeerDocumentReceived.bind(this));
+    this.node.on('documentBlobRejected', this._handlePeerDocumentBlobRejected.bind(this));
+    this.node.on('documentCiphertextReceived', this._handlePeerDocumentCiphertextReceived.bind(this));
+    this.node.on('documentAwaitingKey', this._handlePeerDocumentAwaitingKey.bind(this));
+    this.node.on('documentOpened', this._handlePeerDocumentOpened.bind(this));
 
     // ## Anchor handlers
     // ### Bitcoin
@@ -520,6 +521,13 @@ class CLI extends FabricShell {
       this.bitcoin.on('sync', this._handleBitcoinSync.bind(this));
       this.bitcoin.on('block', this._handleBitcoinBlock.bind(this));
       this.bitcoin.on('transaction', this._handleBitcoinTransaction.bind(this));
+      if (this.wallet && typeof this.wallet.trust === 'function') {
+        this.wallet.trust(this.bitcoin);
+        this.wallet.on('walletTransaction', this._handleWalletTransaction.bind(this));
+        this.wallet.on('htlcClaim', this._handleWalletHtlcClaim.bind(this));
+        this.wallet.on('htlcFunding', this._handleWalletHtlcFunding.bind(this));
+        this.wallet.on('htlcRefund', this._handleWalletHtlcRefund.bind(this));
+      }
     }
 
     // #### Lightning
@@ -834,7 +842,220 @@ class CLI extends FabricShell {
   }
 
   async _appendDebug (msg) {
+    const verbosity = Number(this.settings.verbosity);
+    if (!this.settings.debug && !(Number.isFinite(verbosity) && verbosity >= 4)) return;
     this._appendMessage(`{green-fg}${msg}{/green-fg}`);
+  }
+
+  /**
+   * Load enabled CLI contracts and register their slash-commands.
+   * @param {{ reset?: boolean }} [opts]
+   */
+  _loadCliContracts (opts = {}) {
+    if (opts.reset) {
+      this.commands = {};
+      this._commandOwners = new Map();
+    }
+    const resolved = resolveEnabledContracts(this.settings);
+    this.cliContracts = new Map();
+    for (const contract of resolved) {
+      this.cliContracts.set(contract.id, contract);
+      if (!contract.enabled) continue;
+      this._registerContractCommands(contract);
+    }
+  }
+
+  /**
+   * @param {object} contract
+   */
+  _registerContractCommands (contract) {
+    if (!contract || !contract.commands) return;
+    for (const cmd of Object.keys(contract.commands)) {
+      const methodName = contract.commands[cmd];
+      const method = this[methodName];
+      if (typeof method !== 'function') {
+        if (this.settings.debug) {
+           
+          console.warn(`[FABRIC:CLI] Missing handler ${methodName} for /${cmd} (${contract.id})`);
+        }
+        continue;
+      }
+      this._registerCommand(cmd, method);
+      this._commandOwners.set(cmd, contract.id);
+    }
+  }
+
+  /**
+   * @param {object} contract
+   */
+  _unregisterContractCommands (contract) {
+    if (!contract || !contract.commands) return;
+    for (const cmd of Object.keys(contract.commands)) {
+      if (this._commandOwners.get(cmd) === contract.id) {
+        delete this.commands[cmd];
+        this._commandOwners.delete(cmd);
+      }
+    }
+  }
+
+  /**
+   * Persist CLI contract enable override into settings.
+   * @param {string} id
+   * @param {boolean} enabled
+   */
+  _setCliContractEnabled (id, enabled) {
+    if (!this.settings.cliContracts || typeof this.settings.cliContracts !== 'object') {
+      this.settings.cliContracts = {};
+    }
+    this.settings.cliContracts[id] = !!enabled;
+    if (Array.isArray(this.settings.cliContractsDisabled)) {
+      this.settings.cliContractsDisabled = this.settings.cliContractsDisabled.filter((x) => x !== id);
+      if (!enabled) this.settings.cliContractsDisabled.push(id);
+    }
+  }
+
+  /**
+   * Format shell-pack lines for /contracts.
+   * @returns {string[]}
+   */
+  _formatShellContractLines () {
+    const lines = [];
+    for (const contract of this.cliContracts.values()) {
+      const cmds = Object.keys(contract.commands || {}).sort().join(', ');
+      lines.push(
+        `  ${contract.enabled ? 'on ' : 'off'}  ${contract.id}` +
+        (contract.required ? ' (required)' : '') +
+        ` — ${contract.title}` +
+        (contract.description ? `\n       ${contract.description}` : '') +
+        `\n       cmds: ${cmds || '(none)'}`
+      );
+    }
+    return lines;
+  }
+
+  /**
+   * Live document-exchange / HTLC purchase sessions as contracts.
+   * @returns {Promise<string[]>}
+   */
+  async _formatSessionContractLines () {
+    const tip = await this._bitcoinTipHeight();
+    const rows = listRefundCandidates(this.purchaseSessions, tip, { filter: 'all' });
+    const openish = [];
+    for (const session of this.purchaseSessions.values()) {
+      if (!session) continue;
+      if (session.status === 'complete' || session.status === 'refunded') continue;
+      if (rows.some((r) => r.settlementId === session.settlementId)) continue;
+      openish.push(session);
+    }
+    const lines = [];
+    for (const r of rows) {
+      lines.push(
+        `  [${r.bucket}] document-exchange  settlement=${r.settlementId}` +
+        ` doc=${r.documentId} status=${r.status} amount=${r.amountSats}sats` +
+        (r.refundLocktimeHeight != null ? ` htlcLock=${r.refundLocktimeHeight}` : '')
+      );
+    }
+    for (const s of openish) {
+      lines.push(
+        `  [open] document-exchange  settlement=${s.settlementId}` +
+        ` doc=${s.documentId} status=${s.status} amount=${s.amountSats}sats`
+      );
+    }
+    if (!lines.length) {
+      lines.push('  (none — use /buy for a document-exchange / HTLC session)');
+    }
+    return lines;
+  }
+
+  /**
+   * /contracts — Fabric contracts (interfaces, shell packs, sessions, runtime).
+   * Usage: /contracts [list|interfaces|shell|sessions|enable|disable|runtime]
+   */
+  async _handleContractsCommand (params) {
+    const sub = params[1] ? String(params[1]).toLowerCase() : null;
+    const id = params[2] ? String(params[2]).trim() : null;
+
+    if (sub === 'interfaces' || sub === 'kinds') {
+      return this._appendMessage(
+        `{bold}Contract interfaces{/bold} (capabilities — not exclusive kinds)\n` +
+        `  payment/escrow     — HTLCs, offer escrow\n` +
+        `  document-exchange  — purchase sessions, sealed sales, blob plans\n` +
+        `  crowdfund          — threshold / federation funding\n` +
+        `  program            — Fabric Program + Machine execution\n` +
+        `  proposal           — ContractProposal (Merkle + JSON Patch + PSBT)\n` +
+        `  cli.shell          — local TUI command packs\n` +
+        `Hub registry holds published contracts; Hub publishes first on the public network.\n` +
+        `See docs/CONTRACTS.md`
+      );
+    }
+
+    if (sub === 'shell') {
+      return this._appendMessage(
+        `{bold}Shell packs{/bold} (interface cli.shell)\n` +
+        `${this._formatShellContractLines().join('\n')}\n` +
+        `Use /contracts enable <id> or /contracts disable <id>.`
+      );
+    }
+
+    if (sub === 'sessions') {
+      const lines = await this._formatSessionContractLines();
+      return this._appendMessage(
+        `{bold}Document-exchange / HTLC sessions{/bold}\n` +
+        `${lines.join('\n')}\n` +
+        `Refunds: /refunds · settle: /refund <settlementId>`
+      );
+    }
+
+    if (!sub || sub === 'list') {
+      const shell = this._formatShellContractLines();
+      const sessions = await this._formatSessionContractLines();
+      const runtimeKeys = Object.keys(this.contracts || {});
+      return this._appendMessage(
+        `{bold}Contracts{/bold}\n` +
+        `Agreements beyond the base peer protocol. A contract may implement many\n` +
+        `interfaces; Hub registry published set starts with the Hub contract.\n` +
+        `See docs/CONTRACTS.md · /contracts interfaces\n\n` +
+        `{bold}Document-exchange / HTLC{/bold}\n${sessions.join('\n')}\n\n` +
+        `{bold}Shell packs{/bold} (cli.shell)\n${shell.join('\n')}\n\n` +
+        `{bold}Runtime store{/bold} (${runtimeKeys.length} keys) — /contracts runtime\n` +
+        `Enable/disable shell: /contracts enable|disable <id>`
+      );
+    }
+
+    if (sub === 'runtime' || sub === 'store') {
+      return this._appendMessage(
+        '{bold}Runtime contract store{/bold}: ' + JSON.stringify(this.contracts, null, '  ')
+      );
+    }
+
+    if ((sub === 'enable' || sub === 'disable') && !id) {
+      return this._appendError(`Usage: /contracts ${sub} <shellPackId>`);
+    }
+
+    if (sub === 'enable' || sub === 'disable') {
+      const catalog = findCliContract(id) || this.cliContracts.get(id);
+      if (!catalog) {
+        return this._appendError(
+          `Unknown shell pack "${id}". Known: ${CLI_CONTRACTS.map((c) => c.id).join(', ')}`
+        );
+      }
+      if (sub === 'disable' && catalog.required) {
+        return this._appendError(`Shell pack "${catalog.id}" is required and cannot be disabled.`);
+      }
+      const enable = sub === 'enable';
+      this._setCliContractEnabled(catalog.id, enable);
+      const contract = Object.assign({}, catalog, { enabled: enable });
+      this.cliContracts.set(contract.id, contract);
+      if (enable) this._registerContractCommands(contract);
+      else this._unregisterContractCommands(contract);
+      return this._appendMessage(
+        `Shell pack ${contract.id} ${enable ? 'enabled' : 'disabled'} (interfaces: ${(contract.interfaces || ['cli.shell']).join(', ')}).`
+      );
+    }
+
+    return this._appendError(
+      'Usage: /contracts [list|interfaces|shell|sessions|enable <id>|disable <id>|runtime]'
+    );
   }
 
   async _appendWarning (msg) {
@@ -909,9 +1130,9 @@ class CLI extends FabricShell {
     return false;
   }
 
-  async _handleContractsRequest (_params) {
-    this._appendMessage('{bold}Current Contracts{/bold}: ' + JSON.stringify(this.contracts, null, '  '));
-    return false;
+  async _handleContractsRequest (params) {
+    // Legacy alias — surfaces are contracts now.
+    return this._handleContractsCommand(params || ['contracts']);
   }
 
   async _handleSubscribeRequest (params) {
@@ -977,8 +1198,126 @@ class CLI extends FabricShell {
     if (!params[1]) return this._appendError(`You must specify a sidechain.`);
   }
 
-  async _handleInventoryRequest (_params) {
-    this._appendMessage(`{bold}Inventory:{/bold} ${JSON.stringify(this.documents, null, '  ')}`);
+  _syncDocumentToPeer (documentId, content, rateSats = null) {
+    if (!this.node) return;
+    if (!this.node._state.content.documents) this.node._state.content.documents = {};
+    if (!this.node._state.content.documentRates) this.node._state.content.documentRates = {};
+    const body = Buffer.isBuffer(content) ? content.toString('utf8') : String(content == null ? '' : content);
+    this.node._state.content.documents[documentId] = body;
+    if (rateSats != null && Number.isFinite(Number(rateSats))) {
+      this.node._state.content.documentRates[documentId] = Number(rateSats);
+    }
+  }
+
+  _formatLocalInventory () {
+    const rates = (this.node && this.node._state.content.documentRates) || {};
+    const ids = Object.keys(this.documents);
+    if (!ids.length) return '(empty — use /import <file>)';
+    return ids.map((id) => {
+      const buf = this.documents[id];
+      const size = Buffer.isBuffer(buf) ? buf.length : Buffer.byteLength(String(buf || ''), 'utf8');
+      const rate = Object.prototype.hasOwnProperty.call(rates, id) ? rates[id] : 0;
+      return `  ${id}  ${size} bytes  rate=${rate} sats`;
+    }).join('\n');
+  }
+
+  async _handleInventoryRequest (params) {
+    const peerRef = params[1];
+    if (!peerRef) {
+      this._appendMessage(`{bold}Local inventory{/bold}\n${this._formatLocalInventory()}`);
+      const pending = this.node ? this.node.listPendingDocumentRequests() : [];
+      if (pending.length) {
+        this._appendMessage(`{bold}Pending inbound requests{/bold}: ${pending.length} (see /pending)`);
+      }
+      return;
+    }
+    if (!this.node) return this._appendError('Peer not ready.');
+    const mode = String(params[2] || '').toLowerCase();
+    const offerBtc = mode === 'btc' || mode === '--btc' || mode === 'offerbtc';
+    const opts = offerBtc
+      ? {
+          offerBtc: true,
+          buyerRefundPublicKey: this._buyerRefundPubkeyHex()
+        }
+      : { kind: 'documents' };
+    this._inventoryRequestStartedAt = Date.now();
+    this._inventoryRequestPeer = peerRef;
+    const ok = this.node.requestPeerInventory(peerRef, opts);
+    if (!ok) {
+      return this._appendError(`Could not request inventory from ${peerRef} (not connected?). Try /peers then /connect <addr>.`);
+    }
+    this._appendMessage(`Inventory request sent to ${peerRef}${offerBtc ? ' (offerBtc)' : ''}. Waiting for response…`);
+  }
+
+  _buyerRefundPubkeyHex () {
+    try {
+      if (this.node && this.node.key && this.node.key.public && typeof this.node.key.public.encodeCompressed === 'function') {
+        return this.node.key.public.encodeCompressed('hex');
+      }
+    } catch (_) { /* ignore */ }
+    return null;
+  }
+
+  /**
+   * 32-byte secp256k1 private key for HTLC refund signing (node identity).
+   * @returns {Buffer|null}
+   */
+  _buyerPrivateKey32 () {
+    try {
+      const key = this.node && this.node.key;
+      if (!key) return null;
+      if (key.keypair && typeof key.keypair.getPrivate === 'function') {
+        const buf = key.keypair.getPrivate('bytes');
+        if (Buffer.isBuffer(buf) && buf.length === 32) return buf;
+      }
+      if (Buffer.isBuffer(key.private) && key.private.length === 32) return key.private;
+      if (typeof key.private === 'string' && /^[0-9a-fA-F]{64}$/.test(key.private)) {
+        return Buffer.from(key.private, 'hex');
+      }
+    } catch (_) { /* ignore */ }
+    return null;
+  }
+
+  /**
+   * Fetch raw tx hex via local bitcoind (verbose=false).
+   * @param {string} txid
+   * @returns {Promise<string|null>}
+   */
+  async _fetchRawTxHex (txid) {
+    if (!this.bitcoin || typeof this.bitcoin._makeRPCRequest !== 'function') return null;
+    const id = String(txid || '').trim();
+    if (!/^[0-9a-fA-F]{64}$/.test(id)) return null;
+    try {
+      const raw = await this.bitcoin._makeRPCRequest('getrawtransaction', [id, false]);
+      return typeof raw === 'string' && raw.length > 0 ? raw : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /**
+   * @returns {Promise<number|null>}
+   */
+  async _bitcoinTipHeight () {
+    if (!this.bitcoin || typeof this.bitcoin._makeRPCRequest !== 'function') return null;
+    try {
+      const info = await this.bitcoin._makeRPCRequest('getblockchaininfo');
+      const h = info && info.blocks;
+      return Number.isFinite(Number(h)) ? Number(h) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  _peerScoreForAddress (address) {
+    try {
+      const registry = (this.node && this.node._state && this.node._state.peers) || {};
+      for (const id of Object.keys(registry)) {
+        const e = registry[id];
+        if (e && (e.address === address || id === address)) return Number(e.score) || 0;
+      }
+    } catch (_) { /* ignore */ }
+    return 0;
   }
 
   async _handleImportCommand (params) {
@@ -986,29 +1325,617 @@ class CLI extends FabricShell {
     if (!fs.existsSync(params[1])) return this._appendError(`File does not exist: ${params[1]}`);
     const content = fs.readFileSync(params[1]);
     const actor = new Actor(content);
-    this._appendMessage(`File contents (${content.length} bytes):\n---${content}\n---\nDocument ID: ${actor.id}`);
+    this._appendMessage(`Imported ${content.length} bytes → Document ID: ${actor.id}`);
     this.documents[actor.id] = content;
     this._state.content.documents[actor.id] = content.toString('hex');
+    this._syncDocumentToPeer(actor.id, content, 0);
   }
 
   async _handlePublishCommand (params) {
-    if (!params[1]) return this._appendError(`You must specify the file to publish.`);
-    if (!params[2]) return this._appendError(`You must specify the rate to pay.`);
-    if (!this.documents[params[1]]) return this._appendError(`This file does not exist in the local library.`);
+    if (!params[1]) return this._appendError(`Usage: /publish <documentID> <rateSats>`);
+    if (params[2] == null || params[2] === '') {
+      return this._appendError(`Usage: /publish <documentID> <rateSats> — rate 0 = free gossip only`);
+    }
+    if (!this.documents[params[1]]) return this._appendError(`This file does not exist in the local library. Use /import first.`);
 
+    const rateSats = Number(params[2]);
+    if (!Number.isFinite(rateSats) || rateSats < 0) {
+      return this._appendError(`rateSats must be a non-negative number`);
+    }
+
+    const body = this.documents[params[1]].toString('utf8');
     this.fs.touchDir(`documents`);
     this.fs.publish(`${params[1]}`, this.documents[params[1]]);
-    this.node._publishDocument(params[1], this.documents[params[1]].toString('utf8'));
+    this._syncDocumentToPeer(params[1], body, rateSats);
+    this.node._publishDocument(params[1], body, rateSats);
+    this._appendMessage(`Published ${params[1]} (rate=${rateSats} sats) to peers.`);
   }
 
   async _handleRequestCommand (params) {
-    if (!params[1]) return this._appendError(`You must specify the file to request.`);
-    if (!params[2]) return this._appendError(`You must specify the rate to pay.`);
-    const message = Message.fromVector(['DocumentRequest', {
-      document: params[1]
-    }]);
-    message.signWithKey(this.node.key);
-    this.node.broadcast(message.toBuffer());
+    if (!params[1]) {
+      return this._appendError(`Usage: /request <documentID> [peer] [maxSats] — ask a peer (or broadcast) for a document`);
+    }
+    const documentId = params[1];
+    const peerOrRate = params[2];
+    const directedPeer = (peerOrRate && !/^\d+$/.test(String(peerOrRate))) ? peerOrRate : null;
+    const maxSatsArg = directedPeer ? params[3] : peerOrRate;
+    const opts = {};
+    if (maxSatsArg != null && /^\d+$/.test(String(maxSatsArg))) {
+      opts.maxSats = Number(maxSatsArg);
+    }
+    const ok = this.node.requestDocument(documentId, directedPeer, opts);
+    if (!ok) {
+      return this._appendError(`Could not send DocumentRequest${directedPeer ? ` to ${directedPeer}` : ''}.`);
+    }
+    this._appendMessage(
+      directedPeer
+        ? `DocumentRequest for ${documentId} sent to ${directedPeer}${opts.maxSats != null ? ` (maxSats=${opts.maxSats})` : ''}. Seller must /approve.`
+        : `DocumentRequest for ${documentId} broadcast${opts.maxSats != null ? ` (maxSats=${opts.maxSats})` : ''}. Seller must /approve (consent mode).`
+    );
+  }
+
+  async _handleOffersCommand (params) {
+    const documentId = params[1] || null;
+    const offers = this.offerBook.listOffers(documentId ? { documentId } : {});
+    const ranked = this.offerBook.rankOffers(offers);
+    if (!ranked.length) {
+      return this._appendMessage('No offers in book. Use /inventory <peer> [btc] first.');
+    }
+    const lines = ranked.slice(0, 40).map((o, i) => {
+      const blob = o.blobIndex != null ? ` blob=${o.blobIndex}/${o.blobTotal}` : '';
+      return `  #${i + 1} ${o.documentId}${blob} seller=${o.sellerAddress} price=${o.rateSats} lat=${o.latencyMs}ms score=${o.peerScore} rank=${(o.rankScore || 0).toFixed(3)}`;
+    });
+    this._appendMessage(`{bold}Document offers{/bold} (${ranked.length})\n${lines.join('\n')}`);
+  }
+
+  async _handleBuyCommand (params) {
+    if (!params[1]) {
+      return this._appendError('Usage: /buy <documentID> [seller|auto] [amountSats]');
+    }
+    const documentId = params[1];
+    const sellerArg = params[2] || 'auto';
+    const amountArg = params[3] != null ? Number(params[3]) : null;
+
+    // Multi-blob: open one session per blob via pickBlobPlan when totals are known.
+    const sample = this.offerBook.listOffers({ documentId })[0];
+    const blobTotal = sample && sample.blobTotal != null ? Number(sample.blobTotal) : 0;
+    if (sellerArg === 'auto' && blobTotal > 1) {
+      const plan = this.offerBook.pickBlobPlan(documentId, blobTotal);
+      if (!plan.size) {
+        return this._appendError(`No blob plan for ${documentId}. Run /inventory <peer> btc then /offers.`);
+      }
+      const lines = [];
+      for (const [idx, offer] of plan.entries()) {
+        const session = this._openBuySessionFromOffer(documentId, offer, amountArg);
+        if (session.error) return this._appendError(session.error);
+        lines.push(
+          `  blob ${idx}/${blobTotal} settlement=${session.settlementId}` +
+          ` seller=${offer.sellerAddress} hash=${session.contentHashHex || 'n/a'}`
+        );
+      }
+      return this._appendMessage(
+        `{bold}Buy plan{/bold} ${documentId} (${plan.size} blobs)\n${lines.join('\n')}\n` +
+        `Pay each, then /confirm <settlementId> <txid>`
+      );
+    }
+
+    let offer = null;
+    if (sellerArg === 'auto') {
+      offer = this.offerBook.pickBest(documentId, amountArg != null ? { maxSats: amountArg } : {});
+    } else {
+      const offers = this.offerBook.listOffers({ documentId }).filter((o) => {
+        return o.sellerAddress === sellerArg || o.sellerId === sellerArg;
+      });
+      offer = this.offerBook.rankOffers(offers)[0] || null;
+    }
+    if (!offer) {
+      return this._appendError(`No offer for ${documentId}. Run /inventory <peer> btc then /offers.`);
+    }
+    const session = this._openBuySessionFromOffer(documentId, offer, amountArg);
+    if (session.error) return this._appendError(session.error);
+    this._appendMessage(
+      `{bold}Buy session{/bold} ${session.settlementId}\n` +
+      `  doc=${documentId} seller=${offer.sellerAddress} amount=${session.amountSats} sats` +
+      (session.blobIndex != null ? ` blob=${session.blobIndex}/${session.blobTotal}` : '') + `\n` +
+      `  contentHash=${session.contentHashHex || 'n/a'} (payment commitment)\n` +
+      `  blobHash=${session.blobHashHex || 'n/a'}\n` +
+      `  pay=${session.paymentAddress || '(no HTLC address — fund via Hub invoice or attachInventoryHtlc)'}\n` +
+      `  uri=${session.bitcoinUri || 'n/a'}\n` +
+      `Next: pay, then /confirm ${session.settlementId} <txid>`
+    );
+  }
+
+  /**
+   * @param {string} documentId
+   * @param {object} offer
+   * @param {number|null} amountArg
+   * @returns {object}
+   */
+  _openBuySessionFromOffer (documentId, offer, amountArg) {
+    const amountSats = amountArg != null && Number.isFinite(amountArg)
+      ? amountArg
+      : (Number(offer.rateSats) || 0);
+    let paymentAddress = offer.htlc && offer.htlc.paymentAddress;
+    let bitcoinUri = offer.htlc && offer.htlc.bitcoinUri;
+    let htlc = offer.htlc || null;
+    const contentHashHex = contentHashHexFromObject(offer);
+    if (!paymentAddress && contentHashHex && amountSats > 0) {
+      try {
+        const buyerHex = this._buyerRefundPubkeyHex();
+        const sellerHex = offer.sellerPubkey || null;
+        if (buyerHex && sellerHex && this.node.settings.inventoryHtlcLocktimeHeight) {
+          const built = inventoryHtlc.buildInventoryHtlcP2tr({
+            networkName: this.settings.network || 'regtest',
+            sellerPubkeyCompressed: Buffer.from(sellerHex, 'hex'),
+            buyerRefundPubkeyCompressed: Buffer.from(buyerHex, 'hex'),
+            paymentHash32: Buffer.from(contentHashHex, 'hex'),
+            refundLocktimeHeight: Number(this.node.settings.inventoryHtlcLocktimeHeight)
+          });
+          const hints = inventoryHtlc.buildHtlcFundingHints({
+            paymentAddress: built.address,
+            amountSats,
+            label: documentId.slice(0, 32)
+          });
+          paymentAddress = built.address;
+          bitcoinUri = hints.bitcoinUri;
+          htlc = {
+            paymentAddress,
+            paymentHashHex: built.paymentHashHex,
+            claimScriptHex: built.claimScript.toString('hex'),
+            refundScriptHex: built.refundScript.toString('hex'),
+            refundLocktimeHeight: Number(this.node.settings.inventoryHtlcLocktimeHeight),
+            bitcoinUri
+          };
+        }
+      } catch (e) {
+        this._appendWarning(`Could not build local HTLC: ${e.message}`);
+      }
+    }
+    const session = createDocumentPurchaseSession({
+      documentId,
+      seller: offer.sellerAddress,
+      contentHashHex,
+      amountSats,
+      paymentAddress: paymentAddress || '',
+      bitcoinUri,
+      network: this.settings.network || 'regtest',
+      blobIndex: offer.blobIndex,
+      blobTotal: offer.blobTotal,
+      blobHashHex: offer.blobHashHex,
+      merkleRootHex: offer.merkleRootHex,
+      htlc
+    });
+    if (isDuplicateSettlement(this.paidSettlements, session)) {
+      return { error: `Already settled ${session.dedupeKey} — refusing double-pay` };
+    }
+    for (const open of this.purchaseSessions.values()) {
+      if (open && open.status !== 'confirmed' && open.dedupeKey === session.dedupeKey) {
+        return { error: `Open session already exists for ${session.dedupeKey} (${open.settlementId})` };
+      }
+    }
+    this.purchaseSessions.set(session.settlementId, session);
+    this._registerSessionHtlcWatch(session);
+    return session;
+  }
+
+  /**
+   * Register purchase-session HTLC address + payment hash on the CLI wallet watch set.
+   * Block/mempool ingest arrives via `wallet.trust(bitcoin)`.
+   * @param {object} session
+   */
+  _registerSessionHtlcWatch (session) {
+    if (!session || !this.wallet || typeof this.wallet.watchHtlc !== 'function') return;
+    try {
+      this.wallet.watchHtlc({
+        paymentAddress: session.paymentAddress || (session.htlc && session.htlc.paymentAddress),
+        paymentHashHex: session.contentHashHex || (session.htlc && session.htlc.paymentHashHex),
+        settlementId: session.settlementId,
+        documentId: session.documentId
+      });
+    } catch (e) {
+      this._appendWarning(`Wallet HTLC watch not registered: ${e.message}`);
+    }
+  }
+
+  async _handleConfirmCommand (params) {
+    if (!params[1] || !params[2]) {
+      return this._appendError('Usage: /confirm <settlementId|documentId> <txid>');
+    }
+    const session = findSession(this.purchaseSessions, params[1]);
+    if (!session) return this._appendError('Unknown purchase session. Use /buy first.');
+    const txid = String(params[2]).trim();
+    if (!/^[0-9a-fA-F]{64}$/.test(txid)) return this._appendError('txid must be 64 hex chars');
+
+    if (this.settings.hubRpcUrl) {
+      try {
+        const body = {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'ConfirmInventoryHtlcPayment',
+          params: { settlementId: session.settlementId, txid }
+        };
+        const res = await fetch(String(this.settings.hubRpcUrl).replace(/\/$/, '') + '/services/rpc', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const json = await res.json();
+        if (json.error) return this._appendError(`Hub RPC: ${JSON.stringify(json.error)}`);
+        if (isDuplicateSettlement(this.paidSettlements, session)) {
+          return this._appendError(`Already confirmed settlement for ${session.dedupeKey}`);
+        }
+        rememberSettlement(this.paidSettlements, session);
+        session.status = 'confirmed';
+        this._appendMessage(`Hub confirmed settlement ${session.settlementId}: ${JSON.stringify(json.result || json)}`);
+        return;
+      } catch (e) {
+        return this._appendError(`Hub confirm failed: ${e.message}`);
+      }
+    }
+
+    if (this.bitcoin && typeof this.bitcoin._makeRPCRequest === 'function' && session.paymentAddress && session.amountSats > 0) {
+      try {
+        const raw = await this.bitcoin._makeRPCRequest('getrawtransaction', [txid, true]);
+        const vouts = (raw && raw.vout) || [];
+        let matched = 0;
+        for (const v of vouts) {
+          const addrs = (v.scriptPubKey && (v.scriptPubKey.addresses || (v.scriptPubKey.address ? [v.scriptPubKey.address] : []))) || [];
+          if (addrs.includes(session.paymentAddress)) {
+            matched += Math.round((v.value || 0) * 1e8);
+          }
+        }
+        if (matched < session.amountSats) {
+          return this._appendError(`L1 payment insufficient: found ${matched} sats to ${session.paymentAddress}, need ${session.amountSats}`);
+        }
+        this._appendMessage(`L1 verified ${matched} sats to ${session.paymentAddress} in ${txid}`);
+      } catch (e) {
+        this._appendWarning(`L1 verify skipped/failed: ${e.message}`);
+      }
+    }
+
+    if (isDuplicateSettlement(this.paidSettlements, session)) {
+      return this._appendError(`Already confirmed settlement for ${session.dedupeKey}`);
+    }
+    rememberSettlement(this.paidSettlements, session);
+    session.status = 'confirmed';
+    session.txid = txid;
+    const fundedHex = await this._fetchRawTxHex(txid);
+    if (fundedHex) session.fundedTxHex = fundedHex;
+    if (session.merkleRootHex && this.node.blobTransfers) {
+      this.node.blobTransfers.expectTransfer({
+        documentId: session.documentId,
+        merkleRootHex: session.merkleRootHex,
+        total: session.blobTotal,
+        blobHashHexes: session.blobHashHex ? [session.blobHashHex] : null
+      });
+    }
+    session.status = 'delivery_pending';
+    const reqOpts = { maxSats: session.amountSats };
+    if (session.contentHashHex) reqOpts.contentHashHex = session.contentHashHex;
+    if (session.blobIndex != null) reqOpts.blobIndex = session.blobIndex;
+    if (session.blobTotal != null) reqOpts.blobTotal = session.blobTotal;
+    const ok = this.node.requestDocument(session.documentId, session.seller, reqOpts);
+    this._appendMessage(
+      ok
+        ? `Confirmed ${session.settlementId}; DocumentRequest sent to ${session.seller}. ` +
+          `Awaiting verified ciphertext then content-key reveal (or /claimwatch after seller claim).`
+        : `Confirmed locally but could not send DocumentRequest to ${session.seller}.`
+    );
+  }
+
+  /**
+   * Extract content key K from an on-chain HTLC claim witness and open sealed delivery.
+   * Usage: /claimwatch <settlementId> [claimTxid]
+   */
+  async _handleClaimWatchCommand (params) {
+    if (!params[1]) {
+      return this._appendError('Usage: /claimwatch <settlementId|documentId> [claimTxid]');
+    }
+    const session = findSession(this.purchaseSessions, params[1]);
+    if (!session) return this._appendError('Unknown purchase session. Use /buy first.');
+    if (session.status === 'complete') {
+      return this._appendMessage(`Session ${session.settlementId} already complete.`);
+    }
+    if (session.status === 'refunded') {
+      return this._appendError(`Session ${session.settlementId} was refunded; cannot open.`);
+    }
+
+    let claimTxid = params[2] ? String(params[2]).trim() : (session.claimTxid || null);
+    if (!claimTxid && this.settings.hubRpcUrl && this.settings.hubAdminToken) {
+      try {
+        const body = {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'GetInventoryHtlcSellerReveal',
+          params: {
+            settlementId: session.settlementId,
+            adminToken: this.settings.hubAdminToken
+          }
+        };
+        const res = await fetch(String(this.settings.hubRpcUrl).replace(/\/$/, '') + '/services/rpc', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const json = await res.json();
+        const result = json && json.result;
+        if (result && result.claimTxid) claimTxid = String(result.claimTxid);
+        if (result && result.preimageHex && this.node) {
+          const opened = this.node.openSealedDeliveryWithPreimage(session.documentId, result.preimageHex);
+          if (opened.ok) {
+            session.status = 'complete';
+            session.claimTxid = claimTxid || session.claimTxid;
+            session.openedFrom = 'hub_reveal';
+            return this._appendMessage(
+              `Opened ${session.documentId} from Hub seller reveal` +
+              (claimTxid ? ` (claimTxid=${claimTxid})` : '') + '.'
+            );
+          }
+        }
+      } catch (e) {
+        this._appendWarning(`Hub seller-reveal lookup failed: ${e.message}`);
+      }
+    }
+
+    if (!claimTxid || !/^[0-9a-fA-F]{64}$/.test(claimTxid)) {
+      return this._appendError(
+        'Usage: /claimwatch <settlementId> <claimTxid> — provide the seller claim txid ' +
+        '(or configure hubRpcUrl + hubAdminToken for GetInventoryHtlcSellerReveal).'
+      );
+    }
+
+    const paymentHash = session.contentHashHex ||
+      (session.htlc && session.htlc.paymentHashHex) || null;
+    if (!paymentHash) {
+      return this._appendError('Session has no contentHash / paymentHash to match claim preimage.');
+    }
+
+    let txHex = await this._fetchRawTxHex(claimTxid);
+    if (!txHex) {
+      return this._appendError(
+        `Could not fetch claim tx ${claimTxid} (need local bitcoind). Pass a mined/mempool claimTxid.`
+      );
+    }
+
+    const extracted = extractPreimageFromClaimTx(txHex, paymentHash);
+    if (!extracted.ok) {
+      return this._appendError(`Claim watch failed: ${extracted.error || 'preimage not found'}`);
+    }
+
+    session.claimTxid = claimTxid;
+    if (!this.node) return this._appendError('Peer not ready.');
+    const opened = this.node.openSealedDeliveryWithPreimage(session.documentId, extracted.preimageHex);
+    if (!opened.ok) {
+      session.error = opened.error;
+      if (opened.error && /no pending sealed delivery/i.test(opened.error)) {
+        return this._appendError(
+          `Preimage found in claim ${claimTxid} but no pending sealed ciphertext for ${session.documentId}. ` +
+          `Wait for delivery (session status=${session.status}) then retry.`
+        );
+      }
+      session.status = 'fraud';
+      return this._appendError(`Open with claim preimage failed: ${opened.error}`);
+    }
+    session.status = 'complete';
+    session.openedFrom = 'claim_witness';
+    this._appendMessage(
+      `Opened ${session.documentId} from claim witness ${claimTxid} ` +
+      `(vin=${extracted.vin}, session ${session.settlementId} → complete).`
+    );
+  }
+
+  /**
+   * Refund HTLC after locktime if seller never claimed / never delivered openable content.
+   * Usage: /refund <settlementId> [destinationAddress] [feeSats]
+   */
+  async _handleRefundCommand (params) {
+    if (!params[1]) {
+      return this._appendError('Usage: /refund <settlementId|documentId> [destinationAddress] [feeSats]');
+    }
+    const session = findSession(this.purchaseSessions, params[1]);
+    if (!session) return this._appendError('Unknown purchase session. Use /buy first.');
+    if (session.status === 'complete') {
+      return this._appendError(`Session ${session.settlementId} already complete — refund refused.`);
+    }
+    if (session.status === 'refunded') {
+      return this._appendMessage(`Session ${session.settlementId} already refunded (${session.refundTxid || 'n/a'}).`);
+    }
+
+    const htlc = session.htlc || {};
+    const paymentAddress = session.paymentAddress || htlc.paymentAddress;
+    const claimScriptHex = htlc.claimScriptHex;
+    const refundScriptHex = htlc.refundScriptHex;
+    const refundLocktimeHeight = htlc.refundLocktimeHeight != null
+      ? Number(htlc.refundLocktimeHeight)
+      : Number(this.node && this.node.settings && this.node.settings.inventoryHtlcLocktimeHeight);
+    if (!paymentAddress || !claimScriptHex || !refundScriptHex || !Number.isFinite(refundLocktimeHeight)) {
+      return this._appendError(
+        'Session HTLC incomplete (need paymentAddress, claimScriptHex, refundScriptHex, refundLocktimeHeight). ' +
+        'Re-buy via /inventory <peer> btc so the offer carries full HTLC scripts.'
+      );
+    }
+
+    const tip = await this._bitcoinTipHeight();
+    if (tip == null) {
+      return this._appendError('Need local bitcoind for tip height (getblockchaininfo).');
+    }
+    if (!refundLocktimeMature(tip, refundLocktimeHeight)) {
+      return this._appendError(
+        `Refund locktime not mature: tip=${tip}, need >= ${refundLocktimeHeight}.`
+      );
+    }
+
+    let fundedTxHex = session.fundedTxHex || null;
+    if (!fundedTxHex && session.txid) {
+      fundedTxHex = await this._fetchRawTxHex(session.txid);
+      if (fundedTxHex) session.fundedTxHex = fundedTxHex;
+    }
+    if (!fundedTxHex) {
+      return this._appendError(
+        'Missing fundedTxHex — /confirm <id> <fundingTxid> with bitcoind, or set session.fundedTxHex.'
+      );
+    }
+
+    const priv = this._buyerPrivateKey32();
+    if (!priv) return this._appendError('Buyer private key unavailable on this node.');
+
+    let destinationAddress = params[2] ? String(params[2]).trim() : null;
+    if (!destinationAddress) {
+      try {
+        if (this.bitcoin && typeof this.bitcoin.getUnusedAddress === 'function') {
+          destinationAddress = await this.bitcoin.getUnusedAddress();
+        }
+      } catch (_) { /* ignore */ }
+    }
+    if (!destinationAddress) {
+      return this._appendError('Usage: /refund <settlementId> <destinationAddress> [feeSats]');
+    }
+
+    const feeSats = params[3] != null ? Number(params[3]) : 1000;
+    if (!Number.isFinite(feeSats) || feeSats < 1) {
+      return this._appendError('feeSats must be a positive number');
+    }
+
+    let signed;
+    try {
+      const bundle = prepareInventoryHtlcBuyerRefundPsbt({
+        networkName: session.network || this.settings.network || 'regtest',
+        fundedTxHex,
+        paymentAddress,
+        claimScript: claimScriptHex,
+        refundScript: refundScriptHex,
+        refundLocktimeHeight,
+        destinationAddress,
+        feeSats
+      });
+      signed = signAndExtractInventoryHtlcBuyerRefund(bundle, priv);
+    } catch (e) {
+      return this._appendError(`Refund PSBT failed: ${e.message}`);
+    }
+
+    try {
+      const broadcast = await this.bitcoin._makeRPCRequest('sendrawtransaction', [signed.txHex]);
+      session.status = 'refunded';
+      session.refundTxid = broadcast || signed.txid;
+      session.error = session.error || 'refunded after locktime';
+      this._appendMessage(
+        `Refund broadcast for ${session.settlementId}: txid=${session.refundTxid} → ${destinationAddress}`
+      );
+    } catch (e) {
+      session.refundTxHex = signed.txHex;
+      return this._appendError(
+        `Refund signed (txid=${signed.txid}) but broadcast failed: ${e.message}. ` +
+        `Hex stored on session.refundTxHex.`
+      );
+    }
+  }
+
+  /**
+   * List outstanding / failed / mature HTLC refund candidates.
+   * Usage: /refunds [outstanding|mature|failed|pending|refunded|all]
+   */
+  async _handleRefundsCommand (params) {
+    const filter = params[1] ? String(params[1]).toLowerCase() : 'outstanding';
+    const allowed = new Set(['outstanding', 'mature', 'failed', 'pending', 'refunded', 'all']);
+    if (!allowed.has(filter)) {
+      return this._appendError(
+        'Usage: /refunds [outstanding|mature|failed|pending|refunded|all]'
+      );
+    }
+    const tip = await this._bitcoinTipHeight();
+    const rows = listRefundCandidates(this.purchaseSessions, tip, { filter });
+    if (!rows.length) {
+      return this._appendMessage(
+        `No ${filter} refunds.` +
+        (tip != null ? ` (tip=${tip})` : ' (bitcoind tip unavailable)') +
+        `\nOpen a paid session with /buy, or try /refunds all.`
+      );
+    }
+    const lines = rows.map((r) => {
+      const lock = r.refundLocktimeHeight != null ? String(r.refundLocktimeHeight) : '?';
+      const tipStr = r.tipHeight != null ? String(r.tipHeight) : '?';
+      const wait = r.bucket === 'pending' && r.blocksRemaining
+        ? ` wait=${r.blocksRemaining}blk`
+        : '';
+      const err = r.error ? ` err=${r.error}` : '';
+      const ref = r.refundTxid ? ` refundTx=${r.refundTxid.slice(0, 12)}…` : '';
+      return (
+        `  [${r.bucket}] ${r.settlementId}  doc=${r.documentId}  status=${r.status}` +
+        `  amount=${r.amountSats}  lock=${lock} tip=${tipStr}${wait}${ref}${err}`
+      );
+    });
+    this._appendMessage(
+      `{bold}Refunds{/bold} (${filter}, ${rows.length}` +
+      (tip != null ? `, tip=${tip}` : '') +
+      `)\n${lines.join('\n')}\n` +
+      `Mature rows: /refund <settlementId> [addr] [feeSats]`
+    );
+  }
+
+  async _handleRelayFeesCommand (params) {
+    if (!this.node) return this._appendError('Peer not ready.');
+    if (params[1] == null) {
+      return this._appendMessage(
+        `Relay fees: sats=${this.node.settings.documentRelayFeeSats} bps=${this.node.settings.documentRelayFeeBps} ` +
+        `minRemaining=${this.node.settings.documentRelayMinRemainingSats} maxHops=${this.node.settings.documentRelayMaxHops} ` +
+        `private=${!!this.node.settings.relayPrivateDocumentRequests}`
+      );
+    }
+    const v = String(params[1]);
+    if (v.endsWith('bps') || v.includes('bps')) {
+      const n = Number(String(v).replace(/bps/i, ''));
+      if (!Number.isFinite(n)) return this._appendError('Usage: /relayfees <sats>|<bps>bps');
+      this.node.settings.documentRelayFeeBps = Math.round(n);
+      this.node.settings.documentRelayFeeSats = null;
+    } else {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return this._appendError('Usage: /relayfees <sats>|<bps>bps');
+      this.node.settings.documentRelayFeeSats = Math.round(n);
+    }
+    this._appendMessage(`Relay fee policy updated: sats=${this.node.settings.documentRelayFeeSats} bps=${this.node.settings.documentRelayFeeBps}`);
+  }
+
+  async _handlePendingDocumentRequests (_params) {
+    const rows = this.node ? this.node.listPendingDocumentRequests() : [];
+    if (!rows.length) {
+      this._appendMessage('No pending document requests.');
+      return;
+    }
+    const lines = rows.map((r) => {
+      return `  ${r.key}  doc=${r.documentId}  from=${r.peerAddress || '?'}  at=${new Date(r.created).toISOString()}`;
+    });
+    this._appendMessage(`{bold}Pending document requests{/bold}\n${lines.join('\n')}\nUse /approve <key> or /deny <key>`);
+  }
+
+  async _handleApproveCommand (params) {
+    if (!params[1]) return this._appendError(`Usage: /approve <requestKey|documentID>`);
+    const result = this.node.approveDocumentRequest(params[1]);
+    if (!result.ok) return this._appendError(result.error || 'approve failed');
+    this._appendMessage(`Approved ${result.documentId} → sent P2P_FILE_SEND to ${result.peerAddress}`);
+  }
+
+  async _handleDenyCommand (params) {
+    if (!params[1]) return this._appendError(`Usage: /deny <requestKey|documentID>`);
+    const result = this.node.denyDocumentRequest(params[1]);
+    if (!result.ok) return this._appendError(result.error || 'deny failed');
+    this._appendMessage(`Denied request for ${result.documentId} from ${result.peerAddress}`);
+  }
+
+  async _handleSendDocumentCommand (params) {
+    // Prefer document push when first arg looks like a document id held locally;
+    // otherwise fall through to wallet BTC send (/send <addr> <amount>).
+    const maybeDoc = params[1];
+    const maybePeer = params[2];
+    if (maybeDoc && maybePeer && this.documents[maybeDoc]) {
+      this._syncDocumentToPeer(maybeDoc, this.documents[maybeDoc]);
+      const ok = this.node.sendDocumentFileToPeer(maybeDoc, maybePeer);
+      if (!ok) {
+        return this._appendError(`Could not send document ${maybeDoc} to ${maybePeer} (check /peers).`);
+      }
+      this._appendMessage(`Sent document ${maybeDoc} to ${maybePeer} via P2P_FILE_SEND.`);
+      return;
+    }
+    return this._handleSendRequest(params);
   }
 
   async _handleBitcoinMessage (message) {
@@ -1016,35 +1943,151 @@ class CLI extends FabricShell {
       case 'CollectionSnapshot':
         break;
       default:
-        this._appendMessage(`Bitcoin service emitted message: ${JSON.stringify(message)}`);
+        if (this.settings.debug || Number(this.settings.verbosity) >= 3) {
+          this._appendMessage(`Bitcoin service emitted message: ${JSON.stringify(message)}`);
+        }
         break;
     }
   }
 
   async _handleBitcoinLog (log) {
+    if (!this.settings.debug && Number(this.settings.verbosity) < 3) return;
     this._appendMessage(`[SERVICES:BITCOIN] ${log}`);
   }
 
   async _handleBitcoinCommit (_commit) {
-    // this._appendMessage(`Bitcoin service emitted commit: ${JSON.stringify(_commit)}`);
+    // Quiet by default — commits are high-frequency.
   }
 
   async _handleBitcoinSync (sync) {
-    this._appendMessage(`Bitcoin service emitted sync: ${JSON.stringify(sync)}`);
-    this._state.content.bitcoin.best = sync.best;
-    this.commit();
+    if (sync && sync.best) {
+      this._state.content.bitcoin.best = sync.best;
+      this.commit();
+    }
+    if (this.settings.debug || Number(this.settings.verbosity) >= 3) {
+      this._appendMessage(`Bitcoin service emitted sync: ${JSON.stringify(sync)}`);
+    }
   }
 
   async _handleBitcoinBlock (_block) {
-    // this._appendMessage(`Bitcoin service emitted block ${JSON.stringify(_block)}, chain height now: ${this.bitcoin.height}`);
-    // await this.bitcoin._syncChainInfoOverRPC();
+    // Wallet ingest is handled by `this.wallet.trust(this.bitcoin)`.
     this._syncChainDisplay();
-    // const message = Message.fromVector(['BlockCandidate', block.raw]);
-    // this.node.relayFrom(this.node.id, message);
+    if (_block && _block.height != null) {
+      await this._checkRefundMaturity(_block.height);
+    }
   }
 
   async _handleBitcoinTransaction (transaction) {
-    this._appendMessage(`Bitcoin service emitted transaction: ${JSON.stringify(transaction)}`);
+    // Verbose/hex txs are ingested by wallet.trust; only surface balance-only tips here.
+    if (transaction && transaction.balance && !transaction.txid && !transaction.hex) {
+      this._appendMessage(`Bitcoin balance update: ${JSON.stringify(transaction.balance)}`);
+    }
+  }
+
+  async _handleWalletTransaction (ev) {
+    if (!ev || !ev.related) return;
+    if (!this.settings.debug && Number(this.settings.verbosity) < 3) return;
+    this._appendMessage(
+      `Wallet tx ${ev.kind} ${ev.txid || '?'}` +
+      (ev.matchedAddresses && ev.matchedAddresses.length
+        ? ` addrs=${ev.matchedAddresses.slice(0, 3).join(',')}`
+        : '') +
+      (ev.settlementId ? ` settlement=${ev.settlementId}` : '')
+    );
+  }
+
+  async _handleWalletHtlcFunding (ev) {
+    if (!ev || !ev.settlementId) return;
+    const session = findSession(this.purchaseSessions, ev.settlementId);
+    if (!session) return;
+    if (ev.txid && !session.txid) {
+      session.txid = ev.txid;
+      session.fundedTxHex = ev.hex || session.fundedTxHex;
+    }
+    if (session.status === 'open') {
+      this._appendMessage(
+        `HTLC funding seen for ${session.settlementId} (${ev.txid}). Use /confirm when ready.`
+      );
+    }
+  }
+
+  async _handleWalletHtlcClaim (ev) {
+    if (!ev || !ev.preimageHex) return;
+    const session = ev.settlementId
+      ? findSession(this.purchaseSessions, ev.settlementId)
+      : null;
+    const documentId = (session && session.documentId) ||
+      (ev.documentId) ||
+      null;
+    // Prefer settlement match; else try any awaiting_key session with this payment hash.
+    let target = session;
+    if (!target && ev.paymentHashHex) {
+      for (const row of this.purchaseSessions.values()) {
+        if (row && row.contentHashHex === ev.paymentHashHex &&
+            (row.status === 'awaiting_key' || row.status === 'delivery_pending')) {
+          target = row;
+          break;
+        }
+      }
+    }
+    if (!target) {
+      if (documentId && this.node) {
+        const opened = this.node.openSealedDeliveryWithPreimage(documentId, ev.preimageHex);
+        if (opened.ok) {
+          this._appendMessage(`Opened ${documentId} from wallet claim watch (${ev.txid}).`);
+        }
+      }
+      return;
+    }
+    if (target.status === 'complete') return;
+    target.claimTxid = ev.txid || target.claimTxid;
+    if (!this.node) return;
+    const opened = this.node.openSealedDeliveryWithPreimage(target.documentId, ev.preimageHex);
+    if (opened.ok) {
+      target.status = 'complete';
+      target.openedFrom = 'wallet_claim_watch';
+      this._appendMessage(
+        `Auto-opened ${target.documentId} from on-chain claim ${ev.txid} (wallet watch).`
+      );
+    } else if (opened.error && /no pending sealed delivery/i.test(opened.error)) {
+      target.claimTxid = ev.txid;
+      this._appendMessage(
+        `Claim preimage stored for ${target.settlementId}; awaiting sealed ciphertext then retry open.`
+      );
+      target.pendingClaimPreimageHex = ev.preimageHex;
+    } else {
+      this._appendWarning(`Wallet claim open failed: ${opened.error}`);
+    }
+  }
+
+  async _handleWalletHtlcRefund (ev) {
+    if (!ev || !ev.settlementId) return;
+    const session = findSession(this.purchaseSessions, ev.settlementId);
+    if (!session || session.status === 'complete') return;
+    session.status = 'refunded';
+    session.refundTxid = ev.txid || session.refundTxid;
+    this._appendMessage(`HTLC refund observed for ${session.settlementId}: ${ev.txid}`);
+  }
+
+  /**
+   * When tip crosses a session refund locktime, nudge the operator (does not auto-broadcast).
+   * @param {number} tipHeight
+   */
+  async _checkRefundMaturity (tipHeight) {
+    const tip = Number(tipHeight);
+    if (!Number.isFinite(tip)) return;
+    for (const session of this.purchaseSessions.values()) {
+      if (!session || session.status === 'complete' || session.status === 'refunded') continue;
+      const lock = session.htlc && session.htlc.refundLocktimeHeight;
+      if (!Number.isFinite(Number(lock))) continue;
+      if (refundLocktimeMature(tip, lock) && !session.refundMatureNotified) {
+        session.refundMatureNotified = true;
+        this._appendMessage(
+          `Refund locktime mature for ${session.settlementId} (tip=${tip} ≥ ${lock}). ` +
+          `Use /refund ${session.settlementId} if the sale did not complete.`
+        );
+      }
+    }
   }
 
   async _handleBitcoinDebug (...msg) {
@@ -1298,9 +2341,142 @@ class CLI extends FabricShell {
   async _handlePeerDocumentRequest (message) {
     const id = (message && message.documentId) || '';
     const held = id && this.documents && Object.prototype.hasOwnProperty.call(this.documents, id);
+    const pendingKey = message && message.pendingKey;
+    if (pendingKey) {
+      this._appendMessage(
+        `Document request: ${id || '(unknown)'} from ${(message.origin && message.origin.name) || '?'} — pending ${pendingKey}. /approve ${pendingKey}`
+      );
+      return;
+    }
     this._appendMessage(
-      `Document request: ${id || '(unknown)'}${held ? ' [serving from local store]' : ''}`
+      `Document request: ${id || '(unknown)'}${held ? ' [auto-fulfill or pending]' : ' [not held — relaying]'}`
     );
+  }
+
+  async _handlePeerDocumentRequestPending (row) {
+    this._appendMessage(
+      `Pending file request ${row.key}: doc=${row.documentId} from=${row.peerAddress}. /approve ${row.key} or /deny ${row.key}`
+    );
+  }
+
+  async _handlePeerInventoryResponse (ev) {
+    const origin = (ev && ev.origin && ev.origin.name) || 'peer';
+    const obj = (ev && ev.message && ev.message.object) || {};
+    const items = Array.isArray(obj.items) ? obj.items : [];
+    this.remoteInventories[origin] = { at: Date.now(), items, kind: obj.kind || null };
+    const latencyMs = this._inventoryRequestStartedAt
+      ? Math.max(0, Date.now() - this._inventoryRequestStartedAt)
+      : 0;
+    this.offerBook.ingestInventoryResponse({
+      origin,
+      items,
+      peerScore: this._peerScoreForAddress(origin),
+      latencyMs
+    });
+    if (!items.length) {
+      this._appendMessage(`Inventory from ${origin}: (empty)`);
+      return;
+    }
+    const lines = items.slice(0, 50).map((it) => {
+      const price = it.purchasePriceSats != null ? it.purchasePriceSats : it.rateSats;
+      const priceStr = price != null ? `${price} sats` : 'free';
+      const name = it.name || it.id || '?';
+      const blobs = Array.isArray(it.blobs) ? ` blobs=${it.blobs.length}` : '';
+      return `  ${it.id || '?'}  ${name}  ${priceStr}${blobs}`;
+    });
+    const more = items.length > 50 ? `\n  … +${items.length - 50} more` : '';
+    this._appendMessage(
+      `{bold}Inventory from ${origin}{/bold} (${items.length}, ${latencyMs}ms)\n${lines.join('\n')}${more}\nUse /offers [documentId]`
+    );
+  }
+
+  async _handlePeerFileReceive (ev) {
+    // Indexed frames are handled via documentReceived / documentBlobRejected / awaiting_key.
+    if (ev && (ev.status === 'need_more' || ev.status === 'complete' ||
+        ev.status === 'reject' || ev.status === 'awaiting_key')) {
+      if (ev.status === 'need_more') {
+        this._appendMessage(
+          `Receiving ${ev.documentId}: blob ${ev.received}/${ev.total} verified…`
+        );
+      }
+      return;
+    }
+    this._appendMessage('Received file frame (awaiting verification).');
+  }
+
+  async _handlePeerDocumentCiphertextReceived (ev) {
+    if (!ev || !ev.documentId) return;
+    for (const session of this.purchaseSessions.values()) {
+      if (session && session.documentId === ev.documentId &&
+          (session.status === 'delivery_pending' || session.status === 'confirmed')) {
+        session.status = 'awaiting_key';
+      }
+      if (session && session.documentId === ev.documentId && session.pendingClaimPreimageHex && this.node) {
+        const opened = this.node.openSealedDeliveryWithPreimage(
+          session.documentId,
+          session.pendingClaimPreimageHex
+        );
+        if (opened.ok) {
+          session.status = 'complete';
+          session.openedFrom = 'wallet_claim_watch';
+          delete session.pendingClaimPreimageHex;
+          this._appendMessage(
+            `Opened ${session.documentId} with stored claim preimage after ciphertext arrived.`
+          );
+        }
+      }
+    }
+    this._appendMessage(
+      `Verified sealed ciphertext for ${ev.documentId} (${ev.buffer && ev.buffer.length} bytes). Awaiting content key…`
+    );
+  }
+
+  async _handlePeerDocumentAwaitingKey (ev) {
+    if (!ev || !ev.documentId) return;
+    this._appendMessage(`Document ${ev.documentId} ciphertext complete — awaiting content-key reveal.`);
+  }
+
+  async _handlePeerDocumentOpened (ev) {
+    if (!ev || !ev.documentId || !ev.buffer) return;
+    for (const session of this.purchaseSessions.values()) {
+      if (session && session.documentId === ev.documentId &&
+          (session.status === 'awaiting_key' || session.status === 'delivery_pending')) {
+        session.status = 'complete';
+      }
+    }
+    await this._handlePeerDocumentReceived(Object.assign({}, ev, { opened: true }));
+  }
+
+  async _handlePeerDocumentReceived (ev) {
+    if (!ev || !ev.documentId || !ev.buffer) return;
+    if (!ev.verified) {
+      return this._appendWarning(`Unverified document ${ev.documentId} ignored.`);
+    }
+    const name = ev.documentId;
+    const buf = ev.buffer;
+    this.documents[name] = buf;
+    this._state.content.documents[name] = buf.toString('hex');
+    this._syncDocumentToPeer(name, buf.toString('utf8'));
+    const from = (ev.origin && ev.origin.name) || 'peer';
+    this._appendMessage(
+      `Verified document ${name} (${buf.length} bytes) from ${from}` +
+      (ev.opened ? ' (opened with content key)' : '') +
+      (ev.merkleRootHex ? ` merkle=${ev.merkleRootHex.slice(0, 16)}…` : '') +
+      (ev.legacy ? ' (legacy single frame)' : '') +
+      ' — stored in local inventory.'
+    );
+  }
+
+  async _handlePeerDocumentBlobRejected (ev) {
+    const id = (ev && ev.documentId) || '?';
+    const err = (ev && ev.error) || 'rejected';
+    for (const session of this.purchaseSessions.values()) {
+      if (session && session.documentId === id && session.status !== 'complete') {
+        session.status = 'fraud';
+        session.error = err;
+      }
+    }
+    this._appendError(`Rejected blob for ${id}: ${err}`);
   }
 
   async _handlePeerCandidate (peer) {
@@ -2096,7 +3272,34 @@ class CLI extends FabricShell {
 
     switch (params[1]) {
       default:
-        text = `{bold}Fabric CLI Help{/bold}\nThe Fabric CLI offers a simple command-based interface to a Fabric-speaking Network.  You can use \`/connect <address>\` to establish a connection to a known peer, or any of the available commands.\n\n{bold}Panels{/bold}: F1 Home | F2 Console | F3 Network | F4 Wallet | F5 Contracts | F6 Blockchain\n\n{bold}Available Commands{/bold}:\n\n${Object.keys(this.commands).map(x => `  ${x}`).join('\n')}\n\n{bold}Usage{/bold}:\n  Type any command with a forward slash, e.g. /help, /peers, /connect localhost:7777\n\n{bold}Examples{/bold}:\n  /help          - Show this help message\n  /block 850000  - Browse block by height (F6 panel)\n  /tx <txid>     - Look up transaction\n  /address <addr> - Look up address\n  /peers         - List connected peers\n  /connect <addr> - Connect to a peer\n  /identity      - Show your identity\n  /wallet        - Show wallet information\n  /bitcoin       - Show Bitcoin service status\n  /quit          - Exit the application`;
+        text = `{bold}Fabric CLI Help{/bold}\n` +
+          `Agreements are {bold}contracts{/bold} with {bold}interfaces{/bold} (HTLC, sessions, programs, cli.shell, …).\n` +
+          `Hub registry publishes the Hub contract first. Use /contracts.\n\n` +
+          `{bold}Panels{/bold}: F1 Home | F2 Console | F3 Network | F4 Wallet | F5 Contracts | F6 Blockchain\n\n` +
+          `{bold}Available Commands{/bold}:\n\n` +
+          `${Object.keys(this.commands).sort().map((x) => `  ${x}`).join('\n')}\n\n` +
+          `{bold}Usage{/bold}:\n` +
+          `  Type any command with a forward slash, e.g. /help, /peers, /connect localhost:7777\n\n` +
+          `{bold}Examples{/bold}:\n` +
+          `  /help          - Show this help message\n` +
+          `  /contracts     - List contracts (sessions, shell packs, interfaces)\n` +
+          `  /peers         - List connected peers\n` +
+          `  /connect <addr> - Connect to a peer\n` +
+          `  /import <file> - Load a file into local document inventory\n` +
+          `  /publish <id> <rateSats> - Gossip document (+ optional sat ask)\n` +
+          `  /inventory [peer] [btc] - Local catalog, or request a peer's inventory\n` +
+          `  /offers [id]   - Ranked sale offers (price/latency/score)\n` +
+          `  /buy <id> [seller|auto] [sats] - Open L1 purchase session\n` +
+          `  /confirm <settlementId> <txid> - Verify pay + request delivery\n` +
+          `  /claimwatch <id> [claimTxid] - Open sealed doc from on-chain claim preimage\n` +
+          `  /refunds [filter] - List outstanding / failed / mature refunds\n` +
+          `  /refund <id> [addr] [feeSats] - Buyer refund after HTLC locktime\n` +
+          `  /request <id> [peer] [maxSats] - Ask for a document (seller /approve)\n` +
+          `  /pending /approve /deny - Consent inbound file requests\n` +
+          `  /relayfees [sats|bps] - Private relay fee policy\n` +
+          `  /send <id> <peer> - Push a held document (or /send <addr> <btc>)\n` +
+          `  /identity      - Show your identity\n` +
+          `  /quit          - Exit the application`;
         break;
     }
 

@@ -50,10 +50,15 @@ API: `functions/messageBodyCodec.js` (`encodeBody` / `decodeBody` /
   constructor still `JSON.stringify`s plain objects (legacy Hub/chat
   compatibility); it does **not** auto field-encode even when a schema exists.
 - HTTP / Bridge may map field structs ↔ JSON for REST and browsers
-  (`functions/messageBodyJsonBridge.js` in `@fabric/http`).
+  (`functions/messageBodyJsonBridge.js` in `@fabric/http`), including
+  RFC6902 patch arrays ↔ `SIDECHAIN_STATE_PATCH` fields
+  (`basisClock` / `basisDigest` / `catalogCanonical`).
 - **Legacy:** object bodies without a registered schema still
   `JSON.stringify` (deprecated transitional path for GenericMessage and
   unmigrated types). New opcodes **must** ship a field schema.
+- **Opaque UTF-8 exceptions:** `P2P_CHAT_MESSAGE` and `P2P_PEER_ALIAS` use the
+  body bytes as the UTF-8 text / nickname itself (no field schema, no JSON).
+  Build with `Message.fromVector(['P2P_CHAT_MESSAGE', text])` (string body).
 
 ## Not the same as content-address digests
 

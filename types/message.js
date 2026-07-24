@@ -28,6 +28,8 @@ const {
   P2P_DOCUMENT_PUBLISH,
   P2P_PEER_ALIAS,
   P2P_PEER_ANNOUNCE,
+  P2P_PEER_GOSSIP,
+  P2P_PEERING_OFFER,
   P2P_SESSION_OFFER,
   P2P_SESSION_OPEN,
   P2P_CONTRACT_PUBLISH,
@@ -42,6 +44,7 @@ const {
   P2P_MESSAGE_RECEIPT,
   CHAT_MESSAGE,
   P2P_CHAT_MESSAGE,
+  SIDECHAIN_STATE_PATCH_TYPE,
   DOCUMENT_PUBLISH_TYPE,
   DOCUMENT_REQUEST_TYPE,
   JSON_CALL_TYPE,
@@ -120,6 +123,7 @@ const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [LOG_MESSAGE_TYPE, 'LOG_MESSAGE'],
   [GENERIC_LIST_TYPE, 'GENERIC_LIST'],
   [GENERIC_MESSAGE_TYPE, 'GENERIC_MESSAGE'],
+  [SIDECHAIN_STATE_PATCH_TYPE, 'SIDECHAIN_STATE_PATCH'],
   [DOCUMENT_PUBLISH_TYPE, 'DOCUMENT_PUBLISH'],
   [DOCUMENT_REQUEST_TYPE, 'DOCUMENT_REQUEST'],
   [BLOCK_CANDIDATE, 'BLOCK_CANDIDATE'],
@@ -134,6 +138,8 @@ const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [P2P_DOCUMENT_PUBLISH, 'P2P_DOCUMENT_PUBLISH'],
   [P2P_PEER_ALIAS, 'P2P_PEER_ALIAS'],
   [P2P_PEER_ANNOUNCE, 'P2P_PEER_ANNOUNCE'],
+  [P2P_PEER_GOSSIP, 'P2P_PEER_GOSSIP'],
+  [P2P_PEERING_OFFER, 'P2P_PEERING_OFFER'],
   [P2P_SESSION_OFFER, 'P2P_SESSION_OFFER'],
   [P2P_SESSION_OPEN, 'P2P_SESSION_OPEN'],
   [P2P_CONTRACT_PUBLISH, 'CONTRACT_PUBLISH'],
@@ -224,6 +230,8 @@ const LEGACY_MESSAGE_TYPE_ALIASES = Object.freeze({
   InventoryResponse: P2P_INVENTORY_RESPONSE,
   PeerAlias: P2P_PEER_ALIAS,
   PeerAnnounce: P2P_PEER_ANNOUNCE,
+  PeerGossip: P2P_PEER_GOSSIP,
+  PeeringOffer: P2P_PEERING_OFFER,
   SessionOffer: P2P_SESSION_OFFER,
   SessionOpen: P2P_SESSION_OPEN,
   FileSend: P2P_FILE_SEND,
@@ -232,6 +240,7 @@ const LEGACY_MESSAGE_TYPE_ALIASES = Object.freeze({
   Pong: P2P_PONG,
   DocumentRequest: DOCUMENT_REQUEST_TYPE,
   DocumentPublish: DOCUMENT_PUBLISH_TYPE,
+  SidechainStatePatch: SIDECHAIN_STATE_PATCH_TYPE,
   BlockCandidate: BLOCK_CANDIDATE,
   PeerCandidate: PEER_CANDIDATE,
   PeerInstruction: P2P_INSTRUCTION,
@@ -320,6 +329,65 @@ function friendlyTypeFromWire (wire) {
 function wireTypeFromFriendly (friendly) {
   const f = String(friendly || '').trim();
   return FRIENDLY_TO_WIRE_TYPE[f] || f;
+}
+
+/**
+ * Resolve any opcode / wire name / friendly alias to the numeric AMP type code.
+ * @param {number|string|null|undefined} value
+ * @returns {number|null}
+ */
+function canonicalTypeCode (value) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return CANONICAL_WIRE_TYPE_BY_OPCODE[value] !== undefined ? value : null;
+  }
+  if (typeof value === 'string') {
+    const s = value.trim();
+    if (!s) return null;
+    if (Object.prototype.hasOwnProperty.call(CANONICAL_MESSAGE_TYPE_STRINGS, s)) {
+      return CANONICAL_MESSAGE_TYPE_STRINGS[s];
+    }
+    if (Object.prototype.hasOwnProperty.call(LEGACY_MESSAGE_TYPE_ALIASES, s)) {
+      const code = LEGACY_MESSAGE_TYPE_ALIASES[s];
+      return (typeof code === 'number' && Number.isFinite(code)) ? code : null;
+    }
+    if (/^\d+$/.test(s)) {
+      const n = Number(s);
+      return CANONICAL_WIRE_TYPE_BY_OPCODE[n] !== undefined ? n : null;
+    }
+  }
+  return null;
+}
+
+/**
+ * Resolve any opcode / wire name / friendly alias to the SCREAMING_SNAKE wire label.
+ * @param {number|string|null|undefined} value
+ * @returns {string|null}
+ */
+function canonicalTypeName (value) {
+  const code = canonicalTypeCode(value);
+  if (code != null) return CANONICAL_WIRE_TYPE_BY_OPCODE[code] || null;
+  if (typeof value === 'string') {
+    const s = value.trim();
+    return s || null;
+  }
+  return null;
+}
+
+/**
+ * True when two type references name the same AMP opcode (number, wire name, or friendly alias).
+ * Unregistered string labels only match via exact trim equality.
+ * @param {number|string|null|undefined} a
+ * @param {number|string|null|undefined} b
+ * @returns {boolean}
+ */
+function typeEquals (a, b) {
+  const ca = canonicalTypeCode(a);
+  const cb = canonicalTypeCode(b);
+  if (ca != null && cb != null) return ca === cb;
+  if (typeof a === 'string' && typeof b === 'string') {
+    return a.trim() === b.trim();
+  }
+  return a === b;
 }
 
 /**
@@ -1025,6 +1093,9 @@ Object.defineProperty(Message.prototype, 'sensitive', {
 
 Message.friendlyTypeFromWire = friendlyTypeFromWire;
 Message.wireTypeFromFriendly = wireTypeFromFriendly;
+Message.canonicalTypeCode = canonicalTypeCode;
+Message.canonicalTypeName = canonicalTypeName;
+Message.typeEquals = typeEquals;
 Message.WIRE_TYPE_DECODE_ORDER = WIRE_TYPE_DECODE_ORDER;
 Message.FRIENDLY_TYPE_BY_WIRE = FRIENDLY_TYPE_BY_WIRE;
 Message.FRIENDLY_TO_WIRE_TYPE = FRIENDLY_TO_WIRE_TYPE;

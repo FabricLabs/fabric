@@ -23,5 +23,16 @@ describe('@fabric/core/types/tree', function () {
       assert.ok(tree._tree);
       assert.strictEqual(tree.root.toString('hex'), '906b5aaf65ae98f8c98848de5e81ba865659f16fd53aefa4c78b34176f068079'); // TODO: wat?
     });
+
+    it('addLeaf accumulates leaves for growing merkle roots', function () {
+      const tree = new Tree({ leaves: [] });
+      tree.addLeaf('a');
+      tree.addLeaf('b');
+      tree.addLeaf('c');
+      assert.strictEqual(tree.settings.leaves.length, 3);
+      const rebuilt = new Tree(['a', 'b', 'c']);
+      assert.strictEqual(tree.rootHex, rebuilt.rootHex);
+      assert.ok(tree.rootHex.length === 64);
+    });
   });
 });

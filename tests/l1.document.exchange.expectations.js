@@ -174,6 +174,15 @@ describe('L1 document exchange expectations', function () {
       const src = fs.readFileSync(cliPath, 'utf8');
       assert.ok(/on\('DocumentPublish'/.test(src), 'CLI should register DocumentPublish listener');
       assert.ok(/on\('DocumentRequest'/.test(src), 'CLI should register DocumentRequest listener');
+      assert.ok(/_publishDocument\(params\[1\], body, rateSats\)/.test(src), 'CLI publish should pass rateSats');
+      // Slash commands are registered via CLI contracts (not inline _registerCommand).
+      const contractsSrc = fs.readFileSync(path.join(__dirname, '../functions/cliContracts.js'), 'utf8');
+      assert.ok(/approve:\s*'_handleApproveCommand'/.test(contractsSrc), 'CLI contract should register approve');
+      assert.ok(/pending:\s*'_handlePendingDocumentRequests'/.test(contractsSrc), 'CLI contract should register pending');
+      assert.ok(/buy:\s*'_handleBuyCommand'/.test(contractsSrc), 'CLI contract should register buy');
+      assert.ok(/confirm:\s*'_handleConfirmCommand'/.test(contractsSrc), 'CLI contract should register confirm');
+      assert.ok(/offers:\s*'_handleOffersCommand'/.test(contractsSrc), 'CLI contract should register offers');
+      assert.ok(/contentHashHexFromObject/.test(src), 'CLI buy path should normalize contentHashHex aliases');
 
       const peerPath = path.join(__dirname, '../types/peer.js');
       const peerSrc = fs.readFileSync(peerPath, 'utf8');
@@ -193,6 +202,8 @@ describe('L1 document exchange expectations', function () {
         /emit\('DocumentRequest'/.test(peerSrc),
         'Peer should emit DocumentRequest for CLI compatibility'
       );
+      assert.ok(/approveDocumentRequest/.test(peerSrc), 'Peer should expose approveDocumentRequest');
+      assert.ok(/requestPeerInventory/.test(peerSrc), 'Peer should expose requestPeerInventory');
     });
   });
 });

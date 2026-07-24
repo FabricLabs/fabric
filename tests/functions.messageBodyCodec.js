@@ -22,15 +22,10 @@ describe('@fabric/core/functions/messageBodyCodec', function () {
     assert.deepStrictEqual(back, fields);
   });
 
-  it('round-trips P2P_CHAT schema', function () {
-    const fields = {
-      channel: 'global',
-      content: 'hello',
-      timestamp: '2026-07-24T00:00:00Z'
-    };
-    const buf = encodeBody(SCHEMA_P2P_CHAT, fields);
-    const back = decodeBody(SCHEMA_P2P_CHAT, buf);
-    assert.deepStrictEqual(back, fields);
+  it('P2P_CHAT_MESSAGE has no multi-field body schema (opaque UTF-8)', function () {
+    assert.strictEqual(SCHEMA_P2P_CHAT, null);
+    assert.strictEqual(getBodySchema('P2P_CHAT_MESSAGE'), null);
+    assert.strictEqual(getBodySchema(require('../constants').P2P_CHAT_MESSAGE), null);
   });
 
   it('round-trips FabricProgramRun bytes32 fields', function () {

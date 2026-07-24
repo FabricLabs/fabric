@@ -21,7 +21,7 @@ See **[GOALS.md](GOALS.md)** for the explicit list. In short:
 | **Wire** | **Fabric Message** framing (`types/message.js`), opcodes in **`constants`**, TCP/NOISE **`Peer`**. |
 | **State** | **Actor** / **State** / **Collection**; JSON Patch for deltas; hub and clients use similar patterns. |
 | **Money** | **Bitcoin** and **Lightning** **services** over RPC; optional explorers via configured origins only. |
-| **Apps** | **`CLI`** extends **`FabricShell`** (`types/service.js`) — encrypted store, peer, machine, resources. |
+| **Contracts** | Agreements beyond the base peer protocol. Contracts advertise **interfaces** (not a single `kind`); Hub registry publishes the **Hub contract first**. See **[docs/CONTRACTS.md](docs/CONTRACTS.md)**. **`CLI`** extends **`FabricShell`** (`types/service.js`). |
 | **Downstream** | **Hub** (rendezvous, WebSocket bridge, documents, optional Payjoin) is a **consumer** of this library, not part of this repo. |
 
 ## What “done” looks like for 0.1.x
@@ -43,6 +43,7 @@ These are **not** the default path for new contributors:
 | **Must read** | **README.md**, **QUICKSTART.md**, **DEVELOPERS.md**, **VISION.md** (this file) |
 | **Protocol & security** | **PROTOCOL.md**, **MESSAGES.md**, **POLICY.md**, **SECURITY.md**, **PRIVACY.md** |
 | **Operators** | **docs/PRODUCTION.md**, **docs/RELEASE_CHECKLIST.md**, **docs/PRODUCTION-CHECKLIST.md** |
+| **Contracts & CLI** | **docs/CONTRACTS.md**, **docs/CLI.md**, **docs/L1_DOCUMENT_EXCHANGE.md** |
 | **Guides** | **guides/SERVICES.md**, **guides/ACTORS.md**, **guides/BUILD.md**, **guides/BEST_PRACTICES.md** |
 | **API** | **API.md** (regenerate with `npm run make:api`), HTML under **docs/** after `npm run make:docs` |
 | **Changelog** | **CHANGELOG.md** |

@@ -60,6 +60,7 @@ Primary sources:
 | `BITCOIN_TRANSACTION_HASH` | 22100 | `0x5654` | Announces/propagates a Bitcoin transaction hash. |
 | `LOG_MESSAGE` | 3235156080 | `0xc0d3f330` | Debug/log transport message for diagnostics. |
 | `GENERIC_LIST` | 3235170158 | `0xc0d42e2e` | Generic list/queue-style payload container. |
+| `SIDECHAIN_STATE_PATCH` | 997 | `0x03e5` | Typed-field sidechain/registry update (`basisClock` / `basisDigest` / `catalogCanonical`). HTTP may map RFC6902 ↔ fields. |
 | `DOCUMENT_PUBLISH` | 998 | `0x03e6` | Publishes a document descriptor/content reference. |
 | `DOCUMENT_REQUEST` | 999 | `0x03e7` | Requests a document from peers/services. |
 | `BLOCK_CANDIDATE` | 3 | `0x0003` | Candidate block announcement in peer coordination. |
@@ -72,8 +73,10 @@ Primary sources:
 | `P2P_INVENTORY_RESPONSE` | 88 | `0x0058` | Returns inventory/resource results. |
 | `P2P_FILE_SEND` | 89 | `0x0059` | Transfers file/document payload chunks/metadata peer-to-peer. |
 | `P2P_DOCUMENT_PUBLISH` | 90 | `0x005a` | Publishes document pricing/availability via P2P path. |
-| `P2P_PEER_ALIAS` | 91 | `0x005b` | Announces/updates local nickname/alias for a peer. |
+| `P2P_PEER_ALIAS` | 91 | `0x005b` | Announces/updates personal nickname. Body = raw UTF-8 nickname only (no JSON). Relayed bit-identical; registry keyed by signer pubkey. |
 | `P2P_PEER_ANNOUNCE` | 92 | `0x005c` | Announces peer identity/presence to network participants. |
+| `P2P_PEER_GOSSIP` | 97 | `0x0061` | First-class peer gossip frame (host/port candidates). Relayed bit-identical; logical payload dedup + hop/rate limits. |
+| `P2P_PEERING_OFFER` | 98 | `0x0062` | First-class peering-capacity offer. Relayed bit-identical; candidate queue + hop/rate limits. |
 | `P2P_SESSION_OFFER` | 93 | `0x005d` | Initiates peer session handshake. |
 | `P2P_SESSION_OPEN` | 94 | `0x005e` | Accepts/completes peer session handshake. |
 | `CONTRACT_PUBLISH` | 95 | `0x005f` | Publishes a contract definition; registers it under a deterministic `Actor` id (the contract **namespace**). Emits `contract:publish` and relays. |
@@ -91,7 +94,7 @@ Primary sources:
 | `PEER_CANDIDATE` | 9 | `0x0009` | Candidate peer advertisement for connection management. |
 | `SESSION_START` | 2 | `0x0002` | Starts a session context. |
 | `CHAT_MESSAGE` | 103 | `0x0067` | Legacy chat opcode / Hub transitional carrier. Prefer first-class `P2P_CHAT_MESSAGE`. |
-| `P2P_CHAT_MESSAGE` | 104 | `0x0068` | First-class peer chat frame. Relayed **verbatim** (author + signature preserved, including multisig; wire-hash dedup prevents loops). Hops never re-sign relayable frames. |
+| `P2P_CHAT_MESSAGE` | 104 | `0x0068` | First-class peer chat frame. Body = raw UTF-8 message text only (no JSON; no nickname/handle). Author is AMP header + signature. Relayed **verbatim** (wire-hash dedup). Nicknames use `P2P_PEER_ALIAS`. |
 | `JSON_CALL` | 16000 | `0x3e80` | JSON-RPC-like call request payload. |
 | `JSON_PATCH` | 1024 | `0x0400` | RFC6902-style JSON patch operation payload. |
 | `CONTRACT_PROPOSAL` | 138 | `0x008a` | Contract proposal (batched messages + Merkle + patch context). |
@@ -121,15 +124,13 @@ Primary sources:
 
 These are routed from decoded JSON bodies (often received as `P2P_BASE_MESSAGE` / `P2P_GENERIC`).
 
-> `P2P_CHAT_MESSAGE` is now a **first-class outer opcode** (`0x0068`, table above). Legacy inner-JSON `P2P_CHAT_MESSAGE` bodies carried by `P2P_BASE_MESSAGE` remain decodable for backward compatibility.
+> `P2P_CHAT_MESSAGE` (`0x0068`), `P2P_PEER_ALIAS` (`0x005b`), `P2P_PEER_GOSSIP` (`0x0061`), and `P2P_PEERING_OFFER` (`0x0062`) are **first-class outer opcodes** (table above). Chat and alias bodies are opaque UTF-8 text (not JSON); gossip/offer bodies remain JSON objects.
 
 | Generic `type` | Purpose |
 |---|---|
 | `P2P_STATE_ANNOUNCE` | Announces state updates/snapshots in generic form. |
 | `INVENTORY_REQUEST` | Logical inventory request payload. |
 | `INVENTORY_RESPONSE` | Logical inventory response payload. |
-| `P2P_PEER_GOSSIP` | Gossips known peers for cross-cluster discovery/relay. |
-| `P2P_PEERING_OFFER` | Broadcasts peering-capacity offers and candidate endpoints. |
 | `ServiceMessage` | Service-level internal control/event envelope (wallet/service handlers). |
 | `BitcoinBlock` | Friendly/body-level alias used in some handlers for block notifications. |
 | `BitcoinTransaction` | Friendly/body-level alias for transaction notifications. |

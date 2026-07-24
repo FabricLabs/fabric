@@ -10,7 +10,7 @@ Wire opcodes: [`MESSAGES.md`](../MESSAGES.md) §1 and §3.
 
 | Layer | Outer type | Role |
 |-------|------------|------|
-| **Global shoutbox** | `P2P_CHAT_MESSAGE` (`0x68`) | Network-wide chat; not contract-namespaced. Peer relays bit-identical (author + signature preserved; no hop re-sign). |
+| **Global shoutbox** | `P2P_CHAT_MESSAGE` (`0x68`) | Network-wide chat; body = UTF-8 text only. Peer relays bit-identical. Display nicknames via `P2P_PEER_ALIAS` (`0x5b`), not chat payload. |
 | **Namespace declare** | `CONTRACT_PUBLISH` / `P2P_CONTRACT_PUBLISH` (`0x5f`) | Publish genesis → `Actor(definition).id` is the **application namespace**. |
 | **Namespace events** | `CONTRACT_MESSAGE` / `P2P_CONTRACT_MESSAGE` (`0x60`) | Body MUST include `contract: <id>`. Peer relays; **apps ignore unknown ids**. |
 | **Proposals** | `CONTRACT_PROPOSAL` / `P2P_CONTRACT_PROPOSAL` (`0x8a`) | Batched messages + Merkle + patch (+ optional PSBT), optional `contractId`. |
@@ -39,7 +39,7 @@ These `type` strings ride inside `CONTRACT_MESSAGE` (not outer opcodes):
 | `SCEventBatch` | GoonCitizen | Log / event batch |
 | `GroupChat` | GoonCitizen Group Federation | Group channel chat |
 | `GroupChange` | GoonCitizen Group Federation | Membership / meta |
-| `GroupShare` | GoonCitizen Group Federation | Group-scoped shares (e.g. mission offers) |
+| `GroupShare` | GoonCitizen Group Federation | Group-scoped shares (mission offers; `kind: GroupOffer` for opaque `fabric:<hex>` join offers) |
 | `GameStateSnapshot` | GoonCitizen → Hub sidechain | Cumulative analytics snapshot for Beacon seal (also listed under `ACTIVITY_TYPES`) |
 
 ### Shared activity / GenericMessage types

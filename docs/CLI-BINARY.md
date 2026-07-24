@@ -3,8 +3,8 @@
 The **`fabric`** command is the **Node.js harness** for the Fabric reference client:
 
 1. **Runtime** — system `node` when installed via `npm i -g` / `npm link`, or an **embedded Node-compatible runtime** when built with **`npm run make:binary`** ([pkg](https://github.com/vercel/pkg)).
-2. **Harness** — `scripts/fabric.js` (Commander): subcommands (`setup`, `start`, `chat`, …).
-3. **Default TUI** — the **`chat`** subcommand (also the default) loads the Blessed terminal UI via `contracts/chat.js` → `types/cli.js`.
+2. **Harness** — `scripts/fabric.js` (Commander): subcommands (`setup`, `start`, `chat`, …). First run requires `fabric setup` before the shell (no wallet is created automatically).
+3. **Default TUI** — with a wallet configured, bare `fabric` defaults to **`shell`** / **`chat`** (Blessed TUI via `contracts/shell.js` → `types/cli.js`). Document exchange: `/import`, `/publish`, `/inventory`, `/offers`, `/buy`, `/confirm`, `/request`, `/pending`, `/approve`, `/deny`, `/relayfees`, `/send` (see [`L1_DOCUMENT_EXCHANGE.md`](L1_DOCUMENT_EXCHANGE.md)).
 
 The separate **C ncurses CLI** in `src/cli.c` is **not** this binary; it is a native example / alternate frontend.
 

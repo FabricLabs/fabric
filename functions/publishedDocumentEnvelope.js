@@ -2,10 +2,14 @@
 
 /**
  * Canonical Fabric `DocumentPublish` wire bytes for a stored document record.
- * Used by hub.fabric.pub for inventory HTLC preimage and CreatePurchaseInvoice / ClaimPurchase `contentHash`.
  *
- * preimage (32 bytes) = SHA256(Message.toBuffer())
- * payment hash / contentHash hex = SHA256(preimage)
+ * **Envelope (legacy / unsealed) payment hash:**
+ * - preimage (32 bytes) = SHA256(Message.toBuffer())
+ * - `purchaseContentHashHex` = SHA256(preimage)
+ *
+ * For the full buy/HTLC commitment (sealed vs envelope vs blob), use
+ * {@link module:functions/documentPaymentHash} — `resolveDocumentContentHashHex`.
+ * Wire / session field name is always `contentHashHex`.
  */
 
 const crypto = require('crypto');

@@ -1582,32 +1582,100 @@ class Bitcoin extends Service {
 
     try {
       switch (topic) {
-        case 'BitcoinBlock':
-        case 'BitcoinTransactionHash':
+        case 'BitcoinBlock': {
+          const rawHex = (content && typeof content === 'object' && content.content)
+            ? content.content
+            : (typeof content === 'string' ? content : null);
+          if (rawHex) this.emit('block', { raw: rawHex, source: 'BitcoinBlock' });
           break;
+        }
+        case 'BitcoinTransactionHash': {
+          const txid = (content && typeof content === 'object' && content.content)
+            ? content.content
+            : null;
+          if (txid && this.settings.walletWatchMempool !== false) {
+            try {
+              const verbose = await this._makeRPCRequest('getrawtransaction', [txid, true]);
+              if (verbose) {
+                this.emit('transaction', Object.assign({}, verbose, { source: 'BitcoinTransactionHash' }));
+                if (this.wallet && typeof this.wallet.ingestBitcoinTransaction === 'function') {
+                  this.wallet.ingestBitcoinTransaction(verbose, { source: 'BitcoinTransactionHash' });
+                }
+              }
+            } catch (e) {
+              if (this.settings.debug) {
+                this.emit('debug', `[FABRIC:BITCOIN] mempool tx fetch ${txid}: ${e.message || e}`);
+              }
+            }
+          }
+          break;
+        }
         case 'BitcoinBlockHash': {
           const blockHashHex = (content && typeof content === 'object' && content.content)
             ? content.content
             : (JSON.parse(Buffer.isBuffer(content) ? content.toString() : String(content))).content;
-          const supply = await this._makeRPCRequest('gettxoutsetinfo', []);
-          this._state.content.height = supply.height;
-          this._state.content.tip = blockHashHex;
-          this._state.content.supply = supply.total_amount;
-          this.commit();
-          this.emit('block', {
+          let height = null;
+          let supplyAmount = null;
+          try {
+            const supply = await this._makeRPCRequest('gettxoutsetinfo', []);
+            height = supply.height;
+            supplyAmount = supply.total_amount;
+            this._state.content.height = supply.height;
+            this._state.content.tip = blockHashHex;
+            this._state.content.supply = supply.total_amount;
+            this.commit();
+          } catch (e) {
+            if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] tip supply: ${e.message || e}`);
+          }
+
+          let verboseBlock = null;
+          try {
+            verboseBlock = await this._makeRPCRequest('getblock', [blockHashHex, 2]);
+            if (verboseBlock && verboseBlock.height != null) height = verboseBlock.height;
+          } catch (e) {
+            if (this.settings.debug) {
+              this.emit('debug', `[FABRIC:BITCOIN] getblock(${blockHashHex},2): ${e.message || e}`);
+            }
+          }
+
+          const payload = {
             tip: blockHashHex,
-            height: supply.height,
-            supply: supply.total_amount
-          });
+            hash: blockHashHex,
+            height,
+            supply: supplyAmount,
+            tx: (verboseBlock && verboseBlock.tx) || [],
+            source: 'BitcoinBlockHash'
+          };
+          this.emit('block', payload);
+          if (this.wallet && typeof this.wallet.ingestBitcoinBlock === 'function') {
+            try {
+              this.wallet.ingestBitcoinBlock(payload);
+            } catch (e) {
+              this.emit('warning', `[FABRIC:BITCOIN] wallet block ingest: ${e.message || e}`);
+            }
+          }
           break;
         }
         case 'BitcoinTransaction': {
           try {
+            const rawHex = (content && typeof content === 'object' && content.content)
+              ? content.content
+              : null;
+            if (rawHex) {
+              const event = { hex: rawHex, source: 'BitcoinTransaction' };
+              try {
+                const bitcoinjs = require('bitcoinjs-lib');
+                event.txid = bitcoinjs.Transaction.fromHex(rawHex).getId();
+              } catch (_) { /* ignore parse */ }
+              this.emit('transaction', event);
+              if (this.wallet && typeof this.wallet.ingestBitcoinTransaction === 'function') {
+                this.wallet.ingestBitcoinTransaction(rawHex, { source: 'BitcoinTransaction' });
+              }
+            }
             const balance = await this._makeRPCRequest('getbalances', []).catch(() => null);
             if (balance != null) {
               this._state.balances.mine.trusted = balance;
               this.commit();
-              this.emit('transaction', { balance: this._state.balances.mine.trusted });
             }
           } catch (e) {
             if (this.settings.debug) this.emit('debug', `[FABRIC:BITCOIN] ZMQ BitcoinTransaction handler: ${e.message || e}`);

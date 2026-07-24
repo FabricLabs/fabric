@@ -21,6 +21,11 @@ const Hash256 = require('./hash256');
 const Service = require('./service');
 const Secret = require('./secret');
 const State = require('./state');
+const {
+  buildWatchSet,
+  classifyWalletTransaction,
+  BITCOIN_MESSAGE_TYPES
+} = require('../functions/walletTransactionWatch');
 
 /**
  * Manage keys and track their balances.
@@ -90,6 +95,16 @@ class Wallet extends Service {
     this.txids = new Collection();
     this.outputs = new Collection();
 
+    // Multi-seed keyring: primary `this.key` plus additional seeds in `_seeds`.
+    // Watch set covers addresses derived from every loaded seed/key.
+    this._seeds = new Map();
+    this._watch = {
+      addresses: new Map(),
+      paymentHashes: new Map()
+    };
+    /** @type {Set<string>} txid:kind already emitted (block + mempool may both see the same tx). */
+    this._emittedWalletTxKeys = new Set();
+
     // Encrypted Storage
     this.secrets = new Collection({
       methods: {
@@ -124,8 +139,17 @@ class Wallet extends Service {
       outputs: {},
       addressIndex: 0,
       addresses: {},
-      lastUsedIndex: -1
+      lastUsedIndex: -1,
+      seeds: {}
     });
+
+    // Register the primary key into the shared key collection + watch window.
+    try {
+      if (this.key && this.key.pubkey) {
+        this.loadKey(this.key, ['primary']);
+      }
+      this._registerDerivedAddresses(this.key, { seedId: 'primary', labels: ['primary'] });
+    } catch (_) { /* primary may be pubkey-only in some tests */ }
 
     return this;
   }
@@ -293,7 +317,243 @@ class Wallet extends Service {
     this._state.content.keys[pubkey] = item;
     this.keys.set(`/${pubkey}`, item);
 
+    try {
+      if (typeof key.toBitcoinAddress === 'function') {
+        const addr = key.toBitcoinAddress();
+        if (addr) this.watchAddress(addr, { pubkey, labels: item.labels, source: 'loadKey' });
+      }
+    } catch (_) { /* watch is best-effort */ }
+
     return item;
+  }
+
+  /**
+   * Load an additional BIP39 seed into this wallet's key collection (does not
+   * replace the primary `this.key`). Addresses derived from the seed are watched.
+   * @param {string} phrase BIP39 mnemonic
+   * @param {Array<string>} [labels=[]]
+   * @param {object} [opts]
+   * @param {number} [opts.addressWindow] receive indices to watch (default gapLimit)
+   * @returns {{ seedId: string, xpub: string, labels: string[] }}
+   */
+  loadSeed (phrase, labels = [], opts = {}) {
+    if (typeof phrase !== 'string') throw new Error('Seed must be a string.');
+    const trimmed = phrase.trim().replace(/\s+/g, ' ');
+    if (!bip39.validateMnemonic(trimmed)) {
+      throw new Error('Seed must be a valid BIP39 mnemonic phrase.');
+    }
+    const key = new Key({
+      seed: trimmed,
+      network: this.settings.network,
+      passphrase: opts.passphrase || ''
+    });
+    const xpub = key.xpub || key.pubkey;
+    if (!xpub) throw new Error('Could not derive xpub from seed.');
+    const seedId = Hash256.digest(Buffer.from(String(xpub), 'utf8')).toString('hex').slice(0, 32);
+    const labelList = Array.isArray(labels) ? labels.slice() : [];
+    this._seeds.set(seedId, { key, xpub, labels: labelList });
+    this._state.seeds[seedId] = { xpub, labels: labelList, loadedAt: Date.now() };
+    try {
+      this.loadKey(key, labelList.concat(['seed', seedId]));
+    } catch (_) { /* pubkey registration may fail for some key modes */ }
+    this._registerDerivedAddresses(key, {
+      seedId,
+      labels: labelList,
+      count: opts.addressWindow != null ? Number(opts.addressWindow) : this.settings.gapLimit
+    });
+    this.emit('seedLoaded', { seedId, xpub, labels: labelList });
+    return { seedId, xpub, labels: labelList };
+  }
+
+  /**
+   * @returns {Array<{ seedId: string, xpub: string, labels: string[] }>}
+   */
+  listSeeds () {
+    const rows = [];
+    for (const [seedId, row] of this._seeds.entries()) {
+      rows.push({ seedId, xpub: row.xpub, labels: row.labels || [] });
+    }
+    if (this.key && this.key.xpub) {
+      rows.unshift({
+        seedId: 'primary',
+        xpub: this.key.xpub,
+        labels: ['primary']
+      });
+    }
+    return rows;
+  }
+
+  /**
+   * Watch a Bitcoin address for wallet-associated transactions.
+   * @param {string} address
+   * @param {object} [meta]
+   */
+  watchAddress (address, meta = {}) {
+    const addr = String(address || '').trim();
+    if (!addr) return null;
+    const prev = this._watch.addresses.get(addr) || {};
+    const next = Object.assign({}, prev, meta, { address: addr });
+    this._watch.addresses.set(addr, next);
+    if (!this._state.addresses[addr]) {
+      this._state.addresses[addr] = {
+        index: meta.index != null ? meta.index : -1,
+        used: false,
+        seedId: meta.seedId || null
+      };
+    }
+    return next;
+  }
+
+  /**
+   * Watch an HTLC payment hash (SHA256 preimage) so claim witnesses are detected.
+   * @param {string} paymentHashHex
+   * @param {object} [meta]
+   */
+  watchPaymentHash (paymentHashHex, meta = {}) {
+    const h = String(paymentHashHex || '').trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(h)) throw new Error('paymentHashHex must be 64 hex chars');
+    const prev = this._watch.paymentHashes.get(h) || {};
+    const next = Object.assign({}, prev, meta, { paymentHashHex: h });
+    this._watch.paymentHashes.set(h, next);
+    return next;
+  }
+
+  /**
+   * Watch an inventory HTLC offer (payment address + payment hash + optional settlement).
+   * @param {object} htlc
+   */
+  watchHtlc (htlc = {}) {
+    const address = htlc.paymentAddress || htlc.address;
+    const paymentHashHex = htlc.paymentHashHex || htlc.contentHashHex;
+    if (address) {
+      this.watchAddress(address, {
+        kind: 'htlc',
+        settlementId: htlc.settlementId || null,
+        paymentHashHex: paymentHashHex || null,
+        documentId: htlc.documentId || null
+      });
+    }
+    if (paymentHashHex) {
+      this.watchPaymentHash(paymentHashHex, {
+        settlementId: htlc.settlementId || null,
+        documentId: htlc.documentId || null,
+        address: address || null
+      });
+    }
+    return this.getWatchSet();
+  }
+
+  /**
+   * @returns {object} watch set snapshot
+   */
+  getWatchSet () {
+    return buildWatchSet(this);
+  }
+
+  /**
+   * Derive and watch a window of addresses for a key (all common script types).
+   * @param {Key} key
+   * @param {object} [opts]
+   */
+  _registerDerivedAddresses (key, opts = {}) {
+    if (!key || typeof key.deriveAddress !== 'function') return;
+    const count = Math.max(1, Math.round(Number(opts.count != null ? opts.count : this.settings.gapLimit) || 20));
+    const seedId = opts.seedId || null;
+    const labels = opts.labels || [];
+    const types = ['p2pkh', 'p2wpkh', 'p2tr'];
+    for (let i = 0; i < count; i++) {
+      for (const type of types) {
+        try {
+          const der = key.deriveAddress(i, 0, type);
+          const addr = der && (der.address || (typeof der === 'string' ? der : null));
+          if (addr) {
+            this.watchAddress(addr, { seedId, index: i, type, labels, change: 0 });
+          }
+        } catch (_) { /* script type may be unsupported on this network */ }
+      }
+    }
+  }
+
+  /**
+   * Ingest a Bitcoin transaction (verbose RPC object or raw hex) and emit when related.
+   * @param {object|string} txOrHex
+   * @param {object} [context] { tip, height, source }
+   * @returns {object} classification
+   */
+  ingestBitcoinTransaction (txOrHex, context = {}) {
+    const watchSet = this.getWatchSet();
+    const classified = classifyWalletTransaction(txOrHex, watchSet);
+    if (!classified.related) return classified;
+
+    const txid = classified.txid;
+    const emitKey = txid ? `${txid}:${classified.kind}` : null;
+    if (emitKey && this._emittedWalletTxKeys.has(emitKey)) {
+      return Object.assign({}, classified, { duplicate: true });
+    }
+    if (emitKey) {
+      this._emittedWalletTxKeys.add(emitKey);
+      if (this._emittedWalletTxKeys.size > 4000) {
+        // Bound memory: drop oldest half by recreating from the newest entries.
+        this._emittedWalletTxKeys = new Set([...this._emittedWalletTxKeys].slice(-2000));
+      }
+    }
+
+    if (txid) {
+      this._state.transactions[txid] = Object.assign({}, classified, {
+        tip: context.tip || null,
+        height: context.height != null ? context.height : null,
+        source: context.source || 'ingest',
+        seenAt: Date.now()
+      });
+      this._state.content.transactions[txid] = this._state.transactions[txid];
+      for (const addr of classified.matchedAddresses) {
+        if (this._state.addresses[addr]) {
+          this._state.addresses[addr].used = true;
+          this._state.addresses[addr].lastUsed = Date.now();
+        }
+      }
+    }
+
+    const event = Object.assign({}, classified, {
+      tip: context.tip || null,
+      height: context.height != null ? context.height : null,
+      source: context.source || 'ingest'
+    });
+    this.emit('walletTransaction', event);
+    if (classified.kind === 'htlc_claim') this.emit('htlcClaim', event);
+    else if (classified.kind === 'htlc_funding') this.emit('htlcFunding', event);
+    else if (classified.kind === 'htlc_refund') this.emit('htlcRefund', event);
+    else if (classified.kind === 'receive' || classified.kind === 'payment' || classified.kind === 'coinbase') {
+      this.emit('payment', event);
+    }
+    return classified;
+  }
+
+  /**
+   * Process a new block tip (optionally with verbosity-2 `tx` / `transactions`).
+   * @param {object} block
+   * @returns {object[]} related classifications
+   */
+  ingestBitcoinBlock (block = {}) {
+    const tip = block.tip || block.hash || block.id || null;
+    const height = block.height != null ? block.height : null;
+    const txs = block.tx || block.transactions || [];
+    const out = [];
+    const seen = new Set();
+    for (const tx of txs) {
+      const classified = this.ingestBitcoinTransaction(tx, { tip, height, source: 'block' });
+      if (classified && classified.related && classified.txid && !seen.has(classified.txid)) {
+        seen.add(classified.txid);
+        out.push(classified);
+      }
+    }
+    this.emit('block', {
+      tip,
+      height,
+      related: out.length,
+      messageTypes: BITCOIN_MESSAGE_TYPES
+    });
+    return out;
   }
 
   /**
@@ -312,8 +572,17 @@ class Wallet extends Service {
     this.marshall.agents.push(listener);
 
     emitter.on('transaction', async function trustedHandler (msg) {
-      if (this.settings.verbosity >= 5) console.log('[FABRIC:WALLET]', 'Received transaction from trusted event emitter:', msg);
-      await wallet.addTransactionToWallet(msg);
+      if (wallet.settings.verbosity >= 5) console.log('[FABRIC:WALLET]', 'Received transaction from trusted event emitter:', msg);
+      if (msg && (msg.hex || msg.txid || msg.vout)) {
+        wallet.ingestBitcoinTransaction(msg, { source: 'trusted-transaction' });
+      } else {
+        await wallet.addTransactionToWallet(msg);
+      }
+    });
+
+    emitter.on('block', async function trustedBlockHandler (block) {
+      if (wallet.settings.verbosity >= 5) console.log('[FABRIC:WALLET]', 'Received block from trusted event emitter:', block);
+      await wallet.ingestBitcoinBlock(block);
     });
 
     return this;
@@ -343,11 +612,17 @@ class Wallet extends Service {
   async _processServiceMessage (msg) {
     switch (msg['@type']) {
       case 'BitcoinBlock':
-        this.processBitcoinBlock(msg['@data']);
+      case 'BitcoinBlockHash':
+        this.processBitcoinBlock(msg['@data'] || msg);
         break;
       case 'BitcoinTransaction':
-        // TODO: validate destination is this wallet
-        this.addTransactionToWallet(msg['@data']);
+      case 'BitcoinTransactionHash':
+        if (msg['@data'] && (msg['@data'].hex || msg['@data'].content)) {
+          const payload = msg['@data'].hex || msg['@data'].content || msg['@data'];
+          this.ingestBitcoinTransaction(payload, { source: msg['@type'] });
+        } else {
+          this.addTransactionToWallet(msg['@data']);
+        }
         break;
       default:
         if (this.settings.verbosity >= 4 || this.settings.debug) {
@@ -359,13 +634,32 @@ class Wallet extends Service {
 
   async processBitcoinBlock (block) {
     if (this.settings.verbosity >= 4) console.log('[FABRIC:WALLET]', 'Processing block:', block);
-    if (!block.block) return 0;
-    for (let i = 0; i < block.block.hashes.length; i++) {
-      const txid = block.block.hashes[i].toString('hex');
-      // ATTN: Eric
-      // TODO: process transaction
-      if (this.settings.verbosity >= 5) console.log('found txid in block:', txid);
+    if (!block) return [];
+    // Verbosity-2 style: full txs present
+    if (block.tx || block.transactions) {
+      return this.ingestBitcoinBlock(block);
     }
+    // Legacy SPV-ish: block.block.hashes
+    if (block.block && Array.isArray(block.block.hashes)) {
+      const tip = block.hash || block.tip || null;
+      const related = [];
+      for (let i = 0; i < block.block.hashes.length; i++) {
+        const txid = block.block.hashes[i].toString('hex');
+        if (this.settings.verbosity >= 5) console.log('found txid in block:', txid);
+        related.push({ txid, related: false, kind: 'unknown' });
+      }
+      this.emit('block', { tip, related: 0, txids: related.map((r) => r.txid) });
+      return related;
+    }
+    // Tip-only notification from ZMQ hashblock — still emit so listeners wake up.
+    return this.ingestBitcoinBlock(block);
+  }
+
+  async _scanBlockForTransactions (block) {
+    if (this.settings.verbosity >= 5 || this.settings.debug) {
+      console.log('[AUDIT]', 'Scanning block for transactions:', block);
+    }
+    return this.ingestBitcoinBlock(block || {});
   }
 
   async _attachTXID (txid) {
@@ -478,6 +772,10 @@ class Wallet extends Service {
     return Address.fromScripthash(redeemScript.hash160());
   }
 
+  /**
+   * @deprecated Legacy bcoin-style HTLC for channels — not the document-market P2TR profile.
+   * Use {@link Wallet.buildInventoryHtlcP2tr} / `@fabric/core/functions/inventoryHtlc` instead.
+   */
   async createHTLC (contract) {
     // if (!contract.asset) throw new Error('Contract parameter "asset" is required.');
     if (!contract.amount) throw new Error('Contract parameter "amount" is required.');
@@ -827,13 +1125,6 @@ class Wallet extends Service {
     return inputRefund;
   }
 
-  async _scanBlockForTransactions (block) {
-    if (this.settings.verbosity >= 5 || this.settings.debug) {
-      console.log('[AUDIT]', 'Scanning block for transactions:', block);
-    }
-    return [];
-  }
-
   async _scanChainForTransactions (chain) {
     if (this.settings.verbosity >= 5 || this.settings.debug) {
       console.log('[AUDIT]', 'Scanning chain for transactions:', chain);
@@ -1046,14 +1337,33 @@ class Wallet extends Service {
   }
 
   /**
-   * L1 / hub document purchase binding: same 64-char hex as hub `CreatePurchaseInvoice` / HTLC `contentHash`.
+   * Envelope (legacy / unsealed) payment hash. Prefer {@link Wallet.resolveDocumentContentHashHex}
+   * when sealed meta or a content key may apply.
    * @param {string} documentId
    * @param {object} parsed Whitelisted document fields (see {@link Peer#_buildDocumentParsedForPublish}).
    * @returns {string}
    */
   static purchaseContentHashHex (documentId, parsed) {
-    const { purchaseContentHashHex: hashFn } = require('../functions/publishedDocumentEnvelope');
-    return hashFn(documentId, parsed);
+    return require('../functions/documentPaymentHash').purchaseContentHashHex(documentId, parsed);
+  }
+
+  /**
+   * Single path for buy / HTLC `contentHashHex` (sealed | envelope | blob).
+   * @param {object} opts see {@link module:functions/documentPaymentHash.resolveDocumentContentHashHex}
+   * @returns {{ contentHashHex: string, binding: string }}
+   */
+  static resolveDocumentContentHashHex (opts) {
+    return require('../functions/documentPaymentHash').resolveDocumentContentHashHex(opts);
+  }
+
+  /** @see {@link module:functions/inventoryHtlc.buildInventoryHtlcP2tr} */
+  static buildInventoryHtlcP2tr (opts) {
+    return require('../functions/inventoryHtlc').buildInventoryHtlcP2tr(opts);
+  }
+
+  /** @see {@link module:functions/inventoryHtlc.buildHtlcFundingHints} */
+  static buildHtlcFundingHints (opts) {
+    return require('../functions/inventoryHtlc').buildHtlcFundingHints(opts);
   }
 }
 

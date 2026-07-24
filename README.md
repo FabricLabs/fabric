@@ -11,31 +11,45 @@ peer-to-peer agreements ("contracts") using Bitcoin as a bonding mechanism. The
 classes, enabling the rapid prototyping and testing of Bitcoin-based
 applications for downstream developers.
 
+## Bitcoin
+We've designed Fabric to extend the existing Bitcoin ecosystem, deriving all specifications from well-established designs and implementations.
+
+### Identity
+#### BIP32 Extensions
+```
+mainnet Master: m'/
+mainnet Identity #0: m'/7777/
+mainnet Identity #0: m'/7777/
+mainnet Identity #0, Receive 0: m'/7777/
+mainnet Identity #0, Change 0: m'/7777/
+mainnet Identity #0, Receive 1: m'/7777/
+regtest Master:
+regtest Identity #0:
+```
+
 **Status:** `0.1.0-RC1` — run **`npm run ci`** before release tags (full test suite).
 
 | Doc | Purpose |
 |-----|---------|
 | [VISION.md](VISION.md) | Product vision, architecture snapshot, documentation map |
 | [DEVELOPERS.md](DEVELOPERS.md) | Repo layout, tests, core types, storage |
+| [docs/BOLT_COMPATIBILITY.md](docs/BOLT_COMPATIBILITY.md) | Lightning BOLT #1–#12 vs `lightningd` / `Lightning` |
+| [docs/FABRIC_LIGHTNING_OFFERS.md](docs/FABRIC_LIGHTNING_OFFERS.md) | Fabric **markets** vs BOLT12; `Lightning.Bolt12` |
+| [docs/FABRIC_PAYMENT_BECH32.md](docs/FABRIC_PAYMENT_BECH32.md) | Fabric-routed payments `fa1…`; `Lightning.FabricPayment` |
+| [docs/LIGHTNING_COMPAT.md](docs/LIGHTNING_COMPAT.md) | Core Lightning JSON-RPC ↔ Fabric API |
 | [PRIVACY.md](PRIVACY.md) | Privacy model for operators |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
 
 ## Quick Start
-`npm i -g FabricLabs/fabric#master`
-
-You'll now have the `fabric` binary available on your system.  Set up your environment with a newly-generated cryptographic key by using:
 ```
+npm i -g @fabric/core
 fabric setup
+fabric
 ```
 
 | 🚨 Stop here! |
 |--------------|
 | The output of `fabric setup` includes your **SEED**. Never share it or store it in plain text in cloud-synced folders. Write it down offline or use a password manager. |
-
-Once complete, you'll have a fully configured Fabric client available by running:
-```
-fabric
-```
 
 For help, try entering "insert mode" by pressing the "i" key then typing `/help` and pressing enter — you'll get a short help prompt followed by a list of available commands.  Feel free to explore!
 

@@ -47,6 +47,9 @@ const sidechainState = require('@fabric/core/functions/sidechainState');
 
 Store paths: `sidechain/STATE`, `sidechain/SNAPSHOTS`, `sidechain/JOURNAL`.
 
+**Opcode catalog + common-state Program:** [NETWORK_STATE_PROGRAM.md](./NETWORK_STATE_PROGRAM.md),
+diagram [`contracts/protocol.dot`](../contracts/protocol.dot).
+
 **Chain digests may feed** the document / `GameStateSnapshot`; raw gossip is never
 Beacon authority.
 
@@ -80,8 +83,15 @@ Accepted `CONTRACT_PUBLISH` ids reuse the **same** document helpers under
 
 ### Wire note
 
-`SIDECHAIN_STATE_PATCH` is a named body / manifest type today (typically UTF-8
-JSON). A dedicated outer opcode may be allocated later.
+`SIDECHAIN_STATE_PATCH` uses the **same opcode / type name** across Peer, Beacon,
+and HTTP. Core prefers **typed fields** (`basisClock`, `basisDigest`,
+`catalogCanonical`) via `messageBodyCodec` /
+`functions/documentRegistrySidechain`. **RFC6902 JSON patch arrays are an
+`@fabric/http` edge transform** (`messageBodyJsonBridge`) of those fields — not
+the core/simulator primary API. Digests of `sidechain/STATE` still use
+`fabricCanonicalJson` (digest ≠ wire body).
+
+A dedicated numeric outer opcode may be allocated later.
 
 Related: [PROGRAM.md](./PROGRAM.md), [CHAIN.md](./CHAIN.md),
 [APPLICATION_NAMESPACES.md](./APPLICATION_NAMESPACES.md),

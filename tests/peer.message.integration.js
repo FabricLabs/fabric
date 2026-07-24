@@ -178,8 +178,7 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     };
     hub.peers[addr] = { id: 'client', publicKey: clientKey.pubkey };
 
-    const content = { type: 'P2P_CHAT_MESSAGE', object: { text: 'secure-mesh' } };
-    const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
+    const msg = Message.fromVector(['P2P_CHAT_MESSAGE', 'secure-mesh']);
     msg.signWithKey(clientKey);
 
     let chat = null;
@@ -188,8 +187,8 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     hub._handleFabricMessage(msg.toBuffer(), { name: addr }, null);
 
     assert.ok(chat);
-    assert.strictEqual(chat.object.text, 'secure-mesh');
-    assert.ok(relayWrites.length >= 1, 'relayFrom should write ChatMessage to non-origin edges');
+    assert.strictEqual(chat.text, 'secure-mesh');
+    assert.ok(relayWrites.length >= 1, 'relayFrom should write chat to non-origin edges');
   });
 
   it('rejects chat with a corrupted AMP signature', function () {
@@ -199,8 +198,7 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     hub.connections[addr] = { _writeFabric: () => {}, destroy: () => {} };
     hub.peers[addr] = { id: 'peer', publicKey: author.pubkey };
 
-    const content = { type: 'P2P_CHAT_MESSAGE', object: { text: 'forged' } };
-    const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
+    const msg = Message.fromVector(['P2P_CHAT_MESSAGE', 'forged']);
     msg.signWithKey(author);
     // Flip a signature byte so AMP verify fails (author field still present).
     msg.raw.signature[0] ^= 0xff;
@@ -226,22 +224,22 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     hub.connections[addr] = { _writeFabric: () => {}, destroy: () => {} };
     hub.peers[addr] = { id: 'victim', publicKey: expectedSigner.pubkey };
 
-    // Inventory is not mesh-relay-as-is; connection pin still applies.
-    const content = { type: 'INVENTORY_REQUEST', object: { offerBtc: true } };
-    const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
+    // Inventory is mesh-relay-as-is (author may be a prior hop). Pin applies to local types.
+    const msg = Message.fromVector(['P2P_DOCUMENT_PUBLISH', JSON.stringify({ id: 'doc', content: 'x' })]);
     msg.signWithKey(attacker);
 
     let warned = false;
     hub.once('warning', (w) => {
       if (/Signer mismatch/i.test(String(w))) warned = true;
     });
-    let inventory = 0;
-    hub.on('inventory', () => { inventory++; });
+    let publishes = 0;
+    hub.on('documentPublish', () => { publishes++; });
+    hub.on('DocumentPublish', () => { publishes++; });
 
     hub._handleFabricMessage(msg.toBuffer(), { name: addr }, null);
 
     assert.ok(warned, 'expected signer mismatch for pinned non-relayable type');
-    assert.strictEqual(inventory, 0, 'pinned mismatch must not dispatch inventory');
+    assert.strictEqual(publishes, 0, 'pinned mismatch must not dispatch document publish');
   });
 
   it('drops duplicate wire envelopes (reliable dedup for mesh floods)', function () {
@@ -251,8 +249,7 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     hub.connections[addr] = { _writeFabric: () => {}, destroy: () => {} };
     hub.peers[addr] = { id: 'p', publicKey: k.pubkey };
 
-    const content = { type: 'P2P_CHAT_MESSAGE', object: { text: 'once' } };
-    const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
+    const msg = Message.fromVector(['P2P_CHAT_MESSAGE', 'once']);
     msg.signWithKey(k);
     const buf = msg.toBuffer();
 
@@ -263,6 +260,36 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     hub._handleFabricMessage(buf, { name: addr }, null);
 
     assert.strictEqual(chats, 1);
+  });
+
+  it('dispatches first-class P2P_PEER_GOSSIP over the wire (not P2P_BASE_MESSAGE fallback)', function () {
+    const hub = mockHub();
+    const author = new Key();
+    const origin = '127.0.0.1:7650';
+    const relayWrites = [];
+    hub.connections[origin] = { _writeFabric: () => {}, destroy: () => {} };
+    hub.connections['127.0.0.1:7651'] = {
+      _writeFabric: (buf) => relayWrites.push(Buffer.isBuffer(buf) ? buf : Buffer.from(buf)),
+      destroy: () => {}
+    };
+    hub.peers[origin] = { id: 'relay-peer', publicKey: hub.key.pubkey };
+
+    const msg = Message.fromVector(['P2P_PEER_GOSSIP', JSON.stringify({
+      host: '10.0.0.9',
+      port: 9001,
+      gossipHop: 3
+    })]);
+    msg.signWithKey(author);
+    const original = msg.toBuffer();
+    assert.strictEqual(msg.type, 'P2P_PEER_GOSSIP');
+
+    let gossip = null;
+    hub.once('peeringGossip', (e) => { gossip = e; });
+    hub._handleFabricMessage(original, { name: origin }, null);
+
+    assert.ok(gossip, 'expected peeringGossip from first-class wire frame');
+    assert.ok(relayWrites.length >= 1, 'gossip should relay');
+    assert.ok(relayWrites[0].equals(original), 'gossip relayed bit-identical');
   });
 
   it('relays first-class P2P_CHAT_MESSAGE frames bit-identical (no hop re-sign)', function () {
@@ -278,11 +305,7 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     // Pin is the TCP peer (Noise identity), not necessarily the message author.
     hub.peers[origin] = { id: 'relay-peer', publicKey: hub.key.pubkey };
 
-    const msg = Message.fromVector(['P2P_CHAT_MESSAGE', JSON.stringify({
-      type: 'P2P_CHAT_MESSAGE',
-      actor: { publicKey: author.pubkey, id: author.pubkey },
-      object: { channel: 'global', body: 'as-is', author: author.pubkey }
-    })]);
+    const msg = Message.fromVector(['P2P_CHAT_MESSAGE', 'as-is']);
     msg.signWithKey(author);
     const original = msg.toBuffer();
 
@@ -295,8 +318,7 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     const relayedSigner = hub._verifiedFabricSignerPubkeyHex(relayed);
     const authorXOnly = author.pubkey.length === 66 ? author.pubkey.slice(2) : author.pubkey;
     assert.strictEqual(relayedSigner, authorXOnly, 'original author signature preserved');
-    const body = JSON.parse(relayed.raw.data.toString('utf8'));
-    assert.strictEqual(body.object.author, author.pubkey, 'author preserved in body');
+    assert.strictEqual(relayed.raw.data.toString('utf8'), 'as-is', 'body is UTF-8 text');
   });
 
   it('relays CONTRACT_MESSAGE frames bit-identical (no hop re-sign)', function () {

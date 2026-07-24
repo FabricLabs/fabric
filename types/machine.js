@@ -225,6 +225,83 @@ class Machine extends Actor {
     return resolved.lines;
   }
 
+  /**
+   * Parse program manifest v1 (former DistributedExecution.parseDistributedManifestV1).
+   * @param {object} raw
+   * @param {import('./program')|null} [program] When provided, programId/hash must match.
+   * @returns {{ ok: boolean, error?: string, manifest?: object }}
+   */
+  parseManifest (raw, program = null) {
+    const { parseProgramManifestV1 } = require('../functions/fabricProgramManifest');
+    const parsed = parseProgramManifestV1(raw);
+    if (!parsed.ok) return parsed;
+    if (program) {
+      const hash = program.programHash || (typeof program.hash === 'function' ? program.hash() : null);
+      if (hash && parsed.manifest.programHash !== hash) {
+        return { ok: false, error: 'manifest programHash does not match Program' };
+      }
+    }
+    return parsed;
+  }
+
+  /**
+   * Load a {@link Program} onto this machine (sets script steps).
+   * @param {import('./program')} program
+   * @returns {Machine}
+   */
+  loadProgram (program) {
+    const Program = require('./program');
+    const prog = program instanceof Program ? program : Program.from(program || {});
+    const compiled = prog.compile();
+    if (!compiled.ok) {
+      throw new Error(compiled.error || 'program compile failed');
+    }
+    if (prog.language === 'javascript' && prog.source && typeof prog.source === 'object' &&
+        !Array.isArray(prog.source)) {
+      for (const [name, fn] of Object.entries(prog.source)) {
+        if (typeof fn === 'function') this.define(name, fn);
+      }
+    }
+    this.settings.script = prog.steps.slice();
+    this._program = prog;
+    return this;
+  }
+
+  /**
+   * Load and compute a Program; return stack tip + run commitment for L1 binding.
+   * @param {import('./program')|object} program
+   * @param {*} [input]
+   * @returns {Promise<{ ok: boolean, stack: Array, tip: *, trace: Array, runCommitmentHex: string|null, error?: string }>}
+   */
+  async runProgram (program, input) {
+    try {
+      this.loadProgram(program);
+      const beforeLen = this.stack.length;
+      await this.compute(input);
+      const trace = this.stack.slice(beforeLen);
+      const tip = this.stack.length ? this.stack[this.stack.length - 1] : null;
+      const runCommitmentHex = this._program
+        ? this._program.runCommitmentHex({ tip, stack: trace })
+        : null;
+      return {
+        ok: true,
+        stack: this.stack.slice(),
+        tip,
+        trace,
+        runCommitmentHex
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        stack: this.stack.slice(),
+        tip: null,
+        trace: [],
+        runCommitmentHex: null,
+        error: err && err.message ? err.message : String(err)
+      };
+    }
+  }
+
   applyOperation (op) {
     monitor.applyOperation(this.state, op);
   }

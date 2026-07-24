@@ -70,6 +70,10 @@ reports/coverage-btc-tmp/
 reports/credits.json
 reports/licenses.json
 reports/benchmark-latest.json
+reports/simulator-latest.json
+reports/simulator-beacon-audit-latest.json
+reports/simulator-beacon-audit-latest.md
+reports/simulator-beacon-1000.log
 reports/AUDIT.json
 reports/class-inheritance.json
 reports/npm-audit.json

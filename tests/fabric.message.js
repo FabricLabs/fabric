@@ -76,14 +76,41 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(Message.friendlyTypeFromWire('CHAT_MESSAGE'), 'ChatMessage');
     });
 
+    it('typeEquals / canonicalType* unify opcode, wire name, and friendly alias', function () {
+      const { P2P_PEER_GOSSIP, P2P_PEERING_OFFER } = require('../constants');
+      assert.strictEqual(Message.canonicalTypeName(P2P_PEER_GOSSIP), 'P2P_PEER_GOSSIP');
+      assert.strictEqual(Message.canonicalTypeCode('P2P_PEER_GOSSIP'), P2P_PEER_GOSSIP);
+      assert.strictEqual(Message.canonicalTypeCode('PeerGossip'), P2P_PEER_GOSSIP);
+      assert.ok(Message.typeEquals(P2P_PEER_GOSSIP, 'P2P_PEER_GOSSIP'));
+      assert.ok(Message.typeEquals('PeerGossip', P2P_PEER_GOSSIP));
+      assert.ok(Message.typeEquals(P2P_PEERING_OFFER, 'P2P_PEERING_OFFER'));
+      assert.ok(!Message.typeEquals(P2P_PEER_GOSSIP, P2P_PEERING_OFFER));
+      // Unregistered Hub/WebRTC alias: exact string match only
+      assert.ok(Message.typeEquals('webrtc-peer-gossip', 'webrtc-peer-gossip'));
+      assert.ok(!Message.typeEquals('webrtc-peer-gossip', P2P_PEER_GOSSIP));
+    });
+
     it('P2P_CHAT_MESSAGE is a first-class opcode (roundtrips distinct from CHAT_MESSAGE)', function () {
-      const m = Message.fromVector(['P2P_CHAT_MESSAGE', JSON.stringify({ hello: 'world' })]);
+      const m = Message.fromVector(['P2P_CHAT_MESSAGE', 'hello world']);
       assert.strictEqual(m.type, 'P2P_CHAT_MESSAGE');
       const restored = Message.fromBuffer(m.toBuffer());
       assert.strictEqual(restored.type, 'P2P_CHAT_MESSAGE');
+      assert.strictEqual(String(restored.data || restored.raw.data.toString('utf8')), 'hello world');
       // Not collapsed into P2P_BASE_MESSAGE, and distinct from legacy CHAT_MESSAGE.
       assert.notStrictEqual(restored.type, 'P2P_BASE_MESSAGE');
       assert.notStrictEqual(restored.type, 'CHAT_MESSAGE');
+    });
+
+    it('P2P_PEER_GOSSIP and P2P_PEERING_OFFER are first-class opcodes (not P2P_BASE_MESSAGE)', function () {
+      const gossip = Message.fromVector(['P2P_PEER_GOSSIP', JSON.stringify({ host: '1.2.3.4', port: 9000 })]);
+      assert.strictEqual(gossip.type, 'P2P_PEER_GOSSIP');
+      assert.strictEqual(Message.fromBuffer(gossip.toBuffer()).type, 'P2P_PEER_GOSSIP');
+
+      const offer = Message.fromVector(['PeeringOffer', JSON.stringify({
+        host: '5.6.7.8', port: 7777, transport: 'fabric'
+      })]);
+      assert.strictEqual(offer.type, 'P2P_PEERING_OFFER');
+      assert.strictEqual(Message.fromBuffer(offer.toBuffer()).type, 'P2P_PEERING_OFFER');
     });
 
     it('GenericMessage encodes as GENERIC_MESSAGE (15103), not P2P_BASE_MESSAGE', function () {

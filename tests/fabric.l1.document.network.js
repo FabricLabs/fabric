@@ -265,7 +265,10 @@ describe('@fabric/core L1 document publish & distribution', function () {
     const body = 'listed from peer state.';
     const askSats = 42_000;
     server._publishDocument(docKey, body, askSats);
-    const expectHash = purchaseContentHashHex(docKey, server._buildDocumentParsedForPublish(docKey, body));
+    // Priced docs seal by default: inventory contentHash is SHA256(K), not envelope purchase hash.
+    const sealed = server._getDocumentSealedMeta(docKey);
+    assert.ok(sealed && sealed.paymentHashHex, 'priced publish should seal content key');
+    const expectHash = sealed.paymentHashHex;
 
     await new Promise((r) => setTimeout(r, 300));
 
@@ -276,6 +279,7 @@ describe('@fabric/core L1 document publish & distribution', function () {
 
     assert.strictEqual(inv.length, 1);
     assert.strictEqual(inv[0].message.object.items[0].contentHash, expectHash);
+    assert.strictEqual(inv[0].message.object.items[0].sealed, true);
     assert.strictEqual(inv[0].message.object.items[0].rateSats, askSats);
 
     await server.stop();
@@ -341,7 +345,9 @@ describe('@fabric/core L1 document publish & distribution', function () {
     const docKey = 'relay-star/catalog-item';
     const body = 'inventory via relaying router';
     holder._publishDocument(docKey, body, 33_000);
-    const expectHash = purchaseContentHashHex(docKey, holder._buildDocumentParsedForPublish(docKey, body));
+    const sealed = holder._getDocumentSealedMeta(docKey);
+    assert.ok(sealed && sealed.paymentHashHex, 'priced publish should seal content key');
+    const expectHash = sealed.paymentHashHex;
 
     await new Promise((r) => setTimeout(r, 400));
 
@@ -353,6 +359,7 @@ describe('@fabric/core L1 document publish & distribution', function () {
     assert.ok(gotInventory, 'buyer should receive relayed INVENTORY_RESPONSE');
     assert.strictEqual(inv[0].message.object.items[0].id, docKey);
     assert.strictEqual(inv[0].message.object.items[0].contentHash, expectHash);
+    assert.strictEqual(inv[0].message.object.items[0].sealed, true);
 
     await router.stop();
     await holder.stop();

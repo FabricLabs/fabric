@@ -12,8 +12,7 @@
 const {
   MAX_MESSAGE_SIZE,
   P2P_PING,
-  P2P_PONG,
-  P2P_CHAT_MESSAGE
+  P2P_PONG
 } = require('../constants');
 
 const FIELD_TYPES = Object.freeze([
@@ -230,11 +229,12 @@ const SCHEMA_P2P_PING = Object.freeze([
   { name: 'nonce', type: 'string' }
 ]);
 
-const SCHEMA_P2P_CHAT = Object.freeze([
-  { name: 'channel', type: 'string' },
-  { name: 'content', type: 'string' },
-  { name: 'timestamp', type: 'string' }
-]);
+/**
+ * P2P_CHAT_MESSAGE and P2P_PEER_ALIAS use opaque UTF-8 bodies (the text /
+ * nickname itself) — not a multi-field schema. See MESSAGES.md and
+ * docs/MESSAGE_BODY.md. Kept as null so Message.fromFields rejects misuse.
+ */
+const SCHEMA_P2P_CHAT = null;
 
 const SCHEMA_PROGRAM_RUN = Object.freeze([
   { name: 'programHash', type: 'bytes32' },
@@ -249,8 +249,7 @@ function _installDefaults () {
   registerBodySchema(P2P_PONG, SCHEMA_P2P_PING);
   registerBodySchema('P2P_PONG', SCHEMA_P2P_PING);
   registerBodySchema('Pong', SCHEMA_P2P_PING);
-  registerBodySchema(P2P_CHAT_MESSAGE, SCHEMA_P2P_CHAT);
-  registerBodySchema('P2P_CHAT_MESSAGE', SCHEMA_P2P_CHAT);
+  // P2P_CHAT_MESSAGE / P2P_PEER_ALIAS: opaque UTF-8 body — no field schema.
   // Do not bind 'ChatMessage' here — that friendly name maps to CHAT_MESSAGE and
   // still carries legacy JSON object bodies in Hub / Peer.
   registerBodySchema('FabricProgramRun', SCHEMA_PROGRAM_RUN);

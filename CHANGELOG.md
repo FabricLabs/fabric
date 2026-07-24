@@ -1,6 +1,33 @@
 # `@fabric/core` Changelog
 Recent changes to Fabric Core.
 
+## 2026-07-24
+CLI first-run setup, L1 document settle in core, ranked offers, multi-blob exchange, private paid relay.
+
+**CLI**
+- **Setup gate** — `fabric --help` / `--version` without a wallet; no auto-setup; bare `fabric` hints `fabric setup`. Quieter `contracts/setup.js` (seed + xpub/path; `FABRIC_DEBUG=1` for xprv).
+- **Document exchange** — `/publish` + rate; `/inventory [peer] [btc]`; `/offers`; `/buy` / `/confirm`; `/request` with `maxSats`; `/pending` / `/approve` / `/deny`; `/relayfees`; `/send <doc> <peer>`.
+
+**Peer / functions**
+- Upstream Hub P2TR HTLC + content-key: `functions/inventoryHtlc.js`, `documentContentKey.js`, `documentOfferEscrow.js` (sign via `types/ecc`, no `ecpair`).
+- `documentOfferBook`, `documentBlobManifest`, `documentRequestRelay`, `documentPurchaseSession`.
+- `attachInventoryHtlc`, blob inventory rows, private `DOCUMENT_REQUEST` rewrite with fee skim.
+
+**Hub**
+- Thin re-exports of envelope / HTLC / content-key / escrow from `@fabric/core`.
+
+**Simulator**
+- Scenarios `document-swarm`, `document-relay-private`; adversarial document actions.
+- `DocumentRequest` / inventory opcodes are relay-as-is (star/line forward no longer signer-mismatch drops); document-market pack slimmed to peer wiring (ranking/blobs/fees stay in unit tests); `run.js --all`.
+- **`beacon-registry`** (gated `FABRIC_E2E_REGTEST=1`): managed regtest + `types/Beacon` seals document registry digests on `sidechain/STATE`; end-of-run **audit report** links each epoch to a real L1 block/coinbase txid (`reports/simulator-beacon-audit-latest.{json,md}`).
+
+**Beacon / registry**
+- `types/beacon.js` — L1 epoch chain (Hub `contracts/beacon.js` re-exports).
+- `functions/documentRegistrySidechain.js` — typed-field `SIDECHAIN_STATE_PATCH` catalog apply; RFC6902 only at `@fabric/http` `messageBodyJsonBridge`.
+
+**Docs**
+- [`docs/L1_DOCUMENT_EXCHANGE.md`](docs/L1_DOCUMENT_EXCHANGE.md), BIP draft, payments binding.
+
 ## 2026-03-20
 Pre-release focusing on wire parity, tooling, and release hygiene.
 
@@ -10,6 +37,7 @@ Pre-release focusing on wire parity, tooling, and release hygiene.
 
 **Security / privacy**
 - **Peer logging** — NOISE handshake: **never** log local private key material; public-key diagnostics and inbound session notices only when `settings.debug` is true (see `types/peer.js`). `types/key.js` — `encrypt()` uses explicit `crypto.randomBytes(16)` for IVs.
+- **`P2P_PEER_GOSSIP` / `P2P_PEERING_OFFER` opcodes** — First-class AMP types `0x61` / `0x62` (were string labels that silently encoded as `P2P_BASE_MESSAGE`). Registered in `types/message.js`; Peer handlers match wire string names.
 - **`P2P_PEER_GOSSIP` relay** — Mitigates relay amplification: logical payload dedup, advisory `gossipHop` TTL (origin-set; hops forward bit-identical), per-origin relay budget, bounded wire-hash / payload caches (`constants.js` `GOSSIP_*`, `Peer` `settings.gossip`).
 - **`P2P_PEERING_OFFER` relay** — Same mitigations for peering offers: logical payload dedup, `peeringHop` TTL, per-origin relay budget, bounded payload cache, FIFO-capped deduped candidate queue (`constants.js` `PEERING_OFFER_*`, `PEER_MAX_CANDIDATES_QUEUE`, `Peer` `settings.peering`).
 - **Operations / security docs** — [PRIVACY.md](PRIVACY.md), [AUDIT.md](AUDIT.md), [SECURITY.md](SECURITY.md); [docs/README.md](docs/README.md) index.

@@ -26,7 +26,7 @@ See also [`QUICKSTART.md`][quickstart-guide] for up-to-date instructions.
 1. From a clone of this repo: `npm install` (or `npm install -g @fabric/core` to put `fabric` on your `PATH`)
 2. (optional) `fabric setup` to generate a master key and local config
 3. (optional) `fabric keygen` to generate a new master key without saving to disk (ephemeral)
-4. Run `fabric` — the CLI entry is wired through `types/cli.js` and extends **`Service.FabricShell`**
+4. Run `fabric` — the CLI entry is wired through `types/cli.js` and extends **`Service.FabricShell`**. **Contracts** (HTLCs, document sessions, programs, shell packs, …) are documented in **[docs/CONTRACTS.md](docs/CONTRACTS.md)**; terminal UX in **[docs/CLI.md](docs/CLI.md)**.
 
 Working from a **git checkout** (not the global package) is best when you are changing `@fabric/core` itself; use `npm link` or `npm install ../fabric` from downstream packages (Hub, HTTP server) as described in the repo README.
 
@@ -69,7 +69,9 @@ Use this repo as a **library** or run the **`fabric`** CLI in environments you c
 ## Core Types (reference)
 These live under `types/*.js` (CommonJS). The **`Fabric`** facade (`types/fabric.js`) re-exports many of them for quick experiments; production code usually imports a **leaf** type.
 
-**Sidechain document** (`functions/sidechainState`): logical sidechain JSON + RFC6902 patches, optional path policy, journal/snapshots, tip restore — distributed-execution helpers, **not** a Fabric type. See [docs/DISTRIBUTED_EXECUTION.md](docs/DISTRIBUTED_EXECUTION.md).
+**Beacon** (`types/beacon`): L1-tied epoch chain sealing `sidechain` / `contracts` digests (Hub re-exports as `contracts/beacon.js`).
+
+**Sidechain document** (`functions/sidechainState` + `documentRegistrySidechain`): logical `sidechain/STATE` + journal/snapshots/tip restore. Wire updates use typed `SIDECHAIN_STATE_PATCH` fields; RFC6902 JSON is an `@fabric/http` edge transform. See [docs/DISTRIBUTED_EXECUTION.md](docs/DISTRIBUTED_EXECUTION.md). Network-wide field map + Program: [docs/NETWORK_STATE_PROGRAM.md](docs/NETWORK_STATE_PROGRAM.md); wire diagram [`contracts/protocol.dot`](contracts/protocol.dot).
 
 | Type | Role |
 |------|------|
@@ -131,11 +133,15 @@ The `@fabric/core` library consists of these major areas:
 Files here feed the default **inventory** for packaged releases. When using `@fabric/http`’s server, many assets are served from `/` (configurable). Use this tree for **generated** binaries, WASM, and bundled UI — avoid committing large binaries unless they are part of the release process.
 
 ##### 0.1 Inventory
-For the `0.1` line, focus is Lightning-oriented document exchange. Operators running `fabric chat` can:
+For the `0.1` line, focus is **consenting peer file exchange** plus **ranked L1 document markets**. Operators running `fabric` / `fabric chat` can:
 
-1. Load a file into local inventory: `/import <filename>`
-2. Publish to peers: `/publish <documentID> <rate>`
-3. Request from the network: `/request <documentID> <rate>`
+1. `/import` → `/publish <id> <rateSats>`
+2. `/inventory [peer] [btc]` → `/offers [id]` (rank by price/latency/score)
+3. Unpaid: `/request` → seller `/approve`; paid: `/buy` → pay → `/confirm <settlementId> <txid>`
+4. Private relay fees: `/relayfees`; budgeted requests rewrite hops with fee skim
+5. Large files: multi-blob offers and reassembly (see L1 doc)
+
+Details: [`docs/L1_DOCUMENT_EXCHANGE.md`](docs/L1_DOCUMENT_EXCHANGE.md); BIP: [`docs/bip-fabric-file-exchange.md`](docs/bip-fabric-file-exchange.md).
 
 When this surface is stable and well tested, the project can tag `0.1.0-RC1` and move toward a security audit.
 
@@ -317,6 +323,8 @@ Other **`Store`** subclasses add domain behavior — for example **`Datastore`**
 | Link | Description |
 |------|-------------|
 | [QUICKSTART.md][quickstart-guide] | Install and first commands |
+| [docs/CONTRACTS.md](docs/CONTRACTS.md) | Contracts as interfaces; Hub registry (Hub publishes first) |
+| [docs/CLI.md](docs/CLI.md) | Terminal `/contracts`, refunds, verbosity |
 | [AGENTS.md](AGENTS.md) | Agent services, lifecycle, workers |
 | [SECURITY.md](SECURITY.md) | Disclosure process, release hygiene |
 
