@@ -47,4 +47,19 @@ function fabricCanonicalJson (value, depth = 0) {
   return '{' + keys.map((k) => JSON.stringify(k) + ':' + fabricCanonicalJson(value[k], depth + 1)).join(',') + '}';
 }
 
+/**
+ * Drop `undefined` and normalize values the same way JSON.parse(JSON.stringify) does.
+ * @param {*} value
+ * @returns {*}
+ */
+function jsonSafe (value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+/** @deprecated Prefer {@link fabricCanonicalJson} by name. */
+const stableStringify = fabricCanonicalJson;
+
 module.exports = fabricCanonicalJson;
+module.exports.fabricCanonicalJson = fabricCanonicalJson;
+module.exports.jsonSafe = jsonSafe;
+module.exports.stableStringify = stableStringify;

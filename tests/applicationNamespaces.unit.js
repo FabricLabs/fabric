@@ -6,6 +6,7 @@ const {
   OUTER,
   OUTER_OPCODES,
   CONTRACT_BODY_TYPES,
+  ACTIVITY_TYPES,
   isApplicationOuterType,
   isKnownContractBodyType
 } = require('../functions/applicationNamespaces');
@@ -29,7 +30,15 @@ describe('applicationNamespaces', function () {
     assert.ok(CONTRACT_BODY_TYPES.GroupChat);
     assert.ok(CONTRACT_BODY_TYPES.FederationContractInvite);
     assert.ok(CONTRACT_BODY_TYPES.MissionBroadcast);
+    assert.ok(CONTRACT_BODY_TYPES.GameStateSnapshot);
     assert.strictEqual(isKnownContractBodyType('GroupShare'), true);
+    assert.strictEqual(isKnownContractBodyType('GameStateSnapshot'), true);
     assert.strictEqual(isKnownContractBodyType('NotAType'), false);
+  });
+
+  it('catalogs shared activity types for Beacon / apps', function () {
+    assert.strictEqual(ACTIVITY_TYPES.FederationSignRequest, 'FederationSignRequest');
+    assert.strictEqual(ACTIVITY_TYPES.FederationSignResponse, 'FederationSignResponse');
+    assert.strictEqual(ACTIVITY_TYPES.GameStateSnapshot, 'GameStateSnapshot');
   });
 });

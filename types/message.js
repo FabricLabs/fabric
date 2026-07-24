@@ -7,6 +7,7 @@ const {
   OP_CYCLE,
   LOG_MESSAGE_TYPE,
   GENERIC_LIST_TYPE,
+  GENERIC_MESSAGE_TYPE,
   BITCOIN_BLOCK_TYPE,
   BITCOIN_BLOCK_HASH_TYPE,
   BITCOIN_TRANSACTION_TYPE,
@@ -118,6 +119,7 @@ const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [BITCOIN_TRANSACTION_HASH_TYPE, 'BITCOIN_TRANSACTION_HASH'],
   [LOG_MESSAGE_TYPE, 'LOG_MESSAGE'],
   [GENERIC_LIST_TYPE, 'GENERIC_LIST'],
+  [GENERIC_MESSAGE_TYPE, 'GENERIC_MESSAGE'],
   [DOCUMENT_PUBLISH_TYPE, 'DOCUMENT_PUBLISH'],
   [DOCUMENT_REQUEST_TYPE, 'DOCUMENT_REQUEST'],
   [BLOCK_CANDIDATE, 'BLOCK_CANDIDATE'],
@@ -204,6 +206,8 @@ const LEGACY_MESSAGE_TYPE_ALIASES = Object.freeze({
   GenericLogMessage: LOG_MESSAGE_TYPE,
   GenericList: GENERIC_LIST_TYPE,
   GenericQueue: GENERIC_LIST_TYPE,
+  /** Transitional Hub/browser catch-all (opcode GENERIC_MESSAGE_TYPE / 15103). */
+  GenericMessage: GENERIC_MESSAGE_TYPE,
   FabricLogMessage: LOG_MESSAGE_TYPE,
   FabricServiceLogMessage: LOG_MESSAGE_TYPE,
   GenericTransferQueue: GENERIC_LIST_TYPE,
@@ -334,6 +338,10 @@ function wireTypeFromFriendly (friendly) {
  * maps (<code>WIRE_TYPE_DECODE_ORDER</code>, <code>LEGACY_MESSAGE_TYPE_ALIASES</code>) when aligning <strong>@fabric/http</strong>
  * or Hub.</p>
  *
+ * <p><strong>Body (V1)</strong> — Prefer {@link Message.fromFields} / {@link Message#toFields} with a
+ * registered schema (<code>functions/messageBodyCodec</code>). Bodies are C-like typed fields, not JSON;
+ * JSON bridging is <strong>@fabric/http</strong>. See <code>docs/MESSAGE_BODY.md</code>.</p>
+ *
  * <p><strong>Narrative</strong> — See <strong>DEVELOPERS.md</strong> (<em>Actor and Message</em>) and {@link Actor}
  * <code>@fileoverview</code>; home HTML is generated from DEVELOPERS.md, while this page comes from
  * <code>types/message.js</code>.</p>
@@ -390,6 +398,10 @@ class Message extends Actor {
       if (Buffer.isBuffer(messageData) || messageData instanceof Uint8Array) {
         this.data = Buffer.from(messageData);
       } else if (typeof messageData !== 'string') {
+        // Deprecated transitional path: plain objects without an explicit field encode
+        // still JSON.stringify. Prefer Message.fromFields(type, fields) for V1 bodies
+        // (docs/MESSAGE_BODY.md). Auto field-encode is not applied here to avoid breaking
+        // legacy ChatMessage / GenericMessage object payloads.
         this.data = JSON.stringify(messageData);
       } else {
         this.data = messageData;
@@ -819,6 +831,53 @@ class Message extends Actor {
     }
 
     return message;
+  }
+
+  /**
+   * Build a Message whose body is encoded from a registered field schema (V1).
+   * @param {string|number} type Wire or friendly type name (or opcode).
+   * @param {object} [fields={}] Named fields matching the schema.
+   * @param {object} [opts={}] Extra Message constructor options (`signer`, `sensitive`, …).
+   * @returns {Message}
+   */
+  static fromFields (type, fields = {}, opts = {}) {
+    const {
+      getBodySchema,
+      encodeBody
+    } = require('../functions/messageBodyCodec');
+    const schema = getBodySchema(type);
+    if (!schema) {
+      throw new Error(`Message.fromFields: no body schema registered for type ${type}`);
+    }
+    return new Message(Object.assign({}, opts, {
+      type,
+      data: encodeBody(schema, fields)
+    }));
+  }
+
+  /**
+   * Decode body bytes via the registered field schema for this message type.
+   * @returns {object|null} Field map, or null if no schema / empty body.
+   */
+  toFields () {
+    const {
+      getBodySchema,
+      decodeBody
+    } = require('../functions/messageBodyCodec');
+    const opcode = this.raw.type.readUInt32BE(0);
+    const schema = getBodySchema(this.type) || getBodySchema(this.wireType) || getBodySchema(opcode);
+    if (!schema) return null;
+    const buf = Buffer.isBuffer(this.raw.data)
+      ? this.raw.data
+      : Buffer.from(this.data || '', 'utf8');
+    if (!buf.length) return {};
+    return decodeBody(schema, buf);
+  }
+
+  /** Raw body Buffer (preferred over UTF-8 `data` getter for binary field bodies). */
+  get bodyBuffer () {
+    if (Buffer.isBuffer(this.raw.data)) return this.raw.data;
+    return Buffer.from(this.data || '', 'utf8');
   }
 
   /* get [Symbol.toStringTag] () {

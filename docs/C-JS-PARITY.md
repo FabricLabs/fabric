@@ -54,7 +54,7 @@ Cross-checks: `tests/fabric.message.js` (expected header hashes, `fromBuffer` pr
 ## Wire format
 
 - **Header**: 208 bytes = magic(4) + version(4) + parent(32) + author(32) + type(4) + size(4) + hash(32) + preimage(32) + signature(64). **preimage** is all-zero for public messages (optional secret on wire otherwise).
-- **Body**: variable, bounded by `MAX_MESSAGE_SIZE` in JS (`constants.js`), i.e. 3888 bytes for a 4096-byte frame with the v2 header.
+- **Body**: variable, bounded by `MAX_MESSAGE_SIZE` in JS (`constants.js`), i.e. 3888 bytes for a 4096-byte frame with the v2 header. **V1:** body is a C-like typed field layout per opcode — not JSON ([`MESSAGE_BODY.md`](./MESSAGE_BODY.md)).
 
 ---
 

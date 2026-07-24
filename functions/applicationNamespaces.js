@@ -57,10 +57,22 @@ const CONTRACT_BODY_TYPES = Object.freeze({
   MissionCreated: 'MissionCreated',
   MissionBroadcast: 'MissionBroadcast',
   SCEventBatch: 'SCEventBatch',
+  /** Cumulative analytics snapshot for Hub / Beacon seal (not frozen into Actor id). */
+  GameStateSnapshot: 'GameStateSnapshot',
   // GoonCitizen — per-Group Federation contract
   GroupChat: 'GroupChat',
   GroupChange: 'GroupChange',
   GroupShare: 'GroupShare'
+});
+
+/**
+ * GenericMessage / activity `type` strings shared across Hub Beacon Federation
+ * and app operators (not outer opcodes; not necessarily CONTRACT_MESSAGE bodies).
+ */
+const ACTIVITY_TYPES = Object.freeze({
+  FederationSignRequest: 'FederationSignRequest',
+  FederationSignResponse: 'FederationSignResponse',
+  GameStateSnapshot: 'GameStateSnapshot'
 });
 
 /** Fabric log / activity type names for contract namespace events. */
@@ -107,6 +119,7 @@ module.exports = {
   OUTER_ALIASES,
   OUTER_OPCODES,
   CONTRACT_BODY_TYPES,
+  ACTIVITY_TYPES,
   LOG_TYPES,
   isApplicationOuterType,
   isKnownContractBodyType

@@ -86,6 +86,18 @@ describe('@fabric/core/types/message', function () {
       assert.notStrictEqual(restored.type, 'CHAT_MESSAGE');
     });
 
+    it('GenericMessage encodes as GENERIC_MESSAGE (15103), not P2P_BASE_MESSAGE', function () {
+      const body = JSON.stringify({ type: 'Tombstone', object: { documentId: 'd1' } });
+      const m = Message.fromVector(['GenericMessage', body]);
+      assert.strictEqual(m.type, 'GENERIC_MESSAGE');
+      assert.strictEqual(m.friendlyType, 'GenericMessage');
+      const restored = Message.fromBuffer(m.toBuffer());
+      assert.strictEqual(restored.type, 'GENERIC_MESSAGE');
+      assert.notStrictEqual(restored.type, 'P2P_BASE_MESSAGE');
+      const code = parseInt(restored.raw.type.toString('hex'), 16);
+      assert.strictEqual(code, require('../constants').GENERIC_MESSAGE_TYPE);
+    });
+
     it('P2P_CONTRACT_* names encode to canonical contract opcodes', function () {
       const cases = [
         ['P2P_CONTRACT_PUBLISH', 'CONTRACT_PUBLISH'],
@@ -277,6 +289,19 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(restored.data, data);
       assert.ok(message);
       assert.strictEqual(restored.id, message.id);
+    });
+
+    it('fromFields / toFields round-trips P2P_PING field body', function () {
+      const m = Message.fromFields('P2P_PING', { nonce: '42' });
+      assert.strictEqual(m.type, 'P2P_PING');
+      assert.ok(Buffer.isBuffer(m.bodyBuffer));
+      assert.deepStrictEqual(m.toFields(), { nonce: '42' });
+      const restored = Message.fromBuffer(m.toBuffer());
+      assert.deepStrictEqual(restored.toFields(), { nonce: '42' });
+    });
+
+    it('fromFields throws when no schema is registered', function () {
+      assert.throws(() => Message.fromFields('GENERIC_MESSAGE', { x: 1 }), /no body schema/);
     });
   });
 

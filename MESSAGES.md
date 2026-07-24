@@ -37,9 +37,12 @@ TYPE|NAME
 
 This file enumerates known message types used in `@fabric/core` as of this repo state.
 
+**V1 body rule:** AMP bodies are **typed field layouts** (C-like memory), not JSON.
+See [`docs/MESSAGE_BODY.md`](docs/MESSAGE_BODY.md). JSON bridging is `@fabric/http`.
+
 Scope:
 - **Wire types** are the canonical opcode-backed AMP message types decoded by `types/message.js`.
-- **Generic payload types** are `GenericMessage`/JSON body `type` values routed by peers/services.
+- **Generic payload types** are transitional `GenericMessage` / legacy UTF-8 JSON body `type` values routed by peers/services until field schemas are registered.
 
 Primary sources:
 - `constants.js`

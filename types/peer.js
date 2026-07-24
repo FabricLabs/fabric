@@ -1471,12 +1471,14 @@ class Peer extends Service {
         }
         break;
       }
+      case 'GENERIC_MESSAGE':
+      case 'GenericMessage':
       case 'P2P_BASE_MESSAGE':
       case 'CHAT_MESSAGE':
       case 'ChatMessage':
-        // this.emit('debug', `message ${message}`);
-        // this.emit('debug', `message data: ${message.data}`);
-        // Parse JSON body (bounded — see functions/wireJson)
+        // GENERIC_MESSAGE (15103) is the transitional Hub/browser carrier; P2P_BASE_MESSAGE
+        // remains the generic peer payload / legacy decode fallback. Both carry UTF-8 JSON
+        // bodies dispatched via _handleGenericMessage (bounded — see functions/wireJson).
         {
           const rawGm = messageDataToString(message.data);
           const prGm = tryParseWireJsonBody(rawGm);

@@ -69,6 +69,8 @@ Use this repo as a **library** or run the **`fabric`** CLI in environments you c
 ## Core Types (reference)
 These live under `types/*.js` (CommonJS). The **`Fabric`** facade (`types/fabric.js`) re-exports many of them for quick experiments; production code usually imports a **leaf** type.
 
+**Sidechain document** (`functions/sidechainState`): logical sidechain JSON + RFC6902 patches, optional path policy, journal/snapshots, tip restore — distributed-execution helpers, **not** a Fabric type. See [docs/DISTRIBUTED_EXECUTION.md](docs/DISTRIBUTED_EXECUTION.md).
+
 | Type | Role |
 |------|------|
 | **`Actor`** | Base identity + vector clock + `commit()`; most user-facing types extend it. |

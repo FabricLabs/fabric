@@ -663,6 +663,15 @@ describe('@fabric/core/types/peer', function () {
         msg.signWithKey(peer.key);
         peer._handleFabricMessage(msg.toBuffer(), { name: 'o' });
       });
+      it('dispatches outer GENERIC_MESSAGE (15103) to _handleGenericMessage', function (done) {
+        const peer = new Peer({ listen: false, peersDb: null });
+        peer.once('inventory', () => done());
+        const content = { type: 'INVENTORY_REQUEST', object: {}, message: {}, origin: {} };
+        const msg = Message.fromVector(['GenericMessage', JSON.stringify(content)]);
+        assert.strictEqual(msg.type, 'GENERIC_MESSAGE');
+        msg.signWithKey(peer.key);
+        peer._handleFabricMessage(msg.toBuffer(), { name: 'o' });
+      });
       it('warns and skips _handleGenericMessage when GenericMessage JSON is not an object', function () {
         const peer = new Peer({ listen: false, peersDb: null });
         let warned = 0;
