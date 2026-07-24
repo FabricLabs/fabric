@@ -872,12 +872,12 @@ describe('@fabric/core/types/peer', function () {
         const payload = { type: 'INVENTORY_REQUEST', object: { offerBtc: true, maxSats: 1e6 } };
         const wire = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(payload)]);
         wire.signWithKey(peer.key);
+        const originalInner = wire.toBuffer();
         peer._handleGenericMessage(payload, { name: 'req:1' }, null, wire);
         assert.ok(relayed);
-        const outer = Message.fromBuffer(relayed.toBuffer());
-        assert.strictEqual(outer.type, 'P2P_RELAY');
-        const inner = Message.fromBuffer(outer.raw.data);
-        assert.strictEqual(inner.type, 'P2P_INVENTORY_REQUEST');
+        // Forward original AMP bytes bit-identical (no hop re-sign / P2P_RELAY wrap).
+        assert.ok(relayed.toBuffer().equals(originalInner));
+        assert.strictEqual(relayed.type, 'P2P_BASE_MESSAGE');
       });
       it('relayInventoryRequest does not relay when local inventory responds', function () {
         const peer = new Peer({ listen: false, peersDb: null, serveLocalDocumentInventory: true, relayInventoryRequest: true });
@@ -912,12 +912,11 @@ describe('@fabric/core/types/peer', function () {
         };
         const wire = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(payload)]);
         wire.signWithKey(peer.key);
+        const originalInner = wire.toBuffer();
         peer._handleGenericMessage(payload, { name: 'from:peer' }, null, wire);
         assert.ok(relayed);
-        const outer = Message.fromBuffer(relayed.toBuffer());
-        assert.strictEqual(outer.type, 'P2P_RELAY');
-        const inner = Message.fromBuffer(outer.raw.data);
-        assert.strictEqual(inner.type, 'P2P_INVENTORY_RESPONSE');
+        assert.ok(relayed.toBuffer().equals(originalInner));
+        assert.strictEqual(relayed.type, 'P2P_BASE_MESSAGE');
       });
       it('sendDocumentFileToPeer sends P2P_FILE_SEND when document is held', function () {
         const peer = new Peer({ listen: false, peersDb: null });
@@ -961,14 +960,15 @@ describe('@fabric/core/types/peer', function () {
         peer._handleGenericMessage({ type: 'P2P_PEER_ANNOUNCE', object: { host: '127.0.0.1', port: 7777 } }, { name: 'o' });
         assert.ok(peer.candidates.length >= 1);
       });
-      it('P2P_PEER_GOSSIP dedupes logical payload (no relay amplification on re-sign)', function () {
+      it('P2P_PEER_GOSSIP dedupes logical payload (no relay amplification)', function () {
         const peer = new Peer({ listen: false, peersDb: null });
         let relays = 0;
         peer.relayFrom = function () { relays++; };
         const origin = { name: '127.0.0.1:1' };
         const body = { type: 'P2P_PEER_GOSSIP', object: { host: '1.2.3.4', port: 9000 } };
-        peer._handleGenericMessage(body, origin);
-        peer._handleGenericMessage({ ...body, object: { ...body.object } }, origin);
+        const wire = Message.fromVector(['P2P_PEER_GOSSIP', JSON.stringify(body.object)]).signWithKey(peer.key);
+        peer._handleGenericMessage(body, origin, null, wire);
+        peer._handleGenericMessage({ ...body, object: { ...body.object } }, origin, null, wire);
         assert.strictEqual(relays, 1);
       });
       it('P2P_PEER_GOSSIP does not relay when gossipHop is 0', function () {
@@ -976,10 +976,12 @@ describe('@fabric/core/types/peer', function () {
         let relays = 0;
         peer.relayFrom = function () { relays++; };
         const origin = { name: '127.0.0.1:2' };
+        const object = { host: '5.6.7.8', port: 1, gossipHop: 0 };
+        const wire = Message.fromVector(['P2P_PEER_GOSSIP', JSON.stringify(object)]).signWithKey(peer.key);
         peer._handleGenericMessage({
           type: 'P2P_PEER_GOSSIP',
-          object: { host: '5.6.7.8', port: 1, gossipHop: 0 }
-        }, origin);
+          object
+        }, origin, null, wire);
         assert.strictEqual(relays, 0);
       });
       it('P2P_PEER_GOSSIP rate-limits relays per origin', function () {
@@ -992,14 +994,16 @@ describe('@fabric/core/types/peer', function () {
         peer.relayFrom = function () { relays++; };
         const origin = { name: '127.0.0.1:3' };
         for (let i = 0; i < 4; i++) {
+          const object = { host: '9.8.7.6', port: 7000 + i };
+          const wire = Message.fromVector(['P2P_PEER_GOSSIP', JSON.stringify(object)]).signWithKey(peer.key);
           peer._handleGenericMessage({
             type: 'P2P_PEER_GOSSIP',
-            object: { host: '9.8.7.6', port: 7000 + i }
-          }, origin);
+            object
+          }, origin, null, wire);
         }
         assert.strictEqual(relays, 2);
       });
-      it('P2P_PEERING_OFFER dedupes logical payload (no relay amplification on re-sign)', function () {
+      it('P2P_PEERING_OFFER dedupes logical payload (no relay amplification)', function () {
         const peer = new Peer({ listen: false, peersDb: null });
         let relays = 0;
         peer.relayFrom = function () { relays++; };
@@ -1008,8 +1012,9 @@ describe('@fabric/core/types/peer', function () {
           type: 'P2P_PEERING_OFFER',
           object: { host: '1.2.3.4', port: 9000, transport: 'fabric' }
         };
-        peer._handleGenericMessage(body, origin);
-        peer._handleGenericMessage({ ...body, object: { ...body.object } }, origin);
+        const wire = Message.fromVector(['P2P_PEERING_OFFER', JSON.stringify(body.object)]).signWithKey(peer.key);
+        peer._handleGenericMessage(body, origin, null, wire);
+        peer._handleGenericMessage({ ...body, object: { ...body.object } }, origin, null, wire);
         assert.strictEqual(relays, 1);
       });
       it('P2P_PEERING_OFFER does not relay when peeringHop is 0', function () {
@@ -1017,10 +1022,12 @@ describe('@fabric/core/types/peer', function () {
         let relays = 0;
         peer.relayFrom = function () { relays++; };
         const origin = { name: '127.0.0.1:5' };
+        const object = { host: '5.6.7.8', port: 1, transport: 'fabric', peeringHop: 0 };
+        const wire = Message.fromVector(['P2P_PEERING_OFFER', JSON.stringify(object)]).signWithKey(peer.key);
         peer._handleGenericMessage({
           type: 'P2P_PEERING_OFFER',
-          object: { host: '5.6.7.8', port: 1, transport: 'fabric', peeringHop: 0 }
-        }, origin);
+          object
+        }, origin, null, wire);
         assert.strictEqual(relays, 0);
       });
       it('P2P_PEERING_OFFER rate-limits relays per origin', function () {
@@ -1033,10 +1040,12 @@ describe('@fabric/core/types/peer', function () {
         peer.relayFrom = function () { relays++; };
         const origin = { name: '127.0.0.1:6' };
         for (let i = 0; i < 4; i++) {
+          const object = { host: '9.8.7.6', port: 7000 + i, transport: 'fabric' };
+          const wire = Message.fromVector(['P2P_PEERING_OFFER', JSON.stringify(object)]).signWithKey(peer.key);
           peer._handleGenericMessage({
             type: 'P2P_PEERING_OFFER',
-            object: { host: '9.8.7.6', port: 7000 + i, transport: 'fabric' }
-          }, origin);
+            object
+          }, origin, null, wire);
         }
         assert.strictEqual(relays, 2);
       });

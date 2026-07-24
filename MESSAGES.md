@@ -90,8 +90,8 @@ Primary sources:
 | `P2P_MESSAGE_RECEIPT` | 68 | `0x0044` | Ack/receipt for processed inbound WebSocket/P2P message. |
 | `PEER_CANDIDATE` | 9 | `0x0009` | Candidate peer advertisement for connection management. |
 | `SESSION_START` | 2 | `0x0002` | Starts a session context. |
-| `CHAT_MESSAGE` | 103 | `0x0067` | Chat/social messaging payload type (legacy re-signed relay path). |
-| `P2P_CHAT_MESSAGE` | 104 | `0x0068` | First-class peer chat frame. Relayed **verbatim** (author signature preserved; wire-hash dedup prevents loops). Preferred over the re-signed `CHAT_MESSAGE` path. |
+| `CHAT_MESSAGE` | 103 | `0x0067` | Legacy chat opcode / Hub transitional carrier. Prefer first-class `P2P_CHAT_MESSAGE`. |
+| `P2P_CHAT_MESSAGE` | 104 | `0x0068` | First-class peer chat frame. Relayed **verbatim** (author + signature preserved, including multisig; wire-hash dedup prevents loops). Hops never re-sign relayable frames. |
 | `JSON_CALL` | 16000 | `0x3e80` | JSON-RPC-like call request payload. |
 | `JSON_PATCH` | 1024 | `0x0400` | RFC6902-style JSON patch operation payload. |
 | `CONTRACT_PROPOSAL` | 138 | `0x008a` | Contract proposal (batched messages + Merkle + patch context). |

@@ -303,6 +303,14 @@ describe('@fabric/core/types/message', function () {
     it('fromFields throws when no schema is registered', function () {
       assert.throws(() => Message.fromFields('GENERIC_MESSAGE', { x: 1 }), /no body schema/);
     });
+
+    it('toFields returns null for truncated peer body bytes', function () {
+      const m = Message.fromFields('P2P_PING', { nonce: '1710000000000' });
+      const full = Buffer.from(m.raw.data);
+      m.raw.data = full.subarray(0, Math.max(0, full.length - 1));
+      m.raw.size.writeUInt32BE(m.raw.data.length);
+      assert.strictEqual(m.toFields(), null);
+    });
   });
 
   describe('verifyWithKey()', function () {

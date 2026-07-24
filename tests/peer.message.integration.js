@@ -192,30 +192,56 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     assert.ok(relayWrites.length >= 1, 'relayFrom should write ChatMessage to non-origin edges');
   });
 
-  it('rejects messages with invalid signature when sender pubkey is known', function () {
+  it('rejects chat with a corrupted AMP signature', function () {
     const hub = mockHub();
-    const expectedSigner = new Key();
-    const attacker = new Key();
+    const author = new Key();
     const addr = '127.0.0.1:7400';
     hub.connections[addr] = { _writeFabric: () => {}, destroy: () => {} };
-    hub.peers[addr] = { id: 'victim', publicKey: expectedSigner.pubkey };
+    hub.peers[addr] = { id: 'peer', publicKey: author.pubkey };
 
     const content = { type: 'P2P_CHAT_MESSAGE', object: { text: 'forged' } };
     const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
-    msg.signWithKey(attacker);
+    msg.signWithKey(author);
+    // Flip a signature byte so AMP verify fails (author field still present).
+    msg.raw.signature[0] ^= 0xff;
 
     let warned = false;
     hub.once('warning', (w) => {
-      const s = String(w);
-      if (/Invalid message signature|signature|Signer mismatch/i.test(s)) warned = true;
+      if (/Invalid message signature/i.test(String(w))) warned = true;
     });
     let chats = 0;
     hub.on('chat', () => { chats++; });
 
     hub._handleFabricMessage(msg.toBuffer(), { name: addr }, null);
 
-    assert.ok(warned, 'expected warning when signature does not match stored peer pubkey');
-    assert.strictEqual(chats, 0, 'forged P2P_BASE_MESSAGE must not dispatch chat');
+    assert.ok(warned, 'expected warning for invalid AMP signature');
+    assert.strictEqual(chats, 0, 'invalid signature must not dispatch chat');
+  });
+
+  it('rejects non-relayable frames when signer mismatches pinned peer key', function () {
+    const hub = mockHub();
+    const expectedSigner = new Key();
+    const attacker = new Key();
+    const addr = '127.0.0.1:7401';
+    hub.connections[addr] = { _writeFabric: () => {}, destroy: () => {} };
+    hub.peers[addr] = { id: 'victim', publicKey: expectedSigner.pubkey };
+
+    // Inventory is not mesh-relay-as-is; connection pin still applies.
+    const content = { type: 'INVENTORY_REQUEST', object: { offerBtc: true } };
+    const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
+    msg.signWithKey(attacker);
+
+    let warned = false;
+    hub.once('warning', (w) => {
+      if (/Signer mismatch/i.test(String(w))) warned = true;
+    });
+    let inventory = 0;
+    hub.on('inventory', () => { inventory++; });
+
+    hub._handleFabricMessage(msg.toBuffer(), { name: addr }, null);
+
+    assert.ok(warned, 'expected signer mismatch for pinned non-relayable type');
+    assert.strictEqual(inventory, 0, 'pinned mismatch must not dispatch inventory');
   });
 
   it('drops duplicate wire envelopes (reliable dedup for mesh floods)', function () {
@@ -239,7 +265,7 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     assert.strictEqual(chats, 1);
   });
 
-  it('relays first-class P2P_CHAT_MESSAGE frames (hop re-sign, first-class opcode + author body preserved)', function () {
+  it('relays first-class P2P_CHAT_MESSAGE frames bit-identical (no hop re-sign)', function () {
     const hub = mockHub();
     const author = new Key();
     const origin = '127.0.0.1:7700';
@@ -249,27 +275,59 @@ describe('peer/message integration (mesh & secure delivery)', function () {
       _writeFabric: (buf) => relayWrites.push(Buffer.isBuffer(buf) ? buf : Buffer.from(buf)),
       destroy: () => {}
     };
-    hub.peers[origin] = { id: 'author', publicKey: author.pubkey };
+    // Pin is the TCP peer (Noise identity), not necessarily the message author.
+    hub.peers[origin] = { id: 'relay-peer', publicKey: hub.key.pubkey };
 
     const msg = Message.fromVector(['P2P_CHAT_MESSAGE', JSON.stringify({
       type: 'P2P_CHAT_MESSAGE',
       actor: { publicKey: author.pubkey, id: author.pubkey },
-      object: { channel: 'global', body: 'hop-signed', author: author.pubkey }
+      object: { channel: 'global', body: 'as-is', author: author.pubkey }
     })]);
     msg.signWithKey(author);
+    const original = msg.toBuffer();
 
-    hub._handleFabricMessage(msg.toBuffer(), { name: origin }, null);
+    hub._handleFabricMessage(original, { name: origin }, null);
 
     assert.ok(relayWrites.length >= 1, 'chat should relay to non-origin edge');
+    assert.ok(relayWrites[0].equals(original), 'relay forwards original AMP bytes');
     const relayed = Message.fromBuffer(relayWrites[0]);
-    // Keeps the first-class opcode; re-signed by the hop so per-connection key
-    // pinning holds downstream; the author is preserved in the body.
     assert.strictEqual(relayed.type, 'P2P_CHAT_MESSAGE', 'relay keeps first-class opcode');
     const relayedSigner = hub._verifiedFabricSignerPubkeyHex(relayed);
-    const hubXOnly = hub.key.pubkey.length === 66 ? hub.key.pubkey.slice(2) : hub.key.pubkey;
-    assert.strictEqual(relayedSigner, hubXOnly, 're-signed by hop');
+    const authorXOnly = author.pubkey.length === 66 ? author.pubkey.slice(2) : author.pubkey;
+    assert.strictEqual(relayedSigner, authorXOnly, 'original author signature preserved');
     const body = JSON.parse(relayed.raw.data.toString('utf8'));
     assert.strictEqual(body.object.author, author.pubkey, 'author preserved in body');
+  });
+
+  it('relays CONTRACT_MESSAGE frames bit-identical (no hop re-sign)', function () {
+    const hub = mockHub();
+    const author = new Key();
+    const origin = '127.0.0.1:7750';
+    const relayWrites = [];
+    hub.connections[origin] = { _writeFabric: () => {}, destroy: () => {} };
+    hub.connections['127.0.0.1:7751'] = {
+      _writeFabric: (buf) => relayWrites.push(Buffer.isBuffer(buf) ? buf : Buffer.from(buf)),
+      destroy: () => {}
+    };
+    hub.peers[origin] = { id: 'relay-peer', publicKey: hub.key.pubkey };
+
+    const msg = Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({
+      contract: 'group-contract-id',
+      type: 'GroupChat',
+      object: { body: 'as-is-contract', author: author.pubkey }
+    })]);
+    msg.signWithKey(author);
+    const original = msg.toBuffer();
+
+    hub._handleFabricMessage(original, { name: origin }, null);
+
+    assert.ok(relayWrites.length >= 1, 'CONTRACT_MESSAGE should relay to non-origin edge');
+    assert.ok(relayWrites[0].equals(original), 'relay forwards original AMP bytes');
+    const relayed = Message.fromBuffer(relayWrites[0]);
+    assert.strictEqual(relayed.type, 'CONTRACT_MESSAGE');
+    const relayedSigner = hub._verifiedFabricSignerPubkeyHex(relayed);
+    const authorXOnly = author.pubkey.length === 66 ? author.pubkey.slice(2) : author.pubkey;
+    assert.strictEqual(relayedSigner, authorXOnly, 'original author signature preserved');
   });
 
   it('CONTRACT_MESSAGE dispatches by namespace and does not crash on unknown contract id', function () {

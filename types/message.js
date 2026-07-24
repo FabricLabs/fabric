@@ -857,7 +857,8 @@ class Message extends Actor {
 
   /**
    * Decode body bytes via the registered field schema for this message type.
-   * @returns {object|null} Field map, or null if no schema / empty body.
+   * Truncated / malformed peer bodies return {@code null} (protocol violation) instead of throwing.
+   * @returns {object|null} Field map, or null if no schema / empty / undecodable body.
    */
   toFields () {
     const {
@@ -871,7 +872,12 @@ class Message extends Actor {
       ? this.raw.data
       : Buffer.from(this.data || '', 'utf8');
     if (!buf.length) return {};
-    return decodeBody(schema, buf);
+    try {
+      return decodeBody(schema, buf);
+    } catch (err) {
+      if (err && (err.name === 'RangeError' || err instanceof RangeError)) return null;
+      throw err;
+    }
   }
 
   /** Raw body Buffer (preferred over UTF-8 `data` getter for binary field bodies). */

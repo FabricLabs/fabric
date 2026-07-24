@@ -96,6 +96,69 @@ function normalizePeerPubkeyHex (pk) {
 }
 
 /**
+ * Mesh types that MUST be forwarded bit-identical (author + signature preserved).
+ * Relays never hop-re-sign these — wire-hash dedup and end-to-end / multisig verify depend on it.
+ * Local agents may still *originate* new messages of these types signed with their own key.
+ * @private
+ */
+const RELAY_AS_IS_TYPES = new Set([
+  'BITCOIN_BLOCK',
+  'BitcoinBlock',
+  'P2P_CHAT_MESSAGE',
+  'CONTRACT_PUBLISH',
+  'CONTRACT_MESSAGE',
+  'CONTRACT_PROPOSAL',
+  'ContractProposal',
+  P2P_PEER_GOSSIP,
+  'P2P_PEER_GOSSIP',
+  P2P_PEERING_OFFER,
+  'P2P_PEERING_OFFER'
+]);
+
+/**
+ * @param {string|number|null|undefined} type
+ * @returns {boolean}
+ * @private
+ */
+function isRelayAsIsWireType (type) {
+  if (type == null) return false;
+  if (typeof type === 'number') {
+    return type === P2P_PEER_GOSSIP || type === P2P_PEERING_OFFER;
+  }
+  return RELAY_AS_IS_TYPES.has(String(type));
+}
+
+/**
+ * Generic / base carriers may wrap a relay-as-is body (Hub transitional path).
+ * Pin-check against the TCP peer would wrongly reject multisig / prior-hop authors.
+ * @param {Message} message
+ * @returns {boolean}
+ * @private
+ */
+function isRelayAsIsGenericCarrier (message) {
+  const outer = message && (message.type || message.friendlyType);
+  if (!outer) return false;
+  const carriers = new Set([
+    'GENERIC_MESSAGE',
+    'GenericMessage',
+    'P2P_BASE_MESSAGE',
+    'CHAT_MESSAGE',
+    'ChatMessage'
+  ]);
+  if (!carriers.has(String(outer))) return false;
+  try {
+    const raw = messageDataToString(message.data);
+    const pr = tryParseWireJsonBody(raw);
+    if (!pr.ok || !pr.value || typeof pr.value !== 'object' || Array.isArray(pr.value)) {
+      return false;
+    }
+    return isRelayAsIsWireType(pr.value.type);
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
  * @classdesc P2P node: TCP/NOISE sessions, gossip, and relay of {@link Message} (AMP) frames. Extends {@link Service}
  * (hence {@link Actor}). Opcode and receipt semantics must stay aligned with <strong>@fabric/http</strong> and Hub when you add types —
  * see {@link Message} wire vs friendly names and <code>constants</code> opcodes.
@@ -239,7 +302,7 @@ class Peer extends Service {
     this._gossipPayloadOrder = [];
     /** origin address → { count, windowStart } for gossip relay rate limiting. */
     this._gossipRelayByOrigin = new Map();
-    /** Logical peering-offer payload dedup (ignores per-hop re-signing). */
+    /** Logical peering-offer payload dedup (ignores advisory peeringHop; frames relay as-is). */
     this._peeringPayloadSeen = new Map();
     this._peeringPayloadOrder = [];
     /** origin address → { count, windowStart } for peering-offer relay rate limiting. */
@@ -280,7 +343,8 @@ class Peer extends Service {
   }
 
   /**
-   * Stable id for gossip *logical* content (ignores `gossipHop` and wire signature changes).
+   * Stable id for gossip *logical* content (ignores advisory `gossipHop`; frames are forwarded bit-identical).
+   * Mesh frames are relayed bit-identical; wire-hash dedup also prevents loops.
    * @param {object} msg Generic message (`type`, `object`, …)
    * @returns {string} hex sha256
    */
@@ -404,7 +468,7 @@ class Peer extends Service {
   }
 
   /**
-   * Stable id for peering-offer *logical* content (ignores `peeringHop` and wire signature changes).
+   * Stable id for peering-offer *logical* content (ignores advisory `peeringHop`).
    * @param {object} msg Generic message (`type`, `object`, …)
    * @returns {string} hex sha256
    */
@@ -1247,10 +1311,15 @@ class Peer extends Service {
       return this;
     }
 
-    // If a connection already has a pinned key, require continuity.
+    // Connection peer pin ≠ message author for mesh relays (author may be a prior hop
+    // or a multisig group). Authenticity is the AMP signature; Noise authenticates the TCP peer.
+    // Session / control messages still require signer continuity with the pinned peer key.
     const peerKey = origin && (origin.name != null ? origin.name : origin);
     const peerRecord = peerKey && this.peers[peerKey];
-    if (peerRecord && peerRecord.publicKey) {
+    const relayAsIs = isRelayAsIsWireType(message.type)
+      || isRelayAsIsWireType(message.friendlyType)
+      || isRelayAsIsGenericCarrier(message);
+    if (!relayAsIs && peerRecord && peerRecord.publicKey) {
       const pinned = normalizePeerPubkeyHex(peerRecord.publicKey);
       if (pinned && pinned !== signerPubkeyHex) {
         this.emit('warning', `[FABRIC:PEER] Signer mismatch from ${peerKey}: expected pinned peer key`);
@@ -1464,10 +1533,8 @@ class Peer extends Service {
           signer: signerPubkeyHex || null
         });
         if (origin && origin.name) {
-          // Re-sign with hop key (per-connection key pinning). The proposal's
-          // author-signed inner `messages[]` remain end-to-end verifiable.
-          const relay = Message.fromVector(['CONTRACT_PROPOSAL', messageDataToString(message.data)]).signWithKey(this.key);
-          this.relayFrom(origin.name, relay);
+          // Forward bit-identical — never hop-re-sign (preserves author / multisig).
+          this.relayFrom(origin.name, message);
         }
         break;
       }
@@ -1553,6 +1620,11 @@ class Peer extends Service {
     return this;
   }
 
+  /**
+   * Wrap an already-signed inner AMP frame in a locally signed {@code P2P_RELAY} envelope.
+   * The inner bytes are never re-signed — only the new outer envelope is.
+   * Prefer {@link Peer#relayFrom} with the original message when the type is mesh-relayable.
+   */
   _relayWirePayload (originName, wirePayload, socket = null) {
     if (!originName) return false;
     const body = Buffer.isBuffer(wirePayload)
@@ -1565,7 +1637,17 @@ class Peer extends Service {
     return true;
   }
 
-  _relayGenericPayload (originName, payload, socket = null, _wireMessage = null) {
+  /**
+   * Relay inventory / generic payloads. When {@code wireMessage} is present, forward it
+   * bit-identical (no hop re-sign). Otherwise the local agent originates a new signed frame
+   * and may wrap it in {@code P2P_RELAY} for mesh delivery.
+   */
+  _relayGenericPayload (originName, payload, socket = null, wireMessage = null) {
+    if (!originName) return false;
+    if (wireMessage && typeof wireMessage.toBuffer === 'function') {
+      this.relayFrom(originName, wireMessage, socket);
+      return true;
+    }
     const innerType = (payload && payload.type === 'INVENTORY_REQUEST')
       ? 'P2P_INVENTORY_REQUEST'
       : (payload && payload.type === 'INVENTORY_RESPONSE')
@@ -1740,11 +1822,8 @@ class Peer extends Service {
       case 'P2P_CHAT_MESSAGE': {
         this.emit('chat', msg, { origin, signer: signerPubkeyHex || null, wireMessage });
         if (!origin || !origin.name) break;
-        // Re-sign with this hop's key so per-connection key pinning holds on the
-        // next hop. The author is carried in the body (`actor` / `object.author`)
-        // for app-layer verification. Keeps the first-class P2P_CHAT_MESSAGE type.
-        const relay = Message.fromVector(['P2P_CHAT_MESSAGE', JSON.stringify(msg)]).signWithKey(this.key);
-        this.relayFrom(origin.name, relay);
+        // Relay bit-identical AMP frame (author signature preserved; no hop re-sign).
+        if (wireMessage) this.relayFrom(origin.name, wireMessage);
         break;
       }
       case 'P2P_STATE_ANNOUNCE':
@@ -1765,11 +1844,8 @@ class Peer extends Service {
         if (!this._gossipRateLimitAllow(origin.name)) break;
         this.emit('peeringGossip', { message, origin });
         this._gossipRememberPayload(payloadKey);
-        const relayBody = Object.assign({}, message, {
-          object: Object.assign({}, obj, { gossipHop: hop - 1 })
-        });
-        const gossipRelay = Message.fromVector(['P2P_PEER_GOSSIP', JSON.stringify(relayBody.object || {})]).signWithKey(this.key);
-        this.relayFrom(origin.name, gossipRelay);
+        // Forward original frame only — wire-hash dedup stops loops; never hop-re-sign.
+        if (wireMessage) this.relayFrom(origin.name, wireMessage);
         break;
       }
       case P2P_PEERING_OFFER: {
@@ -1794,11 +1870,7 @@ class Peer extends Service {
             this._enqueuePeeringCandidate(obj.host, obj.port);
           }
         }
-        const relayBody = Object.assign({}, message, {
-          object: Object.assign({}, obj, { peeringHop: hop - 1 })
-        });
-        const offerRelay = Message.fromVector(['P2P_PEERING_OFFER', JSON.stringify(relayBody.object || {})]).signWithKey(this.key);
-        this.relayFrom(origin.name, offerRelay);
+        if (wireMessage) this.relayFrom(origin.name, wireMessage);
         break;
       }
       case 'P2P_PING':
@@ -1884,10 +1956,8 @@ class Peer extends Service {
           origin,
           signer: signerPubkeyHex || null
         });
-        if (origin && origin.name) {
-          // Re-sign with hop key (per-connection key pinning); body preserved.
-          const relay = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(msg.object)]).signWithKey(this.key);
-          this.relayFrom(origin.name, relay);
+        if (origin && origin.name && wireMessage) {
+          this.relayFrom(origin.name, wireMessage);
         }
         break;
       }
@@ -1918,10 +1988,8 @@ class Peer extends Service {
           origin,
           signer: signerPubkeyHex || null
         });
-        if (origin && origin.name) {
-          // Re-sign with hop key (per-connection key pinning); body preserved.
-          const relay = Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify(msg.object)]).signWithKey(this.key);
-          this.relayFrom(origin.name, relay);
+        if (origin && origin.name && wireMessage) {
+          this.relayFrom(origin.name, wireMessage);
         }
         break;
       }
