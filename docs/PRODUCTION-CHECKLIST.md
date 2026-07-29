@@ -4,7 +4,7 @@ Use this after merging core JS/native work (e.g. message parity, peer fixes) and
 **CI:** GitHub Actions runs `npm run report:coverage` (full test suite + `reports/coverage.lcov` for Codecov) **immediately after** installing `bitcoind`, *before* building Core Lightning — so test failures surface without waiting on Lightning.
 
 ## Package & API
-- [x] **Version** — `package.json` at **`0.1.0-RC2`**; **`engines.node`** matches **`.nvmrc`** / CI (`22.14.0`). For the next tag, bump semver and keep tag = published version.
+- [x] **Version** — `package.json` at **`0.1.0-RC2`**; **`engines.node`** matches **`.nvmrc`** / CI (`24.15.0`). For the next tag, bump semver and keep tag = published version.
 - [x] **Exports** — `package.json` `exports` cover `.`, `./constants`, `./types/*`, `./services/*`, `./functions/*` (review when adding new surfaces).
 - [x] **Types entry** — `types/fabric.d.ts` present (minimal); grow alongside real typings.
 - [x] **Smoke** — `npm run smoke` loads `fabric`, `message`, `peer` (runs in CI).

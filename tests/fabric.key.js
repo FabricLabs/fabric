@@ -2,7 +2,8 @@
 
 const Key = require('../types/key');
 const assert = require('assert');
-const networks = require('bitcoinjs-lib/src/networks');
+const { networks: bitcoinNetworks } = require('bitcoinjs-lib');
+const networks = Object.assign({ mainnet: bitcoinNetworks.bitcoin }, bitcoinNetworks);
 const { secp256k1 } = require('@noble/curves/secp256k1.js');
 
 const message = require('../assets/message');

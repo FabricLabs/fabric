@@ -39,8 +39,10 @@ Per opcode, the body is an ordered list of named fields (big-endian):
 What application code historically put in JSON **keys** becomes these **field
 names** in a schema registered for that wire type.
 
-API: `functions/messageBodyCodec.js` (`encodeBody` / `decodeBody` /
-`getBodySchema`), and `Message.fromFields` / `message.toFields()`.
+API: `types/message.js` body codec helpers (`Message.encodeBody` /
+`Message.decodeBody` / `Message.getBodySchema`), and `Message.fromFields` /
+`message.toFields()`. Compatibility re-export:
+`require('@fabric/core/functions/messageBodyCodec')` (same helpers).
 
 ## JSON belongs in `@fabric/http`
 

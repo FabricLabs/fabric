@@ -23,8 +23,8 @@ bitcoin.initEccLib(ecc);
 
 /** bitcoinjs-lib Signer for taproot script-path (publicKey + sign + signSchnorr). */
 function signerFromPriv32 (priv32) {
-  const priv = Buffer.isBuffer(priv32) ? priv32 : Buffer.from(priv32);
-  if (priv.length !== 32) throw new Error('Private key must be 32 bytes.');
+  const priv = asBuffer(priv32);
+  if (!priv || priv.length !== 32) throw new Error('Private key must be 32 bytes.');
   const publicKey = ecc.pointFromScalar(priv, true);
   if (!publicKey) throw new Error('Invalid private key (pointFromScalar failed).');
   return {
@@ -51,10 +51,19 @@ function networkForFabricName (name = '') {
   return networks.bitcoin;
 }
 
+/** Coerce Buffer / Uint8Array / hex string to Buffer (bitcoinjs-lib 7 uses Uint8Array). */
+function asBuffer (value, encoding = 'hex') {
+  if (Buffer.isBuffer(value)) return value;
+  if (value instanceof Uint8Array) return Buffer.from(value);
+  if (typeof value === 'string') return Buffer.from(value, encoding);
+  return null;
+}
+
 function toXOnly (pubkey33) {
-  if (!Buffer.isBuffer(pubkey33) || pubkey33.length !== 33) return null;
-  if (pubkey33[0] !== 0x02 && pubkey33[0] !== 0x03) return null;
-  return pubkey33.subarray(1, 33);
+  const key = asBuffer(pubkey33);
+  if (!key || key.length !== 33) return null;
+  if (key[0] !== 0x02 && key[0] !== 0x03) return null;
+  return key.subarray(1, 33);
 }
 
 function buildInventoryHtlcP2tr (opts = {}) {
@@ -62,14 +71,14 @@ function buildInventoryHtlcP2tr (opts = {}) {
     networkName,
     sellerPubkeyCompressed,
     buyerRefundPubkeyCompressed,
-    paymentHash32,
     refundLocktimeHeight
   } = opts;
 
   const sellerX = toXOnly(sellerPubkeyCompressed);
   const buyerX = toXOnly(buyerRefundPubkeyCompressed);
   if (!sellerX || !buyerX) throw new Error('Invalid compressed public keys (expect 33-byte 02/03).');
-  if (!Buffer.isBuffer(paymentHash32) || paymentHash32.length !== 32) {
+  const paymentHash32 = asBuffer(opts.paymentHash32);
+  if (!paymentHash32 || paymentHash32.length !== 32) {
     throw new Error('paymentHash32 must be a 32-byte Buffer.');
   }
   const lock = Number(refundLocktimeHeight);
@@ -147,10 +156,10 @@ function buildHtlcFundingHints ({ paymentAddress, amountSats, label = '' }) {
 function findP2trVoutForAddress (tx, paymentAddress, network) {
   const addr = String(paymentAddress || '').trim();
   if (!addr) return -1;
-  const want = bitcoin.address.toOutputScript(addr, network);
+  const want = Buffer.from(bitcoin.address.toOutputScript(addr, network));
   for (let i = 0; i < tx.outs.length; i++) {
     const sc = tx.outs[i].script;
-    if (Buffer.isBuffer(sc) && sc.equals(want)) return i;
+    if (sc && Buffer.from(sc).equals(want)) return i;
   }
   return -1;
 }
@@ -160,9 +169,10 @@ function findP2trVoutForAddress (tx, paymentAddress, network) {
  * [claimScript, refundScript] (same order as {@link buildInventoryHtlcP2tr}).
  */
 function buildTapLeafControlBlock (claimScript, refundScript, leafScript) {
-  const claimBuf = Buffer.isBuffer(claimScript) ? claimScript : Buffer.from(String(claimScript), 'hex');
-  const refundBuf = Buffer.isBuffer(refundScript) ? refundScript : Buffer.from(String(refundScript), 'hex');
-  const leafBuf = Buffer.isBuffer(leafScript) ? leafScript : Buffer.from(String(leafScript), 'hex');
+  const claimBuf = asBuffer(claimScript);
+  const refundBuf = asBuffer(refundScript);
+  const leafBuf = asBuffer(leafScript);
+  if (!claimBuf || !refundBuf || !leafBuf) throw new Error('Invalid HTLC tapleaf script bytes.');
   const scriptTree = [{ output: claimBuf }, { output: refundBuf }];
   const hashTree = bip341.toHashTree(scriptTree);
   const leafVersion = bip341.LEAF_VERSION_TAPSCRIPT;
@@ -179,7 +189,8 @@ function buildTapLeafControlBlock (claimScript, refundScript, leafScript) {
 }
 
 function buildClaimControlBlock (claimScript, refundScript) {
-  const claimBuf = Buffer.isBuffer(claimScript) ? claimScript : Buffer.from(String(claimScript), 'hex');
+  const claimBuf = asBuffer(claimScript);
+  if (!claimBuf) throw new Error('Invalid claim script bytes.');
   return buildTapLeafControlBlock(claimBuf, refundScript, claimBuf);
 }
 
@@ -211,10 +222,11 @@ function prepareInventoryHtlcSellerClaimPsbt (opts = {}) {
   const destSats = inputSats - fee;
   if (destSats < 546) throw new Error('Amount after fee is below dust threshold; lower fee or fund more sats.');
 
-  const claimBuf = Buffer.isBuffer(claimScript) ? claimScript : Buffer.from(String(claimScript), 'hex');
-  const refundBuf = Buffer.isBuffer(refundScript) ? refundScript : Buffer.from(String(refundScript), 'hex');
-  const preimage = Buffer.isBuffer(preimage32) ? preimage32 : Buffer.from(String(preimage32), 'hex');
-  if (preimage.length !== 32) throw new Error('preimage must be 32 bytes.');
+  const claimBuf = asBuffer(claimScript);
+  const refundBuf = asBuffer(refundScript);
+  const preimage = asBuffer(preimage32);
+  if (!claimBuf || !refundBuf) throw new Error('Invalid HTLC script bytes.');
+  if (!preimage || preimage.length !== 32) throw new Error('preimage must be 32 bytes.');
 
   const controlBlock = buildClaimControlBlock(claimBuf, refundBuf);
   const psbt = new Psbt({ network });
@@ -223,7 +235,7 @@ function prepareInventoryHtlcSellerClaimPsbt (opts = {}) {
     index: vout,
     witnessUtxo: {
       script: out.script,
-      value: inputSats
+      value: BigInt(inputSats)
     },
     tapInternalKey: TAPROOT_INTERNAL_NUMS,
     tapLeafScript: [{
@@ -234,7 +246,7 @@ function prepareInventoryHtlcSellerClaimPsbt (opts = {}) {
   });
   psbt.addOutput({
     address: String(destinationAddress || '').trim(),
-    value: destSats
+    value: BigInt(destSats)
   });
 
   return {
@@ -254,19 +266,19 @@ function prepareInventoryHtlcSellerClaimPsbt (opts = {}) {
  */
 function signAndExtractInventoryHtlcSellerClaim (bundle, sellerPriv32) {
   if (!bundle || !bundle.psbt) throw new Error('Invalid PSBT bundle.');
-  const priv = Buffer.isBuffer(sellerPriv32) ? sellerPriv32 : Buffer.from(sellerPriv32);
-  if (priv.length !== 32) throw new Error('Seller private key must be 32 bytes.');
+  const priv = asBuffer(sellerPriv32);
+  if (!priv || priv.length !== 32) throw new Error('Seller private key must be 32 bytes.');
   const { psbt, preimage32 } = bundle;
   psbt.signInput(0, signerFromPriv32(priv));
 
-  const preimage = Buffer.isBuffer(preimage32) ? preimage32 : Buffer.from(preimage32);
+  const preimage = asBuffer(preimage32);
   psbt.finalizeInput(0, (_inputIndex, input) => {
     const leaf = (input.tapLeafScript || [])[0];
     if (!leaf || !leaf.script || !leaf.controlBlock) {
       throw new Error('Missing tapLeafScript on PSBT input.');
     }
-    const lh = bip341.tapleafHash({ output: leaf.script, version: leaf.leafVersion });
-    const tss = (input.tapScriptSig || []).find((t) => t.leafHash.equals(lh));
+    const lh = Buffer.from(bip341.tapleafHash({ output: leaf.script, version: leaf.leafVersion }));
+    const tss = (input.tapScriptSig || []).find((t) => Buffer.from(t.leafHash).equals(lh));
     if (!tss) throw new Error('Missing tapscript signature.');
     const sig = tss.signature.length >= 64 ? tss.signature.subarray(0, 64) : tss.signature;
     const witness = [sig, preimage, leaf.script, leaf.controlBlock];
@@ -304,8 +316,9 @@ function prepareInventoryHtlcBuyerRefundPsbt (opts = {}) {
   const destSats = inputSats - fee;
   if (destSats < 546) throw new Error('Amount after fee is below dust threshold; lower fee or fund more sats.');
 
-  const claimBuf = Buffer.isBuffer(claimScript) ? claimScript : Buffer.from(String(claimScript), 'hex');
-  const refundBuf = Buffer.isBuffer(refundScript) ? refundScript : Buffer.from(String(refundScript), 'hex');
+  const claimBuf = asBuffer(claimScript);
+  const refundBuf = asBuffer(refundScript);
+  if (!claimBuf || !refundBuf) throw new Error('Invalid HTLC script bytes.');
   const lock = Number(refundLocktimeHeight);
   if (!Number.isFinite(lock) || lock < 1) throw new Error('refundLocktimeHeight is required.');
 
@@ -318,7 +331,7 @@ function prepareInventoryHtlcBuyerRefundPsbt (opts = {}) {
     sequence: 0xfffffffe,
     witnessUtxo: {
       script: out.script,
-      value: inputSats
+      value: BigInt(inputSats)
     },
     tapInternalKey: TAPROOT_INTERNAL_NUMS,
     tapLeafScript: [{
@@ -329,7 +342,7 @@ function prepareInventoryHtlcBuyerRefundPsbt (opts = {}) {
   });
   psbt.addOutput({
     address: String(destinationAddress || '').trim(),
-    value: destSats
+    value: BigInt(destSats)
   });
 
   return {
@@ -350,8 +363,8 @@ function prepareInventoryHtlcBuyerRefundPsbt (opts = {}) {
  */
 function signAndExtractInventoryHtlcBuyerRefund (bundle, buyerPriv32) {
   if (!bundle || !bundle.psbt) throw new Error('Invalid PSBT bundle.');
-  const priv = Buffer.isBuffer(buyerPriv32) ? buyerPriv32 : Buffer.from(buyerPriv32);
-  if (priv.length !== 32) throw new Error('Buyer private key must be 32 bytes.');
+  const priv = asBuffer(buyerPriv32);
+  if (!priv || priv.length !== 32) throw new Error('Buyer private key must be 32 bytes.');
   const { psbt } = bundle;
   psbt.signInput(0, signerFromPriv32(priv));
 
@@ -360,8 +373,8 @@ function signAndExtractInventoryHtlcBuyerRefund (bundle, buyerPriv32) {
     if (!leaf || !leaf.script || !leaf.controlBlock) {
       throw new Error('Missing tapLeafScript on PSBT input.');
     }
-    const lh = bip341.tapleafHash({ output: leaf.script, version: leaf.leafVersion });
-    const tss = (input.tapScriptSig || []).find((t) => t.leafHash.equals(lh));
+    const lh = Buffer.from(bip341.tapleafHash({ output: leaf.script, version: leaf.leafVersion }));
+    const tss = (input.tapScriptSig || []).find((t) => Buffer.from(t.leafHash).equals(lh));
     if (!tss) throw new Error('Missing tapscript signature.');
     const sig = tss.signature.length >= 64 ? tss.signature.subarray(0, 64) : tss.signature;
     const witness = [sig, leaf.script, leaf.controlBlock];
@@ -381,21 +394,16 @@ function signAndExtractInventoryHtlcBuyerRefund (bundle, buyerPriv32) {
  * @returns {Buffer|null}
  */
 function extractPreimageFromWitnessStack (witness, paymentHash32) {
-  const want = Buffer.isBuffer(paymentHash32)
-    ? paymentHash32
-    : Buffer.from(String(paymentHash32 || '').trim(), 'hex');
+  const want = asBuffer(paymentHash32) || Buffer.from(String(paymentHash32 || '').trim(), 'hex');
   if (want.length !== 32) return null;
   const wantHex = want.toString('hex');
   const stack = Array.isArray(witness) ? witness : [];
   for (const item of stack) {
-    let buf;
-    if (Buffer.isBuffer(item)) buf = item;
-    else if (typeof item === 'string' && /^[0-9a-fA-F]+$/.test(item) && item.length === 64) {
-      buf = Buffer.from(item, 'hex');
-    } else if (typeof item === 'string') {
+    let buf = asBuffer(item);
+    if (!buf && typeof item === 'string') {
       try { buf = Buffer.from(item, 'hex'); } catch (_) { continue; }
-    } else continue;
-    if (buf.length !== 32) continue;
+    }
+    if (!buf || buf.length !== 32) continue;
     if (hash256(buf).toString('hex') === wantHex) return Buffer.from(buf);
   }
   return null;

@@ -59,7 +59,12 @@ class Program extends Circuit {
   }
 
   /**
-   * @param {{ language?: string, source?: *, bytecode?: *, steps?: string[], programId?: string }} opts
+   * @param {Object} [opts]
+   * @param {string} [opts.language]
+   * @param {*} [opts.source]
+   * @param {*} [opts.bytecode]
+   * @param {Array.<string>} [opts.steps]
+   * @param {string} [opts.programId]
    * @returns {Program}
    */
   static from (opts = {}) {
@@ -118,7 +123,7 @@ class Program extends Circuit {
 
   /**
    * Normalize language-specific form into `steps` / `bytecode`.
-   * @returns {{ ok: boolean, error?: string, program?: Program }}
+   * @returns {{ok: boolean, error: (string|undefined), program: (Program|undefined)}}
    */
   compile () {
     const lang = this.language;
@@ -195,7 +200,7 @@ class Program extends Circuit {
 
   /**
    * L1 redeem script scaffold (bitcoin-script only).
-   * @returns {{ ok: boolean, error?: string, scriptHex?: string, asm?: string }}
+   * @returns {{ok: boolean, error: (string|undefined), scriptHex: (string|undefined), asm: (string|undefined)}}
    */
   toRedeemScript () {
     if (this.language !== 'bitcoin-script') {

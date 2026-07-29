@@ -85,15 +85,14 @@ class Beacon extends Actor {
   }
 
   /**
-   * @param {{
-   *   bitcoin?: object,
-   *   fs?: object,
-   *   key?: object,
-   *   federationValidators?: string[],
-   *   federationThreshold?: number,
-   *   getSidechainSnapshotForEpoch?: () => ({ clock: number, stateDigest: string } | null),
-   *   getContractsSnapshotForEpoch?: () => ({ clock: number, stateDigest: string } | null)
-   * }} deps
+   * @param {Object} [deps]
+   * @param {Object} [deps.bitcoin]
+   * @param {Object} [deps.fs]
+   * @param {Object} [deps.key]
+   * @param {Array.<string>} [deps.federationValidators]
+   * @param {number} [deps.federationThreshold]
+   * @param {function(): (Object|null)} [deps.getSidechainSnapshotForEpoch]
+   * @param {function(): (Object|null)} [deps.getContractsSnapshotForEpoch]
    */
   attach (deps = {}) {
     if (deps.bitcoin) this.bitcoin = deps.bitcoin;

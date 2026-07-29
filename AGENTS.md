@@ -170,3 +170,6 @@ Before merging a new Fabric agent:
 - startup failure paths are handled
 - logs/events are sufficient for diagnosis
 - example usage is documented (inline or in `examples/`)
+
+## Author Style
+- do not abbreviate in APIs; `documentId` should be `documentIdentifier`

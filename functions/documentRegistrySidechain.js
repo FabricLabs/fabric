@@ -19,7 +19,7 @@ const {
   getBodySchema,
   encodeBody,
   decodeBody
-} = require('./messageBodyCodec');
+} = require('../types/message');
 
 const REGISTRY_PATH = '/registry';
 const SIDECHAIN_STATE_PATCH_TYPE = sidechainState.SIDECHAIN_STATE_PATCH_TYPE;

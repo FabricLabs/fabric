@@ -3,7 +3,7 @@
 const assert = require('assert');
 const sidechainState = require('../functions/sidechainState');
 const registry = require('../functions/documentRegistrySidechain');
-const { getBodySchema } = require('../functions/messageBodyCodec');
+const { getBodySchema } = require('../types/message');
 
 describe('functions/documentRegistrySidechain', function () {
   it('registers SIDECHAIN_STATE_PATCH body schema', function () {

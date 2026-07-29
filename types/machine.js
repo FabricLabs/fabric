@@ -227,9 +227,9 @@ class Machine extends Actor {
 
   /**
    * Parse program manifest v1 (former DistributedExecution.parseDistributedManifestV1).
-   * @param {object} raw
-   * @param {import('./program')|null} [program] When provided, programId/hash must match.
-   * @returns {{ ok: boolean, error?: string, manifest?: object }}
+   * @param {Object} raw
+   * @param {Program|null} [program] When provided, programId/hash must match.
+   * @returns {{ok: boolean, error: (string|undefined), manifest: (Object|undefined)}}
    */
   parseManifest (raw, program = null) {
     const { parseProgramManifestV1 } = require('../functions/fabricProgramManifest');
@@ -246,7 +246,7 @@ class Machine extends Actor {
 
   /**
    * Load a {@link Program} onto this machine (sets script steps).
-   * @param {import('./program')} program
+   * @param {Program} program
    * @returns {Machine}
    */
   loadProgram (program) {
@@ -269,9 +269,9 @@ class Machine extends Actor {
 
   /**
    * Load and compute a Program; return stack tip + run commitment for L1 binding.
-   * @param {import('./program')|object} program
+   * @param {Program|Object} program
    * @param {*} [input]
-   * @returns {Promise<{ ok: boolean, stack: Array, tip: *, trace: Array, runCommitmentHex: string|null, error?: string }>}
+   * @returns {Promise.<{ok: boolean, stack: Array, tip: *, trace: Array, runCommitmentHex: (string|null), error: (string|undefined)}>}
    */
   async runProgram (program, input) {
     try {

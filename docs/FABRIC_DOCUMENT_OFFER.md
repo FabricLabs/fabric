@@ -17,7 +17,7 @@ Fabric defines an **offer ↔ response** pair for exchanging **document-catalog 
 | **Offer** (catalog / terms request) | `P2P_INVENTORY_REQUEST` (`0x57`) | `{ "type": "…", "object": { … } }` |
 | **Response** (items, hashes, hints) | `P2P_INVENTORY_RESPONSE` (`0x58`) | `{ "kind": "documents", … }` etc. |
 
-The JSON field **`type`** inside the decoded body may use **legacy** names or **canonical Fabric** names (see [`functions/fabricDocumentOfferEnvelope.js`](../functions/fabricDocumentOfferEnvelope.js)); `Peer` normalizes Fabric aliases to `INVENTORY_REQUEST` / `INVENTORY_RESPONSE` for internal handlers.
+The JSON field **`type`** inside the decoded body may use **legacy** names or **canonical Fabric** names (see [`functions/publishedDocumentEnvelope.js`](../functions/publishedDocumentEnvelope.js)); `Peer` normalizes Fabric aliases to `INVENTORY_REQUEST` / `INVENTORY_RESPONSE` for internal handlers. Inventory predicates (`isDocumentInventoryRequestType`, etc.) live on that module; `functions/fabricDocumentOfferEnvelope.js` is a compatibility re-export of the same API.
 
 ## Canonical JSON `type` strings (envelope aliases)
 

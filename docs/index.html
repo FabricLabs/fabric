@@ -58,6 +58,7 @@
           <li><a href="#repository-layout">Repository layout</a></li>
           <li><a href="#development-workflow">Development workflow</a></li>
           <li><a href="#bitcoin-service-servicesbitcoin">Bitcoin service</a></li>
+          <li><a href="#lightning-bolts-rpc-map--hub-desktop-npm-link">Lightning BOLTs, RPC map &amp; Hub desktop (<code>npm link</code>)</a></li>
           <li><a href="#message-types-typesmessage">Message types</a></li>
           <li><a href="#architecture">Architecture</a></li>
           <li><a href="#storage-typesstore">Storage</a></li>
@@ -71,11 +72,11 @@
         <h2>Quick Start</h2>
         <p>See also <a href="QUICKSTART.md"><code>QUICKSTART.md</code></a> for up-to-date instructions.</p>
         <ol start="0">
-          <li><code>nvm use 22.14.0</code> (install <a href="https://nvm.sh"><code>nvm</code></a> if needed)</li>
+          <li><code>nvm use 24.15.0</code> (install <a href="https://nvm.sh"><code>nvm</code></a> if needed; matches <code>.nvmrc</code> / <code>package.json</code> engines)</li>
           <li>From a clone of this repo: <code>npm install</code> (or <code>npm install -g @fabric/core</code> to put <code>fabric</code> on your <code>PATH</code>)</li>
           <li>(optional) <code>fabric setup</code> to generate a master key and local config</li>
           <li>(optional) <code>fabric keygen</code> to generate a new master key without saving to disk (ephemeral)</li>
-          <li>Run <code>fabric</code> — the CLI entry is wired through <code>types/cli.js</code> and extends <strong><code>Service.FabricShell</code></strong></li>
+          <li>Run <code>fabric</code> — the CLI entry is wired through <code>types/cli.js</code> and extends <strong><code>Service.FabricShell</code></strong>. <strong>Contracts</strong> (HTLCs, document sessions, programs, shell packs, …) are documented in <strong><a href="docs/CONTRACTS.md">docs/CONTRACTS.md</a></strong>; terminal UX in <strong><a href="docs/CLI.md">docs/CLI.md</a></strong>.</li>
         </ol>
         <p>Working from a <strong>git checkout</strong> (not the global package) is best when you are changing <code>@fabric/core</code> itself; use <code>npm link</code> or <code>npm install ../fabric</code> from downstream packages (Hub, HTTP server) as described in the repo README.</p>
         <h2>Repository layout</h2>
@@ -119,7 +120,7 @@
         </table>
         <h2>Development workflow</h2>
         <ul>
-          <li><strong>Node:</strong> engines field in <code>package.json</code> is authoritative (currently Node 22.x).</li>
+          <li><strong>Node:</strong> engines field in <code>package.json</code> is authoritative (currently Node 24.15.x).</li>
           <li><strong>Unit tests:</strong> <code>npm test</code> — runs Mocha recursively under <code>tests/</code>.</li>
           <li><strong>Lint:</strong> <code>npm run lint</code> / <code>npm run lint:fix</code> (Semistandard).</li>
           <li><strong>API reference:</strong> <code>npm run make:api</code> writes <code>API.md</code> from JSDoc (see <code>scripts/list-jsdoc-type-files.js</code> for which <code>types/*.js</code> files are included).</li>
@@ -140,7 +141,7 @@
           </thead>
           <tbody>
             <tr>
-              <td>Node <strong>22.14.x</strong>, <code>npm ci</code>, <strong><code>npm run ci</code></strong></td>
+              <td>Node <strong>24.15.0</strong> (see <code>.nvmrc</code>), <code>npm ci</code>, <strong><code>npm run ci</code></strong></td>
               <td><a href="docs/PRODUCTION.md"><code>docs/PRODUCTION.md</code></a></td>
             </tr>
             <tr>
@@ -164,6 +165,8 @@
         <p><strong>Build scripts:</strong> <code>npm run build</code> runs <code>make:all</code>, which still has <strong>placeholder</strong> <code>make:service</code> / <code>make:app</code> / <code>make:lib</code> steps. The <strong>release gate for quality is <code>npm run ci</code></strong> (full Mocha suite), not a successful <code>npm run build</code>. Track operator and bundle readiness in <a href="docs/PRODUCTION-CHECKLIST.md"><code>docs/PRODUCTION-CHECKLIST.md</code></a> and <a href="docs/PRODUCTION.md"><code>docs/PRODUCTION.md</code></a>.</p>
         <h2>Core Types (reference)</h2>
         <p>These live under <code>types/*.js</code> (CommonJS). The <strong><code>Fabric</code></strong> facade (<code>types/fabric.js</code>) re-exports many of them for quick experiments; production code usually imports a <strong>leaf</strong> type.</p>
+        <p><strong>Beacon</strong> (<code>types/beacon</code>): L1-tied epoch chain sealing <code>sidechain</code> / <code>contracts</code> digests (Hub re-exports as <code>contracts/beacon.js</code>).</p>
+        <p><strong>Sidechain document</strong> (<code>functions/sidechainState</code> + <code>documentRegistrySidechain</code>): logical <code>sidechain/STATE</code> + journal/snapshots/tip restore. Wire updates use typed <code>SIDECHAIN_STATE_PATCH</code> fields; RFC6902 JSON is an <code>@fabric/http</code> edge transform. See <a href="docs/DISTRIBUTED_EXECUTION.md">docs/DISTRIBUTED_EXECUTION.md</a>. Network-wide field map + Program: <a href="docs/NETWORK_STATE_PROGRAM.md">docs/NETWORK_STATE_PROGRAM.md</a>; wire diagram <a href="contracts/protocol.dot"><code>contracts/protocol.dot</code></a>.</p>
         <table>
           <thead>
             <tr>
@@ -209,6 +212,42 @@
         <p>Regenerate <strong><code>API.md</code></strong> with <code>npm run make:api</code> after JSDoc changes. Experimental or legacy-only files may be omitted via <strong><code>scripts/list-jsdoc-type-files.js</code></strong>.</p>
         <h2>Bitcoin service (<code>services/bitcoin</code>)</h2>
         <p>RPC is the <strong>source of truth</strong> when a node is connected. Optional HTTP fallback for block, transaction, and address-index reads is configured only via <code>bitcoin.explorerBaseUrl</code> or <code>FABRIC_EXPLORER_URL</code> (an <strong>origin</strong>, not a path). If unset, those helpers stay RPC-only or fail closed with a clear error — <code>@fabric/core</code> does not default to any public explorer.</p>
+        <h2>Lightning: BOLTs, RPC map &amp; Hub desktop (<code>npm link</code>)</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Doc</th>
+              <th>Purpose</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><a href="docs/BOLT_COMPATIBILITY.md">docs/BOLT_COMPATIBILITY.md</a></td>
+              <td>Checklist: <strong>BOLT #1–#12</strong> vs delegated to <code>lightningd</code> vs exposed on <code>Lightning</code></td>
+            </tr>
+            <tr>
+              <td><a href="docs/FABRIC_LIGHTNING_OFFERS.md">docs/FABRIC_LIGHTNING_OFFERS.md</a></td>
+              <td>Fabric <strong>markets</strong> (commerce / P2P) vs <strong>BOLT12</strong>; <strong><code>Lightning.Bolt12</code></strong></td>
+            </tr>
+            <tr>
+              <td><a href="docs/FABRIC_PAYMENT_BECH32.md">docs/FABRIC_PAYMENT_BECH32.md</a></td>
+              <td><strong><code>fa1…</code></strong> bech32m Fabric-routed payments; <strong><code>Lightning.FabricPayment</code></strong></td>
+            </tr>
+            <tr>
+              <td><a href="docs/LIGHTNING_COMPAT.md">docs/LIGHTNING_COMPAT.md</a></td>
+              <td>Core Lightning <strong>JSON-RPC</strong> ↔ Fabric method names</td>
+            </tr>
+          </tbody>
+        </table>
+        <p><strong>Programmatic:</strong> <code>require('@fabric/core/services/lightning').DOCS</code> lists Markdown paths (<code>fabricLightningMarkets</code> and <code>fabricLightningOffers</code> are the same file); <strong><code>Lightning.Bolt12</code></strong> re-exports <code>functions/lightningBolt12.js</code> (<code>FabricLightningMarketRole</code> / <code>FabricLightningOfferRole</code>); <strong><code>Lightning.Bolt12Semantics</code></strong> re-exports <code>functions/bolt12Semantics.js</code> (BIP-340 scope for <strong><code>decode</code></strong>, recurrence TLV helpers); <strong><code>Lightning.FabricPayment</code></strong> re-exports <code>functions/fabricPaymentBech32.js</code> (<code>fa1…</code> encode/decode and <strong><code>classifyPaymentEncodingString</code></strong>).</p>
+        <h3>Manual test: <code>@fabric/hub</code> desktop + local <code>@fabric/core</code> / <code>@fabric/http</code></h3>
+        <p>After changing <strong><code>@fabric/core</code></strong>, you can exercise the stack from the <strong><code>@fabric/hub</code></strong> package (Electron / desktop; e.g. sibling clone <code>hub.fabric.pub</code>) by linking local packages. Typical order:</p>
+        <ol>
+          <li><strong>This repo (<code>@fabric/core</code>):</strong> <code>npm link</code> — registers the global link for <code>@fabric/core</code>.</li>
+          <li><strong><code>@fabric/http</code></strong> (sibling clone): <code>npm link @fabric/core</code> then <code>npm link</code> — HTTP server depends on core; second <code>npm link</code> publishes <code>@fabric/http</code> globally.</li>
+          <li><strong>Hub (<code>@fabric/hub</code>):</strong> <code>npm link @fabric/core</code> and <code>npm link @fabric/http</code> — resolves both to your working trees.</li>
+        </ol>
+        <p>Then start the Hub desktop app (see Hub’s <code>package.json</code>, e.g. <code>build:desktop</code> / Electron scripts). Verify Lightning UI or HTTP mutations against your linked core. To unlink later: <code>npm unlink @fabric/core</code> / <code>@fabric/http</code> in Hub and HTTP, then reinstall published versions as needed.</p>
         <h2>Message types (<code>types/message</code>)</h2>
         <p><code>P2P_MESSAGE_RECEIPT</code> (<code>constants.P2P_MESSAGE_RECEIPT</code>, <code>0x44</code>) is the on-wire type for server acknowledgements of an inbound WebSocket/P2P message (payload JSON uses <code>@type: Receipt</code>). It is distinct from <code>GenericMessage</code> so clients can discriminate without parsing the body first.</p>
         <h2>Architecture</h2>
@@ -228,12 +267,15 @@
         <h4>0. Assets</h4>
         <p>Files here feed the default <strong>inventory</strong> for packaged releases. When using <code>@fabric/http</code>’s server, many assets are served from <code>/</code> (configurable). Use this tree for <strong>generated</strong> binaries, WASM, and bundled UI — avoid committing large binaries unless they are part of the release process.</p>
         <h5>0.1 Inventory</h5>
-        <p>For the <code>0.1</code> line, focus is Lightning-oriented document exchange. Operators running <code>fabric chat</code> can:</p>
+        <p>For the <code>0.1</code> line, focus is <strong>consenting peer file exchange</strong> plus <strong>ranked L1 document markets</strong>. Operators running <code>fabric</code> / <code>fabric chat</code> can:</p>
         <ol>
-          <li>Load a file into local inventory: <code>/import &lt;filename&gt;</code></li>
-          <li>Publish to peers: <code>/publish &lt;documentID&gt; &lt;rate&gt;</code></li>
-          <li>Request from the network: <code>/request &lt;documentID&gt; &lt;rate&gt;</code></li>
+          <li><code>/import</code> → <code>/publish &lt;id&gt; &lt;rateSats&gt;</code></li>
+          <li><code>/inventory [peer] [btc]</code> → <code>/offers [id]</code> (rank by price/latency/score)</li>
+          <li>Unpaid: <code>/request</code> → seller <code>/approve</code>; paid: <code>/buy</code> → pay → <code>/confirm &lt;settlementId&gt; &lt;txid&gt;</code></li>
+          <li>Private relay fees: <code>/relayfees</code>; budgeted requests rewrite hops with fee skim</li>
+          <li>Large files: multi-blob offers and reassembly (see L1 doc)</li>
         </ol>
+        <p>Details: <a href="docs/L1_DOCUMENT_EXCHANGE.md"><code>docs/L1_DOCUMENT_EXCHANGE.md</code></a>; BIP: <a href="docs/bip-fabric-file-exchange.md"><code>docs/bip-fabric-file-exchange.md</code></a>.</p>
         <p>When this surface is stable and well tested, the project can tag <code>0.1.0-RC1</code> and move toward a security audit.</p>
         <h5>0.2 Roadmap</h5>
         <p>See <a href="https://github.com/FabricLabs/fabric/projects/1">the official Fabric roadmap</a> for planned work.</p>
@@ -383,6 +425,14 @@ console.log('Signature (hex):', signature.toString('hex'));
               <td>Install and first commands</td>
             </tr>
             <tr>
+              <td><a href="docs/CONTRACTS.md">docs/CONTRACTS.md</a></td>
+              <td>Contracts as interfaces; Hub registry (Hub publishes first)</td>
+            </tr>
+            <tr>
+              <td><a href="docs/CLI.md">docs/CLI.md</a></td>
+              <td>Terminal <code>/contracts</code>, refunds, verbosity</td>
+            </tr>
+            <tr>
               <td><a href="AGENTS.md">AGENTS.md</a></td>
               <td>Agent services, lifecycle, workers</td>
             </tr>
@@ -414,6 +464,224 @@ console.log('Signature (hex):', signature.toString('hex'));
 
 
 
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/actor.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">Base <strong>Actor</strong> type for Fabric: JSON-shaped state, JSON Patch commits, and a
+            content-derived <strong>id</strong>.
+
+            <p><strong>State</strong> — <code>_state.content</code> is observed with <code>fast-json-patch</code>.
+              <a href="Actor.html#commit">Actor#commit</a> turns observer diffs into Actor#history entries and emits <code>commit</code> plus
+              <code>message</code> with <code>type: 'ActorMessage'</code> / <code>data.type: 'Changes'</code>.
+            </p>
+
+            <p><strong>Identity</strong> — Actor#id is a SHA256 digest (hex) of the 32-byte preimage buffer;
+              Actor#preimage is SHA256(UTF-8) of the pretty-printed <a href="Actor.html#toGenericMessage">Actor#toGenericMessage</a>
+              <code>{ type, object }</code> with sorted keys (<a href="Actor.html#toObject">Actor#toObject</a>). Implementation uses Hash256.compute.
+              Treat <code>id</code> as a <strong>content address</strong> for that state shape, not an arbitrary application string hash.
+            </p>
+
+            <p><strong>Relationship to <a href="Message.html">Message</a></strong> — <code>Message</code> extends <code>Actor</code> and implements
+              <strong>AMP</strong> (wire headers, opcodes, Schnorr <code>Fabric/Message</code>). Downstream apps that only need a stable
+              storage key should not label that key <code>Actor#id</code> unless it is produced by this type.
+            </p>
+
+            <p>Narrative docs: <strong>DEVELOPERS.md</strong> (section <em>Actor and Message</em>) and this file’s class JSDoc are
+              kept in sync; <code>npm run make:docs</code> embeds DEVELOPERS.md as the HTML home page, while Actor.html is generated
+              from here.</p>
+          </div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_actor.js.html">types/actor.js</a>, <a href="types_actor.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
+
+
+
+
+    <section>
+
+      <header>
+
+        <h2>types/datastore.js</h2>
+
+
+      </header>
+
+      <article>
+        <div class="container-overview">
+
+
+          <div class="description">Ledger-adjacent <a href="Store.html">Store</a> extension. Consolidation with <a href="Store.html">Store</a>
+            is planned (single persistence surface + optional ledger facet); left as-is until that
+            design is scheduled.</div>
+
+
+
+
+
+          <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            <dt class="tag-source">Source:</dt>
+            <dd class="tag-source">
+              <ul class="dummy">
+                <li>
+                  <a href="types_datastore.js.html">types/datastore.js</a>, <a href="types_datastore.js.html#line3">line 3</a>
+                </li>
+              </ul>
+            </dd>
+
+
+
+
+
+
+
+          </dl>
+
+
+
+
+        </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      </article>
+
+    </section>
+
+
+
   </div>
   <nav>
     <h2><a href="index.html">Home</a></h2>
@@ -421,14 +689,18 @@ console.log('Signature (hex):', signature.toString('hex'));
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Block.html">Block</a></li>
+      <li><a href="Bond.html">Bond</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Contract.html">Contract</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
-      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
@@ -442,16 +714,19 @@ console.log('Signature (hex):', signature.toString('hex'));
       <li><a href="Machine.html">Machine</a></li>
       <li><a href="Message.html">Message</a></li>
       <li><a href="Peer.html">Peer</a></li>
+      <li><a href="Program.html">Program</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
+      <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
@@ -461,25 +736,23 @@ console.log('Signature (hex):', signature.toString('hex'));
     </ul>
     <h3>Global</h3>
     <ul>
-      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
-      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
-      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
+      <li><a href="global.html#BODY_SCHEMA_BY_KEY">BODY_SCHEMA_BY_KEY</a></li>
+      <li><a href="global.html#GenericMessage">GenericMessage</a></li>
+      <li><a href="global.html#P2P_CHAT_MAX_CHARS">P2P_CHAT_MAX_CHARS</a></li>
+      <li><a href="global.html#P2P_PEER_ALIAS_MAX_CHARS">P2P_PEER_ALIAS_MAX_CHARS</a></li>
+      <li><a href="global.html#SEAL_BLOCK">SEAL_BLOCK</a></li>
+      <li><a href="global.html#blockDigest">blockDigest</a></li>
+      <li><a href="global.html#canonicalTypeCode">canonicalTypeCode</a></li>
+      <li><a href="global.html#canonicalTypeName">canonicalTypeName</a></li>
       <li><a href="global.html#crypto">crypto</a></li>
-      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
-      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
-      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
-      <li><a href="global.html#gossip">gossip</a></li>
-      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
-      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
-      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
-      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
-      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
-      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
-      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
-      <li><a href="global.html#stableStringify">stableStringify</a></li>
-      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
-      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
-      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
+      <li><a href="global.html#fabricCanonicalJson">fabricCanonicalJson</a></li>
+      <li><a href="global.html#isStructuredBlockInput">isStructuredBlockInput</a></li>
+      <li><a href="global.html#meetsProofOfWork">meetsProofOfWork</a></li>
+      <li><a href="global.html#merge">merge</a></li>
+      <li><a href="global.html#mineOnStart">mineOnStart</a></li>
+      <li><a href="global.html#networks">networks</a></li>
+      <li><a href="global.html#signingStringForBlock">signingStringForBlock</a></li>
+      <li><a href="global.html#typeEquals">typeEquals</a></li>
     </ul>
   </nav>
   <br class="clear" />

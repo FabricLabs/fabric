@@ -4,7 +4,7 @@
  * Shared helpers for opt-in fuzz-style tests (random inputs on parser / wire / UI surfaces).
  * Iteration count: {@link process.env.FABRIC_FUZZ_ITERATIONS} (positive integer) or default.
  *
- * Target runtime: Node 24.14.1 (see package.json engines).
+ * Target runtime: Node 24.15.0 (see package.json engines).
  */
 
 const crypto = require('crypto');

@@ -260,7 +260,12 @@ class Chain extends Actor {
   }
 
   /**
-   * @param {{ consensus?: string, seal?: string, genesis?: object, entries?: object[], blocks?: object[] }} [opts]
+   * @param {Object} [opts]
+   * @param {string} [opts.consensus]
+   * @param {string} [opts.seal]
+   * @param {Object} [opts.genesis]
+   * @param {Array.<Object>} [opts.entries]
+   * @param {Array.<Object>} [opts.blocks]
    * @returns {Chain}
    */
   static create (opts = {}) {

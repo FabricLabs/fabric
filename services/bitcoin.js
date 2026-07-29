@@ -2416,7 +2416,7 @@ class Bitcoin extends Service {
         const script = bitcoin.address.toOutputScript(output.address, network);
         const data = {
           script,
-          value: output.value
+          value: typeof output.value === 'bigint' ? output.value : BigInt(Math.round(Number(output.value)))
         };
 
         psbt.addOutput(data);

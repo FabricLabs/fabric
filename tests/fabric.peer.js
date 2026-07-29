@@ -494,7 +494,23 @@ describe('@fabric/core/types/peer', function () {
       });
 
       it('start() retries with default attempts when listenPortAttempts is invalid', async function () {
-        const port = await getFreePort();
+        let port = null;
+        for (let i = 0; i < 40 && port == null; i++) {
+          const candidate = await getFreePort();
+          const probe = net.createServer();
+          try {
+            await new Promise((resolve, reject) => {
+              probe.once('error', reject);
+              probe.listen(candidate + 1, '127.0.0.1', resolve);
+            });
+            await new Promise((resolve) => probe.close(resolve));
+            port = candidate;
+          } catch (_) {
+            probe.close();
+          }
+        }
+        assert.ok(port != null, 'could not find a free basePort with free basePort+1');
+
         const blocker = net.createServer();
         await new Promise((resolve, reject) => {
           blocker.once('error', reject);
@@ -515,7 +531,10 @@ describe('@fabric/core/types/peer', function () {
 
         try {
           await peer.start();
-          assert.strictEqual(peer.settings.port, port + 1);
+          assert.ok(
+            peer.settings.port > port && peer.settings.port <= port + 19,
+            `should leave busy basePort ${port}; got ${peer.settings.port}`
+          );
         } finally {
           await peer.stop().catch(() => {});
           await new Promise((resolve) => blocker.close(resolve));
@@ -588,7 +607,27 @@ describe('@fabric/core/types/peer', function () {
       });
 
       it('start() binds the next port when the configured port is in use', async function () {
-        const port = await getFreePort();
+        const maxAttempts = 20;
+        // Prefer a base where base+1 is also free so the happy path is +1; if the
+        // suite has occupied neighbors, still accept any successful bump within
+        // listenPortAttempts (that is the production contract).
+        let port = null;
+        for (let i = 0; i < 40 && port == null; i++) {
+          const candidate = await getFreePort();
+          const probe = net.createServer();
+          try {
+            await new Promise((resolve, reject) => {
+              probe.once('error', reject);
+              probe.listen(candidate + 1, '127.0.0.1', resolve);
+            });
+            await new Promise((resolve) => probe.close(resolve));
+            port = candidate;
+          } catch (_) {
+            probe.close();
+          }
+        }
+        assert.ok(port != null, 'could not find a free basePort with free basePort+1');
+
         const blocker = net.createServer();
         await new Promise((resolve, reject) => {
           blocker.once('error', reject);
@@ -603,17 +642,22 @@ describe('@fabric/core/types/peer', function () {
           peers: [],
           networking: false,
           peersDb: null,
-          listenPortAttempts: 20
+          listenPortAttempts: maxAttempts
         });
         peers.push(peer);
 
         try {
           await peer.start();
-          assert.strictEqual(peer.settings.port, port + 1, 'should use basePort + 1 when base is EADDRINUSE');
           assert.ok(
-            (peer.listenAddress && peer.listenAddress.endsWith(`:${port + 1}`)) ||
-              String(peer.listenAddress).includes(`:${port + 1}`),
-            `listenAddress should include ${port + 1}, got ${peer.listenAddress}`
+            peer.settings.port > port && peer.settings.port <= port + maxAttempts - 1,
+            `should leave busy basePort ${port}; got ${peer.settings.port}`
+          );
+          // With +1 probed free and listen() recreating the server after EADDRINUSE,
+          // the common case is exact +1; allow a higher bump only if another test
+          // raced onto +1 between probe and start().
+          assert.ok(
+            peer.listenAddress && String(peer.listenAddress).includes(`:${peer.settings.port}`),
+            `listenAddress should include :${peer.settings.port}, got ${peer.listenAddress}`
           );
         } finally {
           await peer.stop().catch(() => {});

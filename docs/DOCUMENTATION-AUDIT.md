@@ -18,7 +18,7 @@ _Last pass: 2026-03-20 · `npm run make:dev` + `npm run check:book-links` **OK**
 - **`dev.fabric.pub`** links in `SUMMARY.md` (`api-docs`, `api-examples`) — confirm host still serves expected content; run `CHECK_BOOK_EXTERNAL=1 npm run check:book-links` after `npm run make:dev`.
 - **`book.json` `edit-link`** — `base` still references `master`; branch may be `main` or feature branches.
 - **Typos** — `package.json` `review:todo` / disclosures string uses `securiy@` (known typo); align with security contacts doc when you touch it.
-- **Node version** — `.nvmrc` is **22.14.0**; scrub docs that still mention Node 16 for *this* repo.
+- **Node version** — `.nvmrc` is **24.15.0**; scrub docs that still mention Node 16 for *this* repo.
 
 ## Commands
 ```bash

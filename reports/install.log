@@ -1,19 +1,101 @@
 $ npm i
+npm warn deprecated uuid@8.3.2: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
 
 > @fabric/core@0.1.0-RC1 install
 > node scripts/install-native.js
 
+gyp info it worked if it ends with ok
+gyp info using node-gyp@12.4.0
+gyp info using node@24.15.0 | darwin | arm64
+gyp info find Python using Python version 3.14.3 found at "/opt/homebrew/opt/python@3.14/bin/python3.14"
 
+gyp http GET https://nodejs.org/download/release/v24.15.0/node-v24.15.0-headers.tar.gz
+gyp http 200 https://nodejs.org/download/release/v24.15.0/node-v24.15.0-headers.tar.gz
+gyp http GET https://nodejs.org/download/release/v24.15.0/SHASUMS256.txt
+gyp http 200 https://nodejs.org/download/release/v24.15.0/SHASUMS256.txt
+gyp info spawn /opt/homebrew/opt/python@3.14/bin/python3.14
+gyp info spawn args [
+gyp info spawn args '/Users/eric/fabric-clean/node_modules/node-gyp/gyp/gyp_main.py',
+gyp info spawn args 'binding.gyp',
+gyp info spawn args '-f',
+gyp info spawn args 'make',
+gyp info spawn args '-I',
+gyp info spawn args '/Users/eric/fabric-clean/build/config.gypi',
+gyp info spawn args '-I',
+gyp info spawn args '/Users/eric/fabric-clean/node_modules/node-gyp/addon.gypi',
+gyp info spawn args '-I',
+gyp info spawn args '/Users/eric/Library/Caches/node-gyp/24.15.0/include/node/common.gypi',
+gyp info spawn args '-Dlibrary=shared_library',
+gyp info spawn args '-Dvisibility=default',
+gyp info spawn args '-Dnode_root_dir=/Users/eric/Library/Caches/node-gyp/24.15.0',
+gyp info spawn args '-Dnode_gyp_dir=/Users/eric/fabric-clean/node_modules/node-gyp',
+gyp info spawn args '-Dnode_lib_file=/Users/eric/Library/Caches/node-gyp/24.15.0/<(target_arch)/node.lib',
+gyp info spawn args '-Dmodule_root_dir=/Users/eric/fabric-clean',
+gyp info spawn args '-Dnode_engine=v8',
+gyp info spawn args '--depth=.',
+gyp info spawn args '--no-parallel',
+gyp info spawn args '--generator-output',
+gyp info spawn args 'build',
+gyp info spawn args '-Goutput_dir=.'
+gyp info spawn args ]
+gyp info spawn make
+gyp info spawn args [ 'BUILDTYPE=Release', '-C', 'build' ]
   CXX(target) Release/obj.target/fabric/src/binding.o
   CC(target) Release/obj.target/fabric/src/crypto.o
   CC(target) Release/obj.target/fabric/src/protocol.o
   CC(target) Release/obj.target/fabric/src/noise.o
   CC(target) Release/obj.target/fabric/src/p2p.o
   SOLINK_MODULE(target) Release/fabric.node
+ld: warning: building for macOS-11.0, but linking with dylib '/opt/homebrew/opt/secp256k1/lib/libsecp256k1.6.dylib' which was built for newer version 26.0
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[2](cipherstate.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[3](dhstate.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[5](handshakestate.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[6](hashstate.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[7](internal.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[8](names.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[9](patterns.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[12](symmetricstate.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[13](util.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[14](dh-curve448.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[15](dh-newhope.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[16](hash-blake2s.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[17](blake2s.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[18](curve448.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[19](p448.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[20](batcher.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[21](error_correction.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[22](fips202.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[23](newhope.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[24](ntt.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[25](poly.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[26](precomp.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[27](reduce.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[28](cipher-aesgcm.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[29](rand_os.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[31](cipher-chachapoly.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[32](dh-curve25519.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[33](hash-blake2b.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[34](hash-sha256.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[35](hash-sha512.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[37](rijndael-alg-fst.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[38](blake2b.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[39](chacha.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[40](poly1305-donna.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[41](ghash.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[42](crypto_stream_chacha20.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[43](sha256.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[44](sha512.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+ld: warning: object file (/usr/local/lib/libnoiseprotocol.a[45](ed25519.o)) was built for newer 'macOS' version (13.0) than being linked (11.0)
+gyp info ok 
 
-added 402 packages, and audited 404 packages in 18s
+added 361 packages, and audited 362 packages in 24s
 
-58 packages are looking for funding
+59 packages are looking for funding
   run `npm fund` for details
 
-found 0 vulnerabilities
+2 moderate severity vulnerabilities
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.

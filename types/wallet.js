@@ -2,7 +2,9 @@
 
 // External Dependencies
 const merge = require('lodash.merge');
-const networks = require('bitcoinjs-lib/src/networks');
+const { networks: bitcoinNetworks } = require('bitcoinjs-lib');
+/** Fabric settings use `mainnet`; bitcoinjs-lib 7 names that network `bitcoin`. */
+const networks = Object.assign({ mainnet: bitcoinNetworks.bitcoin }, bitcoinNetworks);
 
 // Mnemonics
 const ecc = require('./ecc');
@@ -102,8 +104,8 @@ class Wallet extends Service {
       addresses: new Map(),
       paymentHashes: new Map()
     };
-    /** @type {Set<string>} txid:kind already emitted (block + mempool may both see the same tx). */
-    this._emittedWalletTxKeys = new Set();
+    /** @type {Set.<string>} */
+    this._emittedWalletTxKeys = new Set(); // txid:kind already emitted (block + mempool may both see the same tx)
 
     // Encrypted Storage
     this.secrets = new Collection({

@@ -360,7 +360,7 @@ class Block extends Actor {
 
   /**
    * Author Schnorr over signingString (gossip).
-   * @param {import('./key')} key
+   * @param {Key} key
    * @returns {string} signature hex
    */
   sign (key) {
@@ -399,8 +399,13 @@ class Block extends Actor {
   }
 
   /**
-   * @param {{ consensus?: string, validators?: string[], threshold?: number, bits?: number|null, requireParent?: string|null }} [opts]
-   * @returns {{ ok: boolean, reason?: string }}
+   * @param {Object} [opts]
+   * @param {string} [opts.consensus]
+   * @param {Array.<string>} [opts.validators]
+   * @param {number} [opts.threshold]
+   * @param {number|null} [opts.bits]
+   * @param {string|null} [opts.requireParent]
+   * @returns {{ok: boolean, reason: (string|undefined)}}
    */
   validate (opts = {}) {
     const consensus = opts.consensus || CONSENSUS_POW;

@@ -4,7 +4,7 @@
 ## Pre-flight
 | Step | Command |
 |------|---------|
-| Node | **22.14.x** (see `package.json` `engines`). |
+| Node | **24.15.0** (see `package.json` `engines` / `.nvmrc`). |
 | Install | `npm ci` |
 | Release gate | **`npm run ci`** — full recursive **`mocha`** test suite (`NODE_ENV=test`). |
 

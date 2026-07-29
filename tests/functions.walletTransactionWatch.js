@@ -50,7 +50,7 @@ describe('functions/walletTransactionWatch', function () {
     const fundingTx = new bitcoin.Transaction();
     fundingTx.version = 2;
     fundingTx.addInput(Buffer.alloc(32, 3), 0, 0xffffffff);
-    fundingTx.addOutput(built.output, 25_000);
+    fundingTx.addOutput(built.output, 25_000n);
     const destAddr = bitcoin.payments.p2wpkh({
       pubkey: buyer.publicKey,
       network: bitcoin.networks.regtest

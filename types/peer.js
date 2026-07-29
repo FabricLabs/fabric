@@ -56,7 +56,7 @@ const {
 } = require('../functions/documentPaymentHash');
 const {
   normalizeFabricDocumentOfferEnvelopeForHandlers
-} = require('../functions/fabricDocumentOfferEnvelope');
+} = require('../functions/publishedDocumentEnvelope');
 const inventoryHtlc = require('../functions/inventoryHtlc');
 const {
   buildForwardedDocumentRequest
@@ -1093,7 +1093,7 @@ class Peer extends Service {
    * Broadcast a personal nickname as first-class {@link P2P_PEER_ALIAS}
    * (UTF-8 body = nickname text only).
    * @param {string} alias
-   * @param {{ name?: string }|null} [origin] Optional origin to exclude from broadcast
+   * @param {{name: (string|undefined)}|null} [origin] Optional origin to exclude from broadcast
    * @param {*} [_socket] Unused (API compatibility)
    */
   _announceAlias (alias, origin = null, _socket = null) {
@@ -1958,7 +1958,7 @@ class Peer extends Service {
       case 'INVENTORY_REQUEST':
         // Upstream Inventory request (typically for documents). Emit an 'inventory'
         // event so higher-level services (e.g. hub) can respond appropriately.
-        // JSON `type` may be legacy `INVENTORY_REQUEST` or Fabric alias `FABRIC_DOCUMENT_OFFER` (see `functions/fabricDocumentOfferEnvelope.js`).
+        // JSON `type` may be legacy `INVENTORY_REQUEST` or Fabric alias `FABRIC_DOCUMENT_OFFER` (see `functions/publishedDocumentEnvelope.js`).
         this.emit('inventory', { message: msg, origin, socket });
         if (this.settings.serveLocalDocumentInventory) {
           const served = this._respondInventoryFromLocalDocuments(msg, origin);
@@ -2557,7 +2557,11 @@ class Peer extends Service {
    * Priced sealed docs send **ciphertext** (safe without the content key).
    * @param {string} documentId
    * @param {string} peerAddress connection key in {@link Peer#connections}
-   * @param {{ blobIndex?: number, revealKey?: boolean, settlementId?: string, routeId?: string }} [opts]
+   * @param {Object} [opts]
+   * @param {number} [opts.blobIndex]
+   * @param {boolean} [opts.revealKey]
+   * @param {string} [opts.settlementId]
+   * @param {string} [opts.routeId]
    * @returns {boolean} true if at least one frame was written
    */
   _sendP2pFileSendToPeer (documentId, peerAddress, opts = {}) {
@@ -2611,7 +2615,8 @@ class Peer extends Service {
    * Reveal the AES content key to a peer (only after payment-hash match).
    * @param {string} documentId
    * @param {string} peerAddress
-   * @param {{ settlementId?: string }} [opts]
+   * @param {Object} [opts]
+   * @param {string} [opts.settlementId]
    * @returns {boolean}
    */
   _sendDocumentContentKeyReveal (documentId, peerAddress, opts = {}) {
@@ -2649,9 +2654,10 @@ class Peer extends Service {
   /**
    * Verify / accumulate an inbound `P2P_FILE_SEND` against the DocumentBlobIndex rules.
    * Sealed frames store ciphertext until {@link KEY_REVEAL_TYPE}.
-   * @param {Message|object} message
-   * @param {{ name?: string }} origin
-   * @returns {object}
+   * @param {Message|Object} message
+   * @param {Object} origin
+   * @param {string} [origin.name]
+   * @returns {Object}
    */
   _ingestP2pFileSend (message, origin) {
     // Typed wire → Generic dispatch uses `{ type, object }`; raw Message has `.data`.
@@ -2707,9 +2713,10 @@ class Peer extends Service {
 
   /**
    * Apply a content-key reveal to a pending sealed delivery.
-   * @param {object} reveal
-   * @param {{ name?: string }} [origin]
-   * @returns {object}
+   * @param {Object} reveal
+   * @param {Object} [origin]
+   * @param {string} [origin.name]
+   * @returns {Object}
    */
   _handleDocumentContentKeyReveal (reveal, origin = null) {
     const documentId = String((reveal && reveal.documentId) || '').trim();
@@ -2752,7 +2759,7 @@ class Peer extends Service {
    * Open a pending sealed delivery using an HTLC claim preimage (on-chain witness).
    * @param {string} documentId
    * @param {string} preimageHex
-   * @returns {{ ok: boolean, error?: string, buffer?: Buffer }}
+   * @returns {{ok: boolean, error: (string|undefined), buffer: (Buffer|undefined)}}
    */
   openSealedDeliveryWithPreimage (documentId, preimageHex) {
     const id = String(documentId || '').trim();
@@ -2794,7 +2801,9 @@ class Peer extends Service {
    * Public helper: push document bytes to a peer (same wire path as {@link Peer#_handleDocumentRequestWire} fulfillment).
    * @param {string} documentId
    * @param {string} peerAddress
-   * @param {{ blobIndex?: number, revealKey?: boolean }} [opts]
+   * @param {Object} [opts]
+   * @param {number} [opts.blobIndex]
+   * @param {boolean} [opts.revealKey]
    * @returns {boolean}
    */
   sendDocumentFileToPeer (documentId, peerAddress, opts = {}) {
@@ -2935,7 +2944,7 @@ class Peer extends Service {
   /**
    * Approve a pending DOCUMENT_REQUEST and send `P2P_FILE_SEND`.
    * @param {string} requestKey pending key, or document id when unique
-   * @returns {{ ok: boolean, error?: string, documentId?: string, peerAddress?: string }}
+   * @returns {{ok: boolean, error: (string|undefined), documentId: (string|undefined), peerAddress: (string|undefined)}}
    */
   approveDocumentRequest (requestKey) {
     const row = this._findPendingDocumentRequest(requestKey);
@@ -2959,7 +2968,7 @@ class Peer extends Service {
   /**
    * Deny / drop a pending DOCUMENT_REQUEST without sending bytes.
    * @param {string} requestKey
-   * @returns {{ ok: boolean, error?: string }}
+   * @returns {{ok: boolean, error: (string|undefined)}}
    */
   denyDocumentRequest (requestKey) {
     const row = this._findPendingDocumentRequest(requestKey);
@@ -3723,7 +3732,15 @@ class Peer extends Service {
       const errorHandler = (error) => {
         if (error.code === 'EADDRINUSE') {
           // Ensure server resources are released before retrying upstream.
-          this.server.close(() => rejectListen(error));
+          // Recreate the TCP server after close — a closed Server can retain
+          // sticky listen state and spuriously fail the next port attempt.
+          this.server.close(() => {
+            if (this.settings.listen) {
+              this.server = net.createServer(this._NOISESocketHandler.bind(this));
+              this._peerServerRuntimeErrorBound = false;
+            }
+            rejectListen(error);
+          });
           return;
         }
         rejectListen(error);

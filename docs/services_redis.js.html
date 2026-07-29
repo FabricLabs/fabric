@@ -38,7 +38,7 @@ const Service = require('../types/service');
 const Message = require('../types/message');
 
 /**
- * Connect and subscribe to Redis servers.
+ * Connect and subscribe to Redis servers (node-redis v6).
  */
 class Redis extends Service {
   /**
@@ -46,13 +46,12 @@ class Redis extends Service {
    * @param {Object} [settings] Settings for the Redis connection.
    * @param {String} [settings.host] Host for the Redis server.
    * @param {Number} [settings.port] Remote Redis service port.
+   * @param {String} [settings.url] Optional redis URL (overrides host/port).
    * @returns {Redis} Instance of the Redis service, ready to run `start()`
    */
   constructor (settings = {}) {
     super(settings);
 
-    // Assign settings over the defaults
-    // NOTE: switch to lodash.merge if clobbering defaults
     this.settings = Object.assign({
       host: 'localhost',
       port: 6379,
@@ -65,30 +64,48 @@ class Redis extends Service {
     return this;
   }
 
+  _clientOptions () {
+    if (this.settings.url) {
+      return { url: this.settings.url };
+    }
+    return {
+      socket: {
+        host: this.settings.host,
+        port: this.settings.port
+      }
+    };
+  }
+
+  _emitChannelMessage (channel, message) {
+    const topic = channel != null ? String(channel) : '';
+    const raw = Buffer.isBuffer(message)
+      ? message
+      : Buffer.from(message == null ? '' : String(message));
+    const path = `channels/${topic}`;
+    this.emit('debug', `Redis message @ [${path}] (${raw.length} bytes) ⇒ ${raw.toString('hex')}`);
+    this.emit('message', Message.fromVector(['Generic', {
+      topic,
+      message: raw.toString('hex'),
+      encoding: 'hex'
+    }]).toObject());
+  }
+
   /**
    * Opens the connection and subscribes to the requested channels.
-   * @returns {Redis} Instance of the service.
+   * @returns {Promise&lt;Redis>}
    */
   async start () {
     const self = this;
 
-    this.socket = redis.createClient(this.settings);
+    this.socket = redis.createClient(this._clientOptions());
     this.socket.on('error', function _handleSocketError (error) {
       self.emit('error', `Redis socket error: ${error}`);
     });
 
-    this.socket.on('message', function _handleSocketMessage (topic, message) {
-      const path = `channels/${topic.toString()}`;
-      self.emit('debug', `Redis message @ [${path}] (${message.length} bytes) ⇒ ${message.toString('hex')}`);
-      self.emit('message', Message.fromVector(['Generic', {
-        topic: topic.toString(),
-        message: message.toString('hex'),
-        encoding: 'hex'
-      }]).toObject());
-    });
+    await this.socket.connect();
 
     for (let i = 0; i &lt; this.settings.subscriptions.length; i++) {
-      this.subscribe(this.settings.subscriptions[i]);
+      await this.subscribe(this.settings.subscriptions[i]);
     }
 
     this.status = 'STARTED';
@@ -101,17 +118,34 @@ class Redis extends Service {
 
   /**
    * Closes the connection to the Redis server.
-   * @returns {Redis} Instance of the service.
+   * @returns {Promise&lt;Redis>}
    */
   async stop () {
     this.status = 'STOPPING';
-    this.socket.close();
+    if (this.socket) {
+      try {
+        if (typeof this.socket.isOpen === 'boolean' &amp;&amp; this.socket.isOpen) {
+          await this.socket.quit();
+        }
+      } catch (_) {
+        try { this.socket.disconnect(); } catch (__) {}
+      }
+      this.socket = null;
+    }
     this.status = 'STOPPED';
     return this;
   }
 
-  subscribe (name) {
-    this.socket.subscribe(name);
+  /**
+   * @param {string} name Channel name
+   * @returns {Promise&lt;void>}
+   */
+  async subscribe (name) {
+    if (!this.socket) throw new Error('Redis client is not started');
+    const channel = String(name);
+    await this.socket.subscribe(channel, (message, subscribedChannel) => {
+      this._emitChannelMessage(subscribedChannel || channel, message);
+    });
   }
 }
 
@@ -129,14 +163,18 @@ module.exports = Redis;
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Block.html">Block</a></li>
+      <li><a href="Bond.html">Bond</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Contract.html">Contract</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
-      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
@@ -150,16 +188,19 @@ module.exports = Redis;
       <li><a href="Machine.html">Machine</a></li>
       <li><a href="Message.html">Message</a></li>
       <li><a href="Peer.html">Peer</a></li>
+      <li><a href="Program.html">Program</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
+      <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
@@ -169,25 +210,23 @@ module.exports = Redis;
     </ul>
     <h3>Global</h3>
     <ul>
-      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
-      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
-      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
+      <li><a href="global.html#BODY_SCHEMA_BY_KEY">BODY_SCHEMA_BY_KEY</a></li>
+      <li><a href="global.html#GenericMessage">GenericMessage</a></li>
+      <li><a href="global.html#P2P_CHAT_MAX_CHARS">P2P_CHAT_MAX_CHARS</a></li>
+      <li><a href="global.html#P2P_PEER_ALIAS_MAX_CHARS">P2P_PEER_ALIAS_MAX_CHARS</a></li>
+      <li><a href="global.html#SEAL_BLOCK">SEAL_BLOCK</a></li>
+      <li><a href="global.html#blockDigest">blockDigest</a></li>
+      <li><a href="global.html#canonicalTypeCode">canonicalTypeCode</a></li>
+      <li><a href="global.html#canonicalTypeName">canonicalTypeName</a></li>
       <li><a href="global.html#crypto">crypto</a></li>
-      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
-      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
-      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
-      <li><a href="global.html#gossip">gossip</a></li>
-      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
-      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
-      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
-      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
-      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
-      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
-      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
-      <li><a href="global.html#stableStringify">stableStringify</a></li>
-      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
-      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
-      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
+      <li><a href="global.html#fabricCanonicalJson">fabricCanonicalJson</a></li>
+      <li><a href="global.html#isStructuredBlockInput">isStructuredBlockInput</a></li>
+      <li><a href="global.html#meetsProofOfWork">meetsProofOfWork</a></li>
+      <li><a href="global.html#merge">merge</a></li>
+      <li><a href="global.html#mineOnStart">mineOnStart</a></li>
+      <li><a href="global.html#networks">networks</a></li>
+      <li><a href="global.html#signingStringForBlock">signingStringForBlock</a></li>
+      <li><a href="global.html#typeEquals">typeEquals</a></li>
     </ul>
   </nav>
   <br class="clear" />

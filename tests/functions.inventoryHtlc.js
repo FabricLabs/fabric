@@ -78,7 +78,7 @@ describe('functions/inventoryHtlc', function () {
     const fundingTx = new bitcoin.Transaction();
     fundingTx.version = 2;
     fundingTx.addInput(Buffer.alloc(32, 1), 0, 0xffffffff);
-    fundingTx.addOutput(built.output, 50_000);
+    fundingTx.addOutput(built.output, 50_000n);
     const destAddr = bitcoin.payments.p2wpkh({
       pubkey: buyer.publicKey,
       network: bitcoin.networks.regtest
@@ -123,7 +123,7 @@ describe('functions/inventoryHtlc', function () {
     const fundingTx = new bitcoin.Transaction();
     fundingTx.version = 2;
     fundingTx.addInput(Buffer.alloc(32, 2), 0, 0xffffffff);
-    fundingTx.addOutput(built.output, 40_000);
+    fundingTx.addOutput(built.output, 40_000n);
     const destAddr = bitcoin.payments.p2wpkh({
       pubkey: buyer.publicKey,
       network: bitcoin.networks.regtest

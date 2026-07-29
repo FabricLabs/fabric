@@ -35,7 +35,9 @@
 
         <h2><span class="attribs"><span class="type-signature"></span></span>Lightning<span class="signature">(settings<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {<a href="Lightning.html">Lightning</a>}</span></h2>
 
-        <div class="class-description">Manage a Lightning node.</div>
+        <div class="class-description">Manage a Lightning node (Core Lightning JSON-RPC over Unix socket).
+
+          BOLT checklist: `docs/BOLT_COMPATIBILITY.md`. RPC map: `docs/LIGHTNING_COMPAT.md`.</div>
 
 
       </header>
@@ -165,7 +167,7 @@
             <dd class="tag-source">
               <ul class="dummy">
                 <li>
-                  <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line31">line 31</a>
+                  <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line72">line 72</a>
                 </li>
               </ul>
             </dd>
@@ -173,6 +175,13 @@
 
 
 
+
+            <dt class="tag-see">See:</dt>
+            <dd class="tag-see">
+              <ul>
+                <li><a href="Lightning.html#.DOCS">Lightning.DOCS</a></li>
+              </ul>
+            </dd>
 
 
 
@@ -235,6 +244,72 @@
 
 
 
+        <h4 class="name" id="rpc"><span class="type-signature"></span>rpc<span class="type-signature"></span></h4>
+
+
+
+
+        <div class="description">
+          Optional RPC client handle (e.g. REST/grpc); not used by Core Lightning socket `_makeRPCRequest`.
+        </div>
+
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line126">line 126</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
         <h4 class="name" id=".CLN_RPC_METHODS"><span class="type-signature">(static) </span>CLN_RPC_METHODS<span class="type-signature"> :ReadonlyArray.&lt;string></span></h4>
 
 
@@ -291,7 +366,84 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line817">line 817</a>
+                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line1070">line 1070</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+        <h4 class="name" id=".DOCS"><span class="type-signature">(static) </span>DOCS<span class="type-signature"> :Readonly.&lt;{boltCompatibility: string, fabricLightningOffers: string, fabricLightningMarkets: string, fabricPaymentBech32: string, lightningCompat: string}></span></h4>
+
+
+
+
+        <div class="description">
+          Paths to canonical Markdown docs (relative to the `@fabric/core` package root).
+          `fabricLightningMarkets` and `fabricLightningOffers` point at the same file (Fabric **markets** vs Lightning BOLT12 **offers**).
+        </div>
+
+
+
+        <h5>Type:</h5>
+        <ul>
+          <li>
+
+            <span class="param-type">Readonly.&lt;{boltCompatibility: string, fabricLightningOffers: string, fabricLightningMarkets: string, fabricPaymentBech32: string, lightningCompat: string}></span>
+
+
+          </li>
+        </ul>
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line1098">line 1098</a>
               </li>
             </ul>
           </dd>
@@ -516,7 +668,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line619">line 619</a>
+                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line872">line 872</a>
               </li>
             </ul>
           </dd>
@@ -562,6 +714,264 @@
             |
 
             <span class="param-type">String</span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="callRpc"><span class="type-signature">(async) </span>callRpc<span class="signature">(method, params<span class="signature-attributes">opt</span>, timeoutMs<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Promise.&lt;*>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Invoke any Core Lightning JSON-RPC method over the lightningd socket (escape hatch for methods without a typed wrapper).
+          Named `callRpc` so it does not shadow the `rpc` instance property.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+              <th>Default</th>
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>method</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+              </td>
+
+
+              <td class="description last">RPC method name (e.g. `listpeers`).</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>params</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Array</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+                []
+
+              </td>
+
+
+              <td class="description last">Positional/object params as accepted by lightningd for that method.</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>timeoutMs</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Number</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+                30000
+
+              </td>
+
+
+              <td class="description last">Optional timeout.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line287">line 287</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          RPC result.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Promise.&lt;*></span>
 
 
           </dd>
@@ -633,7 +1043,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line225">line 225</a>
+                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line466">line 466</a>
               </li>
             </ul>
           </dd>
@@ -928,7 +1338,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line190">line 190</a>
+                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line248">line 248</a>
               </li>
             </ul>
           </dd>
@@ -1069,7 +1479,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line212">line 212</a>
+                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line270">line 270</a>
               </li>
             </ul>
           </dd>
@@ -1094,6 +1504,2249 @@
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="createInvoiceRequest"><span class="type-signature">(async) </span>createInvoiceRequest<span class="signature">(params)</span><span class="type-signature"> &rarr; {Promise.&lt;Object>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Create a BOLT12 `invoice_request` (you request that someone else pay you via their offer flow). Returns `bolt12` (`lnr1…`). (Core Lightning `invoicerequest`, v22.11+.)
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>params</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">`{ amount, description, issuer?, label?, absolute_expiry?, single_use? }` — see CLN docs for amount formats.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line387">line 387</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Promise.&lt;Object></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="createOffer"><span class="type-signature">(async) </span>createOffer<span class="signature">(params)</span><span class="type-signature"> &rarr; {Promise.&lt;Object>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Create a BOLT12 offer (requires `experimental-offers` / modern CLN). Pass-through to `offer`.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>params</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">Keyword args, e.g. `{ amount_msat, description, label, issuer, ... }`.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line314">line 314</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Offer result (includes `bolt12` / offer id per CLN version).
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Promise.&lt;Object></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="decodeLightning"><span class="type-signature">(async) </span>decodeLightning<span class="signature">(boltString)</span><span class="type-signature"> &rarr; {Promise.&lt;Object>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Decode a BOLT11 invoice or BOLT12 offer string (Core Lightning `decode`).
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>boltString</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">`lnbc...`, `lno1...`, etc.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line296">line 296</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Decoded fields.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Promise.&lt;Object></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="decodePay"><span class="type-signature">(async) </span>decodePay<span class="signature">(bolt11)</span><span class="type-signature"> &rarr; {Promise.&lt;Object>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Decode a BOLT11 invoice for payment fields (Core Lightning `decodepay`).
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>bolt11</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line305">line 305</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Decoded pay details.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Promise.&lt;Object></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="disableInvoiceRequest"><span class="type-signature">(async) </span>disableInvoiceRequest<span class="signature">(invreqId)</span><span class="type-signature"> &rarr; {Promise.&lt;Object>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Disable an `invoice_request` so no further invoices are accepted (Core Lightning `disableinvoicerequest`).
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>invreqId</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line413">line 413</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Promise.&lt;Object></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="disableOffer"><span class="type-signature">(async) </span>disableOffer<span class="signature">(offerId)</span><span class="type-signature"> &rarr; {Promise.&lt;Object>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Disable a local offer by id (Core Lightning `disableoffer`).
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>offerId</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line378">line 378</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Promise.&lt;Object></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="fetchInvoice"><span class="type-signature">(async) </span>fetchInvoice<span class="signature">(offerOrParams, invoiceParams<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Promise.&lt;Object>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Request a BOLT11 invoice from a BOLT12 offer (Core Lightning `fetchinvoice`).
+
+          Call either:
+          - `fetchInvoice('lno1…')` or `fetchInvoice('lno1…', { amount_msat, quantity, payer_note, timeout, … })`
+          - **Recurrence** (when the offer is recurring): `recurrence_counter` (start at 0), `recurrence_start`, `recurrence_label` (stable label linking the series; required when counter is set). See Core Lightning **`fetchinvoice`** and [BOLT #12](https://github.com/lightning/bolts/blob/master/12-offer-encoding.md).
+          - `fetchInvoice({ offer: 'lno1…', amount_msat, … })` — single keyword object as accepted by CLN.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+              <th>Default</th>
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>offerOrParams</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+                |
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+              </td>
+
+
+              <td class="description last">Bolt12 offer string (`lno1…`), or one params object with an `offer` field.</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>invoiceParams</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+                null
+
+              </td>
+
+
+              <td class="description last">When the first arg is a string, optional extra fields merged into the RPC (second positional group).</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line333">line 333</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Invoice response (includes `invoice` bolt11 when successful).
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Promise.&lt;Object></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="getRoute"><span class="type-signature">(async) </span>getRoute<span class="signature">(destinationId, amountMsat, riskfactor<span class="signature-attributes">opt</span>, cltvOrRouteOptions<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Promise.&lt;Object>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Route probe (Core Lightning `getroute`).
+          CLN order: `id`, `amount_msat`, `riskfactor`, `cltv`, `fromid`, `fuzzpercent`, `exclude`, `maxhops`
+          — the fourth **positional** is `cltv`, not `maxhops`. To set `maxhops` (or other tail fields) use the
+          `routeOptions` object so intermediate slots are sent as `null` where needed.
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+              <th>Default</th>
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>destinationId</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+              </td>
+
+
+              <td class="description last">Destination node id (pubkey).</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>amountMsat</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Number</span>
+                |
+
+                <span class="param-type">String</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+              </td>
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>riskfactor</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Number</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+                10
+
+              </td>
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>cltvOrRouteOptions</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Number</span>
+                |
+
+                <span class="param-type">Object</span>
+                |
+
+                <span class="param-type">null</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+                null
+
+              </td>
+
+
+              <td class="description last">Omitted: three-arg RPC. If a number: fourth positional (`cltv`).
+                If an object: tail fields `cltv`, `fromid`, `fuzzpercent`, `exclude`, `maxhops` (each optional).</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line441">line 441</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Promise.&lt;Object></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="listInvoiceRequests"><span class="type-signature">(async) </span>listInvoiceRequests<span class="signature">(filter<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Promise.&lt;Object>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          List `invoice_request` records (Core Lightning `listinvoicerequests`).
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+              <th>Default</th>
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>filter</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+                |
+
+                <span class="param-type">Object</span>
+                |
+
+                <span class="param-type">null</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+                null
+
+              </td>
+
+
+              <td class="description last">`invreq_id` string, or `{ invreq_id?, active_only? }`, or null for all.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line399">line 399</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Promise.&lt;Object></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="listOffers"><span class="type-signature">(async) </span>listOffers<span class="signature">(filter<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Promise.&lt;Object>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          List offers created on this node (Core Lightning `listoffers`).
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+              <th>Default</th>
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>filter</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+                |
+
+                <span class="param-type">Object</span>
+                |
+
+                <span class="param-type">null</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+                null
+
+              </td>
+
+
+              <td class="description last">`offer_id` string, or `{ offer_id?, active_only? }`, or null for all.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line364">line 364</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Promise.&lt;Object></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="pay"><span class="type-signature">(async) </span>pay<span class="signature">(invoiceOrParams, timeoutMs<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {Promise.&lt;Object>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Pay a BOLT11 invoice or BOLT12-fetched bolt11 string (Core Lightning `pay`).
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+              <th>Attributes</th>
+
+
+
+              <th>Default</th>
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>invoiceOrParams</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">String</span>
+                |
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+              </td>
+
+
+              <td class="description last">Bolt11 string, or keyword object (e.g. `{ bolt11 }`, `{ bolt12 }` per CLN).</td>
+            </tr>
+
+
+
+            <tr>
+
+              <td class="name"><code>timeoutMs</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Number</span>
+
+
+
+              </td>
+
+
+              <td class="attributes">
+
+                &lt;optional><br>
+
+
+
+
+
+              </td>
+
+
+
+              <td class="default">
+
+                30000
+
+              </td>
+
+
+              <td class="description last"></td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line355">line 355</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+        <div class="param-desc">
+          Payment result.
+        </div>
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Promise.&lt;Object></span>
+
+
+          </dd>
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h4 class="name" id="sendInvoice"><span class="type-signature">(async) </span>sendInvoice<span class="signature">(params)</span><span class="type-signature"> &rarr; {Promise.&lt;Object>}</span></h4>
+
+
+
+
+
+
+        <div class="description">
+          Create and send a BOLT12 invoice to the issuer of an `invoice_request` (Core Lightning `sendinvoice`).
+        </div>
+
+
+
+
+
+
+
+
+
+        <h5>Parameters:</h5>
+
+
+        <table class="params">
+          <thead>
+            <tr>
+
+              <th>Name</th>
+
+
+              <th>Type</th>
+
+
+
+
+
+              <th class="last">Description</th>
+            </tr>
+          </thead>
+
+          <tbody>
+
+
+            <tr>
+
+              <td class="name"><code>params</code></td>
+
+
+              <td class="type">
+
+
+                <span class="param-type">Object</span>
+
+
+
+              </td>
+
+
+
+
+
+              <td class="description last">`{ invreq, label, amount_msat?, timeout?, quantity? }` — `invreq` is the `lnr1…` string.</td>
+            </tr>
+
+
+          </tbody>
+        </table>
+
+
+
+
+
+
+        <dl class="details">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          <dt class="tag-source">Source:</dt>
+          <dd class="tag-source">
+            <ul class="dummy">
+              <li>
+                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line422">line 422</a>
+              </li>
+            </ul>
+          </dd>
+
+
+
+
+
+
+
+        </dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        <h5>Returns:</h5>
+
+
+
+
+        <dl>
+          <dt>
+            Type
+          </dt>
+          <dd>
+
+            <span class="param-type">Promise.&lt;Object></span>
+
+
+          </dd>
+        </dl>
 
 
 
@@ -1222,7 +3875,7 @@
           <dd class="tag-source">
             <ul class="dummy">
               <li>
-                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line37">line 37</a>
+                <a href="services_lightning.js.html">services/lightning.js</a>, <a href="services_lightning.js.html#line78">line 78</a>
               </li>
             </ul>
           </dd>
@@ -1291,14 +3944,18 @@
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Block.html">Block</a></li>
+      <li><a href="Bond.html">Bond</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="Collection.html">Collection</a></li>
+      <li><a href="Contract.html">Contract</a></li>
+      <li><a href="Disk.html">Disk</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
-      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
@@ -1312,16 +3969,19 @@
       <li><a href="Machine.html">Machine</a></li>
       <li><a href="Message.html">Message</a></li>
       <li><a href="Peer.html">Peer</a></li>
+      <li><a href="Program.html">Program</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
+      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
+      <li><a href="global.html#Text">Text</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
       <li><a href="Vector.html">Vector</a></li>
@@ -1331,25 +3991,23 @@
     </ul>
     <h3>Global</h3>
     <ul>
-      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
-      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
-      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
+      <li><a href="global.html#BODY_SCHEMA_BY_KEY">BODY_SCHEMA_BY_KEY</a></li>
+      <li><a href="global.html#GenericMessage">GenericMessage</a></li>
+      <li><a href="global.html#P2P_CHAT_MAX_CHARS">P2P_CHAT_MAX_CHARS</a></li>
+      <li><a href="global.html#P2P_PEER_ALIAS_MAX_CHARS">P2P_PEER_ALIAS_MAX_CHARS</a></li>
+      <li><a href="global.html#SEAL_BLOCK">SEAL_BLOCK</a></li>
+      <li><a href="global.html#blockDigest">blockDigest</a></li>
+      <li><a href="global.html#canonicalTypeCode">canonicalTypeCode</a></li>
+      <li><a href="global.html#canonicalTypeName">canonicalTypeName</a></li>
       <li><a href="global.html#crypto">crypto</a></li>
-      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
-      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
-      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
-      <li><a href="global.html#gossip">gossip</a></li>
-      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
-      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
-      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
-      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
-      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
-      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
-      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
-      <li><a href="global.html#stableStringify">stableStringify</a></li>
-      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
-      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
-      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
+      <li><a href="global.html#fabricCanonicalJson">fabricCanonicalJson</a></li>
+      <li><a href="global.html#isStructuredBlockInput">isStructuredBlockInput</a></li>
+      <li><a href="global.html#meetsProofOfWork">meetsProofOfWork</a></li>
+      <li><a href="global.html#merge">merge</a></li>
+      <li><a href="global.html#mineOnStart">mineOnStart</a></li>
+      <li><a href="global.html#networks">networks</a></li>
+      <li><a href="global.html#signingStringForBlock">signingStringForBlock</a></li>
+      <li><a href="global.html#typeEquals">typeEquals</a></li>
     </ul>
   </nav>
   <br class="clear" />

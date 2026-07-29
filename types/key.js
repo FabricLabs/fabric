@@ -129,7 +129,7 @@ const bip39 = require('../functions/bip39');
 const bip32Module = require('../functions/bip32');
 const BIP32 = bip32Module.default;
 const BIP32_DEFAULT_NETWORK = bip32Module.DEFAULT_NETWORK;
-const payments = require('bitcoinjs-lib/src/payments');
+const { payments } = require('bitcoinjs-lib');
 
 // Fabric Dependencies
 const Actor = require('./actor');
@@ -719,7 +719,11 @@ class Key extends EventEmitter {
    */
   signSchnorrHash (messageHash) {
     if (!this.private) throw new Error('Cannot sign without private key');
-    if (!Buffer.isBuffer(messageHash) || messageHash.length !== 32) {
+    // bitcoinjs-lib 7 crypto helpers return Uint8Array; accept Buffer or Uint8Array.
+    const hash = Buffer.isBuffer(messageHash)
+      ? messageHash
+      : (messageHash instanceof Uint8Array ? Buffer.from(messageHash) : null);
+    if (!hash || hash.length !== 32) {
       throw new Error('Message hash must be a 32-byte Buffer');
     }
 
@@ -727,7 +731,7 @@ class Key extends EventEmitter {
     const privateKeyBuffer = privateKeyToBuffer(this.private);
 
     // Sign using noble-curves Schnorr (BIP340). Zero auxRand for deterministic signatures.
-    const signature = nobleSchnorr.sign(messageHash, privateKeyBuffer, Buffer.alloc(32));
+    const signature = nobleSchnorr.sign(hash, privateKeyBuffer, Buffer.alloc(32));
 
     // Ensure we return a Buffer
     return Buffer.isBuffer(signature) ? signature : Buffer.from(signature);
@@ -766,7 +770,10 @@ class Key extends EventEmitter {
    * @returns {Boolean} Whether the signature is valid
    */
   verifySchnorrHash (messageHash, sig) {
-    if (!Buffer.isBuffer(messageHash) || messageHash.length !== 32) {
+    const hash = Buffer.isBuffer(messageHash)
+      ? messageHash
+      : (messageHash instanceof Uint8Array ? Buffer.from(messageHash) : null);
+    if (!hash || hash.length !== 32) {
       throw new Error('Message hash must be a 32-byte Buffer');
     }
 
@@ -778,7 +785,7 @@ class Key extends EventEmitter {
     const sigBuffer = Buffer.isBuffer(sig) ? sig : Buffer.from(sig);
 
     // Verify using noble-curves Schnorr (BIP340)
-    return nobleSchnorr.verify(sigBuffer, messageHash, xOnlyPubkey);
+    return nobleSchnorr.verify(sigBuffer, hash, xOnlyPubkey);
   }
 
   commit () {

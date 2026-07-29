@@ -4,6 +4,7 @@ const {
   MAGIC_BYTES,
   VERSION_NUMBER,
   HEADER_SIZE,
+  MAX_MESSAGE_SIZE,
   OP_CYCLE,
   LOG_MESSAGE_TYPE,
   GENERIC_LIST_TYPE,
@@ -407,7 +408,7 @@ function typeEquals (a, b) {
  * or Hub.</p>
  *
  * <p><strong>Body (V1)</strong> — Prefer {@link Message.fromFields} / {@link Message#toFields} with a
- * registered schema (<code>functions/messageBodyCodec</code>). Bodies are C-like typed fields, not JSON;
+ * registered body schema (see body codec helpers on this module). Bodies are C-like typed fields, not JSON;
  * JSON bridging is <strong>@fabric/http</strong>. See <code>docs/MESSAGE_BODY.md</code>.</p>
  *
  * <p><strong>Narrative</strong> — See <strong>DEVELOPERS.md</strong> (<em>Actor and Message</em>) and {@link Actor}
@@ -909,10 +910,6 @@ class Message extends Actor {
    * @returns {Message}
    */
   static fromFields (type, fields = {}, opts = {}) {
-    const {
-      getBodySchema,
-      encodeBody
-    } = require('../functions/messageBodyCodec');
     const schema = getBodySchema(type);
     if (!schema) {
       throw new Error(`Message.fromFields: no body schema registered for type ${type}`);
@@ -929,10 +926,6 @@ class Message extends Actor {
    * @returns {object|null} Field map, or null if no schema / empty / undecodable body.
    */
   toFields () {
-    const {
-      getBodySchema,
-      decodeBody
-    } = require('../functions/messageBodyCodec');
     const opcode = this.raw.type.readUInt32BE(0);
     const schema = getBodySchema(this.type) || getBodySchema(this.wireType) || getBodySchema(opcode);
     if (!schema) return null;
@@ -1099,5 +1092,201 @@ Message.typeEquals = typeEquals;
 Message.WIRE_TYPE_DECODE_ORDER = WIRE_TYPE_DECODE_ORDER;
 Message.FRIENDLY_TYPE_BY_WIRE = FRIENDLY_TYPE_BY_WIRE;
 Message.FRIENDLY_TO_WIRE_TYPE = FRIENDLY_TO_WIRE_TYPE;
+
+// --- AMP body field codec (formerly functions/messageBodyCodec) ---
+const BODY_FIELD_TYPES = Object.freeze([
+  'u8', 'u16', 'u32', 'u64', 'bytes32', 'bytes', 'string', 'message'
+]);
+/** @type {Map<number|string, Array<{ name: string, type: string }>>} */
+const BODY_SCHEMA_BY_KEY = new Map();
+
+function registerBodySchema (opcodeOrName, schema) {
+  if (!Array.isArray(schema)) throw new TypeError('schema must be an array');
+  for (const f of schema) {
+    if (!f || typeof f.name !== 'string' || !BODY_FIELD_TYPES.includes(f.type)) {
+      throw new TypeError(`invalid field: ${JSON.stringify(f)}`);
+    }
+  }
+  BODY_SCHEMA_BY_KEY.set(opcodeOrName, schema.slice());
+}
+
+function getBodySchema (opcodeOrName) {
+  if (opcodeOrName == null) return null;
+  if (BODY_SCHEMA_BY_KEY.has(opcodeOrName)) return BODY_SCHEMA_BY_KEY.get(opcodeOrName);
+  if (typeof opcodeOrName === 'string') {
+    const upper = opcodeOrName.toUpperCase();
+    if (BODY_SCHEMA_BY_KEY.has(upper)) return BODY_SCHEMA_BY_KEY.get(upper);
+  }
+  return null;
+}
+
+function _writeU32 (buf, offset, value) {
+  buf.writeUInt32BE(value >>> 0, offset);
+}
+
+function _readU32 (buf, offset) {
+  return buf.readUInt32BE(offset);
+}
+
+function encodeBody (schema, fields = {}) {
+  if (!Array.isArray(schema)) throw new TypeError('schema required');
+  const chunks = [];
+  let total = 0;
+  for (const def of schema) {
+    const value = fields[def.name];
+    let part;
+    switch (def.type) {
+      case 'u8': {
+        part = Buffer.alloc(1);
+        part.writeUInt8(Number(value) || 0, 0);
+        break;
+      }
+      case 'u16': {
+        part = Buffer.alloc(2);
+        part.writeUInt16BE(Number(value) || 0, 0);
+        break;
+      }
+      case 'u32': {
+        part = Buffer.alloc(4);
+        _writeU32(part, 0, Number(value) || 0);
+        break;
+      }
+      case 'u64': {
+        part = Buffer.alloc(8);
+        const n = typeof value === 'bigint' ? value : BigInt(Number(value) || 0);
+        part.writeBigUInt64BE(n, 0);
+        break;
+      }
+      case 'bytes32': {
+        part = Buffer.alloc(32);
+        if (Buffer.isBuffer(value)) {
+          value.copy(part, 0, 0, Math.min(32, value.length));
+        } else if (typeof value === 'string' && /^[0-9a-fA-F]*$/.test(value)) {
+          Buffer.from(value.padStart(64, '0').slice(0, 64), 'hex').copy(part);
+        }
+        break;
+      }
+      case 'bytes':
+      case 'message': {
+        const raw = Buffer.isBuffer(value)
+          ? value
+          : (value == null ? Buffer.alloc(0) : Buffer.from(String(value), 'utf8'));
+        part = Buffer.alloc(4 + raw.length);
+        _writeU32(part, 0, raw.length);
+        raw.copy(part, 4);
+        break;
+      }
+      case 'string': {
+        const raw = Buffer.from(value == null ? '' : String(value), 'utf8');
+        part = Buffer.alloc(4 + raw.length);
+        _writeU32(part, 0, raw.length);
+        raw.copy(part, 4);
+        break;
+      }
+      default:
+        throw new TypeError(`unsupported field type: ${def.type}`);
+    }
+    total += part.length;
+    if (total > MAX_MESSAGE_SIZE) {
+      throw new RangeError(`message body exceeds MAX_MESSAGE_SIZE (${MAX_MESSAGE_SIZE})`);
+    }
+    chunks.push(part);
+  }
+  return Buffer.concat(chunks, total);
+}
+
+function decodeBody (schema, buffer) {
+  if (!Array.isArray(schema)) throw new TypeError('schema required');
+  const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer || []);
+  const out = {};
+  let offset = 0;
+  for (const def of schema) {
+    if (offset > buf.length) {
+      throw new RangeError(`truncated body while reading field ${def.name}`);
+    }
+    switch (def.type) {
+      case 'u8': {
+        if (offset + 1 > buf.length) throw new RangeError(`truncated body at ${def.name}`);
+        out[def.name] = buf.readUInt8(offset);
+        offset += 1;
+        break;
+      }
+      case 'u16': {
+        if (offset + 2 > buf.length) throw new RangeError(`truncated body at ${def.name}`);
+        out[def.name] = buf.readUInt16BE(offset);
+        offset += 2;
+        break;
+      }
+      case 'u32': {
+        if (offset + 4 > buf.length) throw new RangeError(`truncated body at ${def.name}`);
+        out[def.name] = _readU32(buf, offset);
+        offset += 4;
+        break;
+      }
+      case 'u64': {
+        if (offset + 8 > buf.length) throw new RangeError(`truncated body at ${def.name}`);
+        out[def.name] = buf.readBigUInt64BE(offset);
+        offset += 8;
+        break;
+      }
+      case 'bytes32': {
+        if (offset + 32 > buf.length) throw new RangeError(`truncated body at ${def.name}`);
+        out[def.name] = Buffer.from(buf.subarray(offset, offset + 32));
+        offset += 32;
+        break;
+      }
+      case 'bytes':
+      case 'message': {
+        if (offset + 4 > buf.length) throw new RangeError(`truncated body at ${def.name}`);
+        const len = _readU32(buf, offset);
+        offset += 4;
+        if (offset + len > buf.length) throw new RangeError(`truncated body at ${def.name}`);
+        out[def.name] = Buffer.from(buf.subarray(offset, offset + len));
+        offset += len;
+        break;
+      }
+      case 'string': {
+        if (offset + 4 > buf.length) throw new RangeError(`truncated body at ${def.name}`);
+        const len = _readU32(buf, offset);
+        offset += 4;
+        if (offset + len > buf.length) throw new RangeError(`truncated body at ${def.name}`);
+        out[def.name] = buf.subarray(offset, offset + len).toString('utf8');
+        offset += len;
+        break;
+      }
+      default:
+        throw new TypeError(`unsupported field type: ${def.type}`);
+    }
+  }
+  return out;
+}
+
+const SCHEMA_P2P_PING = Object.freeze([{ name: 'nonce', type: 'string' }]);
+const SCHEMA_P2P_CHAT = null;
+const SCHEMA_PROGRAM_RUN = Object.freeze([
+  { name: 'programHash', type: 'bytes32' },
+  { name: 'runCommitment', type: 'bytes32' },
+  { name: 'resultHint', type: 'string' }
+]);
+
+(function _installBodySchemaDefaults () {
+  registerBodySchema(P2P_PING, SCHEMA_P2P_PING);
+  registerBodySchema('P2P_PING', SCHEMA_P2P_PING);
+  registerBodySchema('Ping', SCHEMA_P2P_PING);
+  registerBodySchema(P2P_PONG, SCHEMA_P2P_PING);
+  registerBodySchema('P2P_PONG', SCHEMA_P2P_PING);
+  registerBodySchema('Pong', SCHEMA_P2P_PING);
+  registerBodySchema('FabricProgramRun', SCHEMA_PROGRAM_RUN);
+})();
+
+Message.FIELD_TYPES = BODY_FIELD_TYPES;
+Message.MAX_MESSAGE_SIZE = MAX_MESSAGE_SIZE;
+Message.registerBodySchema = registerBodySchema;
+Message.getBodySchema = getBodySchema;
+Message.encodeBody = encodeBody;
+Message.decodeBody = decodeBody;
+Message.SCHEMA_P2P_PING = SCHEMA_P2P_PING;
+Message.SCHEMA_P2P_CHAT = SCHEMA_P2P_CHAT;
+Message.SCHEMA_PROGRAM_RUN = SCHEMA_PROGRAM_RUN;
 
 module.exports = Message;
