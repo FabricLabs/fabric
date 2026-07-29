@@ -42,7 +42,7 @@ These are **not** the default path for new contributors:
 |------|--------|
 | **Must read** | **README.md**, **QUICKSTART.md**, **DEVELOPERS.md**, **VISION.md** (this file) |
 | **Protocol & security** | **PROTOCOL.md**, **MESSAGES.md**, **POLICY.md**, **SECURITY.md**, **PRIVACY.md** |
-| **Operators** | **docs/PRODUCTION.md**, **docs/RELEASE_CHECKLIST.md**, **docs/PRODUCTION-CHECKLIST.md** |
+| **Operators** | **docs/PRODUCTION.md** (includes release checklist) |
 | **Contracts & CLI** | **docs/CONTRACTS.md**, **docs/CLI.md**, **docs/L1_DOCUMENT_EXCHANGE.md** |
 | **Guides** | **guides/SERVICES.md**, **guides/ACTORS.md**, **guides/BUILD.md**, **guides/BEST_PRACTICES.md** |
 | **API** | **API.md** (regenerate with `npm run make:api`), HTML under **docs/** after `npm run make:docs` |

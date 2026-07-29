@@ -9,9 +9,9 @@ const {
   DOCUMENT_EXCHANGE_CLI_PACKS,
   listDocumentExchangeCliContracts,
   listDocumentExchangeCommands
-} = require('../functions/documentExchange');
-const { DocumentOfferBook } = require('../functions/documentOfferBook');
-const { createDocumentPurchaseSession } = require('../functions/documentPurchaseSession');
+} = require('../functions/cliDocumentExchange');
+const { DocumentOfferBook } = require('../functions/documentMarket');
+const { createDocumentPurchaseSession } = require('../functions/documentMarket');
 
 describe('functions/cliDocumentExchange (headless CLI surface)', function () {
   it('catalog exposes documents + documents-market packs and commands', function () {

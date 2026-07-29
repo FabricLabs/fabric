@@ -13,7 +13,7 @@
  */
 
 const { purchaseContentHashHex } = require('./publishedDocumentEnvelope');
-const { paymentHashHexFromKey } = require('./documentContentKey');
+const { paymentHashHexFromKey } = require('./documentSealedExchange');
 const { blobPaymentHashHex } = require('./documentBlobManifest');
 
 const HEX64 = /^[0-9a-f]{64}$/;

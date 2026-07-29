@@ -61,7 +61,7 @@ it does not cancel on-chain HTLCs, open sessions, or Hub-registry publishes.
 
 ## Related modules
 - HTLC builders — [`functions/inventoryHtlc.js`](../functions/inventoryHtlc.js)
-- Purchase sessions — [`functions/documentPurchaseSession.js`](../functions/documentPurchaseSession.js)
+- Purchase sessions / offer book — [`functions/documentMarket.js`](../functions/documentMarket.js)
 - Sealed document sale — [`functions/documentSealedExchange.js`](../functions/documentSealedExchange.js)
 - L1 binding — [L1_DOCUMENT_EXCHANGE.md](L1_DOCUMENT_EXCHANGE.md), [PAYMENTS_DOCUMENT_BINDING.md](PAYMENTS_DOCUMENT_BINDING.md)
 - Namespaces — [APPLICATION_NAMESPACES.md](APPLICATION_NAMESPACES.md)

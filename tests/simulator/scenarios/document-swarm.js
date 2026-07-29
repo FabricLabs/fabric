@@ -1,13 +1,13 @@
 'use strict';
 
 const assert = require('assert');
-const { composeUseCases } = require('../usecases');
+const { composeUseCases } = require('./packs');
 const { splitBlobs } = require('../../../functions/documentBlobManifest');
 const {
   DocumentBlobTransferBook,
   parseFileSendObject
-} = require('../../../functions/documentBlobTransfer');
-const { DocumentOfferBook } = require('../../../functions/documentOfferBook');
+} = require('../../../functions/documentBlobManifest');
+const { DocumentOfferBook } = require('../../../functions/documentMarket');
 const { blobPaymentHashHex } = require('../../../functions/documentBlobManifest');
 
 const packs = composeUseCases(['document-market', 'gossip']);

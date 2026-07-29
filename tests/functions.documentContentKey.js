@@ -1,9 +1,9 @@
 'use strict';
 
 const assert = require('assert');
-const documentContentKey = require('../functions/documentContentKey');
+const documentContentKey = require('../functions/documentSealedExchange');
 
-describe('functions/documentContentKey', function () {
+describe('functions/documentSealedExchange (content key)', function () {
   it('seal and open round-trip', function () {
     const plain = Buffer.from('secret document bytes', 'utf8');
     const sealed = documentContentKey.sealPlaintext(plain);

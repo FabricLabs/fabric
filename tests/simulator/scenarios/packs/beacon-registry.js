@@ -1,14 +1,14 @@
 'use strict';
 
-const { e2eRegtestEnabled, startRegtestBeaconHarness } = require('../lib/regtestBeacon');
+const { e2eRegtestEnabled, startRegtestBeaconHarness } = require('../../lib/regtestBeacon');
 const {
   buildBeaconAuditReport,
   writeBeaconAuditReport
-} = require('../lib/beaconAuditReport');
+} = require('../../lib/beaconAuditReport');
 const {
   beaconEpochTarget,
   runBeaconCampaign
-} = require('../lib/beaconLongRun');
+} = require('../../lib/beaconLongRun');
 
 /**
  * Regtest Beacon + document registry seal (requires FABRIC_E2E_REGTEST=1).

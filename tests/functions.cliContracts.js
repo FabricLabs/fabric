@@ -10,7 +10,7 @@ const {
 const {
   createDocumentPurchaseSession,
   listRefundCandidates
-} = require('../functions/documentPurchaseSession');
+} = require('../functions/documentMarket');
 
 describe('functions/cliContracts', function () {
   it('catalog includes core + documents-market with refunds', function () {

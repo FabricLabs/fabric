@@ -1,7 +1,7 @@
 'use strict';
 
-const Actor = require('../../../types/actor');
-const Message = require('../../../types/message');
+const Actor = require('../../../../types/actor');
+const Message = require('../../../../types/message');
 
 /** Application-namespace publish + CONTRACT_MESSAGE traffic. */
 module.exports = {

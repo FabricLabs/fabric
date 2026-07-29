@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('assert');
-const { DocumentOfferBook } = require('../functions/documentOfferBook');
+const { DocumentOfferBook } = require('../functions/documentMarket');
 const {
   splitBlobs,
   verifyBlob,
@@ -12,8 +12,8 @@ const {
   computeRelayFee,
   buildForwardedDocumentRequest,
   assertMonotoneBudget
-} = require('../functions/documentRequestRelay');
-const { createDocumentPurchaseSession } = require('../functions/documentPurchaseSession');
+} = require('../functions/documentMarket');
+const { createDocumentPurchaseSession } = require('../functions/documentMarket');
 
 describe('documentOfferBook + blobs + relay', function () {
   it('ranks cheaper faster higher-score offers first', function () {

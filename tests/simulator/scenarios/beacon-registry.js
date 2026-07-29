@@ -1,6 +1,6 @@
 'use strict';
 
-const { composeUseCases } = require('../usecases');
+const { composeUseCases } = require('./packs');
 const { e2eRegtestEnabled } = require('../lib/regtestBeacon');
 const sidechainState = require('../../../functions/sidechainState');
 

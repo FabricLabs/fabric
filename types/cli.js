@@ -37,7 +37,7 @@ const { tryParsePersistedJson, tryParseWireJson, messageDataToString } = require
 const {
   CliDocumentExchange,
   listRefundCandidates
-} = require('../functions/documentExchange');
+} = require('../functions/cliDocumentExchange');
 const {
   CLI_CONTRACTS,
   resolveEnabledContracts,
@@ -227,7 +227,7 @@ class CLI extends FabricShell {
     /**
      * Canonical headless document-exchange surface (CLI packs `documents` +
      * `documents-market`). Blessed handlers below are thin adapters.
-     * @see functions/documentExchange.js
+     * @see functions/cliDocumentExchange.js
      * @see docs/L1_DOCUMENT_EXCHANGE.md
      */
     this.documentExchange = new CliDocumentExchange({

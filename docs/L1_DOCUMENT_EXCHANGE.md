@@ -22,14 +22,38 @@ Operator document exchange is standardized on the Fabric CLI packs
 
 | Module | Role |
 |--------|------|
-| [`functions/documentExchange.js`](../functions/documentExchange.js) | Public catalog + re-exports |
-| [`functions/cliDocumentExchange.js`](../functions/cliDocumentExchange.js) | `CliDocumentExchange` — import/publish/inventory/offers/buy/confirm/claimwatch/refund |
+| [`functions/cliDocumentExchange.js`](../functions/cliDocumentExchange.js) | `CliDocumentExchange` — import/publish/inventory/offers/buy/confirm/claimwatch/refund + pack catalog |
 | [`functions/cliContracts.js`](../functions/cliContracts.js) | Shell pack command maps |
 | `types/cli.js` | Blessed TUI adapters only (delegates to `CliDocumentExchange`) |
 
-Hub HTTP **402**, Beacon sidechain reward rows named `DocumentOffer`, and
-`DocumentOfferBook` ranking are **related but distinct** — see
-[`FABRIC_DOCUMENT_OFFER.md`](FABRIC_DOCUMENT_OFFER.md) naming notes.
+## Naming (do not conflate)
+
+| Name | Where | Meaning |
+|------|-------|---------|
+| **`FABRIC_DOCUMENT_OFFER`** | Wire envelope (`publishedDocumentEnvelope`) | Inventory-request JSON `type` alias for catalog/terms |
+| **`DocumentOfferBook`** | `@fabric/core` (`documentMarket`) | Ranked local book of seller listings after `/inventory … btc` |
+| **Hub sidechain `DocumentOffer`** | Hub Beacon / reward flows | Application-state reward offer — **not** this inventory envelope |
+| **HTTP 402 `documentOffer`** | `@fabric/http` | Payment-request summary for web/extension auto-pay |
+
+BOLT12 Lightning **offer** strings (`lno1…`) are a different vocabulary — see
+[`FABRIC_LIGHTNING_OFFERS.md`](FABRIC_LIGHTNING_OFFERS.md).
+
+## Inventory offer wire
+
+| Role | AMP opcode | Typical inner JSON |
+|------|------------|--------------------|
+| Catalog / terms request | `P2P_INVENTORY_REQUEST` (`0x57`) | `{ "type": "…", "object": { … } }` |
+| Items / hashes / hints | `P2P_INVENTORY_RESPONSE` (`0x58`) | `{ "kind": "documents", … }` |
+
+Canonical JSON `type` aliases (normalized by Peer to legacy `INVENTORY_*`):
+
+| Semantic | Canonical `type` | Synonyms | Handler `type` |
+|----------|------------------|----------|----------------|
+| Buyer asks | `FABRIC_DOCUMENT_OFFER` | `FABRIC_DOCUMENT_OFFER_REQUEST` | `INVENTORY_REQUEST` |
+| Seller replies | `FABRIC_DOCUMENT_OFFER_RESPONSE` | `FABRIC_DOCUMENT_OFFER_REPLY` | `INVENTORY_RESPONSE` |
+
+HTTP **402** + `X-Fabric-Payment-Request` mapping: `@fabric/http`
+`docs/HTTP_402_FABRIC_PAYMENT.md`.
 
 ## Peer / CLI surface (implemented)
 
@@ -45,7 +69,7 @@ Hub HTTP **402**, Beacon sidechain reward rows named `DocumentOffer`, and
 | CLI contracts | Implemented | `/contracts` lists sessions + shell packs; interfaces model in `CONTRACTS.md`; `debug` off by default |
 | Private paid relay | Implemented | Budgeted `DocumentRequest` rewritten with reduced `maxSats`; `/relayfees`; reverse-route map |
 | Payment hash path | Implemented | `documentPaymentHash.resolveDocumentContentHashHex` shared by Peer, CLI, Hub, HTTP 402 |
-| HTLC builders | In `@fabric/core` | Hub re-exports `inventoryHtlc` / `documentContentKey` / `documentOfferEscrow` |
+| HTLC builders | In `@fabric/core` | Hub re-exports `inventoryHtlc` / `documentSealedExchange` (`buildDocumentOfferEscrow` on `inventoryHtlc`) |
 
 ## CLI flows
 
@@ -91,6 +115,7 @@ Terminal notes (contracts as interfaces, Hub registry, shell packs, verbosity): 
 9. After refund locktime, buyer recovers funds with `/refund`; completed opens refuse refund.
 
 ## Simulator
+Action packs live under `tests/simulator/scenarios/packs/` (e.g. `document-market`).
 - `document-swarm` — multi-seller blob plan + reassembly + sybil resistance
 - `document-relay-private` — multi-hop fee skim + unlinkability flag
 
@@ -100,14 +125,10 @@ node tests/simulator/run.js --scenario document-swarm
 ```
 
 ## Shared modules (`@fabric/core/functions`)
-- `inventoryHtlc.js` — P2TR HTLC + claim-preimage extract + refund maturity
-- `documentContentKey.js` — AES-GCM seal
-- `documentOfferEscrow.js` — role-renamed HTLC wrapper
-- `documentOfferBook.js` — ranked offers
-- `documentBlobManifest.js` — split/reassemble
-- `documentRequestRelay.js` — fee + rewrite helpers
-- `documentPurchaseSession.js` — buy session records
-- `documentSealedExchange.js` — sealed sale + `openWithClaimPreimage`
+- `inventoryHtlc.js` — P2TR HTLC + `buildDocumentOfferEscrow` + claim-preimage extract + refund maturity
+- `documentSealedExchange.js` — AES-GCM content key + sealed sale + `openWithClaimPreimage`
+- `documentBlobManifest.js` — split/reassemble + buyer `DocumentBlobTransferBook`
+- `documentMarket.js` — ranked offer book, purchase sessions, private request relay
 - `documentPaymentHash.js` — single `contentHashHex` resolver (sealed / envelope / blob)
 - `walletTransactionWatch.js` — classify/match wallet-associated Bitcoin txs (multi-seed watch set)
 

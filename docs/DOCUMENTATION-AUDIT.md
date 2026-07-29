@@ -48,7 +48,7 @@ Optional: probe external https links (slow, needs network):
 | Coverage vs baseline | [`reports/COVERAGE-BASELINE.md`](../reports/COVERAGE-BASELINE.md), `npm run ci` |
 | TODO / FIXME index | `npm run report:todo` → `reports/TODO.txt` |
 | Placeholder `make:*` steps | `package.json` — `make:service`, `make:app`, `make:lib`, `make:binary`, `make:viewer` still stubbed |
-| Release / operators | [`PRODUCTION-CHECKLIST.md`](PRODUCTION-CHECKLIST.md), [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) |
+| Release / operators | [`PRODUCTION.md`](PRODUCTION.md) |
 | JS implementation plan | [`JS-PLAN.md`](JS-PLAN.md) |
 
 ## Related

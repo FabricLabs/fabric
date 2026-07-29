@@ -228,7 +228,20 @@ describe('L1 document exchange expectations', function () {
       const src = fs.readFileSync(cliPath, 'utf8');
       assert.ok(/on\('DocumentPublish'/.test(src), 'CLI should register DocumentPublish listener');
       assert.ok(/on\('DocumentRequest'/.test(src), 'CLI should register DocumentRequest listener');
-      assert.ok(/_publishDocument\(params\[1\], body, rateSats\)/.test(src), 'CLI publish should pass rateSats');
+      // Publish + rateSats live in cliDocumentExchange (CLI thin-delegates after extract).
+      const exchangeSrc = fs.readFileSync(
+        path.join(__dirname, '../functions/cliDocumentExchange.js'),
+        'utf8'
+      );
+      assert.ok(
+        /_publishDocument\(id, body, rate\)/.test(exchangeSrc),
+        'cliDocumentExchange publish should pass rateSats into Peer._publishDocument'
+      );
+      assert.ok(
+        /syncDocumentToPeer\(.*rateSats/.test(exchangeSrc) ||
+          /syncDocumentToPeer\(id, body, rate\)/.test(exchangeSrc),
+        'cliDocumentExchange should sync local doc with rateSats'
+      );
       // Slash commands are registered via CLI contracts (not inline _registerCommand).
       const contractsSrc = fs.readFileSync(path.join(__dirname, '../functions/cliContracts.js'), 'utf8');
       assert.ok(/approve:\s*'_handleApproveCommand'/.test(contractsSrc), 'CLI contract should register approve');
@@ -236,7 +249,8 @@ describe('L1 document exchange expectations', function () {
       assert.ok(/buy:\s*'_handleBuyCommand'/.test(contractsSrc), 'CLI contract should register buy');
       assert.ok(/confirm:\s*'_handleConfirmCommand'/.test(contractsSrc), 'CLI contract should register confirm');
       assert.ok(/offers:\s*'_handleOffersCommand'/.test(contractsSrc), 'CLI contract should register offers');
-      assert.ok(/contentHashHexFromObject/.test(src), 'CLI buy path should normalize contentHashHex aliases');
+      assert.ok(/contentHashHexFromObject/.test(src) || /contentHashHexFromObject/.test(exchangeSrc),
+        'CLI buy path should normalize contentHashHex aliases');
 
       const peerPath = path.join(__dirname, '../types/peer.js');
       const peerSrc = fs.readFileSync(peerPath, 'utf8');

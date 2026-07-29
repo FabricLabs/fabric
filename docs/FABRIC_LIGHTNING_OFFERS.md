@@ -6,7 +6,7 @@ In **`@fabric/core`**, **Fabric commerce and resource discovery are modeled as m
 
 | Concept | Where | Meaning |
 |---------|--------|---------|
-| **Fabric market** | `Resource`, `Peer`, document flows | A **published** listing: committed terms to deliver data (often priced in sats). Inventory advertises BTC-backed items with **`offerBtc`** on `INVENTORY_REQUEST` / `INVENTORY_RESPONSE` (wire field name; semantically part of the **market** surface). See [L1_DOCUMENT_EXCHANGE.md](L1_DOCUMENT_EXCHANGE.md). |
+| **Fabric market** | `Resource`, `Peer`, document flows | A **published** listing: committed terms to deliver data (often priced in sats). Inventory advertises BTC-backed items with **`offerBtc`** on `INVENTORY_REQUEST` / `INVENTORY_RESPONSE`. Document-offer **naming** (vs Hub / HTTP 402) is in [L1_DOCUMENT_EXCHANGE.md](L1_DOCUMENT_EXCHANGE.md). |
 | **Lightning BOLT12 offer** | `lightningd`, [BOLT #12](https://github.com/lightning/bolts/blob/master/12-offer-encoding.md) | Spec term: a reusable **payment** string (`lno1…`) from Core Lightning’s **`offer`** RPC → **`fetchinvoice`** → bolt11 **`pay`**. |
 | **Fabric-routed payment (bech32m)** | `functions/fabricPaymentBech32.js` | Human-readable **`fa1…`** handles for Hub / mesh settlement (not Lightning wire). See [FABRIC_PAYMENT_BECH32.md](FABRIC_PAYMENT_BECH32.md). |
 

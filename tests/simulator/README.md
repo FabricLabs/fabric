@@ -39,7 +39,7 @@ Writes `reports/simulator-latest.json` on CLI runs (unless `--no-report`).
 | `document-relay-private` | line | 3 / 12 | document-market (private hop rewrite + fee skim) |
 | `beacon-registry` | star | 5 / 80 | **requires `FABRIC_E2E_REGTEST=1`** — default **1000** L1 seals (`FABRIC_SIM_BEACON_EPOCHS`); mixed-size doc exchanges + connectivity phases between seals; audit report |
 
-## Use-case packs
+## Action packs (`scenarios/packs/`)
 
 | Pack | Actions (weighted) |
 |------|--------------------|
@@ -55,13 +55,13 @@ Writes `reports/simulator-latest.json` on CLI runs (unless `--no-report`).
 | `chaos` | disconnect, reconnect, chaos.raw |
 | `protocol` | balanced mix for end-to-end flow |
 
-## Composing use-cases
+## Composing packs
 
-Packs live under `usecases/` and export `{ name, weights, setup? }`. Scenarios
+Packs live under `scenarios/packs/` and export `{ name, weights, setup? }`. Scenarios
 pull them in via `composeUseCases([...])`:
 
 ```js
-const { composeUseCases } = require('./usecases');
+const { composeUseCases } = require('./scenarios/packs');
 const packs = composeUseCases(['chat', 'contracts', 'state']);
 
 module.exports = {

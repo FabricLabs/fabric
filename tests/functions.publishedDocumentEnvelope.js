@@ -8,18 +8,9 @@ const {
   isDocumentInventoryRequestType,
   isDocumentInventoryResponseType,
   normalizeFabricDocumentOfferEnvelopeForHandlers
-} = require('../functions/fabricDocumentOfferEnvelope');
-const published = require('../functions/publishedDocumentEnvelope');
+} = require('../functions/publishedDocumentEnvelope');
 
-describe('@fabric/core document-offer envelope', function () {
-  it('shim re-exports publishedDocumentEnvelope predicates and aliases', function () {
-    assert.strictEqual(
-      isDocumentInventoryRequestType,
-      published.isDocumentInventoryRequestType
-    );
-    assert.strictEqual(FABRIC_DOCUMENT_OFFER, published.FABRIC_DOCUMENT_OFFER);
-  });
-
+describe('@fabric/core publishedDocumentEnvelope (document-offer aliases)', function () {
   it('accepts legacy and Fabric document-offer request types', function () {
     assert.strictEqual(isDocumentInventoryRequestType('INVENTORY_REQUEST'), true);
     assert.strictEqual(isDocumentInventoryRequestType(FABRIC_DOCUMENT_OFFER), true);

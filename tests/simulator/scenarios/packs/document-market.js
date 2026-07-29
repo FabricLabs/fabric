@@ -3,7 +3,7 @@
 /**
  * Document market pack: multi-seller catalog + private relay settings.
  * `document-swarm` assert covers verified blob reassembly + payment-hash binding;
- * ranking / fee math also covered in `tests/functions.documentOfferBook.js`.
+ * ranking / fee math also covered in `tests/functions.documentOfferBook.js (documentMarket)`.
  */
 module.exports = {
   name: 'document-market',

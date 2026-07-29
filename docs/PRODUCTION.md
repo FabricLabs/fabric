@@ -21,6 +21,24 @@
 - **Mnemonic / xprv** — Only on operator-controlled machines; backup offline.
 - **P2P exposure** — Bind `FABRIC_PORT` / listen interfaces deliberately; use firewall rules in datacenter deploys.
 
+## Release checklist
+Use before tagging an RC or release:
+
+- [ ] Clean tree on the agreed branch.
+- [ ] `npm ci` on **Node 24.15.x**.
+- [ ] **`npm run ci`** (full test suite).
+- [ ] Confirm **native** modules build on a fresh Linux image if you ship to production servers.
+- [ ] Update **CHANGELOG.md** with version, date, breaking vs additive notes.
+- [ ] Bump **version** in `package.json` (tag must match).
+- [ ] **Downstream:** bump **`@fabric/core`** in [fabric-http](https://github.com/FabricLabs/fabric-http) and [hub.fabric.pub](https://github.com/FabricLabs/hub.fabric.pub); run their `npm run ci`.
+- [ ] Tag and push; publish **npm** `@fabric/core` when ready (or document Git install ref).
+
+Optional before tag: `npm run report:quality`, `npm run make:dev && npm run check:book-links`, `npm run report:coverage-baseline`.
+
+Historical consolidation checklist notes (exports, lint gates, audit triage) live in
+git history under the former `PRODUCTION-CHECKLIST.md` / `RELEASE_CHECKLIST.md`
+paths; this file is the operator source of truth.
+
 ## References
 | Doc | Purpose |
 |-----|---------|

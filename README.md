@@ -85,7 +85,7 @@ npm run build:c
 For global CLI install: `npm install -g` (after `npm ci` / `npm install` in the repo).
 
 ### Production
-Before tagging or publishing, use [`docs/PRODUCTION-CHECKLIST.md`](docs/PRODUCTION-CHECKLIST.md) (tests, lint gates, audit reports, optional `make:dev` + `check:book-links`). CI on push/PR runs smoke, lint, **tests with coverage** (after `bitcoind` is available), then installs Lightning for downstream tooling.
+Before tagging or publishing, use [`docs/PRODUCTION.md`](docs/PRODUCTION.md) (pre-flight + release checklist). CI on push/PR runs smoke, lint, **tests with coverage** (after `bitcoind` is available), then installs Lightning for downstream tooling.
 
 ## Available Commands
 - The **`fabric`** binary is the Node harness for the default Blessed TUI (`chat`); optional `fabric.node` accelerates a tiny crypto surface — see [docs/CLI-BINARY.md](docs/CLI-BINARY.md).

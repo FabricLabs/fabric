@@ -93,16 +93,16 @@ Informational. Existing free file drops remain valid as auto-fulfill + `rate_sat
 
 ## Multi-peer blobs and ranking
 
-Buyers assemble an **offer book** from many inventory responses and rank by price, latency, peer score, and completeness (`documentOfferBook`). Every file is advertised as a `DocumentBlobIndex` (Fabric `Tree` merkle over blob leaves): one wire-sized blob when small, many when large. Each blob may be paid to a different peer and reassembled after hash checks (`documentBlobManifest`).
+Buyers assemble an **offer book** from many inventory responses and rank by price, latency, peer score, and completeness (`documentMarket`). Every file is advertised as a `DocumentBlobIndex` (Fabric `Tree` merkle over blob leaves): one wire-sized blob when small, many when large. Each blob may be paid to a different peer and reassembled after hash checks (`documentBlobManifest`).
 
 ## Private paid relay
 
-Budgeted `document_request` messages are **rewritten** at each hop (new signature, reduced `maxSats`) so the seller does not see the original buyer. Relayers keep the fee skim (`maxSats_in - maxSats_out`). See `documentRequestRelay` and Peer `relayPrivateDocumentRequests`.
+Budgeted `document_request` messages are **rewritten** at each hop (new signature, reduced `maxSats`) so the seller does not see the original buyer. Relayers keep the fee skim (`maxSats_in - maxSats_out`). See `documentMarket` and Peer `relayPrivateDocumentRequests`.
 
 ## Reference implementation
 
 - Peer APIs + private relay — `@fabric/core` `types/peer.js`.
-- Shared settle — `functions/inventoryHtlc.js`, `documentContentKey.js`, offer book / blobs / relay helpers.
+- Shared settle — `functions/inventoryHtlc.js`, `documentSealedExchange.js`, `documentMarket.js`, `documentBlobManifest.js`.
 - Interactive CLI: `/import`, `/publish`, `/inventory`, `/offers`, `/buy`, `/confirm`, `/request`, `/pending`, `/approve`, `/relayfees` — `types/cli.js`.
 - Hub RPCs remain orchestration; crypto modules re-export from `@fabric/core`.
 - Simulator: `document-swarm`, `document-relay-private`.

@@ -1,6 +1,6 @@
 'use strict';
 
-const { composeUseCases } = require('../usecases');
+const { composeUseCases } = require('./packs');
 
 /**
  * General protocol flow: star mesh exercising session, chat, contracts,
@@ -26,5 +26,5 @@ module.exports = {
   weightMaps: packs.weightMaps,
   setup: packs.setup,
   // Prefer the balanced protocol pack when merging (overrides thin packs)
-  weights: require('../usecases/protocol').weights
+  weights: require('./packs/protocol').weights
 };

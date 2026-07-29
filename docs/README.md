@@ -34,4 +34,4 @@ One-off reports and analysis files in the repo root are listed in **[NON_CANONIC
 
 ## Downstream
 
-**hub.fabric.pub** (rendezvous hub, HTTP bridge) and **@fabric/http** are separate repos; align versions per **[docs/RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)** and **[../DEVELOPERS.md](../DEVELOPERS.md)**.
+**hub.fabric.pub** (rendezvous hub, HTTP bridge) and **@fabric/http** are separate repos; align versions per **[docs/PRODUCTION.md](PRODUCTION.md)** and **[../DEVELOPERS.md](../DEVELOPERS.md)**.

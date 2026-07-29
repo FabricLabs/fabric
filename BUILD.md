@@ -47,4 +47,4 @@ Wire-format and body-hash alignment between C and JS are summarized in [`docs/C-
 
 ## Release hygiene
 
-See [`docs/PRODUCTION-CHECKLIST.md`](docs/PRODUCTION-CHECKLIST.md).
+See [`docs/PRODUCTION.md`](docs/PRODUCTION.md).

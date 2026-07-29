@@ -32,13 +32,13 @@ Every document is advertised as a **`DocumentBlobIndex`** (Tree merkle over blob
 - Large files → many wire-sized blobs (default chunk ≤ AMP `MAX_MESSAGE_SIZE` budget)
 - `blobHashHex` = `SHA256(blob bytes)` (ciphertext bytes when sealed)
 - `merkleRootHex` = Fabric [`Tree`](../types/tree.js) root over those leaf hashes
-- **Priced / sealed:** inventory `contentHash` = `SHA256(K)` via [`documentContentKey`](../functions/documentContentKey.js) / [`documentSealedExchange`](../functions/documentSealedExchange.js); seller reveals `K` only after payment-hash match (Fabric) **or** by claiming the HTLC on-chain (buyer `/claimwatch` extracts `K` from the claim witness)
+- **Priced / sealed:** inventory `contentHash` = `SHA256(K)` via [`documentSealedExchange`](../functions/documentSealedExchange.js); seller reveals `K` only after payment-hash match (Fabric) **or** by claiming the HTLC on-chain (buyer `/claimwatch` extracts `K` from the claim witness)
 - **Unsealed per-blob:** `blobPaymentHashHex` tagged hash — see [`documentBlobManifest.js`](../functions/documentBlobManifest.js)
 - **Refund:** after `refundLocktimeHeight`, buyer `/refund` spends the CLTV leaf if the sale never completed
 
 When the full leaf list will not fit one AMP body, the index is compacted (`leavesInline: false`) and carries only the Tree root; leaves are recovered from verified blob frames.
 
-Hop budgets for private relay nest with monotone `maxSats` ([`documentRequestRelay.js`](../functions/documentRequestRelay.js)).
+Hop budgets for private relay nest with monotone `maxSats` ([`documentMarket.js`](../functions/documentMarket.js)).
 
 ## API (`@fabric/core/functions/*`)
 | Export | Purpose |
@@ -46,9 +46,9 @@ Hop budgets for private relay nest with monotone `maxSats` ([`documentRequestRel
 | `documentPaymentHash` | **`resolveDocumentContentHashHex`**, alias normalize, re-exports |
 | `publishedDocumentEnvelope` | Unsigned envelope + legacy `purchaseContentHashHex` |
 | `inventoryHtlc` | P2TR build / fund hints / claim+refund PSBTs / `extractPreimageFromClaimTx` / `refundLocktimeMature` |
-| `documentContentKey` | AES-GCM seal; `paymentHashHexFromKey` |
-| `documentOfferEscrow` | Role-renamed HTLC wrapper |
-| `documentPurchaseSession` | Buy session records |
+| `documentSealedExchange` | AES-GCM seal; `paymentHashHexFromKey`; sealed sale helpers |
+| `inventoryHtlc.buildDocumentOfferEscrow` | Role-renamed HTLC wrapper (deliverer/initiator) |
+| `documentMarket` | Offer book, purchase sessions, private request relay |
 | `walletTransactionWatch` | Block/mempool classification against multi-seed wallet watch set |
 | `Wallet.loadSeed` / `watchHtlc` / `ingestBitcoinBlock` | Key collection + on-chain watch |
 

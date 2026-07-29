@@ -16,7 +16,7 @@ const {
 } = require('./lib/actions');
 const { runScenario, writeReport, DEFAULT_REPORT } = require('./lib/runner');
 const { getScenario, listScenarios, SCENARIOS } = require('./scenarios');
-const { composeUseCases, ALL: USE_CASES } = require('./usecases');
+const { composeUseCases, ALL: USE_CASES } = require('./scenarios/packs');
 
 module.exports = {
   createRng,

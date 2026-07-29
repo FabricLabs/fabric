@@ -1,6 +1,6 @@
 'use strict';
 
-const { composeUseCases } = require('../usecases');
+const { composeUseCases } = require('./packs');
 
 const packs = composeUseCases(['chat', 'gossip']);
 

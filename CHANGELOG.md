@@ -21,8 +21,11 @@ CLI first-run setup, L1 document settle in core, ranked offers, multi-blob excha
 - **Document exchange** — `/publish` + rate; `/inventory [peer] [btc]`; `/offers`; `/buy` / `/confirm`; `/request` with `maxSats`; `/pending` / `/approve` / `/deny`; `/relayfees`; `/send <doc> <peer>`.
 
 **Peer / functions**
-- Upstream Hub P2TR HTLC + content-key: `functions/inventoryHtlc.js`, `documentContentKey.js`, `documentOfferEscrow.js` (sign via `types/ecc`, no `ecpair`).
-- `documentOfferBook`, `documentBlobManifest`, `documentRequestRelay`, `documentPurchaseSession`.
+- Upstream Hub P2TR HTLC + content-key: `functions/inventoryHtlc.js` (includes `buildDocumentOfferEscrow`), `documentSealedExchange.js` (sign via `types/ecc`, no `ecpair`).
+- Removed shim modules `fabricDocumentOfferEnvelope`, `documentOfferEscrow`, and `documentExchange` (use `publishedDocumentEnvelope`, `inventoryHtlc`, and `cliDocumentExchange`).
+- Consolidated document helpers: content-key → `documentSealedExchange`; blob transfer → `documentBlobManifest`; offer book + purchase sessions + request relay → `documentMarket`.
+- Docs: document-offer naming folded into `L1_DOCUMENT_EXCHANGE.md`; release checklists into `PRODUCTION.md`.
+- Simulator: action packs moved from `usecases/` to `scenarios/packs/`.
 - `attachInventoryHtlc`, blob inventory rows, private `DOCUMENT_REQUEST` rewrite with fee skim.
 
 **Hub**

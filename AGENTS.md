@@ -160,7 +160,7 @@ class Distributor extends Service {
 npm run ci    # NODE_ENV=test mocha --recursive tests
 ```
 
-Operator and marketing context: [docs/PRODUCTION.md](docs/PRODUCTION.md), [docs/MARKETING_OVERVIEW.md](docs/MARKETING_OVERVIEW.md), [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md).
+Operator and marketing context: [docs/PRODUCTION.md](docs/PRODUCTION.md), [docs/MARKETING_OVERVIEW.md](docs/MARKETING_OVERVIEW.md).
 
 ## Authoring Checklist
 Before merging a new Fabric agent:

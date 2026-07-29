@@ -9,13 +9,13 @@ const {
   parseFileSendObject,
   DocumentBlobTransferBook,
   settlementDedupeKey
-} = require('../functions/documentBlobTransfer');
-const { DocumentOfferBook } = require('../functions/documentOfferBook');
+} = require('../functions/documentBlobManifest');
+const { DocumentOfferBook } = require('../functions/documentMarket');
 const {
   createDocumentPurchaseSession,
   isDuplicateSettlement,
   rememberSettlement
-} = require('../functions/documentPurchaseSession');
+} = require('../functions/documentMarket');
 
 describe('functions/documentBlobTransfer', function () {
   it('rejects tampered blob bytes', function () {

@@ -60,16 +60,14 @@ const {
 const inventoryHtlc = require('../functions/inventoryHtlc');
 const {
   buildForwardedDocumentRequest
-} = require('../functions/documentRequestRelay');
+} = require('../functions/documentMarket');
 const {
   DEFAULT_CHUNK_BYTES,
   advertiseDocumentBlobs,
-  splitBlobs
-} = require('../functions/documentBlobManifest');
-const {
+  splitBlobs,
   DocumentBlobTransferBook,
   parseFileSendObject
-} = require('../functions/documentBlobTransfer');
+} = require('../functions/documentBlobManifest');
 const {
   KEY_REVEAL_TYPE,
   prepareSealedSale,

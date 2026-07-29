@@ -19,4 +19,4 @@ This tracks **JS-only** work for `@fabric/core` after wire/Message parity and pr
 - Browser / ESM story for `types/fabric.mjs` vs `fabricNativeAccel` (Node-only today).
 - Formal `types/*.d.ts` beyond minimal `fabric.d.ts`.
 
-Update this file when slices land; release checklist remains in [`PRODUCTION-CHECKLIST.md`](./PRODUCTION-CHECKLIST.md).
+Update this file when slices land; release checklist remains in [`PRODUCTION.md`](./PRODUCTION.md).

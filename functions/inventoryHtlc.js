@@ -118,9 +118,10 @@ function buildInventoryHtlcP2tr (opts = {}) {
 
   return {
     address: pay.address,
-    output: pay.output,
-    claimScript,
-    refundScript,
+    // bitcoinjs may yield Uint8Array; Hub/tests and Transaction.addOutput expect Buffer.
+    output: asBuffer(pay.output),
+    claimScript: asBuffer(claimScript),
+    refundScript: asBuffer(refundScript),
     paymentHashHex: paymentHash32.toString('hex')
   };
 }
@@ -465,9 +466,57 @@ function refundLocktimeMature (tipHeight, refundLocktimeHeight) {
   return tip >= lock;
 }
 
+function normalizeHex (label, hex, byteLen) {
+  const h = String(hex || '').trim().replace(/^0x/i, '');
+  if (!/^[0-9a-f]*$/i.test(h) || h.length !== byteLen * 2) {
+    throw new Error(`${label} must be ${byteLen * 2} hex characters.`);
+  }
+  return h.toLowerCase();
+}
+
+/**
+ * Document-offer L1 escrow: same Taproot HTLC as inventory, with roles renamed.
+ * Deliverer claims with preimage + Schnorr (seller leaf); initiator refunds after CLTV (buyer leaf).
+ *
+ * @param {object} opts
+ * @param {string} opts.networkName - e.g. regtest, mainnet
+ * @param {string} opts.delivererPubkeyHex - 33-byte compressed (claim path)
+ * @param {string} opts.initiatorRefundPubkeyHex - 33-byte compressed (refund path)
+ * @param {string} opts.paymentHashHex - SHA256(preimage), 32 bytes hex
+ * @param {number} opts.refundLockHeight - block height for CLTV refund leg
+ * @param {number} [opts.amountSats]
+ * @param {string} [opts.label]
+ */
+function buildDocumentOfferEscrow (opts = {}) {
+  const paymentHashHex = normalizeHex('paymentHashHex', opts.paymentHashHex, 32);
+  const delivererHex = normalizeHex('pubkeyHex', opts.delivererPubkeyHex, 33);
+  const initiatorHex = normalizeHex('pubkeyHex', opts.initiatorRefundPubkeyHex, 33);
+  const built = buildInventoryHtlcP2tr({
+    networkName: opts.networkName || 'regtest',
+    sellerPubkeyCompressed: Buffer.from(delivererHex, 'hex'),
+    buyerRefundPubkeyCompressed: Buffer.from(initiatorHex, 'hex'),
+    paymentHash32: Buffer.from(paymentHashHex, 'hex'),
+    refundLocktimeHeight: Number(opts.refundLockHeight)
+  });
+  const hints = buildHtlcFundingHints({
+    paymentAddress: built.address,
+    amountSats: Math.round(Number(opts.amountSats || 0)),
+    label: String(opts.label || 'document-offer').slice(0, 120)
+  });
+  return {
+    paymentAddress: built.address,
+    claimScriptHex: built.claimScript.toString('hex'),
+    refundScriptHex: built.refundScript.toString('hex'),
+    paymentHashHex: built.paymentHashHex,
+    amountBtc: hints.amountBtc,
+    bitcoinUri: hints.bitcoinUri
+  };
+}
+
 module.exports = {
   buildInventoryHtlcP2tr,
   buildHtlcFundingHints,
+  buildDocumentOfferEscrow,
   randomPreimage32,
   hash256,
   networkForFabricName,

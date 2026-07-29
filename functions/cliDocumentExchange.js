@@ -11,20 +11,19 @@
  *
  * @module functions/cliDocumentExchange
  * @see docs/L1_DOCUMENT_EXCHANGE.md
- * @see docs/FABRIC_DOCUMENT_OFFER.md
  */
 
 const fs = require('fs');
 const path = require('path');
 const Actor = require('../types/actor');
-const { DocumentOfferBook } = require('./documentOfferBook');
 const {
+  DocumentOfferBook,
   createDocumentPurchaseSession,
   findSession,
   isDuplicateSettlement,
   rememberSettlement,
   listRefundCandidates
-} = require('./documentPurchaseSession');
+} = require('./documentMarket');
 const inventoryHtlc = require('./inventoryHtlc');
 const { contentHashHexFromObject } = require('./documentPaymentHash');
 const {
@@ -33,8 +32,35 @@ const {
   prepareInventoryHtlcBuyerRefundPsbt,
   signAndExtractInventoryHtlcBuyerRefund
 } = inventoryHtlc;
+const { findCliContract } = require('./cliContracts');
 
 const IMPORT_PATH_MAX_LEN = 4096;
+
+/** Shell packs that implement document exchange in the Fabric CLI. */
+const DOCUMENT_EXCHANGE_CLI_PACKS = Object.freeze(['documents', 'documents-market']);
+
+/**
+ * @returns {Array<object>} Catalog descriptors for document-exchange shell packs.
+ */
+function listDocumentExchangeCliContracts () {
+  return DOCUMENT_EXCHANGE_CLI_PACKS
+    .map((id) => findCliContract(id))
+    .filter(Boolean);
+}
+
+/**
+ * Slash-command names owned by document-exchange shell packs.
+ * @returns {string[]}
+ */
+function listDocumentExchangeCommands () {
+  const out = [];
+  for (const pack of listDocumentExchangeCliContracts()) {
+    for (const cmd of Object.keys(pack.commands || {})) {
+      out.push(cmd);
+    }
+  }
+  return out;
+}
 
 /**
  * Resolve an operator-supplied import path. Absolute paths are normalized as-is;
@@ -906,5 +932,8 @@ module.exports = {
   findSession,
   isDuplicateSettlement,
   rememberSettlement,
-  listRefundCandidates
+  listRefundCandidates,
+  DOCUMENT_EXCHANGE_CLI_PACKS,
+  listDocumentExchangeCliContracts,
+  listDocumentExchangeCommands
 };
