@@ -59,7 +59,8 @@ Use this repo as a **library** or run the **`fabric`** CLI in environments you c
 | Step | Where |
 |------|--------|
 | Node **24.15.0** (see `.nvmrc`), `npm ci`, **`npm run ci`** | [`docs/PRODUCTION.md`](docs/PRODUCTION.md) |
-| Completion / privacy / security matrix | [`docs/PRODUCTION.md`](docs/PRODUCTION.md), [`PRIVACY.md`](PRIVACY.md), [`SECURITY.md`](SECURITY.md) |
+| Public leaf API + scoped RC claim | [`PUBLIC_API.md`](PUBLIC_API.md) |
+| Completion / privacy / security matrix | [`docs/PRODUCTION.md`](docs/PRODUCTION.md), [`PRIVACY.md`](PRIVACY.md), [`SECURITY.md`](SECURITY.md), [`AUDIT.md`](AUDIT.md) |
 | Version tag, changelog, Hub & fabric-http bumps | [`docs/PRODUCTION.md`](docs/PRODUCTION.md) (§ Release checklist) |
 | Operator privacy model | [`PRIVACY.md`](PRIVACY.md) |
 | Vulnerability process | [`SECURITY.md`](SECURITY.md) |
@@ -67,7 +68,7 @@ Use this repo as a **library** or run the **`fabric`** CLI in environments you c
 **Build scripts:** `npm run build` runs `make:all`, which still has **placeholder** `make:service` / `make:app` / `make:lib` steps. The **release gate for quality is `npm run ci`** (full Mocha suite), not a successful `npm run build`. Track operator and bundle readiness in [`docs/PRODUCTION.md`](docs/PRODUCTION.md).
 
 ## Core Types (reference)
-These live under `types/*.js` (CommonJS). The **`Fabric`** facade (`types/fabric.js`) re-exports many of them for quick experiments; production code usually imports a **leaf** type.
+These live under `types/*.js` (CommonJS). The **`Fabric`** facade (`types/fabric.js`) re-exports many of them for quick experiments; production code **must** import a **leaf** type from the frozen map in **[PUBLIC_API.md](PUBLIC_API.md)**.
 
 **Beacon** (`types/beacon`): L1-tied epoch chain sealing `sidechain` / `contracts` digests (Hub re-exports as `contracts/beacon.js`).
 

@@ -1,5 +1,7 @@
 # Production — `@fabric/core`
-`@fabric/core` is the **reference Fabric client**: P2P `Peer`, `Message`, `Key` / identity, collections, Bitcoin and Lightning services, and the types that **hub.fabric.pub** and **`@fabric/http`** build on.
+`@fabric/core` is the **0.1 RC reference Fabric client**: P2P `Peer`, `Message`, `Key` / identity, Bitcoin document-exchange helpers, local `Program` / `Machine`, plus services that **hub.fabric.pub** and **`@fabric/http`** build on.
+
+**Scoped claim:** see [PUBLIC_API.md](../PUBLIC_API.md). Do not market as a production-hardened sandboxed contract VM.
 
 ## Pre-flight
 | Step | Command |
@@ -43,6 +45,8 @@ paths; this file is the operator source of truth.
 | Doc | Purpose |
 |-----|---------|
 | [README.md](../README.md) | CLI, quick start, API overview |
+| [PUBLIC_API.md](../PUBLIC_API.md) | Frozen leaf imports + release claim |
 | [DEVELOPERS.md](../DEVELOPERS.md) | Contributors: layout, tests, core types |
 | [PRIVACY.md](../PRIVACY.md) | Operator-facing privacy model |
+| [AUDIT.md](../AUDIT.md) | Known gaps and pre-tag recommendations |
 | [AGENTS.md](../AGENTS.md) | Agent service contract |

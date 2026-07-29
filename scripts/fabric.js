@@ -29,8 +29,8 @@ const {
   BITCOIN_GENESIS
 } = require('../constants');
 
-// Settings (load for env-backed defaults used by Environment / CLI)
-require('../settings/local');
+// Settings (operator local.js when present; else packaged local.example.js)
+require('../functions/loadLocalSettings').loadLocalSettings();
 
 // Paths
 const path = process.env.HOME + '/.fabric';

@@ -15,10 +15,12 @@ Relay uses the same class of controls as gossip, with separate state: logical de
 ## Operator-facing docs
 | Doc | Use |
 |-----|-----|
+| [PUBLIC_API.md](PUBLIC_API.md) | Frozen leaf imports + what 0.1 does / does not claim |
 | [DEVELOPERS.md](DEVELOPERS.md) | Contributor workflow, core types, tests |
 | [PRIVACY.md](PRIVACY.md) | What is / is not hidden from peers and observers |
 | [AUDIT.md](AUDIT.md) | Known issues and recommendations |
 | [docs/PRODUCTION.md](docs/PRODUCTION.md) | Node version, native addons, downstream alignment |
+| [docs/MESSAGE_BODY.md](docs/MESSAGE_BODY.md) | Canonical wire header (via [PROTOCOL.md](PROTOCOL.md)) |
 
 ## Process
 1. Before large changes, run **`npm run ci`** (full test suite).

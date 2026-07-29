@@ -409,7 +409,7 @@ Implementations SHOULD:
 
 ### Related Documents
 
-- `PROTOCOL.md`: Core protocol specification
+- `PROTOCOL.md` → `docs/MESSAGE_BODY.md`: Canonical wire specification
 - `MESSAGING_PROTOCOL_COMPLETION.md`: Implementation details
 - `FABRIC_MESSAGE_TYPE_CONSOLIDATION.md`: Type system design
 - `FABRIC_MESSAGE_RELAY_BEHAVIOR.md`: Relay behavior analysis

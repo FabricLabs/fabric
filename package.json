@@ -1,7 +1,7 @@
 {
   "name": "@fabric/core",
   "version": "0.1.0-RC1",
-  "description": "Fabric reference client — P2P messaging, identity, Bitcoin/Lightning services (v0.1.0-RC).",
+  "description": "Fabric 0.1 RC reference client — NOISE P2P with bounded gossip, Bitcoin document-exchange helpers, local Program/Machine (experimental; not a sandboxed dapp VM).",
   "main": "types/fabric.js",
   "module": "types/fabric.mjs",
   "types": "types/fabric.d.ts",
@@ -13,6 +13,45 @@
     "example": "examples",
     "test": "tests"
   },
+  "files": [
+    "types/**/*.js",
+    "types/**/*.mjs",
+    "types/**/*.d.ts",
+    "functions/**/*.js",
+    "functions/**/*.d.ts",
+    "services/**/*.js",
+    "contracts/**/*.js",
+    "settings/**/*.json",
+    "settings/deprecations.js",
+    "settings/local.example.js",
+    "scripts/fabric.js",
+    "scripts/cli.js",
+    "scripts/keygen.js",
+    "scripts/install-native.js",
+    "constants.js",
+    "fixtures.js",
+    "fixtures/**",
+    "schemata/**",
+    "binding.gyp",
+    "src/**",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "SECURITY.md",
+    "PRIVACY.md",
+    "AUDIT.md",
+    "PUBLIC_API.md",
+    "PROTOCOL.md",
+    "DEVELOPERS.md",
+    "AGENTS.md",
+    "VISION.md",
+    "QUICKSTART.md",
+    "BUILD.md",
+    "MESSAGES.md",
+    "POLICY.md",
+    "IDENTITY.md",
+    "docs/**/*.md"
+  ],
   "engines": {
     "node": "24.15.0"
   },
@@ -24,7 +63,7 @@
     "build": "npm run make:all",
     "chat": "node scripts/fabric.js shell",
     "ci": "npm run smoke && npm run lint:types && npm run lint:pkg && npm test && npm run test:benchmark",
-    "smoke": "node -e \"require('./types/fabric'); require('./functions/beaconFederationSigning'); require('./functions/fabricProgramManifest'); require('./types/program'); require('./types/machine'); require('./functions/sidechainState'); require('./functions/documentRegistrySidechain'); require('./types/beacon'); require('./types/chain'); require('./types/message'); require('./functions/messageBodyCodec'); require('./types/peer'); require('./types/hash256'); require('./functions/bytes'); require('./functions/fabricCanonicalJson'); require('./functions/wireJson'); require('./functions/fabricNativeAccel'); require('./functions/lightningBolt12'); require('./functions/bolt12Semantics'); require('./functions/fabricPaymentBech32'); require('./functions/publishedDocumentEnvelope'); require('./functions/applicationNamespaces'); require('./functions/contractStatechains'); require('./functions/contractSidechainLocal'); console.log('smoke ok');\"",
+    "smoke": "node -e \"require('./types/fabric'); require('./functions/beaconFederationSigning'); require('./functions/fabricProgramManifest'); require('./types/program'); require('./types/machine'); require('./functions/sidechainState'); require('./functions/documentRegistrySidechain'); require('./types/beacon'); require('./types/chain'); require('./types/message'); require('./functions/messageBodyCodec'); require('./types/peer'); require('./types/hash256'); require('./functions/bytes'); require('./functions/fabricCanonicalJson'); require('./functions/wireJson'); require('./functions/fabricNativeAccel'); require('./functions/lightningBolt12'); require('./functions/bolt12Semantics'); require('./functions/fabricPaymentBech32'); require('./functions/publishedDocumentEnvelope'); require('./functions/applicationNamespaces'); require('./functions/contractStatechains'); require('./functions/contractSidechainLocal'); require('./functions/cliDocumentExchange'); require('./functions/inventoryHtlc'); require('./functions/loadLocalSettings').loadLocalSettings(); console.log('smoke ok');\"",
     "lint:pkg": "eslint scripts/fabric.js scripts/cli.js scripts/gen-quality-reports.js scripts/check-book-links.js scripts/coverage-baseline.js scripts/clean-jsdoc-html.js scripts/classtree.js scripts/report-noble-hashes.js scripts/fix-noble-hashes-compat.js scripts/install-native.js scripts/benchmark.js functions/bytes.js functions/fabricCanonicalJson.js functions/wireJson.js functions/fabricNativeAccel.js functions/base58.js functions/bech32.js functions/bolt12Semantics.js functions/fabricPaymentBech32.js functions/publishedDocumentEnvelope.js functions/lightningBolt12.js functions/sipa/bech32.js functions/sipa/segwit_addr.js functions/bip39.js functions/bip32.js",
     "exchange": "node scripts/fabric.js exchange",
     "fabric:start": "node scripts/fabric.js start",
@@ -210,6 +249,7 @@
   },
   "exports": {
     ".": {
+      "types": "./types/fabric.d.ts",
       "require": "./types/fabric.js",
       "import": "./types/fabric.mjs"
     },
@@ -220,12 +260,14 @@
       "require": "./fixtures.js"
     },
     "./types/*": {
+      "types": "./types/*.d.ts",
       "require": "./types/*.js"
     },
     "./services/*": {
       "require": "./services/*.js"
     },
     "./functions/*": {
+      "types": "./functions/*.d.ts",
       "require": "./functions/*.js"
     }
   }

@@ -2,7 +2,7 @@
 Recent changes to Fabric Core.
 
 ## 2026-07-29
-JS-canonical protocol for 0.1.0; Lightning-style wire preimage; unsigned document binding.
+JS-canonical protocol for 0.1.0; Lightning-style wire preimage; unsigned document binding; public-readiness cuts.
 
 **Install / C**
 - **npm install skips `fabric.node`** by default (`scripts/install-native.js`). Opt in with `FABRIC_BUILD_NATIVE=1` or `npm run build:c`. C sources remain in-tree; JS Message/Peer is the protocol oracle ([`docs/C-JS-PARITY.md`](docs/C-JS-PARITY.md)).
@@ -12,6 +12,11 @@ JS-canonical protocol for 0.1.0; Lightning-style wire preimage; unsigned documen
 
 **Document exchange**
 - Payment binding hashes **unsigned** `documentPublishEnvelopeBuffer` only; `assertUnsignedDocumentPublishEnvelope` rejects signed gossip frames. Whitelist drops `created`/`edited` to stop Hub/Peer hash drift.
+
+**Public readiness**
+- **[PUBLIC_API.md](PUBLIC_API.md)** — frozen 0.1 leaf import map + scoped RC claim (Peer + document helpers + local Program/Machine; not a sandboxed dapp VM).
+- **[PROTOCOL.md](PROTOCOL.md)** redirects to **[docs/MESSAGE_BODY.md](docs/MESSAGE_BODY.md)**; restore **[PRIVACY.md](PRIVACY.md)** / **[AUDIT.md](AUDIT.md)**.
+- **`package.json` `files`** whitelist for npm publish; leaf `.d.ts` stubs for canonical imports; `settings/local.example.js` + `loadLocalSettings` fallback when gitignored `local.js` is absent.
 
 ## 2026-07-24
 CLI first-run setup, L1 document settle in core, ranked offers, multi-blob exchange, private paid relay.

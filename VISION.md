@@ -1,5 +1,5 @@
 # Fabric — product vision
-This document is the **north star** for documentation and implementation work in **`@fabric/core`**. Older whitepapers, completion reports, and snippets may add color; when they conflict with **this file**, **DEVELOPERS.md**, **PROTOCOL.md**, and **QUICKSTART.md**, prefer those four plus **README.md**.
+This document is the **north star** for documentation and implementation work in **`@fabric/core`**. Older whitepapers, completion reports, and snippets may add color; when they conflict with **this file**, **DEVELOPERS.md**, **PUBLIC_API.md**, **PROTOCOL.md** (→ `docs/MESSAGE_BODY.md`), and **QUICKSTART.md**, prefer those plus **README.md**.
 
 ## What we are building
 **Fabric** is a **protocol and a reference client** for **peer-to-peer agreements**—applications that coordinate without requiring users to trust the same server. **Bitcoin** is the primary settlement and bonding layer: participants lock value where the protocol requires it, and dispute/exit paths stay on-chain where appropriate.
@@ -26,8 +26,9 @@ See **[GOALS.md](GOALS.md)** for the explicit list. In short:
 
 ## What “done” looks like for 0.1.x
 - **Operators** can run **`fabric`** / a hub with **[docs/PRODUCTION.md](docs/PRODUCTION.md)** expectations.
-- **Developers** can follow **[QUICKSTART.md](QUICKSTART.md)** and **[DEVELOPERS.md](DEVELOPERS.md)** without dead links.
-- **Protocol** behavior for messages and services is described in **[PROTOCOL.md](PROTOCOL.md)** and **[MESSAGES.md](MESSAGES.md)** and stays aligned with **`@fabric/core`** opcodes.
+- **Developers** can follow **[QUICKSTART.md](QUICKSTART.md)**, **[PUBLIC_API.md](PUBLIC_API.md)**, and **[DEVELOPERS.md](DEVELOPERS.md)** without dead links.
+- **Protocol** wire format is **[docs/MESSAGE_BODY.md](docs/MESSAGE_BODY.md)** (entry: **[PROTOCOL.md](PROTOCOL.md)**); semantics in **[MESSAGES.md](MESSAGES.md)** stay aligned with opcodes.
+- **Scoped claim:** Peer + document helpers + local Program/Machine — not a hardened remote sandbox.
 - **Tests**: **`npm run ci`** is the release gate (see **README.md**).
 
 ## Experimental / secondary tracks
@@ -40,12 +41,12 @@ These are **not** the default path for new contributors:
 ## Documentation map
 | Tier | Files |
 |------|--------|
-| **Must read** | **README.md**, **QUICKSTART.md**, **DEVELOPERS.md**, **VISION.md** (this file) |
-| **Protocol & security** | **PROTOCOL.md**, **MESSAGES.md**, **POLICY.md**, **SECURITY.md**, **PRIVACY.md** |
+| **Must read** | **README.md**, **QUICKSTART.md**, **PUBLIC_API.md**, **DEVELOPERS.md**, **VISION.md** (this file) |
+| **Protocol & security** | **PROTOCOL.md** → **docs/MESSAGE_BODY.md**, **MESSAGES.md**, **POLICY.md**, **SECURITY.md**, **PRIVACY.md**, **AUDIT.md** |
 | **Operators** | **docs/PRODUCTION.md** (includes release checklist) |
 | **Contracts & CLI** | **docs/CONTRACTS.md**, **docs/CLI.md**, **docs/L1_DOCUMENT_EXCHANGE.md** |
 | **Guides** | **guides/SERVICES.md**, **guides/ACTORS.md**, **guides/BUILD.md**, **guides/BEST_PRACTICES.md** |
-| **API** | **API.md** (regenerate with `npm run make:api`), HTML under **docs/** after `npm run make:docs` |
+| **API** | **PUBLIC_API.md** (frozen leaves); **API.md** (full JSDoc via `npm run make:api`) |
 | **Changelog** | **CHANGELOG.md** |
 
 ## Implementation priorities (forward motion)

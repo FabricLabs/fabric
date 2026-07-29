@@ -11,17 +11,20 @@
 | [../DEVELOPERS.md](../DEVELOPERS.md) | Contributors | Repo layout, tests, storage, core types |
 | [../AGENTS.md](../AGENTS.md) | Service authors | Agent lifecycle, workers, safety |
 | [PRODUCTION.md](PRODUCTION.md) | Operators | Node version, native deps, release gate |
+| [../PUBLIC_API.md](../PUBLIC_API.md) | Integrators | Frozen 0.1 leaf imports + scoped claim |
 | [../PRIVACY.md](../PRIVACY.md) | Operators | Threat model |
 | [../SECURITY.md](../SECURITY.md) | Reporters | Process, disclosure |
+| [../AUDIT.md](../AUDIT.md) | Operators | Known gaps / pre-tag checklist |
 
 ## Protocol & reference
 
 | Doc | Purpose |
 |-----|---------|
-| [../PROTOCOL.md](../PROTOCOL.md) | Wire format and message types |
+| [../PROTOCOL.md](../PROTOCOL.md) | Wire entry (→ MESSAGE_BODY.md) |
+| [MESSAGE_BODY.md](MESSAGE_BODY.md) | Canonical 208-byte header + body fields |
 | [../MESSAGES.md](../MESSAGES.md) | Message semantics |
 | [../POLICY.md](../POLICY.md) | Relay and policy constants |
-| [../API.md](../API.md) | Markdown API (run `npm run make:api`) |
+| [../API.md](../API.md) | Full JSDoc Markdown (run `npm run make:api`) |
 
 ## Generated output
 
