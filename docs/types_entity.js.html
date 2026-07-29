@@ -35,17 +35,7 @@
 
 const crypto = require('crypto');
 const { EventEmitter } = require('events');
-const monitor = require('fast-json-patch');
-const Witness = require('./witness');
 
-/**
- * @classdesc &lt;strong>Structured document&lt;/strong> type: extends {@link EventEmitter} (not {@link Actor}) with
- * &lt;code>@type&lt;/code> / &lt;code>@data&lt;/code> shape, JSON serialization, and &lt;code>id&lt;/code> = SHA256(&lt;code>toJSON()&lt;/code>).
- * &lt;strong>Different model from {@link Actor#id}&lt;/strong> (sorted generic envelope). &lt;code>Entity.Transition&lt;/code> (JSON Patch
- * between entity states) is the supported migration path — see &lt;strong>DEVELOPERS.md&lt;/strong> (&lt;em>Consolidated prototypes&lt;/em>).
- * @class Entity
- * @extends EventEmitter
- */
 class Entity extends EventEmitter {
   constructor (data = {}) {
     super(data);
@@ -93,7 +83,7 @@ class Entity extends EventEmitter {
     let entity = this;
     return function buffer () {
       return Buffer.from(entity.toJSON(), 'utf8');
-    };
+    }
   }
 
   get id () {
@@ -142,7 +132,7 @@ class Entity extends EventEmitter {
         result = JSON.stringify(this.actor['@data']);
         break;
       case 'Buffer':
-        void new Uint8Array(this.data);
+        const buffer = new Uint8Array(this.data);
         const values = Object.values(this.data);
         result = JSON.stringify(values);
         break;
@@ -216,105 +206,7 @@ class Entity extends EventEmitter {
   }
 }
 
-/**
- * @classdesc JSON Patch &lt;strong>diff&lt;/strong> between two {@link Entity} snapshots (&lt;code>origin&lt;/code>,
- * &lt;code>target&lt;/code>, &lt;code>changes&lt;/code>). Built via {@link Transition.between}, {@link Transition#fromTarget}, or manual
- * &lt;code>changes&lt;/code>; uses &lt;code>fast-json-patch&lt;/code> observe/generate.
- * @memberof Entity
- * @class Transition
- * @extends Entity
- */
-class Transition extends Entity {
-  constructor (settings = {}) {
-    super(settings);
-
-    this.status = 'constructing';
-    this._state = {
-      origin: null,
-      target: null,
-      changes: [],
-      program: [],
-      witness: null
-    };
-
-    this.settings = Object.assign({}, this._state, settings);
-    this.witness = new Witness(this.settings);
-
-    this._setOrigin(this.settings.origin);
-    this._setTarget(this.settings.target);
-
-    this.status = 'constructed';
-  }
-
-  static between (origin, target) {
-    const x = new Entity(origin);
-    const y = new Entity(target);
-
-    const actor = Object.assign({}, origin);
-    const observer = monitor.observe(actor);
-
-    Object.assign(actor, target);
-
-    return new Transition({
-      origin: x.id,
-      target: y.id,
-      changes: monitor.generate(observer)
-    });
-  }
-
-  fromTarget (target) {
-    const base = new Entity();
-    const entity = this._describeTarget(target);
-    return new Transition({
-      origin: base.id,
-      target: entity.id
-    });
-  }
-
-  _applyTo (state) {
-    if (!state) throw new Error('State must be provided.');
-    if (!(state instanceof Entity)) throw new Error('State not of known Entity type.');
-
-    const instance = Object.assign({}, state);
-    const observer = monitor.observe(instance);
-
-    try {
-      monitor.applyPatch(instance, this._state.changes);
-    } catch (E) {
-      console.error('Could not apply changes:', E);
-    }
-
-    monitor.generate(observer);
-    return instance;
-  }
-
-  _setChanges (changes) {
-    if (!changes) throw new Error('No changes specified.');
-    this._state.changes = changes;
-  }
-
-  _setOrigin (origin) {
-    if (!origin) throw new Error('No origin specified.');
-    this._state.origin = origin;
-  }
-
-  _setTarget (target) {
-    if (!target) throw new Error('No target specified.');
-    this._state.target = target;
-  }
-
-  _describeTarget (target) {
-    if (!target) throw new Error('No target specified.');
-    const entity = new Entity(target);
-    this._setTarget(entity.id);
-    return entity;
-  }
-}
-
-Entity.Transition = Transition;
-
 module.exports = Entity;
-module.exports.Transition = Transition;
 </code></pre>
       </article>
     </section>
@@ -328,21 +220,17 @@ module.exports.Transition = Transition;
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="Block.html">Block</a></li>
-      <li><a href="Bond.html">Bond</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="Collection.html">Collection</a></li>
-      <li><a href="Contract.html">Contract</a></li>
-      <li><a href="Disk.html">Disk</a></li>
-      <li><a href="Entity.html">Entity</a></li>
-      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
+      <li><a href="HTTPServer.html">HTTPServer</a></li>
       <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
@@ -353,45 +241,32 @@ module.exports.Transition = Transition;
       <li><a href="Machine.html">Machine</a></li>
       <li><a href="Message.html">Message</a></li>
       <li><a href="Peer.html">Peer</a></li>
-      <li><a href="Program.html">Program</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
-      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
+      <li><a href="Snapshot.html">Snapshot</a></li>
+      <li><a href="Stack.html">Stack</a></li>
+      <li><a href="Stash.html">Stash</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
-      <li><a href="global.html#Text">Text</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
+      <li><a href="Value.html">Value</a></li>
       <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
-    <h3>Global</h3>
+    <h3>Events</h3>
     <ul>
-      <li><a href="global.html#BODY_SCHEMA_BY_KEY">BODY_SCHEMA_BY_KEY</a></li>
-      <li><a href="global.html#GenericMessage">GenericMessage</a></li>
-      <li><a href="global.html#P2P_CHAT_MAX_CHARS">P2P_CHAT_MAX_CHARS</a></li>
-      <li><a href="global.html#P2P_PEER_ALIAS_MAX_CHARS">P2P_PEER_ALIAS_MAX_CHARS</a></li>
-      <li><a href="global.html#SEAL_BLOCK">SEAL_BLOCK</a></li>
-      <li><a href="global.html#blockDigest">blockDigest</a></li>
-      <li><a href="global.html#canonicalTypeCode">canonicalTypeCode</a></li>
-      <li><a href="global.html#canonicalTypeName">canonicalTypeName</a></li>
-      <li><a href="global.html#crypto">crypto</a></li>
-      <li><a href="global.html#fabricCanonicalJson">fabricCanonicalJson</a></li>
-      <li><a href="global.html#isStructuredBlockInput">isStructuredBlockInput</a></li>
-      <li><a href="global.html#meetsProofOfWork">meetsProofOfWork</a></li>
-      <li><a href="global.html#merge">merge</a></li>
-      <li><a href="global.html#mineOnStart">mineOnStart</a></li>
-      <li><a href="global.html#networks">networks</a></li>
-      <li><a href="global.html#signingStringForBlock">signingStringForBlock</a></li>
-      <li><a href="global.html#typeEquals">typeEquals</a></li>
+      <li><a href="Aggregator.html#event:commit">commit</a></li>
     </ul>
   </nav>
   <br class="clear" />

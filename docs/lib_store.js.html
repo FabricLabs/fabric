@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>JSDoc: Source: lib/store.js</title>
+
+  <script src="scripts/prettify/prettify.js"> </script>
+  <script src="scripts/prettify/lang-css.js"> </script>
+  <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+  <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+  <div id="main">
+
+    <h1 class="page-title">Source: lib/store.js</h1>
+
+
+
+
+
+
+    <section>
+      <article>
+        <pre class="prettyprint source linenums"><code>'use strict';
+
+// TODO: note that generally, requirements are loosely ordered by
+// their relative importance to the file in question
+const crypto = require('crypto');
+const mkdirp = require('mkdirp');
+const level = require('level');
+const pointer = require('json-pointer');
+
+// internal components
+const Collection = require('./collection');
+const Scribe = require('./scribe');
+const Stack = require('./stack');
+const State = require('./state');
+
+/**
+ * Long-term storage.
+ * @property {Mixed} config Current configuration.
+ */
+class Store extends Scribe {
+  /**
+   * Create an instance of a {@link Store} to manage long-term storage, which is
+   * particularly useful when building a user-facing {@link Product}.
+   * @param  {Object} [config={}] Configuration object.
+   * @return {Store}              Instance of the Store, ready to start.
+   */
+  constructor (config = {}) {
+    super(config);
+
+    this.config = Object.assign({
+      path: './stores/store',
+      persistent: true
+    }, config);
+
+    this['@entity'] = {
+      '@type': 'Store',
+      '@data': {}
+    };
+
+    this['@entity']['@data'].types = {};
+    this['@entity']['@data'].blobs = {};
+    this['@entity']['@data'].states = {};
+    this['@entity']['@data'].addresses = {};
+    this['@entity']['@data'].collections = {};
+    this['@entity']['@data'].tips = {};
+
+    Object.assign(this['@data'], this['@entity']['@data']);
+
+    return this;
+  }
+
+  async _setEncrypted (path, value, passphrase = '') {
+    let secret = value; // TODO: encrypt value
+    let name = crypto.createHash('sha256').createHash(path).digest('hex');
+    return this.set(`/secrets/${name}`, secret);
+  }
+
+  async _getEncrypted (path, passphrase = '') {
+    let name = crypto.createHash('sha256').createHash(path).digest('hex');
+    let secret = this.get(`/secrets/${name}`);
+    let decrypted = secret; // TODO: decrypt value
+    return decrypted;
+  }
+
+  /**
+   * Registers an {@link Actor}.  Necessary to store in a collection.
+   * @param  {Object} obj Instance of the object to store.
+   * @return {Vector}     Returned from `storage.set`
+   */
+  async _REGISTER (obj) {
+    let store = this;
+    let result = null;
+    let vector = new State(obj);
+
+    store.log('[STORE]', '_REGISTER', vector.id, vector['@type']);
+
+    try {
+      let item = await this._GET(`/entities/${vector.id}`);
+    } catch (E) {
+      this.warn('[STORE]', '_REGISTER', `Could not read from store:`, E);
+    }
+
+    try {
+      await this._SET(`/types/${vector.id}`, vector['@type']);
+    } catch (E) {
+      this.error('Error creating object:', E, obj);
+    }
+
+    try {
+      result = await this._SET(`/entities/${vector.id}`, vector['@data']);
+    } catch (E) {
+      this.error('Error creating object:', E, obj);
+    }
+
+    return result;
+  }
+
+  async _GET (key) {
+    let result = null;
+
+    this.log('[STORE]', '_GET', key);
+
+    try {
+      result = await this.get(key);
+    } catch (E) {
+      this.warn('[STORE]', '[_GET]', '[FAILURE]', E);
+    }
+
+    return result;
+  }
+
+  async _SET (key, value) {
+    return this.set(key, value);
+  }
+
+  async _PUT (key, value) {
+    return this.set(key, value);
+  }
+
+  async _DELETE (key) {
+    await this._PUT(key, null);
+    return null;
+  }
+
+  async _PATCH (key, patch) {
+    this.log('[STORE]', '_PATCH', 'patch:', key, typeof patch, patch);
+    let root = {};
+    let current = await this._GET(key);
+
+    console.log('current value, no typecheck:', typeof current, current);
+
+    let result = Object.assign(root, current || {}, patch);
+
+    try {
+      let action = await this._PUT(key, result);
+    } catch (E) {
+      console.error('Could not modify:', E);
+    }
+
+    return result;
+  }
+
+  /**
+   * Insert something into a collection.
+   * @param  {String}  key   Path to add data to.
+   * @param  {Mixed}  value Object to store.
+   * @return {Promise}       Resolves on success with a String pointer.
+   */
+  async _POST (key, value) {
+    console.log('[STORE]', '_POST', key, typeof value, value);
+
+    this['@method'] = '_POST';
+
+    // preamble
+    let self = this;
+    let path = pointer.escape(key);
+    let router = this.sha256(path);
+    let address = `/collections/${router}`;
+
+    // TODO: check for commit state
+    self['@entity']['@data'].addresses[router] = address;
+
+    let state = new State(value);
+    let serial = state.serialize();
+    let digest = this.sha256(serial);
+
+    // defaults
+    let actor = null;
+    let list = null;
+    let type = null;
+    let tip = null;
+
+    if (!self.db) {
+      await self.open();
+    }
+
+    let family = null;
+    let origin = null;
+    let entity = null;
+
+    // TODO: use ._GET
+    try {
+      entity = await self.db.get(address);
+      // console.log('loading entity:', entity.toString('utf8'));
+    } catch (E) {
+      console.warn('Creating new collection:', E);
+    }
+
+    if (entity) {
+      try {
+        entity = JSON.parse(entity);
+      } catch (E) {
+        console.warn(`Couldn't parse: ${entity}`, E);
+      }
+    }
+
+    try {
+      if (entity) {
+        family = await self.populate(entity);
+        console.log('WARNING:', 'family exists, expecting restoration:', family);
+        origin = new Collection(family);
+      } else {
+        origin = new Collection();
+      }
+
+      let height = origin.push(value);
+      let object = await self._PUT(`/entities/${state.id}`, value);
+      let serialized = await origin.serialize();
+      let answer = await self.db.put(address, serialized.toString());
+
+    } catch (E) {
+      console.log('Could not POST:', key, value, E);
+      return false;
+    }
+
+    return state.link;
+  }
+
+  async _PUSH (key, data) {
+    let id = pointer.escape(key);
+    let path = `/stacks/${id}`;
+    let list = await this._GET(path);
+    if (!list) list = [];
+    let vector = new State(data);
+    let stack = new Stack(list);
+    let result = stack.push(vector.id);
+    let actor = await this._REGISTER(data);
+    let blob = await this._PUT(`/blobs/${vector.id}`, vector['@data']);
+    let saved = await this._SET(path, stack['@data']);
+    let commit = await this.commit();
+    let output = await this._GET(`/blobs/${vector.id}`);
+    return output;
+  }
+
+  async populate (element) {
+    let map = [];
+
+    for (let i = 0; i &lt; element.length; i++) {
+      map[i] = await this._GET(`/entities/${element[i]}`);
+    }
+
+    return map;
+  }
+
+  /**
+   * Barebones getter.
+   * @param  {String}  key Name of data to retrieve.
+   * @return {Promise}     Resolves on complete.  `null` if not found.
+   */
+  async get (key) {
+    this.log('[STORE]', 'get:', key);
+
+    let self = this;
+    let id = pointer.escape(key);
+    let router = this.sha256(id);
+
+    let type = null;
+    let state = null;
+    let tip = null;
+
+    if (!self.db) {
+      await self.open();
+    }
+
+    try {
+      let input = await self.db.get(`/collections/${router}`);
+      let collection = JSON.parse(input);
+      if (collection) {
+        let answer = [];
+        for (let i = 0; i &lt; collection.length; i++) {
+          let entity = await this._GET(`/entities/${collection[i]}`);
+          answer.push(entity);
+        }
+        return answer;
+      }
+    } catch (E) {
+      // console.error('could not get collection:', E);
+    }
+
+    try {
+      tip = await self.db.get(`/tips/${router}`);
+    } catch (E) {
+      self.error(`cannot get tip [${router}] "/tips/${router}":`, E);
+    }
+
+    try {
+      type = await self.db.get(`/types/${tip}`);
+    } catch (E) {
+      self.error(`cannot get type`, E);
+    }
+
+    try {
+      state = await self.db.get(`/states/${tip}`);
+    } catch (E) {
+      self.error(`cannot get state [${tip}] "/states/${tip}":`, E);
+    }
+
+    switch (type) {
+      default:
+        return State.fromHex(state);
+      case 'Buffer':
+        return Buffer.from(state, 'hex');
+    }
+  }
+
+  /**
+   * Set a `key` to a specific `value`.
+   * @param       {String} key   Address of the information.
+   * @param       {Mixed} value Content to store at `key`.
+   */
+  async set (key, value) {
+    // this.log('[STORE]', `(${this['@method']})`, 'set:', key, value.constructor.name, value);
+    this.log('[STORE]', `(${this['@method']})`, 'set:', key, typeof value, value);
+
+    let self = this;
+
+    // Let's use the document's key as the identifying value.
+    // This is what defines our key => value store.
+    // All functions can be run as a map of an original input vector, allowing
+    // binary scoping across trees of varying complexity.
+    let id = pointer.escape(key);
+    let router = this.sha256(id);
+
+    // locals
+    let origin = new State(self['@data']);
+    let vector = new State(value);
+    let serial = vector.serialize(value);
+    let digest = this.sha256(serial);
+    let batched = null;
+
+    // Since we're using JavaScript, we can use Object literals.
+    // See also: https://to.fabric.pub/#purity:fabric.pub
+    let pure = {
+      '@id': vector.id,
+      '@data': value,
+      // TODO: document the special case of "null"
+      '@type': (value) ? value.constructor.name : 'null',
+      '@link': `/states/${vector.id}`,
+      '@state': vector,
+      '@parent': origin.id,
+      '@buffer': serial
+    };
+
+    console.log('[FABRIC:STORE]', 'CHECKING IF OPEN!', self.db, self.settings, self.config);
+
+    if (!self.db) {
+      await self.open();
+    }
+
+    let ops = [
+      { type: 'put', key: `/states/${pure['@id']}`, value: serial.toString('hex'), encoding: 'hex' },
+      { type: 'put', key: `/blobs/${pure['@id']}`, value: serial.toString('hex'), encoding: 'hex' },
+      { type: 'put', key: `/types/${pure['@id']}`, value: pure['@type'] },
+      { type: 'put', key: `/tips/${router}`, value: pure['@id'] },
+      { type: 'put', key: `/names/${router}`, value: id }
+    ];
+
+    try {
+      batched = await self.db.batch(ops);
+    } catch (E) {
+      console.error('BATCH FAILURE:', E);
+    }
+
+    try {
+      await Promise.all(ops.map(op => {
+        return self.db.put(op.key, op.value);
+      }));
+    } catch (E) {
+      console.error(E);
+    }
+
+    this.commit();
+
+    return this.get(key);
+  }
+
+  async open () {
+    await super.open();
+
+    try {
+      this.db = level(this.config.path);
+      this.trust(this.db);
+      this.status = 'opened';
+    } catch (E) {
+      this.error('[STORE]', E);
+    }
+
+    return this;
+  }
+
+  async close () {
+    if (!this.config.persistent) {
+      await this.flush();
+    }
+
+    if (this.db) {
+      try {
+        await this.db.close();
+      } catch (E) {
+        this.error('[STORE]', 'closing store:', this.config.path, E);
+      }
+    }
+
+    await super.close();
+
+    return this;
+  }
+
+  /**
+   * Implicitly trust an {@link Event} source.
+   * @param  {EventEmitter} source Event-emitting source.
+   * @return {Store}        Resulting instance of {@link Store} with new trust.
+   */
+  trust (source) {
+    let store = this;
+    let name = `/sources/${store.id}`;
+
+    source.on('put', function (key, value) {
+      store.log('[TRUST:SOURCE]', source.constructor.name, 'emitted a put event', name, key, value.constructor.name, value);
+
+      let id = pointer.escape(key);
+      let router = store.sha256(id);
+      let state = new State(value);
+
+      pointer.set(store['@entity']['@data'], `${name}`, value);
+      pointer.set(store['@entity']['@data'], `/states/${state.id}`, value);
+      pointer.set(store['@entity']['@data'], `/blobs/${state.id}`, state.serialize());
+      pointer.set(store['@entity']['@data'], `/types/${state.id}`, value.constructor.name);
+      pointer.set(store['@entity']['@data'], `/tips/${router}`, state.id);
+      pointer.set(store['@entity']['@data'], `/names/${router}`, id);
+
+      store.emit('source/events', {
+        '@type': 'Request',
+        '@method': 'put',
+        '@actor': '~level',
+        '@object': state['@link'],
+        '@target': key,
+        '@data': value
+      });
+    });
+
+    return this;
+  }
+
+  del (key) {
+    return this.db.del(key);
+  }
+
+  batch (ops, done) {
+    if (this.db) {
+      return this.db.batch(ops).then(done);
+    } else {
+      return done;
+    }
+  }
+
+  createReadStream () {
+    return this.db.createReadStream();
+  }
+
+  async flush () {
+    for (let name in this['@entity']['@data'].addresses) {
+      let address = this['@entity']['@data'].addresses[name];
+      console.log('found address:', address);
+      if (address) await this.del(address);
+    }
+
+    return this.del(`/collections`);
+  }
+
+  rotate () {
+    return this;
+  }
+
+  /**
+   * Start running the process.
+   * @return {Promise} Resolves on complete.
+   */
+  async start () {
+    await super.start();
+
+    this.status = 'starting';
+
+    mkdirp.sync(this.config.path);
+
+    try {
+      await this.db.open();
+    } catch (E) {
+      console.error('[FABRIC:STORE]', 'Could not open db:', E);
+    }
+
+    this.status = 'started';
+
+    return this;
+  }
+}
+
+module.exports = Store;
+</code></pre>
+      </article>
+    </section>
+
+
+
+
+  </div>
+
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="App.html">App</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Compiler.html">Compiler</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="Oracle.html">Oracle</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="Remote.html">Remote</a></li>
+      <li><a href="Router.html">Router</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Stack.html">Stack</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
+    </ul>
+  </nav>
+
+  <br class="clear">
+
+  <footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.6.0-dev</a> on Mon Jul 01 2019 21:32:25 GMT-0700 (Pacific Daylight Time)
+  </footer>
+
+  <script>
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"> </script>
+</body>
+
+</html>

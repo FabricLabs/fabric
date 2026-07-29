@@ -70,7 +70,7 @@ class Collection extends Stack {
 
     // Set name to plural version, define path for storage
     this.name = pluralize(this.settings.name);
-    this._path = `/${this.name.toLowerCase()}`;
+    this.path = `/` + this.name.toLowerCase();
 
     this._state = {};
     this.value = {};
@@ -91,15 +91,6 @@ class Collection extends Stack {
 
   get routes () {
     return this.settings.routes;
-  }
-
-  get path () {
-    return this._path;
-  }
-
-  set path (value) {
-    this._path = value;
-    return this._path;
   }
 
   /**
@@ -132,7 +123,7 @@ class Collection extends Stack {
     try {
       if (this.settings.verbosity >= 5) console.log(`getting ${this.path}/${id} from:`, this.value);
       result = pointer.get(this.value, `${this.path}/${id}`);
-    } catch {
+    } catch (E) {
      // console.debug('[FABRIC:COLLECTION]', `@${this.name}`, Date.now(), `Could not find ID "${id}" in tree ${this.asMerkleTree()}`);
     }
 
@@ -269,14 +260,10 @@ class Collection extends Stack {
   async push (data, commit = true) {
     super.push(data);
 
-    const entity = new Entity(data);
     let state = new State(data);
 
     this['@entity'].states[this.id] = this['@data'];
-    this['@entity'].states[entity.id] = state['@data'];
-
-    // Use entity IDs for collection indexing to avoid collisions in State IDs.
-    this['@data'][this['@data'].length - 1] = entity.id;
+    this['@entity'].states[state.id] = state['@data'];
 
     this['@entity']['@data'] = this['@data'].map(x => x.toString());
     this['@data'] = this['@entity']['@data'];
@@ -362,7 +349,7 @@ class Collection extends Stack {
   toTypedArray () {
     const map = this.map();
     const ids = Object.keys(map);
-    return ids.map((id) => this._wrapResult(map[id]));
+    return ids.map((x) => this._wrapResult(map[ids[x]]));
   }
 
   typedMap () {
@@ -383,12 +370,11 @@ class Collection extends Stack {
    * @returns {Array}
    */
   map () {
-    return pointer.get(this.value, `${this.path}`);
+    return Collection.pointer.get(this.value, `${this.path}`);
   }
 
   render () {
-    // Collection rendering should expose the ordered ID list, not internal state metadata.
-    return JSON.stringify(this['@entity']['@data'] || []);
+    return this.serialize(this.state);
   }
 
   /**
@@ -451,7 +437,7 @@ class Collection extends Stack {
    * Loads {@link State} into memory.
    * @param {State} state State to import.
    * @param {Boolean} commit Whether or not to commit the result.
-   * @emits message Will emit one `CollectionSnapshot` message (not the removed Snapshot type).
+   * @emits message Will emit one {@link Snapshot} message.
    */
   async import (input, commit = true) {
     if (input['@data']) input = input['@data'];
@@ -485,7 +471,7 @@ class Collection extends Stack {
     if (this.settings.verbosity >= 4) console.log('input.id', input.id);
 
     this.emit('message', {
-      '@type': 'CollectionSnapshot',
+      '@type': 'Snapshot',
       '@data': {
         path: this.path,
         state: pointer.get(this.value, this.path)
@@ -548,21 +534,17 @@ module.exports = Collection;
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="Block.html">Block</a></li>
-      <li><a href="Bond.html">Bond</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="Collection.html">Collection</a></li>
-      <li><a href="Contract.html">Contract</a></li>
-      <li><a href="Disk.html">Disk</a></li>
-      <li><a href="Entity.html">Entity</a></li>
-      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
+      <li><a href="HTTPServer.html">HTTPServer</a></li>
       <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
@@ -573,45 +555,32 @@ module.exports = Collection;
       <li><a href="Machine.html">Machine</a></li>
       <li><a href="Message.html">Message</a></li>
       <li><a href="Peer.html">Peer</a></li>
-      <li><a href="Program.html">Program</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
-      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
+      <li><a href="Snapshot.html">Snapshot</a></li>
+      <li><a href="Stack.html">Stack</a></li>
+      <li><a href="Stash.html">Stash</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
-      <li><a href="global.html#Text">Text</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
+      <li><a href="Value.html">Value</a></li>
       <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
-    <h3>Global</h3>
+    <h3>Events</h3>
     <ul>
-      <li><a href="global.html#BODY_SCHEMA_BY_KEY">BODY_SCHEMA_BY_KEY</a></li>
-      <li><a href="global.html#GenericMessage">GenericMessage</a></li>
-      <li><a href="global.html#P2P_CHAT_MAX_CHARS">P2P_CHAT_MAX_CHARS</a></li>
-      <li><a href="global.html#P2P_PEER_ALIAS_MAX_CHARS">P2P_PEER_ALIAS_MAX_CHARS</a></li>
-      <li><a href="global.html#SEAL_BLOCK">SEAL_BLOCK</a></li>
-      <li><a href="global.html#blockDigest">blockDigest</a></li>
-      <li><a href="global.html#canonicalTypeCode">canonicalTypeCode</a></li>
-      <li><a href="global.html#canonicalTypeName">canonicalTypeName</a></li>
-      <li><a href="global.html#crypto">crypto</a></li>
-      <li><a href="global.html#fabricCanonicalJson">fabricCanonicalJson</a></li>
-      <li><a href="global.html#isStructuredBlockInput">isStructuredBlockInput</a></li>
-      <li><a href="global.html#meetsProofOfWork">meetsProofOfWork</a></li>
-      <li><a href="global.html#merge">merge</a></li>
-      <li><a href="global.html#mineOnStart">mineOnStart</a></li>
-      <li><a href="global.html#networks">networks</a></li>
-      <li><a href="global.html#signingStringForBlock">signingStringForBlock</a></li>
-      <li><a href="global.html#typeEquals">typeEquals</a></li>
+      <li><a href="Aggregator.html#event:commit">commit</a></li>
     </ul>
   </nav>
   <br class="clear" />

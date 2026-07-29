@@ -35,86 +35,25 @@
 
 // Dependencies
 const net = require('net');
+const { mkdirp } = require('mkdirp');
 const children = require('child_process');
 const path = require('path');
 const fs = require('fs');
-const BN = require('bn.js');
-const { mkdirp } = require('mkdirp');
 
 // Fabric Types
 const Actor = require('../types/actor');
 const Key = require('../types/key');
+const Remote = require('../types/remote');
 const Service = require('../types/service');
 const Machine = require('../types/machine');
 
 // Contracts
 const OP_TEST = require('../contracts/test');
 
-function redactSensitiveCommandArg (arg) {
-  return String(arg).replace(
-    /((?:--?rpcpassword|--?rpcuser|--?rpcauth|--bitcoin-rpcpassword|--bitcoin-rpcuser)=).*/i,
-    '$1[REDACTED]'
-  );
-}
-
-function shouldTreatLightningStderrAsError (line) {
-  const text = String(line || '').trim().toLowerCase();
-  if (!text) return false;
-  return (
-    text.includes('error') ||
-    text.includes('fatal') ||
-    text.includes('exception') ||
-    text.includes('traceback')
-  );
-}
-
-function appendLightningStderrChunk (service, chunk) {
-  if (!service._lightningdStderrBuf) service._lightningdStderrBuf = '';
-  service._lightningdStderrBuf += chunk.toString('utf8');
-  const parts = service._lightningdStderrBuf.split(/\r?\n/);
-  service._lightningdStderrBuf = parts.pop() || '';
-  for (const raw of parts) {
-    const line = raw.trim();
-    if (!line) continue;
-    if (shouldTreatLightningStderrAsError(line)) {
-      service.emit('error', `[FABRIC:LIGHTNING] ${line}`);
-      continue;
-    }
-    if (service.settings.debug) service.emit('debug', `[FABRIC:LIGHTNING] ${line}`);
-  }
-}
-
-function flushLightningStderrBuffer (service) {
-  if (!service._lightningdStderrBuf) return;
-  const line = service._lightningdStderrBuf.trim();
-  service._lightningdStderrBuf = '';
-  if (!line) return;
-  if (shouldTreatLightningStderrAsError(line)) {
-    service.emit('error', `[FABRIC:LIGHTNING] ${line}`);
-    return;
-  }
-  if (service.settings.debug) service.emit('debug', `[FABRIC:LIGHTNING] ${line}`);
-}
-
 /**
- * Manage a Lightning node (Core Lightning JSON-RPC over Unix socket).
- *
- * BOLT checklist: `docs/BOLT_COMPATIBILITY.md`. RPC map: `docs/LIGHTNING_COMPAT.md`.
- * @see Lightning.DOCS
+ * Manage a Lightning node.
  */
 class Lightning extends Service {
-  /**
-   * Default TCP port lightningd listens on when {@link settings.port} is omitted (BOLT / common conventions).
-   * @param {string} [network]
-   * @returns {number}
-   */
-  static defaultListenPortForNetwork (network) {
-    const n = String(network || 'mainnet').toLowerCase();
-    if (n === 'testnet' || n === 'testnet4') return 19735;
-    if (n === 'signet') return 39735;
-    return 9735;
-  }
-
   /**
    * Create an instance of the Lightning {@link Service}.
    * @param {Object} [settings] Settings.
@@ -123,39 +62,17 @@ class Lightning extends Service {
   constructor (settings = {}) {
     super(settings);
 
-    // Increase max listeners to accommodate multiple services
-    process.setMaxListeners(20);
-
     this.settings = Object.assign({
       authority: 'http://127.0.0.1:8181',
-      datadir: './stores/lightning',
       host: '127.0.0.1',
-      hostname: '127.0.0.1',
-      port: null,
-      socket: 'lightningd.sock',
+      port: 8181,
+      path: './stores/lightning',
       mode: 'socket',
-      interval: 60000,
-      managed: false,
-      network: 'regtest',
-      bitcoin: {
-        rpcport: 18443,
-        rpcuser: 'bitcoinrpc',
-        rpcpassword: 'password',
-        host: '127.0.0.1',
-        datadir: './stores/bitcoin-regtest'
-      }
-    }, settings);
-
-    if (this.settings.port == null || this.settings.port === '') {
-      this.settings.port = Lightning.defaultListenPortForNetwork(this.settings.network);
-    }
-
-    // Accept both rpcuser/rpcpassword and username/password shapes.
-    this.settings.bitcoin.rpcuser = this.settings.bitcoin.rpcuser || this.settings.bitcoin.username;
-    this.settings.bitcoin.rpcpassword = this.settings.bitcoin.rpcpassword || this.settings.bitcoin.password;
+      interval: 1000,
+      managed: false
+    }, this.settings, settings);
 
     this.machine = new Machine(this.settings);
-    /** Optional RPC client handle (e.g. REST/grpc); not used by Core Lightning socket `_makeRPCRequest`. */
     this.rpc = null;
     this.rest = null;
     this.status = 'disconnected';
@@ -184,41 +101,7 @@ class Lightning extends Service {
       nodes: {}
     };
 
-    // Store handler references for cleanup
-    this._errorHandlers = {
-      uncaughtException: null,
-      unhandledRejection: null,
-      SIGINT: null,
-      SIGTERM: null,
-      exit: null
-    };
-
     return this;
-  }
-
-  _clnNetworkCliName () {
-    const n = String(this.settings.network || 'regtest').toLowerCase();
-    if (n === 'mainnet' || n === 'bitcoin' || n === 'main') return 'bitcoin';
-    if (n === 'testnet4') return 'testnet4';
-    if (n === 'testnet' || n === 'test') return 'testnet';
-    if (n === 'signet') return 'signet';
-    return 'regtest';
-  }
-
-  _bitcoinCliNetworkFlag () {
-    const network = String(this.settings.network || 'regtest').toLowerCase();
-    switch (network) {
-      case 'main':
-      case 'bitcoin':
-      case 'mainnet': return null;
-      case 'test':
-      case 'testnet': return '-testnet';
-      case 'testnet4': return '-testnet4';
-      case 'signet': return '-signet';
-      case 'regtest':
-      default:
-        return '-regtest';
-    }
   }
 
   static plugin (state) {
@@ -255,560 +138,44 @@ class Lightning extends Service {
     this.emit('error', `Got REST error: ${error}`);
   }
 
-  // format: id@ip:port (CLN accepts this as single param)
-  async connectTo (remote) {
-    const [id, address] = remote.split('@');
-    if (!id || !address) throw new Error(`Invalid remote format: ${remote}. Expected format: id@ip:port`);
-    const result = await this._makeRPCRequest('connect', [remote]);
-    if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Connected to remote node ${id} at ${address}`);
-    this._state.peers[id] = {
-      id: id,
-      address: address,
-      direction: result.direction,
-      features: result.features,
-      connected: true
-    };
-    return this;
-  }
-
-  /**
-   * Creates a new Lightning channel.
-   * @param {String} peer Public key of the peer to create a channel with.
-   * @param {String} amount Amount in satoshis to fund the channel.
-   * @param {Number|null} [pushMsat=null] Optional push amount in millisatoshis.
-   * @param {Object} [options={}] Optional overrides (e.g. minconf for regtest).
-   */
-  async createChannel (peer, amount, pushMsat = null, options = {}) {
-    const pushVal = pushMsat != null &amp;&amp; Number.isFinite(Number(pushMsat)) ? Number(pushMsat) : null;
-    const network = String(this.settings.network || 'bitcoin').toLowerCase();
-    const useMinconfZero = network === 'regtest' || network === 'signet' || network === 'testnet';
-    const params = {
-      id: peer,
-      amount: String(amount),
-      ...(pushVal != null ? { push_msat: pushVal } : {}),
-      ...(useMinconfZero ? { minconf: 0 } : {}),
-      ...(options.minconf !== undefined ? { minconf: Number(options.minconf) } : {}),
-      ...(Array.isArray(options.utxos) &amp;&amp; options.utxos.length > 0 ? { utxos: options.utxos } : {}),
-      ...(options.feerate !== undefined ? { feerate: options.feerate } : useMinconfZero ? { feerate: '253perkw' } : {})
-    };
-    const result = await this._makeRPCRequest('fundchannel', params);
-    if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Created channel with peer ${peer} for amount ${amount}`);
-    return result;
-  }
-
-  /**
-   * Create a new Lightning invoice.
-   * @param {String} amount Amount in millisatoshi (msat).
-   */
-  async createInvoice (amount, label = 'Generic Invoice', description = 'Generic description.') {
-    const result = await this._makeRPCRequest('invoice', [amount, label, description]);
-    return {
-      bolt11: result.bolt11,
-      paymentHash: result.payment_hash,
-      expiresAt: result.expires_at
-    };
-  }
-
-  /**
-   * Invoke any Core Lightning JSON-RPC method over the lightningd socket (escape hatch for methods without a typed wrapper).
-   * Named `callRpc` so it does not shadow the `rpc` instance property.
-   * @param {String} method RPC method name (e.g. `listpeers`).
-   * @param {Array} [params=[]] Positional/object params as accepted by lightningd for that method.
-   * @param {Number} [timeoutMs=30000] Optional timeout.
-   * @returns {Promise&lt;*>} RPC result.
-   */
-  async callRpc (method, params = [], timeoutMs = 30000) {
-    return this._makeRPCRequest(method, params, timeoutMs);
-  }
-
-  /**
-   * Decode a BOLT11 invoice or BOLT12 offer string (Core Lightning `decode`).
-   * @param {String} boltString `lnbc...`, `lno1...`, etc.
-   * @returns {Promise&lt;Object>} Decoded fields.
-   */
-  async decodeLightning (boltString) {
-    return this._makeRPCRequest('decode', [boltString]);
-  }
-
-  /**
-   * Decode a BOLT11 invoice for payment fields (Core Lightning `decodepay`).
-   * @param {String} bolt11
-   * @returns {Promise&lt;Object>} Decoded pay details.
-   */
-  async decodePay (bolt11) {
-    return this._makeRPCRequest('decodepay', [bolt11]);
-  }
-
-  /**
-   * Create a BOLT12 offer (requires `experimental-offers` / modern CLN). Pass-through to `offer`.
-   * @param {Object} params Keyword args, e.g. `{ amount_msat, description, label, issuer, ... }`.
-   * @returns {Promise&lt;Object>} Offer result (includes `bolt12` / offer id per CLN version).
-   */
-  async createOffer (params) {
-    if (!params || typeof params !== 'object' || Array.isArray(params)) {
-      throw new Error('createOffer requires a params object (e.g. { amount_msat, description })');
-    }
-    return this._makeRPCRequest('offer', [params]);
-  }
-
-  /**
-   * Request a BOLT11 invoice from a BOLT12 offer (Core Lightning `fetchinvoice`).
-   *
-   * Call either:
-   * - `fetchInvoice('lno1…')` or `fetchInvoice('lno1…', { amount_msat, quantity, payer_note, timeout, … })`
-   * - **Recurrence** (when the offer is recurring): `recurrence_counter` (start at 0), `recurrence_start`, `recurrence_label` (stable label linking the series; required when counter is set). See Core Lightning **`fetchinvoice`** and [BOLT #12](https://github.com/lightning/bolts/blob/master/12-offer-encoding.md).
-   * - `fetchInvoice({ offer: 'lno1…', amount_msat, … })` — single keyword object as accepted by CLN.
-   *
-   * @param {String|Object} offerOrParams Bolt12 offer string (`lno1…`), or one params object with an `offer` field.
-   * @param {Object} [invoiceParams] When the first arg is a string, optional extra fields merged into the RPC (second positional group).
-   * @returns {Promise&lt;Object>} Invoice response (includes `invoice` bolt11 when successful).
-   */
-  async fetchInvoice (offerOrParams, invoiceParams = null) {
-    if (offerOrParams != null &amp;&amp; typeof offerOrParams === 'object' &amp;&amp; !Array.isArray(offerOrParams) &amp;&amp; typeof offerOrParams.offer === 'string') {
-      if (invoiceParams != null &amp;&amp; typeof invoiceParams === 'object' &amp;&amp; !Array.isArray(invoiceParams)) {
-        return this._makeRPCRequest('fetchinvoice', [Object.assign({}, offerOrParams, invoiceParams)]);
-      }
-      return this._makeRPCRequest('fetchinvoice', [offerOrParams]);
-    }
-    if (typeof offerOrParams !== 'string') {
-      throw new Error('fetchInvoice requires offer string or params object with `offer`');
-    }
-    if (invoiceParams != null &amp;&amp; typeof invoiceParams === 'object' &amp;&amp; !Array.isArray(invoiceParams)) {
-      return this._makeRPCRequest('fetchinvoice', [offerOrParams, invoiceParams]);
-    }
-    return this._makeRPCRequest('fetchinvoice', [offerOrParams]);
-  }
-
-  /**
-   * Pay a BOLT11 invoice or BOLT12-fetched bolt11 string (Core Lightning `pay`).
-   * @param {String|Object} invoiceOrParams Bolt11 string, or keyword object (e.g. `{ bolt11 }`, `{ bolt12 }` per CLN).
-   * @param {Number} [timeoutMs=30000]
-   * @returns {Promise&lt;Object>} Payment result.
-   */
-  async pay (invoiceOrParams, timeoutMs = 30000) {
-    return this._makeRPCRequest('pay', [invoiceOrParams], timeoutMs);
-  }
-
-  /**
-   * List offers created on this node (Core Lightning `listoffers`).
-   * @param {String|Object|null} [filter] `offer_id` string, or `{ offer_id?, active_only? }`, or null for all.
-   * @returns {Promise&lt;Object>}
-   */
-  async listOffers (filter = null) {
-    if (filter == null) return this._makeRPCRequest('listoffers', []);
-    if (typeof filter === 'string') return this._makeRPCRequest('listoffers', [filter]);
-    if (typeof filter === 'object' &amp;&amp; !Array.isArray(filter)) {
-      return this._makeRPCRequest('listoffers', [filter]);
-    }
-    throw new Error('listOffers expects offer_id string, filter object, or null');
-  }
-
-  /**
-   * Disable a local offer by id (Core Lightning `disableoffer`).
-   * @param {String} offerId
-   * @returns {Promise&lt;Object>}
-   */
-  async disableOffer (offerId) {
-    return this._makeRPCRequest('disableoffer', [offerId]);
-  }
-
-  /**
-   * Create a BOLT12 `invoice_request` (you request that someone else pay you via their offer flow). Returns `bolt12` (`lnr1…`). (Core Lightning `invoicerequest`, v22.11+.)
-   * @param {Object} params `{ amount, description, issuer?, label?, absolute_expiry?, single_use? }` — see CLN docs for amount formats.
-   * @returns {Promise&lt;Object>}
-   */
-  async createInvoiceRequest (params) {
-    if (!params || typeof params !== 'object' || Array.isArray(params)) {
-      throw new Error('createInvoiceRequest requires a params object (e.g. { amount, description })');
-    }
-    return this._makeRPCRequest('invoicerequest', [params]);
-  }
-
-  /**
-   * List `invoice_request` records (Core Lightning `listinvoicerequests`).
-   * @param {String|Object|null} [filter] `invreq_id` string, or `{ invreq_id?, active_only? }`, or null for all.
-   * @returns {Promise&lt;Object>}
-   */
-  async listInvoiceRequests (filter = null) {
-    if (filter == null) return this._makeRPCRequest('listinvoicerequests', []);
-    if (typeof filter === 'string') return this._makeRPCRequest('listinvoicerequests', [filter]);
-    if (typeof filter === 'object' &amp;&amp; !Array.isArray(filter)) {
-      return this._makeRPCRequest('listinvoicerequests', [filter]);
-    }
-    throw new Error('listInvoiceRequests expects invreq_id string, filter object, or null');
-  }
-
-  /**
-   * Disable an `invoice_request` so no further invoices are accepted (Core Lightning `disableinvoicerequest`).
-   * @param {String} invreqId
-   * @returns {Promise&lt;Object>}
-   */
-  async disableInvoiceRequest (invreqId) {
-    return this._makeRPCRequest('disableinvoicerequest', [invreqId]);
-  }
-
-  /**
-   * Create and send a BOLT12 invoice to the issuer of an `invoice_request` (Core Lightning `sendinvoice`).
-   * @param {Object} params `{ invreq, label, amount_msat?, timeout?, quantity? }` — `invreq` is the `lnr1…` string.
-   * @returns {Promise&lt;Object>}
-   */
-  async sendInvoice (params) {
-    if (!params || typeof params !== 'object' || Array.isArray(params)) {
-      throw new Error('sendInvoice requires a params object (e.g. { invreq, label })');
-    }
-    return this._makeRPCRequest('sendinvoice', [params]);
-  }
-
-  /**
-   * Route probe (Core Lightning `getroute`).
-   * CLN order: `id`, `amount_msat`, `riskfactor`, `cltv`, `fromid`, `fuzzpercent`, `exclude`, `maxhops`
-   * — the fourth **positional** is `cltv`, not `maxhops`. To set `maxhops` (or other tail fields) use the
-   * `routeOptions` object so intermediate slots are sent as `null` where needed.
-   * @param {String} destinationId Destination node id (pubkey).
-   * @param {Number|String} amountMsat
-   * @param {Number} [riskfactor=10]
-   * @param {Number|Object|null} [cltvOrRouteOptions] Omitted: three-arg RPC. If a number: fourth positional (`cltv`).
-   *   If an object: tail fields `cltv`, `fromid`, `fuzzpercent`, `exclude`, `maxhops` (each optional).
-   * @returns {Promise&lt;Object>}
-   */
-  async getRoute (destinationId, amountMsat, riskfactor = 10, cltvOrRouteOptions = null) {
-    if (cltvOrRouteOptions != null &amp;&amp; typeof cltvOrRouteOptions === 'object' &amp;&amp; !Array.isArray(cltvOrRouteOptions)) {
-      const o = cltvOrRouteOptions;
-      return this._makeRPCRequest('getroute', [
-        destinationId,
-        amountMsat,
-        riskfactor,
-        o.cltv != null ? o.cltv : null,
-        o.fromid != null ? o.fromid : null,
-        o.fuzzpercent != null ? o.fuzzpercent : null,
-        o.exclude != null ? o.exclude : null,
-        o.maxhops != null ? o.maxhops : null
-      ]);
-    }
-    const args = [destinationId, amountMsat, riskfactor];
-    if (cltvOrRouteOptions != null) {
-      args.push(cltvOrRouteOptions);
-    }
-    return this._makeRPCRequest('getroute', args);
-  }
-
-  /**
-   * Computes the total liquidity of the Lightning node.
-   * @returns {Object} Liquidity in BTC.
-   */
-  async computeLiquidity () {
-    await this._syncChannels();
-    const funds = await this._makeRPCRequest('listfunds', []);
-
-    // Calculate outbound (our_amount_msat) and inbound (amount_msat - our_amount_msat)
-    const outbound = funds.channels.reduce((acc, c) => {
-      return acc.add(new BN(c.our_amount_msat));
-    }, new BN(0));
-
-    const inbound = funds.channels.reduce((acc, c) => {
-      const total = new BN(c.amount_msat);
-      const our = new BN(c.our_amount_msat);
-      return acc.add(total.sub(our));
-    }, new BN(0));
-
-    // Convert msat to BTC (1 BTC = 100,000,000,000 msat)
-    const SATS_PER_BTC = new BN('100000000');
-    const MSATS_PER_BTC = SATS_PER_BTC.mul(new BN('1000'));
-
-    // Convert msat to BTC with 16 decimal places
-    // First multiply by 10^16 to preserve decimal places, then divide by MSATS_PER_BTC
-    const DECIMAL_PLACES = new BN('10000000000000000'); // 10^16
-    const outboundBTC = outbound.mul(DECIMAL_PLACES).div(MSATS_PER_BTC);
-    const inboundBTC = inbound.mul(DECIMAL_PLACES).div(MSATS_PER_BTC);
-
-    // Convert to string with proper decimal formatting
-    const formatBTC = (value) => {
-      const str = value.toString().padStart(17, '0'); // Ensure we have at least 16 decimal places
-      const whole = str.slice(0, -16);
-      const decimal = str.slice(-16);
-      return `${whole}.${decimal}`;
-    };
-
-    return {
-      outbound: formatBTC(outboundBTC),
-      inbound: formatBTC(inboundBTC),
-    };
-  }
-
-  async _waitForLightningD (maxAttempts = 10, initialDelay = 1000) {
-    if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Waiting for lightningd to be ready...');
-    let attempts = 0;
-    let delay = initialDelay;
-
-    while (attempts &lt; maxAttempts) {
-      try {
-        if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Attempt ${attempts + 1}/${maxAttempts} to connect to lightningd...`);
-
-        // Check if the RPC socket exists
-        const socketPath = path.resolve(this.settings.datadir, this.settings.socket);
-        if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Checking for socket at: ${socketPath}`);
-
-        if (!fs.existsSync(socketPath)) {
-          throw new Error(`RPC socket not found at ${socketPath}`);
-        }
-
-        // Brief pause for lightningd to finish initializing after socket appears
-        await new Promise(resolve => setTimeout(resolve, 500));
-
-        // Check multiple RPC endpoints to ensure full readiness
-        const checks = [
-          this._makeRPCRequest('getinfo')
-        ];
-
-        // Wait for all checks to complete
-        await Promise.all(checks);
-
-        if (this.settings.debug) {
-          this.emit('debug', '[FABRIC:LIGHTNING] Successfully connected to lightningd');
-        }
-
-        return true;
-      } catch (error) {
-        if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Connection attempt ${attempts + 1} failed: ${error.message}`);
-        attempts++;
-
-        // If we've exceeded max attempts, throw error
-        if (attempts >= maxAttempts) {
-          throw new Error(`Failed to connect to lightningd after ${maxAttempts} attempts: ${error.message}`);
-        }
-
-        // Wait before next attempt with exponential backoff
-        if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Waiting ${delay}ms before retry...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        delay = Math.min(delay * 1.5, 10000); // Exponential backoff with max 10s delay
-        continue; // Continue to next attempt
-      }
-    }
-
-    // Should never reach here due to maxAttempts check in catch block
-    throw new Error('Failed to connect to lightningd: Max attempts exceeded');
-  }
-
-  async createLocalNode () {
-    if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Creating local Lightning node...');
-    const datadir = path.resolve(this.settings.datadir);
-    const bitcoinDatadir = path.resolve(this.settings.bitcoin.datadir);
-    const socketPath = path.join(datadir, this.settings.socket);
-
-    // Ensure storage directory exists
-    await mkdirp(datadir);
-
-    // Configure Lightning node parameters
-    const params = [
-      `--addr=${this.settings.hostname}:${this.settings.port}`,
-      `--network=${this._clnNetworkCliName()}`,
-      `--lightning-dir=${datadir}`,
-      `--rpc-file=${socketPath}`,
-      `--bitcoin-datadir=${bitcoinDatadir}`,
-      `--bitcoin-rpcuser=${this.settings.bitcoin.rpcuser}`,
-      `--bitcoin-rpcpassword=${this.settings.bitcoin.rpcpassword}`,
-      `--bitcoin-rpcconnect=${this.settings.bitcoin.host}`,
-      `--bitcoin-rpcport=${this.settings.bitcoin.rpcport}`,
-      '--log-level=debug',
-      // Regtest fee estimates are unreliable; force 253 perkw (min) for all feerate types
-      '--force-feerates=253'
-    ];
-
-    // Add plugin configurations if specified and supported
-    // Note: Only add plugin configurations for known supported plugins
-    // to avoid invalid command-line arguments on systems without certain plugins
-    if (this.settings.plugins) {
-      const supportedPlugins = ['experimental-offers', 'experimental-features'];
-      Object.entries(this.settings.plugins).forEach(([plugin, config]) => {
-        if (supportedPlugins.includes(plugin)) {
-          Object.entries(config).forEach(([key, value]) => {
-            params.push(`--${plugin}-${key}=${value}`);
-          });
-        } else {
-          if (this.settings.debug) {
-            if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Skipping unsupported plugin configuration: ${plugin}`);
-          }
-        }
-      });
-    }
-
-    // Disable specific plugins if requested
-    if (this.settings.disablePlugins &amp;&amp; Array.isArray(this.settings.disablePlugins)) {
-      this.settings.disablePlugins.forEach(plugin => {
-        params.push(`--disable-plugin=${plugin}`);
-        if (this.settings.debug) {
-          if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Disabling plugin: ${plugin}`);
-        }
-      });
-    }
-
-    if (this.settings.debug) {
-      const safeParams = params.map(redactSensitiveCommandArg);
-      this.emit('debug', `[FABRIC:LIGHTNING] LightningD parameters: ${safeParams.join(' ')}`);
-    }
-
-    // Start lightningd
-    if (this.settings.managed) {
-      this._child = children.spawn('lightningd', params);
-
-      this._child.stdout.on('data', (data) => {
-        if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] ${data.toString('utf8').trim()}`);
-      });
-
-      this._lightningdStderrBuf = '';
-      this._child.stderr.on('data', (data) => {
-        appendLightningStderrChunk(this, data);
-      });
-      this._child.stderr.on('end', () => {
-        flushLightningStderrBuffer(this);
-      });
-      this._child.stderr.on('close', () => {
-        flushLightningStderrBuffer(this);
-      });
-
-      this._child.on('close', (code) => {
-        flushLightningStderrBuffer(this);
-        if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Lightning node exited with code ${code}`);
-        this.emit('log', `[FABRIC:LIGHTNING] Lightning node exited with code ${code}`);
-      });
-
-      // Add cleanup handler
-      const cleanup = async () => {
-        const child = this._child;
-        if (!child) return;
-
-        try {
-          if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Cleaning up Lightning node...');
-
-          if (child.exitCode === null &amp;&amp; !child.killed) {
-            child.kill('SIGTERM');
-          }
-
-          await Promise.race([
-            new Promise((resolve) => child.once('close', () => resolve())),
-            new Promise((resolve) => setTimeout(resolve, 5000))
-          ]);
-
-          // Force terminate if graceful shutdown did not complete in time.
-          if (child.exitCode === null) {
-            try {
-              child.kill('SIGKILL');
-            } catch {
-              // Ignore if process already exited between checks.
-            }
-
-            await Promise.race([
-              new Promise((resolve) => child.once('close', () => resolve())),
-              new Promise((resolve) => setTimeout(resolve, 3000))
-            ]);
-          }
-        } catch (e) {
-          this.emit('error', `[FABRIC:LIGHTNING] Error during cleanup: ${e.message || e}`);
-        } finally {
-          if (this._child === child) this._child = null;
-        }
-      };
-
-      // Store and attach handlers with proper error attribution
-      this._errorHandlers.SIGINT = cleanup;
-      this._errorHandlers.SIGTERM = cleanup;
-      this._errorHandlers.exit = cleanup;
-      this._errorHandlers.uncaughtException = async (err) => {
-        // Only handle errors from this service's child process
-        if (err.source === 'lightning' || (this._child &amp;&amp; err.pid === this._child.pid)) {
-          this.emit('error', `[FABRIC:LIGHTNING] Uncaught exception from Lightning service: ${err.message || err}`);
-          // await cleanup();
-          // this.emit('error', err);
-        }
-      };
-      this._errorHandlers.unhandledRejection = async (reason, _promise) => {
-        // Only handle rejections from this service's operations
-        if (reason.source === 'lightning' || (this._child &amp;&amp; reason.pid === this._child.pid)) {
-          this.emit('error', '[FABRIC:LIGHTNING] Unhandled rejection from Lightning service');
-          // await cleanup();
-          // this.emit('error', reason);
-        }
-      };
-
-      // Attach the handlers
-      process.on('SIGINT', this._errorHandlers.SIGINT);
-      process.on('SIGTERM', this._errorHandlers.SIGTERM);
-      process.on('exit', this._errorHandlers.exit);
-      process.on('uncaughtException', this._errorHandlers.uncaughtException);
-      process.on('unhandledRejection', this._errorHandlers.unhandledRejection);
-
-      // Wait for lightningd to be ready
-      await this._waitForLightningD();
-
-      return this._child;
-    } else {
-      return null;
-    }
-  }
-
-  async newDepositAddress () {
-    const address = await this._makeRPCRequest('newaddr', ['p2tr']);
-    return address.p2tr || address.bech32;
-  }
-
   async start () {
     this.status = 'starting';
 
-    // When managed, verify bitcoind is reachable before spawning lightningd.
-    // When unmanaged (external socket), skip—the external lightningd has its own bitcoind.
-    if (this.settings.managed &amp;&amp; this.settings.bitcoin) {
-      if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Waiting for Lightning to be ready...');
-      try {
-        const bitcoinCliArgs = [
-          `-datadir=${this.settings.bitcoin.datadir}`,
-          '-rpcclienttimeout=60',
-          `-rpcconnect=${this.settings.bitcoin.host}`,
-          `-rpcport=${this.settings.bitcoin.rpcport}`,
-          `-rpcuser=${this.settings.bitcoin.rpcuser}`,
-          '-stdinrpcpass',
-          'getblockchaininfo'
-        ];
-        const networkFlag = this._bitcoinCliNetworkFlag();
-        if (networkFlag) bitcoinCliArgs.unshift(networkFlag);
-        const bitcoinCli = children.spawn('bitcoin-cli', bitcoinCliArgs);
-
-      bitcoinCli.stdin.write(this.settings.bitcoin.rpcpassword + '\n');
-      bitcoinCli.stdin.end();
-
-      await new Promise((resolve, reject) => {
-        let _output = '';
-        bitcoinCli.stdout.on('data', (data) => {
-          _output += data.toString();
-        });
-        bitcoinCli.stderr.on('data', (data) => {
-          const line = data.toString();
-          // Route Lightning CLI errors into the service error channel so the TUI can render them safely.
-          this.emit('error', `[FABRIC:LIGHTNING] Lightning CLI error: ${line.trim()}`);
-        });
-        bitcoinCli.on('close', (code) => {
-          if (code === 0) {
-            resolve();
-          } else {
-            reject(new Error(`Lightning CLI exited with code ${code}`));
-          }
-        });
-      });
-
-        if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Lightning is ready');
-      } catch {
-        const networkFlag = this._bitcoinCliNetworkFlag();
-        const networkHint = networkFlag ? `${networkFlag} ` : '';
-        throw new Error(`Could not connect to bitcoind using bitcoin-cli. Is lightningd running?\n\nMake sure you have bitcoind running and that bitcoin-cli is able to connect to bitcoind.\n\nYou can verify that your Bitcoin Core installation is ready for use by running:\n\n    $ bitcoin-cli ${networkHint}-datadir=${this.settings.bitcoin.datadir} -rpcclienttimeout=60 -rpcconnect=${this.settings.bitcoin.host} -rpcport=${this.settings.bitcoin.rpcport} -rpcuser=${this.settings.bitcoin.rpcuser} -stdinrpcpass echo 'hello world'`);
-      }
-    }
-
     await this.machine.start();
 
-    if (this.settings.managed) {
-      await this.createLocalNode();
-    }
+    switch (this.settings.mode) {
+      default:
+        throw new Error(`Unknown mode: ${this.settings.mode}`);
+      case 'grpc':
+        throw new Error('Disabled.');
+      case 'rest':
+        // TODO: re-work Polar integration
+        const provider = new URL(this.settings.authority);
 
-    await this.sync();
+        // Fabric Remote for target REST interface
+        this.rest = new Remote({
+          host: this.settings.host,
+          macaroon: this.settings.macaroon,
+          username: provider.username,
+          password: provider.password,
+          port: this.settings.port,
+          secure: this.settings.secure
+        });
+
+        // Error Handler
+        this.rest.on('error', this.restErrorHandler.bind(this));
+
+        // Sync data from the target
+        await this._syncOracleInfo();
+
+        break;
+      case 'rpc':
+        throw new Error('Disabled.');
+      case 'socket':
+        this.emit('debug', 'Opening Lightning socket...');
+        await this._sync();
+        break;
+    }
 
     this._heart = setInterval(this._heartbeat.bind(this), this.settings.interval);
     this.status = 'started';
@@ -819,17 +186,11 @@ class Lightning extends Service {
   }
 
   async listFunds () {
-    try {
-      const result = await this._makeRPCRequest('listfunds');
-      return result;
-    } catch (exception) {
-      this.emit('error', `Could not list funds: ${exception}`);
-      return null;
-    }
+    return this._makeRPCRequest('listfunds');
   }
 
   async _heartbeat () {
-    await this.sync();
+    await this._syncOracleInfo();
     return this;
   }
 
@@ -899,69 +260,106 @@ class Lightning extends Service {
    * Make an RPC request through the Lightning UNIX socket.
    * @param {String} method Name of method to call.
    * @param {Array} [params] Array of parameters.
-   * @param {Number} [timeoutMs] Optional timeout in ms; default 30000. Prevents hanging when lightningd is busy.
    * @returns {Object|String} Respond from the Lightning node.
    */
-  async _makeRPCRequest (method, params = [], timeoutMs = 30000) {
-    if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Making RPC request to method ${method}`);
+  async _makeRPCRequest (method, params = []) {
     return new Promise((resolve, reject) => {
-      let settled = false;
-      const finish = (fn, arg) => {
-        if (settled) return;
-        settled = true;
-        if (timeoutId) clearTimeout(timeoutId);
-        try { client.destroy(); } catch {}
-        fn(arg);
-      };
-
-      const socketPath = path.resolve(this.settings.datadir, this.settings.socket);
-      let client;
-      const timeoutId = timeoutMs > 0 ? setTimeout(() => {
-        finish(reject, new Error(`Lightning RPC timeout after ${timeoutMs}ms (${method})`));
-      }, timeoutMs) : null;
-
       try {
-        let buffer = '';
-        client = net.createConnection({ path: socketPath });
-        client.on('error', (err) => finish(reject, err));
+        const client = net.createConnection({ path: this.settings.path });
+
         client.on('data', (data) => {
-          buffer += data.toString('utf8');
           try {
-            const response = JSON.parse(buffer);
-            if (response.result !== undefined) return finish(resolve, response.result);
-            if (response.error) return finish(reject, Object.assign(new Error(response.error.message || 'RPC error'), response.error));
-          } catch {
-            if (buffer.length > 2 * 1024 * 1024) finish(reject, new Error('Lightning RPC response too large'));
+            const response = JSON.parse(data.toString('utf8'));
+            if (response.result) {
+              return resolve(response.result);
+            } else if (response.error) {
+              return reject(response.error);
+            }
+          } catch (exception) {
+            this.emit('error', `Could not make RPC request: ${exception}\n${data.toString('utf8')}`);
           }
         });
 
-        // Format request according to JSON-RPC 2.0 spec
-        const request = {
-          jsonrpc: '2.0',
-          id: 1,
+        client.write(JSON.stringify({
           method: method,
-          params: params
-        };
-
-        client.write(JSON.stringify(request) + '\n');
+          params: params,
+          id: 0
+        }), null, '  ');
       } catch (exception) {
-        finish(reject, exception);
+        reject(exception);
       }
     });
   }
 
-  async _syncChannels () {
-    const channels = await this._makeRPCRequest('listchannels');
-    if (!channels || !channels.channels) {
-      this.emit('error', 'No channels found or error fetching channels');
-      return this;
+  async _syncOracleInfo () {
+    if (this.settings.mode === 'rest') {
+      const result = await this.rest._GET('/v1/channel/getInfo');
+
+      if (result &amp;&amp; result.id) {
+        this._state.id = result.id;
+        this._state.name = result.alias;
+        this._state.network = result.network;
+      }
+
+      await this._syncOracleBalance();
+      await this._syncOracleChannels();
     }
 
-    this._state.channels = channels.channels.reduce((acc, channel) => {
-      const actor = new Actor(channel);
-      acc[actor.id] = actor.state;
-      return acc;
-    }, {});
+    return this._state;
+  }
+
+  async _syncOracleBalance () {
+    if (this.settings.mode === 'rest') {
+      const result = await this.rest._GET('/v1/channel/localRemoteBal');
+      if (result) {
+        this._state.content.balances.spendable = result.totalBalance;
+        this._state.content.balances.confirmed = result.confBalance;
+        this._state.content.balances.unconfirmed = result.unconfBalance;
+        this.commit();
+      }
+    }
+
+    return this.state;
+  }
+
+  async _syncOracleChannels () {
+    if (this.settings.mode === 'rest') {
+      const result = await this.rest._GET('/v1/channel/listChannels');
+      if (!result || !result.map) return this.state;
+      this._state.content.channels = result.map((x) => {
+        return new Actor(x);
+      }).reduce((obj, item) => {
+        obj[item.id] = item.state;
+        return obj;
+      }, {});
+
+      this.commit();
+    }
+
+    return this.state;
+  }
+
+  async _syncChannels () {
+    switch (this.settings.mode) {
+      default:
+        try {
+          const result = await this._makeRPCRequest('listfunds');
+          this._state.channels = result.channels;
+        } catch (exception) {
+          this.emit('error', `Could not sync channels: ${exception}`);
+        }
+        break;
+      case 'rest':
+        try {
+          const result = await this.rest.get('/v1/channels/listChannels');
+          this._state.channels = result.channels;
+        } catch (exception) {
+          this.emit('error', `Could not sync channels: ${exception}`);
+        }
+        break;
+    }
+
+    this.commit();
 
     return this;
   }
@@ -988,161 +386,79 @@ class Lightning extends Service {
     return this;
   }
 
-  async sync () {
-    return this._sync();
+  async createLocalNode () {
+    if (this.settings.debug) console.log('[FABRIC:LIGHTNING]', 'Creating local Lightning node...');
+    const port = 9735; // Default Lightning port
+    let datadir = path.resolve('./stores/lightning');
+
+    // Configure based on network
+    switch (this.settings.network) {
+      default:
+      case 'mainnet':
+        datadir = path.resolve('./stores/lightning');
+        break;
+      case 'testnet':
+        datadir = path.resolve('./stores/lightning-testnet');
+        break;
+      case 'regtest':
+        datadir = path.resolve('./stores/lightning-regtest');
+        break;
+    }
+
+    // Ensure storage directory exists
+    await mkdirp(datadir);
+
+    // Create log file
+    const logFile = path.join(datadir, 'lightningd.log');
+    try {
+      fs.writeFileSync(logFile, '', { flag: 'w' });
+    } catch (error) {
+      throw new Error(`Failed to create log file ${logFile}: ${error.message}`);
+    }
+
+    // Configure Lightning node parameters
+    const params = [
+      `--network=${this.settings.network}`,
+      `--lightning-dir=${datadir}`,
+      `--bitcoin-datadir=${this.settings.bitcoin.datadir}`, // Connect to Bitcoin node
+      `--bitcoin-rpcuser=${this.settings.bitcoin.username}`,
+      `--bitcoin-rpcpassword=${this.settings.bitcoin.password}`,
+      `--bitcoin-rpcconnect=${this.settings.bitcoin.host}`,
+      `--bitcoin-rpcport=${this.settings.bitcoin.rpcport}`, // Use different port range while maintaining last digits
+      '--daemon', // Run as daemon
+      `--log-file=${logFile}`, // Specify log file
+      '--log-level=debug' // Enable debug logging
+    ];
+
+    // Start lightningd
+    if (this.settings.managed) {
+      const child = children.spawn('lightningd', params);
+
+      child.stdout.on('data', (data) => {
+        if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', data.toString('utf8').trim());
+        if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] ${data.toString('utf8').trim()}`);
+      });
+
+      child.stderr.on('data', (data) => {
+        console.error('[FABRIC:LIGHTNING]', '[ERROR]', data.toString('utf8').trim());
+        this.emit('error', `[FABRIC:LIGHTNING] ${data.toString('utf8').trim()}`);
+      });
+
+      child.on('close', (code) => {
+        if (this.settings.debug) console.debug('[FABRIC:LIGHTNING]', 'Lightning node exited with code ' + code);
+        this.emit('log', `[FABRIC:LIGHTNING] Lightning node exited with code ${code}`);
+      });
+
+      return child;
+    } else {
+      return null;
+    }
   }
 
-  async stop () {
-    this.status = 'stopping';
-    if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Starting Lightning service shutdown...');
-
-    // Remove custom error handlers
-    if (this._errorHandlers) {
-      Object.entries(this._errorHandlers).forEach(([event, handler]) => {
-        if (handler) {
-          process.removeListener(event, handler);
-          this._errorHandlers[event] = null;
-        }
-      });
-    }
-
-    // Remove all other event listeners
-    this.removeAllListeners();
-
-    // Clear heartbeat interval
-    if (this._heart) {
-      if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Clearing heartbeat interval...');
-      clearInterval(this._heart);
-      this._heart = null;
-    }
-
-    // Stop the machine
-    if (this.machine) {
-      if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Stopping machine...');
-      await this.machine.stop();
-    }
-
-    // Stop lightningd if it was started
-    if (this.settings.managed &amp;&amp; this._child) {
-      if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Stopping lightningd...');
-
-      try {
-        // Try graceful shutdown first with a timeout
-        if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Attempting graceful shutdown...');
-        const gracefulShutdown = this._makeRPCRequest('stop');
-        const timeout = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Graceful shutdown timeout')), 5000)
-        );
-
-        await Promise.race([gracefulShutdown, timeout]);
-        if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Graceful shutdown successful');
-
-        // Wait a bit for graceful shutdown
-        if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Waiting for graceful shutdown to complete...');
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        // Only force kill if process is still running
-        if (this._child &amp;&amp; !this._child.killed) {
-          const exitCode = this._child.exitCode;
-          if (exitCode === null) {
-            if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Force killing lightningd...');
-            this._child.kill('SIGKILL');
-          } else {
-            if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] lightningd already exited with code ${exitCode}`);
-          }
-        }
-
-        if (this._child) {
-          await Promise.race([
-            new Promise((resolve) => this._child.once('close', () => resolve())),
-            new Promise((resolve) => setTimeout(resolve, 5000))
-          ]);
-        }
-      } catch (error) {
-        if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Error during graceful shutdown: ${error.message}`);
-        // Force kill if graceful shutdown fails and process is still running
-        if (this._child &amp;&amp; !this._child.killed) {
-          const exitCode = this._child.exitCode;
-          if (exitCode === null) {
-            if (this.settings.debug) this.emit('debug', '[FABRIC:LIGHTNING] Force killing lightningd after failed graceful shutdown...');
-            this._child.kill('SIGKILL');
-          } else {
-            if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] lightningd already exited with code ${exitCode}`);
-          }
-        }
-
-        if (this._child) {
-          await Promise.race([
-            new Promise((resolve) => this._child.once('close', () => resolve())),
-            new Promise((resolve) => setTimeout(resolve, 5000))
-          ]);
-        }
-      }
-
-      // Clean up socket file
-      const socketPath = path.resolve(this.settings.datadir, this.settings.socket);
-      try {
-        if (fs.existsSync(socketPath)) {
-          if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Cleaning up socket file: ${socketPath}`);
-          fs.unlinkSync(socketPath);
-        }
-      } catch (error) {
-        if (this.settings.debug) this.emit('debug', `[FABRIC:LIGHTNING] Error cleaning up socket file: ${error.message}`);
-      }
-    }
-
-    this.status = 'stopped';
-    return this;
+  async sync () {
+    // TODO: sync local data with node
   }
 }
-
-/**
- * Core Lightning JSON-RPC method names invoked by this service (see docs/LIGHTNING_COMPAT.md).
- * @type {ReadonlyArray&lt;string>}
- */
-Lightning.CLN_RPC_METHODS = Object.freeze([
-  'connect',
-  'decode',
-  'decodepay',
-  'disableinvoicerequest',
-  'disableoffer',
-  'fetchinvoice',
-  'fundchannel',
-  'getinfo',
-  'getroute',
-  'invoice',
-  'invoicerequest',
-  'listchannels',
-  'listfunds',
-  'listinvoicerequests',
-  'listoffers',
-  'newaddr',
-  'offer',
-  'pay',
-  'sendinvoice',
-  'stop'
-]);
-
-/**
- * Paths to canonical Markdown docs (relative to the `@fabric/core` package root).
- * `fabricLightningMarkets` and `fabricLightningOffers` point at the same file (Fabric **markets** vs Lightning BOLT12 **offers**).
- * @type {Readonly&lt;{ boltCompatibility: string, fabricLightningOffers: string, fabricLightningMarkets: string, fabricPaymentBech32: string, lightningCompat: string }>}
- */
-Lightning.DOCS = Object.freeze({
-  boltCompatibility: 'docs/BOLT_COMPATIBILITY.md',
-  fabricLightningOffers: 'docs/FABRIC_LIGHTNING_OFFERS.md',
-  fabricLightningMarkets: 'docs/FABRIC_LIGHTNING_OFFERS.md',
-  fabricPaymentBech32: 'docs/FABRIC_PAYMENT_BECH32.md',
-  lightningCompat: 'docs/LIGHTNING_COMPAT.md'
-});
-
-Lightning.redactSensitiveCommandArg = redactSensitiveCommandArg;
-
-Object.assign(Lightning, {
-  Bolt12: require('../functions/lightningBolt12'),
-  FabricPayment: require('../functions/fabricPaymentBech32'),
-  Bolt12Semantics: require('../functions/bolt12Semantics')
-});
 
 module.exports = Lightning;
 </code></pre>
@@ -1158,21 +474,17 @@ module.exports = Lightning;
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="Block.html">Block</a></li>
-      <li><a href="Bond.html">Bond</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="Collection.html">Collection</a></li>
-      <li><a href="Contract.html">Contract</a></li>
-      <li><a href="Disk.html">Disk</a></li>
-      <li><a href="Entity.html">Entity</a></li>
-      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
+      <li><a href="HTTPServer.html">HTTPServer</a></li>
       <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
@@ -1183,45 +495,32 @@ module.exports = Lightning;
       <li><a href="Machine.html">Machine</a></li>
       <li><a href="Message.html">Message</a></li>
       <li><a href="Peer.html">Peer</a></li>
-      <li><a href="Program.html">Program</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
-      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
+      <li><a href="Snapshot.html">Snapshot</a></li>
+      <li><a href="Stack.html">Stack</a></li>
+      <li><a href="Stash.html">Stash</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
-      <li><a href="global.html#Text">Text</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
+      <li><a href="Value.html">Value</a></li>
       <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
-    <h3>Global</h3>
+    <h3>Events</h3>
     <ul>
-      <li><a href="global.html#BODY_SCHEMA_BY_KEY">BODY_SCHEMA_BY_KEY</a></li>
-      <li><a href="global.html#GenericMessage">GenericMessage</a></li>
-      <li><a href="global.html#P2P_CHAT_MAX_CHARS">P2P_CHAT_MAX_CHARS</a></li>
-      <li><a href="global.html#P2P_PEER_ALIAS_MAX_CHARS">P2P_PEER_ALIAS_MAX_CHARS</a></li>
-      <li><a href="global.html#SEAL_BLOCK">SEAL_BLOCK</a></li>
-      <li><a href="global.html#blockDigest">blockDigest</a></li>
-      <li><a href="global.html#canonicalTypeCode">canonicalTypeCode</a></li>
-      <li><a href="global.html#canonicalTypeName">canonicalTypeName</a></li>
-      <li><a href="global.html#crypto">crypto</a></li>
-      <li><a href="global.html#fabricCanonicalJson">fabricCanonicalJson</a></li>
-      <li><a href="global.html#isStructuredBlockInput">isStructuredBlockInput</a></li>
-      <li><a href="global.html#meetsProofOfWork">meetsProofOfWork</a></li>
-      <li><a href="global.html#merge">merge</a></li>
-      <li><a href="global.html#mineOnStart">mineOnStart</a></li>
-      <li><a href="global.html#networks">networks</a></li>
-      <li><a href="global.html#signingStringForBlock">signingStringForBlock</a></li>
-      <li><a href="global.html#typeEquals">typeEquals</a></li>
+      <li><a href="Aggregator.html#event:commit">commit</a></li>
     </ul>
   </nav>
   <br class="clear" />

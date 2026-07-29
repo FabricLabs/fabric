@@ -35,7 +35,7 @@
 
 // Dependencies
 const bitcoin = require('bitcoinjs-lib');
-const { tryParseWireJson } = require('../functions/wireJson');
+const schnorr = require('bip-schnorr');
 
 // Fabric Types
 const Key = require('./key');
@@ -67,7 +67,7 @@ class Token {
 
     // Trust Chain
     this.issuer = this.settings.issuer ? this.settings.issuer : this.ephemera;
-    this.subject = this.settings.subject ? this.settings.subject : this.ephemera.keypair.getPublic(true, 'hex');
+    this.subject = this.settings.subject ? this.settings.subject : this.ephemera.keypair.getPublic(true).encodeCompressed('hex');
 
     // ECDSA Signature
     this.signature = null;
@@ -96,77 +96,12 @@ class Token {
       input += '=';
     }
 
-    return Buffer.from(input, 'base64').toString('utf8');
-  }
-
-  static base64UrlDecodeToBuffer (input) {
-    let s = input.replace(/-/g, '+').replace(/_/g, '/');
-    while (s.length % 4) s += '=';
-    return Buffer.from(s, 'base64');
-  }
-
-  static base64UrlEncodeBuffer (input) {
-    const b = Buffer.isBuffer(input) ? input : Buffer.from(input);
-    return b.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  }
-
-  /**
-   * Create a cryptographically signed token string.
-   * Format: base64url(payload).base64url(signature)
-   * Payload: { cap, iss, sub, iat, exp }. Signature: Schnorr over payload JSON.
-   * @param {Object} [options]
-   * @param {number} [options.expiresInSeconds=31536000] Token lifetime (default 1 year).
-   * @returns {string}
-   */
-  toSignedString (options = {}) {
-    const expiresInSeconds = options.expiresInSeconds ?? 365 * 24 * 60 * 60;
-    const iat = Math.floor(Date.now() / 1000);
-    const exp = iat + expiresInSeconds;
-    const iss = this.issuer.public ? this.issuer.public.encodeCompressed('hex') : this.issuer.keypair.getPublic(true, 'hex');
-    const payload = {
-      cap: this.capability,
-      iss,
-      sub: this.settings.subject ?? this.subject,
-      iat,
-      exp
-    };
-    const payloadStr = JSON.stringify(payload);
-    const payloadB64 = Token.base64UrlEncode(payloadStr);
-    const signature = this.issuer.sign(payloadStr);
-    const sigB64 = Token.base64UrlEncodeBuffer(Buffer.isBuffer(signature) ? signature : Buffer.from(signature));
-    return `${payloadB64}.${sigB64}`;
-  }
-
-  /**
-   * Verify a signed token string. Returns parsed payload if valid, null otherwise.
-   * @param {string} tokenString
-   * @param {Key} verificationKey Key used to verify the signature (must match issuer).
-   * @returns {{ cap: string, iss: string, sub: string, iat: number, exp: number }|null}
-   */
-  static verifySigned (tokenString, verificationKey) {
-    if (!tokenString || typeof tokenString !== 'string') return null;
-    if (!verificationKey) return null;
-    const parts = tokenString.split('.');
-    if (parts.length !== 2) return null;
-    try {
-      const payloadStr = Token.base64UrlDecode(parts[0]);
-      const pr = tryParseWireJson(payloadStr);
-      if (!pr.ok) return null;
-      const payload = pr.value;
-      const sig = Token.base64UrlDecodeToBuffer(parts[1]);
-      if (!payload || typeof payload !== 'object' || Array.isArray(payload) || !payload.iss || payload.exp == null) return null;
-      if (Date.now() / 1000 > payload.exp) return null;
-      const ourIss = verificationKey.public ? verificationKey.public.encodeCompressed('hex') : verificationKey.keypair.getPublic(true, 'hex');
-      if (payload.iss !== ourIss) return null;
-      if (!verificationKey.verify(payloadStr, sig)) return null;
-      return payload;
-    } catch {
-      return null;
-    }
+    return Buffer.from(input, 'base64').toString();
   }
 
   static fromString (input) {
     const parts = input.split('.');
+    const headers = parts[0];
     const payload = parts[1];
     const signature = parts[2];
     const inner = Token.base64UrlDecode(payload);
@@ -183,9 +118,7 @@ class Token {
   toString () {
     // TODO: determine rounding preference (secwise)
     const utime = Math.floor(this.created / 1000);
-    // Fabric Key: keypair.getPublic returns hex string; elliptic: returns Point with encodeCompressed
-    const pub = this.issuer.keypair.getPublic(true);
-    const issuer = typeof pub === 'string' ? pub : (pub &amp;&amp; typeof pub.encodeCompressed === 'function' ? pub.encodeCompressed('hex') : '');
+    const issuer = this.issuer.keypair.getPublic(true).encodeCompressed('hex');
     const header = {
       alg: 'ES256K',
       iss: issuer,
@@ -209,9 +142,9 @@ class Token {
     // Encodings
     const encodedHeader = Token.base64UrlEncode(JSON.stringify(header));
     const encodedPayload = Token.base64UrlEncode(JSON.stringify(payload));
-    const signature = Buffer.from(bitcoin.crypto.sha256(
+    const signature = bitcoin.crypto.sha256(
       Buffer.from(`${encodedHeader}.${encodedPayload}.${secret}`)
-    ));
+    );
 
     return [
       encodedHeader,
@@ -221,20 +154,15 @@ class Token {
   }
 
   sign () {
-    const hash = Buffer.from(bitcoin.crypto.sha256(Buffer.from(this.capability, 'utf8')));
-    if (!this.issuer || typeof this.issuer.signSchnorrHash !== 'function') {
-      throw new Error('Token.sign requires issuer Key with private material');
-    }
-    this.signature = this.issuer.signSchnorrHash(hash);
+    // Sign the capability using the private key
+    const hash = bitcoin.crypto.sha256(this.capability);
+    this.signature = schnorr.sign(this.issuer.privateKey, hash);
   }
 
   verify () {
-    const hash = Buffer.from(bitcoin.crypto.sha256(Buffer.from(this.capability, 'utf8')));
-    if (!this.issuer || typeof this.issuer.verifySchnorrHash !== 'function') {
-      return false;
-    }
-    if (!this.signature) return false;
-    return this.issuer.verifySchnorrHash(hash, this.signature);
+    // Verify the signature using the public key
+    const hash = bitcoin.crypto.sha256(this.capability);
+    return schnorr.verify(this.issuer.publicKey, hash, this.signature);
   }
 
   add (other) {
@@ -267,21 +195,17 @@ module.exports = Token;
     <ul>
       <li><a href="Actor.html">Actor</a></li>
       <li><a href="Bitcoin.html">Bitcoin</a></li>
-      <li><a href="Block.html">Block</a></li>
-      <li><a href="Bond.html">Bond</a></li>
+      <li><a href="CLI.html">CLI</a></li>
       <li><a href="Chain.html">Chain</a></li>
       <li><a href="Channel.html">Channel</a></li>
       <li><a href="Circuit.html">Circuit</a></li>
       <li><a href="Collection.html">Collection</a></li>
-      <li><a href="Contract.html">Contract</a></li>
-      <li><a href="Disk.html">Disk</a></li>
-      <li><a href="Entity.html">Entity</a></li>
-      <li><a href="Entity.Transition.html">Transition</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
+      <li><a href="HTTPServer.html">HTTPServer</a></li>
       <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
@@ -292,45 +216,32 @@ module.exports = Token;
       <li><a href="Machine.html">Machine</a></li>
       <li><a href="Message.html">Message</a></li>
       <li><a href="Peer.html">Peer</a></li>
-      <li><a href="Program.html">Program</a></li>
       <li><a href="Reader.html">Reader</a></li>
       <li><a href="Redis.html">Redis</a></li>
       <li><a href="Remote.html">Remote</a></li>
       <li><a href="Resource.html">Resource</a></li>
-      <li><a href="RoundRobin.html">RoundRobin</a></li>
       <li><a href="Scribe.html">Scribe</a></li>
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
+      <li><a href="Snapshot.html">Snapshot</a></li>
+      <li><a href="Stack.html">Stack</a></li>
+      <li><a href="Stash.html">Stash</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
-      <li><a href="global.html#Text">Text</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
+      <li><a href="Value.html">Value</a></li>
       <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
-    <h3>Global</h3>
+    <h3>Events</h3>
     <ul>
-      <li><a href="global.html#BODY_SCHEMA_BY_KEY">BODY_SCHEMA_BY_KEY</a></li>
-      <li><a href="global.html#GenericMessage">GenericMessage</a></li>
-      <li><a href="global.html#P2P_CHAT_MAX_CHARS">P2P_CHAT_MAX_CHARS</a></li>
-      <li><a href="global.html#P2P_PEER_ALIAS_MAX_CHARS">P2P_PEER_ALIAS_MAX_CHARS</a></li>
-      <li><a href="global.html#SEAL_BLOCK">SEAL_BLOCK</a></li>
-      <li><a href="global.html#blockDigest">blockDigest</a></li>
-      <li><a href="global.html#canonicalTypeCode">canonicalTypeCode</a></li>
-      <li><a href="global.html#canonicalTypeName">canonicalTypeName</a></li>
-      <li><a href="global.html#crypto">crypto</a></li>
-      <li><a href="global.html#fabricCanonicalJson">fabricCanonicalJson</a></li>
-      <li><a href="global.html#isStructuredBlockInput">isStructuredBlockInput</a></li>
-      <li><a href="global.html#meetsProofOfWork">meetsProofOfWork</a></li>
-      <li><a href="global.html#merge">merge</a></li>
-      <li><a href="global.html#mineOnStart">mineOnStart</a></li>
-      <li><a href="global.html#networks">networks</a></li>
-      <li><a href="global.html#signingStringForBlock">signingStringForBlock</a></li>
-      <li><a href="global.html#typeEquals">typeEquals</a></li>
+      <li><a href="Aggregator.html#event:commit">commit</a></li>
     </ul>
   </nav>
   <br class="clear" />

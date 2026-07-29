@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>JSDoc: Source: lib/machine.js</title>
+
+  <script src="scripts/prettify/prettify.js"> </script>
+  <script src="scripts/prettify/lang-css.js"> </script>
+  <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+  <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+  <div id="main">
+
+    <h1 class="page-title">Source: lib/machine.js</h1>
+
+
+
+
+
+
+    <section>
+      <article>
+        <pre class="prettyprint source linenums"><code>'use strict'; // commit (.) and continue (,) ⇒ ;
+
+const crypto = require('crypto');
+const arbitrary = require('arbitrary');
+const monitor = require('fast-json-patch');
+
+const Scribe = require('./scribe');
+const State = require('./state');
+const Vector = require('./vector');
+
+/**
+ * General-purpose state machine with {@link Vector}-based instructions.
+ */
+class Machine extends Scribe {
+  /**
+   * Create a Machine.
+   * @param       {Object} config Run-time configuration.
+   */
+  constructor (config) {
+    super(config);
+
+    this.config = Object.assign({
+      path: './data/machine',
+      debug: true,
+      deterministic: true,
+      seed: 1 // TODO: select seed for production
+    }, config);
+
+    this.clock = 0;
+
+    // define integer field
+    this.seed = crypto.createHash('sha256').update(this.config.seed + '');
+    this.q = parseInt(this.seed.digest('hex'));
+
+    // deterministic entropy and RNG
+    this.generator = new arbitrary.default.Generator(this.q);
+    this.entropy = this.sip();
+
+    this.known = {}; // definitions
+    this.script = []; // input
+    this.stack = []; // output
+
+    this.state = new State(); // JS map
+    this.history = []; // State tree
+
+    this.observer = monitor.observe(this.state['@data']);
+    this.vector = new Vector(this.state['@data']);
+
+    Object.defineProperty(this, 'tip', function (val) {
+      this.log(`tip requested: ${val}`);
+      this.log(`tip requested, history: ${JSON.stringify(this.history)}`);
+      return this.history[this.history.length - 1] || null;
+    });
+
+    return this;
+  }
+
+  /**
+   * Get `n` bits of entropy.
+   * @param  {Number} [n=32] Number of bits to retrieve (max = 32).
+   * @return {Number}        Random bits from {@link Generator}.
+   */
+  sip (n = 32) {
+    return this.generator.next.bits(n);
+  }
+
+  /**
+   * Computes the next "step" for our current Vector.  Analagous to `sum`.
+   * The top item on the stack is always the memory held at current position,
+   * so counts should always begin with 0.
+   * @param  {Vector} input - Input state, undefined if desired.
+   * @return {Promise}
+   */
+  async compute (input) {
+    ++this.clock;
+
+    this.emit('tick', this.clock);
+
+    for (let i in this.script) {
+      let instruction = this.script[i];
+
+      if (this.known[instruction]) {
+        let op = new State({
+          '@type': 'Cycle',
+          parent: this.id,
+          state: this.state,
+          known: this.known,
+          input: input
+        });
+        let data = this.known[instruction].call(op, input);
+        this.stack.push(data);
+      } else {
+        this.stack.push(instruction | 0);
+      }
+    }
+
+    if (this.stack.length > 1) {
+      this.warn('Stack is dirty:', this.stack);
+    }
+
+    this.state['@data'] = this.stack;
+    this.state['@id'] = this.id;
+
+    let commit = await this.commit();
+    let state = await this.state.commit();
+
+    return state;
+  }
+
+  asBuffer () {
+    let data = this.serialize(this.state['@data']);
+    return Buffer.from(data);
+  }
+
+  // register a local function
+  define (name, op) {
+    this.known[name] = op.bind(this);
+  }
+
+  applyOperation (op) {
+    monitor.applyOperation(this.state, op);
+  }
+
+  commit () {
+    let self = this;
+    if (!self.observer) return false;
+
+    let changes = monitor.generate(self.observer);
+
+    if (changes &amp;&amp; changes.length) {
+      let vector = new State({
+        '@type': 'Change',
+        '@data': changes,
+        method: 'patch',
+        parent: self.id,
+        params: changes
+      });
+
+      if (!self.history) self.history = [];
+      self.history.push(vector);
+
+      self.emit('transaction', vector);
+    }
+
+    return changes;
+  }
+}
+
+module.exports = Machine;
+</code></pre>
+      </article>
+    </section>
+
+
+
+
+  </div>
+
+  <nav>
+    <h2><a href="index.html">Home</a></h2>
+    <h3>Classes</h3>
+    <ul>
+      <li><a href="App.html">App</a></li>
+      <li><a href="Chain.html">Chain</a></li>
+      <li><a href="CLI.html">CLI</a></li>
+      <li><a href="Compiler.html">Compiler</a></li>
+      <li><a href="Entity.html">Entity</a></li>
+      <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="Machine.html">Machine</a></li>
+      <li><a href="Message.html">Message</a></li>
+      <li><a href="Oracle.html">Oracle</a></li>
+      <li><a href="Peer.html">Peer</a></li>
+      <li><a href="Remote.html">Remote</a></li>
+      <li><a href="Router.html">Router</a></li>
+      <li><a href="Scribe.html">Scribe</a></li>
+      <li><a href="Script.html">Script</a></li>
+      <li><a href="Service.html">Service</a></li>
+      <li><a href="Stack.html">Stack</a></li>
+      <li><a href="State.html">State</a></li>
+      <li><a href="Store.html">Store</a></li>
+      <li><a href="Swarm.html">Swarm</a></li>
+      <li><a href="Vector.html">Vector</a></li>
+      <li><a href="Walker.html">Walker</a></li>
+    </ul>
+  </nav>
+
+  <br class="clear">
+
+  <footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.6.0-dev</a> on Mon Jul 01 2019 21:32:25 GMT-0700 (Pacific Daylight Time)
+  </footer>
+
+  <script>
+    prettyPrint();
+  </script>
+  <script src="scripts/linenumber.js"> </script>
+</body>
+
+</html>
