@@ -212,7 +212,14 @@ function _cloneState (state) {
  */
 function normalizeContractId (contractId) {
   const id = String(contractId || '').trim().toLowerCase();
-  if (!id || id.includes('/') || id.includes('..') || id.length > 128) {
+  if (
+    !id ||
+    id.includes('\0') ||
+    id.includes('/') ||
+    id.includes('\\') ||
+    id.includes('..') ||
+    id.length > 128
+  ) {
     throw new Error('invalid contractId for contract Statechain');
   }
   return id;

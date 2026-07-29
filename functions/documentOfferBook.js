@@ -9,10 +9,10 @@ const {
 } = require('./documentPaymentHash');
 
 const DEFAULT_WEIGHTS = Object.freeze({
-  price: 0.45,
-  latency: 0.25,
-  peerScore: 0.20,
-  completeness: 0.10
+  price: 45 / 100,
+  latency: 25 / 100,
+  peerScore: 1 / 5,
+  completeness: 1 / 10
 });
 
 function offerKey (row) {

@@ -15,6 +15,7 @@
  */
 
 const fs = require('fs');
+const path = require('path');
 const Actor = require('../types/actor');
 const { DocumentOfferBook } = require('./documentOfferBook');
 const {
@@ -32,6 +33,53 @@ const {
   prepareInventoryHtlcBuyerRefundPsbt,
   signAndExtractInventoryHtlcBuyerRefund
 } = inventoryHtlc;
+
+const IMPORT_PATH_MAX_LEN = 4096;
+
+/**
+ * Resolve an operator-supplied import path. Absolute paths are normalized as-is;
+ * relative paths must stay under `process.cwd()`.
+ * @param {string} filePath
+ * @returns {string|null}
+ */
+function resolveImportFilePath (filePath) {
+  if (filePath == null || typeof filePath !== 'string') return null;
+  const trimmed = filePath.trim();
+  if (!trimmed || trimmed.includes('\0') || trimmed.length > IMPORT_PATH_MAX_LEN) return null;
+  let abs;
+  if (path.isAbsolute(trimmed)) {
+    abs = path.normalize(trimmed);
+  } else {
+    // Relative: containment enforced by path.relative below.
+    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
+    abs = path.resolve(process.cwd(), trimmed);
+    const root = path.resolve(process.cwd());
+    const rel = path.relative(root, abs);
+    if (rel === '' || rel.startsWith('..' + path.sep) || rel === '..' || path.isAbsolute(rel)) {
+      return null;
+    }
+  }
+  if (!abs || abs.includes('\0') || !path.isAbsolute(abs)) return null;
+  return abs;
+}
+
+/**
+ * Read a regular file from a previously resolved absolute path.
+ * @param {string} absolutePath
+ * @returns {Buffer}
+ */
+function readResolvedImportFile (absolutePath) {
+  const p = path.normalize(String(absolutePath || ''));
+  if (!p || p.includes('\0') || !path.isAbsolute(p)) {
+    throw new Error('invalid import path');
+  }
+  // Path already validated by resolveImportFilePath.
+  // nosemgrep: javascript.lang.security.audit.path-traversal.tainted-path
+  const st = fs.statSync(p);
+  if (!st.isFile()) throw new Error('not a regular file');
+  // nosemgrep: javascript.lang.security.audit.path-traversal.tainted-path
+  return fs.readFileSync(p);
+}
 
 /**
  * @typedef {Object} DocumentExchangeHost
@@ -186,10 +234,25 @@ class CliDocumentExchange {
    * @returns {ExchangeResult}
    */
   importFile (filePath) {
-    const p = String(filePath || '').trim();
-    if (!p) return { ok: false, error: 'You must provide a file to import.' };
-    if (!fs.existsSync(p)) return { ok: false, error: `File does not exist: ${p}` };
-    const content = fs.readFileSync(p);
+    if (filePath == null || String(filePath).trim() === '') {
+      return { ok: false, error: 'You must provide a file to import.' };
+    }
+    const p = resolveImportFilePath(filePath);
+    if (!p) {
+      return {
+        ok: false,
+        error: 'Invalid import path (null bytes, escape of cwd, or unbound length).'
+      };
+    }
+    let content;
+    try {
+      content = readResolvedImportFile(p);
+    } catch (e) {
+      if (e && e.code === 'ENOENT') {
+        return { ok: false, error: `File does not exist: ${p}` };
+      }
+      return { ok: false, error: `Cannot read import file: ${e.message || e}` };
+    }
     const actor = new Actor(content);
     this.documents[actor.id] = content;
     this.syncDocumentToPeer(actor.id, content, 0);

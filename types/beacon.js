@@ -17,7 +17,7 @@ const Message = require('./message');
 const Chain = require('./chain');
 const beaconFederationSigning = require('../functions/beaconFederationSigning');
 
-const SATS_PER_BTC = 1e8;
+const SATS_PER_BTC = 100000000;
 const BEACON_CHAIN_PATH = 'beacon/CHAIN';
 
 class Beacon extends Actor {

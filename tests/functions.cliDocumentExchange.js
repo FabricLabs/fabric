@@ -11,6 +11,7 @@ const {
   listDocumentExchangeCommands
 } = require('../functions/documentExchange');
 const { DocumentOfferBook } = require('../functions/documentOfferBook');
+const { createDocumentPurchaseSession } = require('../functions/documentPurchaseSession');
 
 describe('functions/cliDocumentExchange (headless CLI surface)', function () {
   it('catalog exposes documents + documents-market packs and commands', function () {
@@ -59,6 +60,33 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
     assert.strictEqual(published.length, 1);
     assert.strictEqual(published[0].rate, 0);
     fs.unlinkSync(tmp);
+  });
+
+  it('importFile rejects empty, missing, and cwd-escaping relative paths', function () {
+    const exchange = new CliDocumentExchange({});
+    assert.strictEqual(exchange.importFile('').ok, false);
+    assert.strictEqual(exchange.importFile(null).ok, false);
+    assert.strictEqual(exchange.importFile('/no/such/fabric-import-' + Date.now()).ok, false);
+    // Relative escape of cwd (when path would resolve outside).
+    const escape = exchange.importFile(path.join('..', '..', 'etc', 'passwd'));
+    // On some layouts this may resolve to an absolute path outside cwd → rejected;
+    // if the file happens to exist as absolute, still must not throw.
+    assert.ok(escape && typeof escape.ok === 'boolean');
+    if (!path.isAbsolute(path.join('..', '..', 'etc', 'passwd'))) {
+      // relative form under resolveImportFilePath must refuse cwd escape
+      assert.strictEqual(escape.ok, false);
+    }
+  });
+
+  it('publish validates args and peer readiness', function () {
+    const exchange = new CliDocumentExchange({
+      getPeer: () => null
+    });
+    assert.ok(!exchange.publish('', 0).ok);
+    assert.ok(!exchange.publish('missing-id', null).ok);
+    exchange.documents['doc1'] = Buffer.from('x');
+    assert.ok(!exchange.publish('doc1', -1).ok);
+    assert.ok(!exchange.publish('doc1', 1).ok); // peer not ready
   });
 
   it('buy opens a session from the offer book without double-pay', function () {
@@ -116,5 +144,328 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
     assert.ok(result.ok);
     assert.ok(result.offers.length >= 2);
     assert.match(result.message, /Document offers/);
+    const empty = exchange.listOffers('missing');
+    assert.ok(empty.ok);
+    assert.strictEqual(empty.offers.length, 0);
+  });
+
+  it('requestInventory lists local catalog and forwards remote requests', function () {
+    const pending = [{ documentId: 'x' }];
+    let requested = null;
+    const peer = {
+      _state: { content: { documentRates: {} } },
+      listPendingDocumentRequests () { return pending; },
+      requestPeerInventory (ref, opts) {
+        requested = { ref, opts };
+        return true;
+      }
+    };
+    const exchange = new CliDocumentExchange({
+      getPeer: () => peer
+    });
+    exchange.documents.abc = Buffer.from('hi');
+    const local = exchange.requestInventory(null);
+    assert.ok(local.ok);
+    assert.ok(local.data.local);
+    assert.strictEqual(local.data.pendingCount, 1);
+
+    const remote = exchange.requestInventory('peer:1', { offerBtc: true });
+    assert.ok(remote.ok);
+    assert.strictEqual(requested.ref, 'peer:1');
+    assert.strictEqual(requested.opts.offerBtc, true);
+
+    peer.requestPeerInventory = () => false;
+    assert.ok(!exchange.requestInventory('peer:2').ok);
+  });
+
+  it('confirm marks session delivery_pending and requests the document', async function () {
+    const txid = 'ab'.repeat(32);
+    const session = createDocumentPurchaseSession({
+      documentId: 'doc-c',
+      seller: 'seller:1',
+      contentHashHex: 'cd'.repeat(32),
+      amountSats: 0,
+      paymentAddress: '',
+      network: 'regtest'
+    });
+    let requested = null;
+    const peer = {
+      settings: {},
+      blobTransfers: null,
+      requestDocument (id, seller, opts) {
+        requested = { id, seller, opts };
+        return true;
+      }
+    };
+    const exchange = new CliDocumentExchange({
+      getPeer: () => peer,
+      getBitcoin: () => null,
+      getSettings: () => ({})
+    });
+    exchange.purchaseSessions.set(session.settlementId, session);
+
+    const bad = await exchange.confirm(null, null);
+    assert.ok(!bad.ok);
+    const missing = await exchange.confirm('nope', txid);
+    assert.ok(!missing.ok);
+    const badTx = await exchange.confirm(session.settlementId, 'zz');
+    assert.ok(!badTx.ok);
+
+    const ok = await exchange.confirm(session.settlementId, txid);
+    assert.ok(ok.ok, ok.error);
+    assert.strictEqual(session.status, 'delivery_pending');
+    assert.strictEqual(requested.id, 'doc-c');
+    assert.strictEqual(requested.seller, 'seller:1');
+
+    const again = await exchange.confirm(session.settlementId, txid);
+    assert.ok(!again.ok);
+    assert.match(again.error, /Already confirmed/);
+  });
+
+  it('confirm verifies L1 payment amount when bitcoind is available', async function () {
+    const txid = '11'.repeat(32);
+    const session = createDocumentPurchaseSession({
+      documentId: 'doc-pay',
+      seller: 'seller:1',
+      contentHashHex: '22'.repeat(32),
+      amountSats: 5000,
+      paymentAddress: 'bcrt1qpayme',
+      network: 'regtest'
+    });
+    const warnings = [];
+    const notices = [];
+    const bitcoin = {
+      async _makeRPCRequest (method, params) {
+        if (method === 'getrawtransaction' && params[1] === true) {
+          return {
+            vout: [{
+              value: 0.00005,
+              scriptPubKey: { address: 'bcrt1qpayme' }
+            }]
+          };
+        }
+        if (method === 'getrawtransaction') return '00';
+        return null;
+      }
+    };
+    const peer = {
+      settings: {},
+      requestDocument () { return true; }
+    };
+    const exchange = new CliDocumentExchange({
+      getPeer: () => peer,
+      getBitcoin: () => bitcoin,
+      getSettings: () => ({}),
+      onWarning: (m) => warnings.push(m),
+      onNotice: (m) => notices.push(m)
+    });
+    exchange.purchaseSessions.set(session.settlementId, session);
+    const ok = await exchange.confirm(session.settlementId, txid);
+    assert.ok(ok.ok, ok.error);
+    assert.ok(notices.some((n) => /L1 verified/.test(n)));
+
+    const short = createDocumentPurchaseSession({
+      documentId: 'doc-short',
+      seller: 'seller:1',
+      contentHashHex: '33'.repeat(32),
+      amountSats: 9000,
+      paymentAddress: 'bcrt1qpayme',
+      network: 'regtest'
+    });
+    exchange.purchaseSessions.set(short.settlementId, short);
+    const fail = await exchange.confirm(short.settlementId, txid);
+    assert.ok(!fail.ok);
+    assert.match(fail.error, /insufficient/);
+  });
+
+  it('claimWatch requires claim txid or hub reveal; refuses refunded sessions', async function () {
+    const session = createDocumentPurchaseSession({
+      documentId: 'doc-claim',
+      seller: 'seller:1',
+      contentHashHex: '44'.repeat(32),
+      amountSats: 1,
+      paymentAddress: 'bcrt1q',
+      network: 'regtest'
+    });
+    const exchange = new CliDocumentExchange({
+      getPeer: () => ({}),
+      getBitcoin: () => null,
+      getSettings: () => ({})
+    });
+    exchange.purchaseSessions.set(session.settlementId, session);
+    assert.ok(!(await exchange.claimWatch(null)).ok);
+    assert.ok(!(await exchange.claimWatch('missing')).ok);
+    const needTx = await exchange.claimWatch(session.settlementId);
+    assert.ok(!needTx.ok);
+    assert.match(needTx.error, /claimTxid|claimwatch/i);
+
+    session.status = 'refunded';
+    const refused = await exchange.claimWatch(session.settlementId, '55'.repeat(32));
+    assert.ok(!refused.ok);
+
+    session.status = 'complete';
+    const done = await exchange.claimWatch(session.settlementId);
+    assert.ok(done.ok);
+  });
+
+  it('refund and listRefunds handle maturity / missing HTLC', async function () {
+    const session = createDocumentPurchaseSession({
+      documentId: 'doc-ref',
+      seller: 'seller:1',
+      contentHashHex: '66'.repeat(32),
+      amountSats: 1000,
+      paymentAddress: 'bcrt1qrefund',
+      network: 'regtest',
+      htlc: {
+        paymentAddress: 'bcrt1qrefund',
+        claimScriptHex: '51',
+        refundScriptHex: '52',
+        refundLocktimeHeight: 200
+      }
+    });
+    session.status = 'confirmed';
+    session.txid = '77'.repeat(32);
+    const bitcoin = {
+      async _makeRPCRequest (method) {
+        if (method === 'getblockchaininfo') return { blocks: 50 };
+        return null;
+      }
+    };
+    const exchange = new CliDocumentExchange({
+      getPeer: () => ({ settings: {} }),
+      getBitcoin: () => bitcoin,
+      getSettings: () => ({}),
+      getNetworkName: () => 'regtest'
+    });
+    exchange.purchaseSessions.set(session.settlementId, session);
+
+    assert.ok(!(await exchange.refund(null)).ok);
+    const immature = await exchange.refund(session.settlementId);
+    assert.ok(!immature.ok);
+    assert.match(immature.error, /not mature|Missing fundedTxHex|Need local bitcoind/);
+
+    const listed = await exchange.listRefunds('all');
+    assert.ok(listed.ok);
+    assert.ok(Array.isArray(listed.rows));
+
+    const badFilter = await exchange.listRefunds('nope');
+    assert.ok(!badFilter.ok);
+
+    session.status = 'complete';
+    assert.ok(!(await exchange.refund(session.settlementId)).ok);
+  });
+
+  it('buy auto opens a multi-blob plan when blobTotal > 1', function () {
+    const book = new DocumentOfferBook();
+    book.ingestInventoryResponse({
+      origin: 'seller-blobs',
+      peerScore: 5,
+      latencyMs: 5,
+      items: [{
+        id: 'doc-multi',
+        rateSats: 10,
+        contentHash: 'ee'.repeat(32),
+        sealed: true,
+        blobs: [
+          { index: 0, total: 2, blobHashHex: 'f1'.repeat(32), rateSats: 10 },
+          { index: 1, total: 2, blobHashHex: 'f2'.repeat(32), rateSats: 10 }
+        ],
+        merkleRootHex: 'f3'.repeat(32),
+        htlc: { paymentAddress: 'bcrt1qmulti', paymentHashHex: 'ee'.repeat(32) }
+      }]
+    });
+    const exchange = new CliDocumentExchange({
+      offerBook: book,
+      getPeer: () => ({ settings: {}, key: null }),
+      getSettings: () => ({ network: 'regtest' }),
+      getNetworkName: () => 'regtest',
+      getWallet: () => null
+    });
+    const plan = exchange.buy('doc-multi', 'auto');
+    assert.ok(plan.ok, plan.error);
+    assert.ok(plan.sessions && plan.sessions.length === 2);
+    assert.match(plan.message, /Buy plan/);
+  });
+
+  it('confirm via Hub RPC marks session confirmed', async function () {
+    const session = createDocumentPurchaseSession({
+      documentId: 'doc-hub',
+      seller: 'seller:hub',
+      contentHashHex: '99'.repeat(32),
+      amountSats: 1,
+      paymentAddress: 'bcrt1qhub',
+      network: 'regtest'
+    });
+    const prevFetch = global.fetch;
+    global.fetch = async () => ({
+      async json () {
+        return { result: { ok: true, settlementId: session.settlementId } };
+      }
+    });
+    try {
+      const exchange = new CliDocumentExchange({
+        getPeer: () => ({ settings: {} }),
+        getSettings: () => ({ hubRpcUrl: 'http://127.0.0.1:9' })
+      });
+      exchange.purchaseSessions.set(session.settlementId, session);
+      const ok = await exchange.confirm(session.settlementId, 'aa'.repeat(32));
+      assert.ok(ok.ok, ok.error);
+      assert.strictEqual(session.status, 'confirmed');
+      assert.match(ok.message, /Hub confirmed/);
+    } finally {
+      global.fetch = prevFetch;
+    }
+  });
+
+  it('listRefunds reports empty outstanding set', async function () {
+    const exchange = new CliDocumentExchange({
+      getBitcoin: () => ({
+        async _makeRPCRequest (method) {
+          if (method === 'getblockchaininfo') return { blocks: 1 };
+          return null;
+        }
+      })
+    });
+    const empty = await exchange.listRefunds('outstanding');
+    assert.ok(empty.ok);
+    assert.strictEqual(empty.rows.length, 0);
+    assert.match(empty.message, /No outstanding refunds/);
+  });
+
+  it('formatLocalInventory and buyer helpers tolerate missing peer', function () {
+    const empty = new CliDocumentExchange({});
+    assert.match(empty.formatLocalInventory(), /empty/);
+    assert.strictEqual(empty.buyerRefundPubkeyHex(), null);
+    assert.strictEqual(empty.buyerPrivateKey32(), null);
+
+    const key = {
+      public: { encodeCompressed () { return '02' + 'ab'.repeat(32); } },
+      private: Buffer.alloc(32, 9)
+    };
+    const withPeer = new CliDocumentExchange({
+      getPeer: () => ({
+        key,
+        _state: { content: { documentRates: { d: 7 } } }
+      })
+    });
+    withPeer.documents.d = Buffer.from('abc');
+    assert.match(withPeer.formatLocalInventory(), /rate=7/);
+    assert.strictEqual(withPeer.buyerRefundPubkeyHex().length, 66);
+    assert.strictEqual(withPeer.buyerPrivateKey32().length, 32);
+  });
+});
+
+describe('@fabric/core/functions/contractSidechainLocal path hardening', function () {
+  const local = require('../functions/contractSidechainLocal');
+
+  it('rejects path-traversal contract ids and contains under storeRoot', function () {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-csl-sec-'));
+    assert.throws(() => local.storePathsForLocalContract('../evil', root));
+    assert.throws(() => local.storePathsForLocalContract('a/b', root));
+    assert.throws(() => local.storePathsForLocalContract('a\\b', root));
+    const id = 'ab'.repeat(32);
+    const paths = local.storePathsForLocalContract(id, root);
+    assert.ok(paths.state.startsWith(path.resolve(root)));
+    assert.ok(paths.state.endsWith(path.join('sidechains', id, 'STATE.json')));
   });
 });
