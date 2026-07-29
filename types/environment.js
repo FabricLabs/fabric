@@ -83,16 +83,23 @@ class Environment extends Entity {
   }
 
   get seed () {
+    // Precedence: settings / env only. CWD `.FABRIC_SEED` (`this.local`) is opt-in
+    // via `settings.allowCwdSeed` so a planted file cannot outrank `~/.fabric/wallet.json`.
     const explicit = [
       this.settings.seed,
       this['FABRIC_SEED'],
-      this.readVariable('FABRIC_SEED'),
-      this.local
-    ].map((candidate) => (typeof candidate === 'string' ? candidate.trim() : candidate));
-    if (process.env.NODE_ENV === 'test') {
-      explicit.push(FIXTURE_SEED);
+      this.readVariable('FABRIC_SEED')
+    ];
+    if (this.settings.allowCwdSeed === true) {
+      explicit.push(this.local);
     }
-    return explicit.find(any);
+    const normalized = explicit.map((candidate) => (
+      typeof candidate === 'string' ? candidate.trim() : candidate
+    ));
+    if (process.env.NODE_ENV === 'test') {
+      normalized.push(FIXTURE_SEED);
+    }
+    return normalized.find(any);
   }
 
   get xprv () {

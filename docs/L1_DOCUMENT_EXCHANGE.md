@@ -106,11 +106,12 @@ Terminal notes (contracts as interfaces, Hub registry, shell packs, verbosity): 
 ## Security rules
 1. Never accept blob bytes without `SHA256(bytes) === blobHashHex` (Peer `DocumentBlobTransferBook`).
 2. Deduplicate settlements per `(documentId, blobIndex, contentHash)` (`settlementDedupeKey`).
-3. Priced documents: HTLC / buy `contentHash` is **`SHA256(content key K)`**; ciphertext may ship anytime; **K is revealed only** when `DocumentRequest.contentHashHex` matches **or** when the seller claim witness exposes `K` on-chain (`/claimwatch`).
+3. Priced documents: HTLC / buy `contentHash` is **`SHA256(content key K)`**; ciphertext may ship anytime; **K is revealed only** after **verified settlement** (`Peer.authorizeDocumentKeyReveal`) **or** when the seller claim witness exposes `K` on-chain (`/claimwatch`). Echoing the public inventory `paymentHashHex` alone must never unlock `K`.
 4. Unsealed / free docs may still use `blobPaymentHashHex` for per-blob settles.
 5. Priced `DOCUMENT_REQUEST` must not bit-identical-relay buyer frames when `relayPrivateDocumentRequests` is on.
 6. `maxSats` monotone decreasing across hops; fee skim cannot inflate budget.
 7. Preimage / content key must not ride inside unpaid file chunks.
+7a. Paid `/buy` always builds a **buyer-bound** local P2TR HTLC; seller-supplied `htlc.paymentAddress` is accepted only when it matches that script.
 8. Ranking mixes peer score so slightly cheaper sybils do not always win.
 9. After refund locktime, buyer recovers funds with `/refund`; completed opens refuse refund.
 

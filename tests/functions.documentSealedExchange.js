@@ -6,6 +6,7 @@ const {
   advertiseSealedDocument,
   buildKeyRevealMessage,
   openSealedDelivery,
+  requestMatchesPaymentHash,
   requestUnlocksContentKey,
   paymentHashHexFromKey
 } = require('../functions/documentSealedExchange');
@@ -35,11 +36,23 @@ describe('functions/documentSealedExchange', function () {
     assert.strictEqual(bad.ok, false);
   });
 
-  it('requestUnlocksContentKey gates reveal on payment hash', function () {
+  it('requestUnlocksContentKey requires settlementVerified (hash echo is not enough)', function () {
     const sale = prepareSealedSale(Buffer.from('y'));
+    assert.ok(requestMatchesPaymentHash({ contentHashHex: sale.paymentHashHex }, sale.paymentHashHex));
     assert.ok(!requestUnlocksContentKey({}, sale.paymentHashHex));
     assert.ok(!requestUnlocksContentKey({ contentHashHex: 'aa'.repeat(32) }, sale.paymentHashHex));
-    assert.ok(requestUnlocksContentKey({ contentHashHex: sale.paymentHashHex }, sale.paymentHashHex));
+    // Public inventory hash alone must never unlock K.
+    assert.ok(!requestUnlocksContentKey({ contentHashHex: sale.paymentHashHex }, sale.paymentHashHex));
+    assert.ok(!requestUnlocksContentKey(
+      { contentHashHex: sale.paymentHashHex },
+      sale.paymentHashHex,
+      { settlementVerified: false }
+    ));
+    assert.ok(requestUnlocksContentKey(
+      { contentHashHex: sale.paymentHashHex },
+      sale.paymentHashHex,
+      { settlementVerified: true }
+    ));
   });
 
   it('advertiseSealedDocument uses SHA256(K) as contentHash on item and every blob', function () {

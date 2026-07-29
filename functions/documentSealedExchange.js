@@ -266,14 +266,29 @@ function openSealedDelivery (reveal, ciphertext) {
 }
 
 /**
- * True when a DocumentRequest should unlock the content key.
+ * True when a DocumentRequest carries the advertised payment hash (catalog match only).
+ * This is **not** payment proof — `paymentHashHex` is public in inventory.
  * @param {object} parsed request body
  * @param {string} paymentHashHex seller's SHA256(K)
  */
-function requestUnlocksContentKey (parsed, paymentHashHex) {
+function requestMatchesPaymentHash (parsed, paymentHashHex) {
   if (!parsed || !paymentHashHex) return false;
   const got = String(parsed.contentHashHex || parsed.paymentHashHex || '').trim().toLowerCase();
   return got === String(paymentHashHex).toLowerCase();
+}
+
+/**
+ * True when a DocumentRequest may unlock the AES content key.
+ * Requires a matching payment hash **and** verified settlement authorization
+ * (`opts.settlementVerified`). Echoing the public inventory hash alone must never
+ * reveal `K`.
+ * @param {object} parsed request body
+ * @param {string} paymentHashHex seller's SHA256(K)
+ * @param {{ settlementVerified?: boolean }} [opts]
+ */
+function requestUnlocksContentKey (parsed, paymentHashHex, opts = {}) {
+  if (!requestMatchesPaymentHash(parsed, paymentHashHex)) return false;
+  return opts.settlementVerified === true;
 }
 
 /**
@@ -318,6 +333,7 @@ module.exports = {
   buildKeyRevealMessage,
   openSealedDelivery,
   openWithClaimPreimage,
+  requestMatchesPaymentHash,
   requestUnlocksContentKey,
   splitBlobs
 };

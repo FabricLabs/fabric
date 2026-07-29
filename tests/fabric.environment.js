@@ -30,6 +30,49 @@ describe('@fabric/core/types/environment', function () {
       assert.ok(environment);
     });
 
+    it('ignores CWD .FABRIC_SEED unless allowCwdSeed is true', function () {
+      const prev = {
+        NODE_ENV: process.env.NODE_ENV,
+        FABRIC_SEED: process.env.FABRIC_SEED,
+        FABRIC_XPRV: process.env.FABRIC_XPRV,
+        FABRIC_XPUB: process.env.FABRIC_XPUB,
+        cwd: process.cwd()
+      };
+      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-cwd-seed-'));
+      try {
+        delete process.env.FABRIC_SEED;
+        delete process.env.FABRIC_XPRV;
+        delete process.env.FABRIC_XPUB;
+        process.env.NODE_ENV = 'production';
+        process.chdir(tmp);
+        fs.writeFileSync(path.join(tmp, '.FABRIC_SEED'), FIXTURE_SEED + '\n', 'utf8');
+        const denied = new Environment({
+          home: path.join(tmp, 'home'),
+          path: path.join(tmp, 'home', '.fabric', 'wallet.json'),
+          store: path.join(tmp, 'home', '.fabric')
+        });
+        denied.local = denied.readSeedFile();
+        assert.ok(denied.local, 'CWD seed file should be readable');
+        assert.strictEqual(denied.seed, undefined, 'CWD seed must not become Environment.seed by default');
+
+        const allowed = new Environment({
+          home: path.join(tmp, 'home2'),
+          path: path.join(tmp, 'home2', '.fabric', 'wallet.json'),
+          store: path.join(tmp, 'home2', '.fabric'),
+          allowCwdSeed: true
+        });
+        allowed.local = allowed.readSeedFile();
+        assert.strictEqual(String(allowed.seed).trim(), FIXTURE_SEED);
+      } finally {
+        process.chdir(prev.cwd);
+        for (const k of ['NODE_ENV', 'FABRIC_SEED', 'FABRIC_XPRV', 'FABRIC_XPUB']) {
+          if (prev[k] === undefined) delete process.env[k];
+          else process.env[k] = prev[k];
+        }
+        fs.rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+
     it('does not treat the BIP39 fixture as the default seed when NODE_ENV is not test (fresh install)', function () {
       const prev = {
         NODE_ENV: process.env.NODE_ENV,

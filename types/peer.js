@@ -75,6 +75,7 @@ const {
   buildKeyRevealMessage,
   openSealedDelivery,
   openWithClaimPreimage,
+  requestMatchesPaymentHash,
   requestUnlocksContentKey
 } = require('../functions/documentSealedExchange');
 
@@ -364,6 +365,13 @@ class Peer extends Service {
     this.peers = {};
     /** Pending DOCUMENT_REQUEST entries when {@link Peer#settings.autoFulfillDocumentRequests} is false. */
     this.pendingDocumentRequests = Object.create(null);
+    /**
+     * Authorized sealed-document key reveals: `"documentId|paymentHashHex"` → meta.
+     * Populated only after verified settlement (never from public hash echo).
+     */
+    this._authorizedDocumentKeyReveals = new Map();
+    /** contractId → Set of lowercase compressed pubkeys allowed to apply state ops. */
+    this._contractPatchAllowList = Object.create(null);
     /** Buyer-side verified blob reassembly (DocumentBlobIndex). */
     this.blobTransfers = new DocumentBlobTransferBook();
     /** Ciphertext awaiting content-key reveal: documentId → meta. */
@@ -2180,7 +2188,7 @@ class Peer extends Service {
         this.emit('debug', `Handling peer contract publish: ${JSON.stringify(msg.object)}`);
         if (!msg.object || typeof msg.object !== 'object') break;
         const publishedId = (new Actor(msg.object)).id;
-        this._registerContract(msg.object);
+        this._registerContract(msg.object, signerPubkeyHex);
         this.emit('contract:publish', {
           contract: publishedId,
           object: msg.object,
@@ -2204,6 +2212,11 @@ class Peer extends Service {
         // State ops only apply to locally registered contract namespaces —
         // unknown ids must not crash the peer (message may still be app-consumed).
         if (registered && Array.isArray(msg.object.ops) && msg.object.ops.length) {
+          if (!this._signerMayPatchContract(contractId, signerPubkeyHex)) {
+            this.emit('warning',
+              `[FABRIC:PEER] CONTRACT_MESSAGE ops rejected for ${contractId}: signer not in contract allow-list`);
+            break;
+          }
           try {
             manager.applyPatch(this._state.content.contracts[contractId], msg.object.ops);
             this.commit();
@@ -2945,7 +2958,7 @@ class Peer extends Service {
    * @param {string} requestKey pending key, or document id when unique
    * @returns {{ok: boolean, error: (string|undefined), documentId: (string|undefined), peerAddress: (string|undefined)}}
    */
-  approveDocumentRequest (requestKey) {
+  approveDocumentRequest (requestKey, opts = {}) {
     const row = this._findPendingDocumentRequest(requestKey);
     if (!row) return { ok: false, error: 'pending request not found' };
     const sendOpts = {};
@@ -2953,7 +2966,8 @@ class Peer extends Service {
       sendOpts.blobIndex = Number(row.parsed.blobIndex);
     }
     const sealedMeta = this._getDocumentSealedMeta(row.documentId);
-    if (sealedMeta && requestUnlocksContentKey(row.parsed || {}, sealedMeta.paymentHashHex)) {
+    // Sealed key reveal requires prior authorizeDocumentKeyReveal (or explicit force).
+    if (sealedMeta && this._mayRevealDocumentContentKey(row.documentId, sealedMeta.paymentHashHex, row.parsed || {}, opts)) {
       sendOpts.revealKey = true;
     }
     if (!this._sendP2pFileSendToPeer(row.documentId, row.peerAddress, sendOpts)) {
@@ -2962,6 +2976,55 @@ class Peer extends Service {
     delete this.pendingDocumentRequests[row.key];
     this.emit('documentRequestApproved', row);
     return { ok: true, documentId: row.documentId, peerAddress: row.peerAddress };
+  }
+
+  /**
+   * Record that settlement for a sealed document was verified so a matching
+   * DocumentRequest may receive the AES content key (not merely the ciphertext).
+   * @param {object} opts
+   * @param {string} opts.documentId
+   * @param {string} opts.contentHashHex payment hash SHA256(K)
+   * @param {string} [opts.settlementId]
+   * @param {string} [opts.txid]
+   * @returns {{ ok: boolean, error?: string, key?: string }}
+   */
+  authorizeDocumentKeyReveal (opts = {}) {
+    const documentId = String(opts.documentId || '').trim();
+    const contentHashHex = String(opts.contentHashHex || opts.paymentHashHex || '').trim().toLowerCase();
+    if (!documentId) return { ok: false, error: 'documentId required' };
+    if (!/^[0-9a-f]{64}$/.test(contentHashHex)) {
+      return { ok: false, error: 'contentHashHex must be 64 hex chars' };
+    }
+    const key = `${documentId}|${contentHashHex}`;
+    this._authorizedDocumentKeyReveals.set(key, {
+      documentId,
+      contentHashHex,
+      settlementId: opts.settlementId || null,
+      txid: opts.txid || null,
+      authorizedAt: Date.now()
+    });
+    while (this._authorizedDocumentKeyReveals.size > 4096) {
+      const first = this._authorizedDocumentKeyReveals.keys().next().value;
+      this._authorizedDocumentKeyReveals.delete(first);
+    }
+    this.emit('documentKeyRevealAuthorized', this._authorizedDocumentKeyReveals.get(key));
+    return { ok: true, key };
+  }
+
+  /**
+   * @param {string} documentId
+   * @param {string} paymentHashHex
+   * @param {object} parsed
+   * @param {{ forceReveal?: boolean }} [opts]
+   * @returns {boolean}
+   */
+  _mayRevealDocumentContentKey (documentId, paymentHashHex, parsed, opts = {}) {
+    if (opts.forceReveal === true) {
+      return requestMatchesPaymentHash(parsed, paymentHashHex);
+    }
+    const authKey = `${String(documentId)}|${String(paymentHashHex || '').toLowerCase()}`;
+    const settlementVerified = this._authorizedDocumentKeyReveals.has(authKey);
+    return requestUnlocksContentKey(parsed, paymentHashHex, { settlementVerified });
   }
 
   /**
@@ -3165,8 +3228,8 @@ class Peer extends Service {
     if (parsed.blobIndex != null) sendOpts.blobIndex = Number(parsed.blobIndex);
     if (parsed.routeId) sendOpts.routeId = String(parsed.routeId);
     const sealedMeta = this._getDocumentSealedMeta(docId);
-    // Ciphertext always; content key only when request carries matching payment hash.
-    if (sealedMeta && requestUnlocksContentKey(parsed, sealedMeta.paymentHashHex)) {
+    // Ciphertext anytime; content key only after authorizeDocumentKeyReveal (never hash echo).
+    if (sealedMeta && this._mayRevealDocumentContentKey(docId, sealedMeta.paymentHashHex, parsed)) {
       sendOpts.revealKey = true;
     }
     if (!this._sendP2pFileSendToPeer(docId, origin.name, sendOpts)) {
@@ -3275,19 +3338,77 @@ class Peer extends Service {
     return this;
   }
 
-  _registerContract (object) {
+  _registerContract (object, publisherPubkeyHex = null) {
     this.emit('debug', `Registering contract: ${JSON.stringify(object, null, '  ')}`);
     const actor = new Actor(object);
 
-    if (this.contracts[actor.id]) return this;
+    if (this.contracts[actor.id]) {
+      this._mergeContractPatchAllowList(actor.id, object, publisherPubkeyHex);
+      return this;
+    }
 
     this.contracts[actor.id] = actor;
     this._state.content.contracts[actor.id] = object.state;
+    this._mergeContractPatchAllowList(actor.id, object, publisherPubkeyHex);
 
     this.commit();
     this.emit('contractset', this.contracts);
 
     return this;
+  }
+
+  /**
+   * Build / extend the set of pubkeys allowed to apply CONTRACT_MESSAGE ops.
+   * @param {string} contractId
+   * @param {object} object contract publish body
+   * @param {string|null} publisherPubkeyHex
+   */
+  _mergeContractPatchAllowList (contractId, object, publisherPubkeyHex) {
+    const id = String(contractId || '');
+    if (!id) return;
+    let set = this._contractPatchAllowList[id];
+    if (!set) {
+      set = new Set();
+      this._contractPatchAllowList[id] = set;
+    }
+    // Store x-only (or raw) form via normalizePeerPubkeyHex so it matches
+    // signerPubkeyHex from wire verify / actor.publicKey (compressed → x-only).
+    const add = (hex) => {
+      const h = normalizePeerPubkeyHex(hex);
+      if (/^[0-9a-f]{64}$/.test(h) || /^[0-9a-f]{66}$/.test(h)) set.add(h);
+    };
+    add(publisherPubkeyHex);
+    const def = object && typeof object === 'object' ? object : {};
+    const lists = [def.validators, def.parties, def.owners, def.members, def.authorities];
+    for (const list of lists) {
+      if (!Array.isArray(list)) continue;
+      for (const entry of list) {
+        if (typeof entry === 'string') add(entry);
+        else if (entry && typeof entry === 'object') {
+          add(entry.pubkey || entry.publicKey || entry.id);
+        }
+      }
+    }
+  }
+
+  /**
+   * @param {string} contractId
+   * @param {string|null} signerPubkeyHex
+   * @returns {boolean}
+   */
+  _signerMayPatchContract (contractId, signerPubkeyHex) {
+    const set = this._contractPatchAllowList[String(contractId || '')];
+    if (!set || !set.size) return false; // fail closed: no parties recorded
+    const h = normalizePeerPubkeyHex(signerPubkeyHex);
+    if (!h) return false;
+    if (set.has(h)) return true;
+    // Tolerate allow-lists populated with compressed 66-char hex before normalize.
+    if (h.length === 64) {
+      for (const entry of set) {
+        if (typeof entry === 'string' && entry.length === 66 && entry.slice(2) === h) return true;
+      }
+    }
+    return false;
   }
 
   /**

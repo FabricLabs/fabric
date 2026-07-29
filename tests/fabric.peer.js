@@ -858,7 +858,7 @@ describe('@fabric/core/types/peer', function () {
         buyer._handleFabricMessage(badMsg.toBuffer(), { name: 'seller:1' }, null);
         assert.ok(rejected && /hash mismatch|rejected/i.test(String(rejected.error || 'rejected')));
       });
-      it('sealed priced doc: ciphertext without key; open after payment-hash reveal', function () {
+      it('sealed priced doc: ciphertext without key; open only after settlement authorize', function () {
         const seller = new Peer({ listen: false, peersDb: null, sealPricedDocuments: true });
         const buyer = new Peer({ listen: false, peersDb: null });
         const secret = 'sealed-secret-' + 'Z'.repeat(3000);
@@ -881,35 +881,39 @@ describe('@fabric/core/types/peer', function () {
         assert.strictEqual(opened, null);
         assert.ok(!buyer._state.content.documents['doc-seal']);
 
-        // Payment-hash unlock reveals key.
+        // Explicit revealKey (seller-side after settlement) unlocks.
         assert.ok(seller._sendP2pFileSendToPeer('doc-seal', 'buyer:2', { revealKey: true }));
         assert.ok(opened && opened.opened && opened.verified);
         assert.strictEqual(opened.buffer.toString('utf8'), secret);
 
-        // DocumentRequest with wrong hash does not unlock.
+        // DocumentRequest echoing public paymentHash alone must not unlock.
         const buyer2 = new Peer({ listen: false, peersDb: null });
         let opened2 = null;
         buyer2.on('documentReceived', (ev) => { opened2 = ev; });
         seller.connections['buyer:3'] = {
           _writeFabric: (buf) => buyer2._handleFabricMessage(buf, { name: 'seller:3' }, null)
         };
-        const msg = Message.fromVector(['DocumentRequest', JSON.stringify({
+        const echoReq = Message.fromVector(['DocumentRequest', JSON.stringify({
           document: 'doc-seal',
-          contentHashHex: 'aa'.repeat(32)
+          contentHashHex: meta.paymentHashHex
         })]);
-        msg.signWithKey(buyer2.key);
-        seller._handleFabricMessage(msg.toBuffer(), { name: 'buyer:3' }, null);
+        echoReq.signWithKey(buyer2.key);
+        seller._handleFabricMessage(echoReq.toBuffer(), { name: 'buyer:3' }, null);
         assert.strictEqual(opened2, null);
-        assert.ok(buyer2.pendingSealedDeliveries['doc-seal'] ||
-          Object.keys(buyer2.pendingSealedDeliveries).length >= 0);
 
-        // Matching hash unlocks via auto-fulfill.
+        // After authorizeDocumentKeyReveal, matching request unlocks via auto-fulfill.
         const buyer3 = new Peer({ listen: false, peersDb: null });
         let opened3 = null;
         buyer3.on('documentReceived', (ev) => { opened3 = ev; });
         seller.connections['buyer:4'] = {
           _writeFabric: (buf) => buyer3._handleFabricMessage(buf, { name: 'seller:4' }, null)
         };
+        const auth = seller.authorizeDocumentKeyReveal({
+          documentId: 'doc-seal',
+          contentHashHex: meta.paymentHashHex,
+          settlementId: 'test-settlement'
+        });
+        assert.ok(auth.ok, auth.error);
         const okReq = Message.fromVector(['DocumentRequest', JSON.stringify({
           document: 'doc-seal',
           contentHashHex: meta.paymentHashHex
@@ -1366,10 +1370,39 @@ describe('@fabric/core/types/peer', function () {
       });
       it('applies patch on CONTRACT_MESSAGE', function (done) {
         const peer = new Peer({ listen: false, peersDb: null });
+        const Key = require('../types/key');
+        const publisher = new Key();
+        const pub = String(publisher.pubkey).toLowerCase();
         peer._state.content.contracts = { c1: { value: 1 } };
-        peer._registerContract({ id: 'c1', state: { value: 1 } });
-        peer.once('commit', () => done());
-        peer._handleGenericMessage({ type: 'CONTRACT_MESSAGE', object: { contract: 'c1', ops: [{ op: 'replace', path: '/value', value: 2 }] } }, { name: 'o' });
+        peer._mergeContractPatchAllowList('c1', { parties: [pub] }, pub);
+        peer.once('commit', () => {
+          assert.strictEqual(peer._state.content.contracts.c1.value, 2);
+          done();
+        });
+        peer._handleGenericMessage({
+          type: 'CONTRACT_MESSAGE',
+          actor: { publicKey: pub },
+          object: { contract: 'c1', ops: [{ op: 'replace', path: '/value', value: 2 }] }
+        }, { name: 'o' });
+      });
+      it('rejects CONTRACT_MESSAGE ops from non-party signers', function (done) {
+        const peer = new Peer({ listen: false, peersDb: null });
+        const Key = require('../types/key');
+        const owner = new Key();
+        const attacker = new Key();
+        const ownerPub = String(owner.pubkey).toLowerCase();
+        peer._state.content.contracts = { c1: { value: 1 } };
+        peer._mergeContractPatchAllowList('c1', { parties: [ownerPub] }, ownerPub);
+        peer.once('warning', (msg) => {
+          assert.ok(String(msg).includes('allow-list'));
+          assert.strictEqual(peer._state.content.contracts.c1.value, 1);
+          done();
+        });
+        peer._handleGenericMessage({
+          type: 'CONTRACT_MESSAGE',
+          actor: { publicKey: String(attacker.pubkey).toLowerCase() },
+          object: { contract: 'c1', ops: [{ op: 'replace', path: '/value', value: 99 }] }
+        }, { name: 'o' });
       });
     });
 

@@ -52,7 +52,10 @@ class DocumentOfferBook {
     const items = Array.isArray(opts.items) ? opts.items : [];
     const peerScore = Number(opts.peerScore);
     const latencyMs = Number(opts.latencyMs);
-    const sellerId = opts.sellerId != null ? String(opts.sellerId) : origin;
+      const sellerId = opts.sellerId != null ? String(opts.sellerId) : origin;
+    const sellerPubkey = opts.sellerPubkey != null
+      ? String(opts.sellerPubkey).trim().toLowerCase()
+      : null;
     const now = Date.now();
     for (const it of items) {
       if (!it || typeof it !== 'object') continue;
@@ -79,6 +82,7 @@ class DocumentOfferBook {
             blobTotal: Number(b.total != null ? b.total : blobs.length),
             sellerId,
             sellerAddress: origin,
+            sellerPubkey: sellerPubkey || it.sellerPubkey || null,
             rateSats: Number(b.rateSats != null ? b.rateSats : rateSats) || 0,
             contentHashHex: paymentHash,
             blobHashHex: b.blobHashHex || null,
@@ -100,6 +104,7 @@ class DocumentOfferBook {
           blobTotal: it.blobTotal != null ? Number(it.blobTotal) : null,
           sellerId,
           sellerAddress: origin,
+          sellerPubkey: sellerPubkey || it.sellerPubkey || null,
           rateSats,
           contentHashHex,
           blobHashHex: it.blobHashHex || null,

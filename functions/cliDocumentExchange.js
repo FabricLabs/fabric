@@ -386,46 +386,86 @@ class CliDocumentExchange {
    * @param {number|null} amountArg
    * @returns {object} session or { error }
    */
+  /**
+   * Resolve seller compressed pubkey from offer fields or the local peer registry.
+   * @param {object} offer
+   * @returns {string|null} 66-char hex or null
+   */
+  _resolveSellerPubkeyHex (offer = {}) {
+    const direct = offer.sellerPubkey || offer.sellerPublicKey || offer.publicKey || null;
+    if (direct && /^[0-9a-fA-F]{66}$/.test(String(direct).trim())) {
+      return String(direct).trim().toLowerCase();
+    }
+    const peer = this._peer();
+    const sid = String(offer.sellerId || offer.sellerAddress || offer.seller || '').trim();
+    if (!peer || !sid) return null;
+    const peers = peer.peers || {};
+    for (const row of Object.values(peers)) {
+      if (!row || typeof row !== 'object') continue;
+      const pk = row.publicKey || row.id;
+      if (!pk) continue;
+      if (String(row.id) === sid || String(row.name) === sid || String(row.address) === sid || String(pk) === sid) {
+        const hex = String(pk).trim().toLowerCase();
+        if (/^[0-9a-f]{66}$/.test(hex)) return hex;
+      }
+    }
+    return null;
+  }
+
   openBuySessionFromOffer (documentId, offer, amountArg) {
     const amountSats = amountArg != null && Number.isFinite(amountArg)
       ? amountArg
       : (Number(offer.rateSats) || 0);
-    let paymentAddress = offer.htlc && offer.htlc.paymentAddress;
-    let bitcoinUri = offer.htlc && offer.htlc.bitcoinUri;
-    let htlc = offer.htlc || null;
+    // Never fund a seller-supplied address without rebuilding a buyer-bound HTLC tree.
+    let paymentAddress = null;
+    let bitcoinUri = null;
+    let htlc = null;
     const contentHashHex = contentHashHexFromObject(offer);
     const peer = this._peer();
-    if (!paymentAddress && contentHashHex && amountSats > 0) {
+    if (contentHashHex && amountSats > 0) {
       try {
         const buyerHex = this.buyerRefundPubkeyHex();
-        const sellerHex = offer.sellerPubkey || null;
+        const sellerHex = this._resolveSellerPubkeyHex(offer);
         const lock = peer && peer.settings && peer.settings.inventoryHtlcLocktimeHeight;
-        if (buyerHex && sellerHex && lock) {
-          const built = inventoryHtlc.buildInventoryHtlcP2tr({
-            networkName: this._networkName(),
-            sellerPubkeyCompressed: Buffer.from(sellerHex, 'hex'),
-            buyerRefundPubkeyCompressed: Buffer.from(buyerHex, 'hex'),
-            paymentHash32: Buffer.from(contentHashHex, 'hex'),
-            refundLocktimeHeight: Number(lock)
-          });
-          const hints = inventoryHtlc.buildHtlcFundingHints({
-            paymentAddress: built.address,
-            amountSats,
-            label: documentId.slice(0, 32)
-          });
-          paymentAddress = built.address;
-          bitcoinUri = hints.bitcoinUri;
-          htlc = {
-            paymentAddress,
-            paymentHashHex: built.paymentHashHex,
-            claimScriptHex: built.claimScript.toString('hex'),
-            refundScriptHex: built.refundScript.toString('hex'),
-            refundLocktimeHeight: Number(lock),
-            bitcoinUri
+        if (!buyerHex || !sellerHex || !lock) {
+          return {
+            error: 'Cannot open paid buy: need buyer refund key, seller pubkey, and inventoryHtlcLocktimeHeight to build a buyer-bound HTLC'
           };
         }
+        const built = inventoryHtlc.buildInventoryHtlcP2tr({
+          networkName: this._networkName(),
+          sellerPubkeyCompressed: Buffer.from(sellerHex, 'hex'),
+          buyerRefundPubkeyCompressed: Buffer.from(buyerHex, 'hex'),
+          paymentHash32: Buffer.from(contentHashHex, 'hex'),
+          refundLocktimeHeight: Number(lock)
+        });
+        const sellerAddr = offer.htlc && offer.htlc.paymentAddress
+          ? String(offer.htlc.paymentAddress).trim()
+          : '';
+        if (sellerAddr && sellerAddr !== built.address) {
+          return {
+            error: 'Seller HTLC paymentAddress does not match buyer-bound P2TR script — refusing to fund'
+          };
+        }
+        const hints = inventoryHtlc.buildHtlcFundingHints({
+          paymentAddress: built.address,
+          amountSats,
+          label: documentId.slice(0, 32)
+        });
+        paymentAddress = built.address;
+        bitcoinUri = hints.bitcoinUri;
+        htlc = {
+          paymentAddress,
+          paymentHashHex: built.paymentHashHex,
+          claimScriptHex: built.claimScript.toString('hex'),
+          refundScriptHex: built.refundScript.toString('hex'),
+          refundLocktimeHeight: Number(lock),
+          bitcoinUri,
+          sellerPubkey: sellerHex,
+          buyerRefundPubkey: buyerHex
+        };
       } catch (e) {
-        this._warn(`Could not build local HTLC: ${e.message}`);
+        return { error: `Could not build local HTLC: ${e.message}` };
       }
     }
     const session = createDocumentPurchaseSession({

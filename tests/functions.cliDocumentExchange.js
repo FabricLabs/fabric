@@ -90,39 +90,114 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
   });
 
   it('buy opens a session from the offer book without double-pay', function () {
+    const Key = require('../types/key');
+    const inventoryHtlc = require('../functions/inventoryHtlc');
+    const seller = new Key();
+    const buyer = new Key();
+    const contentHash = 'aa'.repeat(32);
+    const lock = 900_000;
+    const built = inventoryHtlc.buildInventoryHtlcP2tr({
+      networkName: 'regtest',
+      sellerPubkeyCompressed: Buffer.from(String(seller.pubkey), 'hex'),
+      buyerRefundPubkeyCompressed: Buffer.from(String(buyer.pubkey), 'hex'),
+      paymentHash32: Buffer.from(contentHash, 'hex'),
+      refundLocktimeHeight: lock
+    });
     const book = new DocumentOfferBook();
     book.ingestInventoryResponse({
       origin: 'seller1',
+      sellerPubkey: String(seller.pubkey).toLowerCase(),
       peerScore: 1,
       latencyMs: 10,
       items: [{
         id: 'doc-a',
         rateSats: 100,
-        contentHash: 'aa'.repeat(32),
+        contentHash,
+        sellerPubkey: String(seller.pubkey).toLowerCase(),
         htlc: {
-          paymentAddress: 'bcrt1qtest',
-          paymentHashHex: 'aa'.repeat(32),
-          bitcoinUri: 'bitcoin:bcrt1qtest?amount=0.00000100'
+          paymentAddress: built.address,
+          paymentHashHex: contentHash
         }
       }]
     });
+    const buyerPeerKey = {
+      public: {
+        encodeCompressed (enc) {
+          return enc === 'hex' ? String(buyer.pubkey).toLowerCase() : Buffer.from(String(buyer.pubkey), 'hex');
+        }
+      }
+    };
     const exchange = new CliDocumentExchange({
       offerBook: book,
-      getPeer: () => ({ settings: {}, key: null }),
+      getPeer: () => ({
+        settings: { inventoryHtlcLocktimeHeight: lock },
+        key: buyerPeerKey,
+        peers: {
+          seller1: { id: 'seller1', publicKey: String(seller.pubkey).toLowerCase() }
+        }
+      }),
       getSettings: () => ({ network: 'regtest' }),
       getNetworkName: () => 'regtest',
       getWallet: () => null
     });
 
+    const refuse = new CliDocumentExchange({
+      offerBook: book,
+      getPeer: () => ({ settings: {}, key: null }),
+      getWallet: () => null,
+      getNetworkName: () => 'regtest'
+    });
+    const poisoned = refuse.buy('doc-a', 'auto');
+    assert.ok(!poisoned.ok);
+    assert.match(poisoned.error, /buyer-bound HTLC|seller pubkey/i);
+
     const first = exchange.buy('doc-a', 'auto');
     assert.ok(first.ok, first.error);
     assert.ok(first.session);
     assert.strictEqual(first.session.amountSats, 100);
+    assert.strictEqual(first.session.paymentAddress, built.address);
     assert.strictEqual(exchange.purchaseSessions.size, 1);
 
     const dup = exchange.buy('doc-a', 'auto');
     assert.ok(!dup.ok);
     assert.match(dup.error, /Open session already exists|Already settled/);
+  });
+
+  it('buy refuses seller HTLC address that does not match buyer-bound script', function () {
+    const Key = require('../types/key');
+    const seller = new Key();
+    const buyer = new Key();
+    const book = new DocumentOfferBook();
+    book.ingestInventoryResponse({
+      origin: 'seller1',
+      sellerPubkey: String(seller.pubkey).toLowerCase(),
+      items: [{
+        id: 'doc-evil',
+        rateSats: 50,
+        contentHash: 'bb'.repeat(32),
+        sellerPubkey: String(seller.pubkey).toLowerCase(),
+        htlc: { paymentAddress: 'bcrt1qattackercontrolledxxxxxxxxxxxxxxxxxxxxxxxxx' }
+      }]
+    });
+    const exchange = new CliDocumentExchange({
+      offerBook: book,
+      getPeer: () => ({
+        settings: { inventoryHtlcLocktimeHeight: 900_000 },
+        key: {
+          public: {
+            encodeCompressed (enc) {
+              return enc === 'hex' ? String(buyer.pubkey).toLowerCase() : Buffer.from(String(buyer.pubkey), 'hex');
+            }
+          }
+        },
+        peers: { seller1: { id: 'seller1', publicKey: String(seller.pubkey).toLowerCase() } }
+      }),
+      getNetworkName: () => 'regtest',
+      getWallet: () => null
+    });
+    const bad = exchange.buy('doc-evil', 'auto');
+    assert.ok(!bad.ok);
+    assert.match(bad.error, /does not match buyer-bound/i);
   });
 
   it('listOffers ranks ingested inventory rows', function () {
@@ -356,27 +431,53 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
   });
 
   it('buy auto opens a multi-blob plan when blobTotal > 1', function () {
+    const Key = require('../types/key');
+    const inventoryHtlc = require('../functions/inventoryHtlc');
+    const seller = new Key();
+    const buyer = new Key();
+    const contentHash = 'ee'.repeat(32);
+    const lock = 900_000;
+    const built = inventoryHtlc.buildInventoryHtlcP2tr({
+      networkName: 'regtest',
+      sellerPubkeyCompressed: Buffer.from(String(seller.pubkey), 'hex'),
+      buyerRefundPubkeyCompressed: Buffer.from(String(buyer.pubkey), 'hex'),
+      paymentHash32: Buffer.from(contentHash, 'hex'),
+      refundLocktimeHeight: lock
+    });
     const book = new DocumentOfferBook();
     book.ingestInventoryResponse({
       origin: 'seller-blobs',
+      sellerPubkey: String(seller.pubkey).toLowerCase(),
       peerScore: 5,
       latencyMs: 5,
       items: [{
         id: 'doc-multi',
         rateSats: 10,
-        contentHash: 'ee'.repeat(32),
+        contentHash,
         sealed: true,
         blobs: [
           { index: 0, total: 2, blobHashHex: 'f1'.repeat(32), rateSats: 10 },
           { index: 1, total: 2, blobHashHex: 'f2'.repeat(32), rateSats: 10 }
         ],
         merkleRootHex: 'f3'.repeat(32),
-        htlc: { paymentAddress: 'bcrt1qmulti', paymentHashHex: 'ee'.repeat(32) }
+        htlc: { paymentAddress: built.address, paymentHashHex: contentHash }
       }]
     });
     const exchange = new CliDocumentExchange({
       offerBook: book,
-      getPeer: () => ({ settings: {}, key: null }),
+      getPeer: () => ({
+        settings: { inventoryHtlcLocktimeHeight: lock },
+        key: {
+          public: {
+            encodeCompressed (enc) {
+              return enc === 'hex' ? String(buyer.pubkey).toLowerCase() : Buffer.from(String(buyer.pubkey), 'hex');
+            }
+          }
+        },
+        peers: {
+          'seller-blobs': { id: 'seller-blobs', publicKey: String(seller.pubkey).toLowerCase() }
+        }
+      }),
       getSettings: () => ({ network: 'regtest' }),
       getNetworkName: () => 'regtest',
       getWallet: () => null
