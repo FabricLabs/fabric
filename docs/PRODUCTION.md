@@ -9,7 +9,9 @@
 | Release gate | **`npm run ci`** — full recursive **`mocha`** test suite (`NODE_ENV=test`). |
 
 ## Native addons
-Production installs may compile **native** dependencies (e.g. **secp256k1**, **level**, **zeromq**). CI runners and deploy images need **build toolchain** (Python, make, C++ compiler) unless using prebuilds. See [README.md](../README.md) and **BUILD.md** (if present) for platform notes.
+**`fabric.node` (C) is not built on npm install** — JS is the canonical protocol. Optional:
+`npm run build:c` / `FABRIC_BUILD_NATIVE=1` (see [BUILD.md](../BUILD.md)). Other deps (e.g.
+**level**, **zeromq**) may still compile their own bindings.
 
 ## Downstream alignment
 - **hub.fabric.pub** and **@fabric/http** often pin **Git branches** of this repo during RC. For a coordinated release, tag **`@fabric/core`** first (or in lockstep), then bump pins in Hub and fabric-http.

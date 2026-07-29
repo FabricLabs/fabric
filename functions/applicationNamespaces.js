@@ -62,7 +62,9 @@ const CONTRACT_BODY_TYPES = Object.freeze({
   // GoonCitizen — per-Group Federation contract
   GroupChat: 'GroupChat',
   GroupChange: 'GroupChange',
-  GroupShare: 'GroupShare'
+  GroupShare: 'GroupShare',
+  /** Merkle root + digests of cumulative local history leaves under a Group namespace. */
+  GroupActivityTree: 'GroupActivityTree'
 });
 
 /**

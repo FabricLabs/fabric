@@ -191,16 +191,16 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(Hash256.doubleDigest(restored.raw.data), hashOnWire);
     });
 
-    it('public messages carry SHA256(body) in preimage; sensitive blanks preimage; explicit preimage overrides', function () {
+    it('public messages leave preimage zero; sensitive stays zero; explicit HTLC preimage overrides', function () {
       const bodyJson = JSON.stringify(example.data);
-      const expectedCommit = Hash256.digest(Buffer.from(bodyJson));
 
       const pub = Message.fromVector(['Call', bodyJson]);
       pub.signWithKey(key);
-      assert.ok(pub.preimage);
-      assert.strictEqual(pub.preimage.toString('hex'), expectedCommit);
+      assert.strictEqual(pub.preimage, null);
       const lit = pub.toObject();
-      assert.strictEqual(lit.headers.preimage, expectedCommit);
+      assert.strictEqual(lit.headers.preimage, null);
+      // Body integrity remains on hash (double-SHA256), not preimage.
+      assert.strictEqual(Hash256.doubleDigest(Buffer.from(bodyJson)), lit.headers.hash);
 
       const sens = new Message({
         type: 'Call',
@@ -222,6 +222,14 @@ describe('@fabric/core/types/message', function () {
       const back = Message.fromBuffer(priv.toBuffer());
       assert.strictEqual(back.preimage.toString('hex'), secret.toString('hex'));
       assert.ok(back.verifyWithKey(key));
+
+      // Setting body after an explicit preimage must not invent SHA256(body).
+      const hop = Message.fromVector(['Call', bodyJson]);
+      hop.preimage = secret;
+      hop.data = JSON.stringify({ ...example.data, n: 2 });
+      assert.strictEqual(hop.preimage.toString('hex'), secret.toString('hex'));
+      hop.sensitive = true;
+      assert.strictEqual(hop.preimage, null);
     });
   });
 

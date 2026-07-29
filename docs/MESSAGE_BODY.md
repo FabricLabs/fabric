@@ -17,13 +17,27 @@ layouts**, not JSON documents. JSON appears only at the **`@fabric/http`**
 | 40 | 32 | author |
 | 72 | 4 | type (opcode) |
 | 76 | 4 | size |
-| 80 | 32 | hash = double-SHA256(body) |
-| 112 | 32 | preimage |
+| 80 | 32 | hash = double-SHA256(body) — **body integrity** |
+| 112 | 32 | preimage — **payment secret** (Lightning-style; zeros if none) |
 | 144 | 64 | BIP-340 signature |
 | 208 | … | **body** |
 
 Integrity and signing always cover **raw body bytes**. Nested `P2P_RELAY`
 bodies remain nested AMP frames (already binary).
+
+### Wire `preimage` (payment secret, not body hash)
+Aligned with Lightning HTLC semantics for Fabric Circuits / multi-hop payment
+chains:
+
+- **`hash`** = double-SHA256(body) — only body integrity check (Peer drops on mismatch).
+- **`preimage`** = all zeros for ordinary public messages; set an explicit 32-byte
+  secret when the frame carries an HTLC / circuit payment commitment
+  (`payment_hash = SHA256(preimage)`).
+- Do **not** default `preimage` to SHA256(body) — that conflates integrity with
+  payment secrets and breaks independent hop secrets in circuit chains.
+
+JavaScript (`types/message.js`) is the **canonical** protocol definition for
+`@fabric/core` 0.1.0. The optional C addon is not required for npm install.
 
 ## Body = fields, not JSON
 

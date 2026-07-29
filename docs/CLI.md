@@ -26,6 +26,13 @@ Composable CLI surfaces live in [`functions/cliContracts.js`](../functions/cliCo
 only drops slash-commands; it does not cancel HTLCs, open sessions, or Hub
 registry publishes.
 
+**Document exchange** (`documents` + `documents-market`) is the Core-standard
+operator surface: headless API in
+[`functions/documentExchange.js`](../functions/documentExchange.js) /
+[`functions/cliDocumentExchange.js`](../functions/cliDocumentExchange.js);
+the Blessed TUI in `types/cli.js` only adapts results into the log. See
+[`L1_DOCUMENT_EXCHANGE.md`](L1_DOCUMENT_EXCHANGE.md).
+
 | Pack | Default | Role |
 |------|---------|------|
 | `core` | on (required) | help, quit, settings, `/contracts` |

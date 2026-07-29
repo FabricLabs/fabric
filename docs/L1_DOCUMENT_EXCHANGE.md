@@ -15,6 +15,22 @@ Wire / session / HTTP field is always **`contentHashHex`** (aliases on ingest: `
 
 See also: [`docs/PAYMENTS_DOCUMENT_BINDING.md`](PAYMENTS_DOCUMENT_BINDING.md), [`docs/bip-fabric-file-exchange.md`](bip-fabric-file-exchange.md).
 
+## Canonical Core surface (CLI-first)
+
+Operator document exchange is standardized on the Fabric CLI packs
+`documents` + `documents-market`. Headless logic lives in Core:
+
+| Module | Role |
+|--------|------|
+| [`functions/documentExchange.js`](../functions/documentExchange.js) | Public catalog + re-exports |
+| [`functions/cliDocumentExchange.js`](../functions/cliDocumentExchange.js) | `CliDocumentExchange` — import/publish/inventory/offers/buy/confirm/claimwatch/refund |
+| [`functions/cliContracts.js`](../functions/cliContracts.js) | Shell pack command maps |
+| `types/cli.js` | Blessed TUI adapters only (delegates to `CliDocumentExchange`) |
+
+Hub HTTP **402**, Beacon sidechain reward rows named `DocumentOffer`, and
+`DocumentOfferBook` ranking are **related but distinct** — see
+[`FABRIC_DOCUMENT_OFFER.md`](FABRIC_DOCUMENT_OFFER.md) naming notes.
+
 ## Peer / CLI surface (implemented)
 
 | Area | Status | Notes |
@@ -22,7 +38,7 @@ See also: [`docs/PAYMENTS_DOCUMENT_BINDING.md`](PAYMENTS_DOCUMENT_BINDING.md), [
 | Inventory + offer book | Implemented | `/inventory [peer] [btc]` ingests into `DocumentOfferBook`; `/offers` ranks by price/latency/score/completeness |
 | Multi-blob | Implemented | Indexed wire-sized `P2P_FILE_SEND`; Tree verify; priced docs **sealed-until-claim** (AES-GCM; HTLC = SHA256(K); key reveal only on matching payment hash) |
 | Consent file path | Implemented | `/request` → `/pending` → `/approve` / `/deny`; `autoFulfillDocumentRequests` off in CLI |
-| L1 buy/confirm | Implemented | `/buy` session + `/confirm <id> <txid>` (local L1 verify and/or Hub `ConfirmInventoryHtlcPayment`) |
+| L1 buy/confirm | Implemented | `/buy` session + `/confirm <id> <txid>` (local L1 verify and/or Hub `ConfirmInventoryHtlcPayment`) via `CliDocumentExchange` |
 | Claim-watch open | Implemented | `/claimwatch` **or** wallet block/mempool watch extracts `K` from seller claim witness and opens sealed delivery |
 | Refund after locktime | Implemented | `/refund` + `/refunds` list (mature/failed/pending) + tip maturity notice |
 | Wallet tx watch | Implemented | Multi-seed key collection; ZMQ `BitcoinBlock*` / `BitcoinTransaction*` → `Wallet.ingest*`; monitors all known Bitcoin message types against watched addresses |

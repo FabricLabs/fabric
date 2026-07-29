@@ -1,6 +1,18 @@
 # `@fabric/core` Changelog
 Recent changes to Fabric Core.
 
+## 2026-07-29
+JS-canonical protocol for 0.1.0; Lightning-style wire preimage; unsigned document binding.
+
+**Install / C**
+- **npm install skips `fabric.node`** by default (`scripts/install-native.js`). Opt in with `FABRIC_BUILD_NATIVE=1` or `npm run build:c`. C sources remain in-tree; JS Message/Peer is the protocol oracle ([`docs/C-JS-PARITY.md`](docs/C-JS-PARITY.md)).
+
+**Wire preimage (Lightning-style)**
+- Public frames keep **all-zero** `preimage`; body integrity is only header `hash` (double-SHA256). Explicit 32-byte secrets are for HTLC / Fabric Circuit hops (`payment_hash = SHA256(preimage)`). No longer default `preimage = SHA256(body)`.
+
+**Document exchange**
+- Payment binding hashes **unsigned** `documentPublishEnvelopeBuffer` only; `assertUnsignedDocumentPublishEnvelope` rejects signed gossip frames. Whitelist drops `created`/`edited` to stop Hub/Peer hash drift.
+
 ## 2026-07-24
 CLI first-run setup, L1 document settle in core, ranked offers, multi-blob exchange, private paid relay.
 

@@ -71,6 +71,60 @@ describe('L1 document exchange expectations', function () {
       const fromPreimage = crypto.createHash('sha256').update(preimage).digest('hex');
       assert.strictEqual(hex, fromPreimage);
     });
+    it('purchaseContentHashHex ignores created/edited metadata drift', function () {
+      const docId = 'doc-expectations-meta';
+      const buf = Buffer.from('stable', 'utf8');
+      const base = {
+        id: docId,
+        name: 'x.txt',
+        mime: 'text/plain',
+        revision: 1,
+        contentBase64: buf.toString('base64'),
+        size: buf.length,
+        sha256: crypto.createHash('sha256').update(buf).digest('hex')
+      };
+      const a = purchaseContentHashHex(docId, base);
+      const b = purchaseContentHashHex(docId, Object.assign({}, base, { created: 1, edited: 99 }));
+      assert.strictEqual(a, b);
+    });
+
+    it('rejects signed DocumentPublish buffers for payment preimage', function () {
+      const docId = 'doc-expectations-signed';
+      const buf = Buffer.from('no-sign-bind', 'utf8');
+      const parsed = {
+        id: docId,
+        contentBase64: buf.toString('base64'),
+        size: buf.length,
+        mime: 'text/plain',
+        name: 'n',
+        revision: 1,
+        sha256: crypto.createHash('sha256').update(buf).digest('hex')
+      };
+      const {
+        documentPublishEnvelopeBuffer,
+        inventoryHtlcPreimage32FromEnvelopeBuffer,
+        assertUnsignedDocumentPublishEnvelope
+      } = require('../functions/publishedDocumentEnvelope');
+      const Key = require('../types/key');
+      const unsigned = documentPublishEnvelopeBuffer(docId, parsed);
+      assertUnsignedDocumentPublishEnvelope(unsigned);
+      const key = new Key();
+      const signed = Message.fromBuffer(Buffer.from(unsigned));
+      signed.signWithKey(key);
+      const signedBuf = signed.toBuffer();
+      assert.throws(
+        () => inventoryHtlcPreimage32FromEnvelopeBuffer(signedBuf),
+        /unsigned/
+      );
+      const envHash = crypto.createHash('sha256').update(
+        crypto.createHash('sha256').update(unsigned).digest()
+      ).digest('hex');
+      const signedHash = crypto.createHash('sha256').update(
+        crypto.createHash('sha256').update(signedBuf).digest()
+      ).digest('hex');
+      assert.notStrictEqual(envHash, signedHash);
+      assert.strictEqual(purchaseContentHashHex(docId, parsed), envHash);
+    });
   });
 
   describe('Peer wire events', function () {

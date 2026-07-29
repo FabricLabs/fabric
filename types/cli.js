@@ -34,22 +34,10 @@ const Key = require('./key');
 // Functions
 const truncateMiddle = require('../functions/truncateMiddle');
 const { tryParsePersistedJson, tryParseWireJson, messageDataToString } = require('../functions/wireJson');
-const { DocumentOfferBook } = require('../functions/documentOfferBook');
 const {
-  createDocumentPurchaseSession,
-  findSession,
-  isDuplicateSettlement,
-  rememberSettlement,
+  CliDocumentExchange,
   listRefundCandidates
-} = require('../functions/documentPurchaseSession');
-const inventoryHtlc = require('../functions/inventoryHtlc');
-const { contentHashHexFromObject } = require('../functions/documentPaymentHash');
-const {
-  extractPreimageFromClaimTx,
-  refundLocktimeMature,
-  prepareInventoryHtlcBuyerRefundPsbt,
-  signAndExtractInventoryHtlcBuyerRefund
-} = inventoryHtlc;
+} = require('../functions/documentExchange');
 const {
   CLI_CONTRACTS,
   resolveEnabledContracts,
@@ -236,14 +224,30 @@ class CLI extends FabricShell {
     /** @type {Map<string, string>} command → contract id */
     this._commandOwners = new Map();
     this.contracts = {};
-    this.documents = {};
+    /**
+     * Canonical headless document-exchange surface (CLI packs `documents` +
+     * `documents-market`). Blessed handlers below are thin adapters.
+     * @see functions/documentExchange.js
+     * @see docs/L1_DOCUMENT_EXCHANGE.md
+     */
+    this.documentExchange = new CliDocumentExchange({
+      getPeer: () => this.node,
+      getBitcoin: () => this.bitcoin,
+      getWallet: () => this.wallet,
+      getFilesystem: () => this.fs,
+      getSettings: () => this.settings,
+      getNetworkName: () => (this.settings && this.settings.network) || 'regtest',
+      onNotice: (msg) => this._appendMessage(msg),
+      onWarning: (msg) => this._appendWarning(msg)
+    });
+    this.documents = this.documentExchange.documents;
     /** Last remote inventory catalogs keyed by peer address. */
-    this.remoteInventories = {};
-    this.offerBook = new DocumentOfferBook();
+    this.remoteInventories = this.documentExchange.remoteInventories;
+    this.offerBook = this.documentExchange.offerBook;
     /** @type {Map<string, object>} */
-    this.purchaseSessions = new Map();
+    this.purchaseSessions = this.documentExchange.purchaseSessions;
     /** Paid (documentId|blobIndex|contentHash) keys — blocks double-pay. */
-    this.paidSettlements = new Set();
+    this.paidSettlements = this.documentExchange.paidSettlements;
     this.elements = {};
     this.peers = {};
     this.requests = {};
@@ -938,7 +942,7 @@ class CLI extends FabricShell {
    * @returns {Promise<string[]>}
    */
   async _formatSessionContractLines () {
-    const tip = await this._bitcoinTipHeight();
+    const tip = await this.documentExchange.bitcoinTipHeight();
     const rows = listRefundCandidates(this.purchaseSessions, tip, { filter: 'all' });
     const openish = [];
     for (const session of this.purchaseSessions.values()) {
@@ -1198,115 +1202,50 @@ class CLI extends FabricShell {
     if (!params[1]) return this._appendError(`You must specify a sidechain.`);
   }
 
+  /** @deprecated Prefer `this.documentExchange.syncDocumentToPeer` */
   _syncDocumentToPeer (documentId, content, rateSats = null) {
-    if (!this.node) return;
-    if (!this.node._state.content.documents) this.node._state.content.documents = {};
-    if (!this.node._state.content.documentRates) this.node._state.content.documentRates = {};
-    const body = Buffer.isBuffer(content) ? content.toString('utf8') : String(content == null ? '' : content);
-    this.node._state.content.documents[documentId] = body;
-    if (rateSats != null && Number.isFinite(Number(rateSats))) {
-      this.node._state.content.documentRates[documentId] = Number(rateSats);
-    }
+    return this.documentExchange.syncDocumentToPeer(documentId, content, rateSats);
   }
 
+  /** @deprecated Prefer `this.documentExchange.formatLocalInventory` */
   _formatLocalInventory () {
-    const rates = (this.node && this.node._state.content.documentRates) || {};
-    const ids = Object.keys(this.documents);
-    if (!ids.length) return '(empty — use /import <file>)';
-    return ids.map((id) => {
-      const buf = this.documents[id];
-      const size = Buffer.isBuffer(buf) ? buf.length : Buffer.byteLength(String(buf || ''), 'utf8');
-      const rate = Object.prototype.hasOwnProperty.call(rates, id) ? rates[id] : 0;
-      return `  ${id}  ${size} bytes  rate=${rate} sats`;
-    }).join('\n');
+    return this.documentExchange.formatLocalInventory();
   }
 
   async _handleInventoryRequest (params) {
     const peerRef = params[1];
-    if (!peerRef) {
-      this._appendMessage(`{bold}Local inventory{/bold}\n${this._formatLocalInventory()}`);
-      const pending = this.node ? this.node.listPendingDocumentRequests() : [];
-      if (pending.length) {
-        this._appendMessage(`{bold}Pending inbound requests{/bold}: ${pending.length} (see /pending)`);
-      }
-      return;
-    }
-    if (!this.node) return this._appendError('Peer not ready.');
     const mode = String(params[2] || '').toLowerCase();
     const offerBtc = mode === 'btc' || mode === '--btc' || mode === 'offerbtc';
-    const opts = offerBtc
-      ? {
-          offerBtc: true,
-          buyerRefundPublicKey: this._buyerRefundPubkeyHex()
-        }
-      : { kind: 'documents' };
-    this._inventoryRequestStartedAt = Date.now();
-    this._inventoryRequestPeer = peerRef;
-    const ok = this.node.requestPeerInventory(peerRef, opts);
-    if (!ok) {
-      return this._appendError(`Could not request inventory from ${peerRef} (not connected?). Try /peers then /connect <addr>.`);
+    if (peerRef) {
+      this._inventoryRequestStartedAt = Date.now();
+      this._inventoryRequestPeer = peerRef;
     }
-    this._appendMessage(`Inventory request sent to ${peerRef}${offerBtc ? ' (offerBtc)' : ''}. Waiting for response…`);
+    const result = this.documentExchange.requestInventory(peerRef || null, { offerBtc });
+    if (!result.ok) return this._appendError(result.error);
+    this._appendMessage(result.message);
+    if (result.data && result.data.local && result.data.pendingCount > 0) {
+      this._appendMessage(`{bold}Pending inbound requests{/bold}: ${result.data.pendingCount} (see /pending)`);
+    }
   }
 
+  /** @deprecated Prefer `this.documentExchange.buyerRefundPubkeyHex` */
   _buyerRefundPubkeyHex () {
-    try {
-      if (this.node && this.node.key && this.node.key.public && typeof this.node.key.public.encodeCompressed === 'function') {
-        return this.node.key.public.encodeCompressed('hex');
-      }
-    } catch (_) { /* ignore */ }
-    return null;
+    return this.documentExchange.buyerRefundPubkeyHex();
   }
 
-  /**
-   * 32-byte secp256k1 private key for HTLC refund signing (node identity).
-   * @returns {Buffer|null}
-   */
+  /** @deprecated Prefer `this.documentExchange.buyerPrivateKey32` */
   _buyerPrivateKey32 () {
-    try {
-      const key = this.node && this.node.key;
-      if (!key) return null;
-      if (key.keypair && typeof key.keypair.getPrivate === 'function') {
-        const buf = key.keypair.getPrivate('bytes');
-        if (Buffer.isBuffer(buf) && buf.length === 32) return buf;
-      }
-      if (Buffer.isBuffer(key.private) && key.private.length === 32) return key.private;
-      if (typeof key.private === 'string' && /^[0-9a-fA-F]{64}$/.test(key.private)) {
-        return Buffer.from(key.private, 'hex');
-      }
-    } catch (_) { /* ignore */ }
-    return null;
+    return this.documentExchange.buyerPrivateKey32();
   }
 
-  /**
-   * Fetch raw tx hex via local bitcoind (verbose=false).
-   * @param {string} txid
-   * @returns {Promise<string|null>}
-   */
+  /** @deprecated Prefer `this.documentExchange.fetchRawTxHex` */
   async _fetchRawTxHex (txid) {
-    if (!this.bitcoin || typeof this.bitcoin._makeRPCRequest !== 'function') return null;
-    const id = String(txid || '').trim();
-    if (!/^[0-9a-fA-F]{64}$/.test(id)) return null;
-    try {
-      const raw = await this.bitcoin._makeRPCRequest('getrawtransaction', [id, false]);
-      return typeof raw === 'string' && raw.length > 0 ? raw : null;
-    } catch (_) {
-      return null;
-    }
+    return this.documentExchange.fetchRawTxHex(txid);
   }
 
-  /**
-   * @returns {Promise<number|null>}
-   */
+  /** @deprecated Prefer `this.documentExchange.bitcoinTipHeight` */
   async _bitcoinTipHeight () {
-    if (!this.bitcoin || typeof this.bitcoin._makeRPCRequest !== 'function') return null;
-    try {
-      const info = await this.bitcoin._makeRPCRequest('getblockchaininfo');
-      const h = info && info.blocks;
-      return Number.isFinite(Number(h)) ? Number(h) : null;
-    } catch (_) {
-      return null;
-    }
+    return this.documentExchange.bitcoinTipHeight();
   }
 
   _peerScoreForAddress (address) {
@@ -1320,35 +1259,27 @@ class CLI extends FabricShell {
     return 0;
   }
 
+  /**
+   * Apply a headless {@link CliDocumentExchange} result to the Blessed log.
+   * @param {{ ok: boolean, error?: string, message?: string }} result
+   */
+  _applyExchangeResult (result) {
+    if (!result) return;
+    if (!result.ok) return this._appendError(result.error || 'document exchange failed');
+    if (result.message) this._appendMessage(result.message);
+  }
+
   async _handleImportCommand (params) {
-    if (!params[1]) return this._appendError(`You must provide a file to import.`);
-    if (!fs.existsSync(params[1])) return this._appendError(`File does not exist: ${params[1]}`);
-    const content = fs.readFileSync(params[1]);
-    const actor = new Actor(content);
-    this._appendMessage(`Imported ${content.length} bytes → Document ID: ${actor.id}`);
-    this.documents[actor.id] = content;
-    this._state.content.documents[actor.id] = content.toString('hex');
-    this._syncDocumentToPeer(actor.id, content, 0);
+    const result = this.documentExchange.importFile(params[1]);
+    if (!result.ok) return this._appendError(result.error);
+    if (result.data && result.data.documentId && result.data.content) {
+      this._state.content.documents[result.data.documentId] = result.data.content.toString('hex');
+    }
+    this._appendMessage(result.message);
   }
 
   async _handlePublishCommand (params) {
-    if (!params[1]) return this._appendError(`Usage: /publish <documentID> <rateSats>`);
-    if (params[2] == null || params[2] === '') {
-      return this._appendError(`Usage: /publish <documentID> <rateSats> — rate 0 = free gossip only`);
-    }
-    if (!this.documents[params[1]]) return this._appendError(`This file does not exist in the local library. Use /import first.`);
-
-    const rateSats = Number(params[2]);
-    if (!Number.isFinite(rateSats) || rateSats < 0) {
-      return this._appendError(`rateSats must be a non-negative number`);
-    }
-
-    const body = this.documents[params[1]].toString('utf8');
-    this.fs.touchDir(`documents`);
-    this.fs.publish(`${params[1]}`, this.documents[params[1]]);
-    this._syncDocumentToPeer(params[1], body, rateSats);
-    this.node._publishDocument(params[1], body, rateSats);
-    this._appendMessage(`Published ${params[1]} (rate=${rateSats} sats) to peers.`);
+    this._applyExchangeResult(this.documentExchange.publish(params[1], params[2]));
   }
 
   async _handleRequestCommand (params) {
@@ -1375,252 +1306,28 @@ class CLI extends FabricShell {
   }
 
   async _handleOffersCommand (params) {
-    const documentId = params[1] || null;
-    const offers = this.offerBook.listOffers(documentId ? { documentId } : {});
-    const ranked = this.offerBook.rankOffers(offers);
-    if (!ranked.length) {
-      return this._appendMessage('No offers in book. Use /inventory <peer> [btc] first.');
-    }
-    const lines = ranked.slice(0, 40).map((o, i) => {
-      const blob = o.blobIndex != null ? ` blob=${o.blobIndex}/${o.blobTotal}` : '';
-      return `  #${i + 1} ${o.documentId}${blob} seller=${o.sellerAddress} price=${o.rateSats} lat=${o.latencyMs}ms score=${o.peerScore} rank=${(o.rankScore || 0).toFixed(3)}`;
-    });
-    this._appendMessage(`{bold}Document offers{/bold} (${ranked.length})\n${lines.join('\n')}`);
+    this._applyExchangeResult(this.documentExchange.listOffers(params[1] || null));
   }
 
   async _handleBuyCommand (params) {
-    if (!params[1]) {
-      return this._appendError('Usage: /buy <documentID> [seller|auto] [amountSats]');
-    }
-    const documentId = params[1];
-    const sellerArg = params[2] || 'auto';
     const amountArg = params[3] != null ? Number(params[3]) : null;
-
-    // Multi-blob: open one session per blob via pickBlobPlan when totals are known.
-    const sample = this.offerBook.listOffers({ documentId })[0];
-    const blobTotal = sample && sample.blobTotal != null ? Number(sample.blobTotal) : 0;
-    if (sellerArg === 'auto' && blobTotal > 1) {
-      const plan = this.offerBook.pickBlobPlan(documentId, blobTotal);
-      if (!plan.size) {
-        return this._appendError(`No blob plan for ${documentId}. Run /inventory <peer> btc then /offers.`);
-      }
-      const lines = [];
-      for (const [idx, offer] of plan.entries()) {
-        const session = this._openBuySessionFromOffer(documentId, offer, amountArg);
-        if (session.error) return this._appendError(session.error);
-        lines.push(
-          `  blob ${idx}/${blobTotal} settlement=${session.settlementId}` +
-          ` seller=${offer.sellerAddress} hash=${session.contentHashHex || 'n/a'}`
-        );
-      }
-      return this._appendMessage(
-        `{bold}Buy plan{/bold} ${documentId} (${plan.size} blobs)\n${lines.join('\n')}\n` +
-        `Pay each, then /confirm <settlementId> <txid>`
-      );
-    }
-
-    let offer = null;
-    if (sellerArg === 'auto') {
-      offer = this.offerBook.pickBest(documentId, amountArg != null ? { maxSats: amountArg } : {});
-    } else {
-      const offers = this.offerBook.listOffers({ documentId }).filter((o) => {
-        return o.sellerAddress === sellerArg || o.sellerId === sellerArg;
-      });
-      offer = this.offerBook.rankOffers(offers)[0] || null;
-    }
-    if (!offer) {
-      return this._appendError(`No offer for ${documentId}. Run /inventory <peer> btc then /offers.`);
-    }
-    const session = this._openBuySessionFromOffer(documentId, offer, amountArg);
-    if (session.error) return this._appendError(session.error);
-    this._appendMessage(
-      `{bold}Buy session{/bold} ${session.settlementId}\n` +
-      `  doc=${documentId} seller=${offer.sellerAddress} amount=${session.amountSats} sats` +
-      (session.blobIndex != null ? ` blob=${session.blobIndex}/${session.blobTotal}` : '') + `\n` +
-      `  contentHash=${session.contentHashHex || 'n/a'} (payment commitment)\n` +
-      `  blobHash=${session.blobHashHex || 'n/a'}\n` +
-      `  pay=${session.paymentAddress || '(no HTLC address — fund via Hub invoice or attachInventoryHtlc)'}\n` +
-      `  uri=${session.bitcoinUri || 'n/a'}\n` +
-      `Next: pay, then /confirm ${session.settlementId} <txid>`
+    this._applyExchangeResult(
+      this.documentExchange.buy(params[1], params[2] || 'auto', amountArg)
     );
   }
 
-  /**
-   * @param {string} documentId
-   * @param {object} offer
-   * @param {number|null} amountArg
-   * @returns {object}
-   */
+  /** @deprecated Prefer `this.documentExchange.openBuySessionFromOffer` */
   _openBuySessionFromOffer (documentId, offer, amountArg) {
-    const amountSats = amountArg != null && Number.isFinite(amountArg)
-      ? amountArg
-      : (Number(offer.rateSats) || 0);
-    let paymentAddress = offer.htlc && offer.htlc.paymentAddress;
-    let bitcoinUri = offer.htlc && offer.htlc.bitcoinUri;
-    let htlc = offer.htlc || null;
-    const contentHashHex = contentHashHexFromObject(offer);
-    if (!paymentAddress && contentHashHex && amountSats > 0) {
-      try {
-        const buyerHex = this._buyerRefundPubkeyHex();
-        const sellerHex = offer.sellerPubkey || null;
-        if (buyerHex && sellerHex && this.node.settings.inventoryHtlcLocktimeHeight) {
-          const built = inventoryHtlc.buildInventoryHtlcP2tr({
-            networkName: this.settings.network || 'regtest',
-            sellerPubkeyCompressed: Buffer.from(sellerHex, 'hex'),
-            buyerRefundPubkeyCompressed: Buffer.from(buyerHex, 'hex'),
-            paymentHash32: Buffer.from(contentHashHex, 'hex'),
-            refundLocktimeHeight: Number(this.node.settings.inventoryHtlcLocktimeHeight)
-          });
-          const hints = inventoryHtlc.buildHtlcFundingHints({
-            paymentAddress: built.address,
-            amountSats,
-            label: documentId.slice(0, 32)
-          });
-          paymentAddress = built.address;
-          bitcoinUri = hints.bitcoinUri;
-          htlc = {
-            paymentAddress,
-            paymentHashHex: built.paymentHashHex,
-            claimScriptHex: built.claimScript.toString('hex'),
-            refundScriptHex: built.refundScript.toString('hex'),
-            refundLocktimeHeight: Number(this.node.settings.inventoryHtlcLocktimeHeight),
-            bitcoinUri
-          };
-        }
-      } catch (e) {
-        this._appendWarning(`Could not build local HTLC: ${e.message}`);
-      }
-    }
-    const session = createDocumentPurchaseSession({
-      documentId,
-      seller: offer.sellerAddress,
-      contentHashHex,
-      amountSats,
-      paymentAddress: paymentAddress || '',
-      bitcoinUri,
-      network: this.settings.network || 'regtest',
-      blobIndex: offer.blobIndex,
-      blobTotal: offer.blobTotal,
-      blobHashHex: offer.blobHashHex,
-      merkleRootHex: offer.merkleRootHex,
-      htlc
-    });
-    if (isDuplicateSettlement(this.paidSettlements, session)) {
-      return { error: `Already settled ${session.dedupeKey} — refusing double-pay` };
-    }
-    for (const open of this.purchaseSessions.values()) {
-      if (open && open.status !== 'confirmed' && open.dedupeKey === session.dedupeKey) {
-        return { error: `Open session already exists for ${session.dedupeKey} (${open.settlementId})` };
-      }
-    }
-    this.purchaseSessions.set(session.settlementId, session);
-    this._registerSessionHtlcWatch(session);
-    return session;
+    return this.documentExchange.openBuySessionFromOffer(documentId, offer, amountArg);
   }
 
-  /**
-   * Register purchase-session HTLC address + payment hash on the CLI wallet watch set.
-   * Block/mempool ingest arrives via `wallet.trust(bitcoin)`.
-   * @param {object} session
-   */
+  /** @deprecated Prefer `this.documentExchange.registerSessionHtlcWatch` */
   _registerSessionHtlcWatch (session) {
-    if (!session || !this.wallet || typeof this.wallet.watchHtlc !== 'function') return;
-    try {
-      this.wallet.watchHtlc({
-        paymentAddress: session.paymentAddress || (session.htlc && session.htlc.paymentAddress),
-        paymentHashHex: session.contentHashHex || (session.htlc && session.htlc.paymentHashHex),
-        settlementId: session.settlementId,
-        documentId: session.documentId
-      });
-    } catch (e) {
-      this._appendWarning(`Wallet HTLC watch not registered: ${e.message}`);
-    }
+    return this.documentExchange.registerSessionHtlcWatch(session);
   }
 
   async _handleConfirmCommand (params) {
-    if (!params[1] || !params[2]) {
-      return this._appendError('Usage: /confirm <settlementId|documentId> <txid>');
-    }
-    const session = findSession(this.purchaseSessions, params[1]);
-    if (!session) return this._appendError('Unknown purchase session. Use /buy first.');
-    const txid = String(params[2]).trim();
-    if (!/^[0-9a-fA-F]{64}$/.test(txid)) return this._appendError('txid must be 64 hex chars');
-
-    if (this.settings.hubRpcUrl) {
-      try {
-        const body = {
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'ConfirmInventoryHtlcPayment',
-          params: { settlementId: session.settlementId, txid }
-        };
-        const res = await fetch(String(this.settings.hubRpcUrl).replace(/\/$/, '') + '/services/rpc', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(body)
-        });
-        const json = await res.json();
-        if (json.error) return this._appendError(`Hub RPC: ${JSON.stringify(json.error)}`);
-        if (isDuplicateSettlement(this.paidSettlements, session)) {
-          return this._appendError(`Already confirmed settlement for ${session.dedupeKey}`);
-        }
-        rememberSettlement(this.paidSettlements, session);
-        session.status = 'confirmed';
-        this._appendMessage(`Hub confirmed settlement ${session.settlementId}: ${JSON.stringify(json.result || json)}`);
-        return;
-      } catch (e) {
-        return this._appendError(`Hub confirm failed: ${e.message}`);
-      }
-    }
-
-    if (this.bitcoin && typeof this.bitcoin._makeRPCRequest === 'function' && session.paymentAddress && session.amountSats > 0) {
-      try {
-        const raw = await this.bitcoin._makeRPCRequest('getrawtransaction', [txid, true]);
-        const vouts = (raw && raw.vout) || [];
-        let matched = 0;
-        for (const v of vouts) {
-          const addrs = (v.scriptPubKey && (v.scriptPubKey.addresses || (v.scriptPubKey.address ? [v.scriptPubKey.address] : []))) || [];
-          if (addrs.includes(session.paymentAddress)) {
-            matched += Math.round((v.value || 0) * 1e8);
-          }
-        }
-        if (matched < session.amountSats) {
-          return this._appendError(`L1 payment insufficient: found ${matched} sats to ${session.paymentAddress}, need ${session.amountSats}`);
-        }
-        this._appendMessage(`L1 verified ${matched} sats to ${session.paymentAddress} in ${txid}`);
-      } catch (e) {
-        this._appendWarning(`L1 verify skipped/failed: ${e.message}`);
-      }
-    }
-
-    if (isDuplicateSettlement(this.paidSettlements, session)) {
-      return this._appendError(`Already confirmed settlement for ${session.dedupeKey}`);
-    }
-    rememberSettlement(this.paidSettlements, session);
-    session.status = 'confirmed';
-    session.txid = txid;
-    const fundedHex = await this._fetchRawTxHex(txid);
-    if (fundedHex) session.fundedTxHex = fundedHex;
-    if (session.merkleRootHex && this.node.blobTransfers) {
-      this.node.blobTransfers.expectTransfer({
-        documentId: session.documentId,
-        merkleRootHex: session.merkleRootHex,
-        total: session.blobTotal,
-        blobHashHexes: session.blobHashHex ? [session.blobHashHex] : null
-      });
-    }
-    session.status = 'delivery_pending';
-    const reqOpts = { maxSats: session.amountSats };
-    if (session.contentHashHex) reqOpts.contentHashHex = session.contentHashHex;
-    if (session.blobIndex != null) reqOpts.blobIndex = session.blobIndex;
-    if (session.blobTotal != null) reqOpts.blobTotal = session.blobTotal;
-    const ok = this.node.requestDocument(session.documentId, session.seller, reqOpts);
-    this._appendMessage(
-      ok
-        ? `Confirmed ${session.settlementId}; DocumentRequest sent to ${session.seller}. ` +
-          `Awaiting verified ciphertext then content-key reveal (or /claimwatch after seller claim).`
-        : `Confirmed locally but could not send DocumentRequest to ${session.seller}.`
-    );
+    this._applyExchangeResult(await this.documentExchange.confirm(params[1], params[2]));
   }
 
   /**
@@ -1628,99 +1335,8 @@ class CLI extends FabricShell {
    * Usage: /claimwatch <settlementId> [claimTxid]
    */
   async _handleClaimWatchCommand (params) {
-    if (!params[1]) {
-      return this._appendError('Usage: /claimwatch <settlementId|documentId> [claimTxid]');
-    }
-    const session = findSession(this.purchaseSessions, params[1]);
-    if (!session) return this._appendError('Unknown purchase session. Use /buy first.');
-    if (session.status === 'complete') {
-      return this._appendMessage(`Session ${session.settlementId} already complete.`);
-    }
-    if (session.status === 'refunded') {
-      return this._appendError(`Session ${session.settlementId} was refunded; cannot open.`);
-    }
-
-    let claimTxid = params[2] ? String(params[2]).trim() : (session.claimTxid || null);
-    if (!claimTxid && this.settings.hubRpcUrl && this.settings.hubAdminToken) {
-      try {
-        const body = {
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'GetInventoryHtlcSellerReveal',
-          params: {
-            settlementId: session.settlementId,
-            adminToken: this.settings.hubAdminToken
-          }
-        };
-        const res = await fetch(String(this.settings.hubRpcUrl).replace(/\/$/, '') + '/services/rpc', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(body)
-        });
-        const json = await res.json();
-        const result = json && json.result;
-        if (result && result.claimTxid) claimTxid = String(result.claimTxid);
-        if (result && result.preimageHex && this.node) {
-          const opened = this.node.openSealedDeliveryWithPreimage(session.documentId, result.preimageHex);
-          if (opened.ok) {
-            session.status = 'complete';
-            session.claimTxid = claimTxid || session.claimTxid;
-            session.openedFrom = 'hub_reveal';
-            return this._appendMessage(
-              `Opened ${session.documentId} from Hub seller reveal` +
-              (claimTxid ? ` (claimTxid=${claimTxid})` : '') + '.'
-            );
-          }
-        }
-      } catch (e) {
-        this._appendWarning(`Hub seller-reveal lookup failed: ${e.message}`);
-      }
-    }
-
-    if (!claimTxid || !/^[0-9a-fA-F]{64}$/.test(claimTxid)) {
-      return this._appendError(
-        'Usage: /claimwatch <settlementId> <claimTxid> — provide the seller claim txid ' +
-        '(or configure hubRpcUrl + hubAdminToken for GetInventoryHtlcSellerReveal).'
-      );
-    }
-
-    const paymentHash = session.contentHashHex ||
-      (session.htlc && session.htlc.paymentHashHex) || null;
-    if (!paymentHash) {
-      return this._appendError('Session has no contentHash / paymentHash to match claim preimage.');
-    }
-
-    let txHex = await this._fetchRawTxHex(claimTxid);
-    if (!txHex) {
-      return this._appendError(
-        `Could not fetch claim tx ${claimTxid} (need local bitcoind). Pass a mined/mempool claimTxid.`
-      );
-    }
-
-    const extracted = extractPreimageFromClaimTx(txHex, paymentHash);
-    if (!extracted.ok) {
-      return this._appendError(`Claim watch failed: ${extracted.error || 'preimage not found'}`);
-    }
-
-    session.claimTxid = claimTxid;
-    if (!this.node) return this._appendError('Peer not ready.');
-    const opened = this.node.openSealedDeliveryWithPreimage(session.documentId, extracted.preimageHex);
-    if (!opened.ok) {
-      session.error = opened.error;
-      if (opened.error && /no pending sealed delivery/i.test(opened.error)) {
-        return this._appendError(
-          `Preimage found in claim ${claimTxid} but no pending sealed ciphertext for ${session.documentId}. ` +
-          `Wait for delivery (session status=${session.status}) then retry.`
-        );
-      }
-      session.status = 'fraud';
-      return this._appendError(`Open with claim preimage failed: ${opened.error}`);
-    }
-    session.status = 'complete';
-    session.openedFrom = 'claim_witness';
-    this._appendMessage(
-      `Opened ${session.documentId} from claim witness ${claimTxid} ` +
-      `(vin=${extracted.vin}, session ${session.settlementId} → complete).`
+    this._applyExchangeResult(
+      await this.documentExchange.claimWatch(params[1], params[2] || null)
     );
   }
 
@@ -1729,105 +1345,10 @@ class CLI extends FabricShell {
    * Usage: /refund <settlementId> [destinationAddress] [feeSats]
    */
   async _handleRefundCommand (params) {
-    if (!params[1]) {
-      return this._appendError('Usage: /refund <settlementId|documentId> [destinationAddress] [feeSats]');
-    }
-    const session = findSession(this.purchaseSessions, params[1]);
-    if (!session) return this._appendError('Unknown purchase session. Use /buy first.');
-    if (session.status === 'complete') {
-      return this._appendError(`Session ${session.settlementId} already complete — refund refused.`);
-    }
-    if (session.status === 'refunded') {
-      return this._appendMessage(`Session ${session.settlementId} already refunded (${session.refundTxid || 'n/a'}).`);
-    }
-
-    const htlc = session.htlc || {};
-    const paymentAddress = session.paymentAddress || htlc.paymentAddress;
-    const claimScriptHex = htlc.claimScriptHex;
-    const refundScriptHex = htlc.refundScriptHex;
-    const refundLocktimeHeight = htlc.refundLocktimeHeight != null
-      ? Number(htlc.refundLocktimeHeight)
-      : Number(this.node && this.node.settings && this.node.settings.inventoryHtlcLocktimeHeight);
-    if (!paymentAddress || !claimScriptHex || !refundScriptHex || !Number.isFinite(refundLocktimeHeight)) {
-      return this._appendError(
-        'Session HTLC incomplete (need paymentAddress, claimScriptHex, refundScriptHex, refundLocktimeHeight). ' +
-        'Re-buy via /inventory <peer> btc so the offer carries full HTLC scripts.'
-      );
-    }
-
-    const tip = await this._bitcoinTipHeight();
-    if (tip == null) {
-      return this._appendError('Need local bitcoind for tip height (getblockchaininfo).');
-    }
-    if (!refundLocktimeMature(tip, refundLocktimeHeight)) {
-      return this._appendError(
-        `Refund locktime not mature: tip=${tip}, need >= ${refundLocktimeHeight}.`
-      );
-    }
-
-    let fundedTxHex = session.fundedTxHex || null;
-    if (!fundedTxHex && session.txid) {
-      fundedTxHex = await this._fetchRawTxHex(session.txid);
-      if (fundedTxHex) session.fundedTxHex = fundedTxHex;
-    }
-    if (!fundedTxHex) {
-      return this._appendError(
-        'Missing fundedTxHex — /confirm <id> <fundingTxid> with bitcoind, or set session.fundedTxHex.'
-      );
-    }
-
-    const priv = this._buyerPrivateKey32();
-    if (!priv) return this._appendError('Buyer private key unavailable on this node.');
-
-    let destinationAddress = params[2] ? String(params[2]).trim() : null;
-    if (!destinationAddress) {
-      try {
-        if (this.bitcoin && typeof this.bitcoin.getUnusedAddress === 'function') {
-          destinationAddress = await this.bitcoin.getUnusedAddress();
-        }
-      } catch (_) { /* ignore */ }
-    }
-    if (!destinationAddress) {
-      return this._appendError('Usage: /refund <settlementId> <destinationAddress> [feeSats]');
-    }
-
-    const feeSats = params[3] != null ? Number(params[3]) : 1000;
-    if (!Number.isFinite(feeSats) || feeSats < 1) {
-      return this._appendError('feeSats must be a positive number');
-    }
-
-    let signed;
-    try {
-      const bundle = prepareInventoryHtlcBuyerRefundPsbt({
-        networkName: session.network || this.settings.network || 'regtest',
-        fundedTxHex,
-        paymentAddress,
-        claimScript: claimScriptHex,
-        refundScript: refundScriptHex,
-        refundLocktimeHeight,
-        destinationAddress,
-        feeSats
-      });
-      signed = signAndExtractInventoryHtlcBuyerRefund(bundle, priv);
-    } catch (e) {
-      return this._appendError(`Refund PSBT failed: ${e.message}`);
-    }
-
-    try {
-      const broadcast = await this.bitcoin._makeRPCRequest('sendrawtransaction', [signed.txHex]);
-      session.status = 'refunded';
-      session.refundTxid = broadcast || signed.txid;
-      session.error = session.error || 'refunded after locktime';
-      this._appendMessage(
-        `Refund broadcast for ${session.settlementId}: txid=${session.refundTxid} → ${destinationAddress}`
-      );
-    } catch (e) {
-      session.refundTxHex = signed.txHex;
-      return this._appendError(
-        `Refund signed (txid=${signed.txid}) but broadcast failed: ${e.message}. ` +
-        `Hex stored on session.refundTxHex.`
-      );
-    }
+    const feeSats = params[3] != null ? Number(params[3]) : null;
+    this._applyExchangeResult(
+      await this.documentExchange.refund(params[1], params[2] || null, feeSats)
+    );
   }
 
   /**
@@ -1835,41 +1356,7 @@ class CLI extends FabricShell {
    * Usage: /refunds [outstanding|mature|failed|pending|refunded|all]
    */
   async _handleRefundsCommand (params) {
-    const filter = params[1] ? String(params[1]).toLowerCase() : 'outstanding';
-    const allowed = new Set(['outstanding', 'mature', 'failed', 'pending', 'refunded', 'all']);
-    if (!allowed.has(filter)) {
-      return this._appendError(
-        'Usage: /refunds [outstanding|mature|failed|pending|refunded|all]'
-      );
-    }
-    const tip = await this._bitcoinTipHeight();
-    const rows = listRefundCandidates(this.purchaseSessions, tip, { filter });
-    if (!rows.length) {
-      return this._appendMessage(
-        `No ${filter} refunds.` +
-        (tip != null ? ` (tip=${tip})` : ' (bitcoind tip unavailable)') +
-        `\nOpen a paid session with /buy, or try /refunds all.`
-      );
-    }
-    const lines = rows.map((r) => {
-      const lock = r.refundLocktimeHeight != null ? String(r.refundLocktimeHeight) : '?';
-      const tipStr = r.tipHeight != null ? String(r.tipHeight) : '?';
-      const wait = r.bucket === 'pending' && r.blocksRemaining
-        ? ` wait=${r.blocksRemaining}blk`
-        : '';
-      const err = r.error ? ` err=${r.error}` : '';
-      const ref = r.refundTxid ? ` refundTx=${r.refundTxid.slice(0, 12)}…` : '';
-      return (
-        `  [${r.bucket}] ${r.settlementId}  doc=${r.documentId}  status=${r.status}` +
-        `  amount=${r.amountSats}  lock=${lock} tip=${tipStr}${wait}${ref}${err}`
-      );
-    });
-    this._appendMessage(
-      `{bold}Refunds{/bold} (${filter}, ${rows.length}` +
-      (tip != null ? `, tip=${tip}` : '') +
-      `)\n${lines.join('\n')}\n` +
-      `Mature rows: /refund <settlementId> [addr] [feeSats]`
-    );
+    this._applyExchangeResult(await this.documentExchange.listRefunds(params[1] || 'outstanding'));
   }
 
   async _handleRelayFeesCommand (params) {

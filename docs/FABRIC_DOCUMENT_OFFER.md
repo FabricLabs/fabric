@@ -36,6 +36,18 @@ Per-item **BTC-backed** listings use **`object.offerBtc`** on the request and it
 
 **`@fabric/http`** maps this protocol to HTTP **402** + **`X-Fabric-Payment-Request`** (base64url UTF-8 JSON, including `documentExchange` + optional `documentOffer` / invoice summary) and optional Lightning **L402** `WWW-Authenticate`. See `fabric-http` **`docs/HTTP_402_FABRIC_PAYMENT.md`**.
 
+## Naming (do not conflate)
+| Name | Where | Meaning |
+|------|-------|---------|
+| **`FABRIC_DOCUMENT_OFFER`** | Wire envelope (`publishedDocumentEnvelope`) | Inventory-request JSON `type` alias for catalog/terms |
+| **`DocumentOfferBook`** | `@fabric/core` CLI / Peer | Ranked local book of seller listings after `/inventory … btc` |
+| **Hub sidechain `DocumentOffer`** | Hub Beacon / reward flows | Application-state reward offer — **not** this inventory envelope |
+| **HTTP 402 `documentOffer`** | `@fabric/http` | Payment-request summary for web/extension auto-pay |
+
+Canonical operator flows for L1 buy/confirm/claim/refund:
+[`functions/documentExchange.js`](../functions/documentExchange.js) (CLI packs
+`documents` + `documents-market`).
+
 ## See also
 
 - [`L1_DOCUMENT_EXCHANGE.md`](L1_DOCUMENT_EXCHANGE.md) — peer settings, relay policy, tests

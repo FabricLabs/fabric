@@ -6,10 +6,16 @@
  *   - Claim: sha256(preimage) == paymentHash, seller Schnorr signature
  *   - Refund: CLTV lock height, buyer signature
  *
- * The Hub derives the preimage as SHA-256(wire bytes of a canonical Fabric
- * `DocumentPublish` message wrapping the stored document JSON — same binding as
- * CreatePurchaseInvoice / ClaimPurchase (`contentHash` hex = SHA-256(preimage)).
- * Phase-2 file delivery uses AES-256-GCM with that 32-byte preimage as the key.
+ * **Payment hash / preimage (binding):** always go through
+ * `@fabric/core/functions/documentPaymentHash` (`resolveDocumentContentHashHex`).
+ *
+ * - **Sealed (priced):** preimage = content key `K`; paymentHash = SHA256(K).
+ * - **Legacy unsealed envelope:** preimage = SHA256(**unsigned**
+ *   `documentPublishEnvelopeBuffer` bytes) — never a Schnorr-signed gossip frame;
+ *   paymentHash = SHA256(preimage) (`purchaseContentHashHex`).
+ *
+ * Phase-2 AES-GCM for sealed docs uses `K`; legacy envelope path may use the
+ * envelope-derived 32-byte preimage as the content key only when unsealed.
  */
 
 const crypto = require('crypto');

@@ -13,12 +13,15 @@ The **`fabric`** npm binary is the **Node harness** (`scripts/fabric.js`) for th
 
 Bundled executable: `npm run make:binary` (pkg).
 
-## Native addon (`fabric.node`)
-The Node N-API addon implements peer/message helpers and Bitcoin-related bindings (`binding.gyp`). Build when you need C parity features or JS access to `binding.cc` exports.
+## Native addon (`fabric.node`) — optional
+The Node N-API addon is **not** built on `npm install`. JavaScript (`types/message.js`,
+`types/peer.js`) is the **canonical** wire protocol for `@fabric/core` 0.1.0. C sources
+stay in the repo for experiments and optional acceleration.
 
 ```bash
 npm ci
 npm run build:c
+# or: FABRIC_BUILD_NATIVE=1 npm install
 ```
 
 Outputs under `build/Release/fabric.node` (ignored by git — see `.gitignore`).

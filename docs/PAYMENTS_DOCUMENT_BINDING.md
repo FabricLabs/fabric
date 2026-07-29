@@ -2,11 +2,28 @@
 
 **Buy / HTLC commitment (single path):** [`functions/documentPaymentHash.js`](../functions/documentPaymentHash.js) → `resolveDocumentContentHashHex`. Wire field: **`contentHashHex`**.
 
-Envelope helpers in [`publishedDocumentEnvelope.js`](../functions/publishedDocumentEnvelope.js) remain the source for the **legacy unsealed** binding:
+## Legacy unsealed envelope (unsigned only)
 
-1. Canonical Fabric **`DocumentPublish`** `Message` (full `toBuffer()` bytes).
-2. **32-byte preimage** = `SHA256` of those bytes.
-3. **`purchaseContentHashHex`** = `SHA256(preimage)` — used when the document is not sealed.
+Helpers in [`publishedDocumentEnvelope.js`](../functions/publishedDocumentEnvelope.js):
+
+1. Canonical Fabric **`DocumentPublish`** AMP bytes from **`documentPublishEnvelopeBuffer`** — **signature field all zeros**.
+2. **32-byte preimage** = `SHA256(those unsigned bytes)`.
+3. **`purchaseContentHashHex`** = `SHA256(preimage)`.
+
+**Footgun eliminated:** do **not** hash a Schnorr-**signed** gossip `DocumentPublish` `toBuffer()`. Signing changes bytes 144–207 and diverges from the payment commitment. `assertUnsignedDocumentPublishEnvelope` / `inventoryHtlcPreimage32FromEnvelopeBuffer` **throw** if the signature region is non-zero.
+
+Whitelist for the envelope JSON omits timestamps (`created` / `edited`) and lineage so Hub store vs Peer rebuild stay aligned.
+
+## AMP header `preimage` (Lightning-style)
+
+On Fabric **Messages**, wire `preimage` is a **payment secret**, not a body hash (body integrity is header `hash` = double-SHA256(body)):
+
+| Frame | `preimage` |
+|-------|------------|
+| Public / default | all zeros |
+| Inventory HTLC / Circuit hop | explicit 32-byte secret (`payment_hash = SHA256(preimage)`) |
+
+Same separation as Lightning HTLC chains: multi-hop Fabric Circuits need independent secrets per hop; stuffing `SHA256(body)` into `preimage` would collide with that model. See [`MESSAGE_BODY.md`](MESSAGE_BODY.md).
 
 ## Per-blob commitments
 Every document is advertised as a **`DocumentBlobIndex`** (Tree merkle over blob leaves):
@@ -27,7 +44,7 @@ Hop budgets for private relay nest with monotone `maxSats` ([`documentRequestRel
 | Export | Purpose |
 |--------|---------|
 | `documentPaymentHash` | **`resolveDocumentContentHashHex`**, alias normalize, re-exports |
-| `publishedDocumentEnvelope` | Canonical envelope + legacy `purchaseContentHashHex` |
+| `publishedDocumentEnvelope` | Unsigned envelope + legacy `purchaseContentHashHex` |
 | `inventoryHtlc` | P2TR build / fund hints / claim+refund PSBTs / `extractPreimageFromClaimTx` / `refundLocktimeMature` |
 | `documentContentKey` | AES-GCM seal; `paymentHashHexFromKey` |
 | `documentOfferEscrow` | Role-renamed HTLC wrapper |

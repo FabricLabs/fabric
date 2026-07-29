@@ -451,8 +451,13 @@ class Message extends Actor {
       this.signer = null;
     }
 
-    /** When true, body preimage field is zeroed on wire (no SHA256(body) commitment). */
+    /**
+     * When true, keep wire preimage zeroed (no payment secret). Default public
+     * messages already use zeros — see {@link Message#preimage} (Lightning-style).
+     */
     this._sensitive = !!(input && input.sensitive);
+    /** When true, an explicit HTLC / circuit payment preimage was set — do not clobber. */
+    this._explicitPreimage = false;
 
     // Support both @type/@data (deprecated) and type/data (preferred) formats
     const messageType = input.type || input['@type'];
@@ -551,10 +556,12 @@ class Message extends Actor {
   }
 
   /**
-   * Optional 32-byte preimage on wire:
-   * - **All zeros:** sensitive payload (no commitment) or legacy; {@link Message#sensitive} uses this.
-   * - **SHA256(body):** default for non-sensitive messages (single digest; {@link Message#hash} is double-SHA256(body)).
-   * - **Other:** explicit HTLC secret or custom (must match what was signed).
+   * Optional 32-byte **payment** preimage on wire (Lightning-style):
+   * - **All zeros (default / public):** no HTLC secret; body integrity is only {@link Message#hash}
+   *   (double-SHA256(body)). Do **not** put SHA256(body) here — that collides with circuit HTLC chains.
+   * - **Non-zero:** explicit payment secret for inventory HTLC / Fabric Circuit hops
+   *   (`payment_hash = SHA256(preimage)`), covered by the Schnorr signature.
+   * - {@link Message#sensitive} forces zeros and refuses to clobber an explicit secret.
    */
   get preimage () {
     if (!this.raw || !Buffer.isBuffer(this.raw.preimage) || this.raw.preimage.length !== 32) return null;
@@ -568,11 +575,13 @@ class Message extends Actor {
     }
     if (value === null || value === undefined) {
       this.raw.preimage.fill(0);
+      this._explicitPreimage = false;
       return;
     }
     const buf = Buffer.isBuffer(value) ? value : Buffer.from(value, 'hex');
     if (buf.length !== 32) throw new Error('Message preimage must be 32 bytes');
     buf.copy(this.raw.preimage);
+    this._explicitPreimage = !isAllZero32(this.raw.preimage);
   }
 
   toBuffer () {
@@ -883,6 +892,7 @@ class Message extends Actor {
     // Do not assign `message.data` here: the `data` setter recomputes `raw.hash`
     // (double-SHA256 of the body), which would replace the on-wire hash and break
     // `Peer._handleFabricMessage` body-integrity checks (C parity).
+    message._explicitPreimage = !isAllZero32(message.raw.preimage);
 
     return message;
   }
@@ -1053,14 +1063,14 @@ Object.defineProperty(Message.prototype, 'data', {
     }
     this.raw.data = bodyBuf;
     this.raw.size.write(padDigits(this.raw.data.byteLength.toString(16), 8), 'hex');
-    // Preimage: single SHA256(body) for non-sensitive (commitment); zeros when sensitive (no body hash in preimage).
+    // Lightning-style: body changes never invent a payment preimage. Public =
+    // all-zero unless an explicit HTLC/circuit secret was set (or sensitive clears it).
     if (!Buffer.isBuffer(this.raw.preimage) || this.raw.preimage.length !== 32) {
       this.raw.preimage = Buffer.alloc(32);
     }
-    if (this._sensitive) {
+    if (this._sensitive || !this._explicitPreimage) {
       this.raw.preimage.fill(0);
-    } else {
-      Buffer.from(Hash256.digest(bodyBuf), 'hex').copy(this.raw.preimage);
+      if (this._sensitive) this._explicitPreimage = false;
     }
   }
 });
@@ -1071,16 +1081,13 @@ Object.defineProperty(Message.prototype, 'sensitive', {
   },
   set (value) {
     this._sensitive = !!value;
-    if (!this.raw || !Buffer.isBuffer(this.raw.data) || !this.raw.data.length) return;
-    const bodyBuf = this.raw.data;
+    if (!this._sensitive) return;
+    // Never leave a payment secret on a sensitive frame; do not invent SHA256(body).
     if (!Buffer.isBuffer(this.raw.preimage) || this.raw.preimage.length !== 32) {
       this.raw.preimage = Buffer.alloc(32);
     }
-    if (this._sensitive) {
-      this.raw.preimage.fill(0);
-    } else {
-      Buffer.from(Hash256.digest(bodyBuf), 'hex').copy(this.raw.preimage);
-    }
+    this.raw.preimage.fill(0);
+    this._explicitPreimage = false;
   }
 });
 

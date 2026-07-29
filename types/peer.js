@@ -1379,9 +1379,10 @@ class Peer extends Service {
 
     this._rememberWireHash(hash);
 
-    // Body integrity: `hash` header is double-SHA256(body). `preimage` is single SHA256(body) for
-    // non-sensitive sends, all-zero for sensitive, or an explicit HTLC secret — preimage is covered
-    // by the Schnorr signature; do not require preimage === SHA256(body) here (HTLC secrets differ).
+    // Body integrity: `hash` header is double-SHA256(body). Wire `preimage` is a
+    // Lightning-style payment secret (all-zero for public frames; non-zero for HTLC /
+    // Fabric Circuit hops). Do not require preimage === SHA256(body) — that field is
+    // not a body commitment (see docs/MESSAGE_BODY.md).
     const bodyBuf = message.raw.data || Buffer.alloc(0);
     const checksum = Hash256.doubleDigest(bodyBuf);
     const expectedHash = Buffer.isBuffer(message.raw.hash) ? message.raw.hash.toString('hex') : message.raw.hash;
