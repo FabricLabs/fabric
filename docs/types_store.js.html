@@ -36,6 +36,7 @@
 // Dependencies
 const { Level } = require('level');
 const crypto = require('crypto');
+const merge = require('lodash.merge');
 const pointer = require('json-pointer');
 
 // Fabric Types
@@ -65,6 +66,13 @@ class Store extends Actor {
       persistent: true,
       verbosity: 2, // 0 none, 1 error, 2 warning, 3 notice, 4 debug
     }, settings);
+
+    /**
+     * Optional {@link Codec} for encrypted at-rest values (Level `valueEncoding`).
+     * Browser and Hub-style apps typically use one {@link Store} with `codec` for
+     * secrets and separate plain stores for cache/tips.
+     */
+    this.codec = this.settings.codec || null;
 
     this['@entity'] = {
       '@type': 'Store',
@@ -97,6 +105,43 @@ class Store extends Actor {
     Object.defineProperty(this, 'services', { enumerable: false });
 
     return this;
+  }
+
+  /**
+   * Settings object for a {@link Store} with {@link Codec} at-rest encryption
+   * (same defaults as the legacy `Keystore` type). Prefer `openEncrypted` or
+   * `new Store(Store.encryptedSettings(...))` over ad-hoc Codec wiring.
+   * @param {Object} [settings={}]
+   * @returns {Object} Settings merged with `codec` when absent.
+   */
+  static encryptedSettings (settings = {}) {
+    const Codec = require('./codec');
+    const envSeed = (typeof process !== 'undefined' &amp;&amp; process.env &amp;&amp; process.env.FABRIC_SEED) || null;
+    const merged = merge({
+      name: 'Keystore',
+      path: './stores/keystore',
+      type: 'EncryptedFabricStore',
+      persistent: true,
+      mode: 'aes-256-cbc',
+      version: 0,
+      seed: envSeed
+    }, settings);
+
+    const codec = merged.codec || new Codec({
+      key: merged.key,
+      mode: merged.mode,
+      version: merged.version
+    });
+
+    return merge(merged, { codec });
+  }
+
+  /**
+   * @param {Object} [settings={}]
+   * @returns {Store}
+   */
+  static openEncrypted (settings = {}) {
+    return new Store(Store.encryptedSettings(settings));
   }
 
   _getPathForKey (key) {
@@ -423,7 +468,23 @@ class Store extends Actor {
     // if (this.db) return this;
 
     try {
-      this.db = new Level(this.settings.path);
+      const levelOpts = {};
+      if (this.codec &amp;&amp; typeof this.codec.encode === 'function' &amp;&amp; typeof this.codec.decode === 'function') {
+        const codec = this.codec;
+        levelOpts.valueEncoding = {
+          name: 'fabric-codec',
+          format: 'buffer',
+          encode: function encodeFabricValue (value) {
+            const out = codec.encode(value);
+            if (out == null) throw new Error('[FABRIC:STORE] Codec.encode returned null');
+            return Buffer.isBuffer(out) ? out : Buffer.from(typeof out === 'string' ? out : JSON.stringify(out), 'utf8');
+          },
+          decode: function decodeFabricValue (buffer) {
+            return codec.decode(buffer);
+          }
+        };
+      }
+      this.db = new Level(this.settings.path, levelOpts);
       this.trust(this.db);
       this.status = 'opened';
       await this.commit();
@@ -462,19 +523,22 @@ class Store extends Actor {
     let name = `/sources/${store.id}`;
 
     source.on('write', function (key, value) {
-      if (store.settings.verbosity >= 5) console.log('[TRUST:SOURCE]', source.constructor.name, 'emitted a write event', name, key, value.constructor.name, value);
+      const valueType = (value &amp;&amp; value.constructor &amp;&amp; value.constructor.name) || typeof value;
+      if (store.settings.verbosity >= 5) console.log('[TRUST:SOURCE]', source.constructor.name, 'emitted a write event', name, key, valueType, value);
 
       let id = pointer.escape(key);
       let router = store.sha256(id);
-      let state = new State(value);
+      let state = new Actor(value);
 
+      // TODO: refactor storage paths
       pointer.set(store['@entity']['@data'], `${name}`, value);
       pointer.set(store['@entity']['@data'], `/states/${state.id}`, value);
       pointer.set(store['@entity']['@data'], `/blobs/${state.id}`, state.serialize());
-      pointer.set(store['@entity']['@data'], `/types/${state.id}`, value.constructor.name);
+      pointer.set(store['@entity']['@data'], `/types/${state.id}`, valueType);
       pointer.set(store['@entity']['@data'], `/tips/${router}`, state.id);
       pointer.set(store['@entity']['@data'], `/names/${router}`, id);
 
+      // TODO: document this event
       store.emit('source/events', {
         '@type': 'Request',
         '@method': 'put',
@@ -624,10 +688,10 @@ module.exports = Store;
       <li><a href="Collection.html">Collection</a></li>
       <li><a href="Environment.html">Environment</a></li>
       <li><a href="Fabric.html">Fabric</a></li>
+      <li><a href="FabricShell.html">FabricShell</a></li>
       <li><a href="Federation.html">Federation</a></li>
       <li><a href="Filesystem.html">Filesystem</a></li>
       <li><a href="HKDF.html">HKDF</a></li>
-      <li><a href="HTTPServer.html">HTTPServer</a></li>
       <li><a href="Hash256.html">Hash256</a></li>
       <li><a href="Identity.html">Identity</a></li>
       <li><a href="Interface.html">Interface</a></li>
@@ -646,24 +710,36 @@ module.exports = Store;
       <li><a href="Script.html">Script</a></li>
       <li><a href="Service.html">Service</a></li>
       <li><a href="Session.html">Session</a></li>
-      <li><a href="Snapshot.html">Snapshot</a></li>
-      <li><a href="Stack.html">Stack</a></li>
-      <li><a href="Stash.html">Stash</a></li>
       <li><a href="State.html">State</a></li>
       <li><a href="Store.html">Store</a></li>
-      <li><a href="Swarm.html">Swarm</a></li>
       <li><a href="Token.html">Token</a></li>
       <li><a href="Tree.html">Tree</a></li>
-      <li><a href="Value.html">Value</a></li>
       <li><a href="Vector.html">Vector</a></li>
-      <li><a href="Walker.html">Walker</a></li>
       <li><a href="Wallet.html">Wallet</a></li>
       <li><a href="Worker.html">Worker</a></li>
       <li><a href="ZMQ.html">ZMQ</a></li>
     </ul>
-    <h3>Events</h3>
+    <h3>Global</h3>
     <ul>
-      <li><a href="Aggregator.html#event:commit">commit</a></li>
+      <li><a href="global.html#BEACON_EPOCH_SIGNING_KIND">BEACON_EPOCH_SIGNING_KIND</a></li>
+      <li><a href="global.html#FRIENDLY_TYPE_BY_WIRE">FRIENDLY_TYPE_BY_WIRE</a></li>
+      <li><a href="global.html#WIRE_TYPE_DECODE_ORDER">WIRE_TYPE_DECODE_ORDER</a></li>
+      <li><a href="global.html#crypto">crypto</a></li>
+      <li><a href="global.html#epochCommitmentDigestHex">epochCommitmentDigestHex</a></li>
+      <li><a href="global.html#explorerBaseUrl">explorerBaseUrl</a></li>
+      <li><a href="global.html#friendlyTypeFromWire">friendlyTypeFromWire</a></li>
+      <li><a href="global.html#gossip">gossip</a></li>
+      <li><a href="global.html#isAllZero32">isAllZero32</a></li>
+      <li><a href="global.html#jsonSafe">jsonSafe</a></li>
+      <li><a href="global.html#p2pAddNodes">p2pAddNodes</a></li>
+      <li><a href="global.html#p2pAddNodesAllowMainnet">p2pAddNodesAllowMainnet</a></li>
+      <li><a href="global.html#parseDistributedManifestV1">parseDistributedManifestV1</a></li>
+      <li><a href="global.html#peerDebugDerivedPublicSummary">peerDebugDerivedPublicSummary</a></li>
+      <li><a href="global.html#signingStringForBeaconEpoch">signingStringForBeaconEpoch</a></li>
+      <li><a href="global.html#stableStringify">stableStringify</a></li>
+      <li><a href="global.html#verifyFederationWitnessOnMessage">verifyFederationWitnessOnMessage</a></li>
+      <li><a href="global.html#wireTraffic">wireTraffic</a></li>
+      <li><a href="global.html#wireTypeFromFriendly">wireTypeFromFriendly</a></li>
     </ul>
   </nav>
   <br class="clear" />
