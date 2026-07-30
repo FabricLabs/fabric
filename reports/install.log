@@ -6,7 +6,7 @@ npm warn deprecated uuid@8.3.2: uuid@10 and below is no longer supported.  For E
 
 [@fabric/core] Skipping native addon build (JS is the canonical protocol). Optional: FABRIC_BUILD_NATIVE=1 or npm run build:c
 
-added 361 packages, and audited 362 packages in 25s
+added 361 packages, and audited 362 packages in 18s
 
 59 packages are looking for funding
   run `npm fund` for details

@@ -104,6 +104,23 @@ const PEERING_OFFER_MAX_PAYLOAD_CACHE = 50000;
 const PEER_MAX_CANDIDATES_QUEUE = 128;
 /** Max wire-hash dedup entries in {@link Peer} (bounded memory). */
 const PEER_MAX_WIRE_HASH_CACHE = 10000;
+/**
+ * Max logical first-writer-wins registration keys in {@link Peer}
+ * (CONTRACT_PUBLISH / DOCUMENT_PUBLISH / CONTRACT_PROPOSAL / announces /
+ * BitcoinBlock tip / FLUSH_CHAIN / peer alias / key reveal).
+ * Distinct from wire-hash dedup: catches re-signed copies of the same body.
+ */
+const PEER_MAX_LOGICAL_REGISTER_CACHE = 10000;
+
+/** Default Peer registry-score penalties (Bitcoin Core–style misbehavior). */
+const PEER_SCORE_BODY_HASH_MISMATCH_PENALTY = 100;
+const PEER_SCORE_INVALID_SIGNATURE_PENALTY = 100;
+const PEER_SCORE_SIGNER_PIN_MISMATCH_PENALTY = 100;
+const PEER_SCORE_SESSION_KEY_VIOLATION_PENALTY = 240;
+const PEER_SCORE_CONTRACT_OPS_FORBIDDEN_PENALTY = 80;
+const PEER_SCORE_LOGICAL_REGISTER_HIJACK_PENALTY = 40;
+const PEER_SCORE_LOGICAL_REGISTER_DUPLICATE_PENALTY = 8;
+const PEER_SCORE_LOGICAL_REGISTER_DUPLICATE_WINDOW_MS = 60000;
 const P2P_GENERIC = 0x80; // 128 in decimal
 const P2P_IDENT_REQUEST = 0x01; // 1, or the identity
 const P2P_IDENT_RESPONSE = 0x11;
@@ -119,8 +136,12 @@ const P2P_STATE_COMMITTMENT = 0x00000032; // TODO: select w/ no overlap
 const P2P_STATE_CHANGE = 0x00000033; // TODO: select w/ no overlap
 const P2P_TRANSACTION = 0x00000039; // TODO: select w/ no overlap
 const P2P_CALL = 0x00000042;
-const P2P_RELAY = 0x00000043; // Relay envelope for onion routing; preserves original message + signature
+const P2P_RELAY = 0x00000043; // Mesh flood envelope: body = raw inner Message bytes (not directed onion)
 const P2P_MESSAGE_RECEIPT = 0x00000044; // Ack/receipt for a processed inbound message (WebSocket / P2P)
+/** Directed onion hop: field body `{ nextPeer, ttl, inner }` — see `functions/fabricOnion.js`. */
+const P2P_FORWARD = 0x00000045;
+/** Max nested `P2P_FORWARD` hops an originator may build (path length). */
+const P2P_FORWARD_MAX_HOPS = 8;
 const P2P_CHAIN_SYNC_REQUEST = 0x55;
 /** Playnet / federation: rewind bitcoind to a known-good tip; relay only to highly trusted peers. */
 const P2P_FLUSH_CHAIN = 0x56;
@@ -294,6 +315,15 @@ module.exports = {
   PEERING_OFFER_MAX_PAYLOAD_CACHE,
   PEER_MAX_CANDIDATES_QUEUE,
   PEER_MAX_WIRE_HASH_CACHE,
+  PEER_MAX_LOGICAL_REGISTER_CACHE,
+  PEER_SCORE_BODY_HASH_MISMATCH_PENALTY,
+  PEER_SCORE_INVALID_SIGNATURE_PENALTY,
+  PEER_SCORE_SIGNER_PIN_MISMATCH_PENALTY,
+  PEER_SCORE_SESSION_KEY_VIOLATION_PENALTY,
+  PEER_SCORE_CONTRACT_OPS_FORBIDDEN_PENALTY,
+  PEER_SCORE_LOGICAL_REGISTER_HIJACK_PENALTY,
+  PEER_SCORE_LOGICAL_REGISTER_DUPLICATE_PENALTY,
+  PEER_SCORE_LOGICAL_REGISTER_DUPLICATE_WINDOW_MS,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
   P2P_CHAIN_SYNC_REQUEST,
@@ -323,6 +353,8 @@ module.exports = {
   P2P_CALL,
   P2P_RELAY,
   P2P_MESSAGE_RECEIPT,
+  P2P_FORWARD,
+  P2P_FORWARD_MAX_HOPS,
   P2P_SESSION_ACK,
   P2P_MUSIG_START,
   P2P_MUSIG_ACCEPT,

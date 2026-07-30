@@ -89,8 +89,9 @@ Primary sources:
 | `P2P_STATE_REQUEST` | 41 | `0x0029` | Requests state data from a peer. |
 | `P2P_TRANSACTION` | 57 | `0x0039` | Generic transaction-style message in P2P flow. |
 | `P2P_CALL` | 66 | `0x0042` | RPC/call-like request message over P2P channel. |
-| `P2P_RELAY` | 67 | `0x0043` | Onion-style relay envelope preserving embedded message/signature. |
+| `P2P_RELAY` | 67 | `0x0043` | Mesh flood envelope; body = raw inner Message bytes (not directed onion). |
 | `P2P_MESSAGE_RECEIPT` | 68 | `0x0044` | Ack/receipt for processed inbound WebSocket/P2P message. |
+| `P2P_FORWARD` | 69 | `0x0045` | Directed onion hop: `nextPeer` + `ttl` + nested `inner` Message. |
 | `PEER_CANDIDATE` | 9 | `0x0009` | Candidate peer advertisement for connection management. |
 | `SESSION_START` | 2 | `0x0002` | Starts a session context. |
 | `CHAT_MESSAGE` | 103 | `0x0067` | Legacy chat opcode / Hub transitional carrier. Prefer first-class `P2P_CHAT_MESSAGE`. |

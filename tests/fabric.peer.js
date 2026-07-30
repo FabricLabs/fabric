@@ -1404,6 +1404,79 @@ describe('@fabric/core/types/peer', function () {
           object: { contract: 'c1', ops: [{ op: 'replace', path: '/value', value: 99 }] }
         }, { name: 'o' });
       });
+      it('CONTRACT_PUBLISH republish does not merge attacker into patch allow-list', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        const Key = require('../types/key');
+        const owner = new Key();
+        const attacker = new Key();
+        const ownerPub = String(owner.pubkey).toLowerCase();
+        const attackerPub = String(attacker.pubkey).toLowerCase();
+        // Identical body required so Actor.id matches (content-addressed).
+        const definition = {
+          id: 'republish-contract',
+          state: { value: 1 },
+          parties: [ownerPub]
+        };
+
+        peer._registerContract(definition, ownerPub);
+        const contractId = Object.keys(peer.contracts)[0];
+        assert.ok(contractId);
+        assert.ok(peer._signerMayPatchContract(contractId, ownerPub));
+        assert.strictEqual(peer._signerMayPatchContract(contractId, attackerPub), false);
+
+        // Replay identical body with attacker as wire signer only.
+        peer._registerContract(definition, attackerPub);
+
+        assert.strictEqual(
+          peer._signerMayPatchContract(contractId, attackerPub),
+          false,
+          'republish must not grant patch rights to a new wire signer'
+        );
+        assert.ok(peer._signerMayPatchContract(contractId, ownerPub));
+
+        // CONTRACT_MESSAGE from attacker must still be rejected.
+        let warned = false;
+        peer.once('warning', (msg) => {
+          warned = /allow-list/i.test(String(msg));
+        });
+        peer._handleGenericMessage({
+          type: 'CONTRACT_MESSAGE',
+          actor: { publicKey: attackerPub },
+          object: {
+            contract: contractId,
+            ops: [{ op: 'replace', path: '/value', value: 99 }]
+          }
+        }, { name: 'attacker' });
+        assert.ok(warned);
+        assert.strictEqual(peer._state.content.contracts[contractId].value, 1);
+      });
+      it('CONTRACT_PUBLISH republish via generic handler keeps original allow-list', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        const Key = require('../types/key');
+        const owner = new Key();
+        const attacker = new Key();
+        const ownerPub = String(owner.pubkey).toLowerCase();
+        const attackerPub = String(attacker.pubkey).toLowerCase();
+        const definition = { id: 'republish-generic', state: { n: 0 }, parties: [ownerPub] };
+
+        peer._handleGenericMessage({
+          type: 'CONTRACT_PUBLISH',
+          actor: { publicKey: ownerPub },
+          object: definition
+        }, { name: 'owner' });
+        const contractId = Object.keys(peer.contracts)[0];
+        const beforeSize = peer._contractPatchAllowList[contractId].size;
+
+        peer._handleGenericMessage({
+          type: 'CONTRACT_PUBLISH',
+          actor: { publicKey: attackerPub },
+          object: definition
+        }, { name: 'attacker' });
+
+        assert.strictEqual(peer._contractPatchAllowList[contractId].size, beforeSize);
+        assert.strictEqual(peer._signerMayPatchContract(contractId, attackerPub), false);
+        assert.ok(peer._signerMayPatchContract(contractId, ownerPub));
+      });
     });
 
     describe('P2P handshake (SESSION_OFFER / SESSION_OPEN)', function () {
@@ -1589,7 +1662,11 @@ describe('@fabric/core/types/peer', function () {
         server._handleFabricMessage(msg.toBuffer(), { name: connAddress }, null);
 
         assert.strictEqual(server._addressToId[connAddress], undefined);
-        assert.ok(warnings.some((w) => /Session key violation/i.test(w)));
+        // Unified misbehavior path: session-key:* reason (was a dedicated "Session key violation" string).
+        assert.ok(
+          warnings.some((w) => /Misbehavior \(session-key:/i.test(w) || /session-key:missing/i.test(w)),
+          `expected session-key misbehavior warning, got: ${JSON.stringify(warnings)}`
+        );
         assert.ok((server._state.peers[connAddress] || {}).score < 500);
       });
     });

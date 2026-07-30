@@ -2,7 +2,13 @@
 Recent changes to Fabric Core.
 
 ## 2026-07-29
-JS-canonical protocol for 0.1.0; Lightning-style wire preimage; unsigned document binding; public-readiness cuts.
+JS-canonical protocol for 0.1.0; Lightning-style wire preimage; unsigned document binding; public-readiness cuts; Peer scoring; directed onion forward.
+
+**P2P_FORWARD (onion / IP privacy)**
+- New opcode **`P2P_FORWARD` (0x45)** with V1 field body `{ nextPeer, ttl, inner }`.
+- Helpers: `@fabric/core/functions/fabricOnion` (`wrapOnionPath`, `wrapForwardLayer`, `tryDecodeForward`).
+- `Peer#sendOnion(path, payload)` writes only to the first hop; peers peel when `nextPeer` matches local x-only pubkey, else forward bit-identical to that peer (no mesh flood).
+- `P2P_RELAY` remains the flood envelope — use `P2P_FORWARD` when protecting peer IPs.
 
 **Install / C**
 - **npm install skips `fabric.node`** by default (`scripts/install-native.js`). Opt in with `FABRIC_BUILD_NATIVE=1` or `npm run build:c`. C sources remain in-tree; JS Message/Peer is the protocol oracle ([`docs/C-JS-PARITY.md`](docs/C-JS-PARITY.md)).
@@ -12,6 +18,9 @@ JS-canonical protocol for 0.1.0; Lightning-style wire preimage; unsigned documen
 
 **Document exchange**
 - Payment binding hashes **unsigned** `documentPublishEnvelopeBuffer` only; `assertUnsignedDocumentPublishEnvelope` rejects signed gossip frames. Whitelist drops `created`/`edited` to stop Hub/Peer hash drift.
+
+**Peer scoring / misbehavior**
+- Unified `_applyPeerMisbehavior`: body-hash / bad-sig / pin mismatch / forbidden `CONTRACT_MESSAGE` ops derank and disconnect; logical-register duplicates soft-derank (hijack on `CONTRACT_PUBLISH` re-sign by another key). Wire-hash cache fills only after verify. See [SECURITY.md](SECURITY.md); tests in `tests/fabric.peer.scoring.js`.
 
 **Public readiness**
 - **[PUBLIC_API.md](PUBLIC_API.md)** — frozen 0.1 leaf import map + scoped RC claim (Peer + document helpers + local Program/Machine; not a sandboxed dapp VM).

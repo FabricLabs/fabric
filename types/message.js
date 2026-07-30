@@ -43,6 +43,7 @@ const {
   P2P_CALL,
   P2P_RELAY,
   P2P_MESSAGE_RECEIPT,
+  P2P_FORWARD,
   CHAT_MESSAGE,
   P2P_CHAT_MESSAGE,
   SIDECHAIN_STATE_PATCH_TYPE,
@@ -155,6 +156,7 @@ const WIRE_TYPE_DECODE_ORDER = Object.freeze([
   [P2P_CALL, 'P2P_CALL'],
   [P2P_RELAY, 'P2P_RELAY'],
   [P2P_MESSAGE_RECEIPT, 'P2P_MESSAGE_RECEIPT'],
+  [P2P_FORWARD, 'P2P_FORWARD'],
   [PEER_CANDIDATE, 'PEER_CANDIDATE'],
   [SESSION_START, 'SESSION_START'],
   [CHAT_MESSAGE, 'CHAT_MESSAGE'],
@@ -1275,6 +1277,12 @@ const SCHEMA_PROGRAM_RUN = Object.freeze([
   { name: 'runCommitment', type: 'bytes32' },
   { name: 'resultHint', type: 'string' }
 ]);
+/** Directed onion hop — see {@link module:@fabric/core/functions/fabricOnion}. */
+const SCHEMA_P2P_FORWARD = Object.freeze([
+  { name: 'nextPeer', type: 'bytes32' },
+  { name: 'ttl', type: 'u8' },
+  { name: 'inner', type: 'message' }
+]);
 
 (function _installBodySchemaDefaults () {
   registerBodySchema(P2P_PING, SCHEMA_P2P_PING);
@@ -1284,6 +1292,8 @@ const SCHEMA_PROGRAM_RUN = Object.freeze([
   registerBodySchema('P2P_PONG', SCHEMA_P2P_PING);
   registerBodySchema('Pong', SCHEMA_P2P_PING);
   registerBodySchema('FabricProgramRun', SCHEMA_PROGRAM_RUN);
+  registerBodySchema(P2P_FORWARD, SCHEMA_P2P_FORWARD);
+  registerBodySchema('P2P_FORWARD', SCHEMA_P2P_FORWARD);
 })();
 
 Message.FIELD_TYPES = BODY_FIELD_TYPES;
@@ -1295,5 +1305,6 @@ Message.decodeBody = decodeBody;
 Message.SCHEMA_P2P_PING = SCHEMA_P2P_PING;
 Message.SCHEMA_P2P_CHAT = SCHEMA_P2P_CHAT;
 Message.SCHEMA_PROGRAM_RUN = SCHEMA_PROGRAM_RUN;
+Message.SCHEMA_P2P_FORWARD = SCHEMA_P2P_FORWARD;
 
 module.exports = Message;

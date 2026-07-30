@@ -10,6 +10,13 @@ Fabric Agents are long-running services that can:
 - expose deterministic behavior through service lifecycle methods
 - coordinate compute work and value transfer between nodes
 
+## Onion / directed forward (IP privacy)
+
+Downstream apps that must hide origin IPs from destinations SHOULD use
+**`P2P_FORWARD`** (`0x45`) via `@fabric/core/functions/fabricOnion` and
+`Peer#sendOnion(path, payload)` — not mesh `P2P_RELAY` flood. See
+[`docs/P2P_FORWARD.md`](docs/P2P_FORWARD.md).
+
 ## Scope
 This specification applies to:
 
