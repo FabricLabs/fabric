@@ -23,7 +23,7 @@ Read **[VISION.md](VISION.md)** first for what Fabric is building, how **`@fabri
 See also [`QUICKSTART.md`][quickstart-guide] for up-to-date instructions.
 
 0. `nvm use 24.15.0` (install [`nvm`][nvm-official] if needed; matches `.nvmrc` / `package.json` engines)
-1. From a clone of this repo: `npm install` (or `npm install -g @fabric/core` to put `fabric` on your `PATH`)
+1. From a clone of this repo: `npm install` (or `npm install -g @fabric/core` to put `fabric` on your `PATH`). Downstream packages that install Fabric from GitHub need **`.npmrc` `allow-git=all`** (npm 12+); see Hub / `@fabric/http` / GoonCitizen.
 2. (optional) `fabric setup` to generate a master key and local config
 3. (optional) `fabric keygen` to generate a new master key without saving to disk (ephemeral)
 4. Run `fabric` — the CLI entry is wired through `types/cli.js` and extends **`Service.FabricShell`**. **Contracts** (HTLCs, document sessions, programs, shell packs, …) are documented in **[docs/CONTRACTS.md](docs/CONTRACTS.md)**; terminal UX in **[docs/CLI.md](docs/CLI.md)**.

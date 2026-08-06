@@ -1,6 +1,9 @@
 # `@fabric/core` Changelog
 Recent changes to Fabric Core.
 
+## 2026-08-06
+- **npm git deps:** add **`.npmrc`** with **`allow-git=all`** (and `report:install`) so the monorepo matches Hub/http/app consumers — npm 12+ nested git-dep preparation of commit SHAs fails under `allow-git=root`.
+
 ## 2026-07-29
 JS-canonical protocol for 0.1.0; Lightning-style wire preimage; unsigned document binding; public-readiness cuts; Peer scoring; directed onion forward.
 
