@@ -174,7 +174,7 @@ describe('@fabric/core L1 document publish & distribution', function () {
   it('DOCUMENT_REQUEST to a peer that holds the document yields file bytes on the wire', async function () {
     const port = await getFreePort();
     const server = new Peer(Object.assign(
-      { verbosity: 1 },
+      { verbosity: 1, autoFulfillDocumentRequests: true },
       NODEA,
       {
         listen: true,

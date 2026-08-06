@@ -260,4 +260,25 @@ describe('@fabric/core Peer adversarial hardening', function () {
     assert.ok(/^[0-9a-f]{66}$/.test(htlc.sellerPublicKeyHex));
     assert.strictEqual(htlc.sellerPubkey, htlc.sellerPublicKeyHex);
   });
+
+  it('P2P_RELAY is relay-as-is (foreign AMP author does not pin-ban forwarder)', function () {
+    const peer = offlinePeer();
+    const attacker = new Key();
+    const forwarder = new Key();
+    const a = '127.0.0.1:9160';
+    peer.connections[a] = wireConn([]);
+    peer.peers[a] = { publicKey: forwarder.pubkey };
+    peer._addressToId[a] = 'fwd';
+    peer._state.peers = {
+      fwd: { id: 'fwd', address: a, score: 200, publicKey: forwarder.pubkey }
+    };
+
+    const inner = Message.fromVector(['P2P_PING', JSON.stringify({ t: 1 })]).signWithKey(attacker);
+    const relay = Message.fromVector(['P2P_RELAY', inner.toBuffer()]).signWithKey(attacker);
+    peer._handleFabricMessage(relay.toBuffer(), { name: a }, null);
+
+    assert.strictEqual(peer._isPeerBanned(a), false);
+    assert.ok(peer.connections[a]);
+    assert.strictEqual(peer._state.peers.fwd.score, 200);
+  });
 });

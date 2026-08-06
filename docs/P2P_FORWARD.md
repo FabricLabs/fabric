@@ -63,11 +63,12 @@ Events: `onion:sent`, `onion:peel`, `onion:forward`, `onion:undeliverable`.
   the payload. Confidentiality is an application concern (e.g. sealed
   documents).
 - **Peel / misbehavior:** when a peer peels and delivers `inner`, integrity
-  failures (body-hash / signature) and forbidden contract ops **do not**
-  hard-disconnect or derank the TCP last hop. Relays forward bit-identical
-  outers, so punishing the last hop would let an attacker cut honest links.
-  The outer `P2P_FORWARD` frame is still verified against its path-builder
-  signature before peel/forward.
+  failures (body-hash / signature), forbidden contract ops, bad session key
+  claims, and nested-`P2P_RELAY` depth exceed **do not** hard-disconnect or
+  derank the TCP last hop. Relays forward bit-identical outers, so punishing
+  the last hop would let an attacker cut honest links. The outer
+  `P2P_FORWARD` frame is still verified against its path-builder signature
+  before peel/forward.
 
 ## Example
 

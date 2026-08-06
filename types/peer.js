@@ -192,7 +192,10 @@ const RELAY_AS_IS_TYPES = new Set([
   'INVENTORY_REQUEST',
   'INVENTORY_RESPONSE',
   // Source-signed onion layers: author is path builder, not the TCP peer.
-  'P2P_FORWARD'
+  'P2P_FORWARD',
+  // Mesh flood envelope: outer is attacker/path-builder signed; forward bit-identical.
+  // Without this, the next hop pin-checks AMP author against the honest forwarder and bans them.
+  'P2P_RELAY'
 ]);
 
 const RELAY_AS_IS_NUMERIC = new Set([
@@ -203,7 +206,8 @@ const RELAY_AS_IS_NUMERIC = new Set([
   P2P_INVENTORY_REQUEST,
   P2P_INVENTORY_RESPONSE,
   DOCUMENT_REQUEST_TYPE,
-  P2P_FORWARD
+  P2P_FORWARD,
+  P2P_RELAY
 ]);
 
 /**
@@ -1837,7 +1841,7 @@ class Peer extends Service {
    * Missing/invalid signatures are protocol violations and are penalized.
    * @private
    */
-  _validateSessionKeyExchangeClaim (genericMessage, signerPubkeyHex, originName) {
+  _validateSessionKeyExchangeClaim (genericMessage, signerPubkeyHex, originName, opts = {}) {
     const actor = (genericMessage && genericMessage.actor && typeof genericMessage.actor === 'object')
       ? genericMessage.actor
       : {};
@@ -1845,21 +1849,22 @@ class Peer extends Service {
     const claimedChild = normalizePeerPubkeyHex(actor.pubkey || actor.publicKey);
     const claimedParent = normalizePeerPubkeyHex(actor.parentPubkey || actor.parentPublicKey);
     const parentSigHex = typeof actor.parentSignature === 'string' ? actor.parentSignature.trim() : '';
+    const punishOpts = { peeledForward: opts.peeledForward === true };
 
     if (!claimedChild || !claimedParent || !parentSigHex) {
-      this._punishPeerForSessionKeyViolation(originName, 'missing session key signature material');
+      this._punishPeerForSessionKeyViolation(originName, 'missing session key signature material', punishOpts);
       return false;
     }
     if (!/^[0-9a-f]{64}$/.test(claimedChild) || !/^[0-9a-f]{64}$/.test(claimedParent)) {
-      this._punishPeerForSessionKeyViolation(originName, 'invalid session key format');
+      this._punishPeerForSessionKeyViolation(originName, 'invalid session key format', punishOpts);
       return false;
     }
     if (!/^[0-9a-f]{128}$/.test(parentSigHex)) {
-      this._punishPeerForSessionKeyViolation(originName, 'invalid parent signature format');
+      this._punishPeerForSessionKeyViolation(originName, 'invalid parent signature format', punishOpts);
       return false;
     }
     if (claimedChild !== normalizePeerPubkeyHex(signerPubkeyHex)) {
-      this._punishPeerForSessionKeyViolation(originName, 'claimed child key does not match signer');
+      this._punishPeerForSessionKeyViolation(originName, 'claimed child key does not match signer', punishOpts);
       return false;
     }
 
@@ -1872,7 +1877,7 @@ class Peer extends Service {
       ok = false;
     }
     if (!ok) {
-      this._punishPeerForSessionKeyViolation(originName, 'invalid parent signature');
+      this._punishPeerForSessionKeyViolation(originName, 'invalid parent signature', punishOpts);
       return false;
     }
 
@@ -1882,13 +1887,19 @@ class Peer extends Service {
   /**
    * Penalize protocol violations around unsigned/unverifiable session key claims.
    * @private
+   * @param {string|null|undefined} originName
+   * @param {string} reason
+   * @param {Object} [opts]
+   * @param {boolean} [opts.peeledForward]
    */
-  _punishPeerForSessionKeyViolation (originName, reason) {
+  _punishPeerForSessionKeyViolation (originName, reason, opts = {}) {
+    const peeledForward = opts.peeledForward === true;
     const penalty = Number(this.settings.wireTraffic && this.settings.wireTraffic.sessionKeyViolationPenalty) ||
       PEER_SCORE_SESSION_KEY_VIOLATION_PENALTY;
-    this._applyPeerMisbehavior(originName, `session-key:${reason}`, {
+    // Onion peel: do not cut/ban the honest TCP last hop for a laundered bad session frame.
+    this._applyPeerMisbehavior(peeledForward ? null : originName, `session-key:${reason}`, {
       penalty,
-      disconnect: true
+      disconnect: !peeledForward
     });
   }
 
@@ -1953,9 +1964,11 @@ class Peer extends Service {
     const opts = (options && typeof options === 'object') ? options : {};
     const originName = (origin && origin.name) ? origin.name : null;
     const ps = this.settings.peerScore || {};
-    // Onion peel: never attribute inner-frame integrity / authz failures to the TCP last hop.
-    const peeledForward = opts.peeledForward === true;
-    const scoreOrigin = peeledForward ? null : originName;
+    // Onion peel / bit-identical relay: never attribute inner-frame integrity / authz
+    // failures to the TCP last hop when that hop is only forwarding someone else's frame.
+    const suppressTcpOriginPunish = opts.peeledForward === true || opts.relayedAsIs === true;
+    const peeledForward = suppressTcpOriginPunish; // legacy alias used by nested handlers
+    const scoreOrigin = suppressTcpOriginPunish ? null : originName;
 
     // Frame-size gate before parse / hash / signature work.
     let wire = buffer;
@@ -2078,18 +2091,27 @@ class Peer extends Service {
           const inner = (message.raw && Buffer.isBuffer(message.raw.data))
             ? message.raw.data
             : Buffer.alloc(0);
+          // Outer AMP author ≠ TCP peer pin ⇒ this hop is only forwarding; do not
+          // attribute inner pin/integrity/nest failures to them (mesh partition DoS).
+          const peerRec = this.peers[origin.name];
+          const pinnedOuter = peerRec && peerRec.publicKey
+            ? normalizePeerPubkeyHex(peerRec.publicKey)
+            : null;
+          const relayedAsIs = !!(pinnedOuter && signerPubkeyHex && pinnedOuter !== signerPubkeyHex);
+          const softRelayOrigin = suppressTcpOriginPunish || relayedAsIs;
           if (inner.length > 0) {
             if (relayDepth >= nestCap) {
-              this._applyPeerMisbehavior(originName, 'relay-nest-exceeded', {
+              this._applyPeerMisbehavior(softRelayOrigin ? null : originName, 'relay-nest-exceeded', {
                 penalty: Number(ps.relayNestExceededPenalty) || PEER_SCORE_RELAY_NEST_EXCEEDED_PENALTY,
-                disconnect: true
+                disconnect: !softRelayOrigin
               });
               break;
             }
             this._handleFabricMessage(inner, origin, socket, {
               relayDepth: relayDepth + 1,
               skipRelayFlood: true,
-              peeledForward
+              peeledForward: suppressTcpOriginPunish,
+              relayedAsIs: softRelayOrigin
             });
             // Only the outermost received envelope is mesh-flooded (bit-identical).
             if (!opts.skipRelayFlood) {
@@ -2534,13 +2556,14 @@ class Peer extends Service {
     return this._relayWirePayload(originName, innerBuffer, socket);
   }
 
-  _handleSessionOfferGenericMessage (message, origin, socket, signerPubkeyHex) {
+  _handleSessionOfferGenericMessage (message, origin, socket, signerPubkeyHex, opts = {}) {
     const peerId = message.actor.id;
     const connAddress = origin.name;
     if (this.settings.debug) this.emit('debug', `Handling session offer: ${JSON.stringify(message.object)}`);
     if (this.settings.debug) this.emit('debug', `Session offer origin: ${JSON.stringify(origin)}`);
     {
-      const sessionClaim = this._validateSessionKeyExchangeClaim(message, signerPubkeyHex, connAddress);
+      const sessionClaim = this._validateSessionKeyExchangeClaim(
+        message, signerPubkeyHex, connAddress, { peeledForward: opts.peeledForward === true });
       if (!sessionClaim) return this;
     }
 
@@ -2620,11 +2643,12 @@ class Peer extends Service {
     return this;
   }
 
-  _handleSessionOpenGenericMessage (message, origin, signerPubkeyHex) {
+  _handleSessionOpenGenericMessage (message, origin, signerPubkeyHex, opts = {}) {
     if (this.settings.debug) this.emit('debug', `Handling session open: ${JSON.stringify(message.object)}`);
     const openPeerId = message.object.counterparty;
     {
-      const sessionClaim = this._validateSessionKeyExchangeClaim(message, signerPubkeyHex, origin.name);
+      const sessionClaim = this._validateSessionKeyExchangeClaim(
+        message, signerPubkeyHex, origin && origin.name, { peeledForward: opts.peeledForward === true });
       if (!sessionClaim) return this;
     }
     const existingOpenPeer = (this._state.peers && this._state.peers[openPeerId]) || null;
@@ -2729,10 +2753,10 @@ class Peer extends Service {
         break;
       }
       case 'P2P_SESSION_OFFER':
-        this._handleSessionOfferGenericMessage(msg, origin, socket, signerPubkeyHex);
+        this._handleSessionOfferGenericMessage(msg, origin, socket, signerPubkeyHex, handleOpts);
         break;
       case 'P2P_SESSION_OPEN':
-        this._handleSessionOpenGenericMessage(msg, origin, signerPubkeyHex);
+        this._handleSessionOpenGenericMessage(msg, origin, signerPubkeyHex, handleOpts);
         break;
       case 'P2P_CHAT_MESSAGE': {
         // Legacy GenericMessage / P2P_BASE_MESSAGE carrier with JSON body — not accepted.

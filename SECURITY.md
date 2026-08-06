@@ -15,6 +15,8 @@ Relay uses the same class of controls as gossip, with separate state: logical de
 ## P2P_RELAY mesh flood
 Inbound `P2P_RELAY` unwraps the inner AMP body for local handling, then forwards the **original outer envelope bit-identical** (never hop-re-wraps a new signed `P2P_RELAY`). Nested `P2P_RELAY` unwrap depth is capped (`PEER_MAX_RELAY_NEST_DEPTH` / `settings.peerScore.maxRelayNestDepth`). Prefer `P2P_FORWARD` for directed/onion paths ([docs/P2P_FORWARD.md](docs/P2P_FORWARD.md)).
 
+`P2P_RELAY` is **relay-as-is** for TCP peer pin checks (same class as `P2P_FORWARD`): the AMP author is the flood originator, not the immediate forwarder. Without that exemption, bit-identical flood would hard-ban honest neighbors on `signer-pin-mismatch`. When the outer AMP signer ≠ the TCP peer pin, unwrapped inners also use `relayedAsIs` so pin/integrity/nest failures do not cut that forwarder (direct senders who sign their own `P2P_RELAY` remain punishable).
+
 ## Logical first-writer-wins registration
 Exact wire duplicates are already dropped via the FIFO-capped wire-hash cache (`PEER_MAX_WIRE_HASH_CACHE`). Separately, **registration-style** frames also no-op when the *logical* payload was already claimed — including **re-signed** copies of the same body (different AMP signature → different wire hash). Types include:
 
@@ -36,7 +38,7 @@ Source-routed nesting for IP-hiding delivery (see [docs/P2P_FORWARD.md](docs/P2P
 - Outer frames are **relay-as-is** (path-builder signature; TCP peer pin not required).
 - Peel when `nextPeer` matches local x-only pubkey; otherwise forward **bit-identical** to that peer only (no mesh flood).
 - Drop `ttl === 0`; refuse bounce to the inbound origin; inbound credit cost default 4 (`settings.wireTraffic.forwardCreditCost`).
-- Peeled `inner` delivery uses `peeledForward` so body-hash / bad-sig / pin / forbidden `CONTRACT_MESSAGE` ops **do not** hard-disconnect or derank the TCP last hop (attackers must not cut honest relay↔destination links by laundering a bad inner).
+- Peeled `inner` delivery uses `peeledForward` so body-hash / bad-sig / pin / forbidden `CONTRACT_MESSAGE` ops / session-key violations / nested-`P2P_RELAY` depth exceed **do not** hard-disconnect or derank the TCP last hop (attackers must not cut honest relay↔destination links by laundering a bad inner).
 - **Accepted risk:** hop IDs and inner payload are cleartext at each layer unless the app seals content. Not Sphinx.
 
 ## Peer scoring / misbehavior

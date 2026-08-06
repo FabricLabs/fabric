@@ -30,7 +30,8 @@ JS-canonical protocol for 0.1.0; Lightning-style wire preimage; unsigned documen
 - **Frame size:** drop oversize wire buffers before crypto (`HEADER_SIZE + MAX_MESSAGE_SIZE`).
 - **HTLC offers:** `validateInventoryHtlcOffer` + AMP signer / seller pubkey binding; inventory emits `signerPubkeyHex`.
 - **Memory caps:** pending blob transfers, sealed ciphertext rows, private document relay routes.
-- **`P2P_FORWARD` peel:** inner integrity / authz failures do not hard-disconnect or derank the TCP last hop.
+- **`P2P_FORWARD` peel:** inner integrity / authz / session-key / nest-cap failures do not hard-disconnect or derank the TCP last hop.
+- **`P2P_RELAY`:** included in relay-as-is pin exemption so bit-identical flood cannot ban honest forwarders.
 - Docs: gossip/peering hop is advisory (bit-identical; not decremented). Tests: `tests/fabric.peer.adversarial.js`, `tests/peer.onion.forward.js`.
 
 **Public readiness**

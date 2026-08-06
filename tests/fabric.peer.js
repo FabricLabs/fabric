@@ -800,7 +800,12 @@ describe('@fabric/core/types/peer', function () {
         assert.strictEqual(relayed, 1);
       });
       it('DOCUMENT_REQUEST is answered with P2P_FILE_SEND when document is held', function () {
-        const peer = new Peer({ listen: false, peersDb: null });
+        const peer = new Peer({
+          listen: false,
+          peersDb: null,
+          // Opt in: default is consent-queue (autoFulfillDocumentRequests: false).
+          autoFulfillDocumentRequests: true
+        });
         peer._state.content.documents = { 'doc-held': 'payload-bytes' };
         let written = null;
         peer.connections['requester:8'] = {

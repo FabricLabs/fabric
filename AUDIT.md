@@ -11,7 +11,7 @@ audit report.
 | Gossip / peering-offer amplification | Bounded (TTL, per-origin budget, caches) — see [SECURITY.md](SECURITY.md) |
 | Logical registration republish (re-sign) | First-writer-wins no-op for publish / tip / alias / flush / key-reveal — see [SECURITY.md](SECURITY.md) |
 | Peer misbehavior / scoring | Implemented (integrity, pin, session, contract ops, logical-register, nest cap, temp ban) — see [SECURITY.md](SECURITY.md) |
-| P2P_RELAY amplification | Mitigated: bit-identical outer forward + nest depth cap; gossip hop remains advisory |
+| P2P_RELAY amplification | Mitigated: bit-identical outer forward + nest depth cap + relay-as-is pin; gossip hop remains advisory |
 | Chat mesh amplify | Mitigated: per-origin relay budget (`CHAT_MAX_RELAYS_*`) |
 | Oversize wire frames | Mitigated: drop before parse/crypto (`HEADER_SIZE + MAX_MESSAGE_SIZE`) |
 | Inventory HTLC address spoof | Mitigated: rebuild+match (`validateInventoryHtlcOffer`); AMP signer binding when present |

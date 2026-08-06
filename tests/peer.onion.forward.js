@@ -185,6 +185,97 @@ describe('Peer P2P_FORWARD onion', function () {
     assert.strictEqual(peer._state.peers['honest-relay'].score, 200, 'must not derank last hop');
   });
 
+  it('peeled bad P2P_SESSION_OPEN does not hard-disconnect the last hop', function () {
+    const destKey = new Key();
+    const relayKey = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic }
+    }));
+    const addr = '127.0.0.1:9502';
+    let destroyed = false;
+    peer.connections[addr] = {
+      _writeFabric () {},
+      destroy () { destroyed = true; }
+    };
+    peer._addressToId[addr] = 'honest-relay-session';
+    peer._state.peers = {
+      'honest-relay-session': {
+        id: 'honest-relay-session',
+        address: addr,
+        score: 190,
+        publicKey: relayKey.public.encodeCompressed('hex')
+      }
+    };
+    peer.peers[addr] = {
+      id: 'honest-relay-session',
+      publicKey: relayKey.public.encodeCompressed('hex')
+    };
+
+    // Minimal session open missing actor key material → session-key violation.
+    const payload = Message.fromVector(['P2P_SESSION_OPEN', JSON.stringify({
+      type: 'P2P_SESSION_OPEN',
+      actor: { id: 'attacker' },
+      object: { counterparty: 'x', solution: 'y' }
+    })]).signWithKey(new Key());
+
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(peer.key)],
+      payload,
+      key: relayKey
+    });
+
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.strictEqual(destroyed, false);
+    assert.strictEqual(peer._isPeerBanned(addr), false);
+    assert.strictEqual(peer._state.peers['honest-relay-session'].score, 190);
+  });
+
+  it('peeled nested P2P_RELAY beyond nest cap does not hard-disconnect last hop', function () {
+    const destKey = new Key();
+    const relayKey = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic },
+      peerScore: { maxRelayNestDepth: 1 }
+    }));
+    const addr = '127.0.0.1:9503';
+    let destroyed = false;
+    peer.connections[addr] = {
+      _writeFabric () {},
+      destroy () { destroyed = true; }
+    };
+    peer._addressToId[addr] = 'honest-relay-nest';
+    peer._state.peers = {
+      'honest-relay-nest': {
+        id: 'honest-relay-nest',
+        address: addr,
+        score: 175,
+        publicKey: relayKey.public.encodeCompressed('hex')
+      }
+    };
+    peer.peers[addr] = {
+      id: 'honest-relay-nest',
+      publicKey: relayKey.public.encodeCompressed('hex')
+    };
+
+    const attacker = new Key();
+    const leaf = Message.fromVector(['P2P_PING', JSON.stringify({ nest: true })]).signWithKey(attacker);
+    const mid = Message.fromVector(['P2P_RELAY', leaf.toBuffer()]).signWithKey(attacker);
+    const nested = Message.fromVector(['P2P_RELAY', mid.toBuffer()]).signWithKey(attacker);
+
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(peer.key)],
+      payload: nested,
+      key: relayKey
+    });
+
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.strictEqual(destroyed, false);
+    assert.strictEqual(peer._isPeerBanned(addr), false);
+    assert.strictEqual(peer._state.peers['honest-relay-nest'].score, 175);
+  });
+
   it('peeled body-hash mismatch does not hard-disconnect the last hop', function () {
     const destKey = new Key();
     const relayKey = new Key();
