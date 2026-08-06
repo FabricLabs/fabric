@@ -2835,9 +2835,11 @@ class Peer extends Service {
         if (!Number.isFinite(hop) || hop < 0) hop = maxHops;
         hop = Math.min(hop, maxHops);
         if (hop <= 0) break;
-        // Onion peel: observe locally only — do not burn last-hop peering budget,
-        // enqueue attacker-chosen dial targets, or mesh-relay under that hop.
-        if (peeledForward) {
+        // Onion peel / relay-as-is: observe locally only — do not burn last-hop
+        // peering budget, enqueue attacker-chosen dial targets, or mesh-relay
+        // under that hop (outer P2P_RELAY already floods bit-identical).
+        const peeringLocalOnly = peeledForward || handleOpts.relayedAsIs === true;
+        if (peeringLocalOnly) {
           this.emit('peeringOffer', { message, origin, peeledForward: true });
           this._peeringRememberPayload(payloadKey);
           break;

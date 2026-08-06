@@ -12,6 +12,8 @@ Relay of gossip is bounded to reduce amplification DoS: **logical payload** dedu
 ## P2P peering offers (`P2P_PEERING_OFFER`)
 Relay uses the same class of controls as gossip, with separate state: logical dedup (hash over `type` + `object` sans `peeringHop`), **advisory `peeringHop`** (bit-identical forward; not decremented), **per-origin relay budget** per rolling minute (default 60), **FIFO-capped** payload cache, and a **bounded, deduped** candidate queue for offered addresses (`PEER_MAX_CANDIDATES_QUEUE`, default 128). See `constants.js` (`PEERING_OFFER_*`, `PEER_MAX_CANDIDATES_QUEUE`) and `Peer` `settings.peering`.
 
+When gossip or peering arrives inside a foreign-signed `P2P_RELAY` (or onion peel), the **outer** envelope is what mesh-floods; the unwrapped inner is local-observe only (no last-hop budget burn, no candidate enqueue, no second inner `relayFrom`) — same trust boundary as peeled chat/alias.
+
 ## P2P_RELAY mesh flood
 Inbound `P2P_RELAY` unwraps the inner AMP body for local handling, then forwards the **original outer envelope bit-identical** (never hop-re-wraps a new signed `P2P_RELAY`). Nested `P2P_RELAY` unwrap depth is capped (`PEER_MAX_RELAY_NEST_DEPTH` / `settings.peerScore.maxRelayNestDepth`). Prefer `P2P_FORWARD` for directed/onion paths ([docs/P2P_FORWARD.md](docs/P2P_FORWARD.md)).
 

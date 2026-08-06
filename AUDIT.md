@@ -8,7 +8,7 @@ audit report.
 | Area | Posture |
 |------|---------|
 | Wire integrity (body hash + BIP-340) | Implemented; covered by unit/integration tests |
-| Gossip / peering-offer amplification | Bounded (TTL, per-origin budget, caches) — see [SECURITY.md](SECURITY.md) |
+| Gossip / peering-offer amplification | Bounded (advisory hop, per-origin budget, caches); wire-mesh + RELAY-as-is covered in `tests/fabric.peer.gossip-network.js` — see [SECURITY.md](SECURITY.md) |
 | Logical registration republish (re-sign) | First-writer-wins no-op for publish / tip / alias / flush / key-reveal — see [SECURITY.md](SECURITY.md) |
 | Peer misbehavior / scoring | Implemented (integrity, pin, session, contract ops, logical-register, nest cap, temp ban) — see [SECURITY.md](SECURITY.md) |
 | P2P_RELAY amplification | Mitigated: bit-identical outer forward + nest depth cap + relay-as-is pin; gossip hop remains advisory |

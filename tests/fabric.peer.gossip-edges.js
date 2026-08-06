@@ -83,6 +83,40 @@ describe('@fabric/core Peer gossip / peering / integrity edges', function () {
     });
   });
 
+  describe('P2P_PEERING_OFFER hop & rate edges', function () {
+    it('treats NaN / negative peeringHop as maxHops and still relays once', function () {
+      for (const peeringHop of [NaN, -2, Infinity]) {
+        const peer = offlinePeer({ peering: { maxHops: 3, maxRelaysPerOriginPerMinute: 10 } });
+        let relays = 0;
+        peer.relayFrom = function () { relays++; };
+        const object = { host: '1.2.3.4', port: 9, transport: 'fabric', peeringHop, tag: String(peeringHop) };
+        const wire = Message.fromVector(['P2P_PEERING_OFFER', JSON.stringify(object)]).signWithKey(peer.key);
+        peer._handleGenericMessage({ type: 'P2P_PEERING_OFFER', object }, { name: 'o:ph' }, null, wire);
+        assert.strictEqual(relays, 1, `expected relay for peeringHop=${String(peeringHop)}`);
+      }
+    });
+
+    it('enforces peering rate limit without enqueue after budget exhausted', function () {
+      const peer = offlinePeer({
+        peering: { maxRelaysPerOriginPerMinute: 1, maxCandidates: 8 },
+        constraints: { peers: { max: 32 } }
+      });
+      peer.relayFrom = function () {};
+      const author = new Key();
+      for (let i = 0; i < 3; i++) {
+        const object = {
+          host: `10.4.4.${i}`,
+          port: 7777,
+          transport: 'fabric',
+          peeringHop: 5
+        };
+        const wire = Message.fromVector(['P2P_PEERING_OFFER', JSON.stringify(object)]).signWithKey(author);
+        peer._handleGenericMessage({ type: 'P2P_PEERING_OFFER', object }, { name: 'o:pr' }, null, wire);
+      }
+      assert.strictEqual(peer.candidates.length, 1);
+    });
+  });
+
   describe('P2P_PEERING_OFFER candidate edges', function () {
     it('skips candidate enqueue when transport is not fabric', function () {
       const peer = offlinePeer({ constraints: { peers: { max: 32 } } });
