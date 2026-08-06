@@ -9,6 +9,9 @@
 /* Max payload bytes (4096 byte frame − 208-byte on-wire header: magic…signature) */
 #define FABRIC_MAX_MESSAGE_BODY 3888
 
+/** Max ciphertext bytes per Noise transport frame (matches `noise-protocol-stream` MESSAGE_SIZE). */
+#define FABRIC_NOISE_MAX_FRAME_BYTES 65535
+
 // Default networking
 #define FABRIC_DEFAULT_PORT 7777
 

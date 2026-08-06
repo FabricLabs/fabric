@@ -87,6 +87,23 @@ describe('@fabric/core/types/chain', function () {
       assert.ok(chain);
     });
 
+    it('proposeTransaction ignores duplicate ids (single mempool entry)', async function () {
+      const chain = new Chain();
+      const block = new Block({ debug: true, input: 'Hello, world.' });
+
+      await chain.start();
+      await chain.append(block);
+
+      const payload = { type: 'Transaction', input: 'duplicate-proposal' };
+      const tx1 = chain.proposeTransaction(payload);
+      const tx2 = chain.proposeTransaction(payload);
+
+      assert.strictEqual(tx1.id, tx2.id);
+      assert.strictEqual(tx1, tx2, 'duplicate proposal should return the same Transaction instance');
+      assert.strictEqual(chain.mempool.filter((id) => id === tx1.id).length, 1);
+      await chain.stop();
+    });
+
     it('can mine a second block with transactions', async function () {
       const chain = new Chain();
       const block = new Block({

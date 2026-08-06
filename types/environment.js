@@ -83,12 +83,23 @@ class Environment extends Entity {
   }
 
   get seed () {
-    return [
-      FIXTURE_SEED,
+    // Precedence: settings / env only. CWD `.FABRIC_SEED` (`this.local`) is opt-in
+    // via `settings.allowCwdSeed` so a planted file cannot outrank `~/.fabric/wallet.json`.
+    const explicit = [
       this.settings.seed,
       this['FABRIC_SEED'],
       this.readVariable('FABRIC_SEED')
-    ].find(any);
+    ];
+    if (this.settings.allowCwdSeed === true) {
+      explicit.push(this.local);
+    }
+    const normalized = explicit.map((candidate) => (
+      typeof candidate === 'string' ? candidate.trim() : candidate
+    ));
+    if (process.env.NODE_ENV === 'test') {
+      normalized.push(FIXTURE_SEED);
+    }
+    return normalized.find(any);
   }
 
   get xprv () {
@@ -597,10 +608,18 @@ class Environment extends Entity {
         }
       });
     } else if (this.walletExists()) {
-      const data = this.readWallet();
-
       try {
+        const data = this.readWallet();
         const text = typeof data === 'string' ? data : String(data ?? '');
+
+        if (text.trim() === '') {
+          if (this.emit) {
+            this.emit('warning', `[FABRIC:KEYGEN] Wallet file is empty (${this.settings.path}); remove it or regenerate with fabric setup`);
+          }
+          this.wallet = false;
+          return this;
+        }
+
         const pr = tryParsePersistedJson(text);
         if (!pr.ok) throw pr.error;
         const input = pr.value;
@@ -617,7 +636,9 @@ class Environment extends Entity {
           }
         });
       } catch (exception) {
-        if (this.emit) this.emit('error', `[FABRIC:KEYGEN] Could not load wallet data: ${exception.message || exception}`);
+        // Recoverable user-data issue; do not emit "error" (EventEmitter kills the process with no listeners).
+        if (this.emit) this.emit('warning', `[FABRIC:KEYGEN] Could not load wallet data: ${exception.message || exception}`);
+        this.wallet = false;
       }
     } else {
       this.wallet = false;

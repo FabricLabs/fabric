@@ -1,4 +1,7 @@
 // # Exposing ARCs with HTTP
+// Downstream apps set `path` to their `assets/` (or similar). Files there are served first; unhandled
+// paths fall through to the packaged `@fabric/http` `assets/` (e.g. Fomantic / semantic) — no extra
+// settings required. See `FabricHTTPServer` in `@fabric/http` `types/server.js` static middleware order.
 // Fabric makes it easy to publish applications to the Web,
 // giving downstream users access to a hosted instance of the
 // application.

@@ -10,6 +10,13 @@ Fabric Agents are long-running services that can:
 - expose deterministic behavior through service lifecycle methods
 - coordinate compute work and value transfer between nodes
 
+## Onion / directed forward (IP privacy)
+
+Downstream apps that must hide origin IPs from destinations SHOULD use
+**`P2P_FORWARD`** (`0x45`) via `@fabric/core/functions/fabricOnion` and
+`Peer#sendOnion(path, payload)` — not mesh `P2P_RELAY` flood. See
+[`docs/P2P_FORWARD.md`](docs/P2P_FORWARD.md).
+
 ## Scope
 This specification applies to:
 
@@ -160,7 +167,7 @@ class Distributor extends Service {
 npm run ci    # NODE_ENV=test mocha --recursive tests
 ```
 
-Operator and marketing context: [docs/PRODUCTION.md](docs/PRODUCTION.md), [docs/MARKETING_OVERVIEW.md](docs/MARKETING_OVERVIEW.md), [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md).
+Operator and marketing context: [docs/PRODUCTION.md](docs/PRODUCTION.md), [docs/MARKETING_OVERVIEW.md](docs/MARKETING_OVERVIEW.md).
 
 ## Authoring Checklist
 Before merging a new Fabric agent:
@@ -170,3 +177,6 @@ Before merging a new Fabric agent:
 - startup failure paths are handled
 - logs/events are sufficient for diagnosis
 - example usage is documented (inline or in `examples/`)
+
+## Author Style
+- do not abbreviate in APIs; `documentId` should be `documentIdentifier`

@@ -24,12 +24,12 @@ See also [GOALS.md][goals].
 - [ ] Tests passing on Travis
 - [ ] Tests passing on GitHub Actions
 - [ ] Test Coverage 70%
-- [ ] Clean install from @portal/feed
+- [ ] Clean install from @fabric/fiat
 - [x] Install Time < 300s
 - [ ] Install Time < 30s
 
 ## Annoyances:
-Upon running `rm -rf node_modules && npm i` from `@portal/feed` repo:
+Upon running `rm -rf node_modules && npm i` from `@fabric/fiat` repo:
 ```
 npm WARN deprecated source-map-url@0.4.1: See https://github.com/lydell/source-map-url#deprecated
 npm WARN deprecated urix@0.1.0: Please see https://github.com/lydell/urix#deprecated

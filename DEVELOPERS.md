@@ -7,6 +7,7 @@ There is a lot to cover when building decentralized applications on Fabric, so g
 - [Repository layout](#repository-layout)
 - [Development workflow](#development-workflow)
 - [Bitcoin service](#bitcoin-service-servicesbitcoin)
+- [Lightning BOLTs, RPC map & Hub desktop (`npm link`)](#lightning-bolts-rpc-map--hub-desktop-npm-link)
 - [Message types](#message-types-typesmessage)
 - [Architecture](#architecture)
 - [Storage](#storage-typesstore)
@@ -21,11 +22,11 @@ Read **[VISION.md](VISION.md)** first for what Fabric is building, how **`@fabri
 ## Quick Start
 See also [`QUICKSTART.md`][quickstart-guide] for up-to-date instructions.
 
-0. `nvm use 24.14.1` (install [`nvm`][nvm-official] if needed; matches `.nvmrc` / `package.json` engines)
+0. `nvm use 24.15.0` (install [`nvm`][nvm-official] if needed; matches `.nvmrc` / `package.json` engines)
 1. From a clone of this repo: `npm install` (or `npm install -g @fabric/core` to put `fabric` on your `PATH`)
 2. (optional) `fabric setup` to generate a master key and local config
 3. (optional) `fabric keygen` to generate a new master key without saving to disk (ephemeral)
-4. Run `fabric` — the CLI entry is wired through `types/cli.js` and extends **`Service.FabricShell`**
+4. Run `fabric` — the CLI entry is wired through `types/cli.js` and extends **`Service.FabricShell`**. **Contracts** (HTLCs, document sessions, programs, shell packs, …) are documented in **[docs/CONTRACTS.md](docs/CONTRACTS.md)**; terminal UX in **[docs/CLI.md](docs/CLI.md)**.
 
 Working from a **git checkout** (not the global package) is best when you are changing `@fabric/core` itself; use `npm link` or `npm install ../fabric` from downstream packages (Hub, HTTP server) as described in the repo README.
 
@@ -41,7 +42,7 @@ Working from a **git checkout** (not the global package) is best when you are ch
 | `assets/` | **Generated** browser bundles; rebuild with `npm run build` after type changes. |
 
 ## Development workflow
-- **Node:** engines field in `package.json` is authoritative (currently Node 22.x).
+- **Node:** engines field in `package.json` is authoritative (currently Node 24.15.x).
 - **Unit tests:** `npm test` — runs Mocha recursively under `tests/`.
 - **Lint:** `npm run lint` / `npm run lint:fix` (Semistandard).
 - **API reference:** `npm run make:api` writes `API.md` from JSDoc (see `scripts/list-jsdoc-type-files.js` for which `types/*.js` files are included).
@@ -57,16 +58,21 @@ Use this repo as a **library** or run the **`fabric`** CLI in environments you c
 
 | Step | Where |
 |------|--------|
-| Node **24.14.1** (see `.nvmrc`), `npm ci`, **`npm run ci`** | [`docs/PRODUCTION.md`](docs/PRODUCTION.md) |
-| Completion / privacy / security matrix | [`docs/PRODUCTION-CHECKLIST.md`](docs/PRODUCTION-CHECKLIST.md), [`PRIVACY.md`](PRIVACY.md), [`SECURITY.md`](SECURITY.md) |
-| Version tag, changelog, Hub & fabric-http bumps | [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) |
+| Node **24.15.0** (see `.nvmrc`), `npm ci`, **`npm run ci`** | [`docs/PRODUCTION.md`](docs/PRODUCTION.md) |
+| Public leaf API + scoped RC claim | [`PUBLIC_API.md`](PUBLIC_API.md) |
+| Completion / privacy / security matrix | [`docs/PRODUCTION.md`](docs/PRODUCTION.md), [`PRIVACY.md`](PRIVACY.md), [`SECURITY.md`](SECURITY.md), [`AUDIT.md`](AUDIT.md) |
+| Version tag, changelog, Hub & fabric-http bumps | [`docs/PRODUCTION.md`](docs/PRODUCTION.md) (§ Release checklist) |
 | Operator privacy model | [`PRIVACY.md`](PRIVACY.md) |
 | Vulnerability process | [`SECURITY.md`](SECURITY.md) |
 
-**Build scripts:** `npm run build` runs `make:all`, which still has **placeholder** `make:service` / `make:app` / `make:lib` steps. The **release gate for quality is `npm run ci`** (full Mocha suite), not a successful `npm run build`. Track operator and bundle readiness in [`docs/PRODUCTION-CHECKLIST.md`](docs/PRODUCTION-CHECKLIST.md) and [`docs/PRODUCTION.md`](docs/PRODUCTION.md).
+**Build scripts:** `npm run build` runs `make:all`, which still has **placeholder** `make:service` / `make:app` / `make:lib` steps. The **release gate for quality is `npm run ci`** (full Mocha suite), not a successful `npm run build`. Track operator and bundle readiness in [`docs/PRODUCTION.md`](docs/PRODUCTION.md).
 
 ## Core Types (reference)
-These live under `types/*.js` (CommonJS). The **`Fabric`** facade (`types/fabric.js`) re-exports many of them for quick experiments; production code usually imports a **leaf** type.
+These live under `types/*.js` (CommonJS). The **`Fabric`** facade (`types/fabric.js`) re-exports many of them for quick experiments; production code **must** import a **leaf** type from the frozen map in **[PUBLIC_API.md](PUBLIC_API.md)**.
+
+**Beacon** (`types/beacon`): L1-tied epoch chain sealing `sidechain` / `contracts` digests (Hub re-exports as `contracts/beacon.js`).
+
+**Sidechain document** (`functions/sidechainState` + `documentRegistrySidechain`): logical `sidechain/STATE` + journal/snapshots/tip restore. Wire updates use typed `SIDECHAIN_STATE_PATCH` fields; RFC6902 JSON is an `@fabric/http` edge transform. See [docs/DISTRIBUTED_EXECUTION.md](docs/DISTRIBUTED_EXECUTION.md). Network-wide field map + Program: [docs/NETWORK_STATE_PROGRAM.md](docs/NETWORK_STATE_PROGRAM.md); wire diagram [`contracts/protocol.dot`](contracts/protocol.dot).
 
 | Type | Role |
 |------|------|
@@ -83,6 +89,27 @@ Regenerate **`API.md`** with `npm run make:api` after JSDoc changes. Experimenta
 
 ## Bitcoin service (`services/bitcoin`)
 RPC is the **source of truth** when a node is connected.  Optional HTTP fallback for block, transaction, and address-index reads is configured only via `bitcoin.explorerBaseUrl` or `FABRIC_EXPLORER_URL` (an **origin**, not a path). If unset, those helpers stay RPC-only or fail closed with a clear error — `@fabric/core` does not default to any public explorer.
+
+## Lightning: BOLTs, RPC map & Hub desktop (`npm link`)
+
+| Doc | Purpose |
+|-----|---------|
+| [docs/BOLT_COMPATIBILITY.md](docs/BOLT_COMPATIBILITY.md) | Checklist: **BOLT #1–#12** vs delegated to `lightningd` vs exposed on `Lightning` |
+| [docs/FABRIC_LIGHTNING_OFFERS.md](docs/FABRIC_LIGHTNING_OFFERS.md) | Fabric **markets** (commerce / P2P) vs **BOLT12**; **`Lightning.Bolt12`** |
+| [docs/FABRIC_PAYMENT_BECH32.md](docs/FABRIC_PAYMENT_BECH32.md) | **`fa1…`** bech32m Fabric-routed payments; **`Lightning.FabricPayment`** |
+| [docs/LIGHTNING_COMPAT.md](docs/LIGHTNING_COMPAT.md) | Core Lightning **JSON-RPC** ↔ Fabric method names |
+
+**Programmatic:** `require('@fabric/core/services/lightning').DOCS` lists Markdown paths (`fabricLightningMarkets` and `fabricLightningOffers` are the same file); **`Lightning.Bolt12`** re-exports `functions/lightningBolt12.js` (`FabricLightningMarketRole` / `FabricLightningOfferRole`); **`Lightning.Bolt12Semantics`** re-exports `functions/bolt12Semantics.js` (BIP-340 scope for **`decode`**, recurrence TLV helpers); **`Lightning.FabricPayment`** re-exports `functions/fabricPaymentBech32.js` (`fa1…` encode/decode and **`classifyPaymentEncodingString`**).
+
+### Manual test: `@fabric/hub` desktop + local `@fabric/core` / `@fabric/http`
+
+After changing **`@fabric/core`**, you can exercise the stack from the **`@fabric/hub`** package (Electron / desktop; e.g. sibling clone `hub.fabric.pub`) by linking local packages. Typical order:
+
+1. **This repo (`@fabric/core`):** `npm link` — registers the global link for `@fabric/core`.
+2. **`@fabric/http`** (sibling clone): `npm link @fabric/core` then `npm link` — HTTP server depends on core; second `npm link` publishes `@fabric/http` globally.
+3. **Hub (`@fabric/hub`):** `npm link @fabric/core` and `npm link @fabric/http` — resolves both to your working trees.
+
+Then start the Hub desktop app (see Hub’s `package.json`, e.g. `build:desktop` / Electron scripts). Verify Lightning UI or HTTP mutations against your linked core. To unlink later: `npm unlink @fabric/core` / `@fabric/http` in Hub and HTTP, then reinstall published versions as needed.
 
 ## Message types (`types/message`)
 `P2P_MESSAGE_RECEIPT` (`constants.P2P_MESSAGE_RECEIPT`, `0x44`) is the on-wire type for server acknowledgements of an inbound WebSocket/P2P message (payload JSON uses `@type: Receipt`). It is distinct from `GenericMessage` so clients can discriminate without parsing the body first.
@@ -107,11 +134,15 @@ The `@fabric/core` library consists of these major areas:
 Files here feed the default **inventory** for packaged releases. When using `@fabric/http`’s server, many assets are served from `/` (configurable). Use this tree for **generated** binaries, WASM, and bundled UI — avoid committing large binaries unless they are part of the release process.
 
 ##### 0.1 Inventory
-For the `0.1` line, focus is Lightning-oriented document exchange. Operators running `fabric chat` can:
+For the `0.1` line, focus is **consenting peer file exchange** plus **ranked L1 document markets**. Operators running `fabric` / `fabric chat` can:
 
-1. Load a file into local inventory: `/import <filename>`
-2. Publish to peers: `/publish <documentID> <rate>`
-3. Request from the network: `/request <documentID> <rate>`
+1. `/import` → `/publish <id> <rateSats>`
+2. `/inventory [peer] [btc]` → `/offers [id]` (rank by price/latency/score)
+3. Unpaid: `/request` → seller `/approve`; paid: `/buy` → pay → `/confirm <settlementId> <txid>`
+4. Private relay fees: `/relayfees`; budgeted requests rewrite hops with fee skim
+5. Large files: multi-blob offers and reassembly (see L1 doc)
+
+Details: [`docs/L1_DOCUMENT_EXCHANGE.md`](docs/L1_DOCUMENT_EXCHANGE.md); BIP: [`docs/bip-fabric-file-exchange.md`](docs/bip-fabric-file-exchange.md).
 
 When this surface is stable and well tested, the project can tag `0.1.0-RC1` and move toward a security audit.
 
@@ -293,6 +324,8 @@ Other **`Store`** subclasses add domain behavior — for example **`Datastore`**
 | Link | Description |
 |------|-------------|
 | [QUICKSTART.md][quickstart-guide] | Install and first commands |
+| [docs/CONTRACTS.md](docs/CONTRACTS.md) | Contracts as interfaces; Hub registry (Hub publishes first) |
+| [docs/CLI.md](docs/CLI.md) | Terminal `/contracts`, refunds, verbosity |
 | [AGENTS.md](AGENTS.md) | Agent services, lifecycle, workers |
 | [SECURITY.md](SECURITY.md) | Disclosure process, release hygiene |
 

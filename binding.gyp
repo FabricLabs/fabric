@@ -5,6 +5,7 @@
       "src/binding.cc",
       "src/crypto.c",
       "src/protocol.c",
+      "src/noise.c",
       "src/p2p.c"
     ],
     "include_dirs": [

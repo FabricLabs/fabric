@@ -13,12 +13,15 @@ The **`fabric`** npm binary is the **Node harness** (`scripts/fabric.js`) for th
 
 Bundled executable: `npm run make:binary` (pkg).
 
-## Native addon (`fabric.node`)
-The Node N-API addon implements peer/message helpers and Bitcoin-related bindings (`binding.gyp`). Build when you need C parity features or JS access to `binding.cc` exports.
+## Native addon (`fabric.node`) — optional
+The Node N-API addon is **not** built on `npm install`. JavaScript (`types/message.js`,
+`types/peer.js`) is the **canonical** wire protocol for `@fabric/core` 0.1.0. C sources
+stay in the repo for experiments and optional acceleration.
 
 ```bash
 npm ci
 npm run build:c
+# or: FABRIC_BUILD_NATIVE=1 npm install
 ```
 
 Outputs under `build/Release/fabric.node` (ignored by git — see `.gitignore`).
@@ -26,7 +29,7 @@ Outputs under `build/Release/fabric.node` (ignored by git — see `.gitignore`).
 ### Dependencies
 | Component | Linux (typical) | macOS (Homebrew) |
 |-----------|-----------------|------------------|
-| **Node** | 22.x (see `.nvmrc` / `package.json` `engines`) | same |
+| **Node** | 24.15.x (see `.nvmrc` / `package.json` `engines`) | same |
 | **Build** | `build-essential`, Python 3.x (for `node-gyp`) | Xcode CLT |
 | **secp256k1** | `libsecp256k1-dev` where available, or install to `/usr/local` | `brew install secp256k1` |
 | **libwally-core** | Build from [libwally-core](https://github.com/ElementsProject/libwally-core) or distro packages if present | `brew install libwally-core` |
@@ -44,4 +47,4 @@ Wire-format and body-hash alignment between C and JS are summarized in [`docs/C-
 
 ## Release hygiene
 
-See [`docs/PRODUCTION-CHECKLIST.md`](docs/PRODUCTION-CHECKLIST.md).
+See [`docs/PRODUCTION.md`](docs/PRODUCTION.md).

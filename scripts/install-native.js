@@ -3,10 +3,15 @@
 /**
  * Optional node-gyp build for `fabric.node` (Noise, secp256k1, libwally, etc.).
  *
- * - **FABRIC_SKIP_NODE_GYP=1**: skip rebuild entirely (fastest; no compiler).
- * - **FABRIC_REQUIRE_NODE_GYP=1**: fail install if rebuild fails (CI / strict).
- * - Default: attempt rebuild; on failure warn and exit 0 so `npm install` succeeds
- *   without system libs; JS uses fallbacks unless FABRIC_NATIVE_* opts in.
+ * **Default (npm install):** do **not** compile the C addon. `@fabric/core` 0.1.0
+ * treats the **JavaScript** Message/Peer path as the canonical protocol. C sources
+ * remain in-tree for optional local builds (`npm run build:c`).
+ *
+ * Opt-in native rebuild:
+ * - **FABRIC_BUILD_NATIVE=1** — attempt `node-gyp rebuild`; warn and continue on failure
+ * - **FABRIC_REQUIRE_NODE_GYP=1** — attempt rebuild and **fail** install on error
+ *
+ * Legacy: **FABRIC_SKIP_NODE_GYP=1** still skips (no-op with the new default).
  */
 
 const path = require('path');
@@ -14,14 +19,17 @@ const { spawnSync } = require('child_process');
 
 const root = path.resolve(__dirname, '..');
 
-function shouldSkip () {
-  const v = process.env.FABRIC_SKIP_NODE_GYP;
+function envFlag (name) {
+  const v = process.env[name];
   return v === '1' || v === 'true';
 }
 
+function shouldBuildNative () {
+  return envFlag('FABRIC_BUILD_NATIVE') || envFlag('FABRIC_REQUIRE_NODE_GYP');
+}
+
 function shouldRequireNativeBuild () {
-  const v = process.env.FABRIC_REQUIRE_NODE_GYP;
-  return v === '1' || v === 'true';
+  return envFlag('FABRIC_REQUIRE_NODE_GYP');
 }
 
 function failOrWarn (message, err) {
@@ -33,16 +41,16 @@ function failOrWarn (message, err) {
   if (err) console.warn(err);
   console.warn(
     `${message}\n` +
-      '[@fabric/core] Continuing without native addon. JS fallbacks remain available. ' +
-      'Set FABRIC_REQUIRE_NODE_GYP=1 to fail install when native build is unavailable.'
+      '[@fabric/core] Continuing without native addon. JS protocol path remains available. ' +
+      'Set FABRIC_REQUIRE_NODE_GYP=1 to fail install when a native build is required.'
   );
   process.exit(0);
 }
 
-if (shouldSkip()) {
-  console.warn(
-    '[@fabric/core] Skipping node-gyp rebuild (FABRIC_SKIP_NODE_GYP). ' +
-      'Without build/Release/fabric.node, optional FABRIC_NATIVE_* paths need a local build or FABRIC_ADDON_PATH.'
+if (!shouldBuildNative()) {
+  console.log(
+    '[@fabric/core] Skipping native addon build (JS is the canonical protocol). ' +
+      'Optional: FABRIC_BUILD_NATIVE=1 or npm run build:c'
   );
   process.exit(0);
 }

@@ -1,22 +1,15 @@
 # Installing Fabric
 ## Prerequisites
-- Node.js 24.14.1
+- Node.js 24.15.0
 
 ## Quick Start
-You can install Fabric by running:
 ```
-npm i -g FabricLabs/fabric#feature/cleanup
-```
-
-This will make the `fabric` binary available on your system, after which you should run:
-```
+npm i -g @fabric/core
 fabric setup
-```
-
-Now, you'll have a newly-generated Fabric address and you can run:
-```
 fabric
 ```
+
+This installs the `fabric` binary, generates a wallet under `~/.fabric/`, then opens the interactive shell. For development from git, use e.g. `npm i -g FabricLabs/fabric#master` instead of the npm package.
 
 ## Playnet
 By default, the Fabric CLI connects to `playnet` for an initial set of peers.  You can add new peers manually by running `/connect <address>` where `<address`> is the peer's public hostname and port.
@@ -24,8 +17,8 @@ By default, the Fabric CLI connects to `playnet` for an initial set of peers.  Y
 ## Notes
 If you don't have Node.js, or an incorrect version, we recommend [installing NVM][installing-nvm].  Once complete, you can install and set the default node version:
 ```
-nvm install 24.14.1
-nvm alias default 24.14.1 # optional
+nvm install 24.15.0
+nvm alias default 24.15.0 # optional
 ```
 
 [installing-nvm]: https://nvm.sh

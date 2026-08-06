@@ -177,24 +177,24 @@ class Store extends Actor {
    */
   async _REGISTER (obj) {
     const actor = new Actor(obj);
-    await this._GET(`/entities/${actor.id}`);
+    let result = null;
 
-    store.log('[STORE]', '_REGISTER', vector.id, vector['@type']);
+    this.log('[STORE]', '_REGISTER', actor.id, actor.type);
 
     try {
-      await this._GET(`/entities/${vector.id}`);
+      await this._GET(`/entities/${actor.id}`);
     } catch (E) {
       this.warn('[STORE]', '_REGISTER', `Could not read from store:`, E);
     }
 
     try {
-      await this._SET(`/types/${vector.id}`, vector['@type']);
+      await this._SET(`/types/${actor.id}`, actor.type);
     } catch (E) {
       this.error('Error creating object:', E, obj);
     }
 
     try {
-      result = await this._SET(`/entities/${vector.id}`, vector['@data']);
+      result = await this._SET(`/entities/${actor.id}`, actor.toObject());
     } catch (E) {
       this.error('Error creating object:', E, obj);
     }
@@ -428,8 +428,40 @@ class Store extends Actor {
    */
   async get (key) {
     const route = await this.getRouteInfo(key);
-    const result = pointer.get(this._state.content, route.path);
-    const type = this._state.metadata[route.index].type;
+    let result;
+    try {
+      result = pointer.get(this._state.content, route.path);
+    } catch (_) {
+      result = undefined;
+    }
+
+    // Durable fallback: hydrate from Level when memory has no entry (e.g. after reopen).
+    if (result === undefined && this.db && this.settings.persistent !== false) {
+      try {
+        const raw = await this.db.get(route.path);
+        let value = raw;
+        if (Buffer.isBuffer(raw)) {
+          const text = raw.toString('utf8');
+          const pr = tryParsePersistedJson(text);
+          value = pr.ok ? pr.value : text;
+        } else if (typeof raw === 'string') {
+          const pr = tryParsePersistedJson(raw);
+          value = pr.ok ? pr.value : raw;
+        }
+        const info = await this.getDataInfo(value);
+        this._state.metadata[route.index] = info;
+        this._state.indices[route.index] = route.pointer;
+        pointer.set(this._state.content, route.path, value);
+        return value;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    if (result === undefined) return null;
+
+    const meta = this._state.metadata[route.index];
+    const type = meta && meta.type;
 
     let output = null;
 
@@ -475,6 +507,18 @@ class Store extends Actor {
     pointer.set(this._state.content, route.path, value);
 
     this.commit();
+
+    // Persist path → value when Level is open (survives stop/start reopen).
+    if (this.db && this.settings.persistent !== false) {
+      try {
+        const payload = (typeof value === 'string')
+          ? value
+          : (Buffer.isBuffer(value) ? value : JSON.stringify(value));
+        await this.db.put(route.path, payload);
+      } catch (E) {
+        console.error('[FABRIC:STORE]', 'Could not persist key:', route.path, E);
+      }
+    }
 
     return this.get(key);
   }

@@ -102,7 +102,7 @@ async function main (input = {}) {
   psbt.addOutput({
     network: network,
     address: aliceRedeemAddress,
-    value: BID_VALUE
+    value: BigInt(BID_VALUE)
   });
 
   psbt.finalizeInput(0, btca._getFinalScriptsForInput.bind(btca));

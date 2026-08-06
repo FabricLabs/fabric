@@ -1,0 +1,20 @@
+# https://docs.codecov.com/docs/codecov-yaml
+# Patch coverage should reflect instrumented JS; these paths are not exercised by the Mocha suite.
+coverage:
+  status:
+    project:
+      default:
+        # Expanding the c8 allowlist (PR helpers) can temporarily lower project %;
+        # require no large regressions while still failing real coverage drops.
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        target: auto
+        threshold: 1%
+  ignore:
+    - contracts/**/*
+    - examples/**/*
+    - native/**/*
+    - scripts/fix-noble-hashes-compat.js
+    - scripts/benchmark-report.js

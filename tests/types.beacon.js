@@ -1,0 +1,91 @@
+'use strict';
+
+const assert = require('assert');
+const Beacon = require('../types/beacon');
+const Key = require('../types/key');
+const sidechainState = require('../functions/sidechainState');
+
+function stubBitcoin (opts = {}) {
+  let height = opts.height != null ? opts.height : 0;
+  let tip = opts.tip || ('ab'.repeat(32));
+  return {
+    async getUnusedAddress () {
+      return 'bcrt1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh';
+    },
+    async _makeRPCRequest (method) {
+      if (method === 'generatetoaddress') {
+        height += 1;
+        tip = Buffer.alloc(32, height % 255).toString('hex');
+        return [tip];
+      }
+      if (method === 'getblockcount') return height;
+      if (method === 'getbalances') {
+        return { mine: { trusted: height * 50 } };
+      }
+      if (method === 'getbestblockhash') return tip;
+      throw new Error(`unexpected rpc ${method}`);
+    }
+  };
+}
+
+function memoryFs () {
+  const store = Object.create(null);
+  return {
+    readFile (path) {
+      return store[path] != null ? store[path] : null;
+    },
+    async publish (path, value) {
+      store[path] = typeof value === 'string' ? value : JSON.stringify(value);
+      return true;
+    },
+    _store: store
+  };
+}
+
+describe('@fabric/core/types/beacon', function () {
+  it('createEpoch seals sidechain digest into BEACON_EPOCH', async function () {
+    const key = new Key({ network: 'regtest' });
+    const fs = memoryFs();
+    let state = sidechainState.createInitialState();
+    const applied = sidechainState.applyPatchesToState(state, [
+      { op: 'add', path: '/registry', value: { documents: { 'sim/a': { rateSats: 1 } } } }
+    ]);
+    assert.ok(applied.ok);
+    state = applied.state;
+    await sidechainState.persistState(fs, state);
+
+    const beacon = new Beacon({
+      regtest: true,
+      mineOnStart: false,
+      interval: 0
+    });
+    beacon.attach({
+      bitcoin: stubBitcoin(),
+      fs,
+      key,
+      getSidechainSnapshotForEpoch () {
+        const st = sidechainState.loadState(fs);
+        return { clock: st.clock, stateDigest: sidechainState.stateDigest(st) };
+      }
+    });
+
+    const payload = await beacon.createEpoch();
+    assert.ok(payload && payload.sidechain);
+    assert.strictEqual(payload.sidechain.stateDigest, sidechainState.stateDigest(state));
+    assert.strictEqual(payload.sidechain.clock, state.clock);
+    assert.ok(payload.height >= 1);
+    assert.strictEqual(beacon.getEpochChainSummary().length, 1);
+  });
+
+  it('persists beacon/CHAIN via filesystem publish', async function () {
+    const key = new Key({ network: 'regtest' });
+    const fs = memoryFs();
+    const beacon = new Beacon({ regtest: true, mineOnStart: false, interval: 0 });
+    beacon.attach({ bitcoin: stubBitcoin(), fs, key });
+    await beacon.createEpoch();
+    const raw = fs.readFile(Beacon.BEACON_CHAIN_PATH);
+    assert.ok(raw);
+    const parsed = JSON.parse(raw);
+    assert.ok(Array.isArray(parsed.messages) && parsed.messages.length === 1);
+  });
+});

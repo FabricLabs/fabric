@@ -10,6 +10,32 @@ const net = require('net');
 const Lightning = require('../../services/lightning');
 
 describe('@fabric/core/services/lightning (unit)', function () {
+  describe('Lightning.DOCS', function () {
+    it('exposes Markdown paths relative to the package root', function () {
+      assert.strictEqual(Lightning.DOCS.boltCompatibility, 'docs/BOLT_COMPATIBILITY.md');
+      assert.strictEqual(Lightning.DOCS.fabricLightningOffers, 'docs/FABRIC_LIGHTNING_OFFERS.md');
+      assert.strictEqual(Lightning.DOCS.fabricLightningMarkets, Lightning.DOCS.fabricLightningOffers);
+      assert.strictEqual(Lightning.DOCS.fabricPaymentBech32, 'docs/FABRIC_PAYMENT_BECH32.md');
+      assert.strictEqual(Lightning.DOCS.lightningCompat, 'docs/LIGHTNING_COMPAT.md');
+    });
+  });
+
+  describe('Lightning BOLT12 static exports', function () {
+    it('re-exports bolt12Semantics as Bolt12Semantics', function () {
+      const bolt12Semantics = require('../../functions/bolt12Semantics');
+      const lightningPath = require.resolve('../../services/lightning');
+      const src = fs.readFileSync(lightningPath, 'utf8');
+      assert.ok(
+        /\bBolt12Semantics\b/.test(src) && src.includes('bolt12Semantics'),
+        `expected ${path.relative(process.cwd(), lightningPath)} to wire Bolt12Semantics`
+      );
+      assert.ok(Lightning.Bolt12, 'Lightning.Bolt12');
+      assert.ok(Lightning.FabricPayment, 'Lightning.FabricPayment');
+      assert.ok(Lightning.Bolt12Semantics, 'Lightning.Bolt12Semantics');
+      assert.strictEqual(Lightning.Bolt12Semantics, bolt12Semantics);
+    });
+  });
+
   describe('defaultListenPortForNetwork', function () {
     it('maps networks to conventional lightningd bind ports', function () {
       assert.strictEqual(Lightning.defaultListenPortForNetwork('mainnet'), 9735);
@@ -190,6 +216,209 @@ describe('@fabric/core/services/lightning (unit)', function () {
       assert.strictEqual(out.bolt11, 'lnbc1...');
       assert.strictEqual(out.paymentHash, 'hash');
       assert.strictEqual(out.expiresAt, 123);
+    });
+  });
+
+  describe('JSON-RPC extension & BOLT12 helpers', function () {
+    it('callRpc forwards to _makeRPCRequest with timeout', async function () {
+      const ln = new Lightning();
+      let seenTimeout;
+      ln._makeRPCRequest = async (method, params, timeoutMs) => {
+        assert.strictEqual(method, 'listpeers');
+        assert.deepStrictEqual(params, []);
+        seenTimeout = timeoutMs;
+        return { peers: [] };
+      };
+      const out = await ln.callRpc('listpeers', [], 5000);
+      assert.deepStrictEqual(out, { peers: [] });
+      assert.strictEqual(seenTimeout, 5000);
+    });
+
+    it('constructor leaves rpc null without shadowing callRpc', async function () {
+      const ln = new Lightning();
+      assert.strictEqual(ln.rpc, null);
+      assert.strictEqual(typeof ln.callRpc, 'function');
+    });
+
+    it('decodeLightning calls decode', async function () {
+      const ln = new Lightning();
+      ln._makeRPCRequest = async (method, params) => {
+        assert.strictEqual(method, 'decode');
+        assert.deepStrictEqual(params, ['lno1xxx']);
+        return { type: 'bolt12 offer' };
+      };
+      const out = await ln.decodeLightning('lno1xxx');
+      assert.strictEqual(out.type, 'bolt12 offer');
+    });
+
+    it('decodePay calls decodepay', async function () {
+      const ln = new Lightning();
+      ln._makeRPCRequest = async (method, params) => {
+        assert.strictEqual(method, 'decodepay');
+        assert.deepStrictEqual(params, ['lnbc1xxx']);
+        return { payment_hash: 'ph' };
+      };
+      await ln.decodePay('lnbc1xxx');
+    });
+
+    it('createOffer calls offer with object', async function () {
+      const ln = new Lightning();
+      const p = { amount_msat: '1000', description: 'd' };
+      ln._makeRPCRequest = async (method, params) => {
+        assert.strictEqual(method, 'offer');
+        assert.deepStrictEqual(params, [p]);
+        return { bolt12: 'lno1...' };
+      };
+      const out = await ln.createOffer(p);
+      assert.strictEqual(out.bolt12, 'lno1...');
+    });
+
+    it('createOffer rejects non-object', async function () {
+      const ln = new Lightning();
+      await assert.rejects(() => ln.createOffer(null), /requires a params object/);
+    });
+
+    it('fetchInvoice passes offer only, offer + params, keyword object, or merged keyword objects', async function () {
+      const ln = new Lightning();
+      let calls = 0;
+      ln._makeRPCRequest = async (method, params) => {
+        calls++;
+        assert.strictEqual(method, 'fetchinvoice');
+        if (calls === 1) assert.deepStrictEqual(params, ['lno1a']);
+        else if (calls === 2) assert.deepStrictEqual(params, ['lno1b', { amount_msat: '5000' }]);
+        else if (calls === 3) {
+          assert.deepStrictEqual(params, [{ offer: 'lno1c', amount_msat: '1000', payer_note: 'hi' }]);
+        } else {
+          assert.deepStrictEqual(params, [{
+            offer: 'lno1d',
+            amount_msat: '1000',
+            payer_note: 'merged'
+          }]);
+        }
+        return {};
+      };
+      await ln.fetchInvoice('lno1a');
+      await ln.fetchInvoice('lno1b', { amount_msat: '5000' });
+      await ln.fetchInvoice({ offer: 'lno1c', amount_msat: '1000', payer_note: 'hi' });
+      await ln.fetchInvoice({ offer: 'lno1d', amount_msat: '1000' }, { payer_note: 'merged' });
+    });
+
+    it('fetchInvoice rejects invalid first arg', async function () {
+      const ln = new Lightning();
+      await assert.rejects(() => ln.fetchInvoice(1), /offer string or params object/);
+      await assert.rejects(() => ln.fetchInvoice({}), /offer string or params object/);
+    });
+
+    it('pay passes string or object to pay RPC', async function () {
+      const ln = new Lightning();
+      let n = 0;
+      ln._makeRPCRequest = async (method, params, t) => {
+        n++;
+        assert.strictEqual(method, 'pay');
+        if (n === 1) assert.deepStrictEqual(params, ['lnbc1']);
+        else assert.deepStrictEqual(params, [{ bolt11: 'lnbc1', maxfeepercent: 0.5 }]);
+        assert.strictEqual(t, 8000);
+        return { status: 'complete' };
+      };
+      await ln.pay('lnbc1', 8000);
+      await ln.pay({ bolt11: 'lnbc1', maxfeepercent: 0.5 }, 8000);
+    });
+
+    it('listOffers with no filter, object, or offer_id string', async function () {
+      const ln = new Lightning();
+      let n = 0;
+      ln._makeRPCRequest = async (method, params) => {
+        n++;
+        assert.strictEqual(method, 'listoffers');
+        if (n === 1) assert.deepStrictEqual(params, []);
+        else if (n === 2) assert.deepStrictEqual(params, [{ active_only: true }]);
+        else assert.deepStrictEqual(params, ['offer_id_hex']);
+        return { offers: [] };
+      };
+      await ln.listOffers();
+      await ln.listOffers({ active_only: true });
+      await ln.listOffers('offer_id_hex');
+    });
+
+    it('createInvoiceRequest calls invoicerequest', async function () {
+      const ln = new Lightning();
+      const p = { amount: '1000sat', description: 'req' };
+      ln._makeRPCRequest = async (method, params) => {
+        assert.strictEqual(method, 'invoicerequest');
+        assert.deepStrictEqual(params, [p]);
+        return { bolt12: 'lnr1...' };
+      };
+      const out = await ln.createInvoiceRequest(p);
+      assert.strictEqual(out.bolt12, 'lnr1...');
+    });
+
+    it('listInvoiceRequests with null, string, or object', async function () {
+      const ln = new Lightning();
+      let n = 0;
+      ln._makeRPCRequest = async (method, params) => {
+        n++;
+        assert.strictEqual(method, 'listinvoicerequests');
+        if (n === 1) assert.deepStrictEqual(params, []);
+        else if (n === 2) assert.deepStrictEqual(params, ['invreqid']);
+        else assert.deepStrictEqual(params, [{ active_only: true }]);
+        return { invoicerequests: [] };
+      };
+      await ln.listInvoiceRequests();
+      await ln.listInvoiceRequests('invreqid');
+      await ln.listInvoiceRequests({ active_only: true });
+    });
+
+    it('disableInvoiceRequest calls disableinvoicerequest', async function () {
+      const ln = new Lightning();
+      ln._makeRPCRequest = async (method, params) => {
+        assert.strictEqual(method, 'disableinvoicerequest');
+        assert.deepStrictEqual(params, ['invreq_x']);
+        return { active: false };
+      };
+      await ln.disableInvoiceRequest('invreq_x');
+    });
+
+    it('sendInvoice calls sendinvoice with object', async function () {
+      const ln = new Lightning();
+      const p = { invreq: 'lnr1abc', label: 'lbl' };
+      ln._makeRPCRequest = async (method, params) => {
+        assert.strictEqual(method, 'sendinvoice');
+        assert.deepStrictEqual(params, [p]);
+        return { status: 'paid' };
+      };
+      const out = await ln.sendInvoice(p);
+      assert.strictEqual(out.status, 'paid');
+    });
+
+    it('disableOffer calls disableoffer', async function () {
+      const ln = new Lightning();
+      ln._makeRPCRequest = async (method, params) => {
+        assert.strictEqual(method, 'disableoffer');
+        assert.deepStrictEqual(params, ['offer_id_1']);
+        return { disabled: true };
+      };
+      await ln.disableOffer('offer_id_1');
+    });
+
+    it('getRoute passes three args, fourth as cltv, or full tail via routeOptions (e.g. maxhops)', async function () {
+      const ln = new Lightning();
+      let n = 0;
+      ln._makeRPCRequest = async (method, params) => {
+        n++;
+        assert.strictEqual(method, 'getroute');
+        if (n === 1) assert.deepStrictEqual(params, ['dest', 1e7, 10]);
+        else if (n === 2) assert.deepStrictEqual(params, ['dest', 1e7, 1, 0]);
+        else {
+          assert.deepStrictEqual(
+            params,
+            ['dest', 1e7, 10, null, null, null, null, 5]
+          );
+        }
+        return { route: [] };
+      };
+      await ln.getRoute('dest', 1e7);
+      await ln.getRoute('dest', 1e7, 1, 0);
+      await ln.getRoute('dest', 1e7, 10, { maxhops: 5 });
     });
   });
 

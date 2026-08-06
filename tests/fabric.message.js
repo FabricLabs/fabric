@@ -76,6 +76,70 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(Message.friendlyTypeFromWire('CHAT_MESSAGE'), 'ChatMessage');
     });
 
+    it('typeEquals / canonicalType* unify opcode, wire name, and friendly alias', function () {
+      const { P2P_PEER_GOSSIP, P2P_PEERING_OFFER } = require('../constants');
+      assert.strictEqual(Message.canonicalTypeName(P2P_PEER_GOSSIP), 'P2P_PEER_GOSSIP');
+      assert.strictEqual(Message.canonicalTypeCode('P2P_PEER_GOSSIP'), P2P_PEER_GOSSIP);
+      assert.strictEqual(Message.canonicalTypeCode('PeerGossip'), P2P_PEER_GOSSIP);
+      assert.ok(Message.typeEquals(P2P_PEER_GOSSIP, 'P2P_PEER_GOSSIP'));
+      assert.ok(Message.typeEquals('PeerGossip', P2P_PEER_GOSSIP));
+      assert.ok(Message.typeEquals(P2P_PEERING_OFFER, 'P2P_PEERING_OFFER'));
+      assert.ok(!Message.typeEquals(P2P_PEER_GOSSIP, P2P_PEERING_OFFER));
+      // Unregistered Hub/WebRTC alias: exact string match only
+      assert.ok(Message.typeEquals('webrtc-peer-gossip', 'webrtc-peer-gossip'));
+      assert.ok(!Message.typeEquals('webrtc-peer-gossip', P2P_PEER_GOSSIP));
+    });
+
+    it('P2P_CHAT_MESSAGE is a first-class opcode (roundtrips distinct from CHAT_MESSAGE)', function () {
+      const m = Message.fromVector(['P2P_CHAT_MESSAGE', 'hello world']);
+      assert.strictEqual(m.type, 'P2P_CHAT_MESSAGE');
+      const restored = Message.fromBuffer(m.toBuffer());
+      assert.strictEqual(restored.type, 'P2P_CHAT_MESSAGE');
+      assert.strictEqual(String(restored.data || restored.raw.data.toString('utf8')), 'hello world');
+      // Not collapsed into P2P_BASE_MESSAGE, and distinct from legacy CHAT_MESSAGE.
+      assert.notStrictEqual(restored.type, 'P2P_BASE_MESSAGE');
+      assert.notStrictEqual(restored.type, 'CHAT_MESSAGE');
+    });
+
+    it('P2P_PEER_GOSSIP and P2P_PEERING_OFFER are first-class opcodes (not P2P_BASE_MESSAGE)', function () {
+      const gossip = Message.fromVector(['P2P_PEER_GOSSIP', JSON.stringify({ host: '1.2.3.4', port: 9000 })]);
+      assert.strictEqual(gossip.type, 'P2P_PEER_GOSSIP');
+      assert.strictEqual(Message.fromBuffer(gossip.toBuffer()).type, 'P2P_PEER_GOSSIP');
+
+      const offer = Message.fromVector(['PeeringOffer', JSON.stringify({
+        host: '5.6.7.8', port: 7777, transport: 'fabric'
+      })]);
+      assert.strictEqual(offer.type, 'P2P_PEERING_OFFER');
+      assert.strictEqual(Message.fromBuffer(offer.toBuffer()).type, 'P2P_PEERING_OFFER');
+    });
+
+    it('GenericMessage encodes as GENERIC_MESSAGE (15103), not P2P_BASE_MESSAGE', function () {
+      const body = JSON.stringify({ type: 'Tombstone', object: { documentId: 'd1' } });
+      const m = Message.fromVector(['GenericMessage', body]);
+      assert.strictEqual(m.type, 'GENERIC_MESSAGE');
+      assert.strictEqual(m.friendlyType, 'GenericMessage');
+      const restored = Message.fromBuffer(m.toBuffer());
+      assert.strictEqual(restored.type, 'GENERIC_MESSAGE');
+      assert.notStrictEqual(restored.type, 'P2P_BASE_MESSAGE');
+      const code = parseInt(restored.raw.type.toString('hex'), 16);
+      assert.strictEqual(code, require('../constants').GENERIC_MESSAGE_TYPE);
+    });
+
+    it('P2P_CONTRACT_* names encode to canonical contract opcodes', function () {
+      const cases = [
+        ['P2P_CONTRACT_PUBLISH', 'CONTRACT_PUBLISH'],
+        ['P2P_CONTRACT_MESSAGE', 'CONTRACT_MESSAGE'],
+        ['P2P_CONTRACT_PROPOSAL', 'CONTRACT_PROPOSAL']
+      ];
+      for (const [alias, canonical] of cases) {
+        const m = Message.fromVector([alias, JSON.stringify({ contract: 'x' })]);
+        assert.strictEqual(m.type, canonical, `${alias} should encode as ${canonical}`);
+        const restored = Message.fromBuffer(m.toBuffer());
+        assert.strictEqual(restored.type, canonical);
+        assert.notStrictEqual(restored.type, 'P2P_BASE_MESSAGE');
+      }
+    });
+
     it('can compose from an object literal', async function prove () {
       const message = new Message(example);
       const literal = message.toObject();
@@ -127,16 +191,16 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(Hash256.doubleDigest(restored.raw.data), hashOnWire);
     });
 
-    it('public messages carry SHA256(body) in preimage; sensitive blanks preimage; explicit preimage overrides', function () {
+    it('public messages leave preimage zero; sensitive stays zero; explicit HTLC preimage overrides', function () {
       const bodyJson = JSON.stringify(example.data);
-      const expectedCommit = Hash256.digest(Buffer.from(bodyJson));
 
       const pub = Message.fromVector(['Call', bodyJson]);
       pub.signWithKey(key);
-      assert.ok(pub.preimage);
-      assert.strictEqual(pub.preimage.toString('hex'), expectedCommit);
+      assert.strictEqual(pub.preimage, null);
       const lit = pub.toObject();
-      assert.strictEqual(lit.headers.preimage, expectedCommit);
+      assert.strictEqual(lit.headers.preimage, null);
+      // Body integrity remains on hash (double-SHA256), not preimage.
+      assert.strictEqual(Hash256.doubleDigest(Buffer.from(bodyJson)), lit.headers.hash);
 
       const sens = new Message({
         type: 'Call',
@@ -158,6 +222,14 @@ describe('@fabric/core/types/message', function () {
       const back = Message.fromBuffer(priv.toBuffer());
       assert.strictEqual(back.preimage.toString('hex'), secret.toString('hex'));
       assert.ok(back.verifyWithKey(key));
+
+      // Setting body after an explicit preimage must not invent SHA256(body).
+      const hop = Message.fromVector(['Call', bodyJson]);
+      hop.preimage = secret;
+      hop.data = JSON.stringify({ ...example.data, n: 2 });
+      assert.strictEqual(hop.preimage.toString('hex'), secret.toString('hex'));
+      hop.sensitive = true;
+      assert.strictEqual(hop.preimage, null);
     });
   });
 
@@ -252,6 +324,27 @@ describe('@fabric/core/types/message', function () {
       assert.strictEqual(restored.data, data);
       assert.ok(message);
       assert.strictEqual(restored.id, message.id);
+    });
+
+    it('fromFields / toFields round-trips P2P_PING field body', function () {
+      const m = Message.fromFields('P2P_PING', { nonce: '42' });
+      assert.strictEqual(m.type, 'P2P_PING');
+      assert.ok(Buffer.isBuffer(m.bodyBuffer));
+      assert.deepStrictEqual(m.toFields(), { nonce: '42' });
+      const restored = Message.fromBuffer(m.toBuffer());
+      assert.deepStrictEqual(restored.toFields(), { nonce: '42' });
+    });
+
+    it('fromFields throws when no schema is registered', function () {
+      assert.throws(() => Message.fromFields('GENERIC_MESSAGE', { x: 1 }), /no body schema/);
+    });
+
+    it('toFields returns null for truncated peer body bytes', function () {
+      const m = Message.fromFields('P2P_PING', { nonce: '1710000000000' });
+      const full = Buffer.from(m.raw.data);
+      m.raw.data = full.subarray(0, Math.max(0, full.length - 1));
+      m.raw.size.writeUInt32BE(m.raw.data.length);
+      assert.strictEqual(m.toFields(), null);
     });
   });
 

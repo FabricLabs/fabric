@@ -3,7 +3,6 @@
 const { FabricShell } = require('../types/service');
 
 const assert = require('assert');
-const expect = require('chai').expect;
 
 describe('@fabric/core/types/service (FabricShell)', function () {
   describe('FabricShell', function () {

@@ -176,9 +176,9 @@ class Token {
     // Encodings
     const encodedHeader = Token.base64UrlEncode(JSON.stringify(header));
     const encodedPayload = Token.base64UrlEncode(JSON.stringify(payload));
-    const signature = bitcoin.crypto.sha256(
+    const signature = Buffer.from(bitcoin.crypto.sha256(
       Buffer.from(`${encodedHeader}.${encodedPayload}.${secret}`)
-    );
+    ));
 
     return [
       encodedHeader,
@@ -188,7 +188,7 @@ class Token {
   }
 
   sign () {
-    const hash = bitcoin.crypto.sha256(Buffer.from(this.capability, 'utf8'));
+    const hash = Buffer.from(bitcoin.crypto.sha256(Buffer.from(this.capability, 'utf8')));
     if (!this.issuer || typeof this.issuer.signSchnorrHash !== 'function') {
       throw new Error('Token.sign requires issuer Key with private material');
     }
@@ -196,7 +196,7 @@ class Token {
   }
 
   verify () {
-    const hash = bitcoin.crypto.sha256(Buffer.from(this.capability, 'utf8'));
+    const hash = Buffer.from(bitcoin.crypto.sha256(Buffer.from(this.capability, 'utf8')));
     if (!this.issuer || typeof this.issuer.verifySchnorrHash !== 'function') {
       return false;
     }

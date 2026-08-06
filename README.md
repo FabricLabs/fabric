@@ -3,39 +3,57 @@
 [![Coverage Status][badge-coverage]][coverage]
 [![GitHub contributors][badge-contributors]][contributors]
 
-[The `@fabric/core` project][fabric-github] provides an API for building peer-to-peer applications on [Bitcoin][bitcoin].
+[The `@fabric/core` project][fabric-github] is the **0.1 RC reference client** for
+building peer-to-peer applications on [Bitcoin][bitcoin]: NOISE `Peer` messaging
+with bounded gossip/discovery, Bitcoin-settled document-exchange helpers, and
+local `Program` / `Machine` execution.
 
-Fabric is an experimental approach to the secure establishment and execution of
-peer-to-peer agreements ("contracts") using Bitcoin as a bonding mechanism. The
-`@fabric/core` project provides a robust set of implementations as JavaScript
-classes, enabling the rapid prototyping and testing of Bitcoin-based
-applications for downstream developers.
+Fabric remains **experimental**. This release is **not** a sandboxed remote
+contract VM or a production-hardened dapp SDK — see [PUBLIC_API.md](PUBLIC_API.md)
+for the frozen leaf import map and scoped claim.
 
-**Status:** `0.1.0-RC1` — run **`npm run ci`** before release tags (full test suite).
+## Bitcoin
+We've designed Fabric to extend the existing Bitcoin ecosystem, deriving all specifications from well-established designs and implementations.
+
+### Identity
+#### BIP32 Extensions
+```
+mainnet Master: m'/
+mainnet Identity #0: m'/7777/
+mainnet Identity #0: m'/7777/
+mainnet Identity #0, Receive 0: m'/7777/
+mainnet Identity #0, Change 0: m'/7777/
+mainnet Identity #0, Receive 1: m'/7777/
+regtest Master:
+regtest Identity #0:
+```
+
+**Status:** `0.1.0-RC1` (experimental reference) — run **`npm run ci`** before release tags.
 
 | Doc | Purpose |
 |-----|---------|
+| [PUBLIC_API.md](PUBLIC_API.md) | **Frozen 0.1 leaf imports** + release claim |
 | [VISION.md](VISION.md) | Product vision, architecture snapshot, documentation map |
 | [DEVELOPERS.md](DEVELOPERS.md) | Repo layout, tests, core types, storage |
+| [PROTOCOL.md](PROTOCOL.md) | Wire entry → [docs/MESSAGE_BODY.md](docs/MESSAGE_BODY.md) |
+| [docs/BOLT_COMPATIBILITY.md](docs/BOLT_COMPATIBILITY.md) | Lightning BOLT #1–#12 vs `lightningd` / `Lightning` |
+| [docs/FABRIC_LIGHTNING_OFFERS.md](docs/FABRIC_LIGHTNING_OFFERS.md) | Fabric **markets** vs BOLT12; `Lightning.Bolt12` |
+| [docs/FABRIC_PAYMENT_BECH32.md](docs/FABRIC_PAYMENT_BECH32.md) | Fabric-routed payments `fa1…`; `Lightning.FabricPayment` |
+| [docs/LIGHTNING_COMPAT.md](docs/LIGHTNING_COMPAT.md) | Core Lightning JSON-RPC ↔ Fabric API |
 | [PRIVACY.md](PRIVACY.md) | Privacy model for operators |
+| [SECURITY.md](SECURITY.md) / [AUDIT.md](AUDIT.md) | Hardening notes + known gaps |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
 
 ## Quick Start
-`npm i -g FabricLabs/fabric#master`
-
-You'll now have the `fabric` binary available on your system.  Set up your environment with a newly-generated cryptographic key by using:
 ```
+npm i -g @fabric/core
 fabric setup
+fabric
 ```
 
 | 🚨 Stop here! |
 |--------------|
 | The output of `fabric setup` includes your **SEED**. Never share it or store it in plain text in cloud-synced folders. Write it down offline or use a password manager. |
-
-Once complete, you'll have a fully configured Fabric client available by running:
-```
-fabric
-```
 
 For help, try entering "insert mode" by pressing the "i" key then typing `/help` and pressing enter — you'll get a short help prompt followed by a list of available commands.  Feel free to explore!
 
@@ -71,7 +89,7 @@ npm run build:c
 For global CLI install: `npm install -g` (after `npm ci` / `npm install` in the repo).
 
 ### Production
-Before tagging or publishing, use [`docs/PRODUCTION-CHECKLIST.md`](docs/PRODUCTION-CHECKLIST.md) (tests, lint gates, audit reports, optional `make:dev` + `check:book-links`). CI on push/PR runs smoke, lint, **tests with coverage** (after `bitcoind` is available), then installs Lightning for downstream tooling.
+Before tagging or publishing, use [`docs/PRODUCTION.md`](docs/PRODUCTION.md) (pre-flight + release checklist). CI on push/PR runs smoke, lint, **tests with coverage** (after `bitcoind` is available), then installs Lightning for downstream tooling.
 
 ## Available Commands
 - The **`fabric`** binary is the Node harness for the default Blessed TUI (`chat`); optional `fabric.node` accelerates a tiny crypto surface — see [docs/CLI-BINARY.md](docs/CLI-BINARY.md).
@@ -82,23 +100,20 @@ Before tagging or publishing, use [`docs/PRODUCTION-CHECKLIST.md`](docs/PRODUCTI
 - `npm start` launches the Fabric shell locally (same as `npm run chat`).
 
 ## Native Dependencies
-Installing from npm may compile native addons (`node-gyp`).  Typical toolchain
-needs: **Node 24.14.x** (see `package.json` `engines`), **Python 3** (for `node-gyp`), plus **secp256k1**,
-**libwally-core**, and **noise** libraries for `fabric.node` — see [BUILD.md](BUILD.md).
+**npm install does not build the C addon** — JavaScript is the canonical protocol for 0.1.0.
+Optional `fabric.node`: `npm run build:c` or `FABRIC_BUILD_NATIVE=1` (see [BUILD.md](BUILD.md)).
+Typical toolchain for an optional native build: **Node 24.15.x**, **Python 3**, **secp256k1**,
+**libwally-core**, and **noise**.
 
 JS tests do not require `fabric.node`.  Separately, **`level`** and **`zeromq`**
 may compile platform bindings when those packages are installed.
 
 ## API
-The Fabric reference implementation exposes a simple message-passing interface
-using [the actor model][actor-model], enabling your downstream applications to
-subscribe to simple events for rapid prototyping of distributed applications.
+Prefer **leaf imports** from [PUBLIC_API.md](PUBLIC_API.md) (`Peer`, `Message`,
+`Key`, document helpers). The `Fabric` facade is for demos; production apps should
+not depend on `Fabric.*` statics.
 
 ### Using as a Library
-Using the `EventEmitter` pattern, you can create an instance of Fabric to use
-it as an event source.
-
-#### Simple Example
 ```js
 const Peer = require('@fabric/core/types/peer');
 

@@ -1,5 +1,15 @@
 # C / JavaScript Implementation Parity
 
+**Canonical protocol (0.1.0):** the **JavaScript** reference (`types/message.js`,
+`types/peer.js`, document-exchange helpers under `functions/`). npm install does
+**not** build the C addon by default (`scripts/install-native.js`). C sources
+remain in-tree for optional local builds (`npm run build:c` or
+`FABRIC_BUILD_NATIVE=1`).
+
+Treat this document as notes for the **optional** native stack — not as the
+source of truth for wire behavior. When C and JS disagree, **fix C or leave it
+experimental**; do not change JS to match broken C.
+
 Parity notes for the native addon (`binding.cc`, `src/*.c`) and the JavaScript reference (`types/*.js`).
 
 ## Native / JS surface summary
@@ -10,7 +20,7 @@ Parity notes for the native addon (`binding.cc`, `src/*.c`) and the JavaScript r
   - **`src/protocol.c`** — `errors.c`, `validation.c`, `message.c`
   - **`src/p2p.c`** — `threads.c`, `scoring.c`, `peer.c` (named `p2p.c` so the TU can include `peer.c` without self-inclusion)
 - **Libraries**: `secp256k1`, Noise (`libnoiseprotocol`, `libnoisekeys`) — see `binding.gyp` `conditions` for platform paths
-- **Purpose**: N-API surface in `binding.cc`; crypto/protocol/peer layers compiled as above for Message, Peer, and wire parity with JS
+- **Purpose**: N-API surface in `binding.cc`; crypto/protocol/peer layers compiled as above for Message, Peer, and wire experiments vs JS
 
 ### 2. `src/binding.cc`
 - **libwally**: `wally_init(0)` once at addon load
@@ -26,26 +36,27 @@ Parity notes for the native addon (`binding.cc`, `src/*.c`) and the JavaScript r
 - **Body hash**: `message_compute_body_hash` = SHA256(SHA256(body)) (Bitcoin-style)
 - **Signing**: tagged hash `"Fabric/Message"` over header + body into a separate buffer; **does not** overwrite `message->hash` (wire body hash)
 - **`message_compute_hash`**: deprecated no-op (legacy call sites)
+- **Known gap:** C sign/verify author/signature ordering still lags JS — do not use C as a second protocol oracle until fixed
 
 ---
 
-## Body hash (wire integrity) — aligned
+## Body hash (wire integrity) — JS canonical
 
 | Layer | Behavior |
 |--------|-----------|
-| **C** | `message_compute_body_hash` / `message_verify_body_hash` use double-SHA256 over raw body bytes |
 | **JS** | `Hash256.doubleDigest` in `types/hash256.js`; `Message` `data` setter sets `raw.hash`; `Peer._handleFabricMessage` compares with `Hash256.doubleDigest` on `raw.data` |
+| **C** | `message_compute_body_hash` / `message_verify_body_hash` use double-SHA256 over raw body bytes (optional) |
 
-Cross-checks: `tests/fabric.message.js` (expected header hashes, `fromBuffer` preserves wire hash), `tests/peering.cross-implementation.js` (round-trip and bad-hash rejection).
+Cross-checks: `tests/fabric.message.js` (expected header hashes, `fromBuffer` preserves wire hash), `tests/peering.cross-implementation.js` (when native is built).
 
 **Parse path:** `Message.fromRaw` / `fromBuffer` must **not** run the `data` setter after filling `raw` from bytes — the setter recomputes `hash` from the body and would mask a corrupt wire hash. The `data` setter is for composing messages; parsing keeps header `hash` as on the wire.
 
 ---
 
-## Signing flow — aligned
+## Signing flow — JS canonical
 
-- **Algorithm**: BIP-340 Schnorr with `secp256k1_tagged_sha256` / JS equivalent, tag **`Fabric/Message`**
-- **Digest input**: header (signature zeroed) + body bytes
+- **Algorithm**: BIP-340 Schnorr with tagged hash tag **`Fabric/Message`**
+- **Digest input**: header (**signature zeroed**, **author set**) + body bytes
 - **`hash` field on wire**: body integrity only (double-SHA256), not the signed digest
 - **Author**: x-only pubkey (32 bytes)
 
@@ -53,8 +64,9 @@ Cross-checks: `tests/fabric.message.js` (expected header hashes, `fromBuffer` pr
 
 ## Wire format
 
-- **Header**: 208 bytes = magic(4) + version(4) + parent(32) + author(32) + type(4) + size(4) + hash(32) + preimage(32) + signature(64). **preimage** is all-zero for public messages (optional secret on wire otherwise).
-- **Body**: variable, bounded by `MAX_MESSAGE_SIZE` in JS (`constants.js`), i.e. 3888 bytes for a 4096-byte frame with the v2 header.
+- **Header**: 208 bytes = magic(4) + version(4) + parent(32) + author(32) + type(4) + size(4) + hash(32) + preimage(32) + signature(64).
+- **preimage**: all-zero for public messages; optional **payment secret** for HTLC / Fabric Circuit hops (Lightning-style — not SHA256(body)). See [`MESSAGE_BODY.md`](./MESSAGE_BODY.md).
+- **Body**: variable, bounded by `MAX_MESSAGE_SIZE` in JS (`constants.js`), i.e. 3888 bytes for a 4096-byte frame with the v2 header. **V1:** body is a C-like typed field layout per opcode — not JSON ([`MESSAGE_BODY.md`](./MESSAGE_BODY.md)).
 
 ---
 

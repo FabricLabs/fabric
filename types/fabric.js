@@ -142,7 +142,11 @@ class Fabric extends Service {
   /** @returns {Function} */
   static get Federation () { return require('./federation'); }
 
-  /** @returns {Function} */
+  /**
+   * @deprecated Not a Fabric type. Use {@link Machine}, {@link Program},
+   * `functions/beaconFederationSigning`, and `functions/fabricCanonicalJson`.
+   * @returns {object}
+   */
   static get DistributedExecution () { return require('./distributedExecution'); }
 
   static sha256 (data) {

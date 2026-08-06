@@ -42,20 +42,31 @@ class Tree extends Actor {
   }
 
   /**
-   * Add a leaf to the tree.
-   * @param {String} leaf Leaf to add to the tree.
+   * Add a leaf to the tree (accumulates into `settings.leaves`).
+   * @param {String|Buffer} leaf Leaf to add to the tree.
    * @returns {Tree} Instance of the tree.
    */
   addLeaf (leaf = '') {
-    this._tree = new MerkleTree(this.settings.leaves.concat([
-      leaf
-    ]), Hash256.digest, {
+    this.settings.leaves = (this.settings.leaves || []).concat([leaf]);
+    this._tree = new MerkleTree(this.settings.leaves, Hash256.digest, {
       isBitcoinTree: true
     });
+    this._state = this._state || {};
+    this._state.root = this.root;
 
     this.emit('leaf', leaf);
 
     return this;
+  }
+
+  /**
+   * Hex encoding of {@link Tree#root} (empty string when the tree has no root bytes).
+   * @returns {string}
+   */
+  get rootHex () {
+    const root = this.root;
+    if (!root || !root.length) return '';
+    return Buffer.isBuffer(root) ? root.toString('hex') : String(root);
   }
 
   /**

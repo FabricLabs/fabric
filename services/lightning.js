@@ -35,9 +35,6 @@ function shouldTreatLightningStderrAsError (line) {
   );
 }
 
-/**
- * Node does not chunk stderr on line boundaries; buffer and emit per logical line.
- */
 function appendLightningStderrChunk (service, chunk) {
   if (!service._lightningdStderrBuf) service._lightningdStderrBuf = '';
   service._lightningdStderrBuf += chunk.toString('utf8');
@@ -67,7 +64,10 @@ function flushLightningStderrBuffer (service) {
 }
 
 /**
- * Manage a Lightning node.
+ * Manage a Lightning node (Core Lightning JSON-RPC over Unix socket).
+ *
+ * BOLT checklist: `docs/BOLT_COMPATIBILITY.md`. RPC map: `docs/LIGHTNING_COMPAT.md`.
+ * @see Lightning.DOCS
  */
 class Lightning extends Service {
   /**
@@ -122,6 +122,7 @@ class Lightning extends Service {
     this.settings.bitcoin.rpcpassword = this.settings.bitcoin.rpcpassword || this.settings.bitcoin.password;
 
     this.machine = new Machine(this.settings);
+    /** Optional RPC client handle (e.g. REST/grpc); not used by Core Lightning socket `_makeRPCRequest`. */
     this.rpc = null;
     this.rest = null;
     this.status = 'disconnected';
@@ -273,6 +274,189 @@ class Lightning extends Service {
       paymentHash: result.payment_hash,
       expiresAt: result.expires_at
     };
+  }
+
+  /**
+   * Invoke any Core Lightning JSON-RPC method over the lightningd socket (escape hatch for methods without a typed wrapper).
+   * Named `callRpc` so it does not shadow the `rpc` instance property.
+   * @param {String} method RPC method name (e.g. `listpeers`).
+   * @param {Array} [params=[]] Positional/object params as accepted by lightningd for that method.
+   * @param {Number} [timeoutMs=30000] Optional timeout.
+   * @returns {Promise<*>} RPC result.
+   */
+  async callRpc (method, params = [], timeoutMs = 30000) {
+    return this._makeRPCRequest(method, params, timeoutMs);
+  }
+
+  /**
+   * Decode a BOLT11 invoice or BOLT12 offer string (Core Lightning `decode`).
+   * @param {String} boltString `lnbc...`, `lno1...`, etc.
+   * @returns {Promise<Object>} Decoded fields.
+   */
+  async decodeLightning (boltString) {
+    return this._makeRPCRequest('decode', [boltString]);
+  }
+
+  /**
+   * Decode a BOLT11 invoice for payment fields (Core Lightning `decodepay`).
+   * @param {String} bolt11
+   * @returns {Promise<Object>} Decoded pay details.
+   */
+  async decodePay (bolt11) {
+    return this._makeRPCRequest('decodepay', [bolt11]);
+  }
+
+  /**
+   * Create a BOLT12 offer (requires `experimental-offers` / modern CLN). Pass-through to `offer`.
+   * @param {Object} params Keyword args, e.g. `{ amount_msat, description, label, issuer, ... }`.
+   * @returns {Promise<Object>} Offer result (includes `bolt12` / offer id per CLN version).
+   */
+  async createOffer (params) {
+    if (!params || typeof params !== 'object' || Array.isArray(params)) {
+      throw new Error('createOffer requires a params object (e.g. { amount_msat, description })');
+    }
+    return this._makeRPCRequest('offer', [params]);
+  }
+
+  /**
+   * Request a BOLT11 invoice from a BOLT12 offer (Core Lightning `fetchinvoice`).
+   *
+   * Call either:
+   * - `fetchInvoice('lno1…')` or `fetchInvoice('lno1…', { amount_msat, quantity, payer_note, timeout, … })`
+   * - **Recurrence** (when the offer is recurring): `recurrence_counter` (start at 0), `recurrence_start`, `recurrence_label` (stable label linking the series; required when counter is set). See Core Lightning **`fetchinvoice`** and [BOLT #12](https://github.com/lightning/bolts/blob/master/12-offer-encoding.md).
+   * - `fetchInvoice({ offer: 'lno1…', amount_msat, … })` — single keyword object as accepted by CLN.
+   *
+   * @param {String|Object} offerOrParams Bolt12 offer string (`lno1…`), or one params object with an `offer` field.
+   * @param {Object} [invoiceParams] When the first arg is a string, optional extra fields merged into the RPC (second positional group).
+   * @returns {Promise<Object>} Invoice response (includes `invoice` bolt11 when successful).
+   */
+  async fetchInvoice (offerOrParams, invoiceParams = null) {
+    if (offerOrParams != null && typeof offerOrParams === 'object' && !Array.isArray(offerOrParams) && typeof offerOrParams.offer === 'string') {
+      if (invoiceParams != null && typeof invoiceParams === 'object' && !Array.isArray(invoiceParams)) {
+        return this._makeRPCRequest('fetchinvoice', [Object.assign({}, offerOrParams, invoiceParams)]);
+      }
+      return this._makeRPCRequest('fetchinvoice', [offerOrParams]);
+    }
+    if (typeof offerOrParams !== 'string') {
+      throw new Error('fetchInvoice requires offer string or params object with `offer`');
+    }
+    if (invoiceParams != null && typeof invoiceParams === 'object' && !Array.isArray(invoiceParams)) {
+      return this._makeRPCRequest('fetchinvoice', [offerOrParams, invoiceParams]);
+    }
+    return this._makeRPCRequest('fetchinvoice', [offerOrParams]);
+  }
+
+  /**
+   * Pay a BOLT11 invoice or BOLT12-fetched bolt11 string (Core Lightning `pay`).
+   * @param {String|Object} invoiceOrParams Bolt11 string, or keyword object (e.g. `{ bolt11 }`, `{ bolt12 }` per CLN).
+   * @param {Number} [timeoutMs=30000]
+   * @returns {Promise<Object>} Payment result.
+   */
+  async pay (invoiceOrParams, timeoutMs = 30000) {
+    return this._makeRPCRequest('pay', [invoiceOrParams], timeoutMs);
+  }
+
+  /**
+   * List offers created on this node (Core Lightning `listoffers`).
+   * @param {String|Object|null} [filter] `offer_id` string, or `{ offer_id?, active_only? }`, or null for all.
+   * @returns {Promise<Object>}
+   */
+  async listOffers (filter = null) {
+    if (filter == null) return this._makeRPCRequest('listoffers', []);
+    if (typeof filter === 'string') return this._makeRPCRequest('listoffers', [filter]);
+    if (typeof filter === 'object' && !Array.isArray(filter)) {
+      return this._makeRPCRequest('listoffers', [filter]);
+    }
+    throw new Error('listOffers expects offer_id string, filter object, or null');
+  }
+
+  /**
+   * Disable a local offer by id (Core Lightning `disableoffer`).
+   * @param {String} offerId
+   * @returns {Promise<Object>}
+   */
+  async disableOffer (offerId) {
+    return this._makeRPCRequest('disableoffer', [offerId]);
+  }
+
+  /**
+   * Create a BOLT12 `invoice_request` (you request that someone else pay you via their offer flow). Returns `bolt12` (`lnr1…`). (Core Lightning `invoicerequest`, v22.11+.)
+   * @param {Object} params `{ amount, description, issuer?, label?, absolute_expiry?, single_use? }` — see CLN docs for amount formats.
+   * @returns {Promise<Object>}
+   */
+  async createInvoiceRequest (params) {
+    if (!params || typeof params !== 'object' || Array.isArray(params)) {
+      throw new Error('createInvoiceRequest requires a params object (e.g. { amount, description })');
+    }
+    return this._makeRPCRequest('invoicerequest', [params]);
+  }
+
+  /**
+   * List `invoice_request` records (Core Lightning `listinvoicerequests`).
+   * @param {String|Object|null} [filter] `invreq_id` string, or `{ invreq_id?, active_only? }`, or null for all.
+   * @returns {Promise<Object>}
+   */
+  async listInvoiceRequests (filter = null) {
+    if (filter == null) return this._makeRPCRequest('listinvoicerequests', []);
+    if (typeof filter === 'string') return this._makeRPCRequest('listinvoicerequests', [filter]);
+    if (typeof filter === 'object' && !Array.isArray(filter)) {
+      return this._makeRPCRequest('listinvoicerequests', [filter]);
+    }
+    throw new Error('listInvoiceRequests expects invreq_id string, filter object, or null');
+  }
+
+  /**
+   * Disable an `invoice_request` so no further invoices are accepted (Core Lightning `disableinvoicerequest`).
+   * @param {String} invreqId
+   * @returns {Promise<Object>}
+   */
+  async disableInvoiceRequest (invreqId) {
+    return this._makeRPCRequest('disableinvoicerequest', [invreqId]);
+  }
+
+  /**
+   * Create and send a BOLT12 invoice to the issuer of an `invoice_request` (Core Lightning `sendinvoice`).
+   * @param {Object} params `{ invreq, label, amount_msat?, timeout?, quantity? }` — `invreq` is the `lnr1…` string.
+   * @returns {Promise<Object>}
+   */
+  async sendInvoice (params) {
+    if (!params || typeof params !== 'object' || Array.isArray(params)) {
+      throw new Error('sendInvoice requires a params object (e.g. { invreq, label })');
+    }
+    return this._makeRPCRequest('sendinvoice', [params]);
+  }
+
+  /**
+   * Route probe (Core Lightning `getroute`).
+   * CLN order: `id`, `amount_msat`, `riskfactor`, `cltv`, `fromid`, `fuzzpercent`, `exclude`, `maxhops`
+   * — the fourth **positional** is `cltv`, not `maxhops`. To set `maxhops` (or other tail fields) use the
+   * `routeOptions` object so intermediate slots are sent as `null` where needed.
+   * @param {String} destinationId Destination node id (pubkey).
+   * @param {Number|String} amountMsat
+   * @param {Number} [riskfactor=10]
+   * @param {Number|Object|null} [cltvOrRouteOptions] Omitted: three-arg RPC. If a number: fourth positional (`cltv`).
+   *   If an object: tail fields `cltv`, `fromid`, `fuzzpercent`, `exclude`, `maxhops` (each optional).
+   * @returns {Promise<Object>}
+   */
+  async getRoute (destinationId, amountMsat, riskfactor = 10, cltvOrRouteOptions = null) {
+    if (cltvOrRouteOptions != null && typeof cltvOrRouteOptions === 'object' && !Array.isArray(cltvOrRouteOptions)) {
+      const o = cltvOrRouteOptions;
+      return this._makeRPCRequest('getroute', [
+        destinationId,
+        amountMsat,
+        riskfactor,
+        o.cltv != null ? o.cltv : null,
+        o.fromid != null ? o.fromid : null,
+        o.fuzzpercent != null ? o.fuzzpercent : null,
+        o.exclude != null ? o.exclude : null,
+        o.maxhops != null ? o.maxhops : null
+      ]);
+    }
+    const args = [destinationId, amountMsat, riskfactor];
+    if (cltvOrRouteOptions != null) {
+      args.push(cltvOrRouteOptions);
+    }
+    return this._makeRPCRequest('getroute', args);
   }
 
   /**
@@ -885,15 +1069,46 @@ class Lightning extends Service {
  */
 Lightning.CLN_RPC_METHODS = Object.freeze([
   'connect',
+  'decode',
+  'decodepay',
+  'disableinvoicerequest',
+  'disableoffer',
+  'fetchinvoice',
   'fundchannel',
   'getinfo',
+  'getroute',
   'invoice',
+  'invoicerequest',
   'listchannels',
   'listfunds',
+  'listinvoicerequests',
+  'listoffers',
   'newaddr',
+  'offer',
+  'pay',
+  'sendinvoice',
   'stop'
 ]);
 
+/**
+ * Paths to canonical Markdown docs (relative to the `@fabric/core` package root).
+ * `fabricLightningMarkets` and `fabricLightningOffers` point at the same file (Fabric **markets** vs Lightning BOLT12 **offers**).
+ * @type {Readonly<{ boltCompatibility: string, fabricLightningOffers: string, fabricLightningMarkets: string, fabricPaymentBech32: string, lightningCompat: string }>}
+ */
+Lightning.DOCS = Object.freeze({
+  boltCompatibility: 'docs/BOLT_COMPATIBILITY.md',
+  fabricLightningOffers: 'docs/FABRIC_LIGHTNING_OFFERS.md',
+  fabricLightningMarkets: 'docs/FABRIC_LIGHTNING_OFFERS.md',
+  fabricPaymentBech32: 'docs/FABRIC_PAYMENT_BECH32.md',
+  lightningCompat: 'docs/LIGHTNING_COMPAT.md'
+});
+
 Lightning.redactSensitiveCommandArg = redactSensitiveCommandArg;
+
+Object.assign(Lightning, {
+  Bolt12: require('../functions/lightningBolt12'),
+  FabricPayment: require('../functions/fabricPaymentBech32'),
+  Bolt12Semantics: require('../functions/bolt12Semantics')
+});
 
 module.exports = Lightning;

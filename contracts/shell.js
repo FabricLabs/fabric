@@ -1,7 +1,7 @@
 'use strict';
 
-// Settings
-const settings = require('../settings/local');
+const { loadLocalSettings } = require('../functions/loadLocalSettings');
+const settings = loadLocalSettings();
 
 // Fabric Types
 const CLI = require('../types/cli');

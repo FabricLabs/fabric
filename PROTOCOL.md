@@ -1,104 +1,48 @@
 # The Fabric Protocol
-Fabric implements a TCP-based networking protocol for establishing and executing peer-to-peer agreements.
+Fabric implements a TCP-based networking protocol for establishing and executing
+peer-to-peer agreements. **JavaScript (`types/message.js`, `types/peer.js`) is the
+canonical protocol definition for `@fabric/core` 0.1.x.**
 
-## Messages
-Fabric Messages are hex-encoded bytestreams with a fixed-length header and an optional payload.
+## Canonical wire documentation (read these)
 
-### Fabric Message Format
-The **Fabric Message Format** consists of two (2) components; the message header (the "Header") and the message body (the "Payload").
+| Doc | Purpose |
+|-----|---------|
+| [docs/MESSAGE_BODY.md](docs/MESSAGE_BODY.md) | **Current** 208-byte header, body integrity (`hash` = double-SHA256), Lightning-style `preimage`, typed body fields |
+| [docs/C-JS-PARITY.md](docs/C-JS-PARITY.md) | C addon vs JS oracle; signing tag `Fabric/Message` |
+| [MESSAGES.md](MESSAGES.md) | Message semantics and opcodes |
+| [SECURITY.md](SECURITY.md) | Gossip / peering-offer amplification bounds |
+| [PUBLIC_API.md](PUBLIC_API.md) | Frozen leaf imports for 0.1 consumers |
 
-#### Fabric Message Header
-- `magic` — 4 bytes `C0DEF33D` (constant)
-- `version` — 4 bytes `00000001` (variable)
-- `parent` — 32 bytes (parent state identifier)
-- `type` — 4 bytes (message type)
-- `size` — 4 bytes (payload size)
-- `checksum` — 32 bytes (sha256sum of payload)
-- `signature` — 64 bytes (composable signature by message author of the `checksum`)
+Do **not** treat older header sketches in this file’s git history as normative.
+Historical drafts and analysis notes are listed in [docs/NON_CANONICAL.md](docs/NON_CANONICAL.md).
 
-#### Fabric Message Payload
-- (optional) `payload` — `size` bytes
+## Wire frame (summary)
 
-### Types
-The base list of Fabric Message Types is as follows:
+**Header (208 bytes)** ‖ **body** (`size` bytes):
 
-- `GENERIC` — decimal `128` (`0000080`)
-- `STATE` — decimal `192` (`00000C0`)
-- `DELTA` — decimal `193` (`00000C1`)
-- `ACK` — decimal `200` (`00000C8`) (may change)
-- `LOCK` — decimal `232` (`00000E8`)
-- `ANNOUNCE` — decimal `256` (`0000100`)
-- `BID` — decimal `300` (`0000012C`)
-- `ASK` — decimal `402` (`0000192`)
-- `CLOSE` — decimal `512` (`0000200`)
-- `PATCH` — decimal `1024` (`0000400`)
+| Offset | Size | Field |
+|--------|------|--------|
+| 0 | 4 | magic |
+| 4 | 4 | version |
+| 8 | 32 | parent |
+| 40 | 32 | author |
+| 72 | 4 | type (opcode) |
+| 76 | 4 | size |
+| 80 | 32 | hash = double-SHA256(body) |
+| 112 | 32 | preimage (payment secret; zeros if none) |
+| 144 | 64 | BIP-340 signature |
+| 208 | … | body |
 
-#### The `GENERIC` Message Type
-UTF8-encoded JSON payload.
+Inbound peers **drop** frames whose body hash does not match the header, then
+verify the BIP-340 author signature before dispatch. See `types/peer.js`.
 
-If the `version` field is `1` the payload MUST be valid JSON.
+## Peering (session)
 
-#### The `ANNOUNCE` Message Type
-Used for Peer announcements.
-
-#### The `STATE` Message Type
-Pure State snapshots.
-
-#### The `DELTA` Message Type
-State delta in JSON-PATCH format.
-
-#### The `LOCK` Message Type
-Halt forward movement.
-
-#### The `ACK` Message Type
-Confirm receipt of a message.
-
-#### The `ASK` Message Type
-Ask for payment to unlock a specific document.
-
-#### The `BID` Message Type
-Offers a payment to unlock of specific document.
-
-#### The `CLOSE` Message Type
-Cancel a previous message.
-
-### Generic Messages
-Generic messages use the `GENERIC` type and are currently implemented with UTF8 payloads.
-
-## Compute
-Fabric provides a reference REPL (Read, Evaluate, Print, Loop) interface via the `fabric` command.
-
-### Fabric Compute Space
-Certain generic types are provided within any Fabric Compute Space.
-
-#### Actor
-The `Actor` type maps an object to its unique identifier.
-
-#### ActorSet
-An `ActorSet` is a hashmap of `Actor` instances, address by their ID.
-
-#### Collection
-A `Collection` is a list of `Actor` instances.
-
-#### Contract
-The `Contract` class provides a simple method for creating agreements between a known set of peers.
-
-## Peering
-Peers are identified in the Fabric network by their [**Fabric Identity**][fabric-identity], a `bech32m` encoding of the prefix `id` and public key body.
-
-Connecting to other peers in Fabric requires knowledge of the peer's **public key**.
+Peers are identified by Fabric identity (compressed secp256k1 public key /
+related encodings). Session open:
 
 ```
-$ fabric
-C^i
-/connect 0375f7cfc3fa3bc9ed621019018fca678da404a29c8dfec4350855b5ad2f0a42d7@hub.fabric.pub:7777
-```
-
-### Peer Protocol
-Initiator sends a `P2P_SESSION_OFFER` message, counterparty responds with `P2P_SESSION_OPEN` message.
-
-```
-INITATIOR                     COUNTERPARTY
+INITIATOR                     COUNTERPARTY
 00: CONNECT
 01: SESSION_OFFER ->
 02:                               VALIDATE
@@ -106,29 +50,23 @@ INITATIOR                     COUNTERPARTY
 04: READY
 ```
 
-The `Session` is now open.
+Gossip discovery uses first-class opcodes `P2P_PEER_GOSSIP` / `P2P_PEERING_OFFER`
+with hop TTL and per-origin relay budgets ([SECURITY.md](SECURITY.md)).
 
-#### Negotiation
-```
-incorrect state            correct state
-  |                                    |
-  v                                    |
-  prior state                          |
-  |                                    |
-  v                                    |
-  timeout                              |
-  |                                    |
-  |                                    |
-  |                                    v
-   \---------------------------------> sign -> broadcast
-```
+## Compute & contracts
 
-### Layers
+Local execution uses `Program` + `Machine` ([docs/PROGRAM.md](docs/PROGRAM.md)).
+Distributed Beacon / federation sealing is composed by Hub on top of core helpers
+([docs/DISTRIBUTED_EXECUTION.md](docs/DISTRIBUTED_EXECUTION.md)) — not a standalone
+sandboxed dapp runtime in this package alone.
+
+## CLI
+
 ```
-sha256(input) -> sha256(hash) -> (100% signing set signature)
+$ fabric
+/connect <pubkey>@hub.fabric.pub:7777
 ```
 
-
-
+See [QUICKSTART.md](QUICKSTART.md) and [docs/CLI.md](docs/CLI.md).
 
 [fabric-identity]: IDENTITY.md

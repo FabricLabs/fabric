@@ -141,7 +141,7 @@ class Identity extends Actor {
   }
 
   _verifyKeyIsChild (_key, _parent) {
-
+    throw new Error('_verifyKeyIsChild is not yet implemented.');
   }
 }
 

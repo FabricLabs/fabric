@@ -41,6 +41,8 @@ function patchBs58checkSha256Path (s) {
 }
 
 const jobs = [
+  // bitcoinjs-lib 7 ships CJS under src/cjs/*.cjs (exports map: ./src/* → ./src/cjs/*.cjs)
+  ['node_modules/bitcoinjs-lib/src/cjs/crypto.cjs', patchBitcoinjsCrypto],
   ['node_modules/bitcoinjs-lib/src/crypto.js', patchBitcoinjsCrypto],
   ['node_modules/bs58check/index.js', patchBs58checkSha256Path],
   'node_modules/wif/node_modules/bs58check/src/cjs/index.cjs',

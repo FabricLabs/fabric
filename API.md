@@ -14,6 +14,8 @@ arbitrary app string hash. <strong>Wire traffic</strong> — see <a href="#Messa
 </dd>
 <dt><a href="#Actor">Actor</a></dt>
 <dd></dd>
+<dt><a href="#Block">Block</a></dt>
+<dd></dd>
 <dt><a href="#Bond">Bond</a> ⇐ <code><a href="#Contract">Contract</a></code></dt>
 <dd></dd>
 <dt><a href="#Chain">Chain</a></dt>
@@ -113,6 +115,10 @@ JSON names. [Message.wireTypeFromFriendly](Message.wireTypeFromFriendly) / [Mess
 maps (<code>WIRE_TYPE_DECODE_ORDER</code>, <code>LEGACY_MESSAGE_TYPE_ALIASES</code>) when aligning <strong>@fabric/http</strong>
 or Hub.</p>
 
+<p><strong>Body (V1)</strong> — Prefer [fromFields](#Message.fromFields) / [toFields](#Message+toFields) with a
+registered body schema (see body codec helpers on this module). Bodies are C-like typed fields, not JSON;
+JSON bridging is <strong>@fabric/http</strong>. See <code>docs/MESSAGE_BODY.md</code>.</p>
+
 <p><strong>Narrative</strong> — See <strong>DEVELOPERS.md</strong> (<em>Actor and Message</em>) and [Actor](#Actor)
 <code>@fileoverview</code>; home HTML is generated from DEVELOPERS.md, while this page comes from
 <code>types/message.js</code>.</p></dd>
@@ -124,6 +130,8 @@ or Hub.</p>
 see <a href="#Message">Message</a> wire vs friendly names and <code>constants</code> opcodes.</p>
 </dd>
 <dt><a href="#Peer">Peer</a></dt>
+<dd></dd>
+<dt><a href="#Program">Program</a></dt>
 <dd></dd>
 <dt><a href="#Reader">Reader</a></dt>
 <dd><p>Read from a byte stream, seeking valid Fabric messages.</p>
@@ -196,10 +204,11 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 <dd><p>Manages interaction with the Bitcoin network.</p>
 </dd>
 <dt><a href="#Lightning">Lightning</a></dt>
-<dd><p>Manage a Lightning node.</p>
+<dd><p>Manage a Lightning node (Core Lightning JSON-RPC over Unix socket).</p>
+<p>BOLT checklist: <code>docs/BOLT_COMPATIBILITY.md</code>. RPC map: <code>docs/LIGHTNING_COMPAT.md</code>.</p>
 </dd>
 <dt><a href="#Redis">Redis</a></dt>
-<dd><p>Connect and subscribe to Redis servers.</p>
+<dd><p>Connect and subscribe to Redis servers (node-redis v6).</p>
 </dd>
 <dt><a href="#Text">Text</a> ⇐ <code><a href="#Service">Service</a></code></dt>
 <dd></dd>
@@ -211,11 +220,94 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 </dd>
 </dl>
 
+## Members
+
+<dl>
+<dt><a href="#mineOnStart">mineOnStart</a></dt>
+<dd><p>When false, <code>start()</code> does not mine an initial epoch (regtest).</p>
+</dd>
+<dt><a href="#GenericMessage">GenericMessage</a></dt>
+<dd><p>Transitional Hub/browser catch-all (opcode GENERIC_MESSAGE_TYPE / 15103).</p>
+</dd>
+</dl>
+
 ## Constants
 
 <dl>
+<dt><a href="#merge">merge</a></dt>
+<dd><p>Beacon — L1-tied epoch chain that seals sidechain / contracts digests.</p>
+<p>Regtest: <code>createEpoch()</code> mines one block (<code>generatetoaddress</code>) then appends
+a <code>BEACON_EPOCH</code> entry. Non-regtest: <code>recordEpochFromBlock</code> follows tips.</p>
+<p>Hub product wiring historically lived in hub.fabric.pub <code>contracts/beacon.js</code>;
+that module re-exports this type.</p>
+</dd>
+<dt><a href="#merge">merge</a></dt>
+<dd><p>Bitcoin-shaped Block: parent-linked header + merkle of leaves, with optional
+PoW (<code>nonce</code>/<code>bits</code>), Elements-style federation signatures, and arbitrary <code>data</code>.</p>
+</dd>
+<dt><a href="#crypto">crypto</a></dt>
+<dd><p>Chain — ledger of Bitcoin-shaped Blocks with consensus policy:</p>
+<ul>
+<li><code>pow</code> (default) — parent-linked playnet / Bitcoin-style Block + mempool</li>
+<li><code>federation</code> — linear tip; Elements-style k-of-n block signatures (Beacon)</li>
+<li><code>gossip</code> — content-addressed data blocks; merge = union by block id</li>
+</ul>
+<p>Statechain document helpers (<code>functions/sidechainState</code>) hold the sealed JSON
+document. Digests feed that document / Beacon sidechain heads; raw gossip is
+never Beacon authority.</p>
+</dd>
+<dt><del><a href="#SEAL_BLOCK">SEAL_BLOCK</a></del></dt>
+<dd></dd>
+<dt><del><a href="#fabricCanonicalJson">fabricCanonicalJson</a></del></dt>
+<dd></dd>
+<dt><a href="#BODY_SCHEMA_BY_KEY">BODY_SCHEMA_BY_KEY</a> : <code>Map.&lt;(number|string), Array.&lt;{name: string, type: string}&gt;&gt;</code></dt>
+<dd></dd>
+<dt><a href="#SCHEMA_P2P_FORWARD">SCHEMA_P2P_FORWARD</a></dt>
+<dd><p>Directed onion hop — see <a href="module:@fabric/core/functions/fabricOnion">module:@fabric/core/functions/fabricOnion</a>.</p>
+</dd>
+<dt><a href="#P2P_CHAT_MAX_CHARS">P2P_CHAT_MAX_CHARS</a></dt>
+<dd><p>Max UTF-8 code units for first-class P2P_CHAT_MESSAGE body (text only).</p>
+</dd>
+<dt><a href="#P2P_PEER_ALIAS_MAX_CHARS">P2P_PEER_ALIAS_MAX_CHARS</a></dt>
+<dd><p>Max UTF-8 code units for first-class P2P_PEER_ALIAS body (nickname).</p>
+</dd>
+<dt><a href="#crypto">crypto</a></dt>
+<dd><p>Multi-language Program — executable artifact for <a href="#Machine">Machine</a>, with optional
+L1 Bitcoin redeem scaffolding for <code>bitcoin-script</code>.</p>
+<p>Languages: <code>fabric-opcodes</code> | <code>javascript</code> | <code>bitcoin-script</code> | <code>solidity</code> | <code>asm</code>
+(solidity/asm compile stubs until Compiler frontends land).</p>
+</dd>
+<dt><a href="#networks">networks</a></dt>
+<dd><p>Fabric settings use <code>mainnet</code>; bitcoinjs-lib 7 names that network <code>bitcoin</code>.</p>
+</dd>
 <dt><del><a href="#Text">Text</a></del></dt>
 <dd></dd>
+</dl>
+
+## Functions
+
+<dl>
+<dt><a href="#isStructuredBlockInput">isStructuredBlockInput(input)</a> ⇒ <code>boolean</code></dt>
+<dd></dd>
+<dt><a href="#signingStringForBlock">signingStringForBlock(header)</a> ⇒ <code>string</code></dt>
+<dd><p>Canonical signing / digest body (excludes witness material).</p>
+</dd>
+<dt><a href="#blockDigest">blockDigest(header)</a> ⇒ <code>string</code></dt>
+<dd><p>Content digest for merkle leaves / chain digest (includes optional federationWitness).</p>
+</dd>
+<dt><a href="#meetsProofOfWork">meetsProofOfWork(idHex, bits)</a> ⇒ <code>boolean</code></dt>
+<dd><p>Soft playnet PoW: leading zero hex nibbles from <code>bits</code> (integer 0–64).</p>
+</dd>
+<dt><a href="#canonicalTypeCode">canonicalTypeCode(value)</a> ⇒ <code>number</code> | <code>null</code></dt>
+<dd><p>Resolve any opcode / wire name / friendly alias to the numeric AMP type code.</p>
+</dd>
+<dt><a href="#canonicalTypeName">canonicalTypeName(value)</a> ⇒ <code>string</code> | <code>null</code></dt>
+<dd><p>Resolve any opcode / wire name / friendly alias to the SCREAMING_SNAKE wire label.</p>
+</dd>
+<dt><a href="#typeEquals">typeEquals(a, b)</a> ⇒ <code>boolean</code></dt>
+<dd><p>True when two type references name the same AMP opcode (number, wire name, or friendly alias).
+Unregistered string labels only match via exact trim equality.</p>
+</dd>
 </dl>
 
 ## Typedefs
@@ -678,6 +770,94 @@ Get a number of random bytes from the runtime environment.
 | --- | --- | --- | --- |
 | [count] | <code>Number</code> | <code>32</code> | Number of random bytes to retrieve. |
 
+<a name="Block"></a>
+
+## Block
+**Kind**: global class  
+
+* [Block](#Block)
+    * [new Block([input])](#new_Block_new)
+    * _instance_
+        * [.clock](#Block+clock)
+        * [.payload](#Block+payload)
+        * [.toRecord()](#Block+toRecord) ⇒ <code>object</code>
+        * [.sign(key)](#Block+sign) ⇒ <code>string</code>
+        * [.addSignature(pubkey, sig)](#Block+addSignature) ⇒ [<code>Block</code>](#Block)
+        * [.validate([opts])](#Block+validate) ⇒ <code>Object</code>
+    * _static_
+        * [.fromRecord(record)](#Block.fromRecord) ⇒ [<code>Block</code>](#Block)
+
+<a name="new_Block_new"></a>
+
+### new Block([input])
+
+| Param | Type |
+| --- | --- |
+| [input] | <code>object</code> | 
+
+<a name="Block+clock"></a>
+
+### block.clock
+Alias used by Beacon codecs / tests.
+
+**Kind**: instance property of [<code>Block</code>](#Block)  
+<a name="Block+payload"></a>
+
+### block.payload
+Beacon / legacy entry alias for `data`.
+
+**Kind**: instance property of [<code>Block</code>](#Block)  
+<a name="Block+toRecord"></a>
+
+### block.toRecord() ⇒ <code>object</code>
+JSON-safe ledger record.
+
+**Kind**: instance method of [<code>Block</code>](#Block)  
+<a name="Block+sign"></a>
+
+### block.sign(key) ⇒ <code>string</code>
+Author Schnorr over signingString (gossip).
+
+**Kind**: instance method of [<code>Block</code>](#Block)  
+**Returns**: <code>string</code> - signature hex  
+
+| Param | Type |
+| --- | --- |
+| key | [<code>Key</code>](#Key) | 
+
+<a name="Block+addSignature"></a>
+
+### block.addSignature(pubkey, sig) ⇒ [<code>Block</code>](#Block)
+**Kind**: instance method of [<code>Block</code>](#Block)  
+
+| Param | Type |
+| --- | --- |
+| pubkey | <code>string</code> | 
+| sig | <code>string</code> \| <code>Buffer</code> | 
+
+<a name="Block+validate"></a>
+
+### block.validate([opts]) ⇒ <code>Object</code>
+**Kind**: instance method of [<code>Block</code>](#Block)  
+
+| Param | Type |
+| --- | --- |
+| [opts] | <code>Object</code> | 
+| [opts.consensus] | <code>string</code> | 
+| [opts.validators] | <code>Array.&lt;string&gt;</code> | 
+| [opts.threshold] | <code>number</code> | 
+| [opts.bits] | <code>number</code> \| <code>null</code> | 
+| [opts.requireParent] | <code>string</code> \| <code>null</code> | 
+
+<a name="Block.fromRecord"></a>
+
+### Block.fromRecord(record) ⇒ [<code>Block</code>](#Block)
+**Kind**: static method of [<code>Block</code>](#Block)  
+
+| Param | Type |
+| --- | --- |
+| record | <code>object</code> | 
+
 <a name="Bond"></a>
 
 ## Bond ⇐ [<code>Contract</code>](#Contract)
@@ -986,19 +1166,69 @@ Chain.
 
 | Name | Type | Description |
 | --- | --- | --- |
-| name | <code>String</code> | Current name. |
-| indices | <code>Map</code> |  |
-| storage | <code>Storage</code> |  |
+| consensus | <code>String</code> | `pow` | `federation` | `gossip` |
+
+
+* [Chain](#Chain)
+    * [new Chain([origin])](#new_Chain_new)
+    * _instance_
+        * ~~[.seal](#Chain+seal)~~
+        * [.entries](#Chain+entries)
+        * ~~[._isEntrySeal()](#Chain+_isEntrySeal)~~
+        * [.append()](#Chain+append) ⇒ [<code>Promise.&lt;Chain&gt;</code>](#Chain) \| <code>object</code>
+    * _static_
+        * [.create([opts])](#Chain.create) ⇒ [<code>Chain</code>](#Chain)
 
 <a name="new_Chain_new"></a>
 
-### new Chain(genesis)
-Holds an immutable chain of events.
-
+### new Chain([origin])
 
 | Param | Type | Description |
 | --- | --- | --- |
-| genesis | [<code>Vector</code>](#Vector) | Initial state for the chain of events. |
+| [origin] | <code>Object</code> |  |
+| [origin.consensus] | <code>String</code> | `pow` (default), `federation`, or `gossip` |
+| [origin.seal] | <code>String</code> | Deprecated alias for consensus (`block`→`pow`) |
+| [origin.entries] | <code>Array</code> | Seed block records (federation/gossip) |
+| [origin.blocks] | <code>Array</code> | Seed block records |
+
+<a name="Chain+seal"></a>
+
+### ~~chain.seal~~
+***Use consensusMode***
+
+**Kind**: instance property of [<code>Chain</code>](#Chain)  
+<a name="Chain+entries"></a>
+
+### chain.entries
+Cloned block records (federation/gossip).
+
+**Kind**: instance property of [<code>Chain</code>](#Chain)  
+<a name="Chain+_isEntrySeal"></a>
+
+### ~~chain.\_isEntrySeal()~~
+***Deprecated***
+
+**Kind**: instance method of [<code>Chain</code>](#Chain)  
+<a name="Chain+append"></a>
+
+### chain.append() ⇒ [<code>Promise.&lt;Chain&gt;</code>](#Chain) \| <code>object</code>
+Append a Block (or Block-shaped object).
+Policy chains return the tip view synchronously; pow returns a Promise.
+
+**Kind**: instance method of [<code>Chain</code>](#Chain)  
+<a name="Chain.create"></a>
+
+### Chain.create([opts]) ⇒ [<code>Chain</code>](#Chain)
+**Kind**: static method of [<code>Chain</code>](#Chain)  
+
+| Param | Type |
+| --- | --- |
+| [opts] | <code>Object</code> | 
+| [opts.consensus] | <code>string</code> | 
+| [opts.seal] | <code>string</code> | 
+| [opts.genesis] | <code>Object</code> | 
+| [opts.entries] | <code>Array.&lt;Object&gt;</code> | 
+| [opts.blocks] | <code>Array.&lt;Object&gt;</code> | 
 
 <a name="Channel"></a>
 
@@ -2347,7 +2577,7 @@ types for experiments and apps. Prefer importing <strong>leaf</strong> types in 
         * ~~[.Scribe](#Fabric.Scribe)~~
         * [.Vector](#Fabric.Vector) ⇒ <code>function</code>
         * [.Federation](#Fabric.Federation) ⇒ <code>function</code>
-        * [.DistributedExecution](#Fabric.DistributedExecution) ⇒ <code>function</code>
+        * ~~[.DistributedExecution](#Fabric.DistributedExecution) ⇒ <code>object</code>~~
 
 <a name="new_Fabric_new"></a>
 
@@ -2788,7 +3018,10 @@ EventEmitter-only instruction handle; use [State](#State) / [Machine](#Machine) 
 **Kind**: static property of [<code>Fabric</code>](#Fabric)  
 <a name="Fabric.DistributedExecution"></a>
 
-### Fabric.DistributedExecution ⇒ <code>function</code>
+### ~~Fabric.DistributedExecution ⇒ <code>object</code>~~
+***Not a Fabric type. Use [Machine](#Machine), [Program](#Program),
+`functions/beaconFederationSigning`, and `functions/fabricCanonicalJson`.***
+
 **Kind**: static property of [<code>Fabric</code>](#Fabric)  
 <a name="Fabric"></a>
 
@@ -2842,7 +3075,7 @@ EventEmitter-only instruction handle; use [State](#State) / [Machine](#Machine) 
         * ~~[.Scribe](#Fabric.Scribe)~~
         * [.Vector](#Fabric.Vector) ⇒ <code>function</code>
         * [.Federation](#Fabric.Federation) ⇒ <code>function</code>
-        * [.DistributedExecution](#Fabric.DistributedExecution) ⇒ <code>function</code>
+        * ~~[.DistributedExecution](#Fabric.DistributedExecution) ⇒ <code>object</code>~~
 
 <a name="new_Fabric_new"></a>
 
@@ -3283,7 +3516,10 @@ EventEmitter-only instruction handle; use [State](#State) / [Machine](#Machine) 
 **Kind**: static property of [<code>Fabric</code>](#Fabric)  
 <a name="Fabric.DistributedExecution"></a>
 
-### Fabric.DistributedExecution ⇒ <code>function</code>
+### ~~Fabric.DistributedExecution ⇒ <code>object</code>~~
+***Not a Fabric type. Use [Machine](#Machine), [Program](#Program),
+`functions/beaconFederationSigning`, and `functions/fabricCanonicalJson`.***
+
 **Kind**: static property of [<code>Fabric</code>](#Fabric)  
 <a name="Federation"></a>
 
@@ -4691,6 +4927,9 @@ instruction entries from [push](#Fabric+push) — not the same as P2P [Message](
         * [.sip([n])](#Machine+sip) ⇒ <code>Number</code>
         * [.slurp([n])](#Machine+slurp) ⇒ <code>Number</code>
         * [.compute(input)](#Machine+compute) ⇒ [<code>Machine</code>](#Machine)
+        * [.parseManifest(raw, [program])](#Machine+parseManifest) ⇒ <code>Object</code>
+        * [.loadProgram(program)](#Machine+loadProgram) ⇒ [<code>Machine</code>](#Machine)
+        * [.runProgram(program, [input])](#Machine+runProgram) ⇒ <code>Promise.&lt;{ok: boolean, stack: Array, tip: \*, trace: Array, runCommitmentHex: (string\|null), error: (string\|undefined)}&gt;</code>
         * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
         * [.commit()](#Actor+commit) ⇒ <code>String</code>
         * [.export()](#Actor+export) ⇒ <code>Object</code>
@@ -4756,6 +4995,41 @@ so counts should always begin with 0.
 | Param | Type | Description |
 | --- | --- | --- |
 | input | <code>Object</code> | Value to pass as input. |
+
+<a name="Machine+parseManifest"></a>
+
+### machine.parseManifest(raw, [program]) ⇒ <code>Object</code>
+Parse program manifest v1 (former DistributedExecution.parseDistributedManifestV1).
+
+**Kind**: instance method of [<code>Machine</code>](#Machine)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| raw | <code>Object</code> |  |  |
+| [program] | [<code>Program</code>](#Program) \| <code>null</code> | <code></code> | When provided, programId/hash must match. |
+
+<a name="Machine+loadProgram"></a>
+
+### machine.loadProgram(program) ⇒ [<code>Machine</code>](#Machine)
+Load a [Program](#Program) onto this machine (sets script steps).
+
+**Kind**: instance method of [<code>Machine</code>](#Machine)  
+
+| Param | Type |
+| --- | --- |
+| program | [<code>Program</code>](#Program) | 
+
+<a name="Machine+runProgram"></a>
+
+### machine.runProgram(program, [input]) ⇒ <code>Promise.&lt;{ok: boolean, stack: Array, tip: \*, trace: Array, runCommitmentHex: (string\|null), error: (string\|undefined)}&gt;</code>
+Load and compute a Program; return stack tip + run commitment for L1 binding.
+
+**Kind**: instance method of [<code>Machine</code>](#Machine)  
+
+| Param | Type |
+| --- | --- |
+| program | [<code>Program</code>](#Program) \| <code>Object</code> | 
+| [input] | <code>\*</code> | 
 
 <a name="Actor+adopt"></a>
 
@@ -4925,6 +5199,9 @@ Parse a JSON object of Buffer-like entries into an array of [Buffer](Buffer)s (l
         * [.sip([n])](#Machine+sip) ⇒ <code>Number</code>
         * [.slurp([n])](#Machine+slurp) ⇒ <code>Number</code>
         * [.compute(input)](#Machine+compute) ⇒ [<code>Machine</code>](#Machine)
+        * [.parseManifest(raw, [program])](#Machine+parseManifest) ⇒ <code>Object</code>
+        * [.loadProgram(program)](#Machine+loadProgram) ⇒ [<code>Machine</code>](#Machine)
+        * [.runProgram(program, [input])](#Machine+runProgram) ⇒ <code>Promise.&lt;{ok: boolean, stack: Array, tip: \*, trace: Array, runCommitmentHex: (string\|null), error: (string\|undefined)}&gt;</code>
         * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
         * [.commit()](#Actor+commit) ⇒ <code>String</code>
         * [.export()](#Actor+export) ⇒ <code>Object</code>
@@ -4990,6 +5267,41 @@ so counts should always begin with 0.
 | Param | Type | Description |
 | --- | --- | --- |
 | input | <code>Object</code> | Value to pass as input. |
+
+<a name="Machine+parseManifest"></a>
+
+### machine.parseManifest(raw, [program]) ⇒ <code>Object</code>
+Parse program manifest v1 (former DistributedExecution.parseDistributedManifestV1).
+
+**Kind**: instance method of [<code>Machine</code>](#Machine)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| raw | <code>Object</code> |  |  |
+| [program] | [<code>Program</code>](#Program) \| <code>null</code> | <code></code> | When provided, programId/hash must match. |
+
+<a name="Machine+loadProgram"></a>
+
+### machine.loadProgram(program) ⇒ [<code>Machine</code>](#Machine)
+Load a [Program](#Program) onto this machine (sets script steps).
+
+**Kind**: instance method of [<code>Machine</code>](#Machine)  
+
+| Param | Type |
+| --- | --- |
+| program | [<code>Program</code>](#Program) | 
+
+<a name="Machine+runProgram"></a>
+
+### machine.runProgram(program, [input]) ⇒ <code>Promise.&lt;{ok: boolean, stack: Array, tip: \*, trace: Array, runCommitmentHex: (string\|null), error: (string\|undefined)}&gt;</code>
+Load and compute a Program; return stack tip + run commitment for L1 binding.
+
+**Kind**: instance method of [<code>Machine</code>](#Machine)  
+
+| Param | Type |
+| --- | --- |
+| program | [<code>Program</code>](#Program) \| <code>Object</code> | 
+| [input] | <code>\*</code> | 
 
 <a name="Actor+adopt"></a>
 
@@ -5166,6 +5478,10 @@ JSON names. [Message.wireTypeFromFriendly](Message.wireTypeFromFriendly) / [Mess
 maps (<code>WIRE_TYPE_DECODE_ORDER</code>, <code>LEGACY_MESSAGE_TYPE_ALIASES</code>) when aligning <strong>@fabric/http</strong>
 or Hub.</p>
 
+<p><strong>Body (V1)</strong> — Prefer [fromFields](#Message.fromFields) / [toFields](#Message+toFields) with a
+registered body schema (see body codec helpers on this module). Bodies are C-like typed fields, not JSON;
+JSON bridging is <strong>@fabric/http</strong>. See <code>docs/MESSAGE_BODY.md</code>.</p>
+
 <p><strong>Narrative</strong> — See <strong>DEVELOPERS.md</strong> (<em>Actor and Message</em>) and [Actor](#Actor)
 <code>@fileoverview</code>; home HTML is generated from DEVELOPERS.md, while this page comes from
 <code>types/message.js</code>.</p>
@@ -5175,30 +5491,36 @@ or Hub.</p>
 
 * [Message](#Message) ⇐ [<code>Actor</code>](#Actor)
     * [new Message([input])](#new_Message_new)
-    * [._sensitive](#Message+_sensitive)
-    * [.preimage](#Message+preimage)
-    * [.wireType](#Message+wireType)
-    * [.friendlyType](#Message+friendlyType)
-    * [.asRaw()](#Message+asRaw) ⇒ <code>Buffer</code>
-    * [.signWithKey(key)](#Message+signWithKey) ⇒ [<code>Message</code>](#Message)
-    * [.verify()](#Message+verify) ⇒ <code>Boolean</code>
-    * [.verifyWithKey(key)](#Message+verifyWithKey) ⇒ <code>Boolean</code>
-    * [._setSigner(key)](#Message+_setSigner) ⇒ [<code>Message</code>](#Message)
-    * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
-    * [.commit()](#Actor+commit) ⇒ <code>String</code>
-    * [.export()](#Actor+export) ⇒ <code>Object</code>
-    * [.get(path)](#Actor+get) ⇒ <code>Object</code>
-    * [.set(path, value)](#Actor+set) ⇒ <code>Object</code>
-    * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
-    * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
-    * [.toGenericMessage([type])](#Actor+toGenericMessage) ⇒ <code>Object</code>
-    * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
-    * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
-    * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
-    * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
-    * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
-    * [.value([format])](#Actor+value) ⇒ <code>Object</code>
-    * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
+    * _instance_
+        * [._sensitive](#Message+_sensitive)
+        * [._explicitPreimage](#Message+_explicitPreimage)
+        * [.preimage](#Message+preimage)
+        * [.bodyBuffer](#Message+bodyBuffer)
+        * [.wireType](#Message+wireType)
+        * [.friendlyType](#Message+friendlyType)
+        * [.asRaw()](#Message+asRaw) ⇒ <code>Buffer</code>
+        * [.signWithKey(key)](#Message+signWithKey) ⇒ [<code>Message</code>](#Message)
+        * [.verify()](#Message+verify) ⇒ <code>Boolean</code>
+        * [.verifyWithKey(key)](#Message+verifyWithKey) ⇒ <code>Boolean</code>
+        * [._setSigner(key)](#Message+_setSigner) ⇒ [<code>Message</code>](#Message)
+        * [.toFields()](#Message+toFields) ⇒ <code>object</code> \| <code>null</code>
+        * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
+        * [.commit()](#Actor+commit) ⇒ <code>String</code>
+        * [.export()](#Actor+export) ⇒ <code>Object</code>
+        * [.get(path)](#Actor+get) ⇒ <code>Object</code>
+        * [.set(path, value)](#Actor+set) ⇒ <code>Object</code>
+        * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
+        * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
+        * [.toGenericMessage([type])](#Actor+toGenericMessage) ⇒ <code>Object</code>
+        * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
+        * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
+        * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
+        * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
+        * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
+        * [.value([format])](#Actor+value) ⇒ <code>Object</code>
+        * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
+    * _static_
+        * [.fromFields(type, [fields], [opts])](#Message.fromFields) ⇒ [<code>Message</code>](#Message)
 
 <a name="new_Message_new"></a>
 
@@ -5215,16 +5537,31 @@ are accepted for backward compatibility.
 <a name="Message+_sensitive"></a>
 
 ### message.\_sensitive
-When true, body preimage field is zeroed on wire (no SHA256(body) commitment).
+When true, keep wire preimage zeroed (no payment secret). Default public
+messages already use zeros — see [preimage](#Message+preimage) (Lightning-style).
+
+**Kind**: instance property of [<code>Message</code>](#Message)  
+<a name="Message+_explicitPreimage"></a>
+
+### message.\_explicitPreimage
+When true, an explicit HTLC / circuit payment preimage was set — do not clobber.
 
 **Kind**: instance property of [<code>Message</code>](#Message)  
 <a name="Message+preimage"></a>
 
 ### message.preimage
-Optional 32-byte preimage on wire:
-- **All zeros:** sensitive payload (no commitment) or legacy; [Message#sensitive](Message#sensitive) uses this.
-- **SHA256(body):** default for non-sensitive messages (single digest; [Message#hash](Message#hash) is double-SHA256(body)).
-- **Other:** explicit HTLC secret or custom (must match what was signed).
+Optional 32-byte **payment** preimage on wire (Lightning-style):
+- **All zeros (default / public):** no HTLC secret; body integrity is only [Message#hash](Message#hash)
+  (double-SHA256(body)). Do **not** put SHA256(body) here — that collides with circuit HTLC chains.
+- **Non-zero:** explicit payment secret for inventory HTLC / Fabric Circuit hops
+  (`payment_hash = SHA256(preimage)`), covered by the Schnorr signature.
+- [Message#sensitive](Message#sensitive) forces zeros and refuses to clobber an explicit secret.
+
+**Kind**: instance property of [<code>Message</code>](#Message)  
+<a name="Message+bodyBuffer"></a>
+
+### message.bodyBuffer
+Raw body Buffer (preferred over UTF-8 `data` getter for binary field bodies).
 
 **Kind**: instance property of [<code>Message</code>](#Message)  
 <a name="Message+wireType"></a>
@@ -5302,6 +5639,14 @@ Sets the signer for the message.
 | key | <code>Object</code> | Key object with pubkey property. |
 | key.pubkey | <code>String</code> \| <code>Buffer</code> | Public key |
 
+<a name="Message+toFields"></a>
+
+### message.toFields() ⇒ <code>object</code> \| <code>null</code>
+Decode body bytes via the registered field schema for this message type.
+Truncated / malformed peer bodies return {@code null} (protocol violation) instead of throwing.
+
+**Kind**: instance method of [<code>Message</code>](#Message)  
+**Returns**: <code>object</code> \| <code>null</code> - Field map, or null if no schema / empty / undecodable body.  
 <a name="Actor+adopt"></a>
 
 ### message.adopt(changes) ⇒ [<code>Actor</code>](#Actor)
@@ -5449,6 +5794,19 @@ Parse an Object into a corresponding Fabric state.
 | Param | Type | Description |
 | --- | --- | --- |
 | input | <code>Object</code> | Object to read as input. |
+
+<a name="Message.fromFields"></a>
+
+### Message.fromFields(type, [fields], [opts]) ⇒ [<code>Message</code>](#Message)
+Build a Message whose body is encoded from a registered field schema (V1).
+
+**Kind**: static method of [<code>Message</code>](#Message)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| type | <code>string</code> \| <code>number</code> |  | Wire or friendly type name (or opcode). |
+| [fields] | <code>object</code> | <code>{}</code> | Named fields matching the schema. |
+| [opts] | <code>object</code> | <code>{}</code> | Extra Message constructor options (`signer`, `sensitive`, …). |
 
 <a name="Message"></a>
 
@@ -5457,30 +5815,36 @@ Parse an Object into a corresponding Fabric state.
 
 * [Message](#Message)
     * [new Message([input])](#new_Message_new)
-    * [._sensitive](#Message+_sensitive)
-    * [.preimage](#Message+preimage)
-    * [.wireType](#Message+wireType)
-    * [.friendlyType](#Message+friendlyType)
-    * [.asRaw()](#Message+asRaw) ⇒ <code>Buffer</code>
-    * [.signWithKey(key)](#Message+signWithKey) ⇒ [<code>Message</code>](#Message)
-    * [.verify()](#Message+verify) ⇒ <code>Boolean</code>
-    * [.verifyWithKey(key)](#Message+verifyWithKey) ⇒ <code>Boolean</code>
-    * [._setSigner(key)](#Message+_setSigner) ⇒ [<code>Message</code>](#Message)
-    * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
-    * [.commit()](#Actor+commit) ⇒ <code>String</code>
-    * [.export()](#Actor+export) ⇒ <code>Object</code>
-    * [.get(path)](#Actor+get) ⇒ <code>Object</code>
-    * [.set(path, value)](#Actor+set) ⇒ <code>Object</code>
-    * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
-    * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
-    * [.toGenericMessage([type])](#Actor+toGenericMessage) ⇒ <code>Object</code>
-    * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
-    * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
-    * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
-    * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
-    * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
-    * [.value([format])](#Actor+value) ⇒ <code>Object</code>
-    * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
+    * _instance_
+        * [._sensitive](#Message+_sensitive)
+        * [._explicitPreimage](#Message+_explicitPreimage)
+        * [.preimage](#Message+preimage)
+        * [.bodyBuffer](#Message+bodyBuffer)
+        * [.wireType](#Message+wireType)
+        * [.friendlyType](#Message+friendlyType)
+        * [.asRaw()](#Message+asRaw) ⇒ <code>Buffer</code>
+        * [.signWithKey(key)](#Message+signWithKey) ⇒ [<code>Message</code>](#Message)
+        * [.verify()](#Message+verify) ⇒ <code>Boolean</code>
+        * [.verifyWithKey(key)](#Message+verifyWithKey) ⇒ <code>Boolean</code>
+        * [._setSigner(key)](#Message+_setSigner) ⇒ [<code>Message</code>](#Message)
+        * [.toFields()](#Message+toFields) ⇒ <code>object</code> \| <code>null</code>
+        * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
+        * [.commit()](#Actor+commit) ⇒ <code>String</code>
+        * [.export()](#Actor+export) ⇒ <code>Object</code>
+        * [.get(path)](#Actor+get) ⇒ <code>Object</code>
+        * [.set(path, value)](#Actor+set) ⇒ <code>Object</code>
+        * [.stream([pipe])](#Actor+stream) ⇒ <code>TransformStream</code>
+        * [.toBuffer()](#Actor+toBuffer) ⇒ <code>Buffer</code>
+        * [.toGenericMessage([type])](#Actor+toGenericMessage) ⇒ <code>Object</code>
+        * [.toObject()](#Actor+toObject) ⇒ <code>Object</code>
+        * [.pause()](#Actor+pause) ⇒ [<code>Actor</code>](#Actor)
+        * [.serialize()](#Actor+serialize) ⇒ <code>String</code>
+        * [.sign()](#Actor+sign) ⇒ [<code>Actor</code>](#Actor)
+        * [.unpause()](#Actor+unpause) ⇒ [<code>Actor</code>](#Actor)
+        * [.value([format])](#Actor+value) ⇒ <code>Object</code>
+        * [._readObject(input)](#Actor+_readObject) ⇒ <code>Object</code>
+    * _static_
+        * [.fromFields(type, [fields], [opts])](#Message.fromFields) ⇒ [<code>Message</code>](#Message)
 
 <a name="new_Message_new"></a>
 
@@ -5497,16 +5861,31 @@ are accepted for backward compatibility.
 <a name="Message+_sensitive"></a>
 
 ### message.\_sensitive
-When true, body preimage field is zeroed on wire (no SHA256(body) commitment).
+When true, keep wire preimage zeroed (no payment secret). Default public
+messages already use zeros — see [preimage](#Message+preimage) (Lightning-style).
+
+**Kind**: instance property of [<code>Message</code>](#Message)  
+<a name="Message+_explicitPreimage"></a>
+
+### message.\_explicitPreimage
+When true, an explicit HTLC / circuit payment preimage was set — do not clobber.
 
 **Kind**: instance property of [<code>Message</code>](#Message)  
 <a name="Message+preimage"></a>
 
 ### message.preimage
-Optional 32-byte preimage on wire:
-- **All zeros:** sensitive payload (no commitment) or legacy; [Message#sensitive](Message#sensitive) uses this.
-- **SHA256(body):** default for non-sensitive messages (single digest; [Message#hash](Message#hash) is double-SHA256(body)).
-- **Other:** explicit HTLC secret or custom (must match what was signed).
+Optional 32-byte **payment** preimage on wire (Lightning-style):
+- **All zeros (default / public):** no HTLC secret; body integrity is only [Message#hash](Message#hash)
+  (double-SHA256(body)). Do **not** put SHA256(body) here — that collides with circuit HTLC chains.
+- **Non-zero:** explicit payment secret for inventory HTLC / Fabric Circuit hops
+  (`payment_hash = SHA256(preimage)`), covered by the Schnorr signature.
+- [Message#sensitive](Message#sensitive) forces zeros and refuses to clobber an explicit secret.
+
+**Kind**: instance property of [<code>Message</code>](#Message)  
+<a name="Message+bodyBuffer"></a>
+
+### message.bodyBuffer
+Raw body Buffer (preferred over UTF-8 `data` getter for binary field bodies).
 
 **Kind**: instance property of [<code>Message</code>](#Message)  
 <a name="Message+wireType"></a>
@@ -5584,6 +5963,14 @@ Sets the signer for the message.
 | key | <code>Object</code> | Key object with pubkey property. |
 | key.pubkey | <code>String</code> \| <code>Buffer</code> | Public key |
 
+<a name="Message+toFields"></a>
+
+### message.toFields() ⇒ <code>object</code> \| <code>null</code>
+Decode body bytes via the registered field schema for this message type.
+Truncated / malformed peer bodies return {@code null} (protocol violation) instead of throwing.
+
+**Kind**: instance method of [<code>Message</code>](#Message)  
+**Returns**: <code>object</code> \| <code>null</code> - Field map, or null if no schema / empty / undecodable body.  
 <a name="Actor+adopt"></a>
 
 ### message.adopt(changes) ⇒ [<code>Actor</code>](#Actor)
@@ -5731,6 +6118,19 @@ Parse an Object into a corresponding Fabric state.
 | Param | Type | Description |
 | --- | --- | --- |
 | input | <code>Object</code> | Object to read as input. |
+
+<a name="Message.fromFields"></a>
+
+### Message.fromFields(type, [fields], [opts]) ⇒ [<code>Message</code>](#Message)
+Build a Message whose body is encoded from a registered field schema (V1).
+
+**Kind**: static method of [<code>Message</code>](#Message)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| type | <code>string</code> \| <code>number</code> |  | Wire or friendly type name (or opcode). |
+| [fields] | <code>object</code> | <code>{}</code> | Named fields matching the schema. |
+| [opts] | <code>object</code> | <code>{}</code> | Extra Message constructor options (`signer`, `sensitive`, …). |
 
 <a name="Peer"></a>
 
@@ -5744,18 +6144,36 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
 
 * [Peer](#Peer) ⇐ [<code>Service</code>](#Service)
     * [new Peer([config])](#new_Peer_new)
+    * [.pendingDocumentRequests](#Peer+pendingDocumentRequests)
+    * [._authorizedDocumentKeyReveals](#Peer+_authorizedDocumentKeyReveals)
+    * [._contractPatchAllowList](#Peer+_contractPatchAllowList)
+    * [.blobTransfers](#Peer+blobTransfers)
+    * [.pendingSealedDeliveries](#Peer+pendingSealedDeliveries)
+    * [._documentRelayRoutes](#Peer+_documentRelayRoutes)
     * [._inboundNoiseStaticPubkeyByAddress](#Peer+_inboundNoiseStaticPubkeyByAddress)
     * [.messages](#Peer+messages)
+    * [._logicalRegisterOnce](#Peer+_logicalRegisterOnce) : <code>Map.&lt;string, {type: string, signer: (string\|null), at: number}&gt;</code>
     * [._gossipPayloadSeen](#Peer+_gossipPayloadSeen)
     * [._gossipRelayByOrigin](#Peer+_gossipRelayByOrigin)
+    * [._chatRelayByOrigin](#Peer+_chatRelayByOrigin)
     * [._peeringPayloadSeen](#Peer+_peeringPayloadSeen)
     * [._peeringRelayByOrigin](#Peer+_peeringRelayByOrigin)
     * [._wireInboundByOrigin](#Peer+_wireInboundByOrigin)
+    * [._logicalDupPenaltyByOrigin](#Peer+_logicalDupPenaltyByOrigin)
+    * [._peerBans](#Peer+_peerBans) : <code>Map.&lt;string, {until: number, reason: string}&gt;</code>
     * [._candidateKeys](#Peer+_candidateKeys)
     * [._outboundDialTargets](#Peer+_outboundDialTargets)
     * ~~[.address](#Peer+address)~~
     * [._gossipPayloadDedupKey(msg)](#Peer+_gossipPayloadDedupKey) ⇒ <code>string</code>
+    * [._logicalRegistrationKey(type, object)](#Peer+_logicalRegistrationKey) ⇒ <code>string</code> \| <code>null</code>
+    * [._claimLogicalRegistration(type, object, [signerPubkeyHex])](#Peer+_claimLogicalRegistration) ⇒ <code>Object</code>
+    * [._applyPeerMisbehavior(originName, reason, [opts])](#Peer+_applyPeerMisbehavior)
+    * [._banPeer(originName, reason)](#Peer+_banPeer)
+    * [._isPeerBanned(originName, [pubkeyHex])](#Peer+_isPeerBanned) ⇒ <code>boolean</code>
+    * [._logicalRegisterDuplicateMisbehavior(originName, type, claim, [signerPubkeyHex])](#Peer+_logicalRegisterDuplicateMisbehavior)
+    * [._claimLogicalRegistrationOrPunish(type, object, [signerPubkeyHex], [originName])](#Peer+_claimLogicalRegistrationOrPunish) ⇒ <code>Object</code>
     * [._gossipRateLimitAllow(originName)](#Peer+_gossipRateLimitAllow) ⇒ <code>boolean</code>
+    * [._chatRateLimitAllow(originName)](#Peer+_chatRateLimitAllow) ⇒ <code>boolean</code>
     * [._wireInboundCreditCost(wireType)](#Peer+_wireInboundCreditCost) ⇒ <code>number</code>
     * [._wireInboundRateAllowPeer(originName, creditCost)](#Peer+_wireInboundRateAllowPeer) ⇒ <code>boolean</code>
     * [._derankPeerForWireTraffic(originName, penalty, reason)](#Peer+_derankPeerForWireTraffic)
@@ -5763,25 +6181,50 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [._peeringRateLimitAllow(originName)](#Peer+_peeringRateLimitAllow) ⇒ <code>boolean</code>
     * [._enqueuePeeringCandidate(host, port)](#Peer+_enqueuePeeringCandidate)
     * [.broadcast(message)](#Peer+broadcast)
+    * [._localXOnlyPeerId()](#Peer+_localXOnlyPeerId) ⇒ <code>Buffer</code>
+    * [._resolveAddressByXOnly(peerId)](#Peer+_resolveAddressByXOnly) ⇒ <code>string</code> \| <code>null</code>
+    * [.sendOnion(path, payload)](#Peer+sendOnion) ⇒ <code>boolean</code>
     * [.relayFromTrustedPeers(origin, message, [minScoreExclusive])](#Peer+relayFromTrustedPeers)
     * [._registryScoreForConnectionAddress(connAddress)](#Peer+_registryScoreForConnectionAddress) ⇒ <code>number</code>
     * [._registryScoreForFlushChainSender(connAddress, senderPubkeyHex)](#Peer+_registryScoreForFlushChainSender) ⇒ <code>number</code>
     * [.sendFlushChainToTrustedPeers(object)](#Peer+sendFlushChainToTrustedPeers) ⇒ <code>number</code>
     * [._connect(target)](#Peer+_connect)
+    * [._announceAlias(alias, [origin], [_socket])](#Peer+_announceAlias)
     * [._loadPeerRegistry()](#Peer+_loadPeerRegistry) ⇒ <code>Promise.&lt;void&gt;</code>
     * [._savePeerRegistry()](#Peer+_savePeerRegistry)
     * [._flushChainSenderPubkeyHex()](#Peer+_flushChainSenderPubkeyHex)
     * [._upsertPeerRegistry(address, [updates])](#Peer+_upsertPeerRegistry)
     * [._fillPeerSlots()](#Peer+_fillPeerSlots) ⇒ [<code>Peer</code>](#Peer)
-    * [._handleFabricMessage(buffer)](#Peer+_handleFabricMessage) ⇒ [<code>Peer</code>](#Peer)
+    * [._handleFabricMessage(buffer, [origin], [socket], [options])](#Peer+_handleFabricMessage) ⇒ [<code>Peer</code>](#Peer)
+    * [._relayWirePayload()](#Peer+_relayWirePayload)
+    * [._relayGenericPayload()](#Peer+_relayGenericPayload)
     * [._buildDocumentParsedForPublish(documentId, content)](#Peer+_buildDocumentParsedForPublish) ⇒ <code>Object</code>
+    * [._collectDocumentCatalogInventoryItems([req])](#Peer+_collectDocumentCatalogInventoryItems) ⇒ <code>Array.&lt;object&gt;</code>
+    * [._sendLocalInventoryDocumentsWireResponse(originName, items, [opts])](#Peer+_sendLocalInventoryDocumentsWireResponse) ⇒ <code>boolean</code>
     * [._respondInventoryFromLocalDocuments(message, origin)](#Peer+_respondInventoryFromLocalDocuments) ⇒ <code>boolean</code>
-    * [._sendP2pFileSendToPeer(documentId, peerAddress)](#Peer+_sendP2pFileSendToPeer) ⇒ <code>boolean</code>
-    * [.sendDocumentFileToPeer(documentId, peerAddress)](#Peer+sendDocumentFileToPeer) ⇒ <code>boolean</code>
+    * [._getDocumentSealedMeta(documentId)](#Peer+_getDocumentSealedMeta) ⇒ <code>object</code> \| <code>null</code>
+    * [._sendP2pFileSendToPeer(documentId, peerAddress, [opts])](#Peer+_sendP2pFileSendToPeer) ⇒ <code>boolean</code>
+    * [._sendDocumentContentKeyReveal(documentId, peerAddress, [opts])](#Peer+_sendDocumentContentKeyReveal) ⇒ <code>boolean</code>
+    * [._ingestP2pFileSend(message, origin)](#Peer+_ingestP2pFileSend) ⇒ <code>Object</code>
+    * [._handleDocumentContentKeyReveal(reveal, [origin])](#Peer+_handleDocumentContentKeyReveal) ⇒ <code>Object</code>
+    * [.openSealedDeliveryWithPreimage(documentId, preimageHex)](#Peer+openSealedDeliveryWithPreimage) ⇒ <code>Object</code>
+    * [.sendDocumentFileToPeer(documentId, peerAddress, [opts])](#Peer+sendDocumentFileToPeer) ⇒ <code>boolean</code>
+    * [.requestPeerInventory(peerAddress, [opts])](#Peer+requestPeerInventory) ⇒ <code>boolean</code>
+    * [.requestDocument(documentId, [peerAddress], [opts])](#Peer+requestDocument) ⇒ <code>boolean</code>
+    * [._attachHtlcOfferToItem(item, req, contentHashHex, amountSats)](#Peer+_attachHtlcOfferToItem) ⇒ <code>object</code> \| <code>null</code>
+    * [.listPendingDocumentRequests()](#Peer+listPendingDocumentRequests) ⇒ <code>Array.&lt;object&gt;</code>
+    * [.approveDocumentRequest(requestKey)](#Peer+approveDocumentRequest) ⇒ <code>Object</code>
+    * [.authorizeDocumentKeyReveal(opts)](#Peer+authorizeDocumentKeyReveal) ⇒ <code>Object</code>
+    * [._mayRevealDocumentContentKey(documentId, paymentHashHex, parsed, [opts])](#Peer+_mayRevealDocumentContentKey) ⇒ <code>boolean</code>
+    * [.denyDocumentRequest(requestKey)](#Peer+denyDocumentRequest) ⇒ <code>Object</code>
     * [._buildPublishDocumentWireBuffers(documentId, body, rateSats)](#Peer+_buildPublishDocumentWireBuffers) ⇒ <code>Array.&lt;Buffer&gt;</code>
     * [._announceLocalDocumentsToPeer(peerAddress)](#Peer+_announceLocalDocumentsToPeer)
     * [._publishDocument(documentId, [content], [rateSats])](#Peer+_publishDocument)
     * [._handleDocumentRequestWire(message, origin, socket)](#Peer+_handleDocumentRequestWire)
+    * [._privateRelayDocumentRequest(parsed, origin, [originalMessage])](#Peer+_privateRelayDocumentRequest)
+    * [._maybeReverseRelayFileSend(fileObj, origin)](#Peer+_maybeReverseRelayFileSend) ⇒ <code>boolean</code>
+    * [._mergeContractPatchAllowList(contractId, object, publisherPubkeyHex)](#Peer+_mergeContractPatchAllowList)
+    * [._signerMayPatchContract(contractId, signerPubkeyHex)](#Peer+_signerMayPatchContract) ⇒ <code>boolean</code>
     * [._startFabricPingKeepalive(socket, encryptWrite)](#Peer+_startFabricPingKeepalive)
     * [.start()](#Peer+start)
     * [.stop()](#Peer+stop)
@@ -5837,6 +6280,43 @@ Create an instance of [Peer](#Peer).
 | [config.listenPortAttempts] | <code>Number</code> | <code>20</code> | When the listen port is in use (`EADDRINUSE`),   try the next port up to this many times (same host). |
 | [config.peers] | <code>Array</code> | <code>[]</code> | List of initial peers. |
 
+<a name="Peer+pendingDocumentRequests"></a>
+
+### peer.pendingDocumentRequests
+Pending DOCUMENT_REQUEST entries when [Peer#settings.autoFulfillDocumentRequests](Peer#settings.autoFulfillDocumentRequests) is false.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_authorizedDocumentKeyReveals"></a>
+
+### peer.\_authorizedDocumentKeyReveals
+Authorized sealed-document key reveals: `"documentId|paymentHashHex"` → meta.
+Populated only after verified settlement (never from public hash echo).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_contractPatchAllowList"></a>
+
+### peer.\_contractPatchAllowList
+contractId → Set of lowercase compressed pubkeys allowed to apply state ops.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+blobTransfers"></a>
+
+### peer.blobTransfers
+Buyer-side verified blob reassembly (DocumentBlobIndex).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+pendingSealedDeliveries"></a>
+
+### peer.pendingSealedDeliveries
+Ciphertext awaiting content-key reveal: documentId → meta.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_documentRelayRoutes"></a>
+
+### peer.\_documentRelayRoutes
+Private reverse routes for rewritten DocumentRequests (never gossiped).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+_inboundNoiseStaticPubkeyByAddress"></a>
 
 ### peer.\_inboundNoiseStaticPubkeyByAddress
@@ -5847,6 +6327,13 @@ Inbound address -> NOISE static pubkey hex (FLUSH_CHAIN allowlist only; never fo
 
 ### peer.messages
 Wire-envelope dedup (SHA-256 of full buffer); FIFO-capped via [Peer#_rememberWireHash](Peer#_rememberWireHash).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_logicalRegisterOnce"></a>
+
+### peer.\_logicalRegisterOnce : <code>Map.&lt;string, {type: string, signer: (string\|null), at: number}&gt;</code>
+Logical first-writer-wins registrations (content-addressed keys).
+Catches re-signed duplicates of CONTRACT_PUBLISH / DOCUMENT_PUBLISH / etc.
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+_gossipPayloadSeen"></a>
@@ -5861,10 +6348,16 @@ Logical gossip payload dedup (excludes signature / hop churn).
 origin address → { count, windowStart } for gossip relay rate limiting.
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_chatRelayByOrigin"></a>
+
+### peer.\_chatRelayByOrigin
+origin address → { count, windowStart } for chat mesh relay rate limiting.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+_peeringPayloadSeen"></a>
 
 ### peer.\_peeringPayloadSeen
-Logical peering-offer payload dedup (ignores per-hop re-signing).
+Logical peering-offer payload dedup (ignores advisory peeringHop; frames relay as-is).
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+_peeringRelayByOrigin"></a>
@@ -5877,6 +6370,18 @@ origin address → { count, windowStart } for peering-offer relay rate limiting.
 
 ### peer.\_wireInboundByOrigin
 `host:port` → { credits, windowStart, penalized } — inbound wire flood / de-rank (per peer).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_logicalDupPenaltyByOrigin"></a>
+
+### peer.\_logicalDupPenaltyByOrigin
+`host:port` → { windowStart, penalized } — soft logical-duplicate derank once per window.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_peerBans"></a>
+
+### peer.\_peerBans : <code>Map.&lt;string, {until: number, reason: string}&gt;</code>
+Temporary bans after hard misbehavior: `addr:<host:port>` or `pk:<hex>` → { until, reason }.
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+_candidateKeys"></a>
@@ -5903,7 +6408,8 @@ see `peer not connected` while an ephemeral inbound key remains.
 <a name="Peer+_gossipPayloadDedupKey"></a>
 
 ### peer.\_gossipPayloadDedupKey(msg) ⇒ <code>string</code>
-Stable id for gossip *logical* content (ignores `gossipHop` and wire signature changes).
+Stable id for gossip *logical* content (ignores advisory `gossipHop`; frames are forwarded bit-identical).
+Mesh frames are relayed bit-identical; wire-hash dedup also prevents loops.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: <code>string</code> - hex sha256  
@@ -5912,9 +6418,111 @@ Stable id for gossip *logical* content (ignores `gossipHop` and wire signature c
 | --- | --- | --- |
 | msg | <code>object</code> | Generic message (`type`, `object`, …) |
 
+<a name="Peer+_logicalRegistrationKey"></a>
+
+### peer.\_logicalRegistrationKey(type, object) ⇒ <code>string</code> \| <code>null</code>
+Content-addressed key for first-writer-wins registration types.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| type | <code>string</code> | wire / generic type name |
+| object | <code>object</code> \| <code>null</code> \| <code>undefined</code> | message body / object |
+
+<a name="Peer+_claimLogicalRegistration"></a>
+
+### peer.\_claimLogicalRegistration(type, object, [signerPubkeyHex]) ⇒ <code>Object</code>
+Claim a logical registration key (first writer wins).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| type | <code>string</code> |  | 
+| object | <code>object</code> \| <code>null</code> \| <code>undefined</code> |  | 
+| [signerPubkeyHex] | <code>string</code> \| <code>null</code> | <code>null</code> | 
+
+<a name="Peer+_applyPeerMisbehavior"></a>
+
+### peer.\_applyPeerMisbehavior(originName, reason, [opts])
+Lower registry score and optionally destroy the TCP connection (hard misbehavior).
+Hard disconnects also install a temporary ban (address + known pubkey).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| originName | <code>string</code> \| <code>null</code> \| <code>undefined</code> | 
+| reason | <code>string</code> | 
+| [opts] | <code>Object</code> | 
+| [opts.penalty] | <code>number</code> | 
+| [opts.disconnect] | <code>boolean</code> | 
+
+<a name="Peer+_banPeer"></a>
+
+### peer.\_banPeer(originName, reason)
+Ban a connection address (and mapped pubkey when known) for [Peer#settings.peerScore.banTtlMs](Peer#settings.peerScore.banTtlMs).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| originName | <code>string</code> | 
+| reason | <code>string</code> | 
+
+<a name="Peer+_isPeerBanned"></a>
+
+### peer.\_isPeerBanned(originName, [pubkeyHex]) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| originName | <code>string</code> \| <code>null</code> \| <code>undefined</code> | <code>null</code> | 
+| [pubkeyHex] | <code>string</code> \| <code>null</code> \| <code>undefined</code> | <code>null</code> | 
+
+<a name="Peer+_logicalRegisterDuplicateMisbehavior"></a>
+
+### peer.\_logicalRegisterDuplicateMisbehavior(originName, type, claim, [signerPubkeyHex])
+Soft (once/window) or hijack (CONTRACT_PUBLISH other signer) penalty for logical duplicates.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| originName | <code>string</code> \| <code>null</code> \| <code>undefined</code> | 
+| type | <code>string</code> | 
+| claim | <code>Object</code> | 
+| [claim.prior] | <code>Object</code> \| <code>null</code> | 
+| [claim.prior.signer] | <code>string</code> \| <code>null</code> | 
+| [signerPubkeyHex] | <code>string</code> \| <code>null</code> | 
+
+<a name="Peer+_claimLogicalRegistrationOrPunish"></a>
+
+### peer.\_claimLogicalRegistrationOrPunish(type, object, [signerPubkeyHex], [originName]) ⇒ <code>Object</code>
+Claim logical registration; on duplicate, apply misbehavior and return claim.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| type | <code>string</code> |  | 
+| object | <code>object</code> \| <code>null</code> \| <code>undefined</code> |  | 
+| [signerPubkeyHex] | <code>string</code> \| <code>null</code> | <code>null</code> | 
+| [originName] | <code>string</code> \| <code>null</code> | <code>null</code> | 
+
 <a name="Peer+_gossipRateLimitAllow"></a>
 
 ### peer.\_gossipRateLimitAllow(originName) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| originName | <code>string</code> | Connection id (e.g. `host:port`) |
+
+<a name="Peer+_chatRateLimitAllow"></a>
+
+### peer.\_chatRateLimitAllow(originName) ⇒ <code>boolean</code>
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
 | Param | Type | Description |
@@ -5961,7 +6569,7 @@ Lower registry [Peer#knownPeers](Peer#knownPeers) score for a connection (Bitcoi
 <a name="Peer+_peeringOfferPayloadDedupKey"></a>
 
 ### peer.\_peeringOfferPayloadDedupKey(msg) ⇒ <code>string</code>
-Stable id for peering-offer *logical* content (ignores `peeringHop` and wire signature changes).
+Stable id for peering-offer *logical* content (ignores advisory `peeringHop`).
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: <code>string</code> - hex sha256  
@@ -6001,6 +6609,40 @@ Write a [Buffer](Buffer) to all connected peers.
 | Param | Type | Description |
 | --- | --- | --- |
 | message | <code>Buffer</code> | Message buffer to send. |
+
+<a name="Peer+_localXOnlyPeerId"></a>
+
+### peer.\_localXOnlyPeerId() ⇒ <code>Buffer</code>
+Local node x-only pubkey (AMP {@code author} / {@code P2P_FORWARD.nextPeer} encoding).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+<a name="Peer+_resolveAddressByXOnly"></a>
+
+### peer.\_resolveAddressByXOnly(peerId) ⇒ <code>string</code> \| <code>null</code>
+Resolve a live connection address for an x-only (or compressed) peer pubkey.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>string</code> \| <code>null</code> - connection key ({@code host:port}) or null  
+
+| Param | Type |
+| --- | --- |
+| peerId | <code>Buffer</code> \| <code>string</code> | 
+
+<a name="Peer+sendOnion"></a>
+
+### peer.sendOnion(path, payload) ⇒ <code>boolean</code>
+Send {@code payload} along a source-routed onion path of Fabric peer pubkeys.
+Builds nested {@code P2P_FORWARD} layers and writes the outer frame only to
+{@code path[0]} (immediate hop). Destination learns the last hop's IP, not
+the originator's. See [module:@fabric/core/functions/fabricOnion](module:@fabric/core/functions/fabricOnion).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>boolean</code> - true if the outer frame was written to the first hop  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>Array.&lt;(Buffer\|string)&gt;</code> | hop pubkeys; first = next TCP peer, last = deliverer |
+| payload | [<code>Message</code>](#Message) \| <code>Buffer</code> | innermost application Message (should already be signed) |
 
 <a name="Peer+relayFromTrustedPeers"></a>
 
@@ -6073,6 +6715,20 @@ Open a Fabric connection to the target address and initiate the Fabric Protocol.
 | --- | --- | --- |
 | target | <code>String</code> | Target address. |
 
+<a name="Peer+_announceAlias"></a>
+
+### peer.\_announceAlias(alias, [origin], [_socket])
+Broadcast a personal nickname as first-class [P2P_PEER_ALIAS](P2P_PEER_ALIAS)
+(UTF-8 body = nickname text only).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| alias | <code>string</code> |  |  |
+| [origin] | <code>Object</code> \| <code>null</code> | <code></code> | Optional origin to exclude from broadcast |
+| [_socket] | <code>\*</code> | <code></code> | Unused (API compatibility) |
+
 <a name="Peer+_loadPeerRegistry"></a>
 
 ### peer.\_loadPeerRegistry() ⇒ <code>Promise.&lt;void&gt;</code>
@@ -6113,16 +6769,37 @@ Attempt to fill available connection slots with new peers.
 **Returns**: [<code>Peer</code>](#Peer) - Instance of the peer.  
 <a name="Peer+_handleFabricMessage"></a>
 
-### peer.\_handleFabricMessage(buffer) ⇒ [<code>Peer</code>](#Peer)
+### peer.\_handleFabricMessage(buffer, [origin], [socket], [options]) ⇒ [<code>Peer</code>](#Peer)
 Handle a Fabric [Message](#Message) buffer.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: [<code>Peer</code>](#Peer) - Instance of the Peer.  
 
-| Param | Type |
-| --- | --- |
-| buffer | <code>Buffer</code> | 
+| Param | Type | Default |
+| --- | --- | --- |
+| buffer | <code>Buffer</code> |  | 
+| [origin] | <code>object</code> \| <code>null</code> | <code></code> | 
+| [socket] | <code>object</code> \| <code>null</code> | <code></code> | 
+| [options] | <code>Object</code> | <code></code> | 
+| [options.relayDepth] | <code>number</code> |  | 
+| [options.skipRelayFlood] | <code>boolean</code> |  | 
 
+<a name="Peer+_relayWirePayload"></a>
+
+### peer.\_relayWirePayload()
+Originate a locally signed {@code P2P_RELAY} envelope around already-signed inner AMP bytes.
+Used only when *this* agent starts a flood (e.g. inventory without a prior wire frame).
+Inbound {@code P2P_RELAY} must never call this — forward the original outer bit-identical.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+<a name="Peer+_relayGenericPayload"></a>
+
+### peer.\_relayGenericPayload()
+Relay inventory / generic payloads. When {@code wireMessage} is present, forward it
+bit-identical (no hop re-sign). Otherwise the local agent originates a new signed frame
+and may wrap it in {@code P2P_RELAY} for mesh delivery.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
 <a name="Peer+_buildDocumentParsedForPublish"></a>
 
 ### peer.\_buildDocumentParsedForPublish(documentId, content) ⇒ <code>Object</code>
@@ -6135,6 +6812,32 @@ Build hub-compatible document metadata for [purchaseContentHashHex](purchaseCont
 | --- | --- | --- |
 | documentId | <code>String</code> |  |
 | content | <code>String</code> | UTF-8 body |
+
+<a name="Peer+_collectDocumentCatalogInventoryItems"></a>
+
+### peer.\_collectDocumentCatalogInventoryItems([req]) ⇒ <code>Array.&lt;object&gt;</code>
+Items for Hub-style `kind: 'documents'` inventory (Fabric UI / `@fabric/hub` merge expects `object.kind`).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [req] | <code>Object</code> | request object subset |
+
+<a name="Peer+_sendLocalInventoryDocumentsWireResponse"></a>
+
+### peer.\_sendLocalInventoryDocumentsWireResponse(originName, items, [opts]) ⇒ <code>boolean</code>
+Write [INVENTORY_RESPONSE](INVENTORY_RESPONSE) (`P2P_INVENTORY_RESPONSE`) compatible with `@fabric/hub` Bridge merging
+(body includes `kind: 'documents'` so the browser can merge `object.items`).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| originName | <code>string</code> | connection key [Peer#connections](Peer#connections) |
+| items | <code>Array.&lt;object&gt;</code> |  |
+| [opts] | <code>Object</code> |  |
+| [opts.allowEmpty] | <code>boolean</code> |  |
 
 <a name="Peer+_respondInventoryFromLocalDocuments"></a>
 
@@ -6149,22 +6852,90 @@ Reply to `INVENTORY_REQUEST` with `INVENTORY_RESPONSE` built from local document
 | message | <code>Object</code> | Generic body from [Peer#_handleGenericMessage](Peer#_handleGenericMessage) |
 | origin | <code>Object</code> |  |
 
+<a name="Peer+_getDocumentSealedMeta"></a>
+
+### peer.\_getDocumentSealedMeta(documentId) ⇒ <code>object</code> \| <code>null</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| documentId | <code>string</code> | 
+
 <a name="Peer+_sendP2pFileSendToPeer"></a>
 
-### peer.\_sendP2pFileSendToPeer(documentId, peerAddress) ⇒ <code>boolean</code>
-Send a locally stored document to a connected peer as `P2P_FILE_SEND`.
+### peer.\_sendP2pFileSendToPeer(documentId, peerAddress, [opts]) ⇒ <code>boolean</code>
+Send a locally stored document as indexed, wire-sized `P2P_FILE_SEND` blobs.
+Priced sealed docs send **ciphertext** (safe without the content key).
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
-**Returns**: <code>boolean</code> - true if the payload was written  
+**Returns**: <code>boolean</code> - true if at least one frame was written  
 
 | Param | Type | Description |
 | --- | --- | --- |
 | documentId | <code>string</code> |  |
 | peerAddress | <code>string</code> | connection key in [Peer#connections](Peer#connections) |
+| [opts] | <code>Object</code> |  |
+| [opts.blobIndex] | <code>number</code> |  |
+| [opts.revealKey] | <code>boolean</code> |  |
+| [opts.settlementId] | <code>string</code> |  |
+| [opts.routeId] | <code>string</code> |  |
+
+<a name="Peer+_sendDocumentContentKeyReveal"></a>
+
+### peer.\_sendDocumentContentKeyReveal(documentId, peerAddress, [opts]) ⇒ <code>boolean</code>
+Reveal the AES content key to a peer (only after payment-hash match).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| documentId | <code>string</code> | 
+| peerAddress | <code>string</code> | 
+| [opts] | <code>Object</code> | 
+| [opts.settlementId] | <code>string</code> | 
+
+<a name="Peer+_ingestP2pFileSend"></a>
+
+### peer.\_ingestP2pFileSend(message, origin) ⇒ <code>Object</code>
+Verify / accumulate an inbound `P2P_FILE_SEND` against the DocumentBlobIndex rules.
+Sealed frames store ciphertext until [KEY_REVEAL_TYPE](KEY_REVEAL_TYPE).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| message | [<code>Message</code>](#Message) \| <code>Object</code> | 
+| origin | <code>Object</code> | 
+| [origin.name] | <code>string</code> | 
+
+<a name="Peer+_handleDocumentContentKeyReveal"></a>
+
+### peer.\_handleDocumentContentKeyReveal(reveal, [origin]) ⇒ <code>Object</code>
+Apply a content-key reveal to a pending sealed delivery.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| reveal | <code>Object</code> |  | 
+| [origin] | <code>Object</code> | <code></code> | 
+| [origin.name] | <code>string</code> |  | 
+
+<a name="Peer+openSealedDeliveryWithPreimage"></a>
+
+### peer.openSealedDeliveryWithPreimage(documentId, preimageHex) ⇒ <code>Object</code>
+Open a pending sealed delivery using an HTLC claim preimage (on-chain witness).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| documentId | <code>string</code> | 
+| preimageHex | <code>string</code> | 
 
 <a name="Peer+sendDocumentFileToPeer"></a>
 
-### peer.sendDocumentFileToPeer(documentId, peerAddress) ⇒ <code>boolean</code>
+### peer.sendDocumentFileToPeer(documentId, peerAddress, [opts]) ⇒ <code>boolean</code>
 Public helper: push document bytes to a peer (same wire path as [_handleDocumentRequestWire](#Peer+_handleDocumentRequestWire) fulfillment).
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
@@ -6173,6 +6944,111 @@ Public helper: push document bytes to a peer (same wire path as [_handleDocument
 | --- | --- |
 | documentId | <code>string</code> | 
 | peerAddress | <code>string</code> | 
+| [opts] | <code>Object</code> | 
+| [opts.blobIndex] | <code>number</code> | 
+| [opts.revealKey] | <code>boolean</code> | 
+
+<a name="Peer+requestPeerInventory"></a>
+
+### peer.requestPeerInventory(peerAddress, [opts]) ⇒ <code>boolean</code>
+Ask a connected peer for their document catalog (`kind: 'documents'`) or L1 offers (`offerBtc`).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| peerAddress | <code>string</code> |  | connection key, Fabric id, or host:port |
+| [opts] | <code>Object</code> |  |  |
+| [opts.offerBtc] | <code>boolean</code> | <code>false</code> |  |
+| [opts.kind] | <code>string</code> | <code>&quot;&#x27;documents&#x27;&quot;</code> |  |
+| [opts.maxSats] | <code>number</code> |  |  |
+
+<a name="Peer+requestDocument"></a>
+
+### peer.requestDocument(documentId, [peerAddress], [opts]) ⇒ <code>boolean</code>
+Send a signed `DocumentRequest` to one peer (or broadcast when peerAddress is omitted).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| documentId | <code>string</code> |  | 
+| [peerAddress] | <code>string</code> | <code>null</code> | 
+| [opts] | <code>object</code> |  | 
+| [opts.maxSats] | <code>number</code> |  | 
+| [opts.relayHop] | <code>number</code> |  | 
+| [opts.blobIndex] | <code>number</code> |  | 
+| [opts.blobTotal] | <code>number</code> |  | 
+| [opts.contentHashHex] | <code>string</code> |  | 
+
+<a name="Peer+_attachHtlcOfferToItem"></a>
+
+### peer.\_attachHtlcOfferToItem(item, req, contentHashHex, amountSats) ⇒ <code>object</code> \| <code>null</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| item | <code>object</code> |  |
+| req | <code>object</code> | inventory request object |
+| contentHashHex | <code>string</code> |  |
+| amountSats | <code>number</code> |  |
+
+<a name="Peer+listPendingDocumentRequests"></a>
+
+### peer.listPendingDocumentRequests() ⇒ <code>Array.&lt;object&gt;</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>Array.&lt;object&gt;</code> - pending DOCUMENT_REQUEST rows (consent mode)  
+<a name="Peer+approveDocumentRequest"></a>
+
+### peer.approveDocumentRequest(requestKey) ⇒ <code>Object</code>
+Approve a pending DOCUMENT_REQUEST and send `P2P_FILE_SEND`.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| requestKey | <code>string</code> | pending key, or document id when unique |
+
+<a name="Peer+authorizeDocumentKeyReveal"></a>
+
+### peer.authorizeDocumentKeyReveal(opts) ⇒ <code>Object</code>
+Record that settlement for a sealed document was verified so a matching
+DocumentRequest may receive the AES content key (not merely the ciphertext).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>Object</code> - `{ ok, error?, key? }`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> |  |
+| opts.documentId | <code>string</code> |  |
+| opts.contentHashHex | <code>string</code> | payment hash SHA256(K) |
+| [opts.settlementId] | <code>string</code> |  |
+| [opts.txid] | <code>string</code> |  |
+
+<a name="Peer+_mayRevealDocumentContentKey"></a>
+
+### peer.\_mayRevealDocumentContentKey(documentId, paymentHashHex, parsed, [opts]) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| documentId | <code>string</code> | 
+| paymentHashHex | <code>string</code> | 
+| parsed | <code>object</code> | 
+| [opts] | <code>Object</code> | 
+| [opts.forceReveal] | <code>boolean</code> | 
+
+<a name="Peer+denyDocumentRequest"></a>
+
+### peer.denyDocumentRequest(requestKey) ⇒ <code>Object</code>
+Deny / drop a pending DOCUMENT_REQUEST without sending bytes.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| requestKey | <code>string</code> | 
 
 <a name="Peer+_buildPublishDocumentWireBuffers"></a>
 
@@ -6217,8 +7093,8 @@ Store a document locally and gossip to peers.
 
 ### peer.\_handleDocumentRequestWire(message, origin, socket)
 Handle inbound `DOCUMENT_REQUEST`: emit `documentRequest` / `DocumentRequest`, then either
-send `P2P_FILE_SEND` to the requester if `state.documents[id]` is present, or relay the
-request to other peers (conditional relay).
+send `P2P_FILE_SEND` (when [Peer#settings.autoFulfillDocumentRequests](Peer#settings.autoFulfillDocumentRequests)), queue for
+operator approve, or relay when the document is not held.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
@@ -6227,6 +7103,57 @@ request to other peers (conditional relay).
 | message | [<code>Message</code>](#Message) | 
 | origin | <code>Object</code> | 
 | socket | <code>\*</code> | 
+
+<a name="Peer+_privateRelayDocumentRequest"></a>
+
+### peer.\_privateRelayDocumentRequest(parsed, origin, [originalMessage])
+Rewrite a budgeted DocumentRequest (privacy) and forward with reduced maxSats.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| parsed | <code>object</code> |  | 
+| origin | <code>Object</code> |  | 
+| [originalMessage] | [<code>Message</code>](#Message) | <code></code> | 
+
+<a name="Peer+_maybeReverseRelayFileSend"></a>
+
+### peer.\_maybeReverseRelayFileSend(fileObj, origin) ⇒ <code>boolean</code>
+Forward a relayed `P2P_FILE_SEND` / key reveal back toward the buyer using reverse routes.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>boolean</code> - true if forwarded (caller should skip local ingest)  
+
+| Param | Type |
+| --- | --- |
+| fileObj | <code>object</code> | 
+| origin | <code>Object</code> | 
+
+<a name="Peer+_mergeContractPatchAllowList"></a>
+
+### peer.\_mergeContractPatchAllowList(contractId, object, publisherPubkeyHex)
+Build the set of pubkeys allowed to apply CONTRACT_MESSAGE ops for a newly
+registered contract. Called only on first registration of a contract id —
+republishes must not invoke this (see [Peer#_registerContract](Peer#_registerContract)).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| contractId | <code>string</code> |  |
+| object | <code>object</code> | contract publish body |
+| publisherPubkeyHex | <code>string</code> \| <code>null</code> | wire signer of the first publish |
+
+<a name="Peer+_signerMayPatchContract"></a>
+
+### peer.\_signerMayPatchContract(contractId, signerPubkeyHex) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| contractId | <code>string</code> | 
+| signerPubkeyHex | <code>string</code> \| <code>null</code> | 
 
 <a name="Peer+_startFabricPingKeepalive"></a>
 
@@ -6637,18 +7564,36 @@ Parse an Object into a corresponding Fabric state.
 
 * [Peer](#Peer)
     * [new Peer([config])](#new_Peer_new)
+    * [.pendingDocumentRequests](#Peer+pendingDocumentRequests)
+    * [._authorizedDocumentKeyReveals](#Peer+_authorizedDocumentKeyReveals)
+    * [._contractPatchAllowList](#Peer+_contractPatchAllowList)
+    * [.blobTransfers](#Peer+blobTransfers)
+    * [.pendingSealedDeliveries](#Peer+pendingSealedDeliveries)
+    * [._documentRelayRoutes](#Peer+_documentRelayRoutes)
     * [._inboundNoiseStaticPubkeyByAddress](#Peer+_inboundNoiseStaticPubkeyByAddress)
     * [.messages](#Peer+messages)
+    * [._logicalRegisterOnce](#Peer+_logicalRegisterOnce) : <code>Map.&lt;string, {type: string, signer: (string\|null), at: number}&gt;</code>
     * [._gossipPayloadSeen](#Peer+_gossipPayloadSeen)
     * [._gossipRelayByOrigin](#Peer+_gossipRelayByOrigin)
+    * [._chatRelayByOrigin](#Peer+_chatRelayByOrigin)
     * [._peeringPayloadSeen](#Peer+_peeringPayloadSeen)
     * [._peeringRelayByOrigin](#Peer+_peeringRelayByOrigin)
     * [._wireInboundByOrigin](#Peer+_wireInboundByOrigin)
+    * [._logicalDupPenaltyByOrigin](#Peer+_logicalDupPenaltyByOrigin)
+    * [._peerBans](#Peer+_peerBans) : <code>Map.&lt;string, {until: number, reason: string}&gt;</code>
     * [._candidateKeys](#Peer+_candidateKeys)
     * [._outboundDialTargets](#Peer+_outboundDialTargets)
     * ~~[.address](#Peer+address)~~
     * [._gossipPayloadDedupKey(msg)](#Peer+_gossipPayloadDedupKey) ⇒ <code>string</code>
+    * [._logicalRegistrationKey(type, object)](#Peer+_logicalRegistrationKey) ⇒ <code>string</code> \| <code>null</code>
+    * [._claimLogicalRegistration(type, object, [signerPubkeyHex])](#Peer+_claimLogicalRegistration) ⇒ <code>Object</code>
+    * [._applyPeerMisbehavior(originName, reason, [opts])](#Peer+_applyPeerMisbehavior)
+    * [._banPeer(originName, reason)](#Peer+_banPeer)
+    * [._isPeerBanned(originName, [pubkeyHex])](#Peer+_isPeerBanned) ⇒ <code>boolean</code>
+    * [._logicalRegisterDuplicateMisbehavior(originName, type, claim, [signerPubkeyHex])](#Peer+_logicalRegisterDuplicateMisbehavior)
+    * [._claimLogicalRegistrationOrPunish(type, object, [signerPubkeyHex], [originName])](#Peer+_claimLogicalRegistrationOrPunish) ⇒ <code>Object</code>
     * [._gossipRateLimitAllow(originName)](#Peer+_gossipRateLimitAllow) ⇒ <code>boolean</code>
+    * [._chatRateLimitAllow(originName)](#Peer+_chatRateLimitAllow) ⇒ <code>boolean</code>
     * [._wireInboundCreditCost(wireType)](#Peer+_wireInboundCreditCost) ⇒ <code>number</code>
     * [._wireInboundRateAllowPeer(originName, creditCost)](#Peer+_wireInboundRateAllowPeer) ⇒ <code>boolean</code>
     * [._derankPeerForWireTraffic(originName, penalty, reason)](#Peer+_derankPeerForWireTraffic)
@@ -6656,25 +7601,50 @@ Parse an Object into a corresponding Fabric state.
     * [._peeringRateLimitAllow(originName)](#Peer+_peeringRateLimitAllow) ⇒ <code>boolean</code>
     * [._enqueuePeeringCandidate(host, port)](#Peer+_enqueuePeeringCandidate)
     * [.broadcast(message)](#Peer+broadcast)
+    * [._localXOnlyPeerId()](#Peer+_localXOnlyPeerId) ⇒ <code>Buffer</code>
+    * [._resolveAddressByXOnly(peerId)](#Peer+_resolveAddressByXOnly) ⇒ <code>string</code> \| <code>null</code>
+    * [.sendOnion(path, payload)](#Peer+sendOnion) ⇒ <code>boolean</code>
     * [.relayFromTrustedPeers(origin, message, [minScoreExclusive])](#Peer+relayFromTrustedPeers)
     * [._registryScoreForConnectionAddress(connAddress)](#Peer+_registryScoreForConnectionAddress) ⇒ <code>number</code>
     * [._registryScoreForFlushChainSender(connAddress, senderPubkeyHex)](#Peer+_registryScoreForFlushChainSender) ⇒ <code>number</code>
     * [.sendFlushChainToTrustedPeers(object)](#Peer+sendFlushChainToTrustedPeers) ⇒ <code>number</code>
     * [._connect(target)](#Peer+_connect)
+    * [._announceAlias(alias, [origin], [_socket])](#Peer+_announceAlias)
     * [._loadPeerRegistry()](#Peer+_loadPeerRegistry) ⇒ <code>Promise.&lt;void&gt;</code>
     * [._savePeerRegistry()](#Peer+_savePeerRegistry)
     * [._flushChainSenderPubkeyHex()](#Peer+_flushChainSenderPubkeyHex)
     * [._upsertPeerRegistry(address, [updates])](#Peer+_upsertPeerRegistry)
     * [._fillPeerSlots()](#Peer+_fillPeerSlots) ⇒ [<code>Peer</code>](#Peer)
-    * [._handleFabricMessage(buffer)](#Peer+_handleFabricMessage) ⇒ [<code>Peer</code>](#Peer)
+    * [._handleFabricMessage(buffer, [origin], [socket], [options])](#Peer+_handleFabricMessage) ⇒ [<code>Peer</code>](#Peer)
+    * [._relayWirePayload()](#Peer+_relayWirePayload)
+    * [._relayGenericPayload()](#Peer+_relayGenericPayload)
     * [._buildDocumentParsedForPublish(documentId, content)](#Peer+_buildDocumentParsedForPublish) ⇒ <code>Object</code>
+    * [._collectDocumentCatalogInventoryItems([req])](#Peer+_collectDocumentCatalogInventoryItems) ⇒ <code>Array.&lt;object&gt;</code>
+    * [._sendLocalInventoryDocumentsWireResponse(originName, items, [opts])](#Peer+_sendLocalInventoryDocumentsWireResponse) ⇒ <code>boolean</code>
     * [._respondInventoryFromLocalDocuments(message, origin)](#Peer+_respondInventoryFromLocalDocuments) ⇒ <code>boolean</code>
-    * [._sendP2pFileSendToPeer(documentId, peerAddress)](#Peer+_sendP2pFileSendToPeer) ⇒ <code>boolean</code>
-    * [.sendDocumentFileToPeer(documentId, peerAddress)](#Peer+sendDocumentFileToPeer) ⇒ <code>boolean</code>
+    * [._getDocumentSealedMeta(documentId)](#Peer+_getDocumentSealedMeta) ⇒ <code>object</code> \| <code>null</code>
+    * [._sendP2pFileSendToPeer(documentId, peerAddress, [opts])](#Peer+_sendP2pFileSendToPeer) ⇒ <code>boolean</code>
+    * [._sendDocumentContentKeyReveal(documentId, peerAddress, [opts])](#Peer+_sendDocumentContentKeyReveal) ⇒ <code>boolean</code>
+    * [._ingestP2pFileSend(message, origin)](#Peer+_ingestP2pFileSend) ⇒ <code>Object</code>
+    * [._handleDocumentContentKeyReveal(reveal, [origin])](#Peer+_handleDocumentContentKeyReveal) ⇒ <code>Object</code>
+    * [.openSealedDeliveryWithPreimage(documentId, preimageHex)](#Peer+openSealedDeliveryWithPreimage) ⇒ <code>Object</code>
+    * [.sendDocumentFileToPeer(documentId, peerAddress, [opts])](#Peer+sendDocumentFileToPeer) ⇒ <code>boolean</code>
+    * [.requestPeerInventory(peerAddress, [opts])](#Peer+requestPeerInventory) ⇒ <code>boolean</code>
+    * [.requestDocument(documentId, [peerAddress], [opts])](#Peer+requestDocument) ⇒ <code>boolean</code>
+    * [._attachHtlcOfferToItem(item, req, contentHashHex, amountSats)](#Peer+_attachHtlcOfferToItem) ⇒ <code>object</code> \| <code>null</code>
+    * [.listPendingDocumentRequests()](#Peer+listPendingDocumentRequests) ⇒ <code>Array.&lt;object&gt;</code>
+    * [.approveDocumentRequest(requestKey)](#Peer+approveDocumentRequest) ⇒ <code>Object</code>
+    * [.authorizeDocumentKeyReveal(opts)](#Peer+authorizeDocumentKeyReveal) ⇒ <code>Object</code>
+    * [._mayRevealDocumentContentKey(documentId, paymentHashHex, parsed, [opts])](#Peer+_mayRevealDocumentContentKey) ⇒ <code>boolean</code>
+    * [.denyDocumentRequest(requestKey)](#Peer+denyDocumentRequest) ⇒ <code>Object</code>
     * [._buildPublishDocumentWireBuffers(documentId, body, rateSats)](#Peer+_buildPublishDocumentWireBuffers) ⇒ <code>Array.&lt;Buffer&gt;</code>
     * [._announceLocalDocumentsToPeer(peerAddress)](#Peer+_announceLocalDocumentsToPeer)
     * [._publishDocument(documentId, [content], [rateSats])](#Peer+_publishDocument)
     * [._handleDocumentRequestWire(message, origin, socket)](#Peer+_handleDocumentRequestWire)
+    * [._privateRelayDocumentRequest(parsed, origin, [originalMessage])](#Peer+_privateRelayDocumentRequest)
+    * [._maybeReverseRelayFileSend(fileObj, origin)](#Peer+_maybeReverseRelayFileSend) ⇒ <code>boolean</code>
+    * [._mergeContractPatchAllowList(contractId, object, publisherPubkeyHex)](#Peer+_mergeContractPatchAllowList)
+    * [._signerMayPatchContract(contractId, signerPubkeyHex)](#Peer+_signerMayPatchContract) ⇒ <code>boolean</code>
     * [._startFabricPingKeepalive(socket, encryptWrite)](#Peer+_startFabricPingKeepalive)
     * [.start()](#Peer+start)
     * [.stop()](#Peer+stop)
@@ -6730,6 +7700,43 @@ Create an instance of [Peer](#Peer).
 | [config.listenPortAttempts] | <code>Number</code> | <code>20</code> | When the listen port is in use (`EADDRINUSE`),   try the next port up to this many times (same host). |
 | [config.peers] | <code>Array</code> | <code>[]</code> | List of initial peers. |
 
+<a name="Peer+pendingDocumentRequests"></a>
+
+### peer.pendingDocumentRequests
+Pending DOCUMENT_REQUEST entries when [Peer#settings.autoFulfillDocumentRequests](Peer#settings.autoFulfillDocumentRequests) is false.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_authorizedDocumentKeyReveals"></a>
+
+### peer.\_authorizedDocumentKeyReveals
+Authorized sealed-document key reveals: `"documentId|paymentHashHex"` → meta.
+Populated only after verified settlement (never from public hash echo).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_contractPatchAllowList"></a>
+
+### peer.\_contractPatchAllowList
+contractId → Set of lowercase compressed pubkeys allowed to apply state ops.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+blobTransfers"></a>
+
+### peer.blobTransfers
+Buyer-side verified blob reassembly (DocumentBlobIndex).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+pendingSealedDeliveries"></a>
+
+### peer.pendingSealedDeliveries
+Ciphertext awaiting content-key reveal: documentId → meta.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_documentRelayRoutes"></a>
+
+### peer.\_documentRelayRoutes
+Private reverse routes for rewritten DocumentRequests (never gossiped).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+_inboundNoiseStaticPubkeyByAddress"></a>
 
 ### peer.\_inboundNoiseStaticPubkeyByAddress
@@ -6740,6 +7747,13 @@ Inbound address -> NOISE static pubkey hex (FLUSH_CHAIN allowlist only; never fo
 
 ### peer.messages
 Wire-envelope dedup (SHA-256 of full buffer); FIFO-capped via [Peer#_rememberWireHash](Peer#_rememberWireHash).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_logicalRegisterOnce"></a>
+
+### peer.\_logicalRegisterOnce : <code>Map.&lt;string, {type: string, signer: (string\|null), at: number}&gt;</code>
+Logical first-writer-wins registrations (content-addressed keys).
+Catches re-signed duplicates of CONTRACT_PUBLISH / DOCUMENT_PUBLISH / etc.
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+_gossipPayloadSeen"></a>
@@ -6754,10 +7768,16 @@ Logical gossip payload dedup (excludes signature / hop churn).
 origin address → { count, windowStart } for gossip relay rate limiting.
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_chatRelayByOrigin"></a>
+
+### peer.\_chatRelayByOrigin
+origin address → { count, windowStart } for chat mesh relay rate limiting.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+_peeringPayloadSeen"></a>
 
 ### peer.\_peeringPayloadSeen
-Logical peering-offer payload dedup (ignores per-hop re-signing).
+Logical peering-offer payload dedup (ignores advisory peeringHop; frames relay as-is).
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+_peeringRelayByOrigin"></a>
@@ -6770,6 +7790,18 @@ origin address → { count, windowStart } for peering-offer relay rate limiting.
 
 ### peer.\_wireInboundByOrigin
 `host:port` → { credits, windowStart, penalized } — inbound wire flood / de-rank (per peer).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_logicalDupPenaltyByOrigin"></a>
+
+### peer.\_logicalDupPenaltyByOrigin
+`host:port` → { windowStart, penalized } — soft logical-duplicate derank once per window.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_peerBans"></a>
+
+### peer.\_peerBans : <code>Map.&lt;string, {until: number, reason: string}&gt;</code>
+Temporary bans after hard misbehavior: `addr:<host:port>` or `pk:<hex>` → { until, reason }.
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+_candidateKeys"></a>
@@ -6796,7 +7828,8 @@ see `peer not connected` while an ephemeral inbound key remains.
 <a name="Peer+_gossipPayloadDedupKey"></a>
 
 ### peer.\_gossipPayloadDedupKey(msg) ⇒ <code>string</code>
-Stable id for gossip *logical* content (ignores `gossipHop` and wire signature changes).
+Stable id for gossip *logical* content (ignores advisory `gossipHop`; frames are forwarded bit-identical).
+Mesh frames are relayed bit-identical; wire-hash dedup also prevents loops.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: <code>string</code> - hex sha256  
@@ -6805,9 +7838,111 @@ Stable id for gossip *logical* content (ignores `gossipHop` and wire signature c
 | --- | --- | --- |
 | msg | <code>object</code> | Generic message (`type`, `object`, …) |
 
+<a name="Peer+_logicalRegistrationKey"></a>
+
+### peer.\_logicalRegistrationKey(type, object) ⇒ <code>string</code> \| <code>null</code>
+Content-addressed key for first-writer-wins registration types.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| type | <code>string</code> | wire / generic type name |
+| object | <code>object</code> \| <code>null</code> \| <code>undefined</code> | message body / object |
+
+<a name="Peer+_claimLogicalRegistration"></a>
+
+### peer.\_claimLogicalRegistration(type, object, [signerPubkeyHex]) ⇒ <code>Object</code>
+Claim a logical registration key (first writer wins).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| type | <code>string</code> |  | 
+| object | <code>object</code> \| <code>null</code> \| <code>undefined</code> |  | 
+| [signerPubkeyHex] | <code>string</code> \| <code>null</code> | <code>null</code> | 
+
+<a name="Peer+_applyPeerMisbehavior"></a>
+
+### peer.\_applyPeerMisbehavior(originName, reason, [opts])
+Lower registry score and optionally destroy the TCP connection (hard misbehavior).
+Hard disconnects also install a temporary ban (address + known pubkey).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| originName | <code>string</code> \| <code>null</code> \| <code>undefined</code> | 
+| reason | <code>string</code> | 
+| [opts] | <code>Object</code> | 
+| [opts.penalty] | <code>number</code> | 
+| [opts.disconnect] | <code>boolean</code> | 
+
+<a name="Peer+_banPeer"></a>
+
+### peer.\_banPeer(originName, reason)
+Ban a connection address (and mapped pubkey when known) for [Peer#settings.peerScore.banTtlMs](Peer#settings.peerScore.banTtlMs).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| originName | <code>string</code> | 
+| reason | <code>string</code> | 
+
+<a name="Peer+_isPeerBanned"></a>
+
+### peer.\_isPeerBanned(originName, [pubkeyHex]) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| originName | <code>string</code> \| <code>null</code> \| <code>undefined</code> | <code>null</code> | 
+| [pubkeyHex] | <code>string</code> \| <code>null</code> \| <code>undefined</code> | <code>null</code> | 
+
+<a name="Peer+_logicalRegisterDuplicateMisbehavior"></a>
+
+### peer.\_logicalRegisterDuplicateMisbehavior(originName, type, claim, [signerPubkeyHex])
+Soft (once/window) or hijack (CONTRACT_PUBLISH other signer) penalty for logical duplicates.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| originName | <code>string</code> \| <code>null</code> \| <code>undefined</code> | 
+| type | <code>string</code> | 
+| claim | <code>Object</code> | 
+| [claim.prior] | <code>Object</code> \| <code>null</code> | 
+| [claim.prior.signer] | <code>string</code> \| <code>null</code> | 
+| [signerPubkeyHex] | <code>string</code> \| <code>null</code> | 
+
+<a name="Peer+_claimLogicalRegistrationOrPunish"></a>
+
+### peer.\_claimLogicalRegistrationOrPunish(type, object, [signerPubkeyHex], [originName]) ⇒ <code>Object</code>
+Claim logical registration; on duplicate, apply misbehavior and return claim.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| type | <code>string</code> |  | 
+| object | <code>object</code> \| <code>null</code> \| <code>undefined</code> |  | 
+| [signerPubkeyHex] | <code>string</code> \| <code>null</code> | <code>null</code> | 
+| [originName] | <code>string</code> \| <code>null</code> | <code>null</code> | 
+
 <a name="Peer+_gossipRateLimitAllow"></a>
 
 ### peer.\_gossipRateLimitAllow(originName) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| originName | <code>string</code> | Connection id (e.g. `host:port`) |
+
+<a name="Peer+_chatRateLimitAllow"></a>
+
+### peer.\_chatRateLimitAllow(originName) ⇒ <code>boolean</code>
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
 | Param | Type | Description |
@@ -6854,7 +7989,7 @@ Lower registry [Peer#knownPeers](Peer#knownPeers) score for a connection (Bitcoi
 <a name="Peer+_peeringOfferPayloadDedupKey"></a>
 
 ### peer.\_peeringOfferPayloadDedupKey(msg) ⇒ <code>string</code>
-Stable id for peering-offer *logical* content (ignores `peeringHop` and wire signature changes).
+Stable id for peering-offer *logical* content (ignores advisory `peeringHop`).
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: <code>string</code> - hex sha256  
@@ -6894,6 +8029,40 @@ Write a [Buffer](Buffer) to all connected peers.
 | Param | Type | Description |
 | --- | --- | --- |
 | message | <code>Buffer</code> | Message buffer to send. |
+
+<a name="Peer+_localXOnlyPeerId"></a>
+
+### peer.\_localXOnlyPeerId() ⇒ <code>Buffer</code>
+Local node x-only pubkey (AMP {@code author} / {@code P2P_FORWARD.nextPeer} encoding).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+<a name="Peer+_resolveAddressByXOnly"></a>
+
+### peer.\_resolveAddressByXOnly(peerId) ⇒ <code>string</code> \| <code>null</code>
+Resolve a live connection address for an x-only (or compressed) peer pubkey.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>string</code> \| <code>null</code> - connection key ({@code host:port}) or null  
+
+| Param | Type |
+| --- | --- |
+| peerId | <code>Buffer</code> \| <code>string</code> | 
+
+<a name="Peer+sendOnion"></a>
+
+### peer.sendOnion(path, payload) ⇒ <code>boolean</code>
+Send {@code payload} along a source-routed onion path of Fabric peer pubkeys.
+Builds nested {@code P2P_FORWARD} layers and writes the outer frame only to
+{@code path[0]} (immediate hop). Destination learns the last hop's IP, not
+the originator's. See [module:@fabric/core/functions/fabricOnion](module:@fabric/core/functions/fabricOnion).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>boolean</code> - true if the outer frame was written to the first hop  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>Array.&lt;(Buffer\|string)&gt;</code> | hop pubkeys; first = next TCP peer, last = deliverer |
+| payload | [<code>Message</code>](#Message) \| <code>Buffer</code> | innermost application Message (should already be signed) |
 
 <a name="Peer+relayFromTrustedPeers"></a>
 
@@ -6966,6 +8135,20 @@ Open a Fabric connection to the target address and initiate the Fabric Protocol.
 | --- | --- | --- |
 | target | <code>String</code> | Target address. |
 
+<a name="Peer+_announceAlias"></a>
+
+### peer.\_announceAlias(alias, [origin], [_socket])
+Broadcast a personal nickname as first-class [P2P_PEER_ALIAS](P2P_PEER_ALIAS)
+(UTF-8 body = nickname text only).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| alias | <code>string</code> |  |  |
+| [origin] | <code>Object</code> \| <code>null</code> | <code></code> | Optional origin to exclude from broadcast |
+| [_socket] | <code>\*</code> | <code></code> | Unused (API compatibility) |
+
 <a name="Peer+_loadPeerRegistry"></a>
 
 ### peer.\_loadPeerRegistry() ⇒ <code>Promise.&lt;void&gt;</code>
@@ -7006,16 +8189,37 @@ Attempt to fill available connection slots with new peers.
 **Returns**: [<code>Peer</code>](#Peer) - Instance of the peer.  
 <a name="Peer+_handleFabricMessage"></a>
 
-### peer.\_handleFabricMessage(buffer) ⇒ [<code>Peer</code>](#Peer)
+### peer.\_handleFabricMessage(buffer, [origin], [socket], [options]) ⇒ [<code>Peer</code>](#Peer)
 Handle a Fabric [Message](#Message) buffer.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: [<code>Peer</code>](#Peer) - Instance of the Peer.  
 
-| Param | Type |
-| --- | --- |
-| buffer | <code>Buffer</code> | 
+| Param | Type | Default |
+| --- | --- | --- |
+| buffer | <code>Buffer</code> |  | 
+| [origin] | <code>object</code> \| <code>null</code> | <code></code> | 
+| [socket] | <code>object</code> \| <code>null</code> | <code></code> | 
+| [options] | <code>Object</code> | <code></code> | 
+| [options.relayDepth] | <code>number</code> |  | 
+| [options.skipRelayFlood] | <code>boolean</code> |  | 
 
+<a name="Peer+_relayWirePayload"></a>
+
+### peer.\_relayWirePayload()
+Originate a locally signed {@code P2P_RELAY} envelope around already-signed inner AMP bytes.
+Used only when *this* agent starts a flood (e.g. inventory without a prior wire frame).
+Inbound {@code P2P_RELAY} must never call this — forward the original outer bit-identical.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+<a name="Peer+_relayGenericPayload"></a>
+
+### peer.\_relayGenericPayload()
+Relay inventory / generic payloads. When {@code wireMessage} is present, forward it
+bit-identical (no hop re-sign). Otherwise the local agent originates a new signed frame
+and may wrap it in {@code P2P_RELAY} for mesh delivery.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
 <a name="Peer+_buildDocumentParsedForPublish"></a>
 
 ### peer.\_buildDocumentParsedForPublish(documentId, content) ⇒ <code>Object</code>
@@ -7028,6 +8232,32 @@ Build hub-compatible document metadata for [purchaseContentHashHex](purchaseCont
 | --- | --- | --- |
 | documentId | <code>String</code> |  |
 | content | <code>String</code> | UTF-8 body |
+
+<a name="Peer+_collectDocumentCatalogInventoryItems"></a>
+
+### peer.\_collectDocumentCatalogInventoryItems([req]) ⇒ <code>Array.&lt;object&gt;</code>
+Items for Hub-style `kind: 'documents'` inventory (Fabric UI / `@fabric/hub` merge expects `object.kind`).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| [req] | <code>Object</code> | request object subset |
+
+<a name="Peer+_sendLocalInventoryDocumentsWireResponse"></a>
+
+### peer.\_sendLocalInventoryDocumentsWireResponse(originName, items, [opts]) ⇒ <code>boolean</code>
+Write [INVENTORY_RESPONSE](INVENTORY_RESPONSE) (`P2P_INVENTORY_RESPONSE`) compatible with `@fabric/hub` Bridge merging
+(body includes `kind: 'documents'` so the browser can merge `object.items`).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| originName | <code>string</code> | connection key [Peer#connections](Peer#connections) |
+| items | <code>Array.&lt;object&gt;</code> |  |
+| [opts] | <code>Object</code> |  |
+| [opts.allowEmpty] | <code>boolean</code> |  |
 
 <a name="Peer+_respondInventoryFromLocalDocuments"></a>
 
@@ -7042,22 +8272,90 @@ Reply to `INVENTORY_REQUEST` with `INVENTORY_RESPONSE` built from local document
 | message | <code>Object</code> | Generic body from [Peer#_handleGenericMessage](Peer#_handleGenericMessage) |
 | origin | <code>Object</code> |  |
 
+<a name="Peer+_getDocumentSealedMeta"></a>
+
+### peer.\_getDocumentSealedMeta(documentId) ⇒ <code>object</code> \| <code>null</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| documentId | <code>string</code> | 
+
 <a name="Peer+_sendP2pFileSendToPeer"></a>
 
-### peer.\_sendP2pFileSendToPeer(documentId, peerAddress) ⇒ <code>boolean</code>
-Send a locally stored document to a connected peer as `P2P_FILE_SEND`.
+### peer.\_sendP2pFileSendToPeer(documentId, peerAddress, [opts]) ⇒ <code>boolean</code>
+Send a locally stored document as indexed, wire-sized `P2P_FILE_SEND` blobs.
+Priced sealed docs send **ciphertext** (safe without the content key).
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
-**Returns**: <code>boolean</code> - true if the payload was written  
+**Returns**: <code>boolean</code> - true if at least one frame was written  
 
 | Param | Type | Description |
 | --- | --- | --- |
 | documentId | <code>string</code> |  |
 | peerAddress | <code>string</code> | connection key in [Peer#connections](Peer#connections) |
+| [opts] | <code>Object</code> |  |
+| [opts.blobIndex] | <code>number</code> |  |
+| [opts.revealKey] | <code>boolean</code> |  |
+| [opts.settlementId] | <code>string</code> |  |
+| [opts.routeId] | <code>string</code> |  |
+
+<a name="Peer+_sendDocumentContentKeyReveal"></a>
+
+### peer.\_sendDocumentContentKeyReveal(documentId, peerAddress, [opts]) ⇒ <code>boolean</code>
+Reveal the AES content key to a peer (only after payment-hash match).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| documentId | <code>string</code> | 
+| peerAddress | <code>string</code> | 
+| [opts] | <code>Object</code> | 
+| [opts.settlementId] | <code>string</code> | 
+
+<a name="Peer+_ingestP2pFileSend"></a>
+
+### peer.\_ingestP2pFileSend(message, origin) ⇒ <code>Object</code>
+Verify / accumulate an inbound `P2P_FILE_SEND` against the DocumentBlobIndex rules.
+Sealed frames store ciphertext until [KEY_REVEAL_TYPE](KEY_REVEAL_TYPE).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| message | [<code>Message</code>](#Message) \| <code>Object</code> | 
+| origin | <code>Object</code> | 
+| [origin.name] | <code>string</code> | 
+
+<a name="Peer+_handleDocumentContentKeyReveal"></a>
+
+### peer.\_handleDocumentContentKeyReveal(reveal, [origin]) ⇒ <code>Object</code>
+Apply a content-key reveal to a pending sealed delivery.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| reveal | <code>Object</code> |  | 
+| [origin] | <code>Object</code> | <code></code> | 
+| [origin.name] | <code>string</code> |  | 
+
+<a name="Peer+openSealedDeliveryWithPreimage"></a>
+
+### peer.openSealedDeliveryWithPreimage(documentId, preimageHex) ⇒ <code>Object</code>
+Open a pending sealed delivery using an HTLC claim preimage (on-chain witness).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| documentId | <code>string</code> | 
+| preimageHex | <code>string</code> | 
 
 <a name="Peer+sendDocumentFileToPeer"></a>
 
-### peer.sendDocumentFileToPeer(documentId, peerAddress) ⇒ <code>boolean</code>
+### peer.sendDocumentFileToPeer(documentId, peerAddress, [opts]) ⇒ <code>boolean</code>
 Public helper: push document bytes to a peer (same wire path as [_handleDocumentRequestWire](#Peer+_handleDocumentRequestWire) fulfillment).
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
@@ -7066,6 +8364,111 @@ Public helper: push document bytes to a peer (same wire path as [_handleDocument
 | --- | --- |
 | documentId | <code>string</code> | 
 | peerAddress | <code>string</code> | 
+| [opts] | <code>Object</code> | 
+| [opts.blobIndex] | <code>number</code> | 
+| [opts.revealKey] | <code>boolean</code> | 
+
+<a name="Peer+requestPeerInventory"></a>
+
+### peer.requestPeerInventory(peerAddress, [opts]) ⇒ <code>boolean</code>
+Ask a connected peer for their document catalog (`kind: 'documents'`) or L1 offers (`offerBtc`).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| peerAddress | <code>string</code> |  | connection key, Fabric id, or host:port |
+| [opts] | <code>Object</code> |  |  |
+| [opts.offerBtc] | <code>boolean</code> | <code>false</code> |  |
+| [opts.kind] | <code>string</code> | <code>&quot;&#x27;documents&#x27;&quot;</code> |  |
+| [opts.maxSats] | <code>number</code> |  |  |
+
+<a name="Peer+requestDocument"></a>
+
+### peer.requestDocument(documentId, [peerAddress], [opts]) ⇒ <code>boolean</code>
+Send a signed `DocumentRequest` to one peer (or broadcast when peerAddress is omitted).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| documentId | <code>string</code> |  | 
+| [peerAddress] | <code>string</code> | <code>null</code> | 
+| [opts] | <code>object</code> |  | 
+| [opts.maxSats] | <code>number</code> |  | 
+| [opts.relayHop] | <code>number</code> |  | 
+| [opts.blobIndex] | <code>number</code> |  | 
+| [opts.blobTotal] | <code>number</code> |  | 
+| [opts.contentHashHex] | <code>string</code> |  | 
+
+<a name="Peer+_attachHtlcOfferToItem"></a>
+
+### peer.\_attachHtlcOfferToItem(item, req, contentHashHex, amountSats) ⇒ <code>object</code> \| <code>null</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| item | <code>object</code> |  |
+| req | <code>object</code> | inventory request object |
+| contentHashHex | <code>string</code> |  |
+| amountSats | <code>number</code> |  |
+
+<a name="Peer+listPendingDocumentRequests"></a>
+
+### peer.listPendingDocumentRequests() ⇒ <code>Array.&lt;object&gt;</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>Array.&lt;object&gt;</code> - pending DOCUMENT_REQUEST rows (consent mode)  
+<a name="Peer+approveDocumentRequest"></a>
+
+### peer.approveDocumentRequest(requestKey) ⇒ <code>Object</code>
+Approve a pending DOCUMENT_REQUEST and send `P2P_FILE_SEND`.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| requestKey | <code>string</code> | pending key, or document id when unique |
+
+<a name="Peer+authorizeDocumentKeyReveal"></a>
+
+### peer.authorizeDocumentKeyReveal(opts) ⇒ <code>Object</code>
+Record that settlement for a sealed document was verified so a matching
+DocumentRequest may receive the AES content key (not merely the ciphertext).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>Object</code> - `{ ok, error?, key? }`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> |  |
+| opts.documentId | <code>string</code> |  |
+| opts.contentHashHex | <code>string</code> | payment hash SHA256(K) |
+| [opts.settlementId] | <code>string</code> |  |
+| [opts.txid] | <code>string</code> |  |
+
+<a name="Peer+_mayRevealDocumentContentKey"></a>
+
+### peer.\_mayRevealDocumentContentKey(documentId, paymentHashHex, parsed, [opts]) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| documentId | <code>string</code> | 
+| paymentHashHex | <code>string</code> | 
+| parsed | <code>object</code> | 
+| [opts] | <code>Object</code> | 
+| [opts.forceReveal] | <code>boolean</code> | 
+
+<a name="Peer+denyDocumentRequest"></a>
+
+### peer.denyDocumentRequest(requestKey) ⇒ <code>Object</code>
+Deny / drop a pending DOCUMENT_REQUEST without sending bytes.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| requestKey | <code>string</code> | 
 
 <a name="Peer+_buildPublishDocumentWireBuffers"></a>
 
@@ -7110,8 +8513,8 @@ Store a document locally and gossip to peers.
 
 ### peer.\_handleDocumentRequestWire(message, origin, socket)
 Handle inbound `DOCUMENT_REQUEST`: emit `documentRequest` / `DocumentRequest`, then either
-send `P2P_FILE_SEND` to the requester if `state.documents[id]` is present, or relay the
-request to other peers (conditional relay).
+send `P2P_FILE_SEND` (when [Peer#settings.autoFulfillDocumentRequests](Peer#settings.autoFulfillDocumentRequests)), queue for
+operator approve, or relay when the document is not held.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
@@ -7120,6 +8523,57 @@ request to other peers (conditional relay).
 | message | [<code>Message</code>](#Message) | 
 | origin | <code>Object</code> | 
 | socket | <code>\*</code> | 
+
+<a name="Peer+_privateRelayDocumentRequest"></a>
+
+### peer.\_privateRelayDocumentRequest(parsed, origin, [originalMessage])
+Rewrite a budgeted DocumentRequest (privacy) and forward with reduced maxSats.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| parsed | <code>object</code> |  | 
+| origin | <code>Object</code> |  | 
+| [originalMessage] | [<code>Message</code>](#Message) | <code></code> | 
+
+<a name="Peer+_maybeReverseRelayFileSend"></a>
+
+### peer.\_maybeReverseRelayFileSend(fileObj, origin) ⇒ <code>boolean</code>
+Forward a relayed `P2P_FILE_SEND` / key reveal back toward the buyer using reverse routes.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>boolean</code> - true if forwarded (caller should skip local ingest)  
+
+| Param | Type |
+| --- | --- |
+| fileObj | <code>object</code> | 
+| origin | <code>Object</code> | 
+
+<a name="Peer+_mergeContractPatchAllowList"></a>
+
+### peer.\_mergeContractPatchAllowList(contractId, object, publisherPubkeyHex)
+Build the set of pubkeys allowed to apply CONTRACT_MESSAGE ops for a newly
+registered contract. Called only on first registration of a contract id —
+republishes must not invoke this (see [Peer#_registerContract](Peer#_registerContract)).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| contractId | <code>string</code> |  |
+| object | <code>object</code> | contract publish body |
+| publisherPubkeyHex | <code>string</code> \| <code>null</code> | wire signer of the first publish |
+
+<a name="Peer+_signerMayPatchContract"></a>
+
+### peer.\_signerMayPatchContract(contractId, signerPubkeyHex) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| contractId | <code>string</code> | 
+| signerPubkeyHex | <code>string</code> \| <code>null</code> | 
 
 <a name="Peer+_startFabricPingKeepalive"></a>
 
@@ -7522,6 +8976,79 @@ Parse an Object into a corresponding Fabric state.
 | Param | Type | Description |
 | --- | --- | --- |
 | input | <code>Object</code> | Object to read as input. |
+
+<a name="Program"></a>
+
+## Program
+**Kind**: global class  
+
+* [Program](#Program)
+    * [new Program([settings])](#new_Program_new)
+    * _instance_
+        * [.hash()](#Program+hash) ⇒ <code>string</code>
+        * [.compile()](#Program+compile) ⇒ <code>Object</code>
+        * [.toRedeemScript()](#Program+toRedeemScript) ⇒ <code>Object</code>
+        * [.runCommitmentHex(result)](#Program+runCommitmentHex) ⇒ <code>string</code>
+    * _static_
+        * [.from([opts])](#Program.from) ⇒ [<code>Program</code>](#Program)
+
+<a name="new_Program_new"></a>
+
+### new Program([settings])
+
+| Param | Type |
+| --- | --- |
+| [settings] | <code>object</code> | 
+| [settings.language] | <code>string</code> | 
+| [settings.source] | <code>string</code> \| <code>object</code> | 
+| [settings.bytecode] | <code>\*</code> | 
+| [settings.steps] | <code>Array.&lt;string&gt;</code> | 
+| [settings.programId] | <code>string</code> | 
+
+<a name="Program+hash"></a>
+
+### program.hash() ⇒ <code>string</code>
+Content-address of language + source/bytecode/steps.
+
+**Kind**: instance method of [<code>Program</code>](#Program)  
+**Returns**: <code>string</code> - 64-char hex  
+<a name="Program+compile"></a>
+
+### program.compile() ⇒ <code>Object</code>
+Normalize language-specific form into `steps` / `bytecode`.
+
+**Kind**: instance method of [<code>Program</code>](#Program)  
+<a name="Program+toRedeemScript"></a>
+
+### program.toRedeemScript() ⇒ <code>Object</code>
+L1 redeem script scaffold (bitcoin-script only).
+
+**Kind**: instance method of [<code>Program</code>](#Program)  
+<a name="Program+runCommitmentHex"></a>
+
+### program.runCommitmentHex(result) ⇒ <code>string</code>
+Stable digest binding program identity to a compute result (L1 / OP_RETURN / witness).
+
+**Kind**: instance method of [<code>Program</code>](#Program)  
+**Returns**: <code>string</code> - 64-char hex  
+
+| Param | Type |
+| --- | --- |
+| result | <code>\*</code> | 
+
+<a name="Program.from"></a>
+
+### Program.from([opts]) ⇒ [<code>Program</code>](#Program)
+**Kind**: static method of [<code>Program</code>](#Program)  
+
+| Param | Type |
+| --- | --- |
+| [opts] | <code>Object</code> | 
+| [opts.language] | <code>string</code> | 
+| [opts.source] | <code>\*</code> | 
+| [opts.bytecode] | <code>\*</code> | 
+| [opts.steps] | <code>Array.&lt;string&gt;</code> | 
+| [opts.programId] | <code>string</code> | 
 
 <a name="Reader"></a>
 
@@ -10547,6 +12074,7 @@ Class implementing a Merkle Tree.
 
 * [Tree](#Tree)
     * [new Tree([settings])](#new_Tree_new)
+    * [.rootHex](#Tree+rootHex) ⇒ <code>string</code>
     * [.addLeaf(leaf)](#Tree+addLeaf) ⇒ [<code>Tree</code>](#Tree)
     * [.getLeaves()](#Tree+getLeaves) ⇒ <code>Array</code>
 
@@ -10561,17 +12089,23 @@ Create an instance of a Tree.
 | --- | --- | --- |
 | [settings] | <code>Object</code> | Configuration. |
 
+<a name="Tree+rootHex"></a>
+
+### tree.rootHex ⇒ <code>string</code>
+Hex encoding of [Tree#root](Tree#root) (empty string when the tree has no root bytes).
+
+**Kind**: instance property of [<code>Tree</code>](#Tree)  
 <a name="Tree+addLeaf"></a>
 
 ### tree.addLeaf(leaf) ⇒ [<code>Tree</code>](#Tree)
-Add a leaf to the tree.
+Add a leaf to the tree (accumulates into `settings.leaves`).
 
 **Kind**: instance method of [<code>Tree</code>](#Tree)  
 **Returns**: [<code>Tree</code>](#Tree) - Instance of the tree.  
 
 | Param | Type | Description |
 | --- | --- | --- |
-| leaf | <code>String</code> | Leaf to add to the tree. |
+| leaf | <code>String</code> \| <code>Buffer</code> | Leaf to add to the tree. |
 
 <a name="Tree+getLeaves"></a>
 
@@ -10625,10 +12159,21 @@ Manage keys and track their balances.
 * [Wallet](#Wallet) : <code>Object</code>
     * [new Wallet([settings])](#new_Wallet_new)
     * _instance_
+        * [._emittedWalletTxKeys](#Wallet+_emittedWalletTxKeys) : <code>Set.&lt;string&gt;</code>
         * [.loadKey(input, [labels])](#Wallet+loadKey) ⇒ <code>Object</code>
+        * [.loadSeed(phrase, [labels], [opts])](#Wallet+loadSeed) ⇒ <code>Object</code>
+        * [.listSeeds()](#Wallet+listSeeds) ⇒ <code>Array.&lt;{seedId: string, xpub: string, labels: Array.&lt;string&gt;}&gt;</code>
+        * [.watchAddress(address, [meta])](#Wallet+watchAddress)
+        * [.watchPaymentHash(paymentHashHex, [meta])](#Wallet+watchPaymentHash)
+        * [.watchHtlc(htlc)](#Wallet+watchHtlc)
+        * [.getWatchSet()](#Wallet+getWatchSet) ⇒ <code>object</code>
+        * [._registerDerivedAddresses(key, [opts])](#Wallet+_registerDerivedAddresses)
+        * [.ingestBitcoinTransaction(txOrHex, [context])](#Wallet+ingestBitcoinTransaction) ⇒ <code>object</code>
+        * [.ingestBitcoinBlock(block)](#Wallet+ingestBitcoinBlock) ⇒ <code>Array.&lt;object&gt;</code>
         * [.start()](#Wallet+start)
         * [.getAddressForScript(script)](#Wallet+getAddressForScript)
         * [.getAddressFromRedeemScript(redeemScript)](#Wallet+getAddressFromRedeemScript)
+        * ~~[.createHTLC()](#Wallet+createHTLC)~~
         * [._sign(tx)](#Wallet+_sign)
         * [._createCrowdfund(fund)](#Wallet+_createCrowdfund)
         * [._getSwapInputScript(redeemScript, secret)](#Wallet+_getSwapInputScript)
@@ -10638,6 +12183,9 @@ Manage keys and track their balances.
         * [.createSeed(passphrase)](#Wallet.createSeed) ⇒ <code>FabricSeed</code>
         * [.fromSeed(seed)](#Wallet.fromSeed) ⇒ [<code>Wallet</code>](#Wallet)
         * [.purchaseContentHashHex(documentId, parsed)](#Wallet.purchaseContentHashHex) ⇒ <code>string</code>
+        * [.resolveDocumentContentHashHex(opts)](#Wallet.resolveDocumentContentHashHex) ⇒ <code>Object</code>
+        * [.buildInventoryHtlcP2tr()](#Wallet.buildInventoryHtlcP2tr)
+        * [.buildHtlcFundingHints()](#Wallet.buildHtlcFundingHints)
 
 <a name="new_Wallet_new"></a>
 
@@ -10653,6 +12201,10 @@ Create an instance of a [Wallet](#Wallet).
 | [settings.key] | <code>Object</code> |  | Key to restore from. |
 | [settings.key.seed] | <code>String</code> |  | Mnemonic seed for a restored wallet. |
 
+<a name="Wallet+_emittedWalletTxKeys"></a>
+
+### wallet.\_emittedWalletTxKeys : <code>Set.&lt;string&gt;</code>
+**Kind**: instance property of [<code>Wallet</code>](#Wallet)  
 <a name="Wallet+loadKey"></a>
 
 ### wallet.loadKey(input, [labels]) ⇒ <code>Object</code>
@@ -10666,6 +12218,102 @@ Accepts a Key instance, pubkey hex string, or object-like key input.
 | --- | --- | --- | --- |
 | input | [<code>Key</code>](#Key) \| <code>String</code> \| <code>Object</code> |  | Key material to load. |
 | [labels] | <code>Array.&lt;String&gt;</code> | <code>[]</code> | Optional labels. |
+
+<a name="Wallet+loadSeed"></a>
+
+### wallet.loadSeed(phrase, [labels], [opts]) ⇒ <code>Object</code>
+Load an additional BIP39 seed into this wallet's key collection (does not
+replace the primary `this.key`). Addresses derived from the seed are watched.
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| phrase | <code>string</code> |  | BIP39 mnemonic |
+| [labels] | <code>Array.&lt;string&gt;</code> | <code>[]</code> |  |
+| [opts] | <code>object</code> |  |  |
+| [opts.addressWindow] | <code>number</code> |  | receive indices to watch (default gapLimit) |
+
+<a name="Wallet+listSeeds"></a>
+
+### wallet.listSeeds() ⇒ <code>Array.&lt;{seedId: string, xpub: string, labels: Array.&lt;string&gt;}&gt;</code>
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+<a name="Wallet+watchAddress"></a>
+
+### wallet.watchAddress(address, [meta])
+Watch a Bitcoin address for wallet-associated transactions.
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+
+| Param | Type |
+| --- | --- |
+| address | <code>string</code> | 
+| [meta] | <code>object</code> | 
+
+<a name="Wallet+watchPaymentHash"></a>
+
+### wallet.watchPaymentHash(paymentHashHex, [meta])
+Watch an HTLC payment hash (SHA256 preimage) so claim witnesses are detected.
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+
+| Param | Type |
+| --- | --- |
+| paymentHashHex | <code>string</code> | 
+| [meta] | <code>object</code> | 
+
+<a name="Wallet+watchHtlc"></a>
+
+### wallet.watchHtlc(htlc)
+Watch an inventory HTLC offer (payment address + payment hash + optional settlement).
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+
+| Param | Type |
+| --- | --- |
+| htlc | <code>object</code> | 
+
+<a name="Wallet+getWatchSet"></a>
+
+### wallet.getWatchSet() ⇒ <code>object</code>
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+**Returns**: <code>object</code> - watch set snapshot  
+<a name="Wallet+_registerDerivedAddresses"></a>
+
+### wallet.\_registerDerivedAddresses(key, [opts])
+Derive and watch a window of addresses for a key (all common script types).
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+
+| Param | Type |
+| --- | --- |
+| key | [<code>Key</code>](#Key) | 
+| [opts] | <code>object</code> | 
+
+<a name="Wallet+ingestBitcoinTransaction"></a>
+
+### wallet.ingestBitcoinTransaction(txOrHex, [context]) ⇒ <code>object</code>
+Ingest a Bitcoin transaction (verbose RPC object or raw hex) and emit when related.
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+**Returns**: <code>object</code> - classification  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| txOrHex | <code>object</code> \| <code>string</code> |  |
+| [context] | <code>object</code> | { tip, height, source } |
+
+<a name="Wallet+ingestBitcoinBlock"></a>
+
+### wallet.ingestBitcoinBlock(block) ⇒ <code>Array.&lt;object&gt;</code>
+Process a new block tip (optionally with verbosity-2 `tx` / `transactions`).
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
+**Returns**: <code>Array.&lt;object&gt;</code> - related classifications  
+
+| Param | Type |
+| --- | --- |
+| block | <code>object</code> | 
 
 <a name="Wallet+start"></a>
 
@@ -10695,6 +12343,13 @@ Generate a [BitcoinAddress](BitcoinAddress) for the supplied [BitcoinScript](Bit
 | --- | --- |
 | redeemScript | <code>BitcoinScript</code> | 
 
+<a name="Wallet+createHTLC"></a>
+
+### ~~wallet.createHTLC()~~
+***Legacy bcoin-style HTLC for channels — not the document-market P2TR profile.
+Use [buildInventoryHtlcP2tr](#Wallet.buildInventoryHtlcP2tr) / `@fabric/core/functions/inventoryHtlc` instead.***
+
+**Kind**: instance method of [<code>Wallet</code>](#Wallet)  
 <a name="Wallet+_sign"></a>
 
 ### wallet.\_sign(tx)
@@ -10778,7 +12433,8 @@ Create a new [Wallet](#Wallet) from a seed object.
 <a name="Wallet.purchaseContentHashHex"></a>
 
 ### Wallet.purchaseContentHashHex(documentId, parsed) ⇒ <code>string</code>
-L1 / hub document purchase binding: same 64-char hex as hub `CreatePurchaseInvoice` / HTLC `contentHash`.
+Envelope (legacy / unsealed) payment hash. Prefer [resolveDocumentContentHashHex](#Wallet.resolveDocumentContentHashHex)
+when sealed meta or a content key may apply.
 
 **Kind**: static method of [<code>Wallet</code>](#Wallet)  
 
@@ -10787,6 +12443,27 @@ L1 / hub document purchase binding: same 64-char hex as hub `CreatePurchaseInvoi
 | documentId | <code>string</code> |  |
 | parsed | <code>object</code> | Whitelisted document fields (see [_buildDocumentParsedForPublish](#Peer+_buildDocumentParsedForPublish)). |
 
+<a name="Wallet.resolveDocumentContentHashHex"></a>
+
+### Wallet.resolveDocumentContentHashHex(opts) ⇒ <code>Object</code>
+Single path for buy / HTLC `contentHashHex` (sealed | envelope | blob).
+
+**Kind**: static method of [<code>Wallet</code>](#Wallet)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> | see [module:functions/documentPaymentHash.resolveDocumentContentHashHex](module:functions/documentPaymentHash.resolveDocumentContentHashHex) |
+
+<a name="Wallet.buildInventoryHtlcP2tr"></a>
+
+### Wallet.buildInventoryHtlcP2tr()
+**Kind**: static method of [<code>Wallet</code>](#Wallet)  
+**See**: [module:functions/inventoryHtlc.buildInventoryHtlcP2tr](module:functions/inventoryHtlc.buildInventoryHtlcP2tr)  
+<a name="Wallet.buildHtlcFundingHints"></a>
+
+### Wallet.buildHtlcFundingHints()
+**Kind**: static method of [<code>Wallet</code>](#Wallet)  
+**See**: [module:functions/inventoryHtlc.buildHtlcFundingHints](module:functions/inventoryHtlc.buildHtlcFundingHints)  
 <a name="Worker"></a>
 
 ## Worker
@@ -10980,7 +12657,7 @@ Receive a committed block.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| block | <code>Block</code> | Block to handle. |
+| block | [<code>Block</code>](#Block) | Block to handle. |
 
 <a name="Bitcoin+_handlePeerPacket"></a>
 
@@ -10996,7 +12673,7 @@ Process a message from a peer in the Bitcoin network.
 <a name="Bitcoin+_handleBlockFromSPV"></a>
 
 ### bitcoin.\_handleBlockFromSPV(msg)
-Hand a [Block](Block) message as supplied by an [SPV](SPV) client.
+Hand a [Block](#Block) message as supplied by an [SPV](SPV) client.
 
 **Kind**: instance method of [<code>Bitcoin</code>](#Bitcoin)  
 
@@ -11694,19 +13371,37 @@ Parent directory name of `.cookie` (for probe logging).
 <a name="Lightning"></a>
 
 ## Lightning
-Manage a Lightning node.
+Manage a Lightning node (Core Lightning JSON-RPC over Unix socket).
+
+BOLT checklist: `docs/BOLT_COMPATIBILITY.md`. RPC map: `docs/LIGHTNING_COMPAT.md`.
 
 **Kind**: global class  
+**See**: Lightning.DOCS  
 
 * [Lightning](#Lightning)
     * [new Lightning([settings])](#new_Lightning_new)
     * _instance_
+        * [.rpc](#Lightning+rpc)
         * [.createChannel(peer, amount, [pushMsat], [options])](#Lightning+createChannel)
         * [.createInvoice(amount)](#Lightning+createInvoice)
+        * [.callRpc(method, [params], [timeoutMs])](#Lightning+callRpc) ⇒ <code>Promise.&lt;\*&gt;</code>
+        * [.decodeLightning(boltString)](#Lightning+decodeLightning) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.decodePay(bolt11)](#Lightning+decodePay) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.createOffer(params)](#Lightning+createOffer) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.fetchInvoice(offerOrParams, [invoiceParams])](#Lightning+fetchInvoice) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.pay(invoiceOrParams, [timeoutMs])](#Lightning+pay) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.listOffers([filter])](#Lightning+listOffers) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.disableOffer(offerId)](#Lightning+disableOffer) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.createInvoiceRequest(params)](#Lightning+createInvoiceRequest) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.listInvoiceRequests([filter])](#Lightning+listInvoiceRequests) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.disableInvoiceRequest(invreqId)](#Lightning+disableInvoiceRequest) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.sendInvoice(params)](#Lightning+sendInvoice) ⇒ <code>Promise.&lt;Object&gt;</code>
+        * [.getRoute(destinationId, amountMsat, [riskfactor], [cltvOrRouteOptions])](#Lightning+getRoute) ⇒ <code>Promise.&lt;Object&gt;</code>
         * [.computeLiquidity()](#Lightning+computeLiquidity) ⇒ <code>Object</code>
         * [._makeRPCRequest(method, [params], [timeoutMs])](#Lightning+_makeRPCRequest) ⇒ <code>Object</code> \| <code>String</code>
     * _static_
         * [.CLN_RPC_METHODS](#Lightning.CLN_RPC_METHODS) : <code>ReadonlyArray.&lt;string&gt;</code>
+        * [.DOCS](#Lightning.DOCS) : <code>Readonly.&lt;{boltCompatibility: string, fabricLightningOffers: string, fabricLightningMarkets: string, fabricPaymentBech32: string, lightningCompat: string}&gt;</code>
         * [.defaultListenPortForNetwork([network])](#Lightning.defaultListenPortForNetwork) ⇒ <code>number</code>
 
 <a name="new_Lightning_new"></a>
@@ -11719,6 +13414,12 @@ Create an instance of the Lightning [Service](#Service).
 | --- | --- | --- |
 | [settings] | <code>Object</code> | Settings. |
 
+<a name="Lightning+rpc"></a>
+
+### lightning.rpc
+Optional RPC client handle (e.g. REST/grpc); not used by Core Lightning socket `_makeRPCRequest`.
+
+**Kind**: instance property of [<code>Lightning</code>](#Lightning)  
 <a name="Lightning+createChannel"></a>
 
 ### lightning.createChannel(peer, amount, [pushMsat], [options])
@@ -11743,6 +13444,171 @@ Create a new Lightning invoice.
 | Param | Type | Description |
 | --- | --- | --- |
 | amount | <code>String</code> | Amount in millisatoshi (msat). |
+
+<a name="Lightning+callRpc"></a>
+
+### lightning.callRpc(method, [params], [timeoutMs]) ⇒ <code>Promise.&lt;\*&gt;</code>
+Invoke any Core Lightning JSON-RPC method over the lightningd socket (escape hatch for methods without a typed wrapper).
+Named `callRpc` so it does not shadow the `rpc` instance property.
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+**Returns**: <code>Promise.&lt;\*&gt;</code> - RPC result.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| method | <code>String</code> |  | RPC method name (e.g. `listpeers`). |
+| [params] | <code>Array</code> | <code>[]</code> | Positional/object params as accepted by lightningd for that method. |
+| [timeoutMs] | <code>Number</code> | <code>30000</code> | Optional timeout. |
+
+<a name="Lightning+decodeLightning"></a>
+
+### lightning.decodeLightning(boltString) ⇒ <code>Promise.&lt;Object&gt;</code>
+Decode a BOLT11 invoice or BOLT12 offer string (Core Lightning `decode`).
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - Decoded fields.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| boltString | <code>String</code> | `lnbc...`, `lno1...`, etc. |
+
+<a name="Lightning+decodePay"></a>
+
+### lightning.decodePay(bolt11) ⇒ <code>Promise.&lt;Object&gt;</code>
+Decode a BOLT11 invoice for payment fields (Core Lightning `decodepay`).
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - Decoded pay details.  
+
+| Param | Type |
+| --- | --- |
+| bolt11 | <code>String</code> | 
+
+<a name="Lightning+createOffer"></a>
+
+### lightning.createOffer(params) ⇒ <code>Promise.&lt;Object&gt;</code>
+Create a BOLT12 offer (requires `experimental-offers` / modern CLN). Pass-through to `offer`.
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - Offer result (includes `bolt12` / offer id per CLN version).  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| params | <code>Object</code> | Keyword args, e.g. `{ amount_msat, description, label, issuer, ... }`. |
+
+<a name="Lightning+fetchInvoice"></a>
+
+### lightning.fetchInvoice(offerOrParams, [invoiceParams]) ⇒ <code>Promise.&lt;Object&gt;</code>
+Request a BOLT11 invoice from a BOLT12 offer (Core Lightning `fetchinvoice`).
+
+Call either:
+- `fetchInvoice('lno1…')` or `fetchInvoice('lno1…', { amount_msat, quantity, payer_note, timeout, … })`
+- **Recurrence** (when the offer is recurring): `recurrence_counter` (start at 0), `recurrence_start`, `recurrence_label` (stable label linking the series; required when counter is set). See Core Lightning **`fetchinvoice`** and [BOLT #12](https://github.com/lightning/bolts/blob/master/12-offer-encoding.md).
+- `fetchInvoice({ offer: 'lno1…', amount_msat, … })` — single keyword object as accepted by CLN.
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - Invoice response (includes `invoice` bolt11 when successful).  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| offerOrParams | <code>String</code> \| <code>Object</code> |  | Bolt12 offer string (`lno1…`), or one params object with an `offer` field. |
+| [invoiceParams] | <code>Object</code> | <code></code> | When the first arg is a string, optional extra fields merged into the RPC (second positional group). |
+
+<a name="Lightning+pay"></a>
+
+### lightning.pay(invoiceOrParams, [timeoutMs]) ⇒ <code>Promise.&lt;Object&gt;</code>
+Pay a BOLT11 invoice or BOLT12-fetched bolt11 string (Core Lightning `pay`).
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - Payment result.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| invoiceOrParams | <code>String</code> \| <code>Object</code> |  | Bolt11 string, or keyword object (e.g. `{ bolt11 }`, `{ bolt12 }` per CLN). |
+| [timeoutMs] | <code>Number</code> | <code>30000</code> |  |
+
+<a name="Lightning+listOffers"></a>
+
+### lightning.listOffers([filter]) ⇒ <code>Promise.&lt;Object&gt;</code>
+List offers created on this node (Core Lightning `listoffers`).
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [filter] | <code>String</code> \| <code>Object</code> \| <code>null</code> | <code></code> | `offer_id` string, or `{ offer_id?, active_only? }`, or null for all. |
+
+<a name="Lightning+disableOffer"></a>
+
+### lightning.disableOffer(offerId) ⇒ <code>Promise.&lt;Object&gt;</code>
+Disable a local offer by id (Core Lightning `disableoffer`).
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+
+| Param | Type |
+| --- | --- |
+| offerId | <code>String</code> | 
+
+<a name="Lightning+createInvoiceRequest"></a>
+
+### lightning.createInvoiceRequest(params) ⇒ <code>Promise.&lt;Object&gt;</code>
+Create a BOLT12 `invoice_request` (you request that someone else pay you via their offer flow). Returns `bolt12` (`lnr1…`). (Core Lightning `invoicerequest`, v22.11+.)
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| params | <code>Object</code> | `{ amount, description, issuer?, label?, absolute_expiry?, single_use? }` — see CLN docs for amount formats. |
+
+<a name="Lightning+listInvoiceRequests"></a>
+
+### lightning.listInvoiceRequests([filter]) ⇒ <code>Promise.&lt;Object&gt;</code>
+List `invoice_request` records (Core Lightning `listinvoicerequests`).
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [filter] | <code>String</code> \| <code>Object</code> \| <code>null</code> | <code></code> | `invreq_id` string, or `{ invreq_id?, active_only? }`, or null for all. |
+
+<a name="Lightning+disableInvoiceRequest"></a>
+
+### lightning.disableInvoiceRequest(invreqId) ⇒ <code>Promise.&lt;Object&gt;</code>
+Disable an `invoice_request` so no further invoices are accepted (Core Lightning `disableinvoicerequest`).
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+
+| Param | Type |
+| --- | --- |
+| invreqId | <code>String</code> | 
+
+<a name="Lightning+sendInvoice"></a>
+
+### lightning.sendInvoice(params) ⇒ <code>Promise.&lt;Object&gt;</code>
+Create and send a BOLT12 invoice to the issuer of an `invoice_request` (Core Lightning `sendinvoice`).
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| params | <code>Object</code> | `{ invreq, label, amount_msat?, timeout?, quantity? }` — `invreq` is the `lnr1…` string. |
+
+<a name="Lightning+getRoute"></a>
+
+### lightning.getRoute(destinationId, amountMsat, [riskfactor], [cltvOrRouteOptions]) ⇒ <code>Promise.&lt;Object&gt;</code>
+Route probe (Core Lightning `getroute`).
+CLN order: `id`, `amount_msat`, `riskfactor`, `cltv`, `fromid`, `fuzzpercent`, `exclude`, `maxhops`
+— the fourth **positional** is `cltv`, not `maxhops`. To set `maxhops` (or other tail fields) use the
+`routeOptions` object so intermediate slots are sent as `null` where needed.
+
+**Kind**: instance method of [<code>Lightning</code>](#Lightning)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| destinationId | <code>String</code> |  | Destination node id (pubkey). |
+| amountMsat | <code>Number</code> \| <code>String</code> |  |  |
+| [riskfactor] | <code>Number</code> | <code>10</code> |  |
+| [cltvOrRouteOptions] | <code>Number</code> \| <code>Object</code> \| <code>null</code> | <code></code> | Omitted: three-arg RPC. If a number: fourth positional (`cltv`).   If an object: tail fields `cltv`, `fromid`, `fuzzpercent`, `exclude`, `maxhops` (each optional). |
 
 <a name="Lightning+computeLiquidity"></a>
 
@@ -11771,6 +13637,13 @@ Make an RPC request through the Lightning UNIX socket.
 Core Lightning JSON-RPC method names invoked by this service (see docs/LIGHTNING_COMPAT.md).
 
 **Kind**: static property of [<code>Lightning</code>](#Lightning)  
+<a name="Lightning.DOCS"></a>
+
+### Lightning.DOCS : <code>Readonly.&lt;{boltCompatibility: string, fabricLightningOffers: string, fabricLightningMarkets: string, fabricPaymentBech32: string, lightningCompat: string}&gt;</code>
+Paths to canonical Markdown docs (relative to the `@fabric/core` package root).
+`fabricLightningMarkets` and `fabricLightningOffers` point at the same file (Fabric **markets** vs Lightning BOLT12 **offers**).
+
+**Kind**: static property of [<code>Lightning</code>](#Lightning)  
 <a name="Lightning.defaultListenPortForNetwork"></a>
 
 ### Lightning.defaultListenPortForNetwork([network]) ⇒ <code>number</code>
@@ -11785,14 +13658,15 @@ Default TCP port lightningd listens on when [settings.port](settings.port) is om
 <a name="Redis"></a>
 
 ## Redis
-Connect and subscribe to Redis servers.
+Connect and subscribe to Redis servers (node-redis v6).
 
 **Kind**: global class  
 
 * [Redis](#Redis)
     * [new Redis([settings])](#new_Redis_new)
-    * [.start()](#Redis+start) ⇒ [<code>Redis</code>](#Redis)
-    * [.stop()](#Redis+stop) ⇒ [<code>Redis</code>](#Redis)
+    * [.start()](#Redis+start) ⇒ [<code>Promise.&lt;Redis&gt;</code>](#Redis)
+    * [.stop()](#Redis+stop) ⇒ [<code>Promise.&lt;Redis&gt;</code>](#Redis)
+    * [.subscribe(name)](#Redis+subscribe) ⇒ <code>Promise.&lt;void&gt;</code>
 
 <a name="new_Redis_new"></a>
 
@@ -11806,21 +13680,29 @@ Creates an instance of a Redis subscriber.
 | [settings] | <code>Object</code> | Settings for the Redis connection. |
 | [settings.host] | <code>String</code> | Host for the Redis server. |
 | [settings.port] | <code>Number</code> | Remote Redis service port. |
+| [settings.url] | <code>String</code> | Optional redis URL (overrides host/port). |
 
 <a name="Redis+start"></a>
 
-### redis.start() ⇒ [<code>Redis</code>](#Redis)
+### redis.start() ⇒ [<code>Promise.&lt;Redis&gt;</code>](#Redis)
 Opens the connection and subscribes to the requested channels.
 
 **Kind**: instance method of [<code>Redis</code>](#Redis)  
-**Returns**: [<code>Redis</code>](#Redis) - Instance of the service.  
 <a name="Redis+stop"></a>
 
-### redis.stop() ⇒ [<code>Redis</code>](#Redis)
+### redis.stop() ⇒ [<code>Promise.&lt;Redis&gt;</code>](#Redis)
 Closes the connection to the Redis server.
 
 **Kind**: instance method of [<code>Redis</code>](#Redis)  
-**Returns**: [<code>Redis</code>](#Redis) - Instance of the service.  
+<a name="Redis+subscribe"></a>
+
+### redis.subscribe(name) ⇒ <code>Promise.&lt;void&gt;</code>
+**Kind**: instance method of [<code>Redis</code>](#Redis)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| name | <code>string</code> | Channel name |
+
 <a name="Text"></a>
 
 ## Text ⇐ [<code>Service</code>](#Service)
@@ -12352,6 +14234,114 @@ Closes the connection to the ZMQ publisher.
 Deprecated 2021-11-06 — use [FabricState](FabricState) (<code>types/state</code>). <code>Scribe</code> was merged into <code>State</code>.
 
 **Kind**: global class  
+<a name="mineOnStart"></a>
+
+## mineOnStart
+When false, `start()` does not mine an initial epoch (regtest).
+
+**Kind**: global variable  
+<a name="GenericMessage"></a>
+
+## GenericMessage
+Transitional Hub/browser catch-all (opcode GENERIC_MESSAGE_TYPE / 15103).
+
+**Kind**: global variable  
+<a name="merge"></a>
+
+## merge
+Beacon — L1-tied epoch chain that seals sidechain / contracts digests.
+
+Regtest: `createEpoch()` mines one block (`generatetoaddress`) then appends
+a `BEACON_EPOCH` entry. Non-regtest: `recordEpochFromBlock` follows tips.
+
+Hub product wiring historically lived in hub.fabric.pub `contracts/beacon.js`;
+that module re-exports this type.
+
+**Kind**: global constant  
+<a name="merge"></a>
+
+## merge
+Bitcoin-shaped Block: parent-linked header + merkle of leaves, with optional
+PoW (`nonce`/`bits`), Elements-style federation signatures, and arbitrary `data`.
+
+**Kind**: global constant  
+**See**: docs/CHAIN.md  
+<a name="crypto"></a>
+
+## crypto
+Chain — ledger of Bitcoin-shaped Blocks with consensus policy:
+
+- `pow` (default) — parent-linked playnet / Bitcoin-style Block + mempool
+- `federation` — linear tip; Elements-style k-of-n block signatures (Beacon)
+- `gossip` — content-addressed data blocks; merge = union by block id
+
+Statechain document helpers (`functions/sidechainState`) hold the sealed JSON
+document. Digests feed that document / Beacon sidechain heads; raw gossip is
+never Beacon authority.
+
+**Kind**: global constant  
+**See**
+
+- docs/CHAIN.md
+- docs/DISTRIBUTED_EXECUTION.md
+
+<a name="SEAL_BLOCK"></a>
+
+## ~~SEAL\_BLOCK~~
+***Use CONSENSUS_*; aliases for one release.***
+
+**Kind**: global constant  
+<a name="fabricCanonicalJson"></a>
+
+## ~~fabricCanonicalJson~~
+***Not a Fabric type. Prefer:
+- `functions/fabricCanonicalJson` (jsonSafe / stableStringify)
+- `functions/beaconFederationSigning` (epoch signing / federation verify)
+- `functions/fabricProgramManifest` / `Machine.parseManifest` (manifest v1)
+- `types/program` + `types/machine` for execution
+
+Thin re-export kept for one release so Hub / older requires keep working.***
+
+**Kind**: global constant  
+<a name="BODY_SCHEMA_BY_KEY"></a>
+
+## BODY\_SCHEMA\_BY\_KEY : <code>Map.&lt;(number\|string), Array.&lt;{name: string, type: string}&gt;&gt;</code>
+**Kind**: global constant  
+<a name="SCHEMA_P2P_FORWARD"></a>
+
+## SCHEMA\_P2P\_FORWARD
+Directed onion hop — see [module:@fabric/core/functions/fabricOnion](module:@fabric/core/functions/fabricOnion).
+
+**Kind**: global constant  
+<a name="P2P_CHAT_MAX_CHARS"></a>
+
+## P2P\_CHAT\_MAX\_CHARS
+Max UTF-8 code units for first-class P2P_CHAT_MESSAGE body (text only).
+
+**Kind**: global constant  
+<a name="P2P_PEER_ALIAS_MAX_CHARS"></a>
+
+## P2P\_PEER\_ALIAS\_MAX\_CHARS
+Max UTF-8 code units for first-class P2P_PEER_ALIAS body (nickname).
+
+**Kind**: global constant  
+<a name="crypto"></a>
+
+## crypto
+Multi-language Program — executable artifact for [Machine](#Machine), with optional
+L1 Bitcoin redeem scaffolding for `bitcoin-script`.
+
+Languages: `fabric-opcodes` | `javascript` | `bitcoin-script` | `solidity` | `asm`
+(solidity/asm compile stubs until Compiler frontends land).
+
+**Kind**: global constant  
+**See**: docs/PROGRAM.md  
+<a name="networks"></a>
+
+## networks
+Fabric settings use `mainnet`; bitcoinjs-lib 7 names that network `bitcoin`.
+
+**Kind**: global constant  
 <a name="Text"></a>
 
 ## ~~Text~~
@@ -12829,6 +14819,84 @@ Join a list with an Oxford comma (delegates to [module:functions/oxfordJoin](mod
 | Param | Type |
 | --- | --- |
 | list | <code>Array.&lt;string&gt;</code> | 
+
+<a name="isStructuredBlockInput"></a>
+
+## isStructuredBlockInput(input) ⇒ <code>boolean</code>
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| input | <code>object</code> | 
+
+<a name="signingStringForBlock"></a>
+
+## signingStringForBlock(header) ⇒ <code>string</code>
+Canonical signing / digest body (excludes witness material).
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| header | <code>object</code> | 
+
+<a name="blockDigest"></a>
+
+## blockDigest(header) ⇒ <code>string</code>
+Content digest for merkle leaves / chain digest (includes optional federationWitness).
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| header | <code>object</code> | 
+
+<a name="meetsProofOfWork"></a>
+
+## meetsProofOfWork(idHex, bits) ⇒ <code>boolean</code>
+Soft playnet PoW: leading zero hex nibbles from `bits` (integer 0–64).
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| idHex | <code>string</code> | 
+| bits | <code>number</code> \| <code>null</code> | 
+
+<a name="canonicalTypeCode"></a>
+
+## canonicalTypeCode(value) ⇒ <code>number</code> \| <code>null</code>
+Resolve any opcode / wire name / friendly alias to the numeric AMP type code.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| value | <code>number</code> \| <code>string</code> \| <code>null</code> \| <code>undefined</code> | 
+
+<a name="canonicalTypeName"></a>
+
+## canonicalTypeName(value) ⇒ <code>string</code> \| <code>null</code>
+Resolve any opcode / wire name / friendly alias to the SCREAMING_SNAKE wire label.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| value | <code>number</code> \| <code>string</code> \| <code>null</code> \| <code>undefined</code> | 
+
+<a name="typeEquals"></a>
+
+## typeEquals(a, b) ⇒ <code>boolean</code>
+True when two type references name the same AMP opcode (number, wire name, or friendly alias).
+Unregistered string labels only match via exact trim equality.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| a | <code>number</code> \| <code>string</code> \| <code>null</code> \| <code>undefined</code> | 
+| b | <code>number</code> \| <code>string</code> \| <code>null</code> \| <code>undefined</code> | 
 
 <a name="BitcoinCookieProbeConstraints"></a>
 
