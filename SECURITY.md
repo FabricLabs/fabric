@@ -36,6 +36,7 @@ Source-routed nesting for IP-hiding delivery (see [docs/P2P_FORWARD.md](docs/P2P
 - Outer frames are **relay-as-is** (path-builder signature; TCP peer pin not required).
 - Peel when `nextPeer` matches local x-only pubkey; otherwise forward **bit-identical** to that peer only (no mesh flood).
 - Drop `ttl === 0`; refuse bounce to the inbound origin; inbound credit cost default 4 (`settings.wireTraffic.forwardCreditCost`).
+- Peeled `inner` delivery uses `peeledForward` so body-hash / bad-sig / pin / forbidden `CONTRACT_MESSAGE` ops **do not** hard-disconnect or derank the TCP last hop (attackers must not cut honest relay↔destination links by laundering a bad inner).
 - **Accepted risk:** hop IDs and inner payload are cleartext at each layer unless the app seals content. Not Sphinx.
 
 ## Peer scoring / misbehavior

@@ -141,4 +141,88 @@ describe('Peer P2P_FORWARD onion', function () {
     const midFields = tryDecodeForward(mid);
     assert.strictEqual(midFields.nextPeer.toString('hex'), xOnlyFromKey(r2Key).toString('hex'));
   });
+
+  it('peeled bad-signature inner does not hard-disconnect the last hop', function () {
+    const destKey = new Key();
+    const relayKey = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic }
+    }));
+    const addr = '127.0.0.1:9500';
+    let destroyed = false;
+    peer.connections[addr] = {
+      _writeFabric () {},
+      destroy () { destroyed = true; }
+    };
+    peer._addressToId[addr] = 'honest-relay';
+    peer._state.peers = {
+      'honest-relay': {
+        id: 'honest-relay',
+        address: addr,
+        score: 200,
+        publicKey: relayKey.public.encodeCompressed('hex')
+      }
+    };
+    peer.peers[addr] = { id: 'honest-relay', publicKey: relayKey.public.encodeCompressed('hex') };
+
+    const payload = Message.fromVector(['P2P_CHAT_MESSAGE', 'tampered']);
+    payload.signWithKey(new Key());
+    const wire = Buffer.from(payload.toBuffer());
+    // Corrupt AMP signature so verify fails after peel.
+    if (wire.length > 80) wire[wire.length - 1] ^= 0xff;
+
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(peer.key)],
+      payload: Message.fromBuffer(wire),
+      key: relayKey
+    });
+
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.strictEqual(destroyed, false, 'must not destroy honest last-hop connection');
+    assert.strictEqual(peer._isPeerBanned(addr), false);
+    assert.ok(peer.connections[addr], 'last-hop connection must remain');
+    assert.strictEqual(peer._state.peers['honest-relay'].score, 200, 'must not derank last hop');
+  });
+
+  it('peeled body-hash mismatch does not hard-disconnect the last hop', function () {
+    const destKey = new Key();
+    const relayKey = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic }
+    }));
+    const addr = '127.0.0.1:9501';
+    let destroyed = false;
+    peer.connections[addr] = {
+      _writeFabric () {},
+      destroy () { destroyed = true; }
+    };
+    peer._addressToId[addr] = 'honest-relay-2';
+    peer._state.peers = {
+      'honest-relay-2': {
+        id: 'honest-relay-2',
+        address: addr,
+        score: 180,
+        publicKey: relayKey.public.encodeCompressed('hex')
+      }
+    };
+    peer.peers[addr] = { id: 'honest-relay-2', publicKey: relayKey.public.encodeCompressed('hex') };
+
+    const payload = Message.fromVector(['P2P_CHAT_MESSAGE', 'hash-bad']).signWithKey(new Key());
+    const buf = Buffer.from(payload.toBuffer());
+    // Flip a body byte after the 208-byte header so header.hash mismatches.
+    if (buf.length > 208) buf[208] ^= 0xff;
+
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(peer.key)],
+      payload: Message.fromBuffer(buf),
+      key: relayKey
+    });
+
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.strictEqual(destroyed, false);
+    assert.strictEqual(peer._isPeerBanned(addr), false);
+    assert.strictEqual(peer._state.peers['honest-relay-2'].score, 180);
+  });
 });

@@ -1365,7 +1365,10 @@ class Peer extends Service {
         innerBytes: fields.inner.length
       });
       if (fields.inner.length > 0) {
-        this._handleFabricMessage(fields.inner, origin, socket);
+        // Peeled inners must not hard-disconnect / derank the TCP last hop:
+        // relays forward bit-identical outers, so a malicious originator can
+        // launder a bad inner through an honest relay (see SECURITY.md / P2P_FORWARD).
+        this._handleFabricMessage(fields.inner, origin, socket, { peeledForward: true });
       }
       return this;
     }
@@ -1943,12 +1946,16 @@ class Peer extends Service {
    * @param {Object} [options]
    * @param {number} [options.relayDepth]
    * @param {boolean} [options.skipRelayFlood]
+   * @param {boolean} [options.peeledForward] true when delivered via {@link Peer#_handleP2PForward} peel
    * @returns {Peer} Instance of the Peer.
    */
   _handleFabricMessage (buffer, origin = null, socket = null, options = null) {
     const opts = (options && typeof options === 'object') ? options : {};
     const originName = (origin && origin.name) ? origin.name : null;
     const ps = this.settings.peerScore || {};
+    // Onion peel: never attribute inner-frame integrity / authz failures to the TCP last hop.
+    const peeledForward = opts.peeledForward === true;
+    const scoreOrigin = peeledForward ? null : originName;
 
     // Frame-size gate before parse / hash / signature work.
     let wire = buffer;
@@ -1995,10 +2002,11 @@ class Peer extends Service {
         ? ` wire=${String(expectedHash).slice(0, 16)}… computed=${String(checksum).slice(0, 16)}…`
         : '';
       this.emit('warning',
-        `[FABRIC:PEER] Dropping message (body hash mismatch): from=${originName || 'unknown'} type=${t}${hint}`);
-      this._applyPeerMisbehavior(originName, 'body-hash-mismatch', {
+        `[FABRIC:PEER] Dropping message (body hash mismatch): from=${originName || 'unknown'}` +
+        `${peeledForward ? ' (peeled forward)' : ''} type=${t}${hint}`);
+      this._applyPeerMisbehavior(scoreOrigin, 'body-hash-mismatch', {
         penalty: Number(ps.bodyHashMismatchPenalty) || PEER_SCORE_BODY_HASH_MISMATCH_PENALTY,
-        disconnect: true
+        disconnect: !peeledForward
       });
       return this;
     }
@@ -2006,10 +2014,12 @@ class Peer extends Service {
     // Verify every inbound message against the signed on-wire author field.
     const signerPubkeyHex = this._verifiedFabricSignerPubkeyHex(message);
     if (!signerPubkeyHex) {
-      this.emit('warning', `[FABRIC:PEER] Invalid message signature from ${originName || 'unknown'}`);
-      this._applyPeerMisbehavior(originName, 'invalid-signature', {
+      this.emit('warning',
+        `[FABRIC:PEER] Invalid message signature from ${originName || 'unknown'}` +
+        `${peeledForward ? ' (peeled forward)' : ''}`);
+      this._applyPeerMisbehavior(scoreOrigin, 'invalid-signature', {
         penalty: Number(ps.invalidSignaturePenalty) || PEER_SCORE_INVALID_SIGNATURE_PENALTY,
-        disconnect: true
+        disconnect: !peeledForward
       });
       return this;
     }
@@ -2019,18 +2029,20 @@ class Peer extends Service {
     // Connection peer pin ≠ message author for mesh relays (author may be a prior hop
     // or a multisig group). Authenticity is the AMP signature; Noise authenticates the TCP peer.
     // Session / control messages still require signer continuity with the pinned peer key.
+    // Peeled onion inners are authored by the path originator, not the last hop — skip pin.
     const peerKey = origin && (origin.name != null ? origin.name : origin);
     const peerRecord = peerKey && this.peers[peerKey];
-    const relayAsIs = isRelayAsIsWireType(message.type)
+    const relayAsIs = peeledForward
+      || isRelayAsIsWireType(message.type)
       || isRelayAsIsWireType(message.friendlyType)
       || isRelayAsIsGenericCarrier(message);
     if (!relayAsIs && peerRecord && peerRecord.publicKey) {
       const pinned = normalizePeerPubkeyHex(peerRecord.publicKey);
       if (pinned && pinned !== signerPubkeyHex) {
         this.emit('warning', `[FABRIC:PEER] Signer mismatch from ${peerKey}: expected pinned peer key`);
-        this._applyPeerMisbehavior(originName || peerKey, 'signer-pin-mismatch', {
+        this._applyPeerMisbehavior(scoreOrigin || peerKey, 'signer-pin-mismatch', {
           penalty: Number(ps.signerPinMismatchPenalty) || PEER_SCORE_SIGNER_PIN_MISMATCH_PENALTY,
-          disconnect: true
+          disconnect: !peeledForward
         });
         return this;
       }
@@ -2076,7 +2088,8 @@ class Peer extends Service {
             }
             this._handleFabricMessage(inner, origin, socket, {
               relayDepth: relayDepth + 1,
-              skipRelayFlood: true
+              skipRelayFlood: true,
+              peeledForward
             });
             // Only the outermost received envelope is mesh-flooded (bit-identical).
             if (!opts.skipRelayFlood) {
@@ -2307,7 +2320,7 @@ class Peer extends Service {
             ? Object.assign({}, parsed, { type: parsed.type || innerType })
             : { type: innerType, object: parsed };
         }
-        this._handleGenericMessage(genericBody, origin, socket, message);
+        this._handleGenericMessage(genericBody, origin, socket, message, opts);
         break;
       }
       case 'DOCUMENT_PUBLISH':
@@ -2416,7 +2429,7 @@ class Peer extends Service {
             this.emit('warning', '[FABRIC:PEER] Generic message body must be a JSON object');
             break;
           }
-          this._handleGenericMessage(bodyGm, origin, socket, message);
+          this._handleGenericMessage(bodyGm, origin, socket, message, opts);
         }
 
         break;
@@ -2634,7 +2647,9 @@ class Peer extends Service {
     return this;
   }
 
-  _handleGenericMessage (message, origin = null, socket = null, wireMessage = null) {
+  _handleGenericMessage (message, origin = null, socket = null, wireMessage = null, options = null) {
+    const handleOpts = (options && typeof options === 'object') ? options : {};
+    const peeledForward = handleOpts.peeledForward === true;
     const msg = normalizeFabricDocumentOfferEnvelopeForHandlers(message);
     if (this.settings.debug) this.emit('debug', `Generic message:\n\tFrom: ${JSON.stringify(origin)}\n\tType: ${msg.type}\n\tBody:\n\`\`\`\n${JSON.stringify(msg.object, null, '  ')}\n\`\`\``);
 
@@ -2951,11 +2966,13 @@ class Peer extends Service {
         if (registered && Array.isArray(msg.object.ops) && msg.object.ops.length) {
           if (!this._signerMayPatchContract(contractId, signerPubkeyHex)) {
             this.emit('warning',
-              `[FABRIC:PEER] CONTRACT_MESSAGE ops rejected for ${contractId}: signer not in contract allow-list`);
+              `[FABRIC:PEER] CONTRACT_MESSAGE ops rejected for ${contractId}: signer not in contract allow-list` +
+              `${peeledForward ? ' (peeled forward)' : ''}`);
             const opsPs = this.settings.peerScore || {};
-            this._applyPeerMisbehavior(origin && origin.name, 'contract-ops-forbidden', {
+            // Onion peel: do not cut the honest last-hop TCP link for an unauthorized inner.
+            this._applyPeerMisbehavior(peeledForward ? null : (origin && origin.name), 'contract-ops-forbidden', {
               penalty: Number(opsPs.contractOpsForbiddenPenalty) || PEER_SCORE_CONTRACT_OPS_FORBIDDEN_PENALTY,
-              disconnect: true
+              disconnect: !peeledForward
             });
             // Do not emit or relay — forbidden ops must not be laundered through the mesh.
             break;
