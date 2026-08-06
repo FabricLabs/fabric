@@ -64,7 +64,19 @@ const CONTRACT_BODY_TYPES = Object.freeze({
   GroupChange: 'GroupChange',
   GroupShare: 'GroupShare',
   /** Merkle root + digests of cumulative local history leaves under a Group namespace. */
-  GroupActivityTree: 'GroupActivityTree'
+  GroupActivityTree: 'GroupActivityTree',
+  /** Request missing Statechain journal entries (fromClock → tip). */
+  GroupJournalRequest: 'GroupJournalRequest',
+  /** Catch-up batch of accepted journal rows + tip Schnorr (k-of-n members). */
+  GroupJournalBatch: 'GroupJournalBatch',
+  /** Optional tip attestation: folded stateDigest signed by member threshold. */
+  GroupStateJournal: 'GroupStateJournal',
+  /** Token-backed contract role grant (reader / signer). */
+  ContractCapabilityGrant: 'ContractCapabilityGrant',
+  /** Propose spend or decay-migrate from contract Taproot UTXO. */
+  ContractWithdrawalRequest: 'ContractWithdrawalRequest',
+  /** Co-signer witness for a withdrawal / migration. */
+  ContractWithdrawalWitness: 'ContractWithdrawalWitness'
 });
 
 /**

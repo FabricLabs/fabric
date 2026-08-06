@@ -3193,7 +3193,13 @@ class Peer extends Service {
           registered,
           object: msg.object,
           origin,
-          signer: signerPubkeyHex || null
+          signer: signerPubkeyHex || null,
+          // Bit-identical AMP frame for journal / audit attach (apps ignore if unused).
+          wireMessage: wireMessage || null,
+          messageId: wireMessage && wireMessage.id ? wireMessage.id : null,
+          messageHex: wireMessage && typeof wireMessage.toBuffer === 'function'
+            ? wireMessage.toBuffer().toString('hex')
+            : null
         });
         // Same outermost-only flood rule as CONTRACT_PUBLISH / chat / gossip.
         if (delivery.allowMeshRelay && origin && origin.name && wireMessage) {

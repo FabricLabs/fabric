@@ -31,7 +31,15 @@ describe('applicationNamespaces', function () {
     assert.ok(CONTRACT_BODY_TYPES.FederationContractInvite);
     assert.ok(CONTRACT_BODY_TYPES.MissionBroadcast);
     assert.ok(CONTRACT_BODY_TYPES.GameStateSnapshot);
+    assert.ok(CONTRACT_BODY_TYPES.GroupActivityTree);
+    assert.ok(CONTRACT_BODY_TYPES.GroupJournalRequest);
+    assert.ok(CONTRACT_BODY_TYPES.GroupJournalBatch);
+    assert.ok(CONTRACT_BODY_TYPES.GroupStateJournal);
+    assert.ok(CONTRACT_BODY_TYPES.ContractCapabilityGrant);
+    assert.ok(CONTRACT_BODY_TYPES.ContractWithdrawalRequest);
+    assert.ok(CONTRACT_BODY_TYPES.ContractWithdrawalWitness);
     assert.strictEqual(isKnownContractBodyType('GroupShare'), true);
+    assert.strictEqual(isKnownContractBodyType('GroupJournalBatch'), true);
     assert.strictEqual(isKnownContractBodyType('GameStateSnapshot'), true);
     assert.strictEqual(isKnownContractBodyType('NotAType'), false);
   });

@@ -292,63 +292,28 @@ class Federation extends Contract {
   }
 
   get address () {
-    // Get the public keys of all validators
-    const pubkeys = this._state.content.validators.map(pubkey => Buffer.from(pubkey, 'hex'));
-
-    // Create the threshold script for majority of signers
-    const threshold = Math.ceil(pubkeys.length / 2);
-    const thresholdScript = bitcoin.script.compile([
-      bitcoin.opcodes.OP_PUSHNUM_1 + threshold - 1,
-      ...pubkeys.map(pubkey => Buffer.concat([
-        Buffer.from([pubkey.length]),
-        pubkey
-      ])),
-      bitcoin.opcodes.OP_PUSHNUM_1 + pubkeys.length,
-      bitcoin.opcodes.OP_CHECKMULTISIG
-    ]);
-
-    // Create the taproot tree
-    const tree = [
-      {
-        script: thresholdScript,
-        weight: 1
-      }
-    ];
-
-    // Add timeout condition if specified in settings
-    if (this.settings.timeout) {
-      const timeoutScript = bitcoin.script.compile([
-        bitcoin.opcodes.OP_CHECKLOCKTIMEVERIFY,
-        bitcoin.opcodes.OP_DROP,
-        ...thresholdScript
-      ]);
-      tree.push({
-        script: timeoutScript,
-        weight: 1
-      });
+    const tap = require('../functions/contractTaproot');
+    const validators = (this._state.content.validators || []).slice();
+    if (!validators.length) {
+      throw new Error('Federation address requires at least one validator');
     }
-
-    // Add contract condition if specified in settings
-    if (this.settings.contract) {
-      // If contract is a string, assume it's a script hex
-      const contractScript = typeof this.settings.contract === 'string'
-        ? Buffer.from(this.settings.contract, 'hex')
-        : this.settings.contract;
-
-      tree.push({
-        script: contractScript,
-        weight: 1
-      });
+    const threshold = this.settings.threshold != null
+      ? Number(this.settings.threshold)
+      : Math.ceil(validators.length / 2);
+    const publisher = this.settings.publisher || validators[0];
+    const csvBlocks = this.settings.csvBlocks != null
+      ? Number(this.settings.csvBlocks)
+      : (this.settings.timeout ? Number(this.settings.timeout) || tap.DEFAULT_CSV_BLOCKS : tap.DEFAULT_CSV_BLOCKS);
+    if (this.settings.spendLadder) {
+      return tap.toAddress(this.settings.spendLadder);
     }
-
-    // Create the taproot output
-    const output = bitcoin.payments.p2tr({
-      internalPubkey: pubkeys[0].slice(1), // Use first validator's x-only pubkey
-      scriptTree: tree,
-      network: bitcoin.networks.bitcoin
-    });
-
-    return output.address;
+    return tap.toAddress(tap.synthesizeDefaultLadder({
+      validators,
+      threshold,
+      publisher,
+      network: this.settings.network || 'bitcoin',
+      csvBlocks
+    }));
   }
 }
 

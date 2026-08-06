@@ -40,7 +40,23 @@ These `type` strings ride inside `CONTRACT_MESSAGE` (not outer opcodes):
 | `GroupChat` | GoonCitizen Group Federation | Group channel chat |
 | `GroupChange` | GoonCitizen Group Federation | Membership / meta |
 | `GroupShare` | GoonCitizen Group Federation | Group-scoped shares (mission offers; `kind: GroupOffer` for opaque `fabric:<hex>` join offers) |
+| `GroupActivityTree` | GoonCitizen Group Federation | Merkle root + digests of cumulative history under a Group namespace |
+| `GroupJournalRequest` | GoonCitizen Group Federation | Request missing Statechain journal entries (`fromClock` → tip) |
+| `GroupJournalBatch` | GoonCitizen Group Federation | Catch-up batch of journal rows + tip Schnorr (`ContractStateTip`) |
+| `GroupStateJournal` | GoonCitizen Group Federation | Optional tip attestation: folded `stateDigest` signed to threshold |
+| `ContractCapabilityGrant` | Hub, GoonCitizen | Token-backed reader/signer grant (`OP_CONTRACT_READ` / `OP_CONTRACT_SIGN`) |
+| `ContractWithdrawalRequest` | Hub, GoonCitizen | Spend or decay-migrate from contract Taproot UTXO |
+| `ContractWithdrawalWitness` | Hub, GoonCitizen | Co-signer witness for withdrawal / migration |
 | `GameStateSnapshot` | GoonCitizen → Hub sidechain | Cumulative analytics snapshot for Beacon seal (also listed under `ACTIVITY_TYPES`) |
+
+**Tip attestation:** journal tips use
+[`functions/contractStateSigning`](../functions/contractStateSigning.js)
+(`kind: ContractStateTip`, same k-of-n witness shape as Beacon epochs). Hub must
+track this module when sealing contract-namespace sidechains.
+
+**Taproot spend ladder:** [`functions/contractTaproot`](../functions/contractTaproot.js)
+builds deterministic P2TR trees from author-defined failover tiers (`after` / `until`
+decay + optional migrate). See DISTRIBUTED_EXECUTION.md.
 
 ### Shared activity / GenericMessage types
 
@@ -71,5 +87,6 @@ it is hashed into the contract `Actor` id (GoonCitizen network genesis).
 1. **New mesh features** use the outer types above — not new one-off opcodes per app.
 2. **App-specific semantics** go in `CONTRACT_MESSAGE` body `type` + `object` under a published contract id.
 3. **Ignore unknown namespaces** — never crash the Peer on unfamiliar `contract` ids.
-4. **Hub invite JSON** (`FederationContractInvite` v2) is the shared join/policy shape.
-5. Prefer importing names from `@fabric/core/functions/applicationNamespaces` rather than duplicating string literals.
+4. **Invite JSON** (`FederationContractInvite` v2) is the shared join/policy shape — parse/build lives in **`@fabric/http/functions/federationContractInvite`** (keep JSON bridges out of core).
+5. Prefer importing body-type names from `@fabric/core/functions/applicationNamespaces` rather than duplicating string literals.
+6. **`contract:message` events** expose `wireMessage` / `messageHex` so apps can attach bit-identical AMP frames to journal rows.

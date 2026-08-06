@@ -330,6 +330,48 @@ class Contract extends Service {
       script: this.contract
     };
   }
+
+  /**
+   * Build deterministic P2TR spend tree from settings.spendLadder or synthesized
+   * validators / publisher policy.
+   * @param {object} [overrides]
+   * @returns {object} {@link module:functions/contractTaproot.buildContractTaproot}
+   */
+  toTaprootContract (overrides = {}) {
+    const tap = require('../functions/contractTaproot');
+    const ladder = this.settings.spendLadder || overrides.spendLadder || null;
+    if (ladder) {
+      return tap.buildContractTaproot({ ...ladder, ...overrides });
+    }
+    const validators = (this.settings.proposedPolicy && this.settings.proposedPolicy.validators)
+      || (this.settings.consensus && this.settings.consensus.validators)
+      || this.settings.validators
+      || [];
+    const threshold = (this.settings.proposedPolicy && this.settings.proposedPolicy.threshold)
+      || this.settings.threshold
+      || 1;
+    const publisher = this.settings.publisher
+      || this.settings.creator
+      || (validators[0] || null);
+    return tap.buildContractTaproot(tap.synthesizeDefaultLadder({
+      validators,
+      threshold,
+      publisher,
+      network: this.settings.network || overrides.network || 'regtest',
+      csvBlocks: this.settings.csvBlocks != null ? this.settings.csvBlocks : tap.DEFAULT_CSV_BLOCKS,
+      ...overrides
+    }));
+  }
+
+  /**
+   * Bech32m P2TR address for this contract's spend policy.
+   * @param {string} [network]
+   * @returns {string}
+   */
+  toAddress (network) {
+    const built = this.toTaprootContract(network ? { network } : {});
+    return built.address;
+  }
 }
 
 module.exports = Contract;
