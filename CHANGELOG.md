@@ -37,6 +37,8 @@ JS-canonical protocol for 0.1.0; Lightning-style wire preimage; unsigned documen
 - **Coverage:** c8 includes PR-critical helpers (`fabricOnion`, `inventoryHtlc`, `documentSealedExchange`, `documentBlobManifest`, `loadLocalSettings`, `messageBodyCodec`, `sidechainState`); expanded onion/adversarial tests for TTL=0, bounce refuse, undeliverable, `sendOnion` failures, nest soft-punish, relayedAsIs session reject, ban expiry, chat window rollover, document-route caps.
 - **Coverage:** production gossip/peering wire-mesh suite (`tests/fabric.peer.gossip-network.js`) — bit-identical fan-out, hop=0, budgets/window rollover, FIFO caches, RELAY-as-is (no double amplify), three-node loop-free path, chat/alias budget isolation; peering offers also local-only under `relayedAsIs`.
 - **Coverage:** Codecov project `threshold: 1%` (expanding c8 allowlist); more `DocumentBlobTransferBook` ingest edges + sidechain journal/snapshot summarize coverage.
+- **`P2P_FORWARD` peel:** skip inbound wire-credit debit for peeled/relayed-as-is inners; `P2P_PEER_ANNOUNCE` local-only (no candidate enqueue); logical-register punish origin null on peel (incl. `CONTRACT_PUBLISH` hijack).
+- **Coverage / Codacy:** claimWatch hub-reveal + claim-witness, mature refund broadcast, AMP-signer refuse, sealed content-key store helpers; Semgrep/Opengrep exclude for path-hardened `cliDocumentExchange` / `contractSidechainLocal` (containment already tested).
 
 **Public readiness**
 - **[PUBLIC_API.md](PUBLIC_API.md)** — frozen 0.1 leaf import map + scoped RC claim (Peer + document helpers + local Program/Machine; not a sandboxed dapp VM).

@@ -684,6 +684,126 @@ describe('Peer P2P_FORWARD onion', function () {
     assert.strictEqual(otherWrites.length, 0, 'must not mesh-relay peeled gossip');
   });
 
+  it('peeled inners do not debit last-hop wire-traffic budget', function () {
+    const destKey = new Key();
+    const relayKey = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic },
+      wireTraffic: {
+        maxCreditsPerWindow: 50,
+        defaultCreditCost: 1,
+        forwardCreditCost: 4,
+        overLimitPenalty: 40
+      }
+    }));
+    const addr = '127.0.0.1:9670';
+    peer.connections[addr] = wireMock([]);
+    peer._addressToId[addr] = 'honest-relay-budget';
+    peer._state.peers = {
+      'honest-relay-budget': {
+        id: 'honest-relay-budget',
+        address: addr,
+        score: 200,
+        publicKey: relayKey.public.encodeCompressed('hex')
+      }
+    };
+    peer.peers[addr] = {
+      id: 'honest-relay-budget',
+      publicKey: relayKey.public.encodeCompressed('hex')
+    };
+
+    // 12 outers × 4 credits = 48 ≤ 50. If inners also charged (+1 each), total 60 → derank.
+    for (let i = 0; i < 12; i++) {
+      const payload = Message.fromVector(['P2P_CHAT_MESSAGE', `budget-${i}-${Date.now()}`])
+        .signWithKey(new Key());
+      const outer = wrapOnionPath({
+        path: [xOnlyFromKey(peer.key)],
+        payload,
+        key: relayKey
+      });
+      peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+    }
+
+    assert.strictEqual(peer._state.peers['honest-relay-budget'].score, 200);
+    assert.strictEqual(peer._isPeerBanned(addr), false);
+  });
+
+  it('peeled P2P_PEER_ANNOUNCE does not enqueue dial candidates', function () {
+    const destKey = new Key();
+    const originKey = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic },
+      constraints: { peers: { max: 32 } }
+    }));
+    const addr = '127.0.0.1:9680';
+    peer.connections[addr] = wireMock([]);
+    peer.peers[addr] = { publicKey: originKey.public.encodeCompressed('hex') };
+    const before = (peer.candidates && peer.candidates.length) || 0;
+
+    const payload = Message.fromVector(['P2P_PEER_ANNOUNCE', JSON.stringify({
+      type: 'P2P_PEER_ANNOUNCE',
+      object: { host: '198.51.100.200', port: 17777 }
+    })]).signWithKey(originKey);
+
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(peer.key)],
+      payload,
+      key: originKey
+    });
+    const announces = [];
+    peer.on('peerAnnounce', (d) => announces.push(d));
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.ok(announces.length >= 1);
+    assert.strictEqual(announces[0].peeledForward, true);
+    assert.strictEqual((peer.candidates && peer.candidates.length) || 0, before);
+    assert.ok(!peer._candidateKeys.has('198.51.100.200:17777'));
+  });
+
+  it('peeled CONTRACT_PUBLISH hijack does not derank last hop', function () {
+    const destKey = new Key();
+    const relayKey = new Key();
+    const owner = new Key();
+    const attacker = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic }
+    }));
+    const addr = '127.0.0.1:9690';
+    peer.connections[addr] = wireMock([]);
+    peer._addressToId[addr] = 'honest-relay-cpub';
+    peer._state.peers = {
+      'honest-relay-cpub': {
+        id: 'honest-relay-cpub',
+        address: addr,
+        score: 300,
+        publicKey: relayKey.public.encodeCompressed('hex')
+      }
+    };
+    peer.peers[addr] = {
+      id: 'honest-relay-cpub',
+      publicKey: relayKey.public.encodeCompressed('hex')
+    };
+
+    const contract = { id: 'peel-cpub', state: { v: 1 }, parties: [String(owner.pubkey).toLowerCase()] };
+    // Seed first-writer claim without pin-checking the TCP hop (owner ≠ relay).
+    const claim = peer._claimLogicalRegistration(
+      'CONTRACT_PUBLISH', contract, String(owner.pubkey).toLowerCase());
+    assert.strictEqual(claim.duplicate, false);
+    peer._registerContract(contract, String(owner.pubkey).toLowerCase());
+    const scoreAfterFirst = peer._state.peers['honest-relay-cpub'].score;
+
+    // Re-signed duplicate via onion peel — must not hijack-penalize the relay.
+    const hijack = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(contract)]).signWithKey(attacker);
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(peer.key)],
+      payload: hijack,
+      key: relayKey
+    });
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.strictEqual(peer._state.peers['honest-relay-cpub'].score, scoreAfterFirst);
+  });
+
   it('undecodable P2P_FORWARD body is dropped', function () {
     const peer = new Peer(offlinePeerSettings());
     const fromAddr = '127.0.0.1:9640';

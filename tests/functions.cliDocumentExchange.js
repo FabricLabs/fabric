@@ -613,4 +613,21 @@ describe('@fabric/core/functions/contractSidechainLocal path hardening', functio
     assert.ok(paths.state.startsWith(path.resolve(root)));
     assert.ok(paths.state.endsWith(path.join('sidechains', id, 'STATE.json')));
   });
+
+  it('rejects invalid storeRoot and recovers from corrupt STATE.json', function () {
+    const id = 'ef'.repeat(32);
+    assert.throws(() => local.storePathsForLocalContract(id, null));
+    assert.throws(() => local.storePathsForLocalContract(id, ''));
+    assert.throws(() => local.storePathsForLocalContract(id, 'bad\0root'));
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fabric-csl-bad-'));
+    const ensured = local.ensureLocalContractChain(root, id);
+    fs.writeFileSync(ensured.paths.state, '{not-json');
+    const recovered = local.loadState(root, id);
+    assert.strictEqual(recovered.clock, 0);
+    assert.deepStrictEqual(recovered.content, {});
+    // Second ensure is not created
+    const again = local.ensureLocalContractChain(root, id);
+    assert.strictEqual(again.created, false);
+    assert.strictEqual(local.storePathsForContract, local.storePathsForLocalContract);
+  });
 });

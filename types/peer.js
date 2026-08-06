@@ -2063,7 +2063,9 @@ class Peer extends Service {
       }
     }
 
-    if (originName) {
+    // Outer P2P_FORWARD / foreign P2P_RELAY already paid inbound credits for the
+    // TCP hop — do not debit again for peeled / relayed-as-is inners (onion DoS).
+    if (originName && !suppressTcpOriginPunish) {
       const cost = this._wireInboundCreditCost(message.type);
       if (!this._wireInboundRateAllowPeer(originName, cost)) {
         if (this.settings.debug) {
@@ -2133,7 +2135,7 @@ class Peer extends Service {
         const prBb = tryParseWireJsonBody(rawBb);
         if (prBb.ok && prBb.value && typeof prBb.value === 'object' && !Array.isArray(prBb.value)) {
           const claimBb = this._claimLogicalRegistrationOrPunish(
-            message.type, prBb.value, signerPubkeyHex, originName);
+            message.type, prBb.value, signerPubkeyHex, scoreOrigin);
           if (claimBb.duplicate) {
             if (this.settings.debug) {
               this.emit('debug', '[FABRIC:PEER] Ignoring duplicate BitcoinBlock (tip already registered)');
@@ -2206,7 +2208,7 @@ class Peer extends Service {
         }
         object.snapshotBlockHash = snap.toLowerCase();
         const claimFc = this._claimLogicalRegistrationOrPunish(
-          message.type, object, senderHex, origin.name);
+          message.type, object, senderHex, scoreOrigin);
         if (claimFc.duplicate) {
           if (this.settings.debug) {
             this.emit('debug', '[FABRIC:PEER] Ignoring duplicate FLUSH_CHAIN (snapshot already registered)');
@@ -2372,7 +2374,7 @@ class Peer extends Service {
           const docId = parsed.id;
           if (!docId) break;
           const claimDp = this._claimLogicalRegistrationOrPunish(
-            message.type, parsed, signerPubkeyHex, originName);
+            message.type, parsed, signerPubkeyHex, scoreOrigin);
           if (claimDp.duplicate) {
             if (this.settings.debug) {
               this.emit('debug',
@@ -2419,7 +2421,7 @@ class Peer extends Service {
           break;
         }
         const claimCp = this._claimLogicalRegistrationOrPunish(
-          message.type, payload, signerPubkeyHex, originName);
+          message.type, payload, signerPubkeyHex, scoreOrigin);
         if (claimCp.duplicate) {
           if (this.settings.debug) {
             this.emit('debug',
@@ -2696,6 +2698,10 @@ class Peer extends Service {
   _handleGenericMessage (message, origin = null, socket = null, wireMessage = null, options = null) {
     const handleOpts = (options && typeof options === 'object') ? options : {};
     const peeledForward = handleOpts.peeledForward === true;
+    // Peel / relay-as-is: never attribute logical-register soft/hijack penalties to the TCP hop.
+    const punishOrigin = (peeledForward || handleOpts.relayedAsIs === true)
+      ? null
+      : (origin && origin.name);
     const msg = normalizeFabricDocumentOfferEnvelopeForHandlers(message);
     if (this.settings.debug) this.emit('debug', `Generic message:\n\tFrom: ${JSON.stringify(origin)}\n\tType: ${msg.type}\n\tBody:\n\`\`\`\n${JSON.stringify(msg.object, null, '  ')}\n\`\`\``);
 
@@ -2741,7 +2747,7 @@ class Peer extends Service {
       case 'DocumentContentKeyReveal': {
         const reveal = (msg && msg.object) ? msg.object : msg;
         const claimReveal = this._claimLogicalRegistrationOrPunish(
-          'DocumentContentKeyReveal', reveal, signerPubkeyHex, origin && origin.name);
+          'DocumentContentKeyReveal', reveal, signerPubkeyHex, punishOrigin);
         if (claimReveal.duplicate) {
           if (this.settings.debug) {
             this.emit('debug', '[FABRIC:PEER] Ignoring duplicate DocumentContentKeyReveal');
@@ -2789,7 +2795,7 @@ class Peer extends Service {
       case 'P2P_STATE_ANNOUNCE': {
         const stateObj = msg.object || message.object;
         const claimState = this._claimLogicalRegistrationOrPunish(
-          'P2P_STATE_ANNOUNCE', stateObj, signerPubkeyHex, origin && origin.name);
+          'P2P_STATE_ANNOUNCE', stateObj, signerPubkeyHex, punishOrigin);
         if (claimState.duplicate) {
           if (this.settings.debug) {
             this.emit('debug', '[FABRIC:PEER] Ignoring duplicate P2P_STATE_ANNOUNCE');
@@ -2907,7 +2913,7 @@ class Peer extends Service {
       case 'P2P_PEER_ANNOUNCE': {
         const announceObj = msg.object || message.object;
         const claimAnn = this._claimLogicalRegistrationOrPunish(
-          'P2P_PEER_ANNOUNCE', announceObj, signerPubkeyHex, origin && origin.name);
+          'P2P_PEER_ANNOUNCE', announceObj, signerPubkeyHex, punishOrigin);
         if (claimAnn.duplicate) {
           if (this.settings.debug) {
             this.emit('debug', '[FABRIC:PEER] Ignoring duplicate P2P_PEER_ANNOUNCE');
@@ -2915,6 +2921,13 @@ class Peer extends Service {
           break;
         }
         this.emit('debug', `peer_announce <Generic>${JSON.stringify(announceObj || '')}`);
+        this.emit('peerAnnounce', {
+          message: msg,
+          origin,
+          peeledForward: !punishOrigin
+        });
+        // Peel / relay-as-is: observe only — do not enqueue dial targets under last hop.
+        if (!punishOrigin) break;
         const host = announceObj && announceObj.host;
         const port = announceObj && announceObj.port;
         if (host != null && port != null) {
@@ -2925,7 +2938,7 @@ class Peer extends Service {
       case 'P2P_DOCUMENT_PUBLISH': {
         const priceObj = msg.object || message.object;
         const claimPrice = this._claimLogicalRegistrationOrPunish(
-          'P2P_DOCUMENT_PUBLISH', priceObj, signerPubkeyHex, origin && origin.name);
+          'P2P_DOCUMENT_PUBLISH', priceObj, signerPubkeyHex, punishOrigin);
         if (claimPrice.duplicate) {
           if (this.settings.debug) {
             this.emit('debug', '[FABRIC:PEER] Ignoring duplicate P2P_DOCUMENT_PUBLISH pricing frame');
@@ -2996,7 +3009,7 @@ class Peer extends Service {
         if (!msg.object || typeof msg.object !== 'object') break;
         const publishedId = (new Actor(msg.object)).id;
         const claimPub = this._claimLogicalRegistrationOrPunish(
-          'CONTRACT_PUBLISH', msg.object, signerPubkeyHex, origin && origin.name);
+          'CONTRACT_PUBLISH', msg.object, signerPubkeyHex, punishOrigin);
         if (claimPub.duplicate) {
           if (this.settings.debug) {
             this.emit('debug',
@@ -3011,7 +3024,8 @@ class Peer extends Service {
           origin,
           signer: signerPubkeyHex || null
         });
-        if (origin && origin.name && wireMessage) {
+        // Peel / relay-as-is: deliver locally only (no mesh relay under TCP last hop).
+        if (punishOrigin && origin && origin.name && wireMessage) {
           this.relayFrom(origin.name, wireMessage);
         }
         break;

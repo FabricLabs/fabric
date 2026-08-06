@@ -42,8 +42,10 @@ Source-routed nesting for IP-hiding delivery (see [docs/P2P_FORWARD.md](docs/P2P
 - Drop `ttl === 0`; refuse bounce to the inbound origin; inbound credit cost default 4 (`settings.wireTraffic.forwardCreditCost`).
 - Peeled `inner` delivery uses `peeledForward` so body-hash / bad-sig / pin / forbidden `CONTRACT_MESSAGE` ops / session-key violations / nested-`P2P_RELAY` depth exceed **do not** hard-disconnect or derank the TCP last hop (attackers must not cut honest relay↔destination links by laundering a bad inner).
 - Peeled (and relay-as-is) `P2P_SESSION_OFFER` / `P2P_SESSION_OPEN` are **ignored** before peer-registry / `_addressToId` mutation or `SESSION_OPEN` replies — a valid attacker-signed handshake must not rebind the last hop’s pin.
-- Peeled `P2P_CHAT_MESSAGE`, `P2P_PEERING_OFFER`, and `P2P_PEER_GOSSIP` deliver/observe locally only (no mesh `relayFrom`, no chat/peering/gossip budget burn, no candidate enqueue under the TCP last hop).
+- Peeled `P2P_CHAT_MESSAGE`, `P2P_PEERING_OFFER`, `P2P_PEER_GOSSIP`, and `P2P_PEER_ANNOUNCE` deliver/observe locally only (no mesh `relayFrom`, no chat/peering/gossip budget burn, no candidate enqueue under the TCP last hop).
 - Peeled / relay-as-is `P2P_PEER_ALIAS` observes/emits only — does not set `connections[]._alias`, bind registry `address` to the last hop, or mesh-relay under that hop.
+- Peeled / relay-as-is inners do **not** re-debit the TCP hop’s inbound wire-traffic credits (outer envelope already paid).
+- Peeled / relay-as-is logical-register duplicates (including `CONTRACT_PUBLISH` hijack) do not soft/hijack-penalize the TCP last hop.
 - **Accepted risk:** hop IDs and inner payload are cleartext at each layer unless the app seals content. Not Sphinx.
 
 ## Peer scoring / misbehavior

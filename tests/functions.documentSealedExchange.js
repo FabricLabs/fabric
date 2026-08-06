@@ -8,7 +8,11 @@ const {
   openSealedDelivery,
   requestMatchesPaymentHash,
   requestUnlocksContentKey,
-  paymentHashHexFromKey
+  paymentHashHexFromKey,
+  isSealedDocument,
+  contentKeyStorePath,
+  readContentKey,
+  writeContentKey
 } = require('../functions/documentSealedExchange');
 
 describe('functions/documentSealedExchange', function () {
@@ -98,5 +102,34 @@ describe('functions/documentSealedExchange', function () {
       iv: sale.encryption.iv
     });
     assert.strictEqual(bad.ok, false);
+  });
+
+  it('content-key store helpers round-trip JSON / hex / missing fs', async function () {
+    const sale = prepareSealedSale(Buffer.from('k'));
+    assert.ok(isSealedDocument({ encryption: sale.encryption }));
+    assert.ok(!isSealedDocument(null));
+    assert.ok(!isSealedDocument({}));
+    assert.strictEqual(contentKeyStorePath('doc1'), 'documents/doc1.content-key');
+    assert.strictEqual(readContentKey(null, 'doc1'), null);
+
+    const mem = new Map();
+    const fs = {
+      readFile (p) { return mem.has(p) ? mem.get(p) : null; },
+      async publish (p, data) {
+        mem.set(p, typeof data === 'string' ? data : JSON.stringify(data));
+      }
+    };
+    await writeContentKey(fs, 'doc1', sale.key);
+    const fromJson = readContentKey(fs, 'doc1');
+    assert.ok(fromJson.equals(sale.key));
+
+    mem.set(contentKeyStorePath('doc-hex'), sale.keyHex);
+    assert.ok(readContentKey(fs, 'doc-hex').equals(sale.key));
+
+    mem.set(contentKeyStorePath('doc-buf'), Buffer.from(sale.keyHex, 'utf8'));
+    assert.ok(readContentKey(fs, 'doc-buf').equals(sale.key));
+
+    mem.set(contentKeyStorePath('doc-bad'), '{"keyHex":"zz"}');
+    assert.strictEqual(readContentKey(fs, 'doc-bad'), null);
   });
 });
