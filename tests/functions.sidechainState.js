@@ -223,4 +223,83 @@ describe('@fabric/core/functions/sidechainState', function () {
     assert.strictEqual(r.manifest.sidechainPolicy.maxOps, 4);
     assert.deepStrictEqual(r.manifest.sidechainPolicy.allowedPathPrefixes, ['/app']);
   });
+
+  it('summarizeJournal and summarizeSnapshots for operator UI', function () {
+    const store = new Map();
+    const fs = {
+      readFile: (name) => {
+        const v = store.get(name);
+        return v != null ? Buffer.from(v, 'utf8') : null;
+      },
+      writeFile: (name, content) => {
+        store.set(name, typeof content === 'string' ? content : content.toString('utf8'));
+        return true;
+      }
+    };
+
+    const s0 = sc.createInitialState();
+    const patches = [{ op: 'add', path: '/ui', value: true }];
+    const applied = sc.applyPatchesToState(s0, patches);
+    assert.ok(applied.ok);
+    sc.appendJournalEntrySync(fs, {
+      basisClock: 0,
+      clock: applied.state.clock,
+      basisDigest: applied.basisDigest,
+      newDigest: applied.newDigest,
+      patchDigest: sc.patchCommitmentDigestHex({
+        basisClock: 0,
+        basisDigest: applied.basisDigest,
+        patches
+      }),
+      patches
+    });
+    sc.saveSnapshotForBeaconClockSync(fs, 3, applied.state);
+    sc.sealJournalThroughSidechainClockSync(fs, applied.state.clock, 3);
+
+    const openPatches = [{ op: 'add', path: '/open', value: 1 }];
+    const open = sc.applyPatchesToState(applied.state, openPatches);
+    sc.appendJournalEntrySync(fs, {
+      basisClock: applied.state.clock,
+      clock: open.state.clock,
+      basisDigest: open.basisDigest,
+      newDigest: open.newDigest,
+      patches: openPatches
+    });
+
+    const journal = sc.summarizeJournal(fs, { limit: 10, includePatches: true });
+    assert.strictEqual(journal.version, 1);
+    assert.strictEqual(journal.path, sc.SIDECHAIN_JOURNAL_PATH);
+    assert.strictEqual(journal.entryCount, 2);
+    assert.strictEqual(journal.unsealedCount, 1);
+    assert.ok(journal.entries.length >= 1);
+    assert.ok(Array.isArray(journal.entries[0].patches));
+
+    const snaps = sc.summarizeSnapshots(fs, { limit: 5, includeContent: true });
+    assert.strictEqual(snaps.version, 1);
+    assert.strictEqual(snaps.path, sc.SIDECHAIN_SNAPSHOTS_PATH);
+    assert.strictEqual(snaps.snapshotCount, 1);
+    assert.strictEqual(snaps.snapshots[0].beaconClock, 3);
+    assert.strictEqual(snaps.snapshots[0].sidechainClock, applied.state.clock);
+    assert.ok(snaps.snapshots[0].content);
+    assert.strictEqual(snaps.snapshots[0].content.ui, true);
+  });
+
+  it('pruneSnapshotsForRemovedBeaconClocksSync drops listed clocks', function () {
+    const store = new Map();
+    const fs = {
+      readFile: (name) => {
+        const v = store.get(name);
+        return v != null ? Buffer.from(v, 'utf8') : null;
+      },
+      writeFile: (name, content) => {
+        store.set(name, typeof content === 'string' ? content : content.toString('utf8'));
+        return true;
+      }
+    };
+    sc.saveSnapshotForBeaconClockSync(fs, 1, { version: 1, clock: 1, content: {} });
+    sc.saveSnapshotForBeaconClockSync(fs, 2, { version: 1, clock: 2, content: {} });
+    sc.pruneSnapshotsForRemovedBeaconClocksSync(fs, [1]);
+    assert.strictEqual(sc.loadSnapshotForBeaconClock(fs, 1), null);
+    assert.ok(sc.loadSnapshotForBeaconClock(fs, 2));
+  });
 });

@@ -115,4 +115,126 @@ describe('functions/documentBlobTransfer', function () {
     assert.strictEqual(isDuplicateSettlement(paid, s1), true);
     assert.strictEqual(settlementDedupeKey(s1), s1.dedupeKey);
   });
+
+  it('completes legacy whole-body frames without pending state', function () {
+    const book = new DocumentBlobTransferBook();
+    const frame = parseFileSendObject({
+      name: 'legacy-doc',
+      body: Buffer.from('whole-file').toString('base64')
+    });
+    assert.strictEqual(frame.legacy, true);
+    const out = book.ingest(frame);
+    assert.strictEqual(out.status, 'complete');
+    assert.strictEqual(out.legacy, true);
+    assert.strictEqual(out.verified, true);
+    assert.ok(out.buffer.equals(Buffer.from('whole-file')));
+    assert.strictEqual(book.pendingCount, 0);
+  });
+
+  it('rejects bad frames, blobTotal mismatch, and advertised-index hash drift', function () {
+    assert.strictEqual(new DocumentBlobTransferBook().ingest(null).status, 'reject');
+    assert.strictEqual(
+      new DocumentBlobTransferBook().ingest({ ok: false, error: 'nope' }).error,
+      'nope'
+    );
+
+    const split = splitBlobs(Buffer.alloc(2400, 2), 800, 'mismatch');
+    const totals = new DocumentBlobTransferBook();
+    totals.expectTransfer({
+      documentId: 'mismatch',
+      merkleRootHex: split.merkleRootHex,
+      total: split.blobs.length,
+      blobHashHexes: split.blobs.map((b) => b.blobHashHex)
+    });
+    const wrongTotal = parseFileSendObject({
+      name: 'mismatch',
+      body: split.blobs[0].bytes.toString('base64'),
+      blobIndex: 0,
+      blobTotal: 99,
+      blobHashHex: split.blobs[0].blobHashHex,
+      merkleRootHex: split.merkleRootHex
+    });
+    assert.strictEqual(totals.ingest(wrongTotal).error, 'blobTotal mismatch');
+
+    const indexBook = new DocumentBlobTransferBook();
+    indexBook.expectTransfer({
+      documentId: 'idx',
+      merkleRootHex: split.merkleRootHex,
+      total: split.blobs.length,
+      blobHashHexes: ['11'.repeat(32), '22'.repeat(32), '33'.repeat(32)]
+    });
+    // Bytes match claimed hash, but claimed hash is not the advertised leaf for index 0.
+    const leafBytes = Buffer.alloc(32, 9);
+    const leafHash = require('crypto').createHash('sha256').update(leafBytes).digest('hex');
+    const drift = indexBook.ingest({
+      ok: true,
+      legacy: false,
+      documentId: 'idx',
+      bytes: leafBytes,
+      blobIndex: 0,
+      blobTotal: split.blobs.length,
+      blobHashHex: leafHash,
+      merkleRootHex: split.merkleRootHex,
+      contentSha256: null
+    });
+    assert.strictEqual(drift.status, 'reject');
+    assert.strictEqual(drift.error, 'blob hash not in advertised index');
+  });
+
+  it('rejects contentSha256 mismatch after full reassemble', function () {
+    const data = Buffer.alloc(2000, 7);
+    const split = splitBlobs(data, 1000, 'sha');
+    const book = new DocumentBlobTransferBook();
+    book.expectTransfer({
+      documentId: 'sha',
+      merkleRootHex: split.merkleRootHex,
+      total: split.blobs.length,
+      blobHashHexes: split.blobs.map((b) => b.blobHashHex),
+      contentSha256: 'ff'.repeat(32)
+    });
+    let last = null;
+    for (const b of split.blobs) {
+      last = book.ingest(parseFileSendObject({
+        name: 'sha',
+        body: b.bytes.toString('base64'),
+        blobIndex: b.index,
+        blobTotal: b.total,
+        blobHashHex: b.blobHashHex,
+        merkleRootHex: split.merkleRootHex,
+        contentSha256: 'ff'.repeat(32)
+      }));
+    }
+    assert.strictEqual(last.status, 'reject');
+    assert.strictEqual(last.error, 'contentSha256 mismatch');
+    assert.strictEqual(book.pendingCount, 0);
+  });
+
+  it('TTL purge and maxPending eviction keep the book bounded', function () {
+    const book = new DocumentBlobTransferBook({ maxPending: 1, ttlMs: 1 });
+    book.expectTransfer({
+      documentId: 'old',
+      merkleRootHex: 'aa'.repeat(32),
+      total: 2
+    });
+    const row = book._pending.get(`old|${'aa'.repeat(32)}`);
+    row.updated = Date.now() - 1000;
+    book.expectTransfer({
+      documentId: 'new',
+      merkleRootHex: 'bb'.repeat(32),
+      total: 2
+    });
+    // Cap keeps only the newest registration; purge drops stale on ingest.
+    assert.ok(book.pendingCount <= 1);
+    const stale = book.ingest({
+      ok: true,
+      legacy: false,
+      documentId: 'ghost',
+      bytes: Buffer.alloc(4),
+      blobIndex: 0,
+      blobTotal: 2,
+      blobHashHex: require('crypto').createHash('sha256').update(Buffer.alloc(4)).digest('hex'),
+      merkleRootHex: 'cc'.repeat(32)
+    });
+    assert.ok(stale.status === 'need_more' || stale.status === 'reject');
+  });
 });
