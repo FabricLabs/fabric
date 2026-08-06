@@ -910,4 +910,135 @@ describe('Peer P2P_FORWARD onion', function () {
       );
     }
   });
+
+  it('peeled DocumentRequest does not fulfill or mesh-relay under last hop', function () {
+    const destKey = new Key();
+    const relayKey = new Key();
+    const author = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic },
+      autoFulfillDocumentRequests: true
+    }));
+    const addr = '127.0.0.1:9720';
+    const otherAddr = '127.0.0.1:9721';
+    const relayWrites = [];
+    const otherWrites = [];
+    peer.connections[addr] = wireMock(relayWrites);
+    peer.connections[otherAddr] = wireMock(otherWrites);
+    peer.peers[addr] = {
+      id: 'honest-relay-docreq',
+      publicKey: relayKey.public.encodeCompressed('hex')
+    };
+
+    peer._state.content.documents = peer._state.content.documents || {};
+    peer._state.content.documents['peel-held-doc'] = 'secret-body';
+
+    const events = [];
+    peer.on('documentRequest', (ev) => events.push(ev));
+
+    const payload = Message.fromVector(['DocumentRequest', JSON.stringify({
+      document: 'peel-held-doc'
+    })]).signWithKey(author);
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(peer.key)],
+      payload,
+      key: relayKey
+    });
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.ok(events.length >= 1, 'expected local documentRequest observe');
+    assert.strictEqual(events[0].localObserveOnly, true);
+    assert.strictEqual(events[0].pendingKey, null);
+    // No P2P_FILE_SEND (or anything) to the honest last hop.
+    assert.strictEqual(relayWrites.length, 0, 'must not fulfill to TCP last hop');
+    assert.strictEqual(otherWrites.length, 0, 'must not mesh-relay peeled DocumentRequest');
+  });
+
+  it('P2P_RELAY-unwrapped DocumentRequest does not second-flood or fulfill last hop', function () {
+    const destKey = new Key();
+    const forwarder = new Key();
+    const author = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic },
+      autoFulfillDocumentRequests: true
+    }));
+    const addr = '127.0.0.1:9730';
+    const otherAddr = '127.0.0.1:9731';
+    const relayWrites = [];
+    const otherWrites = [];
+    peer.connections[addr] = wireMock(relayWrites);
+    peer.connections[otherAddr] = wireMock(otherWrites);
+    peer.peers[addr] = {
+      id: 'honest-relay-docreq-relay',
+      publicKey: forwarder.public.encodeCompressed('hex')
+    };
+
+    peer._state.content.documents = peer._state.content.documents || {};
+    peer._state.content.documents['relay-held-doc'] = 'secret-body';
+
+    const innerHeld = Message.fromVector(['DocumentRequest', JSON.stringify({
+      document: 'relay-held-doc'
+    })]).signWithKey(author);
+    const outerHeld = Message.fromVector(['P2P_RELAY', innerHeld.toBuffer()]).signWithKey(author);
+    peer._handleFabricMessage(outerHeld.toBuffer(), { name: addr }, null);
+    assert.strictEqual(relayWrites.length, 0, 'foreign RELAY must not fulfill to last hop');
+
+    // Missing doc: outer may flood; inner must not appear as first-class DocumentRequest.
+    relayWrites.length = 0;
+    otherWrites.length = 0;
+    const innerMiss = Message.fromVector(['DocumentRequest', JSON.stringify({
+      document: 'missing-via-relay'
+    })]).signWithKey(author);
+    const outerMiss = Message.fromVector(['P2P_RELAY', innerMiss.toBuffer()]).signWithKey(author);
+    peer._handleFabricMessage(outerMiss.toBuffer(), { name: addr }, null);
+    for (const buf of otherWrites) {
+      const m = Message.fromBuffer(buf);
+      assert.strictEqual(
+        m.type,
+        'P2P_RELAY',
+        'mesh forward must be outer RELAY only, not unwrapped DocumentRequest'
+      );
+    }
+  });
+
+  it('self-signed P2P_RELAY DocumentRequest may fulfill TCP author (no second flood)', function () {
+    const destKey = new Key();
+    const author = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic },
+      autoFulfillDocumentRequests: true
+    }));
+    const addr = '127.0.0.1:9740';
+    const otherAddr = '127.0.0.1:9741';
+    const authorWrites = [];
+    const otherWrites = [];
+    peer.connections[addr] = wireMock(authorWrites);
+    peer.connections[otherAddr] = wireMock(otherWrites);
+    // Pin matches AMP author ⇒ self-signed RELAY (not relayedAsIs).
+    peer.peers[addr] = {
+      id: 'author-self-relay',
+      publicKey: author.public.encodeCompressed('hex')
+    };
+    peer._state.content.documents = peer._state.content.documents || {};
+    peer._state.content.documents['self-relay-doc'] = 'ok-body';
+
+    const inner = Message.fromVector(['DocumentRequest', JSON.stringify({
+      document: 'self-relay-doc'
+    })]).signWithKey(author);
+    const outer = Message.fromVector(['P2P_RELAY', inner.toBuffer()]).signWithKey(author);
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.ok(authorWrites.length >= 1, 'self-signed RELAY author may receive fulfill');
+    const fulfill = Message.fromBuffer(authorWrites[authorWrites.length - 1]);
+    assert.strictEqual(fulfill.type, 'P2P_FILE_SEND');
+    for (const buf of otherWrites) {
+      const m = Message.fromBuffer(buf);
+      assert.notStrictEqual(
+        m.type,
+        'DocumentRequest',
+        'must not second-flood unwrapped DocumentRequest'
+      );
+      assert.notStrictEqual(m.type, 'DOCUMENT_REQUEST');
+    }
+  });
 });

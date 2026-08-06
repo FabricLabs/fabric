@@ -71,10 +71,12 @@ Events: `onion:sent`, `onion:peel`, `onion:forward`, `onion:undeliverable`.
   before peel/forward.
 - **Peel / identity & mesh side-effects:** session handshake inners do not
   rebind `peers` / `_addressToId` or emit `SESSION_OPEN` replies. Chat,
-  peering-offer, gossip, and peer-announce inners are local-only (no last-hop
-  budget burn, candidate enqueue, or mesh relay). Peeled aliases observe/emit
-  only — no last-hop `_alias` / registry address overlay. Peeled inners do not
+  peering-offer, gossip, peer-announce, contracts, tip gossip, `DocumentRequest`,
+  and inventory inners are local-only (no last-hop budget burn, candidate
+  enqueue, fulfill-to-hop, or mesh relay). Peeled aliases observe/emit only —
+  no last-hop `_alias` / registry address overlay. Peeled inners do not
   re-debit inbound wire credits or logical-register-punish the TCP last hop.
+  Peer implements this via one `meshDeliveryContext` shared by flood and onion.
 
 ## Example
 

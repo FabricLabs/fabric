@@ -20,7 +20,7 @@ audit report.
 | Private DocumentRequest mesh broadcast | Mitigated: directed relay (`relayPath` / `nextPeer` / fan-out excluding origin) |
 | Sealed multi-seller blob plans | Mitigated: `pickBlobPlan` locks sealed docs to one seller |
 | Blob/sealed memory growth | Mitigated: pending transfer / sealed / relay-route caps |
-| Directed onion (`P2P_FORWARD`) | Implemented (peel/forward, TTL, bounce guard; peel skips last-hop hard disconnect; no session/alias rebind / mesh side-effects on peel for chat/peering/gossip/contracts/BitcoinBlock) — **no hop encryption**; see [docs/P2P_FORWARD.md](docs/P2P_FORWARD.md) |
+| Directed onion (`P2P_FORWARD`) | Implemented (peel/forward, TTL, bounce guard; peel skips last-hop hard disconnect; unified `meshDeliveryContext` — no session/alias rebind / mesh side-effects / DocumentRequest fulfill on peel) — **no hop encryption**; see [docs/P2P_FORWARD.md](docs/P2P_FORWARD.md) |
 | L1 document HTLC helpers | Implemented in core; treat as RC reference, not mainnet-hardened market |
 | Application contract sandbox | **Not** claimed — `Machine.define` binds host JS; see [PUBLIC_API.md](PUBLIC_API.md) |
 | External security review | **Outstanding** before dropping “experimental” language |

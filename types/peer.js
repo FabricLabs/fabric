@@ -165,6 +165,52 @@ function normalizePeerPubkeyHex (pk) {
 }
 
 /**
+ * Unified delivery trust for frames that arrived under a transport envelope.
+ *
+ * Protocol rules (see SECURITY.md / docs/P2P_FORWARD.md):
+ * - The **outermost** envelope pays for mesh flood and inbound wire credits.
+ * - Onion peel (`peeledForward`) and foreign-signed `P2P_RELAY` (`relayedAsIs`)
+ *   inners are **local-observe**: no second `relayFrom`, no TCP-origin side-effects
+ *   (document fulfill, dial enqueue, inventory reply to the last hop).
+ * - Self-signed `P2P_RELAY` inners set `skipRelayFlood` only — the inner is not
+ *   flooded again, but the TCP author remains attributable for punish / fulfill.
+ *
+ * @param {Object} [opts]
+ * @param {boolean} [opts.peeledForward]
+ * @param {boolean} [opts.relayedAsIs]
+ * @param {boolean} [opts.skipRelayFlood]
+ * @param {string|null} [originName]
+ * @returns {{
+ *   peeledForward: boolean,
+ *   relayedAsIs: boolean,
+ *   skipRelayFlood: boolean,
+ *   suppressTcpOriginPunish: boolean,
+ *   allowMeshRelay: boolean,
+ *   allowTcpOriginSideEffects: boolean,
+ *   scoreOrigin: (string|null),
+ *   hardDisconnect: boolean
+ * }}
+ * @private
+ */
+function meshDeliveryContext (opts = {}, originName = null) {
+  const o = (opts && typeof opts === 'object') ? opts : {};
+  const peeledForward = o.peeledForward === true;
+  const relayedAsIs = o.relayedAsIs === true;
+  const skipRelayFlood = o.skipRelayFlood === true;
+  const suppressTcpOriginPunish = peeledForward || relayedAsIs;
+  return {
+    peeledForward,
+    relayedAsIs,
+    skipRelayFlood,
+    suppressTcpOriginPunish,
+    allowMeshRelay: !skipRelayFlood && !suppressTcpOriginPunish,
+    allowTcpOriginSideEffects: !suppressTcpOriginPunish,
+    scoreOrigin: suppressTcpOriginPunish ? null : originName,
+    hardDisconnect: !suppressTcpOriginPunish
+  };
+}
+
+/**
  * Mesh types that MUST be forwarded bit-identical (author + signature preserved).
  * Relays never hop-re-sign these — wire-hash dedup and end-to-end / multisig verify depend on it.
  * Local agents may still *originate* new messages of these types signed with their own key.
@@ -1966,11 +2012,11 @@ class Peer extends Service {
     const opts = (options && typeof options === 'object') ? options : {};
     const originName = (origin && origin.name) ? origin.name : null;
     const ps = this.settings.peerScore || {};
-    // Onion peel / bit-identical relay: never attribute inner-frame integrity / authz
-    // failures to the TCP last hop when that hop is only forwarding someone else's frame.
-    const suppressTcpOriginPunish = opts.peeledForward === true || opts.relayedAsIs === true;
-    const peeledForward = suppressTcpOriginPunish; // legacy alias used by nested handlers
-    const scoreOrigin = suppressTcpOriginPunish ? null : originName;
+    // Single delivery context for peel / RELAY-unwrap / outermost-flood rules.
+    const delivery = meshDeliveryContext(opts, originName);
+    const suppressTcpOriginPunish = delivery.suppressTcpOriginPunish;
+    const peeledForward = suppressTcpOriginPunish; // soft-punish alias for nested handlers
+    const scoreOrigin = delivery.scoreOrigin;
 
     // Frame-size gate before parse / hash / signature work.
     let wire = buffer;
@@ -2021,7 +2067,7 @@ class Peer extends Service {
         `${peeledForward ? ' (peeled forward)' : ''} type=${t}${hint}`);
       this._applyPeerMisbehavior(scoreOrigin, 'body-hash-mismatch', {
         penalty: Number(ps.bodyHashMismatchPenalty) || PEER_SCORE_BODY_HASH_MISMATCH_PENALTY,
-        disconnect: !peeledForward
+        disconnect: delivery.hardDisconnect
       });
       return this;
     }
@@ -2034,7 +2080,7 @@ class Peer extends Service {
         `${peeledForward ? ' (peeled forward)' : ''}`);
       this._applyPeerMisbehavior(scoreOrigin, 'invalid-signature', {
         penalty: Number(ps.invalidSignaturePenalty) || PEER_SCORE_INVALID_SIGNATURE_PENALTY,
-        disconnect: !peeledForward
+        disconnect: delivery.hardDisconnect
       });
       return this;
     }
@@ -2057,7 +2103,7 @@ class Peer extends Service {
         this.emit('warning', `[FABRIC:PEER] Signer mismatch from ${peerKey}: expected pinned peer key`);
         this._applyPeerMisbehavior(scoreOrigin || peerKey, 'signer-pin-mismatch', {
           penalty: Number(ps.signerPinMismatchPenalty) || PEER_SCORE_SIGNER_PIN_MISMATCH_PENALTY,
-          disconnect: !peeledForward
+          disconnect: delivery.hardDisconnect
         });
         return this;
       }
@@ -2065,7 +2111,7 @@ class Peer extends Service {
 
     // Outer P2P_FORWARD / foreign P2P_RELAY already paid inbound credits for the
     // TCP hop — do not debit again for peeled / relayed-as-is inners (onion DoS).
-    if (originName && !suppressTcpOriginPunish) {
+    if (originName && delivery.allowTcpOriginSideEffects) {
       const cost = this._wireInboundCreditCost(message.type);
       if (!this._wireInboundRateAllowPeer(originName, cost)) {
         if (this.settings.debug) {
@@ -2145,7 +2191,7 @@ class Peer extends Service {
         }
         this.emit('bitcoinBlock', { message, origin, socket });
         // Peel / RELAY unwrap: outer envelope already floods — never mesh-relay the inner tip.
-        if (origin && origin.name && !opts.skipRelayFlood && !suppressTcpOriginPunish) {
+        if (origin && origin.name && delivery.allowMeshRelay) {
           this.relayFrom(origin.name, message);
         }
         break;
@@ -2255,8 +2301,7 @@ class Peer extends Service {
         });
         // Onion peel / RELAY unwrap: deliver locally only. Mesh relay under the TCP
         // last hop would burn that neighbor's chat budget for an originator's frame.
-        if (origin && origin.name && message &&
-            opts.peeledForward !== true && !opts.skipRelayFlood) {
+        if (origin && origin.name && message && delivery.allowMeshRelay) {
           if (this._chatRateLimitAllow(origin.name)) {
             this.relayFrom(origin.name, message);
           } else {
@@ -2280,7 +2325,7 @@ class Peer extends Service {
         }
         // Peel / relay-as-is: observe only — never overlay alias onto the TCP last hop
         // or bind the attacker's registry address to that hop's socket.
-        const aliasLocalOnly = opts.peeledForward === true || opts.relayedAsIs === true;
+        const aliasLocalOnly = !delivery.allowTcpOriginSideEffects;
         const aliasSignerHex = signerPubkeyHex || this._verifiedFabricSignerPubkeyHex(message);
         const claimAlias = this._claimLogicalRegistrationOrPunish('P2P_PEER_ALIAS', {
           alias: name,
@@ -2314,7 +2359,7 @@ class Peer extends Service {
           wireMessage: message,
           peeledForward: aliasLocalOnly
         });
-        if (!aliasLocalOnly && origin && origin.name && message && !opts.skipRelayFlood) {
+        if (delivery.allowMeshRelay && origin && origin.name && message) {
           this.relayFrom(origin.name, message);
         }
         break;
@@ -2404,7 +2449,7 @@ class Peer extends Service {
       case 'DOCUMENT_REQUEST':
       case 'DocumentRequest':
         try {
-          this._handleDocumentRequestWire(message, origin, socket);
+          this._handleDocumentRequestWire(message, origin, socket, opts);
         } catch (exception) {
           this.emit('warning', `[FABRIC:PEER] DOCUMENT_REQUEST failed: ${exception.message}`);
         }
@@ -2442,7 +2487,7 @@ class Peer extends Service {
         });
         // Forward bit-identical on direct receive only — peel / RELAY unwrap must not
         // second-flood under the TCP last hop (outer envelope already paid).
-        if (origin && origin.name && !opts.skipRelayFlood && !suppressTcpOriginPunish) {
+        if (origin && origin.name && delivery.allowMeshRelay) {
           this.relayFrom(origin.name, message);
         }
         break;
@@ -2701,11 +2746,10 @@ class Peer extends Service {
 
   _handleGenericMessage (message, origin = null, socket = null, wireMessage = null, options = null) {
     const handleOpts = (options && typeof options === 'object') ? options : {};
-    const peeledForward = handleOpts.peeledForward === true;
+    const delivery = meshDeliveryContext(handleOpts, origin && origin.name);
+    const peeledForward = delivery.suppressTcpOriginPunish;
     // Peel / relay-as-is: never attribute logical-register soft/hijack penalties to the TCP hop.
-    const punishOrigin = (peeledForward || handleOpts.relayedAsIs === true)
-      ? null
-      : (origin && origin.name);
+    const punishOrigin = delivery.scoreOrigin;
     const msg = normalizeFabricDocumentOfferEnvelopeForHandlers(message);
     if (this.settings.debug) this.emit('debug', `Generic message:\n\tFrom: ${JSON.stringify(origin)}\n\tType: ${msg.type}\n\tBody:\n\`\`\`\n${JSON.stringify(msg.object, null, '  ')}\n\`\`\``);
 
@@ -2725,10 +2769,14 @@ class Peer extends Service {
         // event so higher-level services (e.g. hub) can respond appropriately.
         // JSON `type` may be legacy `INVENTORY_REQUEST` or Fabric alias `FABRIC_DOCUMENT_OFFER` (see `functions/publishedDocumentEnvelope.js`).
         this.emit('inventory', { message: msg, origin, socket });
+        // Peel / foreign RELAY: observe only — do not reply inventory to the TCP last hop
+        // or second-flood the request under that hop.
+        if (!delivery.allowTcpOriginSideEffects) break;
         if (this.settings.serveLocalDocumentInventory) {
           const served = this._respondInventoryFromLocalDocuments(msg, origin);
           const req = msg.object || {};
-          if (this.settings.relayInventoryRequest && !served && req.offerBtc === true) {
+          if (delivery.allowMeshRelay && this.settings.relayInventoryRequest &&
+              !served && req.offerBtc === true) {
             // Relay path matches L1 `offerBtc` requests; Hub-driven `kind:documents` relays use TTL in app code.
             this._relayGenericPayload(origin && origin.name, msg, socket, wireMessage);
           }
@@ -2744,7 +2792,7 @@ class Peer extends Service {
           socket,
           signerPubkeyHex: signerPubkeyHex || null
         });
-        if (this.settings.relayInventoryResponse) {
+        if (delivery.allowMeshRelay && this.settings.relayInventoryResponse) {
           this._relayGenericPayload(origin && origin.name, msg, socket, wireMessage);
         }
         break;
@@ -2821,10 +2869,9 @@ class Peer extends Service {
         if (!Number.isFinite(hop) || hop < 0) hop = maxHops;
         hop = Math.min(hop, maxHops);
         if (hop <= 0) break;
-        // Onion peel / relay-as-is: observe locally only — do not burn last-hop
-        // gossip budget or mesh-relay under that hop.
-        const gossipLocalOnly = peeledForward || handleOpts.relayedAsIs === true;
-        if (gossipLocalOnly) {
+        // Outermost-only: peel / RELAY unwrap observes locally — no last-hop budget
+        // burn and no second inner mesh flood (outer envelope already paid).
+        if (!delivery.allowMeshRelay) {
           this.emit('peeringGossip', { message, origin, peeledForward: true });
           this._gossipRememberPayload(payloadKey);
           break;
@@ -2847,11 +2894,9 @@ class Peer extends Service {
         if (!Number.isFinite(hop) || hop < 0) hop = maxHops;
         hop = Math.min(hop, maxHops);
         if (hop <= 0) break;
-        // Onion peel / relay-as-is: observe locally only — do not burn last-hop
-        // peering budget, enqueue attacker-chosen dial targets, or mesh-relay
-        // under that hop (outer P2P_RELAY already floods bit-identical).
-        const peeringLocalOnly = peeledForward || handleOpts.relayedAsIs === true;
-        if (peeringLocalOnly) {
+        // Outermost-only: peel / RELAY unwrap observes locally — no last-hop budget,
+        // dial enqueue, or second inner mesh flood.
+        if (!delivery.allowMeshRelay) {
           this.emit('peeringOffer', { message, origin, peeledForward: true });
           this._peeringRememberPayload(payloadKey);
           break;
@@ -2871,6 +2916,8 @@ class Peer extends Service {
         break;
       }
       case 'P2P_PING':
+        // Peel / foreign RELAY: do not write PONG to the TCP last hop.
+        if (!delivery.allowTcpOriginSideEffects) break;
         const now = (new Date()).toISOString();
         const P2P_PONG = Message.fromVector(['P2P_PONG', JSON.stringify({
           created: now
@@ -2880,6 +2927,8 @@ class Peer extends Service {
         }
         break;
       case 'P2P_PONG': {
+        // Peel / foreign RELAY: ignore score credit under the last hop.
+        if (!delivery.allowTcpOriginSideEffects) break;
         const conn = origin && origin.name ? this.connections[origin.name] : null;
         const outstanding = conn && (conn._fabricPingOutstanding | 0);
         if (!outstanding) {
@@ -3029,8 +3078,7 @@ class Peer extends Service {
           signer: signerPubkeyHex || null
         });
         // Peel / RELAY unwrap: deliver locally only (outer envelope already floods).
-        if (punishOrigin && origin && origin.name && wireMessage &&
-            handleOpts.skipRelayFlood !== true) {
+        if (delivery.allowMeshRelay && origin && origin.name && wireMessage) {
           this.relayFrom(origin.name, wireMessage);
         }
         break;
@@ -3052,9 +3100,9 @@ class Peer extends Service {
               `${peeledForward ? ' (peeled forward)' : ''}`);
             const opsPs = this.settings.peerScore || {};
             // Onion peel: do not cut the honest last-hop TCP link for an unauthorized inner.
-            this._applyPeerMisbehavior(peeledForward ? null : (origin && origin.name), 'contract-ops-forbidden', {
+            this._applyPeerMisbehavior(punishOrigin, 'contract-ops-forbidden', {
               penalty: Number(opsPs.contractOpsForbiddenPenalty) || PEER_SCORE_CONTRACT_OPS_FORBIDDEN_PENALTY,
-              disconnect: !peeledForward
+              disconnect: delivery.hardDisconnect
             });
             // Do not emit or relay — forbidden ops must not be laundered through the mesh.
             break;
@@ -3075,8 +3123,7 @@ class Peer extends Service {
           signer: signerPubkeyHex || null
         });
         // Same outermost-only flood rule as CONTRACT_PUBLISH / chat / gossip.
-        if (punishOrigin && origin && origin.name && wireMessage &&
-            handleOpts.skipRelayFlood !== true) {
+        if (delivery.allowMeshRelay && origin && origin.name && wireMessage) {
           this.relayFrom(origin.name, wireMessage);
         }
         break;
@@ -4048,11 +4095,17 @@ class Peer extends Service {
    * Handle inbound `DOCUMENT_REQUEST`: emit `documentRequest` / `DocumentRequest`, then either
    * send `P2P_FILE_SEND` (when {@link Peer#settings.autoFulfillDocumentRequests}), queue for
    * operator approve, or relay when the document is not held.
+   *
+   * Peel / foreign-signed `P2P_RELAY` deliveries are local-observe only: never fulfill or
+   * queue against the TCP last hop, and never second-flood the inner under that hop.
+   *
    * @param {Message} message
    * @param {{ name: string }} origin
    * @param {*} socket
+   * @param {Object} [options] same delivery opts as {@link Peer#_handleFabricMessage}
    */
-  _handleDocumentRequestWire (message, origin, socket) {
+  _handleDocumentRequestWire (message, origin, socket, options = null) {
+    const delivery = meshDeliveryContext(options, origin && origin.name);
     const rawDr = messageDataToString(message.data);
     const prDr = tryParseWireJsonBody(rawDr);
     if (!prDr.ok) return;
@@ -4065,7 +4118,9 @@ class Peer extends Service {
     const docs = this._state.content.documents;
     const held = !!(docs && Object.prototype.hasOwnProperty.call(docs, docId));
     let pendingKey = null;
-    if (held && this.settings.autoFulfillDocumentRequests === false) {
+    // Only queue TCP fulfill when the TCP hop is a trustworthy delivery target.
+    if (held && delivery.allowTcpOriginSideEffects &&
+        this.settings.autoFulfillDocumentRequests === false) {
       const pending = this._queuePendingDocumentRequest(docId, origin, parsed);
       pendingKey = pending.key;
     }
@@ -4077,18 +4132,30 @@ class Peer extends Service {
       documentId: docId,
       parsed,
       source: 'canonical',
-      pendingKey
+      pendingKey,
+      localObserveOnly: !delivery.allowTcpOriginSideEffects
     };
     this.emit('documentRequest', payload);
     this.emit('DocumentRequest', payload);
 
     if (!held) {
+      // Outer envelope already transported this request — do not mesh-relay or
+      // private-rewrite under the last hop (would bind reverse routes to that hop).
+      if (!delivery.allowMeshRelay) return;
       const budgeted = parsed.maxSats != null && Number.isFinite(Number(parsed.maxSats));
       if (budgeted && this.settings.relayPrivateDocumentRequests) {
         this._privateRelayDocumentRequest(parsed, origin, message);
         return;
       }
       this.relayFrom(origin.name, message, socket);
+      return;
+    }
+
+    if (!delivery.allowTcpOriginSideEffects) {
+      if (this.settings.debug) {
+        this.emit('debug',
+          '[FABRIC:PEER] DOCUMENT_REQUEST held but peel/RELAY-as-is — observe only (no fulfill to last hop)');
+      }
       return;
     }
 

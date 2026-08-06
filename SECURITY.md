@@ -19,7 +19,7 @@ Inbound `P2P_RELAY` unwraps the inner AMP body for local handling, then forwards
 
 `P2P_RELAY` is **relay-as-is** for TCP peer pin checks (same class as `P2P_FORWARD`): the AMP author is the flood originator, not the immediate forwarder. Without that exemption, bit-identical flood would hard-ban honest neighbors on `signer-pin-mismatch`. When the outer AMP signer ≠ the TCP peer pin, unwrapped inners also use `relayedAsIs` so pin/integrity/nest failures do not cut that forwarder (direct senders who sign their own `P2P_RELAY` remain punishable).
 
-**Outermost-only flood:** after peel or `P2P_RELAY` unwrap (`skipRelayFlood`), inners are local-observe only. That includes `CONTRACT_MESSAGE`, `CONTRACT_PROPOSAL`, `BitcoinBlock` / `BITCOIN_BLOCK`, chat, alias, gossip, peering, and `CONTRACT_PUBLISH` — never a second `relayFrom` under the TCP last hop.
+**Outermost-only flood:** after peel or `P2P_RELAY` unwrap (`skipRelayFlood`), inners are local-observe only. That includes chat, alias, gossip, peering, `CONTRACT_PUBLISH` / `CONTRACT_MESSAGE` / `CONTRACT_PROPOSAL`, `BitcoinBlock` / `BITCOIN_BLOCK`, `DocumentRequest`, and inventory request/response — never a second `relayFrom` under the TCP last hop. Implementation uses a single `meshDeliveryContext` (`allowMeshRelay` / `allowTcpOriginSideEffects`) so new types cannot drift.
 
 ## Logical first-writer-wins registration
 Exact wire duplicates are already dropped via the FIFO-capped wire-hash cache (`PEER_MAX_WIRE_HASH_CACHE`). Separately, **registration-style** frames also no-op when the *logical* payload was already claimed — including **re-signed** copies of the same body (different AMP signature → different wire hash). Types include:
@@ -46,6 +46,8 @@ Source-routed nesting for IP-hiding delivery (see [docs/P2P_FORWARD.md](docs/P2P
 - Peeled (and relay-as-is) `P2P_SESSION_OFFER` / `P2P_SESSION_OPEN` are **ignored** before peer-registry / `_addressToId` mutation or `SESSION_OPEN` replies — a valid attacker-signed handshake must not rebind the last hop’s pin.
 - Peeled `P2P_CHAT_MESSAGE`, `P2P_PEERING_OFFER`, `P2P_PEER_GOSSIP`, and `P2P_PEER_ANNOUNCE` deliver/observe locally only (no mesh `relayFrom`, no chat/peering/gossip budget burn, no candidate enqueue under the TCP last hop).
 - Peeled / relay-as-is `P2P_PEER_ALIAS` observes/emits only — does not set `connections[]._alias`, bind registry `address` to the last hop, or mesh-relay under that hop.
+- Peeled / relay-as-is `DocumentRequest` observes/emits only — does **not** auto-fulfill or queue pending delivery to the TCP last hop, and does not mesh-relay or private-rewrite under that hop.
+- Peeled / relay-as-is inventory requests do not reply `INVENTORY_RESPONSE` to the last hop or second-flood the request.
 - Peeled / relay-as-is inners do **not** re-debit the TCP hop’s inbound wire-traffic credits (outer envelope already paid).
 - Peeled / relay-as-is logical-register duplicates (including `CONTRACT_PUBLISH` hijack) do not soft/hijack-penalize the TCP last hop.
 - **Accepted risk:** hop IDs and inner payload are cleartext at each layer unless the app seals content. Not Sphinx.
