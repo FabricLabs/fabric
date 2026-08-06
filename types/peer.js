@@ -2271,28 +2271,31 @@ class Peer extends Service {
           this.emit('warning', '[FABRIC:PEER] P2P_PEER_ALIAS body must be UTF-8 text, not JSON');
           break;
         }
+        // Peel / relay-as-is: observe only — never overlay alias onto the TCP last hop
+        // or bind the attacker's registry address to that hop's socket.
+        const aliasLocalOnly = opts.peeledForward === true || opts.relayedAsIs === true;
         const aliasSignerHex = signerPubkeyHex || this._verifiedFabricSignerPubkeyHex(message);
         const claimAlias = this._claimLogicalRegistrationOrPunish('P2P_PEER_ALIAS', {
           alias: name,
           signer: aliasSignerHex || ''
-        }, aliasSignerHex, originName);
+        }, aliasSignerHex, aliasLocalOnly ? null : originName);
         if (claimAlias.duplicate) {
           if (this.settings.debug) {
             this.emit('debug', '[FABRIC:PEER] Ignoring duplicate P2P_PEER_ALIAS (same signer + nickname)');
           }
           break;
         }
-        if (origin && origin.name && this.connections[origin.name]) {
+        if (!aliasLocalOnly && origin && origin.name && this.connections[origin.name]) {
           this.connections[origin.name]._alias = name;
         }
         const aliasPeerId = aliasSignerHex
-          || (origin && this._addressToId && this._addressToId[origin.name])
-          || (origin && origin.name)
+          || (!aliasLocalOnly && origin && this._addressToId && this._addressToId[origin.name])
+          || (!aliasLocalOnly && origin && origin.name)
           || null;
         if (aliasPeerId) {
           this._upsertPeerRegistry(aliasPeerId, {
             id: aliasPeerId,
-            address: origin && origin.name ? origin.name : undefined,
+            address: (!aliasLocalOnly && origin && origin.name) ? origin.name : undefined,
             alias: name,
             publicKey: aliasSignerHex || undefined
           });
@@ -2301,9 +2304,10 @@ class Peer extends Service {
           alias: name,
           signer: aliasSignerHex || null,
           origin,
-          wireMessage: message
+          wireMessage: message,
+          peeledForward: aliasLocalOnly
         });
-        if (origin && origin.name && message) {
+        if (!aliasLocalOnly && origin && origin.name && message && !opts.skipRelayFlood) {
           this.relayFrom(origin.name, message);
         }
         break;
@@ -2805,6 +2809,14 @@ class Peer extends Service {
         if (!Number.isFinite(hop) || hop < 0) hop = maxHops;
         hop = Math.min(hop, maxHops);
         if (hop <= 0) break;
+        // Onion peel / relay-as-is: observe locally only — do not burn last-hop
+        // gossip budget or mesh-relay under that hop.
+        const gossipLocalOnly = peeledForward || handleOpts.relayedAsIs === true;
+        if (gossipLocalOnly) {
+          this.emit('peeringGossip', { message, origin, peeledForward: true });
+          this._gossipRememberPayload(payloadKey);
+          break;
+        }
         if (!this._gossipRateLimitAllow(origin.name)) break;
         this.emit('peeringGossip', { message, origin });
         this._gossipRememberPayload(payloadKey);

@@ -70,9 +70,10 @@ Events: `onion:sent`, `onion:peel`, `onion:forward`, `onion:undeliverable`.
   `P2P_FORWARD` frame is still verified against its path-builder signature
   before peel/forward.
 - **Peel / identity & mesh side-effects:** session handshake inners do not
-  rebind `peers` / `_addressToId` or emit `SESSION_OPEN` replies. Chat and
-  peering-offer inners are local-only (no last-hop budget burn, candidate
-  enqueue, or mesh relay).
+  rebind `peers` / `_addressToId` or emit `SESSION_OPEN` replies. Chat,
+  peering-offer, and gossip inners are local-only (no last-hop budget burn,
+  candidate enqueue, or mesh relay). Peeled aliases observe/emit only — no
+  last-hop `_alias` / registry address overlay.
 
 ## Example
 

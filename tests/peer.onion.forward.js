@@ -601,6 +601,89 @@ describe('Peer P2P_FORWARD onion', function () {
     assert.strictEqual(peer._state.peers['honest-relay-ops'].score, 160);
   });
 
+  it('peeled P2P_PEER_ALIAS does not overlay last-hop nickname or mesh-relay', function () {
+    const destKey = new Key();
+    const originKey = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic }
+    }));
+    const addr = '127.0.0.1:9650';
+    const otherAddr = '127.0.0.1:9651';
+    const otherWrites = [];
+    peer.connections[addr] = wireMock([]);
+    peer.connections[otherAddr] = wireMock(otherWrites);
+    peer.peers[addr] = {
+      id: 'honest-relay-alias',
+      publicKey: originKey.public.encodeCompressed('hex')
+    };
+    peer._addressToId[addr] = 'honest-relay-alias';
+    peer._state.peers = {
+      'honest-relay-alias': {
+        id: 'honest-relay-alias',
+        address: addr,
+        score: 140,
+        publicKey: originKey.public.encodeCompressed('hex'),
+        alias: 'relay-nick'
+      }
+    };
+    peer.connections[addr]._alias = 'relay-nick';
+
+    const attacker = new Key();
+    const payload = Message.fromVector(['P2P_PEER_ALIAS', 'attacker-nick']).signWithKey(attacker);
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(peer.key)],
+      payload,
+      key: originKey
+    });
+
+    const aliases = [];
+    peer.on('peerAlias', (d) => aliases.push(d));
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.ok(aliases.length >= 1);
+    assert.strictEqual(aliases[0].alias, 'attacker-nick');
+    assert.strictEqual(aliases[0].peeledForward, true);
+    assert.strictEqual(peer.connections[addr]._alias, 'relay-nick');
+    assert.strictEqual(peer._state.peers['honest-relay-alias'].alias, 'relay-nick');
+    assert.strictEqual(peer._state.peers['honest-relay-alias'].address, addr);
+    assert.strictEqual(otherWrites.length, 0, 'must not mesh-relay peeled alias');
+  });
+
+  it('peeled P2P_PEER_GOSSIP observes locally without budget burn or mesh-relay', function () {
+    const destKey = new Key();
+    const originKey = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic },
+      gossip: { maxRelaysPerOriginPerMinute: 1 }
+    }));
+    const addr = '127.0.0.1:9660';
+    const otherAddr = '127.0.0.1:9661';
+    const otherWrites = [];
+    peer.connections[addr] = wireMock([]);
+    peer.connections[otherAddr] = wireMock(otherWrites);
+    peer.peers[addr] = { id: 'relay', publicKey: originKey.public.encodeCompressed('hex') };
+
+    const payload = Message.fromVector(['P2P_PEER_GOSSIP', JSON.stringify({
+      type: 'P2P_PEER_GOSSIP',
+      object: { peer: 'deadbeef', gossipHop: 5 }
+    })]).signWithKey(originKey);
+
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(peer.key)],
+      payload,
+      key: originKey
+    });
+
+    const gossips = [];
+    peer.on('peeringGossip', (d) => gossips.push(d));
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.ok(gossips.length >= 1);
+    assert.strictEqual(gossips[0].peeledForward, true);
+    assert.strictEqual(peer._gossipRelayByOrigin.has(addr), false, 'must not burn last-hop gossip budget');
+    assert.strictEqual(otherWrites.length, 0, 'must not mesh-relay peeled gossip');
+  });
+
   it('undecodable P2P_FORWARD body is dropped', function () {
     const peer = new Peer(offlinePeerSettings());
     const fromAddr = '127.0.0.1:9640';
