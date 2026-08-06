@@ -281,4 +281,177 @@ describe('@fabric/core Peer adversarial hardening', function () {
     assert.ok(peer.connections[a]);
     assert.strictEqual(peer._state.peers.fwd.score, 200);
   });
+
+  it('nested P2P_RELAY nest-cap soft-punishes when outer signer ≠ TCP pin', function () {
+    const peer = offlinePeer({
+      peerScore: { maxRelayNestDepth: 1, banTtlMs: 60000 }
+    });
+    const attacker = new Key();
+    const forwarder = new Key();
+    const a = '127.0.0.1:9170';
+    let destroyed = false;
+    peer.connections[a] = {
+      _writeFabric () {},
+      destroy () { destroyed = true; }
+    };
+    peer._addressToId[a] = 'fwd-soft-nest';
+    peer._state.peers = {
+      'fwd-soft-nest': {
+        id: 'fwd-soft-nest',
+        address: a,
+        score: 220,
+        publicKey: forwarder.pubkey
+      }
+    };
+    peer.peers[a] = { publicKey: forwarder.pubkey };
+
+    const leaf = Message.fromVector(['P2P_PING', JSON.stringify({ nest: true })]).signWithKey(attacker);
+    const mid = Message.fromVector(['P2P_RELAY', leaf.toBuffer()]).signWithKey(attacker);
+    const outer = Message.fromVector(['P2P_RELAY', mid.toBuffer()]).signWithKey(attacker);
+    peer._handleFabricMessage(outer.toBuffer(), { name: a }, null);
+
+    assert.strictEqual(destroyed, false, 'foreign-author nest exceed must not cut forwarder');
+    assert.strictEqual(peer._isPeerBanned(a), false);
+    assert.strictEqual(peer._state.peers['fwd-soft-nest'].score, 220);
+  });
+
+  it('P2P_RELAY session offer does not rebind forwarder identity (relayedAsIs)', function () {
+    const peer = offlinePeer();
+    const attacker = new Key();
+    const forwarder = new Key();
+    const a = '127.0.0.1:9180';
+    const writes = [];
+    peer.connections[a] = wireConn(writes);
+    peer._addressToId[a] = 'fwd-session';
+    peer._state.peers = {
+      'fwd-session': {
+        id: 'fwd-session',
+        address: a,
+        score: 210,
+        publicKey: forwarder.pubkey
+      }
+    };
+    peer.peers[a] = { publicKey: forwarder.pubkey };
+
+    const attackerId = 'attacker-via-relay';
+    const proof = peer._sessionKeyProofMessage(attackerId, attacker.pubkey, attacker.pubkey);
+    const offer = Message.fromVector(['P2P_SESSION_OFFER', JSON.stringify({
+      type: 'P2P_SESSION_OFFER',
+      actor: {
+        id: attackerId,
+        pubkey: attacker.pubkey,
+        parentPubkey: attacker.pubkey,
+        parentSignature: attacker.signSchnorr(proof).toString('hex')
+      },
+      object: { challenge: 'relay-rebind' }
+    })]).signWithKey(attacker);
+    const relay = Message.fromVector(['P2P_RELAY', offer.toBuffer()]).signWithKey(attacker);
+
+    peer._handleFabricMessage(relay.toBuffer(), { name: a }, null);
+
+    assert.strictEqual(peer._addressToId[a], 'fwd-session');
+    assert.strictEqual(peer.peers[a].publicKey, forwarder.pubkey);
+    assert.strictEqual(peer._state.peers['fwd-session'].score, 210);
+    assert.ok(!writes.some((buf) => {
+      try { return Message.fromBuffer(buf).type === 'P2P_SESSION_OPEN'; } catch (_) { return false; }
+    }));
+  });
+
+  it('expired temp ban is purged and dial is refused while active', function () {
+    const peer = offlinePeer({ peerScore: { banTtlMs: 60_000 } });
+    const origin = '127.0.0.1:9190';
+    peer._addressToId[origin] = 'ban-expire';
+    peer._state.peers = {
+      'ban-expire': {
+        id: 'ban-expire',
+        address: origin,
+        score: 50,
+        publicKey: 'ef'.repeat(32)
+      }
+    };
+
+    peer._banPeer(origin, 'test-ban');
+    assert.strictEqual(peer._isPeerBanned(origin), true);
+    assert.strictEqual(peer._isPeerBanned(null, 'ef'.repeat(32)), true);
+
+    const warnings = [];
+    peer.on('warning', (w) => warnings.push(String(w)));
+    peer._connect(origin);
+    assert.ok(warnings.some((w) => /Refusing dial to banned peer/i.test(w)));
+    assert.ok(!peer.connections[origin] || peer.connections[origin].destroyed);
+
+    peer._peerBans.set(`addr:${origin}`, { until: Date.now() - 1, reason: 'expired' });
+    peer._peerBans.set(`pk:${'ef'.repeat(32)}`, { until: Date.now() - 1, reason: 'expired' });
+    assert.strictEqual(peer._isPeerBanned(origin), false);
+    assert.strictEqual(peer._peerBans.has(`addr:${origin}`), false);
+  });
+
+  it('drops frames over custom maxMessageSize before verify', function () {
+    const peer = offlinePeer({ maxMessageSize: 100 });
+    const origin = '127.0.0.1:9200';
+    peer._addressToId[origin] = 'size-peer';
+    peer._state.peers = {
+      'size-peer': { id: 'size-peer', address: origin, score: 90, publicKey: '11'.repeat(32) }
+    };
+    const huge = Buffer.alloc(HEADER_SIZE + 101, 0xcd);
+    peer._handleFabricMessage(huge, { name: origin }, null);
+    assert.strictEqual(peer._state.peers['size-peer'].score, 90);
+    assert.strictEqual(peer._isPeerBanned(origin), false);
+
+    const ok = Message.fromVector(['P2P_PING', JSON.stringify({ tiny: 1 })]).signWithKey(peer.key);
+    assert.ok(ok.toBuffer().length <= HEADER_SIZE + 100);
+  });
+
+  it('chat relay budget resets after window rollover', function () {
+    const peer = offlinePeer({ chat: { maxRelaysPerOriginPerMinute: 1 } });
+    const k = new Key();
+    const a = '127.0.0.1:9210';
+    const bWrites = [];
+    peer.connections[a] = wireConn([]);
+    peer.connections['127.0.0.1:9211'] = wireConn(bWrites);
+    peer.peers[a] = { publicKey: k.pubkey };
+
+    const first = Message.fromVector(['P2P_CHAT_MESSAGE', `a-${Date.now()}`]).signWithKey(k);
+    peer._handleFabricMessage(first.toBuffer(), { name: a }, null);
+    assert.strictEqual(bWrites.length, 1);
+
+    const blocked = Message.fromVector(['P2P_CHAT_MESSAGE', `b-${Date.now()}`]).signWithKey(k);
+    peer._handleFabricMessage(blocked.toBuffer(), { name: a }, null);
+    assert.strictEqual(bWrites.length, 1);
+
+    const slot = peer._chatRelayByOrigin.get(a);
+    slot.windowStart = Date.now() - 61_000;
+    peer._chatRelayByOrigin.set(a, slot);
+
+    const resumed = Message.fromVector(['P2P_CHAT_MESSAGE', `c-${Date.now()}`]).signWithKey(k);
+    peer._handleFabricMessage(resumed.toBuffer(), { name: a }, null);
+    assert.strictEqual(bWrites.length, 2);
+  });
+
+  it('caps private document relay routes by oldest created', function () {
+    const peer = offlinePeer({ maxDocumentRelayRoutes: 2 });
+    peer._documentRelayRoutes = {
+      r1: { created: 1, via: 'a' },
+      r2: { created: 2, via: 'b' },
+      r3: { created: 3, via: 'c' }
+    };
+    peer._capDocumentRelayRoutes();
+    assert.strictEqual(Object.keys(peer._documentRelayRoutes).length, 2);
+    assert.ok(!peer._documentRelayRoutes.r1);
+    assert.ok(peer._documentRelayRoutes.r2);
+    assert.ok(peer._documentRelayRoutes.r3);
+  });
+
+  it('pubkeysMatchXOnly binds inventory AMP signer to seller key', function () {
+    const seller = new Key();
+    const other = new Key();
+    const sellerHex = seller.public.encodeCompressed('hex');
+    assert.strictEqual(inventoryHtlc.pubkeysMatchXOnly(sellerHex, seller.pubkey), true);
+    assert.strictEqual(inventoryHtlc.pubkeysMatchXOnly(sellerHex, other.pubkey), false);
+    assert.strictEqual(
+      inventoryHtlc.pubkeysMatchXOnly(seller.public.encodeCompressed('hex').slice(2), sellerHex),
+      true,
+      'x-only form matches compressed seller'
+    );
+  });
 });

@@ -5,7 +5,12 @@ const Key = require('../types/key');
 const Message = require('../types/message');
 const Peer = require('../types/peer');
 const { offlinePeerSettings } = require('./helpers/peer');
-const { xOnlyFromKey, wrapOnionPath, tryDecodeForward } = require('../functions/fabricOnion');
+const {
+  xOnlyFromKey,
+  wrapOnionPath,
+  tryDecodeForward,
+  P2P_FORWARD_MAX_HOPS
+} = require('../functions/fabricOnion');
 
 function wireMock (writes) {
   return {
@@ -439,5 +444,173 @@ describe('Peer P2P_FORWARD onion', function () {
     assert.strictEqual(destroyed, false);
     assert.strictEqual(peer._isPeerBanned(addr), false);
     assert.strictEqual(peer._state.peers['honest-relay-2'].score, 180);
+  });
+
+  it('drops P2P_FORWARD with ttl=0 (no peel, no forward)', function () {
+    const peer = new Peer(offlinePeerSettings());
+    const originKey = new Key();
+    const fromAddr = '127.0.0.1:9600';
+    const nextWrites = [];
+    peer.connections[fromAddr] = wireMock([]);
+    peer.connections['127.0.0.1:9601'] = wireMock(nextWrites);
+    peer.peers[fromAddr] = { id: 'src', publicKey: originKey.public.encodeCompressed('hex') };
+
+    const inner = Message.fromVector(['P2P_CHAT_MESSAGE', 'ttl0']).signWithKey(originKey).toBuffer();
+    const outer = Message.fromFields('P2P_FORWARD', {
+      nextPeer: xOnlyFromKey(peer.key),
+      ttl: 0,
+      inner
+    }).signWithKey(originKey);
+
+    const peels = [];
+    const forwards = [];
+    peer.on('onion:peel', (d) => peels.push(d));
+    peer.on('onion:forward', (d) => forwards.push(d));
+    peer._handleFabricMessage(outer.toBuffer(), { name: fromAddr }, null);
+
+    assert.strictEqual(peels.length, 0);
+    assert.strictEqual(forwards.length, 0);
+    assert.strictEqual(nextWrites.length, 0);
+  });
+
+  it('refuses bounce of P2P_FORWARD back to origin', function () {
+    const relay = new Peer(offlinePeerSettings());
+    const originKey = new Key();
+    const nextKey = new Key();
+    const fromAddr = '127.0.0.1:9610';
+    const fromWrites = [];
+    relay.connections[fromAddr] = wireMock(fromWrites);
+    relay.peers[fromAddr] = { id: 'src', publicKey: nextKey.public.encodeCompressed('hex') };
+
+    const payload = Message.fromVector(['P2P_CHAT_MESSAGE', 'bounce']).signWithKey(originKey);
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(nextKey)],
+      payload,
+      key: originKey
+    });
+
+    const forwards = [];
+    relay.on('onion:forward', (d) => forwards.push(d));
+    relay._handleFabricMessage(outer.toBuffer(), { name: fromAddr }, null);
+
+    assert.strictEqual(forwards.length, 0);
+    assert.strictEqual(fromWrites.length, 0, 'must not write bounce back to origin');
+  });
+
+  it('emits onion:undeliverable when next hop is missing', function () {
+    const relay = new Peer(offlinePeerSettings());
+    const originKey = new Key();
+    const missingKey = new Key();
+    const fromAddr = '127.0.0.1:9620';
+    relay.connections[fromAddr] = wireMock([]);
+    relay.peers[fromAddr] = { id: 'src', publicKey: originKey.public.encodeCompressed('hex') };
+
+    const payload = Message.fromVector(['P2P_CHAT_MESSAGE', 'gone']).signWithKey(originKey);
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(missingKey)],
+      payload,
+      key: originKey
+    });
+
+    const misses = [];
+    relay.on('onion:undeliverable', (d) => misses.push(d));
+    relay._handleFabricMessage(outer.toBuffer(), { name: fromAddr }, null);
+
+    assert.strictEqual(misses.length, 1);
+    assert.strictEqual(misses[0].reason, 'next-hop-missing');
+    assert.strictEqual(misses[0].nextPeer, xOnlyFromKey(missingKey).toString('hex'));
+    assert.strictEqual(relay._isPeerBanned(fromAddr), false);
+  });
+
+  it('sendOnion fails on empty path and missing first hop', function () {
+    const peer = new Peer(offlinePeerSettings());
+    const r1Key = new Key();
+    const payload = Message.fromVector(['P2P_CHAT_MESSAGE', 'x']).signWithKey(peer.key);
+
+    const warnings = [];
+    const undeliverable = [];
+    peer.on('warning', (w) => warnings.push(String(w)));
+    peer.on('onion:undeliverable', (d) => undeliverable.push(d));
+
+    assert.strictEqual(peer.sendOnion([], payload), false);
+    assert.ok(warnings.some((w) => /empty path/i.test(w)));
+
+    assert.strictEqual(peer.sendOnion([xOnlyFromKey(r1Key)], payload), false);
+    assert.ok(undeliverable.some((d) => d.reason === 'first-hop-missing'));
+  });
+
+  it('sendOnion wrap failure returns false for oversized path', function () {
+    const peer = new Peer(offlinePeerSettings());
+    const path = [];
+    for (let i = 0; i < P2P_FORWARD_MAX_HOPS + 1; i++) path.push(xOnlyFromKey(new Key()));
+    const payload = Message.fromVector(['P2P_CHAT_MESSAGE', 'big']).signWithKey(peer.key);
+    const warnings = [];
+    peer.on('warning', (w) => warnings.push(String(w)));
+    assert.strictEqual(peer.sendOnion(path, payload), false);
+    assert.ok(warnings.some((w) => /wrap failed/i.test(w)));
+  });
+
+  it('peeled forbidden CONTRACT_MESSAGE ops do not cut last hop', function () {
+    const destKey = new Key();
+    const relayKey = new Key();
+    const owner = new Key();
+    const attacker = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic }
+    }));
+    const addr = '127.0.0.1:9630';
+    let destroyed = false;
+    peer.connections[addr] = {
+      _writeFabric () {},
+      destroy () { destroyed = true; }
+    };
+    peer._addressToId[addr] = 'honest-relay-ops';
+    peer._state.peers = {
+      'honest-relay-ops': {
+        id: 'honest-relay-ops',
+        address: addr,
+        score: 160,
+        publicKey: relayKey.public.encodeCompressed('hex')
+      }
+    };
+    peer.peers[addr] = {
+      id: 'honest-relay-ops',
+      publicKey: relayKey.public.encodeCompressed('hex')
+    };
+    peer._state.content.contracts = { c1: { value: 1 } };
+    peer._mergeContractPatchAllowList('c1', {
+      parties: [String(owner.pubkey).toLowerCase()]
+    }, String(owner.pubkey).toLowerCase());
+
+    const payload = Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({
+      contract: 'c1',
+      ops: [{ op: 'replace', path: '/value', value: 99 }]
+    })]).signWithKey(attacker);
+
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(peer.key)],
+      payload,
+      key: relayKey
+    });
+
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.strictEqual(peer._state.content.contracts.c1.value, 1);
+    assert.strictEqual(destroyed, false);
+    assert.strictEqual(peer._isPeerBanned(addr), false);
+    assert.strictEqual(peer._state.peers['honest-relay-ops'].score, 160);
+  });
+
+  it('undecodable P2P_FORWARD body is dropped', function () {
+    const peer = new Peer(offlinePeerSettings());
+    const fromAddr = '127.0.0.1:9640';
+    peer.connections[fromAddr] = wireMock([]);
+    // Valid AMP envelope with wrong body shape for P2P_FORWARD.
+    const bogus = Message.fromVector(['P2P_FORWARD', 'not-a-field-body']).signWithKey(peer.key);
+    const peels = [];
+    peer.on('onion:peel', (d) => peels.push(d));
+    peer._handleFabricMessage(bogus.toBuffer(), { name: fromAddr }, null);
+    assert.strictEqual(peels.length, 0);
+    assert.strictEqual(tryDecodeForward(bogus), null);
   });
 });

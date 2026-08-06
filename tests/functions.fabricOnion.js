@@ -99,4 +99,52 @@ describe('@fabric/core/functions/fabricOnion', function () {
     payload.signWithKey(origin);
     assert.throws(() => wrapOnionPath({ path, payload, key: origin }), /exceeds max/);
   });
+
+  it('toXOnlyPeerId / xOnlyFromKey edge cases', function () {
+    assert.strictEqual(toXOnlyPeerId(null).length, 32);
+    assert.ok(toXOnlyPeerId(null).equals(Buffer.alloc(32)));
+    const k = new Key();
+    const hex0x = '0x' + xOnlyFromKey(k).toString('hex');
+    assert.ok(xOnlyEquals(toXOnlyPeerId(hex0x), xOnlyFromKey(k)));
+    assert.ok(xOnlyEquals(xOnlyFromKey({ key: k }), xOnlyFromKey(k)));
+    assert.ok(xOnlyEquals(xOnlyFromKey({ pubkey: k.pubkey }), xOnlyFromKey(k)));
+    assert.throws(() => toXOnlyPeerId('zz'), /expected 32/);
+    assert.throws(() => toXOnlyPeerId(Buffer.alloc(10)), /unsupported pubkey length/);
+    assert.throws(() => xOnlyFromKey(null), /key required/);
+    assert.throws(() => xOnlyFromKey({}), /no public key/);
+    assert.strictEqual(xOnlyEquals(Buffer.alloc(32), Buffer.alloc(31)), false);
+  });
+
+  it('wrapForwardLayer validates ttl / key / empty inner', function () {
+    const origin = new Key();
+    const hop = new Key();
+    const inner = Message.fromVector(['P2P_CHAT_MESSAGE', 'x']).signWithKey(origin);
+    assert.throws(() => wrapForwardLayer({
+      nextPeer: xOnlyFromKey(hop), inner, ttl: 0, key: origin
+    }), /ttl must be/);
+    assert.throws(() => wrapForwardLayer({
+      nextPeer: xOnlyFromKey(hop), inner, ttl: 1
+    }), /key required/);
+    assert.throws(() => wrapForwardLayer({
+      nextPeer: xOnlyFromKey(hop), inner: Buffer.alloc(0), ttl: 1, key: origin
+    }), /empty inner/);
+  });
+
+  it('tryDecodeForward returns null for non-forward / malformed', function () {
+    assert.strictEqual(tryDecodeForward(null), null);
+    const chat = Message.fromVector(['P2P_CHAT_MESSAGE', 'nope']).signWithKey(new Key());
+    assert.strictEqual(tryDecodeForward(chat), null);
+    const bogus = Message.fromVector(['P2P_FORWARD', 'not-fields']).signWithKey(new Key());
+    assert.strictEqual(tryDecodeForward(bogus), null);
+  });
+
+  it('wrapOnionPath rejects empty path and missing key', function () {
+    const origin = new Key();
+    const payload = Message.fromVector(['P2P_CHAT_MESSAGE', 'x']).signWithKey(origin);
+    assert.throws(() => wrapOnionPath({ path: [], payload, key: origin }), /at least one hop/);
+    assert.throws(() => wrapOnionPath({
+      path: [xOnlyFromKey(origin)],
+      payload
+    }), /key required/);
+  });
 });

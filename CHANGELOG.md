@@ -34,6 +34,7 @@ JS-canonical protocol for 0.1.0; Lightning-style wire preimage; unsigned documen
 - **`P2P_FORWARD` peel:** valid `P2P_SESSION_*` inners do not rebind last-hop identity; peeled chat / peering offers are local-only (no mesh relay / candidate enqueue under the TCP hop).
 - **`P2P_RELAY`:** included in relay-as-is pin exemption so bit-identical flood cannot ban honest forwarders.
 - Docs: gossip/peering hop is advisory (bit-identical; not decremented). Tests: `tests/fabric.peer.adversarial.js`, `tests/peer.onion.forward.js`.
+- **Coverage:** c8 includes PR-critical helpers (`fabricOnion`, `inventoryHtlc`, `documentSealedExchange`, `documentBlobManifest`, `loadLocalSettings`, `messageBodyCodec`, `sidechainState`); expanded onion/adversarial tests for TTL=0, bounce refuse, undeliverable, `sendOnion` failures, nest soft-punish, relayedAsIs session reject, ban expiry, chat window rollover, document-route caps.
 
 **Public readiness**
 - **[PUBLIC_API.md](PUBLIC_API.md)** — frozen 0.1 leaf import map + scoped RC claim (Peer + document helpers + local Program/Machine; not a sandboxed dapp VM).
