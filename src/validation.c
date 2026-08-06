@@ -393,7 +393,7 @@ FabricError fabric_safe_string_concat(char *dest, size_t dest_size, const char *
     return FABRIC_ERROR_BUFFER_TOO_SMALL;
   }
 
-  strncat(dest, src, src_len);
+  memcpy(dest + dest_len, src, src_len + 1);
   return FABRIC_SUCCESS;
 }
 
@@ -409,7 +409,7 @@ FabricError fabric_safe_string_copy(char *dest, size_t dest_size, const char *sr
     return FABRIC_ERROR_BUFFER_TOO_SMALL;
   }
 
-  strcpy(dest, src);
+  memcpy(dest, src, src_len + 1);
   return FABRIC_SUCCESS;
 }
 
