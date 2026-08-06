@@ -69,6 +69,10 @@ Events: `onion:sent`, `onion:peel`, `onion:forward`, `onion:undeliverable`.
   the last hop would let an attacker cut honest links. The outer
   `P2P_FORWARD` frame is still verified against its path-builder signature
   before peel/forward.
+- **Peel / identity & mesh side-effects:** session handshake inners do not
+  rebind `peers` / `_addressToId` or emit `SESSION_OPEN` replies. Chat and
+  peering-offer inners are local-only (no last-hop budget burn, candidate
+  enqueue, or mesh relay).
 
 ## Example
 

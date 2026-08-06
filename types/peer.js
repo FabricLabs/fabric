@@ -2243,9 +2243,13 @@ class Peer extends Service {
         this.emit('chat', { text: String(text), type: 'P2P_CHAT_MESSAGE' }, {
           origin,
           signer: chatSigner || null,
-          wireMessage: message
+          wireMessage: message,
+          peeledForward: opts.peeledForward === true
         });
-        if (origin && origin.name && message) {
+        // Onion peel / RELAY unwrap: deliver locally only. Mesh relay under the TCP
+        // last hop would burn that neighbor's chat budget for an originator's frame.
+        if (origin && origin.name && message &&
+            opts.peeledForward !== true && !opts.skipRelayFlood) {
           if (this._chatRateLimitAllow(origin.name)) {
             this.relayFrom(origin.name, message);
           } else {
@@ -2557,6 +2561,13 @@ class Peer extends Service {
   }
 
   _handleSessionOfferGenericMessage (message, origin, socket, signerPubkeyHex, opts = {}) {
+    // Peel / relay-as-is: TCP origin is not the AMP author — never rebind
+    // peers/_addressToId or reply SESSION_OPEN on that socket (partition DoS).
+    if (opts.peeledForward === true || opts.relayedAsIs === true) {
+      this.emit('warning',
+        '[FABRIC:PEER] Ignoring P2P_SESSION_OFFER delivered via peel/relay-as-is (no identity rebind)');
+      return this;
+    }
     const peerId = message.actor.id;
     const connAddress = origin.name;
     if (this.settings.debug) this.emit('debug', `Handling session offer: ${JSON.stringify(message.object)}`);
@@ -2644,6 +2655,11 @@ class Peer extends Service {
   }
 
   _handleSessionOpenGenericMessage (message, origin, signerPubkeyHex, opts = {}) {
+    if (opts.peeledForward === true || opts.relayedAsIs === true) {
+      this.emit('warning',
+        '[FABRIC:PEER] Ignoring P2P_SESSION_OPEN delivered via peel/relay-as-is (no identity rebind)');
+      return this;
+    }
     if (this.settings.debug) this.emit('debug', `Handling session open: ${JSON.stringify(message.object)}`);
     const openPeerId = message.object.counterparty;
     {
@@ -2807,6 +2823,13 @@ class Peer extends Service {
         if (!Number.isFinite(hop) || hop < 0) hop = maxHops;
         hop = Math.min(hop, maxHops);
         if (hop <= 0) break;
+        // Onion peel: observe locally only — do not burn last-hop peering budget,
+        // enqueue attacker-chosen dial targets, or mesh-relay under that hop.
+        if (peeledForward) {
+          this.emit('peeringOffer', { message, origin, peeledForward: true });
+          this._peeringRememberPayload(payloadKey);
+          break;
+        }
         if (!this._peeringRateLimitAllow(origin.name)) break;
         this.emit('peeringOffer', { message, origin });
         this._peeringRememberPayload(payloadKey);

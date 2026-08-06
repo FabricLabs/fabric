@@ -276,6 +276,130 @@ describe('Peer P2P_FORWARD onion', function () {
     assert.strictEqual(peer._state.peers['honest-relay-nest'].score, 175);
   });
 
+  it('valid peeled P2P_SESSION_OFFER does not rebind last-hop identity', function () {
+    const destKey = new Key();
+    const relayKey = new Key();
+    const attackerKey = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic }
+    }));
+    const addr = '127.0.0.1:9504';
+    const writes = [];
+    peer.connections[addr] = wireMock(writes);
+    peer._addressToId[addr] = 'honest-relay-bind';
+    const relayPub = relayKey.public.encodeCompressed('hex');
+    peer._state.peers = {
+      'honest-relay-bind': {
+        id: 'honest-relay-bind',
+        address: addr,
+        score: 200,
+        publicKey: relayPub
+      }
+    };
+    peer.peers[addr] = { id: 'honest-relay-bind', publicKey: relayPub };
+
+    const attackerId = 'attacker-session-id';
+    const proof = peer._sessionKeyProofMessage(attackerId, attackerKey.pubkey, attackerKey.pubkey);
+    const payload = Message.fromVector(['P2P_SESSION_OFFER', JSON.stringify({
+      type: 'P2P_SESSION_OFFER',
+      actor: {
+        id: attackerId,
+        pubkey: attackerKey.pubkey,
+        parentPubkey: attackerKey.pubkey,
+        parentSignature: attackerKey.signSchnorr(proof).toString('hex')
+      },
+      object: { challenge: 'peel-rebind' }
+    })]).signWithKey(attackerKey);
+
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(peer.key)],
+      payload,
+      key: relayKey
+    });
+
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.strictEqual(peer._addressToId[addr], 'honest-relay-bind');
+    assert.strictEqual(peer.peers[addr].publicKey, relayPub);
+    assert.strictEqual(writes.length, 0, 'must not SESSION_OPEN-reply on peel');
+    assert.strictEqual(peer._state.peers['honest-relay-bind'].publicKey, relayPub);
+  });
+
+  it('peeled chat delivers locally without mesh-relaying under last hop', function () {
+    const destKey = new Key();
+    const originKey = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic },
+      chat: { maxRelaysPerOriginPerMinute: 1 }
+    }));
+    const addr = '127.0.0.1:9505';
+    const otherAddr = '127.0.0.1:9506';
+    const otherWrites = [];
+    peer.connections[addr] = wireMock([]);
+    peer.connections[otherAddr] = wireMock(otherWrites);
+    peer.peers[addr] = { id: 'relay', publicKey: originKey.public.encodeCompressed('hex') };
+    peer.peers[otherAddr] = { id: 'other', publicKey: new Key().public.encodeCompressed('hex') };
+
+    const payload = Message.fromVector(['P2P_CHAT_MESSAGE', 'peel-local-only']);
+    payload.signWithKey(originKey);
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(peer.key)],
+      payload,
+      key: originKey
+    });
+
+    const chats = [];
+    peer.on('chat', (body) => chats.push(body));
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.strictEqual(chats.length, 1);
+    assert.strictEqual(chats[0].text, 'peel-local-only');
+    assert.strictEqual(otherWrites.length, 0, 'must not mesh-relay peeled chat');
+  });
+
+  it('peeled P2P_PEERING_OFFER does not enqueue candidates or mesh-relay', function () {
+    const destKey = new Key();
+    const originKey = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic }
+    }));
+    const addr = '127.0.0.1:9507';
+    const otherAddr = '127.0.0.1:9508';
+    const otherWrites = [];
+    peer.connections[addr] = wireMock([]);
+    peer.connections[otherAddr] = wireMock(otherWrites);
+    peer.peers[addr] = { id: 'relay', publicKey: originKey.public.encodeCompressed('hex') };
+    peer.peers[otherAddr] = { id: 'other', publicKey: new Key().public.encodeCompressed('hex') };
+
+    const beforeQueue = (peer.candidates && peer.candidates.length) || 0;
+    const payload = Message.fromVector(['P2P_PEERING_OFFER', JSON.stringify({
+      type: 'P2P_PEERING_OFFER',
+      object: {
+        transport: 'fabric',
+        host: '203.0.113.9',
+        port: 17777,
+        peeringHop: 5
+      }
+    })]).signWithKey(originKey);
+
+    const outer = wrapOnionPath({
+      path: [xOnlyFromKey(peer.key)],
+      payload,
+      key: originKey
+    });
+
+    const offers = [];
+    peer.on('peeringOffer', (d) => offers.push(d));
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    assert.ok(offers.length >= 1, 'expect local peeringOffer observe');
+    assert.strictEqual(offers[0].peeledForward, true);
+    const afterQueue = (peer.candidates && peer.candidates.length) || 0;
+    assert.strictEqual(afterQueue, beforeQueue, 'must not enqueue peel dial targets');
+    assert.ok(!peer._candidateKeys.has('203.0.113.9:17777'));
+    assert.strictEqual(otherWrites.length, 0, 'must not mesh-relay peeled peering offer');
+  });
+
   it('peeled body-hash mismatch does not hard-disconnect the last hop', function () {
     const destKey = new Key();
     const relayKey = new Key();
