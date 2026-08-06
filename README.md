@@ -3,13 +3,14 @@
 [![Coverage Status][badge-coverage]][coverage]
 [![GitHub contributors][badge-contributors]][contributors]
 
-[The `@fabric/core` project][fabric-github] provides an API for building peer-to-peer applications on [Bitcoin][bitcoin].
+[The `@fabric/core` project][fabric-github] is the **0.1 RC reference client** for
+building peer-to-peer applications on [Bitcoin][bitcoin]: NOISE `Peer` messaging
+with bounded gossip/discovery, Bitcoin-settled document-exchange helpers, and
+local `Program` / `Machine` execution.
 
-Fabric is an experimental approach to the secure establishment and execution of
-peer-to-peer agreements ("contracts") using Bitcoin as a bonding mechanism. The
-`@fabric/core` project provides a robust set of implementations as JavaScript
-classes, enabling the rapid prototyping and testing of Bitcoin-based
-applications for downstream developers.
+Fabric remains **experimental**. This release is **not** a sandboxed remote
+contract VM or a production-hardened dapp SDK — see [PUBLIC_API.md](PUBLIC_API.md)
+for the frozen leaf import map and scoped claim.
 
 ## Bitcoin
 We've designed Fabric to extend the existing Bitcoin ecosystem, deriving all specifications from well-established designs and implementations.
@@ -27,17 +28,20 @@ regtest Master:
 regtest Identity #0:
 ```
 
-**Status:** `0.1.0-RC1` — run **`npm run ci`** before release tags (full test suite).
+**Status:** `0.1.0-RC1` (experimental reference) — run **`npm run ci`** before release tags.
 
 | Doc | Purpose |
 |-----|---------|
+| [PUBLIC_API.md](PUBLIC_API.md) | **Frozen 0.1 leaf imports** + release claim |
 | [VISION.md](VISION.md) | Product vision, architecture snapshot, documentation map |
 | [DEVELOPERS.md](DEVELOPERS.md) | Repo layout, tests, core types, storage |
+| [PROTOCOL.md](PROTOCOL.md) | Wire entry → [docs/MESSAGE_BODY.md](docs/MESSAGE_BODY.md) |
 | [docs/BOLT_COMPATIBILITY.md](docs/BOLT_COMPATIBILITY.md) | Lightning BOLT #1–#12 vs `lightningd` / `Lightning` |
 | [docs/FABRIC_LIGHTNING_OFFERS.md](docs/FABRIC_LIGHTNING_OFFERS.md) | Fabric **markets** vs BOLT12; `Lightning.Bolt12` |
 | [docs/FABRIC_PAYMENT_BECH32.md](docs/FABRIC_PAYMENT_BECH32.md) | Fabric-routed payments `fa1…`; `Lightning.FabricPayment` |
 | [docs/LIGHTNING_COMPAT.md](docs/LIGHTNING_COMPAT.md) | Core Lightning JSON-RPC ↔ Fabric API |
 | [PRIVACY.md](PRIVACY.md) | Privacy model for operators |
+| [SECURITY.md](SECURITY.md) / [AUDIT.md](AUDIT.md) | Hardening notes + known gaps |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
 
 ## Quick Start
@@ -105,15 +109,11 @@ JS tests do not require `fabric.node`.  Separately, **`level`** and **`zeromq`**
 may compile platform bindings when those packages are installed.
 
 ## API
-The Fabric reference implementation exposes a simple message-passing interface
-using [the actor model][actor-model], enabling your downstream applications to
-subscribe to simple events for rapid prototyping of distributed applications.
+Prefer **leaf imports** from [PUBLIC_API.md](PUBLIC_API.md) (`Peer`, `Message`,
+`Key`, document helpers). The `Fabric` facade is for demos; production apps should
+not depend on `Fabric.*` statics.
 
 ### Using as a Library
-Using the `EventEmitter` pattern, you can create an instance of Fabric to use
-it as an event source.
-
-#### Simple Example
 ```js
 const Peer = require('@fabric/core/types/peer');
 

@@ -38,6 +38,7 @@ Canonical decode names after **first-match** collapse when numeric codes collide
 | `0x0013` | 19 | `P2P_PONG` |
 | `0x0043` | 67 | `P2P_RELAY` |
 | `0x0044` | 68 | `P2P_MESSAGE_RECEIPT` |
+| `0x0045` | 69 | `P2P_FORWARD` |
 | `0x0031` | 49 | `P2P_BASE_MESSAGE` |
 | `0x0080` | 128 | `P2P_GENERIC` |
 | `0x3aff` | 15103 | `GENERIC_MESSAGE` |

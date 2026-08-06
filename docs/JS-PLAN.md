@@ -10,7 +10,7 @@ This tracks **JS-only** work for `@fabric/core` after wire/Message parity and pr
 
 ## Near term (JS)
 1. **`types/cli.js`** — Close signing / payment-channel TODOs where they block real P2P flows; keep behavior behind flags if experimental.
-2. **Peer hardening** — Rate limits, duplicate message handling, and stricter origin checks (see `types/peer.js` TODOs) without breaking happy path.
+2. **Peer hardening** — **Done for 0.1 path:** wire traffic credits, logical first-writer-wins registration, integrity/pin/session/contract-ops misbehavior scoring + disconnect policy ([SECURITY.md](../SECURITY.md)). Further tuning is settings-only unless new opcodes land.
 3. **`functions/_handleFabricMessage.js`** — Either implement or redirect to `Peer`/`Message` patterns so examples don’t drift from wire format.
 4. **Lint surface** — Expand toward `semistandard` on `contracts/`, `scripts/` (beyond harness), or `tests/` in slices; avoid a one-shot full-repo lint cliff.
 5. **CHANGELOG** — Document user-visible JS changes per release (wire hash, CLI entry, etc.).

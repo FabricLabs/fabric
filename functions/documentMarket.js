@@ -56,6 +56,9 @@ class DocumentOfferBook {
     const sellerPubkey = opts.sellerPubkey != null
       ? String(opts.sellerPubkey).trim().toLowerCase()
       : null;
+    const ampSignerPubkey = opts.signerPubkeyHex != null
+      ? String(opts.signerPubkeyHex).trim().toLowerCase()
+      : (opts.ampSignerPubkey != null ? String(opts.ampSignerPubkey).trim().toLowerCase() : null);
     const now = Date.now();
     for (const it of items) {
       if (!it || typeof it !== 'object') continue;
@@ -83,6 +86,7 @@ class DocumentOfferBook {
             sellerId,
             sellerAddress: origin,
             sellerPubkey: sellerPubkey || it.sellerPubkey || null,
+            ampSignerPubkey: ampSignerPubkey || null,
             rateSats: Number(b.rateSats != null ? b.rateSats : rateSats) || 0,
             contentHashHex: paymentHash,
             blobHashHex: b.blobHashHex || null,
@@ -105,6 +109,7 @@ class DocumentOfferBook {
           sellerId,
           sellerAddress: origin,
           sellerPubkey: sellerPubkey || it.sellerPubkey || null,
+          ampSignerPubkey: ampSignerPubkey || null,
           rateSats,
           contentHashHex,
           blobHashHex: it.blobHashHex || null,

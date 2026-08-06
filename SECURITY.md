@@ -7,10 +7,13 @@ Fabric aims to maximize the security of a sensible default configuration while k
 - Clear separation between **experimental** APIs and **release** commitments (see [CHANGELOG.md](CHANGELOG.md))
 
 ## P2P gossip (`P2P_PEER_GOSSIP`)
-Relay of gossip is bounded to reduce amplification DoS: **logical payload** deduplication (stable hash over `type` + `object` sans `gossipHop`), **`gossipHop` TTL** (default 5, decremented on each relay), **per-origin relay budget** per rolling minute (default 60), and **FIFO-capped** wire-hash and payload caches. See `constants.js` (`GOSSIP_*`, `PEER_MAX_WIRE_HASH_CACHE`) and `Peer` `settings.gossip`.
+Relay of gossip is bounded to reduce amplification DoS: **logical payload** deduplication (stable hash over `type` + `object` sans `gossipHop`), **advisory `gossipHop`** (default max 5; frames are forwarded **bit-identical**, so hop is **not** rewritten/decremented on each hop — diameter control is wire-hash + logical dedup + per-origin budget), **per-origin relay budget** per rolling minute (default 60), and **FIFO-capped** wire-hash and payload caches. See `constants.js` (`GOSSIP_*`, `PEER_MAX_WIRE_HASH_CACHE`) and `Peer` `settings.gossip`.
 
 ## P2P peering offers (`P2P_PEERING_OFFER`)
-Relay uses the same class of controls as gossip, with separate state: logical dedup (hash over `type` + `object` sans `peeringHop`), **`peeringHop` TTL** (default 5), **per-origin relay budget** per rolling minute (default 60), **FIFO-capped** payload cache, and a **bounded, deduped** candidate queue for offered addresses (`PEER_MAX_CANDIDATES_QUEUE`, default 128). See `constants.js` (`PEERING_OFFER_*`, `PEER_MAX_CANDIDATES_QUEUE`) and `Peer` `settings.peering`.
+Relay uses the same class of controls as gossip, with separate state: logical dedup (hash over `type` + `object` sans `peeringHop`), **advisory `peeringHop`** (bit-identical forward; not decremented), **per-origin relay budget** per rolling minute (default 60), **FIFO-capped** payload cache, and a **bounded, deduped** candidate queue for offered addresses (`PEER_MAX_CANDIDATES_QUEUE`, default 128). See `constants.js` (`PEERING_OFFER_*`, `PEER_MAX_CANDIDATES_QUEUE`) and `Peer` `settings.peering`.
+
+## P2P_RELAY mesh flood
+Inbound `P2P_RELAY` unwraps the inner AMP body for local handling, then forwards the **original outer envelope bit-identical** (never hop-re-wraps a new signed `P2P_RELAY`). Nested `P2P_RELAY` unwrap depth is capped (`PEER_MAX_RELAY_NEST_DEPTH` / `settings.peerScore.maxRelayNestDepth`). Prefer `P2P_FORWARD` for directed/onion paths ([docs/P2P_FORWARD.md](docs/P2P_FORWARD.md)).
 
 ## Logical first-writer-wins registration
 Exact wire duplicates are already dropped via the FIFO-capped wire-hash cache (`PEER_MAX_WIRE_HASH_CACHE`). Separately, **registration-style** frames also no-op when the *logical* payload was already claimed — including **re-signed** copies of the same body (different AMP signature → different wire hash). Types include:
@@ -48,8 +51,25 @@ Registry score (Bitcoin Core–style) is earned on ping-gated `P2P_PONG` and spe
 | `CONTRACT_PUBLISH` logical dup, **different** prior signer | 40 | no |
 | Other logical-register duplicates | 8, once per origin per window | no |
 | Inbound wire credit overflow | 22, once per window | no |
+| Nested `P2P_RELAY` beyond nest cap | 60 | yes |
 
-Exact wire duplicates remain a silent drop (no score change). Wire-hash dedup remembers a frame only **after** body-hash + BIP-340 verify succeed (junk cannot fill the cache). Tunables: `settings.peerScore.*` and `settings.wireTraffic.*` (defaults in `constants.js` as `PEER_SCORE_*`). Set `peerScore.disconnectOnHardMisbehavior: false` to derank without destroy.
+Exact wire duplicates remain a silent drop (no score change). Wire-hash dedup remembers a frame only **after** body-hash + BIP-340 verify succeed (junk cannot fill the cache). Hard disconnects also install a temporary **ban** (`settings.peerScore.banTtlMs`, default 15m) on connection address and known pubkey — dial and inbound are refused until expiry. Tunables: `settings.peerScore.*` and `settings.wireTraffic.*` (defaults in `constants.js` as `PEER_SCORE_*` / `PEER_BAN_TTL_MS`). Set `peerScore.disconnectOnHardMisbehavior: false` to derank without destroy; `banOnHardMisbehavior: false` to skip bans.
+
+**Document delivery default:** `autoFulfillDocumentRequests` is **false** (consent / approve queue). Opt in for trusted meshes.
+
+## Chat mesh amplify
+`P2P_CHAT_MESSAGE` still emits locally, but mesh `relayFrom` is **per-origin rate-limited** (`CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE` / `settings.chat.maxRelaysPerOriginPerMinute`, default 30/min).
+
+## Inbound frame size
+Wire frames larger than `HEADER_SIZE + MAX_MESSAGE_SIZE` (override body via `settings.maxMessageSize`) are dropped **before** parse / body-hash / signature work.
+
+## Inventory HTLC binding
+Buyers must rebuild the buyer-bound P2TR (`validateInventoryHtlcOffer`) and must not fund a seller-advertised `paymentAddress` that does not match. When an AMP signer is known (`inventoryResponse.signerPubkeyHex` / offer `ampSignerPubkey` / HTLC `sellerPublicKeyHex`), it must match the resolved seller x-only key before funding.
+
+## Memory caps (document path)
+- `DocumentBlobTransferBook`: max incomplete transfers (`MAX_PENDING_BLOB_TRANSFERS`, default 64) + TTL eviction
+- Pending sealed ciphertext: `PEER_MAX_PENDING_SEALED_DELIVERIES` (default 32)
+- Private DocumentRequest reverse routes: `PEER_MAX_DOCUMENT_RELAY_ROUTES` (default 256)
 
 ## Operator-facing docs
 | Doc | Use |

@@ -513,10 +513,93 @@ function buildDocumentOfferEscrow (opts = {}) {
   };
 }
 
+/**
+ * Normalize compressed (66 hex) or x-only (64 hex) pubkey to lowercase x-only hex.
+ * @param {string|Buffer|null|undefined} pk
+ * @returns {string|null}
+ */
+function toXOnlyPubkeyHex (pk) {
+  if (pk == null) return null;
+  if (Buffer.isBuffer(pk)) {
+    if (pk.length === 32) return pk.toString('hex');
+    if (pk.length === 33 && (pk[0] === 0x02 || pk[0] === 0x03)) {
+      return pk.subarray(1).toString('hex');
+    }
+    return null;
+  }
+  let s = String(pk).trim().toLowerCase();
+  if (s.startsWith('0x')) s = s.slice(2);
+  if (/^[0-9a-f]{64}$/.test(s)) return s;
+  if (/^[0-9a-f]{66}$/.test(s) && (s.startsWith('02') || s.startsWith('03'))) return s.slice(2);
+  return null;
+}
+
+/**
+ * @param {string|Buffer|null|undefined} a
+ * @param {string|Buffer|null|undefined} b
+ * @returns {boolean}
+ */
+function pubkeysMatchXOnly (a, b) {
+  const xa = toXOnlyPubkeyHex(a);
+  const xb = toXOnlyPubkeyHex(b);
+  return !!(xa && xb && xa === xb);
+}
+
+/**
+ * Rebuild buyer-bound P2TR and optionally verify a seller-advertised paymentAddress.
+ * Never treat seller-supplied address as authoritative without a match.
+ *
+ * @param {object} opts
+ * @param {string} opts.networkName
+ * @param {Buffer|string} opts.sellerPubkeyCompressed
+ * @param {Buffer|string} opts.buyerRefundPubkeyCompressed
+ * @param {Buffer|string} opts.paymentHash32
+ * @param {number} opts.refundLocktimeHeight
+ * @param {string} [opts.paymentAddress] seller-advertised address (optional)
+ * @returns {{ ok: true, built: object } | { ok: false, error: string, expectedAddress?: string, built?: object }}
+ */
+function validateInventoryHtlcOffer (opts = {}) {
+  let seller = opts.sellerPubkeyCompressed;
+  let buyer = opts.buyerRefundPubkeyCompressed;
+  let hash = opts.paymentHash32;
+  try {
+    if (!Buffer.isBuffer(seller)) seller = Buffer.from(String(seller || ''), 'hex');
+    if (!Buffer.isBuffer(buyer)) buyer = Buffer.from(String(buyer || ''), 'hex');
+    if (!Buffer.isBuffer(hash)) hash = Buffer.from(String(hash || ''), 'hex');
+  } catch (e) {
+    return { ok: false, error: `Invalid HTLC key/hash material: ${e.message}` };
+  }
+  let built;
+  try {
+    built = buildInventoryHtlcP2tr({
+      networkName: opts.networkName || 'regtest',
+      sellerPubkeyCompressed: seller,
+      buyerRefundPubkeyCompressed: buyer,
+      paymentHash32: hash,
+      refundLocktimeHeight: Number(opts.refundLocktimeHeight)
+    });
+  } catch (e) {
+    return { ok: false, error: e.message || String(e) };
+  }
+  const offered = opts.paymentAddress != null ? String(opts.paymentAddress).trim() : '';
+  if (offered && offered !== built.address) {
+    return {
+      ok: false,
+      error: 'Seller HTLC paymentAddress does not match buyer-bound P2TR script — refusing to fund',
+      expectedAddress: built.address,
+      built
+    };
+  }
+  return { ok: true, built };
+}
+
 module.exports = {
   buildInventoryHtlcP2tr,
   buildHtlcFundingHints,
   buildDocumentOfferEscrow,
+  validateInventoryHtlcOffer,
+  toXOnlyPubkeyHex,
+  pubkeysMatchXOnly,
   randomPreimage32,
   hash256,
   networkForFabricName,

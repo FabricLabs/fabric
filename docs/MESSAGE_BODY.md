@@ -22,8 +22,14 @@ layouts**, not JSON documents. JSON appears only at the **`@fabric/http`**
 | 144 | 64 | BIP-340 signature |
 | 208 | … | **body** |
 
-Integrity and signing always cover **raw body bytes**. Nested `P2P_RELAY`
-bodies remain nested AMP frames (already binary).
+Integrity and signing always cover **raw body bytes**. Nested envelopes:
+
+- **`P2P_RELAY` (0x43)** — mesh **flood** carrier; body = raw inner AMP bytes.
+  Not for IP-hiding routes (every edge sees the frame).
+- **`P2P_FORWARD` (0x45)** — directed **onion hop**; field body
+  `{ nextPeer: bytes32, ttl: u8, inner: message }`. Nest layers with
+  `@fabric/core/functions/fabricOnion` / `Peer#sendOnion`. Destination sees
+  only the last hop’s TCP peer.
 
 ### Wire `preimage` (payment secret, not body hash)
 Aligned with Lightning HTLC semantics for Fabric Circuits / multi-hop payment

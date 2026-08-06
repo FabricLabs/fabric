@@ -121,6 +121,19 @@ const PEER_SCORE_CONTRACT_OPS_FORBIDDEN_PENALTY = 80;
 const PEER_SCORE_LOGICAL_REGISTER_HIJACK_PENALTY = 40;
 const PEER_SCORE_LOGICAL_REGISTER_DUPLICATE_PENALTY = 8;
 const PEER_SCORE_LOGICAL_REGISTER_DUPLICATE_WINDOW_MS = 60000;
+/** Max nested {@link P2P_RELAY} unwrap depth (outermost counts as 0). */
+const PEER_MAX_RELAY_NEST_DEPTH = 2;
+/** Default TTL for hard-misbehavior bans (pubkey + connection address). */
+const PEER_BAN_TTL_MS = 15 * 60 * 1000;
+/** Inbound credit cost for {@link P2P_RELAY} mesh flood envelopes. */
+const PEER_RELAY_CREDIT_COST = 8;
+const PEER_SCORE_RELAY_NEST_EXCEEDED_PENALTY = 60;
+/** Max chat mesh relays per origin per rolling minute (local emit still happens). */
+const CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE = 30;
+/** Max sealed ciphertext rows awaiting key reveal on a Peer. */
+const PEER_MAX_PENDING_SEALED_DELIVERIES = 32;
+/** Max private DocumentRequest reverse-route entries. */
+const PEER_MAX_DOCUMENT_RELAY_ROUTES = 256;
 const P2P_GENERIC = 0x80; // 128 in decimal
 const P2P_IDENT_REQUEST = 0x01; // 1, or the identity
 const P2P_IDENT_RESPONSE = 0x11;
@@ -324,6 +337,13 @@ module.exports = {
   PEER_SCORE_LOGICAL_REGISTER_HIJACK_PENALTY,
   PEER_SCORE_LOGICAL_REGISTER_DUPLICATE_PENALTY,
   PEER_SCORE_LOGICAL_REGISTER_DUPLICATE_WINDOW_MS,
+  PEER_MAX_RELAY_NEST_DEPTH,
+  PEER_BAN_TTL_MS,
+  PEER_RELAY_CREDIT_COST,
+  PEER_SCORE_RELAY_NEST_EXCEEDED_PENALTY,
+  CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
+  PEER_MAX_PENDING_SEALED_DELIVERIES,
+  PEER_MAX_DOCUMENT_RELAY_ROUTES,
   P2P_IDENT_REQUEST,
   P2P_IDENT_RESPONSE,
   P2P_CHAIN_SYNC_REQUEST,

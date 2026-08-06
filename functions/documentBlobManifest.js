@@ -40,6 +40,8 @@ const DEFAULT_BLOB_CHUNK_BYTES = Math.max(
 const DEFAULT_CHUNK_BYTES = DEFAULT_BLOB_CHUNK_BYTES;
 
 const INCOMPLETE_TRANSFER_TTL_MS = 10 * 60 * 1000;
+/** Max concurrent incomplete transfers in {@link DocumentBlobTransferBook} (FIFO eviction). */
+const MAX_PENDING_BLOB_TRANSFERS = 64;
 
 const BLOB_INDEX_TYPE = 'DocumentBlobIndex';
 const BLOB_INDEX_SCHEMA_VERSION = 2;
@@ -449,12 +451,14 @@ function transferKey (documentId, merkleRootHex) {
 
 class DocumentBlobTransferBook {
   /**
-   * @param {{ ttlMs?: number }} [opts]
+   * @param {{ ttlMs?: number, maxPending?: number }} [opts]
    */
   constructor (opts = {}) {
     /** @type {Map<string, object>} */
     this._pending = new Map();
     this.ttlMs = opts.ttlMs != null ? Number(opts.ttlMs) : INCOMPLETE_TRANSFER_TTL_MS;
+    const maxP = Number(opts.maxPending);
+    this.maxPending = Number.isFinite(maxP) && maxP > 0 ? maxP : MAX_PENDING_BLOB_TRANSFERS;
   }
 
   /**
@@ -485,6 +489,7 @@ class DocumentBlobTransferBook {
       updated: Date.now()
     };
     this._pending.set(key, row);
+    this._evictOldestIfOverCap();
     return row;
   }
 
@@ -494,6 +499,14 @@ class DocumentBlobTransferBook {
       if (now - (row.updated || row.created) > this.ttlMs) {
         this._pending.delete(k);
       }
+    }
+  }
+
+  _evictOldestIfOverCap () {
+    while (this._pending.size > this.maxPending) {
+      const oldest = this._pending.keys().next().value;
+      if (oldest == null) break;
+      this._pending.delete(oldest);
     }
   }
 
@@ -546,6 +559,15 @@ class DocumentBlobTransferBook {
         updated: Date.now()
       };
       this._pending.set(key, row);
+      this._evictOldestIfOverCap();
+      // Cap eviction may have dropped this brand-new row under pressure.
+      if (!this._pending.has(key)) {
+        return {
+          status: 'reject',
+          error: 'too many pending blob transfers',
+          documentId: frame.documentId
+        };
+      }
     }
     row.updated = Date.now();
     if (row.total == null) row.total = frame.blobTotal;
@@ -647,6 +669,7 @@ module.exports = {
   LEGACY_HUB_CHUNK_BYTES,
   FILE_SEND_JSON_OVERHEAD,
   INCOMPLETE_TRANSFER_TTL_MS,
+  MAX_PENDING_BLOB_TRANSFERS,
   MAX_MESSAGE_SIZE,
   createBlobMerkleTree,
   merkleRootHexFromBlobHashes,

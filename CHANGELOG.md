@@ -22,6 +22,16 @@ JS-canonical protocol for 0.1.0; Lightning-style wire preimage; unsigned documen
 **Peer scoring / misbehavior**
 - Unified `_applyPeerMisbehavior`: body-hash / bad-sig / pin mismatch / forbidden `CONTRACT_MESSAGE` ops derank and disconnect; logical-register duplicates soft-derank (hijack on `CONTRACT_PUBLISH` re-sign by another key). Wire-hash cache fills only after verify. See [SECURITY.md](SECURITY.md); tests in `tests/fabric.peer.scoring.js`.
 
+**Adversarial Peer hardening**
+- **`P2P_RELAY`:** inbound flood forwards the original outer bit-identical (no hop re-wrap); nested RELAY depth capped; higher inbound credit cost.
+- **Temp ban** after hard misbehavior (address + pubkey, default 15m); refuse dial/inbound while banned.
+- **`autoFulfillDocumentRequests` default `false`** (consent queue); `P2P_PEER_ANNOUNCE` uses capped candidate enqueue.
+- **Chat:** per-origin mesh relay budget (`CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE`).
+- **Frame size:** drop oversize wire buffers before crypto (`HEADER_SIZE + MAX_MESSAGE_SIZE`).
+- **HTLC offers:** `validateInventoryHtlcOffer` + AMP signer / seller pubkey binding; inventory emits `signerPubkeyHex`.
+- **Memory caps:** pending blob transfers, sealed ciphertext rows, private document relay routes.
+- Docs: gossip/peering hop is advisory (bit-identical; not decremented). Tests: `tests/fabric.peer.adversarial.js`.
+
 **Public readiness**
 - **[PUBLIC_API.md](PUBLIC_API.md)** — frozen 0.1 leaf import map + scoped RC claim (Peer + document helpers + local Program/Machine; not a sandboxed dapp VM).
 - **[PROTOCOL.md](PROTOCOL.md)** redirects to **[docs/MESSAGE_BODY.md](docs/MESSAGE_BODY.md)**; restore **[PRIVACY.md](PRIVACY.md)** / **[AUDIT.md](AUDIT.md)**.

@@ -262,6 +262,9 @@ never Beacon authority.</p>
 <dd></dd>
 <dt><a href="#BODY_SCHEMA_BY_KEY">BODY_SCHEMA_BY_KEY</a> : <code>Map.&lt;(number|string), Array.&lt;{name: string, type: string}&gt;&gt;</code></dt>
 <dd></dd>
+<dt><a href="#SCHEMA_P2P_FORWARD">SCHEMA_P2P_FORWARD</a></dt>
+<dd><p>Directed onion hop — see <a href="module:@fabric/core/functions/fabricOnion">module:@fabric/core/functions/fabricOnion</a>.</p>
+</dd>
 <dt><a href="#P2P_CHAT_MAX_CHARS">P2P_CHAT_MAX_CHARS</a></dt>
 <dd><p>Max UTF-8 code units for first-class P2P_CHAT_MESSAGE body (text only).</p>
 </dd>
@@ -5490,6 +5493,7 @@ JSON bridging is <strong>@fabric/http</strong>. See <code>docs/MESSAGE_BODY.md</
     * [new Message([input])](#new_Message_new)
     * _instance_
         * [._sensitive](#Message+_sensitive)
+        * [._explicitPreimage](#Message+_explicitPreimage)
         * [.preimage](#Message+preimage)
         * [.bodyBuffer](#Message+bodyBuffer)
         * [.wireType](#Message+wireType)
@@ -5533,16 +5537,25 @@ are accepted for backward compatibility.
 <a name="Message+_sensitive"></a>
 
 ### message.\_sensitive
-When true, body preimage field is zeroed on wire (no SHA256(body) commitment).
+When true, keep wire preimage zeroed (no payment secret). Default public
+messages already use zeros — see [preimage](#Message+preimage) (Lightning-style).
+
+**Kind**: instance property of [<code>Message</code>](#Message)  
+<a name="Message+_explicitPreimage"></a>
+
+### message.\_explicitPreimage
+When true, an explicit HTLC / circuit payment preimage was set — do not clobber.
 
 **Kind**: instance property of [<code>Message</code>](#Message)  
 <a name="Message+preimage"></a>
 
 ### message.preimage
-Optional 32-byte preimage on wire:
-- **All zeros:** sensitive payload (no commitment) or legacy; [Message#sensitive](Message#sensitive) uses this.
-- **SHA256(body):** default for non-sensitive messages (single digest; [Message#hash](Message#hash) is double-SHA256(body)).
-- **Other:** explicit HTLC secret or custom (must match what was signed).
+Optional 32-byte **payment** preimage on wire (Lightning-style):
+- **All zeros (default / public):** no HTLC secret; body integrity is only [Message#hash](Message#hash)
+  (double-SHA256(body)). Do **not** put SHA256(body) here — that collides with circuit HTLC chains.
+- **Non-zero:** explicit payment secret for inventory HTLC / Fabric Circuit hops
+  (`payment_hash = SHA256(preimage)`), covered by the Schnorr signature.
+- [Message#sensitive](Message#sensitive) forces zeros and refuses to clobber an explicit secret.
 
 **Kind**: instance property of [<code>Message</code>](#Message)  
 <a name="Message+bodyBuffer"></a>
@@ -5804,6 +5817,7 @@ Build a Message whose body is encoded from a registered field schema (V1).
     * [new Message([input])](#new_Message_new)
     * _instance_
         * [._sensitive](#Message+_sensitive)
+        * [._explicitPreimage](#Message+_explicitPreimage)
         * [.preimage](#Message+preimage)
         * [.bodyBuffer](#Message+bodyBuffer)
         * [.wireType](#Message+wireType)
@@ -5847,16 +5861,25 @@ are accepted for backward compatibility.
 <a name="Message+_sensitive"></a>
 
 ### message.\_sensitive
-When true, body preimage field is zeroed on wire (no SHA256(body) commitment).
+When true, keep wire preimage zeroed (no payment secret). Default public
+messages already use zeros — see [preimage](#Message+preimage) (Lightning-style).
+
+**Kind**: instance property of [<code>Message</code>](#Message)  
+<a name="Message+_explicitPreimage"></a>
+
+### message.\_explicitPreimage
+When true, an explicit HTLC / circuit payment preimage was set — do not clobber.
 
 **Kind**: instance property of [<code>Message</code>](#Message)  
 <a name="Message+preimage"></a>
 
 ### message.preimage
-Optional 32-byte preimage on wire:
-- **All zeros:** sensitive payload (no commitment) or legacy; [Message#sensitive](Message#sensitive) uses this.
-- **SHA256(body):** default for non-sensitive messages (single digest; [Message#hash](Message#hash) is double-SHA256(body)).
-- **Other:** explicit HTLC secret or custom (must match what was signed).
+Optional 32-byte **payment** preimage on wire (Lightning-style):
+- **All zeros (default / public):** no HTLC secret; body integrity is only [Message#hash](Message#hash)
+  (double-SHA256(body)). Do **not** put SHA256(body) here — that collides with circuit HTLC chains.
+- **Non-zero:** explicit payment secret for inventory HTLC / Fabric Circuit hops
+  (`payment_hash = SHA256(preimage)`), covered by the Schnorr signature.
+- [Message#sensitive](Message#sensitive) forces zeros and refuses to clobber an explicit secret.
 
 **Kind**: instance property of [<code>Message</code>](#Message)  
 <a name="Message+bodyBuffer"></a>
@@ -6122,21 +6145,35 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
 * [Peer](#Peer) ⇐ [<code>Service</code>](#Service)
     * [new Peer([config])](#new_Peer_new)
     * [.pendingDocumentRequests](#Peer+pendingDocumentRequests)
+    * [._authorizedDocumentKeyReveals](#Peer+_authorizedDocumentKeyReveals)
+    * [._contractPatchAllowList](#Peer+_contractPatchAllowList)
     * [.blobTransfers](#Peer+blobTransfers)
     * [.pendingSealedDeliveries](#Peer+pendingSealedDeliveries)
     * [._documentRelayRoutes](#Peer+_documentRelayRoutes)
     * [._inboundNoiseStaticPubkeyByAddress](#Peer+_inboundNoiseStaticPubkeyByAddress)
     * [.messages](#Peer+messages)
+    * [._logicalRegisterOnce](#Peer+_logicalRegisterOnce) : <code>Map.&lt;string, {type: string, signer: (string\|null), at: number}&gt;</code>
     * [._gossipPayloadSeen](#Peer+_gossipPayloadSeen)
     * [._gossipRelayByOrigin](#Peer+_gossipRelayByOrigin)
+    * [._chatRelayByOrigin](#Peer+_chatRelayByOrigin)
     * [._peeringPayloadSeen](#Peer+_peeringPayloadSeen)
     * [._peeringRelayByOrigin](#Peer+_peeringRelayByOrigin)
     * [._wireInboundByOrigin](#Peer+_wireInboundByOrigin)
+    * [._logicalDupPenaltyByOrigin](#Peer+_logicalDupPenaltyByOrigin)
+    * [._peerBans](#Peer+_peerBans) : <code>Map.&lt;string, {until: number, reason: string}&gt;</code>
     * [._candidateKeys](#Peer+_candidateKeys)
     * [._outboundDialTargets](#Peer+_outboundDialTargets)
     * ~~[.address](#Peer+address)~~
     * [._gossipPayloadDedupKey(msg)](#Peer+_gossipPayloadDedupKey) ⇒ <code>string</code>
+    * [._logicalRegistrationKey(type, object)](#Peer+_logicalRegistrationKey) ⇒ <code>string</code> \| <code>null</code>
+    * [._claimLogicalRegistration(type, object, [signerPubkeyHex])](#Peer+_claimLogicalRegistration) ⇒ <code>Object</code>
+    * [._applyPeerMisbehavior(originName, reason, [opts])](#Peer+_applyPeerMisbehavior)
+    * [._banPeer(originName, reason)](#Peer+_banPeer)
+    * [._isPeerBanned(originName, [pubkeyHex])](#Peer+_isPeerBanned) ⇒ <code>boolean</code>
+    * [._logicalRegisterDuplicateMisbehavior(originName, type, claim, [signerPubkeyHex])](#Peer+_logicalRegisterDuplicateMisbehavior)
+    * [._claimLogicalRegistrationOrPunish(type, object, [signerPubkeyHex], [originName])](#Peer+_claimLogicalRegistrationOrPunish) ⇒ <code>Object</code>
     * [._gossipRateLimitAllow(originName)](#Peer+_gossipRateLimitAllow) ⇒ <code>boolean</code>
+    * [._chatRateLimitAllow(originName)](#Peer+_chatRateLimitAllow) ⇒ <code>boolean</code>
     * [._wireInboundCreditCost(wireType)](#Peer+_wireInboundCreditCost) ⇒ <code>number</code>
     * [._wireInboundRateAllowPeer(originName, creditCost)](#Peer+_wireInboundRateAllowPeer) ⇒ <code>boolean</code>
     * [._derankPeerForWireTraffic(originName, penalty, reason)](#Peer+_derankPeerForWireTraffic)
@@ -6144,6 +6181,9 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [._peeringRateLimitAllow(originName)](#Peer+_peeringRateLimitAllow) ⇒ <code>boolean</code>
     * [._enqueuePeeringCandidate(host, port)](#Peer+_enqueuePeeringCandidate)
     * [.broadcast(message)](#Peer+broadcast)
+    * [._localXOnlyPeerId()](#Peer+_localXOnlyPeerId) ⇒ <code>Buffer</code>
+    * [._resolveAddressByXOnly(peerId)](#Peer+_resolveAddressByXOnly) ⇒ <code>string</code> \| <code>null</code>
+    * [.sendOnion(path, payload)](#Peer+sendOnion) ⇒ <code>boolean</code>
     * [.relayFromTrustedPeers(origin, message, [minScoreExclusive])](#Peer+relayFromTrustedPeers)
     * [._registryScoreForConnectionAddress(connAddress)](#Peer+_registryScoreForConnectionAddress) ⇒ <code>number</code>
     * [._registryScoreForFlushChainSender(connAddress, senderPubkeyHex)](#Peer+_registryScoreForFlushChainSender) ⇒ <code>number</code>
@@ -6155,7 +6195,7 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [._flushChainSenderPubkeyHex()](#Peer+_flushChainSenderPubkeyHex)
     * [._upsertPeerRegistry(address, [updates])](#Peer+_upsertPeerRegistry)
     * [._fillPeerSlots()](#Peer+_fillPeerSlots) ⇒ [<code>Peer</code>](#Peer)
-    * [._handleFabricMessage(buffer)](#Peer+_handleFabricMessage) ⇒ [<code>Peer</code>](#Peer)
+    * [._handleFabricMessage(buffer, [origin], [socket], [options])](#Peer+_handleFabricMessage) ⇒ [<code>Peer</code>](#Peer)
     * [._relayWirePayload()](#Peer+_relayWirePayload)
     * [._relayGenericPayload()](#Peer+_relayGenericPayload)
     * [._buildDocumentParsedForPublish(documentId, content)](#Peer+_buildDocumentParsedForPublish) ⇒ <code>Object</code>
@@ -6174,6 +6214,8 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [._attachHtlcOfferToItem(item, req, contentHashHex, amountSats)](#Peer+_attachHtlcOfferToItem) ⇒ <code>object</code> \| <code>null</code>
     * [.listPendingDocumentRequests()](#Peer+listPendingDocumentRequests) ⇒ <code>Array.&lt;object&gt;</code>
     * [.approveDocumentRequest(requestKey)](#Peer+approveDocumentRequest) ⇒ <code>Object</code>
+    * [.authorizeDocumentKeyReveal(opts)](#Peer+authorizeDocumentKeyReveal) ⇒ <code>Object</code>
+    * [._mayRevealDocumentContentKey(documentId, paymentHashHex, parsed, [opts])](#Peer+_mayRevealDocumentContentKey) ⇒ <code>boolean</code>
     * [.denyDocumentRequest(requestKey)](#Peer+denyDocumentRequest) ⇒ <code>Object</code>
     * [._buildPublishDocumentWireBuffers(documentId, body, rateSats)](#Peer+_buildPublishDocumentWireBuffers) ⇒ <code>Array.&lt;Buffer&gt;</code>
     * [._announceLocalDocumentsToPeer(peerAddress)](#Peer+_announceLocalDocumentsToPeer)
@@ -6181,6 +6223,8 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [._handleDocumentRequestWire(message, origin, socket)](#Peer+_handleDocumentRequestWire)
     * [._privateRelayDocumentRequest(parsed, origin, [originalMessage])](#Peer+_privateRelayDocumentRequest)
     * [._maybeReverseRelayFileSend(fileObj, origin)](#Peer+_maybeReverseRelayFileSend) ⇒ <code>boolean</code>
+    * [._mergeContractPatchAllowList(contractId, object, publisherPubkeyHex)](#Peer+_mergeContractPatchAllowList)
+    * [._signerMayPatchContract(contractId, signerPubkeyHex)](#Peer+_signerMayPatchContract) ⇒ <code>boolean</code>
     * [._startFabricPingKeepalive(socket, encryptWrite)](#Peer+_startFabricPingKeepalive)
     * [.start()](#Peer+start)
     * [.stop()](#Peer+stop)
@@ -6242,6 +6286,19 @@ Create an instance of [Peer](#Peer).
 Pending DOCUMENT_REQUEST entries when [Peer#settings.autoFulfillDocumentRequests](Peer#settings.autoFulfillDocumentRequests) is false.
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_authorizedDocumentKeyReveals"></a>
+
+### peer.\_authorizedDocumentKeyReveals
+Authorized sealed-document key reveals: `"documentId|paymentHashHex"` → meta.
+Populated only after verified settlement (never from public hash echo).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_contractPatchAllowList"></a>
+
+### peer.\_contractPatchAllowList
+contractId → Set of lowercase compressed pubkeys allowed to apply state ops.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+blobTransfers"></a>
 
 ### peer.blobTransfers
@@ -6272,6 +6329,13 @@ Inbound address -> NOISE static pubkey hex (FLUSH_CHAIN allowlist only; never fo
 Wire-envelope dedup (SHA-256 of full buffer); FIFO-capped via [Peer#_rememberWireHash](Peer#_rememberWireHash).
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_logicalRegisterOnce"></a>
+
+### peer.\_logicalRegisterOnce : <code>Map.&lt;string, {type: string, signer: (string\|null), at: number}&gt;</code>
+Logical first-writer-wins registrations (content-addressed keys).
+Catches re-signed duplicates of CONTRACT_PUBLISH / DOCUMENT_PUBLISH / etc.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+_gossipPayloadSeen"></a>
 
 ### peer.\_gossipPayloadSeen
@@ -6282,6 +6346,12 @@ Logical gossip payload dedup (excludes signature / hop churn).
 
 ### peer.\_gossipRelayByOrigin
 origin address → { count, windowStart } for gossip relay rate limiting.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_chatRelayByOrigin"></a>
+
+### peer.\_chatRelayByOrigin
+origin address → { count, windowStart } for chat mesh relay rate limiting.
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+_peeringPayloadSeen"></a>
@@ -6300,6 +6370,18 @@ origin address → { count, windowStart } for peering-offer relay rate limiting.
 
 ### peer.\_wireInboundByOrigin
 `host:port` → { credits, windowStart, penalized } — inbound wire flood / de-rank (per peer).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_logicalDupPenaltyByOrigin"></a>
+
+### peer.\_logicalDupPenaltyByOrigin
+`host:port` → { windowStart, penalized } — soft logical-duplicate derank once per window.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_peerBans"></a>
+
+### peer.\_peerBans : <code>Map.&lt;string, {until: number, reason: string}&gt;</code>
+Temporary bans after hard misbehavior: `addr:<host:port>` or `pk:<hex>` → { until, reason }.
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+_candidateKeys"></a>
@@ -6336,9 +6418,111 @@ Mesh frames are relayed bit-identical; wire-hash dedup also prevents loops.
 | --- | --- | --- |
 | msg | <code>object</code> | Generic message (`type`, `object`, …) |
 
+<a name="Peer+_logicalRegistrationKey"></a>
+
+### peer.\_logicalRegistrationKey(type, object) ⇒ <code>string</code> \| <code>null</code>
+Content-addressed key for first-writer-wins registration types.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| type | <code>string</code> | wire / generic type name |
+| object | <code>object</code> \| <code>null</code> \| <code>undefined</code> | message body / object |
+
+<a name="Peer+_claimLogicalRegistration"></a>
+
+### peer.\_claimLogicalRegistration(type, object, [signerPubkeyHex]) ⇒ <code>Object</code>
+Claim a logical registration key (first writer wins).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| type | <code>string</code> |  | 
+| object | <code>object</code> \| <code>null</code> \| <code>undefined</code> |  | 
+| [signerPubkeyHex] | <code>string</code> \| <code>null</code> | <code>null</code> | 
+
+<a name="Peer+_applyPeerMisbehavior"></a>
+
+### peer.\_applyPeerMisbehavior(originName, reason, [opts])
+Lower registry score and optionally destroy the TCP connection (hard misbehavior).
+Hard disconnects also install a temporary ban (address + known pubkey).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| originName | <code>string</code> \| <code>null</code> \| <code>undefined</code> | 
+| reason | <code>string</code> | 
+| [opts] | <code>Object</code> | 
+| [opts.penalty] | <code>number</code> | 
+| [opts.disconnect] | <code>boolean</code> | 
+
+<a name="Peer+_banPeer"></a>
+
+### peer.\_banPeer(originName, reason)
+Ban a connection address (and mapped pubkey when known) for [Peer#settings.peerScore.banTtlMs](Peer#settings.peerScore.banTtlMs).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| originName | <code>string</code> | 
+| reason | <code>string</code> | 
+
+<a name="Peer+_isPeerBanned"></a>
+
+### peer.\_isPeerBanned(originName, [pubkeyHex]) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| originName | <code>string</code> \| <code>null</code> \| <code>undefined</code> | <code>null</code> | 
+| [pubkeyHex] | <code>string</code> \| <code>null</code> \| <code>undefined</code> | <code>null</code> | 
+
+<a name="Peer+_logicalRegisterDuplicateMisbehavior"></a>
+
+### peer.\_logicalRegisterDuplicateMisbehavior(originName, type, claim, [signerPubkeyHex])
+Soft (once/window) or hijack (CONTRACT_PUBLISH other signer) penalty for logical duplicates.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| originName | <code>string</code> \| <code>null</code> \| <code>undefined</code> | 
+| type | <code>string</code> | 
+| claim | <code>Object</code> | 
+| [claim.prior] | <code>Object</code> \| <code>null</code> | 
+| [claim.prior.signer] | <code>string</code> \| <code>null</code> | 
+| [signerPubkeyHex] | <code>string</code> \| <code>null</code> | 
+
+<a name="Peer+_claimLogicalRegistrationOrPunish"></a>
+
+### peer.\_claimLogicalRegistrationOrPunish(type, object, [signerPubkeyHex], [originName]) ⇒ <code>Object</code>
+Claim logical registration; on duplicate, apply misbehavior and return claim.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| type | <code>string</code> |  | 
+| object | <code>object</code> \| <code>null</code> \| <code>undefined</code> |  | 
+| [signerPubkeyHex] | <code>string</code> \| <code>null</code> | <code>null</code> | 
+| [originName] | <code>string</code> \| <code>null</code> | <code>null</code> | 
+
 <a name="Peer+_gossipRateLimitAllow"></a>
 
 ### peer.\_gossipRateLimitAllow(originName) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| originName | <code>string</code> | Connection id (e.g. `host:port`) |
+
+<a name="Peer+_chatRateLimitAllow"></a>
+
+### peer.\_chatRateLimitAllow(originName) ⇒ <code>boolean</code>
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
 | Param | Type | Description |
@@ -6425,6 +6609,40 @@ Write a [Buffer](Buffer) to all connected peers.
 | Param | Type | Description |
 | --- | --- | --- |
 | message | <code>Buffer</code> | Message buffer to send. |
+
+<a name="Peer+_localXOnlyPeerId"></a>
+
+### peer.\_localXOnlyPeerId() ⇒ <code>Buffer</code>
+Local node x-only pubkey (AMP {@code author} / {@code P2P_FORWARD.nextPeer} encoding).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+<a name="Peer+_resolveAddressByXOnly"></a>
+
+### peer.\_resolveAddressByXOnly(peerId) ⇒ <code>string</code> \| <code>null</code>
+Resolve a live connection address for an x-only (or compressed) peer pubkey.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>string</code> \| <code>null</code> - connection key ({@code host:port}) or null  
+
+| Param | Type |
+| --- | --- |
+| peerId | <code>Buffer</code> \| <code>string</code> | 
+
+<a name="Peer+sendOnion"></a>
+
+### peer.sendOnion(path, payload) ⇒ <code>boolean</code>
+Send {@code payload} along a source-routed onion path of Fabric peer pubkeys.
+Builds nested {@code P2P_FORWARD} layers and writes the outer frame only to
+{@code path[0]} (immediate hop). Destination learns the last hop's IP, not
+the originator's. See [module:@fabric/core/functions/fabricOnion](module:@fabric/core/functions/fabricOnion).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>boolean</code> - true if the outer frame was written to the first hop  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>Array.&lt;(Buffer\|string)&gt;</code> | hop pubkeys; first = next TCP peer, last = deliverer |
+| payload | [<code>Message</code>](#Message) \| <code>Buffer</code> | innermost application Message (should already be signed) |
 
 <a name="Peer+relayFromTrustedPeers"></a>
 
@@ -6551,22 +6769,27 @@ Attempt to fill available connection slots with new peers.
 **Returns**: [<code>Peer</code>](#Peer) - Instance of the peer.  
 <a name="Peer+_handleFabricMessage"></a>
 
-### peer.\_handleFabricMessage(buffer) ⇒ [<code>Peer</code>](#Peer)
+### peer.\_handleFabricMessage(buffer, [origin], [socket], [options]) ⇒ [<code>Peer</code>](#Peer)
 Handle a Fabric [Message](#Message) buffer.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: [<code>Peer</code>](#Peer) - Instance of the Peer.  
 
-| Param | Type |
-| --- | --- |
-| buffer | <code>Buffer</code> | 
+| Param | Type | Default |
+| --- | --- | --- |
+| buffer | <code>Buffer</code> |  | 
+| [origin] | <code>object</code> \| <code>null</code> | <code></code> | 
+| [socket] | <code>object</code> \| <code>null</code> | <code></code> | 
+| [options] | <code>Object</code> | <code></code> | 
+| [options.relayDepth] | <code>number</code> |  | 
+| [options.skipRelayFlood] | <code>boolean</code> |  | 
 
 <a name="Peer+_relayWirePayload"></a>
 
 ### peer.\_relayWirePayload()
-Wrap an already-signed inner AMP frame in a locally signed {@code P2P_RELAY} envelope.
-The inner bytes are never re-signed — only the new outer envelope is.
-Prefer [Peer#relayFrom](Peer#relayFrom) with the original message when the type is mesh-relayable.
+Originate a locally signed {@code P2P_RELAY} envelope around already-signed inner AMP bytes.
+Used only when *this* agent starts a flood (e.g. inventory without a prior wire frame).
+Inbound {@code P2P_RELAY} must never call this — forward the original outer bit-identical.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 <a name="Peer+_relayGenericPayload"></a>
@@ -6786,6 +7009,36 @@ Approve a pending DOCUMENT_REQUEST and send `P2P_FILE_SEND`.
 | --- | --- | --- |
 | requestKey | <code>string</code> | pending key, or document id when unique |
 
+<a name="Peer+authorizeDocumentKeyReveal"></a>
+
+### peer.authorizeDocumentKeyReveal(opts) ⇒ <code>Object</code>
+Record that settlement for a sealed document was verified so a matching
+DocumentRequest may receive the AES content key (not merely the ciphertext).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>Object</code> - `{ ok, error?, key? }`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> |  |
+| opts.documentId | <code>string</code> |  |
+| opts.contentHashHex | <code>string</code> | payment hash SHA256(K) |
+| [opts.settlementId] | <code>string</code> |  |
+| [opts.txid] | <code>string</code> |  |
+
+<a name="Peer+_mayRevealDocumentContentKey"></a>
+
+### peer.\_mayRevealDocumentContentKey(documentId, paymentHashHex, parsed, [opts]) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| documentId | <code>string</code> | 
+| paymentHashHex | <code>string</code> | 
+| parsed | <code>object</code> | 
+| [opts] | <code>Object</code> | 
+| [opts.forceReveal] | <code>boolean</code> | 
+
 <a name="Peer+denyDocumentRequest"></a>
 
 ### peer.denyDocumentRequest(requestKey) ⇒ <code>Object</code>
@@ -6876,6 +7129,31 @@ Forward a relayed `P2P_FILE_SEND` / key reveal back toward the buyer using rever
 | --- | --- |
 | fileObj | <code>object</code> | 
 | origin | <code>Object</code> | 
+
+<a name="Peer+_mergeContractPatchAllowList"></a>
+
+### peer.\_mergeContractPatchAllowList(contractId, object, publisherPubkeyHex)
+Build the set of pubkeys allowed to apply CONTRACT_MESSAGE ops for a newly
+registered contract. Called only on first registration of a contract id —
+republishes must not invoke this (see [Peer#_registerContract](Peer#_registerContract)).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| contractId | <code>string</code> |  |
+| object | <code>object</code> | contract publish body |
+| publisherPubkeyHex | <code>string</code> \| <code>null</code> | wire signer of the first publish |
+
+<a name="Peer+_signerMayPatchContract"></a>
+
+### peer.\_signerMayPatchContract(contractId, signerPubkeyHex) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| contractId | <code>string</code> | 
+| signerPubkeyHex | <code>string</code> \| <code>null</code> | 
 
 <a name="Peer+_startFabricPingKeepalive"></a>
 
@@ -7287,21 +7565,35 @@ Parse an Object into a corresponding Fabric state.
 * [Peer](#Peer)
     * [new Peer([config])](#new_Peer_new)
     * [.pendingDocumentRequests](#Peer+pendingDocumentRequests)
+    * [._authorizedDocumentKeyReveals](#Peer+_authorizedDocumentKeyReveals)
+    * [._contractPatchAllowList](#Peer+_contractPatchAllowList)
     * [.blobTransfers](#Peer+blobTransfers)
     * [.pendingSealedDeliveries](#Peer+pendingSealedDeliveries)
     * [._documentRelayRoutes](#Peer+_documentRelayRoutes)
     * [._inboundNoiseStaticPubkeyByAddress](#Peer+_inboundNoiseStaticPubkeyByAddress)
     * [.messages](#Peer+messages)
+    * [._logicalRegisterOnce](#Peer+_logicalRegisterOnce) : <code>Map.&lt;string, {type: string, signer: (string\|null), at: number}&gt;</code>
     * [._gossipPayloadSeen](#Peer+_gossipPayloadSeen)
     * [._gossipRelayByOrigin](#Peer+_gossipRelayByOrigin)
+    * [._chatRelayByOrigin](#Peer+_chatRelayByOrigin)
     * [._peeringPayloadSeen](#Peer+_peeringPayloadSeen)
     * [._peeringRelayByOrigin](#Peer+_peeringRelayByOrigin)
     * [._wireInboundByOrigin](#Peer+_wireInboundByOrigin)
+    * [._logicalDupPenaltyByOrigin](#Peer+_logicalDupPenaltyByOrigin)
+    * [._peerBans](#Peer+_peerBans) : <code>Map.&lt;string, {until: number, reason: string}&gt;</code>
     * [._candidateKeys](#Peer+_candidateKeys)
     * [._outboundDialTargets](#Peer+_outboundDialTargets)
     * ~~[.address](#Peer+address)~~
     * [._gossipPayloadDedupKey(msg)](#Peer+_gossipPayloadDedupKey) ⇒ <code>string</code>
+    * [._logicalRegistrationKey(type, object)](#Peer+_logicalRegistrationKey) ⇒ <code>string</code> \| <code>null</code>
+    * [._claimLogicalRegistration(type, object, [signerPubkeyHex])](#Peer+_claimLogicalRegistration) ⇒ <code>Object</code>
+    * [._applyPeerMisbehavior(originName, reason, [opts])](#Peer+_applyPeerMisbehavior)
+    * [._banPeer(originName, reason)](#Peer+_banPeer)
+    * [._isPeerBanned(originName, [pubkeyHex])](#Peer+_isPeerBanned) ⇒ <code>boolean</code>
+    * [._logicalRegisterDuplicateMisbehavior(originName, type, claim, [signerPubkeyHex])](#Peer+_logicalRegisterDuplicateMisbehavior)
+    * [._claimLogicalRegistrationOrPunish(type, object, [signerPubkeyHex], [originName])](#Peer+_claimLogicalRegistrationOrPunish) ⇒ <code>Object</code>
     * [._gossipRateLimitAllow(originName)](#Peer+_gossipRateLimitAllow) ⇒ <code>boolean</code>
+    * [._chatRateLimitAllow(originName)](#Peer+_chatRateLimitAllow) ⇒ <code>boolean</code>
     * [._wireInboundCreditCost(wireType)](#Peer+_wireInboundCreditCost) ⇒ <code>number</code>
     * [._wireInboundRateAllowPeer(originName, creditCost)](#Peer+_wireInboundRateAllowPeer) ⇒ <code>boolean</code>
     * [._derankPeerForWireTraffic(originName, penalty, reason)](#Peer+_derankPeerForWireTraffic)
@@ -7309,6 +7601,9 @@ Parse an Object into a corresponding Fabric state.
     * [._peeringRateLimitAllow(originName)](#Peer+_peeringRateLimitAllow) ⇒ <code>boolean</code>
     * [._enqueuePeeringCandidate(host, port)](#Peer+_enqueuePeeringCandidate)
     * [.broadcast(message)](#Peer+broadcast)
+    * [._localXOnlyPeerId()](#Peer+_localXOnlyPeerId) ⇒ <code>Buffer</code>
+    * [._resolveAddressByXOnly(peerId)](#Peer+_resolveAddressByXOnly) ⇒ <code>string</code> \| <code>null</code>
+    * [.sendOnion(path, payload)](#Peer+sendOnion) ⇒ <code>boolean</code>
     * [.relayFromTrustedPeers(origin, message, [minScoreExclusive])](#Peer+relayFromTrustedPeers)
     * [._registryScoreForConnectionAddress(connAddress)](#Peer+_registryScoreForConnectionAddress) ⇒ <code>number</code>
     * [._registryScoreForFlushChainSender(connAddress, senderPubkeyHex)](#Peer+_registryScoreForFlushChainSender) ⇒ <code>number</code>
@@ -7320,7 +7615,7 @@ Parse an Object into a corresponding Fabric state.
     * [._flushChainSenderPubkeyHex()](#Peer+_flushChainSenderPubkeyHex)
     * [._upsertPeerRegistry(address, [updates])](#Peer+_upsertPeerRegistry)
     * [._fillPeerSlots()](#Peer+_fillPeerSlots) ⇒ [<code>Peer</code>](#Peer)
-    * [._handleFabricMessage(buffer)](#Peer+_handleFabricMessage) ⇒ [<code>Peer</code>](#Peer)
+    * [._handleFabricMessage(buffer, [origin], [socket], [options])](#Peer+_handleFabricMessage) ⇒ [<code>Peer</code>](#Peer)
     * [._relayWirePayload()](#Peer+_relayWirePayload)
     * [._relayGenericPayload()](#Peer+_relayGenericPayload)
     * [._buildDocumentParsedForPublish(documentId, content)](#Peer+_buildDocumentParsedForPublish) ⇒ <code>Object</code>
@@ -7339,6 +7634,8 @@ Parse an Object into a corresponding Fabric state.
     * [._attachHtlcOfferToItem(item, req, contentHashHex, amountSats)](#Peer+_attachHtlcOfferToItem) ⇒ <code>object</code> \| <code>null</code>
     * [.listPendingDocumentRequests()](#Peer+listPendingDocumentRequests) ⇒ <code>Array.&lt;object&gt;</code>
     * [.approveDocumentRequest(requestKey)](#Peer+approveDocumentRequest) ⇒ <code>Object</code>
+    * [.authorizeDocumentKeyReveal(opts)](#Peer+authorizeDocumentKeyReveal) ⇒ <code>Object</code>
+    * [._mayRevealDocumentContentKey(documentId, paymentHashHex, parsed, [opts])](#Peer+_mayRevealDocumentContentKey) ⇒ <code>boolean</code>
     * [.denyDocumentRequest(requestKey)](#Peer+denyDocumentRequest) ⇒ <code>Object</code>
     * [._buildPublishDocumentWireBuffers(documentId, body, rateSats)](#Peer+_buildPublishDocumentWireBuffers) ⇒ <code>Array.&lt;Buffer&gt;</code>
     * [._announceLocalDocumentsToPeer(peerAddress)](#Peer+_announceLocalDocumentsToPeer)
@@ -7346,6 +7643,8 @@ Parse an Object into a corresponding Fabric state.
     * [._handleDocumentRequestWire(message, origin, socket)](#Peer+_handleDocumentRequestWire)
     * [._privateRelayDocumentRequest(parsed, origin, [originalMessage])](#Peer+_privateRelayDocumentRequest)
     * [._maybeReverseRelayFileSend(fileObj, origin)](#Peer+_maybeReverseRelayFileSend) ⇒ <code>boolean</code>
+    * [._mergeContractPatchAllowList(contractId, object, publisherPubkeyHex)](#Peer+_mergeContractPatchAllowList)
+    * [._signerMayPatchContract(contractId, signerPubkeyHex)](#Peer+_signerMayPatchContract) ⇒ <code>boolean</code>
     * [._startFabricPingKeepalive(socket, encryptWrite)](#Peer+_startFabricPingKeepalive)
     * [.start()](#Peer+start)
     * [.stop()](#Peer+stop)
@@ -7407,6 +7706,19 @@ Create an instance of [Peer](#Peer).
 Pending DOCUMENT_REQUEST entries when [Peer#settings.autoFulfillDocumentRequests](Peer#settings.autoFulfillDocumentRequests) is false.
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_authorizedDocumentKeyReveals"></a>
+
+### peer.\_authorizedDocumentKeyReveals
+Authorized sealed-document key reveals: `"documentId|paymentHashHex"` → meta.
+Populated only after verified settlement (never from public hash echo).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_contractPatchAllowList"></a>
+
+### peer.\_contractPatchAllowList
+contractId → Set of lowercase compressed pubkeys allowed to apply state ops.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+blobTransfers"></a>
 
 ### peer.blobTransfers
@@ -7437,6 +7749,13 @@ Inbound address -> NOISE static pubkey hex (FLUSH_CHAIN allowlist only; never fo
 Wire-envelope dedup (SHA-256 of full buffer); FIFO-capped via [Peer#_rememberWireHash](Peer#_rememberWireHash).
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_logicalRegisterOnce"></a>
+
+### peer.\_logicalRegisterOnce : <code>Map.&lt;string, {type: string, signer: (string\|null), at: number}&gt;</code>
+Logical first-writer-wins registrations (content-addressed keys).
+Catches re-signed duplicates of CONTRACT_PUBLISH / DOCUMENT_PUBLISH / etc.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+_gossipPayloadSeen"></a>
 
 ### peer.\_gossipPayloadSeen
@@ -7447,6 +7766,12 @@ Logical gossip payload dedup (excludes signature / hop churn).
 
 ### peer.\_gossipRelayByOrigin
 origin address → { count, windowStart } for gossip relay rate limiting.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_chatRelayByOrigin"></a>
+
+### peer.\_chatRelayByOrigin
+origin address → { count, windowStart } for chat mesh relay rate limiting.
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+_peeringPayloadSeen"></a>
@@ -7465,6 +7790,18 @@ origin address → { count, windowStart } for peering-offer relay rate limiting.
 
 ### peer.\_wireInboundByOrigin
 `host:port` → { credits, windowStart, penalized } — inbound wire flood / de-rank (per peer).
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_logicalDupPenaltyByOrigin"></a>
+
+### peer.\_logicalDupPenaltyByOrigin
+`host:port` → { windowStart, penalized } — soft logical-duplicate derank once per window.
+
+**Kind**: instance property of [<code>Peer</code>](#Peer)  
+<a name="Peer+_peerBans"></a>
+
+### peer.\_peerBans : <code>Map.&lt;string, {until: number, reason: string}&gt;</code>
+Temporary bans after hard misbehavior: `addr:<host:port>` or `pk:<hex>` → { until, reason }.
 
 **Kind**: instance property of [<code>Peer</code>](#Peer)  
 <a name="Peer+_candidateKeys"></a>
@@ -7501,9 +7838,111 @@ Mesh frames are relayed bit-identical; wire-hash dedup also prevents loops.
 | --- | --- | --- |
 | msg | <code>object</code> | Generic message (`type`, `object`, …) |
 
+<a name="Peer+_logicalRegistrationKey"></a>
+
+### peer.\_logicalRegistrationKey(type, object) ⇒ <code>string</code> \| <code>null</code>
+Content-addressed key for first-writer-wins registration types.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| type | <code>string</code> | wire / generic type name |
+| object | <code>object</code> \| <code>null</code> \| <code>undefined</code> | message body / object |
+
+<a name="Peer+_claimLogicalRegistration"></a>
+
+### peer.\_claimLogicalRegistration(type, object, [signerPubkeyHex]) ⇒ <code>Object</code>
+Claim a logical registration key (first writer wins).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| type | <code>string</code> |  | 
+| object | <code>object</code> \| <code>null</code> \| <code>undefined</code> |  | 
+| [signerPubkeyHex] | <code>string</code> \| <code>null</code> | <code>null</code> | 
+
+<a name="Peer+_applyPeerMisbehavior"></a>
+
+### peer.\_applyPeerMisbehavior(originName, reason, [opts])
+Lower registry score and optionally destroy the TCP connection (hard misbehavior).
+Hard disconnects also install a temporary ban (address + known pubkey).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| originName | <code>string</code> \| <code>null</code> \| <code>undefined</code> | 
+| reason | <code>string</code> | 
+| [opts] | <code>Object</code> | 
+| [opts.penalty] | <code>number</code> | 
+| [opts.disconnect] | <code>boolean</code> | 
+
+<a name="Peer+_banPeer"></a>
+
+### peer.\_banPeer(originName, reason)
+Ban a connection address (and mapped pubkey when known) for [Peer#settings.peerScore.banTtlMs](Peer#settings.peerScore.banTtlMs).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| originName | <code>string</code> | 
+| reason | <code>string</code> | 
+
+<a name="Peer+_isPeerBanned"></a>
+
+### peer.\_isPeerBanned(originName, [pubkeyHex]) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| originName | <code>string</code> \| <code>null</code> \| <code>undefined</code> | <code>null</code> | 
+| [pubkeyHex] | <code>string</code> \| <code>null</code> \| <code>undefined</code> | <code>null</code> | 
+
+<a name="Peer+_logicalRegisterDuplicateMisbehavior"></a>
+
+### peer.\_logicalRegisterDuplicateMisbehavior(originName, type, claim, [signerPubkeyHex])
+Soft (once/window) or hijack (CONTRACT_PUBLISH other signer) penalty for logical duplicates.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| originName | <code>string</code> \| <code>null</code> \| <code>undefined</code> | 
+| type | <code>string</code> | 
+| claim | <code>Object</code> | 
+| [claim.prior] | <code>Object</code> \| <code>null</code> | 
+| [claim.prior.signer] | <code>string</code> \| <code>null</code> | 
+| [signerPubkeyHex] | <code>string</code> \| <code>null</code> | 
+
+<a name="Peer+_claimLogicalRegistrationOrPunish"></a>
+
+### peer.\_claimLogicalRegistrationOrPunish(type, object, [signerPubkeyHex], [originName]) ⇒ <code>Object</code>
+Claim logical registration; on duplicate, apply misbehavior and return claim.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| type | <code>string</code> |  | 
+| object | <code>object</code> \| <code>null</code> \| <code>undefined</code> |  | 
+| [signerPubkeyHex] | <code>string</code> \| <code>null</code> | <code>null</code> | 
+| [originName] | <code>string</code> \| <code>null</code> | <code>null</code> | 
+
 <a name="Peer+_gossipRateLimitAllow"></a>
 
 ### peer.\_gossipRateLimitAllow(originName) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| originName | <code>string</code> | Connection id (e.g. `host:port`) |
+
+<a name="Peer+_chatRateLimitAllow"></a>
+
+### peer.\_chatRateLimitAllow(originName) ⇒ <code>boolean</code>
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
 | Param | Type | Description |
@@ -7590,6 +8029,40 @@ Write a [Buffer](Buffer) to all connected peers.
 | Param | Type | Description |
 | --- | --- | --- |
 | message | <code>Buffer</code> | Message buffer to send. |
+
+<a name="Peer+_localXOnlyPeerId"></a>
+
+### peer.\_localXOnlyPeerId() ⇒ <code>Buffer</code>
+Local node x-only pubkey (AMP {@code author} / {@code P2P_FORWARD.nextPeer} encoding).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+<a name="Peer+_resolveAddressByXOnly"></a>
+
+### peer.\_resolveAddressByXOnly(peerId) ⇒ <code>string</code> \| <code>null</code>
+Resolve a live connection address for an x-only (or compressed) peer pubkey.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>string</code> \| <code>null</code> - connection key ({@code host:port}) or null  
+
+| Param | Type |
+| --- | --- |
+| peerId | <code>Buffer</code> \| <code>string</code> | 
+
+<a name="Peer+sendOnion"></a>
+
+### peer.sendOnion(path, payload) ⇒ <code>boolean</code>
+Send {@code payload} along a source-routed onion path of Fabric peer pubkeys.
+Builds nested {@code P2P_FORWARD} layers and writes the outer frame only to
+{@code path[0]} (immediate hop). Destination learns the last hop's IP, not
+the originator's. See [module:@fabric/core/functions/fabricOnion](module:@fabric/core/functions/fabricOnion).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>boolean</code> - true if the outer frame was written to the first hop  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| path | <code>Array.&lt;(Buffer\|string)&gt;</code> | hop pubkeys; first = next TCP peer, last = deliverer |
+| payload | [<code>Message</code>](#Message) \| <code>Buffer</code> | innermost application Message (should already be signed) |
 
 <a name="Peer+relayFromTrustedPeers"></a>
 
@@ -7716,22 +8189,27 @@ Attempt to fill available connection slots with new peers.
 **Returns**: [<code>Peer</code>](#Peer) - Instance of the peer.  
 <a name="Peer+_handleFabricMessage"></a>
 
-### peer.\_handleFabricMessage(buffer) ⇒ [<code>Peer</code>](#Peer)
+### peer.\_handleFabricMessage(buffer, [origin], [socket], [options]) ⇒ [<code>Peer</code>](#Peer)
 Handle a Fabric [Message](#Message) buffer.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: [<code>Peer</code>](#Peer) - Instance of the Peer.  
 
-| Param | Type |
-| --- | --- |
-| buffer | <code>Buffer</code> | 
+| Param | Type | Default |
+| --- | --- | --- |
+| buffer | <code>Buffer</code> |  | 
+| [origin] | <code>object</code> \| <code>null</code> | <code></code> | 
+| [socket] | <code>object</code> \| <code>null</code> | <code></code> | 
+| [options] | <code>Object</code> | <code></code> | 
+| [options.relayDepth] | <code>number</code> |  | 
+| [options.skipRelayFlood] | <code>boolean</code> |  | 
 
 <a name="Peer+_relayWirePayload"></a>
 
 ### peer.\_relayWirePayload()
-Wrap an already-signed inner AMP frame in a locally signed {@code P2P_RELAY} envelope.
-The inner bytes are never re-signed — only the new outer envelope is.
-Prefer [Peer#relayFrom](Peer#relayFrom) with the original message when the type is mesh-relayable.
+Originate a locally signed {@code P2P_RELAY} envelope around already-signed inner AMP bytes.
+Used only when *this* agent starts a flood (e.g. inventory without a prior wire frame).
+Inbound {@code P2P_RELAY} must never call this — forward the original outer bit-identical.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 <a name="Peer+_relayGenericPayload"></a>
@@ -7951,6 +8429,36 @@ Approve a pending DOCUMENT_REQUEST and send `P2P_FILE_SEND`.
 | --- | --- | --- |
 | requestKey | <code>string</code> | pending key, or document id when unique |
 
+<a name="Peer+authorizeDocumentKeyReveal"></a>
+
+### peer.authorizeDocumentKeyReveal(opts) ⇒ <code>Object</code>
+Record that settlement for a sealed document was verified so a matching
+DocumentRequest may receive the AES content key (not merely the ciphertext).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>Object</code> - `{ ok, error?, key? }`  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| opts | <code>object</code> |  |
+| opts.documentId | <code>string</code> |  |
+| opts.contentHashHex | <code>string</code> | payment hash SHA256(K) |
+| [opts.settlementId] | <code>string</code> |  |
+| [opts.txid] | <code>string</code> |  |
+
+<a name="Peer+_mayRevealDocumentContentKey"></a>
+
+### peer.\_mayRevealDocumentContentKey(documentId, paymentHashHex, parsed, [opts]) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| documentId | <code>string</code> | 
+| paymentHashHex | <code>string</code> | 
+| parsed | <code>object</code> | 
+| [opts] | <code>Object</code> | 
+| [opts.forceReveal] | <code>boolean</code> | 
+
 <a name="Peer+denyDocumentRequest"></a>
 
 ### peer.denyDocumentRequest(requestKey) ⇒ <code>Object</code>
@@ -8041,6 +8549,31 @@ Forward a relayed `P2P_FILE_SEND` / key reveal back toward the buyer using rever
 | --- | --- |
 | fileObj | <code>object</code> | 
 | origin | <code>Object</code> | 
+
+<a name="Peer+_mergeContractPatchAllowList"></a>
+
+### peer.\_mergeContractPatchAllowList(contractId, object, publisherPubkeyHex)
+Build the set of pubkeys allowed to apply CONTRACT_MESSAGE ops for a newly
+registered contract. Called only on first registration of a contract id —
+republishes must not invoke this (see [Peer#_registerContract](Peer#_registerContract)).
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| contractId | <code>string</code> |  |
+| object | <code>object</code> | contract publish body |
+| publisherPubkeyHex | <code>string</code> \| <code>null</code> | wire signer of the first publish |
+
+<a name="Peer+_signerMayPatchContract"></a>
+
+### peer.\_signerMayPatchContract(contractId, signerPubkeyHex) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type |
+| --- | --- |
+| contractId | <code>string</code> | 
+| signerPubkeyHex | <code>string</code> \| <code>null</code> | 
 
 <a name="Peer+_startFabricPingKeepalive"></a>
 
@@ -13773,6 +14306,12 @@ Thin re-export kept for one release so Hub / older requires keep working.***
 <a name="BODY_SCHEMA_BY_KEY"></a>
 
 ## BODY\_SCHEMA\_BY\_KEY : <code>Map.&lt;(number\|string), Array.&lt;{name: string, type: string}&gt;&gt;</code>
+**Kind**: global constant  
+<a name="SCHEMA_P2P_FORWARD"></a>
+
+## SCHEMA\_P2P\_FORWARD
+Directed onion hop — see [module:@fabric/core/functions/fabricOnion](module:@fabric/core/functions/fabricOnion).
+
 **Kind**: global constant  
 <a name="P2P_CHAT_MAX_CHARS"></a>
 

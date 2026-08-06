@@ -432,21 +432,28 @@ class CliDocumentExchange {
             error: 'Cannot open paid buy: need buyer refund key, seller pubkey, and inventoryHtlcLocktimeHeight to build a buyer-bound HTLC'
           };
         }
-        const built = inventoryHtlc.buildInventoryHtlcP2tr({
-          networkName: this._networkName(),
-          sellerPubkeyCompressed: Buffer.from(sellerHex, 'hex'),
-          buyerRefundPubkeyCompressed: Buffer.from(buyerHex, 'hex'),
-          paymentHash32: Buffer.from(contentHashHex, 'hex'),
-          refundLocktimeHeight: Number(lock)
-        });
+        const ampSigner = offer.ampSignerPubkey || offer.wireSignerPubkey ||
+          (offer.htlc && (offer.htlc.ampSignerPubkey || offer.htlc.sellerPublicKeyHex)) || null;
+        if (ampSigner && !inventoryHtlc.pubkeysMatchXOnly(ampSigner, sellerHex)) {
+          return {
+            error: 'Offer AMP signer does not match resolved seller pubkey — refusing to fund'
+          };
+        }
         const sellerAddr = offer.htlc && offer.htlc.paymentAddress
           ? String(offer.htlc.paymentAddress).trim()
           : '';
-        if (sellerAddr && sellerAddr !== built.address) {
-          return {
-            error: 'Seller HTLC paymentAddress does not match buyer-bound P2TR script — refusing to fund'
-          };
+        const verdict = inventoryHtlc.validateInventoryHtlcOffer({
+          networkName: this._networkName(),
+          sellerPubkeyCompressed: sellerHex,
+          buyerRefundPubkeyCompressed: buyerHex,
+          paymentHash32: contentHashHex,
+          refundLocktimeHeight: Number(lock),
+          paymentAddress: sellerAddr || undefined
+        });
+        if (!verdict.ok) {
+          return { error: verdict.error || 'HTLC offer validation failed' };
         }
+        const built = verdict.built;
         const hints = inventoryHtlc.buildHtlcFundingHints({
           paymentAddress: built.address,
           amountSats,

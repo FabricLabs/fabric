@@ -859,7 +859,13 @@ describe('@fabric/core/types/peer', function () {
         assert.ok(rejected && /hash mismatch|rejected/i.test(String(rejected.error || 'rejected')));
       });
       it('sealed priced doc: ciphertext without key; open only after settlement authorize', function () {
-        const seller = new Peer({ listen: false, peersDb: null, sealPricedDocuments: true });
+        const seller = new Peer({
+          listen: false,
+          peersDb: null,
+          sealPricedDocuments: true,
+          // Exercise settlement → DOCUMENT_REQUEST auto-fulfill path (off by default).
+          autoFulfillDocumentRequests: true
+        });
         const buyer = new Peer({ listen: false, peersDb: null });
         const secret = 'sealed-secret-' + 'Z'.repeat(3000);
         seller._publishDocument('doc-seal', secret, 250);

@@ -28,10 +28,20 @@ const {
   PEER_SCORE_LOGICAL_REGISTER_HIJACK_PENALTY,
   PEER_SCORE_LOGICAL_REGISTER_DUPLICATE_PENALTY,
   PEER_SCORE_LOGICAL_REGISTER_DUPLICATE_WINDOW_MS,
+  PEER_MAX_RELAY_NEST_DEPTH,
+  PEER_BAN_TTL_MS,
+  PEER_RELAY_CREDIT_COST,
+  PEER_SCORE_RELAY_NEST_EXCEEDED_PENALTY,
+  CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE,
+  PEER_MAX_PENDING_SEALED_DELIVERIES,
+  PEER_MAX_DOCUMENT_RELAY_ROUTES,
+  HEADER_SIZE,
+  MAX_MESSAGE_SIZE,
   P2P_PORT,
   P2P_CHAIN_SYNC_REQUEST,
   P2P_FLUSH_CHAIN,
-  P2P_FORWARD
+  P2P_FORWARD,
+  P2P_RELAY
 } = require('../constants');
 
 const {
@@ -311,9 +321,9 @@ class Peer extends Service {
       // When true, answers INVENTORY_REQUEST: `offerBtc` (L1 offers) and `kind: 'documents'`
       // (Hub / browser catalog) using local `_state.content.documents` (+ optional rates/collections).
       serveLocalDocumentInventory: false,
-      // When true (default), DOCUMENT_REQUEST auto-sends P2P_FILE_SEND if held.
-      // When false, queues a pending request for operator approve/deny (CLI consent UX).
-      autoFulfillDocumentRequests: true,
+      // When false (default), DOCUMENT_REQUEST queues for operator approve/deny.
+      // When true, auto-sends P2P_FILE_SEND if held (convenient but amplifies egress).
+      autoFulfillDocumentRequests: false,
       // When true (default), priced publishes seal AES-GCM; HTLC preimage = content key.
       sealPricedDocuments: true,
       // Attach P2TR HTLC fields on offerBtc inventory responses.
@@ -340,6 +350,12 @@ class Peer extends Service {
         maxPayloadCache: GOSSIP_MAX_PAYLOAD_CACHE,
         maxWireHashCache: PEER_MAX_WIRE_HASH_CACHE
       },
+      // Mesh chat amplify controls (local `chat` event still fires when limited).
+      chat: {
+        maxRelaysPerOriginPerMinute: CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE
+      },
+      maxPendingSealedDeliveries: PEER_MAX_PENDING_SEALED_DELIVERIES,
+      maxDocumentRelayRoutes: PEER_MAX_DOCUMENT_RELAY_ROUTES,
       state: Object.assign({
         actors: {},
         channels: {},
@@ -360,6 +376,7 @@ class Peer extends Service {
         chainSyncCreditCost: 55,
         flushChainCreditCost: 120,
         bitcoinBlockCreditCost: 3,
+        relayCreditCost: PEER_RELAY_CREDIT_COST,
         defaultCreditCost: 1,
         overLimitPenalty: 22,
         sessionKeyViolationPenalty: PEER_SCORE_SESSION_KEY_VIOLATION_PENALTY
@@ -373,7 +390,11 @@ class Peer extends Service {
         logicalRegisterHijackPenalty: PEER_SCORE_LOGICAL_REGISTER_HIJACK_PENALTY,
         logicalRegisterDuplicatePenalty: PEER_SCORE_LOGICAL_REGISTER_DUPLICATE_PENALTY,
         logicalRegisterDuplicateWindowMs: PEER_SCORE_LOGICAL_REGISTER_DUPLICATE_WINDOW_MS,
-        disconnectOnHardMisbehavior: true
+        relayNestExceededPenalty: PEER_SCORE_RELAY_NEST_EXCEEDED_PENALTY,
+        disconnectOnHardMisbehavior: true,
+        banOnHardMisbehavior: true,
+        banTtlMs: PEER_BAN_TTL_MS,
+        maxRelayNestDepth: PEER_MAX_RELAY_NEST_DEPTH
       },
       // Inbound P2P_FLUSH_CHAIN: sender registry score must be strictly greater than this (relay uses same threshold).
       flushChainMinTrustedScore: 800,
@@ -463,6 +484,8 @@ class Peer extends Service {
     this._gossipPayloadOrder = [];
     /** origin address → { count, windowStart } for gossip relay rate limiting. */
     this._gossipRelayByOrigin = new Map();
+    /** origin address → { count, windowStart } for chat mesh relay rate limiting. */
+    this._chatRelayByOrigin = new Map();
     /** Logical peering-offer payload dedup (ignores advisory peeringHop; frames relay as-is). */
     this._peeringPayloadSeen = new Map();
     this._peeringPayloadOrder = [];
@@ -472,6 +495,11 @@ class Peer extends Service {
     this._wireInboundByOrigin = new Map();
     /** `host:port` → { windowStart, penalized } — soft logical-duplicate derank once per window. */
     this._logicalDupPenaltyByOrigin = new Map();
+    /**
+     * Temporary bans after hard misbehavior: `addr:<host:port>` or `pk:<hex>` → { until, reason }.
+     * @type {Map<string, { until: number, reason: string }>}
+     */
+    this._peerBans = new Map();
     /** `host:port` keys for {@link P2P_PEERING_OFFER} candidate queue dedup. */
     this._candidateKeys = new Set();
     /**
@@ -634,16 +662,19 @@ class Peer extends Service {
 
   /**
    * Lower registry score and optionally destroy the TCP connection (hard misbehavior).
+   * Hard disconnects also install a temporary ban (address + known pubkey).
    * @param {string|null|undefined} originName
    * @param {string} reason
-   * @param {{ penalty?: number, disconnect?: boolean }} [opts]
+   * @param {Object} [opts]
+   * @param {number} [opts.penalty]
+   * @param {boolean} [opts.disconnect]
    */
   _applyPeerMisbehavior (originName, reason, opts = {}) {
     const penalty = Number(opts.penalty);
     const pen = Number.isFinite(penalty) && penalty > 0 ? penalty : 20;
     const wantDisconnect = opts.disconnect === true;
-    const hardDisconnect = (this.settings.peerScore &&
-      this.settings.peerScore.disconnectOnHardMisbehavior !== false);
+    const ps = this.settings.peerScore || {};
+    const hardDisconnect = ps.disconnectOnHardMisbehavior !== false;
     if (originName) {
       this._derankPeerForWireTraffic(originName, pen, reason);
     }
@@ -651,16 +682,79 @@ class Peer extends Service {
       `[FABRIC:PEER] Misbehavior (${reason}) from ${originName || 'unknown'} penalty=${pen}` +
       (wantDisconnect && hardDisconnect ? ' disconnect=1' : ''));
     if (wantDisconnect && hardDisconnect && originName) {
+      if (ps.banOnHardMisbehavior !== false) {
+        this._banPeer(originName, reason);
+      }
       const conn = this.connections && this.connections[originName];
       if (conn && typeof conn.destroy === 'function') conn.destroy();
+      // Drop registry of the live socket so reconnect/ban checks apply immediately.
+      if (this.connections) delete this.connections[originName];
+      if (this.peers && this.peers[originName] && typeof this.peers[originName] === 'object') {
+        this.peers[originName].status = 'disconnected';
+      }
     }
+  }
+
+  /**
+   * Ban a connection address (and mapped pubkey when known) for {@link Peer#settings.peerScore.banTtlMs}.
+   * @param {string} originName
+   * @param {string} reason
+   */
+  _banPeer (originName, reason) {
+    if (!originName) return;
+    const ps = this.settings.peerScore || {};
+    const ttl = Number(ps.banTtlMs);
+    const banMs = Number.isFinite(ttl) && ttl > 0 ? ttl : PEER_BAN_TTL_MS;
+    const until = Date.now() + banMs;
+    const entry = { until, reason: String(reason || 'misbehavior') };
+    this._peerBans.set(`addr:${originName}`, entry);
+    const peerId = (this._addressToId && this._addressToId[originName]) || null;
+    const reg = (this._state.peers && (this._state.peers[peerId] || this._state.peers[originName])) || null;
+    const pk = normalizePeerPubkeyHex(
+      (reg && reg.publicKey) ||
+      (this.peers[originName] && this.peers[originName].publicKey) ||
+      peerId
+    );
+    if (pk && pk.length >= 64) {
+      this._peerBans.set(`pk:${pk}`, entry);
+    }
+    this.emit('warning',
+      `[FABRIC:PEER] Banned ${originName}${pk ? ` pk=${pk.slice(0, 16)}…` : ''} until=${new Date(until).toISOString()} (${entry.reason})`);
+  }
+
+  /**
+   * @param {string|null|undefined} originName
+   * @param {string|null|undefined} [pubkeyHex]
+   * @returns {boolean}
+   */
+  _isPeerBanned (originName = null, pubkeyHex = null) {
+    const now = Date.now();
+    for (const [k, v] of this._peerBans) {
+      if (!v || !(v.until > now)) this._peerBans.delete(k);
+    }
+    if (originName && this._peerBans.has(`addr:${originName}`)) return true;
+    const pk = normalizePeerPubkeyHex(pubkeyHex);
+    if (pk && this._peerBans.has(`pk:${pk}`)) return true;
+    if (originName) {
+      const peerId = (this._addressToId && this._addressToId[originName]) || null;
+      const reg = (this._state.peers && (this._state.peers[peerId] || this._state.peers[originName])) || null;
+      const mapped = normalizePeerPubkeyHex(
+        (reg && reg.publicKey) ||
+        (this.peers[originName] && this.peers[originName].publicKey) ||
+        peerId
+      );
+      if (mapped && this._peerBans.has(`pk:${mapped}`)) return true;
+    }
+    return false;
   }
 
   /**
    * Soft (once/window) or hijack (CONTRACT_PUBLISH other signer) penalty for logical duplicates.
    * @param {string|null|undefined} originName
    * @param {string} type
-   * @param {{ prior?: { signer?: string|null }|null }} claim
+   * @param {Object} claim
+   * @param {Object|null} [claim.prior]
+   * @param {string|null} [claim.prior.signer]
    * @param {string|null} [signerPubkeyHex]
    */
   _logicalRegisterDuplicateMisbehavior (originName, type, claim, signerPubkeyHex = null) {
@@ -748,6 +842,56 @@ class Peer extends Service {
   }
 
   /**
+   * @param {string} originName Connection id (e.g. `host:port`)
+   * @returns {boolean}
+   */
+  _chatRateLimitAllow (originName) {
+    const limit = (this.settings.chat && this.settings.chat.maxRelaysPerOriginPerMinute) ||
+      CHAT_MAX_RELAYS_PER_ORIGIN_PER_MINUTE;
+    const now = Date.now();
+    let slot = this._chatRelayByOrigin.get(originName);
+    if (!slot || now - slot.windowStart > 60000) {
+      slot = { count: 0, windowStart: now };
+    }
+    if (slot.count >= limit) return false;
+    slot.count++;
+    this._chatRelayByOrigin.set(originName, slot);
+    return true;
+  }
+
+  _capPendingSealedDeliveries () {
+    const max = Number(this.settings.maxPendingSealedDeliveries);
+    const cap = Number.isFinite(max) && max > 0 ? max : PEER_MAX_PENDING_SEALED_DELIVERIES;
+    const ids = Object.keys(this.pendingSealedDeliveries);
+    if (ids.length <= cap) return;
+    ids.sort((a, b) => {
+      const ta = (this.pendingSealedDeliveries[a] && this.pendingSealedDeliveries[a].updated) || 0;
+      const tb = (this.pendingSealedDeliveries[b] && this.pendingSealedDeliveries[b].updated) || 0;
+      return ta - tb;
+    });
+    const drop = ids.length - cap;
+    for (let i = 0; i < drop; i++) {
+      delete this.pendingSealedDeliveries[ids[i]];
+    }
+  }
+
+  _capDocumentRelayRoutes () {
+    const max = Number(this.settings.maxDocumentRelayRoutes);
+    const cap = Number.isFinite(max) && max > 0 ? max : PEER_MAX_DOCUMENT_RELAY_ROUTES;
+    const ids = Object.keys(this._documentRelayRoutes);
+    if (ids.length <= cap) return;
+    ids.sort((a, b) => {
+      const ta = (this._documentRelayRoutes[a] && this._documentRelayRoutes[a].created) || 0;
+      const tb = (this._documentRelayRoutes[b] && this._documentRelayRoutes[b].created) || 0;
+      return ta - tb;
+    });
+    const drop = ids.length - cap;
+    for (let i = 0; i < drop; i++) {
+      delete this._documentRelayRoutes[ids[i]];
+    }
+  }
+
+  /**
    * Credit cost for inbound wire messages (heavier types consume more of the peer's budget).
    * @param {string|number} wireType
    * @returns {number}
@@ -766,6 +910,9 @@ class Peer extends Service {
     }
     if (t === 'P2P_FORWARD' || wireType === P2P_FORWARD) {
       return Number(w.forwardCreditCost) || 4;
+    }
+    if (t === 'P2P_RELAY' || wireType === P2P_RELAY) {
+      return Number(w.relayCreditCost) || PEER_RELAY_CREDIT_COST;
     }
     return Number(w.defaultCreditCost) || 1;
   }
@@ -1415,6 +1562,11 @@ class Peer extends Service {
       return;
     }
 
+    if (this._isPeerBanned(target)) {
+      this.emit('warning', `[FABRIC:PEER:_connect] Refusing dial to banned peer ${target}`);
+      return;
+    }
+
     this.emit('debug', `[FABRIC:PEER:_connect] Attempting to connect to: ${target}`);
     const url = new URL(`tcp://${target}`);
     const id = url.username;
@@ -1786,20 +1938,48 @@ class Peer extends Service {
   /**
    * Handle a Fabric {@link Message} buffer.
    * @param {Buffer} buffer
+   * @param {object|null} [origin]
+   * @param {object|null} [socket]
+   * @param {Object} [options]
+   * @param {number} [options.relayDepth]
+   * @param {boolean} [options.skipRelayFlood]
    * @returns {Peer} Instance of the Peer.
    */
-  _handleFabricMessage (buffer, origin = null, socket = null) {
-    const hash = crypto.createHash('sha256').update(buffer).digest('hex');
-    const message = Message.fromBuffer(buffer);
+  _handleFabricMessage (buffer, origin = null, socket = null, options = null) {
+    const opts = (options && typeof options === 'object') ? options : {};
+    const originName = (origin && origin.name) ? origin.name : null;
+    const ps = this.settings.peerScore || {};
+
+    // Frame-size gate before parse / hash / signature work.
+    let wire = buffer;
+    if (!Buffer.isBuffer(wire)) {
+      if (wire instanceof Uint8Array) wire = Buffer.from(wire);
+      else return this;
+    }
+    const maxBody = Number(this.settings.maxMessageSize);
+    const bodyCap = Number.isFinite(maxBody) && maxBody > 0 ? maxBody : MAX_MESSAGE_SIZE;
+    const maxWire = HEADER_SIZE + bodyCap;
+    if (wire.length > maxWire) {
+      this.emit('warning',
+        `[FABRIC:PEER] Dropping oversized frame (${wire.length} > ${maxWire}) from ${originName || 'unknown'}`);
+      return this;
+    }
+
+    if (originName && this._isPeerBanned(originName)) {
+      this.emit('warning', `[FABRIC:PEER] Dropping message from banned peer ${originName}`);
+      const conn = this.connections && this.connections[originName];
+      if (conn && typeof conn.destroy === 'function') conn.destroy();
+      return this;
+    }
+
+    const hash = crypto.createHash('sha256').update(wire).digest('hex');
+    const message = Message.fromBuffer(wire);
     if (this.settings.debug) this.emit('debug', `Got Fabric message: ${message}`);
 
     // Have we seen this exact wire envelope before? (silent — no score change)
     if (this.messages[hash]) {
       return this;
     }
-
-    const ps = this.settings.peerScore || {};
-    const originName = (origin && origin.name) ? origin.name : null;
 
     // Body integrity: `hash` header is double-SHA256(body). Wire `preimage` is a
     // Lightning-style payment secret (all-zero for public frames; non-zero for HTLC /
@@ -1876,14 +2056,32 @@ class Peer extends Service {
       case 'P2P_RELAY':
         if (!origin || origin.name == null) break;
         {
-          // Mesh flood envelope: raw inner Message bytes (not directed onion).
+          // Mesh flood envelope: body = raw inner Message bytes (not directed onion).
+          // Never re-wrap on forward — bit-identical relayFrom of *this* outer frame so
+          // wire-hash dedup bounds diameter. Nested RELAY unwrap is depth-capped.
           // For IP-hiding source routes use P2P_FORWARD / Peer#sendOnion.
+          const relayDepth = Number(opts.relayDepth) || 0;
+          const maxNest = Number(ps.maxRelayNestDepth);
+          const nestCap = Number.isFinite(maxNest) && maxNest >= 0 ? maxNest : PEER_MAX_RELAY_NEST_DEPTH;
           const inner = (message.raw && Buffer.isBuffer(message.raw.data))
             ? message.raw.data
             : Buffer.alloc(0);
           if (inner.length > 0) {
-            this._handleFabricMessage(inner, origin, socket);
-            this._relayWirePayload(origin.name, inner, socket);
+            if (relayDepth >= nestCap) {
+              this._applyPeerMisbehavior(originName, 'relay-nest-exceeded', {
+                penalty: Number(ps.relayNestExceededPenalty) || PEER_SCORE_RELAY_NEST_EXCEEDED_PENALTY,
+                disconnect: true
+              });
+              break;
+            }
+            this._handleFabricMessage(inner, origin, socket, {
+              relayDepth: relayDepth + 1,
+              skipRelayFlood: true
+            });
+            // Only the outermost received envelope is mesh-flooded (bit-identical).
+            if (!opts.skipRelayFlood) {
+              this.relayFrom(origin.name, message, socket);
+            }
           }
         }
         break;
@@ -2006,14 +2204,19 @@ class Peer extends Service {
             }
           } catch (_) { /* not JSON — treat as text */ }
         }
-        const signerPubkeyHex = this._verifiedFabricSignerPubkeyHex(message);
+        const chatSigner = this._verifiedFabricSignerPubkeyHex(message);
         this.emit('chat', { text: String(text), type: 'P2P_CHAT_MESSAGE' }, {
           origin,
-          signer: signerPubkeyHex || null,
+          signer: chatSigner || null,
           wireMessage: message
         });
         if (origin && origin.name && message) {
-          this.relayFrom(origin.name, message);
+          if (this._chatRateLimitAllow(origin.name)) {
+            this.relayFrom(origin.name, message);
+          } else {
+            this.emit('warning',
+              `[FABRIC:PEER] Chat relay rate-limited for ${origin.name}`);
+          }
         }
         break;
       }
@@ -2276,9 +2479,9 @@ class Peer extends Service {
   }
 
   /**
-   * Wrap an already-signed inner AMP frame in a locally signed {@code P2P_RELAY} envelope.
-   * The inner bytes are never re-signed — only the new outer envelope is.
-   * Prefer {@link Peer#relayFrom} with the original message when the type is mesh-relayable.
+   * Originate a locally signed {@code P2P_RELAY} envelope around already-signed inner AMP bytes.
+   * Used only when *this* agent starts a flood (e.g. inventory without a prior wire frame).
+   * Inbound {@code P2P_RELAY} must never call this — forward the original outer bit-identical.
    */
   _relayWirePayload (originName, wirePayload, socket = null) {
     if (!originName) return false;
@@ -2463,7 +2666,13 @@ class Peer extends Service {
       case 'INVENTORY_RESPONSE':
         // Document inventory reply (may include per-item L1 HTLC offers).
         // JSON `type` may be legacy `INVENTORY_RESPONSE` or Fabric alias `FABRIC_DOCUMENT_OFFER_RESPONSE`.
-        this.emit('inventoryResponse', { message: msg, origin, socket });
+        // Prefer AMP signer over untrusted item.sellerPubkey when funding HTLCs.
+        this.emit('inventoryResponse', {
+          message: msg,
+          origin,
+          socket,
+          signerPubkeyHex: signerPubkeyHex || null
+        });
         if (this.settings.relayInventoryResponse) {
           this._relayGenericPayload(origin && origin.name, msg, socket, wireMessage);
         }
@@ -2628,9 +2837,11 @@ class Peer extends Service {
           break;
         }
         this.emit('debug', `peer_announce <Generic>${JSON.stringify(announceObj || '')}`);
-        const candidate = new Actor(announceObj);
-        this.candidates.push(candidate.toGenericMessage());
-        // this._fillPeerSlots();
+        const host = announceObj && announceObj.host;
+        const port = announceObj && announceObj.port;
+        if (host != null && port != null) {
+          this._enqueuePeeringCandidate(host, port);
+        }
         break;
       }
       case 'P2P_DOCUMENT_PUBLISH': {
@@ -2776,6 +2987,12 @@ class Peer extends Service {
     const target = `${socket.remoteAddress}:${socket.remotePort}`;
     const url = `tcp://${target}`;
 
+    if (this._isPeerBanned(target)) {
+      this.emit('warning', `[FABRIC:PEER] Refusing inbound from banned address ${target}`);
+      if (typeof socket.destroy === 'function') socket.destroy();
+      return;
+    }
+
     // Store a unique actor for this inbound connection
     this._registerActor({ name: target });
 
@@ -2810,7 +3027,13 @@ class Peer extends Service {
       }
       if (remotePk != null) {
         const pkHex = normalizePeerPubkeyHex(Buffer.isBuffer(remotePk) ? Buffer.from(remotePk) : remotePk);
-        if (pkHex) this._inboundNoiseStaticPubkeyByAddress[target] = pkHex;
+        if (pkHex) {
+          this._inboundNoiseStaticPubkeyByAddress[target] = pkHex;
+          if (this._isPeerBanned(target, pkHex)) {
+            this.emit('warning', `[FABRIC:PEER] Closing inbound: banned Noise static ${pkHex.slice(0, 16)}…`);
+            if (typeof socket.destroy === 'function') socket.destroy();
+          }
+        }
       }
     });
     handler.encrypt.on('error', (error) => {
@@ -3233,6 +3456,7 @@ class Peer extends Service {
           origin: origin || null,
           updated: Date.now()
         };
+        this._capPendingSealedDeliveries();
         this.emit('documentCiphertextReceived', {
           documentId: result.documentId,
           buffer: result.buffer,
@@ -3464,6 +3688,7 @@ class Peer extends Service {
       amountSats: Math.round(Number(amountSats) || 0),
       label: String(item.id || '').slice(0, 32)
     });
+    const sellerHex = sellerCompressed.toString('hex');
     return {
       paymentAddress: built.address,
       paymentHashHex: built.paymentHashHex,
@@ -3471,7 +3696,9 @@ class Peer extends Service {
       refundScriptHex: built.refundScript.toString('hex'),
       refundLocktimeHeight: lock,
       amountSats: Math.round(Number(amountSats) || 0),
-      bitcoinUri: hints.bitcoinUri
+      bitcoinUri: hints.bitcoinUri,
+      sellerPublicKeyHex: sellerHex,
+      sellerPubkey: sellerHex
     };
   }
 
@@ -3518,7 +3745,7 @@ class Peer extends Service {
    * @param {string} opts.contentHashHex payment hash SHA256(K)
    * @param {string} [opts.settlementId]
    * @param {string} [opts.txid]
-   * @returns {{ ok: boolean, error?: string, key?: string }}
+   * @returns {Object} `{ ok, error?, key? }`
    */
   authorizeDocumentKeyReveal (opts = {}) {
     const documentId = String(opts.documentId || '').trim();
@@ -3547,7 +3774,8 @@ class Peer extends Service {
    * @param {string} documentId
    * @param {string} paymentHashHex
    * @param {object} parsed
-   * @param {{ forceReveal?: boolean }} [opts]
+   * @param {Object} [opts]
+   * @param {boolean} [opts.forceReveal]
    * @returns {boolean}
    */
   _mayRevealDocumentContentKey (documentId, paymentHashHex, parsed, opts = {}) {
@@ -3808,6 +4036,7 @@ class Peer extends Service {
       blobIndex: fwd.body.blobIndex,
       created: Date.now()
     };
+    this._capDocumentRelayRoutes();
     const msg = Message.fromVector(['DocumentRequest', JSON.stringify(fwd.body)]);
     msg.signWithKey(this.key);
     this.broadcast(msg.toBuffer());
@@ -4179,6 +4408,7 @@ class Peer extends Service {
         if (this.connections[addr]) return false;
         const listenAddr = this.listenAddress || `${this.interface}:${this.port}`;
         if (addr === listenAddr) return false;
+        if (this._isPeerBanned(addr)) return false;
         return true;
       });
       if (toReconnect.length > 0) {
