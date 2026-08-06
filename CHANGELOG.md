@@ -40,6 +40,8 @@ JS-canonical protocol for 0.1.0; Lightning-style wire preimage; unsigned documen
 - **`P2P_FORWARD` peel:** skip inbound wire-credit debit for peeled/relayed-as-is inners; `P2P_PEER_ANNOUNCE` local-only (no candidate enqueue); logical-register punish origin null on peel (incl. `CONTRACT_PUBLISH` hijack).
 - **Outermost-only flood:** peeled / `skipRelayFlood` inners no longer `relayFrom` under the TCP last hop — unified `meshDeliveryContext` (`allowMeshRelay` / `allowTcpOriginSideEffects`) for chat, alias, gossip, peering, contracts, `BitcoinBlock`, `DocumentRequest`, and inventory (no fulfill/queue/reply to TCP last hop on peel / foreign RELAY).
 - **CONTRACT_PUBLISH front-run:** patch allow-list is authority-arrays only (never AMP wire signer alone); non-party first publishers are rejected **before** logical registration so they cannot burn the content-addressed slot.
+- **DocumentContentKeyReveal:** require `SHA256(keyHex) === paymentHashHex` before reverse-relay; logical key binds to derived payment hash; claim only after successful sealed open (junk public-hash frames cannot burn cooperative delivery).
+- **Review follow-ups:** `loadStateAt` parses Buffer STATE docs; `jsonSafe(undefined)` → `null`; federation witness counts distinct validator pubkeys; PBKDF2 salt length check is overflow-safe; MESSAGES.md Lightning alias labels.
 - **Coverage / Codacy:** claimWatch hub-reveal + claim-witness, mature refund broadcast, AMP-signer refuse, sealed content-key store helpers; Semgrep/Opengrep exclude for path-hardened `cliDocumentExchange` / `contractSidechainLocal` (containment already tested).
 
 **Public readiness**

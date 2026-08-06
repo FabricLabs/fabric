@@ -32,7 +32,7 @@ Exact wire duplicates are already dropped via the FIFO-capped wire-hash cache (`
 - `BitcoinBlock` / `BITCOIN_BLOCK` (tip / hash)
 - `P2P_FLUSH_CHAIN` / `FlushChain` (`snapshotBlockHash`)
 - `P2P_PEER_ALIAS` (signer + nickname)
-- `DocumentContentKeyReveal` (`documentId` + payment/key hex)
+- `DocumentContentKeyReveal` (`documentId` + `SHA256(keyHex)` — only well-formed preimages; claim runs **after** successful open so junk public-hash frames cannot burn the slot)
 
 Cache size: `PEER_MAX_LOGICAL_REGISTER_CACHE` (default 10000), overridable via `settings.logicalRegister.maxCache`. **Not** in this list: chat (intentional repeats), session handshake, inventory request/response (ephemeral), `P2P_FILE_SEND` (blob ingest has its own rules), `CONTRACT_MESSAGE` (mutations — unauthorized ops are hard-punished separately). Gossip / peering offers keep their dedicated payload caches.
 

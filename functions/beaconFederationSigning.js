@@ -57,11 +57,14 @@ function epochCommitmentDigestHex (epochPayload) {
 function verifyFederationWitnessOnMessage (messageBuffer, witness, validatorPubkeys, threshold = 1) {
   if (!witness || !witness.signatures || typeof witness.signatures !== 'object') return false;
   if (!Buffer.isBuffer(messageBuffer)) return false;
-  const pubkeys = Array.isArray(validatorPubkeys) ? validatorPubkeys : [];
+  // Deduplicate so a repeated pubkey cannot satisfy k-of-n with one signature.
+  const pubkeys = Array.from(new Set(
+    (Array.isArray(validatorPubkeys) ? validatorPubkeys : [])
+      .filter((p) => typeof p === 'string' && p)
+  ));
   const thr = Math.max(1, Number(threshold) || 1);
   let valid = 0;
   for (const pubkey of pubkeys) {
-    if (typeof pubkey !== 'string' || !pubkey) continue;
     const sigHex = witness.signatures[pubkey];
     if (!sigHex || typeof sigHex !== 'string') continue;
     try {

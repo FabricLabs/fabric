@@ -243,11 +243,13 @@ describe('@fabric/core Peer logical first-writer-wins registration', function ()
   });
 
   it('DocumentContentKeyReveal duplicate is no-op', function () {
+    const { paymentHashHexFromKey } = require('../functions/documentSealedExchange');
     const peer = offlinePeer();
+    const keyHex = '11'.repeat(32);
     const reveal = {
       documentId: 'doc-reveal-1',
-      keyHex: '11'.repeat(32),
-      paymentHashHex: '22'.repeat(32)
+      keyHex,
+      paymentHashHex: paymentHashHexFromKey(keyHex)
     };
     assert.strictEqual(
       peer._claimLogicalRegistration('DocumentContentKeyReveal', reveal, 'aa'.repeat(32)).duplicate,
@@ -256,6 +258,33 @@ describe('@fabric/core Peer logical first-writer-wins registration', function ()
     assert.strictEqual(
       peer._claimLogicalRegistration('DocumentContentKeyReveal', reveal, 'bb'.repeat(32)).duplicate,
       true
+    );
+  });
+
+  it('DocumentContentKeyReveal junk paymentHash does not claim logical slot', function () {
+    const { paymentHashHexFromKey } = require('../functions/documentSealedExchange');
+    const peer = offlinePeer();
+    const realKey = '33'.repeat(32);
+    const realPay = paymentHashHexFromKey(realKey);
+    const junk = {
+      documentId: 'doc-reveal-junk',
+      keyHex: '44'.repeat(32),
+      paymentHashHex: realPay
+    };
+    assert.strictEqual(
+      peer._logicalRegistrationKey('DocumentContentKeyReveal', junk),
+      null,
+      'mismatched key/paymentHash must not produce a claim key'
+    );
+    assert.strictEqual(
+      peer._claimLogicalRegistration('DocumentContentKeyReveal', junk, 'aa'.repeat(32)).key,
+      null
+    );
+    // Real preimage still claims its derived slot.
+    const good = { documentId: 'doc-reveal-junk', keyHex: realKey, paymentHashHex: realPay };
+    assert.strictEqual(
+      peer._claimLogicalRegistration('DocumentContentKeyReveal', good, 'aa'.repeat(32)).duplicate,
+      false
     );
   });
 });

@@ -80,6 +80,16 @@ describe('@fabric/core/functions/sidechainState', function () {
     assert.strictEqual(sc.patchCommitmentDigestHex(p).length, 64);
   });
 
+  it('loadStateAt parses Buffer STATE documents (not only strings)', function () {
+    const doc = { version: 1, clock: 4, content: { n: 7 } };
+    const fs = {
+      readFile: () => Buffer.from(JSON.stringify(doc), 'utf8')
+    };
+    const loaded = sc.loadStateAt(fs, 'sidechain/STATE');
+    assert.strictEqual(loaded.clock, 4);
+    assert.strictEqual(loaded.content.n, 7);
+  });
+
   it('snapshots round-trip and prune by beacon clock', function () {
     const store = new Map();
     const fs = {

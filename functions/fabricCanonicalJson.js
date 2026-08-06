@@ -53,6 +53,9 @@ function fabricCanonicalJson (value, depth = 0) {
  * @returns {*}
  */
 function jsonSafe (value) {
+  // JSON.stringify(undefined) yields `undefined` (not the string "null"), which
+  // JSON.parse cannot consume — match fabricCanonicalJson's undefined → null.
+  if (value === undefined) return null;
   return JSON.parse(JSON.stringify(value));
 }
 

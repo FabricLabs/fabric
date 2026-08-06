@@ -20,6 +20,7 @@ describe('@fabric/core federation / program helpers (ex-distributedExecution)', 
     const o = { a: 1, b: null, c: 'x' };
     assert.deepStrictEqual(jsonSafe(o), o);
     assert.deepStrictEqual(jsonSafe({ u: undefined }), {});
+    assert.strictEqual(jsonSafe(undefined), null);
   });
 
   it('stableStringify aliases fabricCanonicalJson', function () {
@@ -73,6 +74,13 @@ describe('@fabric/core federation / program helpers (ex-distributedExecution)', 
     };
     assert.strictEqual(verifyFederationWitnessOnMessage(msg, witness, [k1.pubkey, k2.pubkey], 2), true);
     assert.strictEqual(verifyFederationWitnessOnMessage(msg, witness, [k1.pubkey, k2.pubkey], 3), false);
+    // Duplicate validator entries must not double-count a single signature.
+    assert.strictEqual(
+      verifyFederationWitnessOnMessage(msg, {
+        signatures: { [k1.pubkey]: k1.signSchnorr(msg).toString('hex') }
+      }, [k1.pubkey, k1.pubkey], 2),
+      false
+    );
   });
 
   describe('parseProgramManifestV1', function () {

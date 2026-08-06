@@ -80,6 +80,28 @@ describe('functions/documentSealedExchange', function () {
     assert.strictEqual(reveal.object.keyHex, sale.keyHex);
   });
 
+  it('isWellFormedKeyReveal requires SHA256(key) === paymentHashHex', function () {
+    const { isWellFormedKeyReveal, paymentHashHexFromKey } = require('../functions/documentSealedExchange');
+    const keyHex = 'ab'.repeat(32);
+    const paymentHashHex = paymentHashHexFromKey(keyHex);
+    assert.strictEqual(isWellFormedKeyReveal({
+      documentId: 'd',
+      keyHex,
+      paymentHashHex
+    }), true);
+    assert.strictEqual(isWellFormedKeyReveal({
+      documentId: 'd',
+      keyHex,
+      paymentHashHex: '00'.repeat(32)
+    }), false);
+    assert.strictEqual(isWellFormedKeyReveal({
+      documentId: 'd',
+      keyHex: 'zz',
+      paymentHashHex
+    }), false);
+    assert.strictEqual(isWellFormedKeyReveal(null), false);
+  });
+
   it('openWithClaimPreimage opens using HTLC claim preimage', function () {
     const {
       openWithClaimPreimage

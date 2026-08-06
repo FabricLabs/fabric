@@ -238,6 +238,24 @@ function buildKeyRevealMessage (opts = {}) {
 }
 
 /**
+ * True when a DocumentContentKeyReveal object carries a 32-byte key that is the
+ * SHA-256 preimage of its declared `paymentHashHex`. Public inventory hashes
+ * alone must not occupy logical-register slots or reverse-relay paths.
+ * @param {object|null|undefined} reveal
+ * @returns {boolean}
+ */
+function isWellFormedKeyReveal (reveal) {
+  if (!reveal || typeof reveal !== 'object') return false;
+  const documentId = String(reveal.documentId || '').trim();
+  const keyHex = String(reveal.keyHex || '').trim().toLowerCase();
+  const paymentHashHex = String(reveal.paymentHashHex || '').trim().toLowerCase();
+  if (!documentId) return false;
+  if (!/^[0-9a-f]{64}$/.test(keyHex)) return false;
+  if (!/^[0-9a-f]{64}$/.test(paymentHashHex)) return false;
+  return paymentHashHexFromKey(keyHex) === paymentHashHex;
+}
+
+/**
  * @param {object} reveal object from DocumentContentKeyReveal
  * @param {Buffer|string} ciphertext
  * @returns {{ ok: boolean, plaintext?: Buffer, error?: string }}
@@ -331,6 +349,7 @@ module.exports = {
   prepareSealedSale,
   advertiseSealedDocument,
   buildKeyRevealMessage,
+  isWellFormedKeyReveal,
   openSealedDelivery,
   openWithClaimPreimage,
   requestMatchesPaymentHash,

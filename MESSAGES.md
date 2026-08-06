@@ -100,11 +100,11 @@ Primary sources:
 | `JSON_PATCH` | 1024 | `0x0400` | RFC6902-style JSON patch operation payload. |
 | `CONTRACT_PROPOSAL` | 138 | `0x008a` | Contract proposal (batched messages + Merkle + patch context). |
 | `P2P_START_CHAIN` | 33 | `0x0021` | Starts/announces chain bootstrap flow. |
-| `LIGHTNING_WARNING` | 1 | `0x0001` | Lightning warning/control-plane warning message. |
+| `LIGHTNING_WARNING` | 1 | `0x0001` | Encoding alias for opcode `0x0001` (canonical decode label is `P2P_IDENT_REQUEST` via first-match in `types/message.js`). |
 | `LIGHTNING_INIT` | 16 | `0x0010` | Lightning initialization handshake message. |
 | `LIGHTNING_ERROR` | 17 | `0x0011` | Lightning protocol error message. |
-| `LIGHTNING_PING` | 18 | `0x0012` | Lightning ping message (shares numeric value with `P2P_PING`). |
-| `LIGHTNING_PONG` | 19 | `0x0013` | Lightning pong message (shares numeric value with `P2P_PONG`). |
+| `LIGHTNING_PING` | 18 | `0x0012` | Encoding alias for opcode `0x0012` (canonical decode label is `P2P_PING`). |
+| `LIGHTNING_PONG` | 19 | `0x0013` | Encoding alias for opcode `0x0013` (canonical decode label is `P2P_PONG`). |
 | `LIGHTNING_OPEN_CHANNEL` | 32 | `0x0020` | Proposes opening a Lightning channel. |
 | `LIGHTNING_ACCEPT_CHANNEL` | 33 | `0x0021` | Accepts channel open parameters. |
 | `LIGHTNING_FUNDING_CREATED` | 34 | `0x0022` | Announces channel funding transaction creation. |
@@ -157,6 +157,6 @@ Wire aliases: `P2P_CONTRACT_*` encode to the same opcodes as `CONTRACT_*`
 
 ## 4) Aliases and Notes
 
-- `types/message.js` accepts both canonical wire names and legacy friendly aliases (for example `JSONCall` -> `JSON_CALL`, `DocumentPublish` -> `DOCUMENT_PUBLISH`).
-- Some constants intentionally share numeric codes (notably some `P2P_*` and `LIGHTNING_*` values); canonical decode ordering in `types/message.js` determines the preferred wire label.
+- `types/message.js` accepts both canonical wire names and legacy-friendly aliases (for example `JSONCall` -> `JSON_CALL`, `DocumentPublish` -> `DOCUMENT_PUBLISH`).
+- Some constants intentionally share numeric codes (notably some `P2P_*` and `LIGHTNING_*` values); canonical decode ordering in `types/message.js` determines the preferred wire label. Rows marked “encoding alias” above are valid encode names but are not the first-match decode label.
 - `HEARTBEAT` appears in policy/examples as a known logical type, but it is not currently registered in `constants.js` canonical wire decode map.

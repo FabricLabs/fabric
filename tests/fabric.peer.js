@@ -935,6 +935,65 @@ describe('@fabric/core/types/peer', function () {
         assert.ok(opened3 && opened3.opened);
         assert.strictEqual(opened3.buffer.toString('utf8'), secret);
       });
+      it('junk DocumentContentKeyReveal cannot burn sealed open slot', function () {
+        const {
+          prepareSealedSale,
+          buildKeyRevealMessage,
+          KEY_REVEAL_TYPE
+        } = require('../functions/documentSealedExchange');
+        const buyer = new Peer({ listen: false, peersDb: null });
+        const attacker = new Key();
+        const seller = new Key();
+        const sale = prepareSealedSale(Buffer.from('cooperative-secret', 'utf8'));
+        const docId = 'doc-reveal-dos';
+        buyer.pendingSealedDeliveries[docId] = {
+          ciphertext: sale.ciphertext,
+          merkleRootHex: 'aa'.repeat(32),
+          paymentHashHex: sale.paymentHashHex,
+          iv: sale.encryption.iv,
+          plaintextSha256: sale.plaintextSha256,
+          origin: { name: 'seller' },
+          updated: Date.now()
+        };
+
+        let opened = null;
+        let warned = 0;
+        buyer.on('documentReceived', (ev) => { opened = ev; });
+        buyer.on('warning', (msg) => {
+          if (/DocumentContentKeyReveal rejected/i.test(String(msg))) warned++;
+        });
+
+        // Attacker echoes public paymentHash with a wrong key — must not claim the slot.
+        const junkBody = {
+          type: KEY_REVEAL_TYPE,
+          object: {
+            documentId: docId,
+            keyHex: '00'.repeat(32),
+            paymentHashHex: sale.paymentHashHex
+          }
+        };
+        const junkMsg = Message.fromVector(['GenericMessage', JSON.stringify(junkBody)]).signWithKey(attacker);
+        buyer._handleFabricMessage(junkMsg.toBuffer(), { name: 'attacker:1' }, null);
+        assert.ok(warned >= 1);
+        assert.strictEqual(opened, null);
+        assert.ok(buyer.pendingSealedDeliveries[docId]);
+        const logicKey = buyer._logicalRegistrationKey('DocumentContentKeyReveal', junkBody.object);
+        assert.strictEqual(logicKey, null);
+
+        // Seller's real reveal still opens.
+        const good = buildKeyRevealMessage({
+          documentId: docId,
+          keyHex: sale.keyHex,
+          paymentHashHex: sale.paymentHashHex,
+          iv: sale.encryption.iv,
+          plaintextSha256: sale.plaintextSha256
+        });
+        const goodMsg = Message.fromVector(['GenericMessage', JSON.stringify(good)]).signWithKey(seller);
+        buyer._handleFabricMessage(goodMsg.toBuffer(), { name: 'seller:1' }, null);
+        assert.ok(opened && opened.opened);
+        assert.strictEqual(opened.buffer.toString('utf8'), 'cooperative-secret');
+        assert.ok(!buyer.pendingSealedDeliveries[docId]);
+      });
       it('DOCUMENT_REQUEST queues pending when autoFulfillDocumentRequests is false', function () {
         const peer = new Peer({
           listen: false,

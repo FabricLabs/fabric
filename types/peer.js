@@ -101,6 +101,8 @@ const {
   prepareSealedSale,
   advertiseSealedDocument,
   buildKeyRevealMessage,
+  isWellFormedKeyReveal,
+  paymentHashHexFromKey,
   openSealedDelivery,
   openWithClaimPreimage,
   requestMatchesPaymentHash,
@@ -723,11 +725,15 @@ class Peer extends Service {
       return `alias:${signer}:${alias}`;
     }
     if (t === 'DocumentContentKeyReveal') {
+      // Bind the slot to SHA256(keyHex), not the attacker-supplied public hash field.
+      // Mismatched / malformed reveals return null (no claim) — see isWellFormedKeyReveal.
       const docId = obj.documentId != null ? String(obj.documentId).trim() : '';
-      if (!docId) return null;
-      const pay = obj.paymentHashHex != null ? String(obj.paymentHashHex).toLowerCase() : '';
-      const key = obj.keyHex != null ? String(obj.keyHex).toLowerCase() : '';
-      return `keyreveal:${docId}:${pay || key}`;
+      const key = obj.keyHex != null ? String(obj.keyHex).trim().toLowerCase() : '';
+      if (!docId || !/^[0-9a-f]{64}$/.test(key)) return null;
+      const derived = paymentHashHexFromKey(key);
+      const pay = obj.paymentHashHex != null ? String(obj.paymentHashHex).trim().toLowerCase() : '';
+      if (pay && pay !== derived) return null;
+      return `keyreveal:${docId}:${derived}`;
     }
     return null;
   }
@@ -2846,15 +2852,14 @@ class Peer extends Service {
         break;
       case 'DocumentContentKeyReveal': {
         const reveal = (msg && msg.object) ? msg.object : msg;
-        const claimReveal = this._claimLogicalRegistrationOrPunish(
-          'DocumentContentKeyReveal', reveal, signerPubkeyHex, punishOrigin);
-        if (claimReveal.duplicate) {
-          if (this.settings.debug) {
-            this.emit('debug', '[FABRIC:PEER] Ignoring duplicate DocumentContentKeyReveal');
-          }
+        // Fail closed before claim / reverse-relay: public paymentHashHex alone must
+        // not burn the logical slot or launder junk toward the buyer.
+        if (!isWellFormedKeyReveal(reveal)) {
+          this.emit('warning',
+            '[FABRIC:PEER] DocumentContentKeyReveal rejected: key must be SHA256 preimage of paymentHashHex');
           break;
         }
-        // Reverse-relay key reveal along private DocumentRequest route when we are not the buyer.
+        // Reverse-relay only well-formed reveals (private DocumentRequest return path).
         if (reveal && reveal.routeId && this._documentRelayRoutes[reveal.routeId]) {
           const route = this._documentRelayRoutes[reveal.routeId];
           const prev = route.prevHopAddress;
@@ -2877,7 +2882,19 @@ class Peer extends Service {
             break;
           }
         }
-        this._handleDocumentContentKeyReveal(reveal, origin);
+        // Claim only after a successful open so failed opens cannot occupy the slot.
+        const logicKey = this._logicalRegistrationKey('DocumentContentKeyReveal', reveal);
+        if (logicKey && this._logicalRegisterOnce.has(logicKey)) {
+          if (this.settings.debug) {
+            this.emit('debug', '[FABRIC:PEER] Ignoring duplicate DocumentContentKeyReveal');
+          }
+          break;
+        }
+        const opened = this._handleDocumentContentKeyReveal(reveal, origin);
+        if (opened && opened.ok) {
+          this._claimLogicalRegistrationOrPunish(
+            'DocumentContentKeyReveal', reveal, signerPubkeyHex, punishOrigin);
+        }
         break;
       }
       case 'P2P_SESSION_OFFER':

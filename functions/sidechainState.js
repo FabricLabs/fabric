@@ -309,7 +309,12 @@ function loadStateAt (fs, statePath) {
   try {
     const raw = fs.readFile(path);
     if (!raw) return createInitialState();
-    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    // Filesystem may return string or Buffer (same as loadSnapshotsDoc / loadJournalDoc).
+    const parsed = typeof raw === 'string'
+      ? JSON.parse(raw)
+      : (Buffer.isBuffer(raw)
+        ? JSON.parse(raw.toString('utf8'))
+        : raw);
     if (!parsed || typeof parsed !== 'object') return createInitialState();
     const clock = Number(parsed.clock) || 0;
     const content = parsed.content && typeof parsed.content === 'object' ? parsed.content : {};
