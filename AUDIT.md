@@ -15,6 +15,10 @@ audit report.
 | Chat mesh amplify | Mitigated: per-origin relay budget (`CHAT_MAX_RELAYS_*`) |
 | Oversize wire frames | Mitigated: drop before parse/crypto (`HEADER_SIZE + MAX_MESSAGE_SIZE`) |
 | Inventory HTLC address spoof | Mitigated: rebuild+match (`validateInventoryHtlcOffer`); AMP signer binding when present |
+| Paid `/confirm` without L1 proof | Mitigated: fail-closed local verify or Hub `ConfirmInventoryHtlcPayment` (`cliDocumentExchange`) |
+| Key reveal from hash echo | Mitigated: `authorizeDocumentKeyReveal` requires `settlementId`/`txid`; `forceReveal` opt-in only |
+| Private DocumentRequest mesh broadcast | Mitigated: directed relay (`relayPath` / `nextPeer` / fan-out excluding origin) |
+| Sealed multi-seller blob plans | Mitigated: `pickBlobPlan` locks sealed docs to one seller |
 | Blob/sealed memory growth | Mitigated: pending transfer / sealed / relay-route caps |
 | Directed onion (`P2P_FORWARD`) | Implemented (peel/forward, TTL, bounce guard; peel skips last-hop hard disconnect; no session/alias rebind / mesh side-effects on peel for chat/peering/gossip) — **no hop encryption**; see [docs/P2P_FORWARD.md](docs/P2P_FORWARD.md) |
 | L1 document HTLC helpers | Implemented in core; treat as RC reference, not mainnet-hardened market |

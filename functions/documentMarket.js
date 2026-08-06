@@ -94,6 +94,7 @@ class DocumentOfferBook {
             size: b.size != null ? Number(b.size) : (it.size != null ? Number(it.size) : null),
             mime: it.mime || null,
             htlc: b.htlc || it.htlc || null,
+            sealed,
             peerScore: Number.isFinite(peerScore) ? peerScore : 0,
             latencyMs: Number.isFinite(latencyMs) ? latencyMs : 0,
             observedAt: now,
@@ -117,6 +118,7 @@ class DocumentOfferBook {
           size: it.size != null ? Number(it.size) : null,
           mime: it.mime || null,
           htlc: it.htlc || null,
+          sealed,
           peerScore: Number.isFinite(peerScore) ? peerScore : 0,
           latencyMs: Number.isFinite(latencyMs) ? latencyMs : 0,
           observedAt: now,
@@ -188,25 +190,46 @@ class DocumentOfferBook {
 
   /**
    * Prefer diversity across sellers when rank scores within 10%.
+   * Sealed documents bind one content key K for the whole ciphertext — never
+   * split blobs across sellers (mirrors of the same seller id are fine).
    * @param {string} documentId
    * @param {number} blobTotal
+   * @param {{ sealed?: boolean }} [opts]
    * @returns {Map<number, object>}
    */
-  pickBlobPlan (documentId, blobTotal) {
+  pickBlobPlan (documentId, blobTotal, opts = {}) {
     const n = Math.round(Number(blobTotal));
     const plan = new Map();
     if (!Number.isFinite(n) || n < 1) return plan;
+    const all = this.listOffers({ documentId });
+    const sealedPlan = opts.sealed === true || all.some((o) => o && o.sealed === true);
     const used = [];
+    let lockedSeller = null;
     for (let i = 0; i < n; i++) {
       let offers = this.listOffers({ documentId, blobIndex: i });
       if (!offers.length) {
-        offers = this.listOffers({ documentId }).filter((o) => o.blobIndex == null);
+        offers = all.filter((o) => o.blobIndex == null);
+      }
+      if (sealedPlan && lockedSeller) {
+        const same = offers.filter((o) => {
+          return String(o.sellerId || o.sellerAddress) === lockedSeller;
+        });
+        offers = same.length ? same : offers.filter((o) => {
+          return String(o.sellerId || o.sellerAddress) === lockedSeller;
+        });
+        if (!offers.length) {
+          offers = all.filter((o) => {
+            return String(o.sellerId || o.sellerAddress) === lockedSeller &&
+              (o.blobIndex === i || o.blobIndex == null);
+          });
+        }
       }
       const ranked = this.rankOffers(offers);
       if (!ranked.length) continue;
       const top = ranked[0];
       let pick = top;
-      if (used.length && ranked.length > 1) {
+      // Unsealed only: prefer seller diversity when scores are within 10%.
+      if (!sealedPlan && used.length && ranked.length > 1) {
         const band = top.rankScore * 0.9;
         const diverse = ranked.find((o) => {
           return o.rankScore >= band && !used.includes(String(o.sellerId || o.sellerAddress));
@@ -215,6 +238,9 @@ class DocumentOfferBook {
       }
       plan.set(i, pick);
       used.push(String(pick.sellerId || pick.sellerAddress));
+      if (sealedPlan && !lockedSeller) {
+        lockedSeller = String(pick.sellerId || pick.sellerAddress);
+      }
     }
     return plan;
   }

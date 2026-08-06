@@ -74,6 +74,8 @@ Wire frames larger than `HEADER_SIZE + MAX_MESSAGE_SIZE` (override body via `set
 ## Inventory HTLC binding
 Buyers must rebuild the buyer-bound P2TR (`validateInventoryHtlcOffer`) and must not fund a seller-advertised `paymentAddress` that does not match. When an AMP signer is known (`inventoryResponse.signerPubkeyHex` / offer `ampSignerPubkey` / HTLC `sellerPublicKeyHex`), it must match the resolved seller x-only key before funding.
 
+Paid CLI `/confirm` fails closed without Hub confirmation or successful local L1 amount verify. `authorizeDocumentKeyReveal` requires a `settlementId` or `txid`. Private DocumentRequest rewrite is directed (never mesh-broadcast). Sealed multi-blob purchase plans stay on a single seller.
+
 ## Memory caps (document path)
 - `DocumentBlobTransferBook`: max incomplete transfers (`MAX_PENDING_BLOB_TRANSFERS`, default 64) + TTL eviction
 - Pending sealed ciphertext: `PEER_MAX_PENDING_SEALED_DELIVERIES` (default 32)

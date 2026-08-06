@@ -72,12 +72,19 @@ Exact scripts MAY follow existing P2TR HTLC inventory profiles; this BIP only re
 
 ### Commitment algorithm (Fabric profile)
 
-Informative — Fabric today:
+Informative — Fabric **priced / sealed** path (primary today):
+
+1. Seller seals plaintext with random 32-byte content key `K` (AES-256-GCM).
+2. `preimage = K`.
+3. `content_commitment = SHA256(K)` (wire field `contentHashHex`).
+4. Ciphertext may be delivered before reveal; `K` is revealed only after verified settlement (or appears in the seller claim witness).
+
+**Legacy unsealed** path (still supported):
 
 1. Build whitelisted JSON fields for document `id`.
-2. Encode as AMP `DocumentPublish` message bytes.
+2. Encode as **unsigned** AMP `DocumentPublish` message bytes (signature region all zeros).
 3. `preimage = SHA256(envelope_bytes)`.
-4. `content_commitment = SHA256(preimage)` (hex for UI / invoices).
+4. `content_commitment = SHA256(preimage)`.
 
 Other profiles MAY use BIP-340 tagged hashes; they MUST document the tag and field whitelist.
 

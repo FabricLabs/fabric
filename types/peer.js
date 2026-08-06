@@ -340,6 +340,8 @@ class Peer extends Service {
       documentRelayFeeBps: 100,
       documentRelayMinRemainingSats: 1,
       documentRelayMaxHops: 4,
+      // Opt-in only: approveDocumentRequest({ forceReveal: true }) without settlement.
+      allowForceDocumentKeyReveal: false,
       // Re-send canonical DocumentPublish + pricing to new inbound peers.
       announceDocumentsOnPeerConnect: false,
       // If local inventory doesn't answer, optionally relay INVENTORY_REQUEST.
@@ -3832,12 +3834,18 @@ class Peer extends Service {
     if (!/^[0-9a-f]{64}$/.test(contentHashHex)) {
       return { ok: false, error: 'contentHashHex must be 64 hex chars' };
     }
+    const settlementId = opts.settlementId != null ? String(opts.settlementId).trim() : '';
+    const txid = opts.txid != null ? String(opts.txid).trim() : '';
+    // Require a settlement handle so callers cannot authorize from public hash echo alone.
+    if (!settlementId && !txid) {
+      return { ok: false, error: 'settlementId or txid required to authorize key reveal' };
+    }
     const key = `${documentId}|${contentHashHex}`;
     this._authorizedDocumentKeyReveals.set(key, {
       documentId,
       contentHashHex,
-      settlementId: opts.settlementId || null,
-      txid: opts.txid || null,
+      settlementId: settlementId || null,
+      txid: txid || null,
       authorizedAt: Date.now()
     });
     while (this._authorizedDocumentKeyReveals.size > 4096) {
@@ -3858,6 +3866,11 @@ class Peer extends Service {
    */
   _mayRevealDocumentContentKey (documentId, paymentHashHex, parsed, opts = {}) {
     if (opts.forceReveal === true) {
+      if (this.settings.allowForceDocumentKeyReveal !== true) {
+        this.emit('warning',
+          '[FABRIC:PEER] forceReveal ignored (set allowForceDocumentKeyReveal to enable)');
+        return false;
+      }
       return requestMatchesPaymentHash(parsed, paymentHashHex);
     }
     const authKey = `${String(documentId)}|${String(paymentHashHex || '').toLowerCase()}`;
@@ -4117,17 +4130,64 @@ class Peer extends Service {
     this._capDocumentRelayRoutes();
     const msg = Message.fromVector(['DocumentRequest', JSON.stringify(fwd.body)]);
     msg.signWithKey(this.key);
-    this.broadcast(msg.toBuffer());
+    const sent = this._sendPrivateRelayedDocumentRequest(msg, origin, parsed);
+    if (!sent) {
+      this.emit('warning', '[FABRIC:PEER] private relay: no outbound peer for rewritten DocumentRequest');
+      return;
+    }
     this.emit('documentRequestRelayed', {
       feeSats: fwd.feeSats,
       maxSatsOut: fwd.maxSatsOut,
       routeId: fwd.body.routeId,
       documentId: fwd.body.document,
-      origin
+      origin,
+      directed: true
     });
     if (originalMessage && this.settings.debug) {
-      this.emit('debug', '[FABRIC:PEER] Rewrote DocumentRequest (did not bit-identical relay)');
+      this.emit('debug', '[FABRIC:PEER] Rewrote DocumentRequest (directed; did not mesh-broadcast)');
     }
+  }
+
+  /**
+   * Deliver a rewritten private DocumentRequest without mesh broadcast.
+   * Preference: onion `relayPath` → explicit `nextPeer` → fan-out to TCP peers
+   * other than the inbound origin.
+   * @param {Message} msg signed DocumentRequest
+   * @param {{ name?: string }|null} origin
+   * @param {object} parsed inbound request body
+   * @returns {boolean}
+   */
+  _sendPrivateRelayedDocumentRequest (msg, origin, parsed = {}) {
+    if (!msg) return false;
+    const path = Array.isArray(parsed.relayPath) ? parsed.relayPath : null;
+    if (path && path.length) {
+      return this.sendOnion(path, msg);
+    }
+
+    const next = parsed.nextPeer != null ? String(parsed.nextPeer).trim() : '';
+    if (next) {
+      const addr = (this.connections && this.connections[next])
+        ? next
+        : (this._resolveToAddress(next) || this._resolveAddressByXOnly(next));
+      if (addr && this.connections[addr] && this.connections[addr]._writeFabric) {
+        if (!(origin && origin.name && addr === origin.name)) {
+          this.connections[addr]._writeFabric(msg.toBuffer());
+          return true;
+        }
+      }
+    }
+
+    const buf = msg.toBuffer();
+    let wrote = 0;
+    for (const addr of Object.keys(this.connections || {})) {
+      if (origin && origin.name && addr === origin.name) continue;
+      const conn = this.connections[addr];
+      if (conn && typeof conn._writeFabric === 'function') {
+        conn._writeFabric(buf);
+        wrote += 1;
+      }
+    }
+    return wrote > 0;
   }
 
   /**

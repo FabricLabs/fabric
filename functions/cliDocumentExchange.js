@@ -590,6 +590,67 @@ class CliDocumentExchange {
    * @param {string} txid
    * @returns {Promise<ExchangeResult>}
    */
+  /**
+   * Paid sessions with a payment address require verified L1 (or Hub) funding
+   * before delivery is requested — never proceed on a skipped/failed verify.
+   * @param {object} session
+   * @returns {boolean}
+   */
+  _sessionRequiresPaymentProof (session) {
+    if (!session) return false;
+    const amount = Math.round(Number(session.amountSats || 0));
+    if (!Number.isFinite(amount) || amount <= 0) return false;
+    const addr = String(
+      session.paymentAddress ||
+      (session.htlc && session.htlc.paymentAddress) ||
+      ''
+    ).trim();
+    return !!addr;
+  }
+
+  /**
+   * Verify txid pays session.paymentAddress for at least amountSats.
+   * @param {object} session
+   * @param {string} txid
+   * @returns {Promise<{ ok: boolean, matchedSats?: number, error?: string }>}
+   */
+  async verifyL1PaymentForSession (session, txid) {
+    const bitcoin = this._bitcoin();
+    if (!bitcoin || typeof bitcoin._makeRPCRequest !== 'function') {
+      return { ok: false, error: 'L1 verify required: configure bitcoind or hubRpcUrl' };
+    }
+    const paymentAddress = String(
+      session.paymentAddress ||
+      (session.htlc && session.htlc.paymentAddress) ||
+      ''
+    ).trim();
+    const amountSats = Math.round(Number(session.amountSats || 0));
+    if (!paymentAddress || !(amountSats > 0)) {
+      return { ok: false, error: 'session missing paymentAddress or amountSats' };
+    }
+    try {
+      const raw = await bitcoin._makeRPCRequest('getrawtransaction', [String(txid).trim(), true]);
+      const vouts = (raw && raw.vout) || [];
+      let matched = 0;
+      for (const v of vouts) {
+        const addrs = (v.scriptPubKey && (v.scriptPubKey.addresses || (v.scriptPubKey.address ? [v.scriptPubKey.address] : []))) || [];
+        if (addrs.includes(paymentAddress)) {
+          matched += Math.round((v.value || 0) * 1e8);
+        }
+      }
+      if (matched < amountSats) {
+        return {
+          ok: false,
+          matchedSats: matched,
+          error: `L1 payment insufficient: found ${matched} sats to ${paymentAddress}, need ${amountSats}`
+        };
+      }
+      return { ok: true, matchedSats: matched };
+    } catch (e) {
+      return { ok: false, error: `L1 verify failed: ${e && e.message ? e.message : String(e)}` };
+    }
+  }
+
   async confirm (sessionKey, txid) {
     if (!sessionKey || !txid) {
       return { ok: false, error: 'Usage: /confirm <settlementId|documentId> <txid>' };
@@ -620,6 +681,7 @@ class CliDocumentExchange {
         }
         rememberSettlement(this.paidSettlements, session);
         session.status = 'confirmed';
+        session.txid = tx;
         return {
           ok: true,
           session,
@@ -630,28 +692,12 @@ class CliDocumentExchange {
       }
     }
 
-    const bitcoin = this._bitcoin();
-    if (bitcoin && typeof bitcoin._makeRPCRequest === 'function' && session.paymentAddress && session.amountSats > 0) {
-      try {
-        const raw = await bitcoin._makeRPCRequest('getrawtransaction', [tx, true]);
-        const vouts = (raw && raw.vout) || [];
-        let matched = 0;
-        for (const v of vouts) {
-          const addrs = (v.scriptPubKey && (v.scriptPubKey.addresses || (v.scriptPubKey.address ? [v.scriptPubKey.address] : []))) || [];
-          if (addrs.includes(session.paymentAddress)) {
-            matched += Math.round((v.value || 0) * 1e8);
-          }
-        }
-        if (matched < session.amountSats) {
-          return {
-            ok: false,
-            error: `L1 payment insufficient: found ${matched} sats to ${session.paymentAddress}, need ${session.amountSats}`
-          };
-        }
-        this._notice(`L1 verified ${matched} sats to ${session.paymentAddress} in ${tx}`);
-      } catch (e) {
-        this._warn(`L1 verify skipped/failed: ${e.message}`);
+    if (this._sessionRequiresPaymentProof(session)) {
+      const verified = await this.verifyL1PaymentForSession(session, tx);
+      if (!verified.ok) {
+        return { ok: false, error: verified.error || 'L1 verify failed' };
       }
+      this._notice(`L1 verified ${verified.matchedSats} sats to ${session.paymentAddress} in ${tx}`);
     }
 
     if (isDuplicateSettlement(this.paidSettlements, session)) {

@@ -109,4 +109,85 @@ describe('documentOfferBook + blobs + relay', function () {
     assert.ok(s.settlementId);
     assert.strictEqual(s.amountSats, 1000);
   });
+
+  it('pickBlobPlan diversifies unsealed sellers but locks sealed to one seller', function () {
+    const book = new DocumentOfferBook();
+    book.ingestInventoryResponse({
+      origin: 'seller-a',
+      peerScore: 500,
+      latencyMs: 10,
+      items: [{
+        id: 'unsealed-doc',
+        rateSats: 20,
+        contentHash: 'aa'.repeat(32),
+        sealed: false,
+        blobs: [
+          { index: 0, total: 2, blobHashHex: 'b1'.repeat(32), rateSats: 10, contentHash: 'c1'.repeat(32) },
+          { index: 1, total: 2, blobHashHex: 'b2'.repeat(32), rateSats: 10, contentHash: 'c2'.repeat(32) }
+        ]
+      }]
+    });
+    book.ingestInventoryResponse({
+      origin: 'seller-b',
+      peerScore: 500,
+      latencyMs: 10,
+      items: [{
+        id: 'unsealed-doc',
+        rateSats: 20,
+        contentHash: 'aa'.repeat(32),
+        sealed: false,
+        blobs: [
+          { index: 0, total: 2, blobHashHex: 'b1'.repeat(32), rateSats: 10, contentHash: 'c1'.repeat(32) },
+          { index: 1, total: 2, blobHashHex: 'b2'.repeat(32), rateSats: 10, contentHash: 'c2'.repeat(32) }
+        ]
+      }]
+    });
+    const unsealed = book.pickBlobPlan('unsealed-doc', 2);
+    assert.strictEqual(unsealed.size, 2);
+    const sellersUnsealed = new Set([
+      String(unsealed.get(0).sellerAddress),
+      String(unsealed.get(1).sellerAddress)
+    ]);
+    assert.strictEqual(sellersUnsealed.size, 2, 'unsealed plan should diversify sellers');
+
+    const sealedBook = new DocumentOfferBook();
+    sealedBook.ingestInventoryResponse({
+      origin: 'seal-a',
+      peerScore: 900,
+      latencyMs: 5,
+      items: [{
+        id: 'sealed-doc',
+        rateSats: 100,
+        contentHash: 'dd'.repeat(32),
+        sealed: true,
+        blobs: [
+          { index: 0, total: 2, blobHashHex: 'e1'.repeat(32), rateSats: 50 },
+          { index: 1, total: 2, blobHashHex: 'e2'.repeat(32), rateSats: 50 }
+        ]
+      }]
+    });
+    sealedBook.ingestInventoryResponse({
+      origin: 'seal-b',
+      peerScore: 900,
+      latencyMs: 5,
+      items: [{
+        id: 'sealed-doc',
+        rateSats: 90,
+        contentHash: 'dd'.repeat(32),
+        sealed: true,
+        blobs: [
+          { index: 0, total: 2, blobHashHex: 'e1'.repeat(32), rateSats: 45 },
+          { index: 1, total: 2, blobHashHex: 'e2'.repeat(32), rateSats: 45 }
+        ]
+      }]
+    });
+    const sealed = sealedBook.pickBlobPlan('sealed-doc', 2);
+    assert.strictEqual(sealed.size, 2);
+    assert.strictEqual(
+      String(sealed.get(0).sellerAddress),
+      String(sealed.get(1).sellerAddress),
+      'sealed plan must keep a single seller for all blobs'
+    );
+    assert.strictEqual(sealed.get(0).sealed, true);
+  });
 });

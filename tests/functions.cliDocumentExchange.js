@@ -307,7 +307,6 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
       paymentAddress: 'bcrt1qpayme',
       network: 'regtest'
     });
-    const warnings = [];
     const notices = [];
     const bitcoin = {
       async _makeRPCRequest (method, params) {
@@ -331,7 +330,6 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
       getPeer: () => peer,
       getBitcoin: () => bitcoin,
       getSettings: () => ({}),
-      onWarning: (m) => warnings.push(m),
       onNotice: (m) => notices.push(m)
     });
     exchange.purchaseSessions.set(session.settlementId, session);
@@ -351,6 +349,52 @@ describe('functions/cliDocumentExchange (headless CLI surface)', function () {
     const fail = await exchange.confirm(short.settlementId, txid);
     assert.ok(!fail.ok);
     assert.match(fail.error, /insufficient/);
+  });
+
+  it('confirm fails closed when paid L1 verify is missing or throws', async function () {
+    const txid = '12'.repeat(32);
+    const session = createDocumentPurchaseSession({
+      documentId: 'doc-failclose',
+      seller: 'seller:1',
+      contentHashHex: '34'.repeat(32),
+      amountSats: 1000,
+      paymentAddress: 'bcrt1qfailclose',
+      network: 'regtest'
+    });
+    const peer = { settings: {}, requestDocument () { return true; } };
+
+    const noBtc = new CliDocumentExchange({
+      getPeer: () => peer,
+      getBitcoin: () => null,
+      getSettings: () => ({})
+    });
+    noBtc.purchaseSessions.set(session.settlementId, session);
+    const missing = await noBtc.confirm(session.settlementId, txid);
+    assert.ok(!missing.ok);
+    assert.match(missing.error, /L1 verify required|bitcoind|hubRpcUrl/i);
+    assert.notStrictEqual(session.status, 'delivery_pending');
+    assert.notStrictEqual(session.status, 'confirmed');
+
+    const session2 = createDocumentPurchaseSession({
+      documentId: 'doc-failclose-2',
+      seller: 'seller:1',
+      contentHashHex: '35'.repeat(32),
+      amountSats: 1000,
+      paymentAddress: 'bcrt1qfailclose',
+      network: 'regtest'
+    });
+    const throwing = new CliDocumentExchange({
+      getPeer: () => peer,
+      getBitcoin: () => ({
+        async _makeRPCRequest () { throw new Error('rpc down'); }
+      }),
+      getSettings: () => ({})
+    });
+    throwing.purchaseSessions.set(session2.settlementId, session2);
+    const failed = await throwing.confirm(session2.settlementId, txid);
+    assert.ok(!failed.ok);
+    assert.match(failed.error, /L1 verify failed/);
+    assert.ok(!throwing.paidSettlements.has(session2.dedupeKey));
   });
 
   it('claimWatch requires claim txid or hub reveal; refuses refunded sessions', async function () {

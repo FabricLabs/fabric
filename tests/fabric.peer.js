@@ -1014,9 +1014,16 @@ describe('@fabric/core/types/peer', function () {
           documentRelayMaxHops: 4
         });
         let relayedIdentical = 0;
+        let broadcastCalls = 0;
         peer.relayFrom = () => { relayedIdentical++; };
+        peer.broadcast = () => { broadcastCalls++; };
         const outs = [];
-        peer.broadcast = (buf) => { outs.push(buf); };
+        peer.connections['seller:next'] = {
+          _writeFabric: (buf) => { outs.push(buf); }
+        };
+        peer.connections['buyer:1'] = {
+          _writeFabric: () => { throw new Error('must not bounce rewrite to origin'); }
+        };
         const msg = Message.fromVector(['DocumentRequest', JSON.stringify({
           document: 'missing-doc',
           maxSats: 100,
@@ -1026,6 +1033,7 @@ describe('@fabric/core/types/peer', function () {
         msg.signWithKey(peer.key);
         peer._handleFabricMessage(msg.toBuffer(), { name: 'buyer:1' }, null);
         assert.strictEqual(relayedIdentical, 0);
+        assert.strictEqual(broadcastCalls, 0, 'private relay must not mesh-broadcast');
         assert.strictEqual(outs.length, 1);
         const body = JSON.parse(Message.fromBuffer(outs[0]).data);
         assert.strictEqual(body.document, 'missing-doc');
@@ -1033,6 +1041,74 @@ describe('@fabric/core/types/peer', function () {
         assert.strictEqual(body.relayHop, 2);
         assert.ok(body.routeId);
         assert.notStrictEqual(body.routeId, 'aabbccdd');
+      });
+      it('private relay honors nextPeer for a single directed hop', function () {
+        const peer = new Peer({
+          listen: false,
+          peersDb: null,
+          relayPrivateDocumentRequests: true,
+          documentRelayFeeSats: 5,
+          documentRelayMaxHops: 4
+        });
+        const outs = { a: 0, b: 0 };
+        peer.connections['peer:a'] = { _writeFabric: () => { outs.a++; } };
+        peer.connections['peer:b'] = { _writeFabric: () => { outs.b++; } };
+        const msg = Message.fromVector(['DocumentRequest', JSON.stringify({
+          document: 'missing-doc',
+          maxSats: 50,
+          relayHop: 2,
+          nextPeer: 'peer:b'
+        })]);
+        msg.signWithKey(peer.key);
+        peer._handleFabricMessage(msg.toBuffer(), { name: 'buyer:9' }, null);
+        assert.strictEqual(outs.a, 0);
+        assert.strictEqual(outs.b, 1);
+      });
+      it('authorizeDocumentKeyReveal requires settlementId or txid', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        const missing = peer.authorizeDocumentKeyReveal({
+          documentId: 'd1',
+          contentHashHex: 'ab'.repeat(32)
+        });
+        assert.strictEqual(missing.ok, false);
+        assert.match(missing.error, /settlementId or txid/);
+        const ok = peer.authorizeDocumentKeyReveal({
+          documentId: 'd1',
+          contentHashHex: 'ab'.repeat(32),
+          settlementId: 's1'
+        });
+        assert.strictEqual(ok.ok, true);
+      });
+      it('forceReveal is ignored unless allowForceDocumentKeyReveal is set', function () {
+        const peer = new Peer({
+          listen: false,
+          peersDb: null,
+          autoFulfillDocumentRequests: false,
+          allowForceDocumentKeyReveal: false,
+          sealPricedDocuments: true
+        });
+        peer._publishDocument('doc-force', 'secret-force', 50);
+        const meta = peer._getDocumentSealedMeta('doc-force');
+        assert.ok(meta && meta.paymentHashHex);
+        const pending = peer._queuePendingDocumentRequest('doc-force', { name: 'buyer:f' }, {
+          document: 'doc-force',
+          contentHashHex: meta.paymentHashHex
+        });
+        peer.connections['buyer:f'] = { _writeFabric: () => {} };
+        assert.strictEqual(
+          peer._mayRevealDocumentContentKey('doc-force', meta.paymentHashHex, {
+            contentHashHex: meta.paymentHashHex
+          }, { forceReveal: true }),
+          false
+        );
+        peer.settings.allowForceDocumentKeyReveal = true;
+        assert.strictEqual(
+          peer._mayRevealDocumentContentKey('doc-force', meta.paymentHashHex, {
+            contentHashHex: meta.paymentHashHex
+          }, { forceReveal: true }),
+          true
+        );
+        assert.ok(pending.key);
       });
     });
 
