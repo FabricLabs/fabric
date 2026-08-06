@@ -24,7 +24,7 @@ Inbound `P2P_RELAY` unwraps the inner AMP body for local handling, then forwards
 ## Logical first-writer-wins registration
 Exact wire duplicates are already dropped via the FIFO-capped wire-hash cache (`PEER_MAX_WIRE_HASH_CACHE`). Separately, **registration-style** frames also no-op when the *logical* payload was already claimed — including **re-signed** copies of the same body (different AMP signature → different wire hash). Types include:
 
-- `CONTRACT_PUBLISH` (Actor id — no allow-list merge / emit / relay on republish)
+- `CONTRACT_PUBLISH` (Actor id — no allow-list merge / emit / relay on republish; wire signer must already appear in body `parties`/`validators`/`owners`/`members`/`authorities` when those arrays are present; patch allow-list is built **only** from those arrays — never from AMP signer alone, so a content-identical front-run cannot elevate an attacker)
 - `DOCUMENT_PUBLISH` / `DocumentPublish` (`documentId` + purchase content hash)
 - `P2P_DOCUMENT_PUBLISH` pricing (`hash` + `rate` + `contentHash`)
 - `CONTRACT_PROPOSAL` (`contractId` + merkle root)

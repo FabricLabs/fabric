@@ -39,6 +39,7 @@ JS-canonical protocol for 0.1.0; Lightning-style wire preimage; unsigned documen
 - **Coverage:** Codecov project `threshold: 1%` (expanding c8 allowlist); more `DocumentBlobTransferBook` ingest edges + sidechain journal/snapshot summarize coverage.
 - **`P2P_FORWARD` peel:** skip inbound wire-credit debit for peeled/relayed-as-is inners; `P2P_PEER_ANNOUNCE` local-only (no candidate enqueue); logical-register punish origin null on peel (incl. `CONTRACT_PUBLISH` hijack).
 - **Outermost-only flood:** peeled / `skipRelayFlood` inners no longer `relayFrom` under the TCP last hop — unified `meshDeliveryContext` (`allowMeshRelay` / `allowTcpOriginSideEffects`) for chat, alias, gossip, peering, contracts, `BitcoinBlock`, `DocumentRequest`, and inventory (no fulfill/queue/reply to TCP last hop on peel / foreign RELAY).
+- **CONTRACT_PUBLISH front-run:** patch allow-list is authority-arrays only (never AMP wire signer alone); non-party first publishers are rejected **before** logical registration so they cannot burn the content-addressed slot.
 - **Coverage / Codacy:** claimWatch hub-reveal + claim-witness, mature refund broadcast, AMP-signer refuse, sealed content-key store helpers; Semgrep/Opengrep exclude for path-hardened `cliDocumentExchange` / `contractSidechainLocal` (containment already tested).
 
 **Public readiness**

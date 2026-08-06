@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const Peer = require('../types/peer');
 const Message = require('../types/message');
 const Key = require('../types/key');
+const Actor = require('../types/actor');
 const assert = require('assert');
 const net = require('net');
 
@@ -1512,7 +1513,7 @@ describe('@fabric/core/types/peer', function () {
         assert.strictEqual(peer._signerMayPatchContract(contractId, attackerPub), false);
 
         // Replay identical body with attacker as wire signer only.
-        peer._registerContract(definition, attackerPub);
+        assert.strictEqual(peer._registerContract(definition, attackerPub), true);
 
         assert.strictEqual(
           peer._signerMayPatchContract(contractId, attackerPub),
@@ -1536,6 +1537,56 @@ describe('@fabric/core/types/peer', function () {
         }, { name: 'attacker' });
         assert.ok(warned);
         assert.strictEqual(peer._state.content.contracts[contractId].value, 1);
+      });
+      it('CONTRACT_PUBLISH front-run by non-party does not register or burn logical slot', function () {
+        const peer = new Peer({ listen: false, peersDb: null });
+        const Key = require('../types/key');
+        const Message = require('../types/message');
+        const owner = new Key();
+        const attacker = new Key();
+        const ownerPub = String(owner.pubkey).toLowerCase();
+        const attackerPub = String(attacker.pubkey).toLowerCase();
+        const definition = {
+          id: 'front-run-contract',
+          state: { value: 1 },
+          parties: [ownerPub]
+        };
+
+        // Attacker broadcasts identical body first — must be rejected.
+        assert.strictEqual(peer._registerContract(definition, attackerPub), false);
+        assert.strictEqual(Object.keys(peer.contracts).length, 0);
+
+        const wireAttacker = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)])
+          .signWithKey(attacker);
+        let publishes = 0;
+        peer.on('contract:publish', () => { publishes++; });
+        peer._handleGenericMessage({
+          type: 'CONTRACT_PUBLISH',
+          actor: { publicKey: attackerPub },
+          object: definition
+        }, { name: 'attacker' }, null, wireAttacker);
+        assert.strictEqual(publishes, 0);
+        assert.strictEqual(Object.keys(peer.contracts).length, 0);
+
+        // Victim still wins first registration (logical slot not burned).
+        const wireOwner = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)])
+          .signWithKey(owner);
+        peer._handleGenericMessage({
+          type: 'CONTRACT_PUBLISH',
+          actor: { publicKey: ownerPub },
+          object: definition
+        }, { name: 'owner' }, null, wireOwner);
+        assert.strictEqual(publishes, 1);
+        const contractId = Object.keys(peer.contracts)[0];
+        assert.ok(contractId);
+        assert.ok(peer._signerMayPatchContract(contractId, ownerPub));
+        assert.strictEqual(peer._signerMayPatchContract(contractId, attackerPub), false);
+
+        // Wire signer alone (no parties) never grants patch rights.
+        const orphan = { id: 'orphan-no-parties', state: { n: 0 } };
+        assert.strictEqual(peer._registerContract(orphan, attackerPub), true);
+        const orphanId = (new Actor(orphan)).id;
+        assert.strictEqual(peer._signerMayPatchContract(orphanId, attackerPub), false);
       });
       it('CONTRACT_PUBLISH republish via generic handler keeps original allow-list', function () {
         const peer = new Peer({ listen: false, peersDb: null });

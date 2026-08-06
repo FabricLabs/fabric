@@ -211,6 +211,54 @@ function meshDeliveryContext (opts = {}, originName = null) {
 }
 
 /**
+ * Pubkeys declared as patch authorities on a CONTRACT_PUBLISH body.
+ * @param {object} object
+ * @returns {Set<string>}
+ * @private
+ */
+function collectContractAuthorityPubkeys (object) {
+  const set = new Set();
+  const add = (hex) => {
+    const h = normalizePeerPubkeyHex(hex);
+    if (/^[0-9a-f]{64}$/.test(h) || /^[0-9a-f]{66}$/.test(h)) set.add(h);
+  };
+  const def = object && typeof object === 'object' ? object : {};
+  const lists = [def.validators, def.parties, def.owners, def.members, def.authorities];
+  for (const list of lists) {
+    if (!Array.isArray(list)) continue;
+    for (const entry of list) {
+      if (typeof entry === 'string') add(entry);
+      else if (entry && typeof entry === 'object') {
+        add(entry.pubkey || entry.publicKey || entry.id);
+      }
+    }
+  }
+  return set;
+}
+
+/**
+ * Whether {@code pubkeyHex} is present in an authority set (x-only ↔ compressed tolerant).
+ * @param {Set<string>} authorities
+ * @param {string} pubkeyHex
+ * @returns {boolean}
+ * @private
+ */
+function authoritySetHasPubkey (authorities, pubkeyHex) {
+  const h = normalizePeerPubkeyHex(pubkeyHex);
+  if (!h || !authorities || !authorities.size) return false;
+  if (authorities.has(h)) return true;
+  if (h.length === 64) {
+    for (const entry of authorities) {
+      if (typeof entry === 'string' && entry.length === 66 && entry.slice(2) === h) return true;
+    }
+  } else if (h.length === 66) {
+    const xOnly = h.slice(2);
+    if (authorities.has(xOnly)) return true;
+  }
+  return false;
+}
+
+/**
  * Mesh types that MUST be forwarded bit-identical (author + signature preserved).
  * Relays never hop-re-sign these — wire-hash dedup and end-to-end / multisig verify depend on it.
  * Local agents may still *originate* new messages of these types signed with their own key.
@@ -3061,6 +3109,14 @@ class Peer extends Service {
         this.emit('debug', `Handling peer contract publish: ${JSON.stringify(msg.object)}`);
         if (!msg.object || typeof msg.object !== 'object') break;
         const publishedId = (new Actor(msg.object)).id;
+        // Authz before logical claim: a front-run signed by a non-party must not
+        // burn the content-addressed registration slot for the real publisher.
+        if (!this._contractPublishSignerAuthorized(msg.object, signerPubkeyHex)) {
+          this.emit('warning',
+            `[FABRIC:PEER] CONTRACT_PUBLISH rejected for ${publishedId}: ` +
+            'wire signer is not listed in parties/validators/owners/members/authorities');
+          break;
+        }
         const claimPub = this._claimLogicalRegistrationOrPunish(
           'CONTRACT_PUBLISH', msg.object, signerPubkeyHex, punishOrigin);
         if (claimPub.duplicate) {
@@ -3070,7 +3126,7 @@ class Peer extends Service {
           }
           break;
         }
-        this._registerContract(msg.object, signerPubkeyHex);
+        if (!this._registerContract(msg.object, signerPubkeyHex)) break;
         this.emit('contract:publish', {
           contract: publishedId,
           object: msg.object,
@@ -4325,6 +4381,27 @@ class Peer extends Service {
     return this;
   }
 
+  /**
+   * When a publish body declares authority arrays, the AMP wire signer must be
+   * one of them. Bodies with no authorities are allowed (observe-only; empty
+   * patch allow-list). Missing signer (local seed) is allowed.
+   * @param {object} object
+   * @param {string|null} signerPubkeyHex
+   * @returns {boolean}
+   */
+  _contractPublishSignerAuthorized (object, signerPubkeyHex = null) {
+    const authorities = collectContractAuthorityPubkeys(object);
+    if (!authorities.size) return true;
+    const pub = normalizePeerPubkeyHex(signerPubkeyHex);
+    if (!pub) return true;
+    return authoritySetHasPubkey(authorities, pub);
+  }
+
+  /**
+   * @param {object} object
+   * @param {string|null} [publisherPubkeyHex]
+   * @returns {boolean} true when newly registered (or already present no-op)
+   */
   _registerContract (object, publisherPubkeyHex = null) {
     this.emit('debug', `Registering contract: ${JSON.stringify(object, null, '  ')}`);
     const actor = new Actor(object);
@@ -4337,28 +4414,40 @@ class Peer extends Service {
         this.emit('debug',
           `[FABRIC:PEER] Ignoring CONTRACT_PUBLISH republish for ${actor.id} (allow-list unchanged)`);
       }
-      return this;
+      return true;
+    }
+
+    if (!this._contractPublishSignerAuthorized(object, publisherPubkeyHex)) {
+      this.emit('warning',
+        `[FABRIC:PEER] CONTRACT_PUBLISH rejected for ${actor.id}: ` +
+        'wire signer is not listed in parties/validators/owners/members/authorities');
+      return false;
     }
 
     this.contracts[actor.id] = actor;
     this._state.content.contracts[actor.id] = object.state;
+    // Patch rights come only from declared authority arrays — never from the AMP
+    // wire signer alone (front-run with identical body must not elevate attacker).
     this._mergeContractPatchAllowList(actor.id, object, publisherPubkeyHex);
 
     this.commit();
     this.emit('contractset', this.contracts);
 
-    return this;
+    return true;
   }
 
   /**
    * Build the set of pubkeys allowed to apply CONTRACT_MESSAGE ops for a newly
    * registered contract. Called only on first registration of a contract id —
    * republishes must not invoke this (see {@link Peer#_registerContract}).
+   * Membership is taken **only** from body authority arrays (`parties`,
+   * `validators`, `owners`, `members`, `authorities`). The wire signer is never
+   * granted rights unless already listed there.
    * @param {string} contractId
    * @param {object} object contract publish body
-   * @param {string|null} publisherPubkeyHex wire signer of the first publish
+   * @param {string|null} [_publisherPubkeyHex] ignored (kept for call-site compat)
    */
-  _mergeContractPatchAllowList (contractId, object, publisherPubkeyHex) {
+  _mergeContractPatchAllowList (contractId, object, _publisherPubkeyHex = null) {
     const id = String(contractId || '');
     if (!id) return;
     let set = this._contractPatchAllowList[id];
@@ -4366,23 +4455,8 @@ class Peer extends Service {
       set = new Set();
       this._contractPatchAllowList[id] = set;
     }
-    // Store x-only (or raw) form via normalizePeerPubkeyHex so it matches
-    // signerPubkeyHex from wire verify / actor.publicKey (compressed → x-only).
-    const add = (hex) => {
-      const h = normalizePeerPubkeyHex(hex);
-      if (/^[0-9a-f]{64}$/.test(h) || /^[0-9a-f]{66}$/.test(h)) set.add(h);
-    };
-    add(publisherPubkeyHex);
-    const def = object && typeof object === 'object' ? object : {};
-    const lists = [def.validators, def.parties, def.owners, def.members, def.authorities];
-    for (const list of lists) {
-      if (!Array.isArray(list)) continue;
-      for (const entry of list) {
-        if (typeof entry === 'string') add(entry);
-        else if (entry && typeof entry === 'object') {
-          add(entry.pubkey || entry.publicKey || entry.id);
-        }
-      }
+    for (const hex of collectContractAuthorityPubkeys(object)) {
+      set.add(hex);
     }
   }
 

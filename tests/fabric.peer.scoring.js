@@ -92,12 +92,13 @@ describe('@fabric/core Peer scoring / misbehavior', function () {
     assert.strictEqual(wasDestroyed(), true);
   });
 
-  it('CONTRACT_PUBLISH logical hijack deranks attacker by hijack penalty (no disconnect)', function () {
+  it('CONTRACT_PUBLISH non-party re-sign is rejected before claim (no hijack path, no disconnect)', function () {
     const peer = offlinePeer();
     peer.relayFrom = function () {};
     const owner = new Key();
     const attacker = new Key();
     const ownerPub = String(owner.pubkey).toLowerCase();
+    const attackerPub = String(attacker.pubkey).toLowerCase();
     const attackerOrigin = '127.0.0.1:hijack';
     const wasDestroyed = seedScore(peer, attackerOrigin, 'peer-hijack', 100);
     const definition = { id: 'score-hijack', state: { v: 1 }, parties: [ownerPub] };
@@ -111,19 +112,52 @@ describe('@fabric/core Peer scoring / misbehavior', function () {
       object: definition
     }, { name: 'owner' }, null, wireOwner);
 
+    // Non-party AMP signer is rejected before logical registration — no hijack
+    // soft-punish path (and no allow-list elevation).
     peer._handleGenericMessage({
       type: 'CONTRACT_PUBLISH',
-      actor: { publicKey: String(attacker.pubkey).toLowerCase() },
+      actor: { publicKey: attackerPub },
       object: definition
     }, { name: attackerOrigin }, null, wireAttacker);
 
+    assert.strictEqual(peer._state.peers['peer-hijack'].score, 100);
+    assert.strictEqual(wasDestroyed(), false);
+    const contractId = Object.keys(peer.contracts)[0];
+    assert.strictEqual(peer._signerMayPatchContract(contractId, attackerPub), false);
+  });
+
+  it('CONTRACT_PUBLISH logical hijack deranks when a co-party re-signs after first writer', function () {
+    const peer = offlinePeer();
+    peer.relayFrom = function () {};
+    const owner = new Key();
+    const coParty = new Key();
+    const ownerPub = String(owner.pubkey).toLowerCase();
+    const coPub = String(coParty.pubkey).toLowerCase();
+    const coOrigin = '127.0.0.1:hijack-co';
+    const wasDestroyed = seedScore(peer, coOrigin, 'peer-hijack-co', 100);
+    // Both listed — second publisher is authorized but still a logical duplicate.
+    const definition = { id: 'score-hijack-co', state: { v: 1 }, parties: [ownerPub, coPub] };
+
+    const wireOwner = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(owner);
+    const wireCo = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(coParty);
+
+    peer._handleGenericMessage({
+      type: 'CONTRACT_PUBLISH',
+      actor: { publicKey: ownerPub },
+      object: definition
+    }, { name: 'owner' }, null, wireOwner);
+
+    peer._handleGenericMessage({
+      type: 'CONTRACT_PUBLISH',
+      actor: { publicKey: coPub },
+      object: definition
+    }, { name: coOrigin }, null, wireCo);
+
     assert.strictEqual(
-      peer._state.peers['peer-hijack'].score,
+      peer._state.peers['peer-hijack-co'].score,
       100 - PEER_SCORE_LOGICAL_REGISTER_HIJACK_PENALTY
     );
     assert.strictEqual(wasDestroyed(), false);
-    const contractId = Object.keys(peer.contracts)[0];
-    assert.strictEqual(peer._signerMayPatchContract(contractId, String(attacker.pubkey).toLowerCase()), false);
   });
 
   it('BitcoinBlock logical duplicate soft-deranks once per window', function () {
