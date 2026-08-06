@@ -19,6 +19,8 @@ Inbound `P2P_RELAY` unwraps the inner AMP body for local handling, then forwards
 
 `P2P_RELAY` is **relay-as-is** for TCP peer pin checks (same class as `P2P_FORWARD`): the AMP author is the flood originator, not the immediate forwarder. Without that exemption, bit-identical flood would hard-ban honest neighbors on `signer-pin-mismatch`. When the outer AMP signer ≠ the TCP peer pin, unwrapped inners also use `relayedAsIs` so pin/integrity/nest failures do not cut that forwarder (direct senders who sign their own `P2P_RELAY` remain punishable).
 
+**Outermost-only flood:** after peel or `P2P_RELAY` unwrap (`skipRelayFlood`), inners are local-observe only. That includes `CONTRACT_MESSAGE`, `CONTRACT_PROPOSAL`, `BitcoinBlock` / `BITCOIN_BLOCK`, chat, alias, gossip, peering, and `CONTRACT_PUBLISH` — never a second `relayFrom` under the TCP last hop.
+
 ## Logical first-writer-wins registration
 Exact wire duplicates are already dropped via the FIFO-capped wire-hash cache (`PEER_MAX_WIRE_HASH_CACHE`). Separately, **registration-style** frames also no-op when the *logical* payload was already claimed — including **re-signed** copies of the same body (different AMP signature → different wire hash). Types include:
 

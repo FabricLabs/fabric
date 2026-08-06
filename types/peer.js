@@ -2144,7 +2144,10 @@ class Peer extends Service {
           }
         }
         this.emit('bitcoinBlock', { message, origin, socket });
-        if (origin && origin.name) this.relayFrom(origin.name, message);
+        // Peel / RELAY unwrap: outer envelope already floods — never mesh-relay the inner tip.
+        if (origin && origin.name && !opts.skipRelayFlood && !suppressTcpOriginPunish) {
+          this.relayFrom(origin.name, message);
+        }
         break;
       }
       case 'P2P_CHAIN_SYNC_REQUEST':
@@ -2437,8 +2440,9 @@ class Peer extends Service {
           socket,
           signer: signerPubkeyHex || null
         });
-        if (origin && origin.name) {
-          // Forward bit-identical — never hop-re-sign (preserves author / multisig).
+        // Forward bit-identical on direct receive only — peel / RELAY unwrap must not
+        // second-flood under the TCP last hop (outer envelope already paid).
+        if (origin && origin.name && !opts.skipRelayFlood && !suppressTcpOriginPunish) {
           this.relayFrom(origin.name, message);
         }
         break;
@@ -3024,8 +3028,9 @@ class Peer extends Service {
           origin,
           signer: signerPubkeyHex || null
         });
-        // Peel / relay-as-is: deliver locally only (no mesh relay under TCP last hop).
-        if (punishOrigin && origin && origin.name && wireMessage) {
+        // Peel / RELAY unwrap: deliver locally only (outer envelope already floods).
+        if (punishOrigin && origin && origin.name && wireMessage &&
+            handleOpts.skipRelayFlood !== true) {
           this.relayFrom(origin.name, wireMessage);
         }
         break;
@@ -3069,7 +3074,9 @@ class Peer extends Service {
           origin,
           signer: signerPubkeyHex || null
         });
-        if (origin && origin.name && wireMessage) {
+        // Same outermost-only flood rule as CONTRACT_PUBLISH / chat / gossip.
+        if (punishOrigin && origin && origin.name && wireMessage &&
+            handleOpts.skipRelayFlood !== true) {
           this.relayFrom(origin.name, wireMessage);
         }
         break;

@@ -816,4 +816,98 @@ describe('Peer P2P_FORWARD onion', function () {
     assert.strictEqual(peels.length, 0);
     assert.strictEqual(tryDecodeForward(bogus), null);
   });
+
+  it('peeled CONTRACT_MESSAGE / PROPOSAL / BitcoinBlock do not mesh-relay under last hop', function () {
+    const { buildContractProposalPayload } = require('../functions/contractProposal');
+    const destKey = new Key();
+    const relayKey = new Key();
+    const author = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic }
+    }));
+    const addr = '127.0.0.1:9701';
+    const otherAddr = '127.0.0.1:9702';
+    const otherWrites = [];
+    peer.connections[addr] = wireMock([]);
+    peer.connections[otherAddr] = wireMock(otherWrites);
+    peer.peers[addr] = {
+      id: 'honest-relay-flood',
+      publicKey: relayKey.public.encodeCompressed('hex')
+    };
+
+    const cases = [];
+
+    // CONTRACT_MESSAGE (no ops — emit + would-have-relayed)
+    cases.push(Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({
+      contract: 'peel-cm-1',
+      ops: []
+    })]).signWithKey(author));
+
+    // CONTRACT_PROPOSAL
+    const leaf = Message.fromVector(['P2P_CHAT_MESSAGE', 'leaf']).signWithKey(author);
+    const proposal = buildContractProposalPayload({
+      contractId: 'peel-cp-1',
+      messages: [leaf],
+      statePatch: []
+    });
+    cases.push(Message.fromVector(['CONTRACT_PROPOSAL', JSON.stringify(proposal)]).signWithKey(author));
+
+    // BitcoinBlock tip
+    cases.push(Message.fromVector(['BitcoinBlock', JSON.stringify({
+      hash: 'ab'.repeat(32),
+      height: 42
+    })]).signWithKey(author));
+
+    for (const payload of cases) {
+      otherWrites.length = 0;
+      const outer = wrapOnionPath({
+        path: [xOnlyFromKey(peer.key)],
+        payload,
+        key: relayKey
+      });
+      peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+      assert.strictEqual(
+        otherWrites.length,
+        0,
+        `peeled ${payload.type} must not mesh-relay under last hop`
+      );
+    }
+  });
+
+  it('P2P_RELAY-unwrapped CONTRACT_MESSAGE does not second-flood the inner', function () {
+    const destKey = new Key();
+    const forwarder = new Key();
+    const author = new Key();
+    const peer = new Peer(offlinePeerSettings({
+      key: { mnemonic: destKey.mnemonic }
+    }));
+    const addr = '127.0.0.1:9710';
+    const otherAddr = '127.0.0.1:9711';
+    const otherWrites = [];
+    peer.connections[addr] = wireMock([]);
+    peer.connections[otherAddr] = wireMock(otherWrites);
+    // Foreign-signed RELAY: pin is forwarder, AMP author is different → relayedAsIs.
+    peer.peers[addr] = {
+      id: 'honest-relay-inner',
+      publicKey: forwarder.public.encodeCompressed('hex')
+    };
+
+    const inner = Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({
+      contract: 'relay-cm-1',
+      ops: []
+    })]).signWithKey(author);
+    const outer = Message.fromVector(['P2P_RELAY', inner.toBuffer()]).signWithKey(author);
+
+    peer._handleFabricMessage(outer.toBuffer(), { name: addr }, null);
+
+    // Outer RELAY may fan out bit-identical; no additional first-class CONTRACT_MESSAGE flood.
+    for (const buf of otherWrites) {
+      const m = Message.fromBuffer(buf);
+      assert.strictEqual(
+        m.type,
+        'P2P_RELAY',
+        'mesh forward must be the outer RELAY only, not unwrapped CONTRACT_MESSAGE'
+      );
+    }
+  });
 });
