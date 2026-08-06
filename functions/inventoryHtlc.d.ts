@@ -1,0 +1,17 @@
+export function buildInventoryHtlcP2tr (...args: unknown[]): unknown;
+export function buildHtlcFundingHints (...args: unknown[]): unknown;
+export function buildDocumentOfferEscrow (...args: unknown[]): unknown;
+export function randomPreimage32 (...args: unknown[]): Buffer;
+export function hash256 (...args: unknown[]): Buffer | string;
+export function networkForFabricName (...args: unknown[]): unknown;
+export const TAPROOT_INTERNAL_NUMS: unknown;
+export function findP2trVoutForAddress (...args: unknown[]): unknown;
+export function buildTapLeafControlBlock (...args: unknown[]): unknown;
+export function buildClaimControlBlock (...args: unknown[]): unknown;
+export function prepareInventoryHtlcSellerClaimPsbt (...args: unknown[]): unknown;
+export function signAndExtractInventoryHtlcSellerClaim (...args: unknown[]): unknown;
+export function prepareInventoryHtlcBuyerRefundPsbt (...args: unknown[]): unknown;
+export function signAndExtractInventoryHtlcBuyerRefund (...args: unknown[]): unknown;
+export function extractPreimageFromWitnessStack (...args: unknown[]): unknown;
+export function extractPreimageFromClaimTx (...args: unknown[]): unknown;
+export function refundLocktimeMature (...args: unknown[]): boolean;
