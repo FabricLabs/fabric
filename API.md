@@ -868,6 +868,8 @@ Author Schnorr over signingString (gossip).
     * [new Bond()](#new_Bond_new)
     * [.deploy()](#Contract+deploy) ⇒ <code>String</code>
     * [.start()](#Contract+start) ⇒ [<code>Contract</code>](#Contract)
+    * [._taprootPolicyInputs([overrides])](#Contract+_taprootPolicyInputs) ⇒ <code>object</code>
+    * [.toAddress([network])](#Contract+toAddress) ⇒ <code>string</code>
     * [._appendWarning(msg)](#Service+_appendWarning) ⇒ [<code>Service</code>](#Service)
     * [.init()](#Service+init)
     * [.tick()](#Service+tick) ⇒ <code>Number</code>
@@ -910,6 +912,29 @@ Start the Contract.
 
 **Kind**: instance method of [<code>Bond</code>](#Bond)  
 **Returns**: [<code>Contract</code>](#Contract) - State "STARTED" iteration of the Contract.  
+<a name="Contract+_taprootPolicyInputs"></a>
+
+### bond.\_taprootPolicyInputs([overrides]) ⇒ <code>object</code>
+Shared spend-policy inputs for [#toTaprootContract](#toTaprootContract).
+Subclasses (e.g. Federation) may override to supply validators from state.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+
+| Param | Type |
+| --- | --- |
+| [overrides] | <code>object</code> | 
+
+<a name="Contract+toAddress"></a>
+
+### bond.toAddress([network]) ⇒ <code>string</code>
+Bech32m P2TR address for this contract's spend policy.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+
+| Param | Type |
+| --- | --- |
+| [network] | <code>string</code> | 
+
 <a name="Service+_appendWarning"></a>
 
 ### bond.\_appendWarning(msg) ⇒ [<code>Service</code>](#Service)
@@ -2026,6 +2051,8 @@ Loads [State](#State) into memory.
     * [new Contract()](#new_Contract_new)
     * [.deploy()](#Contract+deploy) ⇒ <code>String</code>
     * [.start()](#Contract+start) ⇒ [<code>Contract</code>](#Contract)
+    * [._taprootPolicyInputs([overrides])](#Contract+_taprootPolicyInputs) ⇒ <code>object</code>
+    * [.toAddress([network])](#Contract+toAddress) ⇒ <code>string</code>
     * [._appendWarning(msg)](#Service+_appendWarning) ⇒ [<code>Service</code>](#Service)
     * [.init()](#Service+init)
     * [.tick()](#Service+tick) ⇒ <code>Number</code>
@@ -2070,6 +2097,29 @@ Start the Contract.
 **Kind**: instance method of [<code>Contract</code>](#Contract)  
 **Overrides**: [<code>start</code>](#Service+start)  
 **Returns**: [<code>Contract</code>](#Contract) - State "STARTED" iteration of the Contract.  
+<a name="Contract+_taprootPolicyInputs"></a>
+
+### contract.\_taprootPolicyInputs([overrides]) ⇒ <code>object</code>
+Shared spend-policy inputs for [#toTaprootContract](#toTaprootContract).
+Subclasses (e.g. Federation) may override to supply validators from state.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| [overrides] | <code>object</code> | 
+
+<a name="Contract+toAddress"></a>
+
+### contract.toAddress([network]) ⇒ <code>string</code>
+Bech32m P2TR address for this contract's spend policy.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+
+| Param | Type |
+| --- | --- |
+| [network] | <code>string</code> | 
+
 <a name="Service+_appendWarning"></a>
 
 ### contract.\_appendWarning(msg) ⇒ [<code>Service</code>](#Service)
@@ -3535,6 +3585,7 @@ Create and manage sets of {Signer} instances with the Federation class.
     * [.verify(msg, sig)](#Federation+verify) ⇒ <code>Boolean</code>
     * [.createMultiSignature(msg)](#Federation+createMultiSignature) ⇒ <code>Object</code>
     * [.verifyMultiSignature(multiSig, threshold)](#Federation+verifyMultiSignature) ⇒ <code>Boolean</code>
+    * [._taprootPolicyInputs([overrides])](#Federation+_taprootPolicyInputs) ⇒ <code>object</code>
 
 <a name="new_Federation_new"></a>
 
@@ -3604,6 +3655,17 @@ Verifies a multi-signature against a message.
 | --- | --- | --- | --- |
 | multiSig | <code>Object</code> |  | The multi-signature object |
 | threshold | <code>Number</code> | <code>1</code> | Number of valid signatures required |
+
+<a name="Federation+_taprootPolicyInputs"></a>
+
+### federation.\_taprootPolicyInputs([overrides]) ⇒ <code>object</code>
+Federation validators live on consensus state, not only constructor settings.
+
+**Kind**: instance method of [<code>Federation</code>](#Federation)  
+
+| Param | Type |
+| --- | --- |
+| [overrides] | <code>object</code> | 
 
 <a name="Filesystem"></a>
 
@@ -6220,10 +6282,13 @@ see [Message](#Message) wire vs friendly names and <code>constants</code> opcode
     * [._buildPublishDocumentWireBuffers(documentId, body, rateSats)](#Peer+_buildPublishDocumentWireBuffers) ⇒ <code>Array.&lt;Buffer&gt;</code>
     * [._announceLocalDocumentsToPeer(peerAddress)](#Peer+_announceLocalDocumentsToPeer)
     * [._publishDocument(documentId, [content], [rateSats])](#Peer+_publishDocument)
-    * [._handleDocumentRequestWire(message, origin, socket)](#Peer+_handleDocumentRequestWire)
+    * [._handleDocumentRequestWire(message, origin, socket, [options])](#Peer+_handleDocumentRequestWire)
     * [._privateRelayDocumentRequest(parsed, origin, [originalMessage])](#Peer+_privateRelayDocumentRequest)
+    * [._sendPrivateRelayedDocumentRequest(msg, origin, parsed)](#Peer+_sendPrivateRelayedDocumentRequest) ⇒ <code>boolean</code>
     * [._maybeReverseRelayFileSend(fileObj, origin)](#Peer+_maybeReverseRelayFileSend) ⇒ <code>boolean</code>
-    * [._mergeContractPatchAllowList(contractId, object, publisherPubkeyHex)](#Peer+_mergeContractPatchAllowList)
+    * [._contractPublishSignerAuthorized(object, signerPubkeyHex)](#Peer+_contractPublishSignerAuthorized) ⇒ <code>boolean</code>
+    * [._registerContract(object, [publisherPubkeyHex])](#Peer+_registerContract) ⇒ <code>boolean</code>
+    * [._mergeContractPatchAllowList(contractId, object, [_publisherPubkeyHex])](#Peer+_mergeContractPatchAllowList)
     * [._signerMayPatchContract(contractId, signerPubkeyHex)](#Peer+_signerMayPatchContract) ⇒ <code>boolean</code>
     * [._startFabricPingKeepalive(socket, encryptWrite)](#Peer+_startFabricPingKeepalive)
     * [.start()](#Peer+start)
@@ -6775,14 +6840,15 @@ Handle a Fabric [Message](#Message) buffer.
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: [<code>Peer</code>](#Peer) - Instance of the Peer.  
 
-| Param | Type | Default |
-| --- | --- | --- |
-| buffer | <code>Buffer</code> |  | 
-| [origin] | <code>object</code> \| <code>null</code> | <code></code> | 
-| [socket] | <code>object</code> \| <code>null</code> | <code></code> | 
-| [options] | <code>Object</code> | <code></code> | 
-| [options.relayDepth] | <code>number</code> |  | 
-| [options.skipRelayFlood] | <code>boolean</code> |  | 
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| buffer | <code>Buffer</code> |  |  |
+| [origin] | <code>object</code> \| <code>null</code> | <code></code> |  |
+| [socket] | <code>object</code> \| <code>null</code> | <code></code> |  |
+| [options] | <code>Object</code> | <code></code> |  |
+| [options.relayDepth] | <code>number</code> |  |  |
+| [options.skipRelayFlood] | <code>boolean</code> |  |  |
+| [options.peeledForward] | <code>boolean</code> |  | true when delivered via [Peer#_handleP2PForward](Peer#_handleP2PForward) peel |
 
 <a name="Peer+_relayWirePayload"></a>
 
@@ -7091,18 +7157,22 @@ Store a document locally and gossip to peers.
 
 <a name="Peer+_handleDocumentRequestWire"></a>
 
-### peer.\_handleDocumentRequestWire(message, origin, socket)
+### peer.\_handleDocumentRequestWire(message, origin, socket, [options])
 Handle inbound `DOCUMENT_REQUEST`: emit `documentRequest` / `DocumentRequest`, then either
 send `P2P_FILE_SEND` (when [Peer#settings.autoFulfillDocumentRequests](Peer#settings.autoFulfillDocumentRequests)), queue for
 operator approve, or relay when the document is not held.
 
+Peel / foreign-signed `P2P_RELAY` deliveries are local-observe only: never fulfill or
+queue against the TCP last hop, and never second-flood the inner under that hop.
+
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
-| Param | Type |
-| --- | --- |
-| message | [<code>Message</code>](#Message) | 
-| origin | <code>Object</code> | 
-| socket | <code>\*</code> | 
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| message | [<code>Message</code>](#Message) |  |  |
+| origin | <code>Object</code> |  |  |
+| socket | <code>\*</code> |  |  |
+| [options] | <code>Object</code> | <code></code> | same delivery opts as [_handleFabricMessage](#Peer+_handleFabricMessage) |
 
 <a name="Peer+_privateRelayDocumentRequest"></a>
 
@@ -7117,6 +7187,21 @@ Rewrite a budgeted DocumentRequest (privacy) and forward with reduced maxSats.
 | origin | <code>Object</code> |  | 
 | [originalMessage] | [<code>Message</code>](#Message) | <code></code> | 
 
+<a name="Peer+_sendPrivateRelayedDocumentRequest"></a>
+
+### peer.\_sendPrivateRelayedDocumentRequest(msg, origin, parsed) ⇒ <code>boolean</code>
+Deliver a rewritten private DocumentRequest without mesh broadcast.
+Preference: onion `relayPath` → explicit `nextPeer` → fan-out to TCP peers
+other than the inbound origin.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | [<code>Message</code>](#Message) | signed DocumentRequest |
+| origin | <code>Object</code> \| <code>null</code> |  |
+| parsed | <code>object</code> | inbound request body |
+
 <a name="Peer+_maybeReverseRelayFileSend"></a>
 
 ### peer.\_maybeReverseRelayFileSend(fileObj, origin) ⇒ <code>boolean</code>
@@ -7130,20 +7215,48 @@ Forward a relayed `P2P_FILE_SEND` / key reveal back toward the buyer using rever
 | fileObj | <code>object</code> | 
 | origin | <code>Object</code> | 
 
-<a name="Peer+_mergeContractPatchAllowList"></a>
+<a name="Peer+_contractPublishSignerAuthorized"></a>
 
-### peer.\_mergeContractPatchAllowList(contractId, object, publisherPubkeyHex)
-Build the set of pubkeys allowed to apply CONTRACT_MESSAGE ops for a newly
-registered contract. Called only on first registration of a contract id —
-republishes must not invoke this (see [Peer#_registerContract](Peer#_registerContract)).
+### peer.\_contractPublishSignerAuthorized(object, signerPubkeyHex) ⇒ <code>boolean</code>
+When a publish body declares authority arrays, the AMP wire signer must be
+one of them. Bodies with no authorities are allowed (observe-only; empty
+patch allow-list). Missing signer (local seed) is allowed.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
-| Param | Type | Description |
+| Param | Type | Default |
 | --- | --- | --- |
-| contractId | <code>string</code> |  |
-| object | <code>object</code> | contract publish body |
-| publisherPubkeyHex | <code>string</code> \| <code>null</code> | wire signer of the first publish |
+| object | <code>object</code> |  | 
+| signerPubkeyHex | <code>string</code> \| <code>null</code> | <code>null</code> | 
+
+<a name="Peer+_registerContract"></a>
+
+### peer.\_registerContract(object, [publisherPubkeyHex]) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>boolean</code> - true when newly registered (or already present no-op)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| object | <code>object</code> |  | 
+| [publisherPubkeyHex] | <code>string</code> \| <code>null</code> | <code>null</code> | 
+
+<a name="Peer+_mergeContractPatchAllowList"></a>
+
+### peer.\_mergeContractPatchAllowList(contractId, object, [_publisherPubkeyHex])
+Build the set of pubkeys allowed to apply CONTRACT_MESSAGE ops for a newly
+registered contract. Called only on first registration of a contract id —
+republishes must not invoke this (see [_registerContract](#Peer+_registerContract)).
+Membership is taken **only** from body authority arrays (`parties`,
+`validators`, `owners`, `members`, `authorities`). The wire signer is never
+granted rights unless already listed there.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| contractId | <code>string</code> |  |  |
+| object | <code>object</code> |  | contract publish body |
+| [_publisherPubkeyHex] | <code>string</code> \| <code>null</code> | <code>null</code> | ignored (kept for call-site compat) |
 
 <a name="Peer+_signerMayPatchContract"></a>
 
@@ -7640,10 +7753,13 @@ Parse an Object into a corresponding Fabric state.
     * [._buildPublishDocumentWireBuffers(documentId, body, rateSats)](#Peer+_buildPublishDocumentWireBuffers) ⇒ <code>Array.&lt;Buffer&gt;</code>
     * [._announceLocalDocumentsToPeer(peerAddress)](#Peer+_announceLocalDocumentsToPeer)
     * [._publishDocument(documentId, [content], [rateSats])](#Peer+_publishDocument)
-    * [._handleDocumentRequestWire(message, origin, socket)](#Peer+_handleDocumentRequestWire)
+    * [._handleDocumentRequestWire(message, origin, socket, [options])](#Peer+_handleDocumentRequestWire)
     * [._privateRelayDocumentRequest(parsed, origin, [originalMessage])](#Peer+_privateRelayDocumentRequest)
+    * [._sendPrivateRelayedDocumentRequest(msg, origin, parsed)](#Peer+_sendPrivateRelayedDocumentRequest) ⇒ <code>boolean</code>
     * [._maybeReverseRelayFileSend(fileObj, origin)](#Peer+_maybeReverseRelayFileSend) ⇒ <code>boolean</code>
-    * [._mergeContractPatchAllowList(contractId, object, publisherPubkeyHex)](#Peer+_mergeContractPatchAllowList)
+    * [._contractPublishSignerAuthorized(object, signerPubkeyHex)](#Peer+_contractPublishSignerAuthorized) ⇒ <code>boolean</code>
+    * [._registerContract(object, [publisherPubkeyHex])](#Peer+_registerContract) ⇒ <code>boolean</code>
+    * [._mergeContractPatchAllowList(contractId, object, [_publisherPubkeyHex])](#Peer+_mergeContractPatchAllowList)
     * [._signerMayPatchContract(contractId, signerPubkeyHex)](#Peer+_signerMayPatchContract) ⇒ <code>boolean</code>
     * [._startFabricPingKeepalive(socket, encryptWrite)](#Peer+_startFabricPingKeepalive)
     * [.start()](#Peer+start)
@@ -8195,14 +8311,15 @@ Handle a Fabric [Message](#Message) buffer.
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 **Returns**: [<code>Peer</code>](#Peer) - Instance of the Peer.  
 
-| Param | Type | Default |
-| --- | --- | --- |
-| buffer | <code>Buffer</code> |  | 
-| [origin] | <code>object</code> \| <code>null</code> | <code></code> | 
-| [socket] | <code>object</code> \| <code>null</code> | <code></code> | 
-| [options] | <code>Object</code> | <code></code> | 
-| [options.relayDepth] | <code>number</code> |  | 
-| [options.skipRelayFlood] | <code>boolean</code> |  | 
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| buffer | <code>Buffer</code> |  |  |
+| [origin] | <code>object</code> \| <code>null</code> | <code></code> |  |
+| [socket] | <code>object</code> \| <code>null</code> | <code></code> |  |
+| [options] | <code>Object</code> | <code></code> |  |
+| [options.relayDepth] | <code>number</code> |  |  |
+| [options.skipRelayFlood] | <code>boolean</code> |  |  |
+| [options.peeledForward] | <code>boolean</code> |  | true when delivered via [Peer#_handleP2PForward](Peer#_handleP2PForward) peel |
 
 <a name="Peer+_relayWirePayload"></a>
 
@@ -8511,18 +8628,22 @@ Store a document locally and gossip to peers.
 
 <a name="Peer+_handleDocumentRequestWire"></a>
 
-### peer.\_handleDocumentRequestWire(message, origin, socket)
+### peer.\_handleDocumentRequestWire(message, origin, socket, [options])
 Handle inbound `DOCUMENT_REQUEST`: emit `documentRequest` / `DocumentRequest`, then either
 send `P2P_FILE_SEND` (when [Peer#settings.autoFulfillDocumentRequests](Peer#settings.autoFulfillDocumentRequests)), queue for
 operator approve, or relay when the document is not held.
 
+Peel / foreign-signed `P2P_RELAY` deliveries are local-observe only: never fulfill or
+queue against the TCP last hop, and never second-flood the inner under that hop.
+
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
-| Param | Type |
-| --- | --- |
-| message | [<code>Message</code>](#Message) | 
-| origin | <code>Object</code> | 
-| socket | <code>\*</code> | 
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| message | [<code>Message</code>](#Message) |  |  |
+| origin | <code>Object</code> |  |  |
+| socket | <code>\*</code> |  |  |
+| [options] | <code>Object</code> | <code></code> | same delivery opts as [_handleFabricMessage](#Peer+_handleFabricMessage) |
 
 <a name="Peer+_privateRelayDocumentRequest"></a>
 
@@ -8537,6 +8658,21 @@ Rewrite a budgeted DocumentRequest (privacy) and forward with reduced maxSats.
 | origin | <code>Object</code> |  | 
 | [originalMessage] | [<code>Message</code>](#Message) | <code></code> | 
 
+<a name="Peer+_sendPrivateRelayedDocumentRequest"></a>
+
+### peer.\_sendPrivateRelayedDocumentRequest(msg, origin, parsed) ⇒ <code>boolean</code>
+Deliver a rewritten private DocumentRequest without mesh broadcast.
+Preference: onion `relayPath` → explicit `nextPeer` → fan-out to TCP peers
+other than the inbound origin.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| msg | [<code>Message</code>](#Message) | signed DocumentRequest |
+| origin | <code>Object</code> \| <code>null</code> |  |
+| parsed | <code>object</code> | inbound request body |
+
 <a name="Peer+_maybeReverseRelayFileSend"></a>
 
 ### peer.\_maybeReverseRelayFileSend(fileObj, origin) ⇒ <code>boolean</code>
@@ -8550,20 +8686,48 @@ Forward a relayed `P2P_FILE_SEND` / key reveal back toward the buyer using rever
 | fileObj | <code>object</code> | 
 | origin | <code>Object</code> | 
 
-<a name="Peer+_mergeContractPatchAllowList"></a>
+<a name="Peer+_contractPublishSignerAuthorized"></a>
 
-### peer.\_mergeContractPatchAllowList(contractId, object, publisherPubkeyHex)
-Build the set of pubkeys allowed to apply CONTRACT_MESSAGE ops for a newly
-registered contract. Called only on first registration of a contract id —
-republishes must not invoke this (see [Peer#_registerContract](Peer#_registerContract)).
+### peer.\_contractPublishSignerAuthorized(object, signerPubkeyHex) ⇒ <code>boolean</code>
+When a publish body declares authority arrays, the AMP wire signer must be
+one of them. Bodies with no authorities are allowed (observe-only; empty
+patch allow-list). Missing signer (local seed) is allowed.
 
 **Kind**: instance method of [<code>Peer</code>](#Peer)  
 
-| Param | Type | Description |
+| Param | Type | Default |
 | --- | --- | --- |
-| contractId | <code>string</code> |  |
-| object | <code>object</code> | contract publish body |
-| publisherPubkeyHex | <code>string</code> \| <code>null</code> | wire signer of the first publish |
+| object | <code>object</code> |  | 
+| signerPubkeyHex | <code>string</code> \| <code>null</code> | <code>null</code> | 
+
+<a name="Peer+_registerContract"></a>
+
+### peer.\_registerContract(object, [publisherPubkeyHex]) ⇒ <code>boolean</code>
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+**Returns**: <code>boolean</code> - true when newly registered (or already present no-op)  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| object | <code>object</code> |  | 
+| [publisherPubkeyHex] | <code>string</code> \| <code>null</code> | <code>null</code> | 
+
+<a name="Peer+_mergeContractPatchAllowList"></a>
+
+### peer.\_mergeContractPatchAllowList(contractId, object, [_publisherPubkeyHex])
+Build the set of pubkeys allowed to apply CONTRACT_MESSAGE ops for a newly
+registered contract. Called only on first registration of a contract id —
+republishes must not invoke this (see [_registerContract](#Peer+_registerContract)).
+Membership is taken **only** from body authority arrays (`parties`,
+`validators`, `owners`, `members`, `authorities`). The wire signer is never
+granted rights unless already listed there.
+
+**Kind**: instance method of [<code>Peer</code>](#Peer)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| contractId | <code>string</code> |  |  |
+| object | <code>object</code> |  | contract publish body |
+| [_publisherPubkeyHex] | <code>string</code> \| <code>null</code> | <code>null</code> | ignored (kept for call-site compat) |
 
 <a name="Peer+_signerMayPatchContract"></a>
 

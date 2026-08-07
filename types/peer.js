@@ -4320,7 +4320,7 @@ class Peer extends Service {
    * Preference: onion `relayPath` → explicit `nextPeer` → fan-out to TCP peers
    * other than the inbound origin.
    * @param {Message} msg signed DocumentRequest
-   * @param {{ name?: string }|null} origin
+   * @param {{name: (string|undefined)}|null} origin
    * @param {object} parsed inbound request body
    * @returns {boolean}
    */
