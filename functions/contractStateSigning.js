@@ -84,6 +84,10 @@ function verifyContractStateTip (
   stateDigest,
   signaturesOrWitness
 ) {
+  const thr = Number(threshold);
+  if (!Number.isInteger(thr) || thr < 1) {
+    throw new Error('threshold must be a positive integer');
+  }
   const witness = signaturesOrWitness && signaturesOrWitness.signatures
     && typeof signaturesOrWitness.signatures === 'object'
     ? signaturesOrWitness
@@ -92,7 +96,7 @@ function verifyContractStateTip (
     tipMessageBuffer(contractId, clock, stateDigest),
     witness,
     validatorPubkeys,
-    threshold
+    thr
   );
 }
 

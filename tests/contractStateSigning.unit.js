@@ -48,4 +48,23 @@ describe('contractStateSigning', function () {
       false
     );
   });
+
+  it('rejects invalid thresholds instead of defaulting to 1-of-n', function () {
+    const k1 = new Key();
+    const validators = [k1.pubkey];
+    const a = signContractStateTip(k1, contractId, clock, stateDigest);
+    const sigs = { [a.pubkey]: a.signature };
+    assert.throws(
+      () => verifyContractStateTip(validators, undefined, contractId, clock, stateDigest, sigs),
+      /threshold must be a positive integer/
+    );
+    assert.throws(
+      () => verifyContractStateTip(validators, 0, contractId, clock, stateDigest, sigs),
+      /threshold must be a positive integer/
+    );
+    assert.throws(
+      () => verifyContractStateTip(validators, 1.5, contractId, clock, stateDigest, sigs),
+      /threshold must be a positive integer/
+    );
+  });
 });

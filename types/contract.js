@@ -337,28 +337,47 @@ class Contract extends Service {
    * @param {object} [overrides]
    * @returns {object} {@link module:functions/contractTaproot.buildContractTaproot}
    */
-  toTaprootContract (overrides = {}) {
+  /**
+   * Shared spend-policy inputs for {@link #toTaprootContract}.
+   * Subclasses (e.g. Federation) may override to supply validators from state.
+   * @param {object} [overrides]
+   * @returns {object}
+   */
+  _taprootPolicyInputs (overrides = {}) {
     const tap = require('../functions/contractTaproot');
-    const ladder = this.settings.spendLadder || overrides.spendLadder || null;
-    if (ladder) {
-      return tap.buildContractTaproot({ ...ladder, ...overrides });
-    }
-    const validators = (this.settings.proposedPolicy && this.settings.proposedPolicy.validators)
+    const validators = overrides.validators
+      || (this.settings.proposedPolicy && this.settings.proposedPolicy.validators)
       || (this.settings.consensus && this.settings.consensus.validators)
       || this.settings.validators
       || [];
-    const threshold = (this.settings.proposedPolicy && this.settings.proposedPolicy.threshold)
-      || this.settings.threshold
-      || 1;
-    const publisher = this.settings.publisher
+    const threshold = overrides.threshold != null
+      ? overrides.threshold
+      : ((this.settings.proposedPolicy && this.settings.proposedPolicy.threshold)
+        || this.settings.threshold
+        || 1);
+    const publisher = overrides.publisher
+      || this.settings.publisher
       || this.settings.creator
       || (validators[0] || null);
+    const network = overrides.network
+      || this.settings.network
+      || 'regtest';
+    const csvBlocks = overrides.csvBlocks != null
+      ? overrides.csvBlocks
+      : (this.settings.csvBlocks != null ? this.settings.csvBlocks : tap.DEFAULT_CSV_BLOCKS);
+    return { validators, threshold, publisher, network, csvBlocks };
+  }
+
+  toTaprootContract (overrides = {}) {
+    const tap = require('../functions/contractTaproot');
+    const ladder = overrides.spendLadder || this.settings.spendLadder || null;
+    if (ladder) {
+      const network = overrides.network || this.settings.network || ladder.network;
+      return tap.buildContractTaproot({ ...ladder, ...overrides, network: network || ladder.network });
+    }
+    const inputs = this._taprootPolicyInputs(overrides);
     return tap.buildContractTaproot(tap.synthesizeDefaultLadder({
-      validators,
-      threshold,
-      publisher,
-      network: this.settings.network || overrides.network || 'regtest',
-      csvBlocks: this.settings.csvBlocks != null ? this.settings.csvBlocks : tap.DEFAULT_CSV_BLOCKS,
+      ...inputs,
       ...overrides
     }));
   }

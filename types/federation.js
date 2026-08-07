@@ -291,29 +291,34 @@ class Federation extends Contract {
     return false;
   }
 
-  get address () {
+  /**
+   * Federation validators live on consensus state, not only constructor settings.
+   * @param {object} [overrides]
+   * @returns {object}
+   */
+  _taprootPolicyInputs (overrides = {}) {
     const tap = require('../functions/contractTaproot');
-    const validators = (this._state.content.validators || []).slice();
+    const validators = overrides.validators
+      || (this._state.content.validators || []).slice();
     if (!validators.length) {
       throw new Error('Federation address requires at least one validator');
     }
-    const threshold = this.settings.threshold != null
-      ? Number(this.settings.threshold)
-      : Math.ceil(validators.length / 2);
-    const publisher = this.settings.publisher || validators[0];
-    const csvBlocks = this.settings.csvBlocks != null
-      ? Number(this.settings.csvBlocks)
-      : (this.settings.timeout ? Number(this.settings.timeout) || tap.DEFAULT_CSV_BLOCKS : tap.DEFAULT_CSV_BLOCKS);
-    if (this.settings.spendLadder) {
-      return tap.toAddress(this.settings.spendLadder);
-    }
-    return tap.toAddress(tap.synthesizeDefaultLadder({
-      validators,
-      threshold,
-      publisher,
-      network: this.settings.network || 'bitcoin',
-      csvBlocks
-    }));
+    const threshold = overrides.threshold != null
+      ? Number(overrides.threshold)
+      : (this.settings.threshold != null
+        ? Number(this.settings.threshold)
+        : Math.ceil(validators.length / 2));
+    const publisher = overrides.publisher || this.settings.publisher || validators[0];
+    // Do not treat settings.timeout as a block count (units differ).
+    const csvBlocks = overrides.csvBlocks != null
+      ? Number(overrides.csvBlocks)
+      : (this.settings.csvBlocks != null ? Number(this.settings.csvBlocks) : tap.DEFAULT_CSV_BLOCKS);
+    const network = overrides.network || this.settings.network || 'regtest';
+    return { validators, threshold, publisher, network, csvBlocks };
+  }
+
+  get address () {
+    return this.toAddress();
   }
 }
 

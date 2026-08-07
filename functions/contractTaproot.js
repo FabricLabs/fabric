@@ -28,7 +28,8 @@ const DEFAULT_CSV_BLOCKS = 144;
 
 function networkForFabricName (name = '') {
   const n = String(name || '').toLowerCase();
-  if (n === 'regtest' || n === 'test') return networks.regtest;
+  // Do not alias bare "test" — it is ambiguous (testnet tb1 vs regtest bcrt1).
+  if (n === 'regtest') return networks.regtest;
   if (n === 'testnet' || n === 'signet') return networks.testnet;
   return networks.bitcoin;
 }
@@ -59,9 +60,14 @@ function toXOnly (pubkey33) {
 function buildKOfNTapscript (sortedPubkeys33, threshold) {
   const keys = sortedPubkeys33.map(toXOnly).filter(Boolean);
   if (keys.length !== sortedPubkeys33.length) throw new Error('Internal pubkey parse error.');
-  const k = Math.max(1, Math.min(Number(threshold) || 1, keys.length));
+  const k = Number(threshold);
+  if (!Number.isInteger(k) || k < 1) {
+    throw new Error('threshold must be a positive integer');
+  }
+  if (k > keys.length) {
+    throw new Error(`threshold ${k} exceeds unique key count ${keys.length}`);
+  }
   if (keys.length === 1) {
-    if (k !== 1) throw new Error('With one key, threshold must be 1.');
     return script.compile([keys[0], script.OPS.OP_CHECKSIG]);
   }
   const chunks = [keys[0], script.OPS.OP_CHECKSIG];
@@ -81,8 +87,9 @@ function normalizeLock (raw) {
   if (typeof raw !== 'object') return null;
   const type = String(raw.type || '').toLowerCase();
   if (type === 'csv') {
-    const blocks = Math.max(0, Math.floor(Number(raw.blocks) || 0));
-    if (!blocks) return null;
+    const blocks = Math.floor(Number(raw.blocks) || 0);
+    // BIP68 relative-locktime low 16 bits (block-based CSV).
+    if (!Number.isFinite(blocks) || blocks < 1 || blocks > 65535) return null;
     return { type: 'csv', value: blocks, blocks };
   }
   if (type === 'cltv') {
@@ -208,22 +215,40 @@ function normalizeContractSpendPolicy (raw = {}) {
   }
 
   const tiers = [];
-  let prevAfter = 0;
+  let prevAfterLock = null;
   for (let i = 0; i < raw.tiers.length; i++) {
     const t = raw.tiers[i] || {};
     const keysHex = resolveKeyList(t.keys, keySets, publisher);
     const pks = parseCompressedPubkeysSorted(keysHex);
-    const thr = Math.max(1, Math.min(Number(t.threshold) || 1, pks.length));
+    const thr = Number(t.threshold);
+    if (!Number.isInteger(thr) || thr < 1) {
+      throw new Error(`tier[${i}] threshold must be a positive integer`);
+    }
+    if (thr > pks.length) {
+      throw new Error(`tier[${i}] threshold ${thr} exceeds unique key count ${pks.length}`);
+    }
     const after = normalizeLock(t.after);
     const until = normalizeLock(t.until);
     const afterVal = lockValue(after);
-    if (afterVal < prevAfter) {
+    if (after && prevAfterLock) {
+      if (after.type !== prevAfterLock.type) {
+        throw new Error(`tier[${i}] after lock type must match previous tier (${prevAfterLock.type})`);
+      }
+      if (afterVal < lockValue(prevAfterLock)) {
+        throw new Error(`tier[${i}] after must be >= previous tier after`);
+      }
+    } else if (!after && prevAfterLock) {
       throw new Error(`tier[${i}] after must be >= previous tier after`);
     }
-    if (until && after && lockValue(until) <= afterVal) {
-      throw new Error(`tier[${i}] until must be strictly after after`);
+    if (until && after) {
+      if (until.type !== after.type) {
+        throw new Error(`tier[${i}] until lock type must match after (${after.type})`);
+      }
+      if (lockValue(until) <= afterVal) {
+        throw new Error(`tier[${i}] until must be strictly after after`);
+      }
     }
-    prevAfter = afterVal;
+    if (after) prevAfterLock = after;
     const id = t.id != null && String(t.id).trim()
       ? String(t.id).trim().slice(0, 128)
       : `t${i}`;
@@ -255,10 +280,16 @@ function normalizeContractSpendPolicy (raw = {}) {
       : mk;
     const mpks = parseCompressedPubkeysSorted(resolved);
     migrateKeys = mpks.map((b) => b.toString('hex'));
-    migrateThreshold = Math.max(
-      1,
-      Math.min(Number(raw.decay && raw.decay.migrateThreshold) || Math.ceil(mpks.length / 2), mpks.length)
-    );
+    const mtRaw = raw.decay && raw.decay.migrateThreshold != null
+      ? Number(raw.decay.migrateThreshold)
+      : Math.ceil(mpks.length / 2);
+    if (!Number.isInteger(mtRaw) || mtRaw < 1) {
+      throw new Error('decay.migrateThreshold must be a positive integer');
+    }
+    if (mtRaw > mpks.length) {
+      throw new Error(`decay.migrateThreshold ${mtRaw} exceeds unique key count ${mpks.length}`);
+    }
+    migrateThreshold = mtRaw;
   }
 
   return {
@@ -362,7 +393,7 @@ function compileLeaves (policy) {
       kind: 'spend',
       id: t.id,
       tierIndex: t.index,
-      script: body,
+      script: Buffer.from(body),
       after: t.after,
       until: t.until,
       threshold: t.threshold,
@@ -389,7 +420,7 @@ function compileLeaves (policy) {
         leaves.push({
           kind: 'migrate',
           id: `decay@${lockValue(b.until)}`,
-          script: body,
+          script: Buffer.from(body),
           after: b.until,
           decayAt: b.until,
           threshold: p.decay.migrateThreshold,
@@ -530,8 +561,7 @@ function prepareLeafPsbt (opts = {}) {
     leafScript,
     leaves,
     destinationAddress,
-    feeSats,
-    sequence
+    feeSats
   } = opts;
   const network = networkForFabricName(networkName);
   const tx = bitcoin.Transaction.fromHex(String(fundedTxHex || '').trim());
@@ -544,13 +574,29 @@ function prepareLeafPsbt (opts = {}) {
   const destSats = inputSats - fee;
   if (destSats < 546) throw new Error('Amount after fee is below dust; lower fee or use a larger UTXO.');
 
-  const ms = Buffer.isBuffer(leafScript)
-    ? leafScript
-    : Buffer.from(String(leafScript || '').replace(/^0x/i, ''), 'hex');
+  let ms;
+  if (Buffer.isBuffer(leafScript)) {
+    ms = leafScript;
+  } else if (leafScript instanceof Uint8Array) {
+    ms = Buffer.from(leafScript);
+  } else {
+    ms = Buffer.from(String(leafScript || '').replace(/^0x/i, ''), 'hex');
+  }
   if (!ms.length) throw new Error('leafScript is required.');
 
   const dest = String(destinationAddress || '').trim();
   if (!dest) throw new Error('destinationAddress is required.');
+
+  const afterLock = normalizeLock(opts.after);
+  let sequence = opts.sequence != null ? Number(opts.sequence) : undefined;
+  let locktime;
+  if (afterLock && afterLock.type === 'csv') {
+    if (sequence == null) sequence = afterLock.value;
+  } else if (afterLock && afterLock.type === 'cltv') {
+    locktime = afterLock.value;
+    // CLTV requires a non-final nSequence on the input.
+    if (sequence == null || sequence === 0xffffffff) sequence = 0xfffffffe;
+  }
 
   const controlBlock = buildControlBlockForLeaf(leaves, ms);
   const outScript = Buffer.isBuffer(out.script) ? out.script : Buffer.from(out.script);
@@ -571,6 +617,10 @@ function prepareLeafPsbt (opts = {}) {
   if (sequence != null) input.sequence = Number(sequence);
 
   const psbt = new Psbt({ network });
+  if (locktime != null) {
+    if (typeof psbt.setLocktime === 'function') psbt.setLocktime(Number(locktime));
+    else psbt.locktime = Number(locktime);
+  }
   psbt.addInput(input);
   psbt.addOutput({
     address: dest,
@@ -586,7 +636,8 @@ function prepareLeafPsbt (opts = {}) {
     feeSats: fee,
     tapscriptHex: ms.toString('hex'),
     controlBlockHex: controlBlock.toString('hex'),
-    sequence: sequence != null ? Number(sequence) : undefined
+    sequence: sequence != null ? Number(sequence) : undefined,
+    locktime: locktime != null ? Number(locktime) : undefined
   };
 }
 
@@ -613,19 +664,19 @@ function prepareTierWithdrawalPsbt (opts = {}) {
   }
   if (!tier) throw new Error('No active spend tier');
 
-  const leaf = compileLeaves(built.policy).find((l) => l.kind === 'spend' && l.id === tier.id);
+  const leaves = compileLeaves(built.policy);
+  const leaf = leaves.find((l) => l.kind === 'spend' && l.id === tier.id);
   if (!leaf) throw new Error('spend leaf missing');
 
-  const seq = tier.after && tier.after.type === 'csv' ? tier.after.value : undefined;
   const result = prepareLeafPsbt({
     networkName: built.network,
     fundedTxHex: opts.fundedTxHex,
     vaultAddress: opts.vaultAddress || built.address,
     leafScript: leaf.script,
-    leaves: compileLeaves(built.policy),
+    leaves,
     destinationAddress: opts.destinationAddress,
     feeSats: opts.feeSats,
-    sequence: seq
+    after: tier.after
   });
   return {
     ...result,
@@ -654,7 +705,6 @@ function prepareDecayMigrationPsbt (opts = {}) {
     throw new Error(`migration destination must be child address ${childAddr}`);
   }
 
-  const seq = target.decayAt.type === 'csv' ? target.decayAt.value : undefined;
   const result = prepareLeafPsbt({
     networkName: built.network,
     fundedTxHex: opts.fundedTxHex,
@@ -663,7 +713,7 @@ function prepareDecayMigrationPsbt (opts = {}) {
     leaves,
     destinationAddress: childAddr,
     feeSats: opts.feeSats,
-    sequence: seq
+    after: target.decayAt
   });
   return {
     ...result,
@@ -678,7 +728,7 @@ function prepareDecayMigrationPsbt (opts = {}) {
 
 /**
  * Legacy Hub vault API: single k-of-n leaf (address-stable with prior Hub vault).
- * Pass `{ failover: true }` (or publisher+csvBlocks) to use the full default ladder.
+ * Pass `{ failover: true }` or `publisher` + positive `csvBlocks` to use the full default ladder.
  */
 function buildFederationVaultFromPolicy (opts = {}) {
   const {
@@ -691,9 +741,15 @@ function buildFederationVaultFromPolicy (opts = {}) {
   } = opts;
   const pks = parseCompressedPubkeysSorted(validatorPubkeysHex);
   if (!pks.length) throw new Error('At least one validator pubkey is required.');
-  const thr = Math.max(1, Math.min(Number(threshold) || 1, pks.length));
+  const thr = Number(threshold);
+  if (!Number.isInteger(thr) || thr < 1) {
+    throw new Error('threshold must be a positive integer');
+  }
+  if (thr > pks.length) {
+    throw new Error(`threshold ${thr} exceeds unique key count ${pks.length}`);
+  }
 
-  if (failover || (publisher && csvBlocks != null && Number(csvBlocks) > 0 && opts.useLadder)) {
+  if (failover || (publisher && csvBlocks != null && Number(csvBlocks) > 0)) {
     const built = buildContractTaproot(synthesizeDefaultLadder({
       validators: validatorPubkeysHex,
       threshold: thr,

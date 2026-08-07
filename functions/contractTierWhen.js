@@ -16,6 +16,7 @@ function getPath (state, path) {
   let cur = state;
   for (const p of parts) {
     if (cur == null || typeof cur !== 'object') return undefined;
+    if (!Object.prototype.hasOwnProperty.call(cur, p)) return undefined;
     cur = cur[p];
   }
   return cur;
@@ -28,8 +29,11 @@ const OPS = Object.freeze({
     return Number.isFinite(tip) && Number.isFinite(need) && tip >= need;
   },
   statePathEq (pred, ctx) {
-    const actual = getPath(ctx && ctx.contractState, pred && pred.path);
-    return actual === (pred && pred.value);
+    if (!pred || pred.path == null || pred.path === '' || !Object.prototype.hasOwnProperty.call(pred, 'value')) {
+      return false;
+    }
+    const actual = getPath(ctx && ctx.contractState, pred.path);
+    return actual === pred.value;
   }
 });
 
@@ -42,7 +46,7 @@ function evaluateTierWhen (when, ctx = {}) {
   if (when == null) return true;
   if (typeof when !== 'object') return false;
   const allOf = Array.isArray(when.allOf) ? when.allOf : null;
-  if (!allOf) return false;
+  if (!allOf || !allOf.length) return false;
   for (const pred of allOf) {
     if (!pred || typeof pred !== 'object') return false;
     const op = String(pred.op || '');

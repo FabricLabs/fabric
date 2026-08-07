@@ -81,6 +81,22 @@ describe('@fabric/core/types/token', function () {
       assert.strictEqual(Token.verifySigned(signed, new Key()), null);
     });
 
+    it('explicit ctx: null suppresses settings.ctx on signed payload', function () {
+      const issuer = new Key();
+      const token = new Token({
+        capability: 'OP_CONTRACT_READ',
+        issuer,
+        subject: 'sub',
+        ctx: { contractId: 'aa'.repeat(32) }
+      });
+      const withCtx = Token.verifySigned(token.toSignedString(), issuer);
+      assert.ok(withCtx.ctx);
+      assert.strictEqual(withCtx.ctx.contractId, 'aa'.repeat(32));
+      const without = Token.verifySigned(token.toSignedString({ ctx: null }), issuer);
+      assert.ok(without);
+      assert.strictEqual(without.ctx, undefined);
+    });
+
     it('base64Url helpers round-trip string and buffer', function () {
       const raw = '{"a":1}';
       const enc = Token.base64UrlEncode(raw);

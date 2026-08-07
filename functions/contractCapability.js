@@ -49,20 +49,23 @@ function issueContractCapability (opts = {}) {
  * @param {string} expect.contractId
  * @param {string} [expect.expectedCap]
  * @param {string} [expect.subject]
- * @param {Key|object} [expect.issuerKey] If set, verify Schnorr against this key
- * @returns {{ cap: string, iss: string, sub: string, iat: number, exp: number, ctx?: object }|null}
+ * @param {Key|object} [expect.issuerKey] Verify Schnorr against this key (auth path)
+ * @param {boolean} [expect.allowUnverified] Opt-in parse-only (no sig check); result has verified:false
+ * @returns {{ cap: string, iss: string, sub: string, iat: number, exp: number, ctx?: object, verified?: boolean }|null}
  */
 function verifyContractCapability (tokenString, expect = {}) {
   const contractId = String(expect.contractId || '').trim().toLowerCase();
   if (!contractId) return null;
   let payload = null;
+  let verified = false;
   if (expect.issuerKey) {
     const key = expect.issuerKey && typeof expect.issuerKey.verify === 'function'
       ? expect.issuerKey
       : new Key(expect.issuerKey);
     payload = Token.verifySigned(tokenString, key);
-  } else {
-    // Parse without issuer check (caller may only need shape); still require sig format.
+    verified = !!payload;
+  } else if (expect.allowUnverified === true) {
+    // Parse-only: not authorization. Callers must not treat this as a verified grant.
     if (!tokenString || typeof tokenString !== 'string') return null;
     const parts = tokenString.split('.');
     if (parts.length !== 2) return null;
@@ -73,9 +76,12 @@ function verifyContractCapability (tokenString, expect = {}) {
       if (!pr.ok) return null;
       payload = pr.value;
       if (!payload || payload.exp == null || Date.now() / 1000 > payload.exp) return null;
+      verified = false;
     } catch (_) {
       return null;
     }
+  } else {
+    return null;
   }
   if (!payload) return null;
   const ctxId = payload.ctx && payload.ctx.contractId
@@ -87,7 +93,7 @@ function verifyContractCapability (tokenString, expect = {}) {
     const sub = String(payload.sub || '').trim().toLowerCase();
     if (sub !== String(expect.subject).trim().toLowerCase()) return null;
   }
-  return payload;
+  return Object.assign({}, payload, { verified });
 }
 
 function roleToCapability (role) {
