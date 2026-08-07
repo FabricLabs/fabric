@@ -373,7 +373,7 @@ class Contract extends Service {
     const ladder = overrides.spendLadder || this.settings.spendLadder || null;
     if (ladder) {
       const network = overrides.network || this.settings.network || ladder.network;
-      return tap.buildContractTaproot({ ...ladder, ...overrides, network: network || ladder.network });
+      return tap.buildContractTaproot({ ...ladder, ...overrides, network });
     }
     const inputs = this._taprootPolicyInputs(overrides);
     return tap.buildContractTaproot(tap.synthesizeDefaultLadder({

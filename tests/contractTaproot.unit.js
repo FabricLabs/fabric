@@ -141,6 +141,94 @@ describe('contractTaproot', function () {
     );
   });
 
+  it('Contract synthesizes ladder from settings / proposedPolicy / overrides', function () {
+    const expected = toAddress(synthesizeDefaultLadder({
+      validators: [pk(0), pk(1), pk(2)],
+      threshold: 2,
+      publisher: pk(0),
+      network: 'regtest',
+      csvBlocks: 80
+    }));
+
+    // settings.validators + publisher + csvBlocks (hits _taprootPolicyInputs)
+    const fromSettings = new Contract({
+      validators: [pk(0), pk(1), pk(2)],
+      threshold: 2,
+      publisher: pk(0),
+      network: 'regtest',
+      csvBlocks: 80
+    });
+    assert.strictEqual(fromSettings.toAddress(), expected);
+    assert.strictEqual(fromSettings.toAddress('regtest'), expected);
+
+    // proposedPolicy takes precedence over bare settings.validators
+    const fromProposed = new Contract({
+      validators: [pk(4)],
+      proposedPolicy: {
+        validators: [pk(0), pk(1), pk(2)],
+        threshold: 2
+      },
+      publisher: pk(0),
+      network: 'regtest',
+      csvBlocks: 80
+    });
+    assert.strictEqual(fromProposed.toAddress(), expected);
+
+    // consensus.validators when proposedPolicy absent
+    const fromConsensus = new Contract({
+      consensus: { validators: [pk(0), pk(1), pk(2)] },
+      threshold: 2,
+      creator: pk(0),
+      network: 'regtest',
+      csvBlocks: 80
+    });
+    assert.strictEqual(fromConsensus.toAddress(), expected);
+
+    // overrides win for validators / threshold / publisher / csvBlocks / network
+    const bare = new Contract({ validators: [pk(5)], network: 'bitcoin' });
+    const overridden = bare.toTaprootContract({
+      validators: [pk(0), pk(1), pk(2)],
+      threshold: 2,
+      publisher: pk(0),
+      network: 'regtest',
+      csvBlocks: 80
+    });
+    assert.strictEqual(overridden.address, expected);
+
+    // defaults: threshold 1, publisher = validators[0], DEFAULT_CSV_BLOCKS
+    const defaults = new Contract({
+      validators: [pk(0), pk(1)],
+      network: 'regtest'
+    });
+    const inputs = defaults._taprootPolicyInputs();
+    assert.strictEqual(inputs.threshold, 1);
+    assert.strictEqual(inputs.publisher, pk(0));
+    assert.ok(inputs.csvBlocks >= 1);
+    assert.ok(defaults.toAddress().startsWith('bcrt1'));
+
+    // spendLadder on settings, network from ladder when unset
+    const ladderOnly = synthesizeDefaultLadder({
+      validators: [pk(0), pk(1)],
+      threshold: 1,
+      publisher: pk(0),
+      network: 'regtest',
+      csvBlocks: 40
+    });
+    const withLadder = new Contract({ spendLadder: ladderOnly });
+    assert.strictEqual(
+      withLadder.toTaprootContract({}).address,
+      toAddress(ladderOnly)
+    );
+
+    // Defensive fallbacks in _taprootPolicyInputs (empty validators / no network)
+    const empty = new Contract({});
+    const emptyInputs = empty._taprootPolicyInputs();
+    assert.deepStrictEqual(emptyInputs.validators, []);
+    assert.strictEqual(emptyInputs.publisher, null);
+    assert.strictEqual(emptyInputs.network, 'regtest');
+    assert.strictEqual(emptyInputs.threshold, 1);
+  });
+
   it('Federation.address uses toTaprootContract / consistent network', function () {
     const federation = new Federation({
       network: 'regtest',
@@ -162,6 +250,53 @@ describe('contractTaproot', function () {
         csvBlocks: 144
       }))
     );
+  });
+
+  it('Federation._taprootPolicyInputs defaults, overrides, and empty reject', function () {
+    const fed = new Federation({
+      consensus: { validators: [pk(0), pk(1), pk(2)] }
+    });
+    const defaults = fed._taprootPolicyInputs();
+    assert.strictEqual(defaults.threshold, 2); // ceil(3/2)
+    assert.strictEqual(defaults.publisher, pk(0));
+    assert.strictEqual(defaults.network, 'regtest');
+
+    const overridden = fed._taprootPolicyInputs({
+      validators: [pk(0), pk(1)],
+      threshold: 1,
+      publisher: pk(1),
+      csvBlocks: 10,
+      network: 'regtest'
+    });
+    assert.strictEqual(overridden.threshold, 1);
+    assert.strictEqual(overridden.publisher, pk(1));
+    assert.strictEqual(overridden.csvBlocks, 10);
+
+    const empty = new Federation({ consensus: { validators: [] } });
+    assert.throws(
+      () => empty._taprootPolicyInputs(),
+      /at least one validator/
+    );
+
+    // content.validators null → [] fallback then reject
+    const nulled = new Federation({
+      consensus: { validators: [pk(0)] }
+    });
+    nulled._state.content.validators = null;
+    assert.throws(
+      () => nulled._taprootPolicyInputs(),
+      /at least one validator/
+    );
+
+    // settings.csvBlocks when overrides omit it; settings.threshold path
+    const withCsv = new Federation({
+      threshold: 1,
+      csvBlocks: 33,
+      consensus: { validators: [pk(0), pk(1)] }
+    });
+    const fromSettings = withCsv._taprootPolicyInputs();
+    assert.strictEqual(fromSettings.threshold, 1);
+    assert.strictEqual(fromSettings.csvBlocks, 33);
   });
 
   it('timelockMature for csv and cltv', function () {
