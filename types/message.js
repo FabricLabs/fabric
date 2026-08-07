@@ -1204,12 +1204,40 @@ function encodeBody (schema, fields = {}) {
   return Buffer.concat(chunks, total);
 }
 
+/**
+ * Default for an optional field when the wire body ends before that field.
+ * @param {{ type: string }} def
+ */
+function _optionalFieldDefault (def) {
+  switch (def.type) {
+    case 'string':
+      return '';
+    case 'bytes':
+    case 'message':
+      return Buffer.alloc(0);
+    case 'bytes32':
+      return Buffer.alloc(32);
+    case 'u8':
+    case 'u16':
+    case 'u32':
+      return 0;
+    case 'u64':
+      return 0n;
+    default:
+      return null;
+  }
+}
+
 function decodeBody (schema, buffer) {
   if (!Array.isArray(schema)) throw new TypeError('schema required');
   const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer || []);
   const out = {};
   let offset = 0;
   for (const def of schema) {
+    if (def.optional && offset >= buf.length) {
+      out[def.name] = _optionalFieldDefault(def);
+      continue;
+    }
     if (offset > buf.length) {
       throw new RangeError(`truncated body while reading field ${def.name}`);
     }

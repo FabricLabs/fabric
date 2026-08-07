@@ -24,15 +24,18 @@ const {
 const REGISTRY_PATH = '/registry';
 const SIDECHAIN_STATE_PATCH_TYPE = sidechainState.SIDECHAIN_STATE_PATCH_TYPE;
 
-/** V1 field layout for SIDECHAIN_STATE_PATCH (catalog-oriented). */
+/** V1 field layout for SIDECHAIN_STATE_PATCH (catalog + optional RFC6902 fidelity). */
 const SCHEMA_SIDECHAIN_STATE_PATCH = Object.freeze([
   { name: 'basisClock', type: 'u32' },
   { name: 'basisDigest', type: 'bytes32' },
-  { name: 'catalogCanonical', type: 'string' }
+  { name: 'catalogCanonical', type: 'string' },
+  /** Empty string when absent; UTF-8 JSON array of RFC6902 ops (HTTP edge / multi-op). */
+  { name: 'patchesCanonical', type: 'string', optional: true }
 ]);
 
 function _installSchema () {
-  if (getBodySchema(SIDECHAIN_STATE_PATCH_TYPE)) return;
+  const existing = getBodySchema(SIDECHAIN_STATE_PATCH_TYPE);
+  if (existing && existing.length === SCHEMA_SIDECHAIN_STATE_PATCH.length) return;
   registerBodySchema(SIDECHAIN_STATE_PATCH_TYPE, SCHEMA_SIDECHAIN_STATE_PATCH);
   registerBodySchema('SidechainStatePatch', SCHEMA_SIDECHAIN_STATE_PATCH);
   if (SIDECHAIN_STATE_PATCH_OPCODE != null) {
@@ -87,7 +90,8 @@ function encodeRegistryUpdateFields (state, catalog) {
   return {
     basisClock,
     basisDigest: Buffer.from(digestHex, 'hex'),
-    catalogCanonical: fabricCanonicalJson(catalog)
+    catalogCanonical: fabricCanonicalJson(catalog),
+    patchesCanonical: ''
   };
 }
 
@@ -120,15 +124,6 @@ function applyRegistryUpdateFields (state, fields, policy = null) {
   if (!fields || typeof fields.catalogCanonical !== 'string' || !fields.catalogCanonical) {
     return { ok: false, error: 'catalogCanonical required' };
   }
-  let catalog;
-  try {
-    catalog = JSON.parse(fields.catalogCanonical);
-  } catch (err) {
-    return { ok: false, error: 'catalogCanonical must be JSON' };
-  }
-  if (!catalog || typeof catalog !== 'object') {
-    return { ok: false, error: 'invalid catalog' };
-  }
 
   const current = state || sidechainState.createInitialState();
   const basisClock = fields.basisClock != null ? Number(fields.basisClock) : Number(current.clock) || 0;
@@ -143,6 +138,38 @@ function applyRegistryUpdateFields (state, fields, policy = null) {
     if (got !== expected) {
       return { ok: false, error: 'basisDigest mismatch' };
     }
+  }
+
+  // Prefer explicit RFC6902 sequence when present (HTTP multi-op fidelity).
+  const patchesRaw = fields.patchesCanonical != null ? String(fields.patchesCanonical).trim() : '';
+  if (patchesRaw) {
+    let patches;
+    try {
+      patches = JSON.parse(patchesRaw);
+    } catch (err) {
+      return { ok: false, error: 'patchesCanonical must be JSON' };
+    }
+    if (!Array.isArray(patches) || !patches.length) {
+      return { ok: false, error: 'patchesCanonical must be a non-empty RFC6902 array' };
+    }
+    const applied = sidechainState.applyPatchesToState(current, patches, policy);
+    if (!applied.ok) return applied;
+    return {
+      ok: true,
+      state: applied.state,
+      stateDigest: applied.newDigest,
+      basisDigest: applied.basisDigest
+    };
+  }
+
+  let catalog;
+  try {
+    catalog = JSON.parse(fields.catalogCanonical);
+  } catch (err) {
+    return { ok: false, error: 'catalogCanonical must be JSON' };
+  }
+  if (!catalog || typeof catalog !== 'object') {
+    return { ok: false, error: 'invalid catalog' };
   }
 
   // Internal reducer: content replace at /registry (HTTP may present this as RFC6902).

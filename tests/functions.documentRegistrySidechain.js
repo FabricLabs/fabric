@@ -8,7 +8,7 @@ const { getBodySchema } = require('../types/message');
 describe('functions/documentRegistrySidechain', function () {
   it('registers SIDECHAIN_STATE_PATCH body schema', function () {
     assert.ok(getBodySchema(registry.SIDECHAIN_STATE_PATCH_TYPE));
-    assert.strictEqual(getBodySchema(registry.SIDECHAIN_STATE_PATCH_TYPE).length, 3);
+    assert.strictEqual(getBodySchema(registry.SIDECHAIN_STATE_PATCH_TYPE).length, 4);
   });
 
   it('field round-trip encode/decode', function () {
@@ -23,6 +23,42 @@ describe('functions/documentRegistrySidechain', function () {
     assert.ok(Buffer.isBuffer(back.basisDigest));
     assert.strictEqual(back.basisDigest.toString('hex'), sidechainState.stateDigest(state));
     assert.strictEqual(back.catalogCanonical, fields.catalogCanonical);
+    assert.strictEqual(back.patchesCanonical, '');
+  });
+
+  it('decodes legacy 3-field bodies without patchesCanonical', function () {
+    const { encodeBody, decodeBody } = require('../types/message');
+    const legacySchema = Object.freeze([
+      { name: 'basisClock', type: 'u32' },
+      { name: 'basisDigest', type: 'bytes32' },
+      { name: 'catalogCanonical', type: 'string' }
+    ]);
+    const legacy = encodeBody(legacySchema, {
+      basisClock: 0,
+      basisDigest: Buffer.alloc(32),
+      catalogCanonical: '{"version":1,"documents":{}}'
+    });
+    const back = decodeBody(registry.SCHEMA_SIDECHAIN_STATE_PATCH, legacy);
+    assert.strictEqual(back.catalogCanonical, '{"version":1,"documents":{}}');
+    assert.strictEqual(back.patchesCanonical, '');
+  });
+
+  it('applyRegistryUpdateFields honors multi-op patchesCanonical', function () {
+    let state = sidechainState.createInitialState();
+    const patches = [
+      { op: 'add', path: '/note', value: 'hello' },
+      { op: 'add', path: '/count', value: 2 }
+    ];
+    const fields = {
+      basisClock: 0,
+      basisDigest: Buffer.from(sidechainState.stateDigest(state), 'hex'),
+      catalogCanonical: '{}',
+      patchesCanonical: JSON.stringify(patches)
+    };
+    const applied = registry.applyRegistryUpdateFields(state, fields);
+    assert.ok(applied.ok);
+    assert.strictEqual(applied.state.content.note, 'hello');
+    assert.strictEqual(applied.state.content.count, 2);
   });
 
   it('applyInventoryToRegistry updates STATE digest without public RFC6902 API', function () {

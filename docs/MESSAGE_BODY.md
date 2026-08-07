@@ -74,7 +74,8 @@ API: `types/message.js` body codec helpers (`Message.encodeBody` /
 - HTTP / Bridge may map field structs ↔ JSON for REST and browsers
   (`functions/messageBodyJsonBridge.js` in `@fabric/http`), including
   RFC6902 patch arrays ↔ `SIDECHAIN_STATE_PATCH` fields
-  (`basisClock` / `basisDigest` / `catalogCanonical`).
+  (`basisClock` / `basisDigest` / `catalogCanonical` / optional
+  `patchesCanonical` for multi-op fidelity).
 - **Legacy:** object bodies without a registered schema still
   `JSON.stringify` (deprecated transitional path for GenericMessage and
   unmigrated types). New opcodes **must** ship a field schema.

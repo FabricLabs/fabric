@@ -26,7 +26,6 @@
 ./types/key.js:    // TODO: determine if this makes sense / needs to be private
 ./types/key.js:    // TODO: evaluate compression when treating seed phrase as ascii
 ./types/key.js:    // TODO: consider using sha256(masterprivkey) or sha256(sha256(...))?
-./types/chain.js:    // TODO: _sortFees
 ./types/remote.js:    // TODO: use onion address for secure mode
 ./types/remote.js:        // TODO: warn about unexpected values
 ./types/remote.js:        // TODO: should settings override protocol inclusion?
@@ -99,7 +98,6 @@
 ./types/oracle.js:    // TODO: pre-populate
 ./types/node.js:// TODO: re-evaluate, remove
 ./types/node.js:    this.trust(this.program, 'PROGRAM'); // TODO: debug why 'ready' events come twice?
-./types/block.js:    // TODO: implement validators
 ./types/router.js:// TODO: re-define this class for Fabric messages
 ./types/router.js:            // TODO: remove this.fabric.plugins call
 ./types/wallet.js:        // TODO: export this.logs
@@ -108,8 +106,6 @@
 ./types/wallet.js:    // TODO: update channels
 ./types/wallet.js:    // TODO: parse as {@link Message}
 ./types/wallet.js:    // TODO: store in this.messages
-./types/wallet.js:        // TODO: validate destination is this wallet
-./types/wallet.js:      // TODO: process transaction
 ./types/wallet.js:      // TODO: test these outputs
 ./types/wallet.js:    // TODO: use coin selection
 ./types/wallet.js:    // TODO: use the MTX to select outputs
@@ -147,8 +143,6 @@
 ./types/peer.js:    // TODO: switch to child pubkey
 ./types/peer.js:              // TODO: consider making this a FabricMessageID
 ./types/peer.js:    // TODO: output stream
-./types/peer.js:        // TODO: reject and punish mis-behaving peers
-./types/peer.js:        // TODO: reject and punish mis-behaving peers
 ./types/peer.js:    // TODO: reconcile APIs for these methods
 ./types/entity.js:    // TODO: use getters/setters to restrict access to these elements
 ./types/entity.js:        // TODO: write up longer-form explanation as to why we use an Array here
@@ -182,7 +176,6 @@
 ./contracts/exchange.js:  // TODO: reconcile API wth @fabric/doorman as appears at: https://github.com/FabricLabs/doorman
 ./contracts/node.js:    // TODO: configure with input?
 ./contracts/setup.js:  // TODO: replicate this program in C / ASM
-./contracts/setup.js:    // TODO: remove from log output...
 ./tests/fabric.interface.js:      // TODO: remove this case / rework messages
 ./tests/fabric.tree.js:      assert.strictEqual(tree.root.toString('hex'), ''); // TODO: wat?
 ./tests/fabric.tree.js:      assert.strictEqual(tree.root.toString('hex'), '906b5aaf65ae98f8c98848de5e81ba865659f16fd53aefa4c78b34176f068079'); // TODO: wat?

@@ -89,11 +89,12 @@ Accepted `CONTRACT_PUBLISH` ids reuse the **same** document helpers under
 
 `SIDECHAIN_STATE_PATCH` uses the **same opcode / type name** across Peer, Beacon,
 and HTTP. Core prefers **typed fields** (`basisClock`, `basisDigest`,
-`catalogCanonical`) via `messageBodyCodec` /
+`catalogCanonical`, optional `patchesCanonical`) via `messageBodyCodec` /
 `functions/documentRegistrySidechain`. **RFC6902 JSON patch arrays are an
 `@fabric/http` edge transform** (`messageBodyJsonBridge`) of those fields — not
-the core/simulator primary API. Digests of `sidechain/STATE` still use
-`fabricCanonicalJson` (digest ≠ wire body).
+the core/simulator primary API. Multi-op sequences round-trip through
+`patchesCanonical` (UTF-8 JSON array); `/registry` still seeds `catalogCanonical`.
+Digests of `sidechain/STATE` still use `fabricCanonicalJson` (digest ≠ wire body).
 
 A dedicated numeric outer opcode may be allocated later.
 

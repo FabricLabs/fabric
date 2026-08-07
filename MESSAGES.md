@@ -60,7 +60,7 @@ Primary sources:
 | `BITCOIN_TRANSACTION_HASH` | 22100 | `0x5654` | Announces/propagates a Bitcoin transaction hash. |
 | `LOG_MESSAGE` | 3235156080 | `0xc0d3f330` | Debug/log transport message for diagnostics. |
 | `GENERIC_LIST` | 3235170158 | `0xc0d42e2e` | Generic list/queue-style payload container. |
-| `SIDECHAIN_STATE_PATCH` | 997 | `0x03e5` | Typed-field sidechain/registry update (`basisClock` / `basisDigest` / `catalogCanonical`). HTTP may map RFC6902 ↔ fields. |
+| `SIDECHAIN_STATE_PATCH` | 997 | `0x03e5` | Typed-field sidechain/registry update (`basisClock` / `basisDigest` / `catalogCanonical` / optional `patchesCanonical`). HTTP may map RFC6902 ↔ fields. |
 | `DOCUMENT_PUBLISH` | 998 | `0x03e6` | Publishes a document descriptor/content reference. |
 | `DOCUMENT_REQUEST` | 999 | `0x03e7` | Requests a document from peers/services. |
 | `BLOCK_CANDIDATE` | 3 | `0x0003` | Candidate block announcement in peer coordination. |
