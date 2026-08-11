@@ -4,7 +4,8 @@
  * Contract-namespace tip attestation (k-of-n Schnorr).
  *
  * Same witness shape as {@link beaconFederationSigning}: members / validators
- * Schnorr-sign a canonical tip string. Used by GoonCitizen Group Statechain
+ * Schnorr-sign a canonical tip string. Used by group Federation Statechain
+ * catch-up (`GroupJournalBatch`) and related ContractStateTip attestations.
  * journals today; Hub contract sidechains SHOULD reuse this when sealing
  * per-namespace tips (keep Hub docs / RPC in sync if the tip kind changes).
  *

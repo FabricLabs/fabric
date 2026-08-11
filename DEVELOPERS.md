@@ -23,7 +23,7 @@ Read **[VISION.md](VISION.md)** first for what Fabric is building, how **`@fabri
 See also [`QUICKSTART.md`][quickstart-guide] for up-to-date instructions.
 
 0. `nvm use 24.15.0` (install [`nvm`][nvm-official] if needed; matches `.nvmrc` / `package.json` engines)
-0b. Ensure **npm 12+** (`npm -v`). Node 24.15.0 may ship npm 11.x — upgrade with `npm install -g npm@12` (or newer) before installing. **`@fabric/core` keeps npm’s default `allow-git=none`** (no git deps). Only downstream packages that install Fabric from GitHub (Hub / `@fabric/http` / GoonCitizen) should set **`.npmrc` `allow-git=all`** for nested commit-SHA fetches — do not add that opt-in here.
+0b. Ensure **npm 12+** (`npm -v`). Node 24.15.0 may ship npm 11.x — upgrade with `npm install -g npm@12` (or newer) before installing. **`@fabric/core` keeps npm’s default `allow-git=none`** (no git deps). Only downstream packages that install Fabric from GitHub (Hub / `@fabric/http` / app peers) should set **`.npmrc` `allow-git=all`** for nested commit-SHA fetches — do not add that opt-in here.
 1. From a clone of this repo: `npm install` (or `npm install -g @fabric/core` to put `fabric` on your `PATH`).
 2. (optional) `fabric setup` to generate a master key and local config
 3. (optional) `fabric keygen` to generate a new master key without saving to disk (ephemeral)

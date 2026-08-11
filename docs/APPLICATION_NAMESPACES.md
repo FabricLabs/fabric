@@ -1,7 +1,7 @@
 # Fabric application namespaces
 
-Canonical model for multi-app mesh traffic across **Hub**, **GoonCitizen**,
-**Sensemaker**, and other `@fabric/core` peers.
+Canonical model for multi-app mesh traffic across **Hub**, light peers,
+**Sensemaker**, and other `@fabric/core` consumers.
 
 Code catalog: [`functions/applicationNamespaces.js`](../functions/applicationNamespaces.js).  
 Wire opcodes: [`MESSAGES.md`](../MESSAGES.md) §1 and §3.
@@ -28,26 +28,31 @@ fanout in some paths. Prefer `P2P_CHAT_MESSAGE` for all **mesh** chat.
 
 ## Shared CONTRACT_MESSAGE body types
 
-These `type` strings ride inside `CONTRACT_MESSAGE` (not outer opcodes):
+These `type` strings ride inside `CONTRACT_MESSAGE` (not outer opcodes).
+Product-specific types (missions, gameplay batches, share envelopes, activity
+trees) belong in **app catalogs**, not this core list.
 
-| Body `type` | Used by | Purpose |
-|-------------|---------|---------|
-| `FederationContractInvite` | Hub, GoonCitizen | Hub-shaped co-signer / join invite (`v: 2` + `proposedPolicy`) |
-| `FederationContractInviteResponse` | Hub, GoonCitizen | Accept / reject |
-| `MissionCreated` | GoonCitizen | Network mission register upsert |
-| `MissionBroadcast` | GoonCitizen | Network mission offer |
-| `SCEventBatch` | GoonCitizen | Log / event batch |
-| `GroupChat` | GoonCitizen Group Federation | Group channel chat (optional tip-bound seal: `seal.scheme = aes-256-gcm-groupchat-v1`, see `functions/groupChatSeal.js`) |
-| `GroupChange` | GoonCitizen Group Federation | Membership / meta |
-| `GroupShare` | GoonCitizen Group Federation | Group-scoped shares (mission offers; `kind: GroupOffer` for opaque `fabric:<hex>` join offers) |
-| `GroupActivityTree` | GoonCitizen Group Federation | Merkle root + digests of cumulative history under a Group namespace |
-| `GroupJournalRequest` | GoonCitizen Group Federation | Request missing Statechain journal entries (`fromClock` → tip) |
-| `GroupJournalBatch` | GoonCitizen Group Federation | Catch-up batch of journal rows + tip Schnorr (`ContractStateTip`) |
-| `GroupStateJournal` | GoonCitizen Group Federation | Optional tip attestation: folded `stateDigest` signed to threshold |
-| `ContractCapabilityGrant` | Hub, GoonCitizen | Token-backed reader/signer grant (`OP_CONTRACT_READ` / `OP_CONTRACT_SIGN`) |
-| `ContractWithdrawalRequest` | Hub, GoonCitizen | Spend or decay-migrate from contract Taproot UTXO |
-| `ContractWithdrawalWitness` | Hub, GoonCitizen | Co-signer witness for withdrawal / migration |
-| `GameStateSnapshot` | GoonCitizen → Hub sidechain | Cumulative analytics snapshot for Beacon seal (also listed under `ACTIVITY_TYPES`) |
+| Body `type` | Purpose |
+|-------------|---------|
+| `FederationContractInvite` | Co-signer / join invite (`v: 2` + `proposedPolicy`) |
+| `FederationContractInviteResponse` | Accept / reject |
+| `GroupChat` | Chat under a group / pair Application Resource Contract (optional tip-bound seal: `functions/groupChatSeal.js`) |
+| `GroupChange` | Membership / meta on a group Federation contract |
+| `GroupJournalRequest` | Request missing Statechain journal entries (`fromClock` → tip) |
+| `GroupJournalBatch` | Catch-up batch of journal rows + tip Schnorr (`ContractStateTip`) |
+| `GroupStateJournal` | Optional tip attestation: folded `stateDigest` signed to threshold |
+| `ContractCapabilityGrant` | Token-backed reader/signer grant (`OP_CONTRACT_READ` / `OP_CONTRACT_SIGN`) |
+| `ContractWithdrawalRequest` | Spend or decay-migrate from contract Taproot UTXO |
+| `ContractWithdrawalWitness` | Co-signer witness for withdrawal / migration |
+| `MessageReceived` | Phase-1 delivery ACK (reader received the wire frame) |
+| `MessageReceipt` | Phase-2 BIP340 receipt over message / content hash |
+
+**Multi-origin accumulate:** publisher and participants ingest the same signed
+AMP bytes from mesh, opaque hub queues, or copy-paste (`fabric:<hex>`) via
+[`functions/contractMessageAccumulate.js`](../functions/contractMessageAccumulate.js).
+Fold is idempotent by message hash and arrival-order independent. Delivery 2PC
+lives in [`functions/contractMessageCommit.js`](../functions/contractMessageCommit.js)
+(sidecar; does not alter content `stateDigest`).
 
 **Tip attestation:** journal tips use
 [`functions/contractStateSigning`](../functions/contractStateSigning.js)
@@ -67,11 +72,10 @@ Not outer opcodes; not always `CONTRACT_MESSAGE` bodies. Catalogued as
 |--------|---------|
 | `FederationSignRequest` | Ask Federation validators to Schnorr-sign a Beacon epoch commitment |
 | `FederationSignResponse` | Return a validator signature for a pending round |
-| `GameStateSnapshot` | App → Hub sidechain / activity fanout of sealed game-state digests |
 
 Apps MAY add more body types under **their** contract namespace without changing
 core opcodes. Do not casually mutate a frozen genesis `messageTypes` array if
-it is hashed into the contract `Actor` id (GoonCitizen network genesis).
+it is hashed into the contract `Actor` id.
 
 ## Downstream status
 
@@ -79,7 +83,7 @@ it is hashed into the contract `Actor` id (GoonCitizen network genesis).
 |---------|-------------------------------|---------------------|-------|
 | **@fabric/core** Peer | Relays + `chat` event | Relays + `contract:publish` / `contract:message` | Source of truth for opcodes |
 | **Hub** | SubmitChatMessage → P2P mesh; WS often `ChatMessage` | Tracks publish once per id; counts messages in memory | Invites also appear in chat JSON historically |
-| **GoonCitizen** | `global` channel | GoonCitizen genesis + per-Group Federation contracts | Full Groups-as-Federations path |
+| **Light peer / desktop** | `global` channel | App genesis + per-group Federation contracts | Groups-as-Federations; product types in app catalog |
 | **Sensemaker** | Global UI sends/receives `P2P_CHAT_MESSAGE`; Peer `chat` + contract events attached | Emits `fabric:contract:*`; ignore-unknown by default | AI stream stays off mesh; Federation `CONTRACT_PUBLISH` optional next |
 
 ## Convergence rules
@@ -87,6 +91,4 @@ it is hashed into the contract `Actor` id (GoonCitizen network genesis).
 1. **New mesh features** use the outer types above — not new one-off opcodes per app.
 2. **App-specific semantics** go in `CONTRACT_MESSAGE` body `type` + `object` under a published contract id.
 3. **Ignore unknown namespaces** — never crash the Peer on unfamiliar `contract` ids.
-4. **Invite JSON** (`FederationContractInvite` v2) is the shared join/policy shape — parse/build lives in **`@fabric/http/functions/federationContractInvite`** (keep JSON bridges out of core).
-5. Prefer importing body-type names from `@fabric/core/functions/applicationNamespaces` rather than duplicating string literals.
-6. **`contract:message` events** expose `wireMessage` / `messageHex` so apps can attach bit-identical AMP frames to journal rows.
+4. **Same accepted Message set ⇒ same tip** — accumulate from any origin; fold by sorted message hash.

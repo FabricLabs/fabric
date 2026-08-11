@@ -408,7 +408,7 @@ describe('peer/message integration (mesh & secure delivery)', function () {
     let event = null;
     hub.once('contract:publish', (e) => { event = e; });
 
-    const definition = { name: 'GoonCitizen', version: 1, state: {} };
+    const definition = { name: 'AppPeer', version: 1, state: {} };
     const msg = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]);
     msg.signWithKey(k);
     hub._handleFabricMessage(msg.toBuffer(), { name: origin }, null);
