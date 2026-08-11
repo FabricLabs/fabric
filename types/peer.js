@@ -347,6 +347,39 @@ function isRelayAsIsWireType (type) {
 }
 
 /**
+ * Types that must arrive as first-class AMP opcodes — not via P2P_BASE_MESSAGE JSON.
+ * @param {string|null|undefined} type
+ * @returns {boolean}
+ * @private
+ */
+function isFirstClassOpcodeOnlyType (type) {
+  if (type == null) return false;
+  return FIRST_CLASS_OPCODE_ONLY_TYPES.has(String(type));
+}
+
+/** @private */
+const FIRST_CLASS_OPCODE_ONLY_TYPES = new Set([
+  'P2P_PEER_GOSSIP',
+  'P2P_PEERING_OFFER',
+  'P2P_PEER_ANNOUNCE',
+  'P2P_PEER_ALIAS',
+  'P2P_SESSION_OFFER',
+  'P2P_SESSION_OPEN',
+  'P2P_CHAT_MESSAGE',
+  'CONTRACT_PUBLISH',
+  'CONTRACT_MESSAGE',
+  'CONTRACT_PROPOSAL',
+  'P2P_INVENTORY_REQUEST',
+  'P2P_INVENTORY_RESPONSE',
+  'P2P_FILE_SEND',
+  'P2P_DOCUMENT_PUBLISH',
+  'P2P_FLUSH_CHAIN',
+  'FlushChain',
+  'BitcoinBlock',
+  'BITCOIN_BLOCK'
+]);
+
+/**
  * Generic / base carriers may wrap a relay-as-is body (Hub transitional path).
  * Pin-check against the TCP peer would wrongly reject multisig / prior-hop authors.
  * @param {Message} message
@@ -1149,7 +1182,11 @@ class Peer extends Service {
       }
     }
     this._candidateKeys.add(key);
-    this.candidates.push({ host, port: Number(port), pubkey: meta.pubkey || null });
+    const pubkey = meta.pubkey ? normalizePeerPubkeyHex(meta.pubkey) : '';
+    // Omit empty pubkey — callers historically expect `{ host, port }` when unknown.
+    this.candidates.push(pubkey
+      ? { host, port: Number(port), pubkey }
+      : { host, port: Number(port) });
   }
 
   /**
@@ -2581,8 +2618,7 @@ class Peer extends Service {
       case 'CONTRACT_PUBLISH':
       case 'CONTRACT_MESSAGE':
       {
-        const rawTyped = messageDataToString(message.data);
-        const prTyped = tryParseWireJsonBody(rawTyped);
+        const prTyped = Message.tryParseMessageBody(message);
         if (!prTyped.ok || prTyped.value === null || typeof prTyped.value !== 'object' || Array.isArray(prTyped.value)) {
           this.emit('warning', `[FABRIC:PEER] ${message.type} parse failed: ${prTyped.ok ? 'invalid body' : prTyped.error.message}`);
           break;
@@ -2714,7 +2750,9 @@ class Peer extends Service {
             this.emit('warning', '[FABRIC:PEER] Generic message body must be a JSON object');
             break;
           }
-          this._handleGenericMessage(bodyGm, origin, socket, message, opts);
+          this._handleGenericMessage(bodyGm, origin, socket, message, Object.assign({}, opts, {
+            genericCarrier: true
+          }));
         }
 
         break;
@@ -2969,6 +3007,14 @@ class Peer extends Service {
     const msg = normalizeFabricDocumentOfferEnvelopeForHandlers(message);
     if (this.settings.debug) this.emit('debug', `Generic message:\n\tFrom: ${JSON.stringify(origin)}\n\tType: ${msg.type}\n\tBody:\n\`\`\`\n${JSON.stringify(msg.object, null, '  ')}\n\`\`\``);
 
+    // Strict Protocol V1: first-class mesh / session opcodes must not escalate from
+    // P2P_BASE_MESSAGE / GenericMessage JSON carriers (attackers renaming body.type).
+    if (handleOpts.genericCarrier === true && isFirstClassOpcodeOnlyType(msg && msg.type)) {
+      this.emit('warning',
+        `[FABRIC:PEER] Ignoring ${msg.type} via generic carrier; use first-class AMP opcode`);
+      return this;
+    }
+
     const signerPubkeyHex = wireMessage
       ? this._verifiedFabricSignerPubkeyHex(wireMessage)
       : normalizePeerPubkeyHex(msg && msg.actor && (msg.actor.publicKey || msg.actor.pubkey));
@@ -3136,9 +3182,13 @@ class Peer extends Service {
           const connCount = Object.keys(this.connections || {}).length;
           const maxPeers = (this.settings.constraints && this.settings.constraints.peers && this.settings.constraints.peers.max) || MAX_PEERS;
           if (connCount < maxPeers) {
-            this._enqueuePeeringCandidate(obj.host, obj.port, {
-              pubkey: obj.pubkey || (message.actor && (message.actor.pubkey || message.actor.publicKey || message.actor.id))
-            });
+            // Prefer explicit offer pubkey, else verified AMP signer (generic bodies
+            // usually have no `actor` — do not leave candidates with pubkey: null).
+            const advertised = obj.pubkey
+              || (message.actor && (message.actor.pubkey || message.actor.publicKey || message.actor.id))
+              || signerPubkeyHex
+              || '';
+            this._enqueuePeeringCandidate(obj.host, obj.port, { pubkey: advertised });
           }
         }
         if (wireMessage) this.relayFrom(origin.name, wireMessage);

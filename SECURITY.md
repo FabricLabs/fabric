@@ -77,6 +77,16 @@ Exact wire duplicates remain a silent drop (no score change). Wire-hash dedup re
 ## Inbound frame size
 Wire frames larger than `HEADER_SIZE + MAX_MESSAGE_SIZE` (override body via `settings.maxMessageSize`) are dropped **before** parse / body-hash / signature work.
 
+## Strict Protocol V1 (test contract)
+Adversarial Peer coverage under the assumption that **NOISE payloads are raw, well-formed Fabric Messages** (not random bytes) lives in [`tests/protocol-v1/`](tests/protocol-v1/README.md): opcode × delivery matrix (`direct` / foreign `P2P_RELAY` / `P2P_FORWARD` peel), unknown-opcode policy (`UNKNOWN_MESSAGE` — must not alias to `P2P_BASE_MESSAGE`), multi-origin collusion budgets, and a typed live NOISE storm. Parser crash fuzz remains in `tests/fuzz/` and is **not** counted as semantic adversarial coverage.
+
+**Generic carrier:** `P2P_BASE_MESSAGE` / `GENERIC_MESSAGE` JSON bodies must not escalate first-class mesh/session opcodes (`P2P_PEERING_OFFER`, `P2P_PEER_GOSSIP`, `CONTRACT_MESSAGE`, …). Legacy inventory continues to use inner type `INVENTORY_REQUEST` (not the `P2P_` wire name).
+
+**Phase B bodies:** registered field schemas (`Message.fromFields` / `tryParseMessageBody`) cover
+`P2P_PING` / `P2P_PONG` / `P2P_FORWARD` / `P2P_PEER_GOSSIP` / `P2P_PEERING_OFFER` /
+`P2P_PEER_ANNOUNCE`. Peer typed handlers accept **JSON or field layouts**. Chat/alias remain
+raw UTF-8. Coverage: `tests/protocol-v1/phase-b.typed-bodies.js`.
+
 ## Inventory HTLC binding
 Buyers must rebuild the buyer-bound P2TR (`validateInventoryHtlcOffer`) and must not fund a seller-advertised `paymentAddress` that does not match. When an AMP signer is known (`inventoryResponse.signerPubkeyHex` / offer `ampSignerPubkey` / HTLC `sellerPublicKeyHex`), it must match the resolved seller x-only key before funding.
 

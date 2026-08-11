@@ -309,7 +309,11 @@ describe('@fabric/core Peer gossip / peering production network', function () {
 
       assert.strictEqual(offers.length, 1);
       assert.strictEqual(peer.candidates.length, 1);
-      assert.deepStrictEqual(peer.candidates[0], { host: '203.0.113.10', port: 7777 });
+      assert.deepStrictEqual(peer.candidates[0], {
+        host: '203.0.113.10',
+        port: 7777,
+        pubkey: xOnlyFromKey(author).toString('hex')
+      });
       assert.ok(peer._candidateKeys.has('203.0.113.10:7777'));
       assert.ok(wire.equals(edges['127.0.0.1:8101'][0]));
       assert.ok(wire.equals(edges['127.0.0.1:8102'][0]));
