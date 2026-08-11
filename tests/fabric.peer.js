@@ -1677,6 +1677,40 @@ describe('@fabric/core/types/peer', function () {
     });
 
     describe('P2P handshake (SESSION_OFFER / SESSION_OPEN)', function () {
+      it('on P2P_SESSION_OFFER from own Fabric key aborts without SESSION_OPEN', function () {
+        const server = new Peer({ listen: false, peersDb: null });
+        const connAddress = '127.0.0.1:9999';
+        let replyBuffer = null;
+        let selfEv = null;
+        server.connections[connAddress] = {
+          _writeFabric: (buf) => { replyBuffer = buf; },
+          destroy: () => {}
+        };
+        server.on('peer:self', (ev) => { selfEv = ev; });
+
+        const peerId = server.identity.id;
+        const proof = server._sessionKeyProofMessage(peerId, server.key.pubkey, server.key.pubkey);
+        const content = {
+          type: 'P2P_SESSION_OFFER',
+          actor: {
+            id: peerId,
+            pubkey: server.key.pubkey,
+            parentPubkey: server.key.pubkey,
+            parentSignature: server.key.signSchnorr(proof).toString('hex')
+          },
+          object: { challenge: 'selfloop' }
+        };
+        const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
+        msg.signWithKey(server.key);
+        server._handleFabricMessage(msg.toBuffer(), { name: connAddress }, null);
+
+        assert.strictEqual(replyBuffer, null, 'must not reply SESSION_OPEN to self');
+        assert.ok(selfEv, 'emits peer:self');
+        assert.strictEqual(selfEv.address, connAddress);
+        assert.ok(!server.connections[connAddress], 'connection torn down');
+        assert.ok(server._isSelfDialSuppressed(connAddress));
+      });
+
       it('on P2P_SESSION_OFFER registers peer, sets _addressToId, emits peer, and sends P2P_SESSION_OPEN via _writeFabric', function (done) {
         const server = new Peer({ listen: false, peersDb: null });
         const connAddress = '127.0.0.1:9999';

@@ -611,6 +611,12 @@ class Peer extends Service {
      * see `peer not connected` while an ephemeral inbound key remains.
      */
     this._outboundDialTargets = new Set();
+    /**
+     * Addresses suppressed after a self-session (own Fabric key on the wire).
+     * Map `host:port` → expiry ms (Date.now()).
+     * @type {Map<string, number>}
+     */
+    this._selfDialSuppressUntil = new Map();
     this.sessions = {};
 
     // Internal Stack Machine
@@ -1121,10 +1127,19 @@ class Peer extends Service {
    * Enqueue a fabric candidate from {@link P2P_PEERING_OFFER}; FIFO-capped and deduped by host:port.
    * @param {string} host
    * @param {number} port
+   * @param {Object} [meta]
+   * @param {string} [meta.pubkey] Optional advertised Fabric pubkey (skip if own).
    */
-  _enqueuePeeringCandidate (host, port) {
-    const max = (this.settings.peering && this.settings.peering.maxCandidates) || PEER_MAX_CANDIDATES_QUEUE;
+  _enqueuePeeringCandidate (host, port, meta = {}) {
     const key = `${String(host)}:${Number(port)}`;
+    if (this._isSelfDialSuppressed(key)) return;
+    if (meta.pubkey && this._isOwnFabricPubkey(meta.pubkey)) {
+      this.emit('warning',
+        `[FABRIC:PEER] Skipping peering candidate ${key}: advertised pubkey is our own`);
+      this._suppressSelfDialAddress(key);
+      return;
+    }
+    const max = (this.settings.peering && this.settings.peering.maxCandidates) || PEER_MAX_CANDIDATES_QUEUE;
     if (this._candidateKeys.has(key)) return;
     while (this.candidates.length >= max) {
       const old = this.candidates.shift();
@@ -1134,7 +1149,104 @@ class Peer extends Service {
       }
     }
     this._candidateKeys.add(key);
-    this.candidates.push({ host, port: Number(port) });
+    this.candidates.push({ host, port: Number(port), pubkey: meta.pubkey || null });
+  }
+
+  /**
+   * Local Fabric session pubkey (x-only hex), same normalization as wire signers.
+   * @returns {string}
+   */
+  _localFabricPubkeyHex () {
+    try {
+      if (this.key && this.key.public && typeof this.key.public.encodeCompressed === 'function') {
+        return normalizePeerPubkeyHex(this.key.public.encodeCompressed('hex'));
+      }
+    } catch (_) { /* fall through */ }
+    return normalizePeerPubkeyHex(this.key && (this.key.pubkey || this.id));
+  }
+
+  /**
+   * @param {*} hex
+   * @returns {boolean}
+   */
+  _isOwnFabricPubkey (hex) {
+    const remote = normalizePeerPubkeyHex(hex);
+    const local = this._localFabricPubkeyHex();
+    return !!(remote && local && remote === local);
+  }
+
+  /**
+   * @param {*} id
+   * @returns {boolean}
+   */
+  _isOwnFabricActorId (id) {
+    const mine = this.identity && this.identity.id != null ? String(this.identity.id) : '';
+    return !!(mine && id != null && String(id) === mine);
+  }
+
+  /**
+   * @param {string} address
+   * @param {number} [ttlMs=600000]
+   */
+  _suppressSelfDialAddress (address, ttlMs = 600000) {
+    const addr = String(address || '').trim();
+    if (!addr) return;
+    const ttl = Number(ttlMs);
+    const until = Date.now() + (Number.isFinite(ttl) && ttl > 0 ? ttl : 600000);
+    if (!this._selfDialSuppressUntil) this._selfDialSuppressUntil = new Map();
+    this._selfDialSuppressUntil.set(addr, until);
+  }
+
+  /**
+   * @param {string} address
+   * @returns {boolean}
+   */
+  _isSelfDialSuppressed (address) {
+    const addr = String(address || '').trim();
+    if (!addr || !this._selfDialSuppressUntil) return false;
+    const until = this._selfDialSuppressUntil.get(addr);
+    if (until == null) return false;
+    if (Date.now() >= until) {
+      this._selfDialSuppressUntil.delete(addr);
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Tear down a TCP/NOISE session that presented our own Fabric identity.
+   * Emits `peer:self` so apps can drop the address from dial lists.
+   * @param {string|null|undefined} connAddress
+   * @param {string} [reason]
+   * @returns {Peer}
+   */
+  _abortSelfFabricSession (connAddress, reason = 'own Fabric identity') {
+    const addr = connAddress ? String(connAddress) : '';
+    this.emit('warning', `[FABRIC:PEER] Closing self-session ${addr || '(unknown)'}: ${reason}`);
+    this.emit('peer:self', { address: addr || null, reason: String(reason) });
+    if (addr) {
+      this._suppressSelfDialAddress(addr);
+      if (this._outboundDialTargets) this._outboundDialTargets.delete(addr);
+      if (this._candidateKeys) this._candidateKeys.delete(addr);
+      if (Array.isArray(this.candidates)) {
+        this.candidates = this.candidates.filter((c) => {
+          const h = c && (c.address || `${c.host}:${c.port}`);
+          return h !== addr;
+        });
+      }
+      const sock = this.connections && this.connections[addr];
+      if (sock) {
+        if (sock._keepalive) clearInterval(sock._keepalive);
+        delete this.connections[addr];
+        delete this.peers[addr];
+        if (this._addressToId) delete this._addressToId[addr];
+        try {
+          if (typeof sock.destroy === 'function') sock.destroy();
+          else if (typeof sock._destroyFabric === 'function') sock._destroyFabric();
+        } catch (_) { /* ignore */ }
+      }
+    }
+    return this;
   }
 
   get id () {
@@ -1676,11 +1788,31 @@ class Peer extends Service {
       return;
     }
 
+    if (this._isSelfDialSuppressed(target)) {
+      this.emit('warning', `[FABRIC:PEER:_connect] Refusing dial to self-suppressed ${target}`);
+      return;
+    }
+
     this.emit('debug', `[FABRIC:PEER:_connect] Attempting to connect to: ${target}`);
     const url = new URL(`tcp://${target}`);
     const id = url.username;
 
+    // pubkey@host:port — refuse when the pin is our own Fabric key (pre-TCP).
+    if (id && this._isOwnFabricPubkey(id)) {
+      this.emit('warning',
+        `[FABRIC:PEER:_connect] Refusing dial to ${target}: pinned pubkey is our own`);
+      this._suppressSelfDialAddress(target.includes('@') ? target.split('@').pop() : target);
+      this.emit('peer:self', { address: target, reason: 'pinned pubkey is own Fabric key' });
+      return;
+    }
+
     if (!url.port) target += `:${P2P_PORT}`;
+
+    // After normalizing port, check suppress on host:port form.
+    if (this._isSelfDialSuppressed(target)) {
+      this.emit('warning', `[FABRIC:PEER:_connect] Refusing dial to self-suppressed ${target}`);
+      return;
+    }
 
     this._outboundDialTargets.add(target);
 
@@ -1725,7 +1857,9 @@ class Peer extends Service {
 
     socket.on('error', (error) => {
       this.emit('debug', `--- debug error from _connect() ---`);
-      if (error && (error.code === 'EPIPE' || error.code === 'ECONNRESET')) {
+      if (error && (error.code === 'EPIPE' || error.code === 'ECONNRESET' ||
+          error.code === 'ECONNREFUSED' || error.code === 'EHOSTUNREACH' ||
+          error.code === 'ENETUNREACH' || error.code === 'ETIMEDOUT')) {
         this.emit('warning', `Suppressing transient outbound socket error (${error.code}) from _connect().`);
       } else {
         const msg = `Socket error: ${error}`;
@@ -1749,6 +1883,10 @@ class Peer extends Service {
       this.emit('debug', `Socket end: (${target}) ${info}`);
       // delete this.connections[target];
     });
+
+    // Attach before pipe — noise-protocol-stream destroy(err) emits on encrypt/decrypt;
+    // missing listeners become uncaught Exceptions (noise_stream_new / malloc).
+    this._attachNoiseStreamErrorHandlers(client, 'NOISE');
 
     // Handle trusted Fabric messages
     client.decrypt.on('data', (data) => {
@@ -2039,7 +2177,17 @@ class Peer extends Service {
       try {
         const host = candidate.object ? candidate.object.host : candidate.host;
         const port = candidate.object ? candidate.object.port : candidate.port;
-        this._connect(`${host}:${port}`);
+        const pubkey = candidate.pubkey ||
+          (candidate.object && (candidate.object.pubkey || candidate.object.publicKey));
+        const addr = `${host}:${port}`;
+        if (pubkey && this._isOwnFabricPubkey(pubkey)) {
+          this.emit('warning',
+            `[FABRIC:PEER] Dropping candidate ${addr}: pubkey is our own`);
+          this._suppressSelfDialAddress(addr);
+          if (this._candidateKeys) this._candidateKeys.delete(addr);
+          continue;
+        }
+        this._connect(addr);
       } catch (exception) {
         this.emit('error', `Unable to fill open peer slot ${i}: ${exception}`);
       }
@@ -2689,6 +2837,12 @@ class Peer extends Service {
       if (!sessionClaim) return this;
     }
 
+    // Self-dial / hairpin: remote presented a session signed with our own Fabric key.
+    // (Actor-id alone is not enough — an attacker can claim our id with another key.)
+    if (this._isOwnFabricPubkey(signerPubkeyHex)) {
+      return this._abortSelfFabricSession(connAddress, 'P2P_SESSION_OFFER from own Fabric identity');
+    }
+
     // If we've already bound this Fabric id to a key, reject key-mismatched offers.
     const existingPeer = (this._state.peers && this._state.peers[peerId]) || null;
     if (existingPeer && existingPeer.publicKey) {
@@ -2777,6 +2931,14 @@ class Peer extends Service {
       const sessionClaim = this._validateSessionKeyExchangeClaim(
         message, signerPubkeyHex, origin && origin.name, { peeledForward: opts.peeledForward === true });
       if (!sessionClaim) return this;
+    }
+    // Hairpin: OPEN signed with our own key (SESSION_OFFER path should catch first).
+    // Note: object.initiator === our id is normal when we dialed and they accepted.
+    if (this._isOwnFabricPubkey(signerPubkeyHex)) {
+      return this._abortSelfFabricSession(
+        origin && origin.name,
+        'P2P_SESSION_OPEN from own Fabric identity'
+      );
     }
     const existingOpenPeer = (this._state.peers && this._state.peers[openPeerId]) || null;
     if (existingOpenPeer && existingOpenPeer.publicKey) {
@@ -2974,7 +3136,9 @@ class Peer extends Service {
           const connCount = Object.keys(this.connections || {}).length;
           const maxPeers = (this.settings.constraints && this.settings.constraints.peers && this.settings.constraints.peers.max) || MAX_PEERS;
           if (connCount < maxPeers) {
-            this._enqueuePeeringCandidate(obj.host, obj.port);
+            this._enqueuePeeringCandidate(obj.host, obj.port, {
+              pubkey: obj.pubkey || (message.actor && (message.actor.pubkey || message.actor.publicKey || message.actor.id))
+            });
           }
         }
         if (wireMessage) this.relayFrom(origin.name, wireMessage);
@@ -3049,7 +3213,9 @@ class Peer extends Service {
         const host = announceObj && announceObj.host;
         const port = announceObj && announceObj.port;
         if (host != null && port != null) {
-          this._enqueuePeeringCandidate(host, port);
+          this._enqueuePeeringCandidate(host, port, {
+            pubkey: announceObj.pubkey || signerPubkeyHex
+          });
         }
         break;
       }
@@ -3210,6 +3376,34 @@ class Peer extends Service {
     }
   }
 
+  /**
+   * Bind encrypt/decrypt 'error' before piping. noise-protocol-stream calls
+   * stream.destroy(err) on handshake failure; without listeners Node raises
+   * uncaught Exceptions (e.g. `noise_stream_new`, `malloc`).
+   * @param {{encrypt: import('stream').Duplex, decrypt: import('stream').Duplex}} noiseStream
+   * @param {string} [label='NOISE']
+   */
+  _attachNoiseStreamErrorHandlers (noiseStream, label = 'NOISE') {
+    if (!noiseStream || !noiseStream.encrypt || !noiseStream.decrypt) return;
+    const onSide = (side) => (error) => {
+      if (error && (error.code === 'EPIPE' || error.code === 'ECONNRESET')) {
+        this.emit('warning', `Suppressing transient ${label} ${side} error (${error.code}).`);
+        return;
+      }
+      const text = String((error && error.message) || error || '');
+      const msg = `${label} ${side} error: ${error}`;
+      // Native teardown after a bad self-handshake / OOM — keep process alive.
+      if (/noise_stream_new|\bmalloc\b/i.test(text)) {
+        this.emit('warning', msg);
+        return;
+      }
+      if (this.listenerCount('error') > 0) this.emit('error', msg);
+      else this.emit('warning', msg);
+    };
+    noiseStream.encrypt.on('error', onSide('encrypt'));
+    noiseStream.decrypt.on('error', onSide('decrypt'));
+  }
+
   _NOISESocketHandler (socket) {
     const target = `${socket.remoteAddress}:${socket.remotePort}`;
     const url = `tcp://${target}`;
@@ -3263,14 +3457,6 @@ class Peer extends Service {
         }
       }
     });
-    handler.encrypt.on('error', (error) => {
-      if (error && (error.code === 'EPIPE' || error.code === 'ECONNRESET')) {
-        this.emit('warning', `Suppressing transient NOISE encrypt error (${error.code}).`);
-      } else {
-        this.emit('error', `NOISE encrypt error: ${error}`);
-      }
-    });
-
     handler.encrypt.on('end', (data) => {
       if (this.settings.debug) this.emit('debug', `Peer encrypt end: ${data}`);
       // socket.destroy();
@@ -3280,13 +3466,7 @@ class Peer extends Service {
       }
     });
 
-    handler.decrypt.on('error', (error) => {
-      if (error && (error.code === 'EPIPE' || error.code === 'ECONNRESET')) {
-        this.emit('warning', `Suppressing transient NOISE decrypt error (${error.code}).`);
-      } else {
-        this.emit('error', `NOISE decrypt error: ${error}`);
-      }
-    });
+    this._attachNoiseStreamErrorHandlers(handler, 'NOISE');
 
     handler.decrypt.on('close', (data) => {
       if (this.settings.debug) this.emit('debug', `Peer decrypt close: ${data}`);
@@ -4597,12 +4777,22 @@ class Peer extends Service {
   }
 
   _verifyNOISE (localPrivateKey, localPublicKey, remotePublicKey, done) {
-    // Is the message valid?
-    if (1 === 1) {
-      done(null, true);
-    } else {
-      done(null, false);
-    }
+    // When static keys are present, refuse a NOISE peer that is ourselves.
+    try {
+      const local = normalizePeerPubkeyHex(localPublicKey);
+      const remote = normalizePeerPubkeyHex(remotePublicKey);
+      if (local && remote && local === remote) {
+        this.emit('warning', '[FABRIC:PEER] NOISE verify rejected: remote static key is local');
+        this.emit('peer:self', { address: null, reason: 'NOISE remote static key is local' });
+        return done(null, false);
+      }
+      if (remote && this._isOwnFabricPubkey(remote)) {
+        this.emit('warning', '[FABRIC:PEER] NOISE verify rejected: remote static matches Fabric identity');
+        this.emit('peer:self', { address: null, reason: 'NOISE remote static matches Fabric identity' });
+        return done(null, false);
+      }
+    } catch (_) { /* accept below */ }
+    done(null, true);
   }
 
   _writeFabric (msg, stream) {
