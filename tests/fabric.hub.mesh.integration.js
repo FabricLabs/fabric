@@ -106,26 +106,22 @@ describe('@fabric/core Hub mesh integration', function () {
       const sock = hub.connections[addr];
       if (!sock || !sock._writeFabric) return;
 
-      const reply = (obj) => {
-        const m = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(obj)]);
-        m.signWithKey(hub.key);
-        sock._writeFabric(m.toBuffer());
-      };
-
-      reply({
+      const inv = Message.fromVector(['P2P_INVENTORY_RESPONSE', JSON.stringify({
         type: 'INVENTORY_RESPONSE',
         object: {
           items: [{ id: docId, rateSats: askSats, contentHash, network: 'bitcoin' }]
         }
-      });
+      })]);
+      inv.signWithKey(hub.key);
+      sock._writeFabric(inv.toBuffer());
 
-      reply({
-        type: 'P2P_FILE_SEND',
-        object: {
-          name: docId,
-          body: body.toString('base64')
-        }
-      });
+      // First-class opcode — P2P_FILE_SEND must not escalate from P2P_BASE_MESSAGE.
+      const file = Message.fromVector(['P2P_FILE_SEND', JSON.stringify({
+        name: docId,
+        body: body.toString('base64')
+      })]);
+      file.signWithKey(hub.key);
+      sock._writeFabric(file.toBuffer());
     });
 
     await hub.start();

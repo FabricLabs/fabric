@@ -305,12 +305,31 @@ describe('contractTaproot', function () {
     assert.strictEqual(timelockMature({ type: 'csv', blocks: 10 }, { utxoAgeBlocks: 10 }), true);
     assert.strictEqual(timelockMature({ type: 'cltv', height: 100 }, { tipHeight: 99 }), false);
     assert.strictEqual(timelockMature({ type: 'cltv', height: 100 }, { tipHeight: 100 }), true);
+    assert.strictEqual(
+      timelockMature({ type: 'cltv', unix: 500000000 }, { medianTime: 500000000 }),
+      true
+    );
+    assert.strictEqual(
+      timelockMature({ type: 'cltv', unix: 500000000 }, { medianTime: 499999999 }),
+      false
+    );
   });
 
   it('normalizeLock rejects CSV above 65535', function () {
     assert.ok(normalizeLock({ type: 'csv', blocks: 65535 }));
     assert.strictEqual(normalizeLock({ type: 'csv', blocks: 65536 }), null);
     assert.strictEqual(normalizeLock({ type: 'csv', blocks: 0 }), null);
+  });
+
+  it('normalizeLock enforces BIP65 CLTV height/unix threshold', function () {
+    assert.ok(normalizeLock({ type: 'cltv', height: 499999999 }));
+    assert.strictEqual(normalizeLock({ type: 'cltv', height: 500000000 }), null);
+    assert.strictEqual(normalizeLock({ type: 'cltv', unix: 499999999 }), null);
+    const unixOk = normalizeLock({ type: 'cltv', unix: 500000000 });
+    assert.ok(unixOk);
+    assert.strictEqual(unixOk.value, 500000000);
+    assert.strictEqual(unixOk.unix, 500000000);
+    assert.strictEqual(unixOk.height, undefined);
   });
 
   it('throws when threshold exceeds unique key count', function () {

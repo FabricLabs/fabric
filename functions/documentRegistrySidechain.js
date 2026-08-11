@@ -24,6 +24,35 @@ const {
 const REGISTRY_PATH = '/registry';
 const SIDECHAIN_STATE_PATCH_TYPE = sidechainState.SIDECHAIN_STATE_PATCH_TYPE;
 
+/** Patches through this helper may only touch the registry catalog subtree. */
+const REGISTRY_ONLY_PATH_POLICY = Object.freeze({
+  allowedPathPrefixes: Object.freeze([REGISTRY_PATH])
+});
+
+/**
+ * Never widen beyond `/registry`; optionally merge caller maxOps / denied / depth.
+ * @param {object|null|undefined} policy
+ * @returns {object}
+ */
+function registryUpdatePathPolicy (policy) {
+  const out = {
+    allowedPathPrefixes: [REGISTRY_PATH]
+  };
+  if (!policy || typeof policy !== 'object') return out;
+  if (policy.maxOps != null) out.maxOps = policy.maxOps;
+  if (policy.maxPathDepth != null) out.maxPathDepth = policy.maxPathDepth;
+  if (Array.isArray(policy.deniedPathPrefixes) && policy.deniedPathPrefixes.length) {
+    out.deniedPathPrefixes = policy.deniedPathPrefixes.slice();
+  }
+  if (Array.isArray(policy.allowedPathPrefixes) && policy.allowedPathPrefixes.length) {
+    const narrowed = policy.allowedPathPrefixes
+      .map((p) => String(p || ''))
+      .filter((p) => p === REGISTRY_PATH || p.startsWith(`${REGISTRY_PATH}/`));
+    if (narrowed.length) out.allowedPathPrefixes = narrowed;
+  }
+  return out;
+}
+
 /** V1 field layout for SIDECHAIN_STATE_PATCH (catalog + optional RFC6902 fidelity). */
 const SCHEMA_SIDECHAIN_STATE_PATCH = Object.freeze([
   { name: 'basisClock', type: 'u32' },
@@ -121,8 +150,8 @@ function decodeRegistryUpdateBody (body) {
  * @returns {{ ok: boolean, state?: object, stateDigest?: string, error?: string, basisDigest?: string }}
  */
 function applyRegistryUpdateFields (state, fields, policy = null) {
-  if (!fields || typeof fields.catalogCanonical !== 'string' || !fields.catalogCanonical) {
-    return { ok: false, error: 'catalogCanonical required' };
+  if (!fields || typeof fields !== 'object') {
+    return { ok: false, error: 'fields required' };
   }
 
   const current = state || sidechainState.createInitialState();
@@ -141,6 +170,8 @@ function applyRegistryUpdateFields (state, fields, policy = null) {
   }
 
   // Prefer explicit RFC6902 sequence when present (HTTP multi-op fidelity).
+  // Always constrain to /registry — policy=null must not fail open for this helper.
+  const pathPolicy = registryUpdatePathPolicy(policy);
   const patchesRaw = fields.patchesCanonical != null ? String(fields.patchesCanonical).trim() : '';
   if (patchesRaw) {
     let patches;
@@ -152,7 +183,7 @@ function applyRegistryUpdateFields (state, fields, policy = null) {
     if (!Array.isArray(patches) || !patches.length) {
       return { ok: false, error: 'patchesCanonical must be a non-empty RFC6902 array' };
     }
-    const applied = sidechainState.applyPatchesToState(current, patches, policy);
+    const applied = sidechainState.applyPatchesToState(current, patches, pathPolicy);
     if (!applied.ok) return applied;
     return {
       ok: true,
@@ -160,6 +191,10 @@ function applyRegistryUpdateFields (state, fields, policy = null) {
       stateDigest: applied.newDigest,
       basisDigest: applied.basisDigest
     };
+  }
+
+  if (typeof fields.catalogCanonical !== 'string' || !fields.catalogCanonical) {
+    return { ok: false, error: 'catalogCanonical required' };
   }
 
   let catalog;
@@ -174,7 +209,7 @@ function applyRegistryUpdateFields (state, fields, policy = null) {
 
   // Internal reducer: content replace at /registry (HTTP may present this as RFC6902).
   const patches = [{ op: current.content && current.content.registry ? 'replace' : 'add', path: REGISTRY_PATH, value: catalog }];
-  const applied = sidechainState.applyPatchesToState(current, patches, policy);
+  const applied = sidechainState.applyPatchesToState(current, patches, pathPolicy);
   if (!applied.ok) return applied;
   return {
     ok: true,
@@ -227,6 +262,7 @@ function digestToHex (digest) {
 
 module.exports = {
   REGISTRY_PATH,
+  REGISTRY_ONLY_PATH_POLICY,
   SIDECHAIN_STATE_PATCH_TYPE,
   SCHEMA_SIDECHAIN_STATE_PATCH,
   buildRegistryCatalog,
@@ -235,6 +271,7 @@ module.exports = {
   decodeRegistryUpdateBody,
   applyRegistryUpdateFields,
   applyInventoryToRegistry,
+  registryUpdatePathPolicy,
   digestToHex,
   /** @deprecated alias — prefer applyRegistryUpdateFields */
   sha256Hex (buf) {

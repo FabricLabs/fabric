@@ -99,7 +99,7 @@
     "playnet": "node scripts/playnet.js",
     "report:coverage": "npm run make:coverage && c8 report --reporter=text-lcov > reports/coverage.lcov",
     "report:credits": "node scripts/report-credits.js > reports/credits.json",
-    "report:install": "rm -rf node_modules && echo \"\n\" > package-lock.json && echo \"$ npm i --allow-git=all\" > reports/install.log && npm i --allow-git=all >> reports/install.log 2>&1",
+    "report:install": "rm -rf node_modules && echo \"\n\" > package-lock.json && echo \"$ npm i\" > reports/install.log && npm i >> reports/install.log 2>&1",
     "report:install-ci": "bash scripts/report-install-ci.sh",
     "report:warnings": "node scripts/gen-quality-reports.js warnings",
     "report:deprecations": "node scripts/gen-quality-reports.js deprecations",

@@ -45,20 +45,68 @@ describe('functions/documentRegistrySidechain', function () {
 
   it('applyRegistryUpdateFields honors multi-op patchesCanonical', function () {
     let state = sidechainState.createInitialState();
-    const patches = [
-      { op: 'add', path: '/note', value: 'hello' },
-      { op: 'add', path: '/count', value: 2 }
-    ];
-    const fields = {
+    const catalog = registry.buildRegistryCatalog([
+      { id: 'doc-a', rateSats: 1, contentHash: 'ab'.repeat(32), sellerId: 's1' }
+    ]);
+    // Seed registry first.
+    const seeded = registry.applyRegistryUpdateFields(state, {
       basisClock: 0,
       basisDigest: Buffer.from(sidechainState.stateDigest(state), 'hex'),
-      catalogCanonical: '{}',
+      catalogCanonical: JSON.stringify(catalog)
+    });
+    assert.ok(seeded.ok);
+    state = seeded.state;
+
+    const patches = [
+      { op: 'add', path: '/registry/documents/doc-b', value: { id: 'doc-b', sellers: ['s2'] } },
+      { op: 'replace', path: '/registry/sellerCount', value: 2 }
+    ];
+    const fields = {
+      basisClock: state.clock,
+      basisDigest: Buffer.from(sidechainState.stateDigest(state), 'hex'),
       patchesCanonical: JSON.stringify(patches)
     };
     const applied = registry.applyRegistryUpdateFields(state, fields);
     assert.ok(applied.ok);
-    assert.strictEqual(applied.state.content.note, 'hello');
-    assert.strictEqual(applied.state.content.count, 2);
+    assert.ok(applied.state.content.registry.documents['doc-b']);
+    assert.strictEqual(applied.state.content.registry.sellerCount, 2);
+  });
+
+  it('applyRegistryUpdateFields accepts patchesCanonical without catalogCanonical', function () {
+    const state = sidechainState.createInitialState();
+    const catalog = { version: 1, documents: {}, sellerCount: 0, updatedAt: '2026-01-01T00:00:00.000Z' };
+    const patches = [{ op: 'add', path: '/registry', value: catalog }];
+    const applied = registry.applyRegistryUpdateFields(state, {
+      basisClock: 0,
+      basisDigest: Buffer.from(sidechainState.stateDigest(state), 'hex'),
+      patchesCanonical: JSON.stringify(patches)
+    });
+    assert.ok(applied.ok);
+    assert.ok(applied.state.content.registry);
+    assert.strictEqual(applied.state.content.registry.sellerCount, 0);
+  });
+
+  it('applyRegistryUpdateFields rejects patches outside /registry', function () {
+    const state = sidechainState.createInitialState();
+    const applied = registry.applyRegistryUpdateFields(state, {
+      basisClock: 0,
+      basisDigest: Buffer.from(sidechainState.stateDigest(state), 'hex'),
+      patchesCanonical: JSON.stringify([
+        { op: 'add', path: '/note', value: 'escape' }
+      ])
+    });
+    assert.strictEqual(applied.ok, false);
+    assert.match(applied.error, /path not allowed by policy/);
+  });
+
+  it('applyRegistryUpdateFields still requires catalogCanonical without patches', function () {
+    const state = sidechainState.createInitialState();
+    const applied = registry.applyRegistryUpdateFields(state, {
+      basisClock: 0,
+      basisDigest: Buffer.from(sidechainState.stateDigest(state), 'hex')
+    });
+    assert.strictEqual(applied.ok, false);
+    assert.match(applied.error, /catalogCanonical required/);
   });
 
   it('applyInventoryToRegistry updates STATE digest without public RFC6902 API', function () {

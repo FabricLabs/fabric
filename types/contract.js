@@ -338,7 +338,7 @@ class Contract extends Service {
    * @returns {object} {@link module:functions/contractTaproot.buildContractTaproot}
    */
   /**
-   * Shared spend-policy inputs for {@link #toTaprootContract}.
+   * Shared spend-policy inputs for {@link Contract#toTaprootContract}.
    * Subclasses (e.g. Federation) may override to supply validators from state.
    * @param {object} [overrides]
    * @returns {object}

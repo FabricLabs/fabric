@@ -1700,7 +1700,7 @@ describe('@fabric/core/types/peer', function () {
           },
           object: { challenge: 'selfloop' }
         };
-        const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
+        const msg = Message.fromVector(['P2P_SESSION_OFFER', JSON.stringify(content)]);
         msg.signWithKey(server.key);
         server._handleFabricMessage(msg.toBuffer(), { name: connAddress }, null);
 
@@ -1732,7 +1732,7 @@ describe('@fabric/core/types/peer', function () {
           },
           object: { challenge: 'cafebabe' }
         };
-        const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
+        const msg = Message.fromVector(['P2P_SESSION_OFFER', JSON.stringify(content)]);
         msg.signWithKey(remoteKey);
         const buf = msg.toBuffer();
 
@@ -1787,7 +1787,7 @@ describe('@fabric/core/types/peer', function () {
           },
           object: { challenge: 'challenge' }
         };
-        const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
+        const msg = Message.fromVector(['P2P_SESSION_OFFER', JSON.stringify(content)]);
         msg.signWithKey(remoteKey);
 
         server.once('peer', () => {
@@ -1825,7 +1825,7 @@ describe('@fabric/core/types/peer', function () {
             solution: 'challenge'
           }
         };
-        const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
+        const msg = Message.fromVector(['P2P_SESSION_OPEN', JSON.stringify(content)]);
         msg.signWithKey(peer.key);
 
         peer._handleGenericMessage(content, { name: connAddress }, null);
@@ -1857,7 +1857,7 @@ describe('@fabric/core/types/peer', function () {
             solution: 'challenge'
           }
         };
-        const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
+        const msg = Message.fromVector(['P2P_SESSION_OPEN', JSON.stringify(content)]);
         msg.signWithKey(serverKey);
 
         peer._handleFabricMessage(msg.toBuffer(), { name: connAddress }, null);
@@ -1888,7 +1888,7 @@ describe('@fabric/core/types/peer', function () {
           },
           object: { challenge: 'cafef00d' }
         };
-        const msg = Message.fromVector(['P2P_BASE_MESSAGE', JSON.stringify(content)]);
+        const msg = Message.fromVector(['P2P_SESSION_OFFER', JSON.stringify(content)]);
         msg.signWithKey(remoteKey);
         server._handleFabricMessage(msg.toBuffer(), { name: connAddress }, null);
 

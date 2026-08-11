@@ -26,6 +26,10 @@ const TAPROOT_INTERNAL_NUMS = Buffer.from(
 
 const DEFAULT_CSV_BLOCKS = 144;
 
+/** BIP65: nLockTime / CLTV values ≥ this threshold are unix timestamps. */
+const CLTV_TIMESTAMP_THRESHOLD = 500000000;
+const MAX_LOCKTIME = 0xffffffff;
+
 function networkForFabricName (name = '') {
   const n = String(name || '').toLowerCase();
   // Do not alias bare "test" — it is ambiguous (testnet tb1 vs regtest bcrt1).
@@ -93,9 +97,19 @@ function normalizeLock (raw) {
     return { type: 'csv', value: blocks, blocks };
   }
   if (type === 'cltv') {
-    const value = Math.max(0, Math.floor(Number(raw.height != null ? raw.height : raw.unix) || 0));
-    if (!value) return null;
-    return { type: 'cltv', value, height: raw.height != null ? value : undefined, unix: raw.unix != null ? value : undefined };
+    // BIP65 type bit is the numeric threshold: height < 500000000, unix ≥ 500000000.
+    // Reject mismatched representations so policy maturity matches OP_CHECKLOCKTIMEVERIFY.
+    if (raw.height != null) {
+      const height = Math.floor(Number(raw.height) || 0);
+      if (!Number.isFinite(height) || height < 1 || height >= CLTV_TIMESTAMP_THRESHOLD) return null;
+      return { type: 'cltv', value: height, height };
+    }
+    if (raw.unix != null) {
+      const unix = Math.floor(Number(raw.unix) || 0);
+      if (!Number.isFinite(unix) || unix < CLTV_TIMESTAMP_THRESHOLD || unix > MAX_LOCKTIME) return null;
+      return { type: 'cltv', value: unix, unix };
+    }
+    return null;
   }
   return null;
 }
@@ -591,6 +605,8 @@ function prepareLeafPsbt (opts = {}) {
   let sequence = opts.sequence != null ? Number(opts.sequence) : undefined;
   let locktime;
   if (afterLock && afterLock.type === 'csv') {
+    // BIP68 block-based relative locktime: low 16 bits = blocks; TYPE_FLAG
+    // (0x00400000) is for seconds only. Disable-flag bit 31 must stay clear.
     if (sequence == null) sequence = afterLock.value;
   } else if (afterLock && afterLock.type === 'cltv') {
     locktime = afterLock.value;
@@ -828,6 +844,8 @@ function prepareVaultWithdrawalPsbt (opts = {}) {
 module.exports = {
   TAPROOT_INTERNAL_NUMS,
   DEFAULT_CSV_BLOCKS,
+  CLTV_TIMESTAMP_THRESHOLD,
+  MAX_LOCKTIME,
   networkForFabricName,
   parseCompressedPubkeysSorted,
   buildKOfNTapscript,

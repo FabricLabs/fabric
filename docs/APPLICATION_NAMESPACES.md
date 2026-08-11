@@ -37,7 +37,7 @@ These `type` strings ride inside `CONTRACT_MESSAGE` (not outer opcodes):
 | `MissionCreated` | GoonCitizen | Network mission register upsert |
 | `MissionBroadcast` | GoonCitizen | Network mission offer |
 | `SCEventBatch` | GoonCitizen | Log / event batch |
-| `GroupChat` | GoonCitizen Group Federation | Group channel chat |
+| `GroupChat` | GoonCitizen Group Federation | Group channel chat (optional tip-bound seal: `seal.scheme = aes-256-gcm-groupchat-v1`, see `functions/groupChatSeal.js`) |
 | `GroupChange` | GoonCitizen Group Federation | Membership / meta |
 | `GroupShare` | GoonCitizen Group Federation | Group-scoped shares (mission offers; `kind: GroupOffer` for opaque `fabric:<hex>` join offers) |
 | `GroupActivityTree` | GoonCitizen Group Federation | Merkle root + digests of cumulative history under a Group namespace |

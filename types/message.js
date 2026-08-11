@@ -1226,7 +1226,7 @@ function _optionalFieldDefault (def) {
     case 'u64':
       return 0n;
     default:
-      return null;
+      throw new TypeError(`unsupported field type: ${def.type}`);
   }
 }
 

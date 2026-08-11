@@ -121,8 +121,9 @@ describe('@fabric/core Peer gossip / peering / integrity edges', function () {
     it('skips candidate enqueue when transport is not fabric', function () {
       const peer = offlinePeer({ constraints: { peers: { max: 32 } } });
       peer.relayFrom = function () {};
+      const author = new Key();
       const object = { host: '10.0.0.9', port: 7777, transport: 'webrtc' };
-      const wire = Message.fromVector(['P2P_PEERING_OFFER', JSON.stringify(object)]).signWithKey(peer.key);
+      const wire = Message.fromVector(['P2P_PEERING_OFFER', JSON.stringify(object)]).signWithKey(author);
       peer._handleGenericMessage({ type: 'P2P_PEERING_OFFER', object }, { name: 'o:w' }, null, wire);
       assert.strictEqual(peer.candidates.length, 0);
     });
@@ -131,8 +132,9 @@ describe('@fabric/core Peer gossip / peering / integrity edges', function () {
       const peer = offlinePeer({ constraints: { peers: { max: 1 } } });
       peer.connections = { 'busy:1': {} };
       peer.relayFrom = function () {};
+      const author = new Key();
       const object = { host: '10.0.0.10', port: 7777, transport: 'fabric' };
-      const wire = Message.fromVector(['P2P_PEERING_OFFER', JSON.stringify(object)]).signWithKey(peer.key);
+      const wire = Message.fromVector(['P2P_PEERING_OFFER', JSON.stringify(object)]).signWithKey(author);
       peer._handleGenericMessage({ type: 'P2P_PEERING_OFFER', object }, { name: 'o:full' }, null, wire);
       assert.strictEqual(peer.candidates.length, 0);
     });
@@ -140,12 +142,13 @@ describe('@fabric/core Peer gossip / peering / integrity edges', function () {
     it('dedupes candidates by host:port across different origins', function () {
       const peer = offlinePeer({ peering: { maxCandidates: 8 } });
       peer.relayFrom = function () {};
+      const author = new Key();
       const object = { host: '10.1.1.1', port: 1111, transport: 'fabric' };
       for (let i = 0; i < 3; i++) {
         const wire = Message.fromVector(['P2P_PEERING_OFFER', JSON.stringify({
           ...object,
           peeringHop: 5 - i
-        })]).signWithKey(peer.key);
+        })]).signWithKey(author);
         peer._handleGenericMessage(
           { type: 'P2P_PEERING_OFFER', object: { ...object, peeringHop: 5 - i } },
           { name: `o:${i}` },
@@ -160,12 +163,13 @@ describe('@fabric/core Peer gossip / peering / integrity edges', function () {
     it('ignores offers missing host or port for candidate queue', function () {
       const peer = offlinePeer();
       peer.relayFrom = function () {};
+      const author = new Key();
       for (const object of [
         { port: 1, transport: 'fabric' },
         { host: '10.0.0.1', transport: 'fabric' },
         { host: '', port: 2, transport: 'fabric' }
       ]) {
-        const wire = Message.fromVector(['P2P_PEERING_OFFER', JSON.stringify(object)]).signWithKey(peer.key);
+        const wire = Message.fromVector(['P2P_PEERING_OFFER', JSON.stringify(object)]).signWithKey(author);
         peer._handleGenericMessage({ type: 'P2P_PEERING_OFFER', object }, { name: 'o:bad' }, null, wire);
       }
       assert.strictEqual(peer.candidates.length, 0);

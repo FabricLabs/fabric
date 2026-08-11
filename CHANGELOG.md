@@ -1,8 +1,13 @@
 # `@fabric/core` Changelog
 Recent changes to Fabric Core.
 
+## 2026-08-11
+- **Supply-chain:** remove **`allow-git=all`** from core **`.npmrc`** and **`report:install`**. `@fabric/core` has no git deps; keep npm 12+ default `allow-git=none`. Hub / `@fabric/http` / apps that install Fabric from GitHub keep `allow-git=all` in *their* `.npmrc`.
+- **CLTV locks:** `normalizeLock` rejects height/unix values that cross BIP65’s `500000000` type threshold (height must be `<`, unix must be `≥`).
+- **Registry sidechain:** `applyRegistryUpdateFields` accepts patch-only updates (`patchesCanonical` without `catalogCanonical`) and always constrains patches to the `/registry` subtree (no fail-open when `policy` is null).
+
 ## 2026-08-06
-- **npm git deps:** add **`.npmrc`** with **`allow-git=all`** (and `report:install`) so the monorepo matches Hub/http/app consumers — npm 12+ nested git-dep preparation of commit SHAs fails under `allow-git=root`.
+- **npm git deps:** (superseded 2026-08-11) briefly added **`allow-git=all`** for monorepo parity; reverted for core — scope the opt-in to Hub/http/app consumers only.
 
 ## 2026-07-29
 JS-canonical protocol for 0.1.0; Lightning-style wire preimage; unsigned document binding; public-readiness cuts; Peer scoring; directed onion forward.
