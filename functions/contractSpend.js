@@ -227,21 +227,27 @@ function normalizeArcGenesis (definition = {}) {
 
 /**
  * Tip keys used for spend authority. Prefer explicit signers over a general
- * `members` roster (Groups fold applicants into members).
+ * `members` roster (Groups fold applicants into members). An explicit empty
+ * `signers: []` (reader-only GroupChange fold) must NOT widen to members —
+ * `resolveSpend` then keeps genesis validators.
  * @param {object} tip
  * @returns {*[]}
  */
 function tipSpendKeys (tip = {}) {
-  if (Array.isArray(tip.content && tip.content.signers) && tip.content.signers.length) {
-    return tip.content.signers;
+  const content = tip && tip.content && typeof tip.content === 'object' ? tip.content : null;
+  if (content && Object.prototype.hasOwnProperty.call(content, 'signers')
+    && Array.isArray(content.signers)) {
+    return content.signers;
   }
-  if (Array.isArray(tip.signers) && tip.signers.length) return tip.signers;
-  if (Array.isArray(tip.content && tip.content.members) && tip.content.members.length) {
-    return tip.content.members;
+  if (Object.prototype.hasOwnProperty.call(tip || {}, 'signers') && Array.isArray(tip.signers)) {
+    return tip.signers;
+  }
+  if (content && Array.isArray(content.members) && content.members.length) {
+    return content.members;
   }
   if (Array.isArray(tip.members) && tip.members.length) return tip.members;
-  if (Array.isArray(tip.content && tip.content.validators) && tip.content.validators.length) {
-    return tip.content.validators;
+  if (content && Array.isArray(content.validators) && content.validators.length) {
+    return content.validators;
   }
   return [];
 }

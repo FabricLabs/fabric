@@ -109,4 +109,33 @@ describe('@fabric/core/functions/fabricHallmark', function () {
     const hash = '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff';
     assert.strictEqual(fh.tipHashSuffixFromBlockHash(hash).toString('hex'), 'ccddeeff');
   });
+
+  it('omits malformed stateDigest from the commitment (same as absent)', function () {
+    const withValid = fh.deriveFabricHallmarkCommitmentHex({
+      tipBlockHashHex: tip,
+      contractIdHex: contractId,
+      sidechain,
+      contracts
+    });
+    const withBad = fh.deriveFabricHallmarkCommitmentHex({
+      tipBlockHashHex: tip,
+      contractIdHex: contractId,
+      sidechain: { clock: 3, stateDigest: 'not-a-digest' },
+      contracts
+    });
+    const without = fh.deriveFabricHallmarkCommitmentHex({
+      tipBlockHashHex: tip,
+      contractIdHex: contractId,
+      sidechain: { clock: 3 },
+      contracts
+    });
+    assert.notStrictEqual(withValid, withBad);
+    assert.strictEqual(withBad, without);
+  });
+
+  it('exports a copy of HALLMARK_MAGIC (mutation-safe)', function () {
+    const a = fh.HALLMARK_MAGIC;
+    a[0] = 0xff;
+    assert.strictEqual(fh.HALLMARK_MAGIC.toString('hex'), fh.HALLMARK_MAGIC_HEX);
+  });
 });

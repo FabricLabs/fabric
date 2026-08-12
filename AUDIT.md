@@ -25,7 +25,7 @@ audit report.
 | L1 document HTLC helpers | Implemented in core; treat as RC reference, not mainnet-hardened market |
 | Application contract sandbox | **Not** claimed — `Machine.define` binds host JS; see [PUBLIC_API.md](PUBLIC_API.md) |
 | External security review | **Outstanding** before dropping “experimental” language |
-| npm audit (runtime) | Track `npm run report:security` → `reports/SECURITY-AUDIT.md`; remaining highs historically under honkit (docs toolchain) |
+| npm audit (runtime) | Clean after `uuid@11.1.1` override (jayson); track `npm run report:security` → `reports/SECURITY-AUDIT.md` for docs-toolchain noise |
 | Strict Protocol V1 adversarial suite | In progress — [`tests/protocol-v1/`](tests/protocol-v1/README.md) matrix + typed NOISE storm; expand until every mesh opcode is covered |
 
 ## Known gaps (do not paper over)
@@ -51,16 +51,20 @@ audit report.
 
 ### PR #183 review triage (feature/rsi)
 
-Most CodeRabbit actionable items on [#183](https://github.com/FabricLabs/fabric/pull/183) are addressed on tip. Still open / deferred on purpose:
+Most CodeRabbit / automation actionable items on [#183](https://github.com/FabricLabs/fabric/pull/183) are addressed on tip (`533546c4…`) plus staged follow-ups. Security review at `533546c4` Highs (empty tip `signers` → Taproot `members` widen) are fixed in `tipSpendKeys`. Still open / deferred on purpose:
 
 | Item | Status |
 |------|--------|
 | Blinded-execution evaluator ≠ garbler | Fixed in `composeGarblerPublish` / `finalizeBlindedExecution` |
 | Playnet live publish asserts fan-out | Fixed (`Peer#broadcast` returns send count) |
 | `engines.npm: >=12` vs Node 24.15.0 bundled npm | Intentional — keep; DEVELOPERS.md documents upgrade |
-| Bind `at` into `decisionSigningMessage` | Deferred (protocol bump) — ARC §8 / AUDIT #18 |
+| Empty tip `signers: []` widening spend keys to `members` | Fixed — `tipSpendKeys` treats explicit empty `signers` as authoritative; `resolveSpend` keeps genesis validators |
+| Reader-role fold vs `members.set` test flake | Fixed — commutative `member.add` seed (hash-ordered fold) |
+| Bind `at` into `decisionSigningMessage` | Deferred (protocol bump) — ARC §8 / AUDIT #18; Medium on tip security review |
 | Verified-pubkey peering self-suppress | Deferred — AUDIT #16 |
 | Eager `messageHex` / `contractIdentifier` rename / journal caps | Deferred — ARC §8 |
+| Beacon federation `ready` before durable persist | Deferred — retry/durability follow-up on Hub Beacon path |
+| `uuid` via `jayson` (GHSA-w5hq-g745-h8pq) | Mitigated — override `uuid@11.1.1` (avoid `npm audit fix --force` → jayson 2.x) |
 
 ## Recommendations before a non-experimental tag
 

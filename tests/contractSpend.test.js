@@ -82,6 +82,38 @@ describe('contractSpend / ARC resolveSpend', function () {
     assert.strictEqual(spend.spendPolicy.softMode, 'publisher');
   });
 
+  it('explicit empty tip.content.signers does not widen spend keys to members', function () {
+    const a = new Key();
+    const reader = new Key();
+    const {
+      tipSpendKeys
+    } = require('../functions/contractSpend');
+    const tip = {
+      content: {
+        signers: [],
+        members: [a.pubkey.slice(2), reader.pubkey.slice(2)],
+        threshold: 1
+      }
+    };
+    assert.deepStrictEqual(tipSpendKeys(tip), []);
+    const spend = resolveSpend({
+      genesis: {
+        members: { signers: [a.pubkey], threshold: 1 },
+        spendPolicy: {
+          validators: [a.pubkey],
+          threshold: 1,
+          publisher: a.pubkey,
+          csvBlocks: 144,
+          softMode: 'publisher'
+        }
+      },
+      tip,
+      overrides: { network: 'regtest' }
+    });
+    assert.strictEqual(spend.validators.length, 1);
+    assert.strictEqual(spend.validators[0], require('../functions/groupChatSeal').pubkeyCompressed(a.pubkey) || a.pubkey);
+  });
+
   it('resolveSpend is stable for tip members', function () {
     const a = new Key();
     const b = new Key();

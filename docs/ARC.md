@@ -199,6 +199,7 @@ Implementation: [`functions/contractSpend.js`](../functions/contractSpend.js) (`
 20. **Peering self-suppress trust:** suppress dials from a verified pubkey binding (session/registry), not remote-advertised `obj.pubkey` alone ([AUDIT.md](../AUDIT.md) §16).
 21. **Eager `messageHex`:** Peer hot paths still materialize hex wire forms eagerly — laziness / cache invalidation is performance work.
 22. **`API.md` regeneration:** run `npm run make:api` when next syncing field docs for gossip / `tryParseMessageBody` / `resolveSpend` opts.
+23. ~~**Empty tip `signers` spend widen:**~~ `tipSpendKeys` treats explicit `signers: []` as authoritative so reader-only folds do not replace genesis Taproot validators with participant `members` (`resolveSpend` keeps genesis keys).
 
 ### Dual P2TR surfaces → single authority ladder
 | Surface | Role |

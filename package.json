@@ -198,7 +198,8 @@
     "zeromq": "=6.5.0"
   },
   "overrides": {
-    "elliptic": "$elliptic"
+    "elliptic": "$elliptic",
+    "uuid": "11.1.1"
   },
   "devDependencies": {
     "buffer": "=6.0.3",

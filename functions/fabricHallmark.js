@@ -67,7 +67,8 @@ function normalizeStateHead (snap) {
   const dig = snap.stateDigest != null ? String(snap.stateDigest).replace(/^0x/i, '').toLowerCase() : null;
   return {
     clock: Number.isFinite(clock) ? clock : 0,
-    stateDigest: dig && /^[0-9a-f]{64}$/.test(dig) ? dig : (dig || null)
+    // Malformed digests must not enter the commitment (treat as absent).
+    stateDigest: dig && /^[0-9a-f]{64}$/.test(dig) ? dig : null
   };
 }
 
@@ -190,7 +191,10 @@ function verifyFabricHallmark (payload, opts = {}) {
 
 module.exports = {
   HALLMARK_MAGIC_HEX,
-  HALLMARK_MAGIC,
+  // Fresh Buffer so consumers cannot mutate the module-internal magic bytes.
+  get HALLMARK_MAGIC () {
+    return Buffer.from(HALLMARK_MAGIC);
+  },
   HALLMARK_PAYLOAD_LENGTH,
   HALLMARK_TIP_SUFFIX_LENGTH,
   HALLMARK_COMMITMENT_KIND,
