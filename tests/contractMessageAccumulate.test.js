@@ -202,7 +202,7 @@ describe('@fabric/core contractMessageAccumulate', function () {
       genesis
     });
     assert.strictEqual(bad.accepted, false);
-    assert.match(bad.error, /not authorized|fail closed|genesis/i);
+    assert.match(bad.error, /not authorized/i);
     assert.strictEqual(loadDoc(store, contractId).entries.length, 0);
 
     const ok = ingestMessageBuffer(store, contractId, signContractMessage(owner, contractId, 'GroupChange', {
@@ -300,8 +300,25 @@ describe('@fabric/core contractMessageAccumulate', function () {
       genesis
     });
     assert.strictEqual(res.accepted, true);
-    assert.ok(res.tip.content.members.includes(pubkeyXOnly(reader.pubkey)));
-    assert.ok(!res.tip.content.signers.includes(pubkeyXOnly(reader.pubkey)));
+    assert.deepStrictEqual(res.tip.content.signers, []);
+    assert.deepStrictEqual(res.tip.content.members, [pubkeyXOnly(reader.pubkey)]);
+
+    // Owner already a signer: reader add keeps owner in signers and leaves reader out.
+    const store2 = createMemoryStore();
+    const seed = ingestMessageBuffer(store2, contractId, signContractMessage(owner, contractId, 'GroupChange', {
+      action: 'members.set',
+      members: [owner.pubkey]
+    }).toBuffer(), { origin: 'mesh', genesis });
+    assert.strictEqual(seed.accepted, true);
+    const withReader = ingestMessageBuffer(store2, contractId, change.toBuffer(), {
+      origin: 'mesh',
+      genesis
+    });
+    assert.strictEqual(withReader.accepted, true);
+    assert.deepStrictEqual(withReader.tip.content.signers, [pubkeyXOnly(owner.pubkey)]);
+    assert.ok(withReader.tip.content.members.includes(pubkeyXOnly(owner.pubkey)));
+    assert.ok(withReader.tip.content.members.includes(pubkeyXOnly(reader.pubkey)));
+    assert.ok(!withReader.tip.content.signers.includes(pubkeyXOnly(reader.pubkey)));
   });
 
   it('rejects unknown body types and enforces genesis primitives', function () {

@@ -487,9 +487,9 @@ class Contract extends Service {
         bitcoinBlockHash: opts.bitcoinBlockHash
           || (this.settings.bitcoinAnchor && this.settings.bitcoinAnchor.blockHash)
           || null,
-        bitcoinHeight: opts.bitcoinHeight
-          || (this.settings.bitcoinAnchor && this.settings.bitcoinAnchor.height)
-          || null,
+        bitcoinHeight: opts.bitcoinHeight != null
+          ? opts.bitcoinHeight
+          : ((this.settings.bitcoinAnchor && this.settings.bitcoinAnchor.height) || null),
         clock: (this._state && this._state.content && this._state.content.clock) || 0
       },
       contractId: opts.contractId || this.id || null,

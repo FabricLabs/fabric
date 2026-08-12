@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Strict Protocol V1 test helpers.
+ * @fileoverview Strict Protocol V1 test helpers.
  *
  * Contract: every injected frame is a raw, length-bounded, well-formed Fabric
  * {@link Message} (valid body hash + BIP-340 unless the case is integrity-fail).

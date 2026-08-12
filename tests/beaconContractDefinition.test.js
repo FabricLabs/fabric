@@ -41,6 +41,13 @@ describe('beaconContractDefinition', function () {
     assert.strictEqual(list.length, 1);
   });
 
+  it('normalizeValidatorPubkeys drops invalid x-only points', function () {
+    const a = new Key({ private: '6666666666666666666666666666666666666666666666666666666666666666' });
+    const invalidXOnly = '00'.repeat(32); // not a lift-able curve x
+    const list = normalizeValidatorPubkeys([invalidXOnly, a.pubkey, 'not-a-key']);
+    assert.deepStrictEqual(list, [String(a.pubkey).toLowerCase()]);
+  });
+
   it('spendAddress matches federation vault on each network overlay', function () {
     const a = new Key({ private: '4444444444444444444444444444444444444444444444444444444444444444' });
     const b = new Key({ private: '5555555555555555555555555555555555555555555555555555555555555555' });

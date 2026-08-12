@@ -1077,9 +1077,12 @@ function ingestMessageBuffer (store, contractId, bufferOrPaste, meta = {}) {
     doc.bitcoinBlockHash = bitcoinBlockHash;
     if (bitcoinHeight != null) doc.bitcoinHeight = bitcoinHeight;
   } else if (!doc.bitcoinBlockHash && doc.genesis && doc.genesis.bitcoinAnchor) {
-    doc.bitcoinBlockHash = doc.genesis.bitcoinAnchor.blockHash;
-    if (doc.genesis.bitcoinAnchor.height != null) {
-      doc.bitcoinHeight = Number(doc.genesis.bitcoinAnchor.height);
+    const genesisHash = String(doc.genesis.bitcoinAnchor.blockHash || '').trim().toLowerCase();
+    if (/^[0-9a-f]{64}$/.test(genesisHash)) {
+      doc.bitcoinBlockHash = genesisHash;
+      if (doc.genesis.bitcoinAnchor.height != null) {
+        doc.bitcoinHeight = Number(doc.genesis.bitcoinAnchor.height);
+      }
     }
   }
 

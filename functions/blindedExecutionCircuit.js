@@ -344,6 +344,25 @@ function recordProposalDecision (opts = {}) {
     throw new Error('recordProposalDecision: invalid decision signature');
   }
 
+  const prior = Array.isArray(session.decisions) ? session.decisions : [];
+  const existing = prior.find((d) =>
+    d &&
+    String(d.actorPubkey || '').toLowerCase() === actorPubkey &&
+    String(d.proposalMerkleRoot || '').toLowerCase() === proposalMerkleRoot &&
+    String(d.decision || '').toLowerCase() === decision
+  );
+  // Same actor/proposal/decision is idempotent — signature does not bind `at`,
+  // so replaying with a new timestamp must not grow decisions or change the root.
+  if (existing) {
+    if (String(existing.signature || '').toLowerCase() !== sigHex) {
+      throw new Error('recordProposalDecision: conflicting signature for existing decision');
+    }
+    return Object.assign({}, session, {
+      decisions: prior.slice(),
+      coordinationRoot: session.coordinationRoot || computeCoordinationRoot(prior)
+    });
+  }
+
   const entry = {
     decision,
     actorPubkey,
@@ -352,7 +371,7 @@ function recordProposalDecision (opts = {}) {
     at: opts.at != null ? Number(opts.at) : Date.now()
   };
 
-  const decisions = session.decisions.concat([entry]);
+  const decisions = prior.concat([entry]);
   const coordinationRoot = computeCoordinationRoot(decisions);
 
   return Object.assign({}, session, {

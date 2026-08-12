@@ -14,7 +14,7 @@
  */
 
 const Actor = require('../types/actor');
-const { pubkeyCompressed, pubkeyXOnly } = require('./groupChatSeal');
+const { pubkeyCompressed } = require('./groupChatSeal');
 const { canonicalSpendPolicy } = require('./contractSpend');
 const { DEFAULT_CSV_BLOCKS } = require('./contractTaproot');
 
@@ -42,10 +42,11 @@ function normalizeValidatorPubkeys (list) {
   for (const raw of list || []) {
     let c = null;
     try {
+      // pubkeyCompressed already accepts compressed or validated x-only inputs.
+      // Do not invent `02${x}` for invalid points.
       c = pubkeyCompressed(raw);
     } catch (_) {
-      const x = pubkeyXOnly(raw);
-      if (x) c = `02${x}`;
+      continue;
     }
     if (!c) continue;
     const key = c.toLowerCase();

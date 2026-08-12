@@ -125,6 +125,19 @@ describe('functions/blindedExecutionCircuit', function () {
     assert.ok(session.coordinationRoot);
     const afterReject = session.coordinationRoot;
 
+    // Replay of the same actor/proposal/decision (even with a new `at`) is idempotent.
+    const replayed = recordProposalDecision({
+      session,
+      proposalPayload: rejectProposal,
+      decision: 'reject',
+      actorPubkey: pk(1),
+      signature: signDecision(1, session, rejectProposal, 'reject'),
+      at: 9999
+    });
+    assert.strictEqual(replayed.decisions.length, 1);
+    assert.strictEqual(replayed.coordinationRoot, afterReject);
+    assert.strictEqual(replayed.decisions[0].at, 1000);
+
     assert.throws(() => finalizeBlindedExecution({ session }), /evaluator accept/);
 
     // Garbler-only accept is not enough — need an evaluator.

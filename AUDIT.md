@@ -40,9 +40,10 @@ audit report.
 8. **Eager `messageHex`** — hot paths still materialize hex wire forms eagerly; laziness / cache invalidation is outstanding performance work, not a correctness claim.
 9. ~~**Chat / onion seal AAD**~~ — tip + participant AES-GCM AAD lands in `groupChatSeal` / `onionChatSeal` (see [docs/ARC.md](docs/ARC.md) §8).
 10. **Public API short names** — `contractId` and similar remain until a coordinated rename to `contractIdentifier`-style identifiers (Author Style in `AGENTS.md`).
-11. **Blinded-execution decisions** — accept/reject now require BIP340 over `decisionSigningMessage` (`functions/blindedExecutionCircuit.js`); composition remains a scaffold (not Yao GC).
+11. **Blinded-execution decisions** — accept/reject require BIP340 over `decisionSigningMessage`; same actor/proposal/decision replays are idempotent (signature does not bind `at`). Composition remains a scaffold (not Yao GC).
 12. **Fabric coin-type dual path** — protocol identity is **7777** on Bitcoin mainnet and **7778** on all other networks (`fabricCoinTypeForNetwork` / `Identity#network`). Default Peer / Identity (regtest) stays on **7778**. Hub / Passport / extension callers that hard-code `m/44'/7778'/…` should switch to `fabricIdentityDerivationPath(…, network)` when targeting mainnet; re-derive any keys previously treated as “mainnet” under 7778.
-13. ~~**Withdrawal `requestId` bind**~~ — `validateWithdrawalRequest` rejects unless `requestId === computeWithdrawalRequestId(…)` (destination/fee/vault commitment). Remaining ARC follow-ups: journal/re-fold caps; `contractId` → `contractIdentifier` rename; eager `messageHex`.
+13. ~~**Withdrawal `requestId` bind**~~ — `validateWithdrawalRequest` rejects unless `requestId === computeWithdrawalRequestId(…)` (destination/fee/vault commitment).
+14. **Outstanding ARC / Peer follow-ups** — journal / re-fold caps ([docs/ARC.md](docs/ARC.md) §8); coordinated `contractId` → `contractIdentifier` rename; eager `messageHex` laziness; regenerate `API.md` field docs for `SCHEMA_P2P_PEER_GOSSIP` / `tryParseMessageBody` / `resolveSpend` opts when next running `npm run make:api`.
 
 ## Recommendations before a non-experimental tag
 
