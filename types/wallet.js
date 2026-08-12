@@ -3,7 +3,7 @@
 // External Dependencies
 const merge = require('lodash.merge');
 const { networks: bitcoinNetworks } = require('bitcoinjs-lib');
-/** Fabric settings use `mainnet`; bitcoinjs-lib 7 names that network `bitcoin`. */
+/** @private Fabric settings use `mainnet`; bitcoinjs-lib 7 names that network `bitcoin`. */
 const networks = Object.assign({ mainnet: bitcoinNetworks.bitcoin }, bitcoinNetworks);
 
 // Mnemonics

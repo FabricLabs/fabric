@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Multi-language Program — executable artifact for {@link Machine}, with optional
+ * @fileoverview Multi-language Program — executable artifact for {@link Machine}, with optional
  * L1 Bitcoin redeem scaffolding for `bitcoin-script`.
  *
  * Languages: `fabric-opcodes` | `javascript` | `bitcoin-script` | `solidity` | `asm`

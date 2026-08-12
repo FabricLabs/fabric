@@ -83,10 +83,7 @@ class Machine extends Actor {
       precision: 8,
       script: [],
       type: 'x86',
-      /**
-       * Opcode allow-list. Null or empty = unrestricted (legacy soft compute).
-       * @type {string[]|null}
-       */
+      // Opcode allow-list. Null or empty = unrestricted (legacy soft compute).
       allowedOpcodes: null
     }, settings);
 

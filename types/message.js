@@ -215,7 +215,7 @@ const LEGACY_MESSAGE_TYPE_ALIASES = Object.freeze({
   GenericLogMessage: LOG_MESSAGE_TYPE,
   GenericList: GENERIC_LIST_TYPE,
   GenericQueue: GENERIC_LIST_TYPE,
-  /** Transitional Hub/browser catch-all (opcode GENERIC_MESSAGE_TYPE / 15103). */
+  // Transitional Hub/browser catch-all (opcode GENERIC_MESSAGE_TYPE / 15103).
   GenericMessage: GENERIC_MESSAGE_TYPE,
   FabricLogMessage: LOG_MESSAGE_TYPE,
   FabricServiceLogMessage: LOG_MESSAGE_TYPE,
@@ -336,6 +336,7 @@ function wireTypeFromFriendly (friendly) {
 
 /**
  * Resolve any opcode / wire name / friendly alias to the numeric AMP type code.
+ * @private
  * @param {number|string|null|undefined} value
  * @returns {number|null}
  */
@@ -363,6 +364,7 @@ function canonicalTypeCode (value) {
 
 /**
  * Resolve any opcode / wire name / friendly alias to the SCREAMING_SNAKE wire label.
+ * @private
  * @param {number|string|null|undefined} value
  * @returns {string|null}
  */
@@ -379,6 +381,7 @@ function canonicalTypeName (value) {
 /**
  * True when two type references name the same AMP opcode (number, wire name, or friendly alias).
  * Unregistered string labels only match via exact trim equality.
+ * @private
  * @param {number|string|null|undefined} a
  * @param {number|string|null|undefined} b
  * @returns {boolean}
@@ -1108,7 +1111,7 @@ Message.FRIENDLY_TO_WIRE_TYPE = FRIENDLY_TO_WIRE_TYPE;
 const BODY_FIELD_TYPES = Object.freeze([
   'u8', 'u16', 'u32', 'u64', 'bytes32', 'bytes', 'string', 'message'
 ]);
-/** @type {Map<number|string, Array<{ name: string, type: string }>>} */
+/** @private @type {Map<number|string, Array<{ name: string, type: string }>>} */
 const BODY_SCHEMA_BY_KEY = new Map();
 
 function registerBodySchema (opcodeOrName, schema) {
@@ -1208,6 +1211,7 @@ function encodeBody (schema, fields = {}) {
 
 /**
  * Default for an optional field when the wire body ends before that field.
+ * @private
  * @param {{ type: string }} def
  */
 function _optionalFieldDefault (def) {
@@ -1307,13 +1311,13 @@ const SCHEMA_PROGRAM_RUN = Object.freeze([
   { name: 'runCommitment', type: 'bytes32' },
   { name: 'resultHint', type: 'string' }
 ]);
-/** Directed onion hop — see {@link module:@fabric/core/functions/fabricOnion}. */
+/** @private Directed onion hop — see {@link module:@fabric/core/functions/fabricOnion}. */
 const SCHEMA_P2P_FORWARD = Object.freeze([
   { name: 'nextPeer', type: 'bytes32' },
   { name: 'ttl', type: 'u8' },
   { name: 'inner', type: 'message' }
 ]);
-/** Discovery / peering field layouts (Phase B); JSON bodies remain accepted. */
+/** @private Discovery / peering field layouts (Phase B); JSON bodies remain accepted. */
 const SCHEMA_P2P_PEER_GOSSIP = Object.freeze([
   { name: 'host', type: 'string' },
   { name: 'port', type: 'u32' },
@@ -1333,6 +1337,7 @@ const SCHEMA_P2P_PEER_ANNOUNCE = Object.freeze([
 
 /**
  * Parse an inbound AMP body: prefer JSON (legacy), else registered field schema.
+ * @private
  * @param {Message} message
  * @returns {{ ok: true, value: object, encoding: 'json'|'fields' } | { ok: false, error: Error }}
  */

@@ -52,9 +52,9 @@ const {
   toXOnlyPeerId
 } = require('../functions/fabricOnion');
 
-/** Max UTF-8 code units for first-class P2P_CHAT_MESSAGE body (text only). */
+/** @private Max UTF-8 code units for first-class P2P_CHAT_MESSAGE body (text only). */
 const P2P_CHAT_MAX_CHARS = 2000;
-/** Max UTF-8 code units for first-class P2P_PEER_ALIAS body (nickname). */
+/** @private Max UTF-8 code units for first-class P2P_PEER_ALIAS body (nickname). */
 const P2P_PEER_ALIAS_MAX_CHARS = 64;
 
 // Dependencies

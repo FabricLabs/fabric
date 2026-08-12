@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Beacon — L1-tied epoch chain that seals sidechain / contracts digests.
+ * @fileoverview Beacon — L1-tied epoch chain that seals sidechain / contracts digests.
  *
  * Regtest: `createEpoch()` mines one block (`generatetoaddress`) then appends
  * a `BEACON_EPOCH` entry. Non-regtest: `recordEpochFromBlock` follows tips.
@@ -29,7 +29,7 @@ class Beacon extends Actor {
       debug: false,
       interval: 60000,
       regtest: true,
-      /** When false, `start()` does not mine an initial epoch (regtest). */
+      // When false, start() does not mine an initial epoch (regtest).
       mineOnStart: true,
       federationValidators: [],
       federationThreshold: 1,

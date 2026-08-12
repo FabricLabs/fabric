@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Bitcoin-shaped Block: parent-linked header + merkle of leaves, with optional
+ * @fileoverview Bitcoin-shaped Block: parent-linked header + merkle of leaves, with optional
  * PoW (`nonce`/`bits`), Elements-style federation signatures, and arbitrary `data`.
  *
  * @see docs/CHAIN.md
@@ -30,6 +30,7 @@ const CONSENSUS_GOSSIP = 'gossip';
 const BLOCK_SIGNING_KIND = 'FabricBlock';
 
 /**
+ * @private
  * @param {object} input
  * @returns {boolean}
  */
@@ -46,6 +47,7 @@ function isStructuredBlockInput (input) {
 
 /**
  * Canonical signing / digest body (excludes witness material).
+ * @private
  * @param {object} header
  * @returns {string}
  */
@@ -71,6 +73,7 @@ function signingStringForBlock (header) {
 
 /**
  * Content digest for merkle leaves / chain digest (includes optional federationWitness).
+ * @private
  * @param {object} header
  * @returns {string}
  */
@@ -91,6 +94,7 @@ function blockDigest (header) {
 
 /**
  * Soft playnet PoW: leading zero hex nibbles from `bits` (integer 0–64).
+ * @private
  * @param {string} idHex
  * @param {number|null} bits
  * @returns {boolean}

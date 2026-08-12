@@ -72,10 +72,15 @@ types for experiments and apps. Prefer importing <strong>leaf</strong> types in 
 RFC 5869.  Defaults to 32 byte output, matching Bitcoin&#39;s implementaton.</p>
 </dd>
 <dt><a href="#Identity">Identity</a> ⇐ <code><a href="#Actor">Actor</a></code></dt>
-<dd><p><strong>BIP32/BIP39 identity</strong> wrapping <a href="#Key">Key</a>: mnemonic / xprv / passphrase, derivation
-<code>m/44'/7778'/account'/0/index</code> (see <code>derivation</code> getter). <strong>Important:</strong> this class
-overrides <a href="Actor#id">Actor#id</a> with <code>toString()</code> (human-facing / Bech32-style identity), <strong>not</strong> the
-content-addressed <code>Actor#id</code> / <code>preimage</code> chain from <a href="#Actor+toGenericMessage">toGenericMessage</a>. Use
+<dd><p><strong>BIP32/BIP39 identity</strong> wrapping <a href="#Key">Key</a>: mnemonic / xprv / passphrase.
+Protocol identity (pubkey / Schnorr sign / Bech32 id) uses the Fabric derivation path
+<code>m/44'/7778'/account'/0/index</code> (see <a href="Identity#derivation">Identity#derivation</a> and IDENTITY.md).
+The HD <strong>master</strong> remains available as <a href="#Identity+master">master</a> / <a href="Identity#key">Identity#key</a>
+so Bitcoin funds can derive under BIP44 coin type <code>0</code> (see <a href="BITCOIN_KEY_DERIVATION_PATH">BITCOIN_KEY_DERIVATION_PATH</a>
+/ Wallet) without mixing protocol identity keys with spend keys.
+<strong>Important:</strong> this class overrides <a href="Actor#id">Actor#id</a> with <code>toString()</code>
+(human-facing / Bech32-style identity), <strong>not</strong> the content-addressed
+<code>Actor#id</code> / <code>preimage</code> chain from <a href="#Actor+toGenericMessage">toGenericMessage</a>. Use
 <code>pubkey</code>, <code>pubkeyhash</code>, or explicit hashing when you need stable bytes.</p>
 </dd>
 <dt><a href="#Identity">Identity</a></dt>
@@ -220,106 +225,11 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 </dd>
 </dl>
 
-## Members
-
-<dl>
-<dt><a href="#mineOnStart">mineOnStart</a></dt>
-<dd><p>When false, <code>start()</code> does not mine an initial epoch (regtest).</p>
-</dd>
-<dt><a href="#allowedOpcodes">allowedOpcodes</a> : <code>Array.&lt;string&gt;</code> | <code>null</code></dt>
-<dd><p>Opcode allow-list. Null or empty = unrestricted (legacy soft compute).</p>
-</dd>
-<dt><a href="#GenericMessage">GenericMessage</a></dt>
-<dd><p>Transitional Hub/browser catch-all (opcode GENERIC_MESSAGE_TYPE / 15103).</p>
-</dd>
-</dl>
-
 ## Constants
 
 <dl>
-<dt><a href="#merge">merge</a></dt>
-<dd><p>Beacon — L1-tied epoch chain that seals sidechain / contracts digests.</p>
-<p>Regtest: <code>createEpoch()</code> mines one block (<code>generatetoaddress</code>) then appends
-a <code>BEACON_EPOCH</code> entry. Non-regtest: <code>recordEpochFromBlock</code> follows tips.</p>
-<p>Hub product wiring historically lived in hub.fabric.pub <code>contracts/beacon.js</code>;
-that module re-exports this type.</p>
-</dd>
-<dt><a href="#merge">merge</a></dt>
-<dd><p>Bitcoin-shaped Block: parent-linked header + merkle of leaves, with optional
-PoW (<code>nonce</code>/<code>bits</code>), Elements-style federation signatures, and arbitrary <code>data</code>.</p>
-</dd>
-<dt><a href="#crypto">crypto</a></dt>
-<dd><p>Chain — ledger of Bitcoin-shaped Blocks with consensus policy:</p>
-<ul>
-<li><code>pow</code> (default) — parent-linked playnet / Bitcoin-style Block + mempool</li>
-<li><code>federation</code> — linear tip; Elements-style k-of-n block signatures (Beacon)</li>
-<li><code>gossip</code> — content-addressed data blocks; merge = union by block id</li>
-</ul>
-<p>Statechain document helpers (<code>functions/sidechainState</code>) hold the sealed JSON
-document. Digests feed that document / Beacon sidechain heads; raw gossip is
-never Beacon authority.</p>
-</dd>
-<dt><del><a href="#SEAL_BLOCK">SEAL_BLOCK</a></del></dt>
-<dd></dd>
-<dt><del><a href="#fabricCanonicalJson">fabricCanonicalJson</a></del></dt>
-<dd></dd>
-<dt><a href="#BODY_SCHEMA_BY_KEY">BODY_SCHEMA_BY_KEY</a> : <code>Map.&lt;(number|string), Array.&lt;{name: string, type: string}&gt;&gt;</code></dt>
-<dd></dd>
-<dt><a href="#SCHEMA_P2P_FORWARD">SCHEMA_P2P_FORWARD</a></dt>
-<dd><p>Directed onion hop — see <a href="module:@fabric/core/functions/fabricOnion">module:@fabric/core/functions/fabricOnion</a>.</p>
-</dd>
-<dt><a href="#SCHEMA_P2P_PEER_GOSSIP">SCHEMA_P2P_PEER_GOSSIP</a></dt>
-<dd><p>Discovery / peering field layouts (Phase B); JSON bodies remain accepted.</p>
-</dd>
-<dt><a href="#P2P_CHAT_MAX_CHARS">P2P_CHAT_MAX_CHARS</a></dt>
-<dd><p>Max UTF-8 code units for first-class P2P_CHAT_MESSAGE body (text only).</p>
-</dd>
-<dt><a href="#P2P_PEER_ALIAS_MAX_CHARS">P2P_PEER_ALIAS_MAX_CHARS</a></dt>
-<dd><p>Max UTF-8 code units for first-class P2P_PEER_ALIAS body (nickname).</p>
-</dd>
-<dt><a href="#crypto">crypto</a></dt>
-<dd><p>Multi-language Program — executable artifact for <a href="#Machine">Machine</a>, with optional
-L1 Bitcoin redeem scaffolding for <code>bitcoin-script</code>.</p>
-<p>Languages: <code>fabric-opcodes</code> | <code>javascript</code> | <code>bitcoin-script</code> | <code>solidity</code> | <code>asm</code>
-(solidity/asm compile stubs until Compiler frontends land).</p>
-</dd>
-<dt><a href="#networks">networks</a></dt>
-<dd><p>Fabric settings use <code>mainnet</code>; bitcoinjs-lib 7 names that network <code>bitcoin</code>.</p>
-</dd>
 <dt><del><a href="#Text">Text</a></del></dt>
 <dd></dd>
-</dl>
-
-## Functions
-
-<dl>
-<dt><a href="#isStructuredBlockInput">isStructuredBlockInput(input)</a> ⇒ <code>boolean</code></dt>
-<dd></dd>
-<dt><a href="#signingStringForBlock">signingStringForBlock(header)</a> ⇒ <code>string</code></dt>
-<dd><p>Canonical signing / digest body (excludes witness material).</p>
-</dd>
-<dt><a href="#blockDigest">blockDigest(header)</a> ⇒ <code>string</code></dt>
-<dd><p>Content digest for merkle leaves / chain digest (includes optional federationWitness).</p>
-</dd>
-<dt><a href="#meetsProofOfWork">meetsProofOfWork(idHex, bits)</a> ⇒ <code>boolean</code></dt>
-<dd><p>Soft playnet PoW: leading zero hex nibbles from <code>bits</code> (integer 0–64).</p>
-</dd>
-<dt><a href="#canonicalTypeCode">canonicalTypeCode(value)</a> ⇒ <code>number</code> | <code>null</code></dt>
-<dd><p>Resolve any opcode / wire name / friendly alias to the numeric AMP type code.</p>
-</dd>
-<dt><a href="#canonicalTypeName">canonicalTypeName(value)</a> ⇒ <code>string</code> | <code>null</code></dt>
-<dd><p>Resolve any opcode / wire name / friendly alias to the SCREAMING_SNAKE wire label.</p>
-</dd>
-<dt><a href="#typeEquals">typeEquals(a, b)</a> ⇒ <code>boolean</code></dt>
-<dd><p>True when two type references name the same AMP opcode (number, wire name, or friendly alias).
-Unregistered string labels only match via exact trim equality.</p>
-</dd>
-<dt><a href="#_optionalFieldDefault">_optionalFieldDefault(def)</a></dt>
-<dd><p>Default for an optional field when the wire body ends before that field.</p>
-</dd>
-<dt><a href="#tryParseMessageBody">tryParseMessageBody(message)</a> ⇒ <code>Object</code> | <code>Object</code></dt>
-<dd><p>Parse an inbound AMP body: prefer JSON (legacy), else registered field schema.</p>
-</dd>
 </dl>
 
 ## Typedefs
@@ -3928,10 +3838,15 @@ Derive a new output.
 <a name="Identity"></a>
 
 ## Identity ⇐ [<code>Actor</code>](#Actor)
-<strong>BIP32/BIP39 identity</strong> wrapping [Key](#Key): mnemonic / xprv / passphrase, derivation
-<code>m/44'/7778'/account'/0/index</code> (see <code>derivation</code> getter). <strong>Important:</strong> this class
-overrides [Actor#id](Actor#id) with <code>toString()</code> (human-facing / Bech32-style identity), <strong>not</strong> the
-content-addressed <code>Actor#id</code> / <code>preimage</code> chain from [toGenericMessage](#Actor+toGenericMessage). Use
+<strong>BIP32/BIP39 identity</strong> wrapping [Key](#Key): mnemonic / xprv / passphrase.
+Protocol identity (pubkey / Schnorr sign / Bech32 id) uses the Fabric derivation path
+<code>m/44'/7778'/account'/0/index</code> (see [Identity#derivation](Identity#derivation) and IDENTITY.md).
+The HD <strong>master</strong> remains available as [master](#Identity+master) / [Identity#key](Identity#key)
+so Bitcoin funds can derive under BIP44 coin type <code>0</code> (see [BITCOIN_KEY_DERIVATION_PATH](BITCOIN_KEY_DERIVATION_PATH)
+/ Wallet) without mixing protocol identity keys with spend keys.
+<strong>Important:</strong> this class overrides [Actor#id](Actor#id) with <code>toString()</code>
+(human-facing / Bech32-style identity), <strong>not</strong> the content-addressed
+<code>Actor#id</code> / <code>preimage</code> chain from [toGenericMessage](#Actor+toGenericMessage). Use
 <code>pubkey</code>, <code>pubkeyhash</code>, or explicit hashing when you need stable bytes.
 
 **Kind**: global class  
@@ -3939,6 +3854,8 @@ content-addressed <code>Actor#id</code> / <code>preimage</code> chain from [toGe
 
 * [Identity](#Identity) ⇐ [<code>Actor</code>](#Actor)
     * [new Identity([settings])](#new_Identity_new)
+    * [.master](#Identity+master)
+    * [.fabricKey](#Identity+fabricKey) ⇒ [<code>Key</code>](#Key)
     * [.toString()](#Identity+toString) ⇒ <code>String</code>
     * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
     * [.commit()](#Actor+commit) ⇒ <code>String</code>
@@ -3969,10 +3886,24 @@ Create an instance of an Identity.
 | [settings.seed] | <code>String</code> |  | BIP 39 seed phrase. |
 | [settings.xprv] | <code>String</code> |  | Serialized BIP 32 master private key. |
 | [settings.xpub] | <code>String</code> |  | Serialized BIP 32 master public key. |
-| [settings.account] | <code>Number</code> | <code>0</code> | BIP 44 account index. |
-| [settings.index] | <code>Number</code> | <code>0</code> | BIP 44 key index. |
+| [settings.account] | <code>Number</code> | <code>0</code> | BIP 44 account index (Fabric coin type 7778). |
+| [settings.index] | <code>Number</code> | <code>0</code> | BIP 44 address index. |
 | [settings.passphrase] | <code>String</code> |  | Passphrase for the key. |
 
+<a name="Identity+master"></a>
+
+### identity.master
+HD master key — use for Bitcoin BIP44 coin-type-0 fund derivation only.
+
+**Kind**: instance property of [<code>Identity</code>](#Identity)  
+<a name="Identity+fabricKey"></a>
+
+### identity.fabricKey ⇒ [<code>Key</code>](#Key)
+Fabric-protocol signing key at [Identity#derivation](Identity#derivation).
+When this.key is already a protocol account/signing node (or public-only),
+derivation may be impossible — use the key as-is.
+
+**Kind**: instance property of [<code>Identity</code>](#Identity)  
 <a name="Identity+toString"></a>
 
 ### identity.toString() ⇒ <code>String</code>
@@ -4133,6 +4064,8 @@ Parse an Object into a corresponding Fabric state.
 
 * [Identity](#Identity)
     * [new Identity([settings])](#new_Identity_new)
+    * [.master](#Identity+master)
+    * [.fabricKey](#Identity+fabricKey) ⇒ [<code>Key</code>](#Key)
     * [.toString()](#Identity+toString) ⇒ <code>String</code>
     * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
     * [.commit()](#Actor+commit) ⇒ <code>String</code>
@@ -4163,10 +4096,24 @@ Create an instance of an Identity.
 | [settings.seed] | <code>String</code> |  | BIP 39 seed phrase. |
 | [settings.xprv] | <code>String</code> |  | Serialized BIP 32 master private key. |
 | [settings.xpub] | <code>String</code> |  | Serialized BIP 32 master public key. |
-| [settings.account] | <code>Number</code> | <code>0</code> | BIP 44 account index. |
-| [settings.index] | <code>Number</code> | <code>0</code> | BIP 44 key index. |
+| [settings.account] | <code>Number</code> | <code>0</code> | BIP 44 account index (Fabric coin type 7778). |
+| [settings.index] | <code>Number</code> | <code>0</code> | BIP 44 address index. |
 | [settings.passphrase] | <code>String</code> |  | Passphrase for the key. |
 
+<a name="Identity+master"></a>
+
+### identity.master
+HD master key — use for Bitcoin BIP44 coin-type-0 fund derivation only.
+
+**Kind**: instance property of [<code>Identity</code>](#Identity)  
+<a name="Identity+fabricKey"></a>
+
+### identity.fabricKey ⇒ [<code>Key</code>](#Key)
+Fabric-protocol signing key at [Identity#derivation](Identity#derivation).
+When this.key is already a protocol account/signing node (or public-only),
+derivation may be impossible — use the key as-is.
+
+**Kind**: instance property of [<code>Identity</code>](#Identity)  
 <a name="Identity+toString"></a>
 
 ### identity.toString() ⇒ <code>String</code>
@@ -14740,126 +14687,6 @@ Closes the connection to the ZMQ publisher.
 Deprecated 2021-11-06 — use [FabricState](FabricState) (<code>types/state</code>). <code>Scribe</code> was merged into <code>State</code>.
 
 **Kind**: global class  
-<a name="mineOnStart"></a>
-
-## mineOnStart
-When false, `start()` does not mine an initial epoch (regtest).
-
-**Kind**: global variable  
-<a name="allowedOpcodes"></a>
-
-## allowedOpcodes : <code>Array.&lt;string&gt;</code> \| <code>null</code>
-Opcode allow-list. Null or empty = unrestricted (legacy soft compute).
-
-**Kind**: global variable  
-<a name="GenericMessage"></a>
-
-## GenericMessage
-Transitional Hub/browser catch-all (opcode GENERIC_MESSAGE_TYPE / 15103).
-
-**Kind**: global variable  
-<a name="merge"></a>
-
-## merge
-Beacon — L1-tied epoch chain that seals sidechain / contracts digests.
-
-Regtest: `createEpoch()` mines one block (`generatetoaddress`) then appends
-a `BEACON_EPOCH` entry. Non-regtest: `recordEpochFromBlock` follows tips.
-
-Hub product wiring historically lived in hub.fabric.pub `contracts/beacon.js`;
-that module re-exports this type.
-
-**Kind**: global constant  
-<a name="merge"></a>
-
-## merge
-Bitcoin-shaped Block: parent-linked header + merkle of leaves, with optional
-PoW (`nonce`/`bits`), Elements-style federation signatures, and arbitrary `data`.
-
-**Kind**: global constant  
-**See**: docs/CHAIN.md  
-<a name="crypto"></a>
-
-## crypto
-Chain — ledger of Bitcoin-shaped Blocks with consensus policy:
-
-- `pow` (default) — parent-linked playnet / Bitcoin-style Block + mempool
-- `federation` — linear tip; Elements-style k-of-n block signatures (Beacon)
-- `gossip` — content-addressed data blocks; merge = union by block id
-
-Statechain document helpers (`functions/sidechainState`) hold the sealed JSON
-document. Digests feed that document / Beacon sidechain heads; raw gossip is
-never Beacon authority.
-
-**Kind**: global constant  
-**See**
-
-- docs/CHAIN.md
-- docs/DISTRIBUTED_EXECUTION.md
-
-<a name="SEAL_BLOCK"></a>
-
-## ~~SEAL\_BLOCK~~
-***Use CONSENSUS_*; aliases for one release.***
-
-**Kind**: global constant  
-<a name="fabricCanonicalJson"></a>
-
-## ~~fabricCanonicalJson~~
-***Not a Fabric type. Prefer:
-- `functions/fabricCanonicalJson` (jsonSafe / stableStringify)
-- `functions/beaconFederationSigning` (epoch signing / federation verify)
-- `functions/fabricProgramManifest` / `Machine.parseManifest` (manifest v1)
-- `types/program` + `types/machine` for execution
-
-Thin re-export kept for one release so Hub / older requires keep working.***
-
-**Kind**: global constant  
-<a name="BODY_SCHEMA_BY_KEY"></a>
-
-## BODY\_SCHEMA\_BY\_KEY : <code>Map.&lt;(number\|string), Array.&lt;{name: string, type: string}&gt;&gt;</code>
-**Kind**: global constant  
-<a name="SCHEMA_P2P_FORWARD"></a>
-
-## SCHEMA\_P2P\_FORWARD
-Directed onion hop — see [module:@fabric/core/functions/fabricOnion](module:@fabric/core/functions/fabricOnion).
-
-**Kind**: global constant  
-<a name="SCHEMA_P2P_PEER_GOSSIP"></a>
-
-## SCHEMA\_P2P\_PEER\_GOSSIP
-Discovery / peering field layouts (Phase B); JSON bodies remain accepted.
-
-**Kind**: global constant  
-<a name="P2P_CHAT_MAX_CHARS"></a>
-
-## P2P\_CHAT\_MAX\_CHARS
-Max UTF-8 code units for first-class P2P_CHAT_MESSAGE body (text only).
-
-**Kind**: global constant  
-<a name="P2P_PEER_ALIAS_MAX_CHARS"></a>
-
-## P2P\_PEER\_ALIAS\_MAX\_CHARS
-Max UTF-8 code units for first-class P2P_PEER_ALIAS body (nickname).
-
-**Kind**: global constant  
-<a name="crypto"></a>
-
-## crypto
-Multi-language Program — executable artifact for [Machine](#Machine), with optional
-L1 Bitcoin redeem scaffolding for `bitcoin-script`.
-
-Languages: `fabric-opcodes` | `javascript` | `bitcoin-script` | `solidity` | `asm`
-(solidity/asm compile stubs until Compiler frontends land).
-
-**Kind**: global constant  
-**See**: docs/PROGRAM.md  
-<a name="networks"></a>
-
-## networks
-Fabric settings use `mainnet`; bitcoinjs-lib 7 names that network `bitcoin`.
-
-**Kind**: global constant  
 <a name="Text"></a>
 
 ## ~~Text~~
@@ -15337,106 +15164,6 @@ Join a list with an Oxford comma (delegates to [module:functions/oxfordJoin](mod
 | Param | Type |
 | --- | --- |
 | list | <code>Array.&lt;string&gt;</code> | 
-
-<a name="isStructuredBlockInput"></a>
-
-## isStructuredBlockInput(input) ⇒ <code>boolean</code>
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| input | <code>object</code> | 
-
-<a name="signingStringForBlock"></a>
-
-## signingStringForBlock(header) ⇒ <code>string</code>
-Canonical signing / digest body (excludes witness material).
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| header | <code>object</code> | 
-
-<a name="blockDigest"></a>
-
-## blockDigest(header) ⇒ <code>string</code>
-Content digest for merkle leaves / chain digest (includes optional federationWitness).
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| header | <code>object</code> | 
-
-<a name="meetsProofOfWork"></a>
-
-## meetsProofOfWork(idHex, bits) ⇒ <code>boolean</code>
-Soft playnet PoW: leading zero hex nibbles from `bits` (integer 0–64).
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| idHex | <code>string</code> | 
-| bits | <code>number</code> \| <code>null</code> | 
-
-<a name="canonicalTypeCode"></a>
-
-## canonicalTypeCode(value) ⇒ <code>number</code> \| <code>null</code>
-Resolve any opcode / wire name / friendly alias to the numeric AMP type code.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| value | <code>number</code> \| <code>string</code> \| <code>null</code> \| <code>undefined</code> | 
-
-<a name="canonicalTypeName"></a>
-
-## canonicalTypeName(value) ⇒ <code>string</code> \| <code>null</code>
-Resolve any opcode / wire name / friendly alias to the SCREAMING_SNAKE wire label.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| value | <code>number</code> \| <code>string</code> \| <code>null</code> \| <code>undefined</code> | 
-
-<a name="typeEquals"></a>
-
-## typeEquals(a, b) ⇒ <code>boolean</code>
-True when two type references name the same AMP opcode (number, wire name, or friendly alias).
-Unregistered string labels only match via exact trim equality.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| a | <code>number</code> \| <code>string</code> \| <code>null</code> \| <code>undefined</code> | 
-| b | <code>number</code> \| <code>string</code> \| <code>null</code> \| <code>undefined</code> | 
-
-<a name="_optionalFieldDefault"></a>
-
-## \_optionalFieldDefault(def)
-Default for an optional field when the wire body ends before that field.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| def | <code>Object</code> | 
-
-<a name="tryParseMessageBody"></a>
-
-## tryParseMessageBody(message) ⇒ <code>Object</code> \| <code>Object</code>
-Parse an inbound AMP body: prefer JSON (legacy), else registered field schema.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| message | [<code>Message</code>](#Message) | 
 
 <a name="BitcoinCookieProbeConstraints"></a>
 

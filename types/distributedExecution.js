@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * @deprecated Not a Fabric type. Prefer:
+ * @fileoverview @deprecated Not a Fabric type. Prefer:
  * - `functions/fabricCanonicalJson` (jsonSafe / stableStringify)
  * - `functions/beaconFederationSigning` (epoch signing / federation verify)
  * - `functions/fabricProgramManifest` / `Machine.parseManifest` (manifest v1)

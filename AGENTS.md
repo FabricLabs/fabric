@@ -199,3 +199,9 @@ tags. When documenting optional option bags:
 Also: `@type {T}` must not carry a trailing description; put the prose in the
 block above the `@type` line. See [DEVELOPERS.md](DEVELOPERS.md) (Development
 workflow → API reference).
+
+**Avoid Global clutter:** file-level prose must use `@fileoverview` (or
+`@module`) so it does not attach to the next `const`/`require`. Object-literal
+settings fields should use `//` comments, not `/** @type */` blocks (those
+become Global symbols). Mark module-private helpers/constants `@private` so
+they do not appear on `docs/global.html` / `API.md` Globals.
