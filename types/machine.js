@@ -365,6 +365,7 @@ class Machine extends Actor {
         const {
           runExecutionProgram
         } = require('../functions/executionProgramRunner');
+        if (opts.genesis) this.applyGenesisOpcodes(opts.genesis);
         const src = prog.settings.source && typeof prog.settings.source === 'object'
           ? prog.settings.source
           : program;

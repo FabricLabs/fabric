@@ -33,9 +33,18 @@ const {
 const COLLECTION = 'contractmessages';
 const ORIGINS = Object.freeze(['mesh', 'queue', 'paste', 'local']);
 
-/** Body types that mutate members / spend / journal authority — signer only. */
+/**
+ * Body types that require current signer / federation validator (or verified
+ * OP_CONTRACT_SIGN). Includes governance / invite / journal-request frames so
+ * outsiders cannot advance tip clock / stateDigest with AMP-signed spam.
+ */
 const SIGNER_MUTATION_TYPES = Object.freeze([
   'GroupChange',
+  'GroupChangeProposal',
+  'GroupChangeVote',
+  'FederationContractInvite',
+  'FederationContractInviteResponse',
+  'GroupJournalRequest',
   'ContractCapabilityGrant',
   'ContractWithdrawalRequest',
   'ContractWithdrawalWitness',
@@ -516,7 +525,29 @@ function authorizeIngest (doc, type, authorXOnly, meta = {}, bodyObject = null) 
   }
 
   const needsSigner = SIGNER_MUTATION_TYPES.includes(type);
-  if (!needsSigner) return { ok: true };
+  if (!needsSigner) {
+    // Remaining types (custom genesis `primitives.messageTypes`, etc.): still require
+    // author ∈ reader ∪ signer (or verified capability). Do not fail open.
+    if (!/^[0-9a-f]{64}$/.test(authorXOnly)) {
+      return { ok: false, error: 'invalid author' };
+    }
+    const readers = readerSetForDelivery(doc, meta);
+    const signers = currentSignerSet(doc);
+    const allowed = new Set(readers.concat(signers));
+    if (!allowed.size) {
+      return {
+        ok: false,
+        error: 'contract message requires genesis readers/signers or tip members (fail closed)'
+      };
+    }
+    const token = meta.capabilityToken || meta.token;
+    if (!allowed.has(authorXOnly)
+      && !authorHasReadToken(doc, authorXOnly, token)
+      && !authorHasSignToken(doc, authorXOnly, token)) {
+      return { ok: false, error: 'author not in contract reader/signer set' };
+    }
+    return { ok: true };
+  }
 
   if (!/^[0-9a-f]{64}$/.test(authorXOnly)) {
     return { ok: false, error: 'invalid author' };

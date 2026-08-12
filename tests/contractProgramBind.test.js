@@ -37,6 +37,23 @@ describe('contractProgramBind / Machine ↔ redeemable withdrawals', function ()
     return { prog, run, match };
   }
 
+  it('assertMachineRunMatches prefers run.trace when stack was pre-seeded', async function () {
+    const prog = Program.from({
+      language: 'fabric-opcodes',
+      steps: ['OP_TRUE']
+    });
+    prog.compile();
+    const machine = new Machine({ deterministic: true });
+    machine.define('OP_TRUE', () => true);
+    machine.stack.push({ preseed: true });
+    const run = await machine.runProgram(prog);
+    assert.strictEqual(run.ok, true);
+    assert.ok(run.stack.length > run.trace.length);
+    const match = assertMachineRunMatches({ program: prog, run });
+    assert.strictEqual(match.ok, true, match.error);
+    assert.strictEqual(match.runCommitmentHex, run.runCommitmentHex);
+  });
+
   it('Machine runCommitmentHex is stable and binds into tip without changing P2TR', async function () {
     const a = new Key();
     const { prog, run, match } = await runOpcodeProgram();

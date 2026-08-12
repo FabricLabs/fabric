@@ -201,6 +201,36 @@ describe('@fabric/core contractMessageAccumulate', function () {
     assert.deepStrictEqual(ok.tip.content.members, [pubkeyXOnly(owner.pubkey)]);
   });
 
+  it('rejects governance/invite/journal-request spam from non-signers (tip integrity)', function () {
+    const owner = new Key();
+    const outsider = new Key();
+    const store = createMemoryStore();
+    const genesis = { signers: [owner.pubkey] };
+    const tipBefore = () => {
+      const doc = loadDoc(store, contractId);
+      return tipFromDoc(doc);
+    };
+
+    for (const type of [
+      'GroupChangeProposal',
+      'GroupChangeVote',
+      'FederationContractInvite',
+      'FederationContractInviteResponse',
+      'GroupJournalRequest'
+    ]) {
+      const bad = ingestMessageBuffer(
+        store,
+        contractId,
+        signContractMessage(outsider, contractId, type, { note: 'spam' }).toBuffer(),
+        { origin: 'mesh', genesis }
+      );
+      assert.strictEqual(bad.accepted, false, type);
+      assert.match(bad.error, /not authorized|fail closed|genesis/i, type);
+    }
+    assert.strictEqual(loadDoc(store, contractId).entries.length, 0);
+    assert.strictEqual(tipBefore().clock, 0);
+  });
+
   it('rejects GroupChange with no genesis signers (fail closed)', function () {
     const anyone = new Key();
     const store = createMemoryStore();
@@ -281,6 +311,32 @@ describe('@fabric/core contractMessageAccumulate', function () {
     });
     assert.strictEqual(blocked.accepted, false);
     assert.match(blocked.error, /not allowed/i);
+  });
+
+  it('custom genesis messageTypes still require reader/signer membership', function () {
+    const owner = new Key();
+    const outsider = new Key();
+    const store = createMemoryStore();
+    const genesis = {
+      signers: [owner.pubkey],
+      primitives: { messageTypes: ['AppNote'] }
+    };
+    const spam = ingestMessageBuffer(
+      store,
+      contractId,
+      signContractMessage(outsider, contractId, 'AppNote', { body: 'spam' }).toBuffer(),
+      { origin: 'mesh', genesis }
+    );
+    assert.strictEqual(spam.accepted, false);
+    assert.match(spam.error, /reader\/signer|fail closed/i);
+
+    const ok = ingestMessageBuffer(
+      store,
+      contractId,
+      signContractMessage(owner, contractId, 'AppNote', { body: 'ok' }).toBuffer(),
+      { origin: 'mesh', genesis }
+    );
+    assert.strictEqual(ok.accepted, true, ok.error);
   });
 
   it('threads bitcoinBlockHash onto tip', function () {

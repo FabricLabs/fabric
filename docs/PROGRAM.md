@@ -89,7 +89,7 @@ when preparing a PSBT.
 2. **2–3 round** — federation / challenge–response before the witness is final (Beacon / Federation helpers).
 3. **Scaffold** — `bitcoin-script` `toRedeemScript()` / `OP_CHECKREDEEM` compile stub (not yet a Machine opcode).
 4. **Optional hashlock** — attach leaf at publish/compose time; `prepareHashlockWithdrawalPsbt` + `finalizeHashlockPsbt({ preimage32 })` (pure) or preimage+sig.
-5. **Future** — garbared circuits via existing `Circuit` (not implemented here).
+5. **Blinded execution scaffold** — [`functions/blindedExecutionCircuit.js`](../functions/blindedExecutionCircuit.js) composes garbler `CONTRACT_PUBLISH` → ContractProposal accept/reject → content-addressed `circuitCommitment` → optional hashlock Taproot / PSBT bind. This is **composition + digests**, not Yao gate garbling/OT (still a future backend behind the same commitments).
 
 ```js
 const { bindProgramRunToTip, buildWithdrawalRequest } = require('@fabric/core/functions/contractSpend');

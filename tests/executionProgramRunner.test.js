@@ -61,6 +61,38 @@ describe('executionProgramRunner / Machine fabric-execution', function () {
     assert.match(r.error, /Ping/);
   });
 
+  it('enforces Machine / genesis opcode allow-list on FabricOpcode steps', function () {
+    const program = {
+      version: 1,
+      steps: [{ op: 'FabricOpcode', fabricType: 'ChatMessage' }]
+    };
+    const denied = runExecutionProgram(program, {
+      allowedOpcodes: ['P2P_CHAT_MESSAGE'],
+      resolveFabricEntry () {
+        return { name: 'ChatMessage', opcodeDec: 0x67 };
+      }
+    });
+    assert.strictEqual(denied.ok, false);
+    assert.match(denied.error, /allow-list/i);
+
+    const allowed = runExecutionProgram(program, {
+      allowedOpcodes: ['ChatMessage'],
+      resolveFabricEntry () {
+        return { name: 'ChatMessage', opcodeDec: 0x67 };
+      }
+    });
+    assert.strictEqual(allowed.ok, true, allowed.error);
+
+    const fromGenesis = runExecutionProgram(program, {
+      genesis: { primitives: { opcodes: ['OtherOnly'] } },
+      resolveFabricEntry () {
+        return { name: 'ChatMessage', opcodeDec: 0x67 };
+      }
+    });
+    assert.strictEqual(fromGenesis.ok, false);
+    assert.match(fromGenesis.error, /allow-list/i);
+  });
+
   it('Program.compile fabric-execution requires steps', function () {
     const bad = Program.from({ language: 'fabric-execution', source: {} }).compile();
     assert.strictEqual(bad.ok, false);

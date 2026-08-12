@@ -13,6 +13,7 @@ Related docs:
 
 ## Working Area
 ### Bad Classes (work to reduce)
+- `DistributedExecution` (reduce to `Execution`)
 - `Scribe`
 
 ### Dubious Classes (consider integrating/consolidating into existing classes)
@@ -29,7 +30,6 @@ This matrix is a production-first baseline to refine over the next PRs.
 - `Chain`
 - `Circuit`
 - `Collection`
-- `DistributedExecution`
 - `Entity`
 - `Federation`
 - `Hash256`
@@ -58,6 +58,7 @@ Rationale:
 - `Stack` + `Script` -> evaluate unification behind `Program`/`Machine` if no distinct production role.
 
 #### Deprecate/Compatibility-only (for this release cycle)
+- `DistributedExecution` (`types/distributedExecution.js`) — thin re-export of canonical JSON / beacon signing / manifest helpers; prefer those modules + `Machine`/`Program` directly. Keep `Fabric.DistributedExecution` alias one release.
 - `settings/deprecations.js` aliases that only preserve legacy names.
 - Any class only referenced by deprecation mapping + legacy docs, with no product-path usage.
 

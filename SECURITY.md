@@ -1,6 +1,21 @@
 # Security
 Fabric aims to maximize the security of a sensible default configuration while keeping dependencies understandable and reviewable.
 
+## Adversarial environment
+Fabric networks are intended for deployment where **peers, relays, hubs, and operators may be hostile**. Design and review against:
+
+- Untrusted TCP / WebSocket / WebRTC neighbors (forgery, replay, amplification, pin hijack, logical front-running)
+- Phishing of identity flows (`fabric://login`, device-link) toward attacker-controlled hubs
+- Public observability of unsigned or plaintext application traffic unless an explicit seal is used
+- No reliance on an “honest majority” of random internet peers for key custody or contract acceptance
+
+Bitcoin L1 finality and operator key hygiene remain outside this document’s guarantees. Suite apps SHOULD document the same adversarial assumption and keep fail-closed defaults for auth, allowlists, and spend paths.
+
+**Basics coverage:** [`tests/adversarialEnvironment.basics.test.js`](tests/adversarialEnvironment.basics.test.js) (blinded-execution role minimum + phishing hub rejection via allowlist helpers when present). Broader Peer adversarial contracts live under [`tests/protocol-v1/`](tests/protocol-v1/README.md).
+
+## Blinded execution (composition scaffold)
+[`functions/blindedExecutionCircuit.js`](functions/blindedExecutionCircuit.js) commits garbler publish → ContractProposal accept/reject → content-addressed circuit digests → optional hashlock Taproot. It is **not** Yao gate garbling / OT. Do not treat `Circuit#scramble` as cryptographic evaluation. Real GC remains a future backend behind the same digests ([docs/PROGRAM.md](docs/PROGRAM.md)).
+
 ## Objectives
 - Secure defaults for the reference client (`@fabric/core`)
 - Minimal attack surface where practical
@@ -88,7 +103,7 @@ Adversarial Peer coverage under the assumption that **NOISE payloads are raw, we
 raw UTF-8. Coverage: `tests/protocol-v1/phase-b.typed-bodies.js`.
 
 ## Application Resource Contract accumulate
-`functions/contractMessageAccumulate.ingestMessageBuffer` folds signed `CONTRACT_MESSAGE` frames into a tip. **Signer mutations** (`GroupChange`, capability grants, withdrawal request/witness, journal batch/state) require the AMP author to be in **genesis.signers** (when tip members are empty) or the **current tip member set**, or to present a **verified** `OP_CONTRACT_SIGN` Token (`meta.capabilityToken`) issued by a current signer. **`GroupChat`** requires author ∈ tip/genesis **reader ∪ signer** set (or verified `OP_CONTRACT_READ` / `OP_CONTRACT_SIGN`). **`ContractWithdrawalWitness`** must bind `signer` to the AMP author, carry BIP340 `signature` over `fabric:contract-withdrawal-witness:1:…`, and match the pending request’s tip fields. AMP signature alone is not sufficient. Body `type` must appear in genesis `primitives.messageTypes` when declared; otherwise only known core `CONTRACT_BODY_TYPES` are accepted. **Withdrawals** must bind `stateDigest` + `bitcoinBlockHash` to the tip at request time (`functions/contractSpend`). See [`docs/ARC.md`](docs/ARC.md).
+`functions/contractMessageAccumulate.ingestMessageBuffer` folds signed `CONTRACT_MESSAGE` frames into a tip. **Signer mutations** (`GroupChange`, `GroupChangeProposal` / `GroupChangeVote`, federation invite (+ response), capability grants, withdrawal request/witness, journal request/batch/state) require the AMP author to be in **genesis.signers** (when tip members are empty) or the **current tip member set**, or to present a **verified** `OP_CONTRACT_SIGN` Token (`meta.capabilityToken`) issued by a current signer. **`GroupChat`** and other non-mutation body types (including custom genesis `primitives.messageTypes`) require author ∈ tip/genesis **reader ∪ signer** set (or verified `OP_CONTRACT_READ` / `OP_CONTRACT_SIGN`). **`ContractWithdrawalWitness`** must bind `signer` to the AMP author, carry BIP340 `signature` over `fabric:contract-withdrawal-witness:1:…`, and match the pending request’s tip fields. AMP signature alone is not sufficient. Body `type` must appear in genesis `primitives.messageTypes` when declared; otherwise only known core `CONTRACT_BODY_TYPES` are accepted. **Withdrawals** must bind `stateDigest` + `bitcoinBlockHash` to the tip at request time (`functions/contractSpend`). See [`docs/ARC.md`](docs/ARC.md).
 
 ## Inventory HTLC binding
 Buyers must rebuild the buyer-bound P2TR (`validateInventoryHtlcOffer`) and must not fund a seller-advertised `paymentAddress` that does not match. When an AMP signer is known (`inventoryResponse.signerPubkeyHex` / offer `ampSignerPubkey` / HTLC `sellerPublicKeyHex`), it must match the resolved seller x-only key before funding.

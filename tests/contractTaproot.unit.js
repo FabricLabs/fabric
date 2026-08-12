@@ -390,6 +390,23 @@ describe('contractTaproot', function () {
       keySets: { full: [pk(0), pk(1)] },
       tiers: [{ id: 't0', threshold: 3, keys: 'full' }]
     }), /exceeds unique key count/);
+    // synthesizeDefaultLadder must not silently clamp after pubkey dedupe.
+    assert.throws(() => synthesizeDefaultLadder({
+      network: 'regtest',
+      publisher: pk(0),
+      validators: [pk(0), pk(1), pk(0)],
+      threshold: 3,
+      csvBlocks: 144
+    }), /exceeds unique key count/);
+    assert.throws(() => synthesizeDefaultLadder({
+      network: 'regtest',
+      publisher: pk(0),
+      validators: [pk(0), pk(1)],
+      threshold: 2,
+      softMode: 'reduced',
+      softThreshold: 3,
+      csvBlocks: 144
+    }), /softThreshold.*exceeds unique key count/);
   });
 
   it('rejects mixed csv/cltv lock ladders', function () {

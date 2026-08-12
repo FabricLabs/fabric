@@ -10,6 +10,11 @@
  */
 
 const { jsonSafe } = require('./fabricCanonicalJson');
+const {
+  opcodeAllowed,
+  opcodesFromGenesis,
+  normalizeOpcodeAllowList
+} = require('./opcodeAllowList');
 
 const DEFAULT_MAX_STEPS = 256;
 const DEFAULT_MAX_STACK = 64;
@@ -163,12 +168,27 @@ function runExecutionProgram (program, options = {}) {
   }
 
   const Machine = require('../types/machine');
+  let allowList = normalizeOpcodeAllowList(options.allowedOpcodes || []);
+  if (!allowList.length && options.genesis) {
+    allowList = opcodesFromGenesis(options.genesis);
+  }
   const machine = options.machine instanceof Machine
     ? options.machine
     : new Machine({
       deterministic: true,
-      allowedOpcodes: options.allowedOpcodes || null
+      allowedOpcodes: allowList.length ? allowList : null
     });
+  if (allowList.length && options.machine instanceof Machine) {
+    // Prefer explicit opts / genesis list when an existing Machine is injected.
+    const existing = machine.allowedOpcodes || [];
+    if (!existing.length) {
+      machine.setAllowedOpcodes(allowList);
+    } else {
+      allowList = existing;
+    }
+  } else if (!allowList.length && options.machine instanceof Machine) {
+    allowList = machine.allowedOpcodes || [];
+  }
 
   // Structured execution owns the stack; clear any prior compute residue.
   machine.stack = [];
@@ -190,6 +210,9 @@ function runExecutionProgram (program, options = {}) {
       const entry = resolveFabricEntry(step);
       if (NON_EXECUTION_FABRIC_TYPES.has(entry.name)) {
         throw new Error(`${entry.name} is a transport keepalive, not an Execution program opcode`);
+      }
+      if (!opcodeAllowed(allowList, entry.name)) {
+        throw new Error(`FabricOpcode "${entry.name}" not in primitives.opcodes allow-list`);
       }
       const frame = {
         kind: 'fabric',

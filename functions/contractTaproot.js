@@ -190,9 +190,12 @@ function synthesizeDefaultLadder (opts = {}) {
   const validators = Array.isArray(opts.validators)
     ? opts.validators
     : (Array.isArray(opts.validatorPubkeysHex) ? opts.validatorPubkeysHex : []);
-  const threshold = Math.max(1, Number(opts.threshold) || 1);
+  const threshold = Math.max(1, Math.floor(Number(opts.threshold) || 1));
   const sorted = parseCompressedPubkeysSorted(validators).map((b) => b.toString('hex'));
   if (!sorted.length) throw new Error('synthesizeDefaultLadder requires validators');
+  if (threshold > sorted.length) {
+    throw new Error(`threshold ${threshold} exceeds unique key count ${sorted.length}`);
+  }
   const publisher = opts.publisher
     ? String(opts.publisher).trim().toLowerCase()
     : sorted[0];
@@ -208,11 +211,14 @@ function synthesizeDefaultLadder (opts = {}) {
   if (softMode === 'reduced' || softMode === 'threshold') {
     const softThr = Math.max(
       1,
-      Number(opts.softThreshold) || Math.max(1, Math.ceil(threshold / 2))
+      Math.floor(Number(opts.softThreshold) || Math.max(1, Math.ceil(threshold / 2)))
     );
+    if (softThr > sorted.length) {
+      throw new Error(`softThreshold ${softThr} exceeds unique key count ${sorted.length}`);
+    }
     softTier = {
       id: 't1-soft',
-      threshold: Math.min(softThr, sorted.length),
+      threshold: softThr,
       keys: 'full',
       after: { type: 'csv', blocks: csvBlocks },
       until: null
@@ -238,7 +244,7 @@ function synthesizeDefaultLadder (opts = {}) {
     tiers: [
       {
         id: 't0-authority',
-        threshold: Math.min(threshold, sorted.length),
+        threshold,
         keys: 'full',
         after: null,
         until: null

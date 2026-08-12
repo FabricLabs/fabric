@@ -89,8 +89,8 @@ const MACHINE_MAX_MEMORY = MAX_MEMORY_ALLOC * MAX_MESSAGE_SIZE;
 const MAX_CHAT_MESSAGE_LENGTH = 2048;
 
 // Playnet
-const FABRIC_PLAYNET_ADDRESS = ''; // deposit address (P2TR)
-const FABRIC_PLAYNET_ORIGIN = ''; // block hash of first deploy
+const FABRIC_PLAYNET_ADDRESS = ''; // unset until a published playnet P2TR deposit address is chosen
+const FABRIC_PLAYNET_ORIGIN = ''; // unset until first playnet deploy block hash is sealed
 
 // FABRIC ONLY
 const BITCOIN_BLOCK_TYPE = 21000;

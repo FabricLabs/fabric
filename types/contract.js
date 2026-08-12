@@ -362,12 +362,22 @@ class Contract extends Service {
       };
       const next = applyPaymentObservationToTip(tip, observation);
       if (!this._state) this._state = { content: {} };
-      this._state.content = next.content;
-      if (this.settings && this.settings.state) {
-        this.settings.state = next.content;
+      // Merge into the observed content object in place — replacing
+      // `this._state.content` would detach `this.observer` from monitor.
+      if (!this._state.content || typeof this._state.content !== 'object') {
+        this._state.content = {};
+      }
+      const target = this._state.content;
+      const incoming = next.content && typeof next.content === 'object' ? next.content : {};
+      for (const key of Object.keys(target)) {
+        if (!Object.prototype.hasOwnProperty.call(incoming, key)) delete target[key];
+      }
+      Object.assign(target, incoming);
+      if (this.settings) {
+        this.settings.state = target;
       }
       observation.applied = true;
-      observation.balances = next.content.balances;
+      observation.balances = target.balances;
     } else if (observation.ok) {
       observation.applied = false;
     }

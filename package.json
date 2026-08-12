@@ -108,6 +108,7 @@
     "report:deprecations": "node scripts/gen-quality-reports.js deprecations",
     "report:security": "node scripts/gen-quality-reports.js security",
     "report:quality": "node scripts/gen-quality-reports.js all",
+    "report:bip-compliance": "node scripts/bip-compliance-report.js",
     "report:noisy": "node scripts/analyze-deps.js | tee reports/noisy-deps.txt",
     "report:noble-hashes": "node scripts/report-noble-hashes.js",
     "make:classes-dot": "node scripts/classtree.js --write",
