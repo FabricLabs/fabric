@@ -5,7 +5,7 @@ const assert = require('assert');
 const bip39 = require('../functions/bip39');
 const BIP32 = require('../functions/bip32').default;
 const ecc = require('../types/ecc');
-const { FABRIC_KEY_DERIVATION_PATH, bitcoinReceiveDerivationPath } = require('../constants');
+const { FABRIC_KEY_DERIVATION_PATH, bitcoinReceiveDerivationPath, fabricIdentityDerivationPath, fabricCoinTypeForNetwork, FABRIC_COIN_TYPE_MAINNET, FABRIC_COIN_TYPE_TESTNET } = require('../constants');
 let nobleSecp256k1 = null;
 try {
   nobleSecp256k1 = require('@noble/curves/secp256k1.js');
@@ -61,6 +61,21 @@ describe('@fabric/core/types/identity', function () {
       assert.ok(fund.pubkey);
       assert.notEqual(fund.pubkey, identity.pubkey);
       assert.match(fundPath, /^m\/44'\/0'\//);
+    });
+
+    it('uses coin type 7778 by default and 7777 on mainnet', function () {
+      assert.strictEqual(fabricCoinTypeForNetwork('regtest'), FABRIC_COIN_TYPE_TESTNET);
+      assert.strictEqual(fabricCoinTypeForNetwork('testnet'), FABRIC_COIN_TYPE_TESTNET);
+      assert.strictEqual(fabricCoinTypeForNetwork('signet'), FABRIC_COIN_TYPE_TESTNET);
+      assert.strictEqual(fabricCoinTypeForNetwork('mainnet'), FABRIC_COIN_TYPE_MAINNET);
+      assert.strictEqual(fabricIdentityDerivationPath(0, 0), FABRIC_KEY_DERIVATION_PATH);
+      assert.strictEqual(fabricIdentityDerivationPath(0, 0, 'mainnet'), "m/44'/7777'/0'/0/0");
+
+      const reg = new Identity({ seed: SAMPLE.seed, network: 'regtest' });
+      const main = new Identity({ seed: SAMPLE.seed, network: 'mainnet' });
+      assert.strictEqual(reg.derivation, "m/44'/7778'/0'/0/0");
+      assert.strictEqual(main.derivation, "m/44'/7777'/0'/0/0");
+      assert.notEqual(reg.pubkey, main.pubkey);
     });
 
     it('can derive child keys from the master', function () {

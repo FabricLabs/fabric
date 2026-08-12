@@ -93,7 +93,7 @@ const EVALUATION_SUITE = [
     why: 'Purpose level (44/49/84/86) disambiguates account trees.',
     patterns: ['BIP43', "m/44'", "m/84'", "m/86'"],
     expected: { core: 'strong', hub: 'strong', passport: 'strong', application: 'partial' },
-    notes: 'Fabric uses purpose 44 for identity (coin 7778) and Bitcoin funds; Passport also uses 84.'
+    notes: 'Fabric uses purpose 44 for identity (coin 7777 mainnet / 7778 other) and Bitcoin funds; Passport also uses 84.'
   },
   {
     bip: 44,
@@ -102,9 +102,9 @@ const EVALUATION_SUITE = [
     layer: 'Applications',
     adoption: 'universal',
     why: 'Default multi-account path template; still dominant for legacy P2PKH + many apps.',
-    patterns: ['BIP44', 'BITCOIN_KEY_DERIVATION_PATH', "m/44'/0'", "m/44'/7778'", 'bitcoinReceiveDerivationPath'],
+    patterns: ['BIP44', 'BITCOIN_KEY_DERIVATION_PATH', "m/44'/0'", "m/44'/7777'", "m/44'/7778'", 'bitcoinReceiveDerivationPath', 'fabricCoinTypeForNetwork'],
     expected: { core: 'full', hub: 'strong', passport: 'partial', application: 'strong' },
-    notes: 'Core constants encode BIP44 Bitcoin funds + Fabric coin-type 7778 identity.'
+    notes: 'Core constants encode BIP44 Bitcoin funds + Fabric coin-type 7777 (mainnet) / 7778 (other) identity.'
   },
   {
     bip: 49,

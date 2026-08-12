@@ -41,6 +41,7 @@ audit report.
 9. ~~**Chat / onion seal AAD**~~ — tip + participant AES-GCM AAD lands in `groupChatSeal` / `onionChatSeal` (see [docs/ARC.md](docs/ARC.md) §8).
 10. **Public API short names** — `contractId` and similar remain until a coordinated rename to `contractIdentifier`-style identifiers (Author Style in `AGENTS.md`).
 11. **Blinded-execution decisions** — accept/reject now require BIP340 over `decisionSigningMessage` (`functions/blindedExecutionCircuit.js`); composition remains a scaffold (not Yao GC).
+12. **Fabric coin-type dual path** — protocol identity is **7777** on Bitcoin mainnet and **7778** on all other networks (`fabricCoinTypeForNetwork` / `Identity#network`). Default Peer / Identity (regtest) stays on **7778**. Hub / Passport / extension callers that hard-code `m/44'/7778'/…` should switch to `fabricIdentityDerivationPath(…, network)` when targeting mainnet; re-derive any keys previously treated as “mainnet” under 7778.
 
 ## Recommendations before a non-experimental tag
 
@@ -49,6 +50,7 @@ audit report.
 - [ ] Freeze [PUBLIC_API.md](PUBLIC_API.md) import map; keep `package.json` `files` whitelist green
 - [ ] Coordinate Hub / `@fabric/http` pins to the tagged core ([docs/PRODUCTION.md](docs/PRODUCTION.md))
 - [ ] Keep release claim scoped: Peer + document helpers + local Program/Machine — not “hardened dapp sandbox”
+- [ ] Align Hub `fabricAccountDerivedIdentity` / Passport with network-aware Fabric coin types (7777/7778)
 
 ## Disclosure
 

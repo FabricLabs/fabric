@@ -216,7 +216,7 @@ class Wallet extends Service {
     });
   }
 
-  derive (path = `m/7777'/7777'/0'/0/0`) {
+  derive (path = require('../constants').BITCOIN_KEY_DERIVATION_PATH) {
     const derived = this.key.derive(path);
     return {
       privateKey: derived.private,
@@ -1208,7 +1208,7 @@ class Wallet extends Service {
     const index = typeof this.index === 'number' ? this.index : 0;
     this.index = index + 1;
 
-    // Use BIP44 Bitcoin receive path (coin type 0) — not Fabric identity (7778).
+    // Use BIP44 Bitcoin receive path (coin type 0) — not Fabric identity (7777/7778).
     const { bitcoinReceiveDerivationPath } = require('../constants');
     const path = bitcoinReceiveDerivationPath(0, index);
     const pair = this.key.derive(path);

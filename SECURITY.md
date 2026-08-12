@@ -107,6 +107,8 @@ raw UTF-8. Coverage: `tests/protocol-v1/phase-b.typed-bodies.js`.
 
 **Outstanding (seals):** tip-bound and participant AES-GCM seals bind scheme (+ tip / contract / ephemeral) as AAD. Remaining accumulate work: journal / re-fold caps ([docs/ARC.md](docs/ARC.md) §8).
 
+**Identity coin types:** Fabric protocol derivation uses **7777** on Bitcoin mainnet and **7778** otherwise ([IDENTITY.md](IDENTITY.md)). Do not mix Fabric coin-type keys with BIP44 coin-type-0 Bitcoin funds. Downstream Hub/Passport hard-codes of `7778` should pass `network` into `fabricIdentityDerivationPath` when promoting to mainnet.
+
 ## Inventory HTLC binding
 Buyers must rebuild the buyer-bound P2TR (`validateInventoryHtlcOffer`) and must not fund a seller-advertised `paymentAddress` that does not match. When an AMP signer is known (`inventoryResponse.signerPubkeyHex` / offer `ampSignerPubkey` / HTLC `sellerPublicKeyHex`), it must match the resolved seller x-only key before funding.
 

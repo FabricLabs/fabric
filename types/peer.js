@@ -569,8 +569,21 @@ class Peer extends Service {
       }
     });
 
-    this.identity = new Identity(this.settings.key);
-    // Protocol AMP / Schnorr / actor id use Identity#fabricKey (coin type 7778).
+    const keyCfg = this.settings.key;
+    const network = this.settings.network
+      || (this.settings.bitcoin && this.settings.bitcoin.network)
+      || 'regtest';
+    if (keyCfg instanceof Key) {
+      this.identity = new Identity(keyCfg);
+      this.identity.settings.network = String(network);
+      this.identity._state.content.network = String(network);
+    } else {
+      const base = (keyCfg && typeof keyCfg === 'object' && !Buffer.isBuffer(keyCfg))
+        ? Object.assign({}, keyCfg)
+        : (typeof keyCfg === 'string' ? { seed: keyCfg } : {});
+      this.identity = new Identity(Object.assign(base, { network }));
+    }
+    // Protocol AMP / Schnorr / actor id use Identity#fabricKey (7777 mainnet / 7778 otherwise).
     // Master / fund root remains on identity.key for Bitcoin paths that need it.
     this.key = this.identity.fabricKey || new Key(this.settings.key);
     // this.wallet = new Wallet(this.settings.key);

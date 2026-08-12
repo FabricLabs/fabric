@@ -17,16 +17,15 @@ We've designed Fabric to extend the existing Bitcoin ecosystem, deriving all spe
 
 ### Identity
 #### BIP32 Extensions
+```text
+mainnet Master: m
+mainnet Identity #0: m/44'/7777'/0'/0/0
+mainnet Identity #0, address 1: m/44'/7777'/0'/0/1
+regtest / testnet / signet Identity #0: m/44'/7778'/0'/0/0
+Bitcoin funds (any network): m/44'/0'/account'/change/index
 ```
-mainnet Master: m'/
-mainnet Identity #0: m'/7777/
-mainnet Identity #0: m'/7777/
-mainnet Identity #0, Receive 0: m'/7777/
-mainnet Identity #0, Change 0: m'/7777/
-mainnet Identity #0, Receive 1: m'/7777/
-regtest Master:
-regtest Identity #0:
-```
+
+Fabric protocol coin types: **7777** (Bitcoin mainnet), **7778** (all others). See [IDENTITY.md](IDENTITY.md).
 
 **Status:** `0.1.0-RC1` (experimental reference) — run **`npm run ci`** before release tags.
 

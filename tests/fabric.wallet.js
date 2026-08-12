@@ -42,7 +42,8 @@ describe('@fabric/core/types/wallet', function () {
 
     it('can derive keys from a path', function () {
       const wallet = new Wallet(options);
-      const derived = wallet.derive('m/7777\'/7777\'/0\'/0/0');
+      const { BITCOIN_KEY_DERIVATION_PATH } = require('../constants');
+      const derived = wallet.derive(BITCOIN_KEY_DERIVATION_PATH);
       assert.ok(derived);
       assert.ok(derived.privateKey);
       assert.ok(derived.publicKey);
