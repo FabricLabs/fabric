@@ -22,6 +22,7 @@ const {
   createPending,
   markReceived,
   markReceipt,
+  receiptSigningMessage,
   phaseFlags,
   allPhasesComplete,
   aggregatePhaseFlags,
@@ -42,6 +43,7 @@ describe('@fabric/core contractMessageAccumulate', function () {
 
   it('idempotent multi-origin ingest of the same AMP bytes', function () {
     const author = new Key();
+    const genesis = { signers: [author.pubkey] };
     const msg = signContractMessage(author, contractId, 'GroupChat', {
       body: 'hello',
       author: author.pubkey,
@@ -51,11 +53,11 @@ describe('@fabric/core contractMessageAccumulate', function () {
     const paste = `fabric:${buf.toString('hex')}`;
 
     const store = createMemoryStore();
-    const a = ingestMessageBuffer(store, contractId, buf, { origin: 'mesh' });
+    const a = ingestMessageBuffer(store, contractId, buf, { origin: 'mesh', genesis });
     assert.strictEqual(a.accepted, true);
-    const b = ingestMessageBuffer(store, contractId, buf, { origin: 'queue' });
+    const b = ingestMessageBuffer(store, contractId, buf, { origin: 'queue', genesis });
     assert.strictEqual(b.duplicate, true);
-    const c = ingestMessageBuffer(store, contractId, paste, { origin: 'paste' });
+    const c = ingestMessageBuffer(store, contractId, paste, { origin: 'paste', genesis });
     assert.strictEqual(c.duplicate, true);
     assert.strictEqual(a.tip.stateDigest, b.tip.stateDigest);
     assert.strictEqual(a.tip.stateDigest, c.tip.stateDigest);
@@ -66,7 +68,8 @@ describe('@fabric/core contractMessageAccumulate', function () {
   it('arrival-order independence across peers', function () {
     const aKey = new Key();
     const bKey = new Key();
-    const genesis = { signers: [aKey.pubkey] };
+    // Both authors must be authorized for GroupChat in any arrival order.
+    const genesis = { signers: [aKey.pubkey, bKey.pubkey] };
     const m1 = signContractMessage(aKey, contractId, 'GroupChange', {
       action: 'members.set',
       members: [aKey.pubkey, bKey.pubkey]
@@ -100,6 +103,7 @@ describe('@fabric/core contractMessageAccumulate', function () {
   it('publisher local accumulate matches paste-only participant', function () {
     const publisher = new Key();
     const peer = new Key();
+    const genesis = { signers: [publisher.pubkey, peer.pubkey] };
     const out = signContractMessage(publisher, contractId, 'GroupChat', {
       body: 'from publisher',
       author: publisher.pubkey
@@ -110,12 +114,12 @@ describe('@fabric/core contractMessageAccumulate', function () {
     });
 
     const pubStore = createMemoryStore();
-    ingestMessageBuffer(pubStore, contractId, out.toBuffer(), { origin: 'local' });
-    ingestMessageBuffer(pubStore, contractId, reply.toBuffer(), { origin: 'mesh' });
+    ingestMessageBuffer(pubStore, contractId, out.toBuffer(), { origin: 'local', genesis });
+    ingestMessageBuffer(pubStore, contractId, reply.toBuffer(), { origin: 'mesh', genesis });
 
     const partStore = createMemoryStore();
-    ingestMessageBuffer(partStore, contractId, `fabric:${out.toBuffer().toString('hex')}`, { origin: 'paste' });
-    ingestMessageBuffer(partStore, contractId, reply.toBuffer(), { origin: 'mesh' });
+    ingestMessageBuffer(partStore, contractId, `fabric:${out.toBuffer().toString('hex')}`, { origin: 'paste', genesis });
+    ingestMessageBuffer(partStore, contractId, reply.toBuffer(), { origin: 'mesh', genesis });
 
     assert.strictEqual(
       tipFromDoc(loadDoc(pubStore, contractId)).stateDigest,
@@ -127,12 +131,13 @@ describe('@fabric/core contractMessageAccumulate', function () {
     const author = new Key();
     const attacker = new Key();
     const store = createMemoryStore();
+    const genesis = { signers: [author.pubkey] };
     const good = signContractMessage(author, contractId, 'GroupChat', { body: 'ok' });
-    ingestMessageBuffer(store, contractId, good.toBuffer(), { origin: 'mesh' });
+    ingestMessageBuffer(store, contractId, good.toBuffer(), { origin: 'mesh', genesis });
     const tip0 = tipFromDoc(loadDoc(store, contractId)).stateDigest;
 
     const wrongContract = signContractMessage(author, 'd'.repeat(64), 'GroupChat', { body: 'nope' });
-    const badContract = ingestMessageBuffer(store, contractId, wrongContract.toBuffer());
+    const badContract = ingestMessageBuffer(store, contractId, wrongContract.toBuffer(), { genesis });
     assert.strictEqual(badContract.accepted, false);
     assert.match(badContract.error, /mismatch/i);
 
@@ -141,13 +146,33 @@ describe('@fabric/core contractMessageAccumulate', function () {
       type: 'GroupChat',
       object: { body: 'evil' }
     })]).signWithKey(attacker);
-    // Corrupt signature bytes
-    const buf = forged.toBuffer();
-    buf[buf.length - 1] ^= 0xff;
-    const badSig = ingestMessageBuffer(store, contractId, buf);
+    // Corrupt the BIP340 signature field (AMP trailer), not the JSON body.
+    const signed = forged.toBuffer();
+    const badBuf = Buffer.from(signed);
+    // Signature is the last 64 bytes of the Fabric Message frame.
+    assert.ok(badBuf.length > 64);
+    badBuf[badBuf.length - 1] ^= 0xff;
+    const badSig = ingestMessageBuffer(store, contractId, badBuf, { genesis });
     assert.strictEqual(badSig.accepted, false);
+    assert.match(badSig.error, /invalid signature/i);
 
     assert.strictEqual(tipFromDoc(loadDoc(store, contractId)).stateDigest, tip0);
+  });
+
+  it('rejects GroupChat from non-reader/non-signer', function () {
+    const owner = new Key();
+    const outsider = new Key();
+    const store = createMemoryStore();
+    const genesis = { signers: [owner.pubkey], readers: [owner.pubkey] };
+    const bad = ingestMessageBuffer(
+      store,
+      contractId,
+      signContractMessage(outsider, contractId, 'GroupChat', { body: 'spam' }).toBuffer(),
+      { origin: 'mesh', genesis }
+    );
+    assert.strictEqual(bad.accepted, false);
+    assert.match(bad.error, /reader\/signer/i);
+    assert.strictEqual(loadDoc(store, contractId).entries.length, 0);
   });
 
   it('rejects GroupChange from non-signer (F1)', function () {
@@ -266,6 +291,7 @@ describe('@fabric/core contractMessageAccumulate', function () {
       body: 'anchored'
     }).toBuffer(), {
       origin: 'mesh',
+      genesis: { signers: [author.pubkey] },
       bitcoinBlockHash: hash,
       bitcoinHeight: 100
     });
@@ -310,9 +336,11 @@ describe('@fabric/core contractMessageAccumulate', function () {
     assert.ok(store.get('contractmessagecommits', chatRes.entry.hash), 'sync filter opens pending 2PC');
 
     const wireHash = chatRes.entry.hash;
+    const receiptSig = Buffer.from(b.signSchnorr(receiptSigningMessage(wireHash))).toString('hex');
     const receipt = signContractMessage(b, contractId, 'MessageReceipt', {
       messageId: wireHash,
-      receiptAt: '2026-01-01T00:00:01.000Z'
+      receiptAt: '2026-01-01T00:00:01.000Z',
+      receiptSig
     });
     const rx = ingestMessageBuffer(store, contractId, receipt.toBuffer(), {
       origin: 'mesh',
@@ -399,8 +427,11 @@ describe('@fabric/core contractMessageCommit', function () {
     markReceived(record, b.pubkey);
     assert.strictEqual(aggregatePhaseFlags(record).received, true);
     assert.strictEqual(allPhasesComplete(record), false);
-    markReceipt(record, a.pubkey);
-    markReceipt(record, b.pubkey, null, 'sig');
+    const msg = receiptSigningMessage(record.id);
+    const sigA = Buffer.from(a.signSchnorr(msg)).toString('hex');
+    const sigB = Buffer.from(b.signSchnorr(msg)).toString('hex');
+    markReceipt(record, a.pubkey, null, sigA);
+    markReceipt(record, b.pubkey, null, sigB);
     assert.strictEqual(allPhasesComplete(record), true);
     assert.deepStrictEqual(aggregatePhaseFlags(record), { received: true, receipt: true });
     assert.strictEqual(pendingForRelay([record]).length, 0);
@@ -415,5 +446,19 @@ describe('@fabric/core contractMessageCommit', function () {
       readers: [a.pubkey]
     });
     assert.throws(() => markReceived(record, outsider.pubkey), /reader set/);
+  });
+
+  it('rejects markReceipt without a valid BIP340 receiptSig', function () {
+    const a = new Key();
+    const record = createPending({
+      id: 'm3',
+      contractId: 'c'.repeat(64),
+      readers: [a.pubkey]
+    });
+    markReceived(record, a.pubkey);
+    assert.throws(() => markReceipt(record, a.pubkey), /receiptSig required/);
+    assert.throws(() => markReceipt(record, a.pubkey, null, 'ab'.repeat(32)), /invalid receiptSig/);
+    const wrong = Buffer.from(a.signSchnorr(receiptSigningMessage('other'))).toString('hex');
+    assert.throws(() => markReceipt(record, a.pubkey, null, wrong), /invalid receiptSig/);
   });
 });

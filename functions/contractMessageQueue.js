@@ -22,11 +22,19 @@ const {
   messageHashHex,
   authorXOnlyHex,
   parseContractMessageBody,
+  verifyMessageSignature,
   createMemoryStore
 } = require('./contractMessageAccumulate');
 
 const COLLECTION = 'contractmessagequeue';
 const DEFAULT_MAX_ENTRIES = 512;
+const ABSOLUTE_MAX_ENTRIES = 10000;
+
+function clampMaxEntries (value, fallback = DEFAULT_MAX_ENTRIES) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return Math.min(Math.floor(n), ABSOLUTE_MAX_ENTRIES);
+}
 
 /**
  * @param {{ get: Function, put: Function }} store
@@ -42,9 +50,7 @@ function loadQueueDoc (store, contractId) {
   if (existing && typeof existing === 'object') {
     return {
       id,
-      maxEntries: Number(existing.maxEntries) > 0
-        ? Number(existing.maxEntries)
-        : DEFAULT_MAX_ENTRIES,
+      maxEntries: clampMaxEntries(existing.maxEntries, DEFAULT_MAX_ENTRIES),
       entries: Array.isArray(existing.entries) ? existing.entries.slice() : []
     };
   }
@@ -71,7 +77,7 @@ function persistQueueDoc (store, doc) {
  * @returns {object}
  */
 function trimQueueDoc (doc) {
-  const max = Number(doc.maxEntries) > 0 ? Number(doc.maxEntries) : DEFAULT_MAX_ENTRIES;
+  const max = clampMaxEntries(doc.maxEntries, DEFAULT_MAX_ENTRIES);
   doc.maxEntries = max;
   while (doc.entries.length > max) {
     let dropIdx = doc.entries.findIndex((e) => {
@@ -116,19 +122,26 @@ function enqueueMessageBuffer (store, contractId, bufferOrPaste, meta = {}) {
     return { accepted: false, duplicate: false, entry: null, error: e.message || 'parse failed' };
   }
 
+  if (!verifyMessageSignature(msg)) {
+    return { accepted: false, duplicate: false, entry: null, error: 'invalid signature' };
+  }
+
   const hash = messageHashHex(msg);
   if (!hash) {
     return { accepted: false, duplicate: false, entry: null, error: 'missing message hash' };
   }
 
   const body = parseContractMessageBody(msg);
-  if (body && body.contract && body.contract !== id) {
+  if (!body || !body.contract) {
+    return { accepted: false, duplicate: false, entry: null, error: 'not a CONTRACT_MESSAGE body' };
+  }
+  if (body.contract !== id) {
     return { accepted: false, duplicate: false, entry: null, error: 'contract id mismatch' };
   }
 
   const doc = loadQueueDoc(store, id);
-  if (meta.maxEntries != null && Number(meta.maxEntries) > 0) {
-    doc.maxEntries = Number(meta.maxEntries);
+  if (meta.maxEntries != null) {
+    doc.maxEntries = clampMaxEntries(meta.maxEntries, doc.maxEntries);
   }
   if (doc.entries.some((e) => e && e.hash === hash)) {
     return { accepted: false, duplicate: true, entry: null };
@@ -236,6 +249,8 @@ function fallbackContentHash (buffer) {
 module.exports = {
   COLLECTION,
   DEFAULT_MAX_ENTRIES,
+  ABSOLUTE_MAX_ENTRIES,
+  clampMaxEntries,
   loadQueueDoc,
   persistQueueDoc,
   trimQueueDoc,

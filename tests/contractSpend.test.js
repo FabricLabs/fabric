@@ -10,8 +10,10 @@ const {
   buildWithdrawalRequest,
   buildWithdrawalWitness,
   validateWithdrawalRequest,
-  prepareWithdrawalFromRequest
+  prepareWithdrawalFromRequest,
+  verifyWithdrawalWitnessSignature
 } = require('../functions/contractSpend');
+const { pubkeyXOnly } = require('../functions/groupChatSeal');
 const {
   createMemoryStore,
   ingestMessageBuffer,
@@ -189,6 +191,7 @@ describe('contractSpend / ARC resolveSpend', function () {
   });
 
   it('withdrawal request binds tip digest + block hash', function () {
+    const k = new Key();
     const tip = {
       contractId: 'c'.repeat(64),
       clock: 1,
@@ -213,11 +216,13 @@ describe('contractSpend / ARC resolveSpend', function () {
 
     const wit = buildWithdrawalWitness({
       request: req,
-      signer: '02' + 'ab'.repeat(32),
-      signature: 'cd'.repeat(32)
+      signer: pubkeyXOnly(k.pubkey),
+      signerKey: k
     });
     assert.strictEqual(wit.requestId, req.requestId);
     assert.strictEqual(wit.bitcoinBlockHash, tip.bitcoinBlockHash);
+    assert.ok(/^[0-9a-f]{128}$/.test(wit.signature));
+    assert.strictEqual(verifyWithdrawalWitnessSignature(wit).ok, true);
   });
 
   it('ingest rejects withdrawal with stale tip binding', function () {
@@ -307,5 +312,88 @@ describe('contractSpend / ARC resolveSpend', function () {
       genesis,
       fundedTxHex: '02000000000100'
     }), /bitcoinBlockHash|match/i);
+  });
+
+  it('ingest rejects forged ContractWithdrawalWitness (unbound signer / bad sig)', function () {
+    const owner = new Key();
+    const coSigner = new Key();
+    const store = createMemoryStore();
+    const contractId = 'f'.repeat(64);
+    const blockHash = 'aa'.repeat(32);
+    const genesis = {
+      signers: [owner.pubkey, coSigner.pubkey],
+      bitcoinAnchor: { blockHash, height: 3 },
+      primitives: {
+        messageTypes: [
+          'GroupChange',
+          'ContractWithdrawalRequest',
+          'ContractWithdrawalWitness'
+        ]
+      }
+    };
+    assert.strictEqual(ingestMessageBuffer(store, contractId, Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({
+      contract: contractId,
+      type: 'GroupChange',
+      object: { action: 'members.set', members: [owner.pubkey, coSigner.pubkey] }
+    })]).signWithKey(owner).toBuffer(), {
+      origin: 'local',
+      genesis,
+      bitcoinBlockHash: blockHash,
+      bitcoinHeight: 3
+    }).accepted, true);
+
+    const tip = tipFromDoc(loadDoc(store, contractId));
+    const req = buildWithdrawalRequest({
+      tip,
+      destinationAddress: 'bcrt1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
+      feeSats: 100
+    });
+    assert.strictEqual(ingestMessageBuffer(store, contractId, Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({
+      contract: contractId,
+      type: 'ContractWithdrawalRequest',
+      object: req
+    })]).signWithKey(owner).toBuffer(), {
+      origin: 'mesh',
+      genesis,
+      bitcoinBlockHash: blockHash
+    }).accepted, true);
+
+    // Malicious co-signer claims honest owner's key with garbage signature.
+    const forged = buildWithdrawalWitness({
+      request: req,
+      signer: pubkeyXOnly(owner.pubkey),
+      signature: 'ab'.repeat(64)
+    });
+    const bad = ingestMessageBuffer(store, contractId, Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({
+      contract: contractId,
+      type: 'ContractWithdrawalWitness',
+      object: forged
+    })]).signWithKey(coSigner).toBuffer(), {
+      origin: 'mesh',
+      genesis,
+      bitcoinBlockHash: blockHash
+    });
+    assert.strictEqual(bad.accepted, false);
+    assert.match(bad.error, /signer must match|invalid witness/i);
+
+    const honest = buildWithdrawalWitness({
+      request: req,
+      signer: pubkeyXOnly(coSigner.pubkey),
+      signerKey: coSigner
+    });
+    const ok = ingestMessageBuffer(store, contractId, Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({
+      contract: contractId,
+      type: 'ContractWithdrawalWitness',
+      object: honest
+    })]).signWithKey(coSigner).toBuffer(), {
+      origin: 'mesh',
+      genesis,
+      bitcoinBlockHash: blockHash
+    });
+    assert.strictEqual(ok.accepted, true, ok.error);
+    const row = ok.tip.content.withdrawals.find((w) => w.requestId === req.requestId);
+    assert.ok(row);
+    assert.strictEqual(row.witnesses.length, 1);
+    assert.strictEqual(row.witnesses[0].signer, pubkeyXOnly(coSigner.pubkey));
   });
 });

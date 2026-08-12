@@ -109,6 +109,31 @@ describe('functions/documentRegistrySidechain', function () {
     assert.match(applied.error, /catalogCanonical required/);
   });
 
+  it('registryUpdatePathPolicy denies allowlists with no /registry overlap', function () {
+    const denied = registry.registryUpdatePathPolicy({
+      allowedPathPrefixes: ['/contracts', '/note']
+    });
+    assert.deepStrictEqual(denied.allowedPathPrefixes, []);
+    assert.match(denied.error, /no \/registry overlap/);
+
+    const state = sidechainState.createInitialState();
+    const applied = registry.applyRegistryUpdateFields(state, {
+      basisClock: 0,
+      basisDigest: Buffer.from(sidechainState.stateDigest(state), 'hex'),
+      patchesCanonical: JSON.stringify([
+        { op: 'add', path: '/registry', value: { version: 1, documents: {} } }
+      ])
+    }, { allowedPathPrefixes: ['/contracts'] });
+    assert.strictEqual(applied.ok, false);
+    assert.match(applied.error, /no \/registry overlap/);
+
+    const narrowed = registry.registryUpdatePathPolicy({
+      allowedPathPrefixes: ['/registry', '/contracts']
+    });
+    assert.deepStrictEqual(narrowed.allowedPathPrefixes, ['/registry']);
+    assert.ok(!narrowed.error);
+  });
+
   it('applyInventoryToRegistry updates STATE digest without public RFC6902 API', function () {
     let state = sidechainState.createInitialState();
     const r1 = registry.applyInventoryToRegistry(state, [

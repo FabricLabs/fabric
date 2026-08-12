@@ -4,10 +4,14 @@ This document is intended to be utilized as the specification for the Fabric Ide
 ## Overview
 The Fabric Identity Protocol is a decentralized identifier for Fabric-speaking networks.
 
-1. Load a BIP44 HD tree
+1. Load a BIP44 HD tree from the BIP39 seed (master key)
 2. Designate First Identity as Derivation Path: `m/44'/7778'/0'/0/0`
 3. `m = sha256(derived_pubkey)`
 4. `id = bech32m("id", m) // "id" taken as ASCII bytes`
+
+**Funds vs identity:** Bitcoin receive / change keys use BIP44 coin type **`0`** from the
+**same master** (`m/44'/0'/account'/change/index`). Never reuse the Fabric `7778` identity
+node for spendable UTXOs — `@fabric/core` `Identity` signs on `7778`; `Wallet` funds on `0`.
 
 Additional identities may be loaded by modifying the account index in the derivation path:
 
@@ -17,10 +21,11 @@ Identity #2 [1]: m/44'/7778'/1'/0/0
 ...
 ```
 
-Fabric will encode each transaction using the address index field, as specified in BIP 44:
+Fabric will encode each identity address index as specified by BIP 44 for the Fabric coin type
+(not Bitcoin funds):
 
 ```
-Transaction #1 [1]: m/44'/7778'/0'/1/0
+Identity account 0, address 1: m/44'/7778'/0'/0/1
 ```
 
 ### Full Specification

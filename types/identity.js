@@ -4,12 +4,21 @@ const Actor = require('./actor');
 const Bech32 = require('./bech32');
 const Hash256 = require('./hash256');
 const Key = require('./key');
+const {
+  FABRIC_KEY_DERIVATION_PATH,
+  fabricIdentityDerivationPath
+} = require('../constants');
 
 /**
- * @classdesc <strong>BIP32/BIP39 identity</strong> wrapping {@link Key}: mnemonic / xprv / passphrase, derivation
- * <code>m/44'/7778'/account'/0/index</code> (see <code>derivation</code> getter). <strong>Important:</strong> this class
- * overrides {@link Actor#id} with <code>toString()</code> (human-facing / Bech32-style identity), <strong>not</strong> the
- * content-addressed <code>Actor#id</code> / <code>preimage</code> chain from {@link Actor#toGenericMessage}. Use
+ * @classdesc <strong>BIP32/BIP39 identity</strong> wrapping {@link Key}: mnemonic / xprv / passphrase.
+ * Protocol identity (pubkey / Schnorr sign / Bech32 id) uses the Fabric derivation path
+ * <code>m/44'/7778'/account'/0/index</code> (see {@link Identity#derivation} and IDENTITY.md).
+ * The HD <strong>master</strong> remains available as {@link Identity#master} / {@link Identity#key}
+ * so Bitcoin funds can derive under BIP44 coin type <code>0</code> (see {@link BITCOIN_KEY_DERIVATION_PATH}
+ * / Wallet) without mixing protocol identity keys with spend keys.
+ * <strong>Important:</strong> this class overrides {@link Actor#id} with <code>toString()</code>
+ * (human-facing / Bech32-style identity), <strong>not</strong> the content-addressed
+ * <code>Actor#id</code> / <code>preimage</code> chain from {@link Actor#toGenericMessage}. Use
  * <code>pubkey</code>, <code>pubkeyhash</code>, or explicit hashing when you need stable bytes.
  * @class Identity
  * @extends Actor
@@ -21,8 +30,8 @@ class Identity extends Actor {
    * @param {String} [settings.seed] BIP 39 seed phrase.
    * @param {String} [settings.xprv] Serialized BIP 32 master private key.
    * @param {String} [settings.xpub] Serialized BIP 32 master public key.
-   * @param {Number} [settings.account=0] BIP 44 account index.
-   * @param {Number} [settings.index=0] BIP 44 key index.
+   * @param {Number} [settings.account=0] BIP 44 account index (Fabric coin type 7778).
+   * @param {Number} [settings.index=0] BIP 44 address index.
    * @param {String} [settings.passphrase] Passphrase for the key.
    * @returns {Identity} Instance of the identity.
    */
@@ -32,10 +41,12 @@ class Identity extends Actor {
     this.settings = Object.assign({
       seed: null,
       xprv: null,
-      passphrase: null
+      passphrase: null,
+      account: 0,
+      index: 0
     }, settings);
 
-    // Initialize key
+    // Initialize master key (Bitcoin fund root). Protocol signing uses {@link #fabricKey}.
     if (settings instanceof Key) {
       this.key = settings;
     } else {
@@ -55,8 +66,8 @@ class Identity extends Actor {
 
     this._state = {
       content: {
-        account: this.settings.account,
-        index: this.settings.index
+        account: this.settings.account != null ? Number(this.settings.account) : 0,
+        index: this.settings.index != null ? Number(this.settings.index) : 0
       }
     };
 
@@ -69,12 +80,9 @@ class Identity extends Actor {
 
   get derivation () {
     // m / purpose' / coin_type' / account' / change / address_index
-    // NOTE:
-    // Always using Coin Type 0 (Bitcoin) and Change 0 (Public Flag)!
-    // We will use Change 1 ("Internal Chain" as designated by BIP0044)
-    // for any kind of revoke mechanic; i.e., the key derived by the change
-    // address may be used to auto-encode a "revocation" contract.
-    return `m/44'/7778'/${this.accountID}'/0/${this.index}`;
+    // Fabric identity: coin type 7778 (IDENTITY.md). Change 0 = external identity;
+    // change 1 is reserved for revoke / internal-chain mechanics.
+    return fabricIdentityDerivationPath(this.accountID, this.index);
   }
 
   get id () {
@@ -85,12 +93,28 @@ class Identity extends Actor {
     return this._state.content.index;
   }
 
+  /** HD master key — use for Bitcoin BIP44 coin-type-0 fund derivation only. */
   get master () {
     return this.key;
   }
 
+  /**
+   * Fabric-protocol signing key at {@link Identity#derivation}.
+   * When this.key is already a protocol account/signing node (or public-only),
+   * derivation may be impossible — use the key as-is.
+   * @returns {Key}
+   */
+  get fabricKey () {
+    const path = this.derivation || FABRIC_KEY_DERIVATION_PATH;
+    try {
+      return this.key.derive(path);
+    } catch (_) {
+      return this.key;
+    }
+  }
+
   get pubkey () {
-    return this.key.pubkey;
+    return this.fabricKey.pubkey;
   }
 
   get pubkeyhash () {
@@ -106,13 +130,13 @@ class Identity extends Actor {
   }
 
   loadAccountByID (id = 0) {
-    this._state.content.accountID = id;
+    this._state.content.account = id;
     this.commit();
     return this;
   }
 
   sign (data = Buffer.from('', 'hex')) {
-    return this.key.sign(data);
+    return this.fabricKey.sign(data);
   }
 
   /**
@@ -136,7 +160,7 @@ class Identity extends Actor {
 
   _signAsSchnorr (input) {
     if (!input) input = this.pubkeyhash;
-    this._signature = this.key.sign(input);
+    this._signature = this.fabricKey.sign(input);
     return this;
   }
 

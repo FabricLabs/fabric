@@ -20,10 +20,15 @@ const Key = require('../types/key');
 const { OUTER, CONTRACT_BODY_TYPES, isKnownContractBodyType } = require('./applicationNamespaces');
 const { pubkeyXOnly, pubkeyCompressed } = require('./groupChatSeal');
 const {
+  OP_CONTRACT_READ,
   OP_CONTRACT_SIGN,
   verifyContractCapability
 } = require('./contractCapability');
-const { validateWithdrawalRequest } = require('./contractSpend');
+const {
+  validateWithdrawalRequest,
+  withdrawalWitnessSigningMessage,
+  verifyWithdrawalWitnessSignature
+} = require('./contractSpend');
 
 const COLLECTION = 'contractmessages';
 const ORIGINS = Object.freeze(['mesh', 'queue', 'paste', 'local']);
@@ -410,7 +415,14 @@ function messageTypeAllowed (doc, type, meta = {}) {
  * @param {string} [tokenString]
  * @returns {boolean}
  */
-function authorHasSignToken (doc, authorXOnly, tokenString) {
+/**
+ * @param {object} doc
+ * @param {string} authorXOnly
+ * @param {string} [tokenString]
+ * @param {string} expectedCap
+ * @returns {boolean}
+ */
+function authorHasCapabilityToken (doc, authorXOnly, tokenString, expectedCap) {
   if (!tokenString || typeof tokenString !== 'string') return false;
   if (!/^[0-9a-f]{64}$/.test(authorXOnly)) return false;
   const issuers = currentSignerSet(doc);
@@ -430,7 +442,7 @@ function authorHasSignToken (doc, authorXOnly, tokenString) {
       try {
         const payload = verifyContractCapability(tokenString, {
           contractId: doc.id,
-          expectedCap: OP_CONTRACT_SIGN,
+          expectedCap,
           issuerKey: { public: c }
         });
         if (!payload || payload.verified !== true) continue;
@@ -441,6 +453,15 @@ function authorHasSignToken (doc, authorXOnly, tokenString) {
     }
   }
   return false;
+}
+
+function authorHasSignToken (doc, authorXOnly, tokenString) {
+  return authorHasCapabilityToken(doc, authorXOnly, tokenString, OP_CONTRACT_SIGN);
+}
+
+function authorHasReadToken (doc, authorXOnly, tokenString) {
+  return authorHasCapabilityToken(doc, authorXOnly, tokenString, OP_CONTRACT_READ)
+    || authorHasSignToken(doc, authorXOnly, tokenString);
 }
 
 /**
@@ -469,6 +490,27 @@ function authorizeIngest (doc, type, authorXOnly, meta = {}, bodyObject = null) 
     ).toLowerCase();
     if (!/^[0-9a-f]{64}$/.test(target)) {
       return { ok: false, error: 'delivery ack requires messageId (wire hash)' };
+    }
+    return { ok: true };
+  }
+
+  // GroupChat: reader ∪ signer (or verified OP_CONTRACT_READ / OP_CONTRACT_SIGN).
+  if (type === 'GroupChat') {
+    if (!/^[0-9a-f]{64}$/.test(authorXOnly)) {
+      return { ok: false, error: 'invalid author' };
+    }
+    const readers = readerSetForDelivery(doc, meta);
+    const signers = currentSignerSet(doc);
+    const allowed = new Set(readers.concat(signers));
+    if (!allowed.size) {
+      return {
+        ok: false,
+        error: 'GroupChat requires genesis readers/signers or tip members (fail closed)'
+      };
+    }
+    const token = meta.capabilityToken || meta.token;
+    if (!allowed.has(authorXOnly) && !authorHasReadToken(doc, authorXOnly, token)) {
+      return { ok: false, error: 'author not in contract reader/signer set' };
     }
     return { ok: true };
   }
@@ -504,17 +546,44 @@ function authorizeIngest (doc, type, authorXOnly, meta = {}, bodyObject = null) 
 
   if (type === 'ContractWithdrawalWitness' && bodyObject) {
     const tip = tipFromDoc(doc);
+    const requestId = String(bodyObject.requestId || '').toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(requestId)) {
+      return { ok: false, error: 'witness requestId required' };
+    }
+    const pending = ((tip.content && tip.content.withdrawals) || [])
+      .find((w) => w && String(w.requestId || '').toLowerCase() === requestId);
+    if (!pending) {
+      return { ok: false, error: 'witness requestId not found in tip withdrawals' };
+    }
     const reqDigest = String(bodyObject.stateDigest || '').toLowerCase();
     const reqHash = String(bodyObject.bitcoinBlockHash || '').toLowerCase();
-    if (reqDigest && tip.stateDigest && reqDigest !== String(tip.stateDigest).toLowerCase()) {
-      return { ok: false, error: 'witness stateDigest does not match tip' };
+    // Bind to the withdrawal request's tip fields (not the post-request tip digest).
+    if (pending.stateDigest) {
+      if (!/^[0-9a-f]{64}$/.test(reqDigest)) {
+        return { ok: false, error: 'witness stateDigest required' };
+      }
+      if (reqDigest !== String(pending.stateDigest).toLowerCase()) {
+        return { ok: false, error: 'witness stateDigest does not match request' };
+      }
     }
-    if (reqHash && tip.bitcoinBlockHash
-      && reqHash !== String(tip.bitcoinBlockHash).toLowerCase()) {
-      return { ok: false, error: 'witness bitcoinBlockHash does not match tip' };
+    if (pending.bitcoinBlockHash) {
+      if (!/^[0-9a-f]{64}$/.test(reqHash)) {
+        return { ok: false, error: 'witness bitcoinBlockHash required' };
+      }
+      if (reqHash !== String(pending.bitcoinBlockHash).toLowerCase()) {
+        return { ok: false, error: 'witness bitcoinBlockHash does not match request' };
+      }
     }
-    if (!bodyObject.requestId) {
-      return { ok: false, error: 'witness requestId required' };
+    const claimed = pubkeyXOnly(bodyObject.signer) || String(bodyObject.signer || '').toLowerCase();
+    if (claimed && claimed !== authorXOnly) {
+      return { ok: false, error: 'witness signer must match AMP author' };
+    }
+    const verified = verifyWithdrawalWitnessSignature({
+      ...bodyObject,
+      signer: authorXOnly
+    });
+    if (!verified.ok) {
+      return { ok: false, error: verified.error || 'invalid witness signature' };
     }
   }
 
@@ -528,7 +597,13 @@ function authorizeIngest (doc, type, authorXOnly, meta = {}, bodyObject = null) 
  */
 function foldContractState (entries = []) {
   const sorted = (Array.isArray(entries) ? entries.slice() : []).sort((a, b) => {
-    return String(a.hash || '').localeCompare(String(b.hash || ''));
+    // Byte-order / plain lexicographic on hex — not ICU localeCompare (tips must
+    // converge across Node ICU builds).
+    const ha = String(a.hash || '');
+    const hb = String(b.hash || '');
+    if (ha < hb) return -1;
+    if (ha > hb) return 1;
+    return 0;
   });
   const members = new Set();
   const signers = new Set();
@@ -614,7 +689,9 @@ function foldContractState (entries = []) {
       }
       const sig = String(obj.signature || '').toLowerCase();
       const signer = pubkeyXOnly(obj.signer || row.author) || String(obj.signer || row.author || '').toLowerCase();
-      if (signer && sig && !withdrawals[id].witnesses.some((w) => w.signer === signer && w.signature === sig)) {
+      // Fold only witnesses already accepted at ingest (AMP author === signer + BIP340).
+      if (signer && sig && signer === String(row.author || '').toLowerCase()
+        && !withdrawals[id].witnesses.some((w) => w.signer === signer && w.signature === sig)) {
         withdrawals[id].witnesses.push({
           hash: row.hash,
           signer,
@@ -733,12 +810,17 @@ function applyDeliveryAckEntry (store, doc, entry, meta = {}) {
     commit.markReceived(record, author, obj.receivedAt || entry.acceptedAt || undefined);
     if (entry.type === CONTRACT_BODY_TYPES.MessageReceipt ||
         obj.receipt || obj.receiptAt || obj['@type'] === 'MessageReceipt') {
-      commit.markReceipt(
-        record,
-        author,
-        obj.receiptAt || entry.acceptedAt || undefined,
-        obj.receiptSig || null
-      );
+      try {
+        commit.markReceipt(
+          record,
+          author,
+          obj.receiptAt || entry.acceptedAt || undefined,
+          obj.receiptSig || null
+        );
+      } catch (receiptErr) {
+        // Keep MessageReceived; leave receipt phase unset until a valid BIP340 receiptSig.
+        void receiptErr;
+      }
     }
     // Retain the AMP frame hex on the sidecar for later relay / audit.
     if (!Array.isArray(record.ackMessages)) record.ackMessages = [];
@@ -866,11 +948,7 @@ function ingestMessageBuffer (store, contractId, bufferOrPaste, meta = {}) {
   applyGenesisMeta(doc, meta);
 
   if (doc.entries.some((e) => e && e.hash === hash)) {
-    const state = foldContractState(doc.entries);
-    doc.version = state.version;
-    doc.clock = state.clock;
-    doc.content = state.content;
-    persistDoc(store, doc);
+    // Duplicate AMP frame: tip unchanged — skip re-fold / persist.
     return {
       accepted: false,
       duplicate: true,

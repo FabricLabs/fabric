@@ -8,6 +8,7 @@
  */
 
 const crypto = require('crypto');
+const Key = require('../types/key');
 const {
   buildContractTaproot,
   synthesizeDefaultLadder,
@@ -457,7 +458,8 @@ function resolveSpend (opts = {}) {
 /**
  * @param {object} object ContractWithdrawalRequest body
  * @param {object} tip Current tip (must include stateDigest + bitcoinBlockHash)
- * @param {{ genesis?: object }} [opts]
+ * @param {Object} [opts]
+ * @param {Object} [opts.genesis] Optional ARC genesis for policy checks
  * @returns {{ ok: true }|{ ok: false, error: string }}
  */
 function validateWithdrawalRequest (object, tip, opts = {}) {
@@ -566,11 +568,58 @@ function buildWithdrawalRequest (opts = {}) {
     action: object.action,
     after: object.after || null,
     tierId: object.tierId || null,
+    vaultAddress: object.vaultAddress || null,
     clock: object.clock,
     programHash: object.programHash || null,
     runCommitmentHex: object.runCommitmentHex || null
   }));
   return object;
+}
+
+/**
+ * Canonical UTF-8 message for BIP340 withdrawal co-sign attestations.
+ * @param {object} fields
+ * @returns {string}
+ */
+function withdrawalWitnessSigningMessage (fields = {}) {
+  const requestId = String(fields.requestId || '').trim().toLowerCase();
+  const stateDigest = String(fields.stateDigest || '').trim().toLowerCase();
+  const bitcoinBlockHash = String(fields.bitcoinBlockHash || '').trim().toLowerCase();
+  return `fabric:contract-withdrawal-witness:1:${requestId}:${stateDigest}:${bitcoinBlockHash}`;
+}
+
+/**
+ * Verify BIP340 witness signature over {@link withdrawalWitnessSigningMessage}.
+ * @param {object} witness
+ * @returns {{ ok: boolean, error?: string }}
+ */
+function verifyWithdrawalWitnessSignature (witness = {}) {
+  const requestId = String(witness.requestId || '').trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(requestId)) {
+    return { ok: false, error: 'witness requestId required' };
+  }
+  const sigHex = String(witness.signature || '').trim().toLowerCase();
+  if (!/^[0-9a-f]{128}$/.test(sigHex)) {
+    return { ok: false, error: 'witness signature required (64-byte BIP340 hex)' };
+  }
+  const signerX = pubkeyXOnly(witness.signer) || String(witness.signer || '').toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(signerX)) {
+    return { ok: false, error: 'witness signer required' };
+  }
+  try {
+    const key = new Key({ public: `02${signerX}` });
+    const msg = withdrawalWitnessSigningMessage({
+      requestId,
+      stateDigest: witness.stateDigest,
+      bitcoinBlockHash: witness.bitcoinBlockHash
+    });
+    if (!key.verifySchnorr(msg, Buffer.from(sigHex, 'hex'))) {
+      return { ok: false, error: 'invalid witness signature' };
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message || 'witness verify failed' };
+  }
 }
 
 /**
@@ -583,15 +632,21 @@ function buildWithdrawalWitness (opts = {}) {
   if (!/^[0-9a-f]{64}$/.test(requestId)) throw new Error('requestId required');
   const signer = String(opts.signer || '').trim().toLowerCase();
   if (!signer) throw new Error('signer required');
-  const signature = String(opts.signature || '').trim().toLowerCase();
+  let signature = String(opts.signature || '').trim().toLowerCase();
+  const stateDigest = String(opts.stateDigest || request.stateDigest || '').toLowerCase() || undefined;
+  const bitcoinBlockHash = String(opts.bitcoinBlockHash || request.bitcoinBlockHash || '').toLowerCase() || undefined;
+  if (!signature && opts.signerKey && typeof opts.signerKey.signSchnorr === 'function') {
+    const msg = withdrawalWitnessSigningMessage({ requestId, stateDigest, bitcoinBlockHash });
+    signature = Buffer.from(opts.signerKey.signSchnorr(msg)).toString('hex');
+  }
   if (!signature) throw new Error('signature required');
   return {
     type: WITHDRAWAL_WITNESS,
     v: 1,
     contractId: String(opts.contractId || request.contractId || '').trim().toLowerCase() || undefined,
     requestId,
-    stateDigest: String(opts.stateDigest || request.stateDigest || '').toLowerCase() || undefined,
-    bitcoinBlockHash: String(opts.bitcoinBlockHash || request.bitcoinBlockHash || '').toLowerCase() || undefined,
+    stateDigest,
+    bitcoinBlockHash,
     signer,
     signature,
     createdAt: opts.createdAt || new Date().toISOString()
@@ -605,14 +660,10 @@ function buildWithdrawalWitness (opts = {}) {
  */
 function prepareWithdrawalFromRequest (opts = {}) {
   const request = opts.request;
-  const tip = opts.tip || {
-    stateDigest: request && request.stateDigest,
-    bitcoinBlockHash: request && request.bitcoinBlockHash,
-    bitcoinHeight: request && request.bitcoinHeight,
-    clock: request && request.clock,
-    contractId: request && request.contractId,
-    content: opts.tipContent || {}
-  };
+  if (!opts.tip || typeof opts.tip !== 'object') {
+    throw new Error('prepareWithdrawalFromRequest: explicit tip required (do not derive tip from request)');
+  }
+  const tip = opts.tip;
   const check = validateWithdrawalRequest(request, tip, { genesis: opts.genesis });
   if (!check.ok) throw new Error(check.error);
 
@@ -661,6 +712,8 @@ module.exports = {
   validateWithdrawalRequest,
   buildWithdrawalRequest,
   buildWithdrawalWitness,
+  withdrawalWitnessSigningMessage,
+  verifyWithdrawalWitnessSignature,
   prepareWithdrawalFromRequest,
   toCompressedPubkeys,
   programMetaFromTip,

@@ -83,7 +83,10 @@ class Machine extends Actor {
       precision: 8,
       script: [],
       type: 'x86',
-      /** @type {string[]|null} null/empty = unrestricted (legacy soft compute) */
+      /**
+       * Opcode allow-list. Null or empty = unrestricted (legacy soft compute).
+       * @type {string[]|null}
+       */
       allowedOpcodes: null
     }, settings);
 
@@ -312,7 +315,8 @@ class Machine extends Actor {
    * or Program/genesis `primitives.opcodes`), steps and javascript `source`
    * keys must be listed — fail closed.
    * @param {Program|object} program
-   * @param {{ genesis?: object }} [opts]
+   * @param {Object} [opts]
+   * @param {Object} [opts.genesis] ARC genesis; may supply `primitives.opcodes` allow-list
    * @returns {Machine}
    */
   loadProgram (program, opts = {}) {
@@ -352,7 +356,8 @@ class Machine extends Actor {
    * Load and compute a Program; return stack tip + run commitment for L1 binding.
    * @param {Program|Object} program
    * @param {*} [input]
-   * @param {{ genesis?: object }} [opts] ARC genesis for `primitives.opcodes` allow-list
+   * @param {Object} [opts]
+   * @param {Object} [opts.genesis] ARC genesis for `primitives.opcodes` allow-list
    * @returns {Promise.<{ok: boolean, stack: Array, tip: *, trace: Array, runCommitmentHex: (string|null), error: (string|undefined)}>}
    */
   async runProgram (program, input, opts = {}) {

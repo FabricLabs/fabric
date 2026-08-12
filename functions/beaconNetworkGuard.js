@@ -73,6 +73,9 @@ function readNetworkBinding (fs) {
 async function writeNetworkBinding (fs, network) {
   const net = normalizeBitcoinNetwork(network);
   if (!net) throw new Error('bitcoin network required to bind Beacon stores');
+  if (!isKnownBitcoinNetwork(net)) {
+    throw new Error(`unknown bitcoin network "${network}" (expected one of ${KNOWN_NETWORKS.join(', ')})`);
+  }
   if (!fs) throw new Error('filesystem required');
   const binding = {
     schemaVersion: 1,
@@ -151,13 +154,13 @@ function hasBeaconOrSidechainData (fs) {
  */
 function assertBeaconNetworkCompatible (fs, liveNetwork, opts = {}) {
   const live = normalizeBitcoinNetwork(liveNetwork);
-  if (!live) {
+  if (!live || !isKnownBitcoinNetwork(live)) {
     return {
       ok: false,
       code: 'NETWORK_UNKNOWN',
-      message: 'Bitcoin network unavailable; cannot start Beacon safely',
+      message: 'Bitcoin network unavailable or unknown; cannot start Beacon safely',
       stored: null,
-      live: null
+      live: live || null
     };
   }
 

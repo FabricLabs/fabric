@@ -11,7 +11,9 @@ const {
   markDelivered,
   entryHexList,
   COLLECTION,
-  DEFAULT_MAX_ENTRIES
+  DEFAULT_MAX_ENTRIES,
+  ABSOLUTE_MAX_ENTRIES,
+  clampMaxEntries
 } = require('../functions/contractMessageQueue');
 const { ingestMessageBuffer } = require('../functions/contractMessageAccumulate');
 
@@ -64,6 +66,7 @@ describe('@fabric/core contractMessageQueue', function () {
 
   it('queue hex folds via accumulate with origin queue', function () {
     const author = new Key();
+    const genesis = { signers: [author.pubkey] };
     const msg = signContractMessage(author, contractId, 'GroupChat', {
       body: 'from-queue',
       author: author.pubkey,
@@ -75,9 +78,30 @@ describe('@fabric/core contractMessageQueue', function () {
     assert.strictEqual(hexes.length, 1);
 
     const accStore = createMemoryStore();
-    const result = ingestMessageBuffer(accStore, contractId, hexes[0], { origin: 'queue' });
+    const result = ingestMessageBuffer(accStore, contractId, hexes[0], { origin: 'queue', genesis });
     assert.strictEqual(result.accepted, true);
     assert.strictEqual(result.tip.clock, 1);
+  });
+
+  it('rejects unsigned frames at enqueue', function () {
+    const store = createMemoryStore();
+    const unsigned = Message.fromVector(['CONTRACT_MESSAGE', JSON.stringify({
+      contract: contractId,
+      type: 'GroupChat',
+      object: { body: 'no-sig' }
+    })]);
+    const bad = enqueueMessageBuffer(store, contractId, unsigned.toBuffer());
+    assert.strictEqual(bad.accepted, false);
+    assert.match(bad.error, /invalid signature/i);
+  });
+
+  it('clamps maxEntries away from Infinity', function () {
+    // Non-finite values fall back to the default (not ABSOLUTE_MAX).
+    assert.strictEqual(clampMaxEntries(Number.POSITIVE_INFINITY), DEFAULT_MAX_ENTRIES);
+    assert.strictEqual(clampMaxEntries(1e999), DEFAULT_MAX_ENTRIES);
+    assert.strictEqual(clampMaxEntries(0), DEFAULT_MAX_ENTRIES);
+    assert.strictEqual(clampMaxEntries(12), 12);
+    assert.strictEqual(clampMaxEntries(ABSOLUTE_MAX_ENTRIES + 50), ABSOLUTE_MAX_ENTRIES);
   });
 
   it('trims to maxEntries preferring delivered rows', function () {

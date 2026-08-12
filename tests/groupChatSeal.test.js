@@ -10,7 +10,8 @@ const {
   sealParticipantGroupChatBody,
   openGroupChatBody,
   isSealedGroupChat,
-  isParticipantSealedGroupChat
+  isParticipantSealedGroupChat,
+  pubkeyXOnly
 } = require('../functions/groupChatSeal');
 const Key = require('../types/key');
 
@@ -21,9 +22,14 @@ describe('@fabric/core groupChatSeal', function () {
   const digest = require('crypto').createHash('sha256').update('tip-content').digest('hex');
 
   it('sortedMemberXOnlys normalizes compressed and x-only', function () {
-    const xa = a.pubkey.slice(2).toLowerCase();
+    const xa = pubkeyXOnly(a.pubkey);
+    assert.ok(xa && xa.length === 64);
+    assert.strictEqual(pubkeyXOnly(`02${xa}`), xa);
+    assert.strictEqual(pubkeyXOnly(`03${xa}`), xa);
     const list = sortedMemberXOnlys([b.pubkey, a.pubkey, xa, 'nope']);
     assert.strictEqual(list.length, 2);
+    assert.ok(list.includes(xa));
+    assert.ok(list.includes(pubkeyXOnly(b.pubkey)));
     assert.deepStrictEqual(list, list.slice().sort());
   });
 

@@ -48,7 +48,14 @@ function registryUpdatePathPolicy (policy) {
     const narrowed = policy.allowedPathPrefixes
       .map((p) => String(p || ''))
       .filter((p) => p === REGISTRY_PATH || p.startsWith(`${REGISTRY_PATH}/`));
-    if (narrowed.length) out.allowedPathPrefixes = narrowed;
+    // Never widen a caller allowlist that has no /registry overlap into
+    // permission to touch the registry.
+    if (!narrowed.length) {
+      out.allowedPathPrefixes = [];
+      out.error = 'policy allowlist has no /registry overlap';
+      return out;
+    }
+    out.allowedPathPrefixes = narrowed;
   }
   return out;
 }
@@ -172,6 +179,9 @@ function applyRegistryUpdateFields (state, fields, policy = null) {
   // Prefer explicit RFC6902 sequence when present (HTTP multi-op fidelity).
   // Always constrain to /registry — policy=null must not fail open for this helper.
   const pathPolicy = registryUpdatePathPolicy(policy);
+  if (pathPolicy.error) {
+    return { ok: false, error: pathPolicy.error };
+  }
   const patchesRaw = fields.patchesCanonical != null ? String(fields.patchesCanonical).trim() : '';
   if (patchesRaw) {
     let patches;

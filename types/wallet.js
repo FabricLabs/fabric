@@ -1208,8 +1208,9 @@ class Wallet extends Service {
     const index = typeof this.index === 'number' ? this.index : 0;
     this.index = index + 1;
 
-    // Use a standard BIP44 path with the index
-    const path = `m/44'/0'/0'/0/${index}`;
+    // Use BIP44 Bitcoin receive path (coin type 0) — not Fabric identity (7778).
+    const { bitcoinReceiveDerivationPath } = require('../constants');
+    const path = bitcoinReceiveDerivationPath(0, index);
     const pair = this.key.derive(path);
 
     const keypair = {

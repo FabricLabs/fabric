@@ -86,6 +86,7 @@ const {
   normalizeFabricDocumentOfferEnvelopeForHandlers
 } = require('../functions/publishedDocumentEnvelope');
 const inventoryHtlc = require('../functions/inventoryHtlc');
+const { resolveFabricPeerInterface } = require('../functions/fabricListenInterface');
 const {
   buildForwardedDocumentRequest
 } = require('../functions/documentMarket');
@@ -536,6 +537,12 @@ class Peer extends Service {
       // Inbound P2P_FLUSH_CHAIN: allowed signer pubkeys (hex/Buffers); empty = reject all until configured.
       flushChainAuthorizedPubkeys: []
     }, config);
+
+    // FABRIC_INTERFACE / FABRIC_PEER_INTERFACE override bind when set.
+    this.settings.interface = resolveFabricPeerInterface({
+      interface: this.settings.interface,
+      env: process.env
+    });
 
     // Network Internals
     this.upnp = null;

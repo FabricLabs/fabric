@@ -226,6 +226,9 @@ contract&#39;s lifetime as &quot;fulfillment conditions&quot; for its closure.</
 <dt><a href="#mineOnStart">mineOnStart</a></dt>
 <dd><p>When false, <code>start()</code> does not mine an initial epoch (regtest).</p>
 </dd>
+<dt><a href="#allowedOpcodes">allowedOpcodes</a> : <code>Array.&lt;string&gt;</code> | <code>null</code></dt>
+<dd><p>Opcode allow-list. Null or empty = unrestricted (legacy soft compute).</p>
+</dd>
 <dt><a href="#GenericMessage">GenericMessage</a></dt>
 <dd><p>Transitional Hub/browser catch-all (opcode GENERIC_MESSAGE_TYPE / 15103).</p>
 </dd>
@@ -877,6 +880,7 @@ Author Schnorr over signingString (gossip).
     * [new Bond()](#new_Bond_new)
     * [.deploy()](#Contract+deploy) ⇒ <code>String</code>
     * [.start()](#Contract+start) ⇒ [<code>Contract</code>](#Contract)
+    * [._handleBitcoinTransaction(txInput, [opts])](#Contract+_handleBitcoinTransaction) ⇒ <code>object</code>
     * [._taprootPolicyInputs([overrides])](#Contract+_taprootPolicyInputs) ⇒ <code>object</code>
     * [.toAddress([network])](#Contract+toAddress) ⇒ <code>string</code>
     * [.resolveSpend([opts])](#Contract+resolveSpend) ⇒ <code>object</code>
@@ -922,6 +926,24 @@ Start the Contract.
 
 **Kind**: instance method of [<code>Bond</code>](#Bond)  
 **Returns**: [<code>Contract</code>](#Contract) - State "STARTED" iteration of the Contract.  
+<a name="Contract+_handleBitcoinTransaction"></a>
+
+### bond.\_handleBitcoinTransaction(txInput, [opts]) ⇒ <code>object</code>
+Observe an on-chain transaction for payments to this contract's spend address.
+On success (and when `apply` is not false), folds matched sats into tip balances.
+
+**Kind**: instance method of [<code>Bond</code>](#Bond)  
+**Returns**: <code>object</code> - observation from [module:functions/contractPaymentObserve.observePaymentToAddress](module:functions/contractPaymentObserve.observePaymentToAddress)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| txInput | <code>string</code> \| <code>object</code> |  | raw tx hex or bitcoin.Transaction |
+| [opts] | <code>object</code> |  |  |
+| [opts.network] | <code>string</code> |  |  |
+| [opts.address] | <code>string</code> |  | override spend address |
+| [opts.amountSats] | <code>number</code> |  | minimum matched sats |
+| [opts.apply] | <code>boolean</code> | <code>true</code> | fold into `_state.content` on success |
+
 <a name="Contract+_taprootPolicyInputs"></a>
 
 ### bond.\_taprootPolicyInputs([overrides]) ⇒ <code>object</code>
@@ -2076,6 +2098,7 @@ Loads [State](#State) into memory.
     * [new Contract()](#new_Contract_new)
     * [.deploy()](#Contract+deploy) ⇒ <code>String</code>
     * [.start()](#Contract+start) ⇒ [<code>Contract</code>](#Contract)
+    * [._handleBitcoinTransaction(txInput, [opts])](#Contract+_handleBitcoinTransaction) ⇒ <code>object</code>
     * [._taprootPolicyInputs([overrides])](#Contract+_taprootPolicyInputs) ⇒ <code>object</code>
     * [.toAddress([network])](#Contract+toAddress) ⇒ <code>string</code>
     * [.resolveSpend([opts])](#Contract+resolveSpend) ⇒ <code>object</code>
@@ -2123,6 +2146,24 @@ Start the Contract.
 **Kind**: instance method of [<code>Contract</code>](#Contract)  
 **Overrides**: [<code>start</code>](#Service+start)  
 **Returns**: [<code>Contract</code>](#Contract) - State "STARTED" iteration of the Contract.  
+<a name="Contract+_handleBitcoinTransaction"></a>
+
+### contract.\_handleBitcoinTransaction(txInput, [opts]) ⇒ <code>object</code>
+Observe an on-chain transaction for payments to this contract's spend address.
+On success (and when `apply` is not false), folds matched sats into tip balances.
+
+**Kind**: instance method of [<code>Contract</code>](#Contract)  
+**Returns**: <code>object</code> - observation from [module:functions/contractPaymentObserve.observePaymentToAddress](module:functions/contractPaymentObserve.observePaymentToAddress)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| txInput | <code>string</code> \| <code>object</code> |  | raw tx hex or bitcoin.Transaction |
+| [opts] | <code>object</code> |  |  |
+| [opts.network] | <code>string</code> |  |  |
+| [opts.address] | <code>string</code> |  | override spend address |
+| [opts.amountSats] | <code>number</code> |  | minimum matched sats |
+| [opts.apply] | <code>boolean</code> | <code>true</code> | fold into `_state.content` on success |
+
 <a name="Contract+_taprootPolicyInputs"></a>
 
 ### contract.\_taprootPolicyInputs([overrides]) ⇒ <code>object</code>
@@ -5027,12 +5068,15 @@ instruction entries from [push](#Fabric+push) — not the same as P2P [Message](
 * [Machine](#Machine) ⇐ [<code>Actor</code>](#Actor)
     * [new Machine(settings)](#new_Machine_new)
     * _instance_
+        * [.allowedOpcodes](#Machine+allowedOpcodes) ⇒ <code>Array.&lt;string&gt;</code>
+        * [.setAllowedOpcodes(list)](#Machine+setAllowedOpcodes) ⇒ [<code>Machine</code>](#Machine)
+        * [.applyGenesisOpcodes([genesis])](#Machine+applyGenesisOpcodes) ⇒ [<code>Machine</code>](#Machine)
         * [.sip([n])](#Machine+sip) ⇒ <code>Number</code>
         * [.slurp([n])](#Machine+slurp) ⇒ <code>Number</code>
         * [.compute(input)](#Machine+compute) ⇒ [<code>Machine</code>](#Machine)
         * [.parseManifest(raw, [program])](#Machine+parseManifest) ⇒ <code>Object</code>
-        * [.loadProgram(program)](#Machine+loadProgram) ⇒ [<code>Machine</code>](#Machine)
-        * [.runProgram(program, [input])](#Machine+runProgram) ⇒ <code>Promise.&lt;{ok: boolean, stack: Array, tip: \*, trace: Array, runCommitmentHex: (string\|null), error: (string\|undefined)}&gt;</code>
+        * [.loadProgram(program, [opts])](#Machine+loadProgram) ⇒ [<code>Machine</code>](#Machine)
+        * [.runProgram(program, [input], [opts])](#Machine+runProgram) ⇒ <code>Promise.&lt;{ok: boolean, stack: Array, tip: \*, trace: Array, runCommitmentHex: (string\|null), error: (string\|undefined)}&gt;</code>
         * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
         * [.commit()](#Actor+commit) ⇒ <code>String</code>
         * [.export()](#Actor+export) ⇒ <code>Object</code>
@@ -5060,6 +5104,36 @@ Create a Machine.
 | Param | Type | Description |
 | --- | --- | --- |
 | settings | <code>Object</code> | Run-time configuration. |
+
+<a name="Machine+allowedOpcodes"></a>
+
+### machine.allowedOpcodes ⇒ <code>Array.&lt;string&gt;</code>
+Active opcode allow-list (empty = unrestricted).
+
+**Kind**: instance property of [<code>Machine</code>](#Machine)  
+<a name="Machine+setAllowedOpcodes"></a>
+
+### machine.setAllowedOpcodes(list) ⇒ [<code>Machine</code>](#Machine)
+Restrict `define` / `loadProgram` / `compute` to this opcode set.
+Empty / null clears the restriction (legacy soft unknown-op behavior).
+
+**Kind**: instance method of [<code>Machine</code>](#Machine)  
+
+| Param | Type |
+| --- | --- |
+| list | <code>Iterable.&lt;\*&gt;</code> \| <code>null</code> | 
+
+<a name="Machine+applyGenesisOpcodes"></a>
+
+### machine.applyGenesisOpcodes([genesis]) ⇒ [<code>Machine</code>](#Machine)
+Apply ARC / Program genesis `primitives.opcodes` as the Machine allow-list.
+No-op when genesis has no opcodes (keeps unrestricted).
+
+**Kind**: instance method of [<code>Machine</code>](#Machine)  
+
+| Param | Type |
+| --- | --- |
+| [genesis] | <code>object</code> | 
 
 <a name="Machine+sip"></a>
 
@@ -5113,26 +5187,34 @@ Parse program manifest v1 (former DistributedExecution.parseDistributedManifestV
 
 <a name="Machine+loadProgram"></a>
 
-### machine.loadProgram(program) ⇒ [<code>Machine</code>](#Machine)
+### machine.loadProgram(program, [opts]) ⇒ [<code>Machine</code>](#Machine)
 Load a [Program](#Program) onto this machine (sets script steps).
+When an opcode allow-list is active (ctor `allowedOpcodes`,
+[setAllowedOpcodes](#Machine+setAllowedOpcodes), [applyGenesisOpcodes](#Machine+applyGenesisOpcodes),
+or Program/genesis `primitives.opcodes`), steps and javascript `source`
+keys must be listed — fail closed.
 
 **Kind**: instance method of [<code>Machine</code>](#Machine)  
 
-| Param | Type |
-| --- | --- |
-| program | [<code>Program</code>](#Program) | 
+| Param | Type | Description |
+| --- | --- | --- |
+| program | [<code>Program</code>](#Program) \| <code>object</code> |  |
+| [opts] | <code>Object</code> |  |
+| [opts.genesis] | <code>Object</code> | ARC genesis; may supply `primitives.opcodes` allow-list |
 
 <a name="Machine+runProgram"></a>
 
-### machine.runProgram(program, [input]) ⇒ <code>Promise.&lt;{ok: boolean, stack: Array, tip: \*, trace: Array, runCommitmentHex: (string\|null), error: (string\|undefined)}&gt;</code>
+### machine.runProgram(program, [input], [opts]) ⇒ <code>Promise.&lt;{ok: boolean, stack: Array, tip: \*, trace: Array, runCommitmentHex: (string\|null), error: (string\|undefined)}&gt;</code>
 Load and compute a Program; return stack tip + run commitment for L1 binding.
 
 **Kind**: instance method of [<code>Machine</code>](#Machine)  
 
-| Param | Type |
-| --- | --- |
-| program | [<code>Program</code>](#Program) \| <code>Object</code> | 
-| [input] | <code>\*</code> | 
+| Param | Type | Description |
+| --- | --- | --- |
+| program | [<code>Program</code>](#Program) \| <code>Object</code> |  |
+| [input] | <code>\*</code> |  |
+| [opts] | <code>Object</code> |  |
+| [opts.genesis] | <code>Object</code> | ARC genesis for `primitives.opcodes` allow-list |
 
 <a name="Actor+adopt"></a>
 
@@ -5299,12 +5381,15 @@ Parse a JSON object of Buffer-like entries into an array of [Buffer](Buffer)s (l
 * [Machine](#Machine)
     * [new Machine(settings)](#new_Machine_new)
     * _instance_
+        * [.allowedOpcodes](#Machine+allowedOpcodes) ⇒ <code>Array.&lt;string&gt;</code>
+        * [.setAllowedOpcodes(list)](#Machine+setAllowedOpcodes) ⇒ [<code>Machine</code>](#Machine)
+        * [.applyGenesisOpcodes([genesis])](#Machine+applyGenesisOpcodes) ⇒ [<code>Machine</code>](#Machine)
         * [.sip([n])](#Machine+sip) ⇒ <code>Number</code>
         * [.slurp([n])](#Machine+slurp) ⇒ <code>Number</code>
         * [.compute(input)](#Machine+compute) ⇒ [<code>Machine</code>](#Machine)
         * [.parseManifest(raw, [program])](#Machine+parseManifest) ⇒ <code>Object</code>
-        * [.loadProgram(program)](#Machine+loadProgram) ⇒ [<code>Machine</code>](#Machine)
-        * [.runProgram(program, [input])](#Machine+runProgram) ⇒ <code>Promise.&lt;{ok: boolean, stack: Array, tip: \*, trace: Array, runCommitmentHex: (string\|null), error: (string\|undefined)}&gt;</code>
+        * [.loadProgram(program, [opts])](#Machine+loadProgram) ⇒ [<code>Machine</code>](#Machine)
+        * [.runProgram(program, [input], [opts])](#Machine+runProgram) ⇒ <code>Promise.&lt;{ok: boolean, stack: Array, tip: \*, trace: Array, runCommitmentHex: (string\|null), error: (string\|undefined)}&gt;</code>
         * [.adopt(changes)](#Actor+adopt) ⇒ [<code>Actor</code>](#Actor)
         * [.commit()](#Actor+commit) ⇒ <code>String</code>
         * [.export()](#Actor+export) ⇒ <code>Object</code>
@@ -5332,6 +5417,36 @@ Create a Machine.
 | Param | Type | Description |
 | --- | --- | --- |
 | settings | <code>Object</code> | Run-time configuration. |
+
+<a name="Machine+allowedOpcodes"></a>
+
+### machine.allowedOpcodes ⇒ <code>Array.&lt;string&gt;</code>
+Active opcode allow-list (empty = unrestricted).
+
+**Kind**: instance property of [<code>Machine</code>](#Machine)  
+<a name="Machine+setAllowedOpcodes"></a>
+
+### machine.setAllowedOpcodes(list) ⇒ [<code>Machine</code>](#Machine)
+Restrict `define` / `loadProgram` / `compute` to this opcode set.
+Empty / null clears the restriction (legacy soft unknown-op behavior).
+
+**Kind**: instance method of [<code>Machine</code>](#Machine)  
+
+| Param | Type |
+| --- | --- |
+| list | <code>Iterable.&lt;\*&gt;</code> \| <code>null</code> | 
+
+<a name="Machine+applyGenesisOpcodes"></a>
+
+### machine.applyGenesisOpcodes([genesis]) ⇒ [<code>Machine</code>](#Machine)
+Apply ARC / Program genesis `primitives.opcodes` as the Machine allow-list.
+No-op when genesis has no opcodes (keeps unrestricted).
+
+**Kind**: instance method of [<code>Machine</code>](#Machine)  
+
+| Param | Type |
+| --- | --- |
+| [genesis] | <code>object</code> | 
 
 <a name="Machine+sip"></a>
 
@@ -5385,26 +5500,34 @@ Parse program manifest v1 (former DistributedExecution.parseDistributedManifestV
 
 <a name="Machine+loadProgram"></a>
 
-### machine.loadProgram(program) ⇒ [<code>Machine</code>](#Machine)
+### machine.loadProgram(program, [opts]) ⇒ [<code>Machine</code>](#Machine)
 Load a [Program](#Program) onto this machine (sets script steps).
+When an opcode allow-list is active (ctor `allowedOpcodes`,
+[setAllowedOpcodes](#Machine+setAllowedOpcodes), [applyGenesisOpcodes](#Machine+applyGenesisOpcodes),
+or Program/genesis `primitives.opcodes`), steps and javascript `source`
+keys must be listed — fail closed.
 
 **Kind**: instance method of [<code>Machine</code>](#Machine)  
 
-| Param | Type |
-| --- | --- |
-| program | [<code>Program</code>](#Program) | 
+| Param | Type | Description |
+| --- | --- | --- |
+| program | [<code>Program</code>](#Program) \| <code>object</code> |  |
+| [opts] | <code>Object</code> |  |
+| [opts.genesis] | <code>Object</code> | ARC genesis; may supply `primitives.opcodes` allow-list |
 
 <a name="Machine+runProgram"></a>
 
-### machine.runProgram(program, [input]) ⇒ <code>Promise.&lt;{ok: boolean, stack: Array, tip: \*, trace: Array, runCommitmentHex: (string\|null), error: (string\|undefined)}&gt;</code>
+### machine.runProgram(program, [input], [opts]) ⇒ <code>Promise.&lt;{ok: boolean, stack: Array, tip: \*, trace: Array, runCommitmentHex: (string\|null), error: (string\|undefined)}&gt;</code>
 Load and compute a Program; return stack tip + run commitment for L1 binding.
 
 **Kind**: instance method of [<code>Machine</code>](#Machine)  
 
-| Param | Type |
-| --- | --- |
-| program | [<code>Program</code>](#Program) \| <code>Object</code> | 
-| [input] | <code>\*</code> | 
+| Param | Type | Description |
+| --- | --- | --- |
+| program | [<code>Program</code>](#Program) \| <code>Object</code> |  |
+| [input] | <code>\*</code> |  |
+| [opts] | <code>Object</code> |  |
+| [opts.genesis] | <code>Object</code> | ARC genesis for `primitives.opcodes` allow-list |
 
 <a name="Actor+adopt"></a>
 
@@ -14621,6 +14744,12 @@ Deprecated 2021-11-06 — use [FabricState](FabricState) (<code>types/state</cod
 
 ## mineOnStart
 When false, `start()` does not mine an initial epoch (regtest).
+
+**Kind**: global variable  
+<a name="allowedOpcodes"></a>
+
+## allowedOpcodes : <code>Array.&lt;string&gt;</code> \| <code>null</code>
+Opcode allow-list. Null or empty = unrestricted (legacy soft compute).
 
 **Kind**: global variable  
 <a name="GenericMessage"></a>

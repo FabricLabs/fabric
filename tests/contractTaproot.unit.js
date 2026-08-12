@@ -465,4 +465,45 @@ describe('contractTaproot', function () {
     assert.ok(prep.sequence !== 0xffffffff);
     assert.ok(prep.psbtBase64);
   });
+
+  it('prepareLeafPsbt encodes BIP68 block-based CSV in low 16 bits (no TYPE_FLAG)', function () {
+    // BIP68: bit 22 (0x00400000) selects *seconds*; block-based CSV uses the raw
+    // block count in bits 0–15 with bit 31 clear. Do not OR TYPE_FLAG for blocks.
+    const policy = normalizeContractSpendPolicy({
+      version: 1,
+      network: 'regtest',
+      keySets: {
+        full: [pk(1)]
+      },
+      decay: { mode: 'none' },
+      tiers: [{
+        id: 'csv',
+        threshold: 1,
+        keys: 'full',
+        after: { type: 'csv', blocks: 144 }
+      }]
+    });
+    const built = buildContractTaproot(policy);
+    const network = bitcoin.networks.regtest;
+    const funding = new bitcoin.Transaction();
+    funding.version = 2;
+    funding.addInput(Buffer.alloc(32), 0);
+    funding.addOutput(bitcoin.address.toOutputScript(built.address, network), 50_000n);
+    const dest = bitcoin.payments.p2wpkh({
+      pubkey: Buffer.from(pk(5), 'hex'),
+      network
+    }).address;
+
+    const prep = prepareTierWithdrawalPsbt({
+      policy,
+      fundedTxHex: funding.toHex(),
+      destinationAddress: dest,
+      feeSats: 1000,
+      ctx: { utxoAgeBlocks: 144 },
+      tierId: 'csv'
+    });
+    assert.strictEqual(prep.sequence, 144);
+    assert.strictEqual(prep.sequence & 0x00400000, 0);
+    assert.strictEqual(prep.sequence >>> 31, 0);
+  });
 });

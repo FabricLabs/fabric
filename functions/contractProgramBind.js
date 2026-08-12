@@ -181,7 +181,8 @@ function assertMachineRunMatches (opts = {}) {
   }
   const expected = String(program.runCommitmentHex({
     tip: run.tip,
-    stack: run.stack || run.trace || []
+    // Machine commits to the trace delta, not the full stack.
+    stack: run.trace || run.stack || []
   })).toLowerCase();
   const got = run.runCommitmentHex != null
     ? String(run.runCommitmentHex).trim().toLowerCase()

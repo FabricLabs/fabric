@@ -180,3 +180,22 @@ Before merging a new Fabric agent:
 
 ## Author Style
 - do not abbreviate in APIs; `documentId` should be `documentIdentifier`
+
+## JSDoc (for `npm run make:api`)
+`jsdoc2md` / Closure parser reject TypeScript optional property syntax inside
+tags. When documenting optional option bags:
+
+```js
+// Bad — breaks make:api
+/** @param {{ genesis?: object }} [opts] */
+
+// Good
+/**
+ * @param {Object} [opts]
+ * @param {Object} [opts.genesis] ARC genesis (primitives.opcodes, …)
+ */
+```
+
+Also: `@type {T}` must not carry a trailing description; put the prose in the
+block above the `@type` line. See [DEVELOPERS.md](DEVELOPERS.md) (Development
+workflow → API reference).

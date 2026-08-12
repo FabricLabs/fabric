@@ -16,7 +16,50 @@ const FABRIC_USER_AGENT = 'Fabric Core 0.1.0 (@fabric/core#v0.1.0-RC1)';
 const BITCOIN_NETWORK = 'mainnet';
 const BITCOIN_GENESIS = '000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f';
 const BITCOIN_GENESIS_ROOT = '4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b';
-const FABRIC_KEY_DERIVATION_PATH = "m/44'/7777'/0'/0/0";
+const FABRIC_KEY_DERIVATION_PATH = "m/44'/7778'/0'/0/0";
+/** BIP44 coin type for Fabric protocol identity (not Bitcoin). */
+const FABRIC_COIN_TYPE = 7778;
+/** BIP44 coin type for Bitcoin funds (receive / change). */
+const BITCOIN_COIN_TYPE = 0;
+/** Default Bitcoin receive path account 0 / index 0 (funds — never Fabric identity). */
+const BITCOIN_KEY_DERIVATION_PATH = "m/44'/0'/0'/0/0";
+
+/**
+ * Fabric identity path: m/44'/7778'/account'/0/index
+ * @param {number} [account=0]
+ * @param {number} [index=0]
+ * @returns {string}
+ */
+function fabricIdentityDerivationPath (account = 0, index = 0) {
+  const a = Math.max(0, Math.floor(Number(account) || 0));
+  const i = Math.max(0, Math.floor(Number(index) || 0));
+  return `m/44'/${FABRIC_COIN_TYPE}'/${a}'/0/${i}`;
+}
+
+/**
+ * Bitcoin BIP44 receive path (external chain): m/44'/0'/account'/0/index
+ * @param {number} [account=0]
+ * @param {number} [index=0]
+ * @returns {string}
+ */
+function bitcoinReceiveDerivationPath (account = 0, index = 0) {
+  const a = Math.max(0, Math.floor(Number(account) || 0));
+  const i = Math.max(0, Math.floor(Number(index) || 0));
+  return `m/44'/${BITCOIN_COIN_TYPE}'/${a}'/0/${i}`;
+}
+
+/**
+ * Bitcoin BIP44 change path (internal chain): m/44'/0'/account'/1/index
+ * @param {number} [account=0]
+ * @param {number} [index=0]
+ * @returns {string}
+ */
+function bitcoinChangeDerivationPath (account = 0, index = 0) {
+  const a = Math.max(0, Math.floor(Number(account) || 0));
+  const i = Math.max(0, Math.floor(Number(index) || 0));
+  return `m/44'/${BITCOIN_COIN_TYPE}'/${a}'/1/${i}`;
+}
+
 const FIXTURE_SEED = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
 const FIXTURE_XPUB = 'xpub661MyMwAqRbcF6GygV6Q6XAg8dqhPvDuhYHGniequi6HMbYhNNH5XC13Np3qRANHVD2mmnNGtMGBfDT69s2ovpHLr7q8syoAuyWqtRGEsYQ';
 const FIXTURE_XPRV = 'xprv9s21ZrQH143K2cCWaTZPjPDwac1CzTW4LKMfzLFEMNZJUoDYppxpyPgZXY7CZkjefGJTrTyqKnMrM4RG6nGn7Q9cwjHggCtn3CdFGJahaWY';
@@ -248,6 +291,12 @@ module.exports = {
   BITCOIN_GENESIS_HASH: BITCOIN_GENESIS,
   BITCOIN_GENESIS_ROOT,
   FABRIC_KEY_DERIVATION_PATH,
+  FABRIC_COIN_TYPE,
+  BITCOIN_COIN_TYPE,
+  BITCOIN_KEY_DERIVATION_PATH,
+  fabricIdentityDerivationPath,
+  bitcoinReceiveDerivationPath,
+  bitcoinChangeDerivationPath,
   FABRIC_USER_AGENT,
   FIXTURE_SEED,
   FIXTURE_XPUB,

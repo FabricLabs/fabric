@@ -185,7 +185,7 @@ function runExecutionProgram (program, options = {}) {
     trace.push(entry);
   }
 
-  const ops = {
+  const ops = Object.assign(Object.create(null), {
     FabricOpcode (step, pc) {
       const entry = resolveFabricEntry(step);
       if (NON_EXECUTION_FABRIC_TYPES.has(entry.name)) {
@@ -238,7 +238,7 @@ function runExecutionProgram (program, options = {}) {
       stack.push({ kind: 'DelegationSignRequest', envelope: step.envelope });
       pushTrace({ pc, op: 'DelegationSignRequest' });
     }
-  };
+  });
 
   try {
     for (let i = 0; i < steps.length; i++) {
@@ -256,7 +256,7 @@ function runExecutionProgram (program, options = {}) {
         };
       }
       const op = normalizeOpName(step.op);
-      if (!op || !ops[op]) {
+      if (!op || !Object.prototype.hasOwnProperty.call(ops, op)) {
         return {
           ok: false,
           error: `unknown op "${step.op}" at index ${i}`,

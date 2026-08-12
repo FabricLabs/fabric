@@ -11,7 +11,17 @@
  * @module functions/contractMessageCommit
  */
 
+const Key = require('../types/key');
 const { pubkeyXOnly } = require('./groupChatSeal');
+
+/**
+ * Canonical UTF-8 message for BIP340 MessageReceipt signatures.
+ * @param {string} messageId wire hash / pending id
+ * @returns {string}
+ */
+function receiptSigningMessage (messageId) {
+  return `fabric:message-receipt:1:${String(messageId || '').trim().toLowerCase()}`;
+}
 
 /**
  * @param {Iterable<*>} readers
@@ -81,19 +91,47 @@ function markReceived (record, pubkey, at) {
 }
 
 /**
+ * Verify BIP340 receipt over the pending message id / wire hash.
+ * @param {object} record
+ * @param {*} pubkey
+ * @param {string} receiptSig 64-byte hex
+ * @returns {boolean}
+ */
+function verifyReceiptSignature (record, pubkey, receiptSig) {
+  const x = pubkeyXOnly(pubkey);
+  const sigHex = String(receiptSig || '').trim().toLowerCase();
+  if (!x || !/^[0-9a-f]{128}$/.test(sigHex)) return false;
+  const id = String((record && (record.id || record.wireHash)) || '').toLowerCase();
+  if (!id) return false;
+  try {
+    const key = new Key({ public: `02${x}` });
+    return !!key.verifySchnorr(receiptSigningMessage(id), Buffer.from(sigHex, 'hex'));
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
  * Phase 2: mark receipt for a reader.
+ * Requires a BIP340 `receiptSig` over {@link receiptSigningMessage}(record.id).
  * @param {object} record
  * @param {*} pubkey
  * @param {string} [at]
- * @param {string} [receiptSig]
+ * @param {string} receiptSig
  * @returns {object}
  */
 function markReceipt (record, pubkey, at, receiptSig) {
-  const { slot } = _peerSlot(record, pubkey);
+  const { x, slot } = _peerSlot(record, pubkey);
+  if (receiptSig == null || receiptSig === '') {
+    throw new Error('receiptSig required (BIP340 over message id)');
+  }
+  if (!verifyReceiptSignature(record, x, receiptSig)) {
+    throw new Error('invalid receiptSig');
+  }
   if (!slot.receivedAt) slot.receivedAt = at || new Date().toISOString();
   if (!slot.receiptAt) {
     slot.receiptAt = at || new Date().toISOString();
-    if (receiptSig != null) slot.receiptSig = String(receiptSig);
+    slot.receiptSig = String(receiptSig).toLowerCase();
   }
   return record;
 }
@@ -151,9 +189,11 @@ function pendingForRelay (records) {
 
 module.exports = {
   normalizeReaders,
+  receiptSigningMessage,
   createPending,
   markReceived,
   markReceipt,
+  verifyReceiptSignature,
   phaseFlags,
   allPhasesComplete,
   aggregatePhaseFlags,

@@ -53,7 +53,8 @@
     "docs/**/*.md"
   ],
   "engines": {
-    "node": "24.15.0"
+    "node": "24.15.0",
+    "npm": ">=12.0.0"
   },
   "scripts": {
     "install": "node scripts/install-native.js",
@@ -97,6 +98,8 @@
     "make:service": "### ERROR: Not yet implemented.  Debug: ` examples/service.js` to `assets/service.js`",
     "make:viewer": "### ERROR: Not yet implemented.  Debug: `components/circuit-viewer.js` to `assets/viewer.min.js`",
     "playnet": "node scripts/playnet.js",
+    "test:playnet-publish": "NODE_ENV=test mocha --require ./tests/mocha-env.js tests/playnet.contract.publish.integration.js --exit",
+    "test:playnet-publish-live": "FABRIC_PLAYNET_PUBLISH=1 NODE_ENV=test mocha --require ./tests/mocha-env.js tests/playnet.contract.publish.integration.js --exit --timeout 60000",
     "report:coverage": "npm run make:coverage && c8 report --reporter=text-lcov > reports/coverage.lcov",
     "report:credits": "node scripts/report-credits.js > reports/credits.json",
     "report:install": "rm -rf node_modules && echo \"\n\" > package-lock.json && echo \"$ npm i\" > reports/install.log && npm i >> reports/install.log 2>&1",

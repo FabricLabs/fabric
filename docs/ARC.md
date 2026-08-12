@@ -195,12 +195,13 @@ Implementation: [`functions/contractSpend.js`](../functions/contractSpend.js) (`
 6. ~~**Complete** L1 payment observation on `Contract`~~ — `functions/contractPaymentObserve` + `Contract#_handleBitcoinTransaction`
 7. ~~Align Hub tracked-contract accept path with this genesis shape~~
 8. Call sites must pass `meta.genesis.signers` (or persist genesis) for any `GroupChange` path
-9. **RC deploy:** tag `@fabric/core`, bump Hub + GoonCitizen/`relay.goon.vc` to the tag, verify AcceptTrackedApplicationContract attaches `spendAddress` + tip `bitcoinAnchor`
-10. **Network promotion:** `beacon/NETWORK` binding + `FABRIC_BEACON_RESET_NETWORK=1` when flipping regtest → signet/mainnet (see `functions/beaconNetworkGuard.js`)
-11. **Beacon as native ARC:** Hub auto-publishes `fabric-beacon` via `functions/beaconContractDefinition` on `startBeacon` (see Hub `docs/DISTRIBUTED_CONTRACT_EXECUTION.md`)
-12. **Optional hashlock / composable trees:** `composeTaprootTree`, leaf builders, `prepareHashlockWithdrawalPsbt` — Hub vault PSBT uses full `policy` leaves; wallet UIs list `leaves[]`
-13. ~~**ExecutionRun → FabricProgramRun / full Machine runner:**~~ Hub uses `fabric-execution` on `Machine`/`Program` (`executionProgramRunner`); digests via `executionRunBridge`
-14. ~~**Enforce** genesis `primitives.opcodes` on `Machine.loadProgram` / `define`~~ — `functions/opcodeAllowList.js` + `Machine.setAllowedOpcodes` / `applyGenesisOpcodes` (fail closed when set; unrestricted legacy soft-coerce otherwise)
+9. ~~**Enforce** GroupChat reader∪signer authz + BIP340 withdrawal witness / MessageReceipt~~ — `authorizeIngest` + `verifyWithdrawalWitnessSignature` / `markReceipt` (PR #183 review follow-up)
+10. **RC deploy:** tag `@fabric/core`, bump Hub + GoonCitizen/`relay.goon.vc` to the tag, verify AcceptTrackedApplicationContract attaches `spendAddress` + tip `bitcoinAnchor`
+11. **Network promotion:** `beacon/NETWORK` binding + `FABRIC_BEACON_RESET_NETWORK=1` when flipping regtest → signet/mainnet (see `functions/beaconNetworkGuard.js`)
+12. **Beacon as native ARC:** Hub auto-publishes `fabric-beacon` via `functions/beaconContractDefinition` on `startBeacon` (see Hub `docs/DISTRIBUTED_CONTRACT_EXECUTION.md`)
+13. **Optional hashlock / composable trees:** `composeTaprootTree`, leaf builders, `prepareHashlockWithdrawalPsbt` — Hub vault PSBT uses full `policy` leaves; wallet UIs list `leaves[]`
+14. ~~**ExecutionRun → FabricProgramRun / full Machine runner:**~~ Hub uses `fabric-execution` on `Machine`/`Program` (`executionProgramRunner`); digests via `executionRunBridge`
+15. ~~**Enforce** genesis `primitives.opcodes` on `Machine.loadProgram` / `define`~~ — `functions/opcodeAllowList.js` + `Machine.setAllowedOpcodes` / `applyGenesisOpcodes` (fail closed when set; unrestricted legacy soft-coerce otherwise)
 ### Dual P2TR surfaces → single authority ladder
 
 | Surface | Role |

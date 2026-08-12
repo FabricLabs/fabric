@@ -156,8 +156,16 @@ function applyPaymentObservationToTip (tip = {}, observation = {}) {
   }
   const prev = tip && typeof tip === 'object' ? tip : {};
   const content = Object.assign({}, prev.content && typeof prev.content === 'object' ? prev.content : {});
-  const balances = Object.assign({}, content.balances && typeof content.balances === 'object' ? content.balances : {});
+  const payments = Array.isArray(content.payments) ? content.payments.slice() : [];
+  const txid = String(observation.txid || '').toLowerCase();
   const addr = observation.address;
+  if (txid && payments.some((p) => p
+    && String(p.txid || '').toLowerCase() === txid
+    && String(p.address || '') === String(addr || ''))) {
+    // Idempotent: already folded this (txid, address) pair.
+    return Object.assign({}, prev, { content: Object.assign({}, content, { payments }) });
+  }
+  const balances = Object.assign({}, content.balances && typeof content.balances === 'object' ? content.balances : {});
   const prevSats = Number(balances[addr] && balances[addr].sats) || 0;
   balances[addr] = {
     sats: prevSats + Number(observation.matchedSats || 0),
@@ -165,7 +173,6 @@ function applyPaymentObservationToTip (tip = {}, observation = {}) {
     lastObservedAt: new Date().toISOString()
   };
   content.balances = balances;
-  const payments = Array.isArray(content.payments) ? content.payments.slice() : [];
   payments.push({
     txid: observation.txid,
     address: addr,
