@@ -75,6 +75,26 @@ describe('functions/blindedExecutionCircuit', function () {
     assert.strictEqual(a.coordinationRoot, null);
   });
 
+  it('composeGarblerPublish excludes garbler from evaluator set', function () {
+    assert.throws(() => composeGarblerPublish({
+      network: 'regtest',
+      garbler: pk(0),
+      parties: [pk(0)],
+      state: { v: 1 }
+    }), /distinct from garbler/);
+
+    const session = composeGarblerPublish({
+      network: 'regtest',
+      garbler: pk(0),
+      parties: [pk(0), pk(1)],
+      state: { v: 1 },
+      program: { language: 'fabric-opcodes', steps: ['OP_TRUE'] }
+    });
+    assert.deepStrictEqual(session.roles.evaluators, [pk(1).toLowerCase()]);
+    assert.deepStrictEqual(session.parties, [pk(1).toLowerCase()]);
+    assert.ok(!session.parties.includes(pk(0).toLowerCase()));
+  });
+
   it('recordProposalDecision reject then accept; finalize needs an evaluator accept', function () {
     let session = composeGarblerPublish({
       name: 'coord-demo',

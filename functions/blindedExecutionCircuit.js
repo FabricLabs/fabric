@@ -171,6 +171,13 @@ function composeGarblerPublish (opts = {}) {
     garbler = parties[0];
   }
 
+  // Evaluators must be distinct from the garbler — a garbler-only accept must
+  // never satisfy finalizeBlindedExecution.
+  const evaluators = parties.filter((p) => p !== garbler);
+  if (!evaluators.length) {
+    throw new Error('composeGarblerPublish: at least one evaluator distinct from garbler is required');
+  }
+
   const network = opts.network || opts.networkName;
   if (!network) throw new Error('composeGarblerPublish: network required');
 
@@ -183,11 +190,11 @@ function composeGarblerPublish (opts = {}) {
     name,
     programHash,
     stateDigest,
-    parties,
+    parties: evaluators,
     garbler
   });
 
-  const signers = Array.from(new Set([garbler].concat(parties))).sort();
+  const signers = Array.from(new Set([garbler].concat(evaluators))).sort();
   const threshold = Math.max(1, Math.min(Number(opts.threshold) || 1, signers.length));
   const csvBlocks = Math.max(1, Number(opts.csvBlocks) || DEFAULT_CSV_BLOCKS);
 
@@ -217,7 +224,7 @@ function composeGarblerPublish (opts = {}) {
       programHash,
       stateDigest,
       circuitCommitment,
-      parties: parties.slice(),
+      parties: evaluators.slice(),
       garbler
     }
   };
@@ -233,11 +240,11 @@ function composeGarblerPublish (opts = {}) {
     circuitId,
     programHash,
     stateDigest,
-    parties: parties.slice(),
+    parties: evaluators.slice(),
     garbler,
     roles: {
       garbler,
-      evaluators: parties.slice()
+      evaluators: evaluators.slice()
     },
     decisions: [],
     coordinationRoot: null,
@@ -402,11 +409,19 @@ function finalizeBlindedExecution (opts = {}) {
     throw new Error('finalizeBlindedExecution: session already finalized');
   }
 
+  const garblerHex = String(session.garbler || '').trim().toLowerCase().replace(/^0x/i, '');
   const evaluators = new Set(
-    normalizeParties(session.parties || (session.roles && session.roles.evaluators) || [])
+    normalizeParties(
+      (session.roles && session.roles.evaluators) ||
+      session.parties ||
+      []
+    ).filter((p) => p !== garblerHex)
   );
   const accepts = (session.decisions || []).filter((d) => d.decision === 'accept');
-  const evaluatorAccept = accepts.some((d) => evaluators.has(String(d.actorPubkey || '').toLowerCase()));
+  const evaluatorAccept = accepts.some((d) => {
+    const actor = String(d.actorPubkey || '').trim().toLowerCase().replace(/^0x/i, '');
+    return evaluators.has(actor);
+  });
   if (!evaluatorAccept) {
     throw new Error('finalizeBlindedExecution: at least one evaluator accept is required');
   }

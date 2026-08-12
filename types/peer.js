@@ -1547,14 +1547,19 @@ class Peer extends Service {
   /**
    * Write a {@link Buffer} to all connected peers.
    * @param {Buffer} message Message buffer to send.
+   * @param {string|null} [origin] Skip this connection id (usually the inbound origin).
+   * @returns {number} Count of peers the frame was written to.
    */
   broadcast (message, origin = null) {
     if (this.settings.debug) this.emit('debug', `Broadcasting message (${message && message.length ? message.length : 0} bytes)`);
+    let sent = 0;
     for (const id in this.connections) {
       this.emit('debug', `Broadcast [!!!] — evaluating connection: ${id}`);
       if (id === origin) continue;
       this.connections[id]._writeFabric(message);
+      sent += 1;
     }
+    return sent;
   }
 
   connectTo (address) {

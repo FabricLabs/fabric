@@ -195,6 +195,11 @@ Implementation: [`functions/contractSpend.js`](../functions/contractSpend.js) (`
 16. **API naming (Author Style):** public short ids such as `contractId` → `contractIdentifier` (and kin) where call sites allow — breaking; coordinate Hub / `@fabric/http` / apps (see root `AGENTS.md`)
 17. **Journal / re-fold growth:** accumulate entry lists and tip re-fold cost stay unbounded beyond duplicate-skip — add caps, compaction, or eviction for long-lived contracts
 18. ~~**Seal AAD:**~~ tip-bound `groupChatSeal` and participant / onion seals bind scheme (+ tip / contract / ephemeral) as AES-GCM AAD. Journal growth (17) and public API renames (16) remain.
+19. **Blinded-execution `at` bind (PR #183 follow-up):** `decisionSigningMessage` still omits `at`; replays with a new timestamp are idempotent by actor/proposal/decision. Binding `at` is a protocol-string bump — do it with coordinated callers/tests, not opportunistically.
+20. **Peering self-suppress trust:** suppress dials from a verified pubkey binding (session/registry), not remote-advertised `obj.pubkey` alone ([AUDIT.md](../AUDIT.md) §16).
+21. **Eager `messageHex`:** Peer hot paths still materialize hex wire forms eagerly — laziness / cache invalidation is performance work.
+22. **`API.md` regeneration:** run `npm run make:api` when next syncing field docs for gossip / `tryParseMessageBody` / `resolveSpend` opts.
+
 ### Dual P2TR surfaces → single authority ladder
 | Surface | Role |
 |---------|------|

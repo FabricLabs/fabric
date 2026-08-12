@@ -43,11 +43,24 @@ audit report.
 11. **Blinded-execution decisions** — accept/reject require BIP340 over `decisionSigningMessage`; same actor/proposal/decision replays are idempotent (signature does not bind `at`). Composition remains a scaffold (not Yao GC).
 12. **Fabric coin-type dual path** — protocol identity is **7777** on Bitcoin mainnet and **7778** on all other networks (`fabricCoinTypeForNetwork` / `Identity#network`). Default Peer / Identity (regtest) stays on **7778**. Hub / Passport / extension callers that hard-code `m/44'/7778'/…` should switch to `fabricIdentityDerivationPath(…, network)` when targeting mainnet; re-derive any keys previously treated as “mainnet” under 7778.
 13. ~~**Withdrawal `requestId` bind**~~ — `validateWithdrawalRequest` rejects unless `requestId === computeWithdrawalRequestId(…)` (destination/fee/vault commitment).
-14. **Outstanding ARC / Peer follow-ups** — journal / re-fold caps ([docs/ARC.md](docs/ARC.md) §8); coordinated `contractId` → `contractIdentifier` rename; eager `messageHex` laziness; regenerate `API.md` field docs for `SCHEMA_P2P_PEER_GOSSIP` / `tryParseMessageBody` / `resolveSpend` opts when next running `npm run make:api`.
+14. **Outstanding ARC / Peer follow-ups** — journal / re-fold caps ([docs/ARC.md](docs/ARC.md) §8); coordinated `contractId` → `contractIdentifier` rename; eager `messageHex` laziness; regenerate `API.md` field docs for `SCHEMA_P2P_PEER_GOSSIP` / `tryParseMessageBody` / `resolveSpend` opts when next running `npm run make:api`. Blinded-execution `decisionSigningMessage` still omits `at` (idempotent replays by actor/proposal/decision); binding `at` is a deliberate protocol-string bump (see ARC §8 item 19).
 15. ~~**Beacon/ARC `CONTRACT_PUBLISH` authority collector**~~ — `collectContractAuthorityPubkeys` walks nested `members.signers` / `spendPolicy.validators` (not only top-level arrays), so Beacon genesis no longer fail-opens first-claim to any AMP signer.
 16. **Peering self-suppress trust** — candidate host/port validation + default-port normalize on self-key refuse + NOISE self-check fail-closed are in; still open: only suppress dials from a verified pubkey binding (not remote-controlled `obj.pubkey` alone).
 17. **OP_RETURN hallmarks** — core short-format encode/verify (`functions/fabricHallmark`); Hub publish/scan is operator opt-in. Remaining: broader BIP-compliance report coverage and any Hub-side mainnet policy gates outside this repo.
 18. **Blinded-execution `at` bind** — decision timestamps are recorded but not yet part of `decisionSigningMessage` (idempotent replays by actor/proposal/decision still apply).
+
+### PR #183 review triage (feature/rsi)
+
+Most CodeRabbit actionable items on [#183](https://github.com/FabricLabs/fabric/pull/183) are addressed on tip. Still open / deferred on purpose:
+
+| Item | Status |
+|------|--------|
+| Blinded-execution evaluator ≠ garbler | Fixed in `composeGarblerPublish` / `finalizeBlindedExecution` |
+| Playnet live publish asserts fan-out | Fixed (`Peer#broadcast` returns send count) |
+| `engines.npm: >=12` vs Node 24.15.0 bundled npm | Intentional — keep; DEVELOPERS.md documents upgrade |
+| Bind `at` into `decisionSigningMessage` | Deferred (protocol bump) — ARC §8 / AUDIT #18 |
+| Verified-pubkey peering self-suppress | Deferred — AUDIT #16 |
+| Eager `messageHex` / `contractIdentifier` rename / journal caps | Deferred — ARC §8 |
 
 ## Recommendations before a non-experimental tag
 

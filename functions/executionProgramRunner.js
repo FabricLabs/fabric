@@ -115,8 +115,16 @@ function executionProgramFromHub (program) {
 /**
  * Run structured execution steps on a {@link Machine} stack.
  *
+ * Allow-list precedence when `options.machine` is injected:
+ * 1. non-empty `options.allowedOpcodes` / genesis opcodes (applied via
+ *    `setAllowedOpcodes`)
+ * 2. otherwise the Machine's existing `allowedOpcodes`
+ *
  * @param {object} program Hub `{ steps: [...] }`
  * @param {object} [options]
+ * @param {string[]} [options.allowedOpcodes]
+ * @param {object} [options.genesis]
+ * @param {import('../types/machine')} [options.machine]
  * @returns {{
  *   ok: boolean,
  *   stepsExecuted?: number,

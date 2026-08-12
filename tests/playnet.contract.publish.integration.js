@@ -118,12 +118,14 @@ describe('playnet contract publish live', function () {
         state: { network: process.env.FABRIC_FLUSH_NETWORK || 'regtest' }
       };
       const msg = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(peer.key);
-      peer.broadcast(msg.toBuffer());
+      const sent1 = peer.broadcast(msg.toBuffer());
+      assert.ok(sent1 > 0, `expected CONTRACT_PUBLISH fan-out > 0, got ${sent1}`);
 
       // Brief observe, then re-publish once.
       await new Promise((r) => setTimeout(r, 1000));
       const msg2 = Message.fromVector(['CONTRACT_PUBLISH', JSON.stringify(definition)]).signWithKey(peer.key);
-      peer.broadcast(msg2.toBuffer());
+      const sent2 = peer.broadcast(msg2.toBuffer());
+      assert.ok(sent2 > 0, `expected second CONTRACT_PUBLISH fan-out > 0, got ${sent2}`);
       await new Promise((r) => setTimeout(r, 1000));
     } finally {
       await peer.stop();
