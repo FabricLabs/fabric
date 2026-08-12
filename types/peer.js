@@ -566,7 +566,9 @@ class Peer extends Service {
     });
 
     this.identity = new Identity(this.settings.key);
-    this.key = new Key(this.settings.key);
+    // Protocol AMP / Schnorr / actor id use Identity#fabricKey (coin type 7778).
+    // Master / fund root remains on identity.key for Bitcoin paths that need it.
+    this.key = this.identity.fabricKey || new Key(this.settings.key);
     // this.wallet = new Wallet(this.settings.key);
 
     // this.hex = this.key.public.encodeCompressed('hex');

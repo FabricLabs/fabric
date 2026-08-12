@@ -58,7 +58,8 @@ describe('@fabric/core onionChatSeal', function () {
     peer.connections[addr] = { _writeFabric () {}, destroy () {} };
     peer.peers[addr] = { id: 'relay', publicKey: originKey.public.encodeCompressed('hex') };
 
-    const sealed = sealOnionChatText('sealed-via-onion', destKey.pubkey);
+    // Seal to the Peer's Fabric protocol pubkey (Identity#fabricKey), not BIP44 master.
+    const sealed = sealOnionChatText('sealed-via-onion', peer.key.pubkey);
     const payload = Message.fromVector(['P2P_CHAT_MESSAGE', sealed]);
     payload.signWithKey(originKey);
     const outer = wrapOnionPath({
@@ -104,6 +105,7 @@ describe('@fabric/core onionChatSeal', function () {
     const originKey = new Key();
     const relay = new Peer(offlinePeerSettings());
     const destKey = new Key();
+    const dest = new Peer(offlinePeerSettings({ key: { mnemonic: destKey.mnemonic } }));
     const fromAddr = '127.0.0.1:9310';
     const destAddr = '127.0.0.1:9311';
     const destWrites = [];
@@ -114,13 +116,13 @@ describe('@fabric/core onionChatSeal', function () {
       destroy () {}
     };
     relay.peers[fromAddr] = { id: 'src', publicKey: originKey.public.encodeCompressed('hex') };
-    relay.peers[destAddr] = { id: 'dest', publicKey: destKey.public.encodeCompressed('hex') };
+    relay.peers[destAddr] = { id: 'dest', publicKey: dest.key.public.encodeCompressed('hex') };
 
     const plaintext = 'multi-hop-secret';
-    const sealed = sealOnionChatText(plaintext, destKey.pubkey);
+    const sealed = sealOnionChatText(plaintext, dest.key.pubkey);
     const payload = Message.fromVector(['P2P_CHAT_MESSAGE', sealed]).signWithKey(originKey);
     const outer = wrapOnionPath({
-      path: [xOnlyFromKey(relay.key), xOnlyFromKey(destKey)],
+      path: [xOnlyFromKey(relay.key), xOnlyFromKey(dest.key)],
       payload,
       key: originKey
     });
@@ -145,7 +147,6 @@ describe('@fabric/core onionChatSeal', function () {
     assert.ok(!snooped.includes(plaintext));
     assert.strictEqual(tryOpenOnionChatText(snooped, { keyOrPrivate: relay.key }).opened, false);
 
-    const dest = new Peer(offlinePeerSettings({ key: { mnemonic: destKey.mnemonic } }));
     const tipChats = [];
     dest.connections[destAddr] = { _writeFabric () {}, destroy () {} };
     dest.peers[destAddr] = { id: 'relay', publicKey: relay.key.public.encodeCompressed('hex') };

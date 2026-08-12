@@ -313,7 +313,12 @@ class Federation extends Contract {
     const csvBlocks = overrides.csvBlocks != null
       ? Number(overrides.csvBlocks)
       : (this.settings.csvBlocks != null ? Number(this.settings.csvBlocks) : tap.DEFAULT_CSV_BLOCKS);
-    const network = overrides.network || this.settings.network || 'regtest';
+    const network = overrides.network || this.settings.network || null;
+    if (!network) {
+      throw new Error(
+        'Federation Bitcoin network required (set settings.network or pass overrides.network; do not default to regtest)'
+      );
+    }
     return { validators, threshold, publisher, network, csvBlocks };
   }
 

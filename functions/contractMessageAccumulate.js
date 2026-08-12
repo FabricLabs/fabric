@@ -237,13 +237,31 @@ function parseContractMessageBody (msg) {
 function normalizePubkeyList (list) {
   const out = [];
   const seen = new Set();
+  let publicRead = false;
   for (const m of list || []) {
+    if (m === '*' || String(m == null ? '' : m).trim() === '*') {
+      publicRead = true;
+      continue;
+    }
     const x = pubkeyXOnly(m);
     if (!x || seen.has(x)) continue;
     seen.add(x);
     out.push(x);
   }
+  // Preserve ARC public-reader wildcard (docs/ARC.md, beacon / blinded genesis).
+  if (publicRead) out.push('*');
   return out.sort();
+}
+
+/**
+ * @param {string[]} readers
+ * @param {string} authorXOnly
+ * @returns {boolean}
+ */
+function authorAllowedByReaders (readers, authorXOnly) {
+  if (!Array.isArray(readers) || !readers.length) return false;
+  if (readers.includes('*')) return true;
+  return readers.includes(authorXOnly);
 }
 
 /**
@@ -492,7 +510,13 @@ function authorizeIngest (doc, type, authorXOnly, meta = {}, bodyObject = null) 
       return { ok: false, error: 'invalid author' };
     }
     const readers = readerSetForDelivery(doc, meta);
-    if (readers.length && !readers.includes(authorXOnly)) {
+    if (!readers.length) {
+      return {
+        ok: false,
+        error: 'delivery ack requires genesis readers/signers or tip members (fail closed)'
+      };
+    }
+    if (!authorAllowedByReaders(readers, authorXOnly)) {
       return { ok: false, error: 'author not in contract reader set' };
     }
     const target = String(
@@ -519,7 +543,9 @@ function authorizeIngest (doc, type, authorXOnly, meta = {}, bodyObject = null) 
       };
     }
     const token = meta.capabilityToken || meta.token;
-    if (!allowed.has(authorXOnly) && !authorHasReadToken(doc, authorXOnly, token)) {
+    if (!authorAllowedByReaders(readers, authorXOnly)
+      && !signers.includes(authorXOnly)
+      && !authorHasReadToken(doc, authorXOnly, token)) {
       return { ok: false, error: 'author not in contract reader/signer set' };
     }
     return { ok: true };
@@ -542,7 +568,8 @@ function authorizeIngest (doc, type, authorXOnly, meta = {}, bodyObject = null) 
       };
     }
     const token = meta.capabilityToken || meta.token;
-    if (!allowed.has(authorXOnly)
+    if (!authorAllowedByReaders(readers, authorXOnly)
+      && !signers.includes(authorXOnly)
       && !authorHasReadToken(doc, authorXOnly, token)
       && !authorHasSignToken(doc, authorXOnly, token)) {
       return { ok: false, error: 'author not in contract reader/signer set' };
@@ -1085,6 +1112,7 @@ module.exports = {
   normalizeContractId,
   normalizeGenesis,
   normalizePubkeyList,
+  authorAllowedByReaders,
   stateDigest,
   bufferFromPaste,
   verifyMessageSignature,

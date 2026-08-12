@@ -337,7 +337,14 @@ class Contract extends Service {
       observePaymentToAddress,
       applyPaymentObservationToTip
     } = require('../functions/contractPaymentObserve');
-    const network = opts.network || this.settings.network || 'regtest';
+    const network = opts.network || this.settings.network;
+    if (!network) {
+      return {
+        ok: false,
+        code: 'NETWORK_REQUIRED',
+        error: 'Bitcoin network required (set settings.network or opts.network; do not default to regtest)'
+      };
+    }
     let address = opts.address || null;
     if (!address) {
       try {
@@ -420,7 +427,12 @@ class Contract extends Service {
       || (validators[0] || null);
     const network = overrides.network
       || this.settings.network
-      || 'regtest';
+      || null;
+    if (!network) {
+      throw new Error(
+        'Contract Bitcoin network required (set settings.network or pass overrides.network; do not default to regtest)'
+      );
+    }
     const csvBlocks = overrides.csvBlocks != null
       ? overrides.csvBlocks
       : (this.settings.csvBlocks != null ? this.settings.csvBlocks : tap.DEFAULT_CSV_BLOCKS);
@@ -432,6 +444,11 @@ class Contract extends Service {
     const ladder = overrides.spendLadder || this.settings.spendLadder || null;
     if (ladder) {
       const network = overrides.network || this.settings.network || ladder.network;
+      if (!network) {
+        throw new Error(
+          'Contract Bitcoin network required (set settings.network, ladder.network, or overrides.network)'
+        );
+      }
       return tap.buildContractTaproot({ ...ladder, ...overrides, network });
     }
     const inputs = this._taprootPolicyInputs(overrides);

@@ -529,4 +529,41 @@ describe('@fabric/core contractMessageCommit', function () {
     const wrong = Buffer.from(a.signSchnorr(receiptSigningMessage('other'))).toString('hex');
     assert.throws(() => markReceipt(record, a.pubkey, null, wrong), /invalid receiptSig/);
   });
+
+  it('preserves public reader wildcard and fail-closes empty delivery-ack authz', function () {
+    const {
+      normalizePubkeyList,
+      authorAllowedByReaders,
+      authorizeIngest
+    } = require('../functions/contractMessageAccumulate');
+    const cid = 'c'.repeat(64);
+    const readers = normalizePubkeyList(['*', '02' + 'ab'.repeat(32)]);
+    assert.ok(readers.includes('*'));
+    assert.strictEqual(authorAllowedByReaders(['*'], 'cd'.repeat(32)), true);
+    assert.strictEqual(authorAllowedByReaders([], 'cd'.repeat(32)), false);
+
+    const outsider = new Key();
+    const doc = {
+      id: cid,
+      genesis: { signers: [], readers: [] },
+      content: { members: [], signers: [] },
+      entries: []
+    };
+    const denied = authorizeIngest(doc, 'MessageReceived', pubkeyXOnly(outsider.pubkey), {}, {
+      messageId: 'ab'.repeat(32)
+    });
+    assert.strictEqual(denied.ok, false);
+    assert.match(denied.error, /fail closed/i);
+
+    const publicDoc = {
+      id: cid,
+      genesis: { signers: [], readers: ['*'] },
+      content: { members: [], signers: [] },
+      entries: []
+    };
+    const allowed = authorizeIngest(publicDoc, 'MessageReceived', pubkeyXOnly(outsider.pubkey), {}, {
+      messageId: 'ab'.repeat(32)
+    });
+    assert.strictEqual(allowed.ok, true);
+  });
 });

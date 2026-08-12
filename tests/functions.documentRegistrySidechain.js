@@ -99,6 +99,19 @@ describe('functions/documentRegistrySidechain', function () {
     assert.match(applied.error, /path not allowed by policy/);
   });
 
+  it('applyRegistryUpdateFields rejects copy/move from outside /registry', function () {
+    const state = sidechainState.createInitialState();
+    const applied = registry.applyRegistryUpdateFields(state, {
+      basisClock: 0,
+      basisDigest: Buffer.from(sidechainState.stateDigest(state), 'hex'),
+      patchesCanonical: JSON.stringify([
+        { op: 'copy', from: '/outside-registry', path: '/registry/documents/x', value: null }
+      ])
+    });
+    assert.strictEqual(applied.ok, false);
+    assert.match(applied.error, /from not allowed by policy|from denied/i);
+  });
+
   it('applyRegistryUpdateFields still requires catalogCanonical without patches', function () {
     const state = sidechainState.createInitialState();
     const applied = registry.applyRegistryUpdateFields(state, {

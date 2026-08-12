@@ -265,13 +265,17 @@ describe('contractTaproot', function () {
       toAddress(ladderOnly)
     );
 
-    // Defensive fallbacks in _taprootPolicyInputs (empty validators / no network)
+    // Defensive: empty validators ok; Bitcoin network must be explicit (no silent regtest).
     const empty = new Contract({});
-    const emptyInputs = empty._taprootPolicyInputs();
-    assert.deepStrictEqual(emptyInputs.validators, []);
-    assert.strictEqual(emptyInputs.publisher, null);
-    assert.strictEqual(emptyInputs.network, 'regtest');
-    assert.strictEqual(emptyInputs.threshold, 1);
+    assert.throws(
+      () => empty._taprootPolicyInputs(),
+      /network required/i
+    );
+    const emptyWithNet = empty._taprootPolicyInputs({ network: 'regtest' });
+    assert.deepStrictEqual(emptyWithNet.validators, []);
+    assert.strictEqual(emptyWithNet.publisher, null);
+    assert.strictEqual(emptyWithNet.network, 'regtest');
+    assert.strictEqual(emptyWithNet.threshold, 1);
   });
 
   it('Federation.address uses toTaprootContract / consistent network', function () {
@@ -299,12 +303,20 @@ describe('contractTaproot', function () {
 
   it('Federation._taprootPolicyInputs defaults, overrides, and empty reject', function () {
     const fed = new Federation({
+      network: 'regtest',
       consensus: { validators: [pk(0), pk(1), pk(2)] }
     });
     const defaults = fed._taprootPolicyInputs();
     assert.strictEqual(defaults.threshold, 2); // ceil(3/2)
     assert.strictEqual(defaults.publisher, pk(0));
     assert.strictEqual(defaults.network, 'regtest');
+
+    assert.throws(
+      () => new Federation({
+        consensus: { validators: [pk(0), pk(1), pk(2)] }
+      })._taprootPolicyInputs(),
+      /network required/i
+    );
 
     const overridden = fed._taprootPolicyInputs({
       validators: [pk(0), pk(1)],
@@ -335,6 +347,7 @@ describe('contractTaproot', function () {
 
     // settings.csvBlocks when overrides omit it; settings.threshold path
     const withCsv = new Federation({
+      network: 'regtest',
       threshold: 1,
       csvBlocks: 33,
       consensus: { validators: [pk(0), pk(1)] }

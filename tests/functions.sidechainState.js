@@ -58,6 +58,30 @@ describe('@fabric/core/functions/sidechainState', function () {
       true
     );
     assert.strictEqual(
+      sc.validatePatchesAgainstPolicy([{
+        op: 'copy',
+        from: '/outside',
+        path: '/app/ok'
+      }], policy).ok,
+      false
+    );
+    assert.strictEqual(
+      sc.validatePatchesAgainstPolicy([{
+        op: 'move',
+        from: '/app/secret',
+        path: '/app/ok'
+      }], policy).ok,
+      false
+    );
+    assert.strictEqual(
+      sc.validatePatchesAgainstPolicy([{
+        op: 'copy',
+        from: '/app/src',
+        path: '/app/dst'
+      }], policy).ok,
+      true
+    );
+    assert.strictEqual(
       sc.applyPatchesToState(sc.createInitialState(), [
         { op: 'add', path: '/a', value: 1 },
         { op: 'add', path: '/b', value: 2 },

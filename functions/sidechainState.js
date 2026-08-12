@@ -133,26 +133,43 @@ function validatePatchesAgainstPolicy (patches, policy) {
   const denied = policy.deniedPathPrefixes || [];
   const maxDepth = policy.maxPathDepth;
 
+  /**
+   * @param {string} path
+   * @param {string} label
+   * @returns {{ ok: boolean, error?: string }}
+   */
+  function checkPath (path, label) {
+    if (!path.startsWith('/')) {
+      return { ok: false, error: `invalid patch ${label}: ${path || '(empty)'}` };
+    }
+    const depth = path === '/' ? 0 : path.split('/').length - 1;
+    if (maxDepth != null && depth > maxDepth) {
+      return { ok: false, error: `${label} depth exceeds maxPathDepth (${maxDepth}): ${path}` };
+    }
+    if (denied.some((prefix) => _pathMatchesPrefix(path, prefix))) {
+      return { ok: false, error: `${label} denied by policy: ${path}` };
+    }
+    if (Array.isArray(allowed) && allowed.length) {
+      const okPath = allowed.some((prefix) => _pathMatchesPrefix(path, prefix));
+      if (!okPath) {
+        return { ok: false, error: `${label} not allowed by policy: ${path}` };
+      }
+    }
+    return { ok: true };
+  }
+
   for (const op of patches) {
     if (!op || typeof op !== 'object') {
       return { ok: false, error: 'invalid patch op' };
     }
     const path = typeof op.path === 'string' ? op.path : '';
-    if (!path.startsWith('/')) {
-      return { ok: false, error: `invalid patch path: ${path || '(empty)'}` };
-    }
-    const depth = path === '/' ? 0 : path.split('/').length - 1;
-    if (maxDepth != null && depth > maxDepth) {
-      return { ok: false, error: `path depth exceeds maxPathDepth (${maxDepth}): ${path}` };
-    }
-    if (denied.some((prefix) => _pathMatchesPrefix(path, prefix))) {
-      return { ok: false, error: `path denied by policy: ${path}` };
-    }
-    if (Array.isArray(allowed) && allowed.length) {
-      const okPath = allowed.some((prefix) => _pathMatchesPrefix(path, prefix));
-      if (!okPath) {
-        return { ok: false, error: `path not allowed by policy: ${path}` };
-      }
+    const pathCheck = checkPath(path, 'path');
+    if (!pathCheck.ok) return pathCheck;
+    const kind = String(op.op || '').toLowerCase();
+    if (kind === 'copy' || kind === 'move') {
+      const from = typeof op.from === 'string' ? op.from : '';
+      const fromCheck = checkPath(from, 'from');
+      if (!fromCheck.ok) return fromCheck;
     }
   }
   return { ok: true };

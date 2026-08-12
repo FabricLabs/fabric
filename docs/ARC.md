@@ -1,5 +1,4 @@
 # Application Resource Contracts (ARC)
-
 **Status:** Draft — formalizes the Contract / ARC wire + state model for `@fabric/core` 0.1.x (`VERSION_NUMBER = 0x01`).
 **Driven by:** security review themes on [FabricLabs/fabric#183](https://github.com/FabricLabs/fabric/pull/183) (authz, spend-policy fail-closed, path policy, Token grants).
 
@@ -8,7 +7,6 @@ Related: [`CONTRACTS.md`](CONTRACTS.md), [`APPLICATION_NAMESPACES.md`](APPLICATI
 ---
 
 ## 1. What an ARC is
-
 An **Application Resource Contract (ARC)** is a published Fabric **Contract** whose
 genesis declares:
 
@@ -30,7 +28,6 @@ An ARC is **not** a separate opcode family. Outer wire remains:
 ---
 
 ## 2. Genesis object (`CONTRACT_PUBLISH` body)
-
 Minimum fields for a 0.1 ARC genesis (extensible; unknown fields ignored by core):
 
 ```json
@@ -85,7 +82,6 @@ Minimum fields for a 0.1 ARC genesis (extensible; unknown fields ignored by core
 ---
 
 ## 3. Tip state
-
 Each ARC maintains a tip:
 
 ```text
@@ -106,7 +102,6 @@ and L2 spend proofs MUST include the tip’s `stateDigest` **and** `bitcoinBlock
 ---
 
 ## 4. Members, Tokens, and authz
-
 | Role | Capability | How granted |
 |------|------------|-------------|
 | Reader | `OP_CONTRACT_READ` | Genesis `members.readers` or `ContractCapabilityGrant` Token |
@@ -115,7 +110,6 @@ and L2 spend proofs MUST include the tip’s `stateDigest` **and** `bitcoinBlock
 `functions/contractCapability.js` issues/verifies Tokens with `ctx.contractId`.
 
 ### MUST (security — PR #183)
-
 1. **Ingest authz:** `contractMessageAccumulate.ingestMessageBuffer` (and equivalents) MUST NOT fold `GroupChange` (or other member/spend mutations) on AMP signature alone. Author MUST be in the current signer set **or** present a verified `OP_CONTRACT_SIGN` Token for this `contractId`.
 2. **Verify vs parse:** Token verify without `issuerKey` MUST NOT look like authorization (`allowUnverified` only, result labeled `verified: false`).
 3. **Path policy:** RFC6902 / `patchesCanonical` paths MUST stay inside genesis `sidechainPolicy` (no fail-open `policy = null` for registry helpers).
@@ -123,7 +117,6 @@ and L2 spend proofs MUST include the tip’s `stateDigest` **and** `bitcoinBlock
 ---
 
 ## 5. Primitives catalog (core)
-
 Shared body `type` strings (`CONTRACT_BODY_TYPES` in `applicationNamespaces.js`):
 
 | Type | Mutates tip? | Authz |
@@ -144,7 +137,6 @@ Product apps MAY add types **only** if listed in that contract’s `primitives.m
 ---
 
 ## 6. Tip → UTXO / spending contract
-
 ```text
 resolveSpend({ genesis, tip }) =
   buildContractTaproot(
@@ -169,7 +161,6 @@ Implementation: [`functions/contractSpend.js`](../functions/contractSpend.js) (`
 ---
 
 ## 7. Implementation map
-
 | Concern | Module |
 |---------|--------|
 | Contract class | `types/contract.js` |
@@ -186,7 +177,6 @@ Implementation: [`functions/contractSpend.js`](../functions/contractSpend.js) (`
 ---
 
 ## 8. Work remaining
-
 1. ~~**Fix** `GroupChange` / member mutation authz in accumulate (PR #183 High)~~
 2. ~~**Enforce** `primitives.messageTypes` at ingest~~
 3. ~~**Thread** `bitcoinBlockHash` through withdrawal messages~~
@@ -203,7 +193,6 @@ Implementation: [`functions/contractSpend.js`](../functions/contractSpend.js) (`
 14. ~~**ExecutionRun → FabricProgramRun / full Machine runner:**~~ Hub uses `fabric-execution` on `Machine`/`Program` (`executionProgramRunner`); digests via `executionRunBridge`
 15. ~~**Enforce** genesis `primitives.opcodes` on `Machine.loadProgram` / `define`~~ — `functions/opcodeAllowList.js` + `Machine.setAllowedOpcodes` / `applyGenesisOpcodes` (fail closed when set; unrestricted legacy soft-coerce otherwise)
 ### Dual P2TR surfaces → single authority ladder
-
 | Surface | Role |
 |---------|------|
 | **Authority P2TR** (`taproot-authority-ladder-v1`) | One address: **t0-authority** = k-of-n validators/signers (immediate main-chain withdrawals); **t1-soft** unlocks after ~**144** blocks CSV (default softer rule = 1-of-publisher; optional `softMode: 'reduced'`) |
@@ -232,7 +221,6 @@ Hub asserts vault `spendAddress` ≡ accepted `fabric-beacon` ARC after `startBe
 ---
 
 ## 9. Non-goals (0.1)
-
 - Full isolate/vm for arbitrary JS Programs (see `AUDIT.md`)
 - Sphinx-level onion privacy inside ARC payloads
 - Collapsing Beacon **epoch sealing** (`BEACON_EPOCH` / `beacon/CHAIN`) into application CONTRACT_MESSAGE traffic — the Beacon **service** stays the L1 clock; the Beacon **ARC** is the authority/spend/namespace surface under the same tracked-contract path
