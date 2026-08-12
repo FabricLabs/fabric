@@ -42,6 +42,7 @@ audit report.
 10. **Public API short names** — `contractId` and similar remain until a coordinated rename to `contractIdentifier`-style identifiers (Author Style in `AGENTS.md`).
 11. **Blinded-execution decisions** — accept/reject now require BIP340 over `decisionSigningMessage` (`functions/blindedExecutionCircuit.js`); composition remains a scaffold (not Yao GC).
 12. **Fabric coin-type dual path** — protocol identity is **7777** on Bitcoin mainnet and **7778** on all other networks (`fabricCoinTypeForNetwork` / `Identity#network`). Default Peer / Identity (regtest) stays on **7778**. Hub / Passport / extension callers that hard-code `m/44'/7778'/…` should switch to `fabricIdentityDerivationPath(…, network)` when targeting mainnet; re-derive any keys previously treated as “mainnet” under 7778.
+13. ~~**Withdrawal `requestId` bind**~~ — `validateWithdrawalRequest` rejects unless `requestId === computeWithdrawalRequestId(…)` (destination/fee/vault commitment). Remaining ARC follow-ups: journal/re-fold caps; `contractId` → `contractIdentifier` rename; eager `messageHex`.
 
 ## Recommendations before a non-experimental tag
 

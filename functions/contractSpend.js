@@ -456,6 +456,41 @@ function resolveSpend (opts = {}) {
 }
 
 /**
+ * Canonical fields hashed into ContractWithdrawalRequest.requestId.
+ * Witness BIP340 covers requestId; this preimage binds destination/fee/vault.
+ * @param {object} object
+ * @returns {object}
+ */
+function withdrawalRequestCommitmentFields (object = {}) {
+  return {
+    contractId: String(object.contractId || '').trim().toLowerCase(),
+    stateDigest: String(object.stateDigest || '').trim().toLowerCase(),
+    bitcoinBlockHash: String(object.bitcoinBlockHash || '').trim().toLowerCase(),
+    destinationAddress: String(object.destinationAddress || object.destination || '').trim(),
+    feeSats: Math.max(0, Number(object.feeSats) || 0),
+    action: object.action === 'migrate' ? 'migrate' : 'spend',
+    after: object.after || null,
+    tierId: object.tierId ? String(object.tierId) : null,
+    vaultAddress: object.vaultAddress ? String(object.vaultAddress) : null,
+    clock: object.clock != null ? Number(object.clock) : 0,
+    programHash: object.programHash
+      ? String(object.programHash).trim().toLowerCase()
+      : null,
+    runCommitmentHex: object.runCommitmentHex
+      ? String(object.runCommitmentHex).trim().toLowerCase()
+      : null
+  };
+}
+
+/**
+ * @param {object} object
+ * @returns {string} 64-hex sha256 of canonical commitment JSON
+ */
+function computeWithdrawalRequestId (object) {
+  return sha256hex(_canonicalStringify(withdrawalRequestCommitmentFields(object)));
+}
+
+/**
  * @param {object} object ContractWithdrawalRequest body
  * @param {object} tip Current tip (must include stateDigest + bitcoinBlockHash)
  * @param {Object} [opts]
@@ -503,6 +538,16 @@ function validateWithdrawalRequest (object, tip, opts = {}) {
     genesis: genesis || {}
   });
   if (!programCheck.ok) return programCheck;
+
+  // requestId MUST bind destination/fee/vault (witness signs only requestId).
+  const gotId = String(object.requestId || '').trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(gotId)) {
+    return { ok: false, error: 'requestId required (64-hex)' };
+  }
+  const expectedId = computeWithdrawalRequestId(object);
+  if (gotId !== expectedId) {
+    return { ok: false, error: 'requestId does not match withdrawal commitment' };
+  }
 
   return { ok: true };
 }
@@ -556,23 +601,9 @@ function buildWithdrawalRequest (opts = {}) {
     object.programId = String(opts.programId || tipProgram.programId);
   }
 
+  object.requestId = computeWithdrawalRequestId(object);
   const check = validateWithdrawalRequest(object, tip, { genesis: opts.genesis });
   if (!check.ok) throw new Error(check.error);
-
-  object.requestId = sha256hex(_canonicalStringify({
-    contractId: object.contractId,
-    stateDigest: object.stateDigest,
-    bitcoinBlockHash: object.bitcoinBlockHash,
-    destinationAddress: object.destinationAddress,
-    feeSats: object.feeSats,
-    action: object.action,
-    after: object.after || null,
-    tierId: object.tierId || null,
-    vaultAddress: object.vaultAddress || null,
-    clock: object.clock,
-    programHash: object.programHash || null,
-    runCommitmentHex: object.runCommitmentHex || null
-  }));
   return object;
 }
 
@@ -710,6 +741,8 @@ module.exports = {
   nestBitcoinAnchor,
   resolveSpend,
   validateWithdrawalRequest,
+  computeWithdrawalRequestId,
+  withdrawalRequestCommitmentFields,
   buildWithdrawalRequest,
   buildWithdrawalWitness,
   withdrawalWitnessSigningMessage,

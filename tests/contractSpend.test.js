@@ -214,6 +214,19 @@ describe('contractSpend / ARC resolveSpend', function () {
       stateDigest: 'cc'.repeat(32)
     })).ok, false);
 
+    const diverted = Object.assign({}, req, {
+      destinationAddress: 'bcrt1q00000000000000000000000000000000000000',
+      // Keep original requestId — must fail commitment bind.
+      requestId: req.requestId
+    });
+    const divertedCheck = validateWithdrawalRequest(diverted, tip);
+    assert.strictEqual(divertedCheck.ok, false);
+    assert.match(String(divertedCheck.error || ''), /requestId does not match/);
+
+    const missingId = Object.assign({}, req);
+    delete missingId.requestId;
+    assert.strictEqual(validateWithdrawalRequest(missingId, tip).ok, false);
+
     const wit = buildWithdrawalWitness({
       request: req,
       signer: pubkeyXOnly(k.pubkey),

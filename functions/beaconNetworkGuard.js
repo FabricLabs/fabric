@@ -111,7 +111,8 @@ function _pathHasContent (fs, path) {
       if (parsed && typeof parsed === 'object') {
         if (Array.isArray(parsed.messages) && parsed.messages.length === 0) return false;
         if (parsed.content && Object.keys(parsed.content).length === 0 && !(parsed.clock > 0)) {
-          // empty-ish sidechain still counts if clock advanced
+          // Initialized empty sidechain with clock 0 is unused — do not require reset.
+          return false;
         }
       }
     } catch (_) { /* non-json still counts as content */ }

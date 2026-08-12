@@ -4,6 +4,7 @@ const assert = require('assert');
 const {
   BEACON_NETWORK_PATH,
   BEACON_CHAIN_PATH,
+  SIDECHAIN_STATE_PATH,
   normalizeBitcoinNetwork,
   readNetworkBinding,
   writeNetworkBinding,
@@ -83,6 +84,12 @@ describe('beaconNetworkGuard', function () {
     const check = assertBeaconNetworkCompatible(fs, 'mainnet');
     assert.strictEqual(check.ok, false);
     assert.strictEqual(check.code, 'NETWORK_UNBOUND');
+  });
+
+  it('does not treat empty sidechain content (clock 0) as used data', function () {
+    const fs = memoryFs();
+    fs.writeFile(SIDECHAIN_STATE_PATH, JSON.stringify({ content: {}, clock: 0 }));
+    assert.strictEqual(hasBeaconOrSidechainData(fs), false);
   });
 
   it('resetBeaconNetworkStores clears listed paths', async function () {
